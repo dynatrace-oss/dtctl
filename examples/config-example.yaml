@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Config
+current-context: production
+
+contexts:
+- name: development
+  context:
+    environment: https://dev123.live.dynatrace.com
+    token-ref: dev-token
+    namespace: my-app
+
+- name: production
+  context:
+    environment: https://prod456.live.dynatrace.com
+    token-ref: prod-token
+
+tokens:
+- name: dev-token
+  token: dt0s16.DEV_TOKEN_HERE
+
+- name: prod-token
+  token: dt0s16.PROD_TOKEN_HERE
+
+preferences:
+  output: table
+  editor: vim

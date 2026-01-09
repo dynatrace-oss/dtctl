@@ -1,0 +1,4 @@
+fetch logs
+| filter host = "{{.host}}"
+| filter timestamp > now() - {{.timerange | default "1h"}}
+| limit {{.limit | default 100}}

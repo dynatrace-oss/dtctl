@@ -1,0 +1,6 @@
+fetch logs
+| filter status = 'ERROR'
+| filter timestamp > now() - 1h
+| summarize count(), by: {log.source}
+| sort count desc
+| limit 10
