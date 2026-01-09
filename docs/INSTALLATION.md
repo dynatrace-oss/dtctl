@@ -14,7 +14,7 @@ This guide covers building and installing dtctl from source.
 
 ```bash
 # Clone the repository
-git clone https://github.com/dynatrace/dtctl.git
+git clone https://github.com/dynatrace-oss/dtctl.git
 cd dtctl
 
 # Build the binary

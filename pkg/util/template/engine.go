@@ -87,8 +87,8 @@ func ValidateTemplate(templateStr string) ([]string, error) {
 		},
 	}
 
-	// Try to parse the template
-	tmpl, err := template.New("validate").Funcs(funcMap).Parse(templateStr)
+	// Try to parse the template to validate syntax
+	_, err := template.New("validate").Funcs(funcMap).Parse(templateStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid template syntax: %w", err)
 	}
@@ -140,8 +140,6 @@ func ValidateTemplate(templateStr string) ([]string, error) {
 			currentVar.WriteByte(templateStr[i])
 		}
 	}
-
-	_ = tmpl // Use tmpl to avoid unused variable error
 
 	return vars, nil
 }
