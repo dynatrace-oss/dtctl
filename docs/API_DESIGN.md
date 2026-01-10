@@ -531,14 +531,99 @@ dtctl get certificates                           # List certificates
 
 ### 16. Feature Flags
 **API Spec**: `feature-flags.yaml`
+**Detailed Design**: [FEATURE_FLAGS_API_DESIGN.md](FEATURE_FLAGS_API_DESIGN.md)
+
+Feature flags enable progressive rollouts, A/B testing, and controlled feature releases. The API is organized around **Projects** (containers), **Stages** (environments), **Feature Flag Definitions**, and **Stage Definitions** (stage-specific configs).
 
 ```bash
-# Resource name: feature-flag/feature-flags (short: ff)
-dtctl get feature-flags                          # List feature flags
-dtctl describe feature-flag <id>                 # Flag details
-dtctl create feature-flag -f flag.yaml           # Create flag
-dtctl patch feature-flag <id> --enabled=true     # Toggle flag
+# Projects - containers for feature flags
+# Resource name: project/projects (short: proj)
+dtctl get projects                               # List projects
+dtctl describe project my-app                    # Project details with stages
+dtctl create project my-app --name "My Application"
+dtctl delete project my-app
+
+# Link/unlink stages to projects
+dtctl link stage production --project my-app     # Link stage to project
+dtctl unlink stage dev --project my-app          # Unlink stage
+
+# Stages - deployment environments
+# Resource name: stage/stages (short: stg)
+dtctl get stages                                 # List all stages
+dtctl get stages --project my-app                # Stages linked to project
+dtctl create stage production --name "Production"
+dtctl delete stage old-stage                     # Only if not linked
+
+# Feature Flags - flag definitions
+# Resource name: feature-flag/feature-flags (short: ff, flag)
+dtctl get ff --project my-app                    # List flags in project
+dtctl describe ff new-checkout --project my-app  # Flag details
+dtctl create ff new-feature --project my-app \
+  --type BOOLEAN \
+  --variants '{"on":true,"off":false}'
+dtctl edit ff new-feature --project my-app       # Edit in $EDITOR
+dtctl delete ff old-feature --project my-app
+
+# Feature Flag Stage Definitions - stage-specific configs
+# Resource name: feature-flag-stage/feature-flag-stages (short: ffs)
+dtctl get ffs --project my-app --stage production
+dtctl describe ffs new-checkout --project my-app --stage prod
+dtctl patch ffs new-checkout \
+  --project my-app \
+  --stage production \
+  --enabled=true                                 # Enable flag
+dtctl patch ffs new-checkout \
+  --project my-app \
+  --stage production \
+  --default-variant=on                           # Set default
+dtctl edit ffs new-checkout --project my-app --stage prod
+dtctl delete ffs new-checkout --project my-app --stage dev
+
+# Context Attributes - variables for targeting rules
+# Resource name: context/contexts (short: ctx)
+dtctl get contexts --project my-app              # List context attributes
+dtctl create ctx user-tier --project my-app \
+  --type STRING \
+  --description "User subscription level"
+dtctl delete ctx old-context --project my-app
+
+# Change Requests - approval workflow for changes
+# Resource name: change-request/change-requests (short: cr)
+dtctl get cr --project my-app                    # List change requests
+dtctl create cr --project my-app \
+  --feature-flag new-checkout \
+  --stage production \
+  --enabled=true \
+  --comment "Enabling for production"
+dtctl apply cr <request-id> \
+  --comment "Approved by SRE"                    # Approve request
+dtctl close cr <request-id> \
+  --comment "Not ready"                          # Reject request
+
+# Evaluate flag (check current state)
+dtctl exec ff new-checkout --project my-app --stage prod
+dtctl exec ff new-checkout --project my-app --stage prod \
+  --context '{"user-tier":"premium"}'            # With context
+
+# Common workflows
+# Progressive rollout
+dtctl patch ffs new-feature --project my-app --stage prod \
+  --enabled=true \
+  --targeting '{"if":[{"<":[{"var":"$flagd.flagKey"},0.10]},"on","off"]}'
+
+# Set project/stage defaults in context
+dtctl config set-context prod --project my-app --stage production
+dtctl get ff                                     # Uses default project
+dtctl get ffs                                    # Uses default project+stage
 ```
+
+**See [FEATURE_FLAGS_API_DESIGN.md](FEATURE_FLAGS_API_DESIGN.md) for:**
+- Complete command reference for all resource types
+- Manifest examples (YAML/JSON)
+- Targeting rule examples (percentage rollouts, A/B tests, user segments)
+- Common workflows (progressive rollout, emergency disable)
+- Context-based configuration
+- Change request workflows
 
 ### 17. Email (Templates)
 **API Spec**: `email.yaml`

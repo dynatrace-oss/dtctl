@@ -118,6 +118,42 @@ This document tracks implemented features and planned work for dtctl.
 - [ ] Function describe
 - [ ] Workflow `--mine` filter
 
+### Feature Flags (Complete Feature Set)
+**API Spec**: `feature-flags.yaml`
+**Design**: [FEATURE_FLAGS_API_DESIGN.md](FEATURE_FLAGS_API_DESIGN.md)
+
+- [ ] Projects (`dtctl get projects`)
+  - [ ] Create, update, delete projects
+  - [ ] Link/unlink stages to projects
+  - [ ] List project stages
+- [ ] Stages (`dtctl get stages`)
+  - [ ] Create, update, delete stages
+  - [ ] List stages (global and project-scoped)
+- [ ] Feature Flag Definitions (`dtctl get ff`)
+  - [ ] Create, update, delete flags
+  - [ ] Support for BOOLEAN, STRING, NUMBER types
+  - [ ] Multi-variant support
+  - [ ] Edit in $EDITOR
+- [ ] Feature Flag Stage Definitions (`dtctl get ffs`)
+  - [ ] Enable/disable flags per stage
+  - [ ] Set default variant
+  - [ ] Configure targeting rules (JSON Logic)
+  - [ ] Edit stage-specific configs
+- [ ] Context Attributes (`dtctl get contexts`)
+  - [ ] Create, update, delete contexts
+  - [ ] Support for STRING, NUMBER, BOOLEAN, VERSION types
+- [ ] Change Requests (`dtctl get cr`)
+  - [ ] Create change requests for stage definition changes
+  - [ ] Apply (approve) change requests
+  - [ ] Close (reject) change requests
+  - [ ] List and filter change requests
+- [ ] Flag Evaluation (`dtctl exec ff`)
+  - [ ] Evaluate flags with context
+  - [ ] Show current flag state per stage
+- [ ] Context configuration
+  - [ ] Set default project: `--project` flag and context config
+  - [ ] Set default stage: `--stage` flag and context config
+
 ### Distribution
 - [ ] Homebrew tap
 - [ ] Container image
