@@ -781,17 +781,23 @@ metricExpression: "(100)*(builtin:service.response.time:splitBy():sort(value(avg
 
 ### Evaluate SLOs
 
+Evaluate SLOs to get current status, values, and error budget for each criterion:
+
 ```bash
 # Evaluate SLO performance
 dtctl exec slo slo-123
 
-# Historical evaluation
-dtctl exec slo slo-123 \
-  --from 2024-01-01 \
-  --to 2024-01-31
+# Evaluate with custom timeout (default: 30 seconds)
+dtctl exec slo slo-123 --timeout 60
 
 # Output as JSON for analysis
-dtctl exec slo slo-123 -o json | jq '.errorBudgetRemaining'
+dtctl exec slo slo-123 -o json
+
+# Extract error budget from results
+dtctl exec slo slo-123 -o json | jq '.evaluationResults[].errorBudget'
+
+# View in table format (default)
+dtctl exec slo slo-123
 ```
 
 ### Delete SLOs

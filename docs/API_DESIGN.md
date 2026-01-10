@@ -207,7 +207,8 @@ dtctl create slo --from-template <template-id>   # Create from template
 
 # Evaluation
 dtctl exec slo <id>                              # Evaluate SLO now
-dtctl exec slo <id> --from 2024-01-01            # Historical evaluation
+dtctl exec slo <id> --timeout 60                 # Custom timeout (seconds)
+dtctl exec slo <id> -o json                      # Output as JSON
 ```
 
 ### 5. Automation Workflows
@@ -941,11 +942,9 @@ dtctl create slo --from-template template-id \
 dtctl get slos
 dtctl describe slo my-slo-id
 
-# Evaluate historical performance
-dtctl exec slo my-slo-id \
-  --from 2024-01-01 \
-  --to 2024-01-31 \
-  -o json | jq '.errorBudgetRemaining'
+# Evaluate SLO performance
+dtctl exec slo my-slo-id                         # Evaluate and show results
+dtctl exec slo my-slo-id -o json | jq '.evaluationResults[].errorBudget'
 ```
 
 ### Automation Workflows

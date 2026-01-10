@@ -26,7 +26,7 @@ This document tracks implemented features and planned work for dtctl.
 - [x] `delete` - Delete resources
 - [x] `edit` - Edit in $EDITOR
 - [x] `apply` - Create or update
-- [x] `exec` - Execute workflows, analyzers, copilot, functions
+- [x] `exec` - Execute workflows, analyzers, copilot, functions, SLOs
 - [x] `logs` - View execution logs
 - [x] `query` - Execute DQL queries
 - [x] `history` - Show version history (snapshots)
@@ -43,7 +43,7 @@ This document tracks implemented features and planned work for dtctl.
 | **notebook** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
 | **settings** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - |
 | **settings-schema** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
-| **slo** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - |
+| **slo** | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | - | - | - | - | - |
 | **slo-template** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
 | **notification** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
 | **bucket** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - |
@@ -65,6 +65,16 @@ This document tracks implemented features and planned work for dtctl.
 - [x] Live mode with periodic updates: `--live`, `--interval`
 - [x] Customizable chart dimensions: `--width`, `--height`, `--fullscreen`
 - [x] Custom record/byte/scan limits
+
+### SLO Features
+- [x] List SLOs: `dtctl get slos`
+- [x] Get SLO details: `dtctl describe slo <id>`
+- [x] List SLO templates: `dtctl get slo-templates`
+- [x] Create/update SLOs: `dtctl apply -f slo.yaml`
+- [x] Evaluate SLOs: `dtctl exec slo <id>`
+- [x] Evaluation with custom timeout: `--timeout`
+- [x] Automatic polling with exponential backoff
+- [x] Table, JSON, and YAML output formats
 
 ### Davis AI Features
 - [x] List analyzers: `dtctl get analyzers`

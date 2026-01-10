@@ -47,7 +47,7 @@ dtctl query "fetch logs | limit 10"
 | Workflows | get, describe, create, edit, delete, execute, history |
 | Dashboards & Notebooks | get, describe, create, edit, delete, share |
 | DQL Queries | execute with template variables |
-| SLOs | get, create, delete, apply |
+| SLOs | get, create, delete, apply, evaluate |
 | Settings | get, create, delete, apply |
 | Buckets | get, describe |
 | And more... | OpenPipeline, EdgeConnect, Davis AI |
