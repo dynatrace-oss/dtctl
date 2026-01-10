@@ -29,6 +29,7 @@ This document tracks implemented features and planned work for dtctl.
 - [x] `exec` - Execute workflows, analyzers, copilot, functions, SLOs
 - [x] `logs` - View execution logs
 - [x] `query` - Execute DQL queries
+- [x] `wait` - Wait for conditions on resources (polling with exponential backoff)
 - [x] `history` - Show version history (snapshots)
 - [x] `restore` - Restore to previous version
 - [x] `share/unshare` - Share dashboards and notebooks
@@ -82,6 +83,17 @@ This document tracks implemented features and planned work for dtctl.
 - [x] Chat with CoPilot: `dtctl exec copilot "question"` (streaming)
 - [x] NL to DQL: `dtctl exec copilot nl2dql "show error logs"`
 - [x] Document search: `dtctl exec copilot document-search "query"`
+
+### Wait Features
+- [x] Wait for DQL query conditions: `dtctl wait query`
+- [x] Supported conditions: count=N, count-gte, count-gt, count-lte, count-lt, any, none
+- [x] Exponential backoff strategy with configurable parameters
+- [x] Custom timeout and max attempts
+- [x] File-based queries with template variables: `--file`, `--set`
+- [x] Quiet and verbose modes for output control
+- [x] All DQL query options supported (timeframe, limits, locale, etc.)
+- [x] Exit codes for different failure scenarios (timeout, max attempts, errors)
+- [x] Output results in various formats when condition is met
 
 ### Build & Release
 - [x] CI/CD with GitHub Actions (testing, linting, security)
