@@ -105,7 +105,6 @@ This document tracks implemented features and planned work for dtctl.
 ## Planned Features
 
 ### CLI Features
-- [ ] Label selectors (`-l env=prod`)
 - [ ] Watch mode (`--watch`)
 - [ ] Standalone diff command
 - [ ] Patch command

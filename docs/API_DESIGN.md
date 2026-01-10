@@ -1257,25 +1257,6 @@ dtctl get policies -o yaml > iam-audit.yaml
 
 ## Advanced Features
 
-### Labels & Selectors
-```bash
-# Add labels to resources
-dtctl label document <id> environment=production team=sre
-
-# Update existing labels
-dtctl label document <id> version=v2 --overwrite
-
-# Remove labels
-dtctl label document <id> deprecated-
-
-# List resources by label
-dtctl get documents --selector environment=production
-dtctl get documents -l team=sre,env=prod
-
-# Show labels in output
-dtctl get documents --show-labels
-```
-
 ### Wait for Conditions
 ```bash
 # Wait for workflow execution to complete
