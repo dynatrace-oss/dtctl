@@ -58,7 +58,7 @@ exec        - Execute a workflow or function
 history     - Show version history (snapshots) of a document
 restore     - Restore a document to a previous version
 explain     - Show documentation for a resource type
-wait        - Wait for a specific condition on a resource
+wait        - Wait for a specific condition (query results, resource state)
 diff        - Show differences between local and remote resources
 ```
 
@@ -298,6 +298,28 @@ dtctl query -f query.dql --set host=h-123 --set timerange=2h
 # Template Syntax:
 #   Use {{.variable}} to reference variables
 #   Use {{.variable | default "value"}} for default values
+
+# Wait for Query Results (implemented)
+# Poll a query until a specific condition is met
+dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1 --timeout 5m
+dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+dtctl wait query -f query.dql --set test_id=my-test --for=count-gte=1
+
+# Wait conditions:
+#   count=N       - Exactly N records
+#   count-gte=N   - At least N records (>=)
+#   count-gt=N    - More than N records (>)
+#   count-lte=N   - At most N records (<=)
+#   count-lt=N    - Fewer than N records (<)
+#   any           - Any records (count > 0)
+#   none          - No records (count == 0)
+
+# Wait with custom backoff strategy
+dtctl wait query "..." --for=any \
+  --min-interval 500ms --max-interval 15s --backoff-multiplier 1.5
+
+# Wait and output results when condition is met
+dtctl wait query "..." --for=count=1 -o json > result.json
 
 # Fieldsets (planned)
 dtctl get fieldsets                              # List fieldsets
@@ -984,6 +1006,116 @@ dtctl query -f logs-by-host.dql --set host=h-123 --set timerange=2h
 # | filter host = "{{.host}}"
 # | filter timestamp > now() - {{.timerange | default "1h"}}
 # | limit {{.limit | default 100}}
+```
+
+### Waiting for Query Results
+
+```bash
+# Wait for test data to arrive (common in CI/CD)
+dtctl wait query "fetch spans | filter test_id == 'integration-test-123'" \
+  --for=count=1 \
+  --timeout 5m
+
+# Wait for any error logs in the last 5 minutes
+dtctl wait query "fetch logs | filter status == 'ERROR' | filter timestamp > now() - 5m" \
+  --for=any \
+  --timeout 2m
+
+# Wait for at least 10 metrics records
+dtctl wait query "fetch metrics | filter metric.key == 'custom.test.metric'" \
+  --for=count-gte=10 \
+  --timeout 1m
+
+# Wait with template variables
+dtctl wait query -f wait-for-span.dql \
+  --set test_id=my-test-456 \
+  --set span_name="http.server.request" \
+  --for=count=1 \
+  --timeout 5m
+
+# Custom backoff for fast CI/CD pipelines
+dtctl wait query "fetch spans | filter test_id == 'ci-build-789'" \
+  --for=any \
+  --timeout 10m \
+  --min-interval 500ms \
+  --max-interval 15s \
+  --backoff-multiplier 1.5
+
+# Conservative retry strategy (lower load on system)
+dtctl wait query -f query.dql \
+  --for=any \
+  --timeout 30m \
+  --min-interval 10s \
+  --max-interval 2m
+
+# Wait and capture results as JSON
+dtctl wait query "fetch spans | filter test_id == 'test-xyz'" \
+  --for=count=1 \
+  --timeout 5m \
+  -o json > span-data.json
+
+# Wait with initial delay (allow ingestion pipeline time to process)
+dtctl wait query "fetch logs | filter test_id == 'load-test'" \
+  --for=count-gte=100 \
+  --timeout 10m \
+  --initial-delay 30s
+
+# Limit retry attempts (prevent infinite loops)
+dtctl wait query "fetch logs | filter test_id == 'flaky-test'" \
+  --for=any \
+  --timeout 10m \
+  --max-attempts 20
+
+# Use in shell scripts with exit codes
+if dtctl wait query "..." --for=count=1 --timeout 2m --quiet; then
+  echo "Data arrived successfully"
+  # Continue with test assertions
+else
+  echo "Timeout waiting for data" >&2
+  exit 1
+fi
+
+# Real-world example: Capture trace ID from HTTP request and wait for trace data
+TRACE_ID=$(curl -s -A "Mozilla/5.0" https://example.com/your-app \
+  -D - -o /dev/null | grep "dtTrId" | sed -E 's/.*dtTrId;desc="([^"]+)".*/\1/')
+echo "Trace ID: $TRACE_ID"
+
+# Wait for the trace to be ingested and queryable
+dtctl wait query "fetch spans | filter trace.id == \"$TRACE_ID\"" \
+  --for=any \
+  --timeout 3m \
+  -o json | jq '.records[] | {name: .span.name, duration: .duration}'
+
+# Use in automated tests
+test_endpoint() {
+  local url=$1
+
+  # Make request and capture trace ID
+  local trace_id=$(curl -s -A "Mozilla/5.0" "$url" \
+    -D - -o /dev/null | grep "dtTrId" | sed -E 's/.*dtTrId;desc="([^"]+)".*/\1/')
+
+  echo "Testing trace: $trace_id"
+
+  # Wait for trace data with 2 minute timeout
+  if dtctl wait query "fetch spans | filter trace.id == \"$trace_id\"" \
+    --for=any --timeout 2m -o json > /tmp/trace.json; then
+
+    # Run assertions on the trace
+    local error_count=$(jq '[.records[] | select(.status == "ERROR")] | length' /tmp/trace.json)
+    if [ "$error_count" -gt 0 ]; then
+      echo "❌ Found $error_count errors in trace"
+      return 1
+    fi
+
+    echo "✅ Trace validated successfully"
+    return 0
+  else
+    echo "❌ Timeout waiting for trace data"
+    return 1
+  fi
+}
+
+test_endpoint "https://example.com/api/checkout"
 ```
 
 ### Apply Operations
