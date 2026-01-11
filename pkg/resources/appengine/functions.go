@@ -57,7 +57,7 @@ type FunctionExecutorRequest struct {
 // FunctionExecutorResponse represents an ad-hoc function execution response
 type FunctionExecutorResponse struct {
 	Result interface{} `json:"result"`
-	Logs   []string    `json:"logs"`
+	Logs   string      `json:"logs"`
 }
 
 // SDKVersion represents an SDK version
