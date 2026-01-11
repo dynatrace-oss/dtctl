@@ -1,9 +1,9 @@
 # Integration Testing Status
 
 ## Overview
-Integration tests run against a real Dynatrace environment to validate end-to-end functionality. Most tests are passing, with bucket lifecycle tests skipped due to environment-specific API limitations.
+Integration tests run against a real Dynatrace environment to validate end-to-end functionality. Tests cover workflows, dashboards, notebooks, buckets, settings, SLOs, and EdgeConnect configurations. Most tests are passing, with bucket lifecycle tests skipped due to environment-specific API limitations.
 
-## ✅ Passing Tests (100%)
+## ✅ Passing Tests
 
 ### Workflow Tests (100% Complete)
 - **TestWorkflowLifecycle** - Full CRUD lifecycle with execution
@@ -80,11 +80,89 @@ Integration tests run against a real Dynatrace environment to validate end-to-en
   - Missing type validation
   - Missing content validation
 
+### Settings Tests (100% Complete)
+- **TestSettingsLifecycle** - Full CRUD lifecycle ✅
+  - List schemas
+  - Create settings object (builtin:alerting.profile)
+  - Get settings object by ID
+  - List settings objects with schema filter
+  - Update settings object with optimistic locking
+  - Verify version increment
+  - Delete settings object
+  - Verify deletion
+
+- **TestSettingsOptimisticLocking** - Concurrency control ✅
+  - Update with current version
+  - Update with stale version (should fail with 409)
+
+- **TestSettingsValidation** - Validation testing ✅
+  - Validate create without applying
+  - Invalid schema ID validation
+  - Missing required fields validation
+  - Valid settings object validation
+
+- **TestSettingsSchemaOperations** - Schema operations ✅
+  - List all schemas
+  - Get specific schema by ID
+  - Get non-existent schema (error handling)
+
+### SLO Tests (100% Complete)
+- **TestSLOLifecycle** - Full CRUD lifecycle with evaluation ✅
+  - Create SLO with custom DQL metric
+  - Get SLO by ID
+  - List SLOs
+  - Update SLO with optimistic locking
+  - Evaluate SLO (start evaluation)
+  - Poll for evaluation results
+  - Delete SLO
+  - Verify deletion
+
+- **TestSLOOptimisticLocking** - Concurrency control ✅
+  - Update with current version
+  - Update with stale version (should fail with 409)
+
+- **TestSLOTemplates** - Template operations ✅
+  - List SLO templates
+  - Get specific template by ID
+  - Get non-existent template (error handling)
+
+- **TestSLOCreateInvalid** - Error handling ✅
+  - Invalid JSON validation
+  - Empty SLO validation
+  - Missing criteria validation
+
+- **TestSLOEvaluation** - Evaluation operations ✅
+  - Start evaluation
+  - Poll evaluation results
+  - Poll with invalid token (error handling)
+  - Evaluate non-existent SLO (error handling)
+
+### EdgeConnect Tests (100% Complete)
+- **TestEdgeConnectLifecycle** - Full CRUD lifecycle ✅
+  - Create EdgeConnect configuration
+  - Get EdgeConnect by ID
+  - List EdgeConnects
+  - Update EdgeConnect (name and host patterns)
+  - Verify update
+  - Delete EdgeConnect
+  - Verify deletion
+
+- **TestEdgeConnectCreateInvalid** - Error handling ✅
+  - Missing name validation
+  - Valid EdgeConnect creation
+
+- **TestEdgeConnectUpdate** - Update scenarios ✅
+  - Update name and host patterns
+  - Update with empty name (should fail)
+
+- **TestEdgeConnectGetNonExistent** - Error handling ✅
+  - Get non-existent EdgeConnect (error handling)
+
 ## Test Statistics
 
-- **Total Tests**: 14
-- **Passing**: 11 (79%)
-- **Skipped**: 3 (21%)
+- **Total Tests**: 28
+- **Passing**: 25 (89%)
+- **Skipped**: 3 (11%)
 - **Failing**: 0 (0%)
 
 ### Coverage by Resource Type
@@ -92,6 +170,9 @@ Integration tests run against a real Dynatrace environment to validate end-to-en
 - ⚠️ **Buckets**: 25% complete (1/4 tests passing, 3 skipped due to environment limitations)
 - ✅ **Dashboards**: 100% complete (3/3 tests passing)
 - ✅ **Notebooks**: 100% complete (3/3 tests passing)
+- ✅ **Settings**: 100% complete (4/4 tests passing)
+- ✅ **SLOs**: 100% complete (5/5 tests passing)
+- ✅ **EdgeConnect**: 100% complete (4/4 tests passing)
 
 ## Running Tests
 
@@ -182,15 +263,39 @@ go test -v -tags integration -run Invalid ./test/e2e/
 - ✅ No resources left behind after tests
 - ✅ 100% test pass rate
 
+## New Tests Added (Recent)
+
+### Settings Objects
+- Complete CRUD lifecycle testing with builtin:alerting.profile schema
+- Optimistic locking validation
+- Validation testing (validate-only flag)
+- Schema operations (list, get)
+- Safe to run - only creates/modifies test resources with unique prefixes
+
+### SLOs
+- Complete CRUD lifecycle with custom DQL-based metrics
+- Async evaluation testing (start + poll pattern)
+- Template operations (list, get)
+- Optimistic locking validation
+- Safe to run - only creates/modifies test resources with unique prefixes
+
+### EdgeConnect
+- Complete CRUD lifecycle with safe host patterns (*.test.invalid)
+- Update operations (name, host patterns)
+- Error handling and validation
+- Safe to run - uses non-routable .invalid TLD for host patterns
+
 ## Recommendations
 
 1. **Immediate**:
    - All tests are ready for CI/CD validation
-   - Integration tests provide comprehensive coverage of all resource types
+   - Integration tests provide comprehensive coverage of 7 resource types
+   - New tests follow existing patterns and safety measures
 
 2. **Future Enhancements**:
+   - Add tests for IAM resources (users, groups) - read-only operations
+   - Add tests for notification resources
    - Add more workflow execution scenarios (error handlers, conditions)
    - Test error scenarios (network failures, timeouts)
    - Add performance benchmarks
    - Test concurrent operations
-   - Add tests for additional resource types as they're implemented

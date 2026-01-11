@@ -10,6 +10,9 @@ The integration tests verify the complete lifecycle of dtctl operations against 
 - **Dashboards**: Create, get, list, update, snapshots, restore, delete
 - **Notebooks**: Create, get, list, update, snapshots, restore, delete
 - **Grail Buckets**: Create, get, list, update, delete
+- **Settings**: Create, get, list, update, delete, validate, schemas
+- **SLOs**: Create, get, list, update, delete, evaluate, templates
+- **EdgeConnect**: Create, get, list, update, delete
 
 ## Prerequisites
 
@@ -26,10 +29,25 @@ export DTCTL_INTEGRATION_TOKEN="dt0s16.YOUR_PLATFORM_TOKEN"
 
 Your platform token must have the following scopes:
 
+**Workflows & Automation:**
 - `automation:workflows:read`, `automation:workflows:write`, `automation:workflows:execute`
+
+**Documents (Dashboards & Notebooks):**
 - `document:documents:read`, `document:documents:write`
+
+**Storage (Grail Buckets):**
 - `storage:buckets:read`, `storage:buckets:write`
 - `storage:logs:read`
+
+**Settings:**
+- `settings:objects:read`, `settings:objects:write`
+- `settings:schemas:read`
+
+**SLOs:**
+- `slo:read`, `slo:write`
+
+**EdgeConnect:**
+- `app-engine:edge-connects:read`, `app-engine:edge-connects:write`
 
 ### Creating a Platform Token
 
@@ -63,13 +81,34 @@ go test -v -race -tags integration ./test/e2e/notebook_test.go
 
 # Buckets only
 go test -v -race -tags integration ./test/e2e/bucket_test.go
+
+# Settings only
+go test -v -race -tags integration ./test/e2e/settings_test.go
+
+# SLOs only
+go test -v -race -tags integration ./test/e2e/slo_test.go
+
+# EdgeConnect only
+go test -v -race -tags integration ./test/e2e/edgeconnect_test.go
 ```
 
 ### Run Specific Test Functions
 
 ```bash
+# Workflow tests
 go test -v -race -tags integration -run TestWorkflowLifecycle ./test/e2e/
+
+# Dashboard tests
 go test -v -race -tags integration -run TestDashboardLifecycle ./test/e2e/
+
+# Settings tests
+go test -v -race -tags integration -run TestSettingsLifecycle ./test/e2e/
+
+# SLO tests
+go test -v -race -tags integration -run TestSLOLifecycle ./test/e2e/
+
+# EdgeConnect tests
+go test -v -race -tags integration -run TestEdgeConnectLifecycle ./test/e2e/
 ```
 
 ## How Tests Work
@@ -225,10 +264,15 @@ test/
 │   ├── cleanup.go        # CleanupTracker for resource cleanup
 │   └── fixtures.go       # Resource fixture builders
 └── e2e/                  # Actual integration tests
-    ├── workflow_test.go  # Workflow lifecycle tests
-    ├── dashboard_test.go # Dashboard lifecycle tests
-    ├── notebook_test.go  # Notebook lifecycle tests
-    └── bucket_test.go    # Bucket lifecycle tests
+    ├── workflow_test.go     # Workflow lifecycle tests
+    ├── dashboard_test.go    # Dashboard lifecycle tests
+    ├── notebook_test.go     # Notebook lifecycle tests
+    ├── bucket_test.go       # Bucket lifecycle tests
+    ├── settings_test.go     # Settings lifecycle tests
+    ├── slo_test.go         # SLO lifecycle and evaluation tests
+    ├── edgeconnect_test.go  # EdgeConnect lifecycle tests
+    ├── README.md           # This file
+    └── TESTING_STATUS.md   # Test status and coverage details
 ```
 
 ## Best Practices

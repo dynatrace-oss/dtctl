@@ -11,6 +11,9 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 )
 
@@ -128,6 +131,53 @@ func (c *CleanupTracker) deleteResource(resource Resource) error {
 		}
 		return err
 
+	case "settings":
+		handler := settings.NewHandler(c.client)
+		// For settings, we need the version for optimistic locking
+		// Get the current version first
+		obj, err := handler.Get(resource.ID)
+		if err != nil {
+			// Ignore 404 errors - settings already deleted
+			if isNotFoundError(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to get settings version: %w", err)
+		}
+		err = handler.Delete(resource.ID, obj.Version)
+		// Ignore 404 errors - resource already deleted is OK
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
+	case "slo":
+		handler := slo.NewHandler(c.client)
+		// For SLO, we need the version for optimistic locking
+		// Get the current version first
+		sloObj, err := handler.Get(resource.ID)
+		if err != nil {
+			// Ignore 404 errors - SLO already deleted
+			if isNotFoundError(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to get SLO version: %w", err)
+		}
+		err = handler.Delete(resource.ID, sloObj.Version)
+		// Ignore 404 errors - resource already deleted is OK
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
+	case "edgeconnect":
+		handler := edgeconnect.NewHandler(c.client)
+		err := handler.Delete(resource.ID)
+		// Ignore 404 errors - resource already deleted is OK
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource.Type)
 	}
@@ -182,6 +232,33 @@ func (c *CleanupTracker) verifyDeletion(resource Resource) error {
 			return nil
 		}
 		return fmt.Errorf("bucket %s still exists after deletion", resource.ID)
+
+	case "settings":
+		handler := settings.NewHandler(c.client)
+		_, err := handler.Get(resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("settings %s still exists after deletion", resource.ID)
+
+	case "slo":
+		handler := slo.NewHandler(c.client)
+		_, err := handler.Get(resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("slo %s still exists after deletion", resource.ID)
+
+	case "edgeconnect":
+		handler := edgeconnect.NewHandler(c.client)
+		_, err := handler.Get(resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("edgeconnect %s still exists after deletion", resource.ID)
 
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource.Type)

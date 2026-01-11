@@ -66,8 +66,8 @@ func DashboardFixture(prefix string) []byte {
 		},
 		"tiles": []map[string]interface{}{
 			{
-				"name":      "test-tile",
-				"tileType":  "DATA_EXPLORER",
+				"name":       "test-tile",
+				"tileType":   "DATA_EXPLORER",
 				"configured": true,
 				"bounds": map[string]interface{}{
 					"top":    0,
@@ -128,9 +128,9 @@ func NotebookFixture(prefix string) []byte {
 		"name": fmt.Sprintf("%s-notebook", prefix),
 		"sections": []map[string]interface{}{
 			{
-				"type":  "markdown",
-				"title": "Test Section",
-				"state":  "default",
+				"type":     "markdown",
+				"title":    "Test Section",
+				"state":    "default",
 				"markdown": "# Integration Test Notebook\n\nThis is a test notebook.",
 			},
 		},
@@ -152,9 +152,9 @@ func NotebookFixtureModified(prefix string) []byte {
 				"markdown": "# Modified Integration Test Notebook\n\nThis notebook has been modified.",
 			},
 			{
-				"type":  "markdown",
-				"title": "Second Section",
-				"state": "default",
+				"type":     "markdown",
+				"title":    "Second Section",
+				"state":    "default",
 				"markdown": "## New Section\n\nAdded during edit test.",
 			},
 		},
@@ -172,9 +172,9 @@ func BucketName(prefix string) string {
 // BucketCreateRequest returns a bucket creation request
 func BucketCreateRequest(prefix string) map[string]interface{} {
 	return map[string]interface{}{
-		"bucketName":   BucketName(prefix),
-		"table":        "logs",
-		"displayName":  fmt.Sprintf("%s Integration Test Bucket", prefix),
+		"bucketName":    BucketName(prefix),
+		"table":         "logs",
+		"displayName":   fmt.Sprintf("%s Integration Test Bucket", prefix),
 		"retentionDays": 35,
 	}
 }
@@ -182,7 +182,7 @@ func BucketCreateRequest(prefix string) map[string]interface{} {
 // BucketUpdateRequest returns a bucket update request
 func BucketUpdateRequest(prefix string) map[string]interface{} {
 	return map[string]interface{}{
-		"displayName":  fmt.Sprintf("%s Modified Test Bucket", prefix),
+		"displayName":   fmt.Sprintf("%s Modified Test Bucket", prefix),
 		"retentionDays": 60,
 	}
 }
@@ -204,4 +204,90 @@ func ToYAML(data map[string]interface{}) []byte {
 func ToJSON(data map[string]interface{}) []byte {
 	bytes, _ := json.Marshal(data)
 	return bytes
+}
+
+// SettingsObjectFixture returns a minimal settings object for integration testing
+// Uses builtin:loadtest.5k.owner-based schema which is a simple owner-based schema
+func SettingsObjectFixture(prefix string) map[string]interface{} {
+	return map[string]interface{}{
+		"schemaId": "builtin:loadtest.5k.owner-based",
+		"scope":    "environment",
+		"value": map[string]interface{}{
+			"text": fmt.Sprintf("%s-integration-test-settings", prefix),
+		},
+	}
+}
+
+// SettingsObjectFixtureModified returns a modified settings object for edit testing
+func SettingsObjectFixtureModified(prefix string) map[string]interface{} {
+	return map[string]interface{}{
+		"text": fmt.Sprintf("%s-integration-test-settings-modified", prefix),
+	}
+}
+
+// SLOFixture returns a minimal SLO for integration testing
+func SLOFixture(prefix string) []byte {
+	slo := map[string]interface{}{
+		"name":        fmt.Sprintf("%s-slo", prefix),
+		"description": "Integration test SLO",
+		"criteria": []map[string]interface{}{
+			{
+				"timeframeFrom": "-1h",
+				"target":        95.0,
+				"warning":       98.0,
+			},
+		},
+		"customSli": map[string]interface{}{
+			"indicator": "fetch logs | filter status == \"INFO\" | summarize count = count()",
+			"type":      "QUERY_RATIO",
+		},
+	}
+
+	data, _ := json.Marshal(slo)
+	return data
+}
+
+// SLOFixtureModified returns a modified SLO for edit testing
+func SLOFixtureModified(prefix string) []byte {
+	slo := map[string]interface{}{
+		"name":        fmt.Sprintf("%s-slo-modified", prefix),
+		"description": "Modified integration test SLO",
+		"criteria": []map[string]interface{}{
+			{
+				"timeframeFrom": "-1h",
+				"target":        90.0,
+				"warning":       95.0,
+			},
+		},
+		"customSli": map[string]interface{}{
+			"indicator": "fetch logs | filter status == \"INFO\" | summarize count = count()",
+			"type":      "QUERY_RATIO",
+		},
+	}
+
+	data, _ := json.Marshal(slo)
+	return data
+}
+
+// EdgeConnectFixture returns an EdgeConnect configuration for integration testing
+func EdgeConnectFixture(prefix string) map[string]interface{} {
+	return map[string]interface{}{
+		"name": fmt.Sprintf("%s-edgeconnect", prefix),
+		"hostPatterns": []string{
+			fmt.Sprintf("*.%s.test.invalid", prefix), // Use .invalid TLD to ensure non-routable
+		},
+		"oauthClientId": fmt.Sprintf("%s-client-id", prefix),
+	}
+}
+
+// EdgeConnectFixtureModified returns a modified EdgeConnect configuration for edit testing
+func EdgeConnectFixtureModified(prefix string) map[string]interface{} {
+	return map[string]interface{}{
+		"name": fmt.Sprintf("%s-edgeconnect-modified", prefix),
+		"hostPatterns": []string{
+			fmt.Sprintf("*.%s.test.invalid", prefix),
+			fmt.Sprintf("*.%s.modified.test.invalid", prefix),
+		},
+		"oauthClientId": fmt.Sprintf("%s-client-id-modified", prefix),
+	}
 }
