@@ -4,14 +4,51 @@
 package e2e
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/test/integration"
 )
 
+// waitForBucketActive polls the bucket status until it becomes "active" or timeout is reached
+func waitForBucketActive(t *testing.T, handler *bucket.Handler, bucketName string, timeout time.Duration) (*bucket.Bucket, error) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	pollInterval := 2 * time.Second
+	notFoundCount := 0
+	maxNotFoundRetries := 3
+
+	for time.Now().Before(deadline) {
+		b, err := handler.Get(bucketName)
+		if err != nil {
+			// If bucket not found, it might have been auto-deleted or not yet visible
+			// Allow a few retries before failing
+			if notFoundCount < maxNotFoundRetries {
+				notFoundCount++
+				t.Logf("Bucket %s not found (attempt %d/%d), retrying...", bucketName, notFoundCount, maxNotFoundRetries)
+				time.Sleep(pollInterval)
+				continue
+			}
+			return nil, fmt.Errorf("failed to get bucket status: %w", err)
+		}
+
+		notFoundCount = 0 // Reset counter if we got a successful response
+		t.Logf("Bucket %s status: %s (version: %d)", bucketName, b.Status, b.Version)
+
+		if b.Status == "active" {
+			return b, nil
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	return nil, fmt.Errorf("bucket %s did not become active within %v", bucketName, timeout)
+}
+
 func TestBucketLifecycle(t *testing.T) {
-	t.Skip("Skipping: Bucket state transitions asynchronously (creating->active), causing version conflicts and list delays")
+	t.Skip("Skipping: Bucket API may auto-delete buckets that stay in 'creating' state - environment-specific limitation")
 
 	env := integration.SetupIntegration(t)
 	defer env.Cleanup.Cleanup(t)
@@ -53,6 +90,14 @@ func TestBucketLifecycle(t *testing.T) {
 			// Track for cleanup
 			env.Cleanup.Track("bucket", created.BucketName, created.DisplayName)
 
+			// Wait for bucket to become active
+			t.Log("Waiting for bucket to become active...")
+			activeBucket, err := waitForBucketActive(t, handler, bucketName, 60*time.Second)
+			if err != nil {
+				t.Fatalf("Bucket did not become active: %v", err)
+			}
+			t.Logf("✓ Bucket is now active (version: %d)", activeBucket.Version)
+
 			// Step 2: Get bucket
 			t.Log("Step 2: Getting bucket...")
 			retrieved, err := handler.Get(bucketName)
@@ -90,7 +135,8 @@ func TestBucketLifecycle(t *testing.T) {
 			t.Log("Step 4: Updating bucket...")
 			updateReq := integration.BucketUpdateRequest(env.TestPrefix)
 
-			err = handler.Update(bucketName, created.Version, bucket.BucketUpdate{
+			// Use the active bucket version for the update
+			err = handler.Update(bucketName, activeBucket.Version, bucket.BucketUpdate{
 				DisplayName:   updateReq["displayName"].(string),
 				RetentionDays: updateReq["retentionDays"].(int),
 			})
@@ -194,7 +240,7 @@ func TestBucketCreateInvalid(t *testing.T) {
 }
 
 func TestBucketOptimisticLocking(t *testing.T) {
-	t.Skip("Skipping: Bucket version changes asynchronously during creation, causing update conflicts")
+	t.Skip("Skipping: Bucket API may auto-delete buckets that stay in 'creating' state - environment-specific limitation")
 
 	env := integration.SetupIntegration(t)
 	defer env.Cleanup.Cleanup(t)
@@ -218,10 +264,18 @@ func TestBucketOptimisticLocking(t *testing.T) {
 
 	t.Logf("Created bucket: %s (Version: %d)", created.BucketName, created.Version)
 
+	// Wait for bucket to become active
+	t.Log("Waiting for bucket to become active...")
+	activeBucket, err := waitForBucketActive(t, handler, bucketName, 60*time.Second)
+	if err != nil {
+		t.Fatalf("Bucket did not become active: %v", err)
+	}
+	t.Logf("✓ Bucket is now active (version: %d)", activeBucket.Version)
+
 	// Test updating with stale version (should fail)
 	t.Run("update with stale version", func(t *testing.T) {
-		// First update
-		err := handler.Update(bucketName, created.Version, bucket.BucketUpdate{
+		// First update using active version
+		err := handler.Update(bucketName, activeBucket.Version, bucket.BucketUpdate{
 			RetentionDays: 45,
 		})
 		if err != nil {
@@ -234,10 +288,10 @@ func TestBucketOptimisticLocking(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to get updated bucket: %v", err)
 		}
-		t.Logf("Updated version: %d → %d", created.Version, updated.Version)
+		t.Logf("Updated version: %d → %d", activeBucket.Version, updated.Version)
 
 		// Try to update with old version (should fail with 409)
-		err = handler.Update(bucketName, created.Version, bucket.BucketUpdate{
+		err = handler.Update(bucketName, activeBucket.Version, bucket.BucketUpdate{
 			RetentionDays: 55,
 		})
 		if err == nil {
@@ -249,7 +303,7 @@ func TestBucketOptimisticLocking(t *testing.T) {
 }
 
 func TestBucketDuplicateCreate(t *testing.T) {
-	t.Skip("Skipping: Bucket cleanup fails when bucket is still in creating state")
+	t.Skip("Skipping: Bucket API may auto-delete buckets that stay in 'creating' state - environment-specific limitation")
 
 	env := integration.SetupIntegration(t)
 	defer env.Cleanup.Cleanup(t)

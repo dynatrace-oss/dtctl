@@ -316,27 +316,10 @@ func (h *Handler) Create(req CreateRequest) (*Document, error) {
 			}
 		}
 	} else {
-		// JSON response - documentMetadata wrapper
-		var createResp struct {
-			DocumentMetadata DocumentMetadata `json:"documentMetadata"`
-		}
-		if err := json.Unmarshal(resp.Body(), &createResp); err != nil {
-			// Operation succeeded (2xx) but response parsing failed
-			// Try to extract ID from response body as fallback
-			doc = &Document{
-				Name: req.Name,
-				Type: req.Type,
-			}
-			if req.ID != "" {
-				doc.ID = req.ID
-			} else {
-				// Try to extract ID from any JSON in the response
-				if id := extractIDFromResponse(resp.Body()); id != "" {
-					doc.ID = id
-				}
-			}
-		} else {
-			metadata := createResp.DocumentMetadata
+		// JSON response - try direct DocumentMetadata first, then wrapped version
+		var metadata DocumentMetadata
+		if err := json.Unmarshal(resp.Body(), &metadata); err == nil && metadata.ID != "" {
+			// Direct unmarshaling worked
 			doc = &Document{
 				ID:          metadata.ID,
 				Name:        metadata.Name,
@@ -347,6 +330,39 @@ func (h *Handler) Create(req CreateRequest) (*Document, error) {
 				IsPrivate:   metadata.IsPrivate,
 				Created:     metadata.ModificationInfo.CreatedTime,
 				Modified:    metadata.ModificationInfo.LastModifiedTime,
+			}
+		} else {
+			// Try wrapped version (documentMetadata wrapper)
+			var createResp struct {
+				DocumentMetadata DocumentMetadata `json:"documentMetadata"`
+			}
+			if err := json.Unmarshal(resp.Body(), &createResp); err == nil && createResp.DocumentMetadata.ID != "" {
+				metadata := createResp.DocumentMetadata
+				doc = &Document{
+					ID:          metadata.ID,
+					Name:        metadata.Name,
+					Type:        metadata.Type,
+					Description: metadata.Description,
+					Version:     metadata.Version,
+					Owner:       metadata.Owner,
+					IsPrivate:   metadata.IsPrivate,
+					Created:     metadata.ModificationInfo.CreatedTime,
+					Modified:    metadata.ModificationInfo.LastModifiedTime,
+				}
+			} else {
+				// Both parsing attempts failed - try fallback ID extraction
+				doc = &Document{
+					Name: req.Name,
+					Type: req.Type,
+				}
+				if req.ID != "" {
+					doc.ID = req.ID
+				} else {
+					// Try to extract ID from any JSON in the response
+					if id := extractIDFromResponse(resp.Body()); id != "" {
+						doc.ID = id
+					}
+				}
 			}
 		}
 	}
