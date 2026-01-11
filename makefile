@@ -64,7 +64,7 @@ test-integration:
 		echo "See .integrationtests.env.example for setup instructions."; \
 		exit 1; \
 	fi; \
-	go test -v -race -tags integration ./test/e2e/...
+	go test -v -race -count=1 -tags integration ./test/e2e/...
 
 # Run all tests (unit + integration)
 test-all: test-unit test-integration
