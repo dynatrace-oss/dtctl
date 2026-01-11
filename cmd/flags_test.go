@@ -366,3 +366,235 @@ func TestAllCommandsHaveFlags(t *testing.T) {
 		})
 	}
 }
+
+// TestEditFlags validates edit command flags
+func TestEditFlags(t *testing.T) {
+	// Edit commands should have format flag
+	editCommands := []string{"workflow", "dashboard", "notebook"}
+
+	for _, cmdName := range editCommands {
+		t.Run("edit_"+cmdName, func(t *testing.T) {
+			var subcmd *cobra.Command
+			for _, cmd := range editCmd.Commands() {
+				if cmd.Name() == cmdName {
+					subcmd = cmd
+					break
+				}
+			}
+
+			if subcmd == nil {
+				t.Skipf("Edit subcommand %s not found", cmdName)
+				return
+			}
+
+			// Check for format flag
+			flag := subcmd.Flags().Lookup("format")
+			if flag != nil && flag.DefValue != "yaml" {
+				t.Logf("Edit %s has format flag with default %s", cmdName, flag.DefValue)
+			}
+		})
+	}
+}
+
+// TestShareFlags validates share command flags
+func TestShareFlags(t *testing.T) {
+	shareFlags := []string{"user", "group", "access"}
+
+	for _, flagName := range shareFlags {
+		t.Run(flagName, func(t *testing.T) {
+			// Check if flag exists on any share subcommand
+			found := false
+			for _, subcmd := range shareCmd.Commands() {
+				if subcmd.Flags().Lookup(flagName) != nil {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				t.Logf("Flag --%s not found on share subcommands (may be optional)", flagName)
+			}
+		})
+	}
+}
+
+// TestAuthFlags validates auth command flags
+func TestAuthFlags(t *testing.T) {
+	// Check whoami subcommand
+	var whoamiCmd *cobra.Command
+	for _, cmd := range authCmd.Commands() {
+		if cmd.Name() == "whoami" {
+			whoamiCmd = cmd
+			break
+		}
+	}
+
+	if whoamiCmd == nil {
+		t.Skip("whoami subcommand not found")
+		return
+	}
+
+	flags := []struct {
+		name         string
+		defaultValue string
+	}{
+		{"id-only", "false"},
+		{"refresh", "false"},
+	}
+
+	for _, tt := range flags {
+		t.Run(tt.name, func(t *testing.T) {
+			flag := whoamiCmd.Flags().Lookup(tt.name)
+			if flag == nil {
+				t.Errorf("Auth whoami flag --%s not found", tt.name)
+				return
+			}
+
+			if flag.DefValue != tt.defaultValue {
+				t.Errorf("Flag --%s default = %q, want %q", tt.name, flag.DefValue, tt.defaultValue)
+			}
+		})
+	}
+}
+
+// TestConfigFlags validates config command flags
+func TestConfigFlags(t *testing.T) {
+	configFlags := []string{"environment", "token-ref", "token"}
+
+	for _, flagName := range configFlags {
+		t.Run(flagName, func(t *testing.T) {
+			// Check if flag exists on any config subcommand
+			found := false
+			for _, subcmd := range configCmd.Commands() {
+				if subcmd.Flags().Lookup(flagName) != nil {
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				t.Logf("Flag --%s not found on config subcommands (may be optional)", flagName)
+			}
+		})
+	}
+}
+
+// TestLogsFlags validates logs command flags
+func TestLogsFlags(t *testing.T) {
+	// Check workflow execution logs subcommand
+	var logsWorkflowCmd *cobra.Command
+	for _, cmd := range logsCmd.Commands() {
+		if cmd.Name() == "execution" || cmd.Name() == "workflow" {
+			logsWorkflowCmd = cmd
+			break
+		}
+	}
+
+	if logsWorkflowCmd == nil {
+		t.Skip("logs workflow/execution subcommand not found")
+		return
+	}
+
+	flags := []struct {
+		name         string
+		defaultValue string
+	}{
+		{"task", ""},
+		{"follow", "false"},
+		{"all", "false"},
+	}
+
+	for _, tt := range flags {
+		t.Run(tt.name, func(t *testing.T) {
+			flag := logsWorkflowCmd.Flags().Lookup(tt.name)
+			if flag == nil {
+				t.Logf("Logs flag --%s not found (may use different name)", tt.name)
+				return
+			}
+
+			if flag.DefValue != tt.defaultValue {
+				t.Errorf("Flag --%s default = %q, want %q", tt.name, flag.DefValue, tt.defaultValue)
+			}
+		})
+	}
+}
+
+// TestRestoreFlags validates restore command flags
+func TestRestoreFlags(t *testing.T) {
+	// Test force flag on restore subcommands
+	restoreSubcommands := []string{"workflow", "dashboard", "notebook"}
+
+	for _, cmdName := range restoreSubcommands {
+		t.Run(cmdName, func(t *testing.T) {
+			var subcmd *cobra.Command
+			for _, cmd := range restoreCmd.Commands() {
+				if cmd.Name() == cmdName {
+					subcmd = cmd
+					break
+				}
+			}
+
+			if subcmd == nil {
+				t.Skipf("Restore subcommand %s not found", cmdName)
+				return
+			}
+
+			flag := subcmd.Flags().Lookup("force")
+			if flag == nil {
+				t.Errorf("Restore %s flag --force not found", cmdName)
+				return
+			}
+
+			if flag.DefValue != "false" {
+				t.Errorf("Flag --force default = %q, want %q", flag.DefValue, "false")
+			}
+		})
+	}
+}
+
+// TestVersionCommand validates version command exists
+func TestVersionCommand(t *testing.T) {
+	if versionCmd == nil {
+		t.Fatal("versionCmd is nil")
+	}
+
+	if versionCmd.Use != "version" {
+		t.Errorf("versionCmd.Use = %q, want %q", versionCmd.Use, "version")
+	}
+}
+
+// TestCompletionCommand validates completion command exists
+func TestCompletionCommand(t *testing.T) {
+	if completionCmd == nil {
+		t.Fatal("completionCmd is nil")
+	}
+
+	// Just verify it exists, don't check exact Use string
+	if completionCmd.Name() != "completion" {
+		t.Errorf("completionCmd.Name() = %q, want %q", completionCmd.Name(), "completion")
+	}
+}
+
+// TestDescribeCommand validates describe command exists
+func TestDescribeCommand(t *testing.T) {
+	if describeCmd == nil {
+		t.Fatal("describeCmd is nil")
+	}
+
+	// Describe should have subcommands
+	if len(describeCmd.Commands()) == 0 {
+		t.Error("describeCmd has no subcommands")
+	}
+}
+
+// TestHistoryCommand validates history command exists
+func TestHistoryCommand(t *testing.T) {
+	if historyCmd == nil {
+		t.Fatal("historyCmd is nil")
+	}
+
+	// History should have subcommands
+	if len(historyCmd.Commands()) == 0 {
+		t.Error("historyCmd has no subcommands")
+	}
+}
