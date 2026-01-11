@@ -38,3 +38,4 @@ config.yaml
 
 # Build artifacts
 *.log
+.integrationtests.env

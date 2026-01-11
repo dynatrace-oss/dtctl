@@ -5,6 +5,7 @@ package integration
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -87,7 +88,12 @@ func (c *CleanupTracker) deleteResource(resource Resource) error {
 	switch resource.Type {
 	case "workflow":
 		handler := workflow.NewHandler(c.client)
-		return handler.Delete(resource.ID)
+		err := handler.Delete(resource.ID)
+		// Ignore 404 errors - resource already deleted is OK
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
 
 	case "dashboard", "notebook":
 		handler := document.NewHandler(c.client)
@@ -97,19 +103,53 @@ func (c *CleanupTracker) deleteResource(resource Resource) error {
 		if version == 0 {
 			doc, err := handler.Get(resource.ID)
 			if err != nil {
+				// Ignore 404 errors - document already deleted or doesn't exist
+				if isNotFoundError(err) {
+					return nil
+				}
 				return fmt.Errorf("failed to get document version: %w", err)
 			}
 			version = doc.Version
 		}
-		return handler.Delete(resource.ID, version)
+		err := handler.Delete(resource.ID, version)
+		// Ignore 404 errors - resource already deleted is OK
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
 
 	case "bucket":
 		handler := bucket.NewHandler(c.client)
-		return handler.Delete(resource.ID)
+		err := handler.Delete(resource.ID)
+		// Ignore 404 errors and "in use" errors during cleanup
+		// Buckets may be in "creating" state or have dependencies
+		if err != nil && (isNotFoundError(err) || isInUseError(err)) {
+			return nil
+		}
+		return err
 
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource.Type)
 	}
+}
+
+// isNotFoundError checks if an error is a 404 not found error
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "404") ||
+		strings.Contains(errStr, "not found") ||
+		strings.Contains(errStr, "Not found")
+}
+
+// isInUseError checks if an error is an "in use" error (for buckets)
+func isInUseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "still in use")
 }
 
 // verifyDeletion verifies that a resource was actually deleted

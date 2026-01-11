@@ -15,9 +15,9 @@ func WorkflowFixture(prefix string) []byte {
 	workflow := map[string]interface{}{
 		"title":       fmt.Sprintf("%s-workflow", prefix),
 		"description": "Integration test workflow",
-		"tasks": []map[string]interface{}{
-			{
-				"name":   "test-task",
+		"tasks": map[string]interface{}{
+			"test_task": map[string]interface{}{
+				"name":   "test_task",
 				"action": "dynatrace.automations:run-javascript",
 				"input": map[string]interface{}{
 					"script": "export default async function() { return { result: 'Integration test success' }; }",
@@ -35,16 +35,16 @@ func WorkflowFixtureModified(prefix string) []byte {
 	workflow := map[string]interface{}{
 		"title":       fmt.Sprintf("%s-workflow-modified", prefix),
 		"description": "Modified integration test workflow",
-		"tasks": []map[string]interface{}{
-			{
-				"name":   "test-task",
+		"tasks": map[string]interface{}{
+			"test_task": map[string]interface{}{
+				"name":   "test_task",
 				"action": "dynatrace.automations:run-javascript",
 				"input": map[string]interface{}{
 					"script": "export default async function() { return { result: 'Modified workflow' }; }",
 				},
 			},
-			{
-				"name":   "second-task",
+			"second_task": map[string]interface{}{
+				"name":   "second_task",
 				"action": "dynatrace.automations:run-javascript",
 				"input": map[string]interface{}{
 					"script": "export default async function() { return { result: 'Second task added' }; }",

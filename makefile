@@ -36,19 +36,35 @@ test-unit:
 	@go test -v -race -coverprofile=coverage.out ./...
 
 # Run integration tests (requires DTCTL_INTEGRATION_ENV and DTCTL_INTEGRATION_TOKEN)
+# Environment variables can be set via:
+#   1. .integrationtests.env file (recommended, gitignored)
+#   2. Shell environment variables
+#   3. Command line: DTCTL_INTEGRATION_ENV=... make test-integration
 test-integration:
 	@echo "Running integration tests..."
-	@if [ -z "$(DTCTL_INTEGRATION_ENV)" ]; then \
-		echo "Error: DTCTL_INTEGRATION_ENV not set. Integration tests require a Dynatrace environment URL."; \
-		echo "Usage: DTCTL_INTEGRATION_ENV=https://your-env.apps.dynatrace.com DTCTL_INTEGRATION_TOKEN=dt0s16.XXX make test-integration"; \
+	@# Load .integrationtests.env if it exists
+	@if [ -f .integrationtests.env ]; then \
+		echo "Loading environment from .integrationtests.env"; \
+		export $$(cat .integrationtests.env | grep -v '^#' | xargs); \
+	fi; \
+	if [ -z "$$DTCTL_INTEGRATION_ENV" ]; then \
+		echo "Error: DTCTL_INTEGRATION_ENV not set."; \
+		echo ""; \
+		echo "Create .integrationtests.env with your credentials:"; \
+		echo "  cp .integrationtests.env.example .integrationtests.env"; \
+		echo "  # Edit .integrationtests.env with your environment URL and token"; \
+		echo ""; \
+		echo "Or set environment variables:"; \
+		echo "  export DTCTL_INTEGRATION_ENV=https://your-env.apps.dynatrace.com"; \
+		echo "  export DTCTL_INTEGRATION_TOKEN=dt0s16.XXX"; \
 		exit 1; \
-	fi
-	@if [ -z "$(DTCTL_INTEGRATION_TOKEN)" ]; then \
-		echo "Error: DTCTL_INTEGRATION_TOKEN not set. Integration tests require a valid platform token."; \
-		echo "Usage: DTCTL_INTEGRATION_ENV=https://your-env.apps.dynatrace.com DTCTL_INTEGRATION_TOKEN=dt0s16.XXX make test-integration"; \
+	fi; \
+	if [ -z "$$DTCTL_INTEGRATION_TOKEN" ]; then \
+		echo "Error: DTCTL_INTEGRATION_TOKEN not set."; \
+		echo "See .integrationtests.env.example for setup instructions."; \
 		exit 1; \
-	fi
-	@go test -v -race -tags integration ./test/e2e/...
+	fi; \
+	go test -v -race -tags integration ./test/e2e/...
 
 # Run all tests (unit + integration)
 test-all: test-unit test-integration
