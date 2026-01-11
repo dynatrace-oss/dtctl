@@ -33,7 +33,7 @@ func TestConfig_SetContext(t *testing.T) {
 	cfg := NewConfig()
 
 	// Add new context
-	cfg.SetContext("dev", "https://dev.dynatrace.com", "dev-token", "default")
+	cfg.SetContext("dev", "https://dev.dynatrace.com", "dev-token")
 
 	if len(cfg.Contexts) != 1 {
 		t.Fatalf("Expected 1 context, got %d", len(cfg.Contexts))
@@ -46,7 +46,7 @@ func TestConfig_SetContext(t *testing.T) {
 	}
 
 	// Update existing context
-	cfg.SetContext("dev", "https://dev2.dynatrace.com", "", "")
+	cfg.SetContext("dev", "https://dev2.dynatrace.com", "")
 
 	if len(cfg.Contexts) != 1 {
 		t.Fatalf("Expected 1 context after update, got %d", len(cfg.Contexts))
@@ -146,7 +146,7 @@ func TestConfig_MustGetToken(t *testing.T) {
 
 func TestConfig_CurrentContextObj(t *testing.T) {
 	cfg := NewConfig()
-	cfg.SetContext("prod", "https://prod.dynatrace.com", "prod-token", "")
+	cfg.SetContext("prod", "https://prod.dynatrace.com", "prod-token")
 
 	// No current context set
 	_, err := cfg.CurrentContextObj()
@@ -184,7 +184,7 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 
 	// Create and save config
 	cfg := NewConfig()
-	cfg.SetContext("test", "https://test.dynatrace.com", "test-token", "ns1")
+	cfg.SetContext("test", "https://test.dynatrace.com", "test-token")
 	_ = cfg.SetToken("test-token", "secret123")
 	cfg.CurrentContext = "test"
 
@@ -307,9 +307,9 @@ func TestMigrateLegacyConfig(t *testing.T) {
 func TestConfig_MultipleContexts(t *testing.T) {
 	cfg := NewConfig()
 
-	cfg.SetContext("dev", "https://dev.dt.com", "dev-token", "")
-	cfg.SetContext("staging", "https://staging.dt.com", "staging-token", "")
-	cfg.SetContext("prod", "https://prod.dt.com", "prod-token", "")
+	cfg.SetContext("dev", "https://dev.dt.com", "dev-token")
+	cfg.SetContext("staging", "https://staging.dt.com", "staging-token")
+	cfg.SetContext("prod", "https://prod.dt.com", "prod-token")
 
 	if len(cfg.Contexts) != 3 {
 		t.Errorf("Expected 3 contexts, got %d", len(cfg.Contexts))
@@ -340,7 +340,7 @@ func TestConfig_Save(t *testing.T) {
 	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
 
 	cfg := NewConfig()
-	cfg.SetContext("test", "https://test.dt.com", "token", "")
+	cfg.SetContext("test", "https://test.dt.com", "token")
 
 	// Save should work (creates directory if needed)
 	err = cfg.Save()
@@ -395,24 +395,6 @@ func TestDefaultConfigPath(t *testing.T) {
 	path := DefaultConfigPath()
 	if path == "" {
 		t.Error("DefaultConfigPath() returned empty string")
-	}
-}
-
-func TestConfig_SetContext_UpdateNamespace(t *testing.T) {
-	cfg := NewConfig()
-
-	// Create context
-	cfg.SetContext("test", "https://test.dt.com", "token", "ns1")
-
-	// Update only namespace
-	cfg.SetContext("test", "https://test.dt.com", "", "ns2")
-
-	if cfg.Contexts[0].Context.Namespace != "ns2" {
-		t.Errorf("Namespace = %v, want ns2", cfg.Contexts[0].Context.Namespace)
-	}
-	// TokenRef should remain unchanged
-	if cfg.Contexts[0].Context.TokenRef != "token" {
-		t.Errorf("TokenRef = %v, want token", cfg.Contexts[0].Context.TokenRef)
 	}
 }
 

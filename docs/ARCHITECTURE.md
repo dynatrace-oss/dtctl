@@ -197,7 +197,6 @@ type NamedContext struct {
 type Context struct {
     Environment string `yaml:"environment"`
     TokenRef    string `yaml:"token-ref"`
-    Namespace   string `yaml:"namespace,omitempty"`
 }
 ```
 

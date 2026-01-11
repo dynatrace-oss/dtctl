@@ -80,7 +80,6 @@ dtctl query "fetch logs | limit 10"
 
 ```
 --context string      # Use a specific context
---namespace string    # Kubernetes-style grouping (maps to Dynatrace apps/scopes)
 -o, --output string   # Output format: json|yaml|table|wide|name|custom-columns=...
 --plain               # Plain output for machine processing (no colors, no interactive prompts)
 --no-headers          # Omit headers in table output
@@ -741,7 +740,6 @@ contexts:
   context:
     environment: https://dev.apps.dynatrace.com
     token-ref: dev-token
-    namespace: my-app
 
 - name: prod
   context:
@@ -776,7 +774,6 @@ dtctl config use-context prod                    # Switch to prod
 
 # Set context properties
 dtctl config set-context dev --environment https://...
-dtctl config set-context dev --namespace my-app
 
 # Set credentials
 dtctl config set-credentials dev --token dt0s16.***

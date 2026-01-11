@@ -29,7 +29,6 @@ type NamedContext struct {
 type Context struct {
 	Environment string `yaml:"environment"`
 	TokenRef    string `yaml:"token-ref"`
-	Namespace   string `yaml:"namespace,omitempty"`
 }
 
 // NamedToken holds a token with its name
@@ -213,15 +212,12 @@ func (c *Config) MustGetToken(tokenRef string) string {
 }
 
 // SetContext creates or updates a context
-func (c *Config) SetContext(name, environment, tokenRef, namespace string) {
+func (c *Config) SetContext(name, environment, tokenRef string) {
 	for i, nc := range c.Contexts {
 		if nc.Name == name {
 			c.Contexts[i].Context.Environment = environment
 			if tokenRef != "" {
 				c.Contexts[i].Context.TokenRef = tokenRef
-			}
-			if namespace != "" {
-				c.Contexts[i].Context.Namespace = namespace
 			}
 			return
 		}
@@ -232,7 +228,6 @@ func (c *Config) SetContext(name, environment, tokenRef, namespace string) {
 		Context: Context{
 			Environment: environment,
 			TokenRef:    tokenRef,
-			Namespace:   namespace,
 		},
 	})
 }

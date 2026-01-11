@@ -21,7 +21,6 @@ var (
 	outputFormat string
 	verbosity    int
 	dryRun       bool
-	namespace    string
 	plainMode    bool
 	chunkSize    int64
 )
@@ -196,7 +195,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "output format: json|yaml|csv|table|wide")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
-	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "namespace for scoping")
 	rootCmd.PersistentFlags().BoolVar(&plainMode, "plain", false, "plain output for machine processing (no colors, no interactive prompts)")
 	rootCmd.PersistentFlags().Int64Var(&chunkSize, "chunk-size", 500, "Return large lists in chunks rather than all at once. Pass 0 to disable.")
 

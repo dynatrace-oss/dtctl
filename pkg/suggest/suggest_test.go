@@ -33,7 +33,7 @@ func TestLevenshteinDistance(t *testing.T) {
 }
 
 func TestFindClosest(t *testing.T) {
-	flags := []string{"owner", "output", "verbose", "config", "context", "namespace", "workflow"}
+	flags := []string{"owner", "output", "verbose", "config", "context", "workflow"}
 
 	tests := []struct {
 		input    string

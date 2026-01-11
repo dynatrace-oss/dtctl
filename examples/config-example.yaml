@@ -7,7 +7,6 @@ contexts:
   context:
     environment: https://dev123.live.dynatrace.com
     token-ref: dev-token
-    namespace: my-app
 
 - name: production
   context:

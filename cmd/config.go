@@ -106,7 +106,6 @@ var configSetContextCmd = &cobra.Command{
 
 		environment, _ := cmd.Flags().GetString("environment")
 		tokenRef, _ := cmd.Flags().GetString("token-ref")
-		ns, _ := cmd.Flags().GetString("namespace")
 
 		if environment == "" {
 			return fmt.Errorf("--environment is required")
@@ -118,7 +117,7 @@ var configSetContextCmd = &cobra.Command{
 			cfg = config.NewConfig()
 		}
 
-		cfg.SetContext(contextName, environment, tokenRef, ns)
+		cfg.SetContext(contextName, environment, tokenRef)
 
 		// Set as current context if it's the first one
 		if len(cfg.Contexts) == 1 || cfg.CurrentContext == "" {
@@ -224,7 +223,6 @@ func init() {
 	// Flags for set-context
 	configSetContextCmd.Flags().String("environment", "", "environment URL")
 	configSetContextCmd.Flags().String("token-ref", "", "token reference name")
-	configSetContextCmd.Flags().String("namespace", "", "namespace")
 
 	// Flags for set-credentials
 	configSetCredentialsCmd.Flags().String("token", "", "API token")

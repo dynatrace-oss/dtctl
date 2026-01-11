@@ -149,7 +149,7 @@ Examples:
 
 		// Confirm restore unless --force or --plain
 		if !forceDelete && !plainMode {
-			confirmMsg := fmt.Sprintf("Restore dashboard %q to version %d?", metadata.Name, version)
+			confirmMsg := fmt.Sprintf("Restore dashboard %q from snapshot %d?", metadata.Name, version)
 			if !prompt.Confirm(confirmMsg) {
 				fmt.Println("Restore cancelled")
 				return nil
@@ -161,7 +161,7 @@ Examples:
 			return err
 		}
 
-		fmt.Printf("Dashboard %q restored to version %d (new version: %d)\n", metadata.Name, version, result.Version)
+		fmt.Printf("Dashboard %q restored from snapshot %d (new document version: %d)\n", metadata.Name, version, result.Version)
 		return nil
 	},
 }
@@ -224,7 +224,7 @@ Examples:
 
 		// Confirm restore unless --force or --plain
 		if !forceDelete && !plainMode {
-			confirmMsg := fmt.Sprintf("Restore notebook %q to version %d?", metadata.Name, version)
+			confirmMsg := fmt.Sprintf("Restore notebook %q from snapshot %d?", metadata.Name, version)
 			if !prompt.Confirm(confirmMsg) {
 				fmt.Println("Restore cancelled")
 				return nil
@@ -236,7 +236,7 @@ Examples:
 			return err
 		}
 
-		fmt.Printf("Notebook %q restored to version %d (new version: %d)\n", metadata.Name, version, result.Version)
+		fmt.Printf("Notebook %q restored from snapshot %d (new document version: %d)\n", metadata.Name, version, result.Version)
 		return nil
 	},
 }
