@@ -1,0 +1,149 @@
+//go:build integration
+// +build integration
+
+package integration
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+)
+
+// Resource represents a tracked resource for cleanup
+type Resource struct {
+	Type    string // "workflow", "dashboard", "notebook", "bucket"
+	ID      string // Resource ID or name
+	Name    string // Human-readable name for logging
+	Version int    // Version for documents (dashboards/notebooks)
+}
+
+// CleanupTracker tracks created resources and handles cleanup
+type CleanupTracker struct {
+	client    *client.Client
+	resources []Resource
+}
+
+// NewCleanupTracker creates a new cleanup tracker
+func NewCleanupTracker(c *client.Client) *CleanupTracker {
+	return &CleanupTracker{
+		client:    c,
+		resources: make([]Resource, 0),
+	}
+}
+
+// Track adds a resource to be cleaned up
+func (c *CleanupTracker) Track(resourceType, id, name string) {
+	c.resources = append(c.resources, Resource{
+		Type: resourceType,
+		ID:   id,
+		Name: name,
+	})
+}
+
+// TrackDocument adds a document resource (dashboard/notebook) with version for cleanup
+func (c *CleanupTracker) TrackDocument(resourceType, id, name string, version int) {
+	c.resources = append(c.resources, Resource{
+		Type:    resourceType,
+		ID:      id,
+		Name:    name,
+		Version: version,
+	})
+}
+
+// Cleanup deletes all tracked resources in reverse order
+// Returns error if any cleanup operation fails
+func (c *CleanupTracker) Cleanup(t *testing.T) error {
+	t.Helper()
+
+	// Delete in reverse order (LIFO - last created, first deleted)
+	for i := len(c.resources) - 1; i >= 0; i-- {
+		resource := c.resources[i]
+
+		t.Logf("Cleaning up %s: %s (ID: %s)", resource.Type, resource.Name, resource.ID)
+
+		if err := c.deleteResource(resource); err != nil {
+			// Log the error but continue cleanup
+			t.Errorf("Failed to delete %s %s: %v", resource.Type, resource.ID, err)
+			continue
+		}
+
+		// Verify deletion (expect 404)
+		if err := c.verifyDeletion(resource); err != nil {
+			t.Errorf("Cleanup verification failed for %s %s: %v", resource.Type, resource.ID, err)
+		} else {
+			t.Logf("Successfully cleaned up and verified deletion of %s: %s", resource.Type, resource.Name)
+		}
+	}
+
+	return nil
+}
+
+// deleteResource deletes a single resource based on its type
+func (c *CleanupTracker) deleteResource(resource Resource) error {
+	switch resource.Type {
+	case "workflow":
+		handler := workflow.NewHandler(c.client)
+		return handler.Delete(resource.ID)
+
+	case "dashboard", "notebook":
+		handler := document.NewHandler(c.client)
+		// For documents, we need the version for optimistic locking
+		// If version is 0, we need to fetch it first
+		version := resource.Version
+		if version == 0 {
+			doc, err := handler.Get(resource.ID)
+			if err != nil {
+				return fmt.Errorf("failed to get document version: %w", err)
+			}
+			version = doc.Version
+		}
+		return handler.Delete(resource.ID, version)
+
+	case "bucket":
+		handler := bucket.NewHandler(c.client)
+		return handler.Delete(resource.ID)
+
+	default:
+		return fmt.Errorf("unknown resource type: %s", resource.Type)
+	}
+}
+
+// verifyDeletion verifies that a resource was actually deleted
+// Expects a 404 response when trying to GET the resource
+func (c *CleanupTracker) verifyDeletion(resource Resource) error {
+	switch resource.Type {
+	case "workflow":
+		handler := workflow.NewHandler(c.client)
+		_, err := handler.Get(resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("workflow %s still exists after deletion", resource.ID)
+
+	case "dashboard", "notebook":
+		handler := document.NewHandler(c.client)
+		_, err := handler.Get(resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("document %s still exists after deletion", resource.ID)
+
+	case "bucket":
+		handler := bucket.NewHandler(c.client)
+		_, err := handler.Get(resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("bucket %s still exists after deletion", resource.ID)
+
+	default:
+		return fmt.Errorf("unknown resource type: %s", resource.Type)
+	}
+}

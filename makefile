@@ -1,4 +1,4 @@
-.PHONY: all build clean test install lint fmt markdownlint markdownlint-fix security-scan check release release-snapshot
+.PHONY: all build clean test test-unit test-integration test-all install lint fmt markdownlint markdownlint-fix security-scan check release release-snapshot
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -25,10 +25,33 @@ build-host:
 	@echo "Building dtctl for host: $(shell go env GOOS)/$(shell go env GOARCH)..."
 	@env GOOS=$(shell go env GOOS) GOARCH=$(shell go env GOARCH) CGO_ENABLED=0 go build $(LDFLAGS) -o bin/dtctl-host .
 
-# Run tests
+# Run unit tests (default test target)
 test:
-	@echo "Running tests..."
+	@echo "Running unit tests..."
 	@go test -v -race -coverprofile=coverage.out ./...
+
+# Run only unit tests (excludes integration tests)
+test-unit:
+	@echo "Running unit tests..."
+	@go test -v -race -coverprofile=coverage.out ./...
+
+# Run integration tests (requires DTCTL_INTEGRATION_ENV and DTCTL_INTEGRATION_TOKEN)
+test-integration:
+	@echo "Running integration tests..."
+	@if [ -z "$(DTCTL_INTEGRATION_ENV)" ]; then \
+		echo "Error: DTCTL_INTEGRATION_ENV not set. Integration tests require a Dynatrace environment URL."; \
+		echo "Usage: DTCTL_INTEGRATION_ENV=https://your-env.apps.dynatrace.com DTCTL_INTEGRATION_TOKEN=dt0s16.XXX make test-integration"; \
+		exit 1; \
+	fi
+	@if [ -z "$(DTCTL_INTEGRATION_TOKEN)" ]; then \
+		echo "Error: DTCTL_INTEGRATION_TOKEN not set. Integration tests require a valid platform token."; \
+		echo "Usage: DTCTL_INTEGRATION_ENV=https://your-env.apps.dynatrace.com DTCTL_INTEGRATION_TOKEN=dt0s16.XXX make test-integration"; \
+		exit 1; \
+	fi
+	@go test -v -race -tags integration ./test/e2e/...
+
+# Run all tests (unit + integration)
+test-all: test-unit test-integration
 
 # Install locally
 install:
