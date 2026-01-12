@@ -1,0 +1,101 @@
+dtctl
+Copyright 2022-2026 DYNATRACE LLC
+
+This product includes software developed by Dynatrace LLC (https://www.dynatrace.com/).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+================================================================================
+
+This project includes the following third-party open source software:
+
+--------------------------------------------------------------------------------
+Apache License 2.0
+--------------------------------------------------------------------------------
+
+The following components are licensed under the Apache License 2.0:
+
+- github.com/cockroachdb/errors (v1.11.1)
+- github.com/cockroachdb/logtags (v0.0.0-20230118201751-21c54148d20b)
+- github.com/cockroachdb/redact (v1.1.5)
+- github.com/spf13/afero (v1.11.0)
+- github.com/spf13/cobra (v1.8.0)
+- gopkg.in/ini.v1 (v1.67.0)
+
+--------------------------------------------------------------------------------
+MIT License
+--------------------------------------------------------------------------------
+
+The following components are licensed under the MIT License:
+
+- al.essio.dev/pkg/shellescape (v1.5.1)
+- github.com/adrg/xdg (v0.5.3)
+- github.com/go-resty/resty/v2 (v2.11.0)
+- github.com/kr/pretty (v0.3.1)
+- github.com/kr/text (v0.2.0)
+- github.com/mattn/go-runewidth (v0.0.9)
+- github.com/mitchellh/mapstructure (v1.5.0)
+- github.com/olekukonko/tablewriter (v0.0.5)
+- github.com/pelletier/go-toml/v2 (v2.1.0)
+- github.com/sirupsen/logrus (v1.9.3)
+- github.com/spf13/cast (v1.6.0)
+- github.com/spf13/viper (v1.18.0)
+- github.com/subosito/gotenv (v1.6.0)
+- github.com/zalando/go-keyring (v0.2.6)
+- gopkg.in/yaml.v3 (v3.0.1)
+
+--------------------------------------------------------------------------------
+BSD-3-Clause License
+--------------------------------------------------------------------------------
+
+The following components are licensed under the BSD-3-Clause License:
+
+- github.com/fsnotify/fsnotify (v1.7.0)
+- github.com/gogo/protobuf (v1.3.2)
+- github.com/guptarohit/asciigraph (v0.7.3)
+- github.com/rogpeppe/go-internal/fmtsort (v1.9.0)
+- github.com/sagikazarmark/slog-shim (v0.1.0)
+- github.com/spf13/pflag (v1.0.5)
+- golang.org/x/net/publicsuffix (v0.19.0)
+- golang.org/x/sys (v0.39.0)
+- golang.org/x/term (v0.38.0)
+- golang.org/x/text (v0.14.0)
+
+--------------------------------------------------------------------------------
+BSD-2-Clause License
+--------------------------------------------------------------------------------
+
+The following components are licensed under the BSD-2-Clause License:
+
+- github.com/getsentry/sentry-go (v0.18.0)
+- github.com/magiconair/properties (v1.8.7)
+- github.com/pkg/errors (v0.9.1)
+
+--------------------------------------------------------------------------------
+Mozilla Public License 2.0
+--------------------------------------------------------------------------------
+
+The following components are licensed under the MPL-2.0:
+
+- github.com/hashicorp/hcl (v1.0.0)
+
+================================================================================
+
+For the full text of each license, please refer to the respective project's
+license file or visit:
+
+- Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+- MIT License: https://opensource.org/licenses/MIT
+- BSD-3-Clause: https://opensource.org/licenses/BSD-3-Clause
+- BSD-2-Clause: https://opensource.org/licenses/BSD-2-Clause
+- MPL-2.0: https://www.mozilla.org/en-US/MPL/2.0/

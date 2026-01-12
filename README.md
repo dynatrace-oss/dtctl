@@ -1,74 +1,71 @@
-# :tada: :tada: Welcome to your new Project on GitHub :tada: :tada:
+# dtctl
 
-> **Note**
-> This product is not officially supported by Dynatrace!
+**Your Dynatrace platform, one command away.**
 
-Congratulations, your project on GitHub was successfully created and you can start your Open Source Adventure!
+`dtctl` brings the power of `kubectl` to Dynatrace — manage workflows, dashboards, queries, and more from your terminal. Built for developers who prefer the command line and AI-assisted workflows.
 
-As each adventure starts with good preparations, we also have something we would like you to do upe front.
+```bash
+dtctl get workflows                           # List all workflows
+dtctl query "fetch logs | limit 10"           # Run DQL queries
+dtctl edit dashboard "Production Overview"    # Edit resources in your $EDITOR
+dtctl apply -f workflow.yaml                  # Declarative configuration
+```
 
-- [ ] Read this ReadMe carefully, to get an overview of the files within your project.
-- [ ] Write your own ReadMe which reflects your project
-- [ ] Check if the [default community files](https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/creating-a-default-community-health-file)(CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, ..) within the organization `.github`[-project](https://github.com/dynatrace-oss/.github/) match your project's needs. If not, you can always provide your own, but we kindly ask you, that you also update those from time to time.
-- [ ] Check if there is a `LICENSE` file within your project. If not, please create one containing the `Apache License 2.0`.
-- [ ] Explicitly state that this project is not officially supported by Dynatrace in your ReadMe, eg. by using following lines on top of your ReadMe:
+> ⚠️ **Alpha** — Not officially supported by Dynatrace
 
-    > **Note**
-    > This product is not officially supported by Dynatrace!
+## Why dtctl?
 
-## How can I make my project public?
+- **kubectl-style UX** — Familiar commands: `get`, `describe`, `edit`, `apply`, `delete`
+- **AI-friendly** — Plain output modes and YAML editing for seamless AI tool integration
+- **Multi-environment** — Switch between dev/staging/prod with a single command
+- **Template support** — DQL queries with Go template variables
+- **Shell completion** — Tab completion for bash, zsh, fish, and PowerShell
 
-At first, the project will be private, as we (OSPO) want to ensure that you followed the guidelines and that everything is in place.
+## Quick Start
 
-As soon as you are done with your initial commits, you can inform OSPO and we will take a close look at the project, and set it to public if we do think all guidelines are followed.
+```bash
+# Build from source
+git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl
+make build && make install
 
-There is also some automation running, which will set projects, which do not follow the guidelines, to private.
+# Configure your environment
+dtctl config set-context my-env \
+  --environment "https://abc12345.apps.dynatrace.com" \
+  --token-ref my-token
 
-## Provided Tools
+dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
 
-### Markdownlint
+# Go!
+dtctl get workflows
+dtctl query "fetch logs | limit 10"
+```
 
-To make it easier for the project to keep the Markdown files in a good shape, we added `markdownlint-cli` to the project.
+## What Can It Do?
 
-1. with a `makefile` for easier execution locally, based on docker images, so it can be used in every environment as long as `docker` and `make` are available.
-1. with a workflow for pull request verification based on the `makefile`.
+| Resource | Operations |
+|----------|------------|
+| Workflows | get, describe, create, edit, delete, execute, history |
+| Dashboards & Notebooks | get, describe, create, edit, delete, share |
+| DQL Queries | execute with template variables |
+| SLOs | get, create, delete, apply, evaluate |
+| Settings | get, create, delete, apply |
+| Buckets | get, describe |
+| And more... | OpenPipeline, EdgeConnect, Davis AI |
 
-The following files are part of this integration:
+## Documentation
 
-- `makefile`: as it contains the targets for execution
-- `.markdownlint.yml`: as it contains the configuration for `markdownlint-cli`
-- `.github/workflows/makefile.yml`: as it contains the GitHub Action configuration
+| Guide | Description |
+|-------|-------------|
+| [Installation](docs/INSTALLATION.md) | Build from source, shell completion setup |
+| [Quick Start](docs/QUICK_START.md) | Configuration, examples for all resource types |
+| [API Design](docs/dev/API_DESIGN.md) | Complete command reference |
+| [Architecture](docs/dev/ARCHITECTURE.md) | Technical implementation details |
+| [Implementation Status](docs/dev/IMPLEMENTATION_STATUS.md) | Roadmap and feature status |
 
-## Licensing
+## Contributing
 
-We are using Apache License 2.0 as our default.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### Source Code Headers
+## License
 
-Every file containing source code must include copyright and license
-information. This includes any JS/CSS files that you might be serving out to
-browsers. (This is to help well-intentioned people avoid accidental copying that
-doesn't comply with the license.)
-
-Apache header:
-
-    Copyright 2022 Dynatrace LLC
-
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-        https://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
-
-## Additional Questions/Remarks
-
-If you do have additional questions/remarks, feel free to reach out to OSPO, either via slack or email.
-
-If you think this template did not solve all your problems, please also let us know, either with a message or a pull request.
-Together we can improve this template to make it easier for our future projects.
+Apache License 2.0 — see [LICENSE](LICENSE)
