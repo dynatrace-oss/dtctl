@@ -25,7 +25,7 @@ import (
 var getCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Display one or many resources",
-	Long:  `Display one or many resources such as workflows, documents, SLOs, etc.`,
+	Long:  `Display one or many resources such as workflows, dashboards, notebooks, SLOs, etc.`,
 	RunE:  requireSubcommand,
 }
 

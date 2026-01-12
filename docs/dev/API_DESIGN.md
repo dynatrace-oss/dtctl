@@ -161,7 +161,9 @@ dtctl query "fetch logs | limit 10"
 
 ## Resource Types
 
-> **Note**: Like kubectl, dtctl supports both singular and plural resource names (e.g., `document` or `documents`), as well as short aliases for convenience.
+> **Note**: Like kubectl, dtctl supports both singular and plural resource names (e.g., `dashboard` or `dashboards`, `notebook` or `notebooks`), as well as short aliases for convenience.
+> 
+> **Important**: There is no generic `documents` command. Dashboards and notebooks are accessed via their specific resource types (`dtctl get dashboards` and `dtctl get notebooks`), even though they share the underlying Document API.
 
 ### 1. Dashboards
 **API Spec**: `document.yaml`
@@ -801,21 +803,24 @@ dtctl delete document <id> --yes
 
 ```bash
 # Basic list
-dtctl get documents
+dtctl get dashboards
+dtctl get notebooks
 
 # Filter by field (limited support - depends on resource type)
-dtctl get documents --mine                       # Filter to current user's resources
+dtctl get dashboards --mine                      # Filter to current user's dashboards
+dtctl get notebooks --mine                       # Filter to current user's notebooks
 
 # Limit results
 dtctl get workflows --chunk-size 10              # Control pagination
 
 # Wide output (more columns)
-dtctl get documents -o wide
+dtctl get dashboards -o wide
+dtctl get notebooks -o wide
 
 # (not implemented yet)
-# dtctl get documents --sort-by=.metadata.modified  # Sort results
-# dtctl get slos --filter 'name~production'         # Advanced filters
-# dtctl get documents --output custom-columns=NAME:.name,TYPE:.type,OWNER:.owner
+# dtctl get dashboards --sort-by=.metadata.modified  # Sort results
+# dtctl get slos --filter 'name~production'          # Advanced filters
+# dtctl get dashboards --output custom-columns=NAME:.name,TYPE:.type,OWNER:.owner
 ```
 
 ## Configuration & Context
