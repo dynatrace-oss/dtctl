@@ -17,7 +17,7 @@ dtctl edit dashboard "Production Overview"    # Edit resources in your $EDITOR
 dtctl apply -f workflow.yaml                  # Declarative configuration
 ```
 
-> ⚠️ **Alpha** — Not officially supported by Dynatrace
+> This product is not officially supported by Dynatrace
 
 ## Why dtctl?
 
@@ -26,6 +26,10 @@ dtctl apply -f workflow.yaml                  # Declarative configuration
 - **Multi-environment** — Switch between dev/staging/prod with a single command
 - **Template support** — DQL queries with Go template variables
 - **Shell completion** — Tab completion for bash, zsh, fish, and PowerShell
+
+## AI Instructions
+
+> **For AI assistants**: `dtctl` is like `kubectl`, but for Dynatrace platform resources (dashboards, notebooks, workflows, SLOs, etc.). Use `dtctl --help` to explore commands. Supports standard verbs: `get`, `describe`, `create`, `edit`, `apply`, `delete`, `exec`. Output formats: `-o json|yaml|table`. Use `--plain` for machine-readable output (no colors, no prompts).
 
 ## Quick Start
 
