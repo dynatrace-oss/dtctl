@@ -1511,67 +1511,6 @@ dtctl completion zsh > /usr/local/share/zsh/site-functions/_dtctl
 source <(dtctl completion bash)
 ```
 
-### Plugins
-❌ **Not yet implemented**
-
-```bash
-# dtctl plugin list
-# dtctl plugin install dtctl-report
-# dtctl report generate --type security
-```
-
-## Resource Manifest Format
-
-Standard manifest structure for apply/create operations:
-
-```yaml
-apiVersion: <api-group>/<version>  # e.g., document/v1, slo/v1
-kind: <ResourceKind>                # e.g., Document, SLO, Workflow
-metadata:
-  id: <optional-id>                 # Omit for auto-generation
-  name: <resource-name>
-  labels:                           # Optional labels for organization
-    environment: production
-    team: platform
-spec:
-  # Resource-specific configuration
-  # Mirrors the API spec structure
-```
-
-Example workflow manifest:
-```yaml
-{
-  "id": "optional-workflow-id",
-  "title": "My Workflow",
-  "description": "Example workflow",
-  "trigger": {
-    "schedule": {
-      "rule": "0 * * * *",
-      "timezone": "UTC"
-    }
-  },
-  "tasks": {
-    "my_task": {
-      "action": "dynatrace.automations:run-javascript",
-      "input": {
-        "script": "console.log('Hello');"
-      }
-    }
-  }
-}
-```
-
-Example dashboard/notebook content (for apply):
-```json
-{
-  "id": "dashboard-id",
-  "type": "dashboard",
-  "content": {
-    // Dashboard content here
-  }
-}
-```
-
 ## Error Handling
 
 ### Exit Codes
