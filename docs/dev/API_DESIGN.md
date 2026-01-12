@@ -330,7 +330,6 @@ dtctl restore workflow <id> 3 --force            # Skip confirmation
 
 ### 6. Identity & Access Management (IAM)
 **API Specs**: `iam.yaml`, `appengine-registry.yaml`
-**Status**: 🚧 Partially implemented (listing and deletion only, no creation)
 
 ```bash
 # Users
@@ -355,7 +354,6 @@ dtctl describe group <id>                        # Group details
 
 ### 7. Grail Data & Queries
 **API Specs**: `grail-query.yaml`, `grail-storage-management.yaml`, `grail-fieldsets.yaml`, `grail-filter-segments.yaml`
-**Status**: 🚧 Partially implemented (Queries and Buckets available, Fieldsets/Filter Segments/Usage not implemented)
 
 ```bash
 # DQL Queries
@@ -420,7 +418,6 @@ dtctl apply -f bucket.yaml                       # Create or update bucket
 
 ### 8. Settings
 **API Spec**: `settings.yaml`
-**Status**: 🚧 Partially implemented (Basic CRUD available, validation not implemented)
 
 ```bash
 # Settings Schemas
@@ -441,7 +438,6 @@ dtctl apply -f settings.yaml                     # Apply settings (create or upd
 
 ### 9. Notifications
 **API Specs**: `notification-v2.yaml`
-**Status**: 🚧 Partially implemented (get/delete only, no create)
 
 ```bash
 # Resource name: notification/notifications (short: notif)
@@ -456,7 +452,6 @@ dtctl delete notification <id>                   # Delete notification
 
 ### 10. App Engine
 **API Specs**: `appengine-app-functions.yaml`, `appengine-edge-connect.yaml`, `appengine-function-executor.yaml`, `appengine-registry.yaml`
-**Status**: 🚧 Partially implemented (basic function execution and ad-hoc code execution available, deferred execution not implemented)
 
 ```bash
 # Apps (Registry)
@@ -495,7 +490,6 @@ dtctl delete edgeconnect <id>                    # Delete EdgeConnect
 
 ### 11. OpenPipeline
 **API Specs**: `openpipeline-config.yaml`, `openpipeline-ingest.json`
-**Status**: 🚧 Partially implemented (get/describe only)
 
 ```bash
 # Pipeline configurations (read-only)
@@ -598,7 +592,6 @@ dtctl exec copilot document-search "performance" --exclude doc-123,doc-456
 
 ### 14. Platform Management
 **API Spec**: `platform-management.yaml`
-**Status**: Not yet implemented
 
 ```bash
 # Environments and accounts (not implemented yet)
@@ -609,7 +602,6 @@ dtctl exec copilot document-search "performance" --exclude doc-123,doc-456
 
 ### 15. Hub (Extensions)
 **API Specs**: `hub.yaml`, `hub-certificates.yaml`
-**Status**: Not yet implemented
 
 ```bash
 # Extensions (not implemented yet)
@@ -625,7 +617,6 @@ dtctl exec copilot document-search "performance" --exclude doc-123,doc-456
 ### 16. Feature Flags
 **API Spec**: `feature-flags.yaml`
 **Detailed Design**: [FEATURE_FLAGS_API_DESIGN.md](FEATURE_FLAGS_API_DESIGN.md)
-**Status**: Not yet implemented (complete API planned)
 
 Feature flags enable progressive rollouts, A/B testing, and controlled feature releases. The API is organized around **Projects** (containers), **Stages** (environments), **Feature Flag Definitions**, and **Stage Definitions** (stage-specific configs).
 
@@ -634,83 +625,83 @@ Feature flags enable progressive rollouts, A/B testing, and controlled feature r
 
 # Projects - containers for feature flags
 # Resource name: project/projects (short: proj)
-dtctl get projects                               # List projects
-dtctl describe project my-app                    # Project details with stages
-dtctl create project my-app --name "My Application"
-dtctl delete project my-app
+# dtctl get projects                               # List projects
+# dtctl describe project my-app                    # Project details with stages
+# dtctl create project my-app --name "My Application"
+# dtctl delete project my-app
 
 # Link/unlink stages to projects
-dtctl link stage production --project my-app     # Link stage to project
-dtctl unlink stage dev --project my-app          # Unlink stage
+# dtctl link stage production --project my-app     # Link stage to project
+# dtctl unlink stage dev --project my-app          # Unlink stage
 
 # Stages - deployment environments
 # Resource name: stage/stages (short: stg)
-dtctl get stages                                 # List all stages
-dtctl get stages --project my-app                # Stages linked to project
-dtctl create stage production --name "Production"
-dtctl delete stage old-stage                     # Only if not linked
+# dtctl get stages                                 # List all stages
+# dtctl get stages --project my-app                # Stages linked to project
+# dtctl create stage production --name "Production"
+# dtctl delete stage old-stage                     # Only if not linked
 
 # Feature Flags - flag definitions
 # Resource name: feature-flag/feature-flags (short: ff, flag)
-dtctl get ff --project my-app                    # List flags in project
-dtctl describe ff new-checkout --project my-app  # Flag details
-dtctl create ff new-feature --project my-app \
-  --type BOOLEAN \
-  --variants '{"on":true,"off":false}'
-dtctl edit ff new-feature --project my-app       # Edit in $EDITOR
-dtctl delete ff old-feature --project my-app
+# dtctl get ff --project my-app                    # List flags in project
+# dtctl describe ff new-checkout --project my-app  # Flag details
+# dtctl create ff new-feature --project my-app \
+#   --type BOOLEAN \
+#   --variants '{"on":true,"off":false}'
+# dtctl edit ff new-feature --project my-app       # Edit in $EDITOR
+# dtctl delete ff old-feature --project my-app
 
 # Feature Flag Stage Definitions - stage-specific configs
 # Resource name: feature-flag-stage/feature-flag-stages (short: ffs)
-dtctl get ffs --project my-app --stage production
-dtctl describe ffs new-checkout --project my-app --stage prod
-dtctl patch ffs new-checkout \
-  --project my-app \
-  --stage production \
-  --enabled=true                                 # Enable flag
-dtctl patch ffs new-checkout \
-  --project my-app \
-  --stage production \
-  --default-variant=on                           # Set default
-dtctl edit ffs new-checkout --project my-app --stage prod
-dtctl delete ffs new-checkout --project my-app --stage dev
+# dtctl get ffs --project my-app --stage production
+# dtctl describe ffs new-checkout --project my-app --stage prod
+# dtctl patch ffs new-checkout \
+#   --project my-app \
+#   --stage production \
+#   --enabled=true                                 # Enable flag
+# dtctl patch ffs new-checkout \
+#   --project my-app \
+#   --stage production \
+#   --default-variant=on                           # Set default
+# dtctl edit ffs new-checkout --project my-app --stage prod
+# dtctl delete ffs new-checkout --project my-app --stage dev
 
 # Context Attributes - variables for targeting rules
 # Resource name: context/contexts (short: ctx)
-dtctl get contexts --project my-app              # List context attributes
-dtctl create ctx user-tier --project my-app \
-  --type STRING \
-  --description "User subscription level"
-dtctl delete ctx old-context --project my-app
+# dtctl get contexts --project my-app              # List context attributes
+# dtctl create ctx user-tier --project my-app \
+#   --type STRING \
+#   --description "User subscription level"
+# dtctl delete ctx old-context --project my-app
 
 # Change Requests - approval workflow for changes
 # Resource name: change-request/change-requests (short: cr)
-dtctl get cr --project my-app                    # List change requests
-dtctl create cr --project my-app \
-  --feature-flag new-checkout \
-  --stage production \
-  --enabled=true \
-  --comment "Enabling for production"
-dtctl apply cr <request-id> \
-  --comment "Approved by SRE"                    # Approve request
-dtctl close cr <request-id> \
-  --comment "Not ready"                          # Reject request
+# dtctl get cr --project my-app                    # List change requests
+# dtctl create cr --project my-app \
+#   --feature-flag new-checkout \
+#   --stage production \
+#   --enabled=true \
+#   --comment "Enabling for production"
+# dtctl apply cr <request-id> \
+#   --comment "Approved by SRE"                    # Approve request
+# dtctl close cr <request-id> \
+#   --comment "Not ready"                          # Reject request
 
 # Evaluate flag (check current state)
-dtctl exec ff new-checkout --project my-app --stage prod
-dtctl exec ff new-checkout --project my-app --stage prod \
-  --context '{"user-tier":"premium"}'            # With context
+# dtctl exec ff new-checkout --project my-app --stage prod
+# dtctl exec ff new-checkout --project my-app --stage prod \
+#   --context '{"user-tier":"premium"}'            # With context
 
 # Common workflows
 # Progressive rollout
-dtctl patch ffs new-feature --project my-app --stage prod \
-  --enabled=true \
-  --targeting '{"if":[{"<":[{"var":"$flagd.flagKey"},0.10]},"on","off"]}'
+# dtctl patch ffs new-feature --project my-app --stage prod \
+#   --enabled=true \
+#   --targeting '{"if":[{"<":[{"var":"$flagd.flagKey"},0.10]},"on","off"]}'
 
 # Set project/stage defaults in context
-dtctl config set-context prod --project my-app --stage production
-dtctl get ff                                     # Uses default project
-dtctl get ffs                                    # Uses default project+stage
+# dtctl config set-context prod --project my-app --stage production
+# dtctl get ff                                     # Uses default project
+# dtctl get ffs                                    # Uses default project+stage
 ```
 
 **See [FEATURE_FLAGS_API_DESIGN.md](FEATURE_FLAGS_API_DESIGN.md) for:**
@@ -723,7 +714,6 @@ dtctl get ffs                                    # Uses default project+stage
 
 ### 17. Email (Templates)
 **API Spec**: `email.yaml`
-**Status**: Not yet implemented
 
 ```bash
 # Email templates and sending (not implemented yet)
@@ -733,7 +723,6 @@ dtctl get ffs                                    # Uses default project+stage
 
 ### 18. State Management
 **API Spec**: `state-management.yaml`
-**Status**: Not yet implemented
 
 ```bash
 # State storage for apps/extensions (not implemented yet)
@@ -1331,7 +1320,6 @@ dtctl get dashboards -o json > dashboards-backup.json
 ```
 
 ### Pipeline Operations
-**Status**: Not yet implemented
 
 ```bash
 # All pipeline operations (not implemented yet)
@@ -1349,7 +1337,6 @@ dtctl get dashboards -o json > dashboards-backup.json
 ```
 
 ### IAM Operations
-**Status**: Partially implemented (listing only)
 
 ```bash
 # List users and their groups
@@ -1377,7 +1364,6 @@ dtctl wait query "fetch logs" --for=count-gte=100
 ```
 
 ### Watch Mode
-**Status**: Not yet implemented
 
 ```bash
 # (not implemented yet)
@@ -1395,7 +1381,6 @@ dtctl delete document <id> --dry-run
 ```
 
 ### Diff
-**Status**: Not yet implemented
 
 ```bash
 # (not implemented yet)
@@ -1404,7 +1389,6 @@ dtctl delete document <id> --dry-run
 ```
 
 ### Explain Resources
-**Status**: Not yet implemented
 
 ```bash
 # (not implemented yet)
