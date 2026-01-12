@@ -405,7 +405,7 @@ All pull requests must pass:
 
 ## License
 
-By contributing to dtctl, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing to dtctl, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
