@@ -1,8 +1,10 @@
 # dtctl Implementation Status
 
+Last Updated: January 2026
+
 ## Overview
 
-This document tracks implemented features and planned work for dtctl.
+This document tracks the current implementation status of dtctl. For future planned features, see [FUTURE_FEATURES.md](FUTURE_FEATURES.md).
 
 ---
 
@@ -140,44 +142,44 @@ This document tracks implemented features and planned work for dtctl.
   - [ ] Edit stage-specific configs
 - [ ] Context Attributes (`dtctl get contexts`)
   - [ ] Create, update, delete contexts
-  - [ ] Support for STRING, NUMBER, BOOLEAN, VERSION types
-- [ ] Change Requests (`dtctl get cr`)
-  - [ ] Create change requests for stage definition changes
-  - [ ] Apply (approve) change requests
-  - [ ] Close (reject) change requests
-  - [ ] List and filter change requests
-- [ ] Flag Evaluation (`dtctl exec ff`)
-  - [ ] Evaluate flags with context
-  - [ ] Show current flag state per stage
-- [ ] Context configuration
-  - [ ] Set default project: `--project` flag and context config
-  - [ ] Set default stage: `--stage` flag and context config
+---
 
-### Distribution
-- [ ] Homebrew tap
-- [ ] Container image
+## Future Planned Features 🔮
+
+See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for the complete implementation plan including:
+- Platform Management (environment info, license)
+- State Management for Apps
+- Grail Filter Segments
+- Grail Fieldsets
+- Grail Resource Store
+- Feature Flags (comprehensive)
 
 ---
 
-## Quality Improvements
+## Quality & Infrastructure
 
-### Test Coverage
-- [ ] pkg/client tests (target: 90%)
-- [ ] pkg/config tests (target: 90%)
-- [ ] pkg/resources tests (target: 70%)
+### Distribution
+- [x] Multi-platform binaries (Linux, macOS, Windows - AMD64/ARM64)
+- [x] GitHub Releases
+- [ ] Homebrew tap
+- [ ] Container image
 
-### Code Structure
-- [ ] Split large command files (get.go, create.go, describe.go)
-- [ ] Extract common client initialization
-- [ ] Define ResourceHandler interface
+### Testing
+- [x] Unit tests for core packages
+- [x] Integration tests
+- [x] E2E tests
+- [ ] Improve test coverage (target: 80%+)
 
-### Security
-- [ ] Input validation for editor paths
-- [ ] File path sanitization
+### Code Quality
+- [x] Linting (golangci-lint)
+- [x] Security scanning
+- [x] CI/CD pipeline
+- [ ] Split large command files for better maintainability
 
 ---
 
 ## Notes
 
 - Classic environment (v1/v2) APIs are explicitly excluded per design
+- Focus on platform APIs (v2 and newer) only
 - kubectl naming conventions are followed (e.g., `exec` not `execute`)
