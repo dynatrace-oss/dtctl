@@ -2,11 +2,8 @@
 
 A kubectl-inspired CLI tool for managing Dynatrace platform resources.
 
-> **⚠️ IMPLEMENTATION STATUS**: This document describes the complete vision for dtctl. Many features are **not yet implemented**. See the [Implementation Status](#implementation-status) section below for details on what's currently available.
-
 ## Table of Contents
 
-- [Implementation Status](#implementation-status)
 - [Design Principles](#design-principles)
 - [Command Structure](#command-structure)
 - [Resource Types](#resource-types)
@@ -16,93 +13,6 @@ A kubectl-inspired CLI tool for managing Dynatrace platform resources.
   - [Filtering Resources by Owner](#filtering-resources-by-owner---mine)
 - [Output Formats](#output-formats)
 - [Examples](#examples)
-
-## Implementation Status
-
-### ✅ Currently Implemented
-
-**Core Commands:**
-- `dtctl get` - List/retrieve resources
-- `dtctl describe` - Detailed resource information
-- `dtctl create` - Create resources from files (workflow, dashboard, notebook, slo, settings, bucket, edgeconnect)
-- `dtctl edit` - Interactive editing
-- `dtctl delete` - Delete resources
-- `dtctl apply` - Apply configurations
-- `dtctl query` - Execute DQL queries (with template support)
-- `dtctl exec` - Execute workflows, SLOs, analyzers, functions
-- `dtctl logs` - View workflow execution logs
-- `dtctl wait query` - Wait for query results with conditions
-- `dtctl history` - Document version history
-- `dtctl restore` - Restore document versions
-- `dtctl share/unshare` - Share dashboards/notebooks
-
-**Resource Types:**
-- Dashboards (CRUD, sharing, history)
-- Notebooks (CRUD, sharing, history)
-- Workflows (CRUD, execution, logs, history)
-- SLOs (CRUD, execution)
-- Grail Buckets (CRUD)
-- EdgeConnect (CRUD)
-- Grail Queries (execute, template variables)
-- Davis Analyzers (list, execute)
-- Davis CoPilot (chat, nl2dql, dql2nl, document-search)
-- App Functions (list, execute)
-- Apps (list, describe, delete)
-- Users & Groups (basic listing)
-- Settings (get, create, delete, apply)
-- Notifications (list, get, delete)
-- Vulnerabilities (list, describe)
-
-**Configuration:**
-- Context management
-- Authentication
-- Output formats (table, json, yaml, chart, sparkline, barchart)
-
-### 🚧 Partially Implemented
-
-**Resource Types:**
-- App Engine (basic listing and function execution, missing create operations for apps)
-- IAM (listing only, no CRUD operations)
-- OpenPipeline (get/describe only, no create/update/delete/validate/ingest)
-
-### ❌ Not Yet Implemented
-
-**Core Commands:**
-- `dtctl patch` - Field-level updates
-- `dtctl diff` - Show differences
-- `dtctl explain` - Resource documentation
-- `dtctl validate` - Pre-apply validation
-- `dtctl watch` - Watch mode
-
-**Resource Types:**
-- Feature Flags (complete API - projects, stages, flags, contexts, change requests)
-- Email Templates
-- State Management
-- OpenPipeline (pipelines, validation, ingest)
-- Hub/Extensions (install, uninstall, certificates)
-- Platform Management (environments, accounts)
-- Grail Storage Management (buckets, usage)
-- Grail Fieldsets
-- Grail Filter Segments
-
-**Operations:**
-- Document locking (dashboards, notebooks)
-- Trash management (list, restore, permanent delete)
-- Settings validation
-- Notification creation
-- Workflow version history (partially - list history works, restore may be limited)
-- App Engine deferred execution
-- App creation (apps can only be deleted, not created via CLI)
-- Change request workflows
-- OpenPipeline creation/update/validation/ingest
-
-**Advanced Features:**
-- Plugin system
-- Shell completion
-- Interactive resource creation
-- Bulk operations
-- Resource diffing
-- Watch mode
 
 ## Design Principles
 
@@ -207,15 +117,17 @@ create      - Create a resource from file or arguments
 delete      - Delete resources
 edit        - Edit a resource interactively (supports YAML and JSON)
 apply       - Apply configuration from file (create or update, supports templates)
-patch       - Update specific fields of a resource
 logs        - Print logs for a resource
 query       - Execute a DQL query (with template support)
 exec        - Execute a workflow or function
 history     - Show version history (snapshots) of a document
 restore     - Restore a document to a previous version
-explain     - Show documentation for a resource type
 wait        - Wait for a specific condition (query results, resource state)
-diff        - Show differences between local and remote resources
+
+# (not implemented yet)
+# patch       - Update specific fields of a resource
+# explain     - Show documentation for a resource type
+# diff        - Show differences between local and remote resources
 ```
 
 ### Syntax Pattern
@@ -241,8 +153,10 @@ dtctl query "fetch logs | limit 10"
 --no-headers          # Omit headers in table output
 -v, --verbose         # Verbose output
 --dry-run             # Print what would be done without doing it
--w, --watch           # Watch for changes
 --field-selector string # Filter by fields (e.g., owner=me,type=notebook)
+
+# (not implemented yet)
+# -w, --watch           # Watch for changes
 ```
 
 ## Resource Types
@@ -276,9 +190,9 @@ dtctl share dashboard <id> --group <group-sso-id> # Share with group
 dtctl unshare dashboard <id> --user <user-sso-id> # Remove user access
 dtctl unshare dashboard <id> --all               # Remove all shares
 
-# ❌ Not yet implemented
-dtctl lock dashboard <id>                        # Acquire active lock
-dtctl unlock dashboard <id>                      # Release active lock
+# (not implemented yet)
+# dtctl lock dashboard <id>                        # Acquire active lock
+# dtctl unlock dashboard <id>                      # Release active lock
 ```
 
 ### 2. Notebooks
@@ -308,8 +222,8 @@ dtctl share notebook <id> --group <group-sso-id> # Share with group
 dtctl unshare notebook <id> --user <user-sso-id> # Remove user access
 dtctl unshare notebook <id> --all                # Remove all shares
 
-# ❌ Not yet implemented
-dtctl lock notebook <id>                         # Acquire active lock
+# (not implemented yet)
+# dtctl lock notebook <id>                         # Acquire active lock
 ```
 
 ### 3. Document Version History (Snapshots)
@@ -337,10 +251,10 @@ dtctl restore notebook "My Notebook" 3 --force   # Skip confirmation
 # - Only document owner can restore snapshots
 # - Restoring creates a snapshot of current state before restoring
 
-# ❌ Trash management (not yet implemented)
-dtctl get trash                                  # List deleted documents
-dtctl restore trash <id>                         # Restore from trash
-dtctl delete trash <id> --permanent              # Permanently delete
+# Trash management (not implemented yet)
+# dtctl get trash                                  # List deleted documents
+# dtctl restore trash <id>                         # Restore from trash
+# dtctl delete trash <id> --permanent              # Permanently delete
 ```
 
 ### 4. Service Level Objectives (SLOs)
@@ -428,15 +342,15 @@ dtctl get users --group <group-id>               # Users in group
 dtctl get groups                                 # List groups
 dtctl describe group <id>                        # Group details
 
-# ❌ Not yet implemented
-dtctl create group -f group.yaml                 # Create group
-dtctl delete group <id>                          # Delete group
+# (not implemented yet)
+# dtctl create group -f group.yaml                 # Create group
+# dtctl delete group <id>                          # Delete group
 
-# Permissions & Policies (❌ not yet implemented)
-dtctl get policies                               # List policies
-dtctl describe policy <id>                       # Policy details
-dtctl create policy -f policy.yaml               # Create policy
-dtctl get permissions --user <id>                # User's permissions
+# Permissions & Policies (not implemented yet)
+# dtctl get policies                               # List policies
+# dtctl describe policy <id>                       # Policy details
+# dtctl create policy -f policy.yaml               # Create policy
+# dtctl get permissions --user <id>                # User's permissions
 ```
 
 ### 7. Grail Data & Queries
@@ -490,18 +404,18 @@ dtctl create bucket -f bucket.yaml               # Create bucket
 dtctl delete bucket <bucket-name>                # Delete bucket
 dtctl apply -f bucket.yaml                       # Create or update bucket
 
-# ❌ Fieldsets (not yet implemented)
-dtctl get fieldsets                              # List fieldsets
-dtctl describe fieldset <id>                     # Fieldset details
-dtctl create fieldset -f fieldset.yaml           # Create fieldset
+# Fieldsets (not implemented yet)
+# dtctl get fieldsets                              # List fieldsets
+# dtctl describe fieldset <id>                     # Fieldset details
+# dtctl create fieldset -f fieldset.yaml           # Create fieldset
 
-# ❌ Filter Segments (not yet implemented)
-dtctl get filter-segments                        # List filter segments
-dtctl describe filter-segment <id>               # Details
-dtctl create filter-segment -f segment.yaml      # Create segment
+# Filter Segments (not implemented yet)
+# dtctl get filter-segments                        # List filter segments
+# dtctl describe filter-segment <id>               # Details
+# dtctl create filter-segment -f segment.yaml      # Create segment
 
-# ❌ Storage usage info (not yet implemented)
-dtctl get bucket-usage                           # Storage usage info
+# Storage usage info (not implemented yet)
+# dtctl get bucket-usage                           # Storage usage info
 ```
 
 ### 8. Settings
@@ -521,8 +435,8 @@ dtctl create settings -f value.yaml --schema <schema-id> --scope environment
 dtctl delete settings <object-id>                # Delete settings object
 dtctl apply -f settings.yaml                     # Apply settings (create or update)
 
-# ❌ Not yet implemented
-dtctl validate setting -f setting.yaml           # Validate without applying
+# (not implemented yet)
+# dtctl validate setting -f setting.yaml           # Validate without applying
 ```
 
 ### 9. Notifications
@@ -536,8 +450,8 @@ dtctl get notification <id>                      # Get specific notification
 dtctl get notifications --type <type>            # Filter by notification type
 dtctl delete notification <id>                   # Delete notification
 
-# ❌ Not yet implemented
-dtctl create notification -f notif.yaml          # Create notification
+# (not implemented yet)
+# dtctl create notification -f notif.yaml          # Create notification
 ```
 
 ### 10. App Engine
@@ -559,10 +473,10 @@ dtctl exec function <app-id>/<function-name> --method POST --payload '{"key":"va
 dtctl exec function <app-id>/<function-name> --method POST --data @payload.json
 dtctl exec function <app-id>/<function-name> -o json  # JSON output
 
-# ❌ Deferred (async) execution for resumable functions (not yet implemented)
-dtctl exec function <app-id>/<function-name> --defer
-dtctl get deferred-executions                    # List deferred executions
-dtctl describe deferred-execution <execution-id> # Execution details
+# Deferred (async) execution for resumable functions (not implemented yet)
+# dtctl exec function <app-id>/<function-name> --defer
+# dtctl get deferred-executions                    # List deferred executions
+# dtctl describe deferred-execution <execution-id> # Execution details
 
 # Function Executor (ad-hoc code execution)
 dtctl exec function -f script.js                 # Execute JavaScript file
@@ -591,14 +505,14 @@ dtctl get openpipeline <id>                      # Get specific pipeline (e.g., 
 dtctl describe openpipeline <id>                 # Pipeline details
 dtctl get openpipelines -o json                  # Output as JSON
 
-# ❌ Write operations (not yet implemented)
+# Write operations (not implemented yet)
 # dtctl create pipeline -f pipeline.yaml         # Create pipeline
 # dtctl apply -f pipeline.yaml                   # Update pipeline
 
-# ❌ Validation (not yet implemented)
+# Validation (not implemented yet)
 # dtctl validate pipeline -f pipeline.yaml       # Validate config
 
-# ❌ Ingest (not yet implemented)
+# Ingest (not implemented yet)
 # dtctl ingest --pipeline <id> -f data.json      # Test ingest
 ```
 
@@ -684,39 +598,39 @@ dtctl exec copilot document-search "performance" --exclude doc-123,doc-456
 
 ### 14. Platform Management
 **API Spec**: `platform-management.yaml`
-**Status**: ❌ Not yet implemented
+**Status**: Not yet implemented
 
 ```bash
-# ❌ Environments and accounts (not yet implemented)
-dtctl get environments                           # List environments
-dtctl describe environment <id>                  # Environment details
-dtctl get accounts                               # List accounts (if multi-account)
+# Environments and accounts (not implemented yet)
+# dtctl get environments                           # List environments
+# dtctl describe environment <id>                  # Environment details
+# dtctl get accounts                               # List accounts (if multi-account)
 ```
 
 ### 15. Hub (Extensions)
 **API Specs**: `hub.yaml`, `hub-certificates.yaml`
-**Status**: ❌ Not yet implemented
+**Status**: Not yet implemented
 
 ```bash
-# ❌ Extensions (not yet implemented)
-dtctl get extensions                             # List installed extensions
-dtctl describe extension <id>                    # Extension details
-dtctl install extension <extension-id>           # Install from Hub
-dtctl uninstall extension <id>                   # Uninstall extension
+# Extensions (not implemented yet)
+# dtctl get extensions                             # List installed extensions
+# dtctl describe extension <id>                    # Extension details
+# dtctl install extension <extension-id>           # Install from Hub
+# dtctl uninstall extension <id>                   # Uninstall extension
 
-# ❌ Certificates (not yet implemented)
-dtctl get certificates                           # List certificates
+# Certificates (not implemented yet)
+# dtctl get certificates                           # List certificates
 ```
 
 ### 16. Feature Flags
 **API Spec**: `feature-flags.yaml`
 **Detailed Design**: [FEATURE_FLAGS_API_DESIGN.md](FEATURE_FLAGS_API_DESIGN.md)
-**Status**: ❌ Not yet implemented (complete API planned)
+**Status**: Not yet implemented (complete API planned)
 
 Feature flags enable progressive rollouts, A/B testing, and controlled feature releases. The API is organized around **Projects** (containers), **Stages** (environments), **Feature Flag Definitions**, and **Stage Definitions** (stage-specific configs).
 
 ```bash
-# ❌ All feature flags commands are not yet implemented
+# All feature flags commands (not implemented yet)
 
 # Projects - containers for feature flags
 # Resource name: project/projects (short: proj)
@@ -809,23 +723,23 @@ dtctl get ffs                                    # Uses default project+stage
 
 ### 17. Email (Templates)
 **API Spec**: `email.yaml`
-**Status**: ❌ Not yet implemented
+**Status**: Not yet implemented
 
 ```bash
-# ❌ Email templates and sending (not yet implemented)
-dtctl get email-templates                        # List templates
-dtctl send email --template <id> --to user@ex.com # Send email
+# Email templates and sending (not implemented yet)
+# dtctl get email-templates                        # List templates
+# dtctl send email --template <id> --to user@ex.com # Send email
 ```
 
 ### 18. State Management
 **API Spec**: `state-management.yaml`
-**Status**: ❌ Not yet implemented
+**Status**: Not yet implemented
 
 ```bash
-# ❌ State storage for apps/extensions (not yet implemented)
-dtctl get state <key>                            # Get state value
-dtctl set state <key> <value>                    # Set state
-dtctl delete state <key>                         # Delete state
+# State storage for apps/extensions (not implemented yet)
+# dtctl get state <key>                            # Get state value
+# dtctl set state <key> <value>                    # Set state
+# dtctl delete state <key>                         # Delete state
 ```
 
 ## Common Operations
@@ -853,7 +767,7 @@ cat workflow.yaml | dtctl create workflow -f -
 # With template variables
 dtctl create workflow -f workflow.yaml --set env=prod --set owner=team-a
 
-# ❌ Inline creation (not yet implemented)
+# Inline creation (not implemented yet)
 # dtctl create document --name "My Notebook" --type notebook
 ```
 
@@ -863,7 +777,7 @@ dtctl create workflow -f workflow.yaml --set env=prod --set owner=team-a
 # Declarative update (apply)
 dtctl apply -f resource.yaml                     # Create if not exists, update if exists
 
-# ❌ Imperative update (patch - not yet implemented)
+# Imperative update (patch - not implemented yet)
 # dtctl patch document <id> --name "New Name"
 
 # Interactive edit
@@ -909,7 +823,7 @@ dtctl get workflows --chunk-size 10              # Control pagination
 # Wide output (more columns)
 dtctl get documents -o wide
 
-# ❌ Not yet implemented
+# (not implemented yet)
 # dtctl get documents --sort-by=.metadata.modified  # Sort results
 # dtctl get slos --filter 'name~production'         # Advanced filters
 # dtctl get documents --output custom-columns=NAME:.name,TYPE:.type,OWNER:.owner
@@ -1417,10 +1331,10 @@ dtctl get dashboards -o json > dashboards-backup.json
 ```
 
 ### Pipeline Operations
-**Status**: ❌ Not yet implemented
+**Status**: Not yet implemented
 
 ```bash
-# ❌ All pipeline operations not yet implemented
+# All pipeline operations (not implemented yet)
 # View current pipeline config
 # dtctl get pipelines
 
@@ -1435,20 +1349,16 @@ dtctl get dashboards -o json > dashboards-backup.json
 ```
 
 ### IAM Operations
-**Status**: 🚧 Partially implemented (listing only)
+**Status**: Partially implemented (listing only)
 
 ```bash
-# ✅ List users and their groups
+# List users and their groups
 dtctl get users -o wide
 dtctl get groups
 
-# ❌ Show user permissions (not yet implemented)
+# (not implemented yet)
 # dtctl get permissions --user user@example.com
-
-# ❌ Create service account (policy) - not yet implemented
 # dtctl create policy -f service-account.yaml
-
-# ❌ Audit: List all policies (not yet implemented)
 # dtctl get policies -o yaml > iam-audit.yaml
 ```
 
@@ -1461,15 +1371,16 @@ dtctl get groups
 dtctl wait query "fetch logs" --for=any --timeout=5m
 dtctl wait query "fetch logs" --for=count-gte=100
 
-# ❌ Not yet implemented
+# (not implemented yet)
 # dtctl wait --for=condition=complete execution <id>  # Wait for workflow/resource conditions
 # dtctl wait --for=condition=evaluated slo <id>
 ```
 
 ### Watch Mode
-❌ **Not yet implemented**
+**Status**: Not yet implemented
 
 ```bash
+# (not implemented yet)
 # dtctl get documents --watch
 # dtctl get executions <workflow-id> --watch
 # dtctl get slos --watch --interval 30s
@@ -1484,17 +1395,19 @@ dtctl delete document <id> --dry-run
 ```
 
 ### Diff
-❌ **Not yet implemented**
+**Status**: Not yet implemented
 
 ```bash
+# (not implemented yet)
 # dtctl diff -f resource.yaml
 # dtctl diff document <id> local-copy.yaml
 ```
 
 ### Explain Resources
-❌ **Not yet implemented**
+**Status**: Not yet implemented
 
 ```bash
+# (not implemented yet)
 # dtctl explain document
 # dtctl explain slo
 # dtctl explain workflow
