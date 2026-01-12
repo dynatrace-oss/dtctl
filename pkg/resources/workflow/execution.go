@@ -155,7 +155,8 @@ func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, err
 	}
 
 	// The API returns a JSON-encoded string, so we need to unquote it
-	body := resp.String()
+	// Use resp.Body() to avoid potential truncation of large logs
+	body := string(resp.Body())
 	if len(body) >= 2 && body[0] == '"' && body[len(body)-1] == '"' {
 		// Remove surrounding quotes and unescape
 		unquoted := body[1 : len(body)-1]
@@ -184,7 +185,8 @@ func (h *ExecutionHandler) GetExecutionLog(executionID string) (string, error) {
 	}
 
 	// The API returns a JSON-encoded string, so we need to unquote it
-	body := resp.String()
+	// Use resp.Body() to avoid potential truncation of large logs
+	body := string(resp.Body())
 	if len(body) >= 2 && body[0] == '"' && body[len(body)-1] == '"' {
 		// Remove surrounding quotes and unescape
 		unquoted := body[1 : len(body)-1]

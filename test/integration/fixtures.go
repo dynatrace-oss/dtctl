@@ -122,6 +122,48 @@ func DashboardFixtureModified(prefix string) []byte {
 	return data
 }
 
+// DashboardFixtureLarge returns a large dashboard to test truncation issues
+// This creates a dashboard with many tiles to ensure the response is > 10KB
+func DashboardFixtureLarge(prefix string) []byte {
+	tiles := make([]map[string]interface{}, 0)
+
+	// Create 50 tiles to make a reasonably large dashboard (>10KB)
+	for i := 0; i < 50; i++ {
+		tile := map[string]interface{}{
+			"name":       fmt.Sprintf("test-tile-%d", i),
+			"tileType":   "DATA_EXPLORER",
+			"configured": true,
+			"bounds": map[string]interface{}{
+				"top":    (i / 5) * 200,
+				"left":   (i % 5) * 400,
+				"width":  400,
+				"height": 200,
+			},
+			"queries": []map[string]interface{}{
+				{
+					"id":    fmt.Sprintf("query-%d", i),
+					"query": fmt.Sprintf("fetch logs | filter status == \"ERROR\" | filter tile == %d | summarize count = count(), by: {status}", i),
+				},
+			},
+			// Add some padding to make each tile larger
+			"customName": fmt.Sprintf("Custom Tile %d - This is a longer description to add more data", i),
+		}
+		tiles = append(tiles, tile)
+	}
+
+	dashboard := map[string]interface{}{
+		"dashboardMetadata": map[string]interface{}{
+			"name":        fmt.Sprintf("%s-dashboard-large", prefix),
+			"description": "Large dashboard for testing content retrieval and truncation issues. This dashboard contains many tiles with queries.",
+			"shared":      false,
+		},
+		"tiles": tiles,
+	}
+
+	data, _ := json.Marshal(dashboard)
+	return data
+}
+
 // NotebookFixture returns a minimal notebook JSON for integration testing
 func NotebookFixture(prefix string) []byte {
 	notebook := map[string]interface{}{

@@ -1,6 +1,7 @@
 package document
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,7 +33,9 @@ func ParseMultipartDocument(resp *resty.Response) (*Document, error) {
 		return nil, fmt.Errorf("missing boundary in Content-Type")
 	}
 
-	reader := multipart.NewReader(strings.NewReader(resp.String()), boundary)
+	// Use bytes.NewReader with resp.Body() to avoid any potential truncation
+	// that resp.String() might impose. This ensures we read the complete response.
+	reader := multipart.NewReader(bytes.NewReader(resp.Body()), boundary)
 
 	var doc Document
 	var metadataParsed bool

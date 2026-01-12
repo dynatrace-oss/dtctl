@@ -70,7 +70,20 @@ func TestDashboardLifecycle(t *testing.T) {
 			if retrieved.Name != created.Name {
 				t.Errorf("Retrieved dashboard name mismatch: got %s, want %s", retrieved.Name, created.Name)
 			}
-			t.Logf("✓ Retrieved dashboard: %s (Version: %d)", retrieved.Name, retrieved.Version)
+			// CRITICAL: Verify content is not empty or truncated
+			if len(retrieved.Content) == 0 {
+				t.Error("Retrieved dashboard has empty content")
+			}
+			if len(retrieved.Content) < len(createData) {
+				t.Errorf("Retrieved dashboard content appears truncated: got %d bytes, expected at least %d bytes",
+					len(retrieved.Content), len(createData))
+			}
+			// Verify content is valid JSON
+			var contentCheck map[string]interface{}
+			if err := json.Unmarshal(retrieved.Content, &contentCheck); err != nil {
+				t.Errorf("Retrieved dashboard content is not valid JSON: %v", err)
+			}
+			t.Logf("✓ Retrieved dashboard: %s (Version: %d, Content: %d bytes)", retrieved.Name, retrieved.Version, len(retrieved.Content))
 
 			// Step 3: List dashboards (verify our dashboard appears)
 			t.Log("Step 3: Listing dashboards...")
@@ -274,4 +287,85 @@ func TestDashboardOptimisticLocking(t *testing.T) {
 		// Update cleanup tracker with current version
 		env.Cleanup.TrackDocument("dashboard", updated.ID, updated.Name, updated.Version)
 	})
+}
+
+// TestDashboardLargeContent tests that large dashboards don't get truncated
+// This is a regression test for the bug where resp.String() was truncating large responses
+func TestDashboardLargeContent(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := document.NewHandler(env.Client)
+
+	t.Log("Creating large dashboard (>10KB)...")
+	createData := integration.DashboardFixtureLarge(env.TestPrefix)
+
+	// Parse to get the name from fixture
+	var dashboardContent map[string]interface{}
+	if err := json.Unmarshal(createData, &dashboardContent); err != nil {
+		t.Fatalf("Failed to parse dashboard fixture: %v", err)
+	}
+	metadata := dashboardContent["dashboardMetadata"].(map[string]interface{})
+	dashboardName := metadata["name"].(string)
+
+	t.Logf("Original dashboard size: %d bytes", len(createData))
+
+	created, err := handler.Create(document.CreateRequest{
+		Name:    dashboardName,
+		Type:    "dashboard",
+		Content: createData,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create large dashboard: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatal("Created dashboard has no ID")
+	}
+
+	// Track for cleanup
+	env.Cleanup.TrackDocument("dashboard", created.ID, created.Name, created.Version)
+	t.Logf("✓ Created large dashboard: %s (ID: %s)", created.Name, created.ID)
+
+	// Retrieve the dashboard - this is where truncation would occur
+	t.Log("Retrieving large dashboard...")
+	retrieved, err := handler.Get(created.ID)
+	if err != nil {
+		t.Fatalf("Failed to get large dashboard: %v", err)
+	}
+
+	// CRITICAL: Verify content is not empty
+	if len(retrieved.Content) == 0 {
+		t.Fatal("Retrieved dashboard has empty content - TRUNCATION BUG!")
+	}
+
+	t.Logf("Retrieved dashboard size: %d bytes", len(retrieved.Content))
+
+	// Verify content is approximately the same size (allowing for some API transformation)
+	// But it should be at least 80% of the original size
+	minExpectedSize := int(float64(len(createData)) * 0.8)
+	if len(retrieved.Content) < minExpectedSize {
+		t.Fatalf("Retrieved dashboard content appears truncated: got %d bytes, expected at least %d bytes (original: %d bytes)",
+			len(retrieved.Content), minExpectedSize, len(createData))
+	}
+
+	// Verify content is valid JSON
+	var contentCheck map[string]interface{}
+	if err := json.Unmarshal(retrieved.Content, &contentCheck); err != nil {
+		t.Fatalf("Retrieved dashboard content is not valid JSON: %v", err)
+	}
+
+	// Verify tiles are present
+	tiles, ok := contentCheck["tiles"].([]interface{})
+	if !ok {
+		t.Fatal("Retrieved dashboard has no tiles array")
+	}
+
+	originalTiles := dashboardContent["tiles"].([]interface{})
+	if len(tiles) != len(originalTiles) {
+		t.Errorf("Tile count mismatch: got %d tiles, expected %d tiles - possible truncation",
+			len(tiles), len(originalTiles))
+	}
+
+	t.Logf("✓ Large dashboard retrieved successfully with %d tiles and %d bytes of content",
+		len(tiles), len(retrieved.Content))
 }

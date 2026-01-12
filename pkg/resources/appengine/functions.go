@@ -21,19 +21,19 @@ func NewFunctionHandler(c *client.Client) *FunctionHandler {
 
 // FunctionInvokeRequest represents a function invocation request
 type FunctionInvokeRequest struct {
-	Method      string            // HTTP method (GET, POST, PUT, PATCH, DELETE)
-	AppID       string            // App ID
-	FunctionName string           // Function name
-	Payload     string            // Request body/payload
-	Headers     map[string]string // Additional headers
+	Method       string            // HTTP method (GET, POST, PUT, PATCH, DELETE)
+	AppID        string            // App ID
+	FunctionName string            // Function name
+	Payload      string            // Request body/payload
+	Headers      map[string]string // Additional headers
 }
 
 // FunctionInvokeResponse represents a function invocation response
 type FunctionInvokeResponse struct {
-	StatusCode int                    `json:"statusCode"`
-	Headers    map[string]string      `json:"headers,omitempty"`
-	Body       string                 `json:"body"`
-	RawBody    interface{}            `json:"-"` // For direct JSON output
+	StatusCode int               `json:"statusCode"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       string            `json:"body"`
+	RawBody    interface{}       `json:"-"` // For direct JSON output
 }
 
 // DeferredExecutionRequest represents a deferred execution request
@@ -91,7 +91,7 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 	}
 
 	// Execute the request based on method
-	var resp interface{
+	var resp interface {
 		IsError() bool
 		StatusCode() int
 		String() string
@@ -136,8 +136,10 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 
 	// Try to parse as JSON first
 	var jsonBody interface{}
-	body := resp.String()
-	if err := json.Unmarshal(resp.Body(), &jsonBody); err == nil {
+	// Use resp.Body() to avoid potential truncation of large function responses
+	bodyBytes := resp.Body()
+	body := string(bodyBytes)
+	if err := json.Unmarshal(bodyBytes, &jsonBody); err == nil {
 		// Valid JSON response
 		return &FunctionInvokeResponse{
 			StatusCode: resp.StatusCode(),
