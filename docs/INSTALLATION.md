@@ -275,8 +275,8 @@ After setting up completion:
 ## Getting Help
 
 - **Quick Start**: See [QUICK_START.md](QUICK_START.md) for usage examples
-- **API Reference**: See [API_DESIGN.md](API_DESIGN.md) for complete command reference
-- **Architecture**: Read [ARCHITECTURE.md](ARCHITECTURE.md) for implementation details
+- **API Reference**: See [dev/API_DESIGN.md](dev/API_DESIGN.md) for complete command reference
+- **Architecture**: Read [dev/ARCHITECTURE.md](dev/ARCHITECTURE.md) for implementation details
 - **Issues**: Report bugs at [GitHub Issues](https://github.com/dynatrace/dtctl/issues)
 
 ### macOS: "zsh: exec format error"

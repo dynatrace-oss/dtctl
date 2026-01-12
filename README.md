@@ -58,9 +58,9 @@ dtctl query "fetch logs | limit 10"
 |-------|-------------|
 | [Installation](docs/INSTALLATION.md) | Build from source, shell completion setup |
 | [Quick Start](docs/QUICK_START.md) | Configuration, examples for all resource types |
-| [API Design](docs/API_DESIGN.md) | Complete command reference |
-| [Architecture](docs/ARCHITECTURE.md) | Technical implementation details |
-| [Implementation Status](docs/IMPLEMENTATION_STATUS.md) | Roadmap and feature status |
+| [API Design](docs/dev/API_DESIGN.md) | Complete command reference |
+| [Architecture](docs/dev/ARCHITECTURE.md) | Technical implementation details |
+| [Implementation Status](docs/dev/IMPLEMENTATION_STATUS.md) | Roadmap and feature status |
 
 ## Contributing
 

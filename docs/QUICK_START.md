@@ -1645,10 +1645,9 @@ For the core features, your platform token needs:
 
 ## Next Steps
 
-- **API Reference**: See [API_DESIGN.md](API_DESIGN.md) for complete command reference
-- **Architecture**: Read [ARCHITECTURE.md](ARCHITECTURE.md) to understand how dtctl works
-- **Design Principles**: Check [DESIGN_PRINCIPLES.md](DESIGN_PRINCIPLES.md) for design philosophy
-- **Implementation Status**: View [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for roadmap
+- **API Reference**: See [dev/API_DESIGN.md](dev/API_DESIGN.md) for complete command reference
+- **Architecture**: Read [dev/ARCHITECTURE.md](dev/ARCHITECTURE.md) to understand how dtctl works
+- **Implementation Status**: View [dev/IMPLEMENTATION_STATUS.md](dev/IMPLEMENTATION_STATUS.md) for roadmap
 
 ## Getting Help
 
