@@ -210,7 +210,7 @@ func (p *ChartPrinter) extractFromRecord(record map[string]interface{}) (*Timese
 
 	// Parse interval (nanoseconds as string)
 	var intervalNs int64
-	_ = fmt.Sscanf(intervalStr, "%d", &intervalNs)
+	_, _ = fmt.Sscanf(intervalStr, "%d", &intervalNs)
 	interval := time.Duration(intervalNs)
 
 	// Find metric columns (arrays of numbers)
