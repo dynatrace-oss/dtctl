@@ -91,8 +91,8 @@ type DeleteRequest struct {
 
 // List lists all lookup tables
 func (h *Handler) List() ([]Lookup, error) {
-	// Query all files in the system
-	query := `fetch dt.system.files | filter path starts_with "/lookups/"`
+	// Query all files in the system (note: the path field is called 'name' in dt.system.files)
+	query := `fetch dt.system.files | filter startsWith(name, "/lookups/")`
 
 	executor := exec.NewDQLExecutor(h.client)
 	result, err := executor.ExecuteQuery(query)
@@ -110,25 +110,25 @@ func (h *Handler) List() ([]Lookup, error) {
 	for _, record := range records {
 		lookup := Lookup{}
 
-		// Extract path
-		if path, ok := record["path"].(string); ok {
-			lookup.Path = path
+		// Extract path (field is called 'name' in dt.system.files)
+		if name, ok := record["name"].(string); ok {
+			lookup.Path = name
 		}
 
 		// Extract other metadata fields if available
-		if displayName, ok := record["displayName"].(string); ok {
+		if displayName, ok := record["display_name"].(string); ok {
 			lookup.DisplayName = displayName
 		}
 		if description, ok := record["description"].(string); ok {
 			lookup.Description = description
 		}
-		if fileSize, ok := record["fileSize"].(float64); ok {
-			lookup.FileSize = int64(fileSize)
+		if size, ok := record["size"].(float64); ok {
+			lookup.FileSize = int64(size)
 		}
 		if records, ok := record["records"].(float64); ok {
 			lookup.Records = int(records)
 		}
-		if modified, ok := record["timestamp"].(string); ok {
+		if modified, ok := record["modified.timestamp"].(string); ok {
 			lookup.Modified = formatTimestamp(modified)
 		}
 

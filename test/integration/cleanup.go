@@ -281,6 +281,15 @@ func (c *CleanupTracker) verifyDeletion(resource Resource) error {
 		}
 		return fmt.Errorf("edgeconnect %s still exists after deletion", resource.ID)
 
+	case "lookup":
+		handler := lookup.NewHandler(c.client)
+		_, err := handler.Get(resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("lookup %s still exists after deletion", resource.ID)
+
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource.Type)
 	}
