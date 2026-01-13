@@ -16,7 +16,7 @@ A kubectl-inspired CLI for managing Dynatrace platform resources (dashboards, wo
 
 ## Architecture Overview
 
-```
+```text
 cmd/               # Cobra commands (get, describe, create, delete, apply, exec, etc.)
 pkg/
   ├── client/      # HTTP client with retry/rate limiting
@@ -31,12 +31,15 @@ pkg/
 **Pattern**: Follow existing resources like `pkg/resources/slo/` or `pkg/resources/workflow/`
 
 **Steps**:
+
 1. Create `pkg/resources/<name>/<name>.go` with handler functions
 2. Add commands to `cmd/get.go`, `cmd/describe.go`, etc.
 3. Register resource type in resolver if needed
 4. Add tests: `test/e2e/<name>_test.go`
 
 **Handler Signature Example**:
+
+
 ```go
 func GetResource(client *client.Client, id string) (interface{}, error)
 func ListResources(client *client.Client, filters map[string]string) ([]interface{}, error)
@@ -47,6 +50,7 @@ func DeleteResource(client *client.Client, id string) error
 ## Key Files & Patterns
 
 ### Command Structure (`cmd/*.go`)
+
 - `root.go` - Global flags, config initialization
 - `get.go` - List/retrieve resources
 - `describe.go` - Detailed resource info
@@ -55,17 +59,20 @@ func DeleteResource(client *client.Client, id string) error
 - `exec.go` - Execute workflows/functions/analyzers
 
 ### Client (`pkg/client/client.go`)
+
 - Handles auth, retries, rate limiting, pagination
 - Base URL from context config
 - Token from keyring or config
 
 ### Output (`pkg/output/printer.go`)
+
 - `PrintTable()` - Human-readable ASCII tables
 - `PrintJSON()` - Raw API response
 - `PrintYAML()` - Reconstructed YAML
 - Chart outputs for timeseries
 
 ### Configuration (`pkg/config/config.go`)
+
 - Multi-context support (like kubeconfig)
 - Stored at `~/.config/dtctl/config`
 - Tokens in OS keyring
@@ -82,29 +89,34 @@ func DeleteResource(client *client.Client, id string) error
 ## Common Tasks for Agents
 
 ### Task: Add GET support for new resource
-```
+
+```text
 Files: cmd/get.go, pkg/resources/<name>/<name>.go
 Pattern: Copy from pkg/resources/slo/slo.go
 Register: Add to cmd/get.go with aliases
 ```
 
 ### Task: Add EXEC support (execution)
-```
+
+```text
 Files: cmd/exec.go, pkg/exec/<type>.go
 Pattern: See pkg/exec/workflow.go for polling pattern
 ```
 
 ### Task: Add DQL template feature
-```
+
+```text
 Files: pkg/exec/dql.go, pkg/util/template/
 Pattern: Use Go text/template, support --set flag
 ```
 
 ### Task: Fix output formatting
-```
+
+```text
 Files: pkg/output/<format>.go
 Test: Run `dtctl get <resource> -o <format>`
 ```
+
 
 ## Testing
 
@@ -116,6 +128,7 @@ Test: Run `dtctl get <resource> -o <format>`
 ## API Endpoints
 
 Dynatrace Platform APIs:
+
 - Base: `https://<env>.apps.dynatrace.com/platform/`
 - Docs: Each resource handler has API spec reference in comments
 
@@ -133,6 +146,7 @@ Dynatrace Platform APIs:
 ## Finding Examples
 
 Best resource handler examples:
+
 - Simple CRUD: `pkg/resources/bucket/`
 - Complex with subresources: `pkg/resources/workflow/`
 - Execution pattern: `pkg/exec/workflow.go`
@@ -155,6 +169,7 @@ export DTCTL_CONTEXT=dev  # Or use --context flag
 ## Documentation Updates
 
 When adding features, update:
+
 - `docs/dev/IMPLEMENTATION_STATUS.md` - Feature matrix
 - `docs/dev/API_DESIGN.md` - If new resource type
 - Command help strings in `cmd/*.go`

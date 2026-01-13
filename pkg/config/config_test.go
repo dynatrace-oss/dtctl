@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -192,13 +193,15 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 		t.Fatalf("SaveTo() error = %v", err)
 	}
 
-	// Verify file permissions
-	info, err := os.Stat(configPath)
-	if err != nil {
-		t.Fatalf("Failed to stat config file: %v", err)
-	}
-	if info.Mode().Perm() != 0600 {
-		t.Errorf("Config file permissions = %v, want 0600", info.Mode().Perm())
+	// Verify file permissions (Unix-like systems only)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(configPath)
+		if err != nil {
+			t.Fatalf("Failed to stat config file: %v", err)
+		}
+		if info.Mode().Perm() != 0600 {
+			t.Errorf("Config file permissions = %v, want 0600", info.Mode().Perm())
+		}
 	}
 
 	// Load config
@@ -374,12 +377,14 @@ func TestSaveTo_CreateDirectory(t *testing.T) {
 		t.Fatalf("SaveTo() error = %v", err)
 	}
 
-	// Verify directory was created with correct permissions
-	dirInfo, err := os.Stat(filepath.Dir(configPath))
-	if err != nil {
-		t.Fatalf("Failed to stat directory: %v", err)
-	}
-	if dirInfo.Mode().Perm() != 0700 {
-		t.Errorf("Directory permissions = %v, want 0700", dirInfo.Mode().Perm())
+	// Verify directory was created with correct permissions (Unix-like systems only)
+	if runtime.GOOS != "windows" {
+		dirInfo, err := os.Stat(filepath.Dir(configPath))
+		if err != nil {
+			t.Fatalf("Failed to stat directory: %v", err)
+		}
+		if dirInfo.Mode().Perm() != 0700 {
+			t.Errorf("Directory permissions = %v, want 0700", dirInfo.Mode().Perm())
+		}
 	}
 }

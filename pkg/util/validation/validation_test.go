@@ -3,6 +3,7 @@ package validation
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -60,6 +61,11 @@ func TestValidateEditorPath(t *testing.T) {
 }
 
 func TestValidateEditorPath_ValidEditor(t *testing.T) {
+	// Skip on Windows as executable bit checking doesn't work the same way
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping executable permission test on Windows")
+	}
+
 	// Create a temporary executable for testing
 	tmpDir, err := os.MkdirTemp("", "dtctl-test-*")
 	if err != nil {
@@ -110,6 +116,14 @@ func TestValidateEditorPath_NotExecutable(t *testing.T) {
 }
 
 func TestValidateFilePath(t *testing.T) {
+	// Get a platform-appropriate absolute path for testing
+	var absPath string
+	if runtime.GOOS == "windows" {
+		absPath = "C:\\tmp\\file.txt"
+	} else {
+		absPath = "/tmp/file.txt"
+	}
+
 	tests := []struct {
 		name          string
 		path          string
@@ -136,13 +150,13 @@ func TestValidateFilePath(t *testing.T) {
 		},
 		{
 			name:          "absolute path allowed",
-			path:          "/tmp/file.txt",
+			path:          absPath,
 			allowAbsolute: true,
 			wantErr:       false,
 		},
 		{
 			name:          "absolute path not allowed",
-			path:          "/tmp/file.txt",
+			path:          absPath,
 			allowAbsolute: false,
 			wantErr:       true,
 		},
