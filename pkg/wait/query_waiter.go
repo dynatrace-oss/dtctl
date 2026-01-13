@@ -13,16 +13,16 @@ import (
 
 // WaitConfig configures the wait operation
 type WaitConfig struct {
-	Query         string
-	Condition     Condition
-	Timeout       time.Duration
-	MaxAttempts   int // 0 = unlimited
-	Backoff       BackoffConfig
-	QueryOptions  exec.DQLExecuteOptions
-	OutputFormat  string
-	Quiet         bool
-	Verbose       bool
-	ProgressOut   io.Writer // Where to write progress messages (default: stderr)
+	Query        string
+	Condition    Condition
+	Timeout      time.Duration
+	MaxAttempts  int // 0 = unlimited
+	Backoff      BackoffConfig
+	QueryOptions exec.DQLExecuteOptions
+	OutputFormat string
+	Quiet        bool
+	Verbose      bool
+	ProgressOut  io.Writer // Where to write progress messages (default: stderr)
 }
 
 // QueryWaiter polls a query until a condition is met

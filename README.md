@@ -17,6 +17,8 @@ dtctl edit dashboard "Production Overview"    # Edit resources in your $EDITOR
 dtctl apply -f workflow.yaml                  # Declarative configuration
 ```
 
+![dtctl dashboard workflow demo](docs/assets/dtctl-1.gif)
+
 > This product is not officially supported by Dynatrace
 
 ## Why dtctl?

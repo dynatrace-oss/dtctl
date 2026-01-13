@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -16,6 +17,14 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
+
+// uuidRegex matches UUID-formatted strings (the Documents API rejects these for ID during creation)
+var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// isUUID checks if a string is a UUID format
+func isUUID(s string) bool {
+	return uuidRegex.MatchString(s)
+}
 
 // Applier handles resource apply operations
 type Applier struct {
@@ -136,6 +145,26 @@ func detectResourceType(data []byte) (ResourceType, error) {
 			}
 		}
 		return ResourceDashboard, nil // Default to dashboard for documents
+	}
+
+	// Check for direct content format (tiles for dashboard, sections for notebook)
+	if _, hasTiles := raw["tiles"]; hasTiles {
+		return ResourceDashboard, nil
+	}
+	if _, hasSections := raw["sections"]; hasSections {
+		return ResourceNotebook, nil
+	}
+
+	// Also check for "content" field which contains the actual document
+	if content, hasContent := raw["content"]; hasContent {
+		if contentMap, ok := content.(map[string]interface{}); ok {
+			if _, hasTiles := contentMap["tiles"]; hasTiles {
+				return ResourceDashboard, nil
+			}
+			if _, hasSections := contentMap["sections"]; hasSections {
+				return ResourceNotebook, nil
+			}
+		}
 	}
 
 	// Settings objects have "schemaId" and "scope" fields
@@ -277,13 +306,21 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	// Check if document exists
 	metadata, err := handler.GetMetadata(id)
 	if err != nil {
-		// Document doesn't exist, create it with the provided ID
+		// Document doesn't exist, create it
 		if name == "" {
 			name = fmt.Sprintf("Untitled %s", docType)
 		}
 
+		// The Documents API rejects UUID-formatted IDs during creation.
+		// If the ID is a UUID (e.g., from an export), create without it and let the API generate a new ID.
+		createID := id
+		if isUUID(id) {
+			createID = ""
+			fmt.Fprintf(os.Stderr, "Note: Creating new %s (UUID IDs cannot be reused across tenants)\n", docType)
+		}
+
 		result, err := handler.Create(document.CreateRequest{
-			ID:          id,
+			ID:          createID,
 			Name:        name,
 			Type:        docType,
 			Description: description,
