@@ -550,7 +550,7 @@ func TestEnvironmentVariableBinding(t *testing.T) {
 			// Bind flag
 			rootCmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 				if flag.Name == tt.flagKey {
-					viper.BindPFlag(tt.flagKey, flag)
+					_ = viper.BindPFlag(tt.flagKey, flag)
 				}
 			})
 
