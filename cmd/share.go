@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/spf13/cobra"
 )
@@ -73,7 +72,7 @@ Examples:
 			return nil
 		}
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -174,7 +173,7 @@ Examples:
 			return nil
 		}
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

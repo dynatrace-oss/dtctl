@@ -8,7 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/spf13/cobra"
 )
@@ -64,7 +63,7 @@ Examples:
 			return fmt.Errorf("cannot use --task with --all or --tasks flags")
 		}
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

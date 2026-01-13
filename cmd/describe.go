@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
@@ -41,7 +40,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		executionID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -126,7 +125,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identifier := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -194,7 +193,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identifier := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -280,7 +279,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workflowID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -384,7 +383,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		bucketName := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -439,7 +438,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		configID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -518,7 +517,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -578,7 +577,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ecID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -642,7 +641,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		schemaID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -766,7 +765,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userUUID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -816,7 +815,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		groupUUID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

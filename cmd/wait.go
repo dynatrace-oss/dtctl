@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/dynatrace-oss/dtctl/pkg/wait"
@@ -130,7 +129,7 @@ Examples:
 		}
 
 		// Load config and create client
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

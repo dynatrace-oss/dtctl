@@ -66,9 +66,9 @@ func TestGlobalFlags_Config(t *testing.T) {
 // TestGlobalFlags_Context tests the --context flag
 func TestGlobalFlags_Context(t *testing.T) {
 	tests := []struct {
-		name          string
-		context       string
-		wantContext   string
+		name        string
+		context     string
+		wantContext string
 	}{
 		{
 			name:        "custom context",
@@ -95,6 +95,88 @@ func TestGlobalFlags_Context(t *testing.T) {
 			got := viper.GetString("context")
 			if got != tt.wantContext {
 				t.Errorf("context = %v, want %v", got, tt.wantContext)
+			}
+		})
+	}
+}
+
+// TestLoadConfig tests the LoadConfig function with --context flag override
+func TestLoadConfig(t *testing.T) {
+	tests := []struct {
+		name               string
+		currentContext     string
+		contextFlagValue   string
+		wantCurrentContext string
+	}{
+		{
+			name:               "no context flag - use config default",
+			currentContext:     "dev",
+			contextFlagValue:   "",
+			wantCurrentContext: "dev",
+		},
+		{
+			name:               "context flag overrides config",
+			currentContext:     "dev",
+			contextFlagValue:   "prod",
+			wantCurrentContext: "prod",
+		},
+		{
+			name:               "context flag set to same as config",
+			currentContext:     "staging",
+			contextFlagValue:   "staging",
+			wantCurrentContext: "staging",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test config file
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "config.yaml")
+
+			cfg := config.NewConfig()
+			cfg.SetContext("dev", "https://dev.dt.com", "dev-token")
+			cfg.SetContext("staging", "https://staging.dt.com", "staging-token")
+			cfg.SetContext("prod", "https://prod.dt.com", "prod-token")
+			cfg.CurrentContext = tt.currentContext
+
+			if err := cfg.SaveTo(configPath); err != nil {
+				t.Fatalf("failed to save config: %v", err)
+			}
+
+			// Save original values and environment
+			origCfgFile := cfgFile
+			origContextName := contextName
+			origEnvContext := os.Getenv("DTCTL_CONTEXT")
+			defer func() {
+				cfgFile = origCfgFile
+				contextName = origContextName
+				if origEnvContext != "" {
+					os.Setenv("DTCTL_CONTEXT", origEnvContext)
+				} else {
+					os.Unsetenv("DTCTL_CONTEXT")
+				}
+			}()
+
+			// Unset environment variable to avoid interference
+			os.Unsetenv("DTCTL_CONTEXT")
+
+			// Reset state
+			viper.Reset()
+			cfgFile = configPath
+			contextName = tt.contextFlagValue
+
+			// Initialize config
+			initConfig()
+
+			// Load config with context override
+			loadedCfg, err := LoadConfig()
+			if err != nil {
+				t.Fatalf("LoadConfig() error = %v", err)
+			}
+
+			if loadedCfg.CurrentContext != tt.wantCurrentContext {
+				t.Errorf("LoadConfig().CurrentContext = %v, want %v", loadedCfg.CurrentContext, tt.wantCurrentContext)
 			}
 		})
 	}

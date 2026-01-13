@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
@@ -47,7 +46,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Show deprecation warning
 		fmt.Fprintln(os.Stderr, "Warning: 'dtctl exec dql' is deprecated. Use 'dtctl query' instead.")
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -98,7 +97,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workflowID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -219,7 +218,7 @@ Examples:
   dtctl exec function -f script.js --payload '{"input":"data"}'
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -295,7 +294,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		analyzerName := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -395,7 +394,7 @@ Examples:
   dtctl exec copilot "List top errors" --instruction "Answer in bullet points"
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -484,7 +483,7 @@ Examples:
   dtctl exec copilot nl2dql "find hosts with high CPU" -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -547,7 +546,7 @@ Examples:
   dtctl exec copilot dql2nl "fetch logs | limit 10" -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -614,7 +613,7 @@ Examples:
   dtctl exec copilot document-search "kubernetes" --collections notebooks -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -683,7 +682,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sloID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

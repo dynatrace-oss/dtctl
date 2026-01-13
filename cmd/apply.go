@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/spf13/cobra"
 )
@@ -86,7 +85,7 @@ that contains the dashboard ID. The 'create' command always creates new resource
 		}
 
 		// Load configuration
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

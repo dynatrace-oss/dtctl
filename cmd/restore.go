@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
@@ -47,7 +46,7 @@ Examples:
 			return fmt.Errorf("invalid version number: %s", args[1])
 		}
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -122,7 +121,7 @@ Examples:
 			return fmt.Errorf("invalid version number: %s", args[1])
 		}
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -197,7 +196,7 @@ Examples:
 			return fmt.Errorf("invalid version number: %s", args[1])
 		}
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

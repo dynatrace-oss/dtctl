@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
@@ -47,7 +46,7 @@ Examples:
   dtctl get workflows -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -108,7 +107,7 @@ Examples:
   dtctl get wfe -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -165,7 +164,7 @@ Examples:
   dtctl get dashboards --mine
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -242,7 +241,7 @@ Examples:
   dtctl get notebooks --mine
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -323,7 +322,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identifier := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -386,7 +385,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identifier := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -449,7 +448,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identifier := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -509,7 +508,7 @@ Examples:
   dtctl get settings-schemas -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -565,7 +564,7 @@ Examples:
 		schemaID, _ := cmd.Flags().GetString("schema")
 		scope, _ := cmd.Flags().GetString("scope")
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -624,7 +623,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filter, _ := cmd.Flags().GetString("filter")
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -679,7 +678,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filter, _ := cmd.Flags().GetString("filter")
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -734,7 +733,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		notifType, _ := cmd.Flags().GetString("type")
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -784,7 +783,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		notifID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -836,7 +835,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sloID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -889,7 +888,7 @@ Examples:
   dtctl get buckets -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -939,7 +938,7 @@ Examples:
   dtctl get openpipelines -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -989,7 +988,7 @@ Examples:
   dtctl get apps -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1039,7 +1038,7 @@ Examples:
   dtctl get edgeconnects -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1092,7 +1091,7 @@ Examples:
   dtctl get users -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1143,7 +1142,7 @@ Examples:
   dtctl get groups -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1182,7 +1181,7 @@ Examples:
   dtctl get sdk-versions -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1222,7 +1221,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1275,7 +1274,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ecID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1330,7 +1329,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		bucketName := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1390,7 +1389,7 @@ Examples:
   dtctl get analyzers -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1438,7 +1437,7 @@ Examples:
   dtctl get copilot-skills -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -1478,7 +1477,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		objectID := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

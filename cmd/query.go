@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
@@ -82,7 +81,7 @@ Examples:
   dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --width 150 --height 30
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}

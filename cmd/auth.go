@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/spf13/cobra"
 )
 
@@ -51,7 +50,7 @@ JWT token's 'sub' claim.`,
   # Output as JSON
   dtctl auth whoami -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}

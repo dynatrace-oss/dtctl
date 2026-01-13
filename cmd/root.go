@@ -175,6 +175,30 @@ func NewPrinter() output.Printer {
 	return output.NewPrinterWithOptions(outputFormat, os.Stdout, plainMode)
 }
 
+// LoadConfig loads the config and applies the --context flag override if provided
+func LoadConfig() (*config.Config, error) {
+	var cfg *config.Config
+	var err error
+
+	// Load from specified config file or default location
+	if cfgFile != "" {
+		cfg, err = config.LoadFrom(cfgFile)
+	} else {
+		cfg, err = config.Load()
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Override current context if --context flag is provided
+	if contextName != "" {
+		cfg.CurrentContext = contextName
+	}
+
+	return cfg, nil
+}
+
 // NewClientFromConfig creates a new client from config with verbose mode configured
 func NewClientFromConfig(cfg *config.Config) (*client.Client, error) {
 	c, err := client.NewFromConfig(cfg)

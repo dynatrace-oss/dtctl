@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
@@ -84,7 +83,7 @@ Examples:
 		}
 
 		// Load configuration
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -270,7 +269,7 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 		}
 
 		// Load configuration
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -500,7 +499,7 @@ Examples:
 		}
 
 		// Load configuration
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -603,7 +602,7 @@ Examples:
 		}
 
 		// Load configuration
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -696,7 +695,7 @@ Examples:
 		}
 
 		// Load configuration
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -785,7 +784,7 @@ Examples:
 		}
 
 		// Load configuration
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
