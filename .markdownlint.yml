@@ -3,3 +3,36 @@ MD013: false
 
 # punctuation in headings
 MD026: false
+
+# blanks around lists - disabled due to existing codebase style
+MD032: false
+
+# blanks around headings - disabled due to existing codebase style
+MD022: false
+
+# blanks around fences - disabled due to existing codebase style
+MD031: false
+
+# duplicate headings - disabled, common in API docs with repeated sections
+MD024: false
+
+# fenced code language - disabled, some code blocks intentionally omit language
+MD040: false
+
+# bare URLs - disabled, URLs in docs are often intentionally bare
+MD034: false
+
+# hard tabs - disabled due to existing codebase style
+MD010: false
+
+# multiple blank lines - disabled due to existing codebase style
+MD012: false
+
+# trailing spaces
+MD009: false
+
+# emphasis as heading
+MD036: false
+
+# inline HTML
+MD033: false

@@ -39,7 +39,6 @@ pkg/
 
 **Handler Signature Example**:
 
-
 ```go
 func GetResource(client *client.Client, id string) (interface{}, error)
 func ListResources(client *client.Client, filters map[string]string) ([]interface{}, error)
@@ -116,7 +115,6 @@ Pattern: Use Go text/template, support --set flag
 Files: pkg/output/<format>.go
 Test: Run `dtctl get <resource> -o <format>`
 ```
-
 
 ## Testing
 
