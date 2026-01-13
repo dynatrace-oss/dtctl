@@ -41,7 +41,7 @@ func TestGlobalFlags_Config(t *testing.T) {
 				cfg.SetContext("test", "https://test.dt.com", "test-token")
 				_ = cfg.SetToken("test-token", "dt0c01.test")
 				cfg.CurrentContext = "test"
-				if err := _ = cfg.SaveTo(configPath); err != nil {
+				if err := cfg.SaveTo(configPath); err != nil {
 					t.Fatalf("failed to save config: %v", err)
 				}
 			}
@@ -140,7 +140,7 @@ func TestLoadConfig(t *testing.T) {
 			cfg.SetContext("prod", "https://prod.dt.com", "prod-token")
 			cfg.CurrentContext = tt.currentContext
 
-			if err := _ = cfg.SaveTo(configPath); err != nil {
+			if err := cfg.SaveTo(configPath); err != nil {
 				t.Fatalf("failed to save config: %v", err)
 			}
 

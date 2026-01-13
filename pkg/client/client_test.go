@@ -250,7 +250,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_ = w.Write([]byte(`{"status": "ok"}`))
+		_, _ = w.Write([]byte(`{"status": "ok"}`))
 	}))
 	defer server.Close()
 
