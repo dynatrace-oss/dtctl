@@ -27,11 +27,11 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
-          files: ./coverage.out
+          files: ./coverage.txt
           fail_ci_if_error: false
