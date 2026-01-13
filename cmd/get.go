@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/notification"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/openpipeline"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
@@ -920,6 +921,76 @@ Examples:
 	},
 }
 
+// getLookupsCmd retrieves lookup tables
+var getLookupsCmd = &cobra.Command{
+	Use:     "lookups [path]",
+	Aliases: []string{"lookup", "lkup", "lu"},
+	Short:   "Get lookup tables",
+	Long: `Get lookup tables from Grail Resource Store.
+
+Lookup tables are tabular files stored in Grail that can be loaded and
+joined with observability data in DQL queries for data enrichment.
+
+Examples:
+  # List all lookup tables
+  dtctl get lookups
+
+  # Get a specific lookup table with preview
+  dtctl get lookup /lookups/grail/pm/error_codes
+
+  # Export lookup as CSV
+  dtctl get lookup /lookups/grail/pm/error_codes -o csv > error_codes.csv
+
+  # Export as JSON
+  dtctl get lookup /lookups/grail/pm/error_codes -o json
+
+  # Output as wide table
+  dtctl get lookups -o wide
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := lookup.NewHandler(c)
+		printer := NewPrinter()
+
+		// Get specific lookup if path provided
+		if len(args) > 0 {
+			// Get lookup with preview data (first 10 rows)
+			lookupData, err := handler.GetWithData(args[0], 10)
+			if err != nil {
+				return err
+			}
+
+			// For CSV/JSON output, return full data
+			if outputFormat == "csv" || outputFormat == "json" {
+				fullData, err := handler.GetData(args[0], 0)
+				if err != nil {
+					return err
+				}
+				return printer.PrintList(fullData)
+			}
+
+			return printer.Print(lookupData)
+		}
+
+		// List all lookups
+		list, err := handler.List()
+		if err != nil {
+			return err
+		}
+
+		return printer.PrintList(list)
+	},
+}
+
 // getOpenPipelinesCmd retrieves OpenPipeline configurations
 var getOpenPipelinesCmd = &cobra.Command{
 	Use:     "openpipelines [id]",
@@ -1368,6 +1439,65 @@ Examples:
 	},
 }
 
+// deleteLookupCmd deletes a lookup table
+var deleteLookupCmd = &cobra.Command{
+	Use:     "lookup <path>",
+	Aliases: []string{"lookups", "lkup", "lu"},
+	Short:   "Delete a lookup table",
+	Long: `Delete a lookup table from Grail Resource Store.
+
+ATTENTION: This operation is irreversible and will permanently delete the lookup table.
+
+Examples:
+  # Delete a lookup table
+  dtctl delete lookup /lookups/grail/pm/error_codes
+
+  # Delete without confirmation
+  dtctl delete lookup /lookups/grail/pm/error_codes -y
+`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path := args[0]
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := lookup.NewHandler(c)
+
+		// Get lookup for confirmation
+		lu, err := handler.Get(path)
+		if err != nil {
+			return err
+		}
+
+		// Confirm deletion unless --force or --plain
+		if !forceDelete && !plainMode {
+			displayName := lu.DisplayName
+			if displayName == "" {
+				displayName = path
+			}
+			if !prompt.ConfirmDeletion("lookup table", displayName, path) {
+				fmt.Println("Deletion cancelled")
+				return nil
+			}
+		}
+
+		if err := handler.Delete(path); err != nil {
+			return err
+		}
+
+		fmt.Printf("Lookup table %q deleted\n", path)
+		return nil
+	},
+}
+
 // getAnalyzersCmd retrieves Davis analyzers
 var getAnalyzersCmd = &cobra.Command{
 	Use:     "analyzers [name]",
@@ -1530,6 +1660,7 @@ func init() {
 	getCmd.AddCommand(getSLOTemplatesCmd)
 	getCmd.AddCommand(getNotificationsCmd)
 	getCmd.AddCommand(getBucketsCmd)
+	getCmd.AddCommand(getLookupsCmd)
 	getCmd.AddCommand(getOpenPipelinesCmd)
 	getCmd.AddCommand(getAppsCmd)
 	getCmd.AddCommand(getEdgeConnectsCmd)
@@ -1546,6 +1677,7 @@ func init() {
 	deleteCmd.AddCommand(deleteSLOCmd)
 	deleteCmd.AddCommand(deleteNotificationCmd)
 	deleteCmd.AddCommand(deleteBucketCmd)
+	deleteCmd.AddCommand(deleteLookupCmd)
 	deleteCmd.AddCommand(deleteAppCmd)
 	deleteCmd.AddCommand(deleteEdgeConnectCmd)
 
@@ -1581,6 +1713,7 @@ func init() {
 	deleteSLOCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteNotificationCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteBucketCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+	deleteLookupCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteAppCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteEdgeConnectCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 }

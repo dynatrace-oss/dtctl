@@ -399,6 +399,12 @@ func ValidatePath(path string) error {
 		return fmt.Errorf("file path must start with /lookups/ (got: %s)", path)
 	}
 
+	// Must have at least 2 slashes (check early)
+	slashCount := strings.Count(path, "/")
+	if slashCount < 2 {
+		return fmt.Errorf("file path must contain at least 2 slashes")
+	}
+
 	if len(path) > 500 {
 		return fmt.Errorf("file path must not exceed 500 characters")
 	}
@@ -414,12 +420,6 @@ func ValidatePath(path string) error {
 	lastChar := path[len(path)-1]
 	if !((lastChar >= 'a' && lastChar <= 'z') || (lastChar >= 'A' && lastChar <= 'Z') || (lastChar >= '0' && lastChar <= '9')) {
 		return fmt.Errorf("file path must end with alphanumeric character")
-	}
-
-	// Must have at least 2 slashes
-	slashCount := strings.Count(path, "/")
-	if slashCount < 2 {
-		return fmt.Errorf("file path must contain at least 2 slashes")
 	}
 
 	return nil
