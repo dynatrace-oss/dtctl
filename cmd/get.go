@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
@@ -19,8 +17,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
-	"github.com/dynatrace-oss/dtctl/pkg/util/format"
-	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/spf13/cobra"
 )
 
@@ -1431,104 +1427,6 @@ Examples:
 	},
 }
 
-// updateSettingsCmd updates a settings object
-var updateSettingsCmd = &cobra.Command{
-	Use:   "settings <object-id-or-uid> -f <file>",
-	Short: "Update a settings object",
-	Long: `Update an existing settings object from a YAML or JSON file.
-
-You can specify either the full objectId or the UID (UUID format).
-When using a UID, you MUST specify --schema.
-
-Examples:
-  # Update by objectId
-  dtctl update settings vu9U3hXa3q0AAAA... -f pipeline.yaml
-
-  # Update by UID (requires --schema)
-  dtctl update settings e1cd3543-8603-3895-bcee-34d20c700074 -f pipeline.yaml --schema builtin:openpipeline.logs.pipelines
-
-  # Update with template variables
-  dtctl update settings <object-id-or-uid> -f settings.yaml --set name=prod
-
-  # Dry run to preview
-  dtctl update settings <object-id-or-uid> -f settings.yaml --dry-run
-`,
-	Aliases: []string{"setting"},
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		objectID := args[0]
-		file, _ := cmd.Flags().GetString("file")
-		setFlags, _ := cmd.Flags().GetStringArray("set")
-		schemaID, _ := cmd.Flags().GetString("schema")
-		scope, _ := cmd.Flags().GetString("scope")
-
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
-
-		// Read the file
-		fileData, err := os.ReadFile(file)
-		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
-		}
-
-		// Convert to JSON if needed
-		jsonData, err := format.ValidateAndConvert(fileData)
-		if err != nil {
-			return fmt.Errorf("invalid file format: %w", err)
-		}
-
-		// Apply template rendering if variables provided
-		if len(setFlags) > 0 {
-			templateVars, err := template.ParseSetFlags(setFlags)
-			if err != nil {
-				return fmt.Errorf("invalid --set flag: %w", err)
-			}
-			rendered, err := template.RenderTemplate(string(jsonData), templateVars)
-			if err != nil {
-				return fmt.Errorf("template rendering failed: %w", err)
-			}
-			jsonData = []byte(rendered)
-		}
-
-		// Parse the value
-		var value map[string]any
-		if err := json.Unmarshal(jsonData, &value); err != nil {
-			return fmt.Errorf("failed to parse settings value: %w", err)
-		}
-
-		// Handle dry-run
-		if dryRun {
-			fmt.Printf("Dry run: would update settings object %q\n", objectID)
-			fmt.Println("---")
-			fmt.Println(string(jsonData))
-			fmt.Println("---")
-			return nil
-		}
-
-		// Load configuration
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
-
-		handler := settings.NewHandler(c)
-
-		result, err := handler.UpdateWithContext(objectID, value, schemaID, scope)
-		if err != nil {
-			return fmt.Errorf("failed to update settings object: %w", err)
-		}
-
-		fmt.Printf("Settings object %q updated successfully\n", result.ObjectID)
-		return nil
-	},
-}
-
 // getAnalyzersCmd retrieves Davis analyzers
 var getAnalyzersCmd = &cobra.Command{
 	Use:     "analyzers [name]",
@@ -1779,8 +1677,6 @@ func init() {
 	deleteCmd.AddCommand(deleteAppCmd)
 	deleteCmd.AddCommand(deleteEdgeConnectCmd)
 
-	updateCmd.AddCommand(updateSettingsCmd)
-
 	getWorkflowExecutionsCmd.Flags().StringVarP(&workflowFilter, "workflow", "w", "", "Filter executions by workflow ID")
 	getDashboardsCmd.Flags().String("name", "", "Filter by dashboard name (partial match, case-insensitive)")
 	getDashboardsCmd.Flags().Bool("mine", false, "Show only dashboards owned by current user")
@@ -1804,13 +1700,6 @@ func init() {
 	// Settings flags
 	getSettingsCmd.Flags().String("schema", "", "Schema ID (required when listing or using UID)")
 	getSettingsCmd.Flags().String("scope", "", "Scope to filter settings (e.g., 'environment')")
-
-	// Update settings flags
-	updateSettingsCmd.Flags().StringP("file", "f", "", "file containing settings value (required)")
-	updateSettingsCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	updateSettingsCmd.Flags().String("schema", "", "Schema ID (required when using UID)")
-	updateSettingsCmd.Flags().String("scope", "", "Scope for UID resolution (optional, defaults to 'environment')")
-	_ = updateSettingsCmd.MarkFlagRequired("file")
 
 	// Delete settings flags
 	deleteSettingsCmd.Flags().String("schema", "", "Schema ID (required when using UID)")
