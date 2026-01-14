@@ -145,17 +145,8 @@ func (c *CleanupTracker) deleteResource(resource Resource) error {
 
 	case "settings":
 		handler := settings.NewHandler(c.client)
-		// For settings, we need the version for optimistic locking
-		// Get the current version first
-		obj, err := handler.Get(resource.ID)
-		if err != nil {
-			// Ignore 404 errors - settings already deleted
-			if isNotFoundError(err) {
-				return nil
-			}
-			return fmt.Errorf("failed to get settings version: %w", err)
-		}
-		err = handler.Delete(resource.ID, obj.Version)
+		// Delete handles optimistic locking internally
+		err := handler.Delete(resource.ID)
 		// Ignore 404 errors - resource already deleted is OK
 		if err != nil && isNotFoundError(err) {
 			return nil
