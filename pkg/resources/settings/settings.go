@@ -310,10 +310,10 @@ func (h *Handler) getByUID(uid, schemaID, scope string) (*SettingsObject, error)
 		return nil, fmt.Errorf("schema ID is required when looking up settings by UID. Use --schema flag to specify the schema (e.g., --schema builtin:openpipeline.logs.pipelines)")
 	}
 
-	// Default to environment scope if not provided
-	if scope == "" {
-		scope = "environment"
-	}
+	// If no scope provided, search without scope filter (will search all scopes)
+	// This is more expensive but necessary since we don't know which scope the UID is in
+	// The schemaID filter still keeps this reasonably efficient
+	searchScope := scope
 
 	// Paginate through settings objects, stopping when we find the matching UID
 	// This is more efficient than loading all objects at once
@@ -332,8 +332,9 @@ func (h *Handler) getByUID(uid, schemaID, scope string) (*SettingsObject, error)
 			if schemaID != "" {
 				req.SetQueryParam("schemaIds", schemaID)
 			}
-			if scope != "" {
-				req.SetQueryParam("scopes", scope)
+			// Only add scope filter if explicitly provided
+			if searchScope != "" {
+				req.SetQueryParam("scopes", searchScope)
 			}
 			req.SetQueryParam("pageSize", fmt.Sprintf("%d", pageSize))
 		}
@@ -375,10 +376,10 @@ func (h *Handler) getByUID(uid, schemaID, scope string) (*SettingsObject, error)
 	}
 
 	// Provide helpful error message
-	if scope != "" && scope != "environment" {
-		return nil, fmt.Errorf("settings object with UID %q not found in schema %q with scope %q (searched %d objects)", uid, schemaID, scope, totalSearched)
+	if searchScope != "" {
+		return nil, fmt.Errorf("settings object with UID %q not found in schema %q with scope %q (searched %d objects). Try omitting --scope to search all scopes", uid, schemaID, searchScope, totalSearched)
 	}
-	return nil, fmt.Errorf("settings object with UID %q not found in schema %q (searched %d objects)", uid, schemaID, totalSearched)
+	return nil, fmt.Errorf("settings object with UID %q not found in schema %q (searched %d objects across all scopes)", uid, schemaID, totalSearched)
 }
 
 // ValidateCreate validates a settings object without creating it
