@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
@@ -15,8 +17,11 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/notification"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/openpipeline"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/util/format"
+	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/spf13/cobra"
 )
 
@@ -298,6 +303,14 @@ var deleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Delete resources",
 	Long:  `Delete one or more resources.`,
+	RunE:  requireSubcommand,
+}
+
+// updateCmd represents the update command
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update resources",
+	Long:  `Update resources from files.`,
 	RunE:  requireSubcommand,
 }
 
@@ -1404,6 +1417,153 @@ Examples:
 	},
 }
 
+// deleteSettingsCmd deletes a settings object
+var deleteSettingsCmd = &cobra.Command{
+	Use:   "settings <object-id>",
+	Short: "Delete a settings object",
+	Long: `Delete a settings object by ID.
+
+Examples:
+  # Delete a settings object
+  dtctl delete settings <object-id>
+
+  # Delete without confirmation
+  dtctl delete settings <object-id> -y
+`,
+	Aliases: []string{"setting"},
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		objectID := args[0]
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := settings.NewHandler(c)
+
+		// Get current settings object for confirmation
+		obj, err := handler.Get(objectID)
+		if err != nil {
+			return err
+		}
+
+		// Confirm deletion unless --force or --plain
+		if !forceDelete && !plainMode {
+			summary := obj.Summary
+			if summary == "" {
+				summary = obj.SchemaID
+			}
+			if !prompt.ConfirmDeletion("settings object", summary, objectID) {
+				fmt.Println("Deletion cancelled")
+				return nil
+			}
+		}
+
+		if err := handler.Delete(objectID); err != nil {
+			return err
+		}
+
+		fmt.Printf("Settings object %q deleted\n", objectID)
+		return nil
+	},
+}
+
+// updateSettingsCmd updates a settings object
+var updateSettingsCmd = &cobra.Command{
+	Use:   "settings <object-id> -f <file>",
+	Short: "Update a settings object",
+	Long: `Update an existing settings object from a YAML or JSON file.
+
+Examples:
+  # Update a settings object
+  dtctl update settings <object-id> -f pipeline.yaml
+
+  # Update with template variables
+  dtctl update settings <object-id> -f settings.yaml --set name=prod
+
+  # Dry run to preview
+  dtctl update settings <object-id> -f settings.yaml --dry-run
+`,
+	Aliases: []string{"setting"},
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		objectID := args[0]
+		file, _ := cmd.Flags().GetString("file")
+		setFlags, _ := cmd.Flags().GetStringArray("set")
+
+		if file == "" {
+			return fmt.Errorf("--file is required")
+		}
+
+		// Read the file
+		fileData, err := os.ReadFile(file)
+		if err != nil {
+			return fmt.Errorf("failed to read file: %w", err)
+		}
+
+		// Convert to JSON if needed
+		jsonData, err := format.ValidateAndConvert(fileData)
+		if err != nil {
+			return fmt.Errorf("invalid file format: %w", err)
+		}
+
+		// Apply template rendering if variables provided
+		if len(setFlags) > 0 {
+			templateVars, err := template.ParseSetFlags(setFlags)
+			if err != nil {
+				return fmt.Errorf("invalid --set flag: %w", err)
+			}
+			rendered, err := template.RenderTemplate(string(jsonData), templateVars)
+			if err != nil {
+				return fmt.Errorf("template rendering failed: %w", err)
+			}
+			jsonData = []byte(rendered)
+		}
+
+		// Parse the value
+		var value map[string]any
+		if err := json.Unmarshal(jsonData, &value); err != nil {
+			return fmt.Errorf("failed to parse settings value: %w", err)
+		}
+
+		// Handle dry-run
+		if dryRun {
+			fmt.Printf("Dry run: would update settings object %q\n", objectID)
+			fmt.Println("---")
+			fmt.Println(string(jsonData))
+			fmt.Println("---")
+			return nil
+		}
+
+		// Load configuration
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := settings.NewHandler(c)
+
+		result, err := handler.Update(objectID, value)
+		if err != nil {
+			return fmt.Errorf("failed to update settings object: %w", err)
+		}
+
+		fmt.Printf("Settings object %q updated successfully\n", result.ObjectID)
+		return nil
+	},
+}
+
 // getAnalyzersCmd retrieves Davis analyzers
 var getAnalyzersCmd = &cobra.Command{
 	Use:     "analyzers [name]",
@@ -1495,9 +1655,120 @@ Examples:
 	},
 }
 
+// getSettingsSchemasCmd retrieves settings schemas
+var getSettingsSchemasCmd = &cobra.Command{
+	Use:     "settings-schemas [schema-id]",
+	Aliases: []string{"settings-schema", "schemas", "schema"},
+	Short:   "Get settings schemas",
+	Long: `Get available settings schemas.
+
+Examples:
+  # List all settings schemas
+  dtctl get settings-schemas
+
+  # Get a specific schema definition
+  dtctl get settings-schema builtin:openpipeline.logs.pipelines
+
+  # Output as JSON
+  dtctl get settings-schemas -o json
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := settings.NewHandler(c)
+		printer := NewPrinter()
+
+		// Get specific schema if ID provided
+		if len(args) > 0 {
+			schema, err := handler.GetSchema(args[0])
+			if err != nil {
+				return err
+			}
+			return printer.Print(schema)
+		}
+
+		// List all schemas
+		list, err := handler.ListSchemas()
+		if err != nil {
+			return err
+		}
+
+		return printer.PrintList(list.Items)
+	},
+}
+
+// getSettingsCmd retrieves settings objects
+var getSettingsCmd = &cobra.Command{
+	Use:     "settings [object-id]",
+	Aliases: []string{"setting"},
+	Short:   "Get settings objects",
+	Long: `Get settings objects for a schema.
+
+Examples:
+  # List settings objects for a schema
+  dtctl get settings --schema builtin:openpipeline.logs.pipelines
+
+  # List settings with a specific scope
+  dtctl get settings --schema builtin:openpipeline.logs.pipelines --scope environment
+
+  # Get a specific settings object
+  dtctl get settings <object-id>
+
+  # Output as JSON
+  dtctl get settings --schema builtin:openpipeline.logs.pipelines -o json
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		schemaID, _ := cmd.Flags().GetString("schema")
+		scope, _ := cmd.Flags().GetString("scope")
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := settings.NewHandler(c)
+		printer := NewPrinter()
+
+		// Get specific object if ID provided
+		if len(args) > 0 {
+			obj, err := handler.Get(args[0])
+			if err != nil {
+				return err
+			}
+			return printer.Print(obj)
+		}
+
+		// List objects for schema
+		if schemaID == "" {
+			return fmt.Errorf("--schema is required when listing settings objects")
+		}
+
+		list, err := handler.ListObjects(schemaID, scope, GetChunkSize())
+		if err != nil {
+			return err
+		}
+
+		return printer.PrintList(list.Items)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(updateCmd)
 
 	getCmd.AddCommand(getWorkflowsCmd)
 	getCmd.AddCommand(getWorkflowExecutionsCmd)
@@ -1516,6 +1787,8 @@ func init() {
 	getCmd.AddCommand(getSDKVersionsCmd)
 	getCmd.AddCommand(getAnalyzersCmd)
 	getCmd.AddCommand(getCopilotSkillsCmd)
+	getCmd.AddCommand(getSettingsSchemasCmd)
+	getCmd.AddCommand(getSettingsCmd)
 
 	deleteCmd.AddCommand(deleteWorkflowCmd)
 	deleteCmd.AddCommand(deleteDashboardCmd)
@@ -1524,8 +1797,11 @@ func init() {
 	deleteCmd.AddCommand(deleteNotificationCmd)
 	deleteCmd.AddCommand(deleteBucketCmd)
 	deleteCmd.AddCommand(deleteLookupCmd)
+	deleteCmd.AddCommand(deleteSettingsCmd)
 	deleteCmd.AddCommand(deleteAppCmd)
 	deleteCmd.AddCommand(deleteEdgeConnectCmd)
+
+	updateCmd.AddCommand(updateSettingsCmd)
 
 	getWorkflowExecutionsCmd.Flags().StringVarP(&workflowFilter, "workflow", "w", "", "Filter executions by workflow ID")
 	getDashboardsCmd.Flags().String("name", "", "Filter by dashboard name (partial match, case-insensitive)")
@@ -1547,6 +1823,15 @@ func init() {
 	// Analyzer flags
 	getAnalyzersCmd.Flags().String("filter", "", "Filter analyzers (e.g., \"name contains 'forecast'\")")
 
+	// Settings flags
+	getSettingsCmd.Flags().String("schema", "", "Schema ID to list settings for (required for listing)")
+	getSettingsCmd.Flags().String("scope", "", "Scope to filter settings (e.g., 'environment')")
+
+	// Update settings flags
+	updateSettingsCmd.Flags().StringP("file", "f", "", "file containing settings value (required)")
+	updateSettingsCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
+	_ = updateSettingsCmd.MarkFlagRequired("file")
+
 	// Add --force flag to all delete commands
 	deleteWorkflowCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteDashboardCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
@@ -1555,6 +1840,7 @@ func init() {
 	deleteNotificationCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteBucketCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteLookupCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+	deleteSettingsCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteAppCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteEdgeConnectCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 }

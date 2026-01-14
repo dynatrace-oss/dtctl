@@ -12,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/openpipeline"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/spf13/cobra"
 )
@@ -867,6 +868,80 @@ Examples:
 	},
 }
 
+// describeSettingsSchemaCmd shows detailed info about a settings schema
+var describeSettingsSchemaCmd = &cobra.Command{
+	Use:     "settings-schema <schema-id>",
+	Aliases: []string{"schema"},
+	Short:   "Show details of a settings schema",
+	Long: `Show detailed information about a settings schema including properties and validation rules.
+
+Examples:
+  # Describe a settings schema
+  dtctl describe settings-schema builtin:openpipeline.logs.pipelines
+  dtctl describe schema builtin:anomaly-detection.infrastructure
+`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		schemaID := args[0]
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := settings.NewHandler(c)
+
+		schema, err := handler.GetSchema(schemaID)
+		if err != nil {
+			return err
+		}
+
+		// Extract and print key schema information
+		if schemaID, ok := schema["schemaId"].(string); ok {
+			fmt.Printf("Schema ID:        %s\n", schemaID)
+		}
+		if displayName, ok := schema["displayName"].(string); ok {
+			fmt.Printf("Display Name:     %s\n", displayName)
+		}
+		if description, ok := schema["description"].(string); ok && description != "" {
+			fmt.Printf("Description:      %s\n", description)
+		}
+		if version, ok := schema["version"].(string); ok {
+			fmt.Printf("Version:          %s\n", version)
+		}
+		if multiObj, ok := schema["multiObject"].(bool); ok {
+			fmt.Printf("Multi-Object:     %v\n", multiObj)
+		}
+		if ordered, ok := schema["ordered"].(bool); ok {
+			fmt.Printf("Ordered:          %v\n", ordered)
+		}
+
+		// Print properties if available
+		if properties, ok := schema["properties"].(map[string]any); ok && len(properties) > 0 {
+			fmt.Println()
+			fmt.Printf("Properties:       %d defined\n", len(properties))
+		}
+
+		// Print scopes if available
+		if scopesRaw, ok := schema["scopes"].([]any); ok && len(scopesRaw) > 0 {
+			fmt.Println()
+			fmt.Println("Scopes:")
+			for _, s := range scopesRaw {
+				if scope, ok := s.(string); ok {
+					fmt.Printf("  - %s\n", scope)
+				}
+			}
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(describeCmd)
 	describeCmd.AddCommand(describeWorkflowCmd)
@@ -880,4 +955,5 @@ func init() {
 	describeCmd.AddCommand(describeEdgeConnectCmd)
 	describeCmd.AddCommand(describeUserCmd)
 	describeCmd.AddCommand(describeGroupCmd)
+	describeCmd.AddCommand(describeSettingsSchemaCmd)
 }
