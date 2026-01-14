@@ -89,7 +89,6 @@ type CreateResponse struct {
 // ListSchemas lists all available settings schemas
 func (h *Handler) ListSchemas() (*SchemaList, error) {
 	resp, err := h.client.HTTP().R().
-		SetQueryParam("fields", "schemaId,displayName,description,version,multiObject,ordered,scopes").
 		Get("/platform/classic/environment-api/v2/settings/schemas")
 
 	if err != nil {
@@ -141,8 +140,7 @@ func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*Setting
 	nextPageKey := ""
 
 	for {
-		req := h.client.HTTP().R().
-			SetQueryParam("fields", "objectId,externalId,summary,scope,schemaId,schemaVersion,value,modificationInfo")
+		req := h.client.HTTP().R()
 
 		if schemaID != "" {
 			req.SetQueryParam("schemaIds", schemaID)
