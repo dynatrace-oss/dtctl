@@ -56,17 +56,25 @@ type SettingsObject struct {
 	ModificationInfo *ModificationInfo `json:"modificationInfo,omitempty" table:"-"`
 
 	// Decoded fields (computed from ObjectID, not from API)
-	UID       string `json:"-" table:"UID"`
-	ScopeType string `json:"-" table:"SCOPE_TYPE"`
-	ScopeID   string `json:"-" table:"SCOPE_ID"`
+	ObjectIDShort string `json:"-" yaml:"-" table:"OBJECT_ID_SHORT"`
+	UID           string `json:"-" yaml:"-" table:"UID,wide"`
+	ScopeType     string `json:"-" yaml:"-" table:"SCOPE_TYPE,wide"`
+	ScopeID       string `json:"-" yaml:"-" table:"SCOPE_ID,wide"`
 }
 
-// decodeObjectID decodes the ObjectID and populates UID, ScopeType, and ScopeID fields.
+// decodeObjectID decodes the ObjectID and populates UID, ScopeType, ScopeID, and ObjectIDShort fields.
 // This is called automatically after unmarshaling from the API.
 // Errors are silently ignored to maintain backward compatibility.
 func (s *SettingsObject) decodeObjectID() {
 	if s.ObjectID == "" {
 		return
+	}
+
+	// Create truncated version for table display (first 20 chars + "...")
+	if len(s.ObjectID) > 23 {
+		s.ObjectIDShort = s.ObjectID[:20] + "..."
+	} else {
+		s.ObjectIDShort = s.ObjectID
 	}
 
 	decoded, err := DecodeObjectID(s.ObjectID)
