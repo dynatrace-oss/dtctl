@@ -10,7 +10,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
-	"github.com/dynatrace-oss/dtctl/pkg/resources/openpipeline"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
@@ -527,86 +526,6 @@ Examples:
 	},
 }
 
-// describeOpenPipelineCmd shows detailed info about an OpenPipeline configuration
-var describeOpenPipelineCmd = &cobra.Command{
-	Use:     "openpipeline <config-id>",
-	Aliases: []string{"opp", "pipeline"},
-	Short:   "Show details of an OpenPipeline configuration",
-	Long: `Show detailed information about an OpenPipeline configuration.
-
-Examples:
-  # Describe an OpenPipeline configuration
-  dtctl describe openpipeline logs
-  dtctl describe opp events
-`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		configID := args[0]
-
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
-
-		handler := openpipeline.NewHandler(c)
-
-		config, err := handler.Get(configID)
-		if err != nil {
-			return err
-		}
-
-		// Print configuration details
-		fmt.Printf("ID:             %s\n", config.ID)
-		fmt.Printf("Editable:       %v\n", config.Editable)
-		if config.Version != "" {
-			fmt.Printf("Version:        %s\n", config.Version)
-		}
-		if config.CustomBasePath != "" {
-			fmt.Printf("Custom Path:    %s\n", config.CustomBasePath)
-		}
-
-		// Print endpoints summary
-		if len(config.Endpoints) > 0 {
-			fmt.Println()
-			fmt.Printf("Endpoints: %d\n", len(config.Endpoints))
-			for _, ep := range config.Endpoints {
-				displayName, _ := ep["displayName"].(string)
-				basePath, _ := ep["basePath"].(string)
-				enabled, _ := ep["enabled"].(bool)
-				status := "disabled"
-				if enabled {
-					status = "enabled"
-				}
-				fmt.Printf("  - %s (%s) [%s]\n", displayName, basePath, status)
-			}
-		}
-
-		// Print pipelines summary
-		if len(config.Pipelines) > 0 {
-			fmt.Println()
-			fmt.Printf("Pipelines: %d\n", len(config.Pipelines))
-			for _, p := range config.Pipelines {
-				status := "disabled"
-				if p.Enabled {
-					status = "enabled"
-				}
-				builtinStr := ""
-				if p.Builtin {
-					builtinStr = " (builtin)"
-				}
-				fmt.Printf("  - %s [%s]%s\n", p.DisplayName, status, builtinStr)
-			}
-		}
-
-		return nil
-	},
-}
-
 // describeAppCmd shows detailed info about an app
 var describeAppCmd = &cobra.Command{
 	Use:     "app <app-id>",
@@ -950,7 +869,6 @@ func init() {
 	describeCmd.AddCommand(describeNotebookCmd)
 	describeCmd.AddCommand(describeBucketCmd)
 	describeCmd.AddCommand(describeLookupCmd)
-	describeCmd.AddCommand(describeOpenPipelineCmd)
 	describeCmd.AddCommand(describeAppCmd)
 	describeCmd.AddCommand(describeEdgeConnectCmd)
 	describeCmd.AddCommand(describeUserCmd)

@@ -15,7 +15,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/notification"
-	"github.com/dynatrace-oss/dtctl/pkg/resources/openpipeline"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
@@ -910,56 +909,6 @@ Examples:
 	},
 }
 
-// getOpenPipelinesCmd retrieves OpenPipeline configurations
-var getOpenPipelinesCmd = &cobra.Command{
-	Use:     "openpipelines [id]",
-	Aliases: []string{"openpipeline", "opp", "pipeline", "pipelines"},
-	Short:   "Get OpenPipeline configurations",
-	Long: `Get OpenPipeline configurations.
-
-Examples:
-  # List all OpenPipeline configurations
-  dtctl get openpipelines
-
-  # Get a specific configuration (e.g., logs, events, bizevents)
-  dtctl get openpipeline logs
-
-  # Output as JSON
-  dtctl get openpipelines -o json
-`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
-
-		handler := openpipeline.NewHandler(c)
-		printer := NewPrinter()
-
-		// Get specific configuration if ID provided
-		if len(args) > 0 {
-			config, err := handler.Get(args[0])
-			if err != nil {
-				return err
-			}
-			return printer.Print(config)
-		}
-
-		// List all configurations
-		list, err := handler.List()
-		if err != nil {
-			return err
-		}
-
-		return printer.PrintList(list)
-	},
-}
-
 // getAppsCmd retrieves App Engine apps
 var getAppsCmd = &cobra.Command{
 	Use:     "apps [id]",
@@ -1809,7 +1758,6 @@ func init() {
 	getCmd.AddCommand(getNotificationsCmd)
 	getCmd.AddCommand(getBucketsCmd)
 	getCmd.AddCommand(getLookupsCmd)
-	getCmd.AddCommand(getOpenPipelinesCmd)
 	getCmd.AddCommand(getAppsCmd)
 	getCmd.AddCommand(getEdgeConnectsCmd)
 	getCmd.AddCommand(getUsersCmd)

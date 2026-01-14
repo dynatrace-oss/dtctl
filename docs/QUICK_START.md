@@ -1244,22 +1244,27 @@ For lookup table management, your platform token needs:
 
 ## OpenPipeline
 
-OpenPipeline processes and routes observability data.
+OpenPipeline processes and routes observability data. As of September 2025, OpenPipeline configurations have been migrated from the direct API to the Settings API v2 for better access control and configuration management.
 
-### View Pipeline Configurations
+**Important:** The direct OpenPipeline commands (`dtctl get openpipelines`, `dtctl describe openpipeline`) have been removed. Use the Settings API instead to manage OpenPipeline configurations.
+
+### View Pipeline Configurations via Settings API
 
 ```bash
-# List all pipelines
-dtctl get openpipelines
+# List OpenPipeline schemas
+dtctl get settings-schemas | grep openpipeline
 
-# Get a specific pipeline (by type)
-dtctl get openpipeline logs
+# View specific schema details
+dtctl describe settings-schema builtin:openpipeline.logs.pipelines
 
-# Detailed view with processing rules
-dtctl describe openpipeline logs
+# List log pipelines
+dtctl get settings --schema builtin:openpipeline.logs.pipelines
+
+# Get a specific pipeline by object ID
+dtctl get settings <object-id> --schema builtin:openpipeline.logs.pipelines
 ```
 
-**Note:** Pipeline editing is typically done through the Dynatrace UI. Use `describe` to view current configurations.
+**Note:** See the [Settings API](#settings-api) section below for full details on managing OpenPipeline configurations.
 
 ---
 
@@ -2121,7 +2126,8 @@ For the core features, your platform token needs:
 - **SLOs**: `slo:read`, `slo:write`
 - **Grail Buckets**: `storage:buckets:read`, `storage:buckets:write`
 - **Lookup Tables**: `storage:files:read`, `storage:files:write`, `storage:files:delete`
-- **OpenPipeline**: `openpipeline:configurations:read`, `openpipeline:configurations:write`
+- **OpenPipeline** (via Settings API): `settings:objects:read`, `settings:objects:write`
+- **Settings API**: `settings:objects:read`, `settings:objects:write`, `settings:schemas:read`
 - **Davis Analyzers**: `davis:analyzers:read`, `davis:analyzers:execute`
 - **Davis CoPilot**: `davis-copilot:conversations:execute`
 

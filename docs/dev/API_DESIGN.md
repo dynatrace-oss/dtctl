@@ -473,23 +473,11 @@ dtctl delete edgeconnect <id>                    # Delete EdgeConnect
 ### 11. OpenPipeline
 **API Specs**: `openpipeline-config.yaml`, `openpipeline-ingest.json`
 
+**Note**: The direct OpenPipeline API (`/platform/openpipeline/v1/configurations`) is deprecated and has been migrated to Settings API v2. Use the Settings API with OpenPipeline schemas instead (see Settings API v2 section below).
+
 ```bash
-# Pipeline configurations (read-only)
-# Resource name: openpipeline/openpipelines (short: opp, pipeline, pipelines)
-dtctl get openpipelines                          # List pipelines
-dtctl get openpipeline <id>                      # Get specific pipeline (e.g., logs, events, bizevents)
-dtctl describe openpipeline <id>                 # Pipeline details
-dtctl get openpipelines -o json                  # Output as JSON
-
-# Write operations (not implemented yet)
-# dtctl create pipeline -f pipeline.yaml         # Create pipeline
-# dtctl apply -f pipeline.yaml                   # Update pipeline
-
-# Validation (not implemented yet)
-# dtctl validate pipeline -f pipeline.yaml       # Validate config
-
-# Ingest (not implemented yet)
-# dtctl ingest --pipeline <id> -f data.json      # Test ingest
+# OpenPipeline is now managed via Settings API
+# See Settings API v2 section for details on managing pipelines, ingest sources, and routing
 ```
 
 ### 12. Settings API v2
