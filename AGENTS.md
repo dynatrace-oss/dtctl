@@ -119,7 +119,7 @@ Test: Run `dtctl get <resource> -o <format>`
 ## Testing
 
 - Unit: `*_test.go` files alongside code
-- Integration: `test/integration/`
+- Integration: `test/integration/` (use `.integrationtests.env` for running integration tests)
 - E2E: `test/e2e/*_test.go` (requires live environment)
 - Run: `make test` or `go test ./...`
 

@@ -36,6 +36,7 @@ Supported resource types:
   - Notebooks
   - SLOs
   - Grail buckets
+  - Settings objects
 
 Examples:
   # Create a new dashboard (no ID in file)
@@ -45,6 +46,11 @@ Examples:
   dtctl get dashboard my-dash -o yaml > dashboard.yaml
   # Edit dashboard.yaml...
   dtctl apply -f dashboard.yaml  # Updates the existing dashboard
+
+  # Update a settings object
+  dtctl get settings <objectId> -o yaml > setting.yaml
+  # Edit setting.yaml (modify the 'value' field)...
+  dtctl apply -f setting.yaml  # Updates the existing setting
 
   # Apply with template variables
   dtctl apply -f dashboard.yaml --set environment=prod --set owner=team-a

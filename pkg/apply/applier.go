@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
@@ -53,6 +54,7 @@ const (
 	ResourceNotebook  ResourceType = "notebook"
 	ResourceSLO       ResourceType = "slo"
 	ResourceBucket    ResourceType = "bucket"
+	ResourceSettings  ResourceType = "settings"
 	ResourceUnknown   ResourceType = "unknown"
 )
 
@@ -95,6 +97,8 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) error {
 		return a.applySLO(jsonData)
 	case ResourceBucket:
 		return a.applyBucket(jsonData)
+	case ResourceSettings:
+		return a.applySettings(jsonData)
 	default:
 		return fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
@@ -180,6 +184,23 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	if _, hasBucketName := raw["bucketName"]; hasBucketName {
 		if _, hasTable := raw["table"]; hasTable {
 			return ResourceBucket, nil
+		}
+	}
+
+	// Settings objects have "schemaId"/"schemaid", "scope", and "value" fields
+	// Check both camelCase (API format) and lowercase (YAML format)
+	hasSchemaID := false
+	if _, ok := raw["schemaId"]; ok {
+		hasSchemaID = true
+	} else if _, ok := raw["schemaid"]; ok {
+		hasSchemaID = true
+	}
+
+	if hasSchemaID {
+		if _, hasScope := raw["scope"]; hasScope {
+			if _, hasValue := raw["value"]; hasValue {
+				return ResourceSettings, nil
+			}
 		}
 	}
 
@@ -686,6 +707,106 @@ func (a *Applier) applyBucket(data []byte) error {
 	}
 
 	fmt.Printf("Bucket %q updated successfully\n", b.BucketName)
+	return nil
+}
+
+// applySettings applies a settings object resource
+func (a *Applier) applySettings(data []byte) error {
+	var setting map[string]interface{}
+	if err := json.Unmarshal(data, &setting); err != nil {
+		return fmt.Errorf("failed to parse settings JSON: %w", err)
+	}
+
+	handler := settings.NewHandler(a.client)
+
+	// Extract fields - handle both camelCase (API format) and lowercase (YAML keys)
+	objectID, _ := setting["objectId"].(string)
+	if objectID == "" {
+		objectID, _ = setting["objectid"].(string)
+	}
+
+	schemaID, _ := setting["schemaId"].(string)
+	if schemaID == "" {
+		schemaID, _ = setting["schemaid"].(string)
+	}
+
+	scope, _ := setting["scope"].(string)
+
+	value, ok := setting["value"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("settings object missing 'value' field or value is not an object")
+	}
+
+	// If no objectID, create new settings object
+	if objectID == "" {
+		if schemaID == "" {
+			return fmt.Errorf("schemaId is required to create a settings object")
+		}
+		if scope == "" {
+			return fmt.Errorf("scope is required to create a settings object")
+		}
+
+		req := settings.SettingsObjectCreate{
+			SchemaID: schemaID,
+			Scope:    scope,
+			Value:    value,
+		}
+
+		result, err := handler.Create(req)
+		if err != nil {
+			return fmt.Errorf("failed to create settings object: %w", err)
+		}
+
+		fmt.Printf("Settings object created successfully\n")
+		fmt.Printf("  Schema: %s\n", schemaID)
+		fmt.Printf("  Scope: %s\n", scope)
+		fmt.Printf("  ObjectID: %s\n", result.ObjectID)
+		return nil
+	}
+
+	// Check if settings object exists
+	_, err := handler.GetWithContext(objectID, schemaID, scope)
+	if err != nil {
+		// Doesn't exist - try to create it
+		if schemaID == "" {
+			return fmt.Errorf("schemaId is required to create a settings object (objectId %q not found)", objectID)
+		}
+		if scope == "" {
+			return fmt.Errorf("scope is required to create a settings object (objectId %q not found)", objectID)
+		}
+
+		req := settings.SettingsObjectCreate{
+			SchemaID: schemaID,
+			Scope:    scope,
+			Value:    value,
+		}
+
+		result, err := handler.Create(req)
+		if err != nil {
+			return fmt.Errorf("failed to create settings object: %w", err)
+		}
+
+		fmt.Printf("Settings object created successfully\n")
+		fmt.Printf("  Schema: %s\n", schemaID)
+		fmt.Printf("  Scope: %s\n", scope)
+		fmt.Printf("  ObjectID: %s\n", result.ObjectID)
+		return nil
+	}
+
+	// Update existing settings object
+	updated, err := handler.UpdateWithContext(objectID, value, schemaID, scope)
+	if err != nil {
+		return fmt.Errorf("failed to update settings object: %w", err)
+	}
+
+	fmt.Printf("Settings object updated successfully\n")
+	fmt.Printf("  Schema: %s\n", updated.SchemaID)
+	fmt.Printf("  Scope: %s\n", updated.Scope)
+	fmt.Printf("  ObjectID: %s\n", updated.ObjectID)
+	if updated.Summary != "" {
+		fmt.Printf("  Summary: %s\n", updated.Summary)
+	}
+
 	return nil
 }
 

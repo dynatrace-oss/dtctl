@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package integration
 
 import (
@@ -223,12 +226,12 @@ func TestDetectDashboardFormat(t *testing.T) {
 func setupTestClient(t *testing.T) (*client.Client, func()) {
 	t.Helper()
 
-	// Check if we have required environment variables
-	baseURL := os.Getenv("DTCTL_BASE_URL")
-	token := os.Getenv("DTCTL_TOKEN")
+	// Check if we have required environment variables (using standard names)
+	baseURL := os.Getenv("DTCTL_INTEGRATION_ENV")
+	token := os.Getenv("DTCTL_INTEGRATION_TOKEN")
 
 	if baseURL == "" || token == "" {
-		t.Skip("DTCTL_BASE_URL and DTCTL_TOKEN environment variables required for integration tests")
+		t.Skip("DTCTL_INTEGRATION_ENV and DTCTL_INTEGRATION_TOKEN environment variables required for integration tests")
 	}
 
 	c, err := client.New(baseURL, token)

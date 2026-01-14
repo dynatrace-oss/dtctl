@@ -13,8 +13,8 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/notification"
-	"github.com/dynatrace-oss/dtctl/pkg/resources/openpipeline"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/spf13/cobra"
@@ -298,6 +298,14 @@ var deleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Delete resources",
 	Long:  `Delete one or more resources.`,
+	RunE:  requireSubcommand,
+}
+
+// updateCmd represents the update command
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update resources",
+	Long:  `Update resources from files.`,
 	RunE:  requireSubcommand,
 }
 
@@ -897,56 +905,6 @@ Examples:
 	},
 }
 
-// getOpenPipelinesCmd retrieves OpenPipeline configurations
-var getOpenPipelinesCmd = &cobra.Command{
-	Use:     "openpipelines [id]",
-	Aliases: []string{"openpipeline", "opp", "pipeline", "pipelines"},
-	Short:   "Get OpenPipeline configurations",
-	Long: `Get OpenPipeline configurations.
-
-Examples:
-  # List all OpenPipeline configurations
-  dtctl get openpipelines
-
-  # Get a specific configuration (e.g., logs, events, bizevents)
-  dtctl get openpipeline logs
-
-  # Output as JSON
-  dtctl get openpipelines -o json
-`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
-
-		handler := openpipeline.NewHandler(c)
-		printer := NewPrinter()
-
-		// Get specific configuration if ID provided
-		if len(args) > 0 {
-			config, err := handler.Get(args[0])
-			if err != nil {
-				return err
-			}
-			return printer.Print(config)
-		}
-
-		// List all configurations
-		list, err := handler.List()
-		if err != nil {
-			return err
-		}
-
-		return printer.PrintList(list)
-	},
-}
-
 // getAppsCmd retrieves App Engine apps
 var getAppsCmd = &cobra.Command{
 	Use:     "apps [id]",
@@ -1404,6 +1362,71 @@ Examples:
 	},
 }
 
+// deleteSettingsCmd deletes a settings object
+var deleteSettingsCmd = &cobra.Command{
+	Use:   "settings <object-id-or-uid>",
+	Short: "Delete a settings object",
+	Long: `Delete a settings object by objectId or UID.
+
+You can specify either the full objectId or the UID (UUID format).
+When using a UID, you MUST specify --schema.
+
+Examples:
+  # Delete by objectId
+  dtctl delete settings vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ...
+
+  # Delete by UID (requires --schema)
+  dtctl delete settings e1cd3543-8603-3895-bcee-34d20c700074 --schema builtin:openpipeline.logs.pipelines
+
+  # Delete without confirmation
+  dtctl delete settings <object-id-or-uid> -y
+`,
+	Aliases: []string{"setting"},
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		objectID := args[0]
+		schemaID, _ := cmd.Flags().GetString("schema")
+		scope, _ := cmd.Flags().GetString("scope")
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := settings.NewHandler(c)
+
+		// Get current settings object for confirmation
+		obj, err := handler.GetWithContext(objectID, schemaID, scope)
+		if err != nil {
+			return err
+		}
+
+		// Confirm deletion unless --force or --plain
+		if !forceDelete && !plainMode {
+			summary := obj.Summary
+			if summary == "" {
+				summary = obj.SchemaID
+			}
+			if !prompt.ConfirmDeletion("settings object", summary, objectID) {
+				fmt.Println("Deletion cancelled")
+				return nil
+			}
+		}
+
+		if err := handler.DeleteWithContext(objectID, schemaID, scope); err != nil {
+			return err
+		}
+
+		fmt.Printf("Settings object %q deleted\n", objectID)
+		return nil
+	},
+}
+
 // getAnalyzersCmd retrieves Davis analyzers
 var getAnalyzersCmd = &cobra.Command{
 	Use:     "analyzers [name]",
@@ -1495,9 +1518,134 @@ Examples:
 	},
 }
 
+// getSettingsSchemasCmd retrieves settings schemas
+var getSettingsSchemasCmd = &cobra.Command{
+	Use:     "settings-schemas [schema-id]",
+	Aliases: []string{"settings-schema", "schemas", "schema"},
+	Short:   "Get settings schemas",
+	Long: `Get available settings schemas.
+
+Examples:
+  # List all settings schemas
+  dtctl get settings-schemas
+
+  # Get a specific schema definition
+  dtctl get settings-schema builtin:openpipeline.logs.pipelines
+
+  # Output as JSON
+  dtctl get settings-schemas -o json
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := settings.NewHandler(c)
+		printer := NewPrinter()
+
+		// Get specific schema if ID provided
+		if len(args) > 0 {
+			schema, err := handler.GetSchema(args[0])
+			if err != nil {
+				return err
+			}
+			return printer.Print(schema)
+		}
+
+		// List all schemas
+		list, err := handler.ListSchemas()
+		if err != nil {
+			return err
+		}
+
+		return printer.PrintList(list.Items)
+	},
+}
+
+// getSettingsCmd retrieves settings objects
+var getSettingsCmd = &cobra.Command{
+	Use:     "settings [object-id-or-uid]",
+	Aliases: []string{"setting"},
+	Short:   "Get settings objects",
+	Long: `Get settings objects for a schema.
+
+You can retrieve a specific settings object by providing either:
+- The full objectId (base64-encoded composite key) - no flags needed
+- The UID (UUID format) - REQUIRES --schema flag
+
+When using a UID, you MUST specify --schema to narrow the search. This prevents
+expensive operations that could search through thousands of objects and put load
+on the Dynatrace backend.
+
+Examples:
+  # List settings objects for a schema
+  dtctl get settings --schema builtin:openpipeline.logs.pipelines
+
+  # List settings with a specific scope
+  dtctl get settings --schema builtin:openpipeline.logs.pipelines --scope environment
+
+  # Get by objectId (direct API call, no flags needed)
+  dtctl get settings vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ...
+
+  # Get by UID (requires --schema flag)
+  dtctl get settings e1cd3543-8603-3895-bcee-34d20c700074 --schema builtin:openpipeline.logs.pipelines
+
+  # Get by UID with custom scope
+  dtctl get settings e1cd3543-8603-3895-bcee-34d20c700074 --schema builtin:openpipeline.logs.pipelines --scope environment
+
+  # Output as JSON
+  dtctl get settings --schema builtin:openpipeline.logs.pipelines -o json
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		schemaID, _ := cmd.Flags().GetString("schema")
+		scope, _ := cmd.Flags().GetString("scope")
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := settings.NewHandler(c)
+		printer := NewPrinter()
+
+		// Get specific object if ID provided
+		if len(args) > 0 {
+			obj, err := handler.GetWithContext(args[0], schemaID, scope)
+			if err != nil {
+				return err
+			}
+			return printer.Print(obj)
+		}
+
+		// List objects for schema
+		if schemaID == "" {
+			return fmt.Errorf("--schema is required when listing settings objects")
+		}
+
+		list, err := handler.ListObjects(schemaID, scope, GetChunkSize())
+		if err != nil {
+			return err
+		}
+
+		return printer.PrintList(list.Items)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(updateCmd)
 
 	getCmd.AddCommand(getWorkflowsCmd)
 	getCmd.AddCommand(getWorkflowExecutionsCmd)
@@ -1508,7 +1656,6 @@ func init() {
 	getCmd.AddCommand(getNotificationsCmd)
 	getCmd.AddCommand(getBucketsCmd)
 	getCmd.AddCommand(getLookupsCmd)
-	getCmd.AddCommand(getOpenPipelinesCmd)
 	getCmd.AddCommand(getAppsCmd)
 	getCmd.AddCommand(getEdgeConnectsCmd)
 	getCmd.AddCommand(getUsersCmd)
@@ -1516,6 +1663,8 @@ func init() {
 	getCmd.AddCommand(getSDKVersionsCmd)
 	getCmd.AddCommand(getAnalyzersCmd)
 	getCmd.AddCommand(getCopilotSkillsCmd)
+	getCmd.AddCommand(getSettingsSchemasCmd)
+	getCmd.AddCommand(getSettingsCmd)
 
 	deleteCmd.AddCommand(deleteWorkflowCmd)
 	deleteCmd.AddCommand(deleteDashboardCmd)
@@ -1524,6 +1673,7 @@ func init() {
 	deleteCmd.AddCommand(deleteNotificationCmd)
 	deleteCmd.AddCommand(deleteBucketCmd)
 	deleteCmd.AddCommand(deleteLookupCmd)
+	deleteCmd.AddCommand(deleteSettingsCmd)
 	deleteCmd.AddCommand(deleteAppCmd)
 	deleteCmd.AddCommand(deleteEdgeConnectCmd)
 
@@ -1547,6 +1697,14 @@ func init() {
 	// Analyzer flags
 	getAnalyzersCmd.Flags().String("filter", "", "Filter analyzers (e.g., \"name contains 'forecast'\")")
 
+	// Settings flags
+	getSettingsCmd.Flags().String("schema", "", "Schema ID (required when listing or using UID)")
+	getSettingsCmd.Flags().String("scope", "", "Scope to filter settings (e.g., 'environment')")
+
+	// Delete settings flags
+	deleteSettingsCmd.Flags().String("schema", "", "Schema ID (required when using UID)")
+	deleteSettingsCmd.Flags().String("scope", "", "Scope for UID resolution (optional, defaults to 'environment')")
+
 	// Add --force flag to all delete commands
 	deleteWorkflowCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteDashboardCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
@@ -1555,6 +1713,7 @@ func init() {
 	deleteNotificationCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteBucketCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteLookupCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+	deleteSettingsCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteAppCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteEdgeConnectCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 }
