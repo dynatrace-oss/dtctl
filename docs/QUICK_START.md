@@ -71,23 +71,27 @@ For detailed instructions, see [Dynatrace Platform Tokens documentation](https:/
 Manage multiple Dynatrace environments easily:
 
 ```bash
-# Set up dev environment
+# Set up dev environment with unrestricted access
 dtctl config set-context dev \
   --environment "https://dev.apps.dynatrace.com" \
-  --token-ref dev-token
+  --token-ref dev-token \
+  --safety-level dangerously-unrestricted \
+  --description "Development sandbox"
 
 dtctl config set-credentials dev-token \
   --token "dt0s16.DEV_TOKEN_HERE"
 
-# Set up prod environment
+# Set up prod environment with read-only safety
 dtctl config set-context prod \
   --environment "https://prod.apps.dynatrace.com" \
-  --token-ref prod-token
+  --token-ref prod-token \
+  --safety-level readonly \
+  --description "Production - read only"
 
 dtctl config set-credentials prod-token \
   --token "dt0s16.PROD_TOKEN_HERE"
 
-# List all contexts
+# List all contexts (shows safety levels)
 dtctl config get-contexts
 
 # Switch between environments
@@ -106,6 +110,33 @@ Use a different context without switching:
 # Execute a command in prod while dev is active
 dtctl get workflows --context prod
 ```
+
+### Safety Levels
+
+Safety levels provide **client-side** protection against accidental destructive operations:
+
+| Level | Description |
+|-------|-------------|
+| `readonly` | No modifications allowed |
+| `readwrite-mine` | Modify own resources only |
+| `readwrite-all` | Modify all resources (default) |
+| `dangerously-unrestricted` | All operations including bucket deletion |
+
+```bash
+# Set safety level when creating a context
+dtctl config set-context prod \
+  --environment "https://prod.apps.dynatrace.com" \
+  --token-ref prod-token \
+  --safety-level readonly
+
+# View context details including safety level
+dtctl config describe-context prod
+
+# Bypass safety for a single operation (use with caution)
+dtctl delete dashboard old-dash --override-safety
+```
+
+> **Important**: Safety levels are client-side only. For actual security, configure your API tokens with minimum required scopes. See [Context Safety Levels](dev/context-safety-levels.md) for details.
 
 ### Current User Identity
 

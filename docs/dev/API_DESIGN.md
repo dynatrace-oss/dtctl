@@ -911,11 +911,15 @@ contexts:
   context:
     environment: https://dev.apps.dynatrace.com
     token-ref: dev-token
+    safety-level: dangerously-unrestricted  # Full access for dev
+    description: "Development sandbox"
 
 - name: prod
   context:
     environment: https://prod.apps.dynatrace.com
     token-ref: prod-token
+    safety-level: readonly                   # Read-only for production
+    description: "Production - read only"
 
 tokens:
 - name: dev-token
@@ -928,6 +932,41 @@ preferences:
   output: table
   editor: vim
 ```
+
+### Context Safety Levels
+
+Safety levels provide **client-side** protection against accidental destructive operations. They are a convenience feature to prevent mistakes, **not a security boundary**.
+
+> **Important**: For actual security, use proper API token scopes. Configure your Dynatrace API tokens with the minimum required permissions.
+
+| Level | Description | Bucket Delete |
+|-------|-------------|---------------|
+| `readonly` | No modifications allowed | No |
+| `readwrite-mine` | Modify own resources only | No |
+| `readwrite-all` | Modify all resources (default) | No |
+| `dangerously-unrestricted` | All operations | Yes |
+
+```bash
+# Create a read-only production context
+dtctl config set-context prod-viewer \
+  --environment https://prod.dynatrace.com \
+  --token-ref prod-token \
+  --safety-level readonly
+
+# Create an unrestricted dev context
+dtctl config set-context dev \
+  --environment https://dev.dynatrace.com \
+  --token-ref dev-token \
+  --safety-level dangerously-unrestricted
+
+# View context details including safety level
+dtctl config describe-context prod-viewer
+
+# Bypass safety for a single operation (use with caution)
+dtctl delete bucket temp-data --override-safety --confirm=temp-data
+```
+
+See [Context Safety Levels](context-safety-levels.md) for detailed documentation.
 
 ### Context Management Commands
 
