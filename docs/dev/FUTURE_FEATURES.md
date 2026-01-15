@@ -419,20 +419,6 @@ Support global flags:
 
 ---
 
-## Estimated Effort
-
-- **Platform Management**: 2-3 hours
-- **State Management**: 2-3 hours
-- **Grail Fieldsets**: 4-5 hours
-- **Grail Filter Segments**: 4-5 hours
-- **Grail Resource Store**: 4-5 hours
-- **Testing**: 5-8 hours
-- **Documentation**: 3-4 hours
-
-**Total**: ~25-33 hours (3-4 working days)
-
----
-
 ## Notes
 
 - All new features require corresponding API tokens with appropriate scopes
