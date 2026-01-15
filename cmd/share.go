@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/spf13/cobra"
 )
 
@@ -75,6 +77,18 @@ Examples:
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
+		}
+
+		// Safety check - sharing modifies document permissions
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
+			return err
+		}
+		if checker.IsOverridden() {
+			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -176,6 +190,18 @@ Examples:
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
+		}
+
+		// Safety check - unsharing modifies document permissions
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
+			return err
+		}
+		if checker.IsOverridden() {
+			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
 		}
 
 		c, err := NewClientFromConfig(cfg)
