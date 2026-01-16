@@ -46,7 +46,6 @@ type CheckResult struct {
 type Checker struct {
 	contextName string
 	safetyLevel config.SafetyLevel
-	overridden  bool
 }
 
 // NewChecker creates a new safety checker for a context
@@ -54,7 +53,6 @@ func NewChecker(contextName string, ctx *config.Context) *Checker {
 	return &Checker{
 		contextName: contextName,
 		safetyLevel: ctx.GetEffectiveSafetyLevel(),
-		overridden:  false,
 	}
 }
 
@@ -63,18 +61,7 @@ func NewCheckerWithLevel(contextName string, level config.SafetyLevel) *Checker 
 	return &Checker{
 		contextName: contextName,
 		safetyLevel: level,
-		overridden:  false,
 	}
-}
-
-// SetOverride marks that the safety check was overridden
-func (c *Checker) SetOverride(overridden bool) {
-	c.overridden = overridden
-}
-
-// IsOverridden returns whether the safety check was overridden
-func (c *Checker) IsOverridden() bool {
-	return c.overridden
 }
 
 // SafetyLevel returns the current safety level
@@ -89,11 +76,6 @@ func (c *Checker) ContextName() string {
 
 // Check verifies if an operation is allowed under the current safety level
 func (c *Checker) Check(op Operation, ownership ResourceOwnership) CheckResult {
-	// If overridden, always allow
-	if c.overridden {
-		return CheckResult{Allowed: true}
-	}
-
 	switch c.safetyLevel {
 	case config.SafetyLevelReadOnly:
 		return c.checkReadOnly(op)
@@ -119,7 +101,6 @@ func (c *Checker) checkReadOnly(op Operation) CheckResult {
 		Reason:  fmt.Sprintf("Context '%s' (%s) does not allow %s operations", c.contextName, c.safetyLevel, op),
 		Suggestions: []string{
 			"Switch to a context with write permissions",
-			"Use --override-safety to bypass this check",
 		},
 	}
 }
@@ -144,7 +125,6 @@ func (c *Checker) checkReadWriteMine(op Operation, ownership ResourceOwnership) 
 			Reason:  fmt.Sprintf("Context '%s' (%s) %s", c.contextName, c.safetyLevel, reason),
 			Suggestions: []string{
 				"Switch to a 'readwrite-all' context",
-				"Use --override-safety to bypass this check",
 			},
 		}
 	case OperationDeleteBucket:
@@ -153,7 +133,6 @@ func (c *Checker) checkReadWriteMine(op Operation, ownership ResourceOwnership) 
 			Reason:  fmt.Sprintf("Context '%s' (%s) does not allow bucket deletion", c.contextName, c.safetyLevel),
 			Suggestions: []string{
 				"Bucket operations require 'dangerously-unrestricted' safety level",
-				"Use --override-safety to bypass this check",
 			},
 		}
 	}
@@ -167,7 +146,6 @@ func (c *Checker) checkReadWriteAll(op Operation) CheckResult {
 			Reason:  fmt.Sprintf("Context '%s' (%s) does not allow bucket deletion", c.contextName, c.safetyLevel),
 			Suggestions: []string{
 				"Bucket operations require 'dangerously-unrestricted' safety level",
-				"Use --override-safety to bypass this check",
 			},
 		}
 	}
@@ -191,11 +169,6 @@ func (c *Checker) FormatError(result CheckResult) string {
 	}
 
 	return b.String()
-}
-
-// OverrideWarning returns a warning message when safety is overridden
-func (c *Checker) OverrideWarning(op Operation) string {
-	return fmt.Sprintf("Safety check bypassed: %s operation normally requires higher safety level than '%s'", op, c.safetyLevel)
 }
 
 // CheckError performs a safety check and returns an error if not allowed

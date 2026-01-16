@@ -8,7 +8,7 @@ Context safety levels provide **client-side** protection against accidental dest
 
 > **Important: Client-Side Only**
 >
-> Safety levels are enforced by dtctl on your local machine. They are a convenience feature to prevent accidental mistakes, **not a security boundary**. A determined user can bypass them with `--override-safety` or by using the API directly.
+> Safety levels are enforced by dtctl on your local machine. They are a convenience feature to prevent accidental mistakes, **not a security boundary**. A determined user can bypass them by using the API directly.
 >
 > **For actual security, use proper API token scopes.** Configure your Dynatrace API tokens with the minimum required permissions. See [TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for:
 > - Complete scope lists for each safety level (copy-pasteable)
@@ -187,27 +187,6 @@ dtctl delete bucket test-bucket --confirm=test-bucket
 dtctl delete dashboard any-dashboard -y
 ```
 
-## Bypass Mechanisms
-
-### --override-safety Flag
-
-Bypass safety level checks for a single operation:
-
-```bash
-dtctl delete bucket logs-bucket --override-safety --confirm=logs-bucket
-# ⚠️  Safety check bypassed: bucket deletion requires 'dangerously-unrestricted' level
-# Type the bucket name 'logs-bucket' to confirm: logs-bucket
-```
-
-**Use Cases**:
-- Emergency operations
-- Exceptional circumstances
-- When you know what you're doing
-
-**Behavior**:
-- Prints a warning showing what safety was bypassed
-- Still requires normal confirmation (typing name for buckets, -y for others)
-
 ## Context Management Commands
 
 ```bash
@@ -254,13 +233,12 @@ Operation Requested
 Clear, actionable error messages:
 
 ```
-❌ Operation not allowed:
+Operation not allowed:
    Context: production (readwrite-all)
    Reason: Bucket deletion requires 'dangerously-unrestricted' safety level
 
 Suggestions:
   • Switch to a dangerously-unrestricted context
-  • Use --override-safety (if you have permission)
   • Contact your administrator
 ```
 

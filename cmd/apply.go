@@ -106,9 +106,6 @@ that contains the dashboard ID. The 'create' command always creates new resource
 			if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
 				return err
 			}
-			if checker.IsOverridden() {
-				fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
-			}
 		}
 
 		c, err := NewClientFromConfig(cfg)

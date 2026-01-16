@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
@@ -361,9 +360,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -436,9 +432,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -510,9 +503,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -748,9 +738,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -811,9 +798,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -1247,9 +1231,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -1311,9 +1292,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -1381,9 +1359,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationDeleteBucket, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDeleteBucket))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -1456,9 +1431,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -1533,9 +1505,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationDelete))
 		}
 
 		c, err := NewClientFromConfig(cfg)

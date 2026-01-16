@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
@@ -60,9 +59,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -148,9 +144,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -234,9 +227,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
 		}
 
 		c, err := NewClientFromConfig(cfg)

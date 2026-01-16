@@ -169,9 +169,6 @@ if err != nil {
 if err := checker.CheckError(safety.OperationXXX, safety.OwnershipUnknown); err != nil {
     return err
 }
-if checker.IsOverridden() {
-    fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationXXX))
-}
 
 // Now proceed with operation...
 c, err := NewClientFromConfig(cfg)
@@ -219,11 +216,9 @@ Before submitting code with a new/modified command:
 - [ ] Added `safety` package import
 - [ ] Safety check placed after `LoadConfig()` and before operations
 - [ ] Correct `Operation` type chosen
-- [ ] Override warning shown if `checker.IsOverridden()`
 - [ ] Code compiles: `go build .`
 - [ ] Tests pass: `go test ./pkg/safety/...`
 - [ ] Manually tested with `readonly` context (should block)
-- [ ] Manually tested with `--override-safety` (should warn)
 
 ### Examples
 

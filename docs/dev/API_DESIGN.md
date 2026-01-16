@@ -961,10 +961,6 @@ dtctl config set-context dev \
 # View context details including safety level
 dtctl config describe-context prod-viewer
 
-# Bypass safety for a single operation (use with caution)
-dtctl delete bucket temp-data --override-safety --confirm=temp-data
-```
-
 See [Context Safety Levels](context-safety-levels.md) for detailed documentation.
 
 ### Context Management Commands

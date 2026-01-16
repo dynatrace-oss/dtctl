@@ -86,9 +86,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
-		}
 
 		// Get the workflow as raw JSON
 		data, err := handler.GetRaw(workflowID)
@@ -248,9 +245,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
 		}
 
 		// Get format preference
@@ -412,9 +406,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
-		}
 
 		// Get format preference
 		editFormat, _ := cmd.Flags().GetString("format")
@@ -556,9 +547,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationUpdate))
 		}
 
 		c, err := NewClientFromConfig(cfg)

@@ -98,9 +98,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationCreate))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -295,9 +292,6 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 		}
 		if err := checker.CheckError(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationCreate))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -539,9 +533,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationCreate))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -692,9 +683,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationCreate))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -801,9 +789,6 @@ Examples:
 		if err := checker.CheckError(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return err
 		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationCreate))
-		}
 
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
@@ -901,9 +886,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationCreate))
 		}
 
 		c, err := NewClientFromConfig(cfg)
@@ -1014,9 +996,6 @@ Examples:
 		}
 		if err := checker.CheckError(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return err
-		}
-		if checker.IsOverridden() {
-			fmt.Fprintln(os.Stderr, "⚠️ ", checker.OverrideWarning(safety.OperationCreate))
 		}
 
 		c, err := NewClientFromConfig(cfg)

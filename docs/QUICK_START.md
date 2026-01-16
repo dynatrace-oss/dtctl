@@ -105,6 +105,39 @@ Use a different context without switching:
 dtctl get workflows --context prod
 ```
 
+### Per-Project Configuration
+
+dtctl supports per-project configuration files. Create a `.dtctl.yaml` file in your project directory:
+
+```yaml
+# .dtctl.yaml - per-project configuration
+apiVersion: v1
+kind: Config
+current-context: project-env
+contexts:
+  - name: project-env
+    context:
+      environment: https://project.apps.dynatrace.com
+      token-ref: project-token
+      safety-level: readwrite-all
+```
+
+**Search Order:**
+1. `--config` flag (explicit path)
+2. `.dtctl.yaml` in current directory or any parent directory (walks up to root)
+3. Global config (`~/.config/dtctl/config`)
+
+This allows teams to commit `.dtctl.yaml` files to repositories (without tokens!) and have dtctl automatically use the correct environment settings.
+
+```bash
+# In a project directory with .dtctl.yaml
+cd my-project/
+dtctl get workflows  # Uses .dtctl.yaml automatically
+
+# Override with global config
+dtctl --config ~/.config/dtctl/config get workflows
+```
+
 ### Safety Levels
 
 Safety levels provide **client-side** protection against accidental destructive operations:
@@ -125,9 +158,6 @@ dtctl config set-context prod \
 
 # View context details including safety level
 dtctl config describe-context prod
-
-# Bypass safety for a single operation (use with caution)
-dtctl delete dashboard old-dash --override-safety
 ```
 
 > **Important**: Safety levels are client-side only. For actual security, configure your API tokens with minimum required scopes. See [Token Scopes](TOKEN_SCOPES.md) for scope requirements and [Context Safety Levels](dev/context-safety-levels.md) for details.

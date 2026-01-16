@@ -16,14 +16,13 @@ import (
 )
 
 var (
-	cfgFile        string
-	contextName    string
-	outputFormat   string
-	verbosity      int
-	dryRun         bool
-	plainMode      bool
-	chunkSize      int64
-	overrideSafety bool
+	cfgFile      string
+	contextName  string
+	outputFormat string
+	verbosity    int
+	dryRun       bool
+	plainMode    bool
+	chunkSize    int64
 )
 
 // rootCmd represents the base command
@@ -172,11 +171,6 @@ func GetChunkSize() int64 {
 	return chunkSize
 }
 
-// GetOverrideSafety returns the current override safety setting
-func GetOverrideSafety() bool {
-	return overrideSafety
-}
-
 // NewSafetyChecker creates a new safety checker for the current context
 func NewSafetyChecker(cfg *config.Config) (*safety.Checker, error) {
 	ctx, err := cfg.CurrentContextObj()
@@ -184,9 +178,7 @@ func NewSafetyChecker(cfg *config.Config) (*safety.Checker, error) {
 		return nil, err
 	}
 
-	checker := safety.NewChecker(cfg.CurrentContext, ctx)
-	checker.SetOverride(overrideSafety)
-	return checker, nil
+	return safety.NewChecker(cfg.CurrentContext, ctx), nil
 }
 
 // NewPrinter creates a new printer respecting plain mode setting
@@ -232,14 +224,13 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	// Global flags
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $XDG_CONFIG_HOME/dtctl/config)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (searches .dtctl.yaml upward, then $XDG_CONFIG_HOME/dtctl/config)")
 	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "use a specific context")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "output format: json|yaml|csv|table|wide")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
 	rootCmd.PersistentFlags().BoolVar(&plainMode, "plain", false, "plain output for machine processing (no colors, no interactive prompts)")
 	rootCmd.PersistentFlags().Int64Var(&chunkSize, "chunk-size", 500, "Return large lists in chunks rather than all at once. Pass 0 to disable.")
-	rootCmd.PersistentFlags().BoolVar(&overrideSafety, "override-safety", false, "bypass safety level checks for this operation")
 
 	// Bind flags to viper
 	_ = viper.BindPFlag("context", rootCmd.PersistentFlags().Lookup("context"))
@@ -252,12 +243,18 @@ func initConfig() {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		// Use XDG-compliant config directory
-		configDir := config.ConfigDir()
-		viper.AddConfigPath(configDir)
+		// Check for local config first (.dtctl.yaml in current or parent directories)
+		localConfig := config.FindLocalConfig()
+		if localConfig != "" {
+			viper.SetConfigFile(localConfig)
+		} else {
+			// Fall back to XDG-compliant config directory
+			configDir := config.ConfigDir()
+			viper.AddConfigPath(configDir)
 
-		viper.SetConfigType("yaml")
-		viper.SetConfigName("config")
+			viper.SetConfigType("yaml")
+			viper.SetConfigName("config")
+		}
 	}
 
 	viper.AutomaticEnv()

@@ -15,37 +15,22 @@ func TestNewSafetyChecker(t *testing.T) {
 	tests := []struct {
 		name            string
 		safetyLevel     config.SafetyLevel
-		overrideSafety  bool
 		wantSafetyLevel config.SafetyLevel
-		wantOverridden  bool
 	}{
 		{
 			name:            "readonly context",
 			safetyLevel:     config.SafetyLevelReadOnly,
-			overrideSafety:  false,
 			wantSafetyLevel: config.SafetyLevelReadOnly,
-			wantOverridden:  false,
 		},
 		{
 			name:            "readwrite-all context",
 			safetyLevel:     config.SafetyLevelReadWriteAll,
-			overrideSafety:  false,
 			wantSafetyLevel: config.SafetyLevelReadWriteAll,
-			wantOverridden:  false,
-		},
-		{
-			name:            "readonly with override",
-			safetyLevel:     config.SafetyLevelReadOnly,
-			overrideSafety:  true,
-			wantSafetyLevel: config.SafetyLevelReadOnly,
-			wantOverridden:  true,
 		},
 		{
 			name:            "dangerously-unrestricted",
 			safetyLevel:     config.SafetyLevelDangerouslyUnrestricted,
-			overrideSafety:  false,
 			wantSafetyLevel: config.SafetyLevelDangerouslyUnrestricted,
-			wantOverridden:  false,
 		},
 	}
 
@@ -67,15 +52,12 @@ func TestNewSafetyChecker(t *testing.T) {
 
 			// Setup cmd state
 			origCfgFile := cfgFile
-			origOverrideSafety := overrideSafety
 			defer func() {
 				cfgFile = origCfgFile
-				overrideSafety = origOverrideSafety
 			}()
 
 			viper.Reset()
 			cfgFile = configPath
-			overrideSafety = tt.overrideSafety
 
 			// Load config
 			loadedCfg, err := LoadConfig()
@@ -91,10 +73,6 @@ func TestNewSafetyChecker(t *testing.T) {
 
 			if checker.SafetyLevel() != tt.wantSafetyLevel {
 				t.Errorf("SafetyLevel() = %v, want %v", checker.SafetyLevel(), tt.wantSafetyLevel)
-			}
-
-			if checker.IsOverridden() != tt.wantOverridden {
-				t.Errorf("IsOverridden() = %v, want %v", checker.IsOverridden(), tt.wantOverridden)
 			}
 		})
 	}
@@ -118,15 +96,12 @@ func TestSafetyChecker_ReadonlyBlocksOperations(t *testing.T) {
 
 	// Setup cmd state
 	origCfgFile := cfgFile
-	origOverrideSafety := overrideSafety
 	defer func() {
 		cfgFile = origCfgFile
-		overrideSafety = origOverrideSafety
 	}()
 
 	viper.Reset()
 	cfgFile = configPath
-	overrideSafety = false
 
 	loadedCfg, err := LoadConfig()
 	if err != nil {
@@ -173,77 +148,6 @@ func TestSafetyChecker_ReadonlyBlocksOperations(t *testing.T) {
 	})
 }
 
-// TestSafetyChecker_OverrideBypassesChecks tests that --override-safety flag works
-func TestSafetyChecker_OverrideBypassesChecks(t *testing.T) {
-	// Setup test config with readonly context
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-
-	cfg := config.NewConfig()
-	cfg.SetContextWithOptions("readonly-prod", "https://prod.dt.com", "prod-token", &config.ContextOptions{
-		SafetyLevel: config.SafetyLevelReadOnly,
-	})
-	cfg.CurrentContext = "readonly-prod"
-
-	if err := cfg.SaveTo(configPath); err != nil {
-		t.Fatalf("failed to save config: %v", err)
-	}
-
-	// Setup cmd state WITH override
-	origCfgFile := cfgFile
-	origOverrideSafety := overrideSafety
-	defer func() {
-		cfgFile = origCfgFile
-		overrideSafety = origOverrideSafety
-	}()
-
-	viper.Reset()
-	cfgFile = configPath
-	overrideSafety = true // Enable override!
-
-	loadedCfg, err := LoadConfig()
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-
-	checker, err := NewSafetyChecker(loadedCfg)
-	if err != nil {
-		t.Fatalf("NewSafetyChecker() error = %v", err)
-	}
-
-	// Verify override is set
-	if !checker.IsOverridden() {
-		t.Fatal("Expected IsOverridden() to be true")
-	}
-
-	// All operations should be allowed with override
-	allOperations := []safety.Operation{
-		safety.OperationRead,
-		safety.OperationCreate,
-		safety.OperationUpdate,
-		safety.OperationDelete,
-		safety.OperationDeleteBucket,
-	}
-
-	for _, op := range allOperations {
-		t.Run(string(op), func(t *testing.T) {
-			err := checker.CheckError(op, safety.OwnershipUnknown)
-			if err != nil {
-				t.Errorf("CheckError(%s) with override should not return error, got: %v", op, err)
-			}
-		})
-	}
-
-	// Verify warning message exists
-	warning := checker.OverrideWarning(safety.OperationDelete)
-	if !strings.Contains(warning, "bypassed") {
-		t.Errorf("OverrideWarning should mention bypass, got: %s", warning)
-	}
-	if !strings.Contains(warning, "readonly") {
-		t.Errorf("OverrideWarning should mention safety level, got: %s", warning)
-	}
-}
-
 // TestSafetyChecker_ReadWriteMineBlocksSharedAndUnknown tests readwrite-mine blocks shared and unknown ownership
 func TestSafetyChecker_ReadWriteMineBlocksSharedAndUnknown(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -260,15 +164,12 @@ func TestSafetyChecker_ReadWriteMineBlocksSharedAndUnknown(t *testing.T) {
 	}
 
 	origCfgFile := cfgFile
-	origOverrideSafety := overrideSafety
 	defer func() {
 		cfgFile = origCfgFile
-		overrideSafety = origOverrideSafety
 	}()
 
 	viper.Reset()
 	cfgFile = configPath
-	overrideSafety = false
 
 	loadedCfg, err := LoadConfig()
 	if err != nil {
@@ -345,15 +246,12 @@ func TestSafetyChecker_ReadWriteAllBlocksBucket(t *testing.T) {
 	}
 
 	origCfgFile := cfgFile
-	origOverrideSafety := overrideSafety
 	defer func() {
 		cfgFile = origCfgFile
-		overrideSafety = origOverrideSafety
 	}()
 
 	viper.Reset()
 	cfgFile = configPath
-	overrideSafety = false
 
 	loadedCfg, err := LoadConfig()
 	if err != nil {
@@ -416,15 +314,12 @@ func TestSafetyChecker_DangerouslyUnrestrictedAllowsAll(t *testing.T) {
 	}
 
 	origCfgFile := cfgFile
-	origOverrideSafety := overrideSafety
 	defer func() {
 		cfgFile = origCfgFile
-		overrideSafety = origOverrideSafety
 	}()
 
 	viper.Reset()
 	cfgFile = configPath
-	overrideSafety = false
 
 	loadedCfg, err := LoadConfig()
 	if err != nil {
@@ -461,58 +356,6 @@ func TestSafetyChecker_DangerouslyUnrestrictedAllowsAll(t *testing.T) {
 	}
 }
 
-// TestGetOverrideSafety tests the GetOverrideSafety helper
-func TestGetOverrideSafety(t *testing.T) {
-	tests := []struct {
-		name           string
-		overrideSafety bool
-		want           bool
-	}{
-		{
-			name:           "override enabled",
-			overrideSafety: true,
-			want:           true,
-		},
-		{
-			name:           "override disabled",
-			overrideSafety: false,
-			want:           false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			origOverrideSafety := overrideSafety
-			defer func() {
-				overrideSafety = origOverrideSafety
-			}()
-
-			overrideSafety = tt.overrideSafety
-
-			got := GetOverrideSafety()
-			if got != tt.want {
-				t.Errorf("GetOverrideSafety() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-// TestOverrideSafetyFlagRegistered verifies the --override-safety flag is registered
-func TestOverrideSafetyFlagRegistered(t *testing.T) {
-	flag := rootCmd.PersistentFlags().Lookup("override-safety")
-	if flag == nil {
-		t.Fatal("Expected --override-safety flag to be registered")
-	}
-
-	if flag.DefValue != "false" {
-		t.Errorf("--override-safety default value should be 'false', got: %s", flag.DefValue)
-	}
-
-	if flag.Usage == "" {
-		t.Error("--override-safety flag should have usage text")
-	}
-}
-
 // TestDefaultSafetyLevel tests that default safety level is applied correctly
 func TestDefaultSafetyLevel(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -529,15 +372,12 @@ func TestDefaultSafetyLevel(t *testing.T) {
 	}
 
 	origCfgFile := cfgFile
-	origOverrideSafety := overrideSafety
 	defer func() {
 		cfgFile = origCfgFile
-		overrideSafety = origOverrideSafety
 	}()
 
 	viper.Reset()
 	cfgFile = configPath
-	overrideSafety = false
 
 	loadedCfg, err := LoadConfig()
 	if err != nil {
@@ -584,15 +424,12 @@ func TestSafetyErrorMessages(t *testing.T) {
 	}
 
 	origCfgFile := cfgFile
-	origOverrideSafety := overrideSafety
 	defer func() {
 		cfgFile = origCfgFile
-		overrideSafety = origOverrideSafety
 	}()
 
 	viper.Reset()
 	cfgFile = configPath
-	overrideSafety = false
 
 	loadedCfg, err := LoadConfig()
 	if err != nil {
@@ -613,9 +450,8 @@ func TestSafetyErrorMessages(t *testing.T) {
 
 	// Verify error contains helpful information
 	requiredParts := []string{
-		"production",        // Context name
-		"readonly",          // Safety level
-		"--override-safety", // Suggestion
+		"production", // Context name
+		"readonly",   // Safety level
 	}
 
 	for _, part := range requiredParts {

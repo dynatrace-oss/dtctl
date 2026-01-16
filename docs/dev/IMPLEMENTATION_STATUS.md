@@ -16,7 +16,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Context safety levels (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)
 - [x] HTTP client with retry, rate limiting, error handling
 - [x] Output formatters: JSON, YAML, table, wide, CSV, chart, sparkline, barchart
-- [x] Global flags: `--context`, `--output`, `--verbose`, `--dry-run`, `--chunk-size`, `--show-diff`, `--override-safety`
+- [x] Global flags: `--context`, `--output`, `--verbose`, `--dry-run`, `--chunk-size`, `--show-diff`
 - [x] Shell completion (bash, zsh, fish)
 - [x] Automatic pagination with `--chunk-size` (default 500)
 - [x] User identity: `dtctl auth whoami` (via metadata API with JWT fallback)

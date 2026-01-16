@@ -21,9 +21,6 @@ func TestNewChecker(t *testing.T) {
 	if checker.SafetyLevel() != config.SafetyLevelReadOnly {
 		t.Errorf("SafetyLevel() = %v, want %v", checker.SafetyLevel(), config.SafetyLevelReadOnly)
 	}
-	if checker.IsOverridden() {
-		t.Error("IsOverridden() should be false by default")
-	}
 }
 
 func TestNewChecker_DefaultSafetyLevel(t *testing.T) {
@@ -44,45 +41,6 @@ func TestNewCheckerWithLevel(t *testing.T) {
 
 	if checker.SafetyLevel() != config.SafetyLevelDangerouslyUnrestricted {
 		t.Errorf("SafetyLevel() = %v, want %v", checker.SafetyLevel(), config.SafetyLevelDangerouslyUnrestricted)
-	}
-}
-
-func TestChecker_SetOverride(t *testing.T) {
-	checker := NewCheckerWithLevel("test", config.SafetyLevelReadOnly)
-
-	if checker.IsOverridden() {
-		t.Error("IsOverridden() should be false initially")
-	}
-
-	checker.SetOverride(true)
-	if !checker.IsOverridden() {
-		t.Error("IsOverridden() should be true after SetOverride(true)")
-	}
-
-	checker.SetOverride(false)
-	if checker.IsOverridden() {
-		t.Error("IsOverridden() should be false after SetOverride(false)")
-	}
-}
-
-func TestChecker_OverrideBypassesAllChecks(t *testing.T) {
-	checker := NewCheckerWithLevel("test", config.SafetyLevelReadOnly)
-	checker.SetOverride(true)
-
-	// All operations should be allowed when overridden
-	operations := []Operation{
-		OperationRead,
-		OperationCreate,
-		OperationUpdate,
-		OperationDelete,
-		OperationDeleteBucket,
-	}
-
-	for _, op := range operations {
-		result := checker.Check(op, OwnershipShared)
-		if !result.Allowed {
-			t.Errorf("Override should allow %s operation, got blocked", op)
-		}
 	}
 }
 
@@ -286,29 +244,13 @@ func TestChecker_CheckError(t *testing.T) {
 	}
 }
 
-func TestChecker_OverrideWarning(t *testing.T) {
-	checker := NewCheckerWithLevel("prod", config.SafetyLevelReadOnly)
-
-	warning := checker.OverrideWarning(OperationDelete)
-
-	if !strings.Contains(warning, "delete") {
-		t.Error("Warning should contain operation")
-	}
-	if !strings.Contains(warning, "readonly") {
-		t.Error("Warning should contain safety level")
-	}
-	if !strings.Contains(warning, "bypassed") {
-		t.Error("Warning should indicate bypass")
-	}
-}
-
 func TestSafetyError_Error(t *testing.T) {
 	err := &SafetyError{
 		ContextName: "production",
 		SafetyLevel: config.SafetyLevelReadOnly,
 		Operation:   OperationDelete,
 		Reason:      "Delete not allowed",
-		Suggestions: []string{"Switch context", "Use override"},
+		Suggestions: []string{"Switch context"},
 	}
 
 	errStr := err.Error()

@@ -116,8 +116,52 @@ func DataDir() string {
 	return filepath.Join(xdg.DataHome, "dtctl")
 }
 
-// Load loads the configuration from the default path
+// LocalConfigName is the name of the per-project config file
+const LocalConfigName = ".dtctl.yaml"
+
+// FindLocalConfig searches for a .dtctl.yaml file starting from the current
+// directory and walking up to the root. Returns empty string if not found.
+func FindLocalConfig() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+
+	return findLocalConfigFrom(cwd)
+}
+
+// findLocalConfigFrom searches for .dtctl.yaml starting from the given directory
+func findLocalConfigFrom(startDir string) string {
+	dir := startDir
+	for {
+		configPath := filepath.Join(dir, LocalConfigName)
+		if _, err := os.Stat(configPath); err == nil {
+			return configPath
+		}
+
+		// Move to parent directory
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached root
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// Load loads the configuration with the following precedence:
+//  1. Local config (.dtctl.yaml in current directory or parent directories)
+//  2. Global config (XDG_CONFIG_HOME/dtctl/config)
+//
+// If a local config is found, it is used exclusively (not merged with global).
 func Load() (*Config, error) {
+	// Check for local config first
+	localConfig := FindLocalConfig()
+	if localConfig != "" {
+		return LoadFrom(localConfig)
+	}
+
+	// Fall back to global config
 	return LoadFrom(DefaultConfigPath())
 }
 

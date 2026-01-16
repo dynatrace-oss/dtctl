@@ -554,6 +554,79 @@ func TestConfig_SetContextWithOptions_NilOpts(t *testing.T) {
 	}
 }
 
+func TestFindLocalConfig(t *testing.T) {
+	// Create a temp directory hierarchy
+	tmpDir, err := os.MkdirTemp("", "dtctl-local-config-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create nested directory structure: tmpDir/project/subdir/nested
+	projectDir := filepath.Join(tmpDir, "project")
+	subDir := filepath.Join(projectDir, "subdir")
+	nestedDir := filepath.Join(subDir, "nested")
+	if err := os.MkdirAll(nestedDir, 0755); err != nil {
+		t.Fatalf("Failed to create nested dirs: %v", err)
+	}
+
+	// Test 1: No local config exists
+	result := findLocalConfigFrom(nestedDir)
+	if result != "" {
+		t.Errorf("findLocalConfigFrom() should return empty when no config exists, got %q", result)
+	}
+
+	// Test 2: Create .dtctl.yaml in project root
+	localConfigPath := filepath.Join(projectDir, LocalConfigName)
+	configContent := `apiVersion: v1
+kind: Config
+current-context: local-test
+contexts:
+  - name: local-test
+    context:
+      environment: https://local.dt.com
+      token-ref: local-token
+`
+	if err := os.WriteFile(localConfigPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write local config: %v", err)
+	}
+
+	// Test 3: Find config from project dir
+	result = findLocalConfigFrom(projectDir)
+	if result != localConfigPath {
+		t.Errorf("findLocalConfigFrom(projectDir) = %q, want %q", result, localConfigPath)
+	}
+
+	// Test 4: Find config from nested subdir (walks up to project dir)
+	result = findLocalConfigFrom(nestedDir)
+	if result != localConfigPath {
+		t.Errorf("findLocalConfigFrom(nestedDir) = %q, want %q", result, localConfigPath)
+	}
+
+	// Test 5: Config in subdir takes precedence
+	subConfigPath := filepath.Join(subDir, LocalConfigName)
+	if err := os.WriteFile(subConfigPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write subdir config: %v", err)
+	}
+
+	result = findLocalConfigFrom(nestedDir)
+	if result != subConfigPath {
+		t.Errorf("findLocalConfigFrom(nestedDir) with subdir config = %q, want %q", result, subConfigPath)
+	}
+
+	// Test 6: Starting from root should not find config
+	result = findLocalConfigFrom("/")
+	if result != "" {
+		t.Errorf("findLocalConfigFrom('/') should return empty, got %q", result)
+	}
+}
+
+func TestLocalConfigName(t *testing.T) {
+	if LocalConfigName != ".dtctl.yaml" {
+		t.Errorf("LocalConfigName = %q, want .dtctl.yaml", LocalConfigName)
+	}
+}
+
 func TestConfig_DeleteContext(t *testing.T) {
 	tests := []struct {
 		name        string
