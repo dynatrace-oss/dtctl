@@ -10,12 +10,10 @@ Context safety levels provide **client-side** protection against accidental dest
 >
 > Safety levels are enforced by dtctl on your local machine. They are a convenience feature to prevent accidental mistakes, **not a security boundary**. A determined user can bypass them with `--override-safety` or by using the API directly.
 >
-> **For actual security, use proper API token scopes.** Configure your Dynatrace API tokens with the minimum required permissions. For example:
-> - Use read-only token scopes for monitoring contexts
-> - Avoid granting `storage:buckets:delete` unless absolutely necessary
-> - Create separate tokens for different use cases
->
-> See the [Dynatrace documentation on access tokens](https://docs.dynatrace.com/docs/dynatrace-api/basics/access-tokens) for details on available scopes.
+> **For actual security, use proper API token scopes.** Configure your Dynatrace API tokens with the minimum required permissions. See [TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for:
+> - Complete scope lists for each safety level (copy-pasteable)
+> - Detailed breakdown by resource type
+> - Token creation instructions
 
 ## Safety Levels
 
@@ -325,6 +323,8 @@ contexts:
 
 ## Related Documents
 
+- [TOKEN_SCOPES.md](../TOKEN_SCOPES.md) - **Required API token scopes for each safety level**
+- [QUICK_START.md](../QUICK_START.md) - Configuration examples and usage
 - `config-example.yaml` - Example configuration with safety levels
 - `pkg/config/config.go` - Config structure definition
 - `pkg/safety/checker.go` - Safety validation logic

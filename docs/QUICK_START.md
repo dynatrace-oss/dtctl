@@ -50,21 +50,12 @@ To create a platform token in Dynatrace:
 1. Navigate to **Identity & Access Management > Access Tokens**
 2. Select **Generate new token** and choose **Platform token**
 3. Give it a descriptive name (e.g., "dtctl-token")
-4. Add the required scopes based on what you'll manage (see below)
+4. Add the required scopes based on what you'll manage (see [Token Scopes](TOKEN_SCOPES.md))
 5. Copy the token immediately - it's only shown once!
 
 For detailed instructions, see [Dynatrace Platform Tokens documentation](https://docs.dynatrace.com/docs/manage/identity-access-management/access-tokens-and-oauth-clients/platform-tokens).
 
-**Required Token Scopes by Resource:**
-- **Workflows**: `automation:workflows:read`, `automation:workflows:write`, `automation:workflows:execute`
-- **Documents** (dashboards/notebooks): `document:documents:read`, `document:documents:write`
-- **DQL Queries**: `storage:logs:read`, `storage:events:read`, `storage:metrics:read`, `storage:buckets:read`
-- **SLOs**: `slo:read`, `slo:write`
-- **Grail Buckets**: `storage:buckets:read`, `storage:buckets:write`
-- **Lookup Tables**: `storage:files:read`, `storage:files:write`, `storage:files:delete`
-- **OpenPipeline**: `openpipeline:configurations:read`, `openpipeline:configurations:write`
-- **Davis Analyzers**: `davis:analyzers:read`, `davis:analyzers:execute`
-- **Davis CoPilot**: `davis-copilot:conversations:execute`
+**Required Token Scopes**: See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for a complete list of scopes for each safety level and resource type. You can copy-paste scope lists directly from that document.
 
 ### Multiple Environments
 
@@ -139,7 +130,7 @@ dtctl config describe-context prod
 dtctl delete dashboard old-dash --override-safety
 ```
 
-> **Important**: Safety levels are client-side only. For actual security, configure your API tokens with minimum required scopes. See [Context Safety Levels](dev/context-safety-levels.md) for details.
+> **Important**: Safety levels are client-side only. For actual security, configure your API tokens with minimum required scopes. See [Token Scopes](TOKEN_SCOPES.md) for scope requirements and [Context Safety Levels](dev/context-safety-levels.md) for details.
 
 ### Current User Identity
 
@@ -1358,6 +1349,8 @@ For lookup table management, your platform token needs:
 - **Create/Update**: `storage:files:write`
 - **Delete**: `storage:files:delete`
 
+See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
+
 ---
 
 ## OpenPipeline
@@ -1584,10 +1577,10 @@ dtctl --context prod create settings -f pipeline.yaml \
 ```
 
 **Required Token Scopes:**
-- `settings:schemas:read` - Read schema definitions (included in settings:objects:read)
-- `settings:objects:read` - List and view settings objects
+- `settings:objects:read` - List and view settings objects (includes schema read access)
 - `settings:objects:write` - Create, update, and delete settings objects
-- `settings:objects:admin` - Admin access for routing management (optional)
+
+See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
 
 ---
 
@@ -1866,12 +1859,11 @@ dtctl exec copilot document-search "kubernetes" --collections notebooks -o json
 
 ### Required Token Scopes
 
-For Davis AI features, your platform token needs:
+For Davis AI features:
 - **Analyzers**: `davis:analyzers:read`, `davis:analyzers:execute`
-- **CoPilot Chat**: `davis-copilot:conversations:execute`
-- **NL to DQL**: `davis-copilot:nl2dql:execute`
-- **DQL to NL**: `davis-copilot:dql2nl:execute`
-- **Document Search**: `davis-copilot:document-search:execute`
+- **CoPilot** (all features): `davis-copilot:conversations:execute`
+
+See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
 
 ---
 
@@ -2235,19 +2227,12 @@ dtctl get workflows -v
 
 The `-v` flag enables debug logging and shows detailed HTTP interactions with the API.
 
-### Platform Token Permissions
+### Platform Token Scopes
 
-For the core features, your platform token needs:
-- **Workflows**: `automation:workflows:read`, `automation:workflows:write`, `automation:workflows:execute`
-- **Documents** (dashboards/notebooks): `document:documents:read`, `document:documents:write`
-- **DQL Queries**: `storage:logs:read`, `storage:events:read`, `storage:metrics:read`, `storage:buckets:read`
-- **SLOs**: `slo:read`, `slo:write`
-- **Grail Buckets**: `storage:buckets:read`, `storage:buckets:write`
-- **Lookup Tables**: `storage:files:read`, `storage:files:write`, `storage:files:delete`
-- **OpenPipeline** (via Settings API): `settings:objects:read`, `settings:objects:write`
-- **Settings API**: `settings:objects:read`, `settings:objects:write`, `settings:schemas:read`
-- **Davis Analyzers**: `davis:analyzers:read`, `davis:analyzers:execute`
-- **Davis CoPilot**: `davis-copilot:conversations:execute`
+Your platform token needs appropriate scopes for the resources you want to manage. See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for:
+- Complete scope lists for each safety level (copy-pasteable)
+- Detailed breakdown by resource type
+- Token creation instructions
 
 ---
 

@@ -75,6 +75,7 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 |-------|-------------|
 | [Installation](docs/INSTALLATION.md) | Build from source, shell completion setup |
 | [Quick Start](docs/QUICK_START.md) | Configuration, examples for all resource types |
+| [Token Scopes](docs/TOKEN_SCOPES.md) | Required API token scopes for each safety level |
 | [API Design](docs/dev/API_DESIGN.md) | Complete command reference |
 | [Architecture](docs/dev/ARCHITECTURE.md) | Technical implementation details |
 | [Implementation Status](docs/dev/IMPLEMENTATION_STATUS.md) | Roadmap and feature status |
