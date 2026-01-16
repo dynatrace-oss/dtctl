@@ -212,8 +212,6 @@ For `readwrite-mine` level (own vs shared resources):
 3. **Compare**: Check if resource owner matches current user ID
 4. **Fallback**: If ownership cannot be determined, assume shared (safer)
 
-User can override with: `--assume-mine` flag
-
 ### Safety Check Flow
 
 ```
