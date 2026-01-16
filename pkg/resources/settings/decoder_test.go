@@ -96,6 +96,175 @@ func TestDecodedObjectID_FormattedScope(t *testing.T) {
 	}
 }
 
+func TestDecodedObjectID_FormattedScope_PartialData(t *testing.T) {
+	// Test edge cases with partial data
+	tests := []struct {
+		name string
+		d    *DecodedObjectID
+		want string
+	}{
+		{
+			name: "only scope type",
+			d: &DecodedObjectID{
+				ScopeType: "HOST",
+				ScopeID:   "",
+			},
+			want: "HOST-",
+		},
+		{
+			name: "only scope ID",
+			d: &DecodedObjectID{
+				ScopeType: "",
+				ScopeID:   "12345",
+			},
+			want: "-12345",
+		},
+		{
+			name: "environment scope",
+			d: &DecodedObjectID{
+				SchemaID:  "builtin:alerting.profile",
+				ScopeType: "environment",
+				ScopeID:   "",
+			},
+			want: "environment-",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.d.FormattedScope(); got != tt.want {
+				t.Errorf("FormattedScope() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadLengthPrefixedString(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    []byte
+		offset  int
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "valid string",
+			data:    []byte{0x00, 0x05, 'h', 'e', 'l', 'l', 'o'},
+			offset:  0,
+			want:    "hello",
+			wantErr: false,
+		},
+		{
+			name:    "empty string",
+			data:    []byte{0x00, 0x00},
+			offset:  0,
+			want:    "",
+			wantErr: false,
+		},
+		{
+			name:    "insufficient data for length",
+			data:    []byte{0x00},
+			offset:  0,
+			wantErr: true,
+		},
+		{
+			name:    "insufficient data for string",
+			data:    []byte{0x00, 0x10, 'a', 'b', 'c'}, // Claims 16 bytes but only has 3
+			offset:  0,
+			wantErr: true,
+		},
+		{
+			name:    "offset past end",
+			data:    []byte{0x00, 0x05, 'h', 'e', 'l', 'l', 'o'},
+			offset:  10,
+			wantErr: true,
+		},
+		{
+			name:    "read from middle",
+			data:    []byte{0xFF, 0xFF, 0x00, 0x03, 'a', 'b', 'c'},
+			offset:  2,
+			want:    "abc",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := readLengthPrefixedString(tt.data, tt.offset)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("readLengthPrefixedString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("readLengthPrefixedString() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractUUIDv1Timestamp(t *testing.T) {
+	tests := []struct {
+		name    string
+		uuid    string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "valid v1 UUID",
+			uuid:    "9bea8bdc-ae5f-11f0-8001-adbc4e9fd7b3",
+			wantErr: false,
+		},
+		{
+			name:    "valid v1 UUID without dashes",
+			uuid:    "9bea8bdcae5f11f08001adbc4e9fd7b3",
+			wantErr: false,
+		},
+		{
+			name:    "invalid UUID - too short",
+			uuid:    "9bea8bdc-ae5f-11f0",
+			wantErr: true,
+			errMsg:  "invalid UUID length",
+		},
+		{
+			name:    "invalid UUID - bad hex",
+			uuid:    "ZZZZ8bdc-ae5f-11f0-8001-adbc4e9fd7b3",
+			wantErr: true,
+			errMsg:  "invalid UUID hex",
+		},
+		{
+			name:    "v4 UUID (not v1)",
+			uuid:    "550e8400-e29b-41d4-a716-446655440000", // Version 4
+			wantErr: true,
+			errMsg:  "not a v1 UUID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := extractUUIDv1Timestamp(tt.uuid)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("extractUUIDv1Timestamp() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errMsg != "" {
+				if err == nil || !containsStr(err.Error(), tt.errMsg) {
+					t.Errorf("extractUUIDv1Timestamp() error = %v, want error containing %q", err, tt.errMsg)
+				}
+			}
+		})
+	}
+}
+
+// Helper function
+func containsStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 func TestDecodeVersion(t *testing.T) {
 	tests := []struct {
 		name         string

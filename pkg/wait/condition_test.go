@@ -447,3 +447,85 @@ func indexOf(s, substr string) int {
 	}
 	return -1
 }
+
+func TestConditionEvaluate_UnknownOperator(t *testing.T) {
+	// Test with an unknown operator - should return false
+	c := Condition{
+		Type:     ConditionTypeCount,
+		Operator: Operator("!="), // Invalid operator
+		Value:    5,
+	}
+
+	if c.Evaluate(5) {
+		t.Error("Evaluate with unknown operator should return false")
+	}
+	if c.Evaluate(10) {
+		t.Error("Evaluate with unknown operator should return false")
+	}
+}
+
+func TestConditionString_UnknownType(t *testing.T) {
+	// Test String() with unknown type
+	c := Condition{
+		Type:     ConditionType("unknown"),
+		Operator: OpEqual,
+		Value:    5,
+	}
+
+	result := c.String()
+	// Should fallback to default format
+	if result == "" {
+		t.Error("String() should return non-empty for unknown type")
+	}
+}
+
+func TestConditionString_UnknownOperatorInCount(t *testing.T) {
+	// Test String() with count type but unknown operator
+	c := Condition{
+		Type:     ConditionTypeCount,
+		Operator: Operator("!="),
+		Value:    5,
+	}
+
+	result := c.String()
+	// Should fallback to default format showing the operator
+	if result == "" {
+		t.Error("String() should return non-empty for unknown operator")
+	}
+	if !contains(result, "!=") {
+		t.Errorf("String() should contain operator, got %q", result)
+	}
+}
+
+func TestParseCondition_Whitespace(t *testing.T) {
+	// Test various whitespace scenarios
+	tests := []struct {
+		input    string
+		wantType ConditionType
+		wantErr  bool
+	}{
+		{"  any  ", ConditionTypeAny, false},
+		{"\tnone\t", ConditionTypeNone, false},
+		{" count = 10 ", ConditionTypeCount, false},
+		{"   ", "", true}, // Only whitespace should fail
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := ParseCondition(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error for whitespace-only input")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if got.Type != tt.wantType {
+				t.Errorf("Type = %v, want %v", got.Type, tt.wantType)
+			}
+		})
+	}
+}

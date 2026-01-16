@@ -2,6 +2,7 @@ package lookup
 
 import (
 	"testing"
+	"time"
 )
 
 func TestValidatePath(t *testing.T) {
@@ -344,6 +345,125 @@ func TestFormatTimestamp(t *testing.T) {
 				t.Errorf("formatTimestamp() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFormatTimestamp_RelativeTimes(t *testing.T) {
+	// Test relative time formatting with actual timestamps
+	now := time.Now()
+
+	tests := []struct {
+		name        string
+		timestamp   time.Time
+		wantContain string
+	}{
+		{
+			name:        "just now",
+			timestamp:   now.Add(-30 * time.Second),
+			wantContain: "just now",
+		},
+		{
+			name:        "minutes ago",
+			timestamp:   now.Add(-5 * time.Minute),
+			wantContain: "m ago",
+		},
+		{
+			name:        "hours ago",
+			timestamp:   now.Add(-3 * time.Hour),
+			wantContain: "h ago",
+		},
+		{
+			name:        "days ago",
+			timestamp:   now.Add(-5 * 24 * time.Hour),
+			wantContain: "d ago",
+		},
+		{
+			name:        "old date",
+			timestamp:   now.Add(-60 * 24 * time.Hour),
+			wantContain: "-", // Date format contains hyphens like 2024-01-15
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := tt.timestamp.Format(time.RFC3339)
+			got := formatTimestamp(ts)
+			if !contains(got, tt.wantContain) {
+				t.Errorf("formatTimestamp(%s) = %v, want to contain %q", ts, got, tt.wantContain)
+			}
+		})
+	}
+}
+
+func TestParseIntFromString(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{
+			name:    "valid integer",
+			input:   "123",
+			want:    123,
+			wantErr: false,
+		},
+		{
+			name:    "zero",
+			input:   "0",
+			want:    0,
+			wantErr: false,
+		},
+		{
+			name:    "negative",
+			input:   "-456",
+			want:    -456,
+			wantErr: false,
+		},
+		{
+			name:    "large number",
+			input:   "1000000",
+			want:    1000000,
+			wantErr: false,
+		},
+		{
+			name:    "invalid - letters",
+			input:   "abc",
+			wantErr: true,
+		},
+		{
+			name:    "invalid - empty",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "invalid - mixed",
+			input:   "123abc",
+			want:    123, // Sscanf parses until first non-digit
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseIntFromString(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseIntFromString(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("parseIntFromString(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewHandler(t *testing.T) {
+	// Just test that NewHandler doesn't panic with nil
+	// In real usage, client would never be nil
+	h := NewHandler(nil)
+	if h == nil {
+		t.Error("NewHandler returned nil")
 	}
 }
 

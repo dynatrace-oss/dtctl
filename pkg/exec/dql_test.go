@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -423,6 +424,198 @@ func TestDQLQueryResponse_ParseNotificationsFromJSON(t *testing.T) {
 	}
 	if response.Metadata.Grail.ExecutionTimeMilliseconds != 1676 {
 		t.Errorf("expected executionTimeMilliseconds 1676, got %d", response.Metadata.Grail.ExecutionTimeMilliseconds)
+	}
+}
+
+func TestGetHintForNotification(t *testing.T) {
+	tests := []struct {
+		name             string
+		notificationType string
+		message          string
+		wantHint         bool
+		wantContains     string
+	}{
+		{
+			name:             "scan limit by type",
+			notificationType: "SCAN_LIMIT_GBYTES",
+			message:          "",
+			wantHint:         true,
+			wantContains:     "--default-scan-limit-gbytes",
+		},
+		{
+			name:             "result limit records by type",
+			notificationType: "RESULT_LIMIT_RECORDS",
+			message:          "",
+			wantHint:         true,
+			wantContains:     "--max-result-records",
+		},
+		{
+			name:             "result limit bytes by type",
+			notificationType: "RESULT_LIMIT_BYTES",
+			message:          "",
+			wantHint:         true,
+			wantContains:     "--max-result-bytes",
+		},
+		{
+			name:             "fetch timeout by type",
+			notificationType: "FETCH_TIMEOUT",
+			message:          "",
+			wantHint:         true,
+			wantContains:     "--fetch-timeout-seconds",
+		},
+		{
+			name:             "sampling applied by type",
+			notificationType: "SAMPLING_APPLIED",
+			message:          "",
+			wantHint:         true,
+			wantContains:     "--default-sampling-ratio",
+		},
+		{
+			name:             "consumption limit by type",
+			notificationType: "QUERY_CONSUMPTION_LIMIT",
+			message:          "",
+			wantHint:         true,
+			wantContains:     "--enforce-query-consumption-limit",
+		},
+		{
+			name:             "result limited by message pattern",
+			notificationType: "",
+			message:          "Result has been limited to 1000 records",
+			wantHint:         true,
+			wantContains:     "--max-result-records",
+		},
+		{
+			name:             "scan gigabyte by message pattern",
+			notificationType: "",
+			message:          "Scan stopped after 500 gigabytes were processed",
+			wantHint:         true,
+			wantContains:     "--default-scan-limit-gbytes",
+		},
+		{
+			name:             "unknown notification type",
+			notificationType: "UNKNOWN_TYPE",
+			message:          "",
+			wantHint:         false,
+		},
+		{
+			name:             "empty notification",
+			notificationType: "",
+			message:          "",
+			wantHint:         false,
+		},
+		{
+			name:             "unrelated message",
+			notificationType: "",
+			message:          "Query completed successfully",
+			wantHint:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hint := getHintForNotification(tt.notificationType, tt.message)
+
+			if tt.wantHint {
+				if hint == "" {
+					t.Error("expected a hint, got empty string")
+				}
+				if tt.wantContains != "" && !strings.Contains(hint, tt.wantContains) {
+					t.Errorf("hint %q should contain %q", hint, tt.wantContains)
+				}
+			} else {
+				if hint != "" {
+					t.Errorf("expected no hint, got %q", hint)
+				}
+			}
+		})
+	}
+}
+
+func TestNewDQLExecutor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	if executor == nil {
+		t.Error("NewDQLExecutor returned nil")
+	}
+	if executor.client != c {
+		t.Error("executor client not set correctly")
+	}
+}
+
+func TestDQLExecutor_ExecuteQueryWithOptions_RunningNoToken(t *testing.T) {
+	// Test error when query is running but no request token is returned
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := DQLQueryResponse{
+			State:        "RUNNING",
+			RequestToken: "", // Missing token
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	_, err = executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
+
+	if err == nil {
+		t.Fatal("expected error for missing request token")
+	}
+	if !strings.Contains(err.Error(), "no request token") {
+		t.Errorf("expected 'no request token' error, got: %v", err)
+	}
+}
+
+func TestDQLExecutor_ExecuteQueryWithOptions_PollFailed(t *testing.T) {
+	// Test handling of FAILED state during polling
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+
+		if r.URL.Path == "/platform/storage/query/v1/query:execute" {
+			response := DQLQueryResponse{
+				State:        "RUNNING",
+				RequestToken: "test-token-123",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+		} else if r.URL.Path == "/platform/storage/query/v1/query:poll" {
+			response := DQLQueryResponse{
+				State: "FAILED",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(response)
+		}
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	_, err = executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
+
+	if err == nil {
+		t.Fatal("expected error for failed query")
+	}
+	if !strings.Contains(err.Error(), "failed") {
+		t.Errorf("expected 'failed' in error, got: %v", err)
 	}
 }
 
