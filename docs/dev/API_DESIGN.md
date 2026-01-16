@@ -777,10 +777,9 @@ dtctl create lookup -f error_codes.csv \
 - `fetch dt.system.files | filter path starts_with "/lookups/"` - List (via DQL)
 - `load "<path>"` - Load data (via DQL)
 
-**Required Scopes**:
-- Read operations: `storage:files:read`
-- Write operations: `storage:files:write`
-- Delete operations: `storage:files:delete`
+**Required Scopes**: `storage:files:read`, `storage:files:write`, `storage:files:delete`
+
+See [../TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for complete scope reference.
 
 ### 18. Email (Templates)
 **API Spec**: `email.yaml`

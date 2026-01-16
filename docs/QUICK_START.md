@@ -1344,10 +1344,9 @@ dtctl create lookup -f new_data.csv \
 
 ### Required Token Scopes
 
-For lookup table management, your platform token needs:
-- **List/View**: `storage:files:read`
-- **Create/Update**: `storage:files:write`
-- **Delete**: `storage:files:delete`
+For lookup table management: `storage:files:read`, `storage:files:write`, `storage:files:delete`
+
+See [TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for complete scope reference.
 
 See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
 

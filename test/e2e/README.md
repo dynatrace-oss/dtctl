@@ -27,27 +27,15 @@ export DTCTL_INTEGRATION_TOKEN="dt0s16.YOUR_PLATFORM_TOKEN"
 
 ### Required Token Scopes
 
-Your platform token must have the following scopes:
+Your platform token needs scopes for:
+- Workflows: `automation:workflows:*`
+- Documents: `document:documents:*`
+- Storage: `storage:buckets:*`, `storage:logs:read`
+- Settings: `settings:objects:*`, `settings:schemas:read`
+- SLOs: `slo:*`
+- EdgeConnect: `app-engine:edge-connects:*`
 
-**Workflows & Automation:**
-- `automation:workflows:read`, `automation:workflows:write`, `automation:workflows:execute`
-
-**Documents (Dashboards & Notebooks):**
-- `document:documents:read`, `document:documents:write`
-
-**Storage (Grail Buckets):**
-- `storage:buckets:read`, `storage:buckets:write`
-- `storage:logs:read`
-
-**Settings:**
-- `settings:objects:read`, `settings:objects:write`
-- `settings:schemas:read`
-
-**SLOs:**
-- `slo:read`, `slo:write`
-
-**EdgeConnect:**
-- `app-engine:edge-connects:read`, `app-engine:edge-connects:write`
+See [../../docs/TOKEN_SCOPES.md](../../docs/TOKEN_SCOPES.md) for complete scope reference.
 
 ### Creating a Platform Token
 
