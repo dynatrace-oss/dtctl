@@ -14,6 +14,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
@@ -28,13 +29,39 @@ func isUUID(s string) bool {
 
 // Applier handles resource apply operations
 type Applier struct {
-	client  *client.Client
-	baseURL string
+	client        *client.Client
+	baseURL       string
+	safetyChecker *safety.Checker
+	currentUserID string
 }
 
 // NewApplier creates a new applier
 func NewApplier(c *client.Client) *Applier {
-	return &Applier{client: c, baseURL: c.BaseURL()}
+	currentUserID, _ := c.CurrentUserID() // Ignore error - will be empty string
+	return &Applier{
+		client:        c,
+		baseURL:       c.BaseURL(),
+		currentUserID: currentUserID,
+	}
+}
+
+// WithSafetyChecker sets the safety checker for the applier
+func (a *Applier) WithSafetyChecker(checker *safety.Checker) *Applier {
+	a.safetyChecker = checker
+	return a
+}
+
+// checkSafety performs a safety check if a checker is configured
+func (a *Applier) checkSafety(op safety.Operation, ownership safety.ResourceOwnership) error {
+	if a.safetyChecker == nil {
+		return nil // No checker configured, allow operation
+	}
+	return a.safetyChecker.CheckError(op, ownership)
+}
+
+// determineOwnership determines resource ownership given an owner ID
+func (a *Applier) determineOwnership(resourceOwnerID string) safety.ResourceOwnership {
+	return safety.DetermineOwnership(resourceOwnerID, a.currentUserID)
 }
 
 // ApplyOptions holds options for apply operation
@@ -220,6 +247,11 @@ func (a *Applier) applyWorkflow(data []byte) error {
 	id, hasID := wf["id"].(string)
 	if !hasID || id == "" {
 		// Create new workflow
+		// Safety check for create operation
+		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
+			return err
+		}
+
 		result, err := handler.Create(data)
 		if err != nil {
 			return fmt.Errorf("failed to create workflow: %w", err)
@@ -229,15 +261,26 @@ func (a *Applier) applyWorkflow(data []byte) error {
 	}
 
 	// Check if workflow exists
-	_, err := handler.Get(id)
+	existing, err := handler.Get(id)
 	if err != nil {
 		// Workflow doesn't exist, create it
+		// Safety check for create operation
+		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
+			return err
+		}
+
 		result, err := handler.Create(data)
 		if err != nil {
 			return fmt.Errorf("failed to create workflow: %w", err)
 		}
 		fmt.Printf("Workflow %q (%s) created successfully\n", result.Title, result.ID)
 		return nil
+	}
+
+	// Safety check for update operation - determine ownership from existing workflow
+	ownership := a.determineOwnership(existing.Owner)
+	if err := a.checkSafety(safety.OperationUpdate, ownership); err != nil {
+		return err
 	}
 
 	// Update existing workflow
@@ -274,6 +317,11 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	id, hasID := doc["id"].(string)
 	if !hasID || id == "" {
 		// No ID provided - create new document
+		// Safety check for create operation
+		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
+			return err
+		}
+
 		if name == "" {
 			name = fmt.Sprintf("Untitled %s", docType)
 		}
@@ -313,6 +361,11 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	metadata, err := handler.GetMetadata(id)
 	if err != nil {
 		// Document doesn't exist, create it
+		// Safety check for create operation
+		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
+			return err
+		}
+
 		if name == "" {
 			name = fmt.Sprintf("Untitled %s", docType)
 		}
@@ -355,6 +408,12 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 			fmt.Printf("URL: %s\n", a.documentURL(docType, result.ID))
 		}
 		return nil
+	}
+
+	// Safety check for update operation - determine ownership from metadata
+	ownership := a.determineOwnership(metadata.Owner)
+	if err := a.checkSafety(safety.OperationUpdate, ownership); err != nil {
+		return err
 	}
 
 	// Show diff if requested

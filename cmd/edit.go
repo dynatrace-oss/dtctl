@@ -234,9 +234,16 @@ Examples:
 			return err
 		}
 
+		// Get metadata separately for ownership check - the multipart response
+		// from Get() may not include the owner field
+		metadata, err := handler.GetMetadata(dashboardID)
+		if err != nil {
+			return err
+		}
+
 		// Determine ownership for safety check
 		currentUserID, _ := c.CurrentUserID() // Ignore error - will be empty string
-		ownership := safety.DetermineOwnership(doc.Owner, currentUserID)
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
 
 		// Safety check with actual ownership
 		checker, err := NewSafetyChecker(cfg)
@@ -327,8 +334,9 @@ Examples:
 			return nil
 		}
 
-		// Get current metadata for version (optimistic locking)
-		metadata, err := handler.GetMetadata(dashboardID)
+		// Re-fetch metadata for version (optimistic locking) - the document may have been
+		// modified since we fetched it for the ownership check
+		metadata, err = handler.GetMetadata(dashboardID)
 		if err != nil {
 			return err
 		}
@@ -394,9 +402,16 @@ Examples:
 			return err
 		}
 
+		// Get metadata separately for ownership check - the multipart response
+		// from Get() may not include the owner field
+		metadata, err := handler.GetMetadata(notebookID)
+		if err != nil {
+			return err
+		}
+
 		// Determine ownership for safety check
 		currentUserID, _ := c.CurrentUserID() // Ignore error - will be empty string
-		ownership := safety.DetermineOwnership(doc.Owner, currentUserID)
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
 
 		// Safety check with actual ownership
 		checker, err := NewSafetyChecker(cfg)
@@ -487,8 +502,9 @@ Examples:
 			return nil
 		}
 
-		// Get current metadata for version (optimistic locking)
-		metadata, err := handler.GetMetadata(notebookID)
+		// Re-fetch metadata for version (optimistic locking) - the document may have been
+		// modified since we fetched it for the ownership check
+		metadata, err = handler.GetMetadata(notebookID)
 		if err != nil {
 			return err
 		}

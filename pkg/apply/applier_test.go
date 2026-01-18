@@ -7,6 +7,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
 func TestDetectResourceType(t *testing.T) {
@@ -685,4 +688,150 @@ func TestDetectResourceTypeEdgeCases(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestApplierSafetyCheckMethods tests the safety checking helper methods on the Applier
+// This is a regression test for the bug where readwrite-mine would always fail because
+// the safety check used OwnershipUnknown instead of determining actual ownership.
+func TestApplierSafetyCheckMethods(t *testing.T) {
+	t.Run("determineOwnership returns correct ownership", func(t *testing.T) {
+		// Test with matching user IDs
+		a := &Applier{currentUserID: "user-123"}
+		ownership := a.determineOwnership("user-123")
+		if ownership != safety.OwnershipOwn {
+			t.Errorf("expected OwnershipOwn, got %v", ownership)
+		}
+
+		// Test with different user IDs
+		ownership = a.determineOwnership("user-456")
+		if ownership != safety.OwnershipShared {
+			t.Errorf("expected OwnershipShared, got %v", ownership)
+		}
+
+		// Test with empty resource owner
+		ownership = a.determineOwnership("")
+		if ownership != safety.OwnershipUnknown {
+			t.Errorf("expected OwnershipUnknown when resource owner is empty, got %v", ownership)
+		}
+
+		// Test with empty current user
+		a2 := &Applier{currentUserID: ""}
+		ownership = a2.determineOwnership("user-123")
+		if ownership != safety.OwnershipUnknown {
+			t.Errorf("expected OwnershipUnknown when current user is empty, got %v", ownership)
+		}
+	})
+
+	t.Run("checkSafety with readwrite-mine allows own resource updates", func(t *testing.T) {
+		checker := safety.NewChecker("test-context", &config.Context{
+			SafetyLevel: config.SafetyLevelReadWriteMine,
+		})
+
+		a := &Applier{
+			currentUserID: "user-123",
+			safetyChecker: checker,
+		}
+
+		// Create operations should be allowed
+		err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown)
+		if err != nil {
+			t.Errorf("create should be allowed in readwrite-mine: %v", err)
+		}
+
+		// Update of own resource should be allowed
+		err = a.checkSafety(safety.OperationUpdate, safety.OwnershipOwn)
+		if err != nil {
+			t.Errorf("update of own resource should be allowed: %v", err)
+		}
+
+		// Update of shared resource should be blocked
+		err = a.checkSafety(safety.OperationUpdate, safety.OwnershipShared)
+		if err == nil {
+			t.Error("update of shared resource should be blocked in readwrite-mine")
+		}
+
+		// Update with unknown ownership should be blocked (this was the bug!)
+		err = a.checkSafety(safety.OperationUpdate, safety.OwnershipUnknown)
+		if err == nil {
+			t.Error("update with unknown ownership should be blocked in readwrite-mine")
+		}
+	})
+
+	t.Run("checkSafety without checker allows all operations", func(t *testing.T) {
+		// Applier without safety checker should allow everything
+		a := &Applier{currentUserID: "user-123"}
+
+		err := a.checkSafety(safety.OperationUpdate, safety.OwnershipShared)
+		if err != nil {
+			t.Errorf("without checker, all operations should be allowed: %v", err)
+		}
+	})
+}
+
+// TestApplierOwnershipDeterminationRegression is a regression test that verifies
+// the fix for the bug where apply/edit commands with readwrite-mine safety level
+// would always fail because ownership was not properly determined from metadata.
+//
+// The bug was:
+// 1. cmd/apply.go did safety check with OwnershipUnknown BEFORE knowing if it's create/update
+// 2. readwrite-mine blocks updates with OwnershipUnknown
+// 3. Therefore, apply would always fail with readwrite-mine even for your own resources
+//
+// The fix:
+// 1. Safety checks now happen INSIDE the applier methods
+// 2. For updates, ownership is determined from the resource metadata (which includes owner)
+// 3. Create operations use OwnershipUnknown (which is allowed in readwrite-mine)
+func TestApplierOwnershipDeterminationRegression(t *testing.T) {
+	t.Run("readwrite-mine allows create with OwnershipUnknown", func(t *testing.T) {
+		checker := safety.NewChecker("test", &config.Context{
+			SafetyLevel: config.SafetyLevelReadWriteMine,
+		})
+
+		a := &Applier{safetyChecker: checker}
+
+		// This is what happens for new resource creation
+		err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown)
+		if err != nil {
+			t.Errorf("BUG: readwrite-mine should allow creates: %v", err)
+		}
+	})
+
+	t.Run("readwrite-mine blocks update with OwnershipUnknown", func(t *testing.T) {
+		checker := safety.NewChecker("test", &config.Context{
+			SafetyLevel: config.SafetyLevelReadWriteMine,
+		})
+
+		a := &Applier{safetyChecker: checker}
+
+		// This is what the OLD buggy code did - it passed OwnershipUnknown for updates
+		err := a.checkSafety(safety.OperationUpdate, safety.OwnershipUnknown)
+		if err == nil {
+			t.Error("readwrite-mine should block updates with unknown ownership")
+		}
+	})
+
+	t.Run("readwrite-mine allows update when ownership is properly determined", func(t *testing.T) {
+		checker := safety.NewChecker("test", &config.Context{
+			SafetyLevel: config.SafetyLevelReadWriteMine,
+		})
+
+		// Simulate: current user is "user-123", resource owner is also "user-123"
+		a := &Applier{
+			currentUserID: "user-123",
+			safetyChecker: checker,
+		}
+
+		// This is what the NEW fixed code does - it determines ownership from metadata
+		resourceOwner := "user-123" // This comes from metadata.Owner or wf.Owner
+		ownership := a.determineOwnership(resourceOwner)
+
+		if ownership != safety.OwnershipOwn {
+			t.Errorf("expected OwnershipOwn, got %v", ownership)
+		}
+
+		err := a.checkSafety(safety.OperationUpdate, ownership)
+		if err != nil {
+			t.Errorf("BUG: readwrite-mine should allow updating own resources: %v", err)
+		}
+	})
 }
