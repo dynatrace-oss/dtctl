@@ -76,3 +76,204 @@ func TestConfigFlagRespected(t *testing.T) {
 		t.Errorf("View command failed with custom config: %v", viewErr)
 	}
 }
+
+// TestConfigCommandsRespectCustomPath tests that all config commands respect the --config flag
+func TestConfigCommandsRespectCustomPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	customConfigPath := filepath.Join(tmpDir, "custom-config.yaml")
+
+	originalCfgFile := cfgFile
+	defer func() { cfgFile = originalCfgFile }()
+	cfgFile = customConfigPath
+
+	t.Run("use-context modifies custom path", func(t *testing.T) {
+		// First create two contexts
+		configSetContextCmd.Flags().Set("environment", "https://first.example.com")
+		configSetContextCmd.Flags().Set("token-ref", "first-token")
+		defer configSetContextCmd.Flags().Set("environment", "")
+		defer configSetContextCmd.Flags().Set("token-ref", "")
+
+		if err := configSetContextCmd.RunE(configSetContextCmd, []string{"first-ctx"}); err != nil {
+			t.Fatalf("failed to create first context: %v", err)
+		}
+
+		configSetContextCmd.Flags().Set("environment", "https://second.example.com")
+		configSetContextCmd.Flags().Set("token-ref", "second-token")
+
+		if err := configSetContextCmd.RunE(configSetContextCmd, []string{"second-ctx"}); err != nil {
+			t.Fatalf("failed to create second context: %v", err)
+		}
+
+		// Now switch to the second context
+		if err := configUseContextCmd.RunE(configUseContextCmd, []string{"second-ctx"}); err != nil {
+			t.Fatalf("failed to use-context: %v", err)
+		}
+
+		// Verify the change was written to custom path
+		cfg, err := config.LoadFrom(customConfigPath)
+		if err != nil {
+			t.Fatalf("failed to load config: %v", err)
+		}
+
+		if cfg.CurrentContext != "second-ctx" {
+			t.Errorf("expected current context 'second-ctx', got %q", cfg.CurrentContext)
+		}
+	})
+
+	t.Run("config set modifies custom path", func(t *testing.T) {
+		if err := configSetCmd.RunE(configSetCmd, []string{"preferences.editor", "emacs"}); err != nil {
+			t.Fatalf("failed to set preference: %v", err)
+		}
+
+		// Verify the change was written to custom path
+		cfg, err := config.LoadFrom(customConfigPath)
+		if err != nil {
+			t.Fatalf("failed to load config: %v", err)
+		}
+
+		if cfg.Preferences.Editor != "emacs" {
+			t.Errorf("expected editor 'emacs', got %q", cfg.Preferences.Editor)
+		}
+	})
+
+	t.Run("delete-context modifies custom path", func(t *testing.T) {
+		if err := configDeleteContextCmd.RunE(configDeleteContextCmd, []string{"first-ctx"}); err != nil {
+			t.Fatalf("failed to delete context: %v", err)
+		}
+
+		// Verify the change was written to custom path
+		cfg, err := config.LoadFrom(customConfigPath)
+		if err != nil {
+			t.Fatalf("failed to load config: %v", err)
+		}
+
+		// Should only have one context left (second-ctx)
+		if len(cfg.Contexts) != 1 {
+			t.Errorf("expected 1 context, got %d", len(cfg.Contexts))
+		}
+
+		if cfg.Contexts[0].Name != "second-ctx" {
+			t.Errorf("expected remaining context 'second-ctx', got %q", cfg.Contexts[0].Name)
+		}
+	})
+
+	t.Run("get-contexts reads from custom path", func(t *testing.T) {
+		// Should not error when reading from custom config
+		if err := configGetContextsCmd.RunE(configGetContextsCmd, nil); err != nil {
+			t.Fatalf("failed to get-contexts: %v", err)
+		}
+	})
+
+	t.Run("current-context reads from custom path", func(t *testing.T) {
+		if err := configCurrentContextCmd.RunE(configCurrentContextCmd, nil); err != nil {
+			t.Fatalf("failed to get current-context: %v", err)
+		}
+	})
+
+	t.Run("describe-context reads from custom path", func(t *testing.T) {
+		if err := configDescribeContextCmd.RunE(configDescribeContextCmd, []string{"second-ctx"}); err != nil {
+			t.Fatalf("failed to describe-context: %v", err)
+		}
+	})
+}
+
+// TestConfigMultipleCustomPaths tests isolation between different config files
+func TestConfigMultipleCustomPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	config1Path := filepath.Join(tmpDir, "config1.yaml")
+	config2Path := filepath.Join(tmpDir, "config2.yaml")
+
+	originalCfgFile := cfgFile
+	defer func() { cfgFile = originalCfgFile }()
+
+	// Create first config
+	cfgFile = config1Path
+	configSetContextCmd.Flags().Set("environment", "https://config1.example.com")
+	configSetContextCmd.Flags().Set("token-ref", "config1-token")
+	defer configSetContextCmd.Flags().Set("environment", "")
+	defer configSetContextCmd.Flags().Set("token-ref", "")
+
+	if err := configSetContextCmd.RunE(configSetContextCmd, []string{"config1-ctx"}); err != nil {
+		t.Fatalf("failed to create config1: %v", err)
+	}
+
+	// Create second config
+	cfgFile = config2Path
+	configSetContextCmd.Flags().Set("environment", "https://config2.example.com")
+	configSetContextCmd.Flags().Set("token-ref", "config2-token")
+
+	if err := configSetContextCmd.RunE(configSetContextCmd, []string{"config2-ctx"}); err != nil {
+		t.Fatalf("failed to create config2: %v", err)
+	}
+
+	// Verify config1 still has its own context
+	cfg1, err := config.LoadFrom(config1Path)
+	if err != nil {
+		t.Fatalf("failed to load config1: %v", err)
+	}
+	if len(cfg1.Contexts) != 1 {
+		t.Errorf("config1: expected 1 context, got %d", len(cfg1.Contexts))
+	}
+	if cfg1.Contexts[0].Name != "config1-ctx" {
+		t.Errorf("config1: expected context 'config1-ctx', got %q", cfg1.Contexts[0].Name)
+	}
+
+	// Verify config2 has its own context
+	cfg2, err := config.LoadFrom(config2Path)
+	if err != nil {
+		t.Fatalf("failed to load config2: %v", err)
+	}
+	if len(cfg2.Contexts) != 1 {
+		t.Errorf("config2: expected 1 context, got %d", len(cfg2.Contexts))
+	}
+	if cfg2.Contexts[0].Name != "config2-ctx" {
+		t.Errorf("config2: expected context 'config2-ctx', got %q", cfg2.Contexts[0].Name)
+	}
+}
+
+// TestConfigSetCredentialsWithCustomPath tests set-credentials respects --config
+func TestConfigSetCredentialsWithCustomPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	customConfigPath := filepath.Join(tmpDir, "custom-config.yaml")
+
+	originalCfgFile := cfgFile
+	defer func() { cfgFile = originalCfgFile }()
+	cfgFile = customConfigPath
+
+	// Create initial config
+	configSetContextCmd.Flags().Set("environment", "https://test.example.com")
+	configSetContextCmd.Flags().Set("token-ref", "test-token")
+	defer configSetContextCmd.Flags().Set("environment", "")
+	defer configSetContextCmd.Flags().Set("token-ref", "")
+
+	if err := configSetContextCmd.RunE(configSetContextCmd, []string{"test-ctx"}); err != nil {
+		t.Fatalf("failed to create context: %v", err)
+	}
+
+	// Set credentials
+	configSetCredentialsCmd.Flags().Set("token", "secret-token-value")
+	defer configSetCredentialsCmd.Flags().Set("token", "")
+
+	if err := configSetCredentialsCmd.RunE(configSetCredentialsCmd, []string{"test-token"}); err != nil {
+		t.Fatalf("failed to set credentials: %v", err)
+	}
+
+	// Verify credentials were saved to custom config
+	cfg, err := config.LoadFrom(customConfigPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	// Check if token is in config (if keyring is not available) or referenced
+	found := false
+	for _, nt := range cfg.Tokens {
+		if nt.Name == "test-token" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("token reference not found in custom config")
+	}
+}
