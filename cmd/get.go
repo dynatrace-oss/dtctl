@@ -352,15 +352,6 @@ Examples:
 			return err
 		}
 
-		// Safety check
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
@@ -375,9 +366,20 @@ Examples:
 
 		handler := workflow.NewHandler(c)
 
-		// Get workflow details for confirmation
+		// Get workflow details for confirmation and ownership check
 		wf, err := handler.Get(workflowID)
 		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(wf.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
 			return err
 		}
 
@@ -424,15 +426,6 @@ Examples:
 			return err
 		}
 
-		// Safety check
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
@@ -450,6 +443,17 @@ Examples:
 		// Get current version for optimistic locking and details for confirmation
 		metadata, err := handler.GetMetadata(dashboardID)
 		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
 			return err
 		}
 
@@ -496,15 +500,6 @@ Examples:
 			return err
 		}
 
-		// Safety check
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
@@ -522,6 +517,17 @@ Examples:
 		// Get current version for optimistic locking and details for confirmation
 		metadata, err := handler.GetMetadata(notebookID)
 		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
 			return err
 		}
 
@@ -730,15 +736,6 @@ Examples:
 			return err
 		}
 
-		// Safety check
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
@@ -746,9 +743,20 @@ Examples:
 
 		handler := notification.NewHandler(c)
 
-		// Get notification for confirmation
+		// Get notification for confirmation and ownership check
 		n, err := handler.GetEventNotification(notifID)
 		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(n.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
 			return err
 		}
 
