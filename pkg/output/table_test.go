@@ -15,7 +15,7 @@ type TestResource struct {
 	Status      string `table:"STATUS"`
 	Description string `table:"DESCRIPTION,wide"`
 	Internal    string `table:"-"`
-	hidden      string // unexported, should be ignored
+	hidden      string //nolint:unused // unexported field, intentionally unused to test field filtering
 }
 
 // Test struct without table tags

@@ -544,7 +544,7 @@ func TestNewDQLExecutor(t *testing.T) {
 
 	executor := NewDQLExecutor(c)
 	if executor == nil {
-		t.Error("NewDQLExecutor returned nil")
+		t.Fatal("NewDQLExecutor returned nil")
 	}
 	if executor.client != c {
 		t.Error("executor client not set correctly")

@@ -52,15 +52,6 @@ Examples:
 			return err
 		}
 
-		// Safety check - restore modifies the workflow
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
@@ -75,9 +66,20 @@ Examples:
 
 		handler := workflow.NewHandler(c)
 
-		// Get workflow for confirmation
+		// Get workflow for confirmation and ownership check
 		wf, err := handler.Get(workflowID)
 		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership - restore modifies the workflow
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(wf.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 
@@ -136,15 +138,6 @@ Examples:
 			return err
 		}
 
-		// Safety check - restore modifies the dashboard
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
@@ -159,9 +152,20 @@ Examples:
 
 		handler := document.NewHandler(c)
 
-		// Get dashboard metadata for confirmation
+		// Get dashboard metadata for confirmation and ownership check
 		metadata, err := handler.GetMetadata(dashboardID)
 		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership - restore modifies the dashboard
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 
@@ -220,15 +224,6 @@ Examples:
 			return err
 		}
 
-		// Safety check - restore modifies the notebook
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
@@ -243,9 +238,20 @@ Examples:
 
 		handler := document.NewHandler(c)
 
-		// Get notebook metadata for confirmation
+		// Get notebook metadata for confirmation and ownership check
 		metadata, err := handler.GetMetadata(notebookID)
 		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership - restore modifies the notebook
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 

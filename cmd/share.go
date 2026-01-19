@@ -78,21 +78,29 @@ Examples:
 			return err
 		}
 
-		// Safety check - sharing modifies document permissions
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
 		}
 
 		handler := document.NewHandler(c)
+
+		// Get document metadata for ownership check
+		metadata, err := handler.GetMetadata(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership - sharing modifies document permissions
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+			return err
+		}
 
 		// Check if a share already exists for this document with the same access level
 		shares, err := handler.ListDirectShares(documentID)
@@ -188,21 +196,29 @@ Examples:
 			return err
 		}
 
-		// Safety check - unsharing modifies document permissions
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
 		c, err := NewClientFromConfig(cfg)
 		if err != nil {
 			return err
 		}
 
 		handler := document.NewHandler(c)
+
+		// Get document metadata for ownership check
+		metadata, err := handler.GetMetadata(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership - unsharing modifies document permissions
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+			return err
+		}
 
 		// Get existing shares for this document
 		shares, err := handler.ListDirectShares(documentID)
