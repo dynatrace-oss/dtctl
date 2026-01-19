@@ -14,7 +14,7 @@ func TestConfigFlagRespected(t *testing.T) {
 	tmpDir := t.TempDir()
 	defaultConfigDir := filepath.Join(tmpDir, "default")
 	os.MkdirAll(defaultConfigDir, 0700)
-	
+
 	customConfigFile := filepath.Join(tmpDir, "custom", "custom-config.yaml")
 	os.MkdirAll(filepath.Dir(customConfigFile), 0700)
 
@@ -33,12 +33,12 @@ func TestConfigFlagRespected(t *testing.T) {
 	// validation: should create file at customConfigFile
 	args := []string{"test-ctx"}
 	cmd := configSetContextCmd
-	
+
 	// Reset flags to avoid interference
 	cmd.Flags().Set("environment", "https://example.com")
 	cmd.Flags().Set("token-ref", "my-token")
 	cmd.Flags().Set("safety-level", "readonly")
-	
+
 	err := cmd.RunE(cmd, args)
 	if err != nil {
 		t.Fatalf("Command failed: %v", err)
@@ -68,7 +68,7 @@ func TestConfigFlagRespected(t *testing.T) {
 	// 7. Verify we can read it back using view command
 	// Reset Viper to ensure it doesn't hold old state
 	viper.Reset()
-	
+
 	// Capture stdout
 	// (Simulated by just running the command and ensuring no error_
 	viewErr := configViewCmd.RunE(configViewCmd, []string{})
