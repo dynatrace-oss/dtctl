@@ -7,6 +7,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// loadConfigRaw loads configuration respecting the --config flag but WITHOUT applying
+// runtime overrides like --context. This is used for configuration management commands.
+func loadConfigRaw() (*config.Config, error) {
+	if cfgFile != "" {
+		return config.LoadFrom(cfgFile)
+	}
+	return config.Load()
+}
+
+// saveConfig saves configuration respecting the --config flag and local config presence
+func saveConfig(cfg *config.Config) error {
+	if cfgFile != "" {
+		return cfg.SaveTo(cfgFile)
+	}
+	// If a local config exists, save to it
+	if local := config.FindLocalConfig(); local != "" {
+		return cfg.SaveTo(local)
+	}
+	// Fall back to default global location
+	return cfg.Save()
+}
+
 // configCmd represents the config command
 var configCmd = &cobra.Command{
 	Use:   "config",
@@ -19,7 +41,7 @@ var configViewCmd = &cobra.Command{
 	Use:   "view",
 	Short: "Display the current configuration",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -52,7 +74,7 @@ Examples:
   dtctl config get-contexts -o wide
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -84,7 +106,7 @@ var configCurrentContextCmd = &cobra.Command{
 	Use:   "current-context",
 	Short: "Display the current context",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -100,7 +122,7 @@ var configUseContextCmd = &cobra.Command{
 	Short: "Switch to a different context",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := loadConfigRaw()
 		if err != nil {
 			return err
 		}
@@ -122,7 +144,7 @@ var configUseContextCmd = &cobra.Command{
 
 		cfg.CurrentContext = contextName
 
-		if err := cfg.Save(); err != nil {
+		if err := saveConfig(cfg); err != nil {
 			return err
 		}
 
@@ -169,7 +191,7 @@ Examples:
 		safetyLevel, _ := cmd.Flags().GetString("safety-level")
 		description, _ := cmd.Flags().GetString("description")
 
-		cfg, err := config.Load()
+		cfg, err := loadConfigRaw()
 		if err != nil {
 			// Create new config if it doesn't exist
 			cfg = config.NewConfig()
@@ -212,7 +234,7 @@ Examples:
 			cfg.CurrentContext = contextName
 		}
 
-		if err := cfg.Save(); err != nil {
+		if err := saveConfig(cfg); err != nil {
 			return err
 		}
 
@@ -234,7 +256,7 @@ var configSetCredentialsCmd = &cobra.Command{
 			return fmt.Errorf("--token is required")
 		}
 
-		cfg, err := config.Load()
+		cfg, err := loadConfigRaw()
 		if err != nil {
 			cfg = config.NewConfig()
 		}
@@ -243,7 +265,7 @@ var configSetCredentialsCmd = &cobra.Command{
 			return err
 		}
 
-		if err := cfg.Save(); err != nil {
+		if err := saveConfig(cfg); err != nil {
 			return err
 		}
 
@@ -269,7 +291,7 @@ Supported keys:
 		key := args[0]
 		value := args[1]
 
-		cfg, err := config.Load()
+		cfg, err := loadConfigRaw()
 		if err != nil {
 			// Create new config if it doesn't exist
 			cfg = config.NewConfig()
@@ -282,7 +304,7 @@ Supported keys:
 			return fmt.Errorf("unknown configuration key %q", key)
 		}
 
-		if err := cfg.Save(); err != nil {
+		if err := saveConfig(cfg); err != nil {
 			return err
 		}
 
@@ -308,7 +330,7 @@ After migration, tokens are removed from the config file and stored securely.`,
 			return fmt.Errorf("keyring not available on this system. Tokens will remain in config file")
 		}
 
-		cfg, err := config.Load()
+		cfg, err := loadConfigRaw()
 		if err != nil {
 			return err
 		}
@@ -323,7 +345,7 @@ After migration, tokens are removed from the config file and stored securely.`,
 			return nil
 		}
 
-		if err := cfg.Save(); err != nil {
+		if err := saveConfig(cfg); err != nil {
 			return fmt.Errorf("failed to save config after migration: %w", err)
 		}
 
@@ -350,7 +372,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
@@ -424,7 +446,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
 
-		cfg, err := config.Load()
+		cfg, err := loadConfigRaw()
 		if err != nil {
 			return err
 		}
@@ -453,7 +475,7 @@ Examples:
 			fmt.Printf("Warning: deleted the current context. Use 'dtctl config use-context' to set a new one.\n")
 		}
 
-		if err := cfg.Save(); err != nil {
+		if err := saveConfig(cfg); err != nil {
 			return err
 		}
 
