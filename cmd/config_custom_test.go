@@ -13,10 +13,14 @@ func TestConfigFlagRespected(t *testing.T) {
 	// 1. Setup separate directories for "default" config and "custom" config
 	tmpDir := t.TempDir()
 	defaultConfigDir := filepath.Join(tmpDir, "default")
-	os.MkdirAll(defaultConfigDir, 0700)
+	if err := os.MkdirAll(defaultConfigDir, 0700); err != nil {
+		t.Fatalf("failed to create default config dir: %v", err)
+	}
 
 	customConfigFile := filepath.Join(tmpDir, "custom", "custom-config.yaml")
-	os.MkdirAll(filepath.Dir(customConfigFile), 0700)
+	if err := os.MkdirAll(filepath.Dir(customConfigFile), 0700); err != nil {
+		t.Fatalf("failed to create custom config dir: %v", err)
+	}
 
 	// Mock XDG_CONFIG_HOME to point to our temp default dir
 	// This ensures valid Load() calls would go here if --config is ignored
@@ -35,9 +39,15 @@ func TestConfigFlagRespected(t *testing.T) {
 	cmd := configSetContextCmd
 
 	// Reset flags to avoid interference
-	cmd.Flags().Set("environment", "https://example.com")
-	cmd.Flags().Set("token-ref", "my-token")
-	cmd.Flags().Set("safety-level", "readonly")
+	if err := cmd.Flags().Set("environment", "https://example.com"); err != nil {
+		t.Fatalf("failed to set environment flag: %v", err)
+	}
+	if err := cmd.Flags().Set("token-ref", "my-token"); err != nil {
+		t.Fatalf("failed to set token-ref flag: %v", err)
+	}
+	if err := cmd.Flags().Set("safety-level", "readonly"); err != nil {
+		t.Fatalf("failed to set safety-level flag: %v", err)
+	}
 
 	err := cmd.RunE(cmd, args)
 	if err != nil {
@@ -88,17 +98,19 @@ func TestConfigCommandsRespectCustomPath(t *testing.T) {
 
 	t.Run("use-context modifies custom path", func(t *testing.T) {
 		// First create two contexts
-		configSetContextCmd.Flags().Set("environment", "https://first.example.com")
-		configSetContextCmd.Flags().Set("token-ref", "first-token")
-		defer configSetContextCmd.Flags().Set("environment", "")
-		defer configSetContextCmd.Flags().Set("token-ref", "")
+		_ = configSetContextCmd.Flags().Set("environment", "https://first.example.com")
+		_ = configSetContextCmd.Flags().Set("token-ref", "first-token")
+		defer func() {
+			_ = configSetContextCmd.Flags().Set("environment", "")
+			_ = configSetContextCmd.Flags().Set("token-ref", "")
+		}()
 
 		if err := configSetContextCmd.RunE(configSetContextCmd, []string{"first-ctx"}); err != nil {
 			t.Fatalf("failed to create first context: %v", err)
 		}
 
-		configSetContextCmd.Flags().Set("environment", "https://second.example.com")
-		configSetContextCmd.Flags().Set("token-ref", "second-token")
+		_ = configSetContextCmd.Flags().Set("environment", "https://second.example.com")
+		_ = configSetContextCmd.Flags().Set("token-ref", "second-token")
 
 		if err := configSetContextCmd.RunE(configSetContextCmd, []string{"second-ctx"}); err != nil {
 			t.Fatalf("failed to create second context: %v", err)
@@ -188,10 +200,12 @@ func TestConfigMultipleCustomPaths(t *testing.T) {
 
 	// Create first config
 	cfgFile = config1Path
-	configSetContextCmd.Flags().Set("environment", "https://config1.example.com")
-	configSetContextCmd.Flags().Set("token-ref", "config1-token")
-	defer configSetContextCmd.Flags().Set("environment", "")
-	defer configSetContextCmd.Flags().Set("token-ref", "")
+	_ = configSetContextCmd.Flags().Set("environment", "https://config1.example.com")
+	_ = configSetContextCmd.Flags().Set("token-ref", "config1-token")
+	defer func() {
+		_ = configSetContextCmd.Flags().Set("environment", "")
+		_ = configSetContextCmd.Flags().Set("token-ref", "")
+	}()
 
 	if err := configSetContextCmd.RunE(configSetContextCmd, []string{"config1-ctx"}); err != nil {
 		t.Fatalf("failed to create config1: %v", err)
@@ -199,8 +213,8 @@ func TestConfigMultipleCustomPaths(t *testing.T) {
 
 	// Create second config
 	cfgFile = config2Path
-	configSetContextCmd.Flags().Set("environment", "https://config2.example.com")
-	configSetContextCmd.Flags().Set("token-ref", "config2-token")
+	_ = configSetContextCmd.Flags().Set("environment", "https://config2.example.com")
+	_ = configSetContextCmd.Flags().Set("token-ref", "config2-token")
 
 	if err := configSetContextCmd.RunE(configSetContextCmd, []string{"config2-ctx"}); err != nil {
 		t.Fatalf("failed to create config2: %v", err)
@@ -241,18 +255,22 @@ func TestConfigSetCredentialsWithCustomPath(t *testing.T) {
 	cfgFile = customConfigPath
 
 	// Create initial config
-	configSetContextCmd.Flags().Set("environment", "https://test.example.com")
-	configSetContextCmd.Flags().Set("token-ref", "test-token")
-	defer configSetContextCmd.Flags().Set("environment", "")
-	defer configSetContextCmd.Flags().Set("token-ref", "")
+	_ = configSetContextCmd.Flags().Set("environment", "https://test.example.com")
+	_ = configSetContextCmd.Flags().Set("token-ref", "test-token")
+	defer func() {
+		_ = configSetContextCmd.Flags().Set("environment", "")
+		_ = configSetContextCmd.Flags().Set("token-ref", "")
+	}()
 
 	if err := configSetContextCmd.RunE(configSetContextCmd, []string{"test-ctx"}); err != nil {
 		t.Fatalf("failed to create context: %v", err)
 	}
 
 	// Set credentials
-	configSetCredentialsCmd.Flags().Set("token", "secret-token-value")
-	defer configSetCredentialsCmd.Flags().Set("token", "")
+	_ = configSetCredentialsCmd.Flags().Set("token", "secret-token-value")
+	defer func() {
+		_ = configSetCredentialsCmd.Flags().Set("token", "")
+	}()
 
 	if err := configSetCredentialsCmd.RunE(configSetCredentialsCmd, []string{"test-token"}); err != nil {
 		t.Fatalf("failed to set credentials: %v", err)
