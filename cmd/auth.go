@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/spf13/cobra"
 )
 
@@ -116,12 +120,289 @@ JWT token's 'sub' claim.`,
 	},
 }
 
+// authLoginCmd initiates browser-based OAuth login
+var authLoginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Authenticate using browser-based OAuth login",
+	Long: `Authenticate with Dynatrace using OAuth 2.0 browser-based login.
+
+This command will:
+1. Open your default browser to the Dynatrace login page
+2. Wait for you to complete authentication
+3. Store the OAuth tokens securely in your system keyring
+4. Configure a context to use the authenticated session
+
+After successful login, you can use dtctl commands without needing to manage API tokens manually.
+
+Note: OAuth tokens require keyring support. If keyring is not available on your system,
+you'll need to use API token authentication instead (dtctl config set-credentials).`,
+	Example: `  # Login and create a context named "my-env"
+  dtctl auth login --context my-env --environment https://abc12345.apps.dynatrace.com
+
+  # Login with a specific token name
+  dtctl auth login --context my-env --environment https://abc12345.apps.dynatrace.com --token-name my-oauth-token
+
+  # Login with custom timeout
+  dtctl auth login --context my-env --environment https://abc12345.apps.dynatrace.com --timeout 5m`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Get flags
+		contextName, _ := cmd.Flags().GetString("context")
+		environment, _ := cmd.Flags().GetString("environment")
+		tokenName, _ := cmd.Flags().GetString("token-name")
+		timeoutStr, _ := cmd.Flags().GetString("timeout")
+		
+		// Validate required flags
+		if contextName == "" {
+			return fmt.Errorf("--context is required")
+		}
+		if environment == "" {
+			return fmt.Errorf("--environment is required")
+		}
+		
+		// Default token name to context name if not provided
+		if tokenName == "" {
+			tokenName = contextName + "-oauth"
+		}
+		
+		// Parse timeout
+		timeout, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			return fmt.Errorf("invalid timeout: %w", err)
+		}
+		
+		// Load config
+		cfg, err := LoadConfig()
+		if err != nil {
+			// If config doesn't exist, create a new one
+			cfg = config.NewConfig()
+		}
+		
+		// Create OAuth flow
+		oauthConfig := auth.DefaultOAuthConfig()
+		flow, err := auth.NewOAuthFlow(oauthConfig)
+		if err != nil {
+			return fmt.Errorf("failed to initialize OAuth: %w", err)
+		}
+		
+		// Start OAuth flow with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		
+		fmt.Println("Starting OAuth authentication flow...")
+		tokens, err := flow.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+		
+		fmt.Println("✓ Authentication successful!")
+		
+		// Get user info
+		userInfo, err := flow.GetUserInfo(tokens.AccessToken)
+		if err != nil {
+			fmt.Printf("Warning: Failed to retrieve user info: %v\n", err)
+		} else {
+			fmt.Printf("Logged in as: %s (%s)\n", userInfo.Name, userInfo.Email)
+		}
+		
+		// Store tokens
+		tokenManager, err := auth.NewTokenManager(oauthConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create token manager: %w", err)
+		}
+		
+		if err := tokenManager.SaveToken(tokenName, tokens); err != nil {
+			return fmt.Errorf("failed to store tokens: %w", err)
+		}
+		
+		fmt.Printf("✓ Tokens stored securely as '%s'\n", tokenName)
+		
+		// Create or update context
+		cfg.SetContext(contextName, environment, tokenName)
+		cfg.CurrentContext = contextName
+		
+		// Save config
+		if err := cfg.Save(); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+		
+		fmt.Printf("✓ Context '%s' configured and activated\n", contextName)
+		fmt.Println("\nYou can now use dtctl commands with this context.")
+		
+		return nil
+	},
+}
+
+// authLogoutCmd logs out and removes OAuth tokens
+var authLogoutCmd = &cobra.Command{
+	Use:   "logout [context-name]",
+	Short: "Logout and remove OAuth tokens",
+	Long: `Remove stored OAuth tokens for a context.
+
+This command will:
+1. Remove OAuth tokens from the system keyring
+2. Optionally remove the context configuration
+
+If no context name is provided, the current context will be used.`,
+	Example: `  # Logout from current context
+  dtctl auth logout
+
+  # Logout from specific context
+  dtctl auth logout my-env
+
+  # Logout and remove context
+  dtctl auth logout my-env --remove-context`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Load config
+		cfg, err := LoadConfig()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+		
+		// Determine context name
+		var contextName string
+		if len(args) > 0 {
+			contextName = args[0]
+		} else {
+			contextName = cfg.CurrentContext
+		}
+		
+		if contextName == "" {
+			return fmt.Errorf("no context specified and no current context set")
+		}
+		
+		// Find context
+		ctx, err := cfg.GetContext(contextName)
+		if err != nil {
+			return fmt.Errorf("context not found: %w", err)
+		}
+		
+		// Get token name
+		tokenName := ctx.Context.TokenRef
+		if tokenName == "" {
+			return fmt.Errorf("context has no token reference")
+		}
+		
+		// Delete OAuth token
+		oauthConfig := auth.DefaultOAuthConfig()
+		tokenManager, err := auth.NewTokenManager(oauthConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create token manager: %w", err)
+		}
+		
+		if err := tokenManager.DeleteToken(tokenName); err != nil {
+			fmt.Printf("Warning: Failed to delete token from keyring: %v\n", err)
+		} else {
+			fmt.Printf("✓ Removed OAuth token '%s'\n", tokenName)
+		}
+		
+		// Optionally remove context
+		removeContext, _ := cmd.Flags().GetBool("remove-context")
+		if removeContext {
+			if err := cfg.DeleteContext(contextName); err != nil {
+				return fmt.Errorf("failed to remove context: %w", err)
+			}
+			
+			// If we deleted the current context, clear it
+			if cfg.CurrentContext == contextName {
+				cfg.CurrentContext = ""
+			}
+			
+			if err := cfg.Save(); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+			
+			fmt.Printf("✓ Removed context '%s'\n", contextName)
+		}
+		
+		return nil
+	},
+}
+
+// authRefreshCmd refreshes OAuth tokens
+var authRefreshCmd = &cobra.Command{
+	Use:   "refresh [context-name]",
+	Short: "Refresh OAuth tokens",
+	Long: `Refresh OAuth access tokens using the refresh token.
+
+This command manually triggers a token refresh. Normally, dtctl will
+automatically refresh tokens when needed, but this command can be used
+to force a refresh.`,
+	Example: `  # Refresh tokens for current context
+  dtctl auth refresh
+
+  # Refresh tokens for specific context
+  dtctl auth refresh my-env`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Load config
+		cfg, err := LoadConfig()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+		
+		// Determine context name
+		var contextName string
+		if len(args) > 0 {
+			contextName = args[0]
+		} else {
+			contextName = cfg.CurrentContext
+		}
+		
+		if contextName == "" {
+			return fmt.Errorf("no context specified and no current context set")
+		}
+		
+		// Find context
+		ctx, err := cfg.GetContext(contextName)
+		if err != nil {
+			return fmt.Errorf("context not found: %w", err)
+		}
+		
+		// Get token name
+		tokenName := ctx.Context.TokenRef
+		if tokenName == "" {
+			return fmt.Errorf("context has no token reference")
+		}
+		
+		// Refresh token
+		oauthConfig := auth.DefaultOAuthConfig()
+		tokenManager, err := auth.NewTokenManager(oauthConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create token manager: %w", err)
+		}
+		
+		fmt.Println("Refreshing OAuth tokens...")
+		tokens, err := tokenManager.RefreshToken(tokenName)
+		if err != nil {
+			return fmt.Errorf("failed to refresh tokens: %w", err)
+		}
+		
+		fmt.Println("✓ Tokens refreshed successfully")
+		fmt.Printf("New token expires at: %s\n", tokens.ExpiresAt.Format(time.RFC3339))
+		
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(authCmd)
 
 	authCmd.AddCommand(authWhoamiCmd)
+	authCmd.AddCommand(authLoginCmd)
+	authCmd.AddCommand(authLogoutCmd)
+	authCmd.AddCommand(authRefreshCmd)
 
 	// Flags for whoami
 	authWhoamiCmd.Flags().BoolVar(&idOnly, "id-only", false, "output only the user ID")
 	authWhoamiCmd.Flags().BoolVar(&refresh, "refresh", false, "force refresh of cached user info")
+	
+	// Flags for login
+	authLoginCmd.Flags().String("context", "", "name for the context to create (required)")
+	authLoginCmd.Flags().String("environment", "", "Dynatrace environment URL (required)")
+	authLoginCmd.Flags().String("token-name", "", "name for storing the OAuth token (defaults to <context>-oauth)")
+	authLoginCmd.Flags().String("timeout", "5m", "timeout for the authentication flow")
+	authLoginCmd.MarkFlagRequired("context")
+	authLoginCmd.MarkFlagRequired("environment")
+	
+	// Flags for logout
+	authLogoutCmd.Flags().Bool("remove-context", false, "also remove the context configuration")
 }

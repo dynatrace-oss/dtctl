@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -222,12 +223,36 @@ func (c *Config) CurrentContextObj() (*Context, error) {
 	return nil, fmt.Errorf("current context %q not found", c.CurrentContext)
 }
 
+// GetContext returns a named context by name
+func (c *Config) GetContext(name string) (*NamedContext, error) {
+	for i := range c.Contexts {
+		if c.Contexts[i].Name == name {
+			return &c.Contexts[i], nil
+		}
+	}
+	return nil, fmt.Errorf("context %q not found", name)
+}
+
 // GetToken retrieves a token by reference name.
-// It first tries the OS keyring, then falls back to the config file.
+// It first tries the OS keyring (checking both regular and OAuth tokens), then falls back to the config file.
 func (c *Config) GetToken(tokenRef string) (string, error) {
 	// Try keyring first
 	if IsKeyringAvailable() {
 		ts := NewTokenStore()
+		
+		// First check for OAuth token (stored with "oauth:" prefix)
+		oauthToken, err := ts.GetToken("oauth:" + tokenRef)
+		if err == nil && oauthToken != "" {
+			// OAuth token found - it's stored as JSON, extract access token
+			var tokenData map[string]interface{}
+			if err := json.Unmarshal([]byte(oauthToken), &tokenData); err == nil {
+				if accessToken, ok := tokenData["access_token"].(string); ok && accessToken != "" {
+					return accessToken, nil
+				}
+			}
+		}
+		
+		// Fall back to regular token
 		token, err := ts.GetToken(tokenRef)
 		if err == nil && token != "" {
 			return token, nil
