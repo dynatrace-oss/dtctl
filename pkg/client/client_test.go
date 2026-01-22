@@ -2,10 +2,13 @@ package client
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/dynatrace-oss/dtctl/pkg/version"
 )
 
 func TestNew(t *testing.T) {
@@ -340,7 +343,8 @@ func TestClient_UserAgent(t *testing.T) {
 		t.Fatalf("Request failed: %v", err)
 	}
 
-	if receivedUA != "dtctl/dev" {
-		t.Errorf("User-Agent = %v, want dtctl/dev", receivedUA)
+	expectedUA := fmt.Sprintf("dtctl/%s", version.Version)
+	if receivedUA != expectedUA {
+		t.Errorf("User-Agent = %v, want %v", receivedUA, expectedUA)
 	}
 }

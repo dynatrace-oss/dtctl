@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
+	"github.com/dynatrace-oss/dtctl/pkg/version"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
 )
@@ -59,7 +60,7 @@ func New(baseURL, token string) (*Client, error) {
 		SetRetryMaxWaitTime(10*time.Second).
 		AddRetryCondition(isRetryable).
 		SetTimeout(6*time.Minute). // Allow for long-running Grail queries (up to 5 min)
-		SetHeader("User-Agent", "dtctl/dev")
+		SetHeader("User-Agent", fmt.Sprintf("dtctl/%s", version.Version))
 
 	return &Client{
 		http:    httpClient,
