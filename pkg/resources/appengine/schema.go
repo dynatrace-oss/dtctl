@@ -347,9 +347,7 @@ func parseSchemaFromError(errorMsg string) []SchemaField {
 	lines := strings.Split(errorMsg, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "- ") {
-			line = strings.TrimPrefix(line, "- ")
-		}
+		line = strings.TrimPrefix(line, "- ")
 
 		// Extract field name and type hint
 		parts := strings.SplitN(line, ":", 2)
