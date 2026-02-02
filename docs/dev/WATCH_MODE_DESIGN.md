@@ -41,8 +41,8 @@ dtctl get workflow my-workflow --watch
 # Watch with filters
 dtctl get dashboards --mine --watch
 
-# Watch DQL query results
-dtctl query "fetch logs | filter status == 'ERROR'" --watch
+# Live mode for DQL query results
+dtctl query "fetch logs | filter status == 'ERROR'" --live
 ```
 
 ### Output Behavior
@@ -218,8 +218,9 @@ func executeGetWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher) erro
 
 ```go
 // cmd/query.go
-func executeQueryWithWatch(query string, opts QueryOptions) error {
-    if opts.Watch {
+// Note: Query command uses --live mode instead of --watch
+func executeQueryWithLive(query string, opts QueryOptions) error {
+    if opts.Live {
         fetcher := func() (interface{}, error) {
             return executeQuery(query, opts)
         }
@@ -420,8 +421,8 @@ dtctl get executions --workflow error-handler --watch
 # Watch SLO evaluations
 dtctl get slos --watch --interval 10s
 
-# Watch and only show failures
-dtctl query "fetch dt.entity.slo | filter status == 'FAILURE'" --watch
+# Live mode to monitor failures
+dtctl query "fetch dt.entity.slo | filter status == 'FAILURE'" --live
 ```
 
 ### Monitor Dashboard Changes
@@ -442,7 +443,7 @@ dtctl get execution $EXEC_ID --watch | grep -q "COMPLETED"
 echo "Workflow completed!"
 
 # Monitor deployment
-dtctl query "fetch logs | filter deployment_id == '$DEPLOY_ID'" --watch
+dtctl query "fetch logs | filter deployment_id == '$DEPLOY_ID'" --live
 ```
 
 ---
@@ -533,7 +534,7 @@ dtctl query "fetch logs | filter deployment_id == '$DEPLOY_ID'" --watch
 
 2. **Should we support watch filters?**
    - Example: `--watch-filter "status==FAILED"`
-   - Decision: Use DQL query with watch instead
+   - Decision: Use DQL query filters directly (get commands use --watch, query uses --live)
 
 3. **Should we persist watch state across restarts?**
    - Decision: No, watch is ephemeral

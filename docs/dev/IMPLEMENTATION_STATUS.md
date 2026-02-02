@@ -62,9 +62,9 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### Watch Mode Features
 - [x] Watch all `get` commands: `dtctl get workflows --watch`
-- [x] Watch DQL queries: `dtctl query "fetch logs" --watch`
-- [x] Configurable polling interval: `--interval` (default: 2s, min: 1s)
-- [x] Skip initial state: `--watch-only`
+- [x] Live mode for DQL queries: `dtctl query "fetch logs" --live`
+- [x] Configurable polling interval: `--interval` (default: 2s for watch, 60s for live)
+- [x] Skip initial state: `--watch-only` (for `get` commands only)
 - [x] Incremental change display with kubectl-style prefixes:
   - `+` (green) for additions
   - `~` (yellow) for modifications

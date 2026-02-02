@@ -121,8 +121,8 @@ dtctl get workflows --watch
 # Watch with custom interval
 dtctl get workflows --watch --interval 5s
 
-# Watch query results
-dtctl query "fetch logs | filter status='ERROR'" --watch
+# Live query results
+dtctl query "fetch logs | filter status='ERROR'" --live
 
 # Only show changes (skip initial state)
 dtctl get workflows --watch --watch-only

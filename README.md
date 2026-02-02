@@ -64,7 +64,7 @@ dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
 dtctl get workflows
 dtctl get workflows --watch                    # Real-time monitoring
 dtctl query "fetch logs | limit 10"
-dtctl query "fetch logs" --watch               # Watch query results
+dtctl query "fetch logs" --live                # Live query results
 dtctl create lookup -f error_codes.csv --path /lookups/production/errors --lookup-field code
 ```
 

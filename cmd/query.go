@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/watch"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -152,8 +149,6 @@ Examples:
 
 		// Get visualization options
 		live, _ := cmd.Flags().GetBool("live")
-		watchMode, _ := cmd.Flags().GetBool("watch")
-		watchOnly, _ := cmd.Flags().GetBool("watch-only")
 		interval, _ := cmd.Flags().GetDuration("interval")
 		width, _ := cmd.Flags().GetInt("width")
 		height, _ := cmd.Flags().GetInt("height")
@@ -196,55 +191,6 @@ Examples:
 			DefaultTimeframeEnd:          defaultTimeframeEnd,
 			Locale:                       locale,
 			Timezone:                     timezone,
-		}
-
-		// Handle watch mode
-		if watchMode {
-			if interval == 0 {
-				interval = 2 * time.Second
-			}
-
-			printerOpts := output.PrinterOptions{
-				Format:     outputFormat,
-				Width:      width,
-				Height:     height,
-				Fullscreen: fullscreen,
-			}
-
-			basePrinter := output.NewPrinterWithOpts(printerOpts)
-			watchPrinter := output.NewWatchPrinter(basePrinter)
-
-			fetcher := func() (interface{}, error) {
-				result, err := executor.ExecuteQueryWithOptions(query, opts)
-				if err != nil {
-					return nil, err
-				}
-				records := result.Records
-				if result.Result != nil && len(result.Result.Records) > 0 {
-					records = result.Result.Records
-				}
-				return records, nil
-			}
-
-			watcher := watch.NewWatcher(watch.WatcherOptions{
-				Interval:    interval,
-				Client:      c,
-				Fetcher:     fetcher,
-				Printer:     watchPrinter,
-				ShowInitial: !watchOnly,
-			})
-
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			sigCh := make(chan os.Signal, 1)
-			signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-			go func() {
-				<-sigCh
-				cancel()
-			}()
-
-			return watcher.Start(ctx)
 		}
 
 		// Handle live mode
@@ -292,11 +238,9 @@ func init() {
 	queryCmd.Flags().StringP("file", "f", "", "read query from file")
 	queryCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 
-	// Watch and live mode flags
-	queryCmd.Flags().Bool("watch", false, "watch for changes with incremental updates")
-	queryCmd.Flags().Bool("watch-only", false, "only show changes, not initial state")
+	// Live mode flags
 	queryCmd.Flags().Bool("live", false, "enable live mode with periodic updates")
-	queryCmd.Flags().Duration("interval", 60*time.Second, "refresh interval for live/watch mode")
+	queryCmd.Flags().Duration("interval", 60*time.Second, "refresh interval for live mode")
 
 	// Chart sizing flags
 	queryCmd.Flags().Int("width", 0, "chart width in characters (0 = default)")

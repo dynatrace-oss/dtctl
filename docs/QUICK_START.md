@@ -876,34 +876,19 @@ dtctl query "fetch logs" \
 - Feeding data into external analysis tools
 - Generating reports from DQL query results
 
-### Watch Query Results
+### Live Query Results
 
-Monitor DQL query results in real-time with watch mode:
-
-```bash
-# Watch query results for changes
-dtctl query "fetch logs | filter status='ERROR'" --watch
-
-# Watch with custom interval (default: 2s for watch mode)
-dtctl query "fetch logs" --watch --interval 5s
-
-# Only show changes (skip initial results)
-dtctl query "fetch logs" --watch --watch-only
-
-# Watch timeseries data
-dtctl query "timeseries avg(dt.host.cpu.usage)" --watch --interval 10s
-```
-
-**Watch vs Live Mode:**
-- `--watch`: Incremental updates showing only changes (additions, modifications, deletions)
-- `--live`: Full screen refresh with periodic updates (better for charts)
+Monitor DQL query results in real-time with live mode:
 
 ```bash
-# Watch mode - shows changes incrementally
-dtctl query "fetch logs | filter status='ERROR'" --watch
+# Live mode with periodic updates (default: 60s)
+dtctl query "fetch logs | filter status='ERROR'" --live
 
-# Live mode - full refresh with charts
-dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --live
+# Live mode with custom interval
+dtctl query "fetch logs" --live --interval 5s
+
+# Live mode with charts
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --live --interval 10s
 ```
 
 ### Query Warnings
