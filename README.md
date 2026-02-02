@@ -77,6 +77,7 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 | Buckets | get, describe, create, delete |
 | Lookup Tables | get, describe, create, delete (CSV auto-detection) |
 | App Functions | get, describe, execute (discover & run serverless functions) |
+| App Intents | get, describe, find, open (deep linking across apps) |
 | And more... | Apps, EdgeConnect, Davis AI |
 
 ## Documentation

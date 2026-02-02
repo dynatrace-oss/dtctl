@@ -11,9 +11,9 @@ license: Apache-2.0
 dtctl <verb> <resource> [name/id] [flags]
 ```
 
-**Verbs:** get, describe, create, edit, apply, delete, exec, query, logs, wait, history, restore, share/unshare
+**Verbs:** get, describe, create, edit, apply, delete, exec, query, logs, wait, history, restore, share/unshare, find, open
 
-**Key Resources:** workflow (wf), dashboard (dash), notebook (nb), slo, bucket (bkt), lookup (lkup), settings, function (fn), analyzer (az), copilot (cp)
+**Key Resources:** workflow (wf), dashboard (dash), notebook (nb), slo, bucket (bkt), lookup (lkup), settings, function (fn), intent, analyzer (az), copilot (cp)
 
 **Global Flags:**
 - `--context` - Switch environment
@@ -111,6 +111,16 @@ dtctl get functions -o wide                               # Show descriptions
 dtctl describe function dynatrace.slack/slack-send-message
 dtctl exec function dynatrace.slack/slack-send-message --method POST --payload '{"channel":"#alerts","message":"test"}'
 dtctl exec function dynatrace.automations/execute-dql-query --method POST --data @query.json
+```
+
+### App Intents
+```bash
+dtctl get intents                                         # List all intents
+dtctl get intents --app dynatrace.distributedtracing      # Filter by app
+dtctl describe intent dynatrace.distributedtracing/view-trace
+dtctl find intents --data trace_id=abc123                 # Find matching intents
+dtctl open intent dynatrace.distributedtracing/view-trace --data trace_id=abc123
+dtctl open intent dynatrace.distributedtracing/view-trace --data trace_id=abc123 --browser
 ```
 
 ## Template Variables

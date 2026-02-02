@@ -470,6 +470,27 @@ dtctl exec function -f script.js --payload '{"input":"data"}'
 dtctl exec function --code 'export default async function() { return "hello" }'
 dtctl get sdk-versions                           # List available SDK versions
 
+# App Intents
+# Resource name: intent/intents
+# Intents enable inter-app communication by defining entry points that apps expose
+dtctl get intents                                # List all intents across all apps
+dtctl get intents --app <app-id>                 # List intents for a specific app
+dtctl get intent <app-id>/<intent-id>            # Get specific intent details
+dtctl get intents -o wide                        # Show app ID and required properties
+dtctl describe intent <app-id>/<intent-id>       # Show intent details, properties, and usage
+
+# Find matching intents for data
+dtctl find intents --data <key>=<value>          # Find intents matching data
+dtctl find intents --data trace_id=abc,timestamp=2026-02-02T16:04:19.947Z
+dtctl find intents --data log_id=xyz789 -o json  # JSON output
+
+# Generate and open intent URLs
+dtctl open intent <app-id>/<intent-id> --data <key>=<value>  # Generate intent URL
+dtctl open intent <app-id>/<intent-id> --data trace_id=abc123,timestamp=now
+dtctl open intent <app-id>/<intent-id> --data-file payload.json  # From JSON file
+dtctl open intent <app-id>/<intent-id> --data-file - # From stdin
+dtctl open intent <app-id>/<intent-id> --data trace_id=abc --browser  # Open in browser
+
 # EdgeConnect
 # Resource name: edgeconnect/edgeconnects (short: ec)
 dtctl get edgeconnects                           # List EdgeConnect configs

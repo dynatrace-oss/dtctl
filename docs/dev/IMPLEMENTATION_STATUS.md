@@ -58,6 +58,7 @@ This document tracks the current implementation status of dtctl. For future plan
 | **analyzer** | ✅ | ✅ | - | - | - | - | ✅ | - | - | - | - | - |
 | **copilot** | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
 | **lookup** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - |
+| **intent** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
 
 ### DQL Query Features
 - [x] Inline queries: `dtctl query "fetch logs | limit 10"`
@@ -94,6 +95,17 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Execute functions: `dtctl exec function <app-id>/<function-name>`
 - [x] Function metadata: title, description, resumable, stateful flags
 - [x] Wide output with all metadata
+
+### App Intents Features
+- [x] List all intents: `dtctl get intents`
+- [x] Filter by app: `dtctl get intents --app <app-id>`
+- [x] Get intent details: `dtctl get intent <app-id>/<intent-id>`
+- [x] Describe intent: `dtctl describe intent <app-id>/<intent-id>`
+- [x] Find matching intents: `dtctl find intents --data <key>=<value>`
+- [x] Generate intent URL: `dtctl open intent <app-id>/<intent-id> --data <key>=<value>`
+- [x] Open URL in browser: `--browser` flag
+- [x] JSON file support: `--data-file` flag
+- [x] Intent metadata: properties, required fields, descriptions
 
 ### Wait Features
 - [x] Wait for DQL query conditions: `dtctl wait query`

@@ -20,7 +20,7 @@ type TablePrinter struct {
 // tableFieldInfo holds metadata about a field for table display
 type tableFieldInfo struct {
 	name     string
-	index    int
+	indices  []int // Field path for nested/embedded fields
 	wideOnly bool
 }
 
@@ -31,7 +31,7 @@ func getTableFields(t reflect.Type, wide bool) []tableFieldInfo {
 	var fields []tableFieldInfo
 	hasTableTags := false
 
-	// First pass: check if any field has a table tag
+	// First pass: check if any field has a table tag (including embedded structs)
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if !field.IsExported() {
@@ -40,6 +40,20 @@ func getTableFields(t reflect.Type, wide bool) []tableFieldInfo {
 		if tag := field.Tag.Get("table"); tag != "" {
 			hasTableTags = true
 			break
+		}
+		// Check embedded structs for table tags
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			for j := 0; j < field.Type.NumField(); j++ {
+				if embeddedField := field.Type.Field(j); embeddedField.IsExported() {
+					if tag := embeddedField.Tag.Get("table"); tag != "" {
+						hasTableTags = true
+						break
+					}
+				}
+			}
+			if hasTableTags {
+				break
+			}
 		}
 	}
 
@@ -52,11 +66,26 @@ func getTableFields(t reflect.Type, wide bool) []tableFieldInfo {
 
 		tag := field.Tag.Get("table")
 
+		// Handle embedded structs - recursively process their fields
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			embeddedFields := getTableFields(field.Type, wide)
+			// Prepend parent field index to create field path
+			for _, ef := range embeddedFields {
+				indices := append([]int{i}, ef.indices...)
+				fields = append(fields, tableFieldInfo{
+					name:     ef.name,
+					indices:  indices,
+					wideOnly: ef.wideOnly,
+				})
+			}
+			continue
+		}
+
 		// If no table tags exist, fall back to showing all fields
 		if !hasTableTags {
 			fields = append(fields, tableFieldInfo{
-				name:  field.Name,
-				index: i,
+				name:    field.Name,
+				indices: []int{i},
 			})
 			continue
 		}
@@ -83,12 +112,23 @@ func getTableFields(t reflect.Type, wide bool) []tableFieldInfo {
 
 		fields = append(fields, tableFieldInfo{
 			name:     header,
-			index:    i,
+			indices:  []int{i},
 			wideOnly: wideOnly,
 		})
 	}
 
 	return fields
+}
+
+// getFieldByPath traverses a field path to get the final field value
+func getFieldByPath(v reflect.Value, indices []int) reflect.Value {
+	for _, idx := range indices {
+		if v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+		v = v.Field(idx)
+	}
+	return v
 }
 
 // configureKubectlStyle configures the tablewriter to match kubectl's output style
@@ -132,7 +172,7 @@ func (p *TablePrinter) Print(obj interface{}) error {
 
 	for _, f := range fields {
 		headers = append(headers, f.name)
-		value := v.Field(f.index)
+		value := getFieldByPath(v, f.indices)
 		values = append(values, formatValue(value))
 	}
 
@@ -200,7 +240,7 @@ func (p *TablePrinter) PrintList(obj interface{}) error {
 
 		var row []string
 		for _, f := range fields {
-			value := elem.Field(f.index)
+			value := getFieldByPath(elem, f.indices)
 			row = append(row, formatValue(value))
 		}
 		table.Append(row)

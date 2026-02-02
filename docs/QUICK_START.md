@@ -15,12 +15,16 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 7. [Grail Buckets](#grail-buckets)
 8. [Lookup Tables](#lookup-tables)
 9. [OpenPipeline](#openpipeline)
-10. [App Engine](#app-engine)
-11. [EdgeConnect](#edgeconnect)
-12. [Davis AI](#davis-ai)
-13. [Output Formats](#output-formats)
-14. [Tips & Tricks](#tips--tricks)
-15. [Troubleshooting](#troubleshooting)
+10. [Settings API](#settings-api)
+11. [App Engine](#app-engine)
+    - [List and View Apps](#list-and-view-apps)
+    - [App Functions](#app-functions)
+    - [App Intents](#app-intents)
+12. [EdgeConnect](#edgeconnect)
+13. [Davis AI](#davis-ai)
+14. [Output Formats](#output-formats)
+15. [Tips & Tricks](#tips--tricks)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -1795,6 +1799,151 @@ dtctl exec function dynatrace.abuseipdb/check-ip \
 - `app-engine:apps:run` - Execute app functions
 
 See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists.
+
+### App Intents
+
+Intents enable deep linking and inter-app communication by defining entry points that apps expose for opening resources with contextual data. They allow you to navigate directly to specific app views with parameters.
+
+#### Discover Intents
+
+```bash
+# List all intents across all apps
+dtctl get intents
+
+# List intents for a specific app
+dtctl get intents --app dynatrace.distributedtracing
+
+# Show full details in wide format
+dtctl get intents -o wide
+
+# Get a specific intent
+dtctl get intent dynatrace.distributedtracing/view-trace
+
+# Describe an intent (shows properties and usage)
+dtctl describe intent dynatrace.distributedtracing/view-trace
+```
+
+**Example output:**
+```
+Intent:       view-trace
+Full Name:    dynatrace.distributedtracing/view-trace
+Description:  View a distributed trace
+App:          Distributed Tracing (dynatrace.distributedtracing)
+
+Properties:
+  - trace_id: string (required)
+    Description: The trace identifier
+  - timestamp: string
+    Format: date-time
+    Description: When the trace occurred
+
+Required:     trace_id
+
+Usage:
+  dtctl open intent dynatrace.distributedtracing/view-trace --data trace_id=<value>
+  dtctl find intents --data trace_id=<value>
+```
+
+#### Find Matching Intents
+
+Find which intents can handle specific data:
+
+```bash
+# Find intents that match the provided data
+dtctl find intents --data trace_id=d052c9a8772e349d09048355a8891b82
+
+# Output shows match quality (100% = all required properties provided)
+MATCH%  APP                          INTENT_ID        DESCRIPTION
+100%    dynatrace.distributedtracing view-trace       View a distributed trace
+100%    dynatrace.apm               trace-analysis   Analyze trace performance
+
+# Find intents with multiple properties
+dtctl find intents --data trace_id=abc123,timestamp=2026-02-02T16:04:19.947Z
+
+# Output as JSON for processing
+dtctl find intents --data log_id=xyz789 -o json
+```
+
+#### Generate Intent URLs
+
+Generate deep links to open specific resources in apps:
+
+```bash
+# Generate intent URL with data
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=d052c9a8772e349d09048355a8891b82
+
+# Output:
+# https://your-env.apps.dynatrace.com/ui/intent/dynatrace.distributedtracing/view-trace#%7B%22trace_id%22%3A%22d052c9a8772e349d09048355a8891b82%22%7D
+
+# Generate with multiple properties
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=abc123,timestamp=2026-02-02T16:04:19.947Z
+
+# Generate from JSON file
+echo '{"trace_id":"abc123","timestamp":"2026-02-02T16:04:19.947Z"}' > data.json
+dtctl open intent dynatrace.distributedtracing/view-trace --data-file data.json
+
+# Generate from stdin
+cat data.json | dtctl open intent dynatrace.distributedtracing/view-trace --data-file -
+
+# Generate and open in browser
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=abc123 --browser
+```
+
+#### Practical Use Cases
+
+**Use Case 1: Deep Linking from Alerts**
+```bash
+# Extract trace ID from alert and open in Dynatrace
+TRACE_ID=$(extract_from_alert)
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=$TRACE_ID --browser
+```
+
+**Use Case 2: Scripted Navigation**
+```bash
+# Find which apps can handle this data, then open the best match
+dtctl find intents --data log_id=xyz789 -o json | \
+  jq -r '.[0].FullName' | \
+  xargs -I {} dtctl open intent {} --data log_id=xyz789 --browser
+```
+
+**Use Case 3: Generate Documentation**
+```bash
+# Generate intent documentation for all apps
+dtctl get intents -o json | \
+  jq -r '.[] | "## \(.FullName)\n\(.Description)\n"'
+```
+
+**Use Case 4: Integration with External Tools**
+```bash
+# Generate intent URL from external system data
+TRACE_DATA=$(curl -s https://external-system/api/trace/123)
+TRACE_ID=$(echo $TRACE_DATA | jq -r '.traceId')
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=$TRACE_ID
+```
+
+#### Intent Adoption Status
+
+> **Note:** Intents are a new feature and apps need to declare them in their manifests. Currently, most Dynatrace apps haven't adopted intents yet, so `dtctl get intents` may return zero results. The implementation is complete and ready to work automatically once apps start declaring intents.
+
+For more details, see [INTENT_USAGE_GUIDE.md](../INTENT_USAGE_GUIDE.md).
+
+**Expected Apps with Future Intent Support:**
+
+| App | Expected Intents |
+|-----|------------------|
+| `dynatrace.distributedtracing` | view-trace, view-span, trace-analysis |
+| `dynatrace.logs` | view-log-entry, filter-logs, search-logs |
+| `dynatrace.kubernetes` | view-pod, view-deployment, view-service |
+| `dynatrace.smartscape` | view-entity, view-topology |
+| `dynatrace.apm` | view-service, view-request |
+
+**Required Token Scopes:**
+- `app-engine:apps:run` - Required for accessing app manifests and intent data
 
 ### Delete Apps
 

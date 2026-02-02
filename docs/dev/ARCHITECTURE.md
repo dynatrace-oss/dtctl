@@ -471,7 +471,8 @@ dtctl/
 │   │   ├── dql.go              # DQL query executor
 │   │   ├── workflow.go         # Workflow executor
 │   │   ├── slo.go              # SLO evaluator
-│   │   └── function.go         # Function executor
+│   │   ├── function.go         # Function executor
+│   │   └── intent.go           # Intent URL generator
 │   │
 │   └── util/                   # Utilities
 │       ├── editor.go           # Interactive editor
