@@ -1,8 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
@@ -18,6 +24,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/watch"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +34,62 @@ var getCmd = &cobra.Command{
 	Short: "Display one or many resources",
 	Long:  `Display one or many resources such as workflows, dashboards, notebooks, SLOs, etc.`,
 	RunE:  requireSubcommand,
+}
+
+// executeWithWatch wraps a fetcher function with watch mode support
+func executeWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher, printer interface{}) error {
+	watchMode, _ := cmd.Flags().GetBool("watch")
+	if !watchMode {
+		return nil
+	}
+
+	interval, _ := cmd.Flags().GetDuration("interval")
+	watchOnly, _ := cmd.Flags().GetBool("watch-only")
+
+	if interval < time.Second {
+		interval = 2 * time.Second
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	c, err := NewClientFromConfig(cfg)
+	if err != nil {
+		return err
+	}
+
+	// Wrap the printer with WatchPrinter to maintain output format
+	basePrinter := printer.(output.Printer)
+	watchPrinter := output.NewWatchPrinter(basePrinter)
+
+	watcher := watch.NewWatcher(watch.WatcherOptions{
+		Interval:    interval,
+		Client:      c,
+		Fetcher:     fetcher,
+		Printer:     watchPrinter,
+		ShowInitial: !watchOnly,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	return watcher.Start(ctx)
+}
+
+// addWatchFlags adds watch-related flags to a command
+func addWatchFlags(cmd *cobra.Command) {
+	cmd.Flags().Bool("watch", false, "Watch for changes")
+	cmd.Flags().Duration("interval", 2*time.Second, "Polling interval (minimum: 1s)")
+	cmd.Flags().Bool("watch-only", false, "Only show changes, not initial state")
 }
 
 // getWorkflowsCmd retrieves workflows
@@ -84,6 +147,19 @@ Examples:
 				return fmt.Errorf("failed to get current user ID for --mine filter: %w", err)
 			}
 			filters.Owner = userID
+		}
+
+		// Check if watch mode is enabled
+		watchMode, _ := cmd.Flags().GetBool("watch")
+		if watchMode {
+			fetcher := func() (interface{}, error) {
+				list, err := handler.List(filters)
+				if err != nil {
+					return nil, err
+				}
+				return list.Results, nil
+			}
+			return executeWithWatch(cmd, fetcher, printer)
 		}
 
 		list, err := handler.List(filters)
@@ -222,6 +298,19 @@ Examples:
 			filters.Owner = userID
 		}
 
+		// Check if watch mode is enabled
+		watchMode, _ := cmd.Flags().GetBool("watch")
+		if watchMode {
+			fetcher := func() (interface{}, error) {
+				list, err := handler.List(filters)
+				if err != nil {
+					return nil, err
+				}
+				return document.ConvertToDocuments(list), nil
+			}
+			return executeWithWatch(cmd, fetcher, printer)
+		}
+
 		list, err := handler.List(filters)
 		if err != nil {
 			return err
@@ -299,6 +388,19 @@ Examples:
 			filters.Owner = userID
 		}
 
+		// Check if watch mode is enabled
+		watchMode, _ := cmd.Flags().GetBool("watch")
+		if watchMode {
+			fetcher := func() (interface{}, error) {
+				list, err := handler.List(filters)
+				if err != nil {
+					return nil, err
+				}
+				return document.ConvertToDocuments(list), nil
+			}
+			return executeWithWatch(cmd, fetcher, printer)
+		}
+
 		list, err := handler.List(filters)
 		if err != nil {
 			return err
@@ -306,6 +408,96 @@ Examples:
 
 		// Convert metadata list to documents for table display
 		docs := document.ConvertToDocuments(list)
+		return printer.PrintList(docs)
+	},
+}
+
+// getTrashCmd retrieves trashed documents
+var getTrashCmd = &cobra.Command{
+	Use:     "trash",
+	Aliases: []string{"deleted"},
+	Short:   "Get trashed documents",
+	Long: `List or get trashed documents (dashboards and notebooks).
+
+Documents are soft-deleted and kept in trash for 30 days before permanent deletion.
+
+Examples:
+  # List all trashed documents
+  dtctl get trash
+
+  # List only trashed dashboards
+  dtctl get trash --type dashboard
+
+  # List only trashed notebooks
+  dtctl get trash --type notebook
+
+  # Filter by who deleted it
+  dtctl get trash --deleted-by user@example.com
+
+  # Filter by deletion date
+  dtctl get trash --deleted-after 2024-01-01
+  dtctl get trash --deleted-before 2024-12-31
+
+  # Output as JSON
+  dtctl get trash -o json
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewTrashHandler(c)
+		printer := NewPrinter()
+
+		// Build filter options from flags
+		typeFilter, _ := cmd.Flags().GetString("type")
+		deletedBy, _ := cmd.Flags().GetString("deleted-by")
+		deletedAfter, _ := cmd.Flags().GetString("deleted-after")
+		deletedBefore, _ := cmd.Flags().GetString("deleted-before")
+
+		opts := document.TrashListOptions{
+			Type:      typeFilter,
+			DeletedBy: deletedBy,
+			ChunkSize: GetChunkSize(),
+		}
+
+		// Parse date filters if provided
+		if deletedAfter != "" {
+			t, err := time.Parse("2006-01-02", deletedAfter)
+			if err != nil {
+				return fmt.Errorf("invalid deleted-after date format (use YYYY-MM-DD): %w", err)
+			}
+			opts.DeletedAfter = t
+		}
+		if deletedBefore != "" {
+			t, err := time.Parse("2006-01-02", deletedBefore)
+			if err != nil {
+				return fmt.Errorf("invalid deleted-before date format (use YYYY-MM-DD): %w", err)
+			}
+			opts.DeletedBefore = t
+		}
+
+		// Check if watch mode is enabled
+		watchMode, _ := cmd.Flags().GetBool("watch")
+		if watchMode {
+			fetcher := func() (interface{}, error) {
+				return handler.List(opts)
+			}
+			return executeWithWatch(cmd, fetcher, printer)
+		}
+
+		// List trash
+		docs, err := handler.List(opts)
+		if err != nil {
+			return err
+		}
+
 		return printer.PrintList(docs)
 	},
 }
@@ -544,6 +736,90 @@ Examples:
 		}
 
 		fmt.Printf("Notebook %q deleted (moved to trash)\n", metadata.Name)
+		return nil
+	},
+}
+
+// deleteTrashCmd permanently deletes documents from trash
+var deleteTrashCmd = &cobra.Command{
+	Use:     "trash <document-id> [document-id...]",
+	Aliases: []string{"deleted"},
+	Short:   "Permanently delete document(s) from trash",
+	Long: `Permanently delete one or more documents from trash.
+
+WARNING: This operation cannot be undone. Documents will be permanently deleted
+and cannot be recovered.
+
+The --permanent flag is required to prevent accidental deletion.
+
+Examples:
+  # Permanently delete a single document
+  dtctl delete trash a1b2c3d4-e5f6-7890-abcd-ef1234567890 --permanent
+
+  # Permanently delete multiple documents
+  dtctl delete trash <id1> <id2> <id3> --permanent -y
+`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		// Check for --permanent flag
+		permanent, _ := cmd.Flags().GetBool("permanent")
+		if !permanent {
+			return fmt.Errorf("--permanent flag is required to delete from trash")
+		}
+
+		handler := document.NewTrashHandler(c)
+
+		// Confirm deletion unless --force or --plain or deleting multiple
+		if !forceDelete && !plainMode {
+			var docNames []string
+			for _, docID := range args {
+				doc, err := handler.Get(docID)
+				if err != nil {
+					fmt.Printf("Warning: Could not get document %s: %v\n", docID, err)
+					docNames = append(docNames, docID)
+				} else {
+					docNames = append(docNames, fmt.Sprintf("%s %q", doc.Type, doc.Name))
+				}
+			}
+
+			confirmMsg := fmt.Sprintf("PERMANENTLY DELETE %d document(s) from trash? This cannot be undone.", len(args))
+			if !prompt.Confirm(confirmMsg) {
+				fmt.Println("Deletion cancelled")
+				return nil
+			}
+		}
+
+		// Delete each document
+		successCount := 0
+		for _, docID := range args {
+			err := handler.Delete(docID)
+			if err != nil {
+				fmt.Printf("Failed to delete document %s: %v\n", docID, err)
+				continue
+			}
+
+			fmt.Printf("Permanently deleted document %s\n", docID)
+			successCount++
+		}
+
+		if successCount == 0 && len(args) > 0 {
+			return fmt.Errorf("failed to delete any documents")
+		}
+
+		if len(args) > 1 {
+			fmt.Printf("\nDeleted %d of %d documents\n", successCount, len(args))
+		}
+
 		return nil
 	},
 }
@@ -1773,6 +2049,7 @@ func init() {
 	getCmd.AddCommand(getWorkflowExecutionsCmd)
 	getCmd.AddCommand(getDashboardsCmd)
 	getCmd.AddCommand(getNotebooksCmd)
+	getCmd.AddCommand(getTrashCmd)
 	getCmd.AddCommand(getSLOsCmd)
 	getCmd.AddCommand(getSLOTemplatesCmd)
 	getCmd.AddCommand(getNotificationsCmd)
@@ -1793,6 +2070,7 @@ func init() {
 	deleteCmd.AddCommand(deleteWorkflowCmd)
 	deleteCmd.AddCommand(deleteDashboardCmd)
 	deleteCmd.AddCommand(deleteNotebookCmd)
+	deleteCmd.AddCommand(deleteTrashCmd)
 	deleteCmd.AddCommand(deleteSLOCmd)
 	deleteCmd.AddCommand(deleteNotificationCmd)
 	deleteCmd.AddCommand(deleteBucketCmd)
@@ -1801,12 +2079,28 @@ func init() {
 	deleteCmd.AddCommand(deleteAppCmd)
 	deleteCmd.AddCommand(deleteEdgeConnectCmd)
 
+	// Watch flags for get commands
+	addWatchFlags(getWorkflowsCmd)
+	addWatchFlags(getWorkflowExecutionsCmd)
+	addWatchFlags(getDashboardsCmd)
+	addWatchFlags(getNotebooksCmd)
+	addWatchFlags(getTrashCmd)
+	addWatchFlags(getSLOsCmd)
+	addWatchFlags(getNotificationsCmd)
+	addWatchFlags(getBucketsCmd)
+
 	getWorkflowExecutionsCmd.Flags().StringVarP(&workflowFilter, "workflow", "w", "", "Filter executions by workflow ID")
 	getWorkflowsCmd.Flags().Bool("mine", false, "Show only workflows owned by current user")
 	getDashboardsCmd.Flags().String("name", "", "Filter by dashboard name (partial match, case-insensitive)")
 	getDashboardsCmd.Flags().Bool("mine", false, "Show only dashboards owned by current user")
 	getNotebooksCmd.Flags().String("name", "", "Filter by notebook name (partial match, case-insensitive)")
 	getNotebooksCmd.Flags().Bool("mine", false, "Show only notebooks owned by current user")
+
+	// Trash flags
+	getTrashCmd.Flags().String("type", "", "Filter by type: dashboard, notebook")
+	getTrashCmd.Flags().String("deleted-by", "", "Filter by who deleted it")
+	getTrashCmd.Flags().String("deleted-after", "", "Show documents deleted after date (YYYY-MM-DD)")
+	getTrashCmd.Flags().String("deleted-before", "", "Show documents deleted before date (YYYY-MM-DD)")
 
 	// SLO flags
 	getSLOsCmd.Flags().String("filter", "", "Filter SLOs (e.g., \"name~'production'\")")
@@ -1834,6 +2128,8 @@ func init() {
 	deleteWorkflowCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteDashboardCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteNotebookCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+	deleteTrashCmd.Flags().Bool("permanent", false, "Permanently delete (required)")
+	deleteTrashCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteSLOCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteNotificationCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteBucketCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")

@@ -244,6 +244,60 @@ Examples:
 	},
 }
 
+// describeTrashCmd shows detailed info about a trashed document
+var describeTrashCmd = &cobra.Command{
+	Use:     "trash <document-id>",
+	Aliases: []string{"deleted"},
+	Short:   "Show details of a trashed document",
+	Long: `Show detailed information about a trashed document.
+
+Examples:
+  # Describe a trashed document by ID
+  dtctl describe trash <document-id>
+`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		documentID := args[0]
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewTrashHandler(c)
+
+		// Get trashed document details
+		doc, err := handler.Get(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Print detailed information
+		fmt.Printf("ID:                 %s\n", doc.ID)
+		fmt.Printf("Name:               %s\n", doc.Name)
+		fmt.Printf("Type:               %s\n", doc.Type)
+		fmt.Printf("Version:            %d\n", doc.Version)
+		fmt.Printf("Owner:              %s\n", doc.Owner)
+		fmt.Printf("Deleted By:         %s\n", doc.DeletedBy)
+		fmt.Printf("Deleted At:         %s\n", doc.DeletedAt.Format("2006-01-02 15:04:05"))
+
+		// Show modification info if available
+		if !doc.ModificationInfo.LastModifiedTime.IsZero() {
+			fmt.Printf("Last Modified:      %s\n", doc.ModificationInfo.LastModifiedTime.Format("2006-01-02 15:04:05"))
+		}
+		if doc.ModificationInfo.LastModifiedBy != "" {
+			fmt.Printf("Last Modified By:   %s\n", doc.ModificationInfo.LastModifiedBy)
+		}
+
+		return nil
+	},
+}
+
 // formatDuration formats seconds into a human-readable duration
 func formatDuration(seconds int) string {
 	if seconds < 60 {
@@ -1062,6 +1116,7 @@ func init() {
 	describeCmd.AddCommand(describeWorkflowExecutionCmd)
 	describeCmd.AddCommand(describeDashboardCmd)
 	describeCmd.AddCommand(describeNotebookCmd)
+	describeCmd.AddCommand(describeTrashCmd)
 	describeCmd.AddCommand(describeBucketCmd)
 	describeCmd.AddCommand(describeLookupCmd)
 	describeCmd.AddCommand(describeAppCmd)

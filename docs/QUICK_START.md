@@ -321,6 +321,34 @@ dtctl logs wfe exec-456 --all
 dtctl logs wfe exec-456 --task check_errors
 ```
 
+### Watch Workflows
+
+Monitor workflows in real-time with watch mode:
+
+```bash
+# Watch all workflows for changes
+dtctl get workflows --watch
+
+# Watch with custom polling interval (default: 2s)
+dtctl get workflows --watch --interval 5s
+
+# Watch specific workflow
+dtctl get workflow my-workflow --watch
+
+# Watch only your workflows
+dtctl get workflows --mine --watch
+
+# Only show changes (skip initial state)
+dtctl get workflows --watch --watch-only
+```
+
+**Watch mode features:**
+- `+` (green) prefix for newly added workflows
+- `~` (yellow) prefix for modified workflows
+- `-` (red) prefix for deleted workflows
+- Graceful shutdown with Ctrl+C
+- Automatic retry on transient errors
+
 ### Delete Workflows
 
 ```bash
@@ -529,6 +557,24 @@ dtctl restore notebook "Weekly Analysis" 3 --force
 - Only the document owner can restore snapshots
 - Restoring automatically creates a snapshot of the current state before restoring
 
+### Watch Documents
+
+Monitor dashboards and notebooks for changes in real-time:
+
+```bash
+# Watch all dashboards
+dtctl get dashboards --watch
+
+# Watch your own dashboards
+dtctl get dashboards --mine --watch
+
+# Watch notebooks with custom interval
+dtctl get notebooks --watch --interval 10s
+
+# Watch with name filter
+dtctl get dashboards --name "production" --watch
+```
+
 ### Delete Documents
 
 ```bash
@@ -541,6 +587,88 @@ dtctl delete notebook "Old Analysis"
 # Skip confirmation
 dtctl delete dashboard dash-123 -y
 ```
+
+**Note**: Deleted documents are moved to trash and kept for 30 days before permanent deletion. See [Trash Management](#trash-management) below.
+
+### Trash Management
+
+Deleted dashboards and notebooks are moved to trash and kept for 30 days before permanent deletion. You can list, view, restore, or permanently delete items in trash.
+
+#### List Trash
+
+```bash
+# List all trashed documents
+dtctl get trash
+
+# List only trashed dashboards
+dtctl get trash --type dashboard
+
+# List only trashed notebooks
+dtctl get trash --type notebook
+
+# List only documents you deleted
+dtctl get trash --mine
+
+# Filter by deletion date
+dtctl get trash --deleted-after 2024-01-01
+dtctl get trash --deleted-before 2024-12-31
+
+# Output in different formats
+dtctl get trash -o json
+dtctl get trash -o yaml
+```
+
+**Example output:**
+```
+ID                                    TYPE        NAME                DELETED BY    DELETED AT           EXPIRES IN
+abc123-def456-ghi789-jkl012-mno345    dashboard   Prod Overview       john.doe      2024-01-15 10:30:00  29 days
+xyz987-uvw654-rst321-opq098-lmn765    notebook    Debug Session       jane.smith    2024-01-20 14:45:00  24 days
+```
+
+#### View Trash Details
+
+```bash
+# Get detailed information about a trashed document
+dtctl describe trash abc-123
+
+# Shows: ID, name, type, owner, deleted by, deletion date, expiration date, size, tags, etc.
+```
+
+#### Restore from Trash
+
+```bash
+# Restore a single document
+dtctl restore trash abc-123
+
+# Restore multiple documents
+dtctl restore trash abc-123 def-456 ghi-789
+
+# Restore with a new name (to avoid conflicts)
+dtctl restore trash abc-123 --new-name "Recovered Dashboard"
+
+# Force restore (overwrite if name conflict exists)
+dtctl restore trash abc-123 --force
+```
+
+#### Permanently Delete from Trash
+
+**WARNING**: Permanent deletion cannot be undone!
+
+```bash
+# Permanently delete a single document
+dtctl delete trash abc-123 --permanent
+
+# Permanently delete multiple documents
+dtctl delete trash abc-123 def-456 --permanent -y
+
+# The --permanent flag is required to prevent accidental deletion
+```
+
+**Notes:**
+- Documents remain in trash for **30 days** before automatic permanent deletion
+- You can only restore documents that haven't expired yet
+- Trash operations require appropriate permissions (document owner or admin)
+- Use `--deleted-by` flag to filter by who deleted the documents
 
 ---
 
@@ -830,6 +958,21 @@ dtctl query "fetch logs" \
 - Feeding data into external analysis tools
 - Generating reports from DQL query results
 
+### Live Query Results
+
+Monitor DQL query results in real-time with live mode:
+
+```bash
+# Live mode with periodic updates (default: 60s)
+dtctl query "fetch logs | filter status='ERROR'" --live
+
+# Live mode with custom interval
+dtctl query "fetch logs" --live --interval 5s
+
+# Live mode with charts
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --live --interval 10s
+```
+
 ### Query Warnings
 
 DQL queries may return warnings (e.g., scan limits reached, results truncated). These warnings are printed to **stderr**, keeping stdout clean for data processing.
@@ -943,6 +1086,21 @@ dtctl exec slo slo-123 -o json | jq '.evaluationResults[].errorBudget'
 dtctl exec slo slo-123
 ```
 
+### Watch SLOs
+
+Monitor SLO status changes in real-time:
+
+```bash
+# Watch all SLOs
+dtctl get slos --watch
+
+# Watch with custom interval
+dtctl get slos --watch --interval 30s
+
+# Watch with filter
+dtctl get slos --filter 'name~production' --watch
+```
+
 ### Delete SLOs
 
 ```bash
@@ -973,6 +1131,18 @@ dtctl get notification notif-123
 
 # Detailed view
 dtctl describe notification notif-123
+```
+
+### Watch Notifications
+
+Monitor notifications in real-time:
+
+```bash
+# Watch all notifications
+dtctl get notifications --watch
+
+# Watch specific notification type
+dtctl get notifications --type EMAIL --watch
 ```
 
 ### Delete Notifications
@@ -1019,6 +1189,18 @@ displayName: Production Logs
 table: logs
 retentionDays: 35
 status: active
+```
+
+### Watch Buckets
+
+Monitor bucket changes in real-time:
+
+```bash
+# Watch all buckets
+dtctl get buckets --watch
+
+# Watch with custom interval
+dtctl get buckets --watch --interval 10s
 ```
 
 ### Delete Buckets
@@ -2425,7 +2607,42 @@ dtctl apply -f dashboard.yaml --dry-run
 dtctl delete workflow "Test Workflow" --dry-run
 ```
 
-### Show Diff
+### Diff Command
+
+Compare resources before applying changes:
+
+```bash
+# Compare local file with remote resource (auto-detects type and ID from file)
+dtctl diff -f workflow.yaml
+
+# Compare two local files
+dtctl diff -f workflow-v1.yaml -f workflow-v2.yaml
+
+# Compare two remote resources
+dtctl diff workflow prod-workflow staging-workflow
+
+# Different output formats
+dtctl diff -f dashboard.yaml --semantic          # Human-readable with impact analysis
+dtctl diff -f workflow.yaml -o json-patch        # RFC 6902 JSON Patch format
+dtctl diff -f dashboard.yaml --side-by-side      # Split-screen comparison
+
+# Ignore metadata changes (timestamps, versions)
+dtctl diff -f workflow.yaml --ignore-metadata
+
+# Ignore array order (useful for tasks, tiles, etc.)
+dtctl diff -f dashboard.yaml --ignore-order
+
+# Quiet mode (exit code only, for CI/CD)
+dtctl diff -f workflow.yaml --quiet
+# Exit codes: 0 = no changes, 1 = changes found, 2 = error
+
+# Works with all resource types
+dtctl diff -f dashboard.yaml                     # Dashboards
+dtctl diff -f notebook.yaml                      # Notebooks
+dtctl diff -f workflow.yaml                      # Workflows
+```
+
+### Show Diff in Apply
 
 See exactly what changes when updating resources:
 

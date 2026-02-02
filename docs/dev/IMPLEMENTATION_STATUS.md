@@ -29,6 +29,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `delete` - Delete resources
 - [x] `edit` - Edit in $EDITOR
 - [x] `apply` - Create or update
+- [x] `diff` - Compare resources (local vs remote, file vs file, resource vs resource)
 - [x] `exec` - Execute workflows, analyzers, copilot, functions, SLOs
 - [x] `logs` - View execution logs
 - [x] `query` - Execute DQL queries
@@ -39,26 +40,40 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### Resources
 
-| Resource | get | describe | create | delete | edit | apply | exec | logs | share | history | restore | --mine |
-|----------|-----|----------|--------|--------|------|-------|------|------|-------|---------|---------|--------|
-| **workflow** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ |
-| **execution** | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - |
-| **dashboard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
-| **notebook** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
-| **slo** | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | - | - | - | - | - |
-| **slo-template** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
-| **notification** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
-| **bucket** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - |
-| **settings** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - |
-| **app** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
-| **function** | ✅ | ✅ | - | - | - | - | ✅ | - | - | - | - | - |
-| **edgeconnect** | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - |
-| **user** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
-| **group** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
-| **analyzer** | ✅ | ✅ | - | - | - | - | ✅ | - | - | - | - | - |
-| **copilot** | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
-| **lookup** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - |
-| **intent** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
+| Resource | get | describe | create | delete | edit | apply | diff | exec | logs | share | history | restore | --mine | --watch |
+|----------|-----|----------|--------|--------|------|-------|------|------|-------|---------|---------|--------|---------|
+| **workflow** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
+| **execution** | ✅ | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ |
+| **dashboard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **notebook** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **slo** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | ✅ | - | - | - | - | - | ✅ |
+| **slo-template** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - | - |
+| **notification** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - | - | ✅ |
+| **bucket** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | ✅ |
+| **settings** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - |
+| **app** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **function** | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **edgeconnect** | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - | - |
+| **user** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - |
+| **group** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - |
+| **analyzer** | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **copilot** | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **lookup** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
+| **intent** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - |
+
+### Watch Mode Features
+- [x] Watch all `get` commands: `dtctl get workflows --watch`
+- [x] Live mode for DQL queries: `dtctl query "fetch logs" --live`
+- [x] Configurable polling interval: `--interval` (default: 2s for watch, 60s for live)
+- [x] Skip initial state: `--watch-only` (for `get` commands only)
+- [x] Incremental change display with kubectl-style prefixes:
+  - `+` (green) for additions
+  - `~` (yellow) for modifications
+  - `-` (red) for deletions
+- [x] Graceful shutdown on Ctrl+C
+- [x] Automatic retry on transient errors (timeouts, rate limits, network issues)
+- [x] Memory-efficient (only stores last state)
+- [x] Works with existing filters and flags (e.g., `--mine`, `--name`)
 
 ### DQL Query Features
 - [x] Inline queries: `dtctl query "fetch logs | limit 10"`
@@ -67,6 +82,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] All output formats supported
 - [x] Chart output for timeseries: `dtctl query "timeseries ..." -o chart`
 - [x] Live mode with periodic updates: `--live`, `--interval`
+- [x] Watch mode with incremental updates: `--watch`, `--interval`
 - [x] Customizable chart dimensions: `--width`, `--height`, `--fullscreen`
 - [x] Custom record/byte/scan limits
 
@@ -79,6 +95,24 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Evaluation with custom timeout: `--timeout`
 - [x] Automatic polling with exponential backoff
 - [x] Table, JSON, and YAML output formats
+
+### Diff Features
+- [x] Compare local file with remote resource: `dtctl diff -f workflow.yaml`
+- [x] Compare two local files: `dtctl diff -f file1.yaml -f file2.yaml`
+- [x] Compare two remote resources: `dtctl diff workflow prod-wf staging-wf`
+- [x] Multiple output formats:
+  - Unified diff (default)
+  - Side-by-side comparison (`--side-by-side`)
+  - JSON Patch (RFC 6902) (`-o json-patch`)
+  - Semantic diff with impact analysis (`--semantic`)
+- [x] Metadata filtering: `--ignore-metadata`
+- [x] Order-independent comparison: `--ignore-order`
+- [x] Quiet mode for CI/CD: `--quiet` (exit code only)
+- [x] Proper exit codes: 0 (no changes), 1 (changes), 2 (error)
+- [x] Supported resources: workflow, dashboard, notebook
+- [x] Auto-detection of resource type and ID from files
+- [x] Deep nested structure comparison
+- [x] Colorized output support
 
 ### Davis AI Features
 - [x] List analyzers: `dtctl get analyzers`
@@ -129,13 +163,12 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### CLI Features
 - [ ] Watch mode (`--watch`)
-- [ ] Standalone diff command
 - [ ] Patch command
 - [ ] Bulk operations (apply from directory)
 - [ ] JSONPath output
 
 ### Resource Gaps
-- [ ] Document trash (list/restore deleted)
+- [x] Document trash (list/restore deleted) - See [DOCUMENT_TRASH_DESIGN.md](DOCUMENT_TRASH_DESIGN.md)
 
 ---
 

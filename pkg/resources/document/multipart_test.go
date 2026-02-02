@@ -68,7 +68,7 @@ func TestParseMultipartDocument_LargeContent(t *testing.T) {
 		t.Fatalf("Failed to write content: %v", err)
 	}
 
-	writer.Close()
+	_ = writer.Close()
 
 	// Create a mock resty response
 	resp := &resty.Response{
@@ -156,7 +156,7 @@ func TestParseMultipartDocument_Empty(t *testing.T) {
 		t.Fatalf("Failed to write content: %v", err)
 	}
 
-	writer.Close()
+	_ = writer.Close()
 
 	// Create a mock resty response
 	resp := &resty.Response{
@@ -222,7 +222,7 @@ func TestParseMultipartDocument_MissingMetadata(t *testing.T) {
 		t.Fatalf("Failed to write content: %v", err)
 	}
 
-	writer.Close()
+	_ = writer.Close()
 
 	resp := &resty.Response{
 		RawResponse: &http.Response{

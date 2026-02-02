@@ -13,6 +13,7 @@
 ```bash
 dtctl get workflows                           # List all workflows
 dtctl query "fetch logs | limit 10"           # Run DQL queries
+dtctl diff -f workflow.yaml                   # Compare local vs remote
 dtctl edit dashboard "Production Overview"    # Edit resources in your $EDITOR
 dtctl apply -f workflow.yaml                  # Declarative configuration
 ```
@@ -24,6 +25,7 @@ dtctl apply -f workflow.yaml                  # Declarative configuration
 ## Why dtctl?
 
 - **kubectl-style UX** — Familiar commands: `get`, `describe`, `edit`, `apply`, `delete`
+- **Watch mode** — Real-time monitoring with `--watch` flag for all resources
 - **AI-friendly** — Plain output modes and YAML editing for seamless AI tool integration
 - **Multi-environment** — Switch between dev/staging/prod with a single command
 - **Template support** — DQL queries with Go template variables
@@ -61,7 +63,9 @@ dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
 
 # Go!
 dtctl get workflows
+dtctl get workflows --watch                    # Real-time monitoring
 dtctl query "fetch logs | limit 10"
+dtctl query "fetch logs" --live                # Live query results
 dtctl create lookup -f error_codes.csv --path /lookups/production/errors --lookup-field code
 ```
 
@@ -69,8 +73,8 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 
 | Resource | Operations |
 |----------|------------|
-| Workflows | get, describe, create, edit, delete, execute, history |
-| Dashboards & Notebooks | get, describe, create, edit, delete, share |
+| Workflows | get, describe, create, edit, delete, execute, history, diff |
+| Dashboards & Notebooks | get, describe, create, edit, delete, share, diff |
 | DQL Queries | execute with template variables |
 | SLOs | get, create, delete, apply, evaluate |
 | Settings | get schemas, get/create/update/delete objects |

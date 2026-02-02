@@ -68,28 +68,36 @@ func TestIntentWorkflowIntegration(t *testing.T) {
 			t.Fatalf("expected 2 intents, got %d", len(intents))
 		}
 
-		// Verify first intent
-		intent1 := intents[0]
-		if intent1.IntentID != "view-trace" {
-			t.Errorf("expected IntentID 'view-trace', got %q", intent1.IntentID)
-		}
-		if len(intent1.Properties) != 2 {
-			t.Errorf("expected 2 properties, got %d", len(intent1.Properties))
-		}
-		if len(intent1.RequiredProps) != 1 {
-			t.Errorf("expected 1 required prop, got %d", len(intent1.RequiredProps))
-		}
-		if intent1.RequiredProps[0] != "trace_id" {
-			t.Errorf("expected required prop 'trace_id', got %q", intent1.RequiredProps[0])
+		// Find intents by ID (order is not guaranteed from map iteration)
+		var viewTrace, viewTraceAddon *Intent
+		for i := range intents {
+			if intents[i].IntentID == "view-trace" {
+				viewTrace = &intents[i]
+			} else if intents[i].IntentID == "view-trace-addon" {
+				viewTraceAddon = &intents[i]
+			}
 		}
 
-		// Verify second intent
-		intent2 := intents[1]
-		if intent2.IntentID != "view-trace-addon" {
-			t.Errorf("expected IntentID 'view-trace-addon', got %q", intent2.IntentID)
+		// Verify view-trace intent
+		if viewTrace == nil {
+			t.Fatal("view-trace intent not found")
 		}
-		if len(intent2.RequiredProps) != 2 {
-			t.Errorf("expected 2 required props, got %d", len(intent2.RequiredProps))
+		if len(viewTrace.Properties) != 2 {
+			t.Errorf("view-trace: expected 2 properties, got %d", len(viewTrace.Properties))
+		}
+		if len(viewTrace.RequiredProps) != 1 {
+			t.Errorf("view-trace: expected 1 required prop, got %d", len(viewTrace.RequiredProps))
+		}
+		if len(viewTrace.RequiredProps) > 0 && viewTrace.RequiredProps[0] != "trace_id" {
+			t.Errorf("view-trace: expected required prop 'trace_id', got %q", viewTrace.RequiredProps[0])
+		}
+
+		// Verify view-trace-addon intent
+		if viewTraceAddon == nil {
+			t.Fatal("view-trace-addon intent not found")
+		}
+		if len(viewTraceAddon.RequiredProps) != 2 {
+			t.Errorf("view-trace-addon: expected 2 required props, got %d", len(viewTraceAddon.RequiredProps))
 		}
 	})
 

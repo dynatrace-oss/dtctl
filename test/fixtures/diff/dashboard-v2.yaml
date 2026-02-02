@@ -1,0 +1,32 @@
+id: prod-dashboard
+type: dashboard
+name: Production Dashboard - Enhanced
+description: Enhanced production monitoring dashboard with alerts
+tiles:
+  - id: tile-1
+    name: CPU Usage
+    type: graph
+    query: "timeseries avg(dt.host.cpu.usage) | filter dt.entity.host == 'prod-host'"
+    position:
+      x: 0
+      y: 0
+      width: 6
+      height: 4
+  - id: tile-2
+    name: Memory Usage
+    type: graph
+    query: "timeseries avg(dt.host.memory.usage)"
+    position:
+      x: 6
+      y: 0
+      width: 6
+      height: 4
+  - id: tile-3
+    name: Error Rate
+    type: graph
+    query: "timeseries count(dt.entity.service_method) | filter error == true"
+    position:
+      x: 0
+      y: 4
+      width: 12
+      height: 4

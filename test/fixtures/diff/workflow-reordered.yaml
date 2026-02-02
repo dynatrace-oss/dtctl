@@ -1,0 +1,12 @@
+id: multi-task-workflow
+title: Multi Task Workflow
+tasks:
+  - id: task-3
+    name: third-task
+    action: action-3
+  - id: task-1
+    name: first-task
+    action: action-1
+  - id: task-2
+    name: second-task
+    action: action-2

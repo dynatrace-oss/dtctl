@@ -70,6 +70,32 @@ viper.AddConfigPath(config.ConfigDir())
 viper.BindPFlag("context", cmd.Flags().Lookup("context"))
 ```
 
+### Watch Mode: Real-time Resource Monitoring
+
+**Package**: `pkg/watch`
+
+**Architecture:**
+- **Watcher**: Core polling engine with configurable intervals (minimum 1s, default 2s)
+- **Differ**: Change detection algorithm using map-based comparison
+- **WatchPrinter**: Output formatter with kubectl-style change indicators
+
+**Features:**
+- Incremental change display (additions, modifications, deletions)
+- Graceful shutdown on Ctrl+C via context cancellation
+- Error handling for transient failures, rate limiting, and network issues
+- Memory-efficient (only stores last state, not full history)
+- Works with all `get` commands and DQL queries
+
+**Change Indicators:**
+- `+` (green) for added resources
+- `~` (yellow) for modified resources
+- `-` (red) for deleted resources
+
+**Flags:**
+- `--watch`: Enable watch mode
+- `--interval`: Polling interval (default: 2s, min: 1s)
+- `--watch-only`: Skip initial state display
+
 ### API Client Generation: OpenAPI Generator + oapi-codegen
 
 #### oapi-codegen

@@ -159,11 +159,13 @@ func (h *Handler) ChatStream(text string, state *ConversationState, ctx []Conver
 
 	if resp.IsError() {
 		body, _ := io.ReadAll(resp.RawBody())
-		resp.RawBody().Close()
+		_ = resp.RawBody().Close()
 		return nil, fmt.Errorf("failed to send message: status %d: %s", resp.StatusCode(), string(body))
 	}
 
-	defer resp.RawBody().Close()
+	defer func() {
+		_ = resp.RawBody().Close()
+	}()
 
 	var fullText strings.Builder
 	var finalState *ConversationState
