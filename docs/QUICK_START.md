@@ -1692,24 +1692,10 @@ dtctl exec function <app-id>/<function-name>
 
 **Discovering Required Payload Fields:**
 
-Functions don't expose their schemas via the API. Use schema discovery to find required fields:
+Functions don't expose their schemas via the API. To discover what fields are required, try executing the function with an empty payload and examine the error message:
 
 ```bash
-# Discover function schema automatically
-dtctl describe function dynatrace.automations/execute-dql-query --discover-schema
-
-# Output:
-# Function: dynatrace.automations/execute-dql-query
-# 
-# Required Fields:
-#   query  unknown
-# 
-# Example payload:
-#   {
-#     "query": "..."
-#   }
-
-# Manual discovery: try with empty payload to see what fields are required
+# Try with empty payload to see what fields are required
 dtctl exec function dynatrace.automations/execute-dql-query \
   --method POST \
   --payload '{}' \
@@ -1737,21 +1723,16 @@ dtctl get functions --app dynatrace.automations -o wide
 
 **Find function payloads:**
 ```bash
-# Method 1: Use schema discovery (recommended)
-dtctl describe function dynatrace.automations/execute-dql-query --discover-schema
-dtctl describe function dynatrace.email/send-email --discover-schema
-dtctl describe function dynatrace.slack/slack-send-message --discover-schema
-
-# Method 2: Check the Dynatrace UI
+# Method 1: Check the Dynatrace UI
 # Navigate to Apps → [App Name] → View function documentation
 
-# Method 3: Use error messages to discover required fields
+# Method 2: Use error messages to discover required fields
 dtctl exec function <app-id>/<function-name> \
   --method POST \
   --payload '{}' \
   -o json 2>&1 | jq -r '.body' | jq -r '.error // .logs'
 
-# Method 4: Look at existing workflows that use the function
+# Method 3: Look at existing workflows that use the function
 dtctl get workflows -o json | jq -r '.[] | select(.tasks != null)'
 ```
 

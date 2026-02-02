@@ -111,6 +111,13 @@ func (h *FunctionHandler) DiscoverSchema(appID, functionName string) (*FunctionS
 		}
 	}
 
+	// If no fields were discovered and no error message, check if function succeeded with empty payload
+	if len(schema.Fields) == 0 && schema.ErrorMessage == "" {
+		if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			schema.ErrorMessage = "Function accepts empty payload (no required fields)"
+		}
+	}
+
 	return schema, nil
 }
 
@@ -389,6 +396,14 @@ func (s *FunctionSchema) FormatSchema() string {
 	sb.WriteString(fmt.Sprintf("Function: %s/%s\n\n", s.AppID, s.FunctionName))
 
 	if len(s.Fields) == 0 {
+		if s.ErrorMessage == "Function accepts empty payload (no required fields)" {
+			sb.WriteString("✓ This function accepts an empty payload (no required fields).\n")
+			sb.WriteString("  It can be invoked without any input parameters.\n\n")
+			sb.WriteString("Example usage:\n")
+			sb.WriteString(fmt.Sprintf("  dtctl exec function %s/%s --method POST --payload '{}'\n", s.AppID, s.FunctionName))
+			return sb.String()
+		}
+
 		sb.WriteString("Unable to discover schema fields.\n")
 		if s.ErrorMessage != "" {
 			sb.WriteString("\nRaw error message:\n")

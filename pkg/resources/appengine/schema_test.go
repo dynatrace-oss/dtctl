@@ -65,6 +65,22 @@ func TestFunctionSchema_FormatSchema(t *testing.T) {
 				"number",
 			},
 		},
+		{
+			name: "function accepts empty payload",
+			schema: &FunctionSchema{
+				FunctionName: "helloWorld",
+				AppID:        "my.xv.wow1",
+				Fields:       []SchemaField{},
+				ErrorMessage: "Function accepts empty payload (no required fields)",
+			},
+			checks: []string{
+				"helloWorld",
+				"my.xv.wow1",
+				"accepts an empty payload",
+				"no required fields",
+				"Example usage",
+			},
+		},
 	}
 
 	for _, tt := range tests {

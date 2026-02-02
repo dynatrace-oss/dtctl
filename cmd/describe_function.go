@@ -7,10 +7,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	describeFunctionDiscoverSchema bool
-)
-
 // describeFunctionCmd describes an app function
 var describeFunctionCmd = &cobra.Command{
 	Use:     "function <app-id>/<function-name>",
@@ -24,9 +20,6 @@ Each function can be invoked using 'dtctl exec function'.
 Examples:
   # Describe a function
   dtctl describe function dynatrace.automations/execute-dql-query
-
-  # Discover function schema (makes test API call)
-  dtctl describe function dynatrace.automations/execute-dql-query --discover-schema
 
   # Output as JSON
   dtctl describe function dynatrace.abuseipdb/check-ip -o json
@@ -52,17 +45,6 @@ Examples:
 		function, err := handler.GetFunction(args[0])
 		if err != nil {
 			return err
-		}
-
-		// If schema discovery is requested, discover and display schema
-		if describeFunctionDiscoverSchema {
-			functionHandler := appengine.NewFunctionHandler(c)
-			schema, err := functionHandler.DiscoverSchema(function.AppID, function.FunctionName)
-			if err != nil {
-				return fmt.Errorf("failed to discover schema: %w", err)
-			}
-			fmt.Print(schema.FormatSchema())
-			return nil
 		}
 
 		// For table output, show detailed information
@@ -95,5 +77,5 @@ Examples:
 }
 
 func init() {
-	describeFunctionCmd.Flags().BoolVar(&describeFunctionDiscoverSchema, "discover-schema", false, "discover function schema by test invocation")
+	// No flags for this command
 }
