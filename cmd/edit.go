@@ -119,7 +119,9 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("failed to create temp file: %w", err)
 		}
-		defer os.Remove(tmpfile.Name())
+		defer func() {
+			_ = os.Remove(tmpfile.Name())
+		}()
 
 		if _, err := tmpfile.Write(editData); err != nil {
 			return fmt.Errorf("failed to write temp file: %w", err)
@@ -280,7 +282,11 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("failed to create temp file: %w", err)
 		}
-		defer os.Remove(tmpfile.Name())
+		defer func() {
+			if err := os.Remove(tmpfile.Name()); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to remove temp file: %v\n", err)
+			}
+		}()
 
 		if _, err := tmpfile.Write(editData); err != nil {
 			return fmt.Errorf("failed to write temp file: %w", err)

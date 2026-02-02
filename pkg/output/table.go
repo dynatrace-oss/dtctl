@@ -159,7 +159,7 @@ func (p *TablePrinter) Print(obj interface{}) error {
 
 	if v.Kind() != reflect.Struct {
 		// For non-struct types, just print the value
-		fmt.Fprintln(p.writer, obj)
+		_, _ = fmt.Fprintln(p.writer, obj)
 		return nil
 	}
 

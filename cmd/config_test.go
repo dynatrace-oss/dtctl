@@ -15,8 +15,12 @@ func TestConfigSetCmd(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config")
 
 	// Set the config path
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CONFIG_HOME")
+	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
+		t.Fatalf("failed to set XDG_CONFIG_HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Unsetenv("XDG_CONFIG_HOME")
+	}()
 
 	tests := []struct {
 		name      string
@@ -59,7 +63,7 @@ func TestConfigSetCmd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean up for fresh test
-			os.Remove(configPath)
+			_ = os.Remove(configPath)
 
 			// Execute the RunE function directly with args
 			err := configSetCmd.RunE(configSetCmd, []string{tt.key, tt.value})
@@ -92,8 +96,12 @@ func TestConfigDeleteContextCmd(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Set the config path
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CONFIG_HOME")
+	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
+		t.Fatalf("failed to set XDG_CONFIG_HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Unsetenv("XDG_CONFIG_HOME")
+	}()
 
 	tests := []struct {
 		name         string

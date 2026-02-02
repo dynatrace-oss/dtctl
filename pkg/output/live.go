@@ -110,12 +110,12 @@ func (p *LivePrinter) RunLive(ctx context.Context, fetcher DataFetcher) error {
 		select {
 		case <-ctx.Done():
 			// Clear status line and exit cleanly
-			fmt.Fprintln(p.writer, "\nLive mode stopped.")
+			_, _ = fmt.Fprintln(p.writer, "\nLive mode stopped.")
 			return nil
 		case key := <-keyCh:
 			// Handle 'q' or 'Q' to quit
 			if key == 'q' || key == 'Q' {
-				fmt.Fprintln(p.writer, "\nLive mode stopped.")
+				_, _ = fmt.Fprintln(p.writer, "\nLive mode stopped.")
 				return nil
 			}
 		case <-ticker.C:
@@ -172,7 +172,7 @@ func (p *LivePrinter) fetchAndPrint(ctx context.Context, fetcher DataFetcher) er
 // clearScreen clears the terminal screen using ANSI escape codes
 func (p *LivePrinter) clearScreen() {
 	// ANSI escape codes: clear screen and move cursor to home position
-	fmt.Fprint(p.writer, "\033[2J\033[H")
+	_, _ = fmt.Fprint(p.writer, "\033[2J\033[H")
 }
 
 // GetTerminalSize returns the current terminal width and height

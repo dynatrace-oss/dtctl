@@ -152,14 +152,14 @@ func TestLoadConfig(t *testing.T) {
 				cfgFile = origCfgFile
 				contextName = origContextName
 				if origEnvContext != "" {
-					os.Setenv("DTCTL_CONTEXT", origEnvContext)
+					_ = os.Setenv("DTCTL_CONTEXT", origEnvContext)
 				} else {
-					os.Unsetenv("DTCTL_CONTEXT")
+					_ = os.Unsetenv("DTCTL_CONTEXT")
 				}
 			}()
 
 			// Unset environment variable to avoid interference
-			os.Unsetenv("DTCTL_CONTEXT")
+			_ = os.Unsetenv("DTCTL_CONTEXT")
 
 			// Reset state
 			viper.Reset()

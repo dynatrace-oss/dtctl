@@ -1,0 +1,14 @@
+version: 2
+
+run:
+  timeout: 5m
+  go: '1.24'
+
+linters:
+  disable:
+    - errcheck    # Too noisy for defer statements and test code
+    - staticcheck # Disabled to avoid opinionated style suggestions (QF1003, QF1001, QF1008)
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

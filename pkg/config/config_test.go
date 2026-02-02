@@ -179,7 +179,9 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	configPath := filepath.Join(tmpDir, "config")
 
@@ -233,7 +235,9 @@ func TestLoadFrom_InvalidYAML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	configPath := filepath.Join(tmpDir, "config")
 	if err := os.WriteFile(configPath, []byte("invalid: yaml: content: ["), 0600); err != nil {
@@ -295,12 +299,18 @@ func TestConfig_Save(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	// Override XDG for this test
 	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set XDG_CONFIG_HOME: %v", err)
+	}
+	defer func() {
+		_ = os.Setenv("XDG_CONFIG_HOME", origXDG)
+	}()
 
 	cfg := NewConfig()
 	cfg.SetContext("test", "https://test.dt.com", "token")

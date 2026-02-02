@@ -30,7 +30,7 @@ func SetupTestConfig(t *testing.T, serverURL string) (configPath string, cleanup
 	}
 
 	cleanup = func() {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 	}
 
 	return configPath, cleanup
@@ -62,7 +62,9 @@ func CreateTempFile(t *testing.T, content string, pattern string) string {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer tmpFile.Close()
+	defer func() {
+		_ = tmpFile.Close()
+	}()
 
 	if _, err := tmpFile.Write([]byte(content)); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)

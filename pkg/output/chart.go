@@ -493,8 +493,8 @@ func (p *ChartPrinter) renderChart(ts *TimeseriesData) error {
 
 	// Replace \n with \r\n for raw terminal mode compatibility
 	graph = strings.ReplaceAll(graph, "\n", "\r\n")
-	fmt.Fprint(p.writer, graph)
-	fmt.Fprint(p.writer, "\r\n")
+	_, _ = fmt.Fprint(p.writer, graph)
+	_, _ = fmt.Fprint(p.writer, "\r\n")
 
 	return nil
 }
