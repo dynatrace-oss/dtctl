@@ -1855,7 +1855,6 @@ dtctl find intents --data trace_id=d052c9a8772e349d09048355a8891b82
 # Output shows match quality (100% = all required properties provided)
 MATCH%  APP                          INTENT_ID        DESCRIPTION
 100%    dynatrace.distributedtracing view-trace       View a distributed trace
-100%    dynatrace.apm               trace-analysis   Analyze trace performance
 
 # Find intents with multiple properties
 dtctl find intents --data trace_id=abc123,timestamp=2026-02-02T16:04:19.947Z
@@ -1925,22 +1924,6 @@ TRACE_ID=$(echo $TRACE_DATA | jq -r '.traceId')
 dtctl open intent dynatrace.distributedtracing/view-trace \
   --data trace_id=$TRACE_ID
 ```
-
-#### Intent Adoption Status
-
-> **Note:** Intents are a new feature and apps need to declare them in their manifests. Currently, most Dynatrace apps haven't adopted intents yet, so `dtctl get intents` may return zero results. The implementation is complete and ready to work automatically once apps start declaring intents.
-
-For more details, see [INTENT_USAGE_GUIDE.md](../INTENT_USAGE_GUIDE.md).
-
-**Expected Apps with Future Intent Support:**
-
-| App | Expected Intents |
-|-----|------------------|
-| `dynatrace.distributedtracing` | view-trace, view-span, trace-analysis |
-| `dynatrace.logs` | view-log-entry, filter-logs, search-logs |
-| `dynatrace.kubernetes` | view-pod, view-deployment, view-service |
-| `dynatrace.smartscape` | view-entity, view-topology |
-| `dynatrace.apm` | view-service, view-request |
 
 **Required Token Scopes:**
 - `app-engine:apps:run` - Required for accessing app manifests and intent data
