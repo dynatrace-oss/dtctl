@@ -56,20 +56,53 @@ func (h *FunctionHandler) DiscoverSchema(appID, functionName string) (*FunctionS
 	if resp != nil && resp.Body != "" {
 		var bodyData map[string]interface{}
 		if err := json.Unmarshal([]byte(resp.Body), &bodyData); err == nil {
-			if errorMsg, ok := bodyData["error"].(string); ok {
-				schema.ErrorMessage = errorMsg
-				schema.Fields = parseSchemaFromError(errorMsg)
+			// Try to parse constraintViolations format (nested structure)
+			schema.Fields = parseConstraintViolations(bodyData)
 
-				// If no fields discovered and error suggests empty input, try with minimal object
-				if len(schema.Fields) == 0 && strings.Contains(errorMsg, "must not be empty") {
-					req.Payload = `{"test":"value"}`
+			// If no fields found, try parsing error message string
+			if len(schema.Fields) == 0 {
+				if errorMsg, ok := bodyData["error"].(string); ok {
+					schema.ErrorMessage = errorMsg
+					schema.Fields = parseSchemaFromError(errorMsg)
+
+					// If no fields discovered and error suggests empty input, try with minimal object
+					if len(schema.Fields) == 0 && strings.Contains(errorMsg, "must not be empty") {
+						req.Payload = `{"test":"value"}`
+						resp2, _ := h.InvokeFunction(req)
+						if resp2 != nil && resp2.Body != "" {
+							var bodyData2 map[string]interface{}
+							if err := json.Unmarshal([]byte(resp2.Body), &bodyData2); err == nil {
+								if errorMsg2, ok := bodyData2["error"].(string); ok {
+									schema.ErrorMessage = errorMsg2
+									schema.Fields = parseSchemaFromError(errorMsg2)
+								}
+							}
+						}
+					}
+				}
+			}
+
+			// If root-level validation found (empty path), try with sample fields to discover actual schema
+			if hasRootLevelValidation(schema.Fields) {
+				testPayloads := []string{
+					`{"prompt": "test"}`,
+					`{"query": "test"}`,
+					`{"text": "test"}`,
+					`{"message": "test"}`,
+					`{"input": "test"}`,
+					`{"data": {}}`,
+				}
+
+				for _, payload := range testPayloads {
+					req.Payload = payload
 					resp2, _ := h.InvokeFunction(req)
 					if resp2 != nil && resp2.Body != "" {
 						var bodyData2 map[string]interface{}
 						if err := json.Unmarshal([]byte(resp2.Body), &bodyData2); err == nil {
-							if errorMsg2, ok := bodyData2["error"].(string); ok {
-								schema.ErrorMessage = errorMsg2
-								schema.Fields = parseSchemaFromError(errorMsg2)
+							newFields := parseConstraintViolations(bodyData2)
+							if len(newFields) > len(schema.Fields) && !hasRootLevelValidation(newFields) {
+								schema.Fields = newFields
+								break
 							}
 						}
 					}
@@ -81,7 +114,117 @@ func (h *FunctionHandler) DiscoverSchema(appID, functionName string) (*FunctionS
 	return schema, nil
 }
 
-// parseSchemaFromError extracts schema information from error messages
+// parseConstraintViolations extracts schema from constraintViolations format
+// Handles nested structures like: body.error.details.constraintViolations
+func parseConstraintViolations(data map[string]interface{}) []SchemaField {
+	var fields []SchemaField
+
+	// Try to navigate nested structure: body.error.details.constraintViolations
+	var constraintViolations []interface{}
+
+	// Pattern 1: Direct constraintViolations array
+	if cv, ok := data["constraintViolations"].([]interface{}); ok {
+		constraintViolations = cv
+	}
+
+	// Pattern 2: Nested in body.error.details.constraintViolations
+	if body, ok := data["body"].(map[string]interface{}); ok {
+		if errorObj, ok := body["error"].(map[string]interface{}); ok {
+			if details, ok := errorObj["details"].(map[string]interface{}); ok {
+				if cv, ok := details["constraintViolations"].([]interface{}); ok {
+					constraintViolations = cv
+				}
+			}
+		}
+	}
+
+	// Pattern 3: Nested in error.details.constraintViolations
+	if errorObj, ok := data["error"].(map[string]interface{}); ok {
+		if details, ok := errorObj["details"].(map[string]interface{}); ok {
+			if cv, ok := details["constraintViolations"].([]interface{}); ok {
+				constraintViolations = cv
+			}
+		}
+	}
+
+	// Parse each constraint violation
+	for _, cv := range constraintViolations {
+		if violation, ok := cv.(map[string]interface{}); ok {
+			path, _ := violation["path"].(string)
+			message, _ := violation["message"].(string)
+
+			// Skip root-level validation errors (empty path) for now
+			// These will trigger a retry with sample payloads
+			if path == "" {
+				fields = append(fields, SchemaField{
+					Name:     "_root_",
+					Type:     "unknown",
+					Required: true,
+					Hint:     message,
+				})
+				continue
+			}
+
+			// Extract field name from path (handle nested paths like "data.field")
+			fieldName := path
+			if strings.Contains(path, ".") {
+				parts := strings.Split(path, ".")
+				fieldName = parts[0] // Use top-level field
+			}
+
+			field := SchemaField{
+				Name:     fieldName,
+				Type:     "unknown",
+				Required: true,
+				Hint:     message,
+			}
+
+			// Try to infer type from message
+			messageLower := strings.ToLower(message)
+			// Look for "expected <type>" pattern first (more specific)
+			if strings.Contains(messageLower, "expected number") || strings.Contains(messageLower, "expected integer") {
+				field.Type = "number"
+			} else if strings.Contains(messageLower, "expected string") {
+				field.Type = "string"
+			} else if strings.Contains(messageLower, "expected object") {
+				field.Type = "object"
+			} else if strings.Contains(messageLower, "expected array") {
+				field.Type = "array"
+			} else if strings.Contains(messageLower, "expected boolean") {
+				field.Type = "boolean"
+			} else if strings.Contains(messageLower, "string") {
+				field.Type = "string"
+			} else if strings.Contains(messageLower, "object") {
+				field.Type = "object"
+			} else if strings.Contains(messageLower, "array") {
+				field.Type = "array"
+			} else if strings.Contains(messageLower, "boolean") {
+				field.Type = "boolean"
+			} else if strings.Contains(messageLower, "number") || strings.Contains(messageLower, "integer") {
+				field.Type = "number"
+			}
+
+			fields = append(fields, field)
+		}
+	}
+
+	return fields
+}
+
+// hasRootLevelValidation checks if the schema only contains root-level validation errors
+func hasRootLevelValidation(fields []SchemaField) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	for _, field := range fields {
+		if field.Name != "_root_" {
+			return false
+		}
+	}
+	return true
+}
+
+// parseSchemaFromError extracts schema information from error messagesSchemaFromError extracts schema information from error messages
 func parseSchemaFromError(errorMsg string) []SchemaField {
 	var fields []SchemaField
 
