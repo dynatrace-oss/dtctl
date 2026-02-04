@@ -1003,6 +1003,140 @@ dtctl query "fetch logs" -o csv 2>/dev/null > clean_data.csv
 - **SCAN_LIMIT_GBYTES**: Query stopped after scanning the default limit. Use `--default-scan-limit-gbytes` to adjust.
 - **RESULT_TRUNCATED**: Results exceeded the limit. Use `--max-result-records` to increase.
 
+### Query Verification
+
+Verify DQL query syntax without executing it. This is useful for:
+- Testing queries in CI/CD pipelines
+- Pre-commit hooks to validate query files
+- Checking query correctness before execution
+- Getting the canonical (normalized) representation of queries
+
+#### Basic Verification
+
+```bash
+# Verify inline query
+dtctl query verify "fetch logs | limit 10"
+
+# Verify query from file
+dtctl query verify -f query.dql
+
+# Read from stdin (recommended for complex queries)
+dtctl query verify -f - <<'EOF'
+fetch logs | filter status == "ERROR"
+EOF
+
+# Pipe query from file
+cat query.dql | dtctl query verify
+```
+
+#### Verification with Options
+
+```bash
+# Get canonical query representation (normalized format)
+dtctl query verify "fetch logs" --canonical
+
+# Verify with specific timezone and locale
+dtctl query verify "fetch logs" --timezone "Europe/Paris" --locale "fr_FR"
+
+# Get structured output (JSON or YAML)
+dtctl query verify "fetch logs" -o json
+dtctl query verify "fetch logs" -o yaml
+
+# Fail on warnings (strict validation for CI/CD)
+dtctl query verify -f query.dql --fail-on-warn
+```
+
+#### Exit Codes
+
+The `verify` command returns different exit codes based on the result:
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 0 | Query is valid |
+| 1 | Query is invalid or has errors (or warnings with `--fail-on-warn`) |
+| 2 | Authentication/permission error |
+| 3 | Network/server error |
+
+```bash
+# Check exit code in scripts
+if dtctl query verify -f query.dql --fail-on-warn; then
+  echo "Query is valid"
+else
+  echo "Query validation failed"
+  exit 1
+fi
+```
+
+#### CI/CD Integration
+
+```bash
+# Validate all queries in a directory
+for file in queries/*.dql; do
+  echo "Verifying $file..."
+  dtctl query verify -f "$file" --fail-on-warn || exit 1
+done
+
+# Pre-commit hook: Verify staged query files
+git diff --cached --name-only --diff-filter=ACM "*.dql" | \
+  xargs -I {} dtctl query verify -f {} --fail-on-warn
+
+# GitHub Actions / CI pipeline
+- name: Validate DQL queries
+  run: |
+    for file in queries/*.dql; do
+      dtctl query verify -f "$file" --fail-on-warn || exit 1
+    done
+```
+
+#### Template Variables
+
+Verify queries with template variables before execution:
+
+```bash
+# Verify template query
+dtctl query verify -f template.dql --set env=prod --set timerange=1h
+
+# If valid, execute it
+if dtctl query verify -f template.dql --set env=prod 2>/dev/null; then
+  dtctl query -f template.dql --set env=prod -o csv > results.csv
+fi
+```
+
+#### PowerShell Examples
+
+```powershell
+# Verify query using here-strings
+dtctl query verify -f - @'
+fetch logs, bucket:{"custom-logs"} | filter contains(host.name, "api")
+'@
+
+# Validate all queries in a directory
+Get-ChildItem queries/*.dql | ForEach-Object {
+  Write-Host "Verifying $_..."
+  dtctl query verify -f $_.FullName --fail-on-warn
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+```
+
+#### Canonical Query Output
+
+Get the normalized representation of your query:
+
+```bash
+# Get canonical query
+dtctl query verify "fetch logs" --canonical
+
+# Extract canonical query with jq
+dtctl query verify "fetch logs" --canonical -o json | jq -r '.canonicalQuery'
+
+# Compare original vs canonical
+echo "Original:"
+cat query.dql
+echo ""
+echo "Canonical:"
+dtctl query verify -f query.dql --canonical 2>&1 | grep -A 999 "Canonical Query:"
+```
+
 ---
 
 ## Service Level Objectives (SLOs)

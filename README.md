@@ -75,7 +75,7 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 |----------|------------|
 | Workflows | get, describe, create, edit, delete, execute, history, diff |
 | Dashboards & Notebooks | get, describe, create, edit, delete, share, diff |
-| DQL Queries | execute with template variables |
+| DQL Queries | execute with template variables, verify syntax without execution |
 | SLOs | get, create, delete, apply, evaluate |
 | Settings | get schemas, get/create/update/delete objects |
 | Buckets | get, describe, create, delete |
