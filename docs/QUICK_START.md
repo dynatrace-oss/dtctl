@@ -1015,35 +1015,35 @@ Verify DQL query syntax without executing it. This is useful for:
 
 ```bash
 # Verify inline query
-dtctl query verify "fetch logs | limit 10"
+dtctl verify query "fetch logs | limit 10"
 
 # Verify query from file
-dtctl query verify -f query.dql
+dtctl verify query -f query.dql
 
 # Read from stdin (recommended for complex queries)
-dtctl query verify -f - <<'EOF'
+dtctl verify query -f - <<'EOF'
 fetch logs | filter status == "ERROR"
 EOF
 
 # Pipe query from file
-cat query.dql | dtctl query verify
+cat query.dql | dtctl verify query
 ```
 
 #### Verification with Options
 
 ```bash
 # Get canonical query representation (normalized format)
-dtctl query verify "fetch logs" --canonical
+dtctl verify query "fetch logs" --canonical
 
 # Verify with specific timezone and locale
-dtctl query verify "fetch logs" --timezone "Europe/Paris" --locale "fr_FR"
+dtctl verify query "fetch logs" --timezone "Europe/Paris" --locale "fr_FR"
 
 # Get structured output (JSON or YAML)
-dtctl query verify "fetch logs" -o json
-dtctl query verify "fetch logs" -o yaml
+dtctl verify query "fetch logs" -o json
+dtctl verify query "fetch logs" -o yaml
 
 # Fail on warnings (strict validation for CI/CD)
-dtctl query verify -f query.dql --fail-on-warn
+dtctl verify query -f query.dql --fail-on-warn
 ```
 
 #### Exit Codes
@@ -1059,7 +1059,7 @@ The `verify` command returns different exit codes based on the result:
 
 ```bash
 # Check exit code in scripts
-if dtctl query verify -f query.dql --fail-on-warn; then
+if dtctl verify query -f query.dql --fail-on-warn; then
   echo "Query is valid"
 else
   echo "Query validation failed"
@@ -1073,18 +1073,18 @@ fi
 # Validate all queries in a directory
 for file in queries/*.dql; do
   echo "Verifying $file..."
-  dtctl query verify -f "$file" --fail-on-warn || exit 1
+  dtctl verify query -f "$file" --fail-on-warn || exit 1
 done
 
 # Pre-commit hook: Verify staged query files
 git diff --cached --name-only --diff-filter=ACM "*.dql" | \
-  xargs -I {} dtctl query verify -f {} --fail-on-warn
+  xargs -I {} dtctl verify query -f {} --fail-on-warn
 
 # GitHub Actions / CI pipeline
 - name: Validate DQL queries
   run: |
     for file in queries/*.dql; do
-      dtctl query verify -f "$file" --fail-on-warn || exit 1
+      dtctl verify query -f "$file" --fail-on-warn || exit 1
     done
 ```
 
@@ -1094,10 +1094,10 @@ Verify queries with template variables before execution:
 
 ```bash
 # Verify template query
-dtctl query verify -f template.dql --set env=prod --set timerange=1h
+dtctl verify query -f template.dql --set env=prod --set timerange=1h
 
 # If valid, execute it
-if dtctl query verify -f template.dql --set env=prod 2>/dev/null; then
+if dtctl verify query -f template.dql --set env=prod 2>/dev/null; then
   dtctl query -f template.dql --set env=prod -o csv > results.csv
 fi
 ```
@@ -1106,14 +1106,14 @@ fi
 
 ```powershell
 # Verify query using here-strings
-dtctl query verify -f - @'
+dtctl verify query -f - @'
 fetch logs, bucket:{"custom-logs"} | filter contains(host.name, "api")
 '@
 
 # Validate all queries in a directory
 Get-ChildItem queries/*.dql | ForEach-Object {
   Write-Host "Verifying $_..."
-  dtctl query verify -f $_.FullName --fail-on-warn
+  dtctl verify query -f $_.FullName --fail-on-warn
   if ($LASTEXITCODE -ne 0) { exit 1 }
 }
 ```
@@ -1124,17 +1124,17 @@ Get the normalized representation of your query:
 
 ```bash
 # Get canonical query
-dtctl query verify "fetch logs" --canonical
+dtctl verify query "fetch logs" --canonical
 
 # Extract canonical query with jq
-dtctl query verify "fetch logs" --canonical -o json | jq -r '.canonicalQuery'
+dtctl verify query "fetch logs" --canonical -o json | jq -r '.canonicalQuery'
 
 # Compare original vs canonical
 echo "Original:"
 cat query.dql
 echo ""
 echo "Canonical:"
-dtctl query verify -f query.dql --canonical 2>&1 | grep -A 999 "Canonical Query:"
+dtctl verify query -f query.dql --canonical 2>&1 | grep -A 999 "Canonical Query:"
 ```
 
 ---

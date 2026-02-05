@@ -76,8 +76,8 @@ func TestQueryFlags(t *testing.T) {
 	}
 }
 
-// TestQueryVerifyFlags validates query verify subcommand flags
-func TestQueryVerifyFlags(t *testing.T) {
+// TestVerifyQueryFlags validates verify query subcommand flags
+func TestVerifyQueryFlags(t *testing.T) {
 	tests := []struct {
 		flagName     string
 		defaultValue string
@@ -89,23 +89,23 @@ func TestQueryVerifyFlags(t *testing.T) {
 		{"fail-on-warn", "false"},
 	}
 
-	// Find the verify subcommand under queryCmd
-	var verifyCmd *cobra.Command
-	for _, cmd := range queryCmd.Commands() {
-		if cmd.Name() == "verify" {
-			verifyCmd = cmd
+	// Find the query subcommand under verifyCmd
+	var queryCmd *cobra.Command
+	for _, cmd := range verifyCmd.Commands() {
+		if cmd.Name() == "query" {
+			queryCmd = cmd
 			break
 		}
 	}
-	if verifyCmd == nil {
-		t.Fatal("query verify subcommand not found")
+	if queryCmd == nil {
+		t.Fatal("verify query subcommand not found")
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.flagName, func(t *testing.T) {
-			flag := verifyCmd.Flags().Lookup(tt.flagName)
+			flag := queryCmd.Flags().Lookup(tt.flagName)
 			if flag == nil {
-				t.Fatalf("Query verify flag --%s not found", tt.flagName)
+				t.Fatalf("Verify query flag --%s not found", tt.flagName)
 			}
 			if flag.DefValue != tt.defaultValue {
 				t.Errorf("Flag --%s default = %q, want %q", tt.flagName, flag.DefValue, tt.defaultValue)
@@ -115,9 +115,9 @@ func TestQueryVerifyFlags(t *testing.T) {
 
 	// Verify the --set flag is also available (inherited from StringArray pattern)
 	t.Run("set_flag", func(t *testing.T) {
-		flag := verifyCmd.Flags().Lookup("set")
+		flag := queryCmd.Flags().Lookup("set")
 		if flag == nil {
-			t.Fatal("Query verify flag --set not found")
+			t.Fatal("Verify query flag --set not found")
 		}
 		// StringArray flags have "[]" as default value
 		if flag.DefValue != "[]" {

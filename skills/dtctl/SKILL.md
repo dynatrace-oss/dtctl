@@ -72,15 +72,15 @@ fetch logs
 ### Query Verification
 ```bash
 # Verify query syntax without execution
-dtctl query verify 'fetch logs | filter status="ERROR"'
-dtctl query verify -f query.dql --fail-on-warn
+dtctl verify query 'fetch logs | filter status="ERROR"'
+dtctl verify query -f query.dql --fail-on-warn
 
 # Get canonical query format
-dtctl query verify 'fetch logs' --canonical -o json
+dtctl verify query 'fetch logs' --canonical -o json
 
 # CI/CD integration
 for f in queries/*.dql; do
-  dtctl query verify -f "$f" --fail-on-warn || exit 1
+  dtctl verify query -f "$f" --fail-on-warn || exit 1
 done
 ```
 
