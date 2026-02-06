@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/copilot"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
@@ -500,14 +503,6 @@ Examples:
 
 		return printer.PrintList(docs)
 	},
-}
-
-// deleteCmd represents the delete command
-var deleteCmd = &cobra.Command{
-	Use:   "delete",
-	Short: "Delete resources",
-	Long:  `Delete one or more resources.`,
-	RunE:  requireSubcommand,
 }
 
 // updateCmd represents the update command
@@ -2040,6 +2035,105 @@ Examples:
 	},
 }
 
+// getAzureConnectionCmd retrieves Azure connections (formerly HAS credentials)
+var getAzureConnectionCmd = &cobra.Command{
+	Use:     "azure_connection [id]",
+	Aliases: []string{"azure_connections"},
+	Short:   "Get Azure connections",
+	Long:    `Get one or more Azure connections (authentication credentials).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := azureconnection.NewHandler(c)
+		printer := NewPrinter()
+
+		if len(args) > 0 {
+			identifier := args[0]
+
+			// Try to find by name first
+			item, err := handler.FindByName(identifier)
+			if err == nil {
+				return printer.Print(item)
+			}
+
+			// If not found by name, try to get by ID
+			if strings.Contains(err.Error(), "not found") {
+				item, err = handler.Get(identifier)
+				if err != nil {
+					return fmt.Errorf("connection with name or ID %q not found", identifier)
+				}
+				return printer.Print(item)
+			}
+			return err
+		}
+
+		items, err := handler.List()
+		if err != nil {
+			return err
+		}
+		return printer.PrintList(items)
+	},
+}
+
+// getAzureMonitoringConfigCmd retrieves Azure monitoring configurations
+var getAzureMonitoringConfigCmd = &cobra.Command{
+	Use:     "azure_monitoring_config [id]",
+	Aliases: []string{"azure_monitoring_configs"},
+	Short:   "Get Azure monitoring configurations",
+	Long:    `Get one or more Azure monitoring configurations.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := azuremonitoringconfig.NewHandler(c)
+		printer := NewPrinter()
+
+		if len(args) > 0 {
+			identifier := args[0]
+
+			// Try to find by name/description first
+			item, err := handler.FindByName(identifier)
+			
+			// If found, print it
+			if err == nil {
+				return printer.Print(item)
+			}
+
+			// If not found by name, try to get by ID
+			// Check if error is "not found"
+			if strings.Contains(err.Error(), "not found") {
+				item, err = handler.Get(identifier)
+				if err != nil {
+					return fmt.Errorf("monitoring config with name/description or ID %q not found", identifier)
+				}
+				return printer.Print(item)
+			}
+			return err
+		}
+
+		items, err := handler.List()
+		if err != nil {
+			return err
+		}
+		return printer.PrintList(items)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(deleteCmd)
@@ -2062,6 +2156,8 @@ func init() {
 	getCmd.AddCommand(getUsersCmd)
 	getCmd.AddCommand(getGroupsCmd)
 	getCmd.AddCommand(getSDKVersionsCmd)
+	getCmd.AddCommand(getAzureConnectionCmd)
+	getCmd.AddCommand(getAzureMonitoringConfigCmd)
 	getCmd.AddCommand(getAnalyzersCmd)
 	getCmd.AddCommand(getCopilotSkillsCmd)
 	getCmd.AddCommand(getSettingsSchemasCmd)

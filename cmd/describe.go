@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
@@ -1110,7 +1112,96 @@ Examples:
 	},
 }
 
+// describeAzureConnectionCmd shows details of an Azure connection (credential)
+var describeAzureConnectionCmd = &cobra.Command{
+	Use:     "azure_connection <id>",
+	Aliases: []string{"azure_connections", "azconn"},
+	Short:   "Show details of an Azure connection (credential)",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		h := azureconnection.NewHandler(c)
+		item, err := h.Get(args[0])
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("ID:   %s\n", item.ObjectID)
+		fmt.Printf("Name: %s\n", item.Value.Name)
+		fmt.Printf("Type: %s\n", item.Value.Type)
+
+		if item.Value.ClientSecret != nil {
+			fmt.Println("Client Secret Config:")
+			fmt.Printf("  Application ID: %s\n", item.Value.ClientSecret.ApplicationID)
+			fmt.Printf("  Directory ID:   %s\n", item.Value.ClientSecret.DirectoryID)
+			fmt.Printf("  Consumers:      %v\n", item.Value.ClientSecret.Consumers)
+		}
+
+		if item.Value.FederatedIdentityCredential != nil {
+			fmt.Println("Federated Identity Config:")
+			fmt.Printf("  Consumers: %v\n", item.Value.FederatedIdentityCredential.Consumers)
+		}
+
+		return nil
+	},
+}
+
+// describeAzureMonitoringConfigCmd shows details of an Azure monitoring configuration
+var describeAzureMonitoringConfigCmd = &cobra.Command{
+	Use:     "azure_monitoring_config <id>",
+	Aliases: []string{"azure_monitoring", "azmon"},
+	Short:   "Show details of an Azure monitoring configuration",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		h := azuremonitoringconfig.NewHandler(c)
+		item, err := h.Get(args[0])
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("ID:          %s\n", item.ObjectID)
+		fmt.Printf("Description: %s\n", item.Value.Description)
+		fmt.Printf("Enabled:     %v\n", item.Value.Enabled)
+		fmt.Printf("Version:     %s\n", item.Value.Version)
+		fmt.Println("Azure Config:")
+		fmt.Printf("  Deployment Scope:            %s\n", item.Value.Azure.DeploymentScope)
+		fmt.Printf("  Subscription Filtering Mode: %s\n", item.Value.Azure.SubscriptionFilteringMode)
+		fmt.Printf("  Configuration Mode:          %s\n", item.Value.Azure.ConfigurationMode)
+		fmt.Printf("  Deployment Mode:             %s\n", item.Value.Azure.DeploymentMode)
+		
+		if len(item.Value.Azure.Credentials) > 0 {
+			fmt.Println("  Credentials:")
+			for _, cred := range item.Value.Azure.Credentials {
+				fmt.Printf("    - Description:   %s\n", cred.Description)
+				fmt.Printf("      Connection ID: %s\n", cred.ConnectionId)
+				fmt.Printf("      Type:          %s\n", cred.Type)
+			}
+		}
+
+		return nil
+	},
+}
+
 func init() {
+	describeCmd.AddCommand(describeAzureConnectionCmd)
+	describeCmd.AddCommand(describeAzureMonitoringConfigCmd)
 	rootCmd.AddCommand(describeCmd)
 	describeCmd.AddCommand(describeWorkflowCmd)
 	describeCmd.AddCommand(describeWorkflowExecutionCmd)
