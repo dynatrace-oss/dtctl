@@ -19,6 +19,20 @@ func isTerminal(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
+// ANSI color codes for terminal output
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorCyan   = "\033[36m"
+)
+
+// isStderrTerminal checks if stderr is a terminal (for color output)
+func isStderrTerminal() bool {
+	return term.IsTerminal(int(os.Stderr.Fd()))
+}
+
 // queryCmd represents the query command
 var queryCmd = &cobra.Command{
 	Use:     "query [dql-string]",
@@ -234,7 +248,7 @@ Examples:
 func init() {
 	rootCmd.AddCommand(queryCmd)
 
-	// Flags
+	// Flags for main query command
 	queryCmd.Flags().StringP("file", "f", "", "read query from file")
 	queryCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 
