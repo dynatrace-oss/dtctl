@@ -1,6 +1,7 @@
 package azureconnection
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -50,7 +51,9 @@ type ClientSecretCredential struct {
 }
 
 type FederatedIdentityCredential struct {
-	Consumers []string `json:"consumers"`
+	DirectoryID   string   `json:"directoryId,omitempty"`
+	ApplicationID string   `json:"applicationId,omitempty"`
+	Consumers     []string `json:"consumers"`
 }
 
 func (v Value) String() string {
@@ -150,4 +153,119 @@ func (h *Handler) FindByName(name string) (*AzureConnection, error) {
 		}
 	}
 	return nil, fmt.Errorf("Azure connection with name %q not found", name)
+}
+
+// AzureConnectionCreate represents the request body for creating an Azure connection
+type AzureConnectionCreate struct {
+	SchemaID      string `json:"schemaId"`
+	Scope         string `json:"scope"`
+	Value         Value  `json:"value"`
+	SchemaVersion string `json:"schemaVersion,omitempty"`
+	ExternalID    string `json:"externalId,omitempty"`
+}
+
+// CreateResponse represents the response from creating an Azure connection
+type CreateResponse struct {
+	ObjectID string `json:"objectId"`
+	Code     int    `json:"code,omitempty"`
+	Error    *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
+}
+
+// Create creates a new Azure connection
+func (h *Handler) Create(req AzureConnectionCreate) (*AzureConnection, error) {
+	// Ensure schemaId is set to the correct value
+	if req.SchemaID == "" {
+		req.SchemaID = SchemaID
+	}
+	
+	// Default scope to environment if not provided
+	if req.Scope == "" {
+		req.Scope = "environment"
+	}
+
+	// Wrap in array for v2 API
+	body := []AzureConnectionCreate{req}
+
+	resp, err := h.client.HTTP().R().
+		SetBody(body).
+		Post(SettingsAPI)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create azure_connection: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case 400:
+			return nil, fmt.Errorf("invalid azure_connection: %s", resp.String())
+		case 403:
+			return nil, fmt.Errorf("access denied to create azure_connection")
+		case 404:
+			return nil, fmt.Errorf("schema %q not found", req.SchemaID)
+		case 409:
+			return nil, fmt.Errorf("azure_connection already exists or conflicts with existing connection")
+		default:
+			return nil, fmt.Errorf("failed to create azure_connection: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	var createResp []CreateResponse
+	if err := json.Unmarshal(resp.Body(), &createResp); err != nil {
+		return nil, fmt.Errorf("failed to parse create response: %w", err)
+	}
+
+	if len(createResp) == 0 {
+		return nil, fmt.Errorf("no items returned in create response")
+	}
+
+	result := &createResp[0]
+	if result.Error != nil {
+		return nil, fmt.Errorf("create failed: %s", result.Error.Message)
+	}
+
+	// Fetch and return the created connection
+	return h.Get(result.ObjectID)
+}
+
+// Update updates an existing Azure connection
+func (h *Handler) Update(objectID string, value Value) (*AzureConnection, error) {
+	// First get current object to obtain version
+	obj, err := h.Get(objectID)
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]interface{}{
+		"value": value,
+	}
+
+	resp, err := h.client.HTTP().R().
+		SetBody(body).
+		SetHeader("If-Match", obj.SchemaVersion).
+		Put(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to update azure_connection: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case 400:
+			return nil, fmt.Errorf("invalid azure_connection: %s", resp.String())
+		case 403:
+			return nil, fmt.Errorf("access denied to update azure_connection %q", objectID)
+		case 404:
+			return nil, fmt.Errorf("azure_connection %q not found", objectID)
+		case 409, 412:
+			return nil, fmt.Errorf("azure_connection version conflict (connection was modified)")
+		default:
+			return nil, fmt.Errorf("failed to update azure_connection: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	// Fetch and return the updated connection
+	return h.Get(objectID)
 }
