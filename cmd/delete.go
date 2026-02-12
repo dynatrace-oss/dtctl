@@ -14,6 +14,7 @@ var deleteCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "Delete resources",
 	Long:  `Delete resources by ID or name.`,
+	RunE:  requireSubcommand,
 }
 
 var deleteAzureConnectionCmd = &cobra.Command{
