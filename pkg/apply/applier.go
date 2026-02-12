@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
@@ -82,6 +85,8 @@ const (
 	ResourceSLO       ResourceType = "slo"
 	ResourceBucket    ResourceType = "bucket"
 	ResourceSettings  ResourceType = "settings"
+	ResourceAzureConnection      ResourceType = "azure_connection"
+	ResourceAzureMonitoringConfig ResourceType = "azure_monitoring_config"
 	ResourceUnknown   ResourceType = "unknown"
 )
 
@@ -126,6 +131,10 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) error {
 		return a.applyBucket(jsonData)
 	case ResourceSettings:
 		return a.applySettings(jsonData)
+	case ResourceAzureConnection:
+		return a.applyAzureConnection(jsonData)
+	case ResourceAzureMonitoringConfig:
+		return a.applyAzureMonitoringConfig(jsonData)
 	default:
 		return fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
@@ -133,9 +142,29 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) error {
 
 // detectResourceType determines the resource type from JSON data
 func detectResourceType(data []byte) (ResourceType, error) {
+	// Check for array (Azure Connection list)
+	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
+		var rawList []map[string]interface{}
+		if err := json.Unmarshal(data, &rawList); err == nil && len(rawList) > 0 {
+			if schema, ok := rawList[0]["schemaId"].(string); ok && schema == azureconnection.SchemaID {
+				return ResourceAzureConnection, nil
+			}
+		}
+	}
+
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return ResourceUnknown, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+	
+	// Azure Connection detection (single object)
+	if schema, ok := raw["schemaId"].(string); ok && schema == azureconnection.SchemaID {
+		return ResourceAzureConnection, nil
+	}
+
+	// Azure Monitoring Config detection
+	if scope, ok := raw["scope"].(string); ok && scope == "integration-azure" {
+		return ResourceAzureMonitoringConfig, nil
 	}
 
 	// Check for explicit type field
@@ -216,14 +245,21 @@ func detectResourceType(data []byte) (ResourceType, error) {
 
 	// Settings objects have "schemaId"/"schemaid", "scope", and "value" fields
 	// Check both camelCase (API format) and lowercase (YAML format)
+	var schemaIDValue string
 	hasSchemaID := false
-	if _, ok := raw["schemaId"]; ok {
+	if v, ok := raw["schemaId"].(string); ok {
 		hasSchemaID = true
-	} else if _, ok := raw["schemaid"]; ok {
+		schemaIDValue = v
+	} else if v, ok := raw["schemaid"].(string); ok {
 		hasSchemaID = true
+		schemaIDValue = v
 	}
 
 	if hasSchemaID {
+		if schemaIDValue == azureconnection.SchemaID {
+			// This is a single Azure Connection (credential), not a list
+			return ResourceAzureConnection, nil
+		}
 		if _, hasScope := raw["scope"]; hasScope {
 			if _, hasValue := raw["value"]; hasValue {
 				return ResourceSettings, nil
@@ -869,6 +905,126 @@ func (a *Applier) applySettings(data []byte) error {
 	return nil
 }
 
+// applyAzureConnection applies Azure connection (credential)
+func (a *Applier) applyAzureConnection(data []byte) error {
+	// Azure connection input might be a single object or a list of setting objects
+	var items []map[string]interface{}
+	
+	// Try parsing as array first
+	err := json.Unmarshal(data, &items)
+	if err != nil {
+		// Not an array, try parsing as single object
+		var item map[string]interface{}
+		if errSingle := json.Unmarshal(data, &item); errSingle != nil {
+			return fmt.Errorf("failed to parse Azure connection JSON: %w", errSingle)
+		}
+		items = []map[string]interface{}{item}
+	}
+
+	handler := settings.NewHandler(a.client)
+
+	for _, item := range items {
+		objectID, _ := item["objectId"].(string)
+		if objectID == "" {
+			objectID, _ = item["objectid"].(string)
+		}
+
+		schemaID, _ := item["schemaId"].(string)
+		if schemaID == "" {
+			schemaID, _ = item["schemaid"].(string)
+		}
+
+		scope, _ := item["scope"].(string)
+
+		if scope == "" {
+			scope = "environment"
+		}
+
+		value, ok := item["value"].(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("Azure connection missing 'value' field")
+		}
+
+		if objectID == "" {
+			// Create
+			req := settings.SettingsObjectCreate{
+				SchemaID: schemaID,
+				Scope:    scope,
+				Value:    value,
+			}
+			res, err := handler.Create(req)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure connection: %w", err)
+			}
+			fmt.Printf("Azure connection created: %s\n", res.ObjectID)
+
+			// Check for federated identity to print instructions
+			if typeVal, ok := value["type"].(string); ok && typeVal == "federatedIdentityCredential" {
+				printFederatedInstructions(a.baseURL, res.ObjectID)
+			}
+		} else {
+			// Update
+			_, err := handler.UpdateWithContext(objectID, value, schemaID, scope)
+			if err != nil {
+				// Check for Federated Identity error (AADSTS70025 or AADSTS700213)
+				if strings.Contains(err.Error(), "AADSTS70025") || strings.Contains(err.Error(), "AADSTS700213") {
+					if fedCred, ok := value["federatedIdentityCredential"].(map[string]interface{}); ok {
+						if appID, ok := fedCred["applicationId"].(string); ok {
+							printFederatedErrorSnippet(a.baseURL, objectID, appID)
+						}
+					}
+				}
+				return fmt.Errorf("failed to update Azure connection %s: %w", objectID, err)
+			}
+			fmt.Printf("Azure connection updated: %s\n", objectID)
+		}
+	}
+	return nil
+}
+
+// applyAzureMonitoringConfig applies Azure monitoring configuration
+func (a *Applier) applyAzureMonitoringConfig(data []byte) error {
+	handler := azuremonitoringconfig.NewHandler(a.client)
+
+	// Unmarshal to struct to handle casing properly via json tags
+	var config azuremonitoringconfig.AzureMonitoringConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		// Fallback to map if struct unmarshal fails (e.g. slight schema mismatch we might want to pass through?)
+		// But usually strict typing is better here to fix casing issues.
+		// Let's try to unmarshal to map first to get ID, but for sending we need clean data.
+		return fmt.Errorf("failed to parse Azure monitoring config JSON: %w", err)
+	}
+	
+	objectID := config.ObjectID
+
+	if objectID == "" {
+		// Re-marshal to ensure json tags are respected (casing)
+		cleanData, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal clean config: %w", err)
+		}
+
+		res, err := handler.Create(cleanData)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Azure monitoring config created: %s\n", res.ObjectID)
+	} else {
+		// Re-marshal to ensure json tags are respected (casing)
+		cleanData, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal clean config: %w", err)
+		}
+		// Update
+		res, err := handler.Update(objectID, cleanData)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Azure monitoring config updated: %s\n", res.ObjectID)
+	}
+	return nil
+}
+
 // capitalize capitalizes the first letter of a string
 func capitalize(s string) string {
 	if len(s) == 0 {
@@ -876,3 +1032,47 @@ func capitalize(s string) string {
 	}
 	return string(s[0]-32) + s[1:]
 }
+
+// printFederatedInstructions prints configuration instructions for Federated Identity Credential
+func printFederatedInstructions(baseURL, objectID string) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		// Should not happen if client is initialized correctly, but fail gracefully
+		fmt.Printf("Warning: Could not parse base URL for instructions: %v\n", err)
+		return
+	}
+	host := u.Host
+
+	// Determine issuer based on environment heuristic
+	// Default to SaaS production
+	issuer := "https://token.dynatrace.com"
+	if strings.Contains(host, "dev.apps.dynatracelabs.com") || strings.Contains(host, "dev.dynatracelabs.com") {
+		issuer = "https://dev.token.dynatracelabs.com"
+	}
+
+	fmt.Println("\nFurther configuration required in Azure Portal (Federated Credentials):")
+	fmt.Printf("  Issuer:    %s\n", issuer)
+	fmt.Printf("  Subject:   dt:connection-id/%s\n", objectID)
+	fmt.Printf("  Audiences: %s/svc-id/com.dynatrace.da\n", host)
+}
+
+// printFederatedErrorSnippet prints az cli snippet for AADSTS70025 error
+func printFederatedErrorSnippet(baseURL, objectID, clientID string) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return
+	}
+	host := u.Host
+
+	// Determine issuer
+	issuer := "https://token.dynatrace.com"
+	if strings.Contains(host, "dev.apps.dynatracelabs.com") || strings.Contains(host, "dev.dynatracelabs.com") {
+		issuer = "https://dev.token.dynatracelabs.com"
+	}
+
+	fmt.Println("\nTo fix the Federated Identity error, run the following command:")
+	// Use format validated by user: "{'key': 'value'}"
+	fmt.Printf("az ad app federated-credential create --id %q --parameters \"{'name': 'fd-Federated-Credential', 'issuer': '%s', 'subject': 'dt:connection-id/%s', 'audiences': ['%s/svc-id/com.dynatrace.da']}\"\n", clientID, issuer, objectID, host)
+	fmt.Println()
+}
+
