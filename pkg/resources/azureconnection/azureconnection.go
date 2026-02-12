@@ -51,7 +51,9 @@ type ClientSecretCredential struct {
 }
 
 type FederatedIdentityCredential struct {
-	Consumers []string `json:"consumers"`
+	DirectoryID   string   `json:"directoryId,omitempty"`
+	ApplicationID string   `json:"applicationId,omitempty"`
+	Consumers     []string `json:"consumers"`
 }
 
 func (v Value) String() string {
@@ -257,9 +259,7 @@ func (h *Handler) Update(objectID string, value Value) (*AzureConnection, error)
 			return nil, fmt.Errorf("access denied to update azure_connection %q", objectID)
 		case 404:
 			return nil, fmt.Errorf("azure_connection %q not found", objectID)
-		case 409:
-			return nil, fmt.Errorf("azure_connection version conflict (connection was modified)")
-		case 412:
+		case 409, 412:
 			return nil, fmt.Errorf("azure_connection version conflict (connection was modified)")
 		default:
 			return nil, fmt.Errorf("failed to update azure_connection: status %d: %s", resp.StatusCode(), resp.String())

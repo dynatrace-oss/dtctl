@@ -979,12 +979,8 @@ func (a *Applier) applyAzureConnection(data []byte) error {
 			if err != nil {
 				// Check for Federated Identity error (AADSTS70025 or AADSTS700213)
 				if strings.Contains(err.Error(), "AADSTS70025") || strings.Contains(err.Error(), "AADSTS700213") {
-					if value.FederatedIdentityCredential != nil {
-						// Extract applicationId from the federatedIdentityCredential
-						// Note: The FederatedIdentityCredential struct doesn't have ApplicationID field
-						// This appears to be a bug in the original code - we'll keep the error handling
-						// but won't be able to extract the appID
-						printFederatedErrorSnippet(a.baseURL, objectID, "")
+					if value.FederatedIdentityCredential != nil && value.FederatedIdentityCredential.ApplicationID != "" {
+						printFederatedErrorSnippet(a.baseURL, objectID, value.FederatedIdentityCredential.ApplicationID)
 					}
 				}
 				return fmt.Errorf("failed to update Azure connection %s: %w", objectID, err)
