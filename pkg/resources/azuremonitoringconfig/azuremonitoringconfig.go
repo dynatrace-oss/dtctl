@@ -164,3 +164,15 @@ func (h *Handler) Update(id string, data []byte) (*AzureMonitoringConfig, error)
 
 	return &result, nil
 }
+
+// Delete deletes an Azure monitoring config by ID
+func (h *Handler) Delete(id string) error {
+	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", BaseAPI, id))
+	if err != nil {
+		return err
+	}
+	if resp.IsError() {
+		return fmt.Errorf("failed to delete azure_monitoring_config: status %d: %s", resp.StatusCode(), resp.String())
+	}
+	return nil
+}
