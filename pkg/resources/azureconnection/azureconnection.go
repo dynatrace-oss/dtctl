@@ -28,7 +28,7 @@ type AzureConnection struct {
 	Created       int64  `json:"created,omitempty" table:"-"`
 	Modified      int64  `json:"modified,omitempty" table:"-"`
 	Summary       string `json:"summary,omitempty" table:"SUMMARY,wide"`
-	Value         Value  `json:"value" table:"VALUE"`
+	Value         Value  `json:"value" table:"-"`
 
 	// Flattened fields for table view
 	Name string `json:"name,omitempty" table:"NAME"`
@@ -57,10 +57,15 @@ func (v Value) String() string {
 	s := fmt.Sprintf("name=%s type=%s", v.Name, v.Type)
 
 	if v.ClientSecret != nil {
+		// Mask the secret to prevent leaking it in terminal/logs
+		secret := "[REDACTED]"
+		if v.ClientSecret.ClientSecret == "" {
+			secret = ""
+		}
 		s += fmt.Sprintf(" dirId=%s appId=%s secret=%s consumers=%v",
 			v.ClientSecret.DirectoryID,
 			v.ClientSecret.ApplicationID,
-			v.ClientSecret.ClientSecret,
+			secret,
 			v.ClientSecret.Consumers)
 	}
 
