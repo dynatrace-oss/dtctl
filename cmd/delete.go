@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
@@ -47,7 +46,7 @@ var deleteAzureConnectionCmd = &cobra.Command{
 
 		handler := azureconnection.NewHandler(client)
 
-		var objectID = identifier
+		objectID := identifier
 
 		// Try to find by name first to resolve ID if it's a name
 		item, err := handler.FindByName(identifier)
@@ -55,12 +54,8 @@ var deleteAzureConnectionCmd = &cobra.Command{
 			// Found by name
 			objectID = item.ObjectID
 			fmt.Printf("Resolved name %q to ID %s\n", identifier, objectID)
-		} else {
-			// If not found by name, assume it is an ID
-			if !strings.Contains(err.Error(), "not found") {
-				// Log error if needed
-			}
 		}
+		// If not found by name, assume identifier is an ID
 
 		if err := handler.Delete(objectID); err != nil {
 			return fmt.Errorf("failed to delete Azure connection %q: %w", objectID, err)
@@ -100,7 +95,7 @@ var deleteAzureMonitoringConfigCmd = &cobra.Command{
 
 		handler := azuremonitoringconfig.NewHandler(client)
 
-		var objectID = identifier
+		objectID := identifier
 
 		// Try to find by name (description) first to resolve ID if it's a name
 		item, err := handler.FindByName(identifier)
@@ -108,12 +103,8 @@ var deleteAzureMonitoringConfigCmd = &cobra.Command{
 			// Found by name
 			objectID = item.ObjectID
 			fmt.Printf("Resolved name %q to ID %s\n", identifier, objectID)
-		} else {
-			// If not found by name, assume it is an ID
-			if !strings.Contains(err.Error(), "not found") {
-				// Log error if needed
-			}
 		}
+		// If not found by name, assume identifier is an ID
 
 		if err := handler.Delete(objectID); err != nil {
 			return fmt.Errorf("failed to delete Azure monitoring config %q: %w", objectID, err)
