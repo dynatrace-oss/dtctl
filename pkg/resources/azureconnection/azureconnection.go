@@ -144,9 +144,9 @@ func (h *Handler) FindByName(name string) (*AzureConnection, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, item := range items {
-		if item.Name == name {
-			return &item, nil
+	for i := range items {
+		if items[i].Name == name {
+			return &items[i], nil
 		}
 	}
 	return nil, fmt.Errorf("Azure connection with name %q not found", name)
