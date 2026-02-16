@@ -2134,6 +2134,64 @@ var getAzureMonitoringConfigCmd = &cobra.Command{
 	},
 }
 
+// getAzureMonitoringConfigLocationsCmd retrieves available Azure monitoring config locations from extension schema
+var getAzureMonitoringConfigLocationsCmd = &cobra.Command{
+	Use:     "azure_monitoring_config_locations",
+	Aliases: []string{"azure_monitoring_config_location", "azure_monitoring_locations"},
+	Short:   "Get available Azure monitoring config locations",
+	Long:    `Get available Azure regions for Azure monitoring configuration based on the latest extension schema.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := azuremonitoringconfig.NewHandler(c)
+		printer := NewPrinter()
+
+		locations, err := handler.ListAvailableLocations()
+		if err != nil {
+			return err
+		}
+
+		return printer.PrintList(locations)
+	},
+}
+
+// getAzureMonitoringConfigFeatureSetsCmd retrieves available Azure monitoring config feature sets from extension schema
+var getAzureMonitoringConfigFeatureSetsCmd = &cobra.Command{
+	Use:     "azure_monitoring_config_feature_sets",
+	Aliases: []string{"azure_monitoring_config_feature_set", "azure_monitoring_feature_sets"},
+	Short:   "Get available Azure monitoring config feature sets",
+	Long:    `Get available FeatureSetsType values for Azure monitoring configuration based on the latest extension schema.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := azuremonitoringconfig.NewHandler(c)
+		printer := NewPrinter()
+
+		featureSets, err := handler.ListAvailableFeatureSets()
+		if err != nil {
+			return err
+		}
+
+		return printer.PrintList(featureSets)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(deleteCmd)
@@ -2158,6 +2216,8 @@ func init() {
 	getCmd.AddCommand(getSDKVersionsCmd)
 	getCmd.AddCommand(getAzureConnectionCmd)
 	getCmd.AddCommand(getAzureMonitoringConfigCmd)
+	getCmd.AddCommand(getAzureMonitoringConfigLocationsCmd)
+	getCmd.AddCommand(getAzureMonitoringConfigFeatureSetsCmd)
 	getCmd.AddCommand(getAnalyzersCmd)
 	getCmd.AddCommand(getCopilotSkillsCmd)
 	getCmd.AddCommand(getSettingsSchemasCmd)

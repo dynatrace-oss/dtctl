@@ -956,6 +956,18 @@ func (a *Applier) applyAzureConnection(data []byte) error {
 			return fmt.Errorf("failed to unmarshal value: %w", err)
 		}
 
+		// Auto-lookup for Federated Credentials if ObjectID is missing
+		if objectID == "" && value.Type == "federatedIdentityCredential" {
+			existing, err := handler.FindByNameAndType(value.Name, value.Type)
+			if err != nil {
+				// Log warning but proceed to try create (or maybe return error? usually API error means stop)
+				fmt.Printf("Warning: Failed to lookup existing connection: %v\n", err)
+			} else if existing != nil {
+				objectID = existing.ObjectID
+				fmt.Printf("Found existing Federated Credential connection %q (ID: %s), switching to update mode.\n", value.Name, objectID)
+			}
+		}
+
 		if objectID == "" {
 			// Create
 			req := azureconnection.AzureConnectionCreate{
@@ -977,10 +989,26 @@ func (a *Applier) applyAzureConnection(data []byte) error {
 			// Update
 			_, err := handler.Update(objectID, value)
 			if err != nil {
+				errMsg := err.Error()
+
+				// Catch generic validation error that happens when Azure side is not ready/configured
+				// "was unable to be validated with validator .../azureConfiguration"
+				if strings.Contains(errMsg, "azureConfiguration") && strings.Contains(errMsg, "unable to be validated") {
+					// Check if we have incomplete configuration (missing app/directory ID)
+					if value.Type == "federatedIdentityCredential" {
+						fedCred := value.FederatedIdentityCredential
+						if fedCred == nil || fedCred.ApplicationID == "" || fedCred.DirectoryID == "" {
+							printFederatedCompleteInstructions(a.baseURL, objectID, value.Name)
+							return fmt.Errorf("Azure connection requires additional configuration: %w", err)
+						}
+					}
+				}
+
 				// Check for Federated Identity error (AADSTS70025 or AADSTS700213)
-				if strings.Contains(err.Error(), "AADSTS70025") || strings.Contains(err.Error(), "AADSTS700213") {
+				if strings.Contains(errMsg, "AADSTS70025") || strings.Contains(errMsg, "AADSTS700213") {
 					if value.FederatedIdentityCredential != nil && value.FederatedIdentityCredential.ApplicationID != "" {
 						printFederatedErrorSnippet(a.baseURL, objectID, value.FederatedIdentityCredential.ApplicationID)
+						return fmt.Errorf("Azure connection requires federation setup on Azure side: %w", err)
 					}
 				}
 				return fmt.Errorf("failed to update Azure connection %s: %w", objectID, err)
@@ -998,16 +1026,37 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) error {
 	// Unmarshal to struct to handle casing properly via json tags
 	var config azuremonitoringconfig.AzureMonitoringConfig
 	if err := json.Unmarshal(data, &config); err != nil {
-		// Fallback to map if struct unmarshal fails (e.g. slight schema mismatch we might want to pass through?)
-		// But usually strict typing is better here to fix casing issues.
-		// Let's try to unmarshal to map first to get ID, but for sending we need clean data.
 		return fmt.Errorf("failed to parse Azure monitoring config JSON: %w", err)
 	}
 	
 	objectID := config.ObjectID
 
+	if config.Value.Version == "" && config.Version != "" {
+		config.Value.Version = config.Version
+	}
+	
+	// Lookup by name if ID is missing (Feature 1: naming convention lookup)
+	if objectID == "" && config.Value.Description != "" {
+		existing, err := handler.FindByName(config.Value.Description)
+		if err == nil && existing != nil {
+			fmt.Printf("Found existing Azure monitoring config %q with ID: %s\n", config.Value.Description, existing.ObjectID)
+			objectID = existing.ObjectID
+			config.ObjectID = objectID // Set ID for update
+		}
+	}
+
 	if objectID == "" {
-		// Re-marshal to ensure json tags are respected (casing)
+		if config.Value.Version == "" {
+			latestVersion, err := handler.GetLatestVersion()
+			if err != nil {
+				return fmt.Errorf("failed to determine extension version for azure_monitoring_config: %w", err)
+			}
+			config.Value.Version = latestVersion
+			config.Version = latestVersion
+			fmt.Printf("Using latest extension version: %s\n", latestVersion)
+		}
+
+		// New creation
 		cleanData, err := json.Marshal(config)
 		if err != nil {
 			return fmt.Errorf("failed to marshal clean config: %w", err)
@@ -1019,12 +1068,25 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) error {
 		}
 		fmt.Printf("Azure monitoring config created: %s\n", res.ObjectID)
 	} else {
-		// Re-marshal to ensure json tags are respected (casing)
+		// Update existing
+		
+		// Feature 2: If version is missing in YAML, preserve existing version
+		if config.Value.Version == "" {
+			existing, err := handler.Get(objectID)
+			if err != nil {
+				return fmt.Errorf("failed to fetch existing config to preserve version: %w", err)
+			} else {
+				fmt.Printf("Preserving existing version: %s\n", existing.Value.Version)
+				config.Value.Version = existing.Value.Version
+				config.Version = existing.Value.Version
+			}
+		}
+
 		cleanData, err := json.Marshal(config)
 		if err != nil {
 			return fmt.Errorf("failed to marshal clean config: %w", err)
 		}
-		// Update
+
 		res, err := handler.Update(objectID, cleanData)
 		if err != nil {
 			return err
@@ -1063,6 +1125,36 @@ func printFederatedInstructions(baseURL, objectID string) {
 	fmt.Printf("  Issuer:    %s\n", issuer)
 	fmt.Printf("  Subject:   dt:connection-id/%s\n", objectID)
 	fmt.Printf("  Audiences: %s/svc-id/com.dynatrace.da\n", host)
+}
+
+// printFederatedCompleteInstructions prints full configuration instructions for Federated Identity Credential
+func printFederatedCompleteInstructions(baseURL, objectID, connectionName string) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		fmt.Printf("Warning: Could not parse base URL for instructions: %v\n", err)
+		return
+	}
+	host := u.Host
+	
+	// Determine issuer
+	issuer := "https://token.dynatrace.com"
+	if strings.Contains(host, "dev.apps.dynatracelabs.com") || strings.Contains(host, "dev.dynatracelabs.com") {
+		issuer = "https://dev.token.dynatracelabs.com"
+	}
+
+	fmt.Println("\nTo complete the configuration, additional setup is required in the Azure Portal (Federated Credentials).")
+	fmt.Println("Details for Azure configuration:")
+	fmt.Printf("  Issuer:    %s\n", issuer)
+	fmt.Printf("  Subject:   dt:connection-id/%s\n", objectID)
+	fmt.Printf("  Audiences: %s/svc-id/com.dynatrace.da\n", host)
+	fmt.Println()
+	fmt.Println("Azure CLI commands:")
+	fmt.Println("1. Create Service Principal (if not created yet):")
+	fmt.Printf("   az ad sp create-for-rbac --name %q --create-password false --query \"{CLIENT_ID:appId, TENANT_ID:tenant}\" --output table", connectionName)
+	fmt.Println()
+	fmt.Println("2. Create Federated Credential:")
+	fmt.Printf("   az ad app federated-credential create --id \"<CLIENT_ID>\" --parameters \"{'name': 'fd-Federated-Credential', 'issuer': '%s', 'subject': 'dt:connection-id/%s', 'audiences': ['%s/svc-id/com.dynatrace.da']}\"\n", issuer, objectID, host)
+	fmt.Println()
 }
 
 // printFederatedErrorSnippet prints az cli snippet for AADSTS70025 error

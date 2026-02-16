@@ -866,6 +866,91 @@ See [../TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for complete scope reference.
 # dtctl delete state <key>                         # Delete state
 ```
 
+### 20. Azure Connection
+**API Spec**: Settings API v2 (`builtin:hyperscaler-authentication.connections.azure`)
+
+Azure Connection manages authentication credentials used by Azure monitoring configurations.
+
+```bash
+# Resource name: azure_connection/azure_connections
+
+# List all Azure connections
+dtctl get azure_connection
+
+# Get by name (preferred) or object ID
+dtctl get azure_connection <name-or-id>
+
+# JSON/YAML output
+dtctl get azure_connection -o json
+dtctl get azure_connection -o yaml
+
+# Apply/create-update from manifest
+dtctl apply -f azure_connection.yaml
+```
+
+**Behavior notes**:
+- Name-based lookup is supported for `get` and `apply` flows.
+- `apply` performs idempotent create-or-update logic (POST if new, PUT if existing).
+- For federated credentials, dtctl prints actionable guidance when Azure-side federation setup is incomplete.
+
+### 21. Azure Monitoring Configuration
+**API Spec**: Extensions API (`com.dynatrace.extension.da-azure`)
+
+Azure Monitoring Configuration manages monitoring profiles for Azure subscriptions/management groups.
+
+```bash
+# Resource name: azure_monitoring_config/azure_monitoring_configs
+
+# List all monitoring configurations
+dtctl get azure_monitoring_config
+
+# Get by description (name) or object ID
+dtctl get azure_monitoring_config <description-or-id>
+
+# Helper: list available Azure locations from latest extension schema
+dtctl get azure_monitoring_config_locations
+
+# Helper: list available FeatureSetsType values from latest extension schema
+dtctl get azure_monitoring_config_feature_sets
+
+# Apply/create-update from manifest
+dtctl apply -f azure_monitoring_config.yaml
+```
+
+**Behavior notes**:
+- `apply` supports optional `objectId`; when missing, dtctl resolves existing config by description and updates it.
+- If `version` is omitted during update, dtctl preserves the currently configured version.
+- If `version` is omitted during create, dtctl resolves and uses the latest extension version.
+- Locations and feature sets are discovered dynamically from the latest extension schema.
+
+### 22. Google Cloud Connection
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
+### 23. Google Cloud Monitoring Configuration
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
+### 24. AWS Connection
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
+### 25. AWS Monitoring Configuration
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
 ## Common Operations
 
 ### Create Resources

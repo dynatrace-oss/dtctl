@@ -155,7 +155,21 @@ func (h *Handler) FindByName(name string) (*AzureConnection, error) {
 	return nil, fmt.Errorf("Azure connection with name %q not found", name)
 }
 
-// AzureConnectionCreate represents the request body for creating an Azure connection
+// FindByNameAndType finds an Azure connection by name and type
+func (h *Handler) FindByNameAndType(name, typeVal string) (*AzureConnection, error) {
+	items, err := h.List()
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if items[i].Name == name && items[i].Type == typeVal {
+			return &items[i], nil
+		}
+	}
+	return nil, nil // Return nil if not found, distinct from error
+}
+
+// AzureConnectionCreate represents the request body for created Azure connection
 type AzureConnectionCreate struct {
 	SchemaID      string `json:"schemaId"`
 	Scope         string `json:"scope"`
