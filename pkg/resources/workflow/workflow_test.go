@@ -191,3 +191,610 @@ func TestWorkflowFilters(t *testing.T) {
 		t.Errorf("Empty WorkflowFilters.Owner should be empty, got %v", emptyFilters.Owner)
 	}
 }
+
+func TestHandler_Delete(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         string
+		statusCode int
+		wantErr    bool
+	}{
+		{
+			name:       "delete existing workflow",
+			id:         "wf-123",
+			statusCode: http.StatusNoContent,
+			wantErr:    false,
+		},
+		{
+			name:       "delete non-existent workflow (404)",
+			id:         "wf-nonexistent",
+			statusCode: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "access denied (403)",
+			id:         "wf-forbidden",
+			statusCode: http.StatusForbidden,
+			wantErr:    true,
+		},
+		{
+			name:       "server error (500)",
+			id:         "wf-error",
+			statusCode: http.StatusInternalServerError,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/automation/v1/workflows/" + tt.id
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: got %s, want %s", r.URL.Path, expectedPath)
+				}
+				if r.Method != http.MethodDelete {
+					t.Errorf("unexpected method: got %s, want DELETE", r.Method)
+				}
+
+				w.WriteHeader(tt.statusCode)
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("client.New() error = %v", err)
+			}
+			c.HTTP().SetRetryCount(0)
+
+			handler := NewHandler(c)
+			err = handler.Delete(tt.id)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Delete() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
+}
+
+func TestHandler_GetRaw(t *testing.T) {
+	tests := []struct {
+		name         string
+		id           string
+		statusCode   int
+		response     string
+		wantErr      bool
+		wantRawEqual string
+	}{
+		{
+			name:         "get raw workflow",
+			id:           "wf-123",
+			statusCode:   http.StatusOK,
+			response:     `{"id":"wf-123","title":"Test"}`,
+			wantErr:      false,
+			wantRawEqual: `{"id":"wf-123","title":"Test"}`,
+		},
+		{
+			name:       "workflow not found (404)",
+			id:         "wf-nonexistent",
+			statusCode: http.StatusNotFound,
+			response:   `{"error":"not found"}`,
+			wantErr:    true,
+		},
+		{
+			name:       "access denied (403)",
+			id:         "wf-forbidden",
+			statusCode: http.StatusForbidden,
+			response:   `{"error":"forbidden"}`,
+			wantErr:    true,
+		},
+		{
+			name:       "server error (500)",
+			id:         "wf-error",
+			statusCode: http.StatusInternalServerError,
+			response:   `{"error":"internal error"}`,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/automation/v1/workflows/" + tt.id
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: got %s, want %s", r.URL.Path, expectedPath)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("client.New() error = %v", err)
+			}
+			c.HTTP().SetRetryCount(0)
+
+			handler := NewHandler(c)
+			rawData, err := handler.GetRaw(tt.id)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetRaw() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if string(rawData) != tt.wantRawEqual {
+					t.Errorf("GetRaw() = %q, want %q", string(rawData), tt.wantRawEqual)
+				}
+			}
+		})
+	}
+}
+
+func TestHandler_Update(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         string
+		data       []byte
+		statusCode int
+		response   Workflow
+		wantErr    bool
+	}{
+		{
+			name:       "update existing workflow",
+			id:         "wf-123",
+			data:       []byte(`{"title":"Updated Workflow"}`),
+			statusCode: http.StatusOK,
+			response: Workflow{
+				ID:    "wf-123",
+				Title: "Updated Workflow",
+			},
+			wantErr: false,
+		},
+		{
+			name:       "update non-existent workflow (404)",
+			id:         "wf-nonexistent",
+			data:       []byte(`{"title":"Test"}`),
+			statusCode: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "access denied (403)",
+			id:         "wf-forbidden",
+			data:       []byte(`{"title":"Test"}`),
+			statusCode: http.StatusForbidden,
+			wantErr:    true,
+		},
+		{
+			name:       "invalid data (400)",
+			id:         "wf-123",
+			data:       []byte(`{"invalid":"data"}`),
+			statusCode: http.StatusBadRequest,
+			wantErr:    true,
+		},
+		{
+			name:       "server error (500)",
+			id:         "wf-error",
+			data:       []byte(`{"title":"Test"}`),
+			statusCode: http.StatusInternalServerError,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/automation/v1/workflows/" + tt.id
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: got %s, want %s", r.URL.Path, expectedPath)
+				}
+				if r.Method != http.MethodPut {
+					t.Errorf("unexpected method: got %s, want PUT", r.Method)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				_ = json.NewEncoder(w).Encode(tt.response)
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("client.New() error = %v", err)
+			}
+			c.HTTP().SetRetryCount(0)
+
+			handler := NewHandler(c)
+			wf, err := handler.Update(tt.id, tt.data)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Update() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if wf == nil {
+					t.Fatal("Update() returned nil")
+				}
+				if wf.ID != tt.response.ID {
+					t.Errorf("Update() ID = %v, want %v", wf.ID, tt.response.ID)
+				}
+				if wf.Title != tt.response.Title {
+					t.Errorf("Update() Title = %v, want %v", wf.Title, tt.response.Title)
+				}
+			}
+		})
+	}
+}
+
+func TestHandler_Create(t *testing.T) {
+	tests := []struct {
+		name       string
+		data       []byte
+		statusCode int
+		response   Workflow
+		wantErr    bool
+	}{
+		{
+			name:       "create new workflow",
+			data:       []byte(`{"title":"New Workflow"}`),
+			statusCode: http.StatusCreated,
+			response: Workflow{
+				ID:    "wf-new-123",
+				Title: "New Workflow",
+			},
+			wantErr: false,
+		},
+		{
+			name:       "invalid data (400)",
+			data:       []byte(`{"invalid":"data"}`),
+			statusCode: http.StatusBadRequest,
+			wantErr:    true,
+		},
+		{
+			name:       "access denied (403)",
+			data:       []byte(`{"title":"Test"}`),
+			statusCode: http.StatusForbidden,
+			wantErr:    true,
+		},
+		{
+			name:       "server error (500)",
+			data:       []byte(`{"title":"Test"}`),
+			statusCode: http.StatusInternalServerError,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/automation/v1/workflows"
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: got %s, want %s", r.URL.Path, expectedPath)
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("unexpected method: got %s, want POST", r.Method)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				_ = json.NewEncoder(w).Encode(tt.response)
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("client.New() error = %v", err)
+			}
+			c.HTTP().SetRetryCount(0)
+
+			handler := NewHandler(c)
+			wf, err := handler.Create(tt.data)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Create() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				if wf == nil {
+					t.Fatal("Create() returned nil")
+				}
+				if wf.ID != tt.response.ID {
+					t.Errorf("Create() ID = %v, want %v", wf.ID, tt.response.ID)
+				}
+				if wf.Title != tt.response.Title {
+					t.Errorf("Create() Title = %v, want %v", wf.Title, tt.response.Title)
+				}
+			}
+		})
+	}
+}
+
+func TestHandler_ListHistory(t *testing.T) {
+	tests := []struct {
+		name       string
+		workflowID string
+		statusCode int
+		response   HistoryList
+		wantErr    bool
+		errMsg     string
+		wantCount  int
+	}{
+		{
+			name:       "list history for workflow",
+			workflowID: "wf-123",
+			statusCode: http.StatusOK,
+			response: HistoryList{
+				Count: 2,
+				Results: []HistoryRecord{
+					{Version: 2, User: "user-123", DateCreated: "2024-01-02T00:00:00Z"},
+					{Version: 1, User: "user-456", DateCreated: "2024-01-01T00:00:00Z"},
+				},
+			},
+			wantErr:   false,
+			wantCount: 2,
+		},
+		{
+			name:       "workflow not found (404)",
+			workflowID: "wf-nonexistent",
+			statusCode: http.StatusNotFound,
+			wantErr:    true,
+			errMsg:     "workflow \"wf-nonexistent\" not found",
+		},
+		{
+			name:       "access denied (403)",
+			workflowID: "wf-forbidden",
+			statusCode: http.StatusForbidden,
+			wantErr:    true,
+			errMsg:     "access denied to workflow \"wf-forbidden\"",
+		},
+		{
+			name:       "server error (500)",
+			workflowID: "wf-error",
+			statusCode: http.StatusInternalServerError,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/automation/v1/workflows/" + tt.workflowID + "/history"
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: got %s, want %s", r.URL.Path, expectedPath)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				_ = json.NewEncoder(w).Encode(tt.response)
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("client.New() error = %v", err)
+			}
+			c.HTTP().SetRetryCount(0)
+
+			handler := NewHandler(c)
+			history, err := handler.ListHistory(tt.workflowID)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ListHistory() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr && tt.errMsg != "" {
+				if err.Error() != tt.errMsg {
+					t.Errorf("ListHistory() error = %q, want %q", err.Error(), tt.errMsg)
+				}
+			}
+
+			if !tt.wantErr {
+				if history == nil {
+					t.Fatal("ListHistory() returned nil")
+				}
+				if len(history.Results) != tt.wantCount {
+					t.Errorf("ListHistory() returned %d records, want %d", len(history.Results), tt.wantCount)
+				}
+			}
+		})
+	}
+}
+
+func TestHandler_GetHistoryRecord(t *testing.T) {
+	tests := []struct {
+		name       string
+		workflowID string
+		version    int
+		statusCode int
+		response   Workflow
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:       "get history record",
+			workflowID: "wf-123",
+			version:    2,
+			statusCode: http.StatusOK,
+			response: Workflow{
+				ID:    "wf-123",
+				Title: "Workflow v2",
+			},
+			wantErr: false,
+		},
+		{
+			name:       "workflow or version not found (404)",
+			workflowID: "wf-nonexistent",
+			version:    1,
+			statusCode: http.StatusNotFound,
+			wantErr:    true,
+			errMsg:     "workflow \"wf-nonexistent\" or version 1 not found",
+		},
+		{
+			name:       "access denied (403)",
+			workflowID: "wf-forbidden",
+			version:    1,
+			statusCode: http.StatusForbidden,
+			wantErr:    true,
+			errMsg:     "access denied to workflow \"wf-forbidden\"",
+		},
+		{
+			name:       "server error (500)",
+			workflowID: "wf-error",
+			version:    1,
+			statusCode: http.StatusInternalServerError,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/automation/v1/workflows/" + tt.workflowID + "/history/2"
+				if tt.version == 1 {
+					expectedPath = "/platform/automation/v1/workflows/" + tt.workflowID + "/history/1"
+				}
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: got %s, want %s", r.URL.Path, expectedPath)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				_ = json.NewEncoder(w).Encode(tt.response)
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("client.New() error = %v", err)
+			}
+			c.HTTP().SetRetryCount(0)
+
+			handler := NewHandler(c)
+			wf, err := handler.GetHistoryRecord(tt.workflowID, tt.version)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetHistoryRecord() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr && tt.errMsg != "" {
+				if err.Error() != tt.errMsg {
+					t.Errorf("GetHistoryRecord() error = %q, want %q", err.Error(), tt.errMsg)
+				}
+			}
+
+			if !tt.wantErr {
+				if wf == nil {
+					t.Fatal("GetHistoryRecord() returned nil")
+				}
+				if wf.ID != tt.response.ID {
+					t.Errorf("GetHistoryRecord() ID = %v, want %v", wf.ID, tt.response.ID)
+				}
+			}
+		})
+	}
+}
+
+func TestHandler_RestoreHistory(t *testing.T) {
+	tests := []struct {
+		name       string
+		workflowID string
+		version    int
+		statusCode int
+		response   Workflow
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:       "restore workflow to version",
+			workflowID: "wf-123",
+			version:    2,
+			statusCode: http.StatusOK,
+			response: Workflow{
+				ID:    "wf-123",
+				Title: "Restored Workflow",
+			},
+			wantErr: false,
+		},
+		{
+			name:       "workflow or version not found (404)",
+			workflowID: "wf-nonexistent",
+			version:    1,
+			statusCode: http.StatusNotFound,
+			wantErr:    true,
+			errMsg:     "workflow \"wf-nonexistent\" or version 1 not found",
+		},
+		{
+			name:       "access denied (403)",
+			workflowID: "wf-forbidden",
+			version:    1,
+			statusCode: http.StatusForbidden,
+			wantErr:    true,
+			errMsg:     "access denied to restore workflow \"wf-forbidden\"",
+		},
+		{
+			name:       "server error (500)",
+			workflowID: "wf-error",
+			version:    1,
+			statusCode: http.StatusInternalServerError,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/automation/v1/workflows/" + tt.workflowID + "/history/2/restore"
+				if tt.version == 1 {
+					expectedPath = "/platform/automation/v1/workflows/" + tt.workflowID + "/history/1/restore"
+				}
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: got %s, want %s", r.URL.Path, expectedPath)
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("unexpected method: got %s, want POST", r.Method)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				_ = json.NewEncoder(w).Encode(tt.response)
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("client.New() error = %v", err)
+			}
+			c.HTTP().SetRetryCount(0)
+
+			handler := NewHandler(c)
+			wf, err := handler.RestoreHistory(tt.workflowID, tt.version)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RestoreHistory() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr && tt.errMsg != "" {
+				if err.Error() != tt.errMsg {
+					t.Errorf("RestoreHistory() error = %q, want %q", err.Error(), tt.errMsg)
+				}
+			}
+
+			if !tt.wantErr {
+				if wf == nil {
+					t.Fatal("RestoreHistory() returned nil")
+				}
+				if wf.ID != tt.response.ID {
+					t.Errorf("RestoreHistory() ID = %v, want %v", wf.ID, tt.response.ID)
+				}
+			}
+		})
+	}
+}
