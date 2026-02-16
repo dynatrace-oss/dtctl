@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -156,11 +157,11 @@ func TestDiffer_CompareWithIgnoreOrder(t *testing.T) {
 
 func TestComputeSummary(t *testing.T) {
 	tests := []struct {
-		name     string
-		changes  []Change
-		wantAdd  int
-		wantRem  int
-		wantMod  int
+		name    string
+		changes []Change
+		wantAdd int
+		wantRem int
+		wantMod int
 	}{
 		{
 			name:    "no changes",
@@ -240,6 +241,120 @@ func TestCalculateImpact(t *testing.T) {
 			got := calculateImpact(tt.summary)
 			if got != tt.want {
 				t.Errorf("calculateImpact() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDiffer_GetFormatter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		options  DiffOptions
+		wantType string
+	}{
+		{
+			name: "semantic formatter via Semantic flag",
+			options: DiffOptions{
+				Semantic: true,
+				Format:   DiffFormatUnified,
+			},
+			wantType: "*diff.SemanticFormatter",
+		},
+		{
+			name: "side-by-side formatter",
+			options: DiffOptions{
+				Format:   DiffFormatSideBySide,
+				Colorize: true,
+			},
+			wantType: "*diff.SideBySideFormatter",
+		},
+		{
+			name: "json-patch formatter",
+			options: DiffOptions{
+				Format: DiffFormatJSONPatch,
+			},
+			wantType: "*diff.JSONPatchFormatter",
+		},
+		{
+			name: "semantic formatter via Format",
+			options: DiffOptions{
+				Format: DiffFormatSemantic,
+			},
+			wantType: "*diff.SemanticFormatter",
+		},
+		{
+			name: "unified formatter (default)",
+			options: DiffOptions{
+				Format:       DiffFormatUnified,
+				ContextLines: 3,
+				Colorize:     false,
+			},
+			wantType: "*diff.UnifiedFormatter",
+		},
+		{
+			name: "unified formatter with empty format",
+			options: DiffOptions{
+				Format: "",
+			},
+			wantType: "*diff.UnifiedFormatter",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			differ := NewDiffer(tt.options)
+			formatter := differ.getFormatter()
+
+			gotType := fmt.Sprintf("%T", formatter)
+			if gotType != tt.wantType {
+				t.Errorf("getFormatter() type = %v, want %v", gotType, tt.wantType)
+			}
+		})
+	}
+}
+
+func TestDiffer_Compare_AllFormats(t *testing.T) {
+	t.Parallel()
+
+	left := map[string]interface{}{
+		"name":  "old-name",
+		"value": 10,
+	}
+	right := map[string]interface{}{
+		"name":  "new-name",
+		"value": 20,
+	}
+
+	formats := []DiffFormat{
+		DiffFormatUnified,
+		DiffFormatSideBySide,
+		DiffFormatJSONPatch,
+		DiffFormatSemantic,
+	}
+
+	for _, format := range formats {
+		t.Run(string(format), func(t *testing.T) {
+			t.Parallel()
+			differ := NewDiffer(DiffOptions{
+				Format: format,
+			})
+
+			result, err := differ.Compare(left, right, "left", "right")
+			if err != nil {
+				t.Errorf("Compare() with format %s error = %v", format, err)
+				return
+			}
+
+			if !result.HasChanges {
+				t.Errorf("Compare() with format %s should detect changes", format)
+			}
+
+			if result.Patch == "" && format != DiffFormatUnified {
+				// Unified format can have empty patch if no changes shown
+				t.Errorf("Compare() with format %s should generate patch", format)
 			}
 		})
 	}

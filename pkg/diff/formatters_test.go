@@ -308,3 +308,238 @@ func TestTruncate(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatValue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		v    interface{}
+		want string
+	}{
+		{
+			name: "string value",
+			v:    "hello",
+			want: `"hello"`,
+		},
+		{
+			name: "integer value",
+			v:    42,
+			want: "42",
+		},
+		{
+			name: "boolean value",
+			v:    true,
+			want: "true",
+		},
+		{
+			name: "nil value",
+			v:    nil,
+			want: "<nil>",
+		},
+		{
+			name: "map value",
+			v:    map[string]interface{}{"key": "value"},
+			want: `{"key":"value"}`,
+		},
+		{
+			name: "array value",
+			v:    []interface{}{"a", "b", "c"},
+			want: `["a","b","c"]`,
+		},
+		{
+			name: "nested map",
+			v:    map[string]interface{}{"outer": map[string]interface{}{"inner": "value"}},
+			want: `{"outer":{"inner":"value"}}`,
+		},
+		{
+			name: "empty map",
+			v:    map[string]interface{}{},
+			want: `{}`,
+		},
+		{
+			name: "empty array",
+			v:    []interface{}{},
+			want: `[]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := formatValue(tt.v)
+			if got != tt.want {
+				t.Errorf("formatValue() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSideBySideFormatter_AllOperations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		operation ChangeOperation
+		path      string
+		oldValue  interface{}
+		newValue  interface{}
+		checks    []string
+	}{
+		{
+			name:      "add operation",
+			operation: ChangeOpAdd,
+			path:      "newField",
+			newValue:  "newValue",
+			checks:    []string{"newField", "newValue", "|"},
+		},
+		{
+			name:      "remove operation",
+			operation: ChangeOpRemove,
+			path:      "oldField",
+			oldValue:  "oldValue",
+			checks:    []string{"oldField", "oldValue", "|"},
+		},
+		{
+			name:      "replace operation",
+			operation: ChangeOpReplace,
+			path:      "field",
+			oldValue:  "before",
+			newValue:  "after",
+			checks:    []string{"field", "before", "after", "|"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := &DiffResult{
+				HasChanges: true,
+				LeftLabel:  "old",
+				RightLabel: "new",
+				Changes: []Change{
+					{
+						Path:      tt.path,
+						Operation: tt.operation,
+						OldValue:  tt.oldValue,
+						NewValue:  tt.newValue,
+					},
+				},
+			}
+
+			f := &SideBySideFormatter{
+				width:    120,
+				colorize: false,
+			}
+
+			got, err := f.Format(result)
+			if err != nil {
+				t.Fatalf("SideBySideFormatter.Format() error = %v", err)
+			}
+
+			for _, check := range tt.checks {
+				if !strings.Contains(got, check) {
+					t.Errorf("SideBySideFormatter.Format() output missing %q, got:\n%s", check, got)
+				}
+			}
+		})
+	}
+}
+
+func TestSideBySideFormatter_NoChanges(t *testing.T) {
+	t.Parallel()
+
+	result := &DiffResult{
+		HasChanges: false,
+		Changes:    []Change{},
+	}
+
+	f := &SideBySideFormatter{
+		width:    120,
+		colorize: false,
+	}
+
+	got, err := f.Format(result)
+	if err != nil {
+		t.Errorf("SideBySideFormatter.Format() error = %v", err)
+	}
+
+	if got != "" {
+		t.Errorf("SideBySideFormatter.Format() with no changes should return empty string, got: %q", got)
+	}
+}
+
+func TestSemanticFormatter_AllOperations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		operation ChangeOperation
+		path      string
+		oldValue  interface{}
+		newValue  interface{}
+		symbol    string
+	}{
+		{
+			name:      "add shows plus",
+			operation: ChangeOpAdd,
+			path:      "newField",
+			newValue:  "value",
+			symbol:    "+",
+		},
+		{
+			name:      "remove shows minus",
+			operation: ChangeOpRemove,
+			path:      "oldField",
+			oldValue:  "value",
+			symbol:    "-",
+		},
+		{
+			name:      "replace shows tilde",
+			operation: ChangeOpReplace,
+			path:      "field",
+			oldValue:  "old",
+			newValue:  "new",
+			symbol:    "~",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := &DiffResult{
+				HasChanges: true,
+				LeftLabel:  "old",
+				RightLabel: "new",
+				Changes: []Change{
+					{
+						Path:      tt.path,
+						Operation: tt.operation,
+						OldValue:  tt.oldValue,
+						NewValue:  tt.newValue,
+					},
+				},
+				Summary: DiffSummary{
+					Modified: 1,
+					Impact:   ImpactLow,
+				},
+			}
+
+			f := &SemanticFormatter{}
+			got, err := f.Format(result)
+			if err != nil {
+				t.Fatalf("SemanticFormatter.Format() error = %v", err)
+			}
+
+			if !strings.Contains(got, tt.symbol) {
+				t.Errorf("SemanticFormatter.Format() should contain symbol %q, got:\n%s", tt.symbol, got)
+			}
+
+			if !strings.Contains(got, tt.path) {
+				t.Errorf("SemanticFormatter.Format() should contain path %q, got:\n%s", tt.path, got)
+			}
+		})
+	}
+}
