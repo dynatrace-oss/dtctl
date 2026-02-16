@@ -12,9 +12,6 @@ import (
 // aliasNameRegex validates alias names: letters, numbers, hyphens, underscores
 var aliasNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
-// maxPositionalParam is the highest $N we scan for when validating argument count
-const maxPositionalParam = 9
-
 // ValidateAliasName checks that an alias name is syntactically valid.
 func ValidateAliasName(name string) error {
 	if name == "" {
