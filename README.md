@@ -44,15 +44,36 @@ cp -r skills/dtctl ~/.claude/skills/   # For Claude Code
 
 Compatible with GitHub Copilot, Claude Code, and other Agent Skills tools.
 
+## Installation
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew tap dynatrace-oss/tap
+brew install dtctl
+```
+
+### Docker
+
+```bash
+docker pull ghcr.io/dynatrace-oss/dtctl:latest
+docker run --rm ghcr.io/dynatrace-oss/dtctl:latest version
+```
+
+### Download Binary
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/dynatrace-oss/dtctl/releases/latest).
+
+### Build from Source
+
+```bash
+git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl
+make build && make install
+```
+
 ## Quick Start
 
 ```bash
-# Install dtctl - download the latest release for your platform:
-# https://github.com/dynatrace-oss/dtctl/releases/latest
-#
-# Or build from source:
-# git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl
-# make build && make install
 
 # Configure your environment
 dtctl config set-context my-env \

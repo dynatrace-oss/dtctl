@@ -24,12 +24,12 @@ builds:
       - -X github.com/dynatrace-oss/dtctl/pkg/version.Date={{.Date}}
 
 archives:
-  - format: tar.gz
-    name_template: >-
+  - name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
-    format_overrides:
-      - goos: windows
-        format: zip
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
 
 checksum:
   name_template: 'checksums.txt'
@@ -46,3 +46,59 @@ changelog:
       - '^ci:'
       - Merge pull request
       - Merge branch
+
+brews:
+  - repository:
+      owner: dynatrace-oss
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/dynatrace-oss/dtctl
+    description: "kubectl-inspired CLI for Dynatrace - manage workflows, dashboards, queries, and more from your terminal"
+    license: Apache-2.0
+    test: |
+      system "#{bin}/dtctl", "version"
+    install: |
+      bin.install "dtctl"
+      generate_completions_from_executable(bin/"dtctl", "completion")
+
+dockers:
+  - image_templates:
+      - "ghcr.io/dynatrace-oss/dtctl:{{ .Version }}-amd64"
+      - "ghcr.io/dynatrace-oss/dtctl:latest-amd64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/dynatrace-oss/dtctl"
+      - "--label=org.opencontainers.image.description=kubectl-inspired CLI for Dynatrace"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+    dockerfile: Dockerfile
+  - image_templates:
+      - "ghcr.io/dynatrace-oss/dtctl:{{ .Version }}-arm64"
+      - "ghcr.io/dynatrace-oss/dtctl:latest-arm64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/dynatrace-oss/dtctl"
+      - "--label=org.opencontainers.image.description=kubectl-inspired CLI for Dynatrace"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+    goarch: arm64
+    dockerfile: Dockerfile
+
+docker_manifests:
+  - name_template: "ghcr.io/dynatrace-oss/dtctl:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/dynatrace-oss/dtctl:{{ .Version }}-amd64"
+      - "ghcr.io/dynatrace-oss/dtctl:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/dynatrace-oss/dtctl:latest"
+    image_templates:
+      - "ghcr.io/dynatrace-oss/dtctl:latest-amd64"
+      - "ghcr.io/dynatrace-oss/dtctl:latest-arm64"
