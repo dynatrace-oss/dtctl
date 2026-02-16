@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,14 +10,16 @@ import (
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/version"
+	"github.com/sirupsen/logrus"
 )
 
 func TestNew(t *testing.T) {
 	tests := []struct {
-		name    string
-		baseURL string
-		token   string
-		wantErr bool
+		name        string
+		baseURL     string
+		token       string
+		wantErr     bool
+		errContains string
 	}{
 		{
 			name:    "valid config",
@@ -25,31 +28,40 @@ func TestNew(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "empty base URL",
-			baseURL: "",
-			token:   "dt0c01.token",
-			wantErr: true,
+			name:        "empty base URL",
+			baseURL:     "",
+			token:       "dt0c01.token",
+			wantErr:     true,
+			errContains: "base URL is required",
 		},
 		{
-			name:    "empty token",
-			baseURL: "https://example.dynatrace.com",
-			token:   "",
-			wantErr: true,
+			name:        "empty token",
+			baseURL:     "https://example.dynatrace.com",
+			token:       "",
+			wantErr:     true,
+			errContains: "token is required",
 		},
 		{
-			name:    "both empty",
-			baseURL: "",
-			token:   "",
-			wantErr: true,
+			name:        "both empty",
+			baseURL:     "",
+			token:       "",
+			wantErr:     true,
+			errContains: "base URL is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel() // Enable parallel execution
 			client, err := New(tt.baseURL, tt.token)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("New() error = %v, wantErr %v", err, tt.wantErr)
 				return
+			}
+			if tt.wantErr && tt.errContains != "" {
+				if err == nil || !contains(err.Error(), tt.errContains) {
+					t.Errorf("New() error = %v, want error containing %q", err, tt.errContains)
+				}
 			}
 			if !tt.wantErr && client == nil {
 				t.Error("New() returned nil client without error")
@@ -58,9 +70,31 @@ func TestNew(t *testing.T) {
 				if client.BaseURL() != tt.baseURL {
 					t.Errorf("BaseURL() = %v, want %v", client.BaseURL(), tt.baseURL)
 				}
+				// Verify client is properly configured
+				if client.HTTP() == nil {
+					t.Error("HTTP client not initialized")
+				}
+				if client.Logger() == nil {
+					t.Error("Logger not initialized")
+				}
 			}
 		})
 	}
+}
+
+// contains checks if a string contains a substring (helper for error checking)
+func contains(s, substr string) bool {
+	return len(substr) > 0 && len(s) >= len(substr) &&
+		(s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+}
+
+func containsMiddle(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 func TestClient_HTTP(t *testing.T) {
@@ -346,5 +380,311 @@ func TestClient_UserAgent(t *testing.T) {
 	expectedUA := fmt.Sprintf("dtctl/%s", version.Version)
 	if receivedUA != expectedUA {
 		t.Errorf("User-Agent = %v, want %v", receivedUA, expectedUA)
+	}
+}
+
+func TestClient_SetLogger(t *testing.T) {
+	t.Parallel()
+
+	client, err := New("https://example.dynatrace.com", "test-token")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	customLogger := &logrus.Logger{}
+	client.SetLogger(customLogger)
+
+	if client.Logger() != customLogger {
+		t.Error("SetLogger() did not set the custom logger")
+	}
+}
+
+func TestClient_BaseURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		baseURL string
+	}{
+		{
+			name:    "standard dynatrace URL",
+			baseURL: "https://example.dynatrace.com",
+		},
+		{
+			name:    "managed URL",
+			baseURL: "https://managed.example.com/e/environment-id",
+		},
+		{
+			name:    "localhost",
+			baseURL: "http://localhost:8080",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client, err := New(tt.baseURL, "test-token")
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			if client.BaseURL() != tt.baseURL {
+				t.Errorf("BaseURL() = %v, want %v", client.BaseURL(), tt.baseURL)
+			}
+		})
+	}
+}
+
+func TestIsSensitiveHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		header string
+		want   bool
+	}{
+		{
+			name:   "authorization header",
+			header: "Authorization",
+			want:   true,
+		},
+		{
+			name:   "authorization lowercase",
+			header: "authorization",
+			want:   true,
+		},
+		{
+			name:   "x-api-key",
+			header: "X-API-Key",
+			want:   true,
+		},
+		{
+			name:   "cookie",
+			header: "Cookie",
+			want:   true,
+		},
+		{
+			name:   "set-cookie",
+			header: "Set-Cookie",
+			want:   true,
+		},
+		{
+			name:   "content-type not sensitive",
+			header: "Content-Type",
+			want:   false,
+		},
+		{
+			name:   "user-agent not sensitive",
+			header: "User-Agent",
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isSensitiveHeader(tt.header)
+			if got != tt.want {
+				t.Errorf("isSensitiveHeader(%q) = %v, want %v", tt.header, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClient_SetVerbosityLevels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		level int
+	}{
+		{
+			name:  "level 0 - no debug",
+			level: 0,
+		},
+		{
+			name:  "level 1 - summary",
+			level: 1,
+		},
+		{
+			name:  "level 2 - full details",
+			level: 2,
+		},
+		{
+			name:  "level 3 - verbose",
+			level: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client, err := New("https://example.dynatrace.com", "test-token")
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			// Should not panic
+			client.SetVerbosity(tt.level)
+		})
+	}
+}
+
+func TestClient_CurrentUserID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		apiSuccess  bool
+		apiResponse UserInfo
+		apiStatus   int
+		token       string
+		wantID      string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:       "successful API call",
+			apiSuccess: true,
+			apiResponse: UserInfo{
+				UserID:       "api-user-123",
+				UserName:     "test.user",
+				EmailAddress: "test@example.com",
+			},
+			apiStatus: http.StatusOK,
+			token:     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0b2tlbi11c2VyLTQ1NiJ9.signature",
+			wantID:    "api-user-123",
+			wantErr:   false,
+		},
+		{
+			name:       "API fails, fallback to JWT",
+			apiSuccess: false,
+			apiStatus:  http.StatusUnauthorized,
+			token:      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0b2tlbi11c2VyLTQ1NiJ9.signature",
+			wantID:     "token-user-456",
+			wantErr:    false,
+		},
+		{
+			name:        "API fails and invalid JWT",
+			apiSuccess:  false,
+			apiStatus:   http.StatusUnauthorized,
+			token:       "invalid-token",
+			wantErr:     true,
+			errContains: "invalid JWT token format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.apiStatus)
+				if tt.apiSuccess {
+					_ = json.NewEncoder(w).Encode(tt.apiResponse)
+				} else {
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+				}
+			}))
+			defer server.Close()
+
+			client, err := New(server.URL, tt.token)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			client.HTTP().SetRetryCount(0)
+
+			userID, err := client.CurrentUserID()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CurrentUserID() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errContains != "" {
+				if err == nil || !contains(err.Error(), tt.errContains) {
+					t.Errorf("CurrentUserID() error = %v, want error containing %q", err, tt.errContains)
+				}
+			}
+			if !tt.wantErr && userID != tt.wantID {
+				t.Errorf("CurrentUserID() = %v, want %v", userID, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestIsRetryable_ContextDeadline(t *testing.T) {
+	t.Parallel()
+
+	// Test that context deadline errors are NOT retried
+	err := context.DeadlineExceeded
+	if isRetryable(nil, err) {
+		t.Error("isRetryable() should return false for context.DeadlineExceeded")
+	}
+}
+
+func TestIsRetryable_StatusCodes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		statusCode int
+		want       bool
+	}{
+		{
+			name:       "200 OK - no retry",
+			statusCode: http.StatusOK,
+			want:       false,
+		},
+		{
+			name:       "400 Bad Request - no retry",
+			statusCode: http.StatusBadRequest,
+			want:       false,
+		},
+		{
+			name:       "404 Not Found - no retry",
+			statusCode: http.StatusNotFound,
+			want:       false,
+		},
+		{
+			name:       "429 Rate Limit - retry",
+			statusCode: http.StatusTooManyRequests,
+			want:       true,
+		},
+		{
+			name:       "500 Internal Server Error - retry",
+			statusCode: http.StatusInternalServerError,
+			want:       true,
+		},
+		{
+			name:       "502 Bad Gateway - retry",
+			statusCode: http.StatusBadGateway,
+			want:       true,
+		},
+		{
+			name:       "503 Service Unavailable - retry",
+			statusCode: http.StatusServiceUnavailable,
+			want:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.statusCode)
+			}))
+			defer server.Close()
+
+			client, err := New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			client.HTTP().SetRetryCount(0)
+
+			resp, _ := client.HTTP().R().Get("/test")
+			got := isRetryable(resp, nil)
+			if got != tt.want {
+				t.Errorf("isRetryable() with status %d = %v, want %v", tt.statusCode, got, tt.want)
+			}
+		})
 	}
 }
