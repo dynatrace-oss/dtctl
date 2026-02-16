@@ -5,10 +5,41 @@ run:
   go: '1.24'
 
 linters:
-  disable:
-    - errcheck    # Too noisy for defer statements and test code
-    - staticcheck # Disabled to avoid opinionated style suggestions (QF1003, QF1001, QF1008)
+  enable:
+    - staticcheck
+    - errcheck
+    - govet
+    - ineffassign
+    - unused
+    - gocritic
+    - gosimple
+
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF1003" # Convert if/else to switch
+        - "-QF1001" # Apply De Morgan's law
+        - "-QF1008" # Omit embedded fields from selector expression
+    errcheck:
+      exclude-functions:
+        - (*os.File).Close
+        - (io.Closer).Close
+        - (*github.com/spf13/cobra.Command).MarkFlagRequired
+
+formatters:
+  enable:
+    - gofmt
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+  exclude-rules:
+    # Don't enforce errcheck in test files -- test assertions catch errors
+    - path: _test\.go
+      linters:
+        - errcheck
+    # Ignore deferred close errors
+    - source: "defer "
+      linters:
+        - errcheck
