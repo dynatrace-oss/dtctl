@@ -21,6 +21,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Automatic pagination with `--chunk-size` (default 500)
 - [x] User identity: `dtctl auth whoami` (via metadata API with JWT fallback)
 - [x] OS keychain integration for secure token storage
+- [x] Command aliases: simple, parameterized ($1-$9), and shell aliases (with import/export)
 
 ### Verbs Implemented
 - [x] `get` - List/retrieve resources
@@ -37,6 +38,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `history` - Show version history (snapshots)
 - [x] `restore` - Restore to previous version
 - [x] `share/unshare` - Share dashboards and notebooks
+- [x] `alias` - Manage command aliases (set, list, delete, import, export)
 
 ### Resources
 
