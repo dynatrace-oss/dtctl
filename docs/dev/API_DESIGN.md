@@ -1093,6 +1093,11 @@ See [Context Safety Levels](context-safety-levels.md) for detailed documentation
 ### Context Management Commands
 
 ```bash
+# Create project config
+dtctl config init                                # Generate .dtctl.yaml template
+dtctl config init --context staging             # Custom context name
+dtctl config init --force                        # Overwrite existing file
+
 # View configuration
 dtctl config view                                # View full config
 dtctl config view --minify                       # View without defaults

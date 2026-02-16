@@ -111,32 +111,74 @@ dtctl get workflows --context prod
 
 ### Per-Project Configuration
 
-dtctl supports per-project configuration files. Create a `.dtctl.yaml` file in your project directory:
+dtctl supports per-project configuration files for team collaboration and CI/CD workflows.
+
+#### Creating Project Config
+
+Use `dtctl config init` to generate a `.dtctl.yaml` template:
+
+```bash
+# Create .dtctl.yaml in current directory
+dtctl config init
+
+# Create with custom context name
+dtctl config init --context staging
+
+# Overwrite existing file
+dtctl config init --force
+```
+
+This generates a template with environment variable placeholders:
 
 ```yaml
 # .dtctl.yaml - per-project configuration
-apiVersion: v1
+apiVersion: dtctl.io/v1
 kind: Config
-current-context: project-env
+current-context: production
 contexts:
-  - name: project-env
+  - name: production
     context:
-      environment: https://project.apps.dynatrace.com
-      token-ref: project-token
+      environment: ${DT_ENVIRONMENT_URL}
+      token-ref: my-token
       safety-level: readwrite-all
+      description: Project environment
+tokens:
+  - name: my-token
+    token: ${DT_API_TOKEN}
+preferences:
+  output: table
 ```
+
+#### Environment Variable Expansion
+
+Config files support `${VAR_NAME}` syntax for environment variables:
+
+```yaml
+contexts:
+  - name: ci
+    context:
+      environment: ${DT_ENVIRONMENT_URL}  # Expanded from env var
+      token-ref: ci-token
+tokens:
+  - name: ci-token
+    token: ${DT_API_TOKEN}  # Expanded from env var
+```
+
+This allows teams to commit `.dtctl.yaml` files to repositories **without secrets**, while each developer or CI system provides tokens via environment variables.
 
 **Search Order:**
 1. `--config` flag (explicit path)
 2. `.dtctl.yaml` in current directory or any parent directory (walks up to root)
 3. Global config (`~/.config/dtctl/config`)
 
-This allows teams to commit `.dtctl.yaml` files to repositories (without tokens!) and have dtctl automatically use the correct environment settings.
+#### Usage Examples
 
 ```bash
 # In a project directory with .dtctl.yaml
 cd my-project/
-dtctl get workflows  # Uses .dtctl.yaml automatically
+export DT_ENVIRONMENT_URL="https://abc12345.apps.dynatrace.com"
+export DT_API_TOKEN="dt0c01.xxx"
+dtctl get workflows  # Uses .dtctl.yaml with expanded env vars
 
 # Override with global config
 dtctl --config ~/.config/dtctl/config get workflows
