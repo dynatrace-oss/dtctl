@@ -188,13 +188,91 @@ dtctl query "fetch logs | limit 10"
 -o, --output string   # Output format: json|yaml|table|wide|name|custom-columns=...
 --plain               # Plain output for machine processing (no colors, no interactive prompts)
 --no-headers          # Omit headers in table output
--v, --verbose         # Verbose output
+-v, --verbose         # Verbose output (-v for details, -vv for full HTTP debug)
+--debug               # Enable debug mode (full HTTP logging, equivalent to -vv)
 --dry-run             # Print what would be done without doing it
 --field-selector string # Filter by fields (e.g., owner=me,type=notebook)
 
 # (not implemented yet)
 # -w, --watch           # Watch for changes
 ```
+
+### Debug Mode
+
+The `--debug` flag (or `-vv`) enables full HTTP request/response logging for troubleshooting:
+
+```bash
+dtctl get workflows --debug
+
+# Shows:
+# ===> REQUEST <===
+# GET https://abc12345.apps.dynatrace.com/platform/automation/v1/workflows
+# HEADERS:
+#     User-Agent: dtctl/0.10.0
+#     Authorization: [REDACTED]
+#
+# ===> RESPONSE <===
+# STATUS: 200 OK
+# TIME: 234ms
+# HEADERS:
+#     Content-Type: application/json
+# BODY:
+# {"workflows": [...]}
+```
+
+Sensitive headers (Authorization, X-API-Key, Cookie, etc.) are always redacted in debug output for security.
+
+### Error Messages & Troubleshooting
+
+dtctl provides enhanced error messages with contextual troubleshooting suggestions:
+
+**Example 401 Unauthorized:**
+```
+Failed to get workflows (HTTP 401): Authentication failed
+
+Request ID: abc-123-def-456
+
+Troubleshooting suggestions:
+  • Token may be expired or invalid. Run 'dtctl config get-context' to check your configuration
+  • Verify your API token has not been revoked in the Dynatrace console
+  • Try refreshing your authentication with 'dtctl context set' and a new token
+```
+
+**Example 403 Forbidden:**
+```
+Failed to delete dashboard (HTTP 403): Forbidden
+
+Troubleshooting suggestions:
+  • Insufficient permissions. Check that your API token has the required scopes
+  • View current context and safety level: 'dtctl config get-context'
+  • If using a 'readonly' context, switch to a context with write permissions
+  • Review required token scopes in the documentation
+```
+
+Common HTTP status codes:
+- **401**: Authentication error (invalid/expired token)
+- **403**: Permission error (insufficient scopes or readonly context)
+- **404**: Resource not found
+- **429**: Rate limited (dtctl auto-retries)
+- **500/502/503/504**: Server errors (dtctl auto-retries)
+
+Use `--debug` to see full HTTP details when troubleshooting.
+
+### AI Agent Detection
+
+dtctl automatically detects when running under AI coding assistants and includes this in the User-Agent header for telemetry:
+
+- **Claude Code**: Detected via `CLAUDECODE` environment variable
+- **OpenCode**: Detected via `OPENCODE` environment variable
+- **GitHub Copilot**: Detected via `GITHUB_COPILOT` environment variable
+- **Cursor**: Detected via `CURSOR_AGENT` environment variable
+- **Codeium**: Detected via `CODEIUM_AGENT` environment variable
+- **TabNine**: Detected via `TABNINE_AGENT` environment variable
+- **Amazon Q**: Detected via `AMAZON_Q` environment variable
+
+Example User-Agent: `dtctl/0.10.0 (AI-Agent: opencode)`
+
+This telemetry helps improve the CLI experience for AI-assisted workflows. Detection is automatic and doesn't affect functionality.
 
 ## Resource Types
 
