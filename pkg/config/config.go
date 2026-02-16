@@ -11,12 +11,13 @@ import (
 
 // Config represents the dtctl configuration
 type Config struct {
-	APIVersion     string         `yaml:"apiVersion"`
-	Kind           string         `yaml:"kind"`
-	CurrentContext string         `yaml:"current-context"`
-	Contexts       []NamedContext `yaml:"contexts"`
-	Tokens         []NamedToken   `yaml:"tokens"`
-	Preferences    Preferences    `yaml:"preferences"`
+	APIVersion     string            `yaml:"apiVersion"`
+	Kind           string            `yaml:"kind"`
+	CurrentContext string            `yaml:"current-context"`
+	Contexts       []NamedContext    `yaml:"contexts"`
+	Tokens         []NamedToken      `yaml:"tokens"`
+	Preferences    Preferences       `yaml:"preferences"`
+	Aliases        map[string]string `yaml:"aliases,omitempty"`
 }
 
 // NamedContext holds a context with its name

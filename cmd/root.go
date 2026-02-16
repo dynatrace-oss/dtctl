@@ -42,6 +42,30 @@ func Execute() {
 	// Setup enhanced error handling after all subcommands are registered
 	setupErrorHandlers(rootCmd)
 
+	// --- Alias resolution (before Cobra parses args) ---
+	// Load config quietly; if it fails, skip alias resolution (the real
+	// command will produce the proper error later).
+	if cfg, err := config.Load(); err == nil {
+		// os.Args[0] is the binary name; work with os.Args[1:]
+		expanded, isShell, err := resolveAlias(os.Args[1:], cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+			os.Exit(1)
+		}
+
+		if isShell {
+			if err := execShellAlias(expanded[0]); err != nil {
+				os.Exit(1)
+			}
+			return
+		}
+
+		if expanded != nil {
+			rootCmd.SetArgs(expanded)
+		}
+	}
+	// --- End alias resolution ---
+
 	if err := rootCmd.Execute(); err != nil {
 		errStr := err.Error()
 
