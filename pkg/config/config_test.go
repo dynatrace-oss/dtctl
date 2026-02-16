@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -632,12 +633,126 @@ contexts:
 }
 
 func TestLocalConfigName(t *testing.T) {
+	t.Parallel()
 	if LocalConfigName != ".dtctl.yaml" {
 		t.Errorf("LocalConfigName = %q, want .dtctl.yaml", LocalConfigName)
 	}
 }
 
+func TestFindLocalConfig_Integration(t *testing.T) {
+	t.Parallel()
+	// Create a temp directory hierarchy
+	tmpDir, err := os.MkdirTemp("", "dtctl-find-local-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create nested directory structure
+	projectDir := filepath.Join(tmpDir, "project")
+	subDir := filepath.Join(projectDir, "subdir")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatalf("Failed to create nested dirs: %v", err)
+	}
+
+	// Create local config in project root
+	localConfigPath := filepath.Join(projectDir, LocalConfigName)
+	configContent := `apiVersion: v1
+kind: Config
+current-context: local-test
+`
+	if err := os.WriteFile(localConfigPath, []byte(configContent), 0600); err != nil {
+		t.Fatalf("Failed to write local config: %v", err)
+	}
+
+	// Save current working directory
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+	}()
+
+	// Change to subdirectory and test FindLocalConfig
+	if err := os.Chdir(subDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	result := FindLocalConfig()
+	// Use filepath.EvalSymlinks to handle /var vs /private/var on macOS
+	expectedPath, _ := filepath.EvalSymlinks(localConfigPath)
+	actualPath, _ := filepath.EvalSymlinks(result)
+	if actualPath != expectedPath {
+		t.Errorf("FindLocalConfig() from subdir = %q, want %q", result, localConfigPath)
+	}
+
+	// Change to project root and test
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Failed to change to project dir: %v", err)
+	}
+
+	result = FindLocalConfig()
+	actualPath, _ = filepath.EvalSymlinks(result)
+	if actualPath != expectedPath {
+		t.Errorf("FindLocalConfig() from project dir = %q, want %q", result, localConfigPath)
+	}
+}
+
+func TestLoad_LocalConfigPrecedence(t *testing.T) {
+	t.Parallel()
+	// This test verifies the Load() function logic by checking directory changes
+	// We can't fully test XDG env var changes due to library caching,
+	// but we can verify local config detection works
+
+	tmpDir, err := os.MkdirTemp("", "dtctl-load-precedence-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create local config
+	localConfigPath := filepath.Join(tmpDir, LocalConfigName)
+	localContent := `apiVersion: v1
+kind: Config
+current-context: local-ctx
+contexts:
+  - name: local-ctx
+    context:
+      environment: https://local.dt.com
+      token-ref: local-token
+`
+	if err := os.WriteFile(localConfigPath, []byte(localContent), 0600); err != nil {
+		t.Fatalf("Failed to write local config: %v", err)
+	}
+
+	// Save current working directory
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+	}()
+
+	// Change to directory with local config
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	// Load should find local config
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.CurrentContext != "local-ctx" {
+		t.Errorf("Load() returned CurrentContext = %q, want 'local-ctx' (should find local config)", cfg.CurrentContext)
+	}
+}
+
 func TestConfig_DeleteContext(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		setup       func() *Config
@@ -705,6 +820,7 @@ func TestConfig_DeleteContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cfg := tt.setup()
 			err := cfg.DeleteContext(tt.contextName)
 
@@ -726,5 +842,229 @@ func TestConfig_DeleteContext(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLoadFrom_EdgeCases(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		fileContent string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "empty file",
+			fileContent: "",
+			wantErr:     false, // YAML can unmarshal empty file
+		},
+		{
+			name:        "invalid YAML syntax",
+			fileContent: "invalid: yaml: [unclosed",
+			wantErr:     true,
+			errContains: "failed to parse config file",
+		},
+		{
+			name: "minimal valid config",
+			fileContent: `apiVersion: v1
+kind: Config`,
+			wantErr: false,
+		},
+		{
+			name:        "config with tabs",
+			fileContent: "apiVersion: v1\nkind: Config\ncurrent-context:\ttest",
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			tmpDir, err := os.MkdirTemp("", "dtctl-loadfrom-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
+
+			configPath := filepath.Join(tmpDir, "config")
+			if err := os.WriteFile(configPath, []byte(tt.fileContent), 0600); err != nil {
+				t.Fatalf("Failed to write config: %v", err)
+			}
+
+			_, err = LoadFrom(configPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("LoadFrom() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr && tt.errContains != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("LoadFrom() error = %v, want error containing %q", err, tt.errContains)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadFrom_ReadError(t *testing.T) {
+	t.Parallel()
+	// Test error when reading a directory instead of a file
+	tmpDir, err := os.MkdirTemp("", "dtctl-readerror-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	_, err = LoadFrom(tmpDir)
+	if err == nil {
+		t.Error("LoadFrom() on directory should return error")
+	}
+	if !strings.Contains(err.Error(), "failed to read config file") {
+		t.Errorf("LoadFrom() error = %v, want error containing 'failed to read config file'", err)
+	}
+}
+
+func TestConfig_GetToken_KeyringFallback(t *testing.T) {
+	t.Parallel()
+	cfg := NewConfig()
+
+	// Add token with empty value (simulating keyring migration)
+	cfg.Tokens = append(cfg.Tokens, NamedToken{
+		Name:  "migrated-token",
+		Token: "", // Empty = stored in keyring
+	})
+
+	// If keyring is not available, should get specific error
+	_, err := cfg.GetToken("migrated-token")
+	if err == nil {
+		// Either keyring is available and returned token, or should have error
+		t.Log("Keyring available, token retrieved successfully")
+	} else {
+		// Should get specific error about keyring
+		if !strings.Contains(err.Error(), "not found in keyring") {
+			t.Errorf("GetToken() error = %v, want error about keyring", err)
+		}
+	}
+}
+
+func TestConfig_SetContextWithOptions_EmptyTokenRef(t *testing.T) {
+	t.Parallel()
+	cfg := NewConfig()
+
+	// Create context with initial token
+	cfg.SetContextWithOptions("test", "https://test.dt.com", "initial-token", nil)
+
+	if cfg.Contexts[0].Context.TokenRef != "initial-token" {
+		t.Errorf("Initial TokenRef = %v, want 'initial-token'", cfg.Contexts[0].Context.TokenRef)
+	}
+
+	// Update with empty token ref (should keep existing)
+	opts := &ContextOptions{
+		Description: "Updated description",
+	}
+	cfg.SetContextWithOptions("test", "https://test2.dt.com", "", opts)
+
+	if cfg.Contexts[0].Context.TokenRef != "initial-token" {
+		t.Errorf("After update with empty tokenRef, TokenRef = %v, want 'initial-token'", cfg.Contexts[0].Context.TokenRef)
+	}
+	if cfg.Contexts[0].Context.Environment != "https://test2.dt.com" {
+		t.Errorf("Environment not updated = %v", cfg.Contexts[0].Context.Environment)
+	}
+}
+
+func TestConfig_SetContextWithOptions_PartialUpdate(t *testing.T) {
+	t.Parallel()
+	cfg := NewConfig()
+
+	// Create context with all fields
+	opts := &ContextOptions{
+		SafetyLevel: SafetyLevelReadOnly,
+		Description: "Initial description",
+	}
+	cfg.SetContextWithOptions("prod", "https://prod.dt.com", "prod-token", opts)
+
+	// Update only safety level
+	opts2 := &ContextOptions{
+		SafetyLevel: SafetyLevelReadWriteAll,
+	}
+	cfg.SetContextWithOptions("prod", "https://prod2.dt.com", "", opts2)
+
+	ctx := cfg.Contexts[0].Context
+	if ctx.SafetyLevel != SafetyLevelReadWriteAll {
+		t.Errorf("SafetyLevel = %v, want %v", ctx.SafetyLevel, SafetyLevelReadWriteAll)
+	}
+	if ctx.Description != "Initial description" {
+		t.Errorf("Description changed unexpectedly to %v", ctx.Description)
+	}
+
+	// Update only description
+	opts3 := &ContextOptions{
+		Description: "New description",
+	}
+	cfg.SetContextWithOptions("prod", "https://prod3.dt.com", "", opts3)
+
+	ctx = cfg.Contexts[0].Context
+	if ctx.SafetyLevel != SafetyLevelReadWriteAll {
+		t.Errorf("SafetyLevel changed unexpectedly to %v", ctx.SafetyLevel)
+	}
+	if ctx.Description != "New description" {
+		t.Errorf("Description = %v, want 'New description'", ctx.Description)
+	}
+}
+
+func TestSaveTo_MarshalError(t *testing.T) {
+	t.Parallel()
+	// This is difficult to test as yaml.Marshal rarely fails with valid Go structs
+	// We test the directory creation error path instead
+	cfg := NewConfig()
+
+	// Try to save to a path where we can't create the directory
+	// Using root directory should fail on most systems without sudo
+	err := cfg.SaveTo("/root/impossible/path/config")
+	if err == nil {
+		t.Log("Warning: Expected permission error when saving to /root, but succeeded")
+	} else {
+		if !strings.Contains(err.Error(), "failed to create config directory") &&
+			!strings.Contains(err.Error(), "failed to write config file") {
+			t.Errorf("SaveTo() error = %v, want error about directory creation or file write", err)
+		}
+	}
+}
+
+func TestConfig_SetToken_UpdateExisting(t *testing.T) {
+	t.Parallel()
+	cfg := NewConfig()
+
+	// Add initial token
+	if err := cfg.SetToken("my-token", "initial-value"); err != nil {
+		t.Fatalf("SetToken() error = %v", err)
+	}
+
+	initialCount := len(cfg.Tokens)
+
+	// Update existing token
+	if err := cfg.SetToken("my-token", "updated-value"); err != nil {
+		t.Fatalf("SetToken() update error = %v", err)
+	}
+
+	// Should not add a new token entry
+	if len(cfg.Tokens) != initialCount {
+		t.Errorf("SetToken() added duplicate, count = %d, want %d", len(cfg.Tokens), initialCount)
+	}
+
+	// Find the token
+	found := false
+	for _, nt := range cfg.Tokens {
+		if nt.Name == "my-token" {
+			found = true
+			// If keyring not available, should have the new value
+			if !IsKeyringAvailable() && nt.Token != "updated-value" {
+				t.Errorf("Token value = %q, want 'updated-value'", nt.Token)
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Updated token not found in config")
 	}
 }
