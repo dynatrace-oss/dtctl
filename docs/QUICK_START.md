@@ -2995,6 +2995,67 @@ dtctl query "fetch logs" --max-result-records 5000 -o csv > logs.csv
 
 ## Troubleshooting
 
+### Understanding Error Messages
+
+dtctl provides contextual error messages with troubleshooting suggestions. When an operation fails, you'll see:
+
+```
+Failed to get workflows (HTTP 401): Authentication failed
+
+Request ID: abc-123-def-456
+
+Troubleshooting suggestions:
+  • Token may be expired or invalid. Run 'dtctl config get-context' to check your configuration
+  • Verify your API token has not been revoked in the Dynatrace console
+  • Try refreshing your authentication with 'dtctl context set' and a new token
+```
+
+Common HTTP status codes and their meanings:
+
+- **401 Unauthorized**: Token is invalid, expired, or missing
+- **403 Forbidden**: Token lacks required permissions/scopes
+- **404 Not Found**: Resource doesn't exist or wrong ID/name
+- **429 Rate Limited**: Too many requests (dtctl auto-retries)
+- **500/502/503/504**: Server error (dtctl auto-retries)
+
+### Using Debug Mode
+
+For detailed HTTP request/response logging, use the `--debug` flag:
+
+```bash
+# Enable full debug mode with HTTP details
+dtctl get workflows --debug
+
+# Output shows:
+# ===> REQUEST <===
+# GET https://abc12345.apps.dynatrace.com/platform/automation/v1/workflows
+# HEADERS:
+#     User-Agent: dtctl/0.10.0
+#     Authorization: [REDACTED]
+#     ...
+# 
+# ===> RESPONSE <===
+# STATUS: 200 OK
+# TIME: 234ms
+# HEADERS:
+#     Content-Type: application/json
+#     ...
+# BODY:
+# {"workflows": [...]}
+```
+
+The `--debug` flag is equivalent to `-vv` and shows:
+- Full HTTP request URL and method
+- Request and response headers (auth tokens are always redacted)
+- Response body
+- Response time
+
+This is useful for:
+- Diagnosing API errors
+- Verifying request parameters
+- Checking response format
+- Troubleshooting performance issues
+
 ### "config file not found"
 
 This means you haven't set up your configuration yet. Run:
@@ -3014,12 +3075,10 @@ Check:
 2. Your environment URL is correct
 3. You're using the right context
 
-Enable verbose mode to see HTTP request/response details:
+Enable debug mode to see detailed HTTP interactions:
 ```bash
-dtctl get workflows -v
+dtctl get workflows --debug
 ```
-
-The `-v` flag enables debug logging and shows detailed HTTP interactions with the API.
 
 ### Platform Token Scopes
 
@@ -3027,6 +3086,19 @@ Your platform token needs appropriate scopes for the resources you want to manag
 - Complete scope lists for each safety level (copy-pasteable)
 - Detailed breakdown by resource type
 - Token creation instructions
+
+### AI Agent Detection
+
+If you're using dtctl through an AI coding assistant (like Claude Code, GitHub Copilot, Cursor, etc.), dtctl automatically detects this and includes it in the User-Agent header for telemetry purposes. This helps improve the CLI experience for AI-assisted workflows.
+
+The detection is automatic and doesn't affect functionality. Supported AI agents:
+- Claude Code (`CLAUDECODE` env var)
+- OpenCode (`OPENCODE` env var)
+- GitHub Copilot (`GITHUB_COPILOT` env var)
+- Cursor (`CURSOR_AGENT` env var)
+- Codeium (`CODEIUM_AGENT` env var)
+- TabNine (`TABNINE_AGENT` env var)
+- Amazon Q (`AMAZON_Q` env var)
 
 ---
 
@@ -3050,6 +3122,28 @@ dtctl query --help
 dtctl get workflows --help
 ```
 
-Enable verbose mode with `-v` to see detailed HTTP request/response logs for debugging API issues.
+### Debugging Issues
+
+Use the `--debug` flag to see detailed HTTP request/response logs:
+
+```bash
+# Full debug output
+dtctl get workflows --debug
+
+# Alternative: use -vv for the same effect
+dtctl get workflows -vv
+```
+
+The debug output includes:
+- HTTP method and URL
+- Request/response headers (sensitive headers are redacted)
+- Response body and status
+- Response time
+
+### Verbose Levels
+
+- No flag: Normal output
+- `-v`: Verbose output with operation details
+- `-vv` or `--debug`: Full HTTP debug mode with request/response details
 
 For issues and feature requests, visit the [GitHub repository](https://github.com/dynatrace/dtctl).

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -377,10 +378,14 @@ func TestClient_UserAgent(t *testing.T) {
 		t.Fatalf("Request failed: %v", err)
 	}
 
-	expectedUA := fmt.Sprintf("dtctl/%s", version.Version)
-	if receivedUA != expectedUA {
-		t.Errorf("User-Agent = %v, want %v", receivedUA, expectedUA)
+	// User-Agent should start with dtctl/version
+	expectedPrefix := fmt.Sprintf("dtctl/%s", version.Version)
+	if !strings.HasPrefix(receivedUA, expectedPrefix) {
+		t.Errorf("User-Agent = %v, want prefix %v", receivedUA, expectedPrefix)
 	}
+
+	// May include AI agent suffix like " (AI-Agent: opencode)" depending on environment
+	// Just verify the base format is correct
 }
 
 func TestClient_SetLogger(t *testing.T) {
