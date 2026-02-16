@@ -1068,3 +1068,146 @@ func TestConfig_SetToken_UpdateExisting(t *testing.T) {
 		t.Error("Updated token not found in config")
 	}
 }
+
+func TestLoadFrom_EnvironmentVariableExpansion(t *testing.T) {
+	tests := []struct {
+		name          string
+		configContent string
+		envVars       map[string]string
+		wantEnv       string
+		wantToken     string
+		wantSafetyLvl string
+		wantErr       bool
+	}{
+		{
+			name: "expand single environment variable",
+			configContent: `apiVersion: dtctl.io/v1
+kind: Config
+current-context: test
+contexts:
+  - name: test
+    context:
+      environment: ${TEST_ENV_URL}
+      token-ref: test-token
+      safety-level: readonly
+tokens:
+  - name: test-token
+    token: test-value`,
+			envVars: map[string]string{
+				"TEST_ENV_URL": "https://test.dynatrace.com",
+			},
+			wantEnv:       "https://test.dynatrace.com",
+			wantToken:     "test-value",
+			wantSafetyLvl: "readonly",
+		},
+		{
+			name: "expand multiple environment variables",
+			configContent: `apiVersion: dtctl.io/v1
+kind: Config
+current-context: test
+contexts:
+  - name: test
+    context:
+      environment: ${DT_ENVIRONMENT_URL}
+      token-ref: test-token
+      safety-level: ${DT_SAFETY_LEVEL}
+tokens:
+  - name: test-token
+    token: ${DT_API_TOKEN}`,
+			envVars: map[string]string{
+				"DT_ENVIRONMENT_URL": "https://abc123.apps.dynatrace.com",
+				"DT_API_TOKEN":       "dt0s16.SECRET_TOKEN",
+				"DT_SAFETY_LEVEL":    "readwrite-all",
+			},
+			wantEnv:       "https://abc123.apps.dynatrace.com",
+			wantToken:     "dt0s16.SECRET_TOKEN",
+			wantSafetyLvl: "readwrite-all",
+		},
+		{
+			name: "undefined environment variable becomes empty",
+			configContent: `apiVersion: dtctl.io/v1
+kind: Config
+current-context: test
+contexts:
+  - name: test
+    context:
+      environment: ${UNDEFINED_VAR}
+      token-ref: test-token
+tokens:
+  - name: test-token
+    token: static-value`,
+			envVars:       map[string]string{},
+			wantEnv:       "",
+			wantToken:     "static-value",
+			wantSafetyLvl: "readwrite-all", // default
+		},
+		{
+			name: "mixed static and dynamic values",
+			configContent: `apiVersion: dtctl.io/v1
+kind: Config
+current-context: test
+contexts:
+  - name: test
+    context:
+      environment: https://static.dynatrace.com
+      token-ref: test-token
+      safety-level: readonly
+tokens:
+  - name: test-token
+    token: ${DT_API_TOKEN}`,
+			envVars: map[string]string{
+				"DT_API_TOKEN": "dt0s16.DYNAMIC_TOKEN",
+			},
+			wantEnv:       "https://static.dynatrace.com",
+			wantToken:     "dt0s16.DYNAMIC_TOKEN",
+			wantSafetyLvl: "readonly",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up environment variables
+			for k, v := range tt.envVars {
+				os.Setenv(k, v)
+				defer os.Unsetenv(k)
+			}
+
+			// Create temporary config file
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "config")
+			if err := os.WriteFile(configPath, []byte(tt.configContent), 0600); err != nil {
+				t.Fatalf("Failed to write test config: %v", err)
+			}
+
+			// Load config
+			cfg, err := LoadFrom(configPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("LoadFrom() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				return
+			}
+
+			// Verify environment variable was expanded
+			if len(cfg.Contexts) == 0 {
+				t.Fatal("Expected at least one context")
+			}
+			if got := cfg.Contexts[0].Context.Environment; got != tt.wantEnv {
+				t.Errorf("Environment = %q, want %q", got, tt.wantEnv)
+			}
+
+			// Verify token was expanded
+			if len(cfg.Tokens) > 0 {
+				if got := cfg.Tokens[0].Token; got != tt.wantToken {
+					t.Errorf("Token = %q, want %q", got, tt.wantToken)
+				}
+			}
+
+			// Verify safety level
+			if got := cfg.Contexts[0].Context.SafetyLevel.String(); got != tt.wantSafetyLvl {
+				t.Errorf("SafetyLevel = %q, want %q", got, tt.wantSafetyLvl)
+			}
+		})
+	}
+}
