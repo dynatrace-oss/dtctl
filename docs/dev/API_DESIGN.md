@@ -159,6 +159,7 @@ exec        - Execute a workflow or function
 history     - Show version history (snapshots) of a document
 restore     - Restore a document to a previous version
 wait        - Wait for a specific condition (query results, resource state)
+alias       - Manage command aliases (set, list, delete, import, export)
 
 # (not implemented yet)
 # patch       - Update specific fields of a resource
@@ -1141,6 +1142,83 @@ To avoid repeated API calls, dtctl caches the user ID for the current context:
 - Cache location: `~/.cache/dtctl/<context>/user.json`
 - Cache TTL: 24 hours (configurable via `preferences.user-cache-ttl`)
 - Force refresh: `dtctl auth whoami --refresh`
+
+### Command Aliases
+
+Command aliases allow users to create shortcuts for frequently used commands. They are stored in the config file and support three types:
+
+1. **Simple Aliases**: Direct text replacement
+2. **Parameterized Aliases**: Support `$1-$9` positional parameters
+3. **Shell Aliases**: Execute through system shell (prefix with `!`)
+
+**Design Goals:**
+- Reduce typing for common workflows
+- Enable team sharing via import/export
+- Support both simple shortcuts and complex shell pipelines
+- Prevent shadowing of built-in commands for safety
+
+**Commands:**
+
+```bash
+# Set alias
+dtctl alias set <name> <expansion>
+
+# List aliases
+dtctl alias list
+
+# Delete alias
+dtctl alias delete <name>
+
+# Import/export
+dtctl alias import -f <file.yaml>
+dtctl alias export -f <file.yaml>
+```
+
+**Examples:**
+
+```bash
+# Simple alias
+dtctl alias set wf "get workflows"
+dtctl wf  # Expands to: dtctl get workflows
+
+# Parameterized alias
+dtctl alias set logs-status "query 'fetch logs | filter status=\$1 | limit \$2'"
+dtctl logs-status ERROR 100
+# Expands to: dtctl query 'fetch logs | filter status=ERROR | limit 100'
+
+# Shell alias (with pipes, external tools)
+dtctl alias set wf-count "!dtctl get workflows -o json | jq '.workflows | length'"
+dtctl wf-count
+# Executes through shell: dtctl get workflows -o json | jq '.workflows | length'
+```
+
+**Storage Format (in config file):**
+
+```yaml
+apiVersion: v1
+kind: Config
+current-context: prod
+contexts: [...]
+aliases:
+  wf: get workflows
+  wfe: get workflow-executions
+  logs-error: query 'fetch logs | filter status=ERROR | limit 100'
+  top-errors: "!dtctl query 'fetch logs | filter status=ERROR' -o json | jq -r '.records[].message' | sort | uniq -c | sort -rn | head -10"
+```
+
+**Resolution:**
+- Happens before Cobra command parsing (intercepts `os.Args`)
+- Aliases cannot shadow built-in commands (`get`, `describe`, `create`, etc.)
+- Recursive alias expansion is not supported
+- Shell aliases (`!` prefix) execute the full expansion through `/bin/sh` (Unix) or `cmd.exe` (Windows)
+
+**Security Considerations:**
+- Aliases are stored in plain text in config file
+- Shell aliases can execute arbitrary commands
+- Import with `--no-overwrite` to prevent accidental overwrites
+- Validate alias names (alphanumeric + `-_`, no spaces)
+
+See [ALIAS_DESIGN.md](ALIAS_DESIGN.md) for complete specification.
 
 ## Output Formats
 

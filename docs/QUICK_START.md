@@ -190,6 +190,125 @@ dtctl auth whoami -o json
 
 **Note:** The `whoami` command requires the `app-engine:apps:run` scope for full user details. If that scope is unavailable, it falls back to extracting the user ID from the JWT token.
 
+### Command Aliases
+
+dtctl supports custom command aliases to create shortcuts for frequently used commands. Aliases can be simple text replacements, parameterized templates, or shell commands.
+
+#### Simple Aliases
+
+Create shortcuts for common commands:
+
+```bash
+# Create a simple alias
+dtctl alias set wf "get workflows"
+
+# Use the alias
+dtctl wf
+# Expands to: dtctl get workflows
+
+# List all aliases
+dtctl alias list
+
+# Delete an alias
+dtctl alias delete wf
+```
+
+#### Parameterized Aliases
+
+Use positional parameters `$1-$9` for reusable command templates:
+
+```bash
+# Create an alias that takes a parameter
+dtctl alias set logs-errors "query 'fetch logs | filter status=\$1 | limit 100'"
+
+# Use with parameter
+dtctl logs-errors ERROR
+# Expands to: dtctl query 'fetch logs | filter status=ERROR | limit 100'
+
+# Multiple parameters
+dtctl alias set query-host "query 'fetch logs | filter host=\$1 | limit \$2'"
+dtctl query-host server-01 50
+# Expands to: dtctl query 'fetch logs | filter host=server-01 | limit 50'
+```
+
+#### Shell Aliases
+
+Prefix aliases with `!` to execute them through the system shell, enabling pipes, redirection, and external tools:
+
+```bash
+# Create a shell alias with jq for JSON processing
+dtctl alias set wf-names "!dtctl get workflows -o json | jq -r '.workflows[].title'"
+
+# Use the shell alias
+dtctl wf-names
+# Executes through shell: dtctl get workflows -o json | jq -r '.workflows[].title'
+
+# Shell alias with grep
+dtctl alias set errors "!dtctl query 'fetch logs' -o json | grep -i error"
+dtctl errors
+```
+
+#### Import and Export Aliases
+
+Share aliases with your team by exporting and importing them:
+
+```bash
+# Export all aliases to a file
+dtctl alias export -f team-aliases.yaml
+
+# Import aliases from a file
+dtctl alias import -f team-aliases.yaml
+
+# Merge imported aliases (skip conflicts)
+dtctl alias import -f team-aliases.yaml --no-overwrite
+```
+
+**Example alias file** (`team-aliases.yaml`):
+
+```yaml
+wf: get workflows
+wfe: get workflow-executions
+logs-error: query 'fetch logs | filter status=ERROR | limit 100'
+top-errors: "!dtctl query 'fetch logs | filter status=ERROR' -o json | jq -r '.records[] | .message' | sort | uniq -c | sort -rn | head -10"
+```
+
+#### Alias Safety
+
+Aliases cannot shadow built-in commands to prevent confusion:
+
+```bash
+# This will fail - 'get' is a built-in command
+dtctl alias set get "query 'fetch logs'"
+# Error: alias name "get" conflicts with built-in command
+
+# Use a different name instead
+dtctl alias set gl "query 'fetch logs'"
+```
+
+#### Practical Alias Examples
+
+```bash
+# Quick shortcuts for common operations
+dtctl alias set w "get workflows"
+dtctl alias set d "get dashboards"
+dtctl alias set nb "get notebooks"
+
+# Workflow shortcuts
+dtctl alias set wf-run "exec workflow \$1 --wait"
+dtctl alias set wf-logs "logs workflow-execution \$1 --follow"
+
+# Query templates
+dtctl alias set errors "query 'fetch logs | filter status=ERROR | limit \$1'"
+dtctl alias set spans-by-trace "query 'fetch spans | filter trace_id=\$1'"
+
+# Shell aliases for complex operations
+dtctl alias set workflow-count "!dtctl get workflows -o json | jq '.workflows | length'"
+dtctl alias set top-users "!dtctl query 'fetch logs' -o json | jq -r '.records[].user' | sort | uniq -c | sort -rn | head -10"
+
+# Import team-shared aliases
+dtctl alias import -f ~/.dtctl-team-aliases.yaml
+```
+
 ---
 
 ## Workflows
