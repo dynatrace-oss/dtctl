@@ -67,7 +67,8 @@ func New(baseURL, token string) (*Client, error) {
 		SetRetryMaxWaitTime(10*time.Second).
 		AddRetryCondition(isRetryable).
 		SetTimeout(6*time.Minute). // Allow for long-running Grail queries (up to 5 min)
-		SetHeader("User-Agent", userAgent)
+		SetHeader("User-Agent", userAgent).
+		SetHeader("Accept-Encoding", "gzip")
 
 	return &Client{
 		http:    httpClient,
