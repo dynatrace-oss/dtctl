@@ -1,6 +1,7 @@
 package client
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -691,5 +692,59 @@ func TestIsRetryable_StatusCodes(t *testing.T) {
 				t.Errorf("isRetryable() with status %d = %v, want %v", tt.statusCode, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestClient_AcceptEncodingGzip(t *testing.T) {
+	var receivedEncoding string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedEncoding = r.Header.Get("Accept-Encoding")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = client.HTTP().R().Get("/test")
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	if receivedEncoding != "gzip" {
+		t.Errorf("Accept-Encoding = %v, want gzip", receivedEncoding)
+	}
+}
+
+func TestClient_GzipResponseDecompression(t *testing.T) {
+	// Verify that gzip-compressed responses are transparently decompressed.
+	// When Accept-Encoding is explicitly set, Go's net/http transport skips
+	// automatic decompression; resty's own middleware handles it instead.
+	expectedBody := `{"items":[{"id":"abc-123","name":"test-workflow"}]}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Type", "application/json")
+		gz := gzip.NewWriter(w)
+		_, _ = gz.Write([]byte(expectedBody))
+		_ = gz.Close()
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	client.HTTP().SetRetryCount(0)
+
+	resp, err := client.HTTP().R().Get("/test")
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	if resp.String() != expectedBody {
+		t.Errorf("Response body = %q, want %q", resp.String(), expectedBody)
 	}
 }

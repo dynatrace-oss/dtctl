@@ -149,6 +149,7 @@ func (h *Handler) ChatStream(text string, state *ConversationState, ctx []Conver
 	resp, err := h.client.HTTP().R().
 		SetHeader("Accept", "application/x-ndjson").
 		SetHeader("Content-Type", "application/json").
+		SetHeader("Accept-Encoding", "identity").
 		SetBody(reqBody).
 		SetDoNotParseResponse(true).
 		Post("/platform/davis/copilot/v1/skills/conversations:message")
