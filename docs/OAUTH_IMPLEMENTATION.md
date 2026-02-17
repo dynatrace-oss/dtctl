@@ -9,7 +9,7 @@ OAuth browser-based login functionality has been implemented for dtctl, based on
 ### 1. OAuth Flow Package (`pkg/auth/`)
 
 Created two main files:
-- **oauth.go** - Implements OAuth 2.0 PKCE flow with browser-based authentication
+- **oauth_flow.go** - Implements OAuth 2.0 PKCE flow with browser-based authentication
 - **token_manager.go** - Manages OAuth token storage, retrieval, and automatic refresh
 
 ### 2. Login Command (`cmd/auth.go`)
