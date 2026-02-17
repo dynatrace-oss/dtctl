@@ -90,7 +90,12 @@ func (tm *TokenManager) RefreshToken(tokenName string) (*TokenSet, error) {
 		return nil, fmt.Errorf("failed to refresh token: %w", err)
 	}
 	
-	// Update name
+	// Preserve existing refresh token if the provider does not return a new one
+	if newTokens.RefreshToken == "" {
+		newTokens.RefreshToken = stored.RefreshToken
+	}
+	
+	// Update stored token set
 	stored.TokenSet = *newTokens
 	
 	// Save refreshed token
