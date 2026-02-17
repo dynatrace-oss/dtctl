@@ -53,7 +53,8 @@ iam:groups:read,
 notifications:read,
 vulnerabilities:read,
 davis:analyzers:read,
-app-engine:apps:run
+app-engine:apps:run,
+email:emails:send
 ```
 
 ### `readwrite-mine`
@@ -90,7 +91,8 @@ davis:analyzers:read,
 davis:analyzers:execute,
 davis-copilot:conversations:execute,
 app-engine:apps:run,
-app-engine:functions:run
+app-engine:functions:run,
+email:emails:send
 ```
 
 ### `readwrite-all`
@@ -148,7 +150,8 @@ app-engine:apps:run,
 app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
-app-engine:edge-connects:write
+app-engine:edge-connects:write,
+email:emails:send
 ```
 
 ### `dangerously-unrestricted`
@@ -218,7 +221,8 @@ app-engine:apps:run,
 app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
-app-engine:edge-connects:write
+app-engine:edge-connects:write,
+email:emails:send
 ```
 
 ---
