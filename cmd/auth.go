@@ -150,6 +150,7 @@ you'll need to use API token authentication instead (dtctl config set-credential
 		environment, _ := cmd.Flags().GetString("environment")
 		tokenName, _ := cmd.Flags().GetString("token-name")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
+		safetyLevelStr, _ := cmd.Flags().GetString("safety-level")
 		
 		// Validate required flags
 		if contextName == "" {
@@ -170,6 +171,14 @@ you'll need to use API token authentication instead (dtctl config set-credential
 			return fmt.Errorf("invalid timeout: %w", err)
 		}
 		
+		// Parse and validate safety level
+		safetyLevel := config.SafetyLevel(safetyLevelStr)
+		if safetyLevelStr == "" {
+			safetyLevel = config.DefaultSafetyLevel
+		} else if !safetyLevel.IsValid() {
+			return fmt.Errorf("invalid safety level: %s (valid values: %v)", safetyLevelStr, config.ValidSafetyLevels())
+		}
+		
 		// Load config
 		cfg, err := LoadConfig()
 		if err != nil {
@@ -177,11 +186,13 @@ you'll need to use API token authentication instead (dtctl config set-credential
 			cfg = config.NewConfig()
 		}
 		
-		// Detect environment and create appropriate OAuth config
-		oauthConfig := auth.OAuthConfigFromEnvironmentURL(environment)
+		// Detect environment and create appropriate OAuth config with safety level
+		oauthConfig := auth.OAuthConfigFromEnvironmentURLWithSafety(environment, safetyLevel)
 		
 		// Log which environment we detected
 		fmt.Printf("Detected environment: %s\n", oauthConfig.Environment)
+		fmt.Printf("Safety level: %s\n", oauthConfig.SafetyLevel)
+		fmt.Printf("Requesting %d OAuth scopes...\n", len(oauthConfig.Scopes))
 		
 		// Create OAuth flow
 		flow, err := auth.NewOAuthFlow(oauthConfig)
@@ -221,8 +232,10 @@ you'll need to use API token authentication instead (dtctl config set-credential
 		
 		fmt.Printf("✓ Tokens stored securely as '%s'\n", tokenName)
 		
-		// Create or update context
-		cfg.SetContext(contextName, environment, tokenName)
+		// Create or update context with safety level
+		cfg.SetContextWithOptions(contextName, environment, tokenName, &config.ContextOptions{
+			SafetyLevel: safetyLevel,
+		})
 		cfg.CurrentContext = contextName
 		
 		// Save config
@@ -288,7 +301,7 @@ If no context name is provided, the current context will be used.`,
 		}
 		
 		// Detect environment from context URL
-		oauthConfig := auth.OAuthConfigFromEnvironmentURL(ctx.Context.Environment)
+		oauthConfig := auth.OAuthConfigFromEnvironmentURLWithSafety(ctx.Context.Environment, ctx.Context.SafetyLevel)
 		
 		// Delete OAuth token
 		tokenManager, err := auth.NewTokenManager(oauthConfig)
@@ -371,7 +384,7 @@ to force a refresh.`,
 		}
 		
 		// Detect environment from context URL
-		oauthConfig := auth.OAuthConfigFromEnvironmentURL(ctx.Context.Environment)
+		oauthConfig := auth.OAuthConfigFromEnvironmentURLWithSafety(ctx.Context.Environment, ctx.Context.SafetyLevel)
 		
 		// Refresh token
 		tokenManager, err := auth.NewTokenManager(oauthConfig)
@@ -409,6 +422,7 @@ func init() {
 	authLoginCmd.Flags().String("environment", "", "Dynatrace environment URL (required)")
 	authLoginCmd.Flags().String("token-name", "", "name for storing the OAuth token (defaults to <context>-oauth)")
 	authLoginCmd.Flags().String("timeout", "5m", "timeout for the authentication flow")
+	authLoginCmd.Flags().String("safety-level", string(config.DefaultSafetyLevel), "safety level for the context (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
 	authLoginCmd.MarkFlagRequired("context")
 	authLoginCmd.MarkFlagRequired("environment")
 	

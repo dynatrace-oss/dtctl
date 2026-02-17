@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 // TestGeneratePKCE tests the PKCE code generation
@@ -88,12 +90,12 @@ func TestNewOAuthFlow(t *testing.T) {
 	}{
 		{
 			name:    "Valid production config",
-			config:  OAuthConfigForEnvironment(EnvironmentProd),
+			config:  OAuthConfigForEnvironment(EnvironmentProd, config.DefaultSafetyLevel),
 			wantErr: false,
 		},
 		{
 			name:    "Valid development config",
-			config:  OAuthConfigForEnvironment(EnvironmentDev),
+			config:  OAuthConfigForEnvironment(EnvironmentDev, config.DefaultSafetyLevel),
 			wantErr: false,
 		},
 		{
@@ -160,7 +162,7 @@ func TestOAuthFlow_buildAuthURL(t *testing.T) {
 	
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := OAuthConfigForEnvironment(tt.env)
+			config := OAuthConfigForEnvironment(tt.env, config.DefaultSafetyLevel)
 			flow, err := NewOAuthFlow(config)
 			if err != nil {
 				t.Fatalf("NewOAuthFlow() failed: %v", err)

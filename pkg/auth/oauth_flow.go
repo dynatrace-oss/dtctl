@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/pkg/browser"
 )
 
@@ -38,8 +39,6 @@ const (
 	callbackPort     = 3232
 	// Must match the registered redirect URI for the OAuth client
 	callbackPath     = "/auth/login"
-	// Scopes must match what the client is registered for
-	defaultScopes    = "storage:application.snapshots:read storage:logs:read storage:buckets:read dev-obs:breakpoints:set openid app-engine:apps:run"
 )
 
 // Environment represents a Dynatrace environment type
@@ -51,6 +50,216 @@ const (
 	EnvironmentHard Environment = "hard"
 )
 
+// GetScopesForSafetyLevel returns the OAuth scopes required for a given safety level
+func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
+	// Normalize empty string to default
+	if level == "" {
+		level = config.DefaultSafetyLevel
+	}
+	// temporarly returning the scopes that the ide plugin client uses until we have the clients for dtctl
+	return []string{"storage:application.snapshots:read", "storage:logs:read", "storage:buckets:read", "dev-obs:breakpoints:set", "openid", "app-engine:apps:run"}
+
+	// switch level {
+	// case config.SafetyLevelReadOnly:
+	// 	return []string{
+	// 		"openid",
+	// 		"document:documents:read",
+	// 		"automation:workflows:read",
+	// 		"slo:read",
+	// 		"settings:schemas:read",
+	// 		"settings:objects:read",
+	// 		"storage:logs:read",
+	// 		"storage:events:read",
+	// 		"storage:metrics:read",
+	// 		"storage:spans:read",
+	// 		"storage:bizevents:read",
+	// 		"storage:entities:read",
+	// 		"storage:smartscape:read",
+	// 		"storage:system:read",
+	// 		"storage:security.events:read",
+	// 		"storage:application.snapshots:read",
+	// 		"storage:user.events:read",
+	// 		"storage:user.sessions:read",
+	// 		"storage:user.replays:read",
+	// 		"storage:buckets:read",
+	// 		"storage:bucket-definitions:read",
+	// 		"storage:fieldsets:read",
+	// 		"storage:fieldset-definitions:read",
+	// 		"storage:files:read",
+	// 		"storage:filter-segments:read",
+	// 		"iam:users:read",
+	// 		"iam:groups:read",
+	// 		"notifications:read",
+	// 		"vulnerabilities:read",
+	// 		"davis:analyzers:read",
+	// 		"app-engine:apps:run",
+	// 	}
+	
+	// case config.SafetyLevelReadWriteMine:
+	// 	return []string{
+	// 		"openid",
+	// 		"document:documents:read",
+	// 		"document:documents:write",
+	// 		"automation:workflows:read",
+	// 		"automation:workflows:write",
+	// 		"automation:workflows:execute",
+	// 		"slo:read",
+	// 		"slo:write",
+	// 		"settings:schemas:read",
+	// 		"settings:objects:read",
+	// 		"settings:objects:write",
+	// 		"storage:logs:read",
+	// 		"storage:events:read",
+	// 		"storage:metrics:read",
+	// 		"storage:spans:read",
+	// 		"storage:bizevents:read",
+	// 		"storage:entities:read",
+	// 		"storage:smartscape:read",
+	// 		"storage:system:read",
+	// 		"storage:security.events:read",
+	// 		"storage:buckets:read",
+	// 		"storage:bucket-definitions:read",
+	// 		"storage:files:read",
+	// 		"storage:files:write",
+	// 		"storage:filter-segments:read",
+	// 		"storage:filter-segments:write",
+	// 		"davis:analyzers:read",
+	// 		"davis:analyzers:execute",
+	// 		"davis-copilot:conversations:execute",
+	// 		"app-engine:apps:run",
+	// 		"app-engine:functions:run",
+	// 	}
+	
+	// case config.SafetyLevelReadWriteAll:
+	// 	return []string{
+	// 		"openid",
+	// 		"document:documents:read",
+	// 		"document:documents:write",
+	// 		"automation:workflows:read",
+	// 		"automation:workflows:write",
+	// 		"automation:workflows:execute",
+	// 		"slo:read",
+	// 		"slo:write",
+	// 		"settings:schemas:read",
+	// 		"settings:objects:read",
+	// 		"settings:objects:write",
+	// 		"storage:logs:read",
+	// 		"storage:logs:write",
+	// 		"storage:events:read",
+	// 		"storage:events:write",
+	// 		"storage:metrics:read",
+	// 		"storage:metrics:write",
+	// 		"storage:spans:read",
+	// 		"storage:bizevents:read",
+	// 		"storage:entities:read",
+	// 		"storage:smartscape:read",
+	// 		"storage:system:read",
+	// 		"storage:security.events:read",
+	// 		"storage:application.snapshots:read",
+	// 		"storage:user.events:read",
+	// 		"storage:user.sessions:read",
+	// 		"storage:user.replays:read",
+	// 		"storage:buckets:read",
+	// 		"storage:buckets:write",
+	// 		"storage:bucket-definitions:read",
+	// 		"storage:fieldsets:read",
+	// 		"storage:fieldset-definitions:read",
+	// 		"storage:files:read",
+	// 		"storage:files:write",
+	// 		"storage:filter-segments:read",
+	// 		"storage:filter-segments:write",
+	// 		"iam:users:read",
+	// 		"iam:groups:read",
+	// 		"notifications:read",
+	// 		"vulnerabilities:read",
+	// 		"davis:analyzers:read",
+	// 		"davis:analyzers:execute",
+	// 		"davis-copilot:conversations:execute",
+	// 		"davis-copilot:nl2dql:execute",
+	// 		"davis-copilot:dql2nl:execute",
+	// 		"davis-copilot:document-search:execute",
+	// 		"app-engine:apps:install",
+	// 		"app-engine:apps:run",
+	// 		"app-engine:apps:delete",
+	// 		"app-engine:functions:run",
+	// 		"app-engine:edge-connects:read",
+	// 		"app-engine:edge-connects:write",
+	// 	}
+	
+	// case config.SafetyLevelDangerouslyUnrestricted:
+	// 	return []string{
+	// 		"openid",
+	// 		"document:documents:read",
+	// 		"document:documents:write",
+	// 		"automation:workflows:read",
+	// 		"automation:workflows:write",
+	// 		"automation:workflows:execute",
+	// 		"slo:read",
+	// 		"slo:write",
+	// 		"settings:schemas:read",
+	// 		"settings:objects:read",
+	// 		"settings:objects:write",
+	// 		"settings:objects:admin",
+	// 		"storage:logs:read",
+	// 		"storage:logs:write",
+	// 		"storage:events:read",
+	// 		"storage:events:write",
+	// 		"storage:metrics:read",
+	// 		"storage:metrics:write",
+	// 		"storage:spans:read",
+	// 		"storage:bizevents:read",
+	// 		"storage:entities:read",
+	// 		"storage:smartscape:read",
+	// 		"storage:system:read",
+	// 		"storage:security.events:read",
+	// 		"storage:application.snapshots:read",
+	// 		"storage:user.events:read",
+	// 		"storage:user.sessions:read",
+	// 		"storage:user.replays:read",
+	// 		"storage:buckets:read",
+	// 		"storage:buckets:write",
+	// 		"storage:bucket-definitions:read",
+	// 		"storage:bucket-definitions:write",
+	// 		"storage:bucket-definitions:delete",
+	// 		"storage:bucket-definitions:truncate",
+	// 		"storage:fieldsets:read",
+	// 		"storage:fieldset-definitions:read",
+	// 		"storage:fieldset-definitions:write",
+	// 		"storage:files:read",
+	// 		"storage:files:write",
+	// 		"storage:files:delete",
+	// 		"storage:filter-segments:read",
+	// 		"storage:filter-segments:write",
+	// 		"storage:filter-segments:share",
+	// 		"storage:filter-segments:delete",
+	// 		"storage:filter-segments:admin",
+	// 		"storage:records:delete",
+	// 		"iam:users:read",
+	// 		"iam:groups:read",
+	// 		"iam:policies:read",
+	// 		"notifications:read",
+	// 		"notifications:write",
+	// 		"vulnerabilities:read",
+	// 		"davis:analyzers:read",
+	// 		"davis:analyzers:execute",
+	// 		"davis-copilot:conversations:execute",
+	// 		"davis-copilot:nl2dql:execute",
+	// 		"davis-copilot:dql2nl:execute",
+	// 		"davis-copilot:document-search:execute",
+	// 		"app-engine:apps:install",
+	// 		"app-engine:apps:run",
+	// 		"app-engine:apps:delete",
+	// 		"app-engine:functions:run",
+	// 		"app-engine:edge-connects:read",
+	// 		"app-engine:edge-connects:write",
+	// 	}
+	
+	// default:
+	// 	// Default to readwrite-all
+	// 	return GetScopesForSafetyLevel(config.SafetyLevelReadWriteAll)
+	// }
+}
+
 type OAuthConfig struct {
 	AuthURL     string
 	TokenURL    string
@@ -59,6 +268,7 @@ type OAuthConfig struct {
 	Scopes      []string
 	Port        int
 	Environment Environment
+	SafetyLevel config.SafetyLevel
 }
 
 // DetectEnvironment determines the environment type from a Dynatrace URL
@@ -74,14 +284,19 @@ func DetectEnvironment(environmentURL string) Environment {
 	return EnvironmentProd
 }
 
-// DefaultOAuthConfig returns the default OAuth configuration for production
+// DefaultOAuthConfig returns the default OAuth configuration for production with readwrite-all safety level
 func DefaultOAuthConfig() *OAuthConfig {
-	return OAuthConfigForEnvironment(EnvironmentProd)
+	return OAuthConfigForEnvironment(EnvironmentProd, config.DefaultSafetyLevel)
 }
 
-// OAuthConfigForEnvironment creates an OAuth configuration for the specified environment
-func OAuthConfigForEnvironment(env Environment) *OAuthConfig {
+// OAuthConfigForEnvironment creates an OAuth configuration for the specified environment and safety level
+func OAuthConfigForEnvironment(env Environment, safetyLevel config.SafetyLevel) *OAuthConfig {
 	var authURL, tokenURL, userInfoURL, clientID string
+	
+	// Normalize empty safety level to default
+	if safetyLevel == "" {
+		safetyLevel = config.DefaultSafetyLevel
+	}
 	
 	switch env {
 	case EnvironmentDev:
@@ -106,16 +321,24 @@ func OAuthConfigForEnvironment(env Environment) *OAuthConfig {
 		TokenURL:    tokenURL,
 		UserInfoURL: userInfoURL,
 		ClientID:    clientID,
-		Scopes:      strings.Split(defaultScopes, " "),
+		Scopes:      GetScopesForSafetyLevel(safetyLevel),
 		Port:        callbackPort,
 		Environment: env,
+		SafetyLevel: safetyLevel,
 	}
 }
 
 // OAuthConfigFromEnvironmentURL creates an OAuth configuration by detecting the environment from a URL
+// Uses the default safety level (readwrite-all)
 func OAuthConfigFromEnvironmentURL(environmentURL string) *OAuthConfig {
 	env := DetectEnvironment(environmentURL)
-	return OAuthConfigForEnvironment(env)
+	return OAuthConfigForEnvironment(env, config.DefaultSafetyLevel)
+}
+
+// OAuthConfigFromEnvironmentURLWithSafety creates an OAuth configuration with specific safety level
+func OAuthConfigFromEnvironmentURLWithSafety(environmentURL string, safetyLevel config.SafetyLevel) *OAuthConfig {
+	env := DetectEnvironment(environmentURL)
+	return OAuthConfigForEnvironment(env, safetyLevel)
 }
 
 type TokenSet struct {

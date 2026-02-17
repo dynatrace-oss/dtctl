@@ -2,6 +2,8 @@ package auth
 
 import (
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 func TestDetectEnvironment(t *testing.T) {
@@ -89,7 +91,7 @@ func TestOAuthConfigForEnvironment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := OAuthConfigForEnvironment(tt.env)
+			config := OAuthConfigForEnvironment(tt.env, config.DefaultSafetyLevel)
 			
 			if config.AuthURL != tt.wantAuthURL {
 				t.Errorf("AuthURL = %v, want %v", config.AuthURL, tt.wantAuthURL)

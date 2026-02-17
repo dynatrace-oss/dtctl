@@ -2,6 +2,8 @@ package auth
 
 import (
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 func TestTokenManager_getKeyringName(t *testing.T) {
@@ -40,7 +42,7 @@ func TestTokenManager_getKeyringName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a token manager with the specified environment
-			config := OAuthConfigForEnvironment(tt.environment)
+			config := OAuthConfigForEnvironment(tt.environment, config.DefaultSafetyLevel)
 			tm, err := NewTokenManager(config)
 			if err != nil {
 				t.Fatalf("Failed to create TokenManager: %v", err)
@@ -63,19 +65,19 @@ func TestNewTokenManager(t *testing.T) {
 	}{
 		{
 			name:    "Production config",
-			config:  OAuthConfigForEnvironment(EnvironmentProd),
+			config: OAuthConfigForEnvironment(EnvironmentProd, config.DefaultSafetyLevel),
 			wantEnv: EnvironmentProd,
 			wantErr: false,
 		},
 		{
 			name:    "Development config",
-			config:  OAuthConfigForEnvironment(EnvironmentDev),
+			config: OAuthConfigForEnvironment(EnvironmentDev, config.DefaultSafetyLevel),
 			wantEnv: EnvironmentDev,
 			wantErr: false,
 		},
 		{
 			name:    "Hardening config",
-			config:  OAuthConfigForEnvironment(EnvironmentHard),
+			config: OAuthConfigForEnvironment(EnvironmentHard, config.DefaultSafetyLevel),
 			wantEnv: EnvironmentHard,
 			wantErr: false,
 		},
@@ -107,19 +109,19 @@ func TestTokenManager_EnvironmentIsolation(t *testing.T) {
 	// Test that tokens from different environments have different keyring names
 	tokenName := "same-token-name"
 	
-	prodConfig := OAuthConfigForEnvironment(EnvironmentProd)
+	prodConfig := OAuthConfigForEnvironment(EnvironmentProd, config.DefaultSafetyLevel)
 	prodTM, err := NewTokenManager(prodConfig)
 	if err != nil {
 		t.Fatalf("Failed to create prod TokenManager: %v", err)
 	}
 	
-	devConfig := OAuthConfigForEnvironment(EnvironmentDev)
+		devConfig := OAuthConfigForEnvironment(EnvironmentDev, config.DefaultSafetyLevel)
 	devTM, err := NewTokenManager(devConfig)
 	if err != nil {
 		t.Fatalf("Failed to create dev TokenManager: %v", err)
 	}
 	
-	hardConfig := OAuthConfigForEnvironment(EnvironmentHard)
+	hardConfig := OAuthConfigForEnvironment(EnvironmentHard, config.DefaultSafetyLevel)
 	hardTM, err := NewTokenManager(hardConfig)
 	if err != nil {
 		t.Fatalf("Failed to create hard TokenManager: %v", err)
