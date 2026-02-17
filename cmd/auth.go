@@ -192,7 +192,7 @@ you'll need to use API token authentication instead (dtctl config set-credential
 		// Log which environment we detected
 		fmt.Printf("Detected environment: %s\n", oauthConfig.Environment)
 		fmt.Printf("Safety level: %s\n", oauthConfig.SafetyLevel)
-		fmt.Printf("Requesting %d OAuth scopes...\n", len(oauthConfig.Scopes))
+		fmt.Printf("Requesting OAuth scopes for safety level %s...\n", oauthConfig.SafetyLevel)
 		
 		// Create OAuth flow
 		flow, err := auth.NewOAuthFlow(oauthConfig)
