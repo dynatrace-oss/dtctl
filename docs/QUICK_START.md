@@ -162,6 +162,162 @@ dtctl config describe-context prod
 
 > **Important**: Safety levels are client-side only. For actual security, configure your API tokens with minimum required scopes. See [Token Scopes](TOKEN_SCOPES.md) for scope requirements and [Context Safety Levels](dev/context-safety-levels.md) for details.
 
+### OAuth Authentication (Browser-Based Login)
+
+In addition to API tokens, dtctl supports OAuth 2.0 browser-based authentication. This provides a more convenient login experience and automatic token refresh.
+
+#### Why Use OAuth Login?
+
+**Benefits:**
+- 🔐 **Automatic token refresh** - No need to manually update expired tokens
+- 👤 **Personal authentication** - Uses your Dynatrace SSO login
+- 🔑 **Secure storage** - Tokens stored in your system keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+- 📋 **Automatic scopes** - Scopes are automatically requested based on safety level
+- 🚀 **Quick setup** - No need to manually create and manage API tokens
+
+**When to use API tokens instead:**
+- CI/CD pipelines and automation
+- Service accounts
+- Environments without browser access
+- When you need specific granular scopes
+
+#### Basic OAuth Login
+
+```bash
+# Login to an environment (opens browser)
+dtctl auth login \
+  --context my-env \
+  --environment https://abc12345.apps.dynatrace.com
+
+# The command will:
+# 1. Auto-detect the environment (prod/dev/hard)
+# 2. Open your browser to Dynatrace SSO login
+# 3. Wait for you to authenticate
+# 4. Store tokens securely in system keyring
+# 5. Create and activate the context
+
+# Output:
+# Detected environment: prod
+# Safety level: readwrite-all
+# Requesting 45 OAuth scopes...
+# Starting OAuth authentication flow...
+# ✓ Authentication successful!
+# Logged in as: John Doe (john.doe@example.com)
+# ✓ Tokens stored securely as 'my-env-oauth'
+# ✓ Context 'my-env' configured and activated
+# 
+# You can now use dtctl commands with this context.
+```
+
+#### Login with Safety Levels
+
+OAuth scopes are automatically requested based on the safety level:
+
+```bash
+# Production with read-only access (~30 read scopes)
+dtctl auth login \
+  --context prod-readonly \
+  --environment https://prod.apps.dynatrace.com \
+  --safety-level readonly
+
+# Development with unrestricted access (~50+ scopes)
+dtctl auth login \
+  --context dev-full \
+  --environment https://dev.apps.dynatrace.com \
+  --safety-level dangerously-unrestricted
+
+# Default: readwrite-all (~45 scopes, no bucket deletion)
+dtctl auth login \
+  --context team-env \
+  --environment https://team.apps.dynatrace.com
+```
+
+**Safety Level Scope Mapping:**
+- `readonly`: Read-only scopes for monitoring and troubleshooting
+- `readwrite-mine`: Personal resource management scopes
+- `readwrite-all`: Full resource management (no data deletion)
+- `dangerously-unrestricted`: All scopes including bucket deletion
+
+See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for the complete scope list for each level.
+
+#### Multi-Environment OAuth
+
+OAuth supports multiple Dynatrace environments:
+
+```bash
+# Production environment
+dtctl auth login \
+  --context prod \
+  --environment https://abc123.apps.dynatrace.com
+# Uses: sso.dynatrace.com for authentication
+
+# Development environment
+dtctl auth login \
+  --context dev \
+  --environment https://dev456.dev.apps.dynatracelabs.com
+# Uses: sso-dev.dynatracelabs.com for authentication
+
+# Hardening/Sprint environment
+dtctl auth login \
+  --context sprint \
+  --environment https://sprint789.sprint.apps.dynatracelabs.com
+# Uses: sso-sprint.dynatracelabs.com for authentication
+```
+
+dtctl automatically detects the environment type from the URL and uses the appropriate OAuth endpoints.
+
+#### Managing OAuth Sessions
+
+```bash
+# Refresh tokens before they expire
+dtctl auth refresh
+# or specify a context
+dtctl auth refresh prod
+
+# Logout and remove tokens
+dtctl auth logout
+# or specify a context
+dtctl auth logout dev
+
+# Logout and remove context configuration
+dtctl auth logout dev --remove-context
+
+# Check token status with whoami
+dtctl auth whoami
+```
+
+**Token Refresh:** OAuth tokens typically expire after 1 hour. dtctl automatically refreshes them when needed (with a 5-minute buffer). The refresh token is valid for much longer (typically 90 days).
+
+#### Customization Options
+
+```bash
+# Custom token name (default: <context>-oauth)
+dtctl auth login \
+  --context my-env \
+  --environment https://abc123.apps.dynatrace.com \
+  --token-name my-custom-token
+
+# Custom timeout (default: 5 minutes)
+dtctl auth login \
+  --context my-env \
+  --environment https://abc123.apps.dynatrace.com \
+  --timeout 10m
+```
+
+#### OAuth vs API Tokens Comparison
+
+| Feature | OAuth Login | API Token |
+|---------|-------------|-----------|
+| Setup | Browser login (interactive) | Manual token creation |
+| Token lifetime | Auto-refresh (long-lived) | Manual rotation needed |
+| Storage | System keyring | Config file or keyring |
+| Scopes | Auto from safety level | Manual selection |
+| Best for | Interactive use, development | CI/CD, automation |
+| Requires | Browser access | API access only |
+| User identity | Personal SSO account | Service/personal account |
+
+**Note:** You can use both methods simultaneously with different contexts (e.g., OAuth for interactive work, API tokens for scripts).
+
 ### Current User Identity
 
 View information about the currently authenticated user:
