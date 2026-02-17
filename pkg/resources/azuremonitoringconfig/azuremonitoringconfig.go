@@ -283,10 +283,10 @@ func (h *Handler) FindByName(name string) (*AzureMonitoringConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, item := range items {
+	for i := range items {
 		// Matching by Description as it serves as the name
-		if item.Description == name {
-			return &item, nil
+		if items[i].Description == name {
+			return &items[i], nil
 		}
 	}
 	return nil, fmt.Errorf("Azure monitoring config with description %q not found", name)
