@@ -121,7 +121,7 @@ func (tm *TokenManager) DeleteToken(tokenName string) error {
 	
 	// If keyring not available, tokens would be in config file
 	// This is handled by config.DeleteToken
-	return nil
+	return config.DeleteToken(tokenName)
 }
 
 // IsOAuthToken checks if a token name refers to an OAuth token
