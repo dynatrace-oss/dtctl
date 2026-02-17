@@ -56,7 +56,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 	if level == "" {
 		level = config.DefaultSafetyLevel
 	}
-	// temporarly returning the scopes that the ide plugin client uses until we have the clients for dtctl
+	// temporarily returning the scopes that the ide plugin client uses until we have the clients for dtctl
 	return []string{"storage:application.snapshots:read", "storage:logs:read", "storage:buckets:read", "dev-obs:breakpoints:set", "openid", "app-engine:apps:run"}
 
 	// switch level {
