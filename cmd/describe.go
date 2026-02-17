@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
@@ -1156,11 +1159,13 @@ var describeAzureConnectionCmd = &cobra.Command{
 
 // describeAzureMonitoringConfigCmd shows details of an Azure monitoring configuration
 var describeAzureMonitoringConfigCmd = &cobra.Command{
-	Use:     "azure_monitoring_config <id>",
+	Use:     "azure_monitoring_config <id-or-name>",
 	Aliases: []string{"azure_monitoring", "azmon"},
 	Short:   "Show details of an Azure monitoring configuration",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		identifier := args[0]
+
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
@@ -1171,9 +1176,19 @@ var describeAzureMonitoringConfigCmd = &cobra.Command{
 		}
 
 		h := azuremonitoringconfig.NewHandler(c)
-		item, err := h.Get(args[0])
+
+		// Try to resolve by description/name first
+		item, err := h.FindByName(identifier)
 		if err != nil {
-			return err
+			// If not found by name, fallback to ID
+			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+				item, err = h.Get(identifier)
+				if err != nil {
+					return fmt.Errorf("monitoring config with name/description or ID %q not found", identifier)
+				}
+			} else {
+				return err
+			}
 		}
 
 		fmt.Printf("ID:          %s\n", item.ObjectID)
@@ -1195,8 +1210,103 @@ var describeAzureMonitoringConfigCmd = &cobra.Command{
 			}
 		}
 
+		printAzureMonitoringConfigStatus(c, item.ObjectID)
+
 		return nil
 	},
+}
+
+func printAzureMonitoringConfigStatus(c *client.Client, configID string) {
+	executor := exec.NewDQLExecutor(c)
+
+	smartscapeQuery := fmt.Sprintf(`timeseries sum(dt.sfm.da.azure.smartscape.updates.count), interval:1h, by:{dt.config.id}
+| filter dt.config.id == %q`, configID)
+	metricsQuery := fmt.Sprintf(`timeseries sum(dt.sfm.da.azure.metric.data_points.count), interval:1h, by:{dt.config.id}
+| filter dt.config.id == %q`, configID)
+	eventsQuery := fmt.Sprintf(`fetch dt.system.events
+| filter event.kind == "DATA_ACQUISITION_EVENT"
+| filter da.clouds.configurationId == %q
+| sort timestamp desc
+| limit 100`, configID)
+
+	fmt.Println()
+	fmt.Println("Status:")
+
+	smartscapeResult, err := executor.ExecuteQuery(smartscapeQuery)
+	if err != nil {
+		fmt.Printf("  Smartscape updates: query failed (%v)\n", err)
+	} else {
+		smartscapeRecords := exec.ExtractQueryRecords(smartscapeResult)
+		if latest, ok := exec.ExtractLatestPointFromTimeseries(smartscapeRecords, "sum(dt.sfm.da.azure.smartscape.updates.count)"); ok {
+			if !latest.Timestamp.IsZero() {
+				fmt.Printf("  Smartscape updates (latest sum, 1h): %.2f at %s\n", latest.Value, latest.Timestamp.Format(time.RFC3339))
+			} else {
+				fmt.Printf("  Smartscape updates (latest sum, 1h): %.2f\n", latest.Value)
+			}
+		} else {
+			fmt.Println("  Smartscape updates: no data")
+		}
+	}
+
+	metricsResult, err := executor.ExecuteQuery(metricsQuery)
+	if err != nil {
+		fmt.Printf("  Metrics ingest: query failed (%v)\n", err)
+	} else {
+		metricsRecords := exec.ExtractQueryRecords(metricsResult)
+		if latest, ok := exec.ExtractLatestPointFromTimeseries(metricsRecords, "sum(dt.sfm.da.azure.metric.data_points.count)"); ok {
+			if !latest.Timestamp.IsZero() {
+				fmt.Printf("  Metrics ingest (latest sum, 1h): %.2f at %s\n", latest.Value, latest.Timestamp.Format(time.RFC3339))
+			} else {
+				fmt.Printf("  Metrics ingest (latest sum, 1h): %.2f\n", latest.Value)
+			}
+		} else {
+			fmt.Println("  Metrics ingest: no data")
+		}
+	}
+
+	eventsResult, err := executor.ExecuteQuery(eventsQuery)
+	if err != nil {
+		fmt.Printf("  Events: query failed (%v)\n", err)
+		return
+	}
+
+	eventRecords := exec.ExtractQueryRecords(eventsResult)
+	if len(eventRecords) == 0 {
+		fmt.Println("  Events: no recent data acquisition events")
+		return
+	}
+
+	latestStatus := stringFromRecord(eventRecords[0], "da.clouds.status")
+	if latestStatus == "" {
+		latestStatus = "UNKNOWN"
+	}
+	fmt.Printf("  Latest event status: %s\n", latestStatus)
+
+	fmt.Println()
+	fmt.Println("Recent events:")
+	fmt.Printf("%-35s  %s\n", "TIMESTAMP", "DA.CLOUDS.CONTENT")
+	for _, rec := range eventRecords {
+		timestamp := stringFromRecord(rec, "timestamp")
+		content := stringFromRecord(rec, "da.clouds.content")
+		if content == "" {
+			content = "-"
+		}
+		fmt.Printf("%-35s  %s\n", timestamp, content)
+	}
+}
+
+func stringFromRecord(record map[string]interface{}, key string) string {
+	if record == nil {
+		return ""
+	}
+	value, ok := record[key]
+	if !ok || value == nil {
+		return ""
+	}
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return fmt.Sprintf("%v", value)
 }
 
 func init() {
