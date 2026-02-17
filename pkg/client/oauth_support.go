@@ -9,16 +9,21 @@ import (
 func GetTokenWithOAuthSupport(cfg *config.Config, tokenRef string) (string, error) {
 	// First, try to get it as an OAuth token
 	if config.IsKeyringAvailable() {
-		oauthConfig := auth.DefaultOAuthConfig()
-		tokenManager, err := auth.NewTokenManager(oauthConfig)
-		if err == nil {
-			// Try to get as OAuth token (will auto-refresh if needed)
-			token, err := tokenManager.GetToken(tokenRef)
+		// Get current context to detect environment
+		ctx, err := cfg.CurrentContextObj()
+		if err == nil && ctx.Environment != "" {
+			// Detect environment from context
+			oauthConfig := auth.OAuthConfigFromEnvironmentURL(ctx.Environment)
+			tokenManager, err := auth.NewTokenManager(oauthConfig)
 			if err == nil {
-				return token, nil
+				// Try to get as OAuth token (will auto-refresh if needed)
+				token, err := tokenManager.GetToken(tokenRef)
+				if err == nil {
+					return token, nil
+				}
+				// If error is not "not found", return it
+				// Otherwise fall through to try as regular API token
 			}
-			// If error is not "not found", return it
-			// Otherwise fall through to try as regular API token
 		}
 	}
 	
@@ -27,17 +32,7 @@ func GetTokenWithOAuthSupport(cfg *config.Config, tokenRef string) (string, erro
 }
 
 // NewFromConfigWithOAuth creates a new client from config with OAuth support
-// This is like NewFromConfig but supports OAuth tokens with automatic refresh
+// Deprecated: Use NewFromConfig instead, which now supports OAuth tokens automatically
 func NewFromConfigWithOAuth(cfg *config.Config) (*Client, error) {
-	ctx, err := cfg.CurrentContextObj()
-	if err != nil {
-		return nil, err
-	}
-
-	token, err := GetTokenWithOAuthSupport(cfg, ctx.TokenRef)
-	if err != nil {
-		return nil, err
-	}
-
-	return New(ctx.Environment, token)
+	return NewFromConfig(cfg)
 }

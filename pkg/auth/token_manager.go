@@ -18,8 +18,9 @@ const (
 
 // TokenManager manages OAuth tokens including storage and refresh
 type TokenManager struct {
-	flow       *OAuthFlow
-	tokenStore *config.TokenStore
+	flow        *OAuthFlow
+	tokenStore  *config.TokenStore
+	environment Environment
 }
 
 // NewTokenManager creates a new token manager
@@ -29,9 +30,15 @@ func NewTokenManager(oauthConfig *OAuthConfig) (*TokenManager, error) {
 		return nil, fmt.Errorf("failed to create OAuth flow: %w", err)
 	}
 	
+	env := EnvironmentProd
+	if oauthConfig != nil {
+		env = oauthConfig.Environment
+	}
+	
 	return &TokenManager{
-		flow:       flow,
-		tokenStore: config.NewTokenStore(),
+		flow:        flow,
+		tokenStore:  config.NewTokenStore(),
+		environment: env,
 	}, nil
 }
 
@@ -182,8 +189,9 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 
 // getKeyringName returns the keyring storage name for a token
 func (tm *TokenManager) getKeyringName(tokenName string) string {
-	// Add prefix to distinguish OAuth tokens from API tokens
-	return OAuthTokenPrefix + tokenName
+	// Add prefix and environment to distinguish OAuth tokens per environment
+	// Format: oauth:<env>:<tokenName>
+	return fmt.Sprintf("%s%s:%s", OAuthTokenPrefix, tm.environment, tokenName)
 }
 
 // GetTokenInfo retrieves information about a stored OAuth token

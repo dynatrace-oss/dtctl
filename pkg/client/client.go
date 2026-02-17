@@ -23,14 +23,15 @@ type Client struct {
 	logger  *logrus.Logger
 }
 
-// NewFromConfig creates a new client from config
+// NewFromConfig creates a new client from config with OAuth support
 func NewFromConfig(cfg *config.Config) (*Client, error) {
 	ctx, err := cfg.CurrentContextObj()
 	if err != nil {
 		return nil, err
 	}
 
-	token, err := cfg.GetToken(ctx.TokenRef)
+	// Use OAuth-aware token retrieval (supports both OAuth and API tokens)
+	token, err := GetTokenWithOAuthSupport(cfg, ctx.TokenRef)
 	if err != nil {
 		return nil, err
 	}

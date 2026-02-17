@@ -177,8 +177,13 @@ you'll need to use API token authentication instead (dtctl config set-credential
 			cfg = config.NewConfig()
 		}
 		
+		// Detect environment and create appropriate OAuth config
+		oauthConfig := auth.OAuthConfigFromEnvironmentURL(environment)
+		
+		// Log which environment we detected
+		fmt.Printf("Detected environment: %s\n", oauthConfig.Environment)
+		
 		// Create OAuth flow
-		oauthConfig := auth.DefaultOAuthConfig()
 		flow, err := auth.NewOAuthFlow(oauthConfig)
 		if err != nil {
 			return fmt.Errorf("failed to initialize OAuth: %w", err)
@@ -282,8 +287,10 @@ If no context name is provided, the current context will be used.`,
 			return fmt.Errorf("context has no token reference")
 		}
 		
+		// Detect environment from context URL
+		oauthConfig := auth.OAuthConfigFromEnvironmentURL(ctx.Context.Environment)
+		
 		// Delete OAuth token
-		oauthConfig := auth.DefaultOAuthConfig()
 		tokenManager, err := auth.NewTokenManager(oauthConfig)
 		if err != nil {
 			return fmt.Errorf("failed to create token manager: %w", err)
@@ -363,8 +370,10 @@ to force a refresh.`,
 			return fmt.Errorf("context has no token reference")
 		}
 		
+		// Detect environment from context URL
+		oauthConfig := auth.OAuthConfigFromEnvironmentURL(ctx.Context.Environment)
+		
 		// Refresh token
-		oauthConfig := auth.DefaultOAuthConfig()
 		tokenManager, err := auth.NewTokenManager(oauthConfig)
 		if err != nil {
 			return fmt.Errorf("failed to create token manager: %w", err)
