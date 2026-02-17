@@ -26,7 +26,7 @@ Read-only access for production monitoring and troubleshooting.
 ```
 document:documents:read,
 automation:workflows:read,
-slo:read,
+slo:slos:read,
 settings:schemas:read,
 settings:objects:read,
 storage:logs:read,
@@ -66,8 +66,8 @@ document:documents:write,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:execute,
-slo:read,
-slo:write,
+slo:slos:read,
+slo:slos:write,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
@@ -103,8 +103,8 @@ document:documents:write,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:execute,
-slo:read,
-slo:write,
+slo:slos:read,
+slo:slos:write,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
@@ -161,8 +161,8 @@ document:documents:write,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:execute,
-slo:read,
-slo:write,
+slo:slos:read,
+slo:slos:write,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
@@ -282,8 +282,8 @@ app-engine:edge-connects:write
 ### SLOs
 | Scope | Description |
 |-------|-------------|
-| `slo:read` | Read SLOs |
-| `slo:write` | Create, update, delete, evaluate SLOs |
+| `slo:slos:read` | Read SLOs |
+| `slo:slos:write` | Create, update, delete, evaluate SLOs |
 
 ### Settings API
 | Scope | Description |
@@ -314,6 +314,9 @@ app-engine:edge-connects:write
 | `app-engine:edge-connects:write` | Manage EdgeConnect |
 
 ### IAM
+
+> **Note**: The `iam:users:read` and `iam:groups:read` scopes may not be available in all token management UIs (e.g., the platform token page). If unavailable, user and group listing features will not work with that token type.
+
 | Scope | Description |
 |-------|-------------|
 | `iam:users:read` | Read users |

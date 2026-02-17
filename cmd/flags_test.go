@@ -76,6 +76,56 @@ func TestQueryFlags(t *testing.T) {
 	}
 }
 
+// TestVerifyQueryFlags validates verify query subcommand flags
+func TestVerifyQueryFlags(t *testing.T) {
+	tests := []struct {
+		flagName     string
+		defaultValue string
+	}{
+		{"file", ""},
+		{"canonical", "false"},
+		{"timezone", ""},
+		{"locale", ""},
+		{"fail-on-warn", "false"},
+	}
+
+	// Find the query subcommand under verifyCmd
+	var queryCmd *cobra.Command
+	for _, cmd := range verifyCmd.Commands() {
+		if cmd.Name() == "query" {
+			queryCmd = cmd
+			break
+		}
+	}
+	if queryCmd == nil {
+		t.Fatal("verify query subcommand not found")
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.flagName, func(t *testing.T) {
+			flag := queryCmd.Flags().Lookup(tt.flagName)
+			if flag == nil {
+				t.Fatalf("Verify query flag --%s not found", tt.flagName)
+			}
+			if flag.DefValue != tt.defaultValue {
+				t.Errorf("Flag --%s default = %q, want %q", tt.flagName, flag.DefValue, tt.defaultValue)
+			}
+		})
+	}
+
+	// Verify the --set flag is also available (inherited from StringArray pattern)
+	t.Run("set_flag", func(t *testing.T) {
+		flag := queryCmd.Flags().Lookup("set")
+		if flag == nil {
+			t.Fatal("Verify query flag --set not found")
+		}
+		// StringArray flags have "[]" as default value
+		if flag.DefValue != "[]" {
+			t.Errorf("Flag --set default = %q, want %q", flag.DefValue, "[]")
+		}
+	})
+}
+
 // TestExecFlags validates exec command flags
 func TestExecFlags(t *testing.T) {
 	// Test flags on execWorkflowCmd

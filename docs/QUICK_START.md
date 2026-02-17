@@ -112,32 +112,74 @@ dtctl get workflows --context prod
 
 ### Per-Project Configuration
 
-dtctl supports per-project configuration files. Create a `.dtctl.yaml` file in your project directory:
+dtctl supports per-project configuration files for team collaboration and CI/CD workflows.
+
+#### Creating Project Config
+
+Use `dtctl config init` to generate a `.dtctl.yaml` template:
+
+```bash
+# Create .dtctl.yaml in current directory
+dtctl config init
+
+# Create with custom context name
+dtctl config init --context staging
+
+# Overwrite existing file
+dtctl config init --force
+```
+
+This generates a template with environment variable placeholders:
 
 ```yaml
 # .dtctl.yaml - per-project configuration
-apiVersion: v1
+apiVersion: dtctl.io/v1
 kind: Config
-current-context: project-env
+current-context: production
 contexts:
-  - name: project-env
+  - name: production
     context:
-      environment: https://project.apps.dynatrace.com
-      token-ref: project-token
+      environment: ${DT_ENVIRONMENT_URL}
+      token-ref: my-token
       safety-level: readwrite-all
+      description: Project environment
+tokens:
+  - name: my-token
+    token: ${DT_API_TOKEN}
+preferences:
+  output: table
 ```
+
+#### Environment Variable Expansion
+
+Config files support `${VAR_NAME}` syntax for environment variables:
+
+```yaml
+contexts:
+  - name: ci
+    context:
+      environment: ${DT_ENVIRONMENT_URL}  # Expanded from env var
+      token-ref: ci-token
+tokens:
+  - name: ci-token
+    token: ${DT_API_TOKEN}  # Expanded from env var
+```
+
+This allows teams to commit `.dtctl.yaml` files to repositories **without secrets**, while each developer or CI system provides tokens via environment variables.
 
 **Search Order:**
 1. `--config` flag (explicit path)
 2. `.dtctl.yaml` in current directory or any parent directory (walks up to root)
 3. Global config (`~/.config/dtctl/config`)
 
-This allows teams to commit `.dtctl.yaml` files to repositories (without tokens!) and have dtctl automatically use the correct environment settings.
+#### Usage Examples
 
 ```bash
 # In a project directory with .dtctl.yaml
 cd my-project/
-dtctl get workflows  # Uses .dtctl.yaml automatically
+export DT_ENVIRONMENT_URL="https://abc12345.apps.dynatrace.com"
+export DT_API_TOKEN="dt0c01.xxx"
+dtctl get workflows  # Uses .dtctl.yaml with expanded env vars
 
 # Override with global config
 dtctl --config ~/.config/dtctl/config get workflows
@@ -190,6 +232,125 @@ dtctl auth whoami -o json
 ```
 
 **Note:** The `whoami` command requires the `app-engine:apps:run` scope for full user details. If that scope is unavailable, it falls back to extracting the user ID from the JWT token.
+
+### Command Aliases
+
+dtctl supports custom command aliases to create shortcuts for frequently used commands. Aliases can be simple text replacements, parameterized templates, or shell commands.
+
+#### Simple Aliases
+
+Create shortcuts for common commands:
+
+```bash
+# Create a simple alias
+dtctl alias set wf "get workflows"
+
+# Use the alias
+dtctl wf
+# Expands to: dtctl get workflows
+
+# List all aliases
+dtctl alias list
+
+# Delete an alias
+dtctl alias delete wf
+```
+
+#### Parameterized Aliases
+
+Use positional parameters `$1-$9` for reusable command templates:
+
+```bash
+# Create an alias that takes a parameter
+dtctl alias set logs-errors "query 'fetch logs | filter status=\$1 | limit 100'"
+
+# Use with parameter
+dtctl logs-errors ERROR
+# Expands to: dtctl query 'fetch logs | filter status=ERROR | limit 100'
+
+# Multiple parameters
+dtctl alias set query-host "query 'fetch logs | filter host=\$1 | limit \$2'"
+dtctl query-host server-01 50
+# Expands to: dtctl query 'fetch logs | filter host=server-01 | limit 50'
+```
+
+#### Shell Aliases
+
+Prefix aliases with `!` to execute them through the system shell, enabling pipes, redirection, and external tools:
+
+```bash
+# Create a shell alias with jq for JSON processing
+dtctl alias set wf-names "!dtctl get workflows -o json | jq -r '.workflows[].title'"
+
+# Use the shell alias
+dtctl wf-names
+# Executes through shell: dtctl get workflows -o json | jq -r '.workflows[].title'
+
+# Shell alias with grep
+dtctl alias set errors "!dtctl query 'fetch logs' -o json | grep -i error"
+dtctl errors
+```
+
+#### Import and Export Aliases
+
+Share aliases with your team by exporting and importing them:
+
+```bash
+# Export all aliases to a file
+dtctl alias export -f team-aliases.yaml
+
+# Import aliases from a file
+dtctl alias import -f team-aliases.yaml
+
+# Merge imported aliases (skip conflicts)
+dtctl alias import -f team-aliases.yaml --no-overwrite
+```
+
+**Example alias file** (`team-aliases.yaml`):
+
+```yaml
+wf: get workflows
+wfe: get workflow-executions
+logs-error: query 'fetch logs | filter status=ERROR | limit 100'
+top-errors: "!dtctl query 'fetch logs | filter status=ERROR' -o json | jq -r '.records[] | .message' | sort | uniq -c | sort -rn | head -10"
+```
+
+#### Alias Safety
+
+Aliases cannot shadow built-in commands to prevent confusion:
+
+```bash
+# This will fail - 'get' is a built-in command
+dtctl alias set get "query 'fetch logs'"
+# Error: alias name "get" conflicts with built-in command
+
+# Use a different name instead
+dtctl alias set gl "query 'fetch logs'"
+```
+
+#### Practical Alias Examples
+
+```bash
+# Quick shortcuts for common operations
+dtctl alias set w "get workflows"
+dtctl alias set d "get dashboards"
+dtctl alias set nb "get notebooks"
+
+# Workflow shortcuts
+dtctl alias set wf-run "exec workflow \$1 --wait"
+dtctl alias set wf-logs "logs workflow-execution \$1 --follow"
+
+# Query templates
+dtctl alias set errors "query 'fetch logs | filter status=ERROR | limit \$1'"
+dtctl alias set spans-by-trace "query 'fetch spans | filter trace_id=\$1'"
+
+# Shell aliases for complex operations
+dtctl alias set workflow-count "!dtctl get workflows -o json | jq '.workflows | length'"
+dtctl alias set top-users "!dtctl query 'fetch logs' -o json | jq -r '.records[].user' | sort | uniq -c | sort -rn | head -10"
+
+# Import team-shared aliases
+dtctl alias import -f ~/.dtctl-team-aliases.yaml
+```
 
 ---
 
@@ -1003,6 +1164,140 @@ dtctl query "fetch logs" -o csv 2>/dev/null > clean_data.csv
 **Common warnings:**
 - **SCAN_LIMIT_GBYTES**: Query stopped after scanning the default limit. Use `--default-scan-limit-gbytes` to adjust.
 - **RESULT_TRUNCATED**: Results exceeded the limit. Use `--max-result-records` to increase.
+
+### Query Verification
+
+Verify DQL query syntax without executing it. This is useful for:
+- Testing queries in CI/CD pipelines
+- Pre-commit hooks to validate query files
+- Checking query correctness before execution
+- Getting the canonical (normalized) representation of queries
+
+#### Basic Verification
+
+```bash
+# Verify inline query
+dtctl verify query "fetch logs | limit 10"
+
+# Verify query from file
+dtctl verify query -f query.dql
+
+# Read from stdin (recommended for complex queries)
+dtctl verify query -f - <<'EOF'
+fetch logs | filter status == "ERROR"
+EOF
+
+# Pipe query from file
+cat query.dql | dtctl verify query
+```
+
+#### Verification with Options
+
+```bash
+# Get canonical query representation (normalized format)
+dtctl verify query "fetch logs" --canonical
+
+# Verify with specific timezone and locale
+dtctl verify query "fetch logs" --timezone "Europe/Paris" --locale "fr_FR"
+
+# Get structured output (JSON or YAML)
+dtctl verify query "fetch logs" -o json
+dtctl verify query "fetch logs" -o yaml
+
+# Fail on warnings (strict validation for CI/CD)
+dtctl verify query -f query.dql --fail-on-warn
+```
+
+#### Exit Codes
+
+The `verify` command returns different exit codes based on the result:
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 0 | Query is valid |
+| 1 | Query is invalid or has errors (or warnings with `--fail-on-warn`) |
+| 2 | Authentication/permission error |
+| 3 | Network/server error |
+
+```bash
+# Check exit code in scripts
+if dtctl verify query -f query.dql --fail-on-warn; then
+  echo "Query is valid"
+else
+  echo "Query validation failed"
+  exit 1
+fi
+```
+
+#### CI/CD Integration
+
+```bash
+# Validate all queries in a directory
+for file in queries/*.dql; do
+  echo "Verifying $file..."
+  dtctl verify query -f "$file" --fail-on-warn || exit 1
+done
+
+# Pre-commit hook: Verify staged query files
+git diff --cached --name-only --diff-filter=ACM "*.dql" | \
+  xargs -I {} dtctl verify query -f {} --fail-on-warn
+
+# GitHub Actions / CI pipeline
+- name: Validate DQL queries
+  run: |
+    for file in queries/*.dql; do
+      dtctl verify query -f "$file" --fail-on-warn || exit 1
+    done
+```
+
+#### Template Variables
+
+Verify queries with template variables before execution:
+
+```bash
+# Verify template query
+dtctl verify query -f template.dql --set env=prod --set timerange=1h
+
+# If valid, execute it
+if dtctl verify query -f template.dql --set env=prod 2>/dev/null; then
+  dtctl query -f template.dql --set env=prod -o csv > results.csv
+fi
+```
+
+#### PowerShell Examples
+
+```powershell
+# Verify query using here-strings
+dtctl verify query -f - @'
+fetch logs, bucket:{"custom-logs"} | filter contains(host.name, "api")
+'@
+
+# Validate all queries in a directory
+Get-ChildItem queries/*.dql | ForEach-Object {
+  Write-Host "Verifying $_..."
+  dtctl verify query -f $_.FullName --fail-on-warn
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+```
+
+#### Canonical Query Output
+
+Get the normalized representation of your query:
+
+```bash
+# Get canonical query
+dtctl verify query "fetch logs" --canonical
+
+# Extract canonical query with jq
+dtctl verify query "fetch logs" --canonical -o json | jq -r '.canonicalQuery'
+
+# Compare original vs canonical
+echo "Original:"
+cat query.dql
+echo ""
+echo "Canonical:"
+dtctl verify query -f query.dql --canonical 2>&1 | grep -A 999 "Canonical Query:"
+```
 
 ---
 
@@ -2830,6 +3125,67 @@ dtctl query "fetch logs" --max-result-records 5000 -o csv > logs.csv
 
 ## Troubleshooting
 
+### Understanding Error Messages
+
+dtctl provides contextual error messages with troubleshooting suggestions. When an operation fails, you'll see:
+
+```
+Failed to get workflows (HTTP 401): Authentication failed
+
+Request ID: abc-123-def-456
+
+Troubleshooting suggestions:
+  • Token may be expired or invalid. Run 'dtctl config get-context' to check your configuration
+  • Verify your API token has not been revoked in the Dynatrace console
+  • Try refreshing your authentication with 'dtctl context set' and a new token
+```
+
+Common HTTP status codes and their meanings:
+
+- **401 Unauthorized**: Token is invalid, expired, or missing
+- **403 Forbidden**: Token lacks required permissions/scopes
+- **404 Not Found**: Resource doesn't exist or wrong ID/name
+- **429 Rate Limited**: Too many requests (dtctl auto-retries)
+- **500/502/503/504**: Server error (dtctl auto-retries)
+
+### Using Debug Mode
+
+For detailed HTTP request/response logging, use the `--debug` flag:
+
+```bash
+# Enable full debug mode with HTTP details
+dtctl get workflows --debug
+
+# Output shows:
+# ===> REQUEST <===
+# GET https://abc12345.apps.dynatrace.com/platform/automation/v1/workflows
+# HEADERS:
+#     User-Agent: dtctl/0.10.0
+#     Authorization: [REDACTED]
+#     ...
+# 
+# ===> RESPONSE <===
+# STATUS: 200 OK
+# TIME: 234ms
+# HEADERS:
+#     Content-Type: application/json
+#     ...
+# BODY:
+# {"workflows": [...]}
+```
+
+The `--debug` flag is equivalent to `-vv` and shows:
+- Full HTTP request URL and method
+- Request and response headers (auth tokens are always redacted)
+- Response body
+- Response time
+
+This is useful for:
+- Diagnosing API errors
+- Verifying request parameters
+- Checking response format
+- Troubleshooting performance issues
+
 ### "config file not found"
 
 This means you haven't set up your configuration yet. Run:
@@ -2849,12 +3205,10 @@ Check:
 2. Your environment URL is correct
 3. You're using the right context
 
-Enable verbose mode to see HTTP request/response details:
+Enable debug mode to see detailed HTTP interactions:
 ```bash
-dtctl get workflows -v
+dtctl get workflows --debug
 ```
-
-The `-v` flag enables debug logging and shows detailed HTTP interactions with the API.
 
 ### Platform Token Scopes
 
@@ -2862,6 +3216,19 @@ Your platform token needs appropriate scopes for the resources you want to manag
 - Complete scope lists for each safety level (copy-pasteable)
 - Detailed breakdown by resource type
 - Token creation instructions
+
+### AI Agent Detection
+
+If you're using dtctl through an AI coding assistant (like Claude Code, GitHub Copilot, Cursor, etc.), dtctl automatically detects this and includes it in the User-Agent header for telemetry purposes. This helps improve the CLI experience for AI-assisted workflows.
+
+The detection is automatic and doesn't affect functionality. Supported AI agents:
+- Claude Code (`CLAUDECODE` env var)
+- OpenCode (`OPENCODE` env var)
+- GitHub Copilot (`GITHUB_COPILOT` env var)
+- Cursor (`CURSOR_AGENT` env var)
+- Codeium (`CODEIUM_AGENT` env var)
+- TabNine (`TABNINE_AGENT` env var)
+- Amazon Q (`AMAZON_Q` env var)
 
 ---
 
@@ -2885,6 +3252,28 @@ dtctl query --help
 dtctl get workflows --help
 ```
 
-Enable verbose mode with `-v` to see detailed HTTP request/response logs for debugging API issues.
+### Debugging Issues
+
+Use the `--debug` flag to see detailed HTTP request/response logs:
+
+```bash
+# Full debug output
+dtctl get workflows --debug
+
+# Alternative: use -vv for the same effect
+dtctl get workflows -vv
+```
+
+The debug output includes:
+- HTTP method and URL
+- Request/response headers (sensitive headers are redacted)
+- Response body and status
+- Response time
+
+### Verbose Levels
+
+- No flag: Normal output
+- `-v`: Verbose output with operation details
+- `-vv` or `--debug`: Full HTTP debug mode with request/response details
 
 For issues and feature requests, visit the [GitHub repository](https://github.com/dynatrace/dtctl).

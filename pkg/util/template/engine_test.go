@@ -5,6 +5,7 @@ import (
 )
 
 func TestParseSetFlags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		flags   []string
@@ -49,6 +50,7 @@ func TestParseSetFlags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := ParseSetFlags(tt.flags)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseSetFlags() error = %v, wantErr %v", err, tt.wantErr)
@@ -66,6 +68,7 @@ func TestParseSetFlags(t *testing.T) {
 }
 
 func TestRenderTemplate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		template string
@@ -119,6 +122,7 @@ func TestRenderTemplate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := RenderTemplate(tt.template, tt.vars)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("RenderTemplate() error = %v, wantErr %v", err, tt.wantErr)
@@ -132,6 +136,7 @@ func TestRenderTemplate(t *testing.T) {
 }
 
 func TestContainsTemplate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		str  string
@@ -161,6 +166,7 @@ func TestContainsTemplate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := ContainsTemplate(tt.str); got != tt.want {
 				t.Errorf("ContainsTemplate() = %v, want %v", got, tt.want)
 			}
@@ -169,6 +175,7 @@ func TestContainsTemplate(t *testing.T) {
 }
 
 func TestValidateTemplate(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		template string
@@ -200,10 +207,26 @@ func TestValidateTemplate(t *testing.T) {
 			template: "fetch logs | filter {{.unclosed",
 			wantErr:  true,
 		},
+		{
+			name:     "variable with pipe and space",
+			template: "{{.value | default \"test\"}}",
+			wantVars: []string{"value"},
+		},
+		{
+			name:     "variable with space before pipe",
+			template: "{{.value  |  default \"test\"}}",
+			wantVars: []string{"value"},
+		},
+		{
+			name:     "duplicate variables",
+			template: "{{.host}} and {{.host}} again",
+			wantVars: []string{"host"}, // Should only return once
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			gotVars, err := ValidateTemplate(tt.template)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateTemplate() error = %v, wantErr %v", err, tt.wantErr)
@@ -229,4 +252,216 @@ func TestValidateTemplate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRenderTemplate_EdgeCases(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		template string
+		vars     map[string]interface{}
+		want     string
+		wantErr  bool
+	}{
+		{
+			name:     "nil variable value",
+			template: "value: {{.nilval}}",
+			vars:     map[string]interface{}{"nilval": nil},
+			want:     "value: <no value>",
+		},
+		{
+			name:     "empty string variable",
+			template: "value: {{.empty}}",
+			vars:     map[string]interface{}{"empty": ""},
+			want:     "value: ",
+		},
+		{
+			name:     "default with nil value",
+			template: "{{.nilval | default \"fallback\"}}",
+			vars:     map[string]interface{}{"nilval": nil},
+			want:     "fallback",
+		},
+		{
+			name:     "default with empty string",
+			template: "{{.empty | default \"fallback\"}}",
+			vars:     map[string]interface{}{"empty": ""},
+			want:     "fallback",
+		},
+		{
+			name:     "numeric value",
+			template: "count: {{.count}}",
+			vars:     map[string]interface{}{"count": 42},
+			want:     "count: 42",
+		},
+		{
+			name:     "boolean value",
+			template: "enabled: {{.enabled}}",
+			vars:     map[string]interface{}{"enabled": true},
+			want:     "enabled: true",
+		},
+		{
+			name:     "execute error - invalid action",
+			template: "{{.value.invalid.chain}}",
+			vars:     map[string]interface{}{"value": "string"},
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := RenderTemplate(tt.template, tt.vars)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RenderTemplate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("RenderTemplate() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSetFlags_EdgeCases(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		flags   []string
+		want    map[string]interface{}
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:  "empty slice",
+			flags: []string{},
+			want:  map[string]interface{}{},
+		},
+		{
+			name:    "whitespace only key",
+			flags:   []string{"  =value"},
+			wantErr: true,
+			errMsg:  "empty key",
+		},
+		{
+			name:  "whitespace around key and value",
+			flags: []string{"  key  =  value  "},
+			want:  map[string]interface{}{"key": "value"},
+		},
+		{
+			name:  "multiple equals signs in value",
+			flags: []string{"equation=x=y=z"},
+			want:  map[string]interface{}{"equation": "x=y=z"},
+		},
+		{
+			name:  "empty value is valid",
+			flags: []string{"key="},
+			want:  map[string]interface{}{"key": ""},
+		},
+		{
+			name:    "only equals sign",
+			flags:   []string{"="},
+			wantErr: true,
+			errMsg:  "empty key",
+		},
+		{
+			name:    "multiple flags with one invalid",
+			flags:   []string{"valid=value", "invalid"},
+			wantErr: true,
+			errMsg:  "invalid --set format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ParseSetFlags(tt.flags)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseSetFlags() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && tt.errMsg != "" {
+				if err != nil && !contains(err.Error(), tt.errMsg) {
+					t.Errorf("ParseSetFlags() error = %v, want error containing %q", err, tt.errMsg)
+				}
+			}
+			if !tt.wantErr {
+				if len(got) != len(tt.want) {
+					t.Errorf("ParseSetFlags() returned %d items, want %d", len(got), len(tt.want))
+				}
+				for k, v := range tt.want {
+					if got[k] != v {
+						t.Errorf("ParseSetFlags() got[%s] = %v, want %v", k, got[k], v)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestContainsTemplate_EdgeCases(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		str  string
+		want bool
+	}{
+		{
+			name: "empty string",
+			str:  "",
+			want: false,
+		},
+		{
+			name: "nested braces",
+			str:  "{{{.value}}}",
+			want: true,
+		},
+		{
+			name: "braces in middle",
+			str:  "start {{.var}} end",
+			want: true,
+		},
+		{
+			name: "multiple templates",
+			str:  "{{.a}} and {{.b}}",
+			want: true,
+		},
+		{
+			name: "single opening brace",
+			str:  "{",
+			want: false,
+		},
+		{
+			name: "single closing brace",
+			str:  "}",
+			want: false,
+		},
+		{
+			name: "reversed braces",
+			str:  "}}{{",
+			want: true, // Still contains both {{ and }}
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ContainsTemplate(tt.str); got != tt.want {
+				t.Errorf("ContainsTemplate(%q) = %v, want %v", tt.str, got, tt.want)
+			}
+		})
+	}
+}
+
+// Helper function
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || (len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

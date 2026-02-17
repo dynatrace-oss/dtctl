@@ -21,8 +21,6 @@ We'll implement in this order (simple to complex):
 
 ## 1. Platform Management
 
-**API Spec:** `platform-management.yaml`
-
 ### Endpoints to Implement
 
 - `GET /platform/management/v1/environment` - Get environment info
@@ -54,14 +52,12 @@ type EnvironmentInfo struct {
     Name        string `json:"name"`
     Region      string `json:"region"`
     Trial       bool   `json:"trial"`
-    // ... other fields from API spec
 }
 
 type License struct {
     Type           string    `json:"type"`
     ExpirationDate time.Time `json:"expirationDate"`
     MaxDemUnits    int       `json:"maxDemUnits"`
-    // ... other fields from API spec
 }
 ```
 
@@ -71,8 +67,6 @@ type License struct {
 ---
 
 ## 2. State Management for Apps
-
-**API Spec:** `state-management.yaml`
 
 ### Endpoints to Implement
 
@@ -107,8 +101,6 @@ dtctl delete user-app-states <app-id> --self
 ---
 
 ## 3. Grail Fieldsets
-
-**API Spec:** `grail-fieldsets.yaml`
 
 ### Endpoints to Implement
 
@@ -157,7 +149,6 @@ type Fieldset struct {
     DisplayName string   `json:"displayName,omitempty" yaml:"displayName,omitempty"`
     Description string   `json:"description,omitempty" yaml:"description,omitempty"`
     Fields      []string `json:"fields" yaml:"fields"`
-    // ... other fields from API spec
 }
 ```
 
@@ -169,8 +160,6 @@ type Fieldset struct {
 ---
 
 ## 4. Grail Filter Segments
-
-**API Spec:** `grail-filter-segments.yaml`
 
 ### Endpoints to Implement
 
@@ -220,7 +209,6 @@ type FilterSegment struct {
     DisplayName string `json:"displayName,omitempty" yaml:"displayName,omitempty"`
     Description string `json:"description,omitempty" yaml:"description,omitempty"`
     Filter      string `json:"filter" yaml:"filter"`
-    // ... other fields from API spec
 }
 ```
 
@@ -232,8 +220,6 @@ type FilterSegment struct {
 ---
 
 ## 5. Grail Resource Store
-
-**API Spec:** `grail-resource-store.yaml`
 
 ### Endpoints to Implement
 
@@ -284,7 +270,6 @@ type Resource struct {
     Description string                 `json:"description,omitempty" yaml:"description,omitempty"`
     Content     map[string]interface{} `json:"content" yaml:"content"`
     Version     string                 `json:"version,omitempty" yaml:"version,omitempty"`
-    // ... other fields from API spec
 }
 ```
 

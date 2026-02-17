@@ -20,7 +20,7 @@ dtctl apply -f workflow.yaml                  # Declarative configuration
 
 ![dtctl dashboard workflow demo](docs/assets/dtctl-1.gif)
 
-> This product is not officially supported by Dynatrace
+> **Early Development**: This project is in active development. If you encounter any bugs or issues, please [file a GitHub issue](https://github.com/dynatrace-oss/dtctl/issues/new). Contributions and feedback are welcome!
 
 ## Why dtctl?
 
@@ -75,7 +75,7 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 |----------|------------|
 | Workflows | get, describe, create, edit, delete, execute, history, diff |
 | Dashboards & Notebooks | get, describe, create, edit, delete, share, diff |
-| DQL Queries | execute with template variables |
+| DQL Queries | execute with template variables, verify syntax without execution |
 | SLOs | get, create, delete, apply, evaluate |
 | Settings | get schemas, get/create/update/delete objects |
 | Buckets | get, describe, create, delete |

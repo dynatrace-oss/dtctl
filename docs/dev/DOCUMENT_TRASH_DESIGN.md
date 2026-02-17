@@ -138,7 +138,7 @@ View at: https://your-env.apps.dynatrace.com/ui/dashboards/aaaaaaaa-bbbb-cccc-dd
 
 ### API Endpoints
 
-Based on `document.yaml` API spec:
+API endpoints for trash management:
 
 ```
 GET    /platform/document/v1/documents:trash           # List trashed documents

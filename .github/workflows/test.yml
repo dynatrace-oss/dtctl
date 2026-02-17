@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Minimum test coverage percentage required to pass CI.
+# Current: 49.4% (CI) / 49.6% (local). Target: gradually increase to 60 -> 70 -> 80 -> 85.
+env:
+  COVERAGE_THRESHOLD: 49
+
 jobs:
   test:
     name: Test
@@ -13,7 +18,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ['1.24']
+        go: ['1.24.13']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,9 +31,48 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Verify code compiles
+        shell: bash
+        run: go build ./...
+
+      - name: Run go vet
+        shell: bash
+        run: go vet ./...
+
       - name: Run tests
         shell: bash
         run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Enforce coverage threshold
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          echo "Threshold: ${COVERAGE_THRESHOLD}%"
+
+          if [ -z "$COVERAGE" ]; then
+            echo "::error::Could not determine coverage percentage"
+            exit 1
+          fi
+
+          # Compare as integers (truncate decimals) to avoid bc dependency
+          COVERAGE_INT=${COVERAGE%.*}
+          if [ "$COVERAGE_INT" -lt "$COVERAGE_THRESHOLD" ]; then
+            echo "::error::Coverage ${COVERAGE}% is below the ${COVERAGE_THRESHOLD}% threshold"
+            exit 1
+          fi
+
+          echo "Coverage ${COVERAGE}% meets the ${COVERAGE_THRESHOLD}% threshold"
+
+      - name: Generate coverage report
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.txt | tail -20 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest'

@@ -69,6 +69,21 @@ fetch logs
 | filter timestamp > now() - {{.timerange | default "1h"}}
 ```
 
+### Query Verification
+```bash
+# Verify query syntax without execution
+dtctl verify query 'fetch logs | filter status="ERROR"'
+dtctl verify query -f query.dql --fail-on-warn
+
+# Get canonical query format
+dtctl verify query 'fetch logs' --canonical -o json
+
+# CI/CD integration
+for f in queries/*.dql; do
+  dtctl verify query -f "$f" --fail-on-warn || exit 1
+done
+```
+
 ### Lookup Tables
 ```bash
 dtctl create lookup -f data.csv --path /lookups/grail/pm/errors --lookup-field code
