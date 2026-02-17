@@ -17,21 +17,12 @@ var (
 	createAzureConnectionName string
 	createAzureConnectionType string
 
-	updateAzureConnectionName          string
-	updateAzureConnectionDirectoryID   string
-	updateAzureConnectionApplicationID string
-
 	createAzureMonitoringConfigName              string
 	createAzureMonitoringConfigCredentials       string
 	createAzureMonitoringConfigLocationFiltering string
 	createAzureMonitoringConfigTagFiltering      string
 	createAzureMonitoringConfigFeatureSets       string
 	createAzureMonitoringConfigScope             string
-
-	updateAzureMonitoringConfigName              string
-	updateAzureMonitoringConfigLocationFiltering string
-	updateAzureMonitoringConfigTagFiltering      string
-	updateAzureMonitoringConfigFeatureSets       string
 )
 
 var createAzureConnectionCmd = &cobra.Command{
@@ -85,13 +76,9 @@ Examples:
 
 		switch createAzureConnectionType {
 		case "federatedIdentityCredential":
-			value.FederatedIdentityCredential = &azureconnection.FederatedIdentityCredential{
-				Consumers: []string{"SVC:com.dynatrace.da"},
-			}
+			value.FederatedIdentityCredential = &azureconnection.FederatedIdentityCredential{Consumers: []string{"SVC:com.dynatrace.da"}}
 		case "clientSecret":
-			value.ClientSecret = &azureconnection.ClientSecretCredential{
-				Consumers: []string{"SVC:com.dynatrace.da"},
-			}
+			value.ClientSecret = &azureconnection.ClientSecretCredential{Consumers: []string{"SVC:com.dynatrace.da"}}
 		default:
 			return fmt.Errorf("unsupported --type %q (supported: federatedIdentityCredential, clientSecret)", createAzureConnectionType)
 		}
@@ -109,99 +96,13 @@ Examples:
 	},
 }
 
-var updateAzureConnectionCmd = &cobra.Command{
-	Use:   "azure_connection [id]",
-	Short: "Update Azure connection from flags",
-	Long: `Update Azure connection by ID argument or by --name.
-
-Examples:
-  dtctl update azure_connection --name "siwek" --directoryId "XYZ" --applicationId "ZUZ"
-  dtctl update azure_connection <id> --directoryId "XYZ" --applicationId "ZUZ"`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if updateAzureConnectionDirectoryID == "" && updateAzureConnectionApplicationID == "" {
-			return fmt.Errorf("at least one of --directoryId or --applicationId is required")
-		}
-
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
-
-		handler := azureconnection.NewHandler(c)
-
-		var existing *azureconnection.AzureConnection
-		if len(args) > 0 {
-			existing, err = handler.Get(args[0])
-			if err != nil {
-				return err
-			}
-		} else {
-			if updateAzureConnectionName == "" {
-				return fmt.Errorf("provide connection ID argument or --name")
-			}
-			existing, err = handler.FindByName(updateAzureConnectionName)
-			if err != nil {
-				return err
-			}
-		}
-
-		value := existing.Value
-		switch value.Type {
-		case "federatedIdentityCredential":
-			if value.FederatedIdentityCredential == nil {
-				value.FederatedIdentityCredential = &azureconnection.FederatedIdentityCredential{}
-			}
-			if updateAzureConnectionDirectoryID != "" {
-				value.FederatedIdentityCredential.DirectoryID = updateAzureConnectionDirectoryID
-			}
-			if updateAzureConnectionApplicationID != "" {
-				value.FederatedIdentityCredential.ApplicationID = updateAzureConnectionApplicationID
-			}
-		case "clientSecret":
-			if value.ClientSecret == nil {
-				value.ClientSecret = &azureconnection.ClientSecretCredential{}
-			}
-			if updateAzureConnectionDirectoryID != "" {
-				value.ClientSecret.DirectoryID = updateAzureConnectionDirectoryID
-			}
-			if updateAzureConnectionApplicationID != "" {
-				value.ClientSecret.ApplicationID = updateAzureConnectionApplicationID
-			}
-		default:
-			return fmt.Errorf("unsupported azure connection type %q", value.Type)
-		}
-
-		updated, err := handler.Update(existing.ObjectID, value)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Azure connection updated: %s\n", updated.ObjectID)
-		return nil
-	},
-}
-
 var createAzureMonitoringConfigCmd = &cobra.Command{
 	Use:   "azure_monitoring_config",
 	Short: "Create Azure monitoring config from flags",
 	Long: `Create Azure monitoring configuration using command flags.
 
 Examples:
-  dtctl create azure_monitoring_config --name "siwek" --credentials "siwek" --locationFiltering "eastus,northcentralus" --featuresets "microsoft_apimanagement.service_essential,microsoft_cache.redis_essential"
+  dtctl create azure_monitoring_config --name "siwek" --credentials "siwek" --locationFiltering "eastus,northcentralus" --featureSets "microsoft_apimanagement.service_essential,microsoft_cache.redis_essential"
   dtctl create azure_monitoring_config --name "siwek" --credentials "<connection-id>"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if createAzureMonitoringConfigName == "" {
@@ -268,11 +169,9 @@ Examples:
 					ConfigurationMode:         "ADVANCED",
 					DeploymentMode:            "AUTOMATED",
 					SubscriptionFilteringMode: "INCLUDE",
-					Credentials: []azuremonitoringconfig.Credential{
-						credential,
-					},
-					LocationFiltering: locations,
-					TagFiltering:      tagFilters,
+					Credentials:               []azuremonitoringconfig.Credential{credential},
+					LocationFiltering:         locations,
+					TagFiltering:              tagFilters,
 				},
 				FeatureSets: featureSets,
 			},
@@ -293,113 +192,6 @@ Examples:
 		}
 
 		fmt.Printf("Azure monitoring config created: %s\n", created.ObjectID)
-		return nil
-	},
-}
-
-var updateAzureMonitoringConfigCmd = &cobra.Command{
-	Use:   "azure_monitoring_config [id]",
-	Short: "Update Azure monitoring config from flags",
-	Long: `Update Azure monitoring configuration by ID argument or by --name.
-
-Examples:
-  dtctl update azure_monitoring_config --name "siwek" --location-filtering "eastus,westeurope"
-  dtctl update azure_monitoring_config --name "siwek" --featuresets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
-  dtctl update azure_monitoring_config --name "siwek" --tagfiltering "include:dt_owner=xyz@example.com"
-  dtctl update azure_monitoring_config <id> --location-filtering "eastus,westeurope"`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if strings.TrimSpace(updateAzureMonitoringConfigLocationFiltering) == "" &&
-			strings.TrimSpace(updateAzureMonitoringConfigFeatureSets) == "" &&
-			strings.TrimSpace(updateAzureMonitoringConfigTagFiltering) == "" {
-			return fmt.Errorf("at least one of --location-filtering, --featuresets, or --tagfiltering is required")
-		}
-
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-			return err
-		}
-
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
-
-		handler := azuremonitoringconfig.NewHandler(c)
-
-		var existing *azuremonitoringconfig.AzureMonitoringConfig
-		if len(args) > 0 {
-			identifier := args[0]
-
-			// Try to resolve by description/name first
-			existing, err = handler.FindByName(identifier)
-			if err != nil {
-				// If not found by name, fallback to ID
-				existing, err = handler.Get(identifier)
-				if err != nil {
-					return fmt.Errorf("monitoring config with name/description or ID %q not found", identifier)
-				}
-			}
-		} else {
-			if updateAzureMonitoringConfigName == "" {
-				return fmt.Errorf("provide config ID argument or --name")
-			}
-			existing, err = handler.FindByName(updateAzureMonitoringConfigName)
-			if err != nil {
-				return err
-			}
-		}
-
-		value := existing.Value
-
-		if strings.TrimSpace(updateAzureMonitoringConfigLocationFiltering) != "" {
-			locations := azuremonitoringconfig.SplitCSV(updateAzureMonitoringConfigLocationFiltering)
-			if len(locations) == 0 {
-				return fmt.Errorf("--location-filtering must contain at least one location")
-			}
-			value.Azure.LocationFiltering = locations
-		}
-
-		if strings.TrimSpace(updateAzureMonitoringConfigFeatureSets) != "" {
-			featureSets := azuremonitoringconfig.SplitCSV(updateAzureMonitoringConfigFeatureSets)
-			if len(featureSets) == 0 {
-				return fmt.Errorf("--featuresets must contain at least one feature set")
-			}
-			value.FeatureSets = featureSets
-		}
-
-		if strings.TrimSpace(updateAzureMonitoringConfigTagFiltering) != "" {
-			tagFilters, err := azuremonitoringconfig.ParseTagFiltering(updateAzureMonitoringConfigTagFiltering)
-			if err != nil {
-				return err
-			}
-			value.Azure.TagFiltering = tagFilters
-		}
-
-		payload := azuremonitoringconfig.AzureMonitoringConfig{
-			Scope: existing.Scope,
-			Value: value,
-		}
-
-		body, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("failed to prepare request payload: %w", err)
-		}
-
-		updated, err := handler.Update(existing.ObjectID, body)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Azure monitoring config updated: %s\n", updated.ObjectID)
 		return nil
 	},
 }
@@ -458,8 +250,6 @@ func printFederatedCreateInstructions(baseURL, objectID, connectionName string) 
 func init() {
 	createCmd.AddCommand(createAzureConnectionCmd)
 	createCmd.AddCommand(createAzureMonitoringConfigCmd)
-	updateCmd.AddCommand(updateAzureConnectionCmd)
-	updateCmd.AddCommand(updateAzureMonitoringConfigCmd)
 
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionName, "name", "", "Azure connection name (required)")
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionType, "type", "", "Azure connection type: federatedIdentityCredential or clientSecret (required)")
@@ -470,13 +260,6 @@ func init() {
 		}, cobra.ShellCompDirectiveNoFileComp
 	})
 
-	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionName, "name", "", "Azure connection name (used when ID argument is not provided)")
-	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionDirectoryID, "directoryId", "", "Directory ID to set")
-	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionDirectoryID, "directoryID", "", "Alias for --directoryId")
-	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "applicationId", "", "Application ID to set")
-	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "applicationID", "", "Alias for --applicationId")
-	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "aplicationID", "", "Compatibility alias for typo --aplicationID")
-
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigName, "name", "", "Monitoring config name/description (required)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigCredentials, "credentials", "", "Azure connection name or ID (required)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations (default: all from schema)")
@@ -485,18 +268,9 @@ func init() {
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigTagFiltering, "tagfiltering", "", "Alias for --tagFiltering")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets (default: all *_essential from schema)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
-	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featureset", "", "Alias for --featuresets")
+	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featureset", "", "Alias for --featureSets")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "eatureset", "", "Compatibility alias for typo in examples")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigScope, "scope", "integration-azure", "Monitoring config scope")
 	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("name")
 	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("credentials")
-
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "location-filtering", "", "Alias for --locationFiltering")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigTagFiltering, "tagFiltering", "", "Tag filtering rules, e.g. include:environment=prod,tier=db;exclude:owner=pawel")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigTagFiltering, "tagfiltering", "", "Alias for --tagFiltering")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featureset", "", "Alias for --featuresets")
 }

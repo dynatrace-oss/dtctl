@@ -505,14 +505,6 @@ Examples:
 	},
 }
 
-// updateCmd represents the update command
-var updateCmd = &cobra.Command{
-	Use:   "update",
-	Short: "Update resources",
-	Long:  `Update resources from files.`,
-	RunE:  requireSubcommand,
-}
-
 // deleteWorkflowCmd deletes a workflow
 var deleteWorkflowCmd = &cobra.Command{
 	Use:     "workflow <workflow-id-or-name>",
@@ -2195,7 +2187,6 @@ var getAzureMonitoringConfigFeatureSetsCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(deleteCmd)
-	rootCmd.AddCommand(updateCmd)
 
 	getCmd.AddCommand(getWorkflowsCmd)
 	getCmd.AddCommand(getWorkflowExecutionsCmd)
