@@ -25,13 +25,13 @@ func TestTrash_DashboardLifecycle(t *testing.T) {
 	trashHandler := document.NewTrashHandler(env.Client)
 
 	// Step 1: Create a dashboard
-	dashboard := DashboardFixture(env.TestPrefix)
-	created, err := handler.Create(dashboard)
+	dashboardReq := DashboardCreateRequest(env.TestPrefix)
+	created, err := handler.Create(dashboardReq)
 	require.NoError(t, err, "Failed to create dashboard")
 	require.NotEmpty(t, created.ID, "Created dashboard should have an ID")
 
 	dashboardID := created.ID
-	dashboardName := dashboard.Name
+	dashboardName := dashboardReq.Name
 	t.Logf("Created dashboard: %s (ID: %s)", dashboardName, dashboardID)
 
 	// Track the dashboard for cleanup (in case test fails before delete)
@@ -123,13 +123,13 @@ func TestTrash_NotebookLifecycle(t *testing.T) {
 	trashHandler := document.NewTrashHandler(env.Client)
 
 	// Create a notebook
-	notebook := NotebookFixture(env.TestPrefix)
-	created, err := handler.Create(notebook)
+	notebookReq := NotebookCreateRequest(env.TestPrefix)
+	created, err := handler.Create(notebookReq)
 	require.NoError(t, err, "Failed to create notebook")
 	require.NotEmpty(t, created.ID, "Created notebook should have an ID")
 
 	notebookID := created.ID
-	notebookName := notebook.Name
+	notebookName := notebookReq.Name
 	t.Logf("Created notebook: %s (ID: %s)", notebookName, notebookID)
 
 	env.Cleanup.TrackDocument("notebook", notebookID, notebookName, created.Version)
@@ -183,19 +183,19 @@ func TestTrash_FilterByType(t *testing.T) {
 	trashHandler := document.NewTrashHandler(env.Client)
 
 	// Create and delete a dashboard
-	dashboard := DashboardFixture(env.TestPrefix + "-filter-dashboard")
-	createdDash, err := handler.Create(dashboard)
+	dashboardReq := DashboardCreateRequest(env.TestPrefix + "-filter-dashboard")
+	createdDash, err := handler.Create(dashboardReq)
 	require.NoError(t, err)
-	env.Cleanup.TrackDocument("dashboard", createdDash.ID, dashboard.Name, createdDash.Version)
+	env.Cleanup.TrackDocument("dashboard", createdDash.ID, dashboardReq.Name, createdDash.Version)
 
 	err = handler.Delete(createdDash.ID, createdDash.Version)
 	require.NoError(t, err)
 
 	// Create and delete a notebook
-	notebook := NotebookFixture(env.TestPrefix + "-filter-notebook")
-	createdNote, err := handler.Create(notebook)
+	notebookReq := NotebookCreateRequest(env.TestPrefix + "-filter-notebook")
+	createdNote, err := handler.Create(notebookReq)
 	require.NoError(t, err)
-	env.Cleanup.TrackDocument("notebook", createdNote.ID, notebook.Name, createdNote.Version)
+	env.Cleanup.TrackDocument("notebook", createdNote.ID, notebookReq.Name, createdNote.Version)
 
 	err = handler.Delete(createdNote.ID, createdNote.Version)
 	require.NoError(t, err)
@@ -261,10 +261,10 @@ func TestTrash_EmptyTrash(t *testing.T) {
 	// Create and delete multiple documents
 	var deletedIDs []string
 	for i := 0; i < 3; i++ {
-		dashboard := DashboardFixture(env.TestPrefix + "-empty-test")
-		created, err := handler.Create(dashboard)
+		dashboardReq := DashboardCreateRequest(env.TestPrefix + "-empty-test")
+		created, err := handler.Create(dashboardReq)
 		require.NoError(t, err)
-		env.Cleanup.TrackDocument("dashboard", created.ID, dashboard.Name, created.Version)
+		env.Cleanup.TrackDocument("dashboard", created.ID, dashboardReq.Name, created.Version)
 
 		err = handler.Delete(created.ID, created.Version)
 		require.NoError(t, err)
@@ -313,21 +313,20 @@ func TestTrash_RestoreWithConflict(t *testing.T) {
 	trashHandler := document.NewTrashHandler(env.Client)
 
 	// Create dashboard 1
-	dashboard1 := DashboardFixture(env.TestPrefix + "-conflict")
-	created1, err := handler.Create(dashboard1)
+	dashboard1Req := DashboardCreateRequest(env.TestPrefix + "-conflict")
+	created1, err := handler.Create(dashboard1Req)
 	require.NoError(t, err)
-	env.Cleanup.TrackDocument("dashboard", created1.ID, dashboard1.Name, created1.Version)
+	env.Cleanup.TrackDocument("dashboard", created1.ID, dashboard1Req.Name, created1.Version)
 
 	// Delete dashboard 1 (moves to trash)
 	err = handler.Delete(created1.ID, created1.Version)
 	require.NoError(t, err)
 
 	// Create dashboard 2 with the same name
-	dashboard2 := DashboardFixture(env.TestPrefix + "-conflict")
-	dashboard2.Name = dashboard1.Name // Ensure same name
-	created2, err := handler.Create(dashboard2)
+	dashboard2Req := DashboardCreateRequest(env.TestPrefix + "-conflict")
+	created2, err := handler.Create(dashboard2Req)
 	require.NoError(t, err)
-	env.Cleanup.TrackDocument("dashboard", created2.ID, dashboard2.Name, created2.Version)
+	env.Cleanup.TrackDocument("dashboard", created2.ID, dashboard2Req.Name, created2.Version)
 
 	// Try to restore dashboard 1 (should fail due to name conflict)
 	err = trashHandler.Restore(created1.ID, document.RestoreOptions{})
