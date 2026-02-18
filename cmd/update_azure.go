@@ -15,22 +15,29 @@ var (
 	updateAzureConnectionName          string
 	updateAzureConnectionDirectoryID   string
 	updateAzureConnectionApplicationID string
+	updateCloudConnectionProvider      string
 
 	updateAzureMonitoringConfigName              string
 	updateAzureMonitoringConfigLocationFiltering string
 	updateAzureMonitoringConfigFeatureSets       string
+	updateCloudMonitoringConfigProvider          string
 )
 
 var updateAzureConnectionCmd = &cobra.Command{
-	Use:   "azure_connection [id]",
+	Use:   "cloud_connection [id]",
+	Aliases: []string{"azure_connection"},
 	Short: "Update Azure connection from flags",
 	Long: `Update Azure connection by ID argument or by --name.
 
 Examples:
-  dtctl update azure_connection --name "siwek" --directoryId "XYZ" --applicationId "ZUZ"
-  dtctl update azure_connection <id> --directoryId "XYZ" --applicationId "ZUZ"`,
+  dtctl update cloud_connection --provider azure --name "siwek" --directoryId "XYZ" --applicationId "ZUZ"
+  dtctl update cloud_connection --provider azure <id> --directoryId "XYZ" --applicationId "ZUZ"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireAzureProvider(updateCloudConnectionProvider); err != nil {
+			return err
+		}
+
 		if updateAzureConnectionDirectoryID == "" && updateAzureConnectionApplicationID == "" {
 			return fmt.Errorf("at least one of --directoryId or --applicationId is required")
 		}
@@ -108,16 +115,21 @@ Examples:
 }
 
 var updateAzureMonitoringConfigCmd = &cobra.Command{
-	Use:   "azure_monitoring_config [id]",
+	Use:   "cloud_monitoring_config [id]",
+	Aliases: []string{"azure_monitoring_config"},
 	Short: "Update Azure monitoring config from flags",
 	Long: `Update Azure monitoring configuration by ID argument or by --name.
 
 Examples:
-  dtctl update azure_monitoring_config --name "siwek" --locationFiltering "eastus,westeurope"
-  dtctl update azure_monitoring_config --name "siwek" --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
-  dtctl update azure_monitoring_config <id> --locationFiltering "eastus,westeurope"`,
+  dtctl update cloud_monitoring_config --provider azure --name "siwek" --locationFiltering "eastus,westeurope"
+  dtctl update cloud_monitoring_config --provider azure --name "siwek" --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+  dtctl update cloud_monitoring_config --provider azure <id> --locationFiltering "eastus,westeurope"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireAzureProvider(updateCloudMonitoringConfigProvider); err != nil {
+			return err
+		}
+
 		if strings.TrimSpace(updateAzureMonitoringConfigLocationFiltering) == "" &&
 			strings.TrimSpace(updateAzureMonitoringConfigFeatureSets) == "" {
 			return fmt.Errorf("at least one of --locationFiltering or --featureSets is required")
@@ -199,6 +211,7 @@ func init() {
 	updateCmd.AddCommand(updateAzureConnectionCmd)
 	updateCmd.AddCommand(updateAzureMonitoringConfigCmd)
 
+	addRequiredProviderFlagVar(updateAzureConnectionCmd, &updateCloudConnectionProvider)
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionName, "name", "", "Azure connection name (used when ID argument is not provided)")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionDirectoryID, "directoryId", "", "Directory ID to set")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionDirectoryID, "directoryID", "", "Alias for --directoryId")
@@ -206,6 +219,7 @@ func init() {
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "applicationID", "", "Alias for --applicationId")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "aplicationID", "", "Compatibility alias for typo --aplicationID")
 
+	addRequiredProviderFlagVar(updateAzureMonitoringConfigCmd, &updateCloudMonitoringConfigProvider)
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets")

@@ -81,11 +81,16 @@ func printTriggerInfo(trigger map[string]interface{}) {
 
 // describeAzureConnectionCmd shows details of an Azure connection (credential)
 var describeAzureConnectionCmd = &cobra.Command{
-	Use:     "azure_connection <id>",
-	Aliases: []string{"azure_connections", "azconn"},
+	Use:     "cloud_connection <id>",
+	Aliases: []string{"cloud_connections", "azure_connection", "azure_connections", "azconn"},
 	Short:   "Show details of an Azure connection (credential)",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		provider, _ := cmd.Flags().GetString("provider")
+		if err := requireAzureProvider(provider); err != nil {
+			return err
+		}
+
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
@@ -123,11 +128,16 @@ var describeAzureConnectionCmd = &cobra.Command{
 
 // describeAzureMonitoringConfigCmd shows details of an Azure monitoring configuration
 var describeAzureMonitoringConfigCmd = &cobra.Command{
-	Use:     "azure_monitoring_config <id-or-name>",
-	Aliases: []string{"azure_monitoring", "azmon"},
+	Use:     "cloud_monitoring_config <id-or-name>",
+	Aliases: []string{"cloud_monitoring_configs", "azure_monitoring_config", "azure_monitoring", "azmon"},
 	Short:   "Show details of an Azure monitoring configuration",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		provider, _ := cmd.Flags().GetString("provider")
+		if err := requireAzureProvider(provider); err != nil {
+			return err
+		}
+
 		identifier := args[0]
 
 		cfg, err := LoadConfig()
@@ -274,6 +284,8 @@ func stringFromRecord(record map[string]interface{}, key string) string {
 func init() {
 	describeCmd.AddCommand(describeAzureConnectionCmd)
 	describeCmd.AddCommand(describeAzureMonitoringConfigCmd)
+	addRequiredProviderFlag(describeAzureConnectionCmd)
+	addRequiredProviderFlag(describeAzureMonitoringConfigCmd)
 	rootCmd.AddCommand(describeCmd)
 	describeCmd.AddCommand(describeWorkflowCmd)
 	describeCmd.AddCommand(describeWorkflowExecutionCmd)

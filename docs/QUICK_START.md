@@ -2676,7 +2676,7 @@ This is the recommended fast flow for Azure onboarding with federated credential
 ### 1) Create Azure connection in Dynatrace
 
 ```bash
-dtctl create azure_connection --name "my-azure-connection" --type federatedIdentityCredential
+dtctl create cloud_connection --provider azure --name "my-azure-connection" --type federatedIdentityCredential
 ```
 
 Command output prints dynamic values you need for Azure setup:
@@ -2709,7 +2709,7 @@ az ad app federated-credential create --id "$CLIENT_ID" --parameters "{'name': '
 ### 5) Finalize Azure connection in Dynatrace
 
 ```bash
-dtctl update azure_connection --name "my-azure-connection" --directoryId "$TENANT_ID" --applicationId "$CLIENT_ID"
+dtctl update cloud_connection --provider azure --name "my-azure-connection" --directoryId "$TENANT_ID" --applicationId "$CLIENT_ID"
 ```
 
 Note: immediately after step 4, Entra propagation can take a short time. If you see AADSTS70025, retry step 5 after a few seconds.
@@ -2717,9 +2717,9 @@ Note: immediately after step 4, Entra propagation can take a short time. If you 
 ### 6) Create and verify Azure monitoring config
 
 ```bash
-dtctl create azure_monitoring_config --name "my-azure-connection" --credentials "my-azure-connection"
-dtctl get azure_monitoring_config my-azure-connection
-dtctl describe azure_monitoring_config my-azure-connection
+dtctl create cloud_monitoring_config --provider azure --name "my-azure-connection" --credentials "my-azure-connection"
+dtctl get cloud_monitoring_config --provider azure my-azure-connection
+dtctl describe cloud_monitoring_config --provider azure my-azure-connection
 ```
 
 ### 7) Update Azure monitoring config (examples)
@@ -2727,21 +2727,21 @@ dtctl describe azure_monitoring_config my-azure-connection
 Change location filtering to two regions:
 
 ```bash
-dtctl update azure_monitoring_config --name "my-azure-connection" \
+dtctl update cloud_monitoring_config --provider azure --name "my-azure-connection" \
   --locationFiltering "eastus,westeurope"
 ```
 
 Change feature sets to Virtual Machines and Azure Functions:
 
 ```bash
-dtctl update azure_monitoring_config --name "my-azure-connection" \
+dtctl update cloud_monitoring_config --provider azure --name "my-azure-connection" \
   --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
 ```
 
 Create Azure monitoring config with explicit feature sets and two locations:
 
 ```bash
-dtctl create azure_monitoring_config --name "my-azure-monitoring-explicit" \
+dtctl create cloud_monitoring_config --provider azure --name "my-azure-monitoring-explicit" \
   --credentials "my-azure-connection" \
   --locationFiltering "eastus,westeurope" \
   --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"

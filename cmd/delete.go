@@ -18,11 +18,16 @@ var deleteCmd = &cobra.Command{
 }
 
 var deleteAzureConnectionCmd = &cobra.Command{
-	Use:     "azure_connection [ID|NAME]",
+	Use:     "cloud_connection [ID|NAME]",
 	Short:   "Delete an Azure connection",
-	Aliases: []string{"azure_connections"},
+	Aliases: []string{"azure_connection", "azure_connections"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		provider, _ := cmd.Flags().GetString("provider")
+		if err := requireAzureProvider(provider); err != nil {
+			return err
+		}
+
 		identifier := args[0]
 
 		cfg, err := LoadConfig()
@@ -67,11 +72,16 @@ var deleteAzureConnectionCmd = &cobra.Command{
 }
 
 var deleteAzureMonitoringConfigCmd = &cobra.Command{
-	Use:     "azure_monitoring_config [ID|NAME]",
+	Use:     "cloud_monitoring_config [ID|NAME]",
 	Short:   "Delete an Azure monitoring config",
-	Aliases: []string{"azure_monitoring_configs"},
+	Aliases: []string{"azure_monitoring_config", "azure_monitoring_configs"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		provider, _ := cmd.Flags().GetString("provider")
+		if err := requireAzureProvider(provider); err != nil {
+			return err
+		}
+
 		identifier := args[0]
 
 		cfg, err := LoadConfig()
@@ -119,4 +129,7 @@ func init() {
 	rootCmd.AddCommand(deleteCmd)
 	deleteCmd.AddCommand(deleteAzureConnectionCmd)
 	deleteCmd.AddCommand(deleteAzureMonitoringConfigCmd)
+
+	addRequiredProviderFlag(deleteAzureConnectionCmd)
+	addRequiredProviderFlag(deleteAzureMonitoringConfigCmd)
 }

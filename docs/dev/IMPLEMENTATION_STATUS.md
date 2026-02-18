@@ -141,26 +141,26 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Wide output with all metadata
 
 ### Azure Connection Features
-- [x] List connections: `dtctl get azure_connection`
+- [x] List connections: `dtctl get cloud_connection --provider azure`
 - [ ] Filter connection list with dedicated flags
-- [x] Get by name or object ID: `dtctl get azure_connection <name-or-id>`
-- [x] Describe connection: `dtctl describe azure_connection <id>`
-- [x] Create connection: `dtctl create azure_connection --name <name> --type <federatedIdentityCredential|clientSecret>`
-- [x] Update connection: `dtctl update azure_connection --name <name> --directoryId <tenant-id> --applicationId <client-id>`
-- [x] Delete by name or ID: `dtctl delete azure_connection <name-or-id>`
+- [x] Get by name or object ID: `dtctl get cloud_connection --provider azure <name-or-id>`
+- [x] Describe connection: `dtctl describe cloud_connection --provider azure <id>`
+- [x] Create connection: `dtctl create cloud_connection --provider azure --name <name> --type <federatedIdentityCredential|clientSecret>`
+- [x] Update connection: `dtctl update cloud_connection --provider azure --name <name> --directoryId <tenant-id> --applicationId <client-id>`
+- [x] Delete by name or ID: `dtctl delete cloud_connection --provider azure <name-or-id>`
 - [x] Apply from manifest (idempotent): `dtctl apply -f azure_connection.yaml`
 
 ### Azure Monitoring Configuration Features
-- [x] List configs: `dtctl get azure_monitoring_config`
+- [x] List configs: `dtctl get cloud_monitoring_config --provider azure`
 - [ ] Filter config list with dedicated flags
-- [x] Get by description or ID: `dtctl get azure_monitoring_config <description-or-id>`
-- [x] Describe config: `dtctl describe azure_monitoring_config <id-or-name>`
+- [x] Get by description or ID: `dtctl get cloud_monitoring_config --provider azure <description-or-id>`
+- [x] Describe config: `dtctl describe cloud_monitoring_config --provider azure <id-or-name>`
 - [x] Runtime status in describe (Smartscape, metrics, recent events)
-- [x] Create config: `dtctl create azure_monitoring_config --name <name> --credentials <connection-name-or-id>`
-- [x] Update config: `dtctl update azure_monitoring_config --name <name> [--locationFiltering ...] [--featureSets ...]`
-- [x] Delete by name or ID: `dtctl delete azure_monitoring_config <name-or-id>`
+- [x] Create config: `dtctl create cloud_monitoring_config --provider azure --name <name> --credentials <connection-name-or-id>`
+- [x] Update config: `dtctl update cloud_monitoring_config --provider azure --name <name> [--locationFiltering ...] [--featureSets ...]`
+- [x] Delete by name or ID: `dtctl delete cloud_monitoring_config --provider azure <name-or-id>`
 - [x] Apply from manifest (idempotent): `dtctl apply -f azure_monitoring_config.yaml`
-- [x] Schema helpers: `dtctl get azure_monitoring_config_locations`, `dtctl get azure_monitoring_config_feature_sets`
+- [x] Schema helpers: `dtctl get cloud_monitoring_config_locations --provider azure`, `dtctl get cloud_monitoring_config_feature_sets --provider azure`
 
 ### AWS Connection Features
 - [ ] List connections
