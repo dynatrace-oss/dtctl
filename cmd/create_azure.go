@@ -16,29 +16,41 @@ import (
 var (
 	createAzureConnectionName string
 	createAzureConnectionType string
-	createCloudConnectionProvider string
 
 	createAzureMonitoringConfigName              string
 	createAzureMonitoringConfigCredentials       string
 	createAzureMonitoringConfigLocationFiltering string
 	createAzureMonitoringConfigFeatureSets       string
-	createCloudMonitoringConfigProvider          string
 )
 
+var createAzureProviderCmd = &cobra.Command{
+	Use:   "azure",
+	Short: "Create Azure resources",
+	RunE:  requireSubcommand,
+}
+
+var createAWSProviderCmd = &cobra.Command{
+	Use:   "aws",
+	Short: "Create AWS resources",
+	RunE:  requireSubcommand,
+}
+
+var createGCPProviderCmd = &cobra.Command{
+	Use:   "gcp",
+	Short: "Create GCP resources",
+	RunE:  requireSubcommand,
+}
+
 var createAzureConnectionCmd = &cobra.Command{
-	Use:   "cloud_connection",
-	Aliases: []string{"azure_connection"},
+	Use:   "connection",
+	Aliases: []string{"connections"},
 	Short: "Create Azure connection from flags",
 	Long: `Create Azure connection using command flags.
 
 Examples:
-  dtctl create cloud_connection --provider azure --name "siwek" --type "federatedIdentityCredential"
-  dtctl create cloud_connection --provider azure --name "siwek" --type "clientSecret"`,
+  dtctl create azure connection --name "siwek" --type "federatedIdentityCredential"
+  dtctl create azure connection --name "siwek" --type "clientSecret"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireAzureProvider(createCloudConnectionProvider); err != nil {
-			return err
-		}
-
 		if createAzureConnectionName == "" || createAzureConnectionType == "" {
 			missing := make([]string, 0, 2)
 			if createAzureConnectionName == "" {
@@ -49,7 +61,7 @@ Examples:
 			}
 
 			return fmt.Errorf(
-				"required flag(s) %s not set\nAvailable --type values: federatedIdentityCredential, clientSecret\nExample: dtctl create cloud_connection --provider azure --name \"my-conn\" --type federatedIdentityCredential",
+				"required flag(s) %s not set\nAvailable --type values: federatedIdentityCredential, clientSecret\nExample: dtctl create azure connection --name \"my-conn\" --type federatedIdentityCredential",
 				strings.Join(missing, ", "),
 			)
 		}
@@ -102,19 +114,15 @@ Examples:
 }
 
 var createAzureMonitoringConfigCmd = &cobra.Command{
-	Use:   "cloud_monitoring_config",
-	Aliases: []string{"azure_monitoring_config"},
+	Use:   "monitoring",
+	Aliases: []string{"monitoring-config"},
 	Short: "Create Azure monitoring config from flags",
 	Long: `Create Azure monitoring configuration using command flags.
 
 Examples:
-  dtctl create cloud_monitoring_config --provider azure --name "siwek" --credentials "siwek" --locationFiltering "eastus,northcentralus" --featureSets "microsoft_apimanagement.service_essential,microsoft_cache.redis_essential"
-  dtctl create cloud_monitoring_config --provider azure --name "siwek" --credentials "<connection-id>"`,
+  dtctl create azure monitoring --name "siwek" --credentials "siwek" --locationFiltering "eastus,northcentralus" --featureSets "microsoft_apimanagement.service_essential,microsoft_cache.redis_essential"
+  dtctl create azure monitoring --name "siwek" --credentials "<connection-id>"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireAzureProvider(createCloudMonitoringConfigProvider); err != nil {
-			return err
-		}
-
 		if createAzureMonitoringConfigName == "" {
 			return fmt.Errorf("--name is required")
 		}
@@ -229,7 +237,7 @@ func printFederatedCreateInstructions(baseURL, objectID, connectionName string) 
 		fmt.Printf("   az ad app federated-credential create --id \"$CLIENT_ID\" --parameters \"{'name': 'fd-Federated-Credential', 'issuer': '%s', 'subject': 'dt:connection-id/%s', 'audiences': ['%s/svc-id/com.dynatrace.da']}\"\n", issuer, objectID, host)
 		fmt.Println()
 		fmt.Println("4. Finalize connection in Dynatrace (set directoryId + applicationId):")
-		fmt.Printf("   dtctl update cloud_connection --provider azure --name %q --directoryId \"$TENANT_ID\" --applicationId \"$CLIENT_ID\"\n", connectionName)
+		fmt.Printf("   dtctl update azure connection --name %q --directoryId \"$TENANT_ID\" --applicationId \"$CLIENT_ID\"\n", connectionName)
 	} else {
 		fmt.Printf("   CLIENT_ID=$(az ad sp create-for-rbac --name %q --create-password false --query appId -o tsv)\n", connectionName)
 		fmt.Println("   TENANT_ID=$(az account show --query tenantId -o tsv)")
@@ -242,16 +250,23 @@ func printFederatedCreateInstructions(baseURL, objectID, connectionName string) 
 		fmt.Printf("   az ad app federated-credential create --id \"$CLIENT_ID\" --parameters \"{'name': 'fd-Federated-Credential', 'issuer': '%s', 'subject': 'dt:connection-id/%s', 'audiences': ['%s/svc-id/com.dynatrace.da']}\"\n", issuer, objectID, host)
 		fmt.Println()
 		fmt.Println("4. Finalize connection in Dynatrace (set directoryId + applicationId):")
-		fmt.Printf("   dtctl update cloud_connection --provider azure --name %q --directoryId \"$TENANT_ID\" --applicationId \"$CLIENT_ID\"\n", connectionName)
+		fmt.Printf("   dtctl update azure connection --name %q --directoryId \"$TENANT_ID\" --applicationId \"$CLIENT_ID\"\n", connectionName)
 	}
 	fmt.Println()
 }
 
 func init() {
-	createCmd.AddCommand(createAzureConnectionCmd)
-	createCmd.AddCommand(createAzureMonitoringConfigCmd)
+	createCmd.AddCommand(createAzureProviderCmd)
+	createCmd.AddCommand(createAWSProviderCmd)
+	createCmd.AddCommand(createGCPProviderCmd)
 
-	addRequiredProviderFlagVar(createAzureConnectionCmd, &createCloudConnectionProvider)
+	createAzureProviderCmd.AddCommand(createAzureConnectionCmd)
+	createAzureProviderCmd.AddCommand(createAzureMonitoringConfigCmd)
+	createAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
+	createAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
+	createGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connection"))
+	createGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
+
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionName, "name", "", "Azure connection name (required)")
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionType, "type", "", "Azure connection type: federatedIdentityCredential or clientSecret (required)")
 	_ = createAzureConnectionCmd.RegisterFlagCompletionFunc("type", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
@@ -261,7 +276,6 @@ func init() {
 		}, cobra.ShellCompDirectiveNoFileComp
 	})
 
-	addRequiredProviderFlagVar(createAzureMonitoringConfigCmd, &createCloudMonitoringConfigProvider)
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigName, "name", "", "Monitoring config name/description (required)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigCredentials, "credentials", "", "Azure connection name or ID (required)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations (default: all from schema)")

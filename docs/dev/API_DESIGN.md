@@ -933,25 +933,25 @@ See [../TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for complete scope reference.
 Azure Connection manages authentication credentials used by Azure monitoring configurations.
 
 ```bash
-# Resource name: cloud_connection/cloud_connections
+# Resource path: azure connection(s)
 
 # List all Azure connections
-dtctl get cloud_connection --provider azure
+dtctl get azure connections
 
 # Get by name (preferred) or object ID
-dtctl get cloud_connection --provider azure <name-or-id>
+dtctl get azure connections <name-or-id>
 
 # JSON/YAML output
-dtctl get cloud_connection --provider azure -o json
-dtctl get cloud_connection --provider azure -o yaml
+dtctl get azure connections -o json
+dtctl get azure connections -o yaml
 
 # Imperative create from flags
-dtctl create cloud_connection --provider azure --name "my-conn" --type federatedIdentityCredential
-dtctl create cloud_connection --provider azure --name "my-conn" --type clientSecret
+dtctl create azure connection --name "my-conn" --type federatedIdentityCredential
+dtctl create azure connection --name "my-conn" --type clientSecret
 
 # Imperative update by name or ID
-dtctl update cloud_connection --provider azure --name "my-conn" --directoryId "<tenant-id>" --applicationId "<client-id>"
-dtctl update cloud_connection --provider azure <object-id> --directoryId "<tenant-id>" --applicationId "<client-id>"
+dtctl update azure connection --name "my-conn" --directoryId "<tenant-id>" --applicationId "<client-id>"
+dtctl update azure connection <object-id> --directoryId "<tenant-id>" --applicationId "<client-id>"
 
 # Apply/create-update from manifest
 dtctl apply -f azure_connection.yaml
@@ -960,8 +960,8 @@ dtctl apply -f azure_connection.yaml
 **Behavior notes**:
 - Name-based lookup is supported for `get` and `apply` flows.
 - `apply` performs idempotent create-or-update logic (POST if new, PUT if existing).
-- For federated credentials, `create cloud_connection --provider azure` prints actionable Azure CLI guidance with dynamic `Issuer`, `Subject`, and `Audience`.
-- Guided flow includes assigning `Reader` role on subscription scope and finalizing with `dtctl update cloud_connection --provider azure`.
+- For federated credentials, `create azure connection` prints actionable Azure CLI guidance with dynamic `Issuer`, `Subject`, and `Audience`.
+- Guided flow includes assigning `Reader` role on subscription scope and finalizing with `dtctl update azure connection`.
 - `--type` supports: `federatedIdentityCredential`, `clientSecret`.
 - CLI completion supports `--type` value suggestions.
 - After creating federated credential in Entra ID, short propagation delay may occur; retry update when receiving transient `AADSTS70025`.
@@ -972,28 +972,28 @@ dtctl apply -f azure_connection.yaml
 Azure Monitoring Configuration manages monitoring profiles for Azure subscriptions/management groups.
 
 ```bash
-# Resource name: cloud_monitoring_config/cloud_monitoring_configs
+# Resource path: azure monitoring
 
 # List all monitoring configurations
-dtctl get cloud_monitoring_config --provider azure
+dtctl get azure monitoring
 
 # Get by description (name) or object ID
-dtctl get cloud_monitoring_config --provider azure <description-or-id>
+dtctl get azure monitoring <description-or-id>
 
 # Helper: list available Azure locations from latest extension schema
-dtctl get cloud_monitoring_config_locations --provider azure
+dtctl get azure monitoring-locations
 
 # Helper: list available FeatureSetsType values from latest extension schema
-dtctl get cloud_monitoring_config_feature_sets --provider azure
+dtctl get azure monitoring-feature-sets
 
 # Imperative create from flags
-dtctl create cloud_monitoring_config --provider azure --name "my-monitoring" --credentials "my-conn"
+dtctl create azure monitoring --name "my-monitoring" --credentials "my-conn"
 
 # Apply/create-update from manifest
 dtctl apply -f azure_monitoring_config.yaml
 
 # Describe with runtime status section
-dtctl describe cloud_monitoring_config --provider azure "my-monitoring"
+dtctl describe azure monitoring "my-monitoring"
 ```
 
 **Behavior notes**:
@@ -1001,8 +1001,8 @@ dtctl describe cloud_monitoring_config --provider azure "my-monitoring"
 - If `version` is omitted during update, dtctl preserves the currently configured version.
 - If `version` is omitted during create, dtctl resolves and uses the latest extension version.
 - Locations and feature sets are discovered dynamically from the latest extension schema.
-- `describe cloud_monitoring_config --provider azure` supports name-first lookup with ID fallback.
-- `describe cloud_monitoring_config --provider azure` prints operational status based on DQL metrics/events, including latest value timestamp.
+- `describe azure monitoring` supports name-first lookup with ID fallback.
+- `describe azure monitoring` prints operational status based on DQL metrics/events, including latest value timestamp.
 
 ### 22. Google Cloud Connection
 **API Spec**: TBD

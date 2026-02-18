@@ -9,23 +9,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	getCloudConnectionProvider         string
-	getCloudMonitoringConfigProvider   string
-	getCloudMonitoringSchemaProvider   string
-)
+var getAzureProviderCmd = &cobra.Command{
+	Use:   "azure",
+	Short: "Get Azure resources",
+	RunE:  requireSubcommand,
+}
+
+var getAWSProviderCmd = &cobra.Command{
+	Use:   "aws",
+	Short: "Get AWS resources",
+	RunE:  requireSubcommand,
+}
+
+var getGCPProviderCmd = &cobra.Command{
+	Use:   "gcp",
+	Short: "Get GCP resources",
+	RunE:  requireSubcommand,
+}
 
 // getAzureConnectionCmd retrieves Azure connections (formerly HAS credentials)
 var getAzureConnectionCmd = &cobra.Command{
-	Use:     "cloud_connection [id]",
-	Aliases: []string{"cloud_connections", "azure_connection", "azure_connections"},
+	Use:     "connections [id]",
+	Aliases: []string{"connection"},
 	Short:   "Get Azure connections",
 	Long:    `Get one or more Azure connections (authentication credentials).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireAzureProvider(getCloudConnectionProvider); err != nil {
-			return err
-		}
-
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
@@ -67,15 +75,11 @@ var getAzureConnectionCmd = &cobra.Command{
 
 // getAzureMonitoringConfigCmd retrieves Azure monitoring configurations
 var getAzureMonitoringConfigCmd = &cobra.Command{
-	Use:     "cloud_monitoring_config [id]",
-	Aliases: []string{"cloud_monitoring_configs", "azure_monitoring_config", "azure_monitoring_configs"},
+	Use:     "monitoring [id]",
+	Aliases: []string{"monitoring-config", "monitoring-configs"},
 	Short:   "Get Azure monitoring configurations",
 	Long:    `Get one or more Azure monitoring configurations.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireAzureProvider(getCloudMonitoringConfigProvider); err != nil {
-			return err
-		}
-
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
@@ -117,15 +121,11 @@ var getAzureMonitoringConfigCmd = &cobra.Command{
 
 // getAzureMonitoringConfigLocationsCmd retrieves available Azure monitoring config locations from extension schema
 var getAzureMonitoringConfigLocationsCmd = &cobra.Command{
-	Use:     "cloud_monitoring_config_locations",
-	Aliases: []string{"azure_monitoring_config_locations", "azure_monitoring_config_location", "azure_monitoring_locations"},
+	Use:     "monitoring-locations",
+	Aliases: []string{"monitoring-location"},
 	Short:   "Get available Azure monitoring config locations",
 	Long:    `Get available Azure regions for Azure monitoring configuration based on the latest extension schema.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireAzureProvider(getCloudMonitoringSchemaProvider); err != nil {
-			return err
-		}
-
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
@@ -150,15 +150,11 @@ var getAzureMonitoringConfigLocationsCmd = &cobra.Command{
 
 // getAzureMonitoringConfigFeatureSetsCmd retrieves available Azure monitoring config feature sets from extension schema
 var getAzureMonitoringConfigFeatureSetsCmd = &cobra.Command{
-	Use:     "cloud_monitoring_config_feature_sets",
-	Aliases: []string{"azure_monitoring_config_feature_sets", "azure_monitoring_config_feature_set", "azure_monitoring_feature_sets"},
+	Use:     "monitoring-feature-sets",
+	Aliases: []string{"monitoring-feature-set"},
 	Short:   "Get available Azure monitoring config feature sets",
 	Long:    `Get available FeatureSetsType values for Azure monitoring configuration based on the latest extension schema.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireAzureProvider(getCloudMonitoringSchemaProvider); err != nil {
-			return err
-		}
-
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
@@ -182,8 +178,17 @@ var getAzureMonitoringConfigFeatureSetsCmd = &cobra.Command{
 }
 
 func init() {
-	addRequiredProviderFlagVar(getAzureConnectionCmd, &getCloudConnectionProvider)
-	addRequiredProviderFlagVar(getAzureMonitoringConfigCmd, &getCloudMonitoringConfigProvider)
-	addRequiredProviderFlagVar(getAzureMonitoringConfigLocationsCmd, &getCloudMonitoringSchemaProvider)
-	addRequiredProviderFlagVar(getAzureMonitoringConfigFeatureSetsCmd, &getCloudMonitoringSchemaProvider)
+	getCmd.AddCommand(getAzureProviderCmd)
+	getCmd.AddCommand(getAWSProviderCmd)
+	getCmd.AddCommand(getGCPProviderCmd)
+
+	getAzureProviderCmd.AddCommand(getAzureConnectionCmd)
+	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigCmd)
+	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigLocationsCmd)
+	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigFeatureSetsCmd)
+
+	getAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connections"))
+	getAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
+	getGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connections"))
+	getGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 }

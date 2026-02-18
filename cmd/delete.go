@@ -17,17 +17,30 @@ var deleteCmd = &cobra.Command{
 	RunE:  requireSubcommand,
 }
 
+var deleteAzureProviderCmd = &cobra.Command{
+	Use:   "azure",
+	Short: "Delete Azure resources",
+	RunE:  requireSubcommand,
+}
+
+var deleteAWSProviderCmd = &cobra.Command{
+	Use:   "aws",
+	Short: "Delete AWS resources",
+	RunE:  requireSubcommand,
+}
+
+var deleteGCPProviderCmd = &cobra.Command{
+	Use:   "gcp",
+	Short: "Delete GCP resources",
+	RunE:  requireSubcommand,
+}
+
 var deleteAzureConnectionCmd = &cobra.Command{
-	Use:     "cloud_connection [ID|NAME]",
+	Use:     "connection [ID|NAME]",
 	Short:   "Delete an Azure connection",
-	Aliases: []string{"azure_connection", "azure_connections"},
+	Aliases: []string{"connections"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		provider, _ := cmd.Flags().GetString("provider")
-		if err := requireAzureProvider(provider); err != nil {
-			return err
-		}
-
 		identifier := args[0]
 
 		cfg, err := LoadConfig()
@@ -72,16 +85,11 @@ var deleteAzureConnectionCmd = &cobra.Command{
 }
 
 var deleteAzureMonitoringConfigCmd = &cobra.Command{
-	Use:     "cloud_monitoring_config [ID|NAME]",
+	Use:     "monitoring [ID|NAME]",
 	Short:   "Delete an Azure monitoring config",
-	Aliases: []string{"azure_monitoring_config", "azure_monitoring_configs"},
+	Aliases: []string{"monitoring-config", "monitoring-configs"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		provider, _ := cmd.Flags().GetString("provider")
-		if err := requireAzureProvider(provider); err != nil {
-			return err
-		}
-
 		identifier := args[0]
 
 		cfg, err := LoadConfig()
@@ -127,9 +135,14 @@ var deleteAzureMonitoringConfigCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(deleteCmd)
-	deleteCmd.AddCommand(deleteAzureConnectionCmd)
-	deleteCmd.AddCommand(deleteAzureMonitoringConfigCmd)
+	deleteCmd.AddCommand(deleteAzureProviderCmd)
+	deleteCmd.AddCommand(deleteAWSProviderCmd)
+	deleteCmd.AddCommand(deleteGCPProviderCmd)
 
-	addRequiredProviderFlag(deleteAzureConnectionCmd)
-	addRequiredProviderFlag(deleteAzureMonitoringConfigCmd)
+	deleteAzureProviderCmd.AddCommand(deleteAzureConnectionCmd)
+	deleteAzureProviderCmd.AddCommand(deleteAzureMonitoringConfigCmd)
+	deleteAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
+	deleteAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
+	deleteGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connection"))
+	deleteGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 }
