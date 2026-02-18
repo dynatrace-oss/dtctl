@@ -106,6 +106,33 @@ func TestDetectResourceType(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name: "gcp connection",
+			input: `{
+				"schemaId": "builtin:hyperscaler-authentication.connections.gcp",
+				"scope": "environment",
+				"value": {
+					"name": "gcp-conn",
+					"type": "serviceAccountImpersonation"
+				}
+			}`,
+			expected: ResourceGCPConnection,
+			wantErr:  false,
+		},
+		{
+			name: "gcp monitoring config",
+			input: `{
+				"scope": "integration-gcp",
+				"value": {
+					"description": "gcp-monitoring",
+					"googleCloud": {
+						"credentials": []
+					}
+				}
+			}`,
+			expected: ResourceGCPMonitoringConfig,
+			wantErr:  false,
+		},
+		{
 			name: "unknown resource",
 			input: `{
 				"random": "field"

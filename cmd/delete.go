@@ -143,6 +143,4 @@ func init() {
 	deleteAzureProviderCmd.AddCommand(deleteAzureMonitoringConfigCmd)
 	deleteAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
 	deleteAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
-	deleteGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connection"))
-	deleteGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 }

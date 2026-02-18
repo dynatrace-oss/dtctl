@@ -297,8 +297,6 @@ func init() {
 	describeAzureProviderCmd.AddCommand(describeAzureMonitoringConfigCmd)
 	describeAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
 	describeAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
-	describeGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connection"))
-	describeGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 	rootCmd.AddCommand(describeCmd)
 	describeCmd.AddCommand(describeWorkflowCmd)
 	describeCmd.AddCommand(describeWorkflowExecutionCmd)

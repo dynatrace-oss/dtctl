@@ -24,8 +24,9 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 13. [Davis AI](#davis-ai)
 14. [Output Formats](#output-formats)
 15. [Azure Monitoring](#azure-monitoring)
-16. [Tips & Tricks](#tips--tricks)
-17. [Troubleshooting](#troubleshooting)
+16. [GCP Monitoring](#gcp-monitoring)
+17. [Tips & Tricks](#tips--tricks)
+18. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -2745,6 +2746,114 @@ dtctl create azure monitoring --name "my-azure-monitoring-explicit" \
   --credentials "my-azure-connection" \
   --locationFiltering "eastus,westeurope" \
   --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+```
+
+---
+
+## GCP Monitoring
+
+This is the recommended onboarding flow for GCP with service account impersonation.
+
+### 1) Create GCP connection in Dynatrace
+
+```bash
+dtctl create gcp connection --name "my-gcp-connection"
+```
+
+### 2) Use gcloud CLI to establish trust relation
+
+Define variables used in snippets:
+
+```bash
+PROJECT_ID="my-project-id"
+DT_GCP_PRINCIPAL="dynatrace-<tenant-id>@dtp-prod-gcp-auth.iam.gserviceaccount.com"
+CUSTOMER_SA_NAME="dynatrace-integration"
+CUSTOMER_SA_EMAIL="${CUSTOMER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+```
+
+Create customer service account:
+
+```bash
+gcloud iam service-accounts create "${CUSTOMER_SA_NAME}" \
+  --project "${PROJECT_ID}" \
+  --display-name "Dynatrace Integration"
+```
+
+Grant required viewer permissions to customer service account:
+
+```bash
+for ROLE in roles/browser roles/monitoring.viewer roles/compute.viewer roles/cloudasset.viewer; do
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member "serviceAccount:${CUSTOMER_SA_EMAIL}" \
+    --role "${ROLE}"
+done
+
+```
+
+Grant `Service Account Token Creator` to Dynatrace principal (service account impersonation):
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding "${CUSTOMER_SA_EMAIL}" \
+  --member="serviceAccount:${DT_GCP_PRINCIPAL}" \
+  --role="roles/iam.serviceAccountTokenCreator"
+```
+
+If you get `PERMISSION_DENIED` with `iam.serviceAccounts.getIamPolicy`, your operator account is missing permissions to read/update IAM policy on this service account. Ask your GCP admin for the required IAM permissions/role on `${CUSTOMER_SA_EMAIL}`.
+
+
+
+### 3) Update GCP connection in Dynatrace
+
+Use the service account from step 2 and update connection:
+
+```bash
+dtctl update gcp connection --name "my-gcp-connection" --serviceAccountId "${CUSTOMER_SA_EMAIL}"
+```
+
+### 4) Create and verify GCP monitoring config
+
+```bash
+dtctl create gcp monitoring --name "my-gcp-monitoring" --credentials "my-gcp-connection"
+dtctl describe gcp monitoring my-gcp-monitoring
+```
+
+### 5) Discover available locations and feature sets
+
+```bash
+dtctl get gcp monitoring-locations
+dtctl get gcp monitoring-feature-sets
+```
+
+### 6) Update GCP monitoring config (examples)
+
+Change location filtering to two regions:
+
+```bash
+dtctl update gcp monitoring --name "my-gcp-monitoring" \
+  --locationFiltering "us-central1,europe-west1"
+```
+
+Change feature sets to a focused subset:
+
+```bash
+dtctl update gcp monitoring --name "my-gcp-monitoring" \
+  --featureSets "compute_engine_essential,cloud_run_essential"
+```
+
+Create GCP monitoring config with explicit feature sets and locations:
+
+```bash
+dtctl create gcp monitoring --name "my-gcp-monitoring-explicit" \
+  --credentials "my-gcp-connection" \
+  --locationFiltering "us-central1,europe-west1" \
+  --featureSets "compute_engine_essential,cloud_run_essential"
+```
+
+### 7) Delete by name or ID
+
+```bash
+dtctl delete gcp monitoring my-gcp-monitoring
+dtctl delete gcp connection my-gcp-connection
 ```
 
 ---
