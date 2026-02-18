@@ -20,6 +20,24 @@ var describeCmd = &cobra.Command{
 	RunE:  requireSubcommand,
 }
 
+var describeAzureProviderCmd = &cobra.Command{
+	Use:   "azure",
+	Short: "Describe Azure resources",
+	RunE:  requireSubcommand,
+}
+
+var describeAWSProviderCmd = &cobra.Command{
+	Use:   "aws",
+	Short: "Describe AWS resources",
+	RunE:  requireSubcommand,
+}
+
+var describeGCPProviderCmd = &cobra.Command{
+	Use:   "gcp",
+	Short: "Describe GCP resources",
+	RunE:  requireSubcommand,
+}
+
 // formatDuration formats seconds into a human-readable duration
 func formatDuration(seconds int) string {
 	if seconds < 60 {
@@ -81,8 +99,8 @@ func printTriggerInfo(trigger map[string]interface{}) {
 
 // describeAzureConnectionCmd shows details of an Azure connection (credential)
 var describeAzureConnectionCmd = &cobra.Command{
-	Use:     "azure_connection <id>",
-	Aliases: []string{"azure_connections", "azconn"},
+	Use:     "connection <id>",
+	Aliases: []string{"connections", "azconn"},
 	Short:   "Show details of an Azure connection (credential)",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -123,8 +141,8 @@ var describeAzureConnectionCmd = &cobra.Command{
 
 // describeAzureMonitoringConfigCmd shows details of an Azure monitoring configuration
 var describeAzureMonitoringConfigCmd = &cobra.Command{
-	Use:     "azure_monitoring_config <id-or-name>",
-	Aliases: []string{"azure_monitoring", "azmon"},
+	Use:     "monitoring <id-or-name>",
+	Aliases: []string{"monitoring-config", "monitoring-configs", "azmon"},
 	Short:   "Show details of an Azure monitoring configuration",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -272,8 +290,15 @@ func stringFromRecord(record map[string]interface{}, key string) string {
 }
 
 func init() {
-	describeCmd.AddCommand(describeAzureConnectionCmd)
-	describeCmd.AddCommand(describeAzureMonitoringConfigCmd)
+	describeCmd.AddCommand(describeAzureProviderCmd)
+	describeCmd.AddCommand(describeAWSProviderCmd)
+	describeCmd.AddCommand(describeGCPProviderCmd)
+	describeAzureProviderCmd.AddCommand(describeAzureConnectionCmd)
+	describeAzureProviderCmd.AddCommand(describeAzureMonitoringConfigCmd)
+	describeAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
+	describeAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
+	describeGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connection"))
+	describeGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 	rootCmd.AddCommand(describeCmd)
 	describeCmd.AddCommand(describeWorkflowCmd)
 	describeCmd.AddCommand(describeWorkflowExecutionCmd)

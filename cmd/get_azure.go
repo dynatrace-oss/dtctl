@@ -9,10 +9,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var getAzureProviderCmd = &cobra.Command{
+	Use:   "azure",
+	Short: "Get Azure resources",
+	RunE:  requireSubcommand,
+}
+
+var getAWSProviderCmd = &cobra.Command{
+	Use:   "aws",
+	Short: "Get AWS resources",
+	RunE:  requireSubcommand,
+}
+
+var getGCPProviderCmd = &cobra.Command{
+	Use:   "gcp",
+	Short: "Get GCP resources",
+	RunE:  requireSubcommand,
+}
+
 // getAzureConnectionCmd retrieves Azure connections (formerly HAS credentials)
 var getAzureConnectionCmd = &cobra.Command{
-	Use:     "azure_connection [id]",
-	Aliases: []string{"azure_connections"},
+	Use:     "connections [id]",
+	Aliases: []string{"connection"},
 	Short:   "Get Azure connections",
 	Long:    `Get one or more Azure connections (authentication credentials).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -57,8 +75,8 @@ var getAzureConnectionCmd = &cobra.Command{
 
 // getAzureMonitoringConfigCmd retrieves Azure monitoring configurations
 var getAzureMonitoringConfigCmd = &cobra.Command{
-	Use:     "azure_monitoring_config [id]",
-	Aliases: []string{"azure_monitoring_configs"},
+	Use:     "monitoring [id]",
+	Aliases: []string{"monitoring-config", "monitoring-configs"},
 	Short:   "Get Azure monitoring configurations",
 	Long:    `Get one or more Azure monitoring configurations.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -103,8 +121,8 @@ var getAzureMonitoringConfigCmd = &cobra.Command{
 
 // getAzureMonitoringConfigLocationsCmd retrieves available Azure monitoring config locations from extension schema
 var getAzureMonitoringConfigLocationsCmd = &cobra.Command{
-	Use:     "azure_monitoring_config_locations",
-	Aliases: []string{"azure_monitoring_config_location", "azure_monitoring_locations"},
+	Use:     "monitoring-locations",
+	Aliases: []string{"monitoring-location"},
 	Short:   "Get available Azure monitoring config locations",
 	Long:    `Get available Azure regions for Azure monitoring configuration based on the latest extension schema.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -132,8 +150,8 @@ var getAzureMonitoringConfigLocationsCmd = &cobra.Command{
 
 // getAzureMonitoringConfigFeatureSetsCmd retrieves available Azure monitoring config feature sets from extension schema
 var getAzureMonitoringConfigFeatureSetsCmd = &cobra.Command{
-	Use:     "azure_monitoring_config_feature_sets",
-	Aliases: []string{"azure_monitoring_config_feature_set", "azure_monitoring_feature_sets"},
+	Use:     "monitoring-feature-sets",
+	Aliases: []string{"monitoring-feature-set"},
 	Short:   "Get available Azure monitoring config feature sets",
 	Long:    `Get available FeatureSetsType values for Azure monitoring configuration based on the latest extension schema.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -157,4 +175,20 @@ var getAzureMonitoringConfigFeatureSetsCmd = &cobra.Command{
 
 		return printer.PrintList(featureSets)
 	},
+}
+
+func init() {
+	getCmd.AddCommand(getAzureProviderCmd)
+	getCmd.AddCommand(getAWSProviderCmd)
+	getCmd.AddCommand(getGCPProviderCmd)
+
+	getAzureProviderCmd.AddCommand(getAzureConnectionCmd)
+	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigCmd)
+	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigLocationsCmd)
+	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigFeatureSetsCmd)
+
+	getAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connections"))
+	getAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
+	getGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connections"))
+	getGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 }

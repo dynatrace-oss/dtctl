@@ -21,14 +21,33 @@ var (
 	updateAzureMonitoringConfigFeatureSets       string
 )
 
+var updateAzureProviderCmd = &cobra.Command{
+	Use:   "azure",
+	Short: "Update Azure resources",
+	RunE:  requireSubcommand,
+}
+
+var updateAWSProviderCmd = &cobra.Command{
+	Use:   "aws",
+	Short: "Update AWS resources",
+	RunE:  requireSubcommand,
+}
+
+var updateGCPProviderCmd = &cobra.Command{
+	Use:   "gcp",
+	Short: "Update GCP resources",
+	RunE:  requireSubcommand,
+}
+
 var updateAzureConnectionCmd = &cobra.Command{
-	Use:   "azure_connection [id]",
+	Use:   "connection [id]",
+	Aliases: []string{"connections"},
 	Short: "Update Azure connection from flags",
 	Long: `Update Azure connection by ID argument or by --name.
 
 Examples:
-  dtctl update azure_connection --name "siwek" --directoryId "XYZ" --applicationId "ZUZ"
-  dtctl update azure_connection <id> --directoryId "XYZ" --applicationId "ZUZ"`,
+  dtctl update azure connection --name "siwek" --directoryId "XYZ" --applicationId "ZUZ"
+  dtctl update azure connection <id> --directoryId "XYZ" --applicationId "ZUZ"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if updateAzureConnectionDirectoryID == "" && updateAzureConnectionApplicationID == "" {
@@ -108,14 +127,15 @@ Examples:
 }
 
 var updateAzureMonitoringConfigCmd = &cobra.Command{
-	Use:   "azure_monitoring_config [id]",
+	Use:   "monitoring [id]",
+	Aliases: []string{"monitoring-config"},
 	Short: "Update Azure monitoring config from flags",
 	Long: `Update Azure monitoring configuration by ID argument or by --name.
 
 Examples:
-  dtctl update azure_monitoring_config --name "siwek" --locationFiltering "eastus,westeurope"
-  dtctl update azure_monitoring_config --name "siwek" --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
-  dtctl update azure_monitoring_config <id> --locationFiltering "eastus,westeurope"`,
+  dtctl update azure monitoring --name "siwek" --locationFiltering "eastus,westeurope"
+  dtctl update azure monitoring --name "siwek" --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+  dtctl update azure monitoring <id> --locationFiltering "eastus,westeurope"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(updateAzureMonitoringConfigLocationFiltering) == "" &&
@@ -196,8 +216,16 @@ Examples:
 }
 
 func init() {
-	updateCmd.AddCommand(updateAzureConnectionCmd)
-	updateCmd.AddCommand(updateAzureMonitoringConfigCmd)
+	updateCmd.AddCommand(updateAzureProviderCmd)
+	updateCmd.AddCommand(updateAWSProviderCmd)
+	updateCmd.AddCommand(updateGCPProviderCmd)
+
+	updateAzureProviderCmd.AddCommand(updateAzureConnectionCmd)
+	updateAzureProviderCmd.AddCommand(updateAzureMonitoringConfigCmd)
+	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
+	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
+	updateGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connection"))
+	updateGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionName, "name", "", "Azure connection name (used when ID argument is not provided)")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionDirectoryID, "directoryId", "", "Directory ID to set")
