@@ -20,22 +20,6 @@ var getCmd = &cobra.Command{
 	RunE:  requireSubcommand,
 }
 
-// deleteCmd represents the delete command
-var deleteCmd = &cobra.Command{
-	Use:   "delete",
-	Short: "Delete resources",
-	Long:  `Delete one or more resources.`,
-	RunE:  requireSubcommand,
-}
-
-// updateCmd represents the update command
-var updateCmd = &cobra.Command{
-	Use:   "update",
-	Short: "Update resources",
-	Long:  `Update resources from files.`,
-	RunE:  requireSubcommand,
-}
-
 // forceDelete skips confirmation prompts
 var forceDelete bool
 
@@ -63,7 +47,6 @@ func executeWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher, printer
 		return err
 	}
 
-	// Wrap the printer with WatchPrinter to maintain output format
 	basePrinter := printer.(output.Printer)
 	watchPrinter := output.NewWatchPrinter(basePrinter)
 
@@ -97,8 +80,6 @@ func addWatchFlags(cmd *cobra.Command) {
 
 func init() {
 	rootCmd.AddCommand(getCmd)
-	rootCmd.AddCommand(deleteCmd)
-	rootCmd.AddCommand(updateCmd)
 
 	// Get subcommands (command definitions live in get_*.go files)
 	getCmd.AddCommand(getWorkflowsCmd)

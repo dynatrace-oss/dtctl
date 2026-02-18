@@ -927,6 +927,111 @@ See [../TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for complete scope reference.
 # dtctl delete state <key>                         # Delete state
 ```
 
+### 20. Azure Connection
+**API Spec**: Settings API v2 (`builtin:hyperscaler-authentication.connections.azure`)
+
+Azure Connection manages authentication credentials used by Azure monitoring configurations.
+
+```bash
+# Resource path: azure connection(s)
+
+# List all Azure connections
+dtctl get azure connections
+
+# Get by name (preferred) or object ID
+dtctl get azure connections <name-or-id>
+
+# JSON/YAML output
+dtctl get azure connections -o json
+dtctl get azure connections -o yaml
+
+# Imperative create from flags
+dtctl create azure connection --name "my-conn" --type federatedIdentityCredential
+dtctl create azure connection --name "my-conn" --type clientSecret
+
+# Imperative update by name or ID
+dtctl update azure connection --name "my-conn" --directoryId "<tenant-id>" --applicationId "<client-id>"
+dtctl update azure connection <object-id> --directoryId "<tenant-id>" --applicationId "<client-id>"
+
+# Apply/create-update from manifest
+dtctl apply -f azure_connection.yaml
+```
+
+**Behavior notes**:
+- Name-based lookup is supported for `get` and `apply` flows.
+- `apply` performs idempotent create-or-update logic (POST if new, PUT if existing).
+- For federated credentials, `create azure connection` prints actionable Azure CLI guidance with dynamic `Issuer`, `Subject`, and `Audience`.
+- Guided flow includes assigning `Reader` role on subscription scope and finalizing with `dtctl update azure connection`.
+- `--type` supports: `federatedIdentityCredential`, `clientSecret`.
+- CLI completion supports `--type` value suggestions.
+- After creating federated credential in Entra ID, short propagation delay may occur; retry update when receiving transient `AADSTS70025`.
+
+### 21. Azure Monitoring Configuration
+**API Spec**: Extensions API (`com.dynatrace.extension.da-azure`)
+
+Azure Monitoring Configuration manages monitoring profiles for Azure subscriptions/management groups.
+
+```bash
+# Resource path: azure monitoring
+
+# List all monitoring configurations
+dtctl get azure monitoring
+
+# Get by description (name) or object ID
+dtctl get azure monitoring <description-or-id>
+
+# Helper: list available Azure locations from latest extension schema
+dtctl get azure monitoring-locations
+
+# Helper: list available FeatureSetsType values from latest extension schema
+dtctl get azure monitoring-feature-sets
+
+# Imperative create from flags
+dtctl create azure monitoring --name "my-monitoring" --credentials "my-conn"
+
+# Apply/create-update from manifest
+dtctl apply -f azure_monitoring_config.yaml
+
+# Describe with runtime status section
+dtctl describe azure monitoring "my-monitoring"
+```
+
+**Behavior notes**:
+- `apply` supports optional `objectId`; when missing, dtctl resolves existing config by description and updates it.
+- If `version` is omitted during update, dtctl preserves the currently configured version.
+- If `version` is omitted during create, dtctl resolves and uses the latest extension version.
+- Locations and feature sets are discovered dynamically from the latest extension schema.
+- `describe azure monitoring` supports name-first lookup with ID fallback.
+- `describe azure monitoring` prints operational status based on DQL metrics/events, including latest value timestamp.
+
+### 22. Google Cloud Connection
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
+### 23. Google Cloud Monitoring Configuration
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
+### 24. AWS Connection
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
+### 25. AWS Monitoring Configuration
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
 ## Common Operations
 
 ### Create Resources

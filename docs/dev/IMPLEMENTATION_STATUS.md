@@ -64,6 +64,12 @@ This document tracks the current implementation status of dtctl. For future plan
 | **copilot** | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - |
 | **lookup** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
 | **intent** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - |
+| **azure_connection** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
+| **azure_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
+| **aws_connection** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **aws_monitoring_config** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **gcp_connection** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **gcp_monitoring_config** | - | - | - | - | - | - | - | - | - | - | - | - | - |
 
 ### Watch Mode Features
 - [x] Watch all `get` commands: `dtctl get workflows --watch`
@@ -133,6 +139,56 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Execute functions: `dtctl exec function <app-id>/<function-name>`
 - [x] Function metadata: title, description, resumable, stateful flags
 - [x] Wide output with all metadata
+
+### Azure Connection Features
+- [x] List connections: `dtctl get azure connections`
+- [ ] Filter connection list with dedicated flags
+- [x] Get by name or object ID: `dtctl get azure connections <name-or-id>`
+- [x] Describe connection: `dtctl describe azure connection <id>`
+- [x] Create connection: `dtctl create azure connection --name <name> --type <federatedIdentityCredential|clientSecret>`
+- [x] Update connection: `dtctl update azure connection --name <name> --directoryId <tenant-id> --applicationId <client-id>`
+- [x] Delete by name or ID: `dtctl delete azure connection <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f azure_connection.yaml`
+
+### Azure Monitoring Configuration Features
+- [x] List configs: `dtctl get azure monitoring`
+- [ ] Filter config list with dedicated flags
+- [x] Get by description or ID: `dtctl get azure monitoring <description-or-id>`
+- [x] Describe config: `dtctl describe azure monitoring <id-or-name>`
+- [x] Runtime status in describe (Smartscape, metrics, recent events)
+- [x] Create config: `dtctl create azure monitoring --name <name> --credentials <connection-name-or-id>`
+- [x] Update config: `dtctl update azure monitoring --name <name> [--locationFiltering ...] [--featureSets ...]`
+- [x] Delete by name or ID: `dtctl delete azure monitoring <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f azure_monitoring_config.yaml`
+- [x] Schema helpers: `dtctl get azure monitoring-locations`, `dtctl get azure monitoring-feature-sets`
+
+### AWS Connection Features
+- [ ] List connections
+- [ ] Filter connections
+- [ ] Get by name or ID
+- [ ] Describe connection
+- [ ] Create/update/delete/apply connection
+
+### AWS Monitoring Configuration Features
+- [ ] List monitoring configs
+- [ ] Filter monitoring configs
+- [ ] Get by name or ID
+- [ ] Describe monitoring config
+- [ ] Create/update/delete/apply monitoring config
+
+### GCP Connection Features
+- [ ] List connections
+- [ ] Filter connections
+- [ ] Get by name or ID
+- [ ] Describe connection
+- [ ] Create/update/delete/apply connection
+
+### GCP Monitoring Configuration Features
+- [ ] List monitoring configs
+- [ ] Filter monitoring configs
+- [ ] Get by name or ID
+- [ ] Describe monitoring config
+- [ ] Create/update/delete/apply monitoring config
 
 ### App Intents Features
 - [x] List all intents: `dtctl get intents`

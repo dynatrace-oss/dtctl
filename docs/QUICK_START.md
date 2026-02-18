@@ -23,8 +23,9 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 12. [EdgeConnect](#edgeconnect)
 13. [Davis AI](#davis-ai)
 14. [Output Formats](#output-formats)
-15. [Tips & Tricks](#tips--tricks)
-16. [Troubleshooting](#troubleshooting)
+15. [Azure Monitoring](#azure-monitoring)
+16. [Tips & Tricks](#tips--tricks)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -2665,6 +2666,86 @@ For Davis AI features:
 - **CoPilot** (all features): `davis-copilot:conversations:execute`
 
 See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
+
+---
+
+## Azure Monitoring
+
+This is the recommended fast flow for Azure onboarding with federated credentials.
+
+### 1) Create Azure connection in Dynatrace
+
+```bash
+dtctl create azure connection --name "my-azure-connection" --type federatedIdentityCredential
+```
+
+Command output prints dynamic values you need for Azure setup:
+- Issuer
+- Subject (dt:connection-id/...)
+- Audience
+
+### 2) Create Service Principal and capture IDs
+
+```bash
+CLIENT_ID=$(az ad sp create-for-rbac --name "my-azure-connection" --create-password false --query appId -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+```
+
+### 3) Assign Reader role on subscription scope
+
+```bash
+IAM_SCOPE="/subscriptions/00000000-0000-0000-0000-000000000000"
+az role assignment create --assignee "$CLIENT_ID" --role Reader --scope "$IAM_SCOPE"
+```
+
+### 4) Create federated credential in Entra ID
+
+Use Issuer/Subject/Audience exactly as printed by the create command:
+
+```bash
+az ad app federated-credential create --id "$CLIENT_ID" --parameters "{'name': 'fd-Federated-Credential', 'issuer': 'https://dev.token.dynatracelabs.com', 'subject': 'dt:connection-id/<connection-object-id>', 'audiences': ['<tenant>.dev.apps.dynatracelabs.com/svc-id/com.dynatrace.da']}"
+```
+
+### 5) Finalize Azure connection in Dynatrace
+
+```bash
+dtctl update azure connection --name "my-azure-connection" --directoryId "$TENANT_ID" --applicationId "$CLIENT_ID"
+```
+
+Note: immediately after step 4, Entra propagation can take a short time. If you see AADSTS70025, retry step 5 after a few seconds.
+
+### 6) Create and verify Azure monitoring config
+
+```bash
+dtctl create azure monitoring --name "my-azure-connection" --credentials "my-azure-connection"
+dtctl get azure monitoring my-azure-connection
+dtctl describe azure monitoring my-azure-connection
+```
+
+### 7) Update Azure monitoring config (examples)
+
+Change location filtering to two regions:
+
+```bash
+dtctl update azure monitoring --name "my-azure-connection" \
+  --locationFiltering "eastus,westeurope"
+```
+
+Change feature sets to Virtual Machines and Azure Functions:
+
+```bash
+dtctl update azure monitoring --name "my-azure-connection" \
+  --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+```
+
+Create Azure monitoring config with explicit feature sets and two locations:
+
+```bash
+dtctl create azure monitoring --name "my-azure-monitoring-explicit" \
+  --credentials "my-azure-connection" \
+  --locationFiltering "eastus,westeurope" \
+  --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+```
 
 ---
 

@@ -448,16 +448,16 @@ func (h *Handler) Create(req SettingsObjectCreate) (*SettingsObjectResponse, err
 		}
 	}
 
-	var createResp CreateResponse
+	var createResp []SettingsObjectResponse
 	if err := json.Unmarshal(resp.Body(), &createResp); err != nil {
 		return nil, fmt.Errorf("failed to parse create response: %w", err)
 	}
 
-	if len(createResp.Items) == 0 {
+	if len(createResp) == 0 {
 		return nil, fmt.Errorf("no items returned in create response")
 	}
 
-	result := &createResp.Items[0]
+	result := &createResp[0]
 	if result.Error != nil {
 		return nil, fmt.Errorf("create failed: %s", result.Error.Message)
 	}
