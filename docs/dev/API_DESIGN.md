@@ -208,7 +208,7 @@ dtctl get workflows --debug
 # ===> REQUEST <===
 # GET https://abc12345.apps.dynatrace.com/platform/automation/v1/workflows
 # HEADERS:
-#     User-Agent: dtctl/0.10.0
+#     User-Agent: dtctl/0.11.0
 #     Authorization: [REDACTED]
 #
 # ===> RESPONSE <===
@@ -270,7 +270,7 @@ dtctl automatically detects when running under AI coding assistants and includes
 - **TabNine**: Detected via `TABNINE_AGENT` environment variable
 - **Amazon Q**: Detected via `AMAZON_Q` environment variable
 
-Example User-Agent: `dtctl/0.10.0 (AI-Agent: opencode)`
+Example User-Agent: `dtctl/0.11.0 (AI-Agent: opencode)`
 
 This telemetry helps improve the CLI experience for AI-assisted workflows. Detection is automatic and doesn't affect functionality.
 

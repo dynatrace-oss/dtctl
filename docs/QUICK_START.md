@@ -3153,7 +3153,7 @@ dtctl get workflows --debug
 # ===> REQUEST <===
 # GET https://abc12345.apps.dynatrace.com/platform/automation/v1/workflows
 # HEADERS:
-#     User-Agent: dtctl/0.10.0
+#     User-Agent: dtctl/0.11.0
 #     Authorization: [REDACTED]
 #     ...
 # 
