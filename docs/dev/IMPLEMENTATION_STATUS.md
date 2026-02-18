@@ -157,7 +157,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Describe config: `dtctl describe azure_monitoring_config <id-or-name>`
 - [x] Runtime status in describe (Smartscape, metrics, recent events)
 - [x] Create config: `dtctl create azure_monitoring_config --name <name> --credentials <connection-name-or-id>`
-- [x] Update config: `dtctl update azure_monitoring_config --name <name> [--location-filtering ...] [--featuresets ...] [--tagfiltering ...]`
+- [x] Update config: `dtctl update azure_monitoring_config --name <name> [--locationFiltering ...] [--featureSets ...]`
 - [x] Delete by name or ID: `dtctl delete azure_monitoring_config <name-or-id>`
 - [x] Apply from manifest (idempotent): `dtctl apply -f azure_monitoring_config.yaml`
 - [x] Schema helpers: `dtctl get azure_monitoring_config_locations`, `dtctl get azure_monitoring_config_feature_sets`

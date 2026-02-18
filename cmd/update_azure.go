@@ -18,7 +18,6 @@ var (
 
 	updateAzureMonitoringConfigName              string
 	updateAzureMonitoringConfigLocationFiltering string
-	updateAzureMonitoringConfigTagFiltering      string
 	updateAzureMonitoringConfigFeatureSets       string
 )
 
@@ -116,14 +115,12 @@ var updateAzureMonitoringConfigCmd = &cobra.Command{
 Examples:
   dtctl update azure_monitoring_config --name "siwek" --locationFiltering "eastus,westeurope"
   dtctl update azure_monitoring_config --name "siwek" --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
-  dtctl update azure_monitoring_config --name "siwek" --tagFiltering "include:dt_owner=xyz@example.com"
   dtctl update azure_monitoring_config <id> --locationFiltering "eastus,westeurope"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(updateAzureMonitoringConfigLocationFiltering) == "" &&
-			strings.TrimSpace(updateAzureMonitoringConfigFeatureSets) == "" &&
-			strings.TrimSpace(updateAzureMonitoringConfigTagFiltering) == "" {
-			return fmt.Errorf("at least one of --locationFiltering, --featureSets, or --tagFiltering is required")
+			strings.TrimSpace(updateAzureMonitoringConfigFeatureSets) == "" {
+			return fmt.Errorf("at least one of --locationFiltering or --featureSets is required")
 		}
 
 		cfg, err := LoadConfig()
@@ -181,13 +178,6 @@ Examples:
 			}
 			value.FeatureSets = featureSets
 		}
-		if strings.TrimSpace(updateAzureMonitoringConfigTagFiltering) != "" {
-			tagFilters, err := azuremonitoringconfig.ParseTagFiltering(updateAzureMonitoringConfigTagFiltering)
-			if err != nil {
-				return err
-			}
-			value.Azure.TagFiltering = tagFilters
-		}
 
 		payload := azuremonitoringconfig.AzureMonitoringConfig{Scope: existing.Scope, Value: value}
 		body, err := json.Marshal(payload)
@@ -218,10 +208,6 @@ func init() {
 
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "location-filtering", "", "Alias for --locationFiltering")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigTagFiltering, "tagFiltering", "", "Tag filtering rules, e.g. include:environment=prod,tier=db;exclude:owner=pawel")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigTagFiltering, "tagfiltering", "", "Alias for --tagFiltering")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
-	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featureset", "", "Alias for --featureSets")
 }

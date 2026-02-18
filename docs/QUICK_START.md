@@ -2738,13 +2738,6 @@ dtctl update azure_monitoring_config --name "my-azure-connection" \
   --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
 ```
 
-Change tag filtering rules (`dt_owner=xyz@example.com`):
-
-```bash
-dtctl update azure_monitoring_config --name "my-azure-connection" \
-  --tagFiltering "include:dt_owner=xyz@example.com"
-```
-
 Create Azure monitoring config with explicit feature sets and two locations:
 
 ```bash

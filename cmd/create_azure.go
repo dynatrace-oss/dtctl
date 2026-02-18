@@ -20,9 +20,7 @@ var (
 	createAzureMonitoringConfigName              string
 	createAzureMonitoringConfigCredentials       string
 	createAzureMonitoringConfigLocationFiltering string
-	createAzureMonitoringConfigTagFiltering      string
 	createAzureMonitoringConfigFeatureSets       string
-	createAzureMonitoringConfigScope             string
 )
 
 var createAzureConnectionCmd = &cobra.Command{
@@ -148,18 +146,13 @@ Examples:
 			return err
 		}
 
-		tagFilters, err := azuremonitoringconfig.ParseTagFiltering(createAzureMonitoringConfigTagFiltering)
-		if err != nil {
-			return err
-		}
-
 		version, err := monitoringHandler.GetLatestVersion()
 		if err != nil {
 			return fmt.Errorf("failed to determine extension version: %w", err)
 		}
 
 		payload := azuremonitoringconfig.AzureMonitoringConfig{
-			Scope: createAzureMonitoringConfigScope,
+			Scope: "integration-azure",
 			Value: azuremonitoringconfig.Value{
 				Enabled:     true,
 				Description: createAzureMonitoringConfigName,
@@ -171,14 +164,9 @@ Examples:
 					SubscriptionFilteringMode: "INCLUDE",
 					Credentials:               []azuremonitoringconfig.Credential{credential},
 					LocationFiltering:         locations,
-					TagFiltering:              tagFilters,
 				},
 				FeatureSets: featureSets,
 			},
-		}
-
-		if payload.Scope == "" {
-			payload.Scope = "integration-azure"
 		}
 
 		body, err := json.Marshal(payload)
@@ -263,14 +251,8 @@ func init() {
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigName, "name", "", "Monitoring config name/description (required)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigCredentials, "credentials", "", "Azure connection name or ID (required)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations (default: all from schema)")
-	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigLocationFiltering, "location-filtering", "", "Alias for --locationFiltering")
-	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigTagFiltering, "tagFiltering", "", "Tag filtering rules, e.g. include:environment=prod,tier=db;exclude:owner=pawel")
-	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigTagFiltering, "tagfiltering", "", "Alias for --tagFiltering")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets (default: all *_essential from schema)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
-	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featureset", "", "Alias for --featureSets")
-	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "eatureset", "", "Compatibility alias for typo in examples")
-	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigScope, "scope", "integration-azure", "Monitoring config scope")
 	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("name")
 	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("credentials")
 }
