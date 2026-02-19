@@ -51,6 +51,13 @@ type DQLExecuteOptions struct {
 	Timezone string // Query timezone (e.g., "UTC", "Europe/Paris")
 }
 
+// DQLVerifyOptions configures DQL query verification
+type DQLVerifyOptions struct {
+	GenerateCanonicalQuery bool   // Generate a canonical (normalized) version of the query
+	Timezone               string // Query timezone (e.g., "UTC", "Europe/Paris")
+	Locale                 string // Query locale (e.g., "en_US")
+}
+
 // DQLQueryRequest represents a DQL query request
 type DQLQueryRequest struct {
 	Query                        string  `json:"query"`
@@ -120,6 +127,41 @@ type QueryNotification struct {
 type AnalysisTimeframe struct {
 	Start string `json:"start,omitempty"`
 	End   string `json:"end,omitempty"`
+}
+
+// DQLVerifyRequest represents a DQL query verification request
+type DQLVerifyRequest struct {
+	Query                  string `json:"query"`
+	GenerateCanonicalQuery bool   `json:"generateCanonicalQuery,omitempty"`
+	Timezone               string `json:"timezone,omitempty"`
+	Locale                 string `json:"locale,omitempty"`
+}
+
+// DQLVerifyResponse represents a DQL query verification response
+type DQLVerifyResponse struct {
+	Valid          bool                   `json:"valid"`
+	CanonicalQuery string                 `json:"canonicalQuery,omitempty"`
+	Notifications  []MetadataNotification `json:"notifications,omitempty"`
+}
+
+// MetadataNotification represents a notification from query verification or execution
+type MetadataNotification struct {
+	Severity         string          `json:"severity"`
+	NotificationType string          `json:"notificationType"`
+	Message          string          `json:"message"`
+	SyntaxPosition   *SyntaxPosition `json:"syntaxPosition,omitempty"`
+}
+
+// SyntaxPosition represents the position of a syntax issue in a query
+type SyntaxPosition struct {
+	Start *Position `json:"start,omitempty"`
+	End   *Position `json:"end,omitempty"`
+}
+
+// Position represents a line and column position in text
+type Position struct {
+	Line   int `json:"line"`
+	Column int `json:"column"`
 }
 
 // Execute executes a DQL query
@@ -225,6 +267,46 @@ func (e *DQLExecutor) ExecuteQueryWithOptions(query string, opts DQLExecuteOptio
 		}
 	} else if resp.IsError() {
 		return nil, fmt.Errorf("query failed with status %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	return &result, nil
+}
+
+// VerifyQuery verifies a DQL query without executing it
+func (e *DQLExecutor) VerifyQuery(query string, opts DQLVerifyOptions) (*DQLVerifyResponse, error) {
+	req := DQLVerifyRequest{
+		Query:                  query,
+		GenerateCanonicalQuery: opts.GenerateCanonicalQuery,
+	}
+
+	// Set localization parameters
+	if opts.Timezone != "" {
+		req.Timezone = opts.Timezone
+	}
+	if opts.Locale != "" {
+		req.Locale = opts.Locale
+	}
+
+	var result DQLVerifyResponse
+
+	// Create context with 30-second timeout (verify is fast)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	httpReq := e.client.HTTP().R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/json").
+		SetBody(req).
+		SetResult(&result)
+
+	resp, err := httpReq.Post("/platform/storage/query/v1/query:verify")
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify query: %w", err)
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("query verification failed with status %d: %s", resp.StatusCode(), resp.String())
 	}
 
 	return &result, nil

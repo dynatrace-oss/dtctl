@@ -49,6 +49,18 @@ Detailed implementation plan for upcoming features:
 
 ---
 
+### [ALIAS_DESIGN.md](ALIAS_DESIGN.md)
+Command alias system design:
+- **User Experience** - Setting, listing, deleting, importing/exporting aliases
+- **Parameterization** - Positional parameters ($1, $2) for reusable templates
+- **Shell Expansion** - Pipe dtctl output through external tools via `!` prefix
+- **Technical Design** - Storage in config, resolution order, builtin safety checks
+- **Testing Strategy** - Unit, resolution, and integration test plans
+
+**Use this for**: Understanding the alias feature design, implementation plan, and integration points.
+
+---
+
 ## Quick Reference
 
 **New to dtctl development?** Start here:

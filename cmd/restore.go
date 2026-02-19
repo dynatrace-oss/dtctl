@@ -274,15 +274,107 @@ Examples:
 	},
 }
 
+// restoreTrashCmd restores documents from trash
+var restoreTrashCmd = &cobra.Command{
+	Use:     "trash <document-id> [document-id...]",
+	Aliases: []string{"deleted"},
+	Short:   "Restore document(s) from trash",
+	Long: `Restore one or more documents from trash.
+
+Documents can be restored from trash if they haven't expired yet. By default,
+documents are kept in trash for 30 days before permanent deletion.
+
+Examples:
+  # Restore a single document
+  dtctl restore trash a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+  # Restore multiple documents
+  dtctl restore trash <id1> <id2> <id3>
+
+  # Restore with a new name (to avoid conflicts)
+  dtctl restore trash <id> --new-name "Recovered Dashboard"
+
+  # Force restore (overwrite if name conflict exists)
+  dtctl restore trash <id> --force
+`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewTrashHandler(c)
+
+		// Get flags
+		forceRestore, _ := cmd.Flags().GetBool("force")
+		newName, _ := cmd.Flags().GetString("new-name")
+
+		opts := document.RestoreOptions{
+			Force:   forceRestore,
+			NewName: newName,
+		}
+
+		// Restore each document
+		successCount := 0
+		for _, docID := range args {
+			// Get document info first
+			doc, err := handler.Get(docID)
+			if err != nil {
+				fmt.Printf("Error getting document %s: %v\n", docID, err)
+				continue
+			}
+
+			// Confirm restore unless --force or --plain or restoring multiple
+			if !forceRestore && !plainMode && len(args) == 1 {
+				confirmMsg := fmt.Sprintf("Restore %s %q from trash?", doc.Type, doc.Name)
+				if !prompt.Confirm(confirmMsg) {
+					fmt.Println("Restore cancelled")
+					continue
+				}
+			}
+
+			err = handler.Restore(docID, opts)
+			if err != nil {
+				fmt.Printf("Failed to restore document %s: %v\n", docID, err)
+				continue
+			}
+
+			fmt.Printf("Restored %s %q (ID: %s)\n", doc.Type, doc.Name, docID)
+			successCount++
+		}
+
+		if successCount == 0 && len(args) > 0 {
+			return fmt.Errorf("failed to restore any documents")
+		}
+
+		if len(args) > 1 {
+			fmt.Printf("\nRestored %d of %d documents\n", successCount, len(args))
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(restoreCmd)
 
 	restoreCmd.AddCommand(restoreWorkflowCmd)
 	restoreCmd.AddCommand(restoreDashboardCmd)
 	restoreCmd.AddCommand(restoreNotebookCmd)
+	restoreCmd.AddCommand(restoreTrashCmd)
 
 	// Add --force flag to restore commands
 	restoreWorkflowCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
 	restoreDashboardCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
 	restoreNotebookCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
+
+	// Restore trash flags
+	restoreTrashCmd.Flags().Bool("force", false, "Restore even if name conflicts exist")
+	restoreTrashCmd.Flags().String("new-name", "", "Restore with a new name")
 }

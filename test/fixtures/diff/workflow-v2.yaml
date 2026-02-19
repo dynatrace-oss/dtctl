@@ -1,0 +1,16 @@
+id: error-handler
+title: Error Handler
+description: Handles application errors with enhanced notifications
+isPrivate: false
+tasks:
+  - name: alert-team
+    action: dynatrace.slack:slack-send-message
+    input:
+      channel: "#alerts"
+      message: "Critical error detected in production"
+  - name: create-ticket
+    action: dynatrace.jira:jira-create-issue
+    input:
+      project: "OPS"
+      summary: "Critical Production Error"
+      priority: "High"

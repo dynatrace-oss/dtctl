@@ -1,8 +1,11 @@
-.PHONY: all build clean test test-unit test-integration test-all install lint fmt markdownlint markdownlint-fix security-scan check release release-snapshot
+.PHONY: all build clean test test-unit test-integration test-all test-coverage install lint fmt markdownlint markdownlint-fix security-scan check release release-snapshot
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Minimum test coverage percentage. Raise as coverage improves: 60 -> 70 -> 80 -> 85.
+COVERAGE_THRESHOLD ?= 60
 
 LDFLAGS = -ldflags "-X github.com/dynatrace-oss/dtctl/cmd.version=$(VERSION) -X github.com/dynatrace-oss/dtctl/cmd.commit=$(COMMIT) -X github.com/dynatrace-oss/dtctl/cmd.date=$(DATE) -s -w"
 
@@ -68,6 +71,23 @@ test-integration:
 
 # Run all tests (unit + integration)
 test-all: test-unit test-integration
+
+# Run tests and enforce coverage threshold
+test-coverage:
+	@echo "Running tests with coverage..."
+	@go test -race -coverprofile=coverage.out -covermode=atomic ./...
+	@echo ""
+	@echo "=== Package Coverage ==="
+	@go tool cover -func=coverage.out | grep -E "^(total|.*\t)" | tail -30
+	@echo ""
+	@COVERAGE=$$(go tool cover -func=coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	COVERAGE_INT=$${COVERAGE%.*}; \
+	echo "Total coverage: $${COVERAGE}% (threshold: $(COVERAGE_THRESHOLD)%)"; \
+	if [ "$$COVERAGE_INT" -lt "$(COVERAGE_THRESHOLD)" ]; then \
+		echo "FAIL: Coverage $${COVERAGE}% is below the $(COVERAGE_THRESHOLD)% threshold"; \
+		exit 1; \
+	fi; \
+	echo "OK: Coverage meets threshold"
 
 # Install locally
 install:

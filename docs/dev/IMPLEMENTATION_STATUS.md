@@ -1,6 +1,6 @@
 # dtctl Implementation Status
 
-Last Updated: January 2026
+Last Updated: February 2026
 
 ## Overview
 
@@ -16,11 +16,14 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Context safety levels (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)
 - [x] HTTP client with retry, rate limiting, error handling
 - [x] Output formatters: JSON, YAML, table, wide, CSV, chart, sparkline, barchart
-- [x] Global flags: `--context`, `--output`, `--verbose`, `--dry-run`, `--chunk-size`, `--show-diff`
+- [x] Global flags: `--context`, `--output`, `--verbose`, `--debug`, `--dry-run`, `--chunk-size`, `--show-diff`
 - [x] Shell completion (bash, zsh, fish)
 - [x] Automatic pagination with `--chunk-size` (default 500)
 - [x] User identity: `dtctl auth whoami` (via metadata API with JWT fallback)
 - [x] OS keychain integration for secure token storage
+- [x] Command aliases: simple, parameterized ($1-$9), and shell aliases (with import/export)
+- [x] AI agent detection in User-Agent header for telemetry
+- [x] Enhanced error messages with contextual troubleshooting suggestions
 
 ### Verbs Implemented
 - [x] `get` - List/retrieve resources
@@ -29,6 +32,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `delete` - Delete resources
 - [x] `edit` - Edit in $EDITOR
 - [x] `apply` - Create or update
+- [x] `diff` - Compare resources (local vs remote, file vs file, resource vs resource)
 - [x] `exec` - Execute workflows, analyzers, copilot, functions, SLOs
 - [x] `logs` - View execution logs
 - [x] `query` - Execute DQL queries
@@ -36,28 +40,50 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `history` - Show version history (snapshots)
 - [x] `restore` - Restore to previous version
 - [x] `share/unshare` - Share dashboards and notebooks
+- [x] `alias` - Manage command aliases (set, list, delete, import, export)
 
 ### Resources
 
-| Resource | get | describe | create | delete | edit | apply | exec | logs | share | history | restore | --mine |
-|----------|-----|----------|--------|--------|------|-------|------|------|-------|---------|---------|--------|
-| **workflow** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ |
-| **execution** | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - |
-| **dashboard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
-| **notebook** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
-| **slo** | ✅ | ✅ | ✅ | ✅ | - | ✅ | ✅ | - | - | - | - | - |
-| **slo-template** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
-| **notification** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
-| **bucket** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - |
-| **settings** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - |
-| **app** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
-| **function** | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
-| **edgeconnect** | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - |
-| **user** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
-| **group** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - |
-| **analyzer** | ✅ | ✅ | - | - | - | - | ✅ | - | - | - | - | - |
-| **copilot** | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
-| **lookup** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - |
+| Resource | get | describe | create | delete | edit | apply | diff | exec | logs | share | history | restore | --mine | --watch |
+|----------|-----|----------|--------|--------|------|-------|------|------|-------|---------|---------|--------|---------|
+| **workflow** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
+| **execution** | ✅ | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | ✅ |
+| **dashboard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **notebook** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **slo** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | ✅ | - | - | - | - | - | ✅ |
+| **slo-template** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - | - |
+| **notification** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - | - | ✅ |
+| **bucket** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | ✅ |
+| **settings** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - |
+| **app** | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - | - |
+| **function** | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **edgeconnect** | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | - | - | - | - |
+| **user** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - |
+| **group** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - |
+| **analyzer** | ✅ | ✅ | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **copilot** | ✅ | - | - | - | - | - | - | ✅ | - | - | - | - | - |
+| **lookup** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
+| **intent** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - |
+| **azure_connection** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
+| **azure_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
+| **aws_connection** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **aws_monitoring_config** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **gcp_connection** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **gcp_monitoring_config** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+
+### Watch Mode Features
+- [x] Watch all `get` commands: `dtctl get workflows --watch`
+- [x] Live mode for DQL queries: `dtctl query "fetch logs" --live`
+- [x] Configurable polling interval: `--interval` (default: 2s for watch, 60s for live)
+- [x] Skip initial state: `--watch-only` (for `get` commands only)
+- [x] Incremental change display with kubectl-style prefixes:
+  - `+` (green) for additions
+  - `~` (yellow) for modifications
+  - `-` (red) for deletions
+- [x] Graceful shutdown on Ctrl+C
+- [x] Automatic retry on transient errors (timeouts, rate limits, network issues)
+- [x] Memory-efficient (only stores last state)
+- [x] Works with existing filters and flags (e.g., `--mine`, `--name`)
 
 ### DQL Query Features
 - [x] Inline queries: `dtctl query "fetch logs | limit 10"`
@@ -66,6 +92,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] All output formats supported
 - [x] Chart output for timeseries: `dtctl query "timeseries ..." -o chart`
 - [x] Live mode with periodic updates: `--live`, `--interval`
+- [x] Watch mode with incremental updates: `--watch`, `--interval`
 - [x] Customizable chart dimensions: `--width`, `--height`, `--fullscreen`
 - [x] Custom record/byte/scan limits
 
@@ -79,12 +106,100 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Automatic polling with exponential backoff
 - [x] Table, JSON, and YAML output formats
 
+### Diff Features
+- [x] Compare local file with remote resource: `dtctl diff -f workflow.yaml`
+- [x] Compare two local files: `dtctl diff -f file1.yaml -f file2.yaml`
+- [x] Compare two remote resources: `dtctl diff workflow prod-wf staging-wf`
+- [x] Multiple output formats:
+  - Unified diff (default)
+  - Side-by-side comparison (`--side-by-side`)
+  - JSON Patch (RFC 6902) (`-o json-patch`)
+  - Semantic diff with impact analysis (`--semantic`)
+- [x] Metadata filtering: `--ignore-metadata`
+- [x] Order-independent comparison: `--ignore-order`
+- [x] Quiet mode for CI/CD: `--quiet` (exit code only)
+- [x] Proper exit codes: 0 (no changes), 1 (changes), 2 (error)
+- [x] Supported resources: workflow, dashboard, notebook
+- [x] Auto-detection of resource type and ID from files
+- [x] Deep nested structure comparison
+- [x] Colorized output support
+
 ### Davis AI Features
 - [x] List analyzers: `dtctl get analyzers`
 - [x] Execute analyzer: `dtctl exec analyzer <name> -f input.json`
 - [x] Chat with CoPilot: `dtctl exec copilot "question"` (streaming)
 - [x] NL to DQL: `dtctl exec copilot nl2dql "show error logs"`
 - [x] Document search: `dtctl exec copilot document-search "query"`
+
+### App Functions Features
+- [x] List all functions: `dtctl get functions`
+- [x] Filter by app: `dtctl get functions --app <app-id>`
+- [x] Get function details: `dtctl get function <app-id>/<function-name>`
+- [x] Describe function: `dtctl describe function <app-id>/<function-name>`
+- [x] Execute functions: `dtctl exec function <app-id>/<function-name>`
+- [x] Function metadata: title, description, resumable, stateful flags
+- [x] Wide output with all metadata
+
+### Azure Connection Features
+- [x] List connections: `dtctl get azure connections`
+- [ ] Filter connection list with dedicated flags
+- [x] Get by name or object ID: `dtctl get azure connections <name-or-id>`
+- [x] Describe connection: `dtctl describe azure connection <id>`
+- [x] Create connection: `dtctl create azure connection --name <name> --type <federatedIdentityCredential|clientSecret>`
+- [x] Update connection: `dtctl update azure connection --name <name> --directoryId <tenant-id> --applicationId <client-id>`
+- [x] Delete by name or ID: `dtctl delete azure connection <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f azure_connection.yaml`
+
+### Azure Monitoring Configuration Features
+- [x] List configs: `dtctl get azure monitoring`
+- [ ] Filter config list with dedicated flags
+- [x] Get by description or ID: `dtctl get azure monitoring <description-or-id>`
+- [x] Describe config: `dtctl describe azure monitoring <id-or-name>`
+- [x] Runtime status in describe (Smartscape, metrics, recent events)
+- [x] Create config: `dtctl create azure monitoring --name <name> --credentials <connection-name-or-id>`
+- [x] Update config: `dtctl update azure monitoring --name <name> [--locationFiltering ...] [--featureSets ...]`
+- [x] Delete by name or ID: `dtctl delete azure monitoring <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f azure_monitoring_config.yaml`
+- [x] Schema helpers: `dtctl get azure monitoring-locations`, `dtctl get azure monitoring-feature-sets`
+
+### AWS Connection Features
+- [ ] List connections
+- [ ] Filter connections
+- [ ] Get by name or ID
+- [ ] Describe connection
+- [ ] Create/update/delete/apply connection
+
+### AWS Monitoring Configuration Features
+- [ ] List monitoring configs
+- [ ] Filter monitoring configs
+- [ ] Get by name or ID
+- [ ] Describe monitoring config
+- [ ] Create/update/delete/apply monitoring config
+
+### GCP Connection Features
+- [ ] List connections
+- [ ] Filter connections
+- [ ] Get by name or ID
+- [ ] Describe connection
+- [ ] Create/update/delete/apply connection
+
+### GCP Monitoring Configuration Features
+- [ ] List monitoring configs
+- [ ] Filter monitoring configs
+- [ ] Get by name or ID
+- [ ] Describe monitoring config
+- [ ] Create/update/delete/apply monitoring config
+
+### App Intents Features
+- [x] List all intents: `dtctl get intents`
+- [x] Filter by app: `dtctl get intents --app <app-id>`
+- [x] Get intent details: `dtctl get intent <app-id>/<intent-id>`
+- [x] Describe intent: `dtctl describe intent <app-id>/<intent-id>`
+- [x] Find matching intents: `dtctl find intents --data <key>=<value>`
+- [x] Generate intent URL: `dtctl open intent <app-id>/<intent-id> --data <key>=<value>`
+- [x] Open URL in browser: `--browser` flag
+- [x] JSON file support: `--data-file` flag
+- [x] Intent metadata: properties, required fields, descriptions
 
 ### Wait Features
 - [x] Wait for DQL query conditions: `dtctl wait query`
@@ -108,14 +223,12 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### CLI Features
 - [ ] Watch mode (`--watch`)
-- [ ] Standalone diff command
 - [ ] Patch command
 - [ ] Bulk operations (apply from directory)
 - [ ] JSONPath output
 
 ### Resource Gaps
-- [ ] Document trash (list/restore deleted)
-- [ ] Function describe
+- [x] Document trash (list/restore deleted) - See [DOCUMENT_TRASH_DESIGN.md](DOCUMENT_TRASH_DESIGN.md)
 
 ---
 

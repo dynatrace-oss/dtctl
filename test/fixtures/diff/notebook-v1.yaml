@@ -1,0 +1,13 @@
+id: analysis-notebook
+type: notebook
+name: Performance Analysis
+description: Weekly performance analysis notebook
+sections:
+  - id: section-1
+    title: Overview
+    content: "# Performance Overview\nThis notebook contains weekly performance metrics."
+  - id: section-2
+    title: CPU Analysis
+    queries:
+      - name: cpu-trend
+        query: "timeseries avg(dt.host.cpu.usage), by:{dt.entity.host}"

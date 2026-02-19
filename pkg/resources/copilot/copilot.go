@@ -149,6 +149,7 @@ func (h *Handler) ChatStream(text string, state *ConversationState, ctx []Conver
 	resp, err := h.client.HTTP().R().
 		SetHeader("Accept", "application/x-ndjson").
 		SetHeader("Content-Type", "application/json").
+		SetHeader("Accept-Encoding", "identity").
 		SetBody(reqBody).
 		SetDoNotParseResponse(true).
 		Post("/platform/davis/copilot/v1/skills/conversations:message")
@@ -159,11 +160,13 @@ func (h *Handler) ChatStream(text string, state *ConversationState, ctx []Conver
 
 	if resp.IsError() {
 		body, _ := io.ReadAll(resp.RawBody())
-		resp.RawBody().Close()
+		_ = resp.RawBody().Close()
 		return nil, fmt.Errorf("failed to send message: status %d: %s", resp.StatusCode(), string(body))
 	}
 
-	defer resp.RawBody().Close()
+	defer func() {
+		_ = resp.RawBody().Close()
+	}()
 
 	var fullText strings.Builder
 	var finalState *ConversationState

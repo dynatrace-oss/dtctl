@@ -1,0 +1,18 @@
+id: analysis-notebook
+type: notebook
+name: Performance Analysis - Updated
+description: Weekly performance analysis notebook with memory metrics
+sections:
+  - id: section-1
+    title: Overview
+    content: "# Performance Overview\nThis notebook contains weekly performance and memory metrics."
+  - id: section-2
+    title: CPU Analysis
+    queries:
+      - name: cpu-trend
+        query: "timeseries avg(dt.host.cpu.usage), by:{dt.entity.host}"
+  - id: section-3
+    title: Memory Analysis
+    queries:
+      - name: memory-trend
+        query: "timeseries avg(dt.host.memory.usage), by:{dt.entity.host}"

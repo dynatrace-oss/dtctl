@@ -13,35 +13,36 @@
 ```bash
 dtctl get workflows                           # List all workflows
 dtctl query "fetch logs | limit 10"           # Run DQL queries
+dtctl diff -f workflow.yaml                   # Compare local vs remote
 dtctl edit dashboard "Production Overview"    # Edit resources in your $EDITOR
 dtctl apply -f workflow.yaml                  # Declarative configuration
 ```
 
 ![dtctl dashboard workflow demo](docs/assets/dtctl-1.gif)
 
-> This product is not officially supported by Dynatrace
+> **Early Development**: This project is in active development. If you encounter any bugs or issues, please [file a GitHub issue](https://github.com/dynatrace-oss/dtctl/issues/new). Contributions and feedback are welcome!
 
 ## Why dtctl?
 
 - **kubectl-style UX** — Familiar commands: `get`, `describe`, `edit`, `apply`, `delete`
+- **Watch mode** — Real-time monitoring with `--watch` flag for all resources
 - **AI-friendly** — Plain output modes and YAML editing for seamless AI tool integration
 - **Multi-environment** — Switch between dev/staging/prod with a single command
 - **Template support** — DQL queries with Go template variables
 - **Shell completion** — Tab completion for bash, zsh, fish, and PowerShell
 
-## AI Instructions
+## AI Agent Skill
 
-Copy this into your AI assistant's context:
+dtctl includes an [Agent Skill](https://agentskills.io) at `skills/dtctl/` that teaches AI assistants how to use dtctl.
 
+**To use:** Copy the skill folder to `.github/skills/` (GitHub Copilot) or `.claude/skills/` (Claude Code):
+
+```bash
+cp -r skills/dtctl ~/.github/skills/   # For GitHub Copilot
+cp -r skills/dtctl ~/.claude/skills/   # For Claude Code
 ```
-`dtctl` is a CLI for managing Dynatrace platform resources (workflows, dashboards, notebooks, SLOs, settings, buckets, lookups).
 
-Use `dtctl` for: querying logs/metrics with DQL, managing automation workflows, editing dashboards, applying configurations from YAML files.
-
-Commands: get, describe, create, edit, apply, delete, exec, query
-Output: -o json|yaml|table, --plain (no colors/prompts)
-Help: `dtctl --help, dtctl <command> --help`
-```
+Compatible with GitHub Copilot, Claude Code, and other Agent Skills tools.
 
 ## Quick Start
 
@@ -62,7 +63,9 @@ dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
 
 # Go!
 dtctl get workflows
+dtctl get workflows --watch                    # Real-time monitoring
 dtctl query "fetch logs | limit 10"
+dtctl query "fetch logs" --live                # Live query results
 dtctl create lookup -f error_codes.csv --path /lookups/production/errors --lookup-field code
 ```
 
@@ -70,14 +73,16 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 
 | Resource | Operations |
 |----------|------------|
-| Workflows | get, describe, create, edit, delete, execute, history |
-| Dashboards & Notebooks | get, describe, create, edit, delete, share |
-| DQL Queries | execute with template variables |
+| Workflows | get, describe, create, edit, delete, execute, history, diff |
+| Dashboards & Notebooks | get, describe, create, edit, delete, share, diff |
+| DQL Queries | execute with template variables, verify syntax without execution |
 | SLOs | get, create, delete, apply, evaluate |
 | Settings | get schemas, get/create/update/delete objects |
 | Buckets | get, describe, create, delete |
 | Lookup Tables | get, describe, create, delete (CSV auto-detection) |
-| And more... | OpenPipeline, EdgeConnect, Davis AI |
+| App Functions | get, describe, execute (discover & run serverless functions) |
+| App Intents | get, describe, find, open (deep linking across apps) |
+| And more... | Apps, EdgeConnect, Davis AI |
 
 ## Documentation
 

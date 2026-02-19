@@ -70,42 +70,44 @@ viper.AddConfigPath(config.ConfigDir())
 viper.BindPFlag("context", cmd.Flags().Lookup("context"))
 ```
 
+### Watch Mode: Real-time Resource Monitoring
+
+**Package**: `pkg/watch`
+
+**Architecture:**
+- **Watcher**: Core polling engine with configurable intervals (minimum 1s, default 2s)
+- **Differ**: Change detection algorithm using map-based comparison
+- **WatchPrinter**: Output formatter with kubectl-style change indicators
+
+**Features:**
+- Incremental change display (additions, modifications, deletions)
+- Graceful shutdown on Ctrl+C via context cancellation
+- Error handling for transient failures, rate limiting, and network issues
+- Memory-efficient (only stores last state, not full history)
+- Works with all `get` commands and DQL queries
+
+**Change Indicators:**
+- `+` (green) for added resources
+- `~` (yellow) for modified resources
+- `-` (red) for deleted resources
+
+**Flags:**
+- `--watch`: Enable watch mode
+- `--interval`: Polling interval (default: 2s, min: 1s)
+- `--watch-only`: Skip initial state display
+
 ### API Client Generation: OpenAPI Generator + oapi-codegen
 
 #### oapi-codegen
 **Repository**: https://github.com/deepmap/oapi-codegen
 
 **Rationale:**
-- Generates Go client code directly from OpenAPI 3.0 specs
 - Type-safe API clients
 - Supports all HTTP methods and authentication schemes
 - Generates models for request/response bodies
 - Lightweight generated code
 
 **Alternative considered**: go-swagger (more heavyweight, OpenAPI 2.0 focused)
-
-**Integration:**
-```bash
-# Generate clients from API specs
-oapi-codegen -generate types,client \
-  -package document \
-  api-spec/document.yaml > pkg/api/document/client.go
-
-oapi-codegen -generate types,client \
-  -package slo \
-  api-spec/slo.yaml > pkg/api/slo/client.go
-```
-
-**Usage:**
-```go
-// Generated client usage
-import "github.com/yourorg/dtctl/pkg/api/document"
-
-client, _ := document.NewClient(baseURL)
-docs, err := client.ListDocuments(ctx, &document.ListDocumentsParams{
-    Owner: "me",
-})
-```
 
 ### HTTP Client: Standard library + Resty
 
@@ -471,7 +473,8 @@ dtctl/
 │   │   ├── dql.go              # DQL query executor
 │   │   ├── workflow.go         # Workflow executor
 │   │   ├── slo.go              # SLO evaluator
-│   │   └── function.go         # Function executor
+│   │   ├── function.go         # Function executor
+│   │   └── intent.go           # Intent URL generator
 │   │
 │   └── util/                   # Utilities
 │       ├── editor.go           # Interactive editor
@@ -479,13 +482,7 @@ dtctl/
 │       ├── selector.go         # Label selector parsing
 │       └── version.go          # Version comparison
 │
-├── api-spec/                   # OpenAPI specifications
-│   ├── document.yaml
-│   ├── slo.yaml
-│   └── ...
-│
 ├── scripts/                    # Build and dev scripts
-│   ├── generate-clients.sh     # Generate API clients
 │   └── build.sh                # Build script
 │
 ├── test/                       # Integration tests
@@ -542,12 +539,7 @@ DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 LDFLAGS = -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE) -s -w"
 
-all: generate build
-
-# Generate API clients from OpenAPI specs
-generate:
-	@echo "Generating API clients..."
-	@./scripts/generate-clients.sh
+all: build
 
 # Build the binary
 build:
@@ -590,7 +582,7 @@ release-snapshot:
 
 ## Development Workflow
 
-### 1. Setup Development Environment
+### 1. Development Setup
 
 ```bash
 # Clone repository
@@ -600,14 +592,6 @@ cd dtctl
 # Install dependencies
 go mod download
 
-# Install development tools
-go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-go install golang.org/x/tools/cmd/goimports@latest
-
-# Generate API clients
-make generate
-
 # Build
 make build
 
@@ -615,38 +599,7 @@ make build
 make test
 ```
 
-### 2. Generate API Clients
-
-```bash
-# scripts/generate-clients.sh
-#!/bin/bash
-
-set -e
-
-SPECS_DIR="api-spec"
-OUTPUT_DIR="pkg/api"
-
-mkdir -p "$OUTPUT_DIR"
-
-# Document API
-oapi-codegen -generate types,client \
-  -package document \
-  "$SPECS_DIR/document.yaml" > "$OUTPUT_DIR/document/client.go"
-
-# SLO API
-oapi-codegen -generate types,client \
-  -package slo \
-  "$SPECS_DIR/slo.yaml" > "$OUTPUT_DIR/slo/client.go"
-
-# Automation API
-oapi-codegen -generate types,client \
-  -package automation \
-  "$SPECS_DIR/automation.yaml" > "$OUTPUT_DIR/automation/client.go"
-
-# ... repeat for other APIs
-```
-
-### 3. CI/CD Pipeline (GitHub Actions)
+### 2. CI/CD Pipeline (GitHub Actions)
 
 ```yaml
 # .github/workflows/ci.yml

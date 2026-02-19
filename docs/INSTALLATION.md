@@ -13,7 +13,7 @@ This guide covers installing dtctl on your system.
    **Linux/macOS:**
    ```bash
    # Extract the archive
-   tar -xzf dtctl-*.tar.gz
+   tar -xzf dtctl_*.tar.gz
    
    # Make it executable
    chmod +x dtctl

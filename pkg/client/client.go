@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
+	"github.com/dynatrace-oss/dtctl/pkg/version"
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
 )
@@ -51,6 +53,12 @@ func New(baseURL, token string) (*Client, error) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.InfoLevel)
 
+	// Build user agent with AI detection
+	userAgent := fmt.Sprintf("dtctl/%s", version.Version)
+	if aiSuffix := aidetect.UserAgentSuffix(); aiSuffix != "" {
+		userAgent += aiSuffix
+	}
+
 	httpClient := resty.New().
 		SetBaseURL(baseURL).
 		SetAuthScheme("Bearer").
@@ -60,7 +68,8 @@ func New(baseURL, token string) (*Client, error) {
 		SetRetryMaxWaitTime(10*time.Second).
 		AddRetryCondition(isRetryable).
 		SetTimeout(6*time.Minute). // Allow for long-running Grail queries (up to 5 min)
-		SetHeader("User-Agent", "dtctl/dev")
+		SetHeader("User-Agent", userAgent).
+		SetHeader("Accept-Encoding", "gzip")
 
 	return &Client{
 		http:    httpClient,

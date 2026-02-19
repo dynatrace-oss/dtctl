@@ -515,7 +515,7 @@ func TestShowJSONDiff(t *testing.T) {
 
 			showJSONDiff([]byte(tt.oldData), []byte(tt.newData), tt.resourceType)
 
-			w.Close()
+			_ = w.Close()
 			os.Stdout = old
 
 			var buf bytes.Buffer

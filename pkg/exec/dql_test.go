@@ -706,3 +706,604 @@ func TestDQLExecutor_ExecuteQueryWithOptions_AllParameters(t *testing.T) {
 		t.Errorf("expected Timezone to be 'Europe/Paris', got %s", receivedRequest.Timezone)
 	}
 }
+
+// TestVerifyQuery_Valid tests verification of a valid query
+func TestVerifyQuery_Valid(t *testing.T) {
+	var receivedRequest DQLVerifyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify correct endpoint
+		if r.URL.Path != "/platform/storage/query/v1/query:verify" {
+			t.Errorf("expected path /platform/storage/query/v1/query:verify, got %s", r.URL.Path)
+		}
+
+		// Capture request body
+		_ = json.NewDecoder(r.Body).Decode(&receivedRequest)
+
+		// Return valid response
+		response := DQLVerifyResponse{
+			Valid: true,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	result, err := executor.VerifyQuery("fetch logs", DQLVerifyOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.Valid {
+		t.Error("expected valid query")
+	}
+
+	if receivedRequest.Query != "fetch logs" {
+		t.Errorf("expected query 'fetch logs', got %s", receivedRequest.Query)
+	}
+}
+
+// TestVerifyQuery_Invalid tests verification of an invalid query
+func TestVerifyQuery_Invalid(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return invalid response with syntax error notification
+		response := DQLVerifyResponse{
+			Valid: false,
+			Notifications: []MetadataNotification{
+				{
+					Severity:         "ERROR",
+					NotificationType: "SYNTAX_ERROR",
+					Message:          "Expected command, got 'invalid'",
+					SyntaxPosition: &SyntaxPosition{
+						Start: &Position{Line: 1, Column: 1},
+						End:   &Position{Line: 1, Column: 8},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	result, err := executor.VerifyQuery("invalid query", DQLVerifyOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Valid {
+		t.Error("expected invalid query")
+	}
+
+	if len(result.Notifications) != 1 {
+		t.Fatalf("expected 1 notification, got %d", len(result.Notifications))
+	}
+
+	n := result.Notifications[0]
+	if n.Severity != "ERROR" {
+		t.Errorf("expected severity ERROR, got %s", n.Severity)
+	}
+	if n.NotificationType != "SYNTAX_ERROR" {
+		t.Errorf("expected notificationType SYNTAX_ERROR, got %s", n.NotificationType)
+	}
+	if n.Message == "" {
+		t.Error("expected non-empty error message")
+	}
+	if n.SyntaxPosition == nil {
+		t.Error("expected syntax position for syntax error")
+	} else {
+		if n.SyntaxPosition.Start == nil || n.SyntaxPosition.Start.Line != 1 {
+			t.Error("expected syntax position with line 1")
+		}
+	}
+}
+
+// TestVerifyQuery_WithCanonical tests verification with canonical query generation
+func TestVerifyQuery_WithCanonical(t *testing.T) {
+	var receivedRequest DQLVerifyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedRequest)
+
+		response := DQLVerifyResponse{
+			Valid:          true,
+			CanonicalQuery: "fetch logs\n| limit 100",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	opts := DQLVerifyOptions{
+		GenerateCanonicalQuery: true,
+	}
+
+	result, err := executor.VerifyQuery("fetch logs | limit 100", opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.Valid {
+		t.Error("expected valid query")
+	}
+
+	if result.CanonicalQuery == "" {
+		t.Error("expected canonical query to be returned")
+	}
+
+	if receivedRequest.GenerateCanonicalQuery != true {
+		t.Error("expected GenerateCanonicalQuery to be true in request")
+	}
+
+	expectedCanonical := "fetch logs\n| limit 100"
+	if result.CanonicalQuery != expectedCanonical {
+		t.Errorf("expected canonical query %q, got %q", expectedCanonical, result.CanonicalQuery)
+	}
+}
+
+// TestVerifyQuery_WithTimezone tests verification with timezone option
+func TestVerifyQuery_WithTimezone(t *testing.T) {
+	var receivedRequest DQLVerifyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedRequest)
+
+		response := DQLVerifyResponse{
+			Valid: true,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	opts := DQLVerifyOptions{
+		Timezone: "Europe/Paris",
+	}
+
+	result, err := executor.VerifyQuery("fetch logs", opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.Valid {
+		t.Error("expected valid query")
+	}
+
+	if receivedRequest.Timezone != "Europe/Paris" {
+		t.Errorf("expected timezone 'Europe/Paris', got %s", receivedRequest.Timezone)
+	}
+}
+
+// TestVerifyQuery_WithLocale tests verification with locale option
+func TestVerifyQuery_WithLocale(t *testing.T) {
+	var receivedRequest DQLVerifyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedRequest)
+
+		response := DQLVerifyResponse{
+			Valid: true,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	opts := DQLVerifyOptions{
+		Locale: "en_US",
+	}
+
+	result, err := executor.VerifyQuery("fetch logs", opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.Valid {
+		t.Error("expected valid query")
+	}
+
+	if receivedRequest.Locale != "en_US" {
+		t.Errorf("expected locale 'en_US', got %s", receivedRequest.Locale)
+	}
+}
+
+// TestVerifyQuery_WithAllOptions tests verification with all options
+func TestVerifyQuery_WithAllOptions(t *testing.T) {
+	var receivedRequest DQLVerifyRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&receivedRequest)
+
+		response := DQLVerifyResponse{
+			Valid:          true,
+			CanonicalQuery: "fetch logs\n| limit 100",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	opts := DQLVerifyOptions{
+		GenerateCanonicalQuery: true,
+		Timezone:               "America/New_York",
+		Locale:                 "de_DE",
+	}
+
+	result, err := executor.VerifyQuery("fetch logs | limit 100", opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.Valid {
+		t.Error("expected valid query")
+	}
+
+	// Verify all request parameters
+	if receivedRequest.Query != "fetch logs | limit 100" {
+		t.Errorf("expected query 'fetch logs | limit 100', got %s", receivedRequest.Query)
+	}
+	if receivedRequest.GenerateCanonicalQuery != true {
+		t.Error("expected GenerateCanonicalQuery to be true")
+	}
+	if receivedRequest.Timezone != "America/New_York" {
+		t.Errorf("expected timezone 'America/New_York', got %s", receivedRequest.Timezone)
+	}
+	if receivedRequest.Locale != "de_DE" {
+		t.Errorf("expected locale 'de_DE', got %s", receivedRequest.Locale)
+	}
+
+	// Verify canonical query in response
+	if result.CanonicalQuery == "" {
+		t.Error("expected canonical query to be returned")
+	}
+}
+
+// TestVerifyQuery_NetworkError tests handling of network errors
+func TestVerifyQuery_NetworkError(t *testing.T) {
+	// Create client pointing to non-existent server
+	c, err := client.New("http://localhost:0", "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	_, err = executor.VerifyQuery("fetch logs", DQLVerifyOptions{})
+	if err == nil {
+		t.Fatal("expected network error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to verify query") {
+		t.Errorf("expected 'failed to verify query' error, got: %v", err)
+	}
+}
+
+// TestVerifyQuery_AuthError tests handling of authentication errors
+func TestVerifyQuery_AuthError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return 401 Unauthorized
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error": {"code": 401, "message": "Unauthorized"}}`))
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	_, err = executor.VerifyQuery("fetch logs", DQLVerifyOptions{})
+	if err == nil {
+		t.Fatal("expected authentication error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "401") {
+		t.Errorf("expected '401' in error, got: %v", err)
+	}
+}
+
+// TestVerifyQuery_ServerError tests handling of server errors
+func TestVerifyQuery_ServerError(t *testing.T) {
+	tests := []struct {
+		name           string
+		statusCode     int
+		expectedErrMsg string
+	}{
+		{
+			name:           "bad request",
+			statusCode:     http.StatusBadRequest,
+			expectedErrMsg: "query verification failed with status 400",
+		},
+		{
+			name:           "internal server error",
+			statusCode:     http.StatusInternalServerError,
+			expectedErrMsg: "query verification failed with status 500",
+		},
+		{
+			name:           "service unavailable",
+			statusCode:     http.StatusServiceUnavailable,
+			expectedErrMsg: "query verification failed with status 503",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte("Error"))
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			executor := NewDQLExecutor(c)
+
+			_, err = executor.VerifyQuery("fetch logs", DQLVerifyOptions{})
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			if !strings.Contains(err.Error(), tt.expectedErrMsg) {
+				t.Errorf("expected error containing '%s', got '%s'", tt.expectedErrMsg, err.Error())
+			}
+		})
+	}
+}
+
+// TestVerifyTypes_JSONMarshaling tests JSON marshaling/unmarshaling of verify types
+func TestVerifyTypes_JSONMarshaling(t *testing.T) {
+	t.Run("DQLVerifyRequest", func(t *testing.T) {
+		req := DQLVerifyRequest{
+			Query:                  "fetch logs",
+			GenerateCanonicalQuery: true,
+			Timezone:               "UTC",
+			Locale:                 "en_US",
+		}
+
+		data, err := json.Marshal(req)
+		if err != nil {
+			t.Fatalf("failed to marshal: %v", err)
+		}
+
+		var decoded DQLVerifyRequest
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+
+		if decoded.Query != req.Query {
+			t.Errorf("expected query %s, got %s", req.Query, decoded.Query)
+		}
+		if decoded.GenerateCanonicalQuery != req.GenerateCanonicalQuery {
+			t.Errorf("expected GenerateCanonicalQuery %v, got %v", req.GenerateCanonicalQuery, decoded.GenerateCanonicalQuery)
+		}
+		if decoded.Timezone != req.Timezone {
+			t.Errorf("expected timezone %s, got %s", req.Timezone, decoded.Timezone)
+		}
+		if decoded.Locale != req.Locale {
+			t.Errorf("expected locale %s, got %s", req.Locale, decoded.Locale)
+		}
+	})
+
+	t.Run("DQLVerifyResponse", func(t *testing.T) {
+		resp := DQLVerifyResponse{
+			Valid:          false,
+			CanonicalQuery: "fetch logs\n| limit 100",
+			Notifications: []MetadataNotification{
+				{
+					Severity:         "ERROR",
+					NotificationType: "SYNTAX_ERROR",
+					Message:          "Test error",
+					SyntaxPosition: &SyntaxPosition{
+						Start: &Position{Line: 1, Column: 5},
+						End:   &Position{Line: 1, Column: 10},
+					},
+				},
+			},
+		}
+
+		data, err := json.Marshal(resp)
+		if err != nil {
+			t.Fatalf("failed to marshal: %v", err)
+		}
+
+		var decoded DQLVerifyResponse
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+
+		if decoded.Valid != resp.Valid {
+			t.Errorf("expected valid %v, got %v", resp.Valid, decoded.Valid)
+		}
+		if decoded.CanonicalQuery != resp.CanonicalQuery {
+			t.Errorf("expected canonical query %s, got %s", resp.CanonicalQuery, decoded.CanonicalQuery)
+		}
+		if len(decoded.Notifications) != len(resp.Notifications) {
+			t.Fatalf("expected %d notifications, got %d", len(resp.Notifications), len(decoded.Notifications))
+		}
+
+		n := decoded.Notifications[0]
+		if n.Severity != "ERROR" {
+			t.Errorf("expected severity ERROR, got %s", n.Severity)
+		}
+		if n.NotificationType != "SYNTAX_ERROR" {
+			t.Errorf("expected notificationType SYNTAX_ERROR, got %s", n.NotificationType)
+		}
+		if n.SyntaxPosition == nil {
+			t.Fatal("expected syntax position")
+		}
+		if n.SyntaxPosition.Start.Line != 1 || n.SyntaxPosition.Start.Column != 5 {
+			t.Errorf("expected start position (1,5), got (%d,%d)", n.SyntaxPosition.Start.Line, n.SyntaxPosition.Start.Column)
+		}
+	})
+
+	t.Run("MetadataNotification", func(t *testing.T) {
+		notif := MetadataNotification{
+			Severity:         "WARNING",
+			NotificationType: "DEPRECATION",
+			Message:          "This feature is deprecated",
+		}
+
+		data, err := json.Marshal(notif)
+		if err != nil {
+			t.Fatalf("failed to marshal: %v", err)
+		}
+
+		var decoded MetadataNotification
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+
+		if decoded.Severity != notif.Severity {
+			t.Errorf("expected severity %s, got %s", notif.Severity, decoded.Severity)
+		}
+		if decoded.NotificationType != notif.NotificationType {
+			t.Errorf("expected notificationType %s, got %s", notif.NotificationType, decoded.NotificationType)
+		}
+		if decoded.Message != notif.Message {
+			t.Errorf("expected message %s, got %s", notif.Message, decoded.Message)
+		}
+	})
+
+	t.Run("SyntaxPosition", func(t *testing.T) {
+		pos := SyntaxPosition{
+			Start: &Position{Line: 2, Column: 10},
+			End:   &Position{Line: 2, Column: 20},
+		}
+
+		data, err := json.Marshal(pos)
+		if err != nil {
+			t.Fatalf("failed to marshal: %v", err)
+		}
+
+		var decoded SyntaxPosition
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+
+		if decoded.Start == nil || decoded.End == nil {
+			t.Fatal("expected start and end positions")
+		}
+		if decoded.Start.Line != 2 || decoded.Start.Column != 10 {
+			t.Errorf("expected start (2,10), got (%d,%d)", decoded.Start.Line, decoded.Start.Column)
+		}
+		if decoded.End.Line != 2 || decoded.End.Column != 20 {
+			t.Errorf("expected end (2,20), got (%d,%d)", decoded.End.Line, decoded.End.Column)
+		}
+	})
+}
+
+// TestVerifyQuery_ParseActualAPIResponse tests parsing real API response format
+func TestVerifyQuery_ParseActualAPIResponse(t *testing.T) {
+	// Test with actual JSON format from the verify API
+	jsonResponse := `{
+		"valid": false,
+		"notifications": [
+			{
+				"severity": "ERROR",
+				"notificationType": "SYNTAX_ERROR",
+				"message": "Expected command, got 'invalid'",
+				"syntaxPosition": {
+					"start": {"line": 1, "column": 1},
+					"end": {"line": 1, "column": 8}
+				}
+			},
+			{
+				"severity": "WARNING",
+				"notificationType": "DEPRECATION_WARNING",
+				"message": "This syntax is deprecated"
+			}
+		],
+		"canonicalQuery": "fetch logs"
+	}`
+
+	var response DQLVerifyResponse
+	if err := json.Unmarshal([]byte(jsonResponse), &response); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	if response.Valid {
+		t.Error("expected valid to be false")
+	}
+
+	if len(response.Notifications) != 2 {
+		t.Fatalf("expected 2 notifications, got %d", len(response.Notifications))
+	}
+
+	// Check first notification (ERROR with syntax position)
+	n1 := response.Notifications[0]
+	if n1.Severity != "ERROR" {
+		t.Errorf("expected severity ERROR, got %s", n1.Severity)
+	}
+	if n1.NotificationType != "SYNTAX_ERROR" {
+		t.Errorf("expected notificationType SYNTAX_ERROR, got %s", n1.NotificationType)
+	}
+	if n1.SyntaxPosition == nil {
+		t.Fatal("expected syntax position for first notification")
+	}
+	if n1.SyntaxPosition.Start.Line != 1 || n1.SyntaxPosition.Start.Column != 1 {
+		t.Errorf("expected start position (1,1), got (%d,%d)", n1.SyntaxPosition.Start.Line, n1.SyntaxPosition.Start.Column)
+	}
+
+	// Check second notification (WARNING without syntax position)
+	n2 := response.Notifications[1]
+	if n2.Severity != "WARNING" {
+		t.Errorf("expected severity WARNING, got %s", n2.Severity)
+	}
+	if n2.NotificationType != "DEPRECATION_WARNING" {
+		t.Errorf("expected notificationType DEPRECATION_WARNING, got %s", n2.NotificationType)
+	}
+	if n2.SyntaxPosition != nil {
+		t.Error("expected no syntax position for second notification")
+	}
+
+	if response.CanonicalQuery != "fetch logs" {
+		t.Errorf("expected canonical query 'fetch logs', got %s", response.CanonicalQuery)
+	}
+}

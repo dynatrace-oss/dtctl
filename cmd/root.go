@@ -20,6 +20,7 @@ var (
 	contextName  string
 	outputFormat string
 	verbosity    int
+	debugMode    bool // --debug flag (alias for -vv)
 	dryRun       bool
 	plainMode    bool
 	chunkSize    int64
@@ -41,6 +42,30 @@ SLOs, queries, and other Dynatrace platform capabilities.`,
 func Execute() {
 	// Setup enhanced error handling after all subcommands are registered
 	setupErrorHandlers(rootCmd)
+
+	// --- Alias resolution (before Cobra parses args) ---
+	// Load config quietly; if it fails, skip alias resolution (the real
+	// command will produce the proper error later).
+	if cfg, err := config.Load(); err == nil {
+		// os.Args[0] is the binary name; work with os.Args[1:]
+		expanded, isShell, err := resolveAlias(os.Args[1:], cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+			os.Exit(1)
+		}
+
+		if isShell {
+			if err := execShellAlias(expanded[0]); err != nil {
+				os.Exit(1)
+			}
+			return
+		}
+
+		if expanded != nil {
+			rootCmd.SetArgs(expanded)
+		}
+	}
+	// --- End alias resolution ---
 
 	if err := rootCmd.Execute(); err != nil {
 		errStr := err.Error()
@@ -216,7 +241,12 @@ func NewClientFromConfig(cfg *config.Config) (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.SetVerbosity(verbosity)
+	// If --debug flag is set, force verbosity to 2 (full debug mode)
+	if debugMode {
+		c.SetVerbosity(2)
+	} else {
+		c.SetVerbosity(verbosity)
+	}
 	return c, nil
 }
 
@@ -228,6 +258,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "use a specific context")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "output format: json|yaml|csv|table|wide")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
+	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode (full HTTP request/response logging, equivalent to -vv)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
 	rootCmd.PersistentFlags().BoolVar(&plainMode, "plain", false, "plain output for machine processing (no colors, no interactive prompts)")
 	rootCmd.PersistentFlags().Int64Var(&chunkSize, "chunk-size", 500, "Return large lists in chunks rather than all at once. Pass 0 to disable.")

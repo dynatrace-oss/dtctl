@@ -15,12 +15,17 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 7. [Grail Buckets](#grail-buckets)
 8. [Lookup Tables](#lookup-tables)
 9. [OpenPipeline](#openpipeline)
-10. [App Engine](#app-engine)
-11. [EdgeConnect](#edgeconnect)
-12. [Davis AI](#davis-ai)
-13. [Output Formats](#output-formats)
-14. [Tips & Tricks](#tips--tricks)
-15. [Troubleshooting](#troubleshooting)
+10. [Settings API](#settings-api)
+11. [App Engine](#app-engine)
+    - [List and View Apps](#list-and-view-apps)
+    - [App Functions](#app-functions)
+    - [App Intents](#app-intents)
+12. [EdgeConnect](#edgeconnect)
+13. [Davis AI](#davis-ai)
+14. [Output Formats](#output-formats)
+15. [Azure Monitoring](#azure-monitoring)
+16. [Tips & Tricks](#tips--tricks)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -107,32 +112,74 @@ dtctl get workflows --context prod
 
 ### Per-Project Configuration
 
-dtctl supports per-project configuration files. Create a `.dtctl.yaml` file in your project directory:
+dtctl supports per-project configuration files for team collaboration and CI/CD workflows.
+
+#### Creating Project Config
+
+Use `dtctl config init` to generate a `.dtctl.yaml` template:
+
+```bash
+# Create .dtctl.yaml in current directory
+dtctl config init
+
+# Create with custom context name
+dtctl config init --context staging
+
+# Overwrite existing file
+dtctl config init --force
+```
+
+This generates a template with environment variable placeholders:
 
 ```yaml
 # .dtctl.yaml - per-project configuration
-apiVersion: v1
+apiVersion: dtctl.io/v1
 kind: Config
-current-context: project-env
+current-context: production
 contexts:
-  - name: project-env
+  - name: production
     context:
-      environment: https://project.apps.dynatrace.com
-      token-ref: project-token
+      environment: ${DT_ENVIRONMENT_URL}
+      token-ref: my-token
       safety-level: readwrite-all
+      description: Project environment
+tokens:
+  - name: my-token
+    token: ${DT_API_TOKEN}
+preferences:
+  output: table
 ```
+
+#### Environment Variable Expansion
+
+Config files support `${VAR_NAME}` syntax for environment variables:
+
+```yaml
+contexts:
+  - name: ci
+    context:
+      environment: ${DT_ENVIRONMENT_URL}  # Expanded from env var
+      token-ref: ci-token
+tokens:
+  - name: ci-token
+    token: ${DT_API_TOKEN}  # Expanded from env var
+```
+
+This allows teams to commit `.dtctl.yaml` files to repositories **without secrets**, while each developer or CI system provides tokens via environment variables.
 
 **Search Order:**
 1. `--config` flag (explicit path)
 2. `.dtctl.yaml` in current directory or any parent directory (walks up to root)
 3. Global config (`~/.config/dtctl/config`)
 
-This allows teams to commit `.dtctl.yaml` files to repositories (without tokens!) and have dtctl automatically use the correct environment settings.
+#### Usage Examples
 
 ```bash
 # In a project directory with .dtctl.yaml
 cd my-project/
-dtctl get workflows  # Uses .dtctl.yaml automatically
+export DT_ENVIRONMENT_URL="https://abc12345.apps.dynatrace.com"
+export DT_API_TOKEN="dt0c01.xxx"
+dtctl get workflows  # Uses .dtctl.yaml with expanded env vars
 
 # Override with global config
 dtctl --config ~/.config/dtctl/config get workflows
@@ -342,6 +389,125 @@ dtctl auth whoami -o json
 
 **Note:** The `whoami` command requires the `app-engine:apps:run` scope for full user details. If that scope is unavailable, it falls back to extracting the user ID from the JWT token.
 
+### Command Aliases
+
+dtctl supports custom command aliases to create shortcuts for frequently used commands. Aliases can be simple text replacements, parameterized templates, or shell commands.
+
+#### Simple Aliases
+
+Create shortcuts for common commands:
+
+```bash
+# Create a simple alias
+dtctl alias set wf "get workflows"
+
+# Use the alias
+dtctl wf
+# Expands to: dtctl get workflows
+
+# List all aliases
+dtctl alias list
+
+# Delete an alias
+dtctl alias delete wf
+```
+
+#### Parameterized Aliases
+
+Use positional parameters `$1-$9` for reusable command templates:
+
+```bash
+# Create an alias that takes a parameter
+dtctl alias set logs-errors "query 'fetch logs | filter status=\$1 | limit 100'"
+
+# Use with parameter
+dtctl logs-errors ERROR
+# Expands to: dtctl query 'fetch logs | filter status=ERROR | limit 100'
+
+# Multiple parameters
+dtctl alias set query-host "query 'fetch logs | filter host=\$1 | limit \$2'"
+dtctl query-host server-01 50
+# Expands to: dtctl query 'fetch logs | filter host=server-01 | limit 50'
+```
+
+#### Shell Aliases
+
+Prefix aliases with `!` to execute them through the system shell, enabling pipes, redirection, and external tools:
+
+```bash
+# Create a shell alias with jq for JSON processing
+dtctl alias set wf-names "!dtctl get workflows -o json | jq -r '.workflows[].title'"
+
+# Use the shell alias
+dtctl wf-names
+# Executes through shell: dtctl get workflows -o json | jq -r '.workflows[].title'
+
+# Shell alias with grep
+dtctl alias set errors "!dtctl query 'fetch logs' -o json | grep -i error"
+dtctl errors
+```
+
+#### Import and Export Aliases
+
+Share aliases with your team by exporting and importing them:
+
+```bash
+# Export all aliases to a file
+dtctl alias export -f team-aliases.yaml
+
+# Import aliases from a file
+dtctl alias import -f team-aliases.yaml
+
+# Merge imported aliases (skip conflicts)
+dtctl alias import -f team-aliases.yaml --no-overwrite
+```
+
+**Example alias file** (`team-aliases.yaml`):
+
+```yaml
+wf: get workflows
+wfe: get workflow-executions
+logs-error: query 'fetch logs | filter status=ERROR | limit 100'
+top-errors: "!dtctl query 'fetch logs | filter status=ERROR' -o json | jq -r '.records[] | .message' | sort | uniq -c | sort -rn | head -10"
+```
+
+#### Alias Safety
+
+Aliases cannot shadow built-in commands to prevent confusion:
+
+```bash
+# This will fail - 'get' is a built-in command
+dtctl alias set get "query 'fetch logs'"
+# Error: alias name "get" conflicts with built-in command
+
+# Use a different name instead
+dtctl alias set gl "query 'fetch logs'"
+```
+
+#### Practical Alias Examples
+
+```bash
+# Quick shortcuts for common operations
+dtctl alias set w "get workflows"
+dtctl alias set d "get dashboards"
+dtctl alias set nb "get notebooks"
+
+# Workflow shortcuts
+dtctl alias set wf-run "exec workflow \$1 --wait"
+dtctl alias set wf-logs "logs workflow-execution \$1 --follow"
+
+# Query templates
+dtctl alias set errors "query 'fetch logs | filter status=ERROR | limit \$1'"
+dtctl alias set spans-by-trace "query 'fetch spans | filter trace_id=\$1'"
+
+# Shell aliases for complex operations
+dtctl alias set workflow-count "!dtctl get workflows -o json | jq '.workflows | length'"
+dtctl alias set top-users "!dtctl query 'fetch logs' -o json | jq -r '.records[].user' | sort | uniq -c | sort -rn | head -10"
+
+# Import team-shared aliases
+dtctl alias import -f ~/.dtctl-team-aliases.yaml
+```
+
 ---
 
 ## Workflows
@@ -472,6 +638,34 @@ dtctl logs wfe exec-456 --all
 # View logs for a specific task
 dtctl logs wfe exec-456 --task check_errors
 ```
+
+### Watch Workflows
+
+Monitor workflows in real-time with watch mode:
+
+```bash
+# Watch all workflows for changes
+dtctl get workflows --watch
+
+# Watch with custom polling interval (default: 2s)
+dtctl get workflows --watch --interval 5s
+
+# Watch specific workflow
+dtctl get workflow my-workflow --watch
+
+# Watch only your workflows
+dtctl get workflows --mine --watch
+
+# Only show changes (skip initial state)
+dtctl get workflows --watch --watch-only
+```
+
+**Watch mode features:**
+- `+` (green) prefix for newly added workflows
+- `~` (yellow) prefix for modified workflows
+- `-` (red) prefix for deleted workflows
+- Graceful shutdown with Ctrl+C
+- Automatic retry on transient errors
 
 ### Delete Workflows
 
@@ -681,6 +875,24 @@ dtctl restore notebook "Weekly Analysis" 3 --force
 - Only the document owner can restore snapshots
 - Restoring automatically creates a snapshot of the current state before restoring
 
+### Watch Documents
+
+Monitor dashboards and notebooks for changes in real-time:
+
+```bash
+# Watch all dashboards
+dtctl get dashboards --watch
+
+# Watch your own dashboards
+dtctl get dashboards --mine --watch
+
+# Watch notebooks with custom interval
+dtctl get notebooks --watch --interval 10s
+
+# Watch with name filter
+dtctl get dashboards --name "production" --watch
+```
+
 ### Delete Documents
 
 ```bash
@@ -693,6 +905,88 @@ dtctl delete notebook "Old Analysis"
 # Skip confirmation
 dtctl delete dashboard dash-123 -y
 ```
+
+**Note**: Deleted documents are moved to trash and kept for 30 days before permanent deletion. See [Trash Management](#trash-management) below.
+
+### Trash Management
+
+Deleted dashboards and notebooks are moved to trash and kept for 30 days before permanent deletion. You can list, view, restore, or permanently delete items in trash.
+
+#### List Trash
+
+```bash
+# List all trashed documents
+dtctl get trash
+
+# List only trashed dashboards
+dtctl get trash --type dashboard
+
+# List only trashed notebooks
+dtctl get trash --type notebook
+
+# List only documents you deleted
+dtctl get trash --mine
+
+# Filter by deletion date
+dtctl get trash --deleted-after 2024-01-01
+dtctl get trash --deleted-before 2024-12-31
+
+# Output in different formats
+dtctl get trash -o json
+dtctl get trash -o yaml
+```
+
+**Example output:**
+```
+ID                                    TYPE        NAME                DELETED BY    DELETED AT           EXPIRES IN
+abc123-def456-ghi789-jkl012-mno345    dashboard   Prod Overview       john.doe      2024-01-15 10:30:00  29 days
+xyz987-uvw654-rst321-opq098-lmn765    notebook    Debug Session       jane.smith    2024-01-20 14:45:00  24 days
+```
+
+#### View Trash Details
+
+```bash
+# Get detailed information about a trashed document
+dtctl describe trash abc-123
+
+# Shows: ID, name, type, owner, deleted by, deletion date, expiration date, size, tags, etc.
+```
+
+#### Restore from Trash
+
+```bash
+# Restore a single document
+dtctl restore trash abc-123
+
+# Restore multiple documents
+dtctl restore trash abc-123 def-456 ghi-789
+
+# Restore with a new name (to avoid conflicts)
+dtctl restore trash abc-123 --new-name "Recovered Dashboard"
+
+# Force restore (overwrite if name conflict exists)
+dtctl restore trash abc-123 --force
+```
+
+#### Permanently Delete from Trash
+
+**WARNING**: Permanent deletion cannot be undone!
+
+```bash
+# Permanently delete a single document
+dtctl delete trash abc-123 --permanent
+
+# Permanently delete multiple documents
+dtctl delete trash abc-123 def-456 --permanent -y
+
+# The --permanent flag is required to prevent accidental deletion
+```
+
+**Notes:**
+- Documents remain in trash for **30 days** before automatic permanent deletion
+- You can only restore documents that haven't expired yet
+- Trash operations require appropriate permissions (document owner or admin)
+- Use `--deleted-by` flag to filter by who deleted the documents
 
 ---
 
@@ -982,6 +1276,21 @@ dtctl query "fetch logs" \
 - Feeding data into external analysis tools
 - Generating reports from DQL query results
 
+### Live Query Results
+
+Monitor DQL query results in real-time with live mode:
+
+```bash
+# Live mode with periodic updates (default: 60s)
+dtctl query "fetch logs | filter status='ERROR'" --live
+
+# Live mode with custom interval
+dtctl query "fetch logs" --live --interval 5s
+
+# Live mode with charts
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --live --interval 10s
+```
+
 ### Query Warnings
 
 DQL queries may return warnings (e.g., scan limits reached, results truncated). These warnings are printed to **stderr**, keeping stdout clean for data processing.
@@ -1011,6 +1320,140 @@ dtctl query "fetch logs" -o csv 2>/dev/null > clean_data.csv
 **Common warnings:**
 - **SCAN_LIMIT_GBYTES**: Query stopped after scanning the default limit. Use `--default-scan-limit-gbytes` to adjust.
 - **RESULT_TRUNCATED**: Results exceeded the limit. Use `--max-result-records` to increase.
+
+### Query Verification
+
+Verify DQL query syntax without executing it. This is useful for:
+- Testing queries in CI/CD pipelines
+- Pre-commit hooks to validate query files
+- Checking query correctness before execution
+- Getting the canonical (normalized) representation of queries
+
+#### Basic Verification
+
+```bash
+# Verify inline query
+dtctl verify query "fetch logs | limit 10"
+
+# Verify query from file
+dtctl verify query -f query.dql
+
+# Read from stdin (recommended for complex queries)
+dtctl verify query -f - <<'EOF'
+fetch logs | filter status == "ERROR"
+EOF
+
+# Pipe query from file
+cat query.dql | dtctl verify query
+```
+
+#### Verification with Options
+
+```bash
+# Get canonical query representation (normalized format)
+dtctl verify query "fetch logs" --canonical
+
+# Verify with specific timezone and locale
+dtctl verify query "fetch logs" --timezone "Europe/Paris" --locale "fr_FR"
+
+# Get structured output (JSON or YAML)
+dtctl verify query "fetch logs" -o json
+dtctl verify query "fetch logs" -o yaml
+
+# Fail on warnings (strict validation for CI/CD)
+dtctl verify query -f query.dql --fail-on-warn
+```
+
+#### Exit Codes
+
+The `verify` command returns different exit codes based on the result:
+
+| Exit Code | Meaning |
+|-----------|---------|
+| 0 | Query is valid |
+| 1 | Query is invalid or has errors (or warnings with `--fail-on-warn`) |
+| 2 | Authentication/permission error |
+| 3 | Network/server error |
+
+```bash
+# Check exit code in scripts
+if dtctl verify query -f query.dql --fail-on-warn; then
+  echo "Query is valid"
+else
+  echo "Query validation failed"
+  exit 1
+fi
+```
+
+#### CI/CD Integration
+
+```bash
+# Validate all queries in a directory
+for file in queries/*.dql; do
+  echo "Verifying $file..."
+  dtctl verify query -f "$file" --fail-on-warn || exit 1
+done
+
+# Pre-commit hook: Verify staged query files
+git diff --cached --name-only --diff-filter=ACM "*.dql" | \
+  xargs -I {} dtctl verify query -f {} --fail-on-warn
+
+# GitHub Actions / CI pipeline
+- name: Validate DQL queries
+  run: |
+    for file in queries/*.dql; do
+      dtctl verify query -f "$file" --fail-on-warn || exit 1
+    done
+```
+
+#### Template Variables
+
+Verify queries with template variables before execution:
+
+```bash
+# Verify template query
+dtctl verify query -f template.dql --set env=prod --set timerange=1h
+
+# If valid, execute it
+if dtctl verify query -f template.dql --set env=prod 2>/dev/null; then
+  dtctl query -f template.dql --set env=prod -o csv > results.csv
+fi
+```
+
+#### PowerShell Examples
+
+```powershell
+# Verify query using here-strings
+dtctl verify query -f - @'
+fetch logs, bucket:{"custom-logs"} | filter contains(host.name, "api")
+'@
+
+# Validate all queries in a directory
+Get-ChildItem queries/*.dql | ForEach-Object {
+  Write-Host "Verifying $_..."
+  dtctl verify query -f $_.FullName --fail-on-warn
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+}
+```
+
+#### Canonical Query Output
+
+Get the normalized representation of your query:
+
+```bash
+# Get canonical query
+dtctl verify query "fetch logs" --canonical
+
+# Extract canonical query with jq
+dtctl verify query "fetch logs" --canonical -o json | jq -r '.canonicalQuery'
+
+# Compare original vs canonical
+echo "Original:"
+cat query.dql
+echo ""
+echo "Canonical:"
+dtctl verify query -f query.dql --canonical 2>&1 | grep -A 999 "Canonical Query:"
+```
 
 ---
 
@@ -1095,6 +1538,21 @@ dtctl exec slo slo-123 -o json | jq '.evaluationResults[].errorBudget'
 dtctl exec slo slo-123
 ```
 
+### Watch SLOs
+
+Monitor SLO status changes in real-time:
+
+```bash
+# Watch all SLOs
+dtctl get slos --watch
+
+# Watch with custom interval
+dtctl get slos --watch --interval 30s
+
+# Watch with filter
+dtctl get slos --filter 'name~production' --watch
+```
+
 ### Delete SLOs
 
 ```bash
@@ -1125,6 +1583,18 @@ dtctl get notification notif-123
 
 # Detailed view
 dtctl describe notification notif-123
+```
+
+### Watch Notifications
+
+Monitor notifications in real-time:
+
+```bash
+# Watch all notifications
+dtctl get notifications --watch
+
+# Watch specific notification type
+dtctl get notifications --type EMAIL --watch
 ```
 
 ### Delete Notifications
@@ -1171,6 +1641,18 @@ displayName: Production Logs
 table: logs
 retentionDays: 35
 status: active
+```
+
+### Watch Buckets
+
+Monitor bucket changes in real-time:
+
+```bash
+# Watch all buckets
+dtctl get buckets --watch
+
+# Watch with custom interval
+dtctl get buckets --watch --interval 10s
 ```
 
 ### Delete Buckets
@@ -1771,7 +2253,7 @@ See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
 
 ## App Engine
 
-Manage Dynatrace apps and functions.
+Manage Dynatrace apps and their serverless functions.
 
 ### List and View Apps
 
@@ -1788,6 +2270,297 @@ dtctl get app app-123
 # Detailed view
 dtctl describe app app-123
 ```
+
+### App Functions
+
+App functions are serverless backend functions exposed by installed apps. They can be invoked via HTTP to perform various operations like sending notifications, querying external APIs, or executing custom logic.
+
+#### Discover Functions
+
+```bash
+# List all functions across all installed apps
+dtctl get functions
+
+# List functions for a specific app
+dtctl get functions --app dynatrace.automations
+
+# Show function descriptions and metadata (wide output)
+dtctl get functions --app dynatrace.automations -o wide
+
+# Get details about a specific function
+dtctl get function dynatrace.automations/execute-dql-query
+
+# Describe a function (shows usage and metadata)
+dtctl describe function dynatrace.automations/execute-dql-query
+```
+
+**Example output:**
+```
+Function:     execute-dql-query
+Full Name:    dynatrace.automations/execute-dql-query
+Title:        Execute DQL Query
+Description:  Make use of Dynatrace Grail data in your workflow.
+App:          Workflows (dynatrace.automations)
+Resumable:    false
+Stateful:     true
+
+Usage:
+  dtctl exec function dynatrace.automations/execute-dql-query
+```
+
+#### Execute Functions
+
+> **Note:** Function input schemas are not currently exposed through the API. To discover what payload a function expects, try executing it with an empty payload `{}` to see the error message listing required fields, or check the Dynatrace UI documentation for the app.
+
+```bash
+# Execute a DQL query function (requires dynatrace.automations app - built-in)
+dtctl exec function dynatrace.automations/execute-dql-query \
+  --method POST \
+  --payload '{"query":"fetch logs | limit 5"}' \
+  -o json
+
+# Execute with payload from file
+dtctl exec function dynatrace.automations/execute-dql-query \
+  --method POST \
+  --data @query.json
+
+# Execute with GET method (for functions that don't require input)
+dtctl exec function <app-id>/<function-name>
+```
+
+**Discovering Required Payload Fields:**
+
+Functions don't expose their schemas via the API. To discover what fields are required, try executing the function with an empty payload and examine the error message:
+
+```bash
+# Try with empty payload to see what fields are required
+dtctl exec function dynatrace.automations/execute-dql-query \
+  --method POST \
+  --payload '{}' \
+  -o json 2>&1 | jq -r '.body' | jq -r '.error'
+
+# Output: Error: Input fields 'query' are missing.
+```
+
+#### Tips for Working with Functions
+
+**Discover available functions:**
+```bash
+# List all available functions
+dtctl get functions
+
+# Find functions by keyword
+dtctl get functions | grep -i "query\|http"
+
+# Export function inventory
+dtctl get functions -o json > functions-inventory.json
+
+# Get detailed info about a function (shows title, description, stateful)
+dtctl get functions --app dynatrace.automations -o wide
+```
+
+**Find function payloads:**
+```bash
+# Method 1: Check the Dynatrace UI
+# Navigate to Apps → [App Name] → View function documentation
+
+# Method 2: Use error messages to discover required fields
+dtctl exec function <app-id>/<function-name> \
+  --method POST \
+  --payload '{}' \
+  -o json 2>&1 | jq -r '.body' | jq -r '.error // .logs'
+
+# Method 3: Look at existing workflows that use the function
+dtctl get workflows -o json | jq -r '.[] | select(.tasks != null)'
+```
+
+**Common Function Examples:**
+
+```bash
+# DQL Query (dynatrace.automations/execute-dql-query)
+# Required: query (string)
+dtctl exec function dynatrace.automations/execute-dql-query \
+  --method POST \
+  --payload '{"query":"fetch logs | limit 5"}' \
+  -o json
+
+# Send Email (dynatrace.email/send-email)
+# Required: to, cc, bcc (arrays), subject, content (strings)
+dtctl exec function dynatrace.email/send-email \
+  --method POST \
+  --payload '{
+    "to": ["user@example.com"],
+    "cc": [],
+    "bcc": [],
+    "subject": "Test Email",
+    "content": "This is a test email from dtctl"
+  }'
+
+# Slack Message (dynatrace.slack/slack-send-message)
+# Required: connection, channel, message
+dtctl exec function dynatrace.slack/slack-send-message \
+  --method POST \
+  --payload '{
+    "connection": "connection-id",
+    "channel": "#alerts",
+    "message": "Hello from dtctl"
+  }'
+
+# Jira Create Issue (dynatrace.jira/jira-create-issue)
+# Required: connectionId, project, issueType, components, summary, description
+dtctl exec function dynatrace.jira/jira-create-issue \
+  --method POST \
+  --payload '{
+    "connectionId": "connection-id",
+    "project": "PROJ",
+    "issueType": "Bug",
+    "components": [],
+    "summary": "Issue from dtctl",
+    "description": "Created via dtctl"
+  }'
+
+# AbuseIPDB Check (dynatrace.abuseipdb/check-ip)
+# Required: observable (object), settingsObjectId (string)
+dtctl exec function dynatrace.abuseipdb/check-ip \
+  --method POST \
+  --payload '{
+    "observable": {"type": "IP", "value": "8.8.8.8"},
+    "settingsObjectId": "settings-object-id"
+  }'
+```
+
+**Required Token Scopes:**
+- `app-engine:apps:run` - Execute app functions
+
+See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists.
+
+### App Intents
+
+Intents enable deep linking and inter-app communication by defining entry points that apps expose for opening resources with contextual data. They allow you to navigate directly to specific app views with parameters.
+
+#### Discover Intents
+
+```bash
+# List all intents across all apps
+dtctl get intents
+
+# List intents for a specific app
+dtctl get intents --app dynatrace.distributedtracing
+
+# Show full details in wide format
+dtctl get intents -o wide
+
+# Get a specific intent
+dtctl get intent dynatrace.distributedtracing/view-trace
+
+# Describe an intent (shows properties and usage)
+dtctl describe intent dynatrace.distributedtracing/view-trace
+```
+
+**Example output:**
+```
+Intent:       view-trace
+Full Name:    dynatrace.distributedtracing/view-trace
+Description:  View a distributed trace
+App:          Distributed Tracing (dynatrace.distributedtracing)
+
+Properties:
+  - trace_id: string (required)
+    Description: The trace identifier
+  - timestamp: string
+    Format: date-time
+    Description: When the trace occurred
+
+Required:     trace_id
+
+Usage:
+  dtctl open intent dynatrace.distributedtracing/view-trace --data trace_id=<value>
+  dtctl find intents --data trace_id=<value>
+```
+
+#### Find Matching Intents
+
+Find which intents can handle specific data:
+
+```bash
+# Find intents that match the provided data
+dtctl find intents --data trace_id=d052c9a8772e349d09048355a8891b82
+
+# Output shows match quality (100% = all required properties provided)
+MATCH%  APP                          INTENT_ID        DESCRIPTION
+100%    dynatrace.distributedtracing view-trace       View a distributed trace
+
+# Find intents with multiple properties
+dtctl find intents --data trace_id=abc123,timestamp=2026-02-02T16:04:19.947Z
+
+# Output as JSON for processing
+dtctl find intents --data log_id=xyz789 -o json
+```
+
+#### Generate Intent URLs
+
+Generate deep links to open specific resources in apps:
+
+```bash
+# Generate intent URL with data
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=d052c9a8772e349d09048355a8891b82
+
+# Output:
+# https://your-env.apps.dynatrace.com/ui/intent/dynatrace.distributedtracing/view-trace#%7B%22trace_id%22%3A%22d052c9a8772e349d09048355a8891b82%22%7D
+
+# Generate with multiple properties
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=abc123,timestamp=2026-02-02T16:04:19.947Z
+
+# Generate from JSON file
+echo '{"trace_id":"abc123","timestamp":"2026-02-02T16:04:19.947Z"}' > data.json
+dtctl open intent dynatrace.distributedtracing/view-trace --data-file data.json
+
+# Generate from stdin
+cat data.json | dtctl open intent dynatrace.distributedtracing/view-trace --data-file -
+
+# Generate and open in browser
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=abc123 --browser
+```
+
+#### Practical Use Cases
+
+**Use Case 1: Deep Linking from Alerts**
+```bash
+# Extract trace ID from alert and open in Dynatrace
+TRACE_ID=$(extract_from_alert)
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=$TRACE_ID --browser
+```
+
+**Use Case 2: Scripted Navigation**
+```bash
+# Find which apps can handle this data, then open the best match
+dtctl find intents --data log_id=xyz789 -o json | \
+  jq -r '.[0].FullName' | \
+  xargs -I {} dtctl open intent {} --data log_id=xyz789 --browser
+```
+
+**Use Case 3: Generate Documentation**
+```bash
+# Generate intent documentation for all apps
+dtctl get intents -o json | \
+  jq -r '.[] | "## \(.FullName)\n\(.Description)\n"'
+```
+
+**Use Case 4: Integration with External Tools**
+```bash
+# Generate intent URL from external system data
+TRACE_DATA=$(curl -s https://external-system/api/trace/123)
+TRACE_ID=$(echo $TRACE_DATA | jq -r '.traceId')
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=$TRACE_ID
+```
+
+**Required Token Scopes:**
+- `app-engine:apps:run` - Required for accessing app manifests and intent data
 
 ### Delete Apps
 
@@ -2052,6 +2825,86 @@ See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
 
 ---
 
+## Azure Monitoring
+
+This is the recommended fast flow for Azure onboarding with federated credentials.
+
+### 1) Create Azure connection in Dynatrace
+
+```bash
+dtctl create azure connection --name "my-azure-connection" --type federatedIdentityCredential
+```
+
+Command output prints dynamic values you need for Azure setup:
+- Issuer
+- Subject (dt:connection-id/...)
+- Audience
+
+### 2) Create Service Principal and capture IDs
+
+```bash
+CLIENT_ID=$(az ad sp create-for-rbac --name "my-azure-connection" --create-password false --query appId -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+```
+
+### 3) Assign Reader role on subscription scope
+
+```bash
+IAM_SCOPE="/subscriptions/00000000-0000-0000-0000-000000000000"
+az role assignment create --assignee "$CLIENT_ID" --role Reader --scope "$IAM_SCOPE"
+```
+
+### 4) Create federated credential in Entra ID
+
+Use Issuer/Subject/Audience exactly as printed by the create command:
+
+```bash
+az ad app federated-credential create --id "$CLIENT_ID" --parameters "{'name': 'fd-Federated-Credential', 'issuer': 'https://dev.token.dynatracelabs.com', 'subject': 'dt:connection-id/<connection-object-id>', 'audiences': ['<tenant>.dev.apps.dynatracelabs.com/svc-id/com.dynatrace.da']}"
+```
+
+### 5) Finalize Azure connection in Dynatrace
+
+```bash
+dtctl update azure connection --name "my-azure-connection" --directoryId "$TENANT_ID" --applicationId "$CLIENT_ID"
+```
+
+Note: immediately after step 4, Entra propagation can take a short time. If you see AADSTS70025, retry step 5 after a few seconds.
+
+### 6) Create and verify Azure monitoring config
+
+```bash
+dtctl create azure monitoring --name "my-azure-connection" --credentials "my-azure-connection"
+dtctl get azure monitoring my-azure-connection
+dtctl describe azure monitoring my-azure-connection
+```
+
+### 7) Update Azure monitoring config (examples)
+
+Change location filtering to two regions:
+
+```bash
+dtctl update azure monitoring --name "my-azure-connection" \
+  --locationFiltering "eastus,westeurope"
+```
+
+Change feature sets to Virtual Machines and Azure Functions:
+
+```bash
+dtctl update azure monitoring --name "my-azure-connection" \
+  --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+```
+
+Create Azure monitoring config with explicit feature sets and two locations:
+
+```bash
+dtctl create azure monitoring --name "my-azure-monitoring-explicit" \
+  --credentials "my-azure-connection" \
+  --locationFiltering "eastus,westeurope" \
+  --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+```
+
+---
+
 ## Output Formats
 
 All `get` and `query` commands support multiple output formats.
@@ -2286,7 +3139,42 @@ dtctl apply -f dashboard.yaml --dry-run
 dtctl delete workflow "Test Workflow" --dry-run
 ```
 
-### Show Diff
+### Diff Command
+
+Compare resources before applying changes:
+
+```bash
+# Compare local file with remote resource (auto-detects type and ID from file)
+dtctl diff -f workflow.yaml
+
+# Compare two local files
+dtctl diff -f workflow-v1.yaml -f workflow-v2.yaml
+
+# Compare two remote resources
+dtctl diff workflow prod-workflow staging-workflow
+
+# Different output formats
+dtctl diff -f dashboard.yaml --semantic          # Human-readable with impact analysis
+dtctl diff -f workflow.yaml -o json-patch        # RFC 6902 JSON Patch format
+dtctl diff -f dashboard.yaml --side-by-side      # Split-screen comparison
+
+# Ignore metadata changes (timestamps, versions)
+dtctl diff -f workflow.yaml --ignore-metadata
+
+# Ignore array order (useful for tasks, tiles, etc.)
+dtctl diff -f dashboard.yaml --ignore-order
+
+# Quiet mode (exit code only, for CI/CD)
+dtctl diff -f workflow.yaml --quiet
+# Exit codes: 0 = no changes, 1 = changes found, 2 = error
+
+# Works with all resource types
+dtctl diff -f dashboard.yaml                     # Dashboards
+dtctl diff -f notebook.yaml                      # Notebooks
+dtctl diff -f workflow.yaml                      # Workflows
+```
+
+### Show Diff in Apply
 
 See exactly what changes when updating resources:
 
@@ -2386,6 +3274,67 @@ dtctl query "fetch logs" --max-result-records 5000 -o csv > logs.csv
 
 ## Troubleshooting
 
+### Understanding Error Messages
+
+dtctl provides contextual error messages with troubleshooting suggestions. When an operation fails, you'll see:
+
+```
+Failed to get workflows (HTTP 401): Authentication failed
+
+Request ID: abc-123-def-456
+
+Troubleshooting suggestions:
+  • Token may be expired or invalid. Run 'dtctl config get-context' to check your configuration
+  • Verify your API token has not been revoked in the Dynatrace console
+  • Try refreshing your authentication with 'dtctl context set' and a new token
+```
+
+Common HTTP status codes and their meanings:
+
+- **401 Unauthorized**: Token is invalid, expired, or missing
+- **403 Forbidden**: Token lacks required permissions/scopes
+- **404 Not Found**: Resource doesn't exist or wrong ID/name
+- **429 Rate Limited**: Too many requests (dtctl auto-retries)
+- **500/502/503/504**: Server error (dtctl auto-retries)
+
+### Using Debug Mode
+
+For detailed HTTP request/response logging, use the `--debug` flag:
+
+```bash
+# Enable full debug mode with HTTP details
+dtctl get workflows --debug
+
+# Output shows:
+# ===> REQUEST <===
+# GET https://abc12345.apps.dynatrace.com/platform/automation/v1/workflows
+# HEADERS:
+#     User-Agent: dtctl/0.11.0
+#     Authorization: [REDACTED]
+#     ...
+# 
+# ===> RESPONSE <===
+# STATUS: 200 OK
+# TIME: 234ms
+# HEADERS:
+#     Content-Type: application/json
+#     ...
+# BODY:
+# {"workflows": [...]}
+```
+
+The `--debug` flag is equivalent to `-vv` and shows:
+- Full HTTP request URL and method
+- Request and response headers (auth tokens are always redacted)
+- Response body
+- Response time
+
+This is useful for:
+- Diagnosing API errors
+- Verifying request parameters
+- Checking response format
+- Troubleshooting performance issues
+
 ### "config file not found"
 
 This means you haven't set up your configuration yet. Run:
@@ -2405,12 +3354,10 @@ Check:
 2. Your environment URL is correct
 3. You're using the right context
 
-Enable verbose mode to see HTTP request/response details:
+Enable debug mode to see detailed HTTP interactions:
 ```bash
-dtctl get workflows -v
+dtctl get workflows --debug
 ```
-
-The `-v` flag enables debug logging and shows detailed HTTP interactions with the API.
 
 ### Platform Token Scopes
 
@@ -2418,6 +3365,19 @@ Your platform token needs appropriate scopes for the resources you want to manag
 - Complete scope lists for each safety level (copy-pasteable)
 - Detailed breakdown by resource type
 - Token creation instructions
+
+### AI Agent Detection
+
+If you're using dtctl through an AI coding assistant (like Claude Code, GitHub Copilot, Cursor, etc.), dtctl automatically detects this and includes it in the User-Agent header for telemetry purposes. This helps improve the CLI experience for AI-assisted workflows.
+
+The detection is automatic and doesn't affect functionality. Supported AI agents:
+- Claude Code (`CLAUDECODE` env var)
+- OpenCode (`OPENCODE` env var)
+- GitHub Copilot (`GITHUB_COPILOT` env var)
+- Cursor (`CURSOR_AGENT` env var)
+- Codeium (`CODEIUM_AGENT` env var)
+- TabNine (`TABNINE_AGENT` env var)
+- Amazon Q (`AMAZON_Q` env var)
 
 ---
 
@@ -2441,6 +3401,28 @@ dtctl query --help
 dtctl get workflows --help
 ```
 
-Enable verbose mode with `-v` to see detailed HTTP request/response logs for debugging API issues.
+### Debugging Issues
+
+Use the `--debug` flag to see detailed HTTP request/response logs:
+
+```bash
+# Full debug output
+dtctl get workflows --debug
+
+# Alternative: use -vv for the same effect
+dtctl get workflows -vv
+```
+
+The debug output includes:
+- HTTP method and URL
+- Request/response headers (sensitive headers are redacted)
+- Response body and status
+- Response time
+
+### Verbose Levels
+
+- No flag: Normal output
+- `-v`: Verbose output with operation details
+- `-vv` or `--debug`: Full HTTP debug mode with request/response details
 
 For issues and feature requests, visit the [GitHub repository](https://github.com/dynatrace/dtctl).

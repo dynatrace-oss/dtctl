@@ -1,0 +1,16 @@
+id: error-handler
+title: Error Handler
+description: Handles application errors
+isPrivate: false
+metadata:
+  createdAt: "2024-01-01T00:00:00Z"
+  updatedAt: "2024-01-05T00:00:00Z"
+  version: 5
+  createdBy: "user1"
+  modifiedBy: "user2"
+tasks:
+  - name: notify-team
+    action: dynatrace.slack:slack-send-message
+    input:
+      channel: "#errors"
+      message: "Error detected in production"

@@ -26,7 +26,7 @@ Read-only access for production monitoring and troubleshooting.
 ```
 document:documents:read,
 automation:workflows:read,
-slo:read,
+slo:slos:read,
 settings:schemas:read,
 settings:objects:read,
 storage:logs:read,
@@ -53,7 +53,8 @@ iam:groups:read,
 notifications:read,
 vulnerabilities:read,
 davis:analyzers:read,
-app-engine:apps:run
+app-engine:apps:run,
+email:emails:send
 ```
 
 ### `readwrite-mine`
@@ -66,8 +67,8 @@ document:documents:write,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:execute,
-slo:read,
-slo:write,
+slo:slos:read,
+slo:slos:write,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
@@ -90,7 +91,8 @@ davis:analyzers:read,
 davis:analyzers:execute,
 davis-copilot:conversations:execute,
 app-engine:apps:run,
-app-engine:functions:run
+app-engine:functions:run,
+email:emails:send
 ```
 
 ### `readwrite-all`
@@ -103,8 +105,8 @@ document:documents:write,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:execute,
-slo:read,
-slo:write,
+slo:slos:read,
+slo:slos:write,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
@@ -148,7 +150,8 @@ app-engine:apps:run,
 app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
-app-engine:edge-connects:write
+app-engine:edge-connects:write,
+email:emails:send
 ```
 
 ### `dangerously-unrestricted`
@@ -161,8 +164,8 @@ document:documents:write,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:execute,
-slo:read,
-slo:write,
+slo:slos:read,
+slo:slos:write,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
@@ -218,7 +221,8 @@ app-engine:apps:run,
 app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
-app-engine:edge-connects:write
+app-engine:edge-connects:write,
+email:emails:send
 ```
 
 ---
@@ -282,8 +286,8 @@ app-engine:edge-connects:write
 ### SLOs
 | Scope | Description |
 |-------|-------------|
-| `slo:read` | Read SLOs |
-| `slo:write` | Create, update, delete, evaluate SLOs |
+| `slo:slos:read` | Read SLOs |
+| `slo:slos:write` | Create, update, delete, evaluate SLOs |
 
 ### Settings API
 | Scope | Description |
@@ -314,6 +318,9 @@ app-engine:edge-connects:write
 | `app-engine:edge-connects:write` | Manage EdgeConnect |
 
 ### IAM
+
+> **Note**: The `iam:users:read` and `iam:groups:read` scopes may not be available in all token management UIs (e.g., the platform token page). If unavailable, user and group listing features will not work with that token type.
+
 | Scope | Description |
 |-------|-------------|
 | `iam:users:read` | Read users |

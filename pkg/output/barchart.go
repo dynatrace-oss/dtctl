@@ -39,7 +39,7 @@ func (p *BarChartPrinter) Print(obj interface{}) error {
 	chartPrinter := &ChartPrinter{writer: p.writer, height: DefaultChartHeight}
 	ts, err := chartPrinter.extractTimeseries(obj)
 	if err != nil {
-		fmt.Fprintf(p.writer, "Warning: %v. Falling back to JSON output.\n\n", err)
+		_, _ = fmt.Fprintf(p.writer, "Warning: %v. Falling back to JSON output.\n\n", err)
 		return (&JSONPrinter{writer: p.writer}).Print(obj)
 	}
 
@@ -55,7 +55,7 @@ func (p *BarChartPrinter) PrintList(obj interface{}) error {
 func (p *BarChartPrinter) renderBarChart(ts *TimeseriesData) error {
 	// Print styled header with timeframe (use \r\n for raw terminal mode)
 	timeFormat := "2006-01-02 15:04"
-	fmt.Fprintf(p.writer, "%s%s%s %s─%s %s%s%s\r\n\r\n",
+	_, _ = fmt.Fprintf(p.writer, "%s%s%s %s─%s %s%s%s\r\n\r\n",
 		BrightCyan, ts.Start.UTC().Format(timeFormat), Reset,
 		Dim, Reset,
 		BrightCyan, ts.End.UTC().Format(timeFormat), Reset)
@@ -141,7 +141,7 @@ func (p *BarChartPrinter) renderBarChart(ts *TimeseriesData) error {
 
 		// Print with btop-style formatting: label │ bar │ value
 		// Use \r\n for raw terminal mode compatibility
-		fmt.Fprintf(p.writer, "%s%-*s%s %s│%s %s %s│%s %s%7.2f%s\r\n",
+		_, _ = fmt.Fprintf(p.writer, "%s%-*s%s %s│%s %s %s│%s %s%7.2f%s\r\n",
 			BrightWhite, maxLabelLen, label, Reset,
 			Dim, Reset,
 			bar,

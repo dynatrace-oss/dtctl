@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // loadConfigRaw loads configuration respecting the --config flag but WITHOUT applying
@@ -49,6 +51,91 @@ var configViewCmd = &cobra.Command{
 		printer := NewPrinter()
 		return printer.Print(cfg)
 	},
+}
+
+// configInitCmd creates a .dtctl.yaml template in the current directory
+var configInitCmd = &cobra.Command{
+	Use:   "init",
+	Short: "Create a .dtctl.yaml template in the current directory",
+	Long: `Create a project-local .dtctl.yaml configuration template.
+
+This creates a .dtctl.yaml file in the current directory with example
+configuration that can be customized for your project. Project-local
+configuration takes precedence over global configuration.
+
+Examples:
+  # Create .dtctl.yaml in current directory
+  dtctl config init
+
+  # Create .dtctl.yaml with a specific context pre-set
+  dtctl config init --context production
+
+Environment variables can be used in the config file using ${VAR_NAME} syntax.
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Check if .dtctl.yaml already exists
+		configPath := config.LocalConfigName
+		if _, err := os.Stat(configPath); err == nil {
+			force, _ := cmd.Flags().GetBool("force")
+			if !force {
+				return fmt.Errorf("%s already exists. Use --force to overwrite", configPath)
+			}
+		}
+
+		// Get context from flag if provided
+		contextName, _ := cmd.Flags().GetString("context")
+
+		// Create template config
+		template := createLocalConfigTemplate(contextName)
+
+		// Write to file
+		data, err := yaml.Marshal(template)
+		if err != nil {
+			return fmt.Errorf("failed to marshal config template: %w", err)
+		}
+
+		if err := os.WriteFile(configPath, data, 0600); err != nil {
+			return fmt.Errorf("failed to write %s: %w", configPath, err)
+		}
+
+		fmt.Printf("Created %s\n", configPath)
+		fmt.Printf("\nEdit this file to configure your project-local settings.\n")
+		fmt.Printf("Environment variables can be used with ${VAR_NAME} syntax.\n")
+		return nil
+	},
+}
+
+// createLocalConfigTemplate generates a template config for local projects
+func createLocalConfigTemplate(contextName string) *config.Config {
+	if contextName == "" {
+		contextName = "my-environment"
+	}
+
+	return &config.Config{
+		APIVersion:     "dtctl.io/v1",
+		Kind:           "Config",
+		CurrentContext: contextName,
+		Contexts: []config.NamedContext{
+			{
+				Name: contextName,
+				Context: config.Context{
+					Environment: "${DT_ENVIRONMENT_URL}",
+					TokenRef:    "my-token",
+					SafetyLevel: config.SafetyLevelReadWriteAll,
+					Description: "Project environment",
+				},
+			},
+		},
+		Tokens: []config.NamedToken{
+			{
+				Name:  "my-token",
+				Token: "${DT_API_TOKEN}",
+			},
+		},
+		Preferences: config.Preferences{
+			Output: "table",
+		},
+	}
 }
 
 // ContextListItem is a flattened view of a context for table display
@@ -488,6 +575,7 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 
 	configCmd.AddCommand(configViewCmd)
+	configCmd.AddCommand(configInitCmd)
 	configCmd.AddCommand(configGetContextsCmd)
 	configCmd.AddCommand(configCurrentContextCmd)
 	configCmd.AddCommand(configUseContextCmd)
@@ -497,6 +585,10 @@ func init() {
 	configCmd.AddCommand(configMigrateTokensCmd)
 	configCmd.AddCommand(configDescribeContextCmd)
 	configCmd.AddCommand(configDeleteContextCmd)
+
+	// Flags for init
+	configInitCmd.Flags().String("context", "", "context name to use in template (default: my-environment)")
+	configInitCmd.Flags().Bool("force", false, "overwrite existing .dtctl.yaml")
 
 	// Flags for set-context
 	configSetContextCmd.Flags().String("environment", "", "environment URL")
