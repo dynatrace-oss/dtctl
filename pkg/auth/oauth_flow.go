@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -57,207 +59,207 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 		level = config.DefaultSafetyLevel
 	}
 	// temporarly returning the scopes that the ide plugin client uses until we have the clients for dtctl
-	return []string{"storage:application.snapshots:read", "storage:logs:read", "storage:buckets:read", "dev-obs:breakpoints:set", "openid", "app-engine:apps:run"}
+	//return []string{"storage:application.snapshots:read", "storage:logs:read", "storage:buckets:read", "dev-obs:breakpoints:set", "openid", "app-engine:apps:run"}
 
-	// switch level {
-	// case config.SafetyLevelReadOnly:
-	// 	return []string{
-	// 		"openid",
-	// 		"document:documents:read",
-	// 		"automation:workflows:read",
-	// 		"slo:read",
-	// 		"settings:schemas:read",
-	// 		"settings:objects:read",
-	// 		"storage:logs:read",
-	// 		"storage:events:read",
-	// 		"storage:metrics:read",
-	// 		"storage:spans:read",
-	// 		"storage:bizevents:read",
-	// 		"storage:entities:read",
-	// 		"storage:smartscape:read",
-	// 		"storage:system:read",
-	// 		"storage:security.events:read",
-	// 		"storage:application.snapshots:read",
-	// 		"storage:user.events:read",
-	// 		"storage:user.sessions:read",
-	// 		"storage:user.replays:read",
-	// 		"storage:buckets:read",
-	// 		"storage:bucket-definitions:read",
-	// 		"storage:fieldsets:read",
-	// 		"storage:fieldset-definitions:read",
-	// 		"storage:files:read",
-	// 		"storage:filter-segments:read",
-	// 		"iam:users:read",
-	// 		"iam:groups:read",
-	// 		"notifications:read",
-	// 		"vulnerabilities:read",
-	// 		"davis:analyzers:read",
-	// 		"app-engine:apps:run",
-	// 	}
+	switch level {
+	case config.SafetyLevelReadOnly:
+		return []string{
+			"openid",
+			"document:documents:read",
+			"automation:workflows:read",
+			"slo:read",
+			"settings:schemas:read",
+			"settings:objects:read",
+			"storage:logs:read",
+			"storage:events:read",
+			"storage:metrics:read",
+			"storage:spans:read",
+			"storage:bizevents:read",
+			"storage:entities:read",
+			"storage:smartscape:read",
+			"storage:system:read",
+			"storage:security.events:read",
+			"storage:application.snapshots:read",
+			"storage:user.events:read",
+			"storage:user.sessions:read",
+			"storage:user.replays:read",
+			"storage:buckets:read",
+			"storage:bucket-definitions:read",
+			"storage:fieldsets:read",
+			"storage:fieldset-definitions:read",
+			"storage:files:read",
+			"storage:filter-segments:read",
+			"iam:users:read",
+			"iam:groups:read",
+			"notifications:read",
+			"vulnerabilities:read",
+			"davis:analyzers:read",
+			"app-engine:apps:run",
+		}
 	
-	// case config.SafetyLevelReadWriteMine:
-	// 	return []string{
-	// 		"openid",
-	// 		"document:documents:read",
-	// 		"document:documents:write",
-	// 		"automation:workflows:read",
-	// 		"automation:workflows:write",
-	// 		"automation:workflows:execute",
-	// 		"slo:read",
-	// 		"slo:write",
-	// 		"settings:schemas:read",
-	// 		"settings:objects:read",
-	// 		"settings:objects:write",
-	// 		"storage:logs:read",
-	// 		"storage:events:read",
-	// 		"storage:metrics:read",
-	// 		"storage:spans:read",
-	// 		"storage:bizevents:read",
-	// 		"storage:entities:read",
-	// 		"storage:smartscape:read",
-	// 		"storage:system:read",
-	// 		"storage:security.events:read",
-	// 		"storage:buckets:read",
-	// 		"storage:bucket-definitions:read",
-	// 		"storage:files:read",
-	// 		"storage:files:write",
-	// 		"storage:filter-segments:read",
-	// 		"storage:filter-segments:write",
-	// 		"davis:analyzers:read",
-	// 		"davis:analyzers:execute",
-	// 		"davis-copilot:conversations:execute",
-	// 		"app-engine:apps:run",
-	// 		"app-engine:functions:run",
-	// 	}
+	case config.SafetyLevelReadWriteMine:
+		return []string{
+			"openid",
+			"document:documents:read",
+			"document:documents:write",
+			"automation:workflows:read",
+			"automation:workflows:write",
+			"automation:workflows:execute",
+			"slo:read",
+			"slo:write",
+			"settings:schemas:read",
+			"settings:objects:read",
+			"settings:objects:write",
+			"storage:logs:read",
+			"storage:events:read",
+			"storage:metrics:read",
+			"storage:spans:read",
+			"storage:bizevents:read",
+			"storage:entities:read",
+			"storage:smartscape:read",
+			"storage:system:read",
+			"storage:security.events:read",
+			"storage:buckets:read",
+			"storage:bucket-definitions:read",
+			"storage:files:read",
+			"storage:files:write",
+			"storage:filter-segments:read",
+			"storage:filter-segments:write",
+			"davis:analyzers:read",
+			"davis:analyzers:execute",
+			"davis-copilot:conversations:execute",
+			"app-engine:apps:run",
+			"app-engine:functions:run",
+		}
 	
-	// case config.SafetyLevelReadWriteAll:
-	// 	return []string{
-	// 		"openid",
-	// 		"document:documents:read",
-	// 		"document:documents:write",
-	// 		"automation:workflows:read",
-	// 		"automation:workflows:write",
-	// 		"automation:workflows:execute",
-	// 		"slo:read",
-	// 		"slo:write",
-	// 		"settings:schemas:read",
-	// 		"settings:objects:read",
-	// 		"settings:objects:write",
-	// 		"storage:logs:read",
-	// 		"storage:logs:write",
-	// 		"storage:events:read",
-	// 		"storage:events:write",
-	// 		"storage:metrics:read",
-	// 		"storage:metrics:write",
-	// 		"storage:spans:read",
-	// 		"storage:bizevents:read",
-	// 		"storage:entities:read",
-	// 		"storage:smartscape:read",
-	// 		"storage:system:read",
-	// 		"storage:security.events:read",
-	// 		"storage:application.snapshots:read",
-	// 		"storage:user.events:read",
-	// 		"storage:user.sessions:read",
-	// 		"storage:user.replays:read",
-	// 		"storage:buckets:read",
-	// 		"storage:buckets:write",
-	// 		"storage:bucket-definitions:read",
-	// 		"storage:fieldsets:read",
-	// 		"storage:fieldset-definitions:read",
-	// 		"storage:files:read",
-	// 		"storage:files:write",
-	// 		"storage:filter-segments:read",
-	// 		"storage:filter-segments:write",
-	// 		"iam:users:read",
-	// 		"iam:groups:read",
-	// 		"notifications:read",
-	// 		"vulnerabilities:read",
-	// 		"davis:analyzers:read",
-	// 		"davis:analyzers:execute",
-	// 		"davis-copilot:conversations:execute",
-	// 		"davis-copilot:nl2dql:execute",
-	// 		"davis-copilot:dql2nl:execute",
-	// 		"davis-copilot:document-search:execute",
-	// 		"app-engine:apps:install",
-	// 		"app-engine:apps:run",
-	// 		"app-engine:apps:delete",
-	// 		"app-engine:functions:run",
-	// 		"app-engine:edge-connects:read",
-	// 		"app-engine:edge-connects:write",
-	// 	}
+	case config.SafetyLevelReadWriteAll:
+		return []string{
+			"openid",
+			"document:documents:read",
+			"document:documents:write",
+			"automation:workflows:read",
+			"automation:workflows:write",
+			"automation:workflows:execute",
+			"slo:read",
+			"slo:write",
+			"settings:schemas:read",
+			"settings:objects:read",
+			"settings:objects:write",
+			"storage:logs:read",
+			"storage:logs:write",
+			"storage:events:read",
+			"storage:events:write",
+			"storage:metrics:read",
+			"storage:metrics:write",
+			"storage:spans:read",
+			"storage:bizevents:read",
+			"storage:entities:read",
+			"storage:smartscape:read",
+			"storage:system:read",
+			"storage:security.events:read",
+			"storage:application.snapshots:read",
+			"storage:user.events:read",
+			"storage:user.sessions:read",
+			"storage:user.replays:read",
+			"storage:buckets:read",
+			"storage:buckets:write",
+			"storage:bucket-definitions:read",
+			"storage:fieldsets:read",
+			"storage:fieldset-definitions:read",
+			"storage:files:read",
+			"storage:files:write",
+			"storage:filter-segments:read",
+			"storage:filter-segments:write",
+			"iam:users:read",
+			"iam:groups:read",
+			"notifications:read",
+			"vulnerabilities:read",
+			"davis:analyzers:read",
+			"davis:analyzers:execute",
+			"davis-copilot:conversations:execute",
+			"davis-copilot:nl2dql:execute",
+			"davis-copilot:dql2nl:execute",
+			"davis-copilot:document-search:execute",
+			"app-engine:apps:install",
+			"app-engine:apps:run",
+			"app-engine:apps:delete",
+			"app-engine:functions:run",
+			"app-engine:edge-connects:read",
+			"app-engine:edge-connects:write",
+		}
 	
-	// case config.SafetyLevelDangerouslyUnrestricted:
-	// 	return []string{
-	// 		"openid",
-	// 		"document:documents:read",
-	// 		"document:documents:write",
-	// 		"automation:workflows:read",
-	// 		"automation:workflows:write",
-	// 		"automation:workflows:execute",
-	// 		"slo:read",
-	// 		"slo:write",
-	// 		"settings:schemas:read",
-	// 		"settings:objects:read",
-	// 		"settings:objects:write",
-	// 		"settings:objects:admin",
-	// 		"storage:logs:read",
-	// 		"storage:logs:write",
-	// 		"storage:events:read",
-	// 		"storage:events:write",
-	// 		"storage:metrics:read",
-	// 		"storage:metrics:write",
-	// 		"storage:spans:read",
-	// 		"storage:bizevents:read",
-	// 		"storage:entities:read",
-	// 		"storage:smartscape:read",
-	// 		"storage:system:read",
-	// 		"storage:security.events:read",
-	// 		"storage:application.snapshots:read",
-	// 		"storage:user.events:read",
-	// 		"storage:user.sessions:read",
-	// 		"storage:user.replays:read",
-	// 		"storage:buckets:read",
-	// 		"storage:buckets:write",
-	// 		"storage:bucket-definitions:read",
-	// 		"storage:bucket-definitions:write",
-	// 		"storage:bucket-definitions:delete",
-	// 		"storage:bucket-definitions:truncate",
-	// 		"storage:fieldsets:read",
-	// 		"storage:fieldset-definitions:read",
-	// 		"storage:fieldset-definitions:write",
-	// 		"storage:files:read",
-	// 		"storage:files:write",
-	// 		"storage:files:delete",
-	// 		"storage:filter-segments:read",
-	// 		"storage:filter-segments:write",
-	// 		"storage:filter-segments:share",
-	// 		"storage:filter-segments:delete",
-	// 		"storage:filter-segments:admin",
-	// 		"storage:records:delete",
-	// 		"iam:users:read",
-	// 		"iam:groups:read",
-	// 		"iam:policies:read",
-	// 		"notifications:read",
-	// 		"notifications:write",
-	// 		"vulnerabilities:read",
-	// 		"davis:analyzers:read",
-	// 		"davis:analyzers:execute",
-	// 		"davis-copilot:conversations:execute",
-	// 		"davis-copilot:nl2dql:execute",
-	// 		"davis-copilot:dql2nl:execute",
-	// 		"davis-copilot:document-search:execute",
-	// 		"app-engine:apps:install",
-	// 		"app-engine:apps:run",
-	// 		"app-engine:apps:delete",
-	// 		"app-engine:functions:run",
-	// 		"app-engine:edge-connects:read",
-	// 		"app-engine:edge-connects:write",
-	// 	}
+	case config.SafetyLevelDangerouslyUnrestricted:
+		return []string{
+			"openid",
+			"document:documents:read",
+			"document:documents:write",
+			"automation:workflows:read",
+			"automation:workflows:write",
+			"automation:workflows:execute",
+			"slo:read",
+			"slo:write",
+			"settings:schemas:read",
+			"settings:objects:read",
+			"settings:objects:write",
+			"settings:objects:admin",
+			"storage:logs:read",
+			"storage:logs:write",
+			"storage:events:read",
+			"storage:events:write",
+			"storage:metrics:read",
+			"storage:metrics:write",
+			"storage:spans:read",
+			"storage:bizevents:read",
+			"storage:entities:read",
+			"storage:smartscape:read",
+			"storage:system:read",
+			"storage:security.events:read",
+			"storage:application.snapshots:read",
+			"storage:user.events:read",
+			"storage:user.sessions:read",
+			"storage:user.replays:read",
+			"storage:buckets:read",
+			"storage:buckets:write",
+			"storage:bucket-definitions:read",
+			"storage:bucket-definitions:write",
+			"storage:bucket-definitions:delete",
+			"storage:bucket-definitions:truncate",
+			"storage:fieldsets:read",
+			"storage:fieldset-definitions:read",
+			"storage:fieldset-definitions:write",
+			"storage:files:read",
+			"storage:files:write",
+			"storage:files:delete",
+			"storage:filter-segments:read",
+			"storage:filter-segments:write",
+			"storage:filter-segments:share",
+			"storage:filter-segments:delete",
+			"storage:filter-segments:admin",
+			"storage:records:delete",
+			"iam:users:read",
+			"iam:groups:read",
+			"iam:policies:read",
+			"notifications:read",
+			"notifications:write",
+			"vulnerabilities:read",
+			"davis:analyzers:read",
+			"davis:analyzers:execute",
+			"davis-copilot:conversations:execute",
+			"davis-copilot:nl2dql:execute",
+			"davis-copilot:dql2nl:execute",
+			"davis-copilot:document-search:execute",
+			"app-engine:apps:install",
+			"app-engine:apps:run",
+			"app-engine:apps:delete",
+			"app-engine:functions:run",
+			"app-engine:edge-connects:read",
+			"app-engine:edge-connects:write",
+		}
 	
-	// default:
-	// 	// Default to readwrite-all
-	// 	return GetScopesForSafetyLevel(config.SafetyLevelReadWriteAll)
-	// }
+	default:
+		// Default to readwrite-all
+		return GetScopesForSafetyLevel(config.SafetyLevelReadWriteAll)
+	}
 }
 
 type OAuthConfig struct {
@@ -510,18 +512,34 @@ func (f *OAuthFlow) startCallbackServer() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc(callbackPath, f.handleCallback)
 	
+	// Create a listener first so we can verify it's bound before proceeding
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", f.config.Port))
+	if err != nil {
+		return fmt.Errorf("failed to bind to port %d: %w", f.config.Port, err)
+	}
+	
 	f.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", f.config.Port),
 		Handler: mux,
 	}
 	
+	// Channel to signal when server is ready or encounters an error
+	serverReady := make(chan error, 1)
+	
 	go func() {
-		if err := f.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		// Signal that we're ready to accept connections
+		serverReady <- nil
+		
+		// Start serving
+		if err := f.server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			f.resultChan <- &authResult{err: fmt.Errorf("callback server error: %w", err)}
 		}
 	}()
 	
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready (or error)
+	if err := <-serverReady; err != nil {
+		listener.Close()
+		return err
+	}
 	
 	return nil
 }
@@ -610,8 +628,8 @@ func (f *OAuthFlow) sendSuccess(w http.ResponseWriter) {
 func (f *OAuthFlow) sendError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusBadRequest)
-	html := strings.ReplaceAll(errorHTML, "{{ERROR}}", err.Error())
-	w.Write([]byte(html))
+	htmlContent := strings.ReplaceAll(errorHTML, "{{ERROR}}", html.EscapeString(err.Error()))
+	w.Write([]byte(htmlContent))
 	f.resultChan <- &authResult{err: err}
 }
 
