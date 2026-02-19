@@ -124,9 +124,9 @@ func (tm *TokenManager) DeleteToken(tokenName string) error {
 		return tm.tokenStore.DeleteToken(keyringName)
 	}
 	
-	// If keyring not available, tokens would be in config file
-	// This is handled by config.DeleteToken
-	return config.DeleteToken(tokenName)
+	// OAuth tokens require keyring, so if keyring is not available, 
+	// the token doesn't exist in our OAuth storage
+	return fmt.Errorf("OAuth token deletion requires keyring support")
 }
 
 // IsOAuthToken checks if a token name refers to an OAuth token

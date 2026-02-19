@@ -263,14 +263,15 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 }
 
 type OAuthConfig struct {
-	AuthURL     string
-	TokenURL    string
-	UserInfoURL string
-	ClientID    string
-	Scopes      []string
-	Port        int
-	Environment Environment
-	SafetyLevel config.SafetyLevel
+	AuthURL        string
+	TokenURL       string
+	UserInfoURL    string
+	ClientID       string
+	Scopes         []string
+	Port           int
+	Environment    Environment
+	SafetyLevel    config.SafetyLevel
+	EnvironmentURL string
 }
 
 // DetectEnvironment determines the environment type from a Dynatrace URL
@@ -334,13 +335,17 @@ func OAuthConfigForEnvironment(env Environment, safetyLevel config.SafetyLevel) 
 // Uses the default safety level (readwrite-all)
 func OAuthConfigFromEnvironmentURL(environmentURL string) *OAuthConfig {
 	env := DetectEnvironment(environmentURL)
-	return OAuthConfigForEnvironment(env, config.DefaultSafetyLevel)
+	config := OAuthConfigForEnvironment(env, config.DefaultSafetyLevel)
+	config.EnvironmentURL = environmentURL
+	return config
 }
 
 // OAuthConfigFromEnvironmentURLWithSafety creates an OAuth configuration with specific safety level
 func OAuthConfigFromEnvironmentURLWithSafety(environmentURL string, safetyLevel config.SafetyLevel) *OAuthConfig {
 	env := DetectEnvironment(environmentURL)
-	return OAuthConfigForEnvironment(env, safetyLevel)
+	config := OAuthConfigForEnvironment(env, safetyLevel)
+	config.EnvironmentURL = environmentURL
+	return config
 }
 
 type TokenSet struct {
@@ -403,7 +408,7 @@ func (f *OAuthFlow) Start(ctx context.Context) (*TokenSet, error) {
 		return nil, fmt.Errorf("failed to start callback server: %w", err)
 	}
 	defer f.stopCallbackServer()
-	
+
 	authURL := f.buildAuthURL()
 	
 	fmt.Println("Opening browser for authentication...")
@@ -499,6 +504,11 @@ func (f *OAuthFlow) buildAuthURL() string {
 		"state":                 {f.state},
 		"code_challenge":        {f.codeChallenge},
 		"code_challenge_method": {"S256"},
+	}
+	
+	// Add resource parameter with environment URL if available
+	if f.config.EnvironmentURL != "" {		
+		params.Set("resource", f.config.EnvironmentURL)
 	}
 	
 	return f.config.AuthURL + "?" + params.Encode()
