@@ -186,6 +186,11 @@ you'll need to use API token authentication instead (dtctl config set-credential
 			cfg = config.NewConfig()
 		}
 		
+		// Ensure keyring is available before starting OAuth flow
+		if !config.IsKeyringAvailable() {
+			return fmt.Errorf("OAuth login requires a working system keyring, but none is available. Please configure a keyring (or disable keyring usage if supported) and try again, or use an alternative authentication method.")
+		}
+		
 		// Detect environment and create appropriate OAuth config with safety level
 		oauthConfig := auth.OAuthConfigFromEnvironmentURLWithSafety(environment, safetyLevel)
 		
