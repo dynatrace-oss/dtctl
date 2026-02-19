@@ -9,6 +9,36 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type gcpConnectionTableRow struct {
+	Name             string `table:"NAME"`
+	Type             string `table:"TYPE"`
+	Principal        string `table:"PRINCIPAL"`
+	ServiceAccountID string `table:"SERVICE_ACCOUNT"`
+	ObjectID         string `table:"ID"`
+}
+
+func useGCPConnectionTableView() bool {
+	return outputFormat == "" || outputFormat == "table" || outputFormat == "wide"
+}
+
+func toGCPConnectionTableRow(item *gcpconnection.GCPConnection) gcpConnectionTableRow {
+	return gcpConnectionTableRow{
+		Name:             item.Name,
+		Type:             item.Type,
+		Principal:        item.Principal,
+		ServiceAccountID: item.ServiceAccountID,
+		ObjectID:         item.ObjectID,
+	}
+}
+
+func toGCPConnectionTableRows(items []gcpconnection.GCPConnection) []gcpConnectionTableRow {
+	rows := make([]gcpConnectionTableRow, 0, len(items))
+	for i := range items {
+		rows = append(rows, toGCPConnectionTableRow(&items[i]))
+	}
+	return rows
+}
+
 var getGCPConnectionCmd = &cobra.Command{
 	Use:     "connections [id]",
 	Aliases: []string{"connection"},
@@ -33,6 +63,10 @@ var getGCPConnectionCmd = &cobra.Command{
 
 			item, err := handler.FindByName(identifier)
 			if err == nil {
+				if useGCPConnectionTableView() {
+					row := toGCPConnectionTableRow(item)
+					return printer.Print(row)
+				}
 				return printer.Print(item)
 			}
 
@@ -40,6 +74,10 @@ var getGCPConnectionCmd = &cobra.Command{
 				item, err = handler.Get(identifier)
 				if err != nil {
 					return fmt.Errorf("connection with name or ID %q not found", identifier)
+				}
+				if useGCPConnectionTableView() {
+					row := toGCPConnectionTableRow(item)
+					return printer.Print(row)
 				}
 				return printer.Print(item)
 			}
@@ -49,6 +87,9 @@ var getGCPConnectionCmd = &cobra.Command{
 		items, err := handler.List()
 		if err != nil {
 			return err
+		}
+		if useGCPConnectionTableView() {
+			return printer.PrintList(toGCPConnectionTableRows(items))
 		}
 		return printer.PrintList(items)
 	},

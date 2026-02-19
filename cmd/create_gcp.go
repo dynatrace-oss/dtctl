@@ -94,7 +94,7 @@ func printGCPPrincipalHint(handler *gcpconnection.Handler, serviceAccountID stri
 
 	if serviceAccountID != "" && principal.Principal != "" {
 		fmt.Println("Grant Token Creator role (copy/paste):")
-		fmt.Printf("gcloud iam service-accounts add-iam-policy-binding %q --member=\"serviceAccount:%s\" --role=\"roles/iam.serviceAccountTokenCreator\"\n", serviceAccountID, principal.Principal)
+		fmt.Printf("gcloud iam service-accounts add-iam-policy-binding %q --project=\"${PROJECT_ID}\" --member=\"serviceAccount:%s\" --role=\"roles/iam.serviceAccountTokenCreator\"\n", serviceAccountID, principal.Principal)
 	}
 
 	dynatracePrincipal := principal.Principal
@@ -122,15 +122,16 @@ func printGCPPrincipalHint(handler *gcpconnection.Handler, serviceAccountID stri
 	fmt.Println("3) Grant required viewer roles:")
 	fmt.Println("for ROLE in roles/browser roles/monitoring.viewer roles/compute.viewer roles/cloudasset.viewer; do")
 	fmt.Println("  gcloud projects add-iam-policy-binding \"${PROJECT_ID}\" \\")
+	fmt.Println("    --quiet --format=\"none\" \\")
 	fmt.Println("    --member \"serviceAccount:${CUSTOMER_SA_EMAIL}\" \\")
 	fmt.Println("    --role \"${ROLE}\"")
 	fmt.Println("done")
 	fmt.Println()
 	fmt.Println("4) Grant Token Creator role to Dynatrace principal:")
 	fmt.Printf("gcloud iam service-accounts add-iam-policy-binding %q \\\n", customerServiceAccount)
+	fmt.Println("  --project \"${PROJECT_ID}\" \\")
 	fmt.Printf("  --member=\"serviceAccount:%s\" \\\n", dynatracePrincipal)
 	fmt.Println("  --role=\"roles/iam.serviceAccountTokenCreator\"")
-	fmt.Println("   If you get PERMISSION_DENIED (iam.serviceAccounts.getIamPolicy), ask your GCP admin for rights to read/update IAM policy on this service account.")
 	fmt.Println()
 	fmt.Println("5) Update connection in Dynatrace:")
 	fmt.Printf("dtctl update gcp connection --name %q --serviceAccountId \"${CUSTOMER_SA_EMAIL}\"\n", createGCPConnectionName)

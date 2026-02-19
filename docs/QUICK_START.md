@@ -2784,6 +2784,7 @@ Grant required viewer permissions to customer service account:
 ```bash
 for ROLE in roles/browser roles/monitoring.viewer roles/compute.viewer roles/cloudasset.viewer; do
   gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --quiet --format="none" \
     --member "serviceAccount:${CUSTOMER_SA_EMAIL}" \
     --role "${ROLE}"
 done
@@ -2794,13 +2795,10 @@ Grant `Service Account Token Creator` to Dynatrace principal (service account im
 
 ```bash
 gcloud iam service-accounts add-iam-policy-binding "${CUSTOMER_SA_EMAIL}" \
+  --project "${PROJECT_ID}" \
   --member="serviceAccount:${DT_GCP_PRINCIPAL}" \
   --role="roles/iam.serviceAccountTokenCreator"
 ```
-
-If you get `PERMISSION_DENIED` with `iam.serviceAccounts.getIamPolicy`, your operator account is missing permissions to read/update IAM policy on this service account. Ask your GCP admin for the required IAM permissions/role on `${CUSTOMER_SA_EMAIL}`.
-
-
 
 ### 3) Update GCP connection in Dynatrace
 
