@@ -68,8 +68,8 @@ This document tracks the current implementation status of dtctl. For future plan
 | **azure_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
 | **aws_connection** | - | - | - | - | - | - | - | - | - | - | - | - | - |
 | **aws_monitoring_config** | - | - | - | - | - | - | - | - | - | - | - | - | - |
-| **gcp_connection** | - | - | - | - | - | - | - | - | - | - | - | - | - |
-| **gcp_monitoring_config** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **gcp_connection** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
+| **gcp_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
 
 ### Watch Mode Features
 - [x] Watch all `get` commands: `dtctl get workflows --watch`
@@ -177,18 +177,27 @@ This document tracks the current implementation status of dtctl. For future plan
 - [ ] Create/update/delete/apply monitoring config
 
 ### GCP Connection Features
-- [ ] List connections
+- [x] List connections: `dtctl get gcp connections`
 - [ ] Filter connections
-- [ ] Get by name or ID
-- [ ] Describe connection
-- [ ] Create/update/delete/apply connection
+- [x] Get by name or ID: `dtctl get gcp connections <name-or-id>`
+- [x] Describe connection: `dtctl describe gcp connection <id>`
+- [x] Create connection: `dtctl create gcp connection --name <name> --serviceAccountId <service-account-email>`
+- [x] Update connection: `dtctl update gcp connection --name <name> --serviceAccountId <service-account-email>`
+- [x] Delete by name or ID: `dtctl delete gcp connection <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f gcp_connection.yaml`
+- [x] Ensure Dynatrace GCP principal on create/apply
 
 ### GCP Monitoring Configuration Features
-- [ ] List monitoring configs
+- [x] List monitoring configs: `dtctl get gcp monitoring`
 - [ ] Filter monitoring configs
-- [ ] Get by name or ID
-- [ ] Describe monitoring config
-- [ ] Create/update/delete/apply monitoring config
+- [x] Get by description or ID: `dtctl get gcp monitoring <description-or-id>`
+- [x] Describe config: `dtctl describe gcp monitoring <id-or-name>`
+- [x] Runtime status in describe (Smartscape, metrics, recent events)
+- [x] Create config: `dtctl create gcp monitoring --name <name> --credentials <connection-name-or-id>`
+- [x] Update config: `dtctl update gcp monitoring --name <name> [--locationFiltering ...] [--featureSets ...]`
+- [x] Delete by name or ID: `dtctl delete gcp monitoring <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f gcp_monitoring_config.yaml`
+- [x] Schema helpers: `dtctl get gcp monitoring-locations`, `dtctl get gcp monitoring-feature-sets`
 
 ### App Intents Features
 - [x] List all intents: `dtctl get intents`

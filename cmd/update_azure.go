@@ -27,22 +27,10 @@ var updateAzureProviderCmd = &cobra.Command{
 	RunE:  requireSubcommand,
 }
 
-var updateAWSProviderCmd = &cobra.Command{
-	Use:   "aws",
-	Short: "Update AWS resources",
-	RunE:  requireSubcommand,
-}
-
-var updateGCPProviderCmd = &cobra.Command{
-	Use:   "gcp",
-	Short: "Update GCP resources",
-	RunE:  requireSubcommand,
-}
-
 var updateAzureConnectionCmd = &cobra.Command{
-	Use:   "connection [id]",
+	Use:     "connection [id]",
 	Aliases: []string{"connections"},
-	Short: "Update Azure connection from flags",
+	Short:   "Update Azure connection from flags",
 	Long: `Update Azure connection by ID argument or by --name.
 
 Examples:
@@ -127,9 +115,9 @@ Examples:
 }
 
 var updateAzureMonitoringConfigCmd = &cobra.Command{
-	Use:   "monitoring [id]",
+	Use:     "monitoring [id]",
 	Aliases: []string{"monitoring-config"},
-	Short: "Update Azure monitoring config from flags",
+	Short:   "Update Azure monitoring config from flags",
 	Long: `Update Azure monitoring configuration by ID argument or by --name.
 
 Examples:
@@ -217,15 +205,9 @@ Examples:
 
 func init() {
 	updateCmd.AddCommand(updateAzureProviderCmd)
-	updateCmd.AddCommand(updateAWSProviderCmd)
-	updateCmd.AddCommand(updateGCPProviderCmd)
 
 	updateAzureProviderCmd.AddCommand(updateAzureConnectionCmd)
 	updateAzureProviderCmd.AddCommand(updateAzureMonitoringConfigCmd)
-	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
-	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
-	updateGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connection"))
-	updateGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionName, "name", "", "Azure connection name (used when ID argument is not provided)")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionDirectoryID, "directoryId", "", "Directory ID to set")

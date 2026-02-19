@@ -29,22 +29,10 @@ var createAzureProviderCmd = &cobra.Command{
 	RunE:  requireSubcommand,
 }
 
-var createAWSProviderCmd = &cobra.Command{
-	Use:   "aws",
-	Short: "Create AWS resources",
-	RunE:  requireSubcommand,
-}
-
-var createGCPProviderCmd = &cobra.Command{
-	Use:   "gcp",
-	Short: "Create GCP resources",
-	RunE:  requireSubcommand,
-}
-
 var createAzureConnectionCmd = &cobra.Command{
-	Use:   "connection",
+	Use:     "connection",
 	Aliases: []string{"connections"},
-	Short: "Create Azure connection from flags",
+	Short:   "Create Azure connection from flags",
 	Long: `Create Azure connection using command flags.
 
 Examples:
@@ -114,9 +102,9 @@ Examples:
 }
 
 var createAzureMonitoringConfigCmd = &cobra.Command{
-	Use:   "monitoring",
+	Use:     "monitoring",
 	Aliases: []string{"monitoring-config"},
-	Short: "Create Azure monitoring config from flags",
+	Short:   "Create Azure monitoring config from flags",
 	Long: `Create Azure monitoring configuration using command flags.
 
 Examples:
@@ -257,15 +245,9 @@ func printFederatedCreateInstructions(baseURL, objectID, connectionName string) 
 
 func init() {
 	createCmd.AddCommand(createAzureProviderCmd)
-	createCmd.AddCommand(createAWSProviderCmd)
-	createCmd.AddCommand(createGCPProviderCmd)
 
 	createAzureProviderCmd.AddCommand(createAzureConnectionCmd)
 	createAzureProviderCmd.AddCommand(createAzureMonitoringConfigCmd)
-	createAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
-	createAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
-	createGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connection"))
-	createGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionName, "name", "", "Azure connection name (required)")
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionType, "type", "", "Azure connection type: federatedIdentityCredential or clientSecret (required)")

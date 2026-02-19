@@ -14,6 +14,8 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
@@ -79,15 +81,17 @@ type ApplyOptions struct {
 type ResourceType string
 
 const (
-	ResourceWorkflow  ResourceType = "workflow"
-	ResourceDashboard ResourceType = "dashboard"
-	ResourceNotebook  ResourceType = "notebook"
-	ResourceSLO       ResourceType = "slo"
-	ResourceBucket    ResourceType = "bucket"
-	ResourceSettings  ResourceType = "settings"
-	ResourceAzureConnection      ResourceType = "azure_connection"
+	ResourceWorkflow              ResourceType = "workflow"
+	ResourceDashboard             ResourceType = "dashboard"
+	ResourceNotebook              ResourceType = "notebook"
+	ResourceSLO                   ResourceType = "slo"
+	ResourceBucket                ResourceType = "bucket"
+	ResourceSettings              ResourceType = "settings"
+	ResourceAzureConnection       ResourceType = "azure_connection"
 	ResourceAzureMonitoringConfig ResourceType = "azure_monitoring_config"
-	ResourceUnknown   ResourceType = "unknown"
+	ResourceGCPConnection         ResourceType = "gcp_connection"
+	ResourceGCPMonitoringConfig   ResourceType = "gcp_monitoring_config"
+	ResourceUnknown               ResourceType = "unknown"
 )
 
 // Apply applies a resource configuration from file
@@ -135,6 +139,10 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) error {
 		return a.applyAzureConnection(jsonData)
 	case ResourceAzureMonitoringConfig:
 		return a.applyAzureMonitoringConfig(jsonData)
+	case ResourceGCPConnection:
+		return a.applyGCPConnection(jsonData)
+	case ResourceGCPMonitoringConfig:
+		return a.applyGCPMonitoringConfig(jsonData)
 	default:
 		return fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
@@ -149,6 +157,9 @@ func detectResourceType(data []byte) (ResourceType, error) {
 			if schema, ok := rawList[0]["schemaId"].(string); ok && schema == azureconnection.SchemaID {
 				return ResourceAzureConnection, nil
 			}
+			if schema, ok := rawList[0]["schemaId"].(string); ok && schema == gcpconnection.SchemaID {
+				return ResourceGCPConnection, nil
+			}
 		}
 	}
 
@@ -156,15 +167,23 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return ResourceUnknown, fmt.Errorf("failed to parse JSON: %w", err)
 	}
-	
+
 	// Azure Connection detection (single object)
 	if schema, ok := raw["schemaId"].(string); ok && schema == azureconnection.SchemaID {
 		return ResourceAzureConnection, nil
+	}
+	if schema, ok := raw["schemaId"].(string); ok && schema == gcpconnection.SchemaID {
+		return ResourceGCPConnection, nil
 	}
 
 	// Azure Monitoring Config detection
 	if scope, ok := raw["scope"].(string); ok && scope == "integration-azure" {
 		return ResourceAzureMonitoringConfig, nil
+	}
+
+	// GCP Monitoring Config detection
+	if scope, ok := raw["scope"].(string); ok && scope == "integration-gcp" {
+		return ResourceGCPMonitoringConfig, nil
 	}
 
 	// Check for explicit type field
@@ -260,8 +279,17 @@ func detectResourceType(data []byte) (ResourceType, error) {
 			// This is a single Azure Connection (credential), not a list
 			return ResourceAzureConnection, nil
 		}
+		if schemaIDValue == gcpconnection.SchemaID {
+			return ResourceGCPConnection, nil
+		}
 		if _, hasScope := raw["scope"]; hasScope {
 			if _, hasValue := raw["value"]; hasValue {
+				if scope, ok := raw["scope"].(string); ok && scope == "integration-gcp" {
+					return ResourceGCPMonitoringConfig, nil
+				}
+				if scope, ok := raw["scope"].(string); ok && scope == "integration-azure" {
+					return ResourceAzureMonitoringConfig, nil
+				}
 				return ResourceSettings, nil
 			}
 		}
@@ -909,7 +937,7 @@ func (a *Applier) applySettings(data []byte) error {
 func (a *Applier) applyAzureConnection(data []byte) error {
 	// Azure connection input might be a single object or a list of setting objects
 	var items []map[string]interface{}
-	
+
 	// Try parsing as array first
 	err := json.Unmarshal(data, &items)
 	if err != nil {
@@ -950,7 +978,7 @@ func (a *Applier) applyAzureConnection(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal value: %w", err)
 		}
-		
+
 		var value azureconnection.Value
 		if err := json.Unmarshal(valueJSON, &value); err != nil {
 			return fmt.Errorf("failed to unmarshal value: %w", err)
@@ -1028,13 +1056,13 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) error {
 	if err := json.Unmarshal(data, &config); err != nil {
 		return fmt.Errorf("failed to parse Azure monitoring config JSON: %w", err)
 	}
-	
+
 	objectID := config.ObjectID
 
 	if config.Value.Version == "" && config.Version != "" {
 		config.Value.Version = config.Version
 	}
-	
+
 	// Lookup by name if ID is missing (Feature 1: naming convention lookup)
 	if objectID == "" && config.Value.Description != "" {
 		existing, err := handler.FindByName(config.Value.Description)
@@ -1069,7 +1097,7 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) error {
 		fmt.Printf("Azure monitoring config created: %s\n", res.ObjectID)
 	} else {
 		// Update existing
-		
+
 		// Feature 2: If version is missing in YAML, preserve existing version
 		if config.Value.Version == "" {
 			existing, err := handler.Get(objectID)
@@ -1093,6 +1121,150 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) error {
 		}
 		fmt.Printf("Azure monitoring config updated: %s\n", res.ObjectID)
 	}
+	return nil
+}
+
+// applyGCPConnection applies GCP connection configuration
+func (a *Applier) applyGCPConnection(data []byte) error {
+	var item map[string]interface{}
+	if err := json.Unmarshal(data, &item); err != nil {
+		return fmt.Errorf("failed to parse GCP connection JSON: %w", err)
+	}
+
+	handler := gcpconnection.NewHandler(a.client)
+	if err := handler.EnsureDynatracePrincipal(); err != nil {
+		return err
+	}
+
+	objectID, _ := item["objectId"].(string)
+	if objectID == "" {
+		objectID, _ = item["objectid"].(string)
+	}
+
+	schemaID, _ := item["schemaId"].(string)
+	if schemaID == "" {
+		schemaID, _ = item["schemaid"].(string)
+	}
+
+	scope, _ := item["scope"].(string)
+	if scope == "" {
+		scope = "environment"
+	}
+
+	valueMap, ok := item["value"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("GCP connection missing 'value' field")
+	}
+
+	valueJSON, err := json.Marshal(valueMap)
+	if err != nil {
+		return fmt.Errorf("failed to marshal value: %w", err)
+	}
+
+	var value gcpconnection.Value
+	if err := json.Unmarshal(valueJSON, &value); err != nil {
+		return fmt.Errorf("failed to unmarshal value: %w", err)
+	}
+	if value.Type == "" {
+		value.Type = "serviceAccountImpersonation"
+	}
+
+	if objectID == "" {
+		existing, err := handler.FindByNameAndType(value.Name, value.Type)
+		if err == nil && existing != nil {
+			objectID = existing.ObjectID
+		}
+	}
+
+	if objectID == "" {
+		res, err := handler.Create(gcpconnection.GCPConnectionCreate{
+			SchemaID: schemaID,
+			Scope:    scope,
+			Value:    value,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create GCP connection: %w", err)
+		}
+		fmt.Printf("GCP connection created: %s\n", res.ObjectID)
+	} else {
+		_, err := handler.Update(objectID, value)
+		if err != nil {
+			return fmt.Errorf("failed to update GCP connection %s: %w", objectID, err)
+		}
+		fmt.Printf("GCP connection updated: %s\n", objectID)
+	}
+
+	return nil
+}
+
+// applyGCPMonitoringConfig applies GCP monitoring configuration
+func (a *Applier) applyGCPMonitoringConfig(data []byte) error {
+	handler := gcpmonitoringconfig.NewHandler(a.client)
+
+	var config gcpmonitoringconfig.GCPMonitoringConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse GCP monitoring config JSON: %w", err)
+	}
+
+	objectID := config.ObjectID
+
+	if config.Value.Version == "" && config.Version != "" {
+		config.Value.Version = config.Version
+	}
+
+	if objectID == "" && config.Value.Description != "" {
+		existing, err := handler.FindByName(config.Value.Description)
+		if err == nil && existing != nil {
+			fmt.Printf("Found existing GCP monitoring config %q with ID: %s\n", config.Value.Description, existing.ObjectID)
+			objectID = existing.ObjectID
+			config.ObjectID = objectID
+		}
+	}
+
+	if objectID == "" {
+		if config.Value.Version == "" {
+			latestVersion, err := handler.GetLatestVersion()
+			if err != nil {
+				return fmt.Errorf("failed to determine extension version for gcp_monitoring_config: %w", err)
+			}
+			config.Value.Version = latestVersion
+			config.Version = latestVersion
+			fmt.Printf("Using latest extension version: %s\n", latestVersion)
+		}
+
+		cleanData, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal clean config: %w", err)
+		}
+
+		res, err := handler.Create(cleanData)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("GCP monitoring config created: %s\n", res.ObjectID)
+	} else {
+		if config.Value.Version == "" {
+			existing, err := handler.Get(objectID)
+			if err != nil {
+				return fmt.Errorf("failed to fetch existing config to preserve version: %w", err)
+			}
+			fmt.Printf("Preserving existing version: %s\n", existing.Value.Version)
+			config.Value.Version = existing.Value.Version
+			config.Version = existing.Value.Version
+		}
+
+		cleanData, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal clean config: %w", err)
+		}
+
+		res, err := handler.Update(objectID, cleanData)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("GCP monitoring config updated: %s\n", res.ObjectID)
+	}
+
 	return nil
 }
 
@@ -1135,7 +1307,7 @@ func printFederatedCompleteInstructions(baseURL, objectID, connectionName string
 		return
 	}
 	host := u.Host
-	
+
 	// Determine issuer
 	issuer := "https://token.dynatrace.com"
 	if strings.Contains(host, "dev.apps.dynatracelabs.com") || strings.Contains(host, "dev.dynatracelabs.com") {
@@ -1176,4 +1348,3 @@ func printFederatedErrorSnippet(baseURL, objectID, clientID string) {
 	fmt.Printf("az ad app federated-credential create --id %q --parameters \"{'name': 'fd-Federated-Credential', 'issuer': '%s', 'subject': 'dt:connection-id/%s', 'audiences': ['%s/svc-id/com.dynatrace.da']}\"\n", clientID, issuer, objectID, host)
 	fmt.Println()
 }
-
