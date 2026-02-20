@@ -8,6 +8,7 @@ DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 COVERAGE_THRESHOLD ?= 60
 
 LDFLAGS = -ldflags "-X github.com/dynatrace-oss/dtctl/cmd.version=$(VERSION) -X github.com/dynatrace-oss/dtctl/cmd.commit=$(COMMIT) -X github.com/dynatrace-oss/dtctl/cmd.date=$(DATE) -s -w"
+INSTALL_BIN_DIR ?= $(if $(GOBIN),$(GOBIN),$(shell go env GOPATH)/bin)
 
 MD_LINT_CLI_IMAGE := "ghcr.io/igorshubovych/markdownlint-cli:v0.31.1"
 
@@ -91,8 +92,15 @@ test-coverage:
 
 # Install locally
 install:
-	@echo "Installing dtctl..."
-	@go install $(LDFLAGS) .
+	@echo "Installing dtctl to $(INSTALL_BIN_DIR)..."
+	@mkdir -p "$(INSTALL_BIN_DIR)"
+	@go build $(LDFLAGS) -o "$(INSTALL_BIN_DIR)/dtctl" .
+	@if case ":$$PATH:" in *":$(INSTALL_BIN_DIR):"*) false;; *) true;; esac; then \
+		echo ""; \
+		echo "dtctl installed, but $(INSTALL_BIN_DIR) is not in PATH."; \
+		echo "Add it with:"; \
+		echo '  export PATH="$$PATH:$(INSTALL_BIN_DIR)"'; \
+	fi
 
 # Clean build artifacts
 clean:

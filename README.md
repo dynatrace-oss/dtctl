@@ -53,6 +53,8 @@ Compatible with GitHub Copilot, Claude Code, and other Agent Skills tools.
 # Or build from source:
 # git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl
 # make build && make install
+# If `dtctl` is not found afterwards, add Go bin to PATH:
+# export PATH="$PATH:$(go env GOPATH)/bin"
 
 # Configure your environment
 dtctl config set-context my-env \
