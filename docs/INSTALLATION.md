@@ -109,6 +109,11 @@ dtctl version
 
 This installs to `$GOPATH/bin/dtctl` (typically `~/go/bin/dtctl`). Ensure `$GOPATH/bin` is in your `$PATH`.
 
+```bash
+# Add Go bin to PATH (zsh/bash)
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
 ### Option 3: Copy to System PATH
 
 Install system-wide:
