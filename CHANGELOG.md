@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-02-24
+
+### Added
+- **Homebrew Distribution** (#41)
+  - `brew install dynatrace-oss/tap/dtctl` now available
+  - GoReleaser `homebrew_casks` integration auto-publishes Cask on tagged releases
+  - Shell completions (bash, zsh, fish) bundled in release archives and Cask
+  - Post-install quarantine removal for unsigned macOS binaries
+
+### Fixed
+- Fixed OAuth scope names and removed dead IAM code (#40)
+- Fixed `make install` with empty `$GOPATH` (#39)
+
+### Changed
+- GoReleaser config modernized: fixed all deprecation warnings (`formats`, `version_template`)
+- Pinned `goreleaser/goreleaser-action` to commit SHA for supply-chain safety
+
 ## [0.11.0] - 2026-02-18
 
 ### Added
@@ -85,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Updated Go version to 1.24.13 in security workflow
 
-[Unreleased]: https://github.com/dynatrace-oss/dtctl/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/dynatrace-oss/dtctl/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.9.0...v0.10.0
