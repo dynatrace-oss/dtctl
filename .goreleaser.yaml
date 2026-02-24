@@ -52,7 +52,7 @@ snapshot:
 homebrew_casks:
   - repository:
       owner: dynatrace-oss
-      name: tap
+      name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/dynatrace-oss/dtctl
     description: "kubectl-inspired CLI for Dynatrace - manage workflows, dashboards, SLOs, queries, and more from your terminal"

@@ -6,7 +6,7 @@ Spec for distributing `dtctl` via Homebrew using a custom tap.
 
 - **Current**: Binary downloads from GitHub Releases only
 - **Goal**: `brew install dynatrace-oss/tap/dtctl`
-- **Tap repo**: <https://github.com/dynatrace-oss/tap>
+- **Tap repo**: <https://github.com/dynatrace-oss/homebrew-tap>
 
 ## Overview
 
@@ -34,16 +34,15 @@ brew upgrade dtctl
 
 ### Step 1: Initialize the tap repository
 
-The tap repo exists at <https://github.com/dynatrace-oss/tap>.
+The tap repo exists at <https://github.com/dynatrace-oss/homebrew-tap>.
 
-> **Note:** Homebrew convention is `homebrew-<name>`, but a plain `tap` repo
-> works too -- Homebrew tries both `homebrew-tap` and `tap` when resolving
-> `dynatrace-oss/tap`.
+> **Note:** Homebrew requires the `homebrew-` prefix. When resolving
+> `dynatrace-oss/tap`, Homebrew looks for `dynatrace-oss/homebrew-tap`.
 
 Repository structure:
 
 ```text
-dynatrace-oss/tap/
+dynatrace-oss/homebrew-tap/
   README.md
   Casks/
     .gitkeep        # Placeholder -- GoReleaser creates dtctl.rb on first release
@@ -53,7 +52,7 @@ GoReleaser will create `Casks/dtctl.rb` automatically on the first release.
 
 ### Step 2: Create a GitHub token for tap pushes
 
-GoReleaser needs a token with write access to `dynatrace-oss/tap`. The default
+GoReleaser needs a token with write access to `dynatrace-oss/homebrew-tap`. The default
 `GITHUB_TOKEN` from GitHub Actions is scoped to the current repo only, so a
 separate token is required.
 
@@ -61,7 +60,7 @@ Options (pick one):
 
 | Method | Scope | Recommendation |
 |--------|-------|----------------|
-| **Fine-grained PAT** | `Contents: write` on `dynatrace-oss/tap` only | Preferred -- least privilege |
+| **Fine-grained PAT** | `Contents: write` on `dynatrace-oss/homebrew-tap` only | Preferred -- least privilege |
 | Classic PAT | `repo` scope | Works but overly broad |
 | GitHub App installation token | Custom app with repo-scoped permissions | Best for orgs, more setup |
 
@@ -76,7 +75,7 @@ Use `homebrew_casks` (not the deprecated `brews`):
 homebrew_casks:
   - repository:
       owner: dynatrace-oss
-      name: tap
+      name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/dynatrace-oss/dtctl
     description: >-
@@ -169,7 +168,7 @@ brew untap local/tap
 2. Tag a new release: `git tag v0.X.0 && git push origin v0.X.0`
 3. Verify:
    - GitHub Release is created with binaries
-   - `dynatrace-oss/tap` has a new commit with `Casks/dtctl.rb`
+   - `dynatrace-oss/homebrew-tap` has a new commit with `Casks/dtctl.rb`
    - `brew install dynatrace-oss/tap/dtctl` works on a clean machine
 
 ## Generated Cask
@@ -228,7 +227,7 @@ end
 
 ## Checklist
 
-- [x] Initialize `dynatrace-oss/tap` with README and empty `Casks/` dir
+- [x] Initialize `dynatrace-oss/homebrew-tap` with README and empty `Casks/` dir
 - [ ] Create fine-grained PAT with `Contents: write` on the tap repo
 - [ ] Store PAT as `HOMEBREW_TAP_GITHUB_TOKEN` secret in `dynatrace-oss/dtctl`
 - [x] Add `homebrew_casks` section to `.goreleaser.yaml`
