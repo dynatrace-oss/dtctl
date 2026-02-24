@@ -76,7 +76,7 @@ Use `homebrew_casks` (not the deprecated `brews`):
 homebrew_casks:
   - repository:
       owner: dynatrace-oss
-      name: tap
+      name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/dynatrace-oss/dtctl
     description: >-
