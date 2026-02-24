@@ -25,10 +25,15 @@ Read-only access for production monitoring and troubleshooting.
 
 ```
 document:documents:read,
+document:direct-shares:read,
+document:trash.documents:read,
 automation:workflows:read,
 slo:slos:read,
+slo:objective-templates:read,
 settings:schemas:read,
 settings:objects:read,
+extensions:definitions:read,
+extensions:configurations:read,
 storage:logs:read,
 storage:events:read,
 storage:metrics:read,
@@ -50,10 +55,10 @@ storage:files:read,
 storage:filter-segments:read,
 iam:users:read,
 iam:groups:read,
-notifications:read,
-vulnerabilities:read,
+notification:notifications:read,
 davis:analyzers:read,
 app-engine:apps:run,
+app-engine:edge-connects:read,
 email:emails:send
 ```
 
@@ -64,14 +69,23 @@ Create and manage your own resources in sandbox/development environments.
 ```
 document:documents:read,
 document:documents:write,
+document:direct-shares:read,
+document:direct-shares:write,
+document:direct-shares:delete,
+document:trash.documents:read,
+document:trash.documents:restore,
 automation:workflows:read,
 automation:workflows:write,
-automation:workflows:execute,
+automation:workflows:run,
 slo:slos:read,
 slo:slos:write,
+slo:objective-templates:read,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
+extensions:definitions:read,
+extensions:configurations:read,
+extensions:configurations:write,
 storage:logs:read,
 storage:events:read,
 storage:metrics:read,
@@ -87,11 +101,15 @@ storage:files:read,
 storage:files:write,
 storage:filter-segments:read,
 storage:filter-segments:write,
+iam:users:read,
+iam:groups:read,
+notification:notifications:read,
 davis:analyzers:read,
 davis:analyzers:execute,
 davis-copilot:conversations:execute,
 app-engine:apps:run,
 app-engine:functions:run,
+app-engine:edge-connects:read,
 email:emails:send
 ```
 
@@ -102,14 +120,27 @@ Full resource management for team environments (no data deletion).
 ```
 document:documents:read,
 document:documents:write,
+document:direct-shares:read,
+document:direct-shares:write,
+document:direct-shares:delete,
+document:environment-shares:read,
+document:environment-shares:write,
+document:environment-shares:claim,
+document:environment-shares:delete,
+document:trash.documents:read,
+document:trash.documents:restore,
 automation:workflows:read,
 automation:workflows:write,
-automation:workflows:execute,
+automation:workflows:run,
 slo:slos:read,
 slo:slos:write,
+slo:objective-templates:read,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
+extensions:definitions:read,
+extensions:configurations:read,
+extensions:configurations:write,
 storage:logs:read,
 storage:logs:write,
 storage:events:read,
@@ -137,8 +168,8 @@ storage:filter-segments:read,
 storage:filter-segments:write,
 iam:users:read,
 iam:groups:read,
-notifications:read,
-vulnerabilities:read,
+notification:notifications:read,
+notification:notifications:write,
 davis:analyzers:read,
 davis:analyzers:execute,
 davis-copilot:conversations:execute,
@@ -161,15 +192,31 @@ Full admin access including data deletion and bucket management.
 ```
 document:documents:read,
 document:documents:write,
+document:documents:delete,
+document:documents:admin,
+document:direct-shares:read,
+document:direct-shares:write,
+document:direct-shares:delete,
+document:environment-shares:read,
+document:environment-shares:write,
+document:environment-shares:claim,
+document:environment-shares:delete,
+document:trash.documents:read,
+document:trash.documents:restore,
+document:trash.documents:delete,
 automation:workflows:read,
 automation:workflows:write,
-automation:workflows:execute,
+automation:workflows:run,
 slo:slos:read,
 slo:slos:write,
+slo:objective-templates:read,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
 settings:objects:admin,
+extensions:definitions:read,
+extensions:configurations:read,
+extensions:configurations:write,
 storage:logs:read,
 storage:logs:write,
 storage:events:read,
@@ -207,9 +254,8 @@ storage:records:delete,
 iam:users:read,
 iam:groups:read,
 iam:policies:read,
-notifications:read,
-notifications:write,
-vulnerabilities:read,
+notification:notifications:read,
+notification:notifications:write,
 davis:analyzers:read,
 davis:analyzers:execute,
 davis-copilot:conversations:execute,
@@ -222,6 +268,7 @@ app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
 app-engine:edge-connects:write,
+app-engine:edge-connects:delete,
 email:emails:send
 ```
 
@@ -234,13 +281,25 @@ email:emails:send
 |-------|-------------|
 | `automation:workflows:read` | Read workflow definitions |
 | `automation:workflows:write` | Create, update, delete workflows |
-| `automation:workflows:execute` | Execute workflows |
+| `automation:workflows:run` | Execute workflows |
 
 ### Documents (Dashboards & Notebooks)
 | Scope | Description |
 |-------|-------------|
 | `document:documents:read` | Read dashboards and notebooks |
-| `document:documents:write` | Create, update, delete documents |
+| `document:documents:write` | Create, update documents |
+| `document:documents:delete` | Delete documents (moves to trash) |
+| `document:documents:admin` | Admin access for ownership |
+| `document:direct-shares:read` | Read direct shares |
+| `document:direct-shares:write` | Create/manage direct shares |
+| `document:direct-shares:delete` | Delete direct shares |
+| `document:environment-shares:read` | Read environment shares |
+| `document:environment-shares:write` | Create environment shares |
+| `document:environment-shares:claim` | Claim environment shares |
+| `document:environment-shares:delete` | Delete environment shares |
+| `document:trash.documents:read` | Read trashed documents |
+| `document:trash.documents:restore` | Restore from trash |
+| `document:trash.documents:delete` | Permanently delete from trash |
 
 ### DQL Queries & Grail Data
 | Scope | Description |
@@ -278,6 +337,7 @@ email:emails:send
 | Scope | Description |
 |-------|-------------|
 | `storage:buckets:read` | Read from buckets |
+| `storage:buckets:write` | Write to buckets |
 | `storage:bucket-definitions:read` | Read bucket definitions |
 | `storage:bucket-definitions:write` | Create/update bucket definitions |
 | `storage:bucket-definitions:delete` | Delete bucket definitions |
@@ -288,6 +348,7 @@ email:emails:send
 |-------|-------------|
 | `slo:slos:read` | Read SLOs |
 | `slo:slos:write` | Create, update, delete, evaluate SLOs |
+| `slo:objective-templates:read` | Read SLO templates |
 
 ### Settings API
 | Scope | Description |
@@ -296,6 +357,13 @@ email:emails:send
 | `settings:objects:read` | Read settings objects |
 | `settings:objects:write` | Create, update, delete settings |
 | `settings:objects:admin` | Admin access for ownership |
+
+### Extensions API
+| Scope | Description |
+|-------|-------------|
+| `extensions:definitions:read` | Read extension definitions |
+| `extensions:configurations:read` | Read monitoring configurations |
+| `extensions:configurations:write` | Create, update, delete monitoring configurations |
 
 ### Davis AI
 | Scope | Description |
@@ -315,11 +383,18 @@ email:emails:send
 | `app-engine:apps:delete` | Uninstall apps |
 | `app-engine:functions:run` | Execute functions |
 | `app-engine:edge-connects:read` | Read EdgeConnect |
-| `app-engine:edge-connects:write` | Manage EdgeConnect |
+| `app-engine:edge-connects:write` | Create/update EdgeConnect |
+| `app-engine:edge-connects:delete` | Delete EdgeConnect |
+
+### Notifications
+| Scope | Description |
+|-------|-------------|
+| `notification:notifications:read` | Read notification configurations |
+| `notification:notifications:write` | Create/update notification configurations |
 
 ### IAM
 
-> **Note**: The `iam:users:read` and `iam:groups:read` scopes may not be available in all token management UIs (e.g., the platform token page). If unavailable, user and group listing features will not work with that token type.
+> **Note**: The `iam:users:read` and `iam:groups:read` scopes are defined in the IAM API spec but may not be available in all token management UIs (e.g., the platform token page). If unavailable, user and group listing features will not work with that token type.
 
 | Scope | Description |
 |-------|-------------|
@@ -330,6 +405,4 @@ email:emails:send
 ### Other
 | Scope | Description |
 |-------|-------------|
-| `notifications:read` | Read notifications |
-| `notifications:write` | Create/update notifications |
-| `vulnerabilities:read` | Read vulnerabilities |
+| `email:emails:send` | Send notification emails |
