@@ -2,7 +2,28 @@
 
 This guide covers installing dtctl on your system.
 
-## Quick Install (Recommended)
+## Homebrew (Recommended — macOS and Linux)
+
+```bash
+brew install dynatrace-oss/tap/dtctl
+```
+
+This installs the binary and sets up shell completions (bash, zsh, fish) automatically.
+
+To upgrade:
+
+```bash
+brew upgrade dtctl
+```
+
+To uninstall:
+
+```bash
+brew uninstall dtctl
+brew untap dynatrace-oss/tap  # optional
+```
+
+## Binary Download
 
 **For most users**, download the pre-built binary for your platform:
 
@@ -230,9 +251,16 @@ dtctl get <TAB><TAB>
 
 ## Updating dtctl
 
+### If Installed via Homebrew
+
+```bash
+brew update
+brew upgrade dtctl
+```
+
 ### If Installed from Release
 
-Download and install the latest release following the [Quick Install](#quick-install-recommended) steps above.
+Download and install the latest release following the [Binary Download](#binary-download) steps above.
 
 ### If Built from Source
 
@@ -259,6 +287,9 @@ sudo cp bin/dtctl /usr/local/bin/
 To remove dtctl:
 
 ```bash
+# If installed via Homebrew
+brew uninstall dtctl
+
 # If installed via Option 2 (make install)
 rm $GOPATH/bin/dtctl
 

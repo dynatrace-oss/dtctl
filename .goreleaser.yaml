@@ -24,18 +24,35 @@ builds:
       - -X github.com/dynatrace-oss/dtctl/pkg/version.Date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: 'checksums.txt'
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
+
+homebrew_casks:
+  - repository:
+      owner: dynatrace-oss
+      name: tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/dynatrace-oss/dtctl
+    description: "kubectl-inspired CLI for Dynatrace - manage workflows, dashboards, SLOs, queries, and more from your terminal"
+    skip_upload: auto
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dtctl"]
+          end
 
 changelog:
   sort: asc

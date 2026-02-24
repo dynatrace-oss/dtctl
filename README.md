@@ -47,14 +47,11 @@ Compatible with GitHub Copilot, Claude Code, and other Agent Skills tools.
 ## Quick Start
 
 ```bash
-# Install dtctl - download the latest release for your platform:
-# https://github.com/dynatrace-oss/dtctl/releases/latest
-#
-# Or build from source:
-# git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl
-# make build && make install
-# If `dtctl` is not found afterwards, add Go bin to PATH:
-# export PATH="$PATH:$(go env GOPATH)/bin"
+# Install via Homebrew (macOS/Linux)
+brew install dynatrace-oss/tap/dtctl
+
+# Or download a binary: https://github.com/dynatrace-oss/dtctl/releases/latest
+# Or build from source: git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl && make install
 
 # Configure your environment
 dtctl config set-context my-env \
@@ -90,7 +87,7 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 
 | Guide | Description |
 |-------|-------------|
-| [Installation](docs/INSTALLATION.md) | Build from source, shell completion setup |
+| [Installation](docs/INSTALLATION.md) | Homebrew, binary download, build from source, shell completion |
 | [Quick Start](docs/QUICK_START.md) | Configuration, examples for all resource types |
 | [Token Scopes](docs/TOKEN_SCOPES.md) | Required API token scopes for each safety level |
 | [API Design](docs/dev/API_DESIGN.md) | Complete command reference |
