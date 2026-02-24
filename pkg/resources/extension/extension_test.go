@@ -472,7 +472,7 @@ func TestListMonitoringConfigurations(t *testing.T) {
 					return
 				}
 
-				   // NOTE: Implementation does not set version as a query param, so do not check for it here.
+				// NOTE: Implementation does not set version as a query param, so do not check for it here.
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.statusCode)
@@ -506,6 +506,198 @@ func TestListMonitoringConfigurations(t *testing.T) {
 
 			if len(result.Items) != len(tt.response.Items) {
 				t.Errorf("expected %d configs, got %d", len(tt.response.Items), len(result.Items))
+			}
+		})
+	}
+}
+
+func TestCreateMonitoringConfiguration(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		body          MonitoringConfigurationCreate
+		statusCode    int
+		response      MonitoringConfiguration
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful create",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			body: MonitoringConfigurationCreate{
+				Scope: "HOST-123",
+				Value: map[string]any{"enabled": true, "description": "test"},
+			},
+			statusCode: 200,
+			response:   MonitoringConfiguration{ObjectID: "new-config-1", Scope: "HOST-123"},
+		},
+		{
+			name:          "extension not found",
+			extensionName: "com.dynatrace.extension.nonexistent",
+			body: MonitoringConfigurationCreate{
+				Value: map[string]any{"enabled": true},
+			},
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			body: MonitoringConfigurationCreate{
+				Value: map[string]any{"enabled": true},
+			},
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/monitoring-configurations"
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("unexpected method: %s (expected POST)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 200 {
+					json.NewEncoder(w).Encode(tt.response)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.CreateMonitoringConfiguration(tt.extensionName, tt.body)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.ObjectID != tt.response.ObjectID {
+				t.Errorf("expected objectId %q, got %q", tt.response.ObjectID, result.ObjectID)
+			}
+		})
+	}
+}
+
+func TestUpdateMonitoringConfiguration(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		configID      string
+		body          MonitoringConfigurationCreate
+		statusCode    int
+		response      MonitoringConfiguration
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful update",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			configID:      "config-1",
+			body: MonitoringConfigurationCreate{
+				Scope: "HOST-123",
+				Value: map[string]any{"enabled": false, "description": "updated"},
+			},
+			statusCode: 200,
+			response:   MonitoringConfiguration{ObjectID: "config-1", Scope: "HOST-123"},
+		},
+		{
+			name:          "config not found",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			configID:      "nonexistent",
+			body: MonitoringConfigurationCreate{
+				Value: map[string]any{"enabled": true},
+			},
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			configID:      "config-1",
+			body: MonitoringConfigurationCreate{
+				Value: map[string]any{"enabled": true},
+			},
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/monitoring-configurations/" + tt.configID
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodPut {
+					t.Errorf("unexpected method: %s (expected PUT)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 200 {
+					json.NewEncoder(w).Encode(tt.response)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.UpdateMonitoringConfiguration(tt.extensionName, tt.configID, tt.body)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.ObjectID != tt.response.ObjectID {
+				t.Errorf("expected objectId %q, got %q", tt.response.ObjectID, result.ObjectID)
 			}
 		})
 	}
