@@ -24,19 +24,19 @@ const (
 	prodAuthURL      = "https://sso.dynatrace.com/oauth2/authorize"
 	prodTokenURL     = "https://token.dynatrace.com/sso/oauth2/token"
 	prodUserInfoURL  = "https://sso.dynatrace.com/sso/oauth2/userinfo"
-	prodClientID     = "dt0s12.live-debugging-prod"
+	prodClientID     = "dt0s12.dtctl-prod"
 	
 	// Development environment
 	devAuthURL       = "https://sso-dev.dynatracelabs.com/oauth2/authorize"
 	devTokenURL      = "https://dev.token.dynatracelabs.com/sso/oauth2/token"
 	devUserInfoURL   = "https://sso-dev.dynatracelabs.com/sso/oauth2/userinfo"
-	devClientID      = "dt0s12.live-debugging-dev"
+	devClientID      = "dt0s12.dtctl-dev"
 	
 	// Hardening/Sprint environment
 	hardAuthURL      = "https://sso-sprint.dynatracelabs.com/oauth2/authorize"
 	hardTokenURL     = "https://hard.token.dynatracelabs.com/sso/oauth2/token"
 	hardUserInfoURL  = "https://sso-sprint.dynatracelabs.com/sso/oauth2/userinfo"
-	hardClientID     = "dt0s12.live-debugging-sprint"
+	hardClientID     = "dt0s12.dtctl-sprint"
 	
 	callbackPort     = 3232
 	// Must match the registered redirect URI for the OAuth client
@@ -60,6 +60,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 	}
 	// temporarly returning the scopes that the ide plugin client uses until we have the clients for dtctl
 	//return []string{"storage:application.snapshots:read", "storage:logs:read", "storage:buckets:read", "dev-obs:breakpoints:set", "openid", "app-engine:apps:run"}
+	
 
 	switch level {
 	case config.SafetyLevelReadOnly:
