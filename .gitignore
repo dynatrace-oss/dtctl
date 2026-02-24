@@ -41,6 +41,7 @@ config.yaml
 # Build artifacts
 *.log
 .integrationtests.env
+completions/
 
 # API specs (copied for reference, not tracked)
 .api-spec/

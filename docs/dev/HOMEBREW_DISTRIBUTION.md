@@ -83,6 +83,10 @@ homebrew_casks:
       kubectl-inspired CLI for Dynatrace - manage workflows, dashboards,
       SLOs, queries, and more from your terminal
     skip_upload: auto
+    completions:
+      bash: completions/dtctl.bash
+      zsh: completions/dtctl.zsh
+      fish: completions/dtctl.fish
     hooks:
       post:
         install: |
@@ -234,4 +238,4 @@ end
 - [x] Update README.md with Homebrew install instructions
 - [x] Update docs/INSTALLATION.md
 - [ ] Tag a release and verify end-to-end
-- [ ] Update IMPLEMENTATION_STATUS.md
+- [x] Update IMPLEMENTATION_STATUS.md

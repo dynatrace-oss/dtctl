@@ -6,6 +6,10 @@ project_name: dtctl
 before:
   hooks:
     - go mod tidy
+    - go build -o /tmp/dtctl-completions-helper .
+    - sh -c "mkdir -p completions && /tmp/dtctl-completions-helper completion bash > completions/dtctl.bash"
+    - sh -c "/tmp/dtctl-completions-helper completion zsh > completions/dtctl.zsh"
+    - sh -c "/tmp/dtctl-completions-helper completion fish > completions/dtctl.fish"
 
 builds:
   - env:
@@ -28,6 +32,12 @@ archives:
       - tar.gz
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - LICENSE*
+      - README*
+      - CHANGELOG*
+      - src: completions/*
+        dst: completions
     format_overrides:
       - goos: windows
         formats:
@@ -47,6 +57,10 @@ homebrew_casks:
     homepage: https://github.com/dynatrace-oss/dtctl
     description: "kubectl-inspired CLI for Dynatrace - manage workflows, dashboards, SLOs, queries, and more from your terminal"
     skip_upload: auto
+    completions:
+      bash: completions/dtctl.bash
+      zsh: completions/dtctl.zsh
+      fish: completions/dtctl.fish
     hooks:
       post:
         install: |
