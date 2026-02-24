@@ -68,10 +68,10 @@ Examples:
 			jsonData = []byte(rendered)
 		}
 
-		// Parse the value
-		var value map[string]any
-		if err := json.Unmarshal(jsonData, &value); err != nil {
-			return fmt.Errorf("failed to parse configuration value: %w", err)
+		// Parse the configuration
+		var config extension.MonitoringConfigurationCreate
+		if err := json.Unmarshal(jsonData, &config); err != nil {
+			return fmt.Errorf("failed to parse configuration: %w", err)
 		}
 
 		// Handle dry-run
@@ -109,10 +109,7 @@ Examples:
 
 		handler := extension.NewHandler(c)
 
-		result, err := handler.CreateMonitoringConfiguration(extensionName, extension.MonitoringConfigurationCreate{
-			Scope: scope,
-			Value: value,
-		})
+		result, err := handler.CreateMonitoringConfiguration(extensionName, config)
 		if err != nil {
 			return fmt.Errorf("failed to create monitoring configuration: %w", err)
 		}

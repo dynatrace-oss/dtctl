@@ -314,8 +314,6 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*MonitoringConfiguration, error) {
 	var result MonitoringConfiguration
 
-	fmt.Println("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", extensionName, configID)
-
 	resp, err := h.client.HTTP().R().
 		SetResult(&result).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", extensionName, configID))
@@ -379,7 +377,6 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 		SetBody(body).
 		SetResult(&result).
 		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", extensionName, configID))
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to update monitoring configuration: %w", err)
 	}

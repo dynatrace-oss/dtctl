@@ -14,23 +14,25 @@ import (
 
 // updateExtensionConfigCmd updates a monitoring configuration for an extension
 var updateExtensionConfigCmd = &cobra.Command{
-	Use:     "extension-config <extension-name> --config-id <config-id> -f <file>",
+	Use:     "extension-config <extension-name> -f <file> [--config-id <config-id>]",
 	Aliases: []string{"ext-config"},
 	Short:   "Update a monitoring configuration for an extension",
 	Long: `Update an existing monitoring configuration for an Extensions 2.0 extension from a YAML or JSON file.
 
+The config ID can be provided via --config-id flag or read from the .objectId field in the file.
+
 Examples:
-  # Update a monitoring configuration
+  # Update using objectId from the file
+  dtctl update extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+
+  # Update with explicit config ID
   dtctl update extension-config com.dynatrace.extension.host-monitoring --config-id abc123 -f config.yaml
 
-  # Update with a specific scope
-  dtctl update extension-config com.dynatrace.extension.host-monitoring --config-id abc123 -f config.yaml --scope HOST-1234
-
   # Update with template variables
-  dtctl update extension-config com.dynatrace.extension.host-monitoring --config-id abc123 -f config.yaml --set env=prod
+  dtctl update extension-config com.dynatrace.extension.host-monitoring -f config.yaml --set env=prod
 
   # Dry run to preview
-  dtctl update extension-config com.dynatrace.extension.host-monitoring --config-id abc123 -f config.yaml --dry-run
+  dtctl update extension-config com.dynatrace.extension.host-monitoring -f config.yaml --dry-run
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,9 +42,6 @@ Examples:
 		scope, _ := cmd.Flags().GetString("scope")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 
-		if configID == "" {
-			return fmt.Errorf("--config-id is required")
-		}
 		if file == "" {
 			return fmt.Errorf("--file is required")
 		}
@@ -72,10 +71,23 @@ Examples:
 			jsonData = []byte(rendered)
 		}
 
-		// Parse the value
-		var value map[string]any
-		if err := json.Unmarshal(jsonData, &value); err != nil {
-			return fmt.Errorf("failed to parse configuration value: %w", err)
+		// Parse the configuration
+		var config extension.MonitoringConfigurationCreate
+		if err := json.Unmarshal(jsonData, &config); err != nil {
+			return fmt.Errorf("failed to parse configuration: %w", err)
+		}
+
+		// Extract objectId from file if --config-id not provided
+		if configID == "" {
+			var raw map[string]any
+			if err := json.Unmarshal(jsonData, &raw); err == nil {
+				if id, ok := raw["objectId"].(string); ok && id != "" {
+					configID = id
+				}
+			}
+		}
+		if configID == "" {
+			return fmt.Errorf("--config-id is required when the file does not contain an objectId field")
 		}
 
 		// Handle dry-run
@@ -114,10 +126,7 @@ Examples:
 
 		handler := extension.NewHandler(c)
 
-		result, err := handler.UpdateMonitoringConfiguration(extensionName, configID, extension.MonitoringConfigurationCreate{
-			Scope: scope,
-			Value: value,
-		})
+		result, err := handler.UpdateMonitoringConfiguration(extensionName, configID, config)
 		if err != nil {
 			return fmt.Errorf("failed to update monitoring configuration: %w", err)
 		}
@@ -128,10 +137,9 @@ Examples:
 }
 
 func init() {
-	updateExtensionConfigCmd.Flags().String("config-id", "", "monitoring configuration ID to update (required)")
+	updateExtensionConfigCmd.Flags().String("config-id", "", "monitoring configuration ID to update (optional if objectId is in the file)")
 	updateExtensionConfigCmd.Flags().StringP("file", "f", "", "file containing monitoring configuration value (required)")
 	updateExtensionConfigCmd.Flags().String("scope", "", "scope for the monitoring configuration (e.g. HOST-1234)")
 	updateExtensionConfigCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	_ = updateExtensionConfigCmd.MarkFlagRequired("config-id")
 	_ = updateExtensionConfigCmd.MarkFlagRequired("file")
 }
