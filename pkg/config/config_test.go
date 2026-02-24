@@ -640,7 +640,7 @@ func TestLocalConfigName(t *testing.T) {
 }
 
 func TestFindLocalConfig_Integration(t *testing.T) {
-	t.Parallel()
+	// NOT parallel: os.Chdir is process-global and races with other tests
 	// Create a temp directory hierarchy
 	tmpDir, err := os.MkdirTemp("", "dtctl-find-local-*")
 	if err != nil {
@@ -700,7 +700,7 @@ current-context: local-test
 }
 
 func TestLoad_LocalConfigPrecedence(t *testing.T) {
-	t.Parallel()
+	// NOT parallel: os.Chdir is process-global and races with other tests
 	// This test verifies the Load() function logic by checking directory changes
 	// We can't fully test XDG env var changes due to library caching,
 	// but we can verify local config detection works
