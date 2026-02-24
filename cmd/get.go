@@ -122,8 +122,12 @@ func init() {
 	getCmd.AddCommand(getCopilotSkillsCmd)
 	getCmd.AddCommand(getSettingsSchemasCmd)
 	getCmd.AddCommand(getSettingsCmd)
+	getCmd.AddCommand(getExtensionsCmd)
+	getCmd.AddCommand(getExtensionConfigsCmd)
 
 	// Delete subcommands (command definitions live in get_*.go files)
+	updateCmd.AddCommand(updateExtensionConfigCmd)
+
 	deleteCmd.AddCommand(deleteWorkflowCmd)
 	deleteCmd.AddCommand(deleteDashboardCmd)
 	deleteCmd.AddCommand(deleteNotebookCmd)

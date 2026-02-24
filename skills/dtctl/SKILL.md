@@ -138,6 +138,19 @@ dtctl open intent dynatrace.distributedtracing/view-trace --data trace_id=abc123
 dtctl open intent dynatrace.distributedtracing/view-trace --data trace_id=abc123 --browser
 ```
 
+### Extensions
+```bash
+dtctl get extensions                                      # List all extensions (shows extension name and active version)
+dtctl get extensions com.dynatrace.extension.host-monitoring # Get all versions of a specific extension
+dtctl describe extension com.dynatrace.extension.host-monitoring # Show detailed info for an extension (active version by default)
+dtctl describe extension com.dynatrace.extension.host-monitoring 1.2.3 # Show details for a specific version
+dtctl get extension-configs com.dynatrace.extension.host-monitoring # List monitoring configurations for an extension
+dtctl get extension-config com.dynatrace.extension.host-monitoring --config-id <config-id> # Get a specific monitoring configuration by ID
+# Output as JSON
+dtctl get extensions -o json
+dtctl describe extension com.dynatrace.extension.host-monitoring -o json
+```
+
 ## Template Variables
 ```bash
 # In YAML files: {{.variable}} or {{.variable | default "value"}}

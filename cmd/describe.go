@@ -93,4 +93,5 @@ func init() {
 	describeCmd.AddCommand(describeSettingsCmd)
 	describeCmd.AddCommand(describeSettingsSchemaCmd)
 	describeCmd.AddCommand(describeSLOCmd)
+	describeCmd.AddCommand(describeExtensionCmd)
 }
