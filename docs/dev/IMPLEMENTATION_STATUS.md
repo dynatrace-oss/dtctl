@@ -248,7 +248,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for the complete implementation pla
 ### Distribution
 - [x] Multi-platform binaries (Linux, macOS, Windows - AMD64/ARM64)
 - [x] GitHub Releases
-- [ ] Homebrew tap
+- [x] Homebrew tap
 - [ ] Container image
 
 ### Testing
