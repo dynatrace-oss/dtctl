@@ -1005,18 +1005,88 @@ dtctl describe azure monitoring "my-monitoring"
 - `describe azure monitoring` prints operational status based on DQL metrics/events, including latest value timestamp.
 
 ### 22. Google Cloud Connection
-**API Spec**: TBD
+**API Spec**: Settings API v2 (`builtin:hyperscaler-authentication.connections.gcp`)
+
+Google Cloud Connection manages service-account impersonation credentials used by GCP monitoring configurations.
 
 ```bash
-# Placeholder (to be implemented)
+# Resource path: gcp connection(s)
+
+# List all GCP connections
+dtctl get gcp connections
+
+# Get by name (preferred) or object ID
+dtctl get gcp connections <name-or-id>
+
+# JSON/YAML output
+dtctl get gcp connections -o json
+dtctl get gcp connections -o yaml
+
+# Imperative create from flags
+dtctl create gcp connection --name "my-gcp-conn" --serviceAccountId "reader@project.iam.gserviceaccount.com"
+
+# Imperative update by name or ID
+dtctl update gcp connection --name "my-gcp-conn" --serviceAccountId "reader@project.iam.gserviceaccount.com"
+dtctl update gcp connection <object-id> --serviceAccountId "reader@project.iam.gserviceaccount.com"
+
+# Delete by name or ID
+dtctl delete gcp connection <name-or-id>
+
+# Apply/create-update from manifest
+dtctl apply -f gcp_connection.yaml
 ```
+
+**Behavior notes**:
+- On create/apply, dtctl ensures the Dynatrace singleton principal (`builtin:hyperscaler-authentication.connections.gcp-dynatrace-principal`) exists.
+- `get`, `update`, and `delete` support name-first lookup with object ID fallback.
+- Connection type defaults to `serviceAccountImpersonation`.
+- `apply` performs idempotent create-or-update logic (POST if new, PUT if existing).
 
 ### 23. Google Cloud Monitoring Configuration
-**API Spec**: TBD
+**API Spec**: Extensions API (`com.dynatrace.extension.da-gcp`)
+
+Google Cloud Monitoring Configuration manages monitoring profiles for GCP integrations.
 
 ```bash
-# Placeholder (to be implemented)
+# Resource path: gcp monitoring
+
+# List all monitoring configurations
+dtctl get gcp monitoring
+
+# Get by description (name) or object ID
+dtctl get gcp monitoring <description-or-id>
+
+# Helper: list available GCP locations from latest extension schema
+dtctl get gcp monitoring-locations
+
+# Helper: list available FeatureSetsType values from latest extension schema
+dtctl get gcp monitoring-feature-sets
+
+# Imperative create from flags
+dtctl create gcp monitoring --name "my-gcp-monitoring" --credentials "my-gcp-conn"
+
+# Imperative update by name or ID
+dtctl update gcp monitoring --name "my-gcp-monitoring" --locationFiltering "us-central1,europe-west1"
+dtctl update gcp monitoring <object-id> --featureSets "compute_engine_essential,cloud_run_essential"
+
+# Delete by name or ID
+dtctl delete gcp monitoring <name-or-id>
+
+# Apply/create-update from manifest
+dtctl apply -f gcp_monitoring_config.yaml
+
+# Describe with runtime status section
+dtctl describe gcp monitoring "my-gcp-monitoring"
 ```
+
+**Behavior notes**:
+- `apply` supports optional `objectId`; when missing, dtctl resolves existing config by description and updates it.
+- If `version` is omitted during update, dtctl preserves the currently configured version.
+- If `version` is omitted during create, dtctl resolves and uses the latest extension version.
+- Locations and feature sets are discovered dynamically from the latest extension schema.
+- Default create behavior uses all discovered locations and all discovered `*_essential` feature sets unless explicitly overridden.
+- `describe gcp monitoring` supports name-first lookup with ID fallback.
+- `describe gcp monitoring` prints operational status based on GCP-specific DQL metrics/events.
 
 ### 24. AWS Connection
 **API Spec**: TBD

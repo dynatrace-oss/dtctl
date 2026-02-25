@@ -9,21 +9,35 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type azureConnectionTableRow struct {
+	Name     string `table:"NAME"`
+	Type     string `table:"TYPE"`
+	ObjectID string `table:"ID"`
+}
+
+func useAzureConnectionTableView() bool {
+	return outputFormat == "" || outputFormat == "table" || outputFormat == "wide"
+}
+
+func toAzureConnectionTableRow(item *azureconnection.AzureConnection) azureConnectionTableRow {
+	return azureConnectionTableRow{
+		Name:     item.Name,
+		Type:     item.Type,
+		ObjectID: item.ObjectID,
+	}
+}
+
+func toAzureConnectionTableRows(items []azureconnection.AzureConnection) []azureConnectionTableRow {
+	rows := make([]azureConnectionTableRow, 0, len(items))
+	for i := range items {
+		rows = append(rows, toAzureConnectionTableRow(&items[i]))
+	}
+	return rows
+}
+
 var getAzureProviderCmd = &cobra.Command{
 	Use:   "azure",
 	Short: "Get Azure resources",
-	RunE:  requireSubcommand,
-}
-
-var getAWSProviderCmd = &cobra.Command{
-	Use:   "aws",
-	Short: "Get AWS resources",
-	RunE:  requireSubcommand,
-}
-
-var getGCPProviderCmd = &cobra.Command{
-	Use:   "gcp",
-	Short: "Get GCP resources",
 	RunE:  requireSubcommand,
 }
 
@@ -52,6 +66,10 @@ var getAzureConnectionCmd = &cobra.Command{
 
 			item, err := handler.FindByName(identifier)
 			if err == nil {
+				if useAzureConnectionTableView() {
+					row := toAzureConnectionTableRow(item)
+					return printer.Print(row)
+				}
 				return printer.Print(item)
 			}
 
@@ -59,6 +77,10 @@ var getAzureConnectionCmd = &cobra.Command{
 				item, err = handler.Get(identifier)
 				if err != nil {
 					return fmt.Errorf("connection with name or ID %q not found", identifier)
+				}
+				if useAzureConnectionTableView() {
+					row := toAzureConnectionTableRow(item)
+					return printer.Print(row)
 				}
 				return printer.Print(item)
 			}
@@ -68,6 +90,9 @@ var getAzureConnectionCmd = &cobra.Command{
 		items, err := handler.List()
 		if err != nil {
 			return err
+		}
+		if useAzureConnectionTableView() {
+			return printer.PrintList(toAzureConnectionTableRows(items))
 		}
 		return printer.PrintList(items)
 	},
@@ -179,16 +204,9 @@ var getAzureMonitoringConfigFeatureSetsCmd = &cobra.Command{
 
 func init() {
 	getCmd.AddCommand(getAzureProviderCmd)
-	getCmd.AddCommand(getAWSProviderCmd)
-	getCmd.AddCommand(getGCPProviderCmd)
 
 	getAzureProviderCmd.AddCommand(getAzureConnectionCmd)
 	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigCmd)
 	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigLocationsCmd)
 	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigFeatureSetsCmd)
-
-	getAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connections"))
-	getAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
-	getGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "connections"))
-	getGCPProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("gcp", "monitoring"))
 }

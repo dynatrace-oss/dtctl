@@ -1,11 +1,13 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -140,6 +142,9 @@ func (c *Client) SetVerbosity(level int) {
 					sb.WriteString(fmt.Sprintf("    %s: %s\n", k, strings.Join(v, ", ")))
 				}
 			}
+			if bodyText := readRequestBodyForDebug(req); bodyText != "" {
+				sb.WriteString(fmt.Sprintf("BODY:\n%s\n", bodyText))
+			}
 		}
 		fmt.Print(sb.String())
 		return nil
@@ -164,6 +169,43 @@ func (c *Client) SetVerbosity(level int) {
 		fmt.Print(sb.String())
 		return nil
 	})
+}
+
+func readRequestBodyForDebug(req *http.Request) string {
+	defer func() {
+		_ = recover()
+	}()
+
+	if req == nil {
+		return ""
+	}
+
+	if req.GetBody != nil {
+		clone, err := req.GetBody()
+		if err == nil && clone != nil {
+			defer clone.Close()
+			body, readErr := io.ReadAll(clone)
+			if readErr == nil && len(body) > 0 {
+				return string(body)
+			}
+		}
+	}
+
+	if req.Body == nil {
+		return ""
+	}
+
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return ""
+	}
+	req.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	if len(body) == 0 {
+		return ""
+	}
+
+	return string(body)
 }
 
 // SetLogger sets a custom logger
