@@ -31,7 +31,7 @@ var deleteAWSProviderCmd = &cobra.Command{
 
 var deleteGCPProviderCmd = &cobra.Command{
 	Use:   "gcp",
-	Short: "Delete GCP resources",
+	Short: "Delete GCP resources (Preview)",
 	RunE:  requireSubcommand,
 }
 
@@ -138,6 +138,7 @@ func init() {
 	deleteCmd.AddCommand(deleteAzureProviderCmd)
 	deleteCmd.AddCommand(deleteAWSProviderCmd)
 	deleteCmd.AddCommand(deleteGCPProviderCmd)
+	attachPreviewNotice(deleteGCPProviderCmd, "GCP")
 
 	deleteAzureProviderCmd.AddCommand(deleteAzureConnectionCmd)
 	deleteAzureProviderCmd.AddCommand(deleteAzureMonitoringConfigCmd)

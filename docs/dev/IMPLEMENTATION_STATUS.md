@@ -68,8 +68,8 @@ This document tracks the current implementation status of dtctl. For future plan
 | **azure_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
 | **aws_connection** | - | - | - | - | - | - | - | - | - | - | - | - | - |
 | **aws_monitoring_config** | - | - | - | - | - | - | - | - | - | - | - | - | - |
-| **gcp_connection** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
-| **gcp_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
+| **gcp_connection (Preview)** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
+| **gcp_monitoring_config (Preview)** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
 
 ### Watch Mode Features
 - [x] Watch all `get` commands: `dtctl get workflows --watch`
@@ -176,7 +176,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [ ] Describe monitoring config
 - [ ] Create/update/delete/apply monitoring config
 
-### GCP Connection Features
+### GCP Connection Features (Preview)
 - [x] List connections: `dtctl get gcp connections`
 - [ ] Filter connections
 - [x] Get by name or ID: `dtctl get gcp connections <name-or-id>`
@@ -185,9 +185,9 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Update connection: `dtctl update gcp connection --name <name> --serviceAccountId <service-account-email>`
 - [x] Delete by name or ID: `dtctl delete gcp connection <name-or-id>`
 - [x] Apply from manifest (idempotent): `dtctl apply -f gcp_connection.yaml`
-- [x] Ensure Dynatrace GCP principal on create/apply
+- [x] Dynatrace GCP principal is auto-created by backend on first HAS connection
 
-### GCP Monitoring Configuration Features
+### GCP Monitoring Configuration Features (Preview)
 - [x] List monitoring configs: `dtctl get gcp monitoring`
 - [ ] Filter monitoring configs
 - [x] Get by description or ID: `dtctl get gcp monitoring <description-or-id>`

@@ -10,13 +10,14 @@ var createAWSProviderCmd = &cobra.Command{
 
 var createGCPProviderCmd = &cobra.Command{
 	Use:   "gcp",
-	Short: "Create GCP resources",
+	Short: "Create GCP resources (Preview)",
 	RunE:  requireSubcommand,
 }
 
 func init() {
 	createCmd.AddCommand(createAWSProviderCmd)
 	createCmd.AddCommand(createGCPProviderCmd)
+	attachPreviewNotice(createGCPProviderCmd, "GCP")
 
 	createAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
 	createAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))

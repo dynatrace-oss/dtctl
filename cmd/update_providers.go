@@ -10,13 +10,14 @@ var updateAWSProviderCmd = &cobra.Command{
 
 var updateGCPProviderCmd = &cobra.Command{
 	Use:   "gcp",
-	Short: "Update GCP resources",
+	Short: "Update GCP resources (Preview)",
 	RunE:  requireSubcommand,
 }
 
 func init() {
 	updateCmd.AddCommand(updateAWSProviderCmd)
 	updateCmd.AddCommand(updateGCPProviderCmd)
+	attachPreviewNotice(updateGCPProviderCmd, "GCP")
 
 	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
 	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))

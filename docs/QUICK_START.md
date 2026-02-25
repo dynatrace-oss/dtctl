@@ -24,7 +24,7 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 13. [Davis AI](#davis-ai)
 14. [Output Formats](#output-formats)
 15. [Azure Monitoring](#azure-monitoring)
-16. [GCP Monitoring](#gcp-monitoring)
+16. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
 17. [Tips & Tricks](#tips--tricks)
 18. [Troubleshooting](#troubleshooting)
 
@@ -2750,9 +2750,11 @@ dtctl create azure monitoring --name "my-azure-monitoring-explicit" \
 
 ---
 
-## GCP Monitoring
+## GCP Monitoring (Preview)
 
 This is the recommended onboarding flow for GCP with service account impersonation.
+
+All GCP commands in this section are `Preview`.
 
 ### 1) Create GCP connection in Dynatrace
 
