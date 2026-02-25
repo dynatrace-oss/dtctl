@@ -66,8 +66,8 @@ This document tracks the current implementation status of dtctl. For future plan
 | **intent** | ✅ | ✅ | - | - | - | - | - | - | - | - | - | - | - |
 | **azure_connection** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
 | **azure_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - | - |
-| **aws_connection** | - | - | - | - | - | - | - | - | - | - | - | - | - |
-| **aws_monitoring_config** | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **aws_connection** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
+| **aws_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
 | **gcp_connection** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
 | **gcp_monitoring_config** | ✅ | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | - | - | - |
 
@@ -163,18 +163,26 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Schema helpers: `dtctl get azure monitoring-locations`, `dtctl get azure monitoring-feature-sets`
 
 ### AWS Connection Features
-- [ ] List connections
+- [x] List connections: `dtctl get aws connections`
 - [ ] Filter connections
-- [ ] Get by name or ID
-- [ ] Describe connection
-- [ ] Create/update/delete/apply connection
+- [x] Get by name or ID: `dtctl get aws connections <name-or-id>`
+- [x] Describe connection: `dtctl describe aws connection <id>`
+- [x] Create connection: `dtctl create aws connection --name <name>`
+- [x] Update connection: `dtctl update aws connection --name <name> --roleArn <role-arn>`
+- [x] Delete by name or ID: `dtctl delete aws connection <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f aws_connection.yaml`
 
 ### AWS Monitoring Configuration Features
-- [ ] List monitoring configs
+- [x] List monitoring configs: `dtctl get aws monitoring`
 - [ ] Filter monitoring configs
-- [ ] Get by name or ID
-- [ ] Describe monitoring config
-- [ ] Create/update/delete/apply monitoring config
+- [x] Get by description or ID: `dtctl get aws monitoring <description-or-id>`
+- [x] Describe monitoring config: `dtctl describe aws monitoring <id-or-name>`
+- [x] Runtime status in describe (Smartscape, metrics, recent events)
+- [x] Create config: `dtctl create aws monitoring --name <name> --credentials <connection-name-or-id>`
+- [x] Update config: `dtctl update aws monitoring --name <name> [--regionFiltering ...] [--featureSets ...]`
+- [x] Delete by name or ID: `dtctl delete aws monitoring <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f aws_monitoring_config.yaml`
+- [x] Schema helpers: `dtctl get aws monitoring-locations`, `dtctl get aws monitoring-feature-sets`
 
 ### GCP Connection Features
 - [x] List connections: `dtctl get gcp connections`

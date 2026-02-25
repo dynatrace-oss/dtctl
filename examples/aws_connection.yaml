@@ -1,0 +1,9 @@
+schemaId: builtin:hyperscaler-authentication.connections.aws
+scope: environment
+value:
+  name: my-aws-connection
+  type: awsRoleBasedAuthentication
+  awsRoleBasedAuthentication:
+    roleArn: arn:aws:iam::123456789012:role/dynatrace-monitoring
+    consumers:
+      - SVC:com.dynatrace.da

@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
@@ -89,6 +91,8 @@ const (
 	ResourceSettings              ResourceType = "settings"
 	ResourceAzureConnection       ResourceType = "azure_connection"
 	ResourceAzureMonitoringConfig ResourceType = "azure_monitoring_config"
+	ResourceAWSConnection         ResourceType = "aws_connection"
+	ResourceAWSMonitoringConfig   ResourceType = "aws_monitoring_config"
 	ResourceGCPConnection         ResourceType = "gcp_connection"
 	ResourceGCPMonitoringConfig   ResourceType = "gcp_monitoring_config"
 	ResourceUnknown               ResourceType = "unknown"
@@ -139,6 +143,10 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) error {
 		return a.applyAzureConnection(jsonData)
 	case ResourceAzureMonitoringConfig:
 		return a.applyAzureMonitoringConfig(jsonData)
+	case ResourceAWSConnection:
+		return a.applyAWSConnection(jsonData)
+	case ResourceAWSMonitoringConfig:
+		return a.applyAWSMonitoringConfig(jsonData)
 	case ResourceGCPConnection:
 		return a.applyGCPConnection(jsonData)
 	case ResourceGCPMonitoringConfig:
@@ -154,6 +162,9 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
 		var rawList []map[string]interface{}
 		if err := json.Unmarshal(data, &rawList); err == nil && len(rawList) > 0 {
+			if schema, ok := rawList[0]["schemaId"].(string); ok && schema == awsconnection.SchemaID {
+				return ResourceAWSConnection, nil
+			}
 			if schema, ok := rawList[0]["schemaId"].(string); ok && schema == azureconnection.SchemaID {
 				return ResourceAzureConnection, nil
 			}
@@ -172,6 +183,9 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	if schema, ok := raw["schemaId"].(string); ok && schema == azureconnection.SchemaID {
 		return ResourceAzureConnection, nil
 	}
+	if schema, ok := raw["schemaId"].(string); ok && schema == awsconnection.SchemaID {
+		return ResourceAWSConnection, nil
+	}
 	if schema, ok := raw["schemaId"].(string); ok && schema == gcpconnection.SchemaID {
 		return ResourceGCPConnection, nil
 	}
@@ -179,6 +193,11 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	// Azure Monitoring Config detection
 	if scope, ok := raw["scope"].(string); ok && scope == "integration-azure" {
 		return ResourceAzureMonitoringConfig, nil
+	}
+
+	// AWS Monitoring Config detection
+	if scope, ok := raw["scope"].(string); ok && scope == "integration-aws" {
+		return ResourceAWSMonitoringConfig, nil
 	}
 
 	// GCP Monitoring Config detection
@@ -275,6 +294,9 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	}
 
 	if hasSchemaID {
+		if schemaIDValue == awsconnection.SchemaID {
+			return ResourceAWSConnection, nil
+		}
 		if schemaIDValue == azureconnection.SchemaID {
 			// This is a single Azure Connection (credential), not a list
 			return ResourceAzureConnection, nil
@@ -284,6 +306,9 @@ func detectResourceType(data []byte) (ResourceType, error) {
 		}
 		if _, hasScope := raw["scope"]; hasScope {
 			if _, hasValue := raw["value"]; hasValue {
+				if scope, ok := raw["scope"].(string); ok && scope == "integration-aws" {
+					return ResourceAWSMonitoringConfig, nil
+				}
 				if scope, ok := raw["scope"].(string); ok && scope == "integration-gcp" {
 					return ResourceGCPMonitoringConfig, nil
 				}
@@ -1124,6 +1149,147 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) error {
 	return nil
 }
 
+// applyAWSConnection applies AWS connection (credential)
+func (a *Applier) applyAWSConnection(data []byte) error {
+	var item map[string]interface{}
+	if err := json.Unmarshal(data, &item); err != nil {
+		return fmt.Errorf("failed to parse AWS connection JSON: %w", err)
+	}
+
+	handler := awsconnection.NewHandler(a.client)
+
+	objectID, _ := item["objectId"].(string)
+	if objectID == "" {
+		objectID, _ = item["objectid"].(string)
+	}
+
+	schemaID, _ := item["schemaId"].(string)
+	if schemaID == "" {
+		schemaID, _ = item["schemaid"].(string)
+	}
+
+	scope, _ := item["scope"].(string)
+	if scope == "" {
+		scope = "environment"
+	}
+
+	valueMap, ok := item["value"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("AWS connection missing 'value' field")
+	}
+
+	valueJSON, err := json.Marshal(valueMap)
+	if err != nil {
+		return fmt.Errorf("failed to marshal value: %w", err)
+	}
+
+	var value awsconnection.Value
+	if err := json.Unmarshal(valueJSON, &value); err != nil {
+		return fmt.Errorf("failed to unmarshal value: %w", err)
+	}
+	if value.Type == "" {
+		value.Type = "awsRoleBasedAuthentication"
+	}
+
+	if objectID == "" {
+		existing, err := handler.FindByNameAndType(value.Name, value.Type)
+		if err == nil && existing != nil {
+			objectID = existing.ObjectID
+		}
+	}
+
+	if objectID == "" {
+		res, err := handler.Create(awsconnection.AWSConnectionCreate{
+			SchemaID: schemaID,
+			Scope:    scope,
+			Value:    value,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create AWS connection: %w", err)
+		}
+		fmt.Printf("AWS connection created: %s\n", res.ObjectID)
+	} else {
+		_, err := handler.Update(objectID, value)
+		if err != nil {
+			return fmt.Errorf("failed to update AWS connection %s: %w", objectID, err)
+		}
+		fmt.Printf("AWS connection updated: %s\n", objectID)
+	}
+
+	return nil
+}
+
+// applyAWSMonitoringConfig applies AWS monitoring configuration
+func (a *Applier) applyAWSMonitoringConfig(data []byte) error {
+	handler := awsmonitoringconfig.NewHandler(a.client)
+
+	var config awsmonitoringconfig.AWSMonitoringConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse AWS monitoring config JSON: %w", err)
+	}
+
+	objectID := config.ObjectID
+
+	if config.Value.Version == "" && config.Version != "" {
+		config.Value.Version = config.Version
+	}
+
+	if objectID == "" && config.Value.Description != "" {
+		existing, err := handler.FindByName(config.Value.Description)
+		if err == nil && existing != nil {
+			fmt.Printf("Found existing AWS monitoring config %q with ID: %s\n", config.Value.Description, existing.ObjectID)
+			objectID = existing.ObjectID
+			config.ObjectID = objectID
+		}
+	}
+
+	if objectID == "" {
+		if config.Value.Version == "" {
+			latestVersion, err := handler.GetLatestVersion()
+			if err != nil {
+				return fmt.Errorf("failed to determine extension version for aws_monitoring_config: %w", err)
+			}
+			config.Value.Version = latestVersion
+			config.Version = latestVersion
+			fmt.Printf("Using latest extension version: %s\n", latestVersion)
+		}
+
+		cleanData, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal clean config: %w", err)
+		}
+
+		res, err := handler.Create(cleanData)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("AWS monitoring config created: %s\n", res.ObjectID)
+	} else {
+		if config.Value.Version == "" {
+			existing, err := handler.Get(objectID)
+			if err != nil {
+				return fmt.Errorf("failed to fetch existing config to preserve version: %w", err)
+			}
+			fmt.Printf("Preserving existing version: %s\n", existing.Value.Version)
+			config.Value.Version = existing.Value.Version
+			config.Version = existing.Value.Version
+		}
+
+		cleanData, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal clean config: %w", err)
+		}
+
+		res, err := handler.Update(objectID, cleanData)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("AWS monitoring config updated: %s\n", res.ObjectID)
+	}
+
+	return nil
+}
+
 // applyGCPConnection applies GCP connection configuration
 func (a *Applier) applyGCPConnection(data []byte) error {
 	var item map[string]interface{}
@@ -1132,9 +1298,6 @@ func (a *Applier) applyGCPConnection(data []byte) error {
 	}
 
 	handler := gcpconnection.NewHandler(a.client)
-	if err := handler.EnsureDynatracePrincipal(); err != nil {
-		return err
-	}
 
 	objectID, _ := item["objectId"].(string)
 	if objectID == "" {

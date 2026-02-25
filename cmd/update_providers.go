@@ -17,7 +17,4 @@ var updateGCPProviderCmd = &cobra.Command{
 func init() {
 	updateCmd.AddCommand(updateAWSProviderCmd)
 	updateCmd.AddCommand(updateGCPProviderCmd)
-
-	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
-	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
 }

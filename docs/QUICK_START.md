@@ -2856,6 +2856,75 @@ dtctl delete gcp connection my-gcp-connection
 
 ---
 
+## AWS Monitoring
+
+This is the recommended onboarding flow for AWS role-based monitoring.
+
+### 1) Create AWS connection in Dynatrace
+
+```bash
+dtctl create aws connection --name "my-aws-connection"
+```
+
+Command output prints the External ID required for trust policy setup in AWS.
+
+### 2) Create IAM role and trust relation (AWS CLI)
+
+```bash
+ROLE_NAME="dynatrace-monitoring"
+EXTERNAL_ID="<external-id-from-step-1>"
+DT_AWS_ACCOUNT="476114158034"
+
+TRUST=$(cat <<JSON
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"$DT_AWS_ACCOUNT"},"Action":"sts:AssumeRole","Condition":{"StringEquals":{"sts:ExternalId":"$EXTERNAL_ID"}}}]}
+JSON
+)
+
+aws iam create-role --role-name "$ROLE_NAME" --assume-role-policy-document "$TRUST"
+aws iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' -o text)
+```
+
+### 3) Finalize AWS connection in Dynatrace
+
+```bash
+dtctl update aws connection --name "my-aws-connection" --roleArn "$ROLE_ARN"
+```
+
+### 4) Create and verify AWS monitoring config
+
+```bash
+dtctl create aws monitoring --name "my-aws-monitoring" --credentials "my-aws-connection"
+dtctl get aws monitoring my-aws-monitoring
+dtctl describe aws monitoring my-aws-monitoring
+```
+
+### 5) Discover available regions and feature sets
+
+```bash
+dtctl get aws monitoring-locations
+dtctl get aws monitoring-feature-sets
+```
+
+### 6) Update AWS monitoring config (examples)
+
+```bash
+dtctl update aws monitoring --name "my-aws-monitoring" \
+  --regionFiltering "eu-west-1,us-east-1"
+
+dtctl update aws monitoring --name "my-aws-monitoring" \
+  --featureSets "EC2_essential,S3_essential,Lambda_essential"
+```
+
+### 7) Delete by name or ID
+
+```bash
+dtctl delete aws monitoring my-aws-monitoring
+dtctl delete aws connection my-aws-connection
+```
+
+---
+
 ## Output Formats
 
 All `get` and `query` commands support multiple output formats.

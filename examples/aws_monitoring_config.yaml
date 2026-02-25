@@ -1,0 +1,42 @@
+scope: integration-aws
+value:
+  enabled: true
+  description: my-aws-monitoring
+  version: 1.0.0.0
+  activationContext: DATA_ACQUISITION
+  featureSets:
+    - EC2_essential
+    - S3_essential
+    - Lambda_essential
+  aws:
+    deploymentRegion: eu-west-1
+    credentials:
+      - description: my-aws-connection
+        enabled: true
+        connectionId: <aws-connection-object-id>
+        accountId: "123456789012"
+        overrideParentConfiguration: false
+    regionFiltering:
+      - eu-west-1
+      - us-east-1
+    tagFiltering: []
+    tagEnrichment: []
+    dtLabelsEnrichment: {}
+    metricsConfiguration:
+      enabled: true
+      regions:
+        - eu-west-1
+        - us-east-1
+    cloudWatchLogsConfiguration:
+      enabled: true
+      regions:
+        - eu-west-1
+    eventsConfiguration:
+      enabled: true
+      regions:
+        - eu-west-1
+    namespaces: []
+    configurationMode: QUICK_START
+    deploymentMode: AUTOMATED
+    deploymentScope: SINGLE_ACCOUNT
+    manualDeploymentStatus: NA
