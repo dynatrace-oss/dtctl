@@ -1132,9 +1132,6 @@ func (a *Applier) applyGCPConnection(data []byte) error {
 	}
 
 	handler := gcpconnection.NewHandler(a.client)
-	if err := handler.EnsureDynatracePrincipal(); err != nil {
-		return err
-	}
 
 	objectID, _ := item["objectId"].(string)
 	if objectID == "" {
