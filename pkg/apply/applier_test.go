@@ -119,6 +119,19 @@ func TestDetectResourceType(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name: "gcp connection array",
+			input: `[{
+				"schemaId": "builtin:hyperscaler-authentication.connections.gcp",
+				"scope": "environment",
+				"value": {
+					"name": "gcp-conn",
+					"type": "serviceAccountImpersonation"
+				}
+			}]`,
+			expected: ResourceGCPConnection,
+			wantErr:  false,
+		},
+		{
 			name: "gcp monitoring config",
 			input: `{
 				"scope": "integration-gcp",
@@ -145,9 +158,8 @@ func TestDetectResourceType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Validate JSON
-			var testJSON map[string]interface{}
-			if err := json.Unmarshal([]byte(tt.input), &testJSON); err != nil {
-				t.Fatalf("test input is not valid JSON: %v", err)
+			if !json.Valid([]byte(tt.input)) {
+				t.Fatalf("test input is not valid JSON")
 			}
 
 			result, err := detectResourceType([]byte(tt.input))
