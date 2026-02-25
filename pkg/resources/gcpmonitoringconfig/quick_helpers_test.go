@@ -77,6 +77,7 @@ func TestResolveCredential(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"message":"not found"}}`))
 	}))
 	defer server.Close()
 
@@ -98,5 +99,35 @@ func TestResolveCredential(t *testing.T) {
 	_, err = ResolveCredential("missing", connHandler)
 	if err == nil || !strings.Contains(err.Error(), "not found by name or ID") {
 		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestResolveCredential_DoesNotMaskListFailureAsNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Query().Get("schemaIds") != "" {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"message":"backend unavailable"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("client.New() error = %v", err)
+	}
+	c.HTTP().SetRetryCount(0)
+	connHandler := gcpconnection.NewHandler(c)
+
+	_, err = ResolveCredential("conn-a", connHandler)
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "not found by name or id") {
+		t.Fatalf("expected non-not-found error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to resolve gcp connection") {
+		t.Fatalf("expected wrapped resolve error, got %v", err)
 	}
 }

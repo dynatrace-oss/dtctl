@@ -10,9 +10,16 @@ import (
 func ResolveCredential(identifier string, handler *gcpconnection.Handler) (Credential, error) {
 	item, err := handler.FindByName(identifier)
 	if err != nil {
+		if !isNameNotFoundError(err) {
+			return Credential{}, fmt.Errorf("failed to resolve gcp connection %q by name: %w", identifier, err)
+		}
+
 		item, err = handler.Get(identifier)
 		if err != nil {
-			return Credential{}, fmt.Errorf("gcp connection %q not found by name or ID", identifier)
+			if isNotFoundError(err) {
+				return Credential{}, fmt.Errorf("gcp connection %q not found by name or ID", identifier)
+			}
+			return Credential{}, fmt.Errorf("failed to resolve gcp connection %q by name or ID: %w", identifier, err)
 		}
 	}
 
@@ -27,6 +34,21 @@ func ResolveCredential(identifier string, handler *gcpconnection.Handler) (Crede
 		ConnectionID:   item.ObjectID,
 		ServiceAccount: serviceAccount,
 	}, nil
+}
+
+func isNameNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "gcp connection with name") && strings.Contains(msg, "not found")
+}
+
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 func ParseOrDefaultLocations(input string, handler *Handler) ([]string, error) {

@@ -1126,69 +1126,76 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) error {
 
 // applyGCPConnection applies GCP connection configuration
 func (a *Applier) applyGCPConnection(data []byte) error {
-	var item map[string]interface{}
-	if err := json.Unmarshal(data, &item); err != nil {
-		return fmt.Errorf("failed to parse GCP connection JSON: %w", err)
+	var items []map[string]interface{}
+
+	if err := json.Unmarshal(data, &items); err != nil {
+		var item map[string]interface{}
+		if errSingle := json.Unmarshal(data, &item); errSingle != nil {
+			return fmt.Errorf("failed to parse GCP connection JSON: %w", errSingle)
+		}
+		items = []map[string]interface{}{item}
 	}
 
 	handler := gcpconnection.NewHandler(a.client)
 
-	objectID, _ := item["objectId"].(string)
-	if objectID == "" {
-		objectID, _ = item["objectid"].(string)
-	}
-
-	schemaID, _ := item["schemaId"].(string)
-	if schemaID == "" {
-		schemaID, _ = item["schemaid"].(string)
-	}
-
-	scope, _ := item["scope"].(string)
-	if scope == "" {
-		scope = "environment"
-	}
-
-	valueMap, ok := item["value"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("GCP connection missing 'value' field")
-	}
-
-	valueJSON, err := json.Marshal(valueMap)
-	if err != nil {
-		return fmt.Errorf("failed to marshal value: %w", err)
-	}
-
-	var value gcpconnection.Value
-	if err := json.Unmarshal(valueJSON, &value); err != nil {
-		return fmt.Errorf("failed to unmarshal value: %w", err)
-	}
-	if value.Type == "" {
-		value.Type = "serviceAccountImpersonation"
-	}
-
-	if objectID == "" {
-		existing, err := handler.FindByNameAndType(value.Name, value.Type)
-		if err == nil && existing != nil {
-			objectID = existing.ObjectID
+	for _, item := range items {
+		objectID, _ := item["objectId"].(string)
+		if objectID == "" {
+			objectID, _ = item["objectid"].(string)
 		}
-	}
 
-	if objectID == "" {
-		res, err := handler.Create(gcpconnection.GCPConnectionCreate{
-			SchemaID: schemaID,
-			Scope:    scope,
-			Value:    value,
-		})
+		schemaID, _ := item["schemaId"].(string)
+		if schemaID == "" {
+			schemaID, _ = item["schemaid"].(string)
+		}
+
+		scope, _ := item["scope"].(string)
+		if scope == "" {
+			scope = "environment"
+		}
+
+		valueMap, ok := item["value"].(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("GCP connection missing 'value' field")
+		}
+
+		valueJSON, err := json.Marshal(valueMap)
 		if err != nil {
-			return fmt.Errorf("failed to create GCP connection: %w", err)
+			return fmt.Errorf("failed to marshal value: %w", err)
 		}
-		fmt.Printf("GCP connection created: %s\n", res.ObjectID)
-	} else {
-		_, err := handler.Update(objectID, value)
-		if err != nil {
-			return fmt.Errorf("failed to update GCP connection %s: %w", objectID, err)
+
+		var value gcpconnection.Value
+		if err := json.Unmarshal(valueJSON, &value); err != nil {
+			return fmt.Errorf("failed to unmarshal value: %w", err)
 		}
-		fmt.Printf("GCP connection updated: %s\n", objectID)
+		if value.Type == "" {
+			value.Type = "serviceAccountImpersonation"
+		}
+
+		if objectID == "" {
+			existing, err := handler.FindByNameAndType(value.Name, value.Type)
+			if err == nil && existing != nil {
+				objectID = existing.ObjectID
+			}
+		}
+
+		if objectID == "" {
+			res, err := handler.Create(gcpconnection.GCPConnectionCreate{
+				SchemaID: schemaID,
+				Scope:    scope,
+				Value:    value,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create GCP connection: %w", err)
+			}
+			fmt.Printf("GCP connection created: %s\n", res.ObjectID)
+		} else {
+			_, err := handler.Update(objectID, value)
+			if err != nil {
+				return fmt.Errorf("failed to update GCP connection %s: %w", objectID, err)
+			}
+			fmt.Printf("GCP connection updated: %s\n", objectID)
+		}
 	}
 
 	return nil

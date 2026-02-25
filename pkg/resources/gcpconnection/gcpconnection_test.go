@@ -2,6 +2,7 @@ package gcpconnection
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -71,6 +72,26 @@ func TestHandlerGetListFindDelete(t *testing.T) {
 }
 
 func TestEnsureDynatracePrincipal(t *testing.T) {
+	t.Run("get principal not found sentinel", func(t *testing.T) {
+		h, server := newHandler(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == http.MethodGet && r.URL.Query().Get("schemaIds") == PrincipalSchemaID {
+				_ = json.NewEncoder(w).Encode(ListResponse{Items: []GCPConnection{}})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+		defer server.Close()
+
+		_, err := h.GetDynatracePrincipal()
+		if err == nil {
+			t.Fatalf("GetDynatracePrincipal() expected error, got nil")
+		}
+		if !errors.Is(err, ErrPrincipalNotFound) {
+			t.Fatalf("GetDynatracePrincipal() expected ErrPrincipalNotFound, got %v", err)
+		}
+	})
+
 	t.Run("already exists", func(t *testing.T) {
 		h, server := newHandler(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

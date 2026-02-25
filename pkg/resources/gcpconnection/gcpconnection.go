@@ -2,6 +2,7 @@ package gcpconnection
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -12,6 +13,8 @@ const (
 	PrincipalSchemaID = "builtin:hyperscaler-authentication.connections.gcp-dynatrace-principal"
 	SettingsAPI       = "/platform/classic/environment-api/v2/settings/objects"
 )
+
+var ErrPrincipalNotFound = errors.New("gcp dynatrace principal not found")
 
 type Handler struct {
 	client *client.Client
@@ -130,7 +133,7 @@ func (h *Handler) GetDynatracePrincipal() (*GCPConnection, error) {
 		return nil, fmt.Errorf("failed to get gcp dynatrace principal: %w", err)
 	}
 	if len(items) == 0 {
-		return nil, fmt.Errorf("gcp dynatrace principal not found")
+		return nil, ErrPrincipalNotFound
 	}
 
 	return &items[0], nil
@@ -183,7 +186,7 @@ func (h *Handler) EnsureDynatracePrincipalWithResult() (*GCPConnection, error) {
 	if err == nil {
 		return principal, nil
 	}
-	if err.Error() != "gcp dynatrace principal not found" {
+	if !errors.Is(err, ErrPrincipalNotFound) {
 		return nil, err
 	}
 
