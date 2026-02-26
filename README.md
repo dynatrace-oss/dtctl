@@ -8,14 +8,14 @@
 
 **Your Dynatrace platform, one command away.**
 
-`dtctl` brings the power of `kubectl` to Dynatrace — manage workflows, dashboards, queries, and more from your terminal. Built for developers who prefer the command line and AI-assisted workflows.
+`dtctl` is a CLI for the Dynatrace platform — manage workflows, dashboards, queries, and more from your terminal or let AI agents do it for you. Its predictable verb-noun syntax (inspired by `kubectl`) makes it easy for both humans and AI agents to operate.
 
 ```bash
 dtctl get workflows                           # List all workflows
 dtctl query "fetch logs | limit 10"           # Run DQL queries
-dtctl diff -f workflow.yaml                   # Compare local vs remote
-dtctl edit dashboard "Production Overview"    # Edit resources in your $EDITOR
-dtctl apply -f workflow.yaml                  # Declarative configuration
+dtctl apply -f workflow.yaml --set env=prod   # Declarative configuration
+dtctl get dashboards -o json                  # Structured output for automation
+dtctl exec copilot nl2dql "error logs from last hour"
 ```
 
 ![dtctl dashboard workflow demo](docs/assets/dtctl-1.gif)
@@ -24,25 +24,26 @@ dtctl apply -f workflow.yaml                  # Declarative configuration
 
 ## Why dtctl?
 
-- **kubectl-style UX** — Familiar commands: `get`, `describe`, `edit`, `apply`, `delete`
+- **Built for AI agents** — Predictable verb-noun commands, structured output (`--plain`, `-o json`), and YAML-based editing make dtctl a natural tool for LLM-driven automation
+- **Agent Skill included** — Ships with an [Agent Skill](https://agentskills.io) that teaches AI assistants how to operate your Dynatrace environment
+- **Familiar CLI conventions** — `get`, `describe`, `edit`, `apply`, `delete` — if you (or your AI) know `kubectl`, you already know dtctl
 - **Watch mode** — Real-time monitoring with `--watch` flag for all resources
-- **AI-friendly** — Plain output modes and YAML editing for seamless AI tool integration
 - **Multi-environment** — Switch between dev/staging/prod with a single command
 - **Template support** — DQL queries with Go template variables
 - **Shell completion** — Tab completion for bash, zsh, fish, and PowerShell
 
 ## AI Agent Skill
 
-dtctl includes an [Agent Skill](https://agentskills.io) at `skills/dtctl/` that teaches AI assistants how to use dtctl.
+dtctl ships with an [Agent Skill](https://agentskills.io) at `skills/dtctl/` — a compact command reference that teaches AI coding assistants how to use dtctl effectively.
 
-**To use:** Copy the skill folder to `.github/skills/` (GitHub Copilot) or `.claude/skills/` (Claude Code):
+**To use:** Copy the skill folder to your AI assistant's skill directory:
 
 ```bash
 cp -r skills/dtctl ~/.github/skills/   # For GitHub Copilot
 cp -r skills/dtctl ~/.claude/skills/   # For Claude Code
 ```
 
-Compatible with GitHub Copilot, Claude Code, and other Agent Skills tools.
+Compatible with GitHub Copilot, Claude Code, and other Agent Skills-compatible tools.
 
 ## Quick Start
 
@@ -62,9 +63,9 @@ dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
 
 # Go!
 dtctl get workflows
-dtctl get workflows --watch                    # Real-time monitoring
+dtctl describe workflow "My Workflow" -o yaml  # Structured output
 dtctl query "fetch logs | limit 10"
-dtctl query "fetch logs" --live                # Live query results
+dtctl apply -f workflow.yaml --set env=prod    # Template variables
 dtctl create lookup -f error_codes.csv --path /lookups/production/errors --lookup-field code
 ```
 
