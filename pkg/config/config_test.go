@@ -131,6 +131,50 @@ func TestConfig_GetToken(t *testing.T) {
 	}
 }
 
+func TestConfig_oauthKeyringNames(t *testing.T) {
+	cfg := NewConfig()
+	cfg.SetContext("prod", "https://abc123.apps.dynatrace.com", "shared-token")
+	cfg.SetContext("dev", "https://dev456.dev.apps.dynatracelabs.com", "shared-token")
+
+	got := cfg.oauthKeyringNames("shared-token")
+	want := []string{
+		"oauth:prod:shared-token",
+		"oauth:dev:shared-token",
+		"oauth:hard:shared-token",
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("oauthKeyringNames() len = %d, want %d (got=%v)", len(got), len(want), got)
+	}
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("oauthKeyringNames()[%d] = %q, want %q (all=%v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestOAuthEnvironmentFromURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "prod", url: "https://abc123.apps.dynatrace.com", want: "prod"},
+		{name: "dev", url: "https://abc.dev.apps.dynatracelabs.com", want: "dev"},
+		{name: "hard", url: "https://abc.sprint.apps.dynatracelabs.com", want: "hard"},
+		{name: "unknown", url: "https://example.com", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := oauthEnvironmentFromURL(tt.url); got != tt.want {
+				t.Errorf("oauthEnvironmentFromURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfig_MustGetToken(t *testing.T) {
 	cfg := NewConfig()
 	_ = cfg.SetToken("existing", "token-value")

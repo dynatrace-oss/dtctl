@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/adrg/xdg"
 	"gopkg.in/yaml.v3"
@@ -243,16 +244,21 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 	// Try keyring first
 	if IsKeyringAvailable() {
 		ts := NewTokenStore()
-		
-		// First check for OAuth token (stored with "oauth:" prefix)
-		oauthToken, err := ts.GetToken("oauth:" + tokenRef)
-		if err == nil && oauthToken != "" {
-			// OAuth token found - it's stored as JSON, extract access token
-			var tokenData map[string]interface{}
-			if err := json.Unmarshal([]byte(oauthToken), &tokenData); err == nil {
-				if accessToken, ok := tokenData["access_token"].(string); ok && accessToken != "" {
-					return accessToken, nil
-				}
+
+		// First check for OAuth token.
+		// Current format: oauth:<env>:<tokenRef>
+		// Legacy format:  oauth:<tokenRef>
+		for _, keyringName := range c.oauthKeyringNames(tokenRef) {
+			oauthToken, err := ts.GetToken(keyringName)
+			if err != nil || oauthToken == "" {
+				continue
+			}
+
+			var tokenData struct {
+				AccessToken string `json:"access_token"`
+			}
+			if err := json.Unmarshal([]byte(oauthToken), &tokenData); err == nil && tokenData.AccessToken != "" {
+				return tokenData.AccessToken, nil
 			}
 		}
 		
@@ -274,6 +280,56 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("token %q not found", tokenRef)
+}
+
+func (c *Config) oauthKeyringNames(tokenRef string) []string {
+	addCandidate := func(list []string, seen map[string]struct{}, key string) []string {
+		if key == "" {
+			return list
+		}
+		if _, exists := seen[key]; exists {
+			return list
+		}
+		seen[key] = struct{}{}
+		return append(list, key)
+	}
+
+	seen := make(map[string]struct{})
+	var candidates []string
+
+	// Prefer environment-specific entries from matching contexts.
+	for _, nc := range c.Contexts {
+		if nc.Context.TokenRef != tokenRef {
+			continue
+		}
+		env := oauthEnvironmentFromURL(nc.Context.Environment)
+		if env != "" {
+			candidates = addCandidate(candidates, seen, fmt.Sprintf("oauth:%s:%s", env, tokenRef))
+		}
+	}
+
+	// Also check all known environment prefixes to support shared token refs.
+	for _, env := range []string{"prod", "dev", "hard"} {
+		candidates = addCandidate(candidates, seen, fmt.Sprintf("oauth:%s:%s", env, tokenRef))
+	}
+
+	return candidates
+}
+
+func oauthEnvironmentFromURL(environmentURL string) string {
+	url := strings.ToLower(environmentURL)
+
+	if strings.Contains(url, "dev.apps.dynatracelabs.com") {
+		return "dev"
+	}
+	if strings.Contains(url, "sprint.apps.dynatracelabs.com") {
+		return "hard"
+	}
+	if strings.Contains(url, "apps.dynatrace.com") {
+		return "prod"
+	}
+
+	return ""
 }
 
 // MustGetToken retrieves a token by reference name, returning empty string on error
