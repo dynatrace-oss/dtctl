@@ -12,7 +12,7 @@ type ApplyResultBase struct {
 	Action       string   `json:"action"       yaml:"action"       table:"ACTION"`
 	ResourceType string   `json:"resourceType" yaml:"resourceType" table:"TYPE"`
 	ID           string   `json:"id"           yaml:"id"           table:"ID"`
-	Name         string   `json:"name"         yaml:"name"         table:"NAME"`
+	Name         string   `json:"name,omitempty" yaml:"name,omitempty" table:"NAME"`
 	Warnings     []string `json:"warnings,omitempty" yaml:"warnings,omitempty" table:"-"`
 }
 
@@ -58,10 +58,9 @@ type BucketApplyResult struct {
 // SettingsApplyResult is the result of applying a settings object.
 type SettingsApplyResult struct {
 	ApplyResultBase `yaml:",inline"`
-	SchemaID        string `json:"schemaId"          yaml:"schemaId"          table:"SCHEMA"`
-	Scope           string `json:"scope"             yaml:"scope"             table:"SCOPE"`
-	ObjectID        string `json:"objectId"          yaml:"objectId"          table:"OBJECT_ID"`
-	Summary         string `json:"summary,omitempty" yaml:"summary,omitempty" table:"-"`
+	SchemaID        string `json:"schemaId,omitempty" yaml:"schemaId,omitempty" table:"SCHEMA"`
+	Scope           string `json:"scope,omitempty"    yaml:"scope,omitempty"    table:"SCOPE"`
+	Summary         string `json:"summary,omitempty"  yaml:"summary,omitempty"  table:"-"`
 }
 
 // ConnectionApplyResult is the result of applying a cloud connection (Azure or GCP).
@@ -69,13 +68,10 @@ type ConnectionApplyResult struct {
 	ApplyResultBase `yaml:",inline"`
 	SchemaID        string `json:"schemaId,omitempty" yaml:"schemaId,omitempty" table:"SCHEMA"`
 	Scope           string `json:"scope,omitempty"    yaml:"scope,omitempty"    table:"SCOPE"`
-	ObjectID        string `json:"objectId"           yaml:"objectId"           table:"OBJECT_ID"`
 }
 
 // MonitoringConfigApplyResult is the result of applying a monitoring config (Azure or GCP).
 type MonitoringConfigApplyResult struct {
 	ApplyResultBase `yaml:",inline"`
-	SchemaID        string `json:"schemaId,omitempty" yaml:"schemaId,omitempty" table:"SCHEMA"`
-	Scope           string `json:"scope,omitempty"    yaml:"scope,omitempty"    table:"SCOPE"`
-	ObjectID        string `json:"objectId"           yaml:"objectId"           table:"OBJECT_ID"`
+	Scope           string `json:"scope,omitempty" yaml:"scope,omitempty" table:"SCOPE"`
 }

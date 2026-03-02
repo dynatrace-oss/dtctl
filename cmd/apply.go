@@ -127,21 +127,29 @@ that contains the dashboard ID. The 'create' command always creates new resource
 			ShowDiff:     showDiff,
 		}
 
-		result, err := applier.Apply(fileData, opts)
+		results, err := applier.Apply(fileData, opts)
 		if err != nil {
 			return err
 		}
 
-		// dry-run returns nil result (output handled internally on stderr)
-		if result == nil {
+		// dry-run returns nil results (output handled internally on stderr)
+		if results == nil {
 			return nil
 		}
 
-		// Print structured output using the global -o flag
+		// Print structured output using the global -o flag.
 		// The concrete type (DashboardApplyResult, WorkflowApplyResult, etc.)
 		// determines which columns/fields appear in the output.
 		printer := NewPrinter()
-		return printer.Print(result)
+		if len(results) == 1 {
+			return printer.Print(results[0])
+		}
+		// Multiple results (e.g., connection list apply) — use list output
+		items := make([]interface{}, len(results))
+		for i, r := range results {
+			items[i] = r
+		}
+		return printer.PrintList(items)
 	},
 }
 

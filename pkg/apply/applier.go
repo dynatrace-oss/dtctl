@@ -103,8 +103,10 @@ const (
 	ResourceUnknown               ResourceType = "unknown"
 )
 
-// Apply applies a resource configuration from file
-func (a *Applier) Apply(fileData []byte, opts ApplyOptions) (ApplyResult, error) {
+// Apply applies a resource configuration from file.
+// Returns a slice of results (most resource types return a single-element slice;
+// connection resources may return multiple results when applying a list).
+func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, error) {
 	// Convert to JSON if needed
 	jsonData, err := format.ValidateAndConvert(fileData)
 	if err != nil {
@@ -130,31 +132,42 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) (ApplyResult, error)
 		return nil, a.dryRun(resourceType, jsonData)
 	}
 
-	// Apply based on resource type
+	// Connection resources can return multiple results
 	switch resourceType {
-	case ResourceWorkflow:
-		return a.applyWorkflow(jsonData)
-	case ResourceDashboard:
-		return a.applyDocument(jsonData, "dashboard", opts)
-	case ResourceNotebook:
-		return a.applyDocument(jsonData, "notebook", opts)
-	case ResourceSLO:
-		return a.applySLO(jsonData)
-	case ResourceBucket:
-		return a.applyBucket(jsonData)
-	case ResourceSettings:
-		return a.applySettings(jsonData)
 	case ResourceAzureConnection:
 		return a.applyAzureConnection(jsonData)
-	case ResourceAzureMonitoringConfig:
-		return a.applyAzureMonitoringConfig(jsonData)
 	case ResourceGCPConnection:
 		return a.applyGCPConnection(jsonData)
+	default:
+		// All other resource types return a single result
+	}
+
+	// Apply single-result resource types
+	var result ApplyResult
+	switch resourceType {
+	case ResourceWorkflow:
+		result, err = a.applyWorkflow(jsonData)
+	case ResourceDashboard:
+		result, err = a.applyDocument(jsonData, "dashboard", opts)
+	case ResourceNotebook:
+		result, err = a.applyDocument(jsonData, "notebook", opts)
+	case ResourceSLO:
+		result, err = a.applySLO(jsonData)
+	case ResourceBucket:
+		result, err = a.applyBucket(jsonData)
+	case ResourceSettings:
+		result, err = a.applySettings(jsonData)
+	case ResourceAzureMonitoringConfig:
+		result, err = a.applyAzureMonitoringConfig(jsonData)
 	case ResourceGCPMonitoringConfig:
-		return a.applyGCPMonitoringConfig(jsonData)
+		result, err = a.applyGCPMonitoringConfig(jsonData)
 	default:
 		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return []ApplyResult{result}, nil
 }
 
 // detectResourceType determines the resource type from JSON data
@@ -951,11 +964,9 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 				Action:       ActionCreated,
 				ResourceType: "settings",
 				ID:           result.ObjectID,
-				Name:         schemaID,
 			},
 			SchemaID: schemaID,
 			Scope:    scope,
-			ObjectID: result.ObjectID,
 		}, nil
 	}
 
@@ -986,11 +997,9 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 				Action:       ActionCreated,
 				ResourceType: "settings",
 				ID:           result.ObjectID,
-				Name:         schemaID,
 			},
 			SchemaID: schemaID,
 			Scope:    scope,
-			ObjectID: result.ObjectID,
 		}, nil
 	}
 
@@ -1005,17 +1014,16 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 			Action:       ActionUpdated,
 			ResourceType: "settings",
 			ID:           updated.ObjectID,
-			Name:         updated.SchemaID,
+			Name:         updated.Summary,
 		},
 		SchemaID: updated.SchemaID,
 		Scope:    updated.Scope,
-		ObjectID: updated.ObjectID,
 		Summary:  updated.Summary,
 	}, nil
 }
 
 // applyAzureConnection applies Azure connection (credential)
-func (a *Applier) applyAzureConnection(data []byte) (ApplyResult, error) {
+func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 	// Azure connection input might be a single object or a list of setting objects
 	var items []map[string]interface{}
 
@@ -1032,7 +1040,7 @@ func (a *Applier) applyAzureConnection(data []byte) (ApplyResult, error) {
 
 	handler := azureconnection.NewHandler(a.client)
 
-	var lastResult ApplyResult
+	var results []ApplyResult
 	var resultWarnings []string
 	for _, item := range items {
 		objectID, _ := item["objectId"].(string)
@@ -1096,7 +1104,7 @@ func (a *Applier) applyAzureConnection(data []byte) (ApplyResult, error) {
 				printFederatedInstructions(a.baseURL, res.ObjectID, &resultWarnings)
 			}
 
-			lastResult = &ConnectionApplyResult{
+			results = append(results, &ConnectionApplyResult{
 				ApplyResultBase: ApplyResultBase{
 					Action:       ActionCreated,
 					ResourceType: "azure_connection",
@@ -1105,8 +1113,7 @@ func (a *Applier) applyAzureConnection(data []byte) (ApplyResult, error) {
 				},
 				SchemaID: schemaID,
 				Scope:    scope,
-				ObjectID: res.ObjectID,
-			}
+			})
 		} else {
 			// Update
 			_, err := handler.Update(objectID, value)
@@ -1136,7 +1143,7 @@ func (a *Applier) applyAzureConnection(data []byte) (ApplyResult, error) {
 				return nil, fmt.Errorf("failed to update Azure connection %s: %w", objectID, err)
 			}
 
-			lastResult = &ConnectionApplyResult{
+			results = append(results, &ConnectionApplyResult{
 				ApplyResultBase: ApplyResultBase{
 					Action:       ActionUpdated,
 					ResourceType: "azure_connection",
@@ -1145,22 +1152,18 @@ func (a *Applier) applyAzureConnection(data []byte) (ApplyResult, error) {
 				},
 				SchemaID: schemaID,
 				Scope:    scope,
-				ObjectID: objectID,
-			}
+			})
 		}
 	}
 
-	// Add warning when multiple items were applied (only last result is returned)
-	if len(items) > 1 {
-		stderrWarn(&resultWarnings, "Applied %d connection objects (showing last)", len(items))
+	// Attach collected warnings to the last result
+	if len(resultWarnings) > 0 && len(results) > 0 {
+		if cr, ok := results[len(results)-1].(*ConnectionApplyResult); ok {
+			cr.Warnings = resultWarnings
+		}
 	}
 
-	// Attach collected warnings to the result
-	if cr, ok := lastResult.(*ConnectionApplyResult); ok && len(resultWarnings) > 0 {
-		cr.Warnings = resultWarnings
-	}
-
-	return lastResult, nil
+	return results, nil
 }
 
 // applyAzureMonitoringConfig applies Azure monitoring configuration
@@ -1220,8 +1223,7 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) (ApplyResult, error) {
 				Name:         config.Value.Description,
 				Warnings:     warnings,
 			},
-			Scope:    config.Scope,
-			ObjectID: res.ObjectID,
+			Scope: config.Scope,
 		}, nil
 	}
 
@@ -1256,13 +1258,12 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) (ApplyResult, error) {
 			Name:         config.Value.Description,
 			Warnings:     warnings,
 		},
-		Scope:    config.Scope,
-		ObjectID: res.ObjectID,
+		Scope: config.Scope,
 	}, nil
 }
 
 // applyGCPConnection applies GCP connection configuration
-func (a *Applier) applyGCPConnection(data []byte) (ApplyResult, error) {
+func (a *Applier) applyGCPConnection(data []byte) ([]ApplyResult, error) {
 	var items []map[string]interface{}
 
 	if err := json.Unmarshal(data, &items); err != nil {
@@ -1275,7 +1276,7 @@ func (a *Applier) applyGCPConnection(data []byte) (ApplyResult, error) {
 
 	handler := gcpconnection.NewHandler(a.client)
 
-	var lastResult ApplyResult
+	var results []ApplyResult
 	var resultWarnings []string
 	for _, item := range items {
 		objectID, _ := item["objectId"].(string)
@@ -1328,7 +1329,7 @@ func (a *Applier) applyGCPConnection(data []byte) (ApplyResult, error) {
 				return nil, fmt.Errorf("failed to create GCP connection: %w", err)
 			}
 
-			lastResult = &ConnectionApplyResult{
+			results = append(results, &ConnectionApplyResult{
 				ApplyResultBase: ApplyResultBase{
 					Action:       ActionCreated,
 					ResourceType: "gcp_connection",
@@ -1337,15 +1338,14 @@ func (a *Applier) applyGCPConnection(data []byte) (ApplyResult, error) {
 				},
 				SchemaID: schemaID,
 				Scope:    scope,
-				ObjectID: res.ObjectID,
-			}
+			})
 		} else {
 			_, err := handler.Update(objectID, value)
 			if err != nil {
 				return nil, fmt.Errorf("failed to update GCP connection %s: %w", objectID, err)
 			}
 
-			lastResult = &ConnectionApplyResult{
+			results = append(results, &ConnectionApplyResult{
 				ApplyResultBase: ApplyResultBase{
 					Action:       ActionUpdated,
 					ResourceType: "gcp_connection",
@@ -1354,22 +1354,18 @@ func (a *Applier) applyGCPConnection(data []byte) (ApplyResult, error) {
 				},
 				SchemaID: schemaID,
 				Scope:    scope,
-				ObjectID: objectID,
-			}
+			})
 		}
 	}
 
-	// Add warning when multiple items were applied (only last result is returned)
-	if len(items) > 1 {
-		stderrWarn(&resultWarnings, "Applied %d connection objects (showing last)", len(items))
+	// Attach collected warnings to the last result
+	if len(resultWarnings) > 0 && len(results) > 0 {
+		if cr, ok := results[len(results)-1].(*ConnectionApplyResult); ok {
+			cr.Warnings = resultWarnings
+		}
 	}
 
-	// Attach collected warnings to the result
-	if cr, ok := lastResult.(*ConnectionApplyResult); ok && len(resultWarnings) > 0 {
-		cr.Warnings = resultWarnings
-	}
-
-	return lastResult, nil
+	return results, nil
 }
 
 // applyGCPMonitoringConfig applies GCP monitoring configuration
@@ -1426,8 +1422,7 @@ func (a *Applier) applyGCPMonitoringConfig(data []byte) (ApplyResult, error) {
 				Name:         config.Value.Description,
 				Warnings:     warnings,
 			},
-			Scope:    config.Scope,
-			ObjectID: res.ObjectID,
+			Scope: config.Scope,
 		}, nil
 	}
 
@@ -1458,8 +1453,7 @@ func (a *Applier) applyGCPMonitoringConfig(data []byte) (ApplyResult, error) {
 			Name:         config.Value.Description,
 			Warnings:     warnings,
 		},
-		Scope:    config.Scope,
-		ObjectID: res.ObjectID,
+		Scope: config.Scope,
 	}, nil
 }
 

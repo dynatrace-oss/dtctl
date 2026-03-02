@@ -154,7 +154,6 @@ func TestSettingsApplyResultJSON(t *testing.T) {
 		},
 		SchemaID: "builtin:openpipeline.logs.pipelines",
 		Scope:    "environment",
-		ObjectID: "obj-123",
 	}
 
 	data, err := json.Marshal(result)
@@ -173,8 +172,9 @@ func TestSettingsApplyResultJSON(t *testing.T) {
 	if parsed["scope"] != "environment" {
 		t.Errorf("unexpected scope: %v", parsed["scope"])
 	}
-	if parsed["objectId"] != "obj-123" {
-		t.Errorf("unexpected objectId: %v", parsed["objectId"])
+	// Name should be omitted when empty (omitempty)
+	if _, ok := parsed["name"]; ok {
+		t.Error("empty name should be omitted from JSON")
 	}
 }
 
@@ -188,7 +188,6 @@ func TestSettingsApplyResultWithSummaryJSON(t *testing.T) {
 		},
 		SchemaID: "builtin:alerting.profile",
 		Scope:    "environment",
-		ObjectID: "obj-456",
 		Summary:  "Alert profile for production",
 	}
 
@@ -254,7 +253,6 @@ func TestConnectionApplyResultJSON(t *testing.T) {
 		},
 		SchemaID: "builtin:hyperscaler-authentication.connections.gcp",
 		Scope:    "environment",
-		ObjectID: "conn-123",
 	}
 
 	data, err := json.Marshal(result)
@@ -270,8 +268,8 @@ func TestConnectionApplyResultJSON(t *testing.T) {
 	if parsed["schemaId"] != "builtin:hyperscaler-authentication.connections.gcp" {
 		t.Errorf("unexpected schemaId: %v", parsed["schemaId"])
 	}
-	if parsed["objectId"] != "conn-123" {
-		t.Errorf("unexpected objectId: %v", parsed["objectId"])
+	if parsed["id"] != "conn-123" {
+		t.Errorf("unexpected id: %v", parsed["id"])
 	}
 }
 
@@ -283,9 +281,7 @@ func TestMonitoringConfigApplyResultJSON(t *testing.T) {
 			ID:           "mc-789",
 			Name:         "GCP Monitoring",
 		},
-		SchemaID: "builtin:cloud.gcp",
-		Scope:    "integration-gcp",
-		ObjectID: "mc-789",
+		Scope: "integration-gcp",
 	}
 
 	data, err := json.Marshal(result)
@@ -301,11 +297,12 @@ func TestMonitoringConfigApplyResultJSON(t *testing.T) {
 	if parsed["resourceType"] != "gcp-monitoring-config" {
 		t.Errorf("unexpected resourceType: %v", parsed["resourceType"])
 	}
-	if parsed["schemaId"] != "builtin:cloud.gcp" {
-		t.Errorf("unexpected schemaId: %v", parsed["schemaId"])
-	}
 	if parsed["scope"] != "integration-gcp" {
 		t.Errorf("unexpected scope: %v", parsed["scope"])
+	}
+	// MonitoringConfigApplyResult no longer has SchemaID (API doesn't provide it)
+	if _, ok := parsed["schemaId"]; ok {
+		t.Error("monitoring config result should not have schemaId")
 	}
 }
 
@@ -386,7 +383,6 @@ func TestSettingsSummaryOmittedWhenEmpty(t *testing.T) {
 		},
 		SchemaID: "builtin:alerting.profile",
 		Scope:    "environment",
-		ObjectID: "s-1",
 	}
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -475,12 +471,10 @@ func TestYAMLSerialization(t *testing.T) {
 				},
 				SchemaID: "builtin:alerting.profile",
 				Scope:    "environment",
-				ObjectID: "s-1",
 			},
 			checks: map[string]interface{}{
 				"schemaId": "builtin:alerting.profile",
 				"scope":    "environment",
-				"objectId": "s-1",
 			},
 		},
 	}
