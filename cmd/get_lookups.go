@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
@@ -62,27 +64,30 @@ Examples:
 		if len(args) > 0 {
 			// For table output, show the actual lookup table data (not metadata)
 			if outputFormat == "table" || outputFormat == "wide" {
-				data, err := handler.GetData(args[0], 0)
+				dataResult, err := handler.GetData(args[0], 0)
 				if err != nil {
 					return err
 				}
-				return printer.PrintList(data)
+				printLookupNotifications(c, dataResult.Notifications)
+				return printer.PrintList(dataResult.Records)
 			}
 
 			// For CSV/JSON output, return full data
 			if outputFormat == "csv" || outputFormat == "json" {
-				fullData, err := handler.GetData(args[0], 0)
+				dataResult, err := handler.GetData(args[0], 0)
 				if err != nil {
 					return err
 				}
-				return printer.PrintList(fullData)
+				printLookupNotifications(c, dataResult.Notifications)
+				return printer.PrintList(dataResult.Records)
 			}
 
 			// For YAML output, return full structure (metadata + data)
-			lookupData, err := handler.GetWithData(args[0], 0)
+			lookupData, notifications, err := handler.GetWithData(args[0], 0)
 			if err != nil {
 				return err
 			}
+			printLookupNotifications(c, notifications)
 			return printer.Print(lookupData)
 		}
 
@@ -167,4 +172,13 @@ Examples:
 func init() {
 	// Delete confirmation flags
 	deleteLookupCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+}
+
+// printLookupNotifications surfaces DQL query notifications (e.g., truncation warnings) to stderr
+func printLookupNotifications(c *client.Client, notifications []exec.QueryNotification) {
+	if len(notifications) == 0 {
+		return
+	}
+	executor := exec.NewDQLExecutor(c)
+	executor.PrintNotifications(notifications)
 }

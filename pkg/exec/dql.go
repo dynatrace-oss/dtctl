@@ -372,8 +372,8 @@ func getHintForNotification(notificationType, message string) string {
 	return ""
 }
 
-// printNotifications prints query notifications/warnings to stderr
-func (e *DQLExecutor) printNotifications(notifications []QueryNotification) {
+// PrintNotifications prints query notifications/warnings to stderr
+func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 	useColor := isStderrTerminal()
 
 	for _, n := range notifications {
@@ -418,7 +418,7 @@ func (e *DQLExecutor) printNotifications(notifications []QueryNotification) {
 func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOptions) error {
 	// Print any notifications/warnings first
 	if notifications := result.GetNotifications(); len(notifications) > 0 {
-		e.printNotifications(notifications)
+		e.PrintNotifications(notifications)
 	}
 
 	// Extract records from result

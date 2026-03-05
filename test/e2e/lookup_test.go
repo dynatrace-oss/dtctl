@@ -108,18 +108,18 @@ func TestLookupLifecycle(t *testing.T) {
 
 	// Step 4: Get lookup data
 	t.Log("Step 4: Getting lookup data...")
-	data, err := handler.GetData(lookupPath, 0)
+	dataResult, err := handler.GetData(lookupPath, 0)
 	if err != nil {
 		t.Fatalf("Failed to get lookup data: %v", err)
 	}
-	if len(data) != 6 {
-		t.Errorf("GetData() record count = %v, want 6", len(data))
+	if len(dataResult.Records) != 6 {
+		t.Errorf("GetData() record count = %v, want 6", len(dataResult.Records))
 	}
-	t.Logf("✓ Got lookup data: %d records", len(data))
+	t.Logf("✓ Got lookup data: %d records", len(dataResult.Records))
 
 	// Verify first record
-	if len(data) > 0 {
-		firstRecord := data[0]
+	if len(dataResult.Records) > 0 {
+		firstRecord := dataResult.Records[0]
 		if code, ok := firstRecord["code"].(string); ok {
 			if code != "200" {
 				t.Errorf("First record code = %v, want '200'", code)
@@ -158,16 +158,16 @@ func TestLookupLifecycle(t *testing.T) {
 
 	// Step 6: Verify update
 	t.Log("Step 6: Verifying update...")
-	updatedData, err := handler.GetData(lookupPath, 0)
+	updatedDataResult, err := handler.GetData(lookupPath, 0)
 	if err != nil {
 		t.Fatalf("Failed to get updated lookup data: %v", err)
 	}
-	if len(updatedData) != 4 {
-		t.Errorf("Updated data record count = %v, want 4", len(updatedData))
+	if len(updatedDataResult.Records) != 4 {
+		t.Errorf("Updated data record count = %v, want 4", len(updatedDataResult.Records))
 	}
 	// Check if new column exists
-	if len(updatedData) > 0 {
-		if _, hasCategory := updatedData[0]["category"]; !hasCategory {
+	if len(updatedDataResult.Records) > 0 {
+		if _, hasCategory := updatedDataResult.Records[0]["category"]; !hasCategory {
 			t.Error("Updated data missing 'category' column")
 		}
 	}
@@ -369,18 +369,18 @@ func TestLookupCreate_CustomParsePattern(t *testing.T) {
 
 	// Verify data
 	time.Sleep(2 * time.Second)
-	data, err := handler.GetData(lookupPath, 0)
+	dataResult, err := handler.GetData(lookupPath, 0)
 	if err != nil {
 		t.Fatalf("Failed to get data: %v", err)
 	}
 
-	if len(data) != 3 {
-		t.Errorf("Data length = %d, want 3", len(data))
+	if len(dataResult.Records) != 3 {
+		t.Errorf("Data length = %d, want 3", len(dataResult.Records))
 	}
 
 	// Check first record has expected columns
-	if len(data) > 0 {
-		first := data[0]
+	if len(dataResult.Records) > 0 {
+		first := dataResult.Records[0]
 		if _, hasID := first["id"]; !hasID {
 			t.Error("First record missing 'id' column")
 		}
