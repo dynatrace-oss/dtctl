@@ -522,43 +522,42 @@ func normalizeLocalsHierarchy(locals map[string]interface{}) map[string]interfac
 		}
 	}
 
-	dbHelperObj := map[string]interface{}{}
-	if dbHelper, ok := normalized["dbHelper"]; ok {
-		dbHelperObj["@self"] = dbHelper
+	linkedObjName, _ := thisObj["@value"].(string)
+	if linkedObjName == "" || linkedObjName == "this" {
+		return normalized
 	}
 
-	moved := 0
-	for name, value := range normalized {
-		if isLikelyDbHelperMember(name) {
-			dbHelperObj[name] = value
-			delete(normalized, name)
-			moved++
+	rawLinkedObj, exists := normalized[linkedObjName]
+	if !exists {
+		return normalized
+	}
+
+	linkedObj := map[string]interface{}{}
+	if linkedMap, ok := rawLinkedObj.(map[string]interface{}); ok {
+		for k, v := range linkedMap {
+			linkedObj[k] = v
 		}
+	} else {
+		linkedObj["@value"] = rawLinkedObj
+		linkedObj["@common_type"] = "dynamic"
+		linkedObj["@original_type"] = "snapshot.inferred"
 	}
 
-	if moved > 0 || len(dbHelperObj) > 0 {
-		thisObj["dbHelper"] = dbHelperObj
-		normalized["this"] = thisObj
-		delete(normalized, "dbHelper")
+	if _, ok := linkedObj["@common_type"]; !ok {
+		linkedObj["@common_type"] = "object"
 	}
+	if _, ok := linkedObj["@original_type"]; !ok {
+		linkedObj["@original_type"] = "snapshot.inferred.nested_object"
+	}
+	if _, ok := linkedObj["@value"]; !ok {
+		linkedObj["@value"] = "<nested object>"
+	}
+
+	thisObj[linkedObjName] = linkedObj
+	normalized["this"] = thisObj
+	delete(normalized, linkedObjName)
 
 	return normalized
-}
-
-func isLikelyDbHelperMember(name string) bool {
-	if name == "" || name == "dbHelper" || name == "this" {
-		return false
-	}
-	if strings.HasSuffix(name, "_QUERY") || strings.HasSuffix(name, "_BY_ACCOUNT_ID") {
-		return true
-	}
-	if strings.HasPrefix(name, "GET_") || strings.HasPrefix(name, "INSERT_") || strings.HasPrefix(name, "UPDATE_") || strings.HasPrefix(name, "DELETE_") || strings.HasPrefix(name, "COUNT_") {
-		return true
-	}
-	if name != strings.ToUpper(name) {
-		return false
-	}
-	return strings.Contains(name, "_")
 }
 
 func inferLocalDetails(localNames []string, stringCache []string) map[string]map[string]interface{} {
@@ -819,58 +818,10 @@ func extractLocalNames(stringsCache []string) []string {
 		}
 	}
 
-	variablesStart := -1
-	for i, s := range stringsCache {
-		if s == "variables" {
-			variablesStart = i + 1
-			break
-		}
-	}
-	if variablesStart != -1 {
-		stopWords := map[string]struct{}{
-			"threading": {}, "traceback": {}, "frame": {}, "locals": {},
-		}
-		for i := variablesStart; i < len(stringsCache) && i < variablesStart+120; i++ {
-			s := strings.TrimSpace(stringsCache[i])
-			if s == "" {
-				continue
-			}
-			if _, stop := stopWords[s]; stop {
-				break
-			}
-			if !isLikelyVariableNameToken(s) {
-				continue
-			}
-			appendUnique(s)
-			if len(names) >= 140 {
-				break
-			}
-		}
-	}
-
 	if len(names) == 0 {
 		return nil
 	}
 	return names
-}
-
-func isLikelyVariableNameToken(s string) bool {
-	if s == "" {
-		return false
-	}
-	if isLikelyTypeToken(s) {
-		return false
-	}
-	if strings.Contains(s, " ") || strings.Contains(s, ":") || strings.Contains(s, "/") || strings.Contains(s, "?") {
-		return false
-	}
-	if strings.HasSuffix(s, ".java") || strings.HasPrefix(s, "http") {
-		return false
-	}
-	if _, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return false
-	}
-	return true
 }
 
 func getString(record map[string]interface{}, key string) string {

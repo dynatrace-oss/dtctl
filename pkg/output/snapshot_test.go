@@ -135,15 +135,16 @@ func TestInferLocalDetails(t *testing.T) {
 	}
 }
 
-func TestExtractLocalNames_IncludesVariablesSectionNames(t *testing.T) {
+func TestExtractLocalNames_UsesLocalsSectionOnly(t *testing.T) {
 	cache := []string{
 		"metadata",
 		"variables",
 		"firstElement",
 		"java.lang.Long",
-		"traceback",
+		"threading",
 		"locals",
 		"count",
+		"lastElement",
 		"step",
 		"threading",
 	}
@@ -154,19 +155,23 @@ func TestExtractLocalNames_IncludesVariablesSectionNames(t *testing.T) {
 		has[n] = true
 	}
 
-	if !has["firstElement"] {
-		t.Fatalf("expected firstElement in extracted names, got %#v", names)
+	if has["firstElement"] {
+		t.Fatalf("did not expect firstElement from variables section, got %#v", names)
 	}
 	if !has["count"] {
 		t.Fatalf("expected count in extracted names, got %#v", names)
 	}
+	if !has["lastElement"] {
+		t.Fatalf("expected lastElement in extracted names, got %#v", names)
+	}
 }
 
-func TestNormalizeLocalsHierarchy_NestsDbHelperMembersUnderThis(t *testing.T) {
+func TestNormalizeLocalsHierarchy_NestsLinkedObjectOnly(t *testing.T) {
 	locals := map[string]interface{}{
 		"this": map[string]interface{}{
 			"@common_type":  "object",
 			"@original_type": "MyClass",
+			"@value":        "dbHelper",
 		},
 		"dbHelper": map[string]interface{}{
 			"@common_type":  "object",
@@ -179,13 +184,6 @@ func TestNormalizeLocalsHierarchy_NestsDbHelperMembersUnderThis(t *testing.T) {
 
 	normalized := normalizeLocalsHierarchy(locals)
 
-	if _, exists := normalized["CC_MANUFACTURE_DETAILS_QUERY"]; exists {
-		t.Fatalf("expected CC_MANUFACTURE_DETAILS_QUERY to be moved under this.dbHelper")
-	}
-	if _, exists := normalized["COUNT_ORDER_BY_ACCOUNT_ID_QUERY"]; exists {
-		t.Fatalf("expected COUNT_ORDER_BY_ACCOUNT_ID_QUERY to be moved under this.dbHelper")
-	}
-
 	thisObj, ok := normalized["this"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected normalized this object, got %#v", normalized["this"])
@@ -194,13 +192,19 @@ func TestNormalizeLocalsHierarchy_NestsDbHelperMembersUnderThis(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected this.dbHelper object, got %#v", thisObj["dbHelper"])
 	}
-	if _, ok := dbHelperObj["CC_MANUFACTURE_DETAILS_QUERY"]; !ok {
-		t.Fatalf("expected this.dbHelper.CC_MANUFACTURE_DETAILS_QUERY, got %#v", dbHelperObj)
+	if dbHelperObj["@common_type"] == "" {
+		t.Fatalf("expected this.dbHelper @common_type to exist, got %#v", dbHelperObj["@common_type"])
 	}
-	if _, ok := dbHelperObj["COUNT_ORDER_BY_ACCOUNT_ID_QUERY"]; !ok {
-		t.Fatalf("expected this.dbHelper.COUNT_ORDER_BY_ACCOUNT_ID_QUERY, got %#v", dbHelperObj)
+	if dbHelperObj["@original_type"] == "" {
+		t.Fatalf("expected this.dbHelper @original_type to exist, got %#v", dbHelperObj["@original_type"])
+	}
+	if _, ok := normalized["CC_MANUFACTURE_DETAILS_QUERY"]; !ok {
+		t.Fatalf("expected unrelated local to remain top-level, got %#v", normalized)
+	}
+	if _, ok := normalized["COUNT_ORDER_BY_ACCOUNT_ID_QUERY"]; !ok {
+		t.Fatalf("expected unrelated local to remain top-level, got %#v", normalized)
 	}
 	if _, ok := normalized["count"]; !ok {
-		t.Fatalf("non-dbHelper local should remain top-level, got %#v", normalized)
+		t.Fatalf("expected non-linked local to remain top-level, got %#v", normalized)
 	}
 }

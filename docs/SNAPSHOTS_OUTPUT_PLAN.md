@@ -48,62 +48,44 @@ The snapshot.data is actually a base64 of a protobuf of the collected variables 
 
 You can see the code from a different project that I placed in the livedebugger-management folder. You can start with the file livedebugger-management/pkg/server/user_msg/grail_snapshot_record_utils.go and the function ConvertSnapshotDataToSnapshotMsg (you can see the struct GrailSnapshotRecord which is the definition of the snapshot). If you need to use files from the livedebugger-management project then don't use them from that folder, you can copy and paste code from them, but don't assume this folder will stay here (it is just for learning and inspiration!).
 
-## Progress Update (2026-03-03)
+## POC Summary (2026-03-05)
 
-### What we completed today
+This feature is now in a usable POC state. It supports snapshot-specific output and demonstrates end-to-end decoding + enrichment, but still relies on heuristic parsing due to missing typed snapshot protobuf schema.
 
-- Added `-o snapshot` output support and integrated it into the output printer flow.
-- Implemented snapshot enrichment that:
-  - parses `snapshot.string_map` (both array and map JSON forms),
-  - decodes `snapshot.data` from base64,
-  - performs schema-less protobuf wire decode (best-effort),
-  - resolves string indices to actual strings from `snapshot.string_map`.
-- Simplified user-facing output to a single field:
+### Implemented behavior
+
+- `-o snapshot` is implemented and wired into output handling.
+- Snapshot records are enriched by:
+  - decoding `snapshot.data` from base64,
+  - decoding protobuf wire fields (schema-less / best-effort),
+  - resolving string indices through `snapshot.string_map`.
+- User-facing output is intentionally simplified to a single field:
   - `parsed_snapshot`
-- Removed extra debug/auxiliary output fields from final snapshot output:
-  - removed `snapshot.parsed`
-  - removed `snapshot.message_namespace`
-  - removed `snapshot.namespace_view`
-  - removed `snapshot.message_view`
-- Improved local-variable extraction:
-  - increased extraction coverage from `locals` and `variables` token regions,
-  - fixed missing variables (e.g. `firstElement`, `lastElement`, `count` now appear when present in the source snapshot strings).
-- Added hierarchy normalization for object members:
-  - db helper constants are grouped under `parsed_snapshot.view.locals.this.dbHelper`.
+- Removed intermediate/debug-shaped fields from final output:
+  - `snapshot.parsed`, `snapshot.message_namespace`, `snapshot.namespace_view`, `snapshot.message_view`.
 
-### Current known limitations
+### Important design correction made during implementation
 
-- Value/type reconstruction is still heuristic (schema-less) because we are not using the exact typed protobuf schema from the snapshot producer.
-- Some inferred `@value` relationships may still be approximate when neighboring string tokens are ambiguous.
-- The output currently prioritizes readability and structure over perfect semantic fidelity.
+- Early versions used variable-name heuristics (e.g. `_QUERY`, `GET_`, etc.) to infer nesting.
+- This was removed.
+- Current logic does **not** classify or move locals based on variable name values/prefix/suffix.
+- Any nesting that remains is structural only (e.g., linking through already-parsed object references), not keyword-driven.
 
-### What to validate next
+### Current quality / limitations
 
-- Run a fresh snapshot query and compare `parsed_snapshot` against expected locals in `locals.json`.
-- Verify all expected top-level locals are present for representative snapshots.
-- Verify db helper constants remain nested under `this.dbHelper` and are not duplicated at top-level.
+- This is really bad code, Copilot implemented a lot of hard coded stuff based on examples it saw. We need to rewrite of of the stuff here.
+- `@original_type`, `@common_type`, `@value` are still inferred in many cases and may be approximate.
+- Without typed protobuf schema, object membership and concrete values cannot be reconstructed with full fidelity.
+- Output is acceptable for exploration and troubleshooting, not yet production-grade semantic reconstruction.
 
-### Suggested next improvements
+### Validation status
 
-- Improve token-to-variable binding around `variables` section to reduce false associations.
-- Add focused fixture tests based on real snapshot samples (including nested object member cases).
-- If/when the typed snapshot protobuf schema is available, replace heuristic decode with typed decoding for accurate values and types.
+- Scoped tests for output package pass: `go test ./pkg/output`.
+- Manual runtime checks performed via:
+  - `go build -o ./dtctl .`
+  - `./dtctl query "fetch application.snapshots | sort timestamp desc | limit 1" -o snapshot > snapshot.out3.json`
 
-### Acceptance checklist (next session)
+### Next step to move beyond POC
 
-- [ ] Build current branch: `go build -o ./dtctl .`
-- [ ] Generate a fresh sample: `./dtctl query "fetch application.snapshots | sort timestamp desc | limit 1" -o snapshot > snapshot.out3.json`
-- [ ] Confirm output shape contains `parsed_snapshot` and does **not** contain:
-  - `snapshot.parsed`
-  - `snapshot.message_namespace`
-  - `snapshot.namespace_view`
-  - `snapshot.message_view`
-- [ ] Compare `parsed_snapshot.view.locals` against expected entries from `locals.json`:
-  - `firstElement`
-  - `lastElement`
-  - `count`
-- [ ] Confirm db helper constants are nested under `parsed_snapshot.view.locals.this.dbHelper`:
-  - `CC_MANUFACTURE_DETAILS_QUERY`
-  - `COUNT_ORDER_BY_ACCOUNT_ID_QUERY`
-- [ ] Confirm those db helper constants are not duplicated as top-level locals.
-- [ ] Run scoped tests: `go test ./pkg/output`
+- Replace schema-less protobuf decode with typed decode using the canonical snapshot protobuf schema.
+- Rework local/object reconstruction around typed fields instead of positional string heuristics.
