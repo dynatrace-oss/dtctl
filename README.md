@@ -24,7 +24,8 @@ dtctl exec copilot nl2dql "error logs from last hour"
 
 ## Why dtctl?
 
-- **Built for AI agents** — Predictable verb-noun commands, structured output (`--plain`, `-o json`), and YAML-based editing make dtctl a natural tool for LLM-driven automation
+- **Built for AI agents** — Predictable verb-noun commands, structured output (`--plain`, `-o json`, `--agent`), and YAML-based editing make dtctl a natural tool for LLM-driven automation
+- **Agent output envelope** — `--agent` flag (auto-detected in AI environments) wraps all output in a structured JSON envelope with `ok`/`result`/`error`/`context` fields, follow-up suggestions, and pagination metadata
 - **Agent Skill included** — Ships with an [Agent Skill](https://agentskills.io) that teaches AI assistants how to operate your Dynatrace environment
 - **Familiar CLI conventions** — `get`, `describe`, `edit`, `apply`, `delete` — if you (or your AI) know `kubectl`, you already know dtctl
 - **Watch mode** — Real-time monitoring with `--watch` flag for all resources

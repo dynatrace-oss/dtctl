@@ -194,10 +194,43 @@ dtctl query "fetch logs | limit 10"
 --debug               # Enable debug mode (full HTTP logging, equivalent to -vv)
 --dry-run             # Print what would be done without doing it
 --field-selector string # Filter by fields (e.g., owner=me,type=notebook)
+-A, --agent           # Agent output mode: wrap all output in a structured JSON envelope
+--no-agent            # Disable auto-detected agent mode
 
 # (not implemented yet)
 # -w, --watch           # Watch for changes
 ```
+
+### Agent Mode (`--agent` / `-A`)
+
+When `--agent` (or `-A`) is passed, all CLI output is wrapped in a structured JSON envelope designed for AI agents and automation consumers:
+
+```json
+{
+  "ok": true,
+  "result": [ ... ],
+  "context": {
+    "total": 5,
+    "has_more": true,
+    "verb": "get",
+    "resource": "workflow",
+    "suggestions": [
+      "Run 'dtctl describe workflow <id>' for details",
+      "More results available. Use '--chunk-size 0' to retrieve all, or filter with DQL"
+    ]
+  }
+}
+```
+
+**Envelope fields:**
+- `ok` (bool) — `true` for success, `false` for errors. Always present.
+- `result` — The command output data. Always present (may be `null`).
+- `error` (object, optional) — Structured error with `code`, `message`, `operation`, `status_code`, `request_id`, `suggestions`.
+- `context` (object, optional) — Operational metadata: `total`, `has_more`, `verb`, `resource`, `suggestions`, `warnings`, `duration`, `links`.
+
+**Auto-detection:** Agent mode is automatically enabled when dtctl detects it is running inside an AI agent environment (via the `aidetect` package). Use `--no-agent` to opt out. Auto-detection is skipped if an explicit `--output` format is set.
+
+**Behavior:** Agent mode implies `--plain` (no colors, no interactive prompts).
 
 ### Debug Mode
 

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Agent output envelope (`--agent` / `-A`)** — Wrap all CLI output in a structured JSON envelope (`ok`, `result`, `error`, `context`) for AI agents and automation consumers
+  - Auto-detects AI agent environments and enables agent mode automatically (opt out with `--no-agent`)
+  - Enriched context (suggestions, pagination, warnings) for `get workflows`, `get workflow-executions`, `delete workflow`, and `apply` commands
+  - Structured error output with machine-readable error codes and suggestions
 - **`dtctl ctx` command** — Top-level context management shortcut (like kubectx)
   - `dtctl ctx` lists all contexts, `dtctl ctx <name>` switches context
   - Subcommands: `current`, `describe`, `set`, `delete`/`rm`

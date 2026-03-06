@@ -96,6 +96,10 @@ Use IDs whenever possible instead of names to avoid ambiguity.
 ### Output Modes
 
 ```bash
+# Agent envelope mode (auto-detected in AI environments)
+-A, --agent      # Structured JSON envelope with ok/result/error/context
+--no-agent       # Opt out of auto-detected agent mode
+
 # Machine-readable formats (use these for AI agents)
 -o json          # JSON output
 -o yaml          # YAML output
@@ -108,11 +112,25 @@ Use IDs whenever possible instead of names to avoid ambiguity.
 -o table         # Table format (default)
 -o wide          # Wide table with more columns
 
-# Always use --plain flag for AI consumption
+# Always use --plain flag for AI consumption (implied by --agent)
 --plain          # Strips colors and prompts, best for parsing
 ```
 
-**For AI agents, always use:** `dtctl <command> -o json --plain`
+**For AI agents, prefer:** `dtctl <command> --agent` (auto-detected) or `dtctl <command> -o json --plain`
+
+The `--agent` envelope provides structured metadata alongside results:
+
+```json
+{
+  "ok": true,
+  "result": [ ... ],
+  "context": {
+    "verb": "get", "resource": "workflow",
+    "total": 5, "has_more": false,
+    "suggestions": ["Run 'dtctl describe workflow <id>' for details"]
+  }
+}
+```
 
 ### Template Variables
 

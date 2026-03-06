@@ -3111,6 +3111,47 @@ No colors, no interactive prompts (for scripts):
 dtctl get workflows --plain
 ```
 
+### Agent Mode (`--agent` / `-A`)
+
+Wraps all output in a structured JSON envelope designed for AI agents and automation:
+
+```bash
+dtctl get workflows --agent
+
+# Output:
+# {
+#   "ok": true,
+#   "result": [...],
+#   "context": {
+#     "total": 5,
+#     "has_more": false,
+#     "verb": "get",
+#     "resource": "workflow",
+#     "suggestions": [
+#       "Run 'dtctl describe workflow <id>' for details",
+#       "Run 'dtctl exec workflow <id>' to trigger a workflow"
+#     ]
+#   }
+# }
+```
+
+Agent mode is auto-detected when running inside an AI agent environment (e.g., GitHub Copilot, Claude Code). To opt out, pass `--no-agent`. Agent mode implies `--plain`.
+
+```bash
+# Force agent mode off in an auto-detected environment
+dtctl get workflows --no-agent
+
+# Errors are also structured
+# {
+#   "ok": false,
+#   "error": {
+#     "code": "auth_required",
+#     "message": "Authentication failed",
+#     "suggestions": ["Run 'dtctl auth login' to refresh your token"]
+#   }
+# }
+```
+
 ### Pagination (--chunk-size)
 
 Like kubectl, dtctl automatically paginates through large result sets:

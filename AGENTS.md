@@ -18,9 +18,23 @@ pkg/
   ├── client/    # HTTP client (auth, retry, rate limiting, pagination)
   ├── config/    # Multi-context config (~/.config/dtctl/config, keyring tokens)
   ├── resources/ # Resource handlers (one per API)
-  ├── output/    # Formatters (table, JSON, YAML, charts)
+  ├── output/    # Formatters (table, JSON, YAML, charts, agent envelope)
   └── exec/      # DQL query execution
 ```
+
+## Agent Output Mode
+
+dtctl supports `--agent` / `-A` to wrap all output in a structured JSON envelope for AI agents:
+
+```json
+{"ok": true, "result": [...], "context": {"verb": "get", "resource": "workflow", "suggestions": [...]}}
+```
+
+- **Auto-detected** in AI agent environments (opt out with `--no-agent`)
+- Implies `--plain` (no colors, no interactive prompts)
+- Errors are also structured: `{"ok": false, "error": {"code": "not_found", "message": "..."}}`
+- Implementation: `pkg/output/agent.go` (`AgentPrinter`, `Response`, `PrintError`)
+- Per-command context enrichment via `enrichAgent()` helper in `cmd/root.go`
 
 ## Adding a Resource
 
