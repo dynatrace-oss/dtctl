@@ -14,6 +14,7 @@ import (
 var (
 	colorEnabledOnce   sync.Once
 	colorEnabledResult bool
+	plainModeEnabled   bool
 )
 
 // ColorEnabled returns whether color output should be used.
@@ -26,8 +27,21 @@ func ColorEnabled() bool {
 	return colorEnabledResult
 }
 
+// SetPlainMode disables color output when --plain is used.
+// Must be called before the first call to ColorEnabled() (e.g., during
+// command initialization) so the cached result reflects the flag.
+func SetPlainMode(plain bool) {
+	plainModeEnabled = plain
+}
+
 // detectColor performs the actual color detection logic.
+// Color enabled = NOT (NO_COLOR is set) AND NOT (--plain flag) AND (stdout is a TTY OR FORCE_COLOR=1)
 func detectColor() bool {
+	// --plain flag disables color (and interactive prompts)
+	if plainModeEnabled {
+		return false
+	}
+
 	// NO_COLOR standard: any value (including empty) disables color
 	// See https://no-color.org/
 	if _, exists := os.LookupEnv("NO_COLOR"); exists {
@@ -44,10 +58,11 @@ func detectColor() bool {
 }
 
 // ResetColorCache resets the cached color detection result.
-// This is primarily useful for testing.
+// NOT safe for concurrent use — intended for testing only.
 func ResetColorCache() {
 	colorEnabledOnce = sync.Once{}
 	colorEnabledResult = false
+	plainModeEnabled = false
 }
 
 // Colorize wraps text in ANSI color codes if color is enabled.

@@ -124,6 +124,37 @@ func TestColorCode_WithColorDisabled(t *testing.T) {
 	}
 }
 
+func TestColorEnabled_PlainModeDisablesColor(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "1")
+
+	SetPlainMode(true)
+	result := ColorEnabled()
+	if result {
+		t.Error("ColorEnabled() should return false when plain mode is enabled, even with FORCE_COLOR=1")
+	}
+}
+
+func TestColorEnabled_PlainModeTakesPrecedenceOverFORCECOLOR(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "1")
+
+	SetPlainMode(true)
+	result := ColorEnabled()
+	if result {
+		t.Error("ColorEnabled() should return false when plain mode is set, even with FORCE_COLOR=1")
+	}
+
+	// After reset, plain mode should be cleared and FORCE_COLOR should work
+	ResetColorCache()
+	result = ColorEnabled()
+	if !result {
+		t.Error("After ResetColorCache(), plain mode should be cleared and FORCE_COLOR=1 should enable color")
+	}
+}
+
 func TestRenderGradientBar(t *testing.T) {
 	// Test various fill levels
 	tests := []struct {

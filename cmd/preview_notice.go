@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/spf13/cobra"
 )
 
@@ -27,10 +28,6 @@ func printPreviewNotice(area string) {
 	previewNoticeShown[area] = true
 
 	message := fmt.Sprintf("%s commands are in Preview and may change in future releases.", area)
-	if plainMode {
-		fmt.Fprintf(os.Stderr, "[Preview] %s\n", message)
-		return
-	}
-
-	fmt.Fprintf(os.Stderr, "\x1b[33m[Preview]\x1b[0m %s\n", message)
+	tag := output.Colorize(output.Yellow, "[Preview]")
+	fmt.Fprintf(os.Stderr, "%s %s\n", tag, message)
 }

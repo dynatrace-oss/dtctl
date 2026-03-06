@@ -314,6 +314,11 @@ func initConfig() {
 		plainMode = true
 	}
 
+	// Propagate plain mode to the output package so ColorEnabled() respects --plain
+	if plainMode {
+		output.SetPlainMode(true)
+	}
+
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
