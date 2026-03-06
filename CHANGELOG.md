@@ -5,9 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.14.0] - 2026-03-07
 
 ### Added
+- **`dtctl skills` command** — Install, uninstall, and check status of AI agent skill files
+  - `dtctl skills install --for <agent>` installs skill files for Claude, Copilot, Cursor, or OpenCode
+  - `dtctl skills uninstall --for <agent>` removes skill files from both project-local and global locations
+  - `dtctl skills status` shows installation status across all supported agents
+  - Auto-detects the current AI agent environment when `--for` is omitted
+  - `--global` flag for user-wide installation (supported agents only)
+  - `--force` flag to overwrite existing skill files
+  - `--list` flag to show all supported agents without installing
+  - Agent-mode structured output for all subcommands
+- **Golden (snapshot) tests** — Comprehensive output format regression testing
+  - 49 golden files covering all output formats (table, JSON, YAML, CSV, wide, chart, sparkline, barchart, braille, agent envelope, watch, errors)
+  - Uses real production structs from `pkg/resources/*` to catch field changes automatically
+  - `make test-update-golden` to update after intentional changes
+  - Windows line-ending normalization for cross-platform CI
+- **Zero-warnings linter policy** — CI now fails on any golangci-lint warning
+
+### Changed
+- **Go 1.26.1** — Upgraded from Go 1.24.13 to 1.26.1
+- **golangci-lint v2.11.1** — Upgraded for Go 1.26 compatibility
+
+## [0.13.3] - 2026-03-05
+
+### Fixed
+- Lookup table export silently truncates data at 1000 records (#58)
+- Expanded dtctl agent skill with reference docs
+
+## [0.13.2] - 2026-03-04
+
+### Fixed
+- `auth login`/`logout` writes to local `.dtctl.yaml` when present instead of always using global config
+
+## [0.13.1] - 2026-03-02
+
+### Added
+- Structured output for `dtctl apply` command
+
+### Fixed
+- Document URLs updated to use new app-based format (#51)
+- Config tests no longer overwrite real user config
+- Implementation status features table formatting
+
+## [0.13.0] - 2026-03-02
+
+### Added
+- **OAuth login** — `dtctl auth login` with PKCE flow, keyring-backed token storage, and automatic refresh
+  - `dtctl auth logout` to clear tokens
+  - `dtctl auth whoami` to show current identity
+  - Safety level-based scope selection (readonly, readwrite-mine, readwrite-all)
+  - Keyring integration for secure token persistence
 - **NO_COLOR support** — Implement the [no-color.org](https://no-color.org/) standard for color control
   - Color is automatically disabled when stdout is not a TTY (piped output)
   - `NO_COLOR` environment variable suppresses all ANSI color output
@@ -140,7 +189,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Updated Go version to 1.24.13 in security workflow
 
-[Unreleased]: https://github.com/dynatrace-oss/dtctl/compare/v0.12.0...HEAD
+[0.14.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.13.3...v0.14.0
+[0.13.3]: https://github.com/dynatrace-oss/dtctl/compare/v0.13.2...v0.13.3
+[0.13.2]: https://github.com/dynatrace-oss/dtctl/compare/v0.13.1...v0.13.2
+[0.13.1]: https://github.com/dynatrace-oss/dtctl/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.9.0...v0.10.0

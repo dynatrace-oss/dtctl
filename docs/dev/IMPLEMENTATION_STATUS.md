@@ -48,6 +48,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `ctx` - Quick context management (list, switch, describe, set, delete)
 - [x] `doctor` - Health check (config, context, token, connectivity, auth)
 - [x] `commands` - Machine-readable command catalog (JSON/YAML, `--brief`, resource filter, `howto` subcommand)
+- [x] `skills` - AI agent skill file management (install, uninstall, status for Claude, Copilot, Cursor, OpenCode)
 
 ### Resources
 
@@ -263,7 +264,6 @@ This document tracks the current implementation status of dtctl. For future plan
 ## Planned Features
 
 ### CLI Features
-- [ ] Watch mode (`--watch`)
 - [ ] Patch command
 - [ ] Bulk operations (apply from directory)
 - [ ] JSONPath output

@@ -42,7 +42,8 @@ func detectColor() bool {
 		return false
 	}
 
-	// NO_COLOR standard: any value (including empty) disables color
+	// NO_COLOR: any set value (including empty) disables color.
+	// This is intentionally stricter than no-color.org (which excludes empty strings).
 	// See https://no-color.org/
 	if _, exists := os.LookupEnv("NO_COLOR"); exists {
 		return false
