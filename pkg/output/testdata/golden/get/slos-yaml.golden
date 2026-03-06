@@ -1,0 +1,35 @@
+- id: a1b2c3d4-0001-4000-8000-000000000001
+  name: API Availability
+  description: 99.9% availability for public API endpoints
+  version: "3"
+  criteria:
+    - timeframefrom: -7d
+      timeframeto: ""
+      target: 99.9
+      warning: 99.5
+  tags:
+    - service:api
+    - tier:1
+  customsli: {}
+  externalid: ""
+- id: a1b2c3d4-0002-4000-8000-000000000002
+  name: Checkout Latency
+  description: P95 response time under 500ms for checkout flow
+  version: "1"
+  criteria:
+    - timeframefrom: -30d
+      timeframeto: ""
+      target: 95
+      warning: null
+  tags:
+    - service:checkout
+  customsli: {}
+  externalid: ""
+- id: a1b2c3d4-0003-4000-8000-000000000003
+  name: Error Rate
+  description: Error rate below 0.1% across all services
+  version: "5"
+  criteria: []
+  tags: []
+  customsli: {}
+  externalid: ""

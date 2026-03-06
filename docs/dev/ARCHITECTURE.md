@@ -272,6 +272,7 @@ defer server.Close()
 #### Additional Tools:
 - **testify**: Assertions and mocking - https://github.com/stretchr/testify
 - **gomock**: Mock generation - https://github.com/golang/mock
+- **Golden (snapshot) tests**: Output formatters are covered by golden-file tests in `pkg/output/golden_test.go` — uses real production structs from `pkg/resources/*` to capture exact output across all formats (table, wide, JSON, YAML, CSV, agent, watch, chart). Update with `make test-update-golden` or `go test ./pkg/output/ -run TestGolden -update`.
 
 ### Error Handling: cockroachdb/errors
 

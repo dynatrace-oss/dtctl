@@ -1,0 +1,37 @@
+[
+  {
+    "objectId": "vu9U3hXa3q0AAAABABhidWlsdGluOmFsZXJ0aW5nLnByb2ZpbGUABnRlbmFudAAGdGVuYW50ACRhMWIyYzNkNC1lNWY2LTRhN2ItOGM5ZC0wZTFmMmEzYjRjNWQ",
+    "schemaId": "builtin:alerting.profile",
+    "schemaVersion": "1.0.5",
+    "scope": "environment",
+    "summary": "Default Alerting Profile",
+    "value": {
+      "eventTypeFilter": [],
+      "name": "Default",
+      "severityRules": []
+    }
+  },
+  {
+    "objectId": "vu9U3hXa3q0AAAABABxidWlsdGluOnByb2JsZW0ubm90aWZpY2F0aW9ucwAGdGVuYW50AAZ0ZW5hbnQAJGIyYzNkNGU1LWY2YTctNGI4Yy05ZDBlLTFmMmEzYjRjNWQ2ZQ",
+    "schemaId": "builtin:problem.notifications",
+    "schemaVersion": "2.1.0",
+    "scope": "environment",
+    "summary": "Email Notification",
+    "value": {
+      "enabled": true,
+      "recipients": "oncall-team@example.invalid",
+      "type": "EMAIL"
+    }
+  },
+  {
+    "objectId": "vu9U3hXa3q0AAAABABlidWlsdGluOnRhZ3MuYXV0by10YWdnaW5nAAZ0ZW5hbnQABnRlbmFudAAkYzNkNGU1ZjYtYTdiOC00YzlkLTBlMWYtMmEzYjRjNWQ2ZTdm",
+    "schemaId": "builtin:tags.auto-tagging",
+    "schemaVersion": "3.0.2",
+    "scope": "environment",
+    "summary": "Environment Tag Rule",
+    "value": {
+      "name": "environment",
+      "rules": []
+    }
+  }
+]

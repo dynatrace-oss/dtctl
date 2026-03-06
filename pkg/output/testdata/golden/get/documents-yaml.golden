@@ -1,0 +1,29 @@
+- description: Main production monitoring dashboard
+  id: b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e
+  isPrivate: false
+  modificationInfo:
+    createdTime: 2025-03-15T10:30:00Z
+    lastModifiedTime: 2025-03-15T12:30:00Z
+  name: Production Overview
+  owner: 7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d
+  type: dashboard
+  version: 3
+- id: c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f
+  isPrivate: true
+  modificationInfo:
+    createdTime: 2025-03-14T10:30:00Z
+    lastModifiedTime: 2025-03-14T22:30:00Z
+  name: 'Runbook: Incident Response'
+  owner: 8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e
+  type: notebook
+  version: 1
+- description: Service performance metrics and SLOs
+  id: d3e4f5a6-b7c8-4d9e-0f1a-2b3c4d5e6f7a
+  isPrivate: false
+  modificationInfo:
+    createdTime: 2025-03-12T10:30:00Z
+    lastModifiedTime: 2025-03-15T09:30:00Z
+  name: Performance Dashboard
+  owner: 9c0d1e2f-3a4b-5c6d-7e8f-9a0b1c2d3e4f
+  type: dashboard
+  version: 7

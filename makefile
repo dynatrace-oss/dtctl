@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-unit test-integration test-all test-coverage install lint fmt markdownlint markdownlint-fix security-scan check release release-snapshot
+.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint fmt markdownlint markdownlint-fix security-scan check release release-snapshot
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -69,6 +69,12 @@ test-integration:
 		exit 1; \
 	fi; \
 	go test -v -race -count=1 -tags integration ./test/e2e/...
+
+# Regenerate golden files (run after intentional output changes)
+test-update-golden:
+	@echo "Updating golden files..."
+	@go test ./... -update
+	@echo "Golden files updated. Review changes with: git diff pkg/output/testdata/"
 
 # Run all tests (unit + integration)
 test-all: test-unit test-integration

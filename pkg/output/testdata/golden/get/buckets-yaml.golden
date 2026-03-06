@@ -1,0 +1,33 @@
+- bucketname: default_logs
+  table: logs
+  displayname: Default Logs
+  status: active
+  retentiondays: 35
+  includedquerylimitdays: 0
+  metricinterval: ""
+  version: 1
+  updatable: true
+  records: 1250000
+  estimateduncompressedbytes: null
+- bucketname: custom_metrics
+  table: metrics
+  displayname: Custom Metrics
+  status: active
+  retentiondays: 90
+  includedquerylimitdays: 30
+  metricinterval: PT1M
+  version: 3
+  updatable: true
+  records: 8750000
+  estimateduncompressedbytes: null
+- bucketname: security_events
+  table: logs
+  displayname: Security Events
+  status: active
+  retentiondays: 365
+  includedquerylimitdays: 0
+  metricinterval: ""
+  version: 2
+  updatable: false
+  records: 42000
+  estimateduncompressedbytes: null

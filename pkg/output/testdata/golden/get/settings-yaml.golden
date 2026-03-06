@@ -1,0 +1,32 @@
+- objectid: vu9U3hXa3q0AAAABABhidWlsdGluOmFsZXJ0aW5nLnByb2ZpbGUABnRlbmFudAAGdGVuYW50ACRhMWIyYzNkNC1lNWY2LTRhN2ItOGM5ZC0wZTFmMmEzYjRjNWQ
+  schemaid: builtin:alerting.profile
+  schemaversion: 1.0.5
+  scope: environment
+  externalid: ""
+  summary: Default Alerting Profile
+  value:
+    eventTypeFilter: []
+    name: Default
+    severityRules: []
+  modificationinfo: null
+- objectid: vu9U3hXa3q0AAAABABxidWlsdGluOnByb2JsZW0ubm90aWZpY2F0aW9ucwAGdGVuYW50AAZ0ZW5hbnQAJGIyYzNkNGU1LWY2YTctNGI4Yy05ZDBlLTFmMmEzYjRjNWQ2ZQ
+  schemaid: builtin:problem.notifications
+  schemaversion: 2.1.0
+  scope: environment
+  externalid: ""
+  summary: Email Notification
+  value:
+    enabled: true
+    recipients: oncall-team@example.invalid
+    type: EMAIL
+  modificationinfo: null
+- objectid: vu9U3hXa3q0AAAABABlidWlsdGluOnRhZ3MuYXV0by10YWdnaW5nAAZ0ZW5hbnQABnRlbmFudAAkYzNkNGU1ZjYtYTdiOC00YzlkLTBlMWYtMmEzYjRjNWQ2ZTdm
+  schemaid: builtin:tags.auto-tagging
+  schemaversion: 3.0.2
+  scope: environment
+  externalid: ""
+  summary: Environment Tag Rule
+  value:
+    name: environment
+    rules: []
+  modificationinfo: null

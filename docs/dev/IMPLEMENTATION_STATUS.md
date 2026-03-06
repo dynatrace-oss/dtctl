@@ -296,6 +296,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for the complete implementation pla
 - [x] Unit tests for core packages
 - [x] Integration tests
 - [x] E2E tests
+- [x] Golden (snapshot) tests for all output formatters (`pkg/output/golden_test.go`, 49 golden files)
 - [ ] Improve test coverage (target: 80%+)
 
 ### Code Quality

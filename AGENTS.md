@@ -84,6 +84,45 @@ func ListResources(client *client.Client, filters map[string]string) ([]interfac
 
 **Tests**: `make test` or `go test ./...` • E2E: `test/e2e/` • Integration: `test/integration/`
 
+## Golden (Snapshot) Tests
+
+Output formatting is covered by golden-file tests that capture the exact output of every printer for every resource type. These tests **must be updated** whenever you change output formatting, add/remove struct fields, or add a new resource.
+
+### When to run
+
+- **After modifying** anything in `pkg/output/` or resource structs in `pkg/resources/*/` — run golden tests to check for regressions
+- **After adding a new resource** — add test cases to `pkg/output/golden_test.go` using the real production struct
+
+### Commands
+
+```bash
+# Run golden tests (will FAIL if output changed — this is intentional)
+go test ./pkg/output/ -run TestGolden
+
+# Update golden files after intentional changes (review the diff!)
+make test-update-golden
+# or: go test ./pkg/output/ -run TestGolden -update
+
+# Run full suite (golden tests are included automatically)
+make test
+```
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `pkg/output/golden_test.go` | Test cases — uses **real production structs** from `pkg/resources/*` |
+| `pkg/output/testdata/golden/` | Golden files (49 files across get/, describe/, query/, errors/, empty/) |
+| `cmd/testutil/golden.go` | `AssertGolden` / `AssertGoldenStripped` helpers, `-update` flag |
+| `pkg/output/testdata/README.md` | Workflow documentation |
+
+### Important rules
+
+1. **Use real structs** — Import from `pkg/resources/*`, never create test-only duplicates. This ensures golden files automatically catch when fields are added/removed.
+2. **Review diffs** — After `make test-update-golden`, always `git diff` the golden files to verify changes are intentional.
+3. **Privacy** — All test data must be synthetic. No real names, env IDs, tokens, or emails. Use `@example.invalid` for emails (RFC 2606).
+4. **CI** — Golden tests run automatically in GitHub Actions via `go test ./...` on every PR. No separate workflow needed.
+
 ## 🚨 **CRITICAL: Safety Checks** 🚨
 
 **ALL mutating commands MUST include safety checks.** Non-negotiable for security.

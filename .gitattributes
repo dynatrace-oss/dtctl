@@ -1,0 +1,3 @@
+# Force LF line endings for golden test files to ensure consistent
+# comparison across platforms (Windows, macOS, Linux).
+*.golden text eol=lf

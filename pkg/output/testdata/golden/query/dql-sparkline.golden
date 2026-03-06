@@ -1,0 +1,25 @@
+Warning: no timeseries data found in records: record does not contain timeseries data (missing timeframe or interval). Falling back to JSON output.
+
+[
+  {
+    "avg(dt.host.cpu.usage)": [
+      12.5,
+      15.3,
+      18.7,
+      22.1,
+      35.6,
+      42.3,
+      38.9,
+      25.4,
+      19.8,
+      14.2,
+      11.1,
+      13.7
+    ],
+    "interval": 300000000000,
+    "timeframe": {
+      "end": "2025-03-15T10:00:00Z",
+      "start": "2025-03-15T09:00:00Z"
+    }
+  }
+]

@@ -1,0 +1,4 @@
+NAME,TABLE,DISPLAY_NAME,STATUS,RETENTION_DAYS,INTERVAL,UPDATABLE,RECORDS
+default_logs,logs,Default Logs,active,35,,true,1250000
+custom_metrics,metrics,Custom Metrics,active,90,PT1M,true,8750000
+security_events,logs,Security Events,active,365,,false,42000

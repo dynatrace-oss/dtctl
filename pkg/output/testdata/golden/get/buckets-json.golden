@@ -1,0 +1,34 @@
+[
+  {
+    "bucketName": "default_logs",
+    "table": "logs",
+    "displayName": "Default Logs",
+    "status": "active",
+    "retentionDays": 35,
+    "version": 1,
+    "updatable": true,
+    "records": 1250000
+  },
+  {
+    "bucketName": "custom_metrics",
+    "table": "metrics",
+    "displayName": "Custom Metrics",
+    "status": "active",
+    "retentionDays": 90,
+    "includedQueryLimitDays": 30,
+    "metricInterval": "PT1M",
+    "version": 3,
+    "updatable": true,
+    "records": 8750000
+  },
+  {
+    "bucketName": "security_events",
+    "table": "logs",
+    "displayName": "Security Events",
+    "status": "active",
+    "retentionDays": 365,
+    "version": 2,
+    "updatable": false,
+    "records": 42000
+  }
+]

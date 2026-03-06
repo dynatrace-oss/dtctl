@@ -1,0 +1,4 @@
+ID                                     NAME               DESCRIPTION                                     
+a1b2c3d4-0001-4000-8000-000000000001   API Availability   99.9% availability for public API endpoints       
+a1b2c3d4-0002-4000-8000-000000000002   Checkout Latency   P95 response time under 500ms for checkout flow   
+a1b2c3d4-0003-4000-8000-000000000003   Error Rate         Error rate below 0.1% across all services         
