@@ -24,6 +24,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Command aliases: simple, parameterized ($1-$9), and shell aliases (with import/export)
 - [x] AI agent detection in User-Agent header for telemetry
 - [x] Enhanced error messages with contextual troubleshooting suggestions
+- [x] Machine-readable command catalog (`dtctl commands`) for AI agent bootstrap
 
 ### Verbs Implemented
 - [x] `get` - List/retrieve resources
@@ -43,6 +44,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `alias` - Manage command aliases (set, list, delete, import, export)
 - [x] `ctx` - Quick context management (list, switch, describe, set, delete)
 - [x] `doctor` - Health check (config, context, token, connectivity, auth)
+- [x] `commands` - Machine-readable command catalog (JSON/YAML, `--brief`, resource filter, `howto` subcommand)
 
 ### Resources
 

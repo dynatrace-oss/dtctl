@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 6 sequential checks: version, config, context, token, connectivity, authentication
   - Token expiration warning (< 24h remaining)
   - Lightweight HEAD request for connectivity probe
+- **`dtctl commands` command** — Machine-readable command catalog for AI agents
+  - Walks the Cobra command tree and outputs structured JSON/YAML describing all verbs, flags, resource types, mutating status, and safety levels
+  - `--brief` flag strips descriptions and global flags for compact output
+  - Positional resource filter with alias resolution and singular/plural fuzzy matching
+  - `dtctl commands howto` subcommand generates Markdown how-to guides
+  - Implementation: `pkg/commands/` (schema types, tree walker, howto generator)
 
 ### Changed
 - **Release signing & SBOM** — Added cosign signing and syft SBOM generation to GoReleaser and release workflow

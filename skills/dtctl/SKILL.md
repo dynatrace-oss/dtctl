@@ -1,6 +1,6 @@
 ---
 name: dtctl
-description: Manage Dynatrace environments using dtctl - install/update the CLI, configure authentication with OS keyring tokens, and run kubectl-style operations (get/describe/edit/apply/delete/query/exec) for workflows, dashboards, notebooks, DQL, SLOs, settings, buckets, lookups, OpenPipeline, and Davis AI. Use when the user wants to control Dynatrace resources via dtctl.
+description: Manage Dynatrace environments using dtctl - install/update the CLI, configure authentication with OS keyring tokens, and run kubectl-style operations (get/describe/edit/apply/delete/query/exec/commands) for workflows, dashboards, notebooks, DQL, SLOs, settings, buckets, lookups, OpenPipeline, and Davis AI. Use when the user wants to control Dynatrace resources via dtctl.
 ---
 
 # Dynatrace Control with dtctl
@@ -12,6 +12,9 @@ Operate `dtctl`, the kubectl-style CLI for Dynatrace. This skill teaches core dt
 At the start of a task, run these checks to establish context and permissions:
 
 ```bash
+# Discover all available commands, flags, and resources
+dtctl commands --brief -o json
+
 # Show current context
 dtctl config current-context
 
@@ -90,6 +93,7 @@ Use IDs whenever possible instead of names to avoid ambiguity.
 | **open** | Open in browser | `dtctl open intent <app/intent> --data key=value` |
 | **diff** | Compare resources | `dtctl diff -f workflow.yaml` |
 | **verify** | Validate without executing | `dtctl verify query 'fetch logs' --fail-on-warn` |
+| **commands** | List all commands (machine-readable) | `dtctl commands --brief -o json` |
 
 ## Key Concepts for AI Agents
 

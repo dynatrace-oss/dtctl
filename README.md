@@ -24,7 +24,7 @@ dtctl exec copilot nl2dql "error logs from last hour"
 
 ## Why dtctl?
 
-- **Built for AI agents** — Predictable verb-noun commands, structured output (`--plain`, `-o json`, `--agent`), and YAML-based editing make dtctl a natural tool for LLM-driven automation
+- **Built for AI agents** — Predictable verb-noun commands, structured output (`--plain`, `-o json`, `--agent`), machine-readable command catalog (`dtctl commands`), and YAML-based editing make dtctl a natural tool for LLM-driven automation
 - **Agent output envelope** — `--agent` flag (auto-detected in AI environments) wraps all output in a structured JSON envelope with `ok`/`result`/`error`/`context` fields, follow-up suggestions, and pagination metadata
 - **Agent Skill included** — Ships with an [Agent Skill](https://agentskills.io) that teaches AI assistants how to operate your Dynatrace environment
 - **Familiar CLI conventions** — `get`, `describe`, `edit`, `apply`, `delete` — if you (or your AI) know `kubectl`, you already know dtctl
@@ -35,7 +35,7 @@ dtctl exec copilot nl2dql "error logs from last hour"
 
 ## AI Agent Skill
 
-dtctl ships with an [Agent Skill](https://agentskills.io) at `skills/dtctl/` — a compact command reference that teaches AI coding assistants how to use dtctl effectively.
+dtctl ships with an [Agent Skill](https://agentskills.io) at `skills/dtctl/` — a compact command reference that teaches AI coding assistants how to use dtctl effectively. Agents can also bootstrap themselves at runtime with `dtctl commands --brief -o json` to discover all available verbs, flags, and resources.
 
 **To use:** Copy the skill folder to your AI assistant's skill directory:
 
@@ -94,6 +94,7 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 |---------|-------------|
 | `dtctl ctx` | Quick context switching (`ctx` lists, `ctx <name>` switches, subcommands: `current`, `describe`, `set`, `delete`) |
 | `dtctl doctor` | Health check — verifies config, context, token, connectivity, and authentication |
+| `dtctl commands` | Machine-readable command catalog — lists all verbs, flags, resources, and safety levels (`--brief` for compact output, `howto` subcommand for Markdown guides) |
 
 ## Documentation
 

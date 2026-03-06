@@ -3111,6 +3111,26 @@ No colors, no interactive prompts (for scripts):
 dtctl get workflows --plain
 ```
 
+### Command Catalog (`dtctl commands`)
+
+AI agents can discover all available dtctl commands, flags, and resources at runtime:
+
+```bash
+# Full catalog in JSON
+dtctl commands -o json
+
+# Compact catalog (no descriptions, no global flags)
+dtctl commands --brief -o json
+
+# Filter to a specific resource
+dtctl commands workflow -o json
+
+# Generate a Markdown how-to guide
+dtctl commands howto
+```
+
+This is especially useful for agent bootstrap — run `dtctl commands --brief -o json` at the start of a session to learn what dtctl can do.
+
 ### Agent Mode (`--agent` / `-A`)
 
 Wraps all output in a structured JSON envelope designed for AI agents and automation:
@@ -3564,6 +3584,9 @@ dtctl query --help
 
 # Resource-specific help
 dtctl get workflows --help
+
+# Machine-readable command catalog (for AI agents)
+dtctl commands --brief -o json
 ```
 
 ### Debugging Issues
