@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
@@ -24,6 +25,8 @@ var (
 	dryRun       bool
 	plainMode    bool
 	chunkSize    int64
+	agentMode    bool // --agent/-A flag: wrap output in machine-readable envelope
+	noAgent      bool // --no-agent flag: opt out of auto-detected agent mode
 )
 
 // rootCmd represents the base command
@@ -206,9 +209,31 @@ func NewSafetyChecker(cfg *config.Config) (*safety.Checker, error) {
 	return safety.NewChecker(cfg.CurrentContext, ctx), nil
 }
 
-// NewPrinter creates a new printer respecting plain mode setting
+// NewPrinter creates a new printer respecting agent and plain mode settings
 func NewPrinter() output.Printer {
+	if agentMode {
+		ctx := &output.ResponseContext{}
+		return output.NewAgentPrinter(os.Stdout, ctx)
+	}
 	return output.NewPrinterWithOptions(outputFormat, os.Stdout, plainMode)
+}
+
+// enrichAgent configures agent-mode metadata on the printer if agent mode is active.
+// It is a no-op when the printer is not an AgentPrinter. Returns the AgentPrinter
+// for further customization (or nil if not in agent mode).
+func enrichAgent(printer output.Printer, verb, resource string) *output.AgentPrinter {
+	ap, ok := printer.(*output.AgentPrinter)
+	if !ok {
+		return nil
+	}
+	ap.Context().Verb = verb
+	ap.SetResource(resource)
+	return ap
+}
+
+// GetAgentMode returns the current agent mode setting
+func GetAgentMode() bool {
+	return agentMode
 }
 
 // LoadConfig loads the config and applies the --context flag override if provided
@@ -261,6 +286,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode (full HTTP request/response logging, equivalent to -vv)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
 	rootCmd.PersistentFlags().BoolVar(&plainMode, "plain", false, "plain output for machine processing (no colors, no interactive prompts)")
+	rootCmd.PersistentFlags().BoolVarP(&agentMode, "agent", "A", false, "agent output mode: wrap output in a structured JSON envelope with metadata")
+	rootCmd.PersistentFlags().BoolVar(&noAgent, "no-agent", false, "disable auto-detected agent mode")
 	rootCmd.PersistentFlags().Int64Var(&chunkSize, "chunk-size", 500, "Return large lists in chunks rather than all at once. Pass 0 to disable.")
 
 	// Bind flags to viper
@@ -271,6 +298,22 @@ func init() {
 
 // initConfig reads in config file and ENV variables if set
 func initConfig() {
+	// Auto-detect AI agent environment and enable agent mode
+	if !agentMode && !noAgent {
+		if info := aidetect.Detect(); info.Detected {
+			// Only auto-enable if user hasn't explicitly chosen a non-JSON output format
+			outputFlag := rootCmd.PersistentFlags().Lookup("output")
+			if outputFlag == nil || !outputFlag.Changed {
+				agentMode = true
+			}
+		}
+	}
+
+	// Agent mode implies plain mode (no colors, no interactive prompts)
+	if agentMode {
+		plainMode = true
+	}
+
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
