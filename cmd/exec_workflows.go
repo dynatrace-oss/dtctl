@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	workflowpkg "github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 )
 
 // execWorkflowCmd executes a workflow
@@ -88,6 +89,31 @@ Examples:
 			}
 			fmt.Printf("Duration: %s\n", formatExecutionDuration(status.Runtime))
 
+			// Print task results if --show-results is set
+			showResults, _ := cmd.Flags().GetBool("show-results")
+			if showResults {
+				execHandler := workflowpkg.NewExecutionHandler(c)
+				tasks, err := execHandler.ListTasks(result.ID)
+				if err != nil {
+					return fmt.Errorf("failed to list tasks: %w", err)
+				}
+				if len(tasks) > 0 {
+					fmt.Printf("\nTask Results:\n")
+					printer := NewPrinter()
+					for _, task := range tasks {
+						fmt.Printf("\n--- %s [%s] ---\n", task.Name, task.State)
+						taskResult, err := execHandler.GetTaskResult(result.ID, task.Name)
+						if err != nil {
+							fmt.Printf("(failed to fetch result: %v)\n", err)
+							continue
+						}
+						if err := printer.Print(taskResult); err != nil {
+							fmt.Printf("(failed to print result: %v)\n", err)
+						}
+					}
+				}
+			}
+
 			// Return error if execution failed
 			if status.State == "ERROR" {
 				return fmt.Errorf("workflow execution failed")
@@ -124,4 +150,5 @@ func init() {
 	execWorkflowCmd.Flags().StringSlice("params", []string{}, "workflow parameters (key=value)")
 	execWorkflowCmd.Flags().Bool("wait", false, "wait for workflow execution to complete")
 	execWorkflowCmd.Flags().Duration("timeout", 30*time.Minute, "timeout when waiting for completion")
+	execWorkflowCmd.Flags().Bool("show-results", false, "print the result of each task after execution completes (requires --wait)")
 }
