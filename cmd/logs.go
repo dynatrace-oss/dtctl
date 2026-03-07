@@ -17,6 +17,7 @@ var taskName string
 var followLogs bool
 var allTaskLogs bool
 var tasksOnlyLogs bool
+var showTaskResult bool
 
 // logsCmd represents the logs command
 var logsCmd = &cobra.Command{
@@ -48,6 +49,9 @@ Examples:
   dtctl logs wfe <execution-id> --task <task-name>
   dtctl logs wfe <execution-id> -t <task-name>
 
+  # Get the return value (result) of a specific task
+  dtctl logs wfe <execution-id> --task <task-name> --result
+
   # Follow logs in real-time (stream until execution completes)
   dtctl logs wfe <execution-id> --follow
   dtctl logs wfe <execution-id> -f
@@ -63,6 +67,12 @@ Examples:
 		if taskName != "" && (allTaskLogs || tasksOnlyLogs) {
 			return fmt.Errorf("cannot use --task with --all or --tasks flags")
 		}
+		if showTaskResult && taskName == "" {
+			return fmt.Errorf("--result requires --task <task-name>")
+		}
+		if showTaskResult && followLogs {
+			return fmt.Errorf("cannot use --result with --follow")
+		}
 
 		cfg, err := LoadConfig()
 		if err != nil {
@@ -75,6 +85,16 @@ Examples:
 		}
 
 		handler := workflow.NewExecutionHandler(c)
+
+		// Handle --result: print the task's return value as JSON
+		if showTaskResult {
+			result, err := handler.GetTaskResult(executionID, taskName)
+			if err != nil {
+				return err
+			}
+			printer := NewPrinter()
+			return printer.Print(result)
+		}
 
 		if followLogs {
 			return followExecutionLogs(handler, executionID, taskName, allTaskLogs, tasksOnlyLogs)
@@ -215,4 +235,5 @@ func init() {
 	logsWorkflowExecutionCmd.Flags().BoolVarP(&followLogs, "follow", "f", false, "Follow logs in real-time until execution completes")
 	logsWorkflowExecutionCmd.Flags().BoolVarP(&allTaskLogs, "all", "a", false, "Get all logs (workflow execution log + all task logs)")
 	logsWorkflowExecutionCmd.Flags().BoolVar(&tasksOnlyLogs, "tasks", false, "Get task logs only (all tasks with headers)")
+	logsWorkflowExecutionCmd.Flags().BoolVar(&showTaskResult, "result", false, "Get the return value of a specific task (requires --task)")
 }
