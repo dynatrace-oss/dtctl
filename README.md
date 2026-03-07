@@ -65,12 +65,15 @@ brew install dynatrace-oss/tap/dtctl
 # Or download a binary: https://github.com/dynatrace-oss/dtctl/releases/latest
 # Or build from source: git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl && make install
 
-# Configure your environment
-dtctl config set-context my-env \
-  --environment "https://abc12345.apps.dynatrace.com" \
-  --token-ref my-token
+# Authenticate via OAuth (recommended — no token management needed)
+dtctl auth login --context my-env --environment "https://abc12345.apps.dynatrace.com"
+# Opens your browser for Dynatrace SSO login, tokens are stored automatically
 
-dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
+# Alternative: token-based authentication
+# dtctl config set-context my-env \
+#   --environment "https://abc12345.apps.dynatrace.com" \
+#   --token-ref my-token
+# dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
 
 # Verify everything works
 dtctl doctor
