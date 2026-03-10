@@ -58,6 +58,7 @@ This document tracks the current implementation status of dtctl. For future plan
 |----------|-----|----------|--------|--------|------|-------|
 | workflow | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | execution | ✅ | ✅ | - | - | - | - |
+| document | ✅ | ✅ | ✅ | ✅ | ✅ | - |
 | dashboard | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | notebook | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | slo | ✅ | ✅ | ✅ | ✅ | - | ✅ |
@@ -92,6 +93,7 @@ This document tracks the current implementation status of dtctl. For future plan
 |----------|------|------|------|-------|---------|---------|--------|---------|
 | workflow | ✅ | ✅ | - | - | ✅ | ✅ | ✅ | ✅ |
 | execution | - | - | ✅ | - | - | - | - | ✅ |
+| document | - | - | - | - | ✅ | ✅ | ✅ | ✅ |
 | dashboard | ✅ | - | - | ✅ | ✅ | ✅ | ✅ | ✅ |
 | notebook | ✅ | - | - | ✅ | ✅ | ✅ | ✅ | ✅ |
 | slo | - | ✅ | - | - | - | - | - | ✅ |

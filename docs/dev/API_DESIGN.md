@@ -321,10 +321,34 @@ This telemetry helps improve the CLI experience for AI-assisted workflows. Detec
 ## Resource Types
 
 > **Note**: Like kubectl, dtctl supports both singular and plural resource names (e.g., `dashboard` or `dashboards`, `notebook` or `notebooks`), as well as short aliases for convenience.
-> 
-> **Important**: There is no generic `documents` command. Dashboards and notebooks are accessed via their specific resource types (`dtctl get dashboards` and `dtctl get notebooks`), even though they share the underlying Document API.
 
-### 1. Dashboards
+### 1. Documents (Generic)
+
+The `documents` resource provides type-agnostic access to the Dynatrace Documents API. It lists **all** document types by default and always shows the `TYPE` column. Use this as the escape hatch for document types beyond `dashboard` and `notebook` (e.g. `launchpad`, custom app documents).
+
+```bash
+# Resource name: document/documents (short: doc)
+dtctl get documents                              # List all documents (all types)
+dtctl get documents --type launchpad             # Filter by any type
+dtctl get documents --type my-app:config         # Custom app document types
+dtctl get documents --name "production"          # Filter by name
+dtctl get documents --mine                       # Only my documents
+dtctl get documents --types                      # Discover distinct types and counts
+dtctl get document <id>                          # Get specific document by ID (any type)
+dtctl describe document <id-or-name>             # Show detailed metadata
+dtctl create document -f file.json --type launchpad  # Create with explicit type
+dtctl create document -f file.yaml               # Type read from payload "type" field
+dtctl edit document <id-or-name>                 # Edit in $EDITOR (YAML by default)
+dtctl edit document <id> --format=json           # Edit in JSON format
+dtctl delete document <id-or-name>               # Move to trash
+dtctl delete document "My Launchpad" -y          # Delete by name, skip confirmation
+dtctl history document <id-or-name>              # Show version history (snapshots)
+dtctl restore document <id-or-name> <version>    # Restore to a previous snapshot
+```
+
+> **Relationship to `dashboards`/`notebooks`**: `dtctl get documents` is a superset — it includes dashboards and notebooks too. The type-specific commands (`dtctl get dashboards`, `dtctl get notebooks`) remain as convenient aliases with type-specific UX (tile counts, known app URLs). Nothing is deprecated.
+
+### 2. Dashboards
 
 Dashboards are visual documents for monitoring and analysis.
 
@@ -355,7 +379,7 @@ dtctl unshare dashboard <id> --all               # Remove all shares
 # dtctl unlock dashboard <id>                      # Release active lock
 ```
 
-### 2. Notebooks
+### 3. Notebooks
 
 Notebooks are interactive documents for data exploration and analysis.
 
@@ -385,20 +409,22 @@ dtctl unshare notebook <id> --all                # Remove all shares
 # dtctl lock notebook <id>                         # Acquire active lock
 ```
 
-### 3. Document Version History (Snapshots)
+### 4. Document Version History (Snapshots)
 
-These operations apply to both dashboards and notebooks. Snapshots capture document content at specific points in time and can be used to restore previous versions.
+These operations apply to dashboards, notebooks, and any generic document type. Snapshots capture document content at specific points in time and can be used to restore previous versions.
 
 ```bash
 # View version history
 dtctl history dashboard <id-or-name>             # List dashboard snapshots
 dtctl history notebook <id-or-name>              # List notebook snapshots
+dtctl history document <id-or-name>              # List snapshots for any document type
 dtctl history dashboard "Production Dashboard"   # By name
 dtctl history notebook "Analysis Notebook" -o json  # Output as JSON
 
 # Restore to previous version
 dtctl restore dashboard <id-or-name> <version>   # Restore dashboard to version
 dtctl restore notebook <id-or-name> <version>    # Restore notebook to version
+dtctl restore document <id-or-name> <version>    # Restore any document type to version
 dtctl restore dashboard "My Dashboard" 5         # Restore by name to version 5
 dtctl restore notebook "My Notebook" 3 --force   # Skip confirmation
 
@@ -415,7 +441,7 @@ dtctl restore notebook "My Notebook" 3 --force   # Skip confirmation
 # dtctl delete trash <id> --permanent              # Permanently delete
 ```
 
-### 4. Service Level Objectives (SLOs)
+### 5. Service Level Objectives (SLOs)
 
 ```bash
 # Resource name: slo/slos
@@ -437,7 +463,7 @@ dtctl exec slo <id> --timeout 60                 # Custom timeout (seconds)
 dtctl exec slo <id> -o json                      # Output as JSON
 ```
 
-### 5. Automation Workflows
+### 6. Automation Workflows
 
 ```bash
 # Resource name: workflow/workflows (short: wf)
@@ -484,7 +510,7 @@ dtctl restore workflow "My Workflow" 5           # Restore by name
 dtctl restore workflow <id> 3 --force            # Skip confirmation
 ```
 
-### 6. Identity & Access Management (IAM)
+### 7. Identity & Access Management (IAM)
 
 ```bash
 # Users
@@ -507,7 +533,7 @@ dtctl describe group <id>                        # Group details
 # dtctl get permissions --user <id>                # User's permissions
 ```
 
-### 7. Grail Data & Queries
+### 8. Grail Data & Queries
 
 ```bash
 # DQL Queries
@@ -570,7 +596,7 @@ dtctl apply -f bucket.yaml                       # Create or update bucket
 # dtctl get bucket-usage                           # Storage usage info
 ```
 
-### 8. Notifications
+### 9. Notifications
 
 ```bash
 # Resource name: notification/notifications (short: notif)

@@ -1,7 +1,8 @@
 # Generic Documents Support
 
-**Status:** Proposal
+**Status:** Implemented
 **Created:** 2026-03-09
+**Shipped:** 2026-03-10
 **Author:** dtctl team
 
 ## Problem Statement
@@ -259,24 +260,25 @@ dtctl create document -f raw.json
 
 ## Implementation Phases
 
-### Phase 1: Read-only access (MVP)
+### Phase 1: Read-only access ✅ Implemented
 - `dtctl get documents [--type TYPE] [--name NAME] [--mine]`
 - `dtctl get document <id>`
 - `dtctl describe document <id>`
 - `dtctl get documents --types` (type discovery)
 - Golden tests
 
-### Phase 2: Mutating operations
+### Phase 2: Mutating operations ✅ Implemented
 - `dtctl delete document <id>`
 - `dtctl create document -f FILE --type TYPE`
 - `dtctl edit document <id>`
-- `dtctl apply -f FILE` (with generic type detection)
-- Safety checks
+- Safety checks (ownership-aware, same as dashboard/notebook)
 
-### Phase 3: Collaboration & history
-- `dtctl share document <id>`
+### Phase 3: History & restore ✅ Implemented
 - `dtctl history document <id>`
-- `dtctl restore document <id> --version N`
+- `dtctl restore document <id> <version>`
+
+### Phase 3b: Collaboration & diff (not yet implemented)
+- `dtctl share document <id>`
 - `dtctl diff document <id>`
 
 ## Open Questions
@@ -293,6 +295,6 @@ dtctl create document -f raw.json
 ## References
 
 - Dynatrace Documents API: `/platform/document/v1/documents`
-- Current implementation: `pkg/resources/document/document.go`
-- API design principles: `docs/dev/API_DESIGN.md`
-- Explicit no-generic-documents note: `API_DESIGN.md:324` (to be updated when this ships)
+- Implementation: `pkg/resources/document/document.go`, `cmd/get_documents.go`, `cmd/create_documents.go`, `cmd/edit_documents.go`, `cmd/describe_documents.go`, `cmd/history.go`, `cmd/restore.go`
+- Resolver: `pkg/resources/resolver/resolver.go` (`TypeDocument`)
+- API design principles: `docs/dev/API_DESIGN.md` (see § 1. Documents (Generic))
