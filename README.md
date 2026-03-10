@@ -54,7 +54,7 @@ cp -r skills/dtctl ~/.github/skills/   # For GitHub Copilot
 cp -r skills/dtctl ~/.claude/skills/   # For Claude Code
 ```
 
-Compatible with GitHub Copilot, Claude Code, Cursor, OpenCode, and other Agent Skills-compatible tools.
+Compatible with GitHub Copilot, Claude Code, Cursor, Kiro, OpenCode, and other Agent Skills-compatible tools.
 
 ## Quick Start
 

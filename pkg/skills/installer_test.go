@@ -9,7 +9,7 @@ import (
 
 func TestSupportedAgents(t *testing.T) {
 	agents := SupportedAgents()
-	expected := []string{"claude", "copilot", "cursor", "opencode"}
+	expected := []string{"claude", "copilot", "cursor", "kiro", "opencode"}
 	if len(agents) != len(expected) {
 		t.Fatalf("expected %d agents, got %d", len(expected), len(agents))
 	}
@@ -28,6 +28,7 @@ func TestFindAgent(t *testing.T) {
 		{"claude", true},
 		{"copilot", true},
 		{"cursor", true},
+		{"kiro", true},
 		{"opencode", true},
 		{"unknown", false},
 		{"", false},
@@ -49,7 +50,7 @@ func TestFindAgent(t *testing.T) {
 func TestDetectAgent(t *testing.T) {
 	// Each subtest clears ALL agent env vars to ensure full isolation.
 	allEnvVars := []string{
-		"CLAUDECODE", "CURSOR_AGENT", "GITHUB_COPILOT", "OPENCODE",
+		"CLAUDECODE", "CURSOR_AGENT", "GITHUB_COPILOT", "KIRO", "OPENCODE",
 		"CODEIUM_AGENT", "TABNINE_AGENT", "AMAZON_Q", "AI_AGENT",
 	}
 
@@ -113,6 +114,18 @@ func TestDetectAgent(t *testing.T) {
 		}
 		if agent.Name != "cursor" {
 			t.Errorf("expected cursor, got %q", agent.Name)
+		}
+	})
+
+	t.Run("detects kiro", func(t *testing.T) {
+		clearAllEnvVars(t)
+		t.Setenv("KIRO", "1")
+		agent, detected := DetectAgent()
+		if !detected {
+			t.Fatal("expected agent detected")
+		}
+		if agent.Name != "kiro" {
+			t.Errorf("expected kiro, got %q", agent.Name)
 		}
 	})
 }
@@ -194,6 +207,47 @@ func TestRenderWithData_MarkdownFormat(t *testing.T) {
 				t.Error("non-Cursor output should NOT start with MDC frontmatter")
 			}
 		})
+	}
+}
+
+func TestRenderWithData_KiroPowerFormat(t *testing.T) {
+	agent, _ := FindAgent("kiro")
+	data := TemplateData{Version: "4.0.0"}
+
+	content, err := RenderWithData(agent, data)
+	if err != nil {
+		t.Fatalf("RenderWithData error: %v", err)
+	}
+
+	// Kiro output must have POWER.md YAML frontmatter
+	if !strings.HasPrefix(content, "---\n") {
+		t.Error("Kiro output should start with YAML frontmatter")
+	}
+	if !strings.Contains(content, "name: \"dtctl\"") {
+		t.Error("Kiro output should have name in frontmatter")
+	}
+	if !strings.Contains(content, "displayName:") {
+		t.Error("Kiro output should have displayName in frontmatter")
+	}
+	if !strings.Contains(content, "description:") {
+		t.Error("Kiro output should have description in frontmatter")
+	}
+	if !strings.Contains(content, "keywords:") {
+		t.Error("Kiro output should have keywords in frontmatter")
+	}
+	if !strings.Contains(content, "author: \"Dynatrace\"") {
+		t.Error("Kiro output should have author in frontmatter")
+	}
+	if !strings.Contains(content, "4.0.0") {
+		t.Error("Kiro output should contain version 4.0.0")
+	}
+	// Must not have HTML comment version header
+	if strings.Contains(content, "<!-- dtctl skill") {
+		t.Error("Kiro output should NOT contain HTML comment version header")
+	}
+	// Must contain the skill content after the frontmatter
+	if !strings.Contains(content, "dtctl") {
+		t.Error("Kiro output should contain skill content")
 	}
 }
 
@@ -428,6 +482,7 @@ func TestAgentPaths(t *testing.T) {
 		{"claude", ".claude/commands/dtctl.md"},
 		{"copilot", ".github/instructions/dtctl.instructions.md"},
 		{"cursor", ".cursor/rules/dtctl.mdc"},
+		{"kiro", ".kiro/powers/dtctl/POWER.md"},
 		{"opencode", ".opencode/commands/dtctl.md"},
 	}
 

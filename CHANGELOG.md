@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **`dtctl skills` command** — Install, uninstall, and check status of AI agent skill files
-  - `dtctl skills install --for <agent>` installs skill files for Claude, Copilot, Cursor, or OpenCode
+  - `dtctl skills install --for <agent>` installs skill files for Claude, Copilot, Cursor, Kiro, or OpenCode
   - `dtctl skills uninstall --for <agent>` removes skill files from both project-local and global locations
   - `dtctl skills status` shows installation status across all supported agents
   - Auto-detects the current AI agent environment when `--for` is omitted

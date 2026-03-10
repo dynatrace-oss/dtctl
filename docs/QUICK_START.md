@@ -3426,6 +3426,7 @@ The detection is automatic and doesn't affect functionality. Supported AI agents
 - OpenCode (`OPENCODE` env var)
 - GitHub Copilot (`GITHUB_COPILOT` env var)
 - Cursor (`CURSOR_AGENT` env var)
+- Kiro (`KIRO` env var)
 - Codeium (`CODEIUM_AGENT` env var)
 - TabNine (`TABNINE_AGENT` env var)
 - Amazon Q (`AMAZON_Q` env var)

@@ -157,6 +157,14 @@ var agents = []Agent{
 		DetectName:  "cursor",
 	},
 	{
+		Name:        "kiro",
+		DisplayName: "Kiro",
+		ProjectPath: filepath.Join(".kiro", "powers", "dtctl", "POWER.md"),
+		GlobalPath:  "",
+		EnvVar:      "KIRO",
+		DetectName:  "kiro",
+	},
+	{
 		Name:        "opencode",
 		DisplayName: "OpenCode",
 		ProjectPath: filepath.Join(".opencode", "commands", "dtctl.md"),
@@ -251,6 +259,17 @@ func wrapForAgent(agent Agent, content string, data TemplateData) (string, error
 		sb.WriteString("---\n")
 		sb.WriteString(fmt.Sprintf("description: dtctl CLI skill (v%s) — kubectl-style CLI for Dynatrace\n", data.Version))
 		sb.WriteString("globs: [\"*.yaml\", \"*.yml\", \"*.json\", \"*.dql\"]\n")
+		sb.WriteString("---\n\n")
+		sb.WriteString(content)
+	case "kiro":
+		// Kiro uses the Powers format: POWER.md with YAML frontmatter
+		// containing name, displayName, description, keywords, and author.
+		sb.WriteString("---\n")
+		sb.WriteString("name: \"dtctl\"\n")
+		sb.WriteString(fmt.Sprintf("displayName: \"dtctl — Dynatrace CLI (v%s)\"\n", data.Version))
+		sb.WriteString("description: \"kubectl-style CLI for Dynatrace — manage dashboards, workflows, SLOs, documents, and more using DQL queries and YAML definitions\"\n")
+		sb.WriteString("keywords: [\"dynatrace\", \"dtctl\", \"observability\", \"monitoring\", \"dql\", \"dashboards\", \"workflows\", \"slo\", \"grail\", \"davis\"]\n")
+		sb.WriteString("author: \"Dynatrace\"\n")
 		sb.WriteString("---\n\n")
 		sb.WriteString(content)
 	default:

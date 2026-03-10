@@ -18,7 +18,7 @@ var skillsCmd = &cobra.Command{
 	Long: `Manage dtctl skill files for AI coding assistants.
 
 Skill files teach your AI assistant how to use dtctl effectively.
-Supported agents: claude, copilot, cursor, opencode.`,
+Supported agents: claude, copilot, cursor, kiro, opencode.`,
 	Example: `  # Auto-detect agent and install skill file
   dtctl skills install
 
@@ -136,7 +136,7 @@ func init() {
 	skillsCmd.AddCommand(skillsStatusCmd)
 
 	// Flags for install
-	skillsInstallCmd.Flags().String("for", "", "install for a specific agent (claude, copilot, cursor, opencode)")
+	skillsInstallCmd.Flags().String("for", "", "install for a specific agent (claude, copilot, cursor, kiro, opencode)")
 	skillsInstallCmd.Flags().Bool("global", false, "install to user-wide location instead of project directory")
 	skillsInstallCmd.Flags().Bool("force", false, "overwrite existing files without prompting")
 	skillsInstallCmd.Flags().Bool("list", false, "list all supported agents")
