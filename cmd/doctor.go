@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/version"
 )
@@ -110,7 +111,7 @@ func runDoctorChecks() []checkResult {
 	})
 
 	// 4. Token retrieval
-	token, tokenErr := cfg.GetToken(ctx.TokenRef)
+	token, tokenErr := client.GetTokenWithOAuthSupport(cfg, ctx.TokenRef)
 	if tokenErr != nil || token == "" {
 		detail := "token not found"
 		if tokenErr != nil {
