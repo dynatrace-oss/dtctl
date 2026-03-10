@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	rookout "dynatrace.com/protocols/v11/messages/rookout"
+	rookout "github.com/dynatrace-oss/dtctl/pkg/proto/rookout"
 	"google.golang.org/protobuf/proto"
 )
 

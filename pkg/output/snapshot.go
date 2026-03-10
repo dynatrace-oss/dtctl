@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	rookout "dynatrace.com/protocols/v11/messages/rookout"
+	rookout "github.com/dynatrace-oss/dtctl/pkg/proto/rookout"
 	"google.golang.org/protobuf/proto"
 )
 

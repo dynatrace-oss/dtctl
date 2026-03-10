@@ -3,7 +3,6 @@ module github.com/dynatrace-oss/dtctl
 go 1.24.13
 
 require (
-	dynatrace.com/protocols/v11 v11.331.0
 	github.com/adrg/xdg v0.5.3
 	github.com/go-resty/resty/v2 v2.11.0
 	github.com/guptarohit/asciigraph v0.7.3
