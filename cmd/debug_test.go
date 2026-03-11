@@ -1,6 +1,11 @@
 package cmd
 
-import "testing"
+import (
+	"bytes"
+	"os"
+	"strings"
+	"testing"
+)
 
 func TestGetBreakpointsCommandRegistration(t *testing.T) {
 	getCmd, _, err := rootCmd.Find([]string{"get"})
@@ -226,5 +231,97 @@ func TestBuildGraphQLResponse(t *testing.T) {
 	}
 	if response["data"] != payload["data"] {
 		t.Fatalf("unexpected response payload: %#v", response)
+	}
+}
+
+func TestPrintGraphQLResponse(t *testing.T) {
+	originalOut := rootCmd.OutOrStdout()
+	defer rootCmd.SetOut(originalOut)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+
+	payload := map[string]interface{}{
+		"data": map[string]interface{}{"ok": true},
+	}
+
+	if err := printGraphQLResponse("getWorkspaceRules", payload); err != nil {
+		t.Fatalf("printGraphQLResponse returned error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "\"operation\": \"getWorkspaceRules\"") {
+		t.Fatalf("missing operation in output: %q", output)
+	}
+	if !strings.Contains(output, "\"response\"") {
+		t.Fatalf("missing response in output: %q", output)
+	}
+}
+
+func TestPrintGraphQLResponse_NilPayload(t *testing.T) {
+	if err := printGraphQLResponse("noop", nil); err != nil {
+		t.Fatalf("expected nil payload to return nil error, got: %v", err)
+	}
+}
+
+func TestPrintBreakpointsTable(t *testing.T) {
+	originalOut := rootCmd.OutOrStdout()
+	defer rootCmd.SetOut(originalOut)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+
+	rows := []breakpointRow{{ID: "bp-1", Filename: "A.java", Line: 10, Active: true}}
+	printBreakpointsTable(rows)
+
+	output := out.String()
+	if !strings.Contains(output, "id") || !strings.Contains(output, "filename") || !strings.Contains(output, "line number") || !strings.Contains(output, "active") {
+		t.Fatalf("missing table header: %q", output)
+	}
+	if !strings.Contains(output, "bp-1") || !strings.Contains(output, "A.java") {
+		t.Fatalf("missing row content: %q", output)
+	}
+}
+
+func TestCurrentProjectPath(t *testing.T) {
+	originalCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get cwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(originalCwd) }()
+
+	tmp := t.TempDir()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("failed to chdir: %v", err)
+	}
+
+	if got := currentProjectPath(); got == "" || got == "no-project" {
+		t.Fatalf("expected project name from cwd, got %q", got)
+	}
+}
+
+func TestIsDebugVerbose(t *testing.T) {
+	originalDebugMode := debugMode
+	originalVerbosity := verbosity
+	defer func() {
+		debugMode = originalDebugMode
+		verbosity = originalVerbosity
+	}()
+
+	debugMode = false
+	verbosity = 0
+	if isDebugVerbose() {
+		t.Fatalf("expected false when debugMode and verbosity are disabled")
+	}
+
+	verbosity = 1
+	if !isDebugVerbose() {
+		t.Fatalf("expected true when verbosity > 0")
+	}
+
+	verbosity = 0
+	debugMode = true
+	if !isDebugVerbose() {
+		t.Fatalf("expected true when debugMode is enabled")
 	}
 }

@@ -33,7 +33,7 @@ const (
 	devTokenURL    = "https://dev.token.dynatracelabs.com/sso/oauth2/token"
 	devUserInfoURL = "https://sso-dev.dynatracelabs.com/sso/oauth2/userinfo"
 	devClientID    = "dt0s12.dtctl-dev"
-	
+
 	// Hardening/Sprint environment
 	hardAuthURL     = "https://sso-sprint.dynatracelabs.com/oauth2/authorize"
 	hardTokenURL    = "https://hard.token.dynatracelabs.com/sso/oauth2/token"
@@ -59,7 +59,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 	// Normalize empty string to default
 	if level == "" {
 		level = config.DefaultSafetyLevel
-	}	
+	}
 
 	switch level {
 	case config.SafetyLevelReadOnly:

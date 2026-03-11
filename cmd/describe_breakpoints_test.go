@@ -1,6 +1,10 @@
 package cmd
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
 
 func TestBuildBreakpointStatusResult(t *testing.T) {
 	rule := map[string]interface{}{
@@ -172,4 +176,103 @@ func TestUseBreakpointDescribeTextView(t *testing.T) {
 			t.Fatalf("useBreakpointDescribeTextView() = %v, want false when agent mode enabled", got)
 		}
 	})
+}
+
+func TestPrintBreakpointStatusResult(t *testing.T) {
+	originalOut := rootCmd.OutOrStdout()
+	defer rootCmd.SetOut(originalOut)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+
+	result := breakpointStatusResult{
+		ID:            "bp-1",
+		Location:      "OrderController.java:306",
+		Enabled:       true,
+		Status:        "Warning",
+		ActiveRooks:   []breakpointRookInfo{{ID: "rook-1", Hostname: "host-a", Executable: "java"}},
+		ActiveTips:    []breakpointTip{{Description: "Trigger the line", DocsLink: "https://docs.example/trigger"}},
+		Warnings:      []breakpointStatusIssue{{Title: "Source file has changed", Description: "Redeploy source map"}},
+		ControllerWarnings: []breakpointStatusIssue{{
+			Title:       "Partial deployment",
+			Description: "Some agents missing",
+			Controllers: []string{"controller-1"},
+		}},
+	}
+
+	printBreakpointStatusResult(result)
+
+	text := out.String()
+	for _, mustContain := range []string{
+		"ID:",
+		"bp-1",
+		"Location:",
+		"OrderController.java:306",
+		"Status:",
+		"Warning",
+		"Active rooks:",
+		"Active tips:",
+		"Warnings:",
+		"Controller warnings:",
+	} {
+		if !strings.Contains(text, mustContain) {
+			t.Fatalf("expected output to contain %q, got: %q", mustContain, text)
+		}
+	}
+}
+
+func TestPrintBreakpointRooksSection(t *testing.T) {
+	originalOut := rootCmd.OutOrStdout()
+	defer rootCmd.SetOut(originalOut)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+
+	rooks := []breakpointRookInfo{{ID: "rook-1", Hostname: "host-a", Executable: "java"}}
+	printBreakpointRooksSection("Active rooks", rooks)
+
+	text := out.String()
+	if !strings.Contains(text, "Active rooks:") || !strings.Contains(text, "host-a / java") {
+		t.Fatalf("unexpected rooks section output: %q", text)
+	}
+}
+
+func TestPrintBreakpointTipsSection(t *testing.T) {
+	originalOut := rootCmd.OutOrStdout()
+	defer rootCmd.SetOut(originalOut)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+
+	tips := []breakpointTip{{Description: "Trigger the line", DocsLink: "https://docs.example/trigger"}}
+	printBreakpointTipsSection("Active tips", tips)
+
+	text := out.String()
+	if !strings.Contains(text, "Active tips:") || !strings.Contains(text, "Trigger the line") {
+		t.Fatalf("unexpected tips section output: %q", text)
+	}
+}
+
+func TestPrintBreakpointIssuesSection(t *testing.T) {
+	originalOut := rootCmd.OutOrStdout()
+	defer rootCmd.SetOut(originalOut)
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+
+	issues := []breakpointStatusIssue{{
+		Title:       "Source file has changed",
+		Description: "Redeploy source map",
+		DocsLink:    "https://docs.example/source",
+		Rooks:       []breakpointRookInfo{{ID: "rook-1", Hostname: "host-a", Executable: "java"}},
+		Controllers: []string{"controller-1"},
+	}}
+	printBreakpointIssuesSection("Warnings", issues)
+
+	text := out.String()
+	for _, mustContain := range []string{"Warnings:", "Source file has changed", "Description:", "Docs:", "Rooks:", "Controllers:"} {
+		if !strings.Contains(text, mustContain) {
+			t.Fatalf("expected output to contain %q, got: %q", mustContain, text)
+		}
+	}
 }

@@ -149,3 +149,64 @@ func TestCheckDeleteBreakpointSafety(t *testing.T) {
 		}
 	})
 }
+
+func TestRunDeleteAllBreakpoints_NoRows(t *testing.T) {
+	originalOutputFormat := outputFormat
+	originalAgentMode := agentMode
+	originalPlainMode := plainMode
+	defer func() {
+		outputFormat = originalOutputFormat
+		agentMode = originalAgentMode
+		plainMode = originalPlainMode
+	}()
+
+	outputFormat = "table"
+	agentMode = false
+	plainMode = true
+
+	output := captureStdout(t, func() {
+		if err := runDeleteAllBreakpoints(nil, "workspace-1", nil, true, false); err != nil {
+			t.Fatalf("runDeleteAllBreakpoints returned error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "No breakpoints found in the current workspace") {
+		t.Fatalf("unexpected output: %q", output)
+	}
+}
+
+func TestRunDeleteBreakpointRows_DryRun(t *testing.T) {
+	originalDryRun := dryRun
+	originalOutputFormat := outputFormat
+	originalAgentMode := agentMode
+	originalPlainMode := plainMode
+	defer func() {
+		dryRun = originalDryRun
+		outputFormat = originalOutputFormat
+		agentMode = originalAgentMode
+		plainMode = originalPlainMode
+	}()
+
+	dryRun = true
+	outputFormat = "table"
+	agentMode = false
+	plainMode = true
+
+	rows := []breakpointRow{
+		{ID: "bp-1", Filename: "OrderController.java", Line: 306},
+		{ID: "bp-2", Filename: "OrderController.java", Line: 307},
+	}
+
+	output := captureStdout(t, func() {
+		if err := runDeleteBreakpointRows(nil, "workspace-1", rows, true, false); err != nil {
+			t.Fatalf("runDeleteBreakpointRows returned error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "Dry run: would delete breakpoint bp-1 (OrderController.java:306)") {
+		t.Fatalf("missing first dry-run output: %q", output)
+	}
+	if !strings.Contains(output, "Dry run: would delete breakpoint bp-2 (OrderController.java:307)") {
+		t.Fatalf("missing second dry-run output: %q", output)
+	}
+}
