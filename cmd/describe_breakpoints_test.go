@@ -111,3 +111,27 @@ func TestDescribeCommandAcceptsSingleIdentifier(t *testing.T) {
 		t.Fatalf("expected single identifier to be accepted, got error: %v", err)
 	}
 }
+
+func TestShouldHandleAsBreakpointDescribe(t *testing.T) {
+	tests := []struct {
+		name       string
+		identifier string
+		want       bool
+	}{
+		{name: "filename line", identifier: "OrderController.java:306", want: true},
+		{name: "dtctl rule id", identifier: "dtctl-rule-abc123", want: true},
+		{name: "bp prefix", identifier: "bp-1", want: true},
+		{name: "numeric id", identifier: "123456789", want: true},
+		{name: "slo resource token", identifier: "slo", want: false},
+		{name: "arbitrary string", identifier: "somestring", want: false},
+		{name: "empty", identifier: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldHandleAsBreakpointDescribe(tt.identifier); got != tt.want {
+				t.Fatalf("shouldHandleAsBreakpointDescribe(%q) = %v, want %v", tt.identifier, got, tt.want)
+			}
+		})
+	}
+}

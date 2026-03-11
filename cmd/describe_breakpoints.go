@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -52,7 +53,37 @@ func runDescribeCommand(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return requireSubcommand(cmd, args)
 	}
+
+	if !shouldHandleAsBreakpointDescribe(args[0]) {
+		return requireSubcommand(cmd, args)
+	}
+
 	return runDescribeBreakpoint(cmd, args[0])
+}
+
+func shouldHandleAsBreakpointDescribe(identifier string) bool {
+	trimmed := strings.TrimSpace(identifier)
+	if trimmed == "" {
+		return false
+	}
+
+	if _, _, err := parseBreakpoint(trimmed); err == nil {
+		return true
+	}
+
+	if strings.HasPrefix(trimmed, "dtctl-rule-") {
+		return true
+	}
+
+	if strings.HasPrefix(trimmed, "bp-") {
+		return true
+	}
+
+	if _, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+		return true
+	}
+
+	return false
 }
 
 func runDescribeBreakpoint(cmd *cobra.Command, identifier string) error {
