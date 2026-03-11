@@ -29,7 +29,7 @@ type breakpointRow struct {
 var debugCmd = &cobra.Command{
 	Use:   "debug",
 	Short: "Manage Live Debugger workspace filters",
-	Long: `POC command for Live Debugger GraphQL integration.
+	Long: `Configure Live Debugger workspace filters for the current project.
 
 Examples:
   dtctl debug --filters k8s.namespace.name=prod
