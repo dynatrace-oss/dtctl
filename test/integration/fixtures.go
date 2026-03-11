@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 )
 
 // WorkflowFixture returns a minimal workflow JSON for integration testing
@@ -331,5 +333,50 @@ func EdgeConnectFixtureModified(prefix string) map[string]interface{} {
 			fmt.Sprintf("*.%s.modified.test.invalid", prefix),
 		},
 		"oauthClientId": fmt.Sprintf("%s-client-id-modified", prefix),
+	}
+}
+
+// DashboardCreateRequest returns a CreateRequest for a dashboard
+func DashboardCreateRequest(prefix string) document.CreateRequest {
+	return document.CreateRequest{
+		Name:    fmt.Sprintf("%s-dashboard", prefix),
+		Type:    "dashboard",
+		Content: DashboardFixture(prefix),
+	}
+}
+
+// DashboardCreateRequestModified returns a modified CreateRequest for a dashboard
+func DashboardCreateRequestModified(prefix string) document.CreateRequest {
+	return document.CreateRequest{
+		Name:    fmt.Sprintf("%s-dashboard-modified", prefix),
+		Type:    "dashboard",
+		Content: DashboardFixtureModified(prefix),
+	}
+}
+
+// DashboardCreateRequestLarge returns a CreateRequest for a large dashboard
+func DashboardCreateRequestLarge(prefix string) document.CreateRequest {
+	return document.CreateRequest{
+		Name:    fmt.Sprintf("%s-dashboard-large", prefix),
+		Type:    "dashboard",
+		Content: DashboardFixtureLarge(prefix),
+	}
+}
+
+// NotebookCreateRequest returns a CreateRequest for a notebook
+func NotebookCreateRequest(prefix string) document.CreateRequest {
+	return document.CreateRequest{
+		Name:    fmt.Sprintf("%s-notebook", prefix),
+		Type:    "notebook",
+		Content: NotebookFixture(prefix),
+	}
+}
+
+// NotebookCreateRequestModified returns a modified CreateRequest for a notebook
+func NotebookCreateRequestModified(prefix string) document.CreateRequest {
+	return document.CreateRequest{
+		Name:    fmt.Sprintf("%s-notebook-modified", prefix),
+		Type:    "notebook",
+		Content: NotebookFixtureModified(prefix),
 	}
 }

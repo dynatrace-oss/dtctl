@@ -5,14 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/dynatrace-oss/dtctl/pkg/version"
 	"github.com/sirupsen/logrus"
+
+	"github.com/dynatrace-oss/dtctl/pkg/version"
 )
 
 func TestNew(t *testing.T) {
@@ -746,5 +748,18 @@ func TestClient_GzipResponseDecompression(t *testing.T) {
 
 	if resp.String() != expectedBody {
 		t.Errorf("Response body = %q, want %q", resp.String(), expectedBody)
+	}
+}
+
+func TestReadRequestBodyForDebug_NilGetBodyReader(t *testing.T) {
+	req := &http.Request{
+		GetBody: func() (io.ReadCloser, error) {
+			return nil, nil
+		},
+	}
+
+	got := readRequestBodyForDebug(req)
+	if got != "" {
+		t.Fatalf("readRequestBodyForDebug() = %q, want empty string", got)
 	}
 }

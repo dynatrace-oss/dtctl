@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
-	"github.com/spf13/cobra"
 )
 
 // describeDashboardCmd shows detailed info about a dashboard
@@ -145,7 +146,75 @@ Examples:
 	},
 }
 
-// describeTrashCmd shows detailed info about a trashed document
+// describeDocumentCmd shows detailed info about any document
+var describeDocumentCmd = &cobra.Command{
+	Use:     "document <document-id-or-name>",
+	Aliases: []string{"doc"},
+	Short:   "Show details of a document",
+	Long: `Show detailed information about a document of any type.
+
+Works for any document type (dashboard, notebook, launchpad, custom app documents, etc.).
+
+Examples:
+  # Describe a document by ID
+  dtctl describe document <document-id>
+
+  # Describe a document by name
+  dtctl describe document "My Launchpad"
+`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		identifier := args[0]
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		// Resolve name to ID (searches across all document types)
+		res := resolver.NewResolver(c)
+		documentID, err := res.ResolveID(resolver.TypeDocument, identifier)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewHandler(c)
+
+		// Get full metadata
+		metadata, err := handler.GetMetadata(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Print detailed information
+		fmt.Printf("ID:          %s\n", metadata.ID)
+		fmt.Printf("Name:        %s\n", metadata.Name)
+		fmt.Printf("Type:        %s\n", metadata.Type)
+		if metadata.Description != "" {
+			fmt.Printf("Description: %s\n", metadata.Description)
+		}
+		fmt.Printf("Version:     %d\n", metadata.Version)
+		fmt.Printf("Owner:       %s\n", metadata.Owner)
+		fmt.Printf("Private:     %v\n", metadata.IsPrivate)
+		fmt.Printf("Created:     %s (by %s)\n",
+			metadata.ModificationInfo.CreatedTime.Format("2006-01-02 15:04:05"),
+			metadata.ModificationInfo.CreatedBy)
+		fmt.Printf("Modified:    %s (by %s)\n",
+			metadata.ModificationInfo.LastModifiedTime.Format("2006-01-02 15:04:05"),
+			metadata.ModificationInfo.LastModifiedBy)
+		if len(metadata.Access) > 0 {
+			fmt.Printf("Access:      %s\n", strings.Join(metadata.Access, ", "))
+		}
+
+		return nil
+	},
+}
+
 var describeTrashCmd = &cobra.Command{
 	Use:     "trash <document-id>",
 	Aliases: []string{"deleted"},

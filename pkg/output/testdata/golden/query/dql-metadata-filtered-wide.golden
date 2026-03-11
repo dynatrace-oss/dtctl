@@ -1,0 +1,9 @@
+CONTENT                          HOST NAME       STATUS   TIMESTAMP            
+Connection timeout to database   web-server-01   ERROR    2025-03-15T10:30:00Z   
+High memory usage detected       web-server-02   WARN     2025-03-15T10:29:55Z   
+Request processed successfully   api-gateway     INFO     2025-03-15T10:29:50Z   
+
+--- Query Metadata ---
+Execution time:     47ms
+Scanned records:    42,351
+Query ID:           27c4daf9-2619-4ba1-b1ad-9e276c75a351

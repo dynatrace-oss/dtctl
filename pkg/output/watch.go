@@ -41,7 +41,7 @@ func NewWatchPrinter(basePrinter Printer) *WatchPrinter {
 	return &WatchPrinter{
 		basePrinter: basePrinter,
 		writer:      os.Stdout,
-		colorize:    true,
+		colorize:    ColorEnabled(),
 	}
 }
 
@@ -130,7 +130,7 @@ func (p *WatchPrinter) printWithPrefix(resource interface{}, prefix string, colo
 
 	// For other formats, print the prefix and the resource
 	if p.colorize && color != "" {
-		fmt.Fprintf(p.writer, "%s%s%s ", color, prefix, Reset)
+		fmt.Fprintf(p.writer, "%s%s%s ", color, prefix, ColorCode(Reset))
 	} else {
 		fmt.Fprintf(p.writer, "%s ", prefix)
 	}
@@ -148,7 +148,7 @@ func (p *WatchPrinter) printTableRow(resource interface{}, prefix string, color 
 	if v.Kind() != reflect.Struct {
 		// Fallback for non-struct types
 		if p.colorize && color != "" {
-			fmt.Fprintf(p.writer, "%s%s%s %v\n", color, prefix, Reset, resource)
+			fmt.Fprintf(p.writer, "%s%s%s %v\n", color, prefix, ColorCode(Reset), resource)
 		} else {
 			fmt.Fprintf(p.writer, "%s %v\n", prefix, resource)
 		}
@@ -167,7 +167,7 @@ func (p *WatchPrinter) printTableRow(resource interface{}, prefix string, color 
 
 	// Print prefix and row values with proper spacing
 	if p.colorize && color != "" {
-		fmt.Fprintf(p.writer, "%s%s%s ", color, prefix, Reset)
+		fmt.Fprintf(p.writer, "%s%s%s ", color, prefix, ColorCode(Reset))
 	} else {
 		fmt.Fprintf(p.writer, "%s ", prefix)
 	}

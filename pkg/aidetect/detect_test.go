@@ -80,6 +80,16 @@ func TestDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "Kiro detected",
+			envVars: map[string]string{
+				"KIRO": "1",
+			},
+			expected: AgentInfo{
+				Detected: true,
+				Name:     "kiro",
+			},
+		},
+		{
 			name: "OpenCode detected",
 			envVars: map[string]string{
 				"OPENCODE": "1",

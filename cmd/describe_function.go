@@ -3,8 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 )
 
 // describeFunctionCmd describes an app function

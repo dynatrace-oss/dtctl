@@ -3,8 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
 )
 
 // describeEdgeConnectCmd shows detailed info about an EdgeConnect

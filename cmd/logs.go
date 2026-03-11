@@ -8,8 +8,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 )
 
 var taskName string
@@ -145,13 +146,14 @@ func followExecutionLogs(handler *workflow.ExecutionHandler, executionID, task s
 		var logs string
 		var err error
 
-		if task != "" {
+		switch {
+		case task != "":
 			logs, err = handler.GetTaskLog(executionID, task)
-		} else if allLogs {
+		case allLogs:
 			logs, err = handler.GetCompleteExecutionLog(executionID)
-		} else if tasksOnly {
+		case tasksOnly:
 			logs, err = handler.GetFullExecutionLog(executionID)
-		} else {
+		default:
 			logs, err = handler.GetExecutionLog(executionID)
 		}
 
@@ -174,13 +176,14 @@ func followExecutionLogs(handler *workflow.ExecutionHandler, executionID, task s
 		// Check if execution is complete
 		if isTerminalState(exec.State) {
 			// Final log fetch to ensure we have everything
-			if task != "" {
+			switch {
+			case task != "":
 				logs, _ = handler.GetTaskLog(executionID, task)
-			} else if allLogs {
+			case allLogs:
 				logs, _ = handler.GetCompleteExecutionLog(executionID)
-			} else if tasksOnly {
+			case tasksOnly:
 				logs, _ = handler.GetFullExecutionLog(executionID)
-			} else {
+			default:
 				logs, _ = handler.GetExecutionLog(executionID)
 			}
 			if len(logs) > lastLogLen {

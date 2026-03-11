@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 )
 
 // describeLookupCmd shows detailed info about a lookup table
@@ -45,7 +46,7 @@ Examples:
 		}
 
 		// Get preview data (first 5 rows)
-		data, err := handler.GetData(path, 5)
+		dataResult, err := handler.GetData(path, 5)
 		if err != nil {
 			return err
 		}
@@ -58,7 +59,7 @@ Examples:
 				PreviewData []map[string]interface{} `json:"previewData"`
 			}{
 				Lookup:      lu,
-				PreviewData: data,
+				PreviewData: dataResult.Records,
 			}
 			return printer.Print(lookupData)
 		}
@@ -88,9 +89,9 @@ Examples:
 		}
 
 		// Print data preview
-		if len(data) > 0 {
+		if len(dataResult.Records) > 0 {
 			fmt.Println()
-			fmt.Printf("Data Preview (first %d rows):\n", len(data))
+			fmt.Printf("Data Preview (first %d rows):\n", len(dataResult.Records))
 
 			// Create table header
 			if len(lu.Columns) > 0 {
@@ -98,7 +99,7 @@ Examples:
 			}
 
 			// Print rows
-			for _, row := range data {
+			for _, row := range dataResult.Records {
 				var values []string
 				for _, col := range lu.Columns {
 					val := fmt.Sprintf("%v", row[col])

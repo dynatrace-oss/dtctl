@@ -167,11 +167,11 @@ func TestSettingsObjectCreateMarshal(t *testing.T) {
 
 func TestCreateResponseUnmarshal(t *testing.T) {
 	tests := []struct {
-		name        string
-		jsonData    string
-		wantErr     bool
+		name         string
+		jsonData     string
+		wantErr      bool
 		wantObjectID string
-		checkError  bool
+		checkError   bool
 	}{
 		{
 			name: "successful creation",

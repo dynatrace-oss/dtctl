@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 // SetupTestConfig creates a temporary config file for testing and returns the config path and cleanup function

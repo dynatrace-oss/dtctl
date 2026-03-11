@@ -5,6 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
 // TestGlobalFlags validates all global persistent flags
@@ -60,6 +62,7 @@ func TestQueryFlags(t *testing.T) {
 		{"default-timeframe-end", ""},
 		{"locale", ""},
 		{"timezone", ""},
+		{"metadata", ""},
 	}
 
 	for _, tt := range tests {
@@ -670,5 +673,222 @@ func TestHistoryCommand(t *testing.T) {
 	// History should have subcommands
 	if len(historyCmd.Commands()) == 0 {
 		t.Error("historyCmd has no subcommands")
+	}
+}
+
+// TestSkillsFlags validates skills command flags
+func TestSkillsFlags(t *testing.T) {
+	// skills install flags
+	installFlags := []struct {
+		flagName     string
+		defaultValue string
+	}{
+		{"for", ""},
+		{"global", "false"},
+		{"force", "false"},
+		{"list", "false"},
+	}
+
+	for _, tt := range installFlags {
+		t.Run("install_"+tt.flagName, func(t *testing.T) {
+			flag := skillsInstallCmd.Flags().Lookup(tt.flagName)
+			if flag == nil {
+				t.Fatalf("Skills install flag --%s not found", tt.flagName)
+			}
+			if flag.DefValue != tt.defaultValue {
+				t.Errorf("Flag --%s default = %q, want %q", tt.flagName, flag.DefValue, tt.defaultValue)
+			}
+		})
+	}
+
+	// skills uninstall flags
+	t.Run("uninstall_for", func(t *testing.T) {
+		flag := skillsUninstallCmd.Flags().Lookup("for")
+		if flag == nil {
+			t.Fatal("Skills uninstall flag --for not found")
+		}
+		if flag.DefValue != "" {
+			t.Errorf("Flag --for default = %q, want %q", flag.DefValue, "")
+		}
+	})
+
+	// skills status flags
+	t.Run("status_for", func(t *testing.T) {
+		flag := skillsStatusCmd.Flags().Lookup("for")
+		if flag == nil {
+			t.Fatal("Skills status flag --for not found")
+		}
+		if flag.DefValue != "" {
+			t.Errorf("Flag --for default = %q, want %q", flag.DefValue, "")
+		}
+	})
+}
+
+// TestSkillsCommand validates skills command structure
+func TestSkillsCommand(t *testing.T) {
+	if skillsCmd == nil {
+		t.Fatal("skillsCmd is nil")
+	}
+
+	// Skills should have subcommands
+	subs := skillsCmd.Commands()
+	if len(subs) == 0 {
+		t.Fatal("skillsCmd has no subcommands")
+	}
+
+	expectedSubs := []string{"install", "uninstall", "status"}
+	for _, name := range expectedSubs {
+		found := false
+		for _, sub := range subs {
+			if sub.Name() == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected subcommand %q not found under skills", name)
+		}
+	}
+}
+
+// TestMetadataFlagCompletion_Empty tests completion when nothing is typed yet
+func TestMetadataFlagCompletion_Empty(t *testing.T) {
+	suggestions, directive := metadataFieldCompletion(nil, nil, "")
+
+	if directive&cobra.ShellCompDirectiveNoFileComp == 0 {
+		t.Error("expected ShellCompDirectiveNoFileComp to be set")
+	}
+	if directive&cobra.ShellCompDirectiveNoSpace == 0 {
+		t.Error("expected ShellCompDirectiveNoSpace to be set")
+	}
+
+	// Should include "all" plus all 13 field names
+	allFields := output.ValidMetadataFieldNames()
+	expectedCount := len(allFields) + 1 // +1 for "all"
+	if len(suggestions) != expectedCount {
+		t.Errorf("got %d suggestions, want %d", len(suggestions), expectedCount)
+	}
+
+	// First suggestion should be "all" (with tab-separated description)
+	if suggestions[0] != "all\tInclude all metadata fields" {
+		t.Errorf("first suggestion = %q, want %q", suggestions[0], "all\tInclude all metadata fields")
+	}
+}
+
+// TestMetadataFlagCompletion_Partial tests completion with a partial field name
+func TestMetadataFlagCompletion_Partial(t *testing.T) {
+	suggestions, _ := metadataFieldCompletion(nil, nil, "scanned")
+
+	// Should match: scannedBytes, scannedDataPoints, scannedRecords
+	if len(suggestions) != 3 {
+		t.Fatalf("got %d suggestions, want 3: %v", len(suggestions), suggestions)
+	}
+
+	expected := map[string]bool{
+		"scannedBytes":      true,
+		"scannedDataPoints": true,
+		"scannedRecords":    true,
+	}
+	for _, s := range suggestions {
+		if !expected[s] {
+			t.Errorf("unexpected suggestion: %q", s)
+		}
+	}
+}
+
+// TestMetadataFlagCompletion_AfterComma tests completion after a comma (second field)
+func TestMetadataFlagCompletion_AfterComma(t *testing.T) {
+	suggestions, _ := metadataFieldCompletion(nil, nil, "queryId,")
+
+	// Should exclude "queryId" from suggestions
+	for _, s := range suggestions {
+		if s == "queryId" || s == ",queryId" {
+			t.Error("queryId should be excluded from suggestions (already selected)")
+		}
+	}
+
+	// All suggestions should have "queryId," prefix
+	for _, s := range suggestions {
+		if len(s) < 8 || s[:8] != "queryId," {
+			t.Errorf("suggestion %q should have prefix 'queryId,'", s)
+		}
+	}
+
+	// Should have 12 suggestions (all fields minus queryId)
+	if len(suggestions) != 12 {
+		t.Errorf("got %d suggestions, want 12", len(suggestions))
+	}
+}
+
+// TestMetadataFlagCompletion_AfterCommaPartial tests completion with partial after comma
+func TestMetadataFlagCompletion_AfterCommaPartial(t *testing.T) {
+	suggestions, _ := metadataFieldCompletion(nil, nil, "queryId,scanned")
+
+	// Should match scannedBytes, scannedDataPoints, scannedRecords — all with prefix
+	if len(suggestions) != 3 {
+		t.Fatalf("got %d suggestions, want 3: %v", len(suggestions), suggestions)
+	}
+
+	expected := map[string]bool{
+		"queryId,scannedBytes":      true,
+		"queryId,scannedDataPoints": true,
+		"queryId,scannedRecords":    true,
+	}
+	for _, s := range suggestions {
+		if !expected[s] {
+			t.Errorf("unexpected suggestion: %q", s)
+		}
+	}
+}
+
+// TestMetadataFlagCompletion_MultipleSelected tests that multiple already-selected fields are excluded
+func TestMetadataFlagCompletion_MultipleSelected(t *testing.T) {
+	suggestions, _ := metadataFieldCompletion(nil, nil, "queryId,sampled,")
+
+	// Should exclude both queryId and sampled
+	for _, s := range suggestions {
+		if s == "queryId,sampled,queryId" || s == "queryId,sampled,sampled" {
+			t.Errorf("already-selected field should not appear: %q", s)
+		}
+	}
+
+	// 13 total fields - 2 selected = 11
+	if len(suggestions) != 11 {
+		t.Errorf("got %d suggestions, want 11", len(suggestions))
+	}
+}
+
+// TestMetadataFlagCompletion_NoMatch tests completion with a prefix that matches nothing
+func TestMetadataFlagCompletion_NoMatch(t *testing.T) {
+	suggestions, _ := metadataFieldCompletion(nil, nil, "nonexistent")
+
+	if len(suggestions) != 0 {
+		t.Errorf("got %d suggestions for non-matching prefix, want 0: %v", len(suggestions), suggestions)
+	}
+}
+
+// TestMetadataFlagNoOptDefVal tests that bare --metadata uses "all"
+func TestMetadataFlagNoOptDefVal(t *testing.T) {
+	flag := queryCmd.Flags().Lookup("metadata")
+	if flag == nil {
+		t.Fatal("metadata flag not found")
+	}
+	if flag.NoOptDefVal != "all" {
+		t.Errorf("metadata NoOptDefVal = %q, want %q", flag.NoOptDefVal, "all")
+	}
+}
+
+// TestMetadataFlagCompletionRegistered tests that completion is registered for --metadata
+func TestMetadataFlagCompletionRegistered(t *testing.T) {
+	// Cobra stores registered completion functions internally.
+	// We verify by calling the completion function through the command's
+	// completion mechanism. The simplest way is to verify the function
+	// exists and returns valid results.
+	suggestions, directive := metadataFieldCompletion(queryCmd, nil, "")
+	if len(suggestions) == 0 {
+		t.Error("completion function returned no suggestions")
+	}
+	if directive&cobra.ShellCompDirectiveNoFileComp == 0 {
+		t.Error("expected NoFileComp directive")
 	}
 }

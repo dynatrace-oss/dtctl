@@ -1,0 +1,2 @@
+NAME           TABLE   DISPLAY NAME   STATUS   RETENTION DAYS 
+default_logs   logs    Default Logs   active   35               

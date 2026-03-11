@@ -1,0 +1,4 @@
+NAME              TABLE     DISPLAY NAME      STATUS   RETENTION DAYS 
+default_logs      logs      Default Logs      active   35               
+custom_metrics    metrics   Custom Metrics    active   90               
+security_events   logs      Security Events   active   365              

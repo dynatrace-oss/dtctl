@@ -190,19 +190,20 @@ func computeDiff(path string, left, right interface{}) []Change {
 			leftVal, leftExists := leftMap[k]
 			rightVal, rightExists := rightMap[k]
 
-			if !leftExists {
+			switch {
+			case !leftExists:
 				changes = append(changes, Change{
 					Path:      newPath,
 					Operation: ChangeOpAdd,
 					NewValue:  rightVal,
 				})
-			} else if !rightExists {
+			case !rightExists:
 				changes = append(changes, Change{
 					Path:      newPath,
 					Operation: ChangeOpRemove,
 					OldValue:  leftVal,
 				})
-			} else {
+			default:
 				changes = append(changes, computeDiff(newPath, leftVal, rightVal)...)
 			}
 		}
@@ -221,19 +222,20 @@ func computeDiff(path string, left, right interface{}) []Change {
 		for i := 0; i < maxLen; i++ {
 			newPath := fmt.Sprintf("%s[%d]", path, i)
 
-			if i >= len(leftSlice) {
+			switch {
+			case i >= len(leftSlice):
 				changes = append(changes, Change{
 					Path:      newPath,
 					Operation: ChangeOpAdd,
 					NewValue:  rightSlice[i],
 				})
-			} else if i >= len(rightSlice) {
+			case i >= len(rightSlice):
 				changes = append(changes, Change{
 					Path:      newPath,
 					Operation: ChangeOpRemove,
 					OldValue:  leftSlice[i],
 				})
-			} else {
+			default:
 				changes = append(changes, computeDiff(newPath, leftSlice[i], rightSlice[i])...)
 			}
 		}

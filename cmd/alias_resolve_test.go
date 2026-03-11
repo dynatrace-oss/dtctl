@@ -3,8 +3,9 @@ package cmd
 import (
 	"testing"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 func TestResolveAlias(t *testing.T) {

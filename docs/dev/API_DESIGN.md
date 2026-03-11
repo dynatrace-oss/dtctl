@@ -160,11 +160,14 @@ history     - Show version history (snapshots) of a document
 restore     - Restore a document to a previous version
 wait        - Wait for a specific condition (query results, resource state)
 alias       - Manage command aliases (set, list, delete, import, export)
+ctx         - Quick context management (list, switch, describe, set, delete)
+doctor      - Health check (config, context, token, connectivity, auth)
+diff        - Show differences between local and remote resources
+commands    - Machine-readable command catalog for AI agents (JSON/YAML, --brief, howto)
 
 # (not implemented yet)
 # patch       - Update specific fields of a resource
 # explain     - Show documentation for a resource type
-# diff        - Show differences between local and remote resources
 ```
 
 ### Syntax Pattern
@@ -192,10 +195,50 @@ dtctl query "fetch logs | limit 10"
 --debug               # Enable debug mode (full HTTP logging, equivalent to -vv)
 --dry-run             # Print what would be done without doing it
 --field-selector string # Filter by fields (e.g., owner=me,type=notebook)
+-A, --agent           # Agent output mode: wrap all output in a structured JSON envelope
+--no-agent            # Disable auto-detected agent mode
+-w, --watch           # Watch for changes (with --interval, --watch-only)
 
 # (not implemented yet)
-# -w, --watch           # Watch for changes
+# -l, --selector        # Label selector for filtering
 ```
+
+**Color control** follows the [no-color.org](https://no-color.org/) standard:
+- `NO_COLOR` env var (any non-empty value) disables ANSI color output
+- `FORCE_COLOR=1` env var overrides TTY detection to force color on
+- Color is automatically disabled when stdout is not a TTY (piped output)
+- `--plain` flag also disables color (and interactive prompts)
+
+### Agent Mode (`--agent` / `-A`)
+
+When `--agent` (or `-A`) is passed, all CLI output is wrapped in a structured JSON envelope designed for AI agents and automation consumers:
+
+```json
+{
+  "ok": true,
+  "result": [ ... ],
+  "context": {
+    "total": 5,
+    "has_more": true,
+    "verb": "get",
+    "resource": "workflow",
+    "suggestions": [
+      "Run 'dtctl describe workflow <id>' for details",
+      "More results available. Use '--chunk-size 0' to retrieve all, or filter with DQL"
+    ]
+  }
+}
+```
+
+**Envelope fields:**
+- `ok` (bool) — `true` for success, `false` for errors. Always present.
+- `result` — The command output data. Always present (may be `null`).
+- `error` (object, optional) — Structured error with `code`, `message`, `operation`, `status_code`, `request_id`, `suggestions`.
+- `context` (object, optional) — Operational metadata: `total`, `has_more`, `verb`, `resource`, `suggestions`, `warnings`, `duration`, `links`.
+
+**Auto-detection:** Agent mode is automatically enabled when dtctl detects it is running inside an AI agent environment (via the `aidetect` package). Use `--no-agent` to opt out. Auto-detection is skipped if an explicit `--output` format is set.
+
+**Behavior:** Agent mode implies `--plain` (no colors, no interactive prompts).
 
 ### Debug Mode
 
@@ -208,7 +251,7 @@ dtctl get workflows --debug
 # ===> REQUEST <===
 # GET https://abc12345.apps.dynatrace.com/platform/automation/v1/workflows
 # HEADERS:
-#     User-Agent: dtctl/0.10.0
+#     User-Agent: dtctl/0.12.0
 #     Authorization: [REDACTED]
 #
 # ===> RESPONSE <===
@@ -266,21 +309,46 @@ dtctl automatically detects when running under AI coding assistants and includes
 - **OpenCode**: Detected via `OPENCODE` environment variable
 - **GitHub Copilot**: Detected via `GITHUB_COPILOT` environment variable
 - **Cursor**: Detected via `CURSOR_AGENT` environment variable
+- **Kiro**: Detected via `KIRO` environment variable
 - **Codeium**: Detected via `CODEIUM_AGENT` environment variable
 - **TabNine**: Detected via `TABNINE_AGENT` environment variable
 - **Amazon Q**: Detected via `AMAZON_Q` environment variable
 
-Example User-Agent: `dtctl/0.10.0 (AI-Agent: opencode)`
+Example User-Agent: `dtctl/0.12.0 (AI-Agent: opencode)`
 
 This telemetry helps improve the CLI experience for AI-assisted workflows. Detection is automatic and doesn't affect functionality.
 
 ## Resource Types
 
 > **Note**: Like kubectl, dtctl supports both singular and plural resource names (e.g., `dashboard` or `dashboards`, `notebook` or `notebooks`), as well as short aliases for convenience.
-> 
-> **Important**: There is no generic `documents` command. Dashboards and notebooks are accessed via their specific resource types (`dtctl get dashboards` and `dtctl get notebooks`), even though they share the underlying Document API.
 
-### 1. Dashboards
+### 1. Documents (Generic)
+
+The `documents` resource provides type-agnostic access to the Dynatrace Documents API. It lists **all** document types by default and always shows the `TYPE` column. Use this as the escape hatch for document types beyond `dashboard` and `notebook` (e.g. `launchpad`, custom app documents).
+
+```bash
+# Resource name: document/documents (short: doc)
+dtctl get documents                              # List all documents (all types)
+dtctl get documents --type launchpad             # Filter by any type
+dtctl get documents --type my-app:config         # Custom app document types
+dtctl get documents --name "production"          # Filter by name
+dtctl get documents --mine                       # Only my documents
+dtctl get documents --types                      # Discover distinct types and counts
+dtctl get document <id>                          # Get specific document by ID (any type)
+dtctl describe document <id-or-name>             # Show detailed metadata
+dtctl create document -f file.json --type launchpad  # Create with explicit type
+dtctl create document -f file.yaml               # Type read from payload "type" field
+dtctl edit document <id-or-name>                 # Edit in $EDITOR (YAML by default)
+dtctl edit document <id> --format=json           # Edit in JSON format
+dtctl delete document <id-or-name>               # Move to trash
+dtctl delete document "My Launchpad" -y          # Delete by name, skip confirmation
+dtctl history document <id-or-name>              # Show version history (snapshots)
+dtctl restore document <id-or-name> <version>    # Restore to a previous snapshot
+```
+
+> **Relationship to `dashboards`/`notebooks`**: `dtctl get documents` is a superset — it includes dashboards and notebooks too. The type-specific commands (`dtctl get dashboards`, `dtctl get notebooks`) remain as convenient aliases with type-specific UX (tile counts, known app URLs). Nothing is deprecated.
+
+### 2. Dashboards
 
 Dashboards are visual documents for monitoring and analysis.
 
@@ -311,7 +379,7 @@ dtctl unshare dashboard <id> --all               # Remove all shares
 # dtctl unlock dashboard <id>                      # Release active lock
 ```
 
-### 2. Notebooks
+### 3. Notebooks
 
 Notebooks are interactive documents for data exploration and analysis.
 
@@ -341,20 +409,22 @@ dtctl unshare notebook <id> --all                # Remove all shares
 # dtctl lock notebook <id>                         # Acquire active lock
 ```
 
-### 3. Document Version History (Snapshots)
+### 4. Document Version History (Snapshots)
 
-These operations apply to both dashboards and notebooks. Snapshots capture document content at specific points in time and can be used to restore previous versions.
+These operations apply to dashboards, notebooks, and any generic document type. Snapshots capture document content at specific points in time and can be used to restore previous versions.
 
 ```bash
 # View version history
 dtctl history dashboard <id-or-name>             # List dashboard snapshots
 dtctl history notebook <id-or-name>              # List notebook snapshots
+dtctl history document <id-or-name>              # List snapshots for any document type
 dtctl history dashboard "Production Dashboard"   # By name
 dtctl history notebook "Analysis Notebook" -o json  # Output as JSON
 
 # Restore to previous version
 dtctl restore dashboard <id-or-name> <version>   # Restore dashboard to version
 dtctl restore notebook <id-or-name> <version>    # Restore notebook to version
+dtctl restore document <id-or-name> <version>    # Restore any document type to version
 dtctl restore dashboard "My Dashboard" 5         # Restore by name to version 5
 dtctl restore notebook "My Notebook" 3 --force   # Skip confirmation
 
@@ -371,7 +441,7 @@ dtctl restore notebook "My Notebook" 3 --force   # Skip confirmation
 # dtctl delete trash <id> --permanent              # Permanently delete
 ```
 
-### 4. Service Level Objectives (SLOs)
+### 5. Service Level Objectives (SLOs)
 
 ```bash
 # Resource name: slo/slos
@@ -393,7 +463,7 @@ dtctl exec slo <id> --timeout 60                 # Custom timeout (seconds)
 dtctl exec slo <id> -o json                      # Output as JSON
 ```
 
-### 5. Automation Workflows
+### 6. Automation Workflows
 
 ```bash
 # Resource name: workflow/workflows (short: wf)
@@ -440,7 +510,7 @@ dtctl restore workflow "My Workflow" 5           # Restore by name
 dtctl restore workflow <id> 3 --force            # Skip confirmation
 ```
 
-### 6. Identity & Access Management (IAM)
+### 7. Identity & Access Management (IAM)
 
 ```bash
 # Users
@@ -463,7 +533,7 @@ dtctl describe group <id>                        # Group details
 # dtctl get permissions --user <id>                # User's permissions
 ```
 
-### 7. Grail Data & Queries
+### 8. Grail Data & Queries
 
 ```bash
 # DQL Queries
@@ -526,7 +596,7 @@ dtctl apply -f bucket.yaml                       # Create or update bucket
 # dtctl get bucket-usage                           # Storage usage info
 ```
 
-### 8. Notifications
+### 9. Notifications
 
 ```bash
 # Resource name: notification/notifications (short: notif)
@@ -608,12 +678,68 @@ dtctl delete edgeconnect <id>                    # Delete EdgeConnect
 
 ### 11. OpenPipeline
 
-**Note**: The direct OpenPipeline API (`/platform/openpipeline/v1/configurations`) is deprecated and has been migrated to Settings API v2. Use the Settings API with OpenPipeline schemas instead (see Settings API v2 section below).
+**Note**: The OpenPipeline API for managing configurations (`/platform/openpipeline/v1/configurations`) is deprecated,
+and has been migrated to Settings API v2. Only to validate DQL processors, or Matchers use the OpenPipeline API, CRUD operations
+are using the Settings API.
+
 
 ```bash
-# OpenPipeline is now managed via Settings API
-# See Settings API v2 section for details on managing pipelines, ingest sources, and routing
+# List configurations (uses Settings 2.0)
+dtctl get openpipeline configurations --schema <schema_id>
+dtctl get openpipeline configurations --schema builtin:openpipeline.logs.pipelines
+
+# Get configuration (uses Settings 2.0)
+dtctl get openpipeline configurations <object-id>
+
+# Create configuration (uses Settings 2.0)
+dtctl create openpipeline configuration --type <id> 
+dtctl create openpipeline configuration --type logs 
+dtctl apply -f pipeline-config.yaml
+
+# Update configuration (uses Settings 2.0)
+dtctl update openpipeline configuration <object-id> -f config.yaml # Update existing
+dtctl update openpipeline configuration <object-id> -f config.yaml --set version=v2
+
+# Delete configuration (uses Settings 2.0)
+dtctl delete openpipeline configuration <object-id>                
+dtctl delete openpipeline configuration <object-id> -y             # Skip confirmation
+
+# Matcher Operations
+dtctl verify openpipeline matcher 'matchesValue(content, "error")'
+
+# DQL Processor Operations
+dtctl verify openpipeline processor 'fieldsAdd(environment: "production")'
+
+# Preview a processor with sample data (requires JSON file with processor + sample record)
+dtctl exec openpipeline preview-processor -f preview-request.json
+dtctl exec openpipeline preview-processor -f preview-request.json -o json
 ```
+Sample payload for preview-processor:
+```json
+{
+	"processor": {
+		"type": "fieldsRename",
+		"enabled": false,
+		"editable": true,
+		"id": "hostname-field-normalizer",
+		"description": "hostname field normalizer",
+		"matcher": "isNotNull(\"hostname\")",
+		"sampleData": "{\"hostname\": \"raspberry-pi 4\",\"ip\":\"10.0.0.123\"}",
+		"fields": [
+			{
+				"fromName": "hostname",
+				"toName": "host.name"
+			},
+			{
+				"fromName": "ip",
+				"toName": "ip.address"
+			}
+		]
+	}
+}
+```
+
+
 
 ### 12. Settings API v2
 
@@ -927,6 +1053,181 @@ See [../TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for complete scope reference.
 # dtctl delete state <key>                         # Delete state
 ```
 
+### 20. Azure Connection
+**API Spec**: Settings API v2 (`builtin:hyperscaler-authentication.connections.azure`)
+
+Azure Connection manages authentication credentials used by Azure monitoring configurations.
+
+```bash
+# Resource path: azure connection(s)
+
+# List all Azure connections
+dtctl get azure connections
+
+# Get by name (preferred) or object ID
+dtctl get azure connections <name-or-id>
+
+# JSON/YAML output
+dtctl get azure connections -o json
+dtctl get azure connections -o yaml
+
+# Imperative create from flags
+dtctl create azure connection --name "my-conn" --type federatedIdentityCredential
+dtctl create azure connection --name "my-conn" --type clientSecret
+
+# Imperative update by name or ID
+dtctl update azure connection --name "my-conn" --directoryId "<tenant-id>" --applicationId "<client-id>"
+dtctl update azure connection <object-id> --directoryId "<tenant-id>" --applicationId "<client-id>"
+
+# Apply/create-update from manifest
+dtctl apply -f azure_connection.yaml
+```
+
+**Behavior notes**:
+- Name-based lookup is supported for `get` and `apply` flows.
+- `apply` performs idempotent create-or-update logic (POST if new, PUT if existing).
+- For federated credentials, `create azure connection` prints actionable Azure CLI guidance with dynamic `Issuer`, `Subject`, and `Audience`.
+- Guided flow includes assigning `Reader` role on subscription scope and finalizing with `dtctl update azure connection`.
+- `--type` supports: `federatedIdentityCredential`, `clientSecret`.
+- CLI completion supports `--type` value suggestions.
+- After creating federated credential in Entra ID, short propagation delay may occur; retry update when receiving transient `AADSTS70025`.
+
+### 21. Azure Monitoring Configuration
+**API Spec**: Extensions API (`com.dynatrace.extension.da-azure`)
+
+Azure Monitoring Configuration manages monitoring profiles for Azure subscriptions/management groups.
+
+```bash
+# Resource path: azure monitoring
+
+# List all monitoring configurations
+dtctl get azure monitoring
+
+# Get by description (name) or object ID
+dtctl get azure monitoring <description-or-id>
+
+# Helper: list available Azure locations from latest extension schema
+dtctl get azure monitoring-locations
+
+# Helper: list available FeatureSetsType values from latest extension schema
+dtctl get azure monitoring-feature-sets
+
+# Imperative create from flags
+dtctl create azure monitoring --name "my-monitoring" --credentials "my-conn"
+
+# Apply/create-update from manifest
+dtctl apply -f azure_monitoring_config.yaml
+
+# Describe with runtime status section
+dtctl describe azure monitoring "my-monitoring"
+```
+
+**Behavior notes**:
+- `apply` supports optional `objectId`; when missing, dtctl resolves existing config by description and updates it.
+- If `version` is omitted during update, dtctl preserves the currently configured version.
+- If `version` is omitted during create, dtctl resolves and uses the latest extension version.
+- Locations and feature sets are discovered dynamically from the latest extension schema.
+- `describe azure monitoring` supports name-first lookup with ID fallback.
+- `describe azure monitoring` prints operational status based on DQL metrics/events, including latest value timestamp.
+
+### 22. Google Cloud Connection
+**API Spec**: Settings API v2 (`builtin:hyperscaler-authentication.connections.gcp`)
+
+Google Cloud Connection manages service-account impersonation credentials used by GCP monitoring configurations.
+
+```bash
+# Resource path: gcp connection(s)
+
+# List all GCP connections
+dtctl get gcp connections
+
+# Get by name (preferred) or object ID
+dtctl get gcp connections <name-or-id>
+
+# JSON/YAML output
+dtctl get gcp connections -o json
+dtctl get gcp connections -o yaml
+
+# Imperative create from flags
+dtctl create gcp connection --name "my-gcp-conn" --serviceAccountId "reader@project.iam.gserviceaccount.com"
+
+# Imperative update by name or ID
+dtctl update gcp connection --name "my-gcp-conn" --serviceAccountId "reader@project.iam.gserviceaccount.com"
+dtctl update gcp connection <object-id> --serviceAccountId "reader@project.iam.gserviceaccount.com"
+
+# Delete by name or ID
+dtctl delete gcp connection <name-or-id>
+
+# Apply/create-update from manifest
+dtctl apply -f gcp_connection.yaml
+```
+
+**Behavior notes**:
+- On create/apply, dtctl ensures the Dynatrace singleton principal (`builtin:hyperscaler-authentication.connections.gcp-dynatrace-principal`) exists.
+- `get`, `update`, and `delete` support name-first lookup with object ID fallback.
+- Connection type defaults to `serviceAccountImpersonation`.
+- `apply` performs idempotent create-or-update logic (POST if new, PUT if existing).
+
+### 23. Google Cloud Monitoring Configuration
+**API Spec**: Extensions API (`com.dynatrace.extension.da-gcp`)
+
+Google Cloud Monitoring Configuration manages monitoring profiles for GCP integrations.
+
+```bash
+# Resource path: gcp monitoring
+
+# List all monitoring configurations
+dtctl get gcp monitoring
+
+# Get by description (name) or object ID
+dtctl get gcp monitoring <description-or-id>
+
+# Helper: list available GCP locations from latest extension schema
+dtctl get gcp monitoring-locations
+
+# Helper: list available FeatureSetsType values from latest extension schema
+dtctl get gcp monitoring-feature-sets
+
+# Imperative create from flags
+dtctl create gcp monitoring --name "my-gcp-monitoring" --credentials "my-gcp-conn"
+
+# Imperative update by name or ID
+dtctl update gcp monitoring --name "my-gcp-monitoring" --locationFiltering "us-central1,europe-west1"
+dtctl update gcp monitoring <object-id> --featureSets "compute_engine_essential,cloud_run_essential"
+
+# Delete by name or ID
+dtctl delete gcp monitoring <name-or-id>
+
+# Apply/create-update from manifest
+dtctl apply -f gcp_monitoring_config.yaml
+
+# Describe with runtime status section
+dtctl describe gcp monitoring "my-gcp-monitoring"
+```
+
+**Behavior notes**:
+- `apply` supports optional `objectId`; when missing, dtctl resolves existing config by description and updates it.
+- If `version` is omitted during update, dtctl preserves the currently configured version.
+- If `version` is omitted during create, dtctl resolves and uses the latest extension version.
+- Locations and feature sets are discovered dynamically from the latest extension schema.
+- Default create behavior uses all discovered locations and all discovered `*_essential` feature sets unless explicitly overridden.
+- `describe gcp monitoring` supports name-first lookup with ID fallback.
+- `describe gcp monitoring` prints operational status based on GCP-specific DQL metrics/events.
+
+### 24. AWS Connection
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
+### 25. AWS Monitoring Configuration
+**API Spec**: TBD
+
+```bash
+# Placeholder (to be implemented)
+```
+
 ## Common Operations
 
 ### Create Resources
@@ -1120,6 +1421,36 @@ dtctl config delete-context dev
 
 # Rename context
 dtctl config rename-context old-name new-name
+```
+
+#### Context Shortcut (`dtctl ctx`)
+
+The `ctx` command provides a top-level shortcut for common context operations:
+
+```bash
+dtctl ctx                    # List all contexts (highlights current)
+dtctl ctx prod               # Switch to 'prod' context
+dtctl ctx current            # Show current context name
+dtctl ctx describe           # Describe current context
+dtctl ctx describe prod      # Describe specific context
+dtctl ctx set                # Create or update a context (interactive)
+dtctl ctx delete old-env     # Delete a context
+dtctl ctx rm old-env         # Alias for delete
+```
+
+### Diagnostics
+
+```bash
+# Run all health checks
+dtctl doctor
+
+# Checks performed (in order):
+# 1. Version    - shows dtctl version
+# 2. Config     - verifies config file exists and is readable
+# 3. Context    - validates current context and environment URL
+# 4. Token      - checks token presence and expiration
+# 5. Connect    - lightweight HEAD request to environment URL
+# 6. Auth       - validates token via metadata API
 ```
 
 ### Authentication
@@ -1389,6 +1720,8 @@ HOST-B  ████████████████████████
 **Note**: All timeseries output formats (`chart`, `sparkline`, `barchart`) require timeseries data 
 (records with `timeframe` and `interval` fields). If the data is not timeseries, they fall back 
 to JSON output with a warning. When more than 10 series are present, only the first 10 are displayed.
+
+**Color**: Charts, sparklines, bar charts, and watch mode use ANSI colors when enabled. Color follows the [no-color.org](https://no-color.org/) standard — it is automatically disabled when piped, when `NO_COLOR` is set, or when `--plain` is used. Set `FORCE_COLOR=1` to override TTY detection.
 
 ## Examples
 

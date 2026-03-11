@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
-	"github.com/spf13/cobra"
 )
 
 // restoreCmd represents the restore command
@@ -274,6 +275,94 @@ Examples:
 	},
 }
 
+// restoreDocumentCmd restores a document of any type to a specific version
+var restoreDocumentCmd = &cobra.Command{
+	Use:     "document <document-id-or-name> <version>",
+	Aliases: []string{"documents", "doc"},
+	Short:   "Restore a document to a previous version",
+	Long: `Restore a document of any type to a previous snapshot version.
+
+Works for any document type (dashboard, notebook, launchpad, custom app documents, etc.).
+
+This operation resets the document's content to the state it had when the snapshot
+was created. A new snapshot of the current state is automatically created before
+restoring (if one doesn't exist).
+
+Note: Only the document owner can restore snapshots.
+
+Examples:
+  # Restore by ID to version 5
+  dtctl restore document a1b2c3d4-e5f6-7890-abcd-ef1234567890 5
+
+  # Restore by name
+  dtctl restore document "My Launchpad" 3
+
+  # Restore without confirmation
+  dtctl restore document "My Launchpad" 3 --force
+`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		identifier := args[0]
+		version, err := strconv.Atoi(args[1])
+		if err != nil {
+			return fmt.Errorf("invalid version number: %s", args[1])
+		}
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		// Resolve name to ID (searches across all document types)
+		res := resolver.NewResolver(c)
+		documentID, err := res.ResolveID(resolver.TypeDocument, identifier)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewHandler(c)
+
+		// Get document metadata for confirmation and ownership check
+		metadata, err := handler.GetMetadata(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership - restore modifies the document
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+			return err
+		}
+
+		// Confirm restore unless --force or --plain
+		if !forceDelete && !plainMode {
+			confirmMsg := fmt.Sprintf("Restore document %q (%s) from snapshot %d?", metadata.Name, metadata.Type, version)
+			if !prompt.Confirm(confirmMsg) {
+				fmt.Println("Restore cancelled")
+				return nil
+			}
+		}
+
+		result, err := handler.RestoreSnapshot(documentID, version)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Document %q (%s) restored from snapshot %d (new document version: %d)\n", metadata.Name, metadata.Type, version, result.Version)
+		return nil
+	},
+}
+
 // restoreTrashCmd restores documents from trash
 var restoreTrashCmd = &cobra.Command{
 	Use:     "trash <document-id> [document-id...]",
@@ -367,12 +456,14 @@ func init() {
 	restoreCmd.AddCommand(restoreWorkflowCmd)
 	restoreCmd.AddCommand(restoreDashboardCmd)
 	restoreCmd.AddCommand(restoreNotebookCmd)
+	restoreCmd.AddCommand(restoreDocumentCmd)
 	restoreCmd.AddCommand(restoreTrashCmd)
 
 	// Add --force flag to restore commands
 	restoreWorkflowCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
 	restoreDashboardCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
 	restoreNotebookCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
+	restoreDocumentCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
 
 	// Restore trash flags
 	restoreTrashCmd.Flags().Bool("force", false, "Restore even if name conflicts exist")

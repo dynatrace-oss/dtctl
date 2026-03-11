@@ -1,6 +1,7 @@
 package document
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -20,6 +21,28 @@ type TrashedDocument struct {
 	// Computed fields for display
 	DeletedBy string    `json:"-" yaml:"-" table:"DELETED BY"`
 	DeletedAt time.Time `json:"-" yaml:"-" table:"DELETED AT"`
+}
+
+// UnmarshalJSON custom unmarshaler for TrashedDocument to handle version as string or int.
+func (t *TrashedDocument) UnmarshalJSON(data []byte) error {
+	type Alias TrashedDocument
+	aux := &struct {
+		Version json.RawMessage `json:"version"`
+		*Alias
+	}{
+		Alias: (*Alias)(t),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if len(aux.Version) > 0 {
+		v, err := parseFlexibleInt(aux.Version)
+		if err != nil {
+			return fmt.Errorf("invalid version: %w", err)
+		}
+		t.Version = v
+	}
+	return nil
 }
 
 // TrashDocumentListEntry represents a document in the trash list (from GET /trash/documents)
@@ -230,4 +253,3 @@ func (h *TrashHandler) Delete(id string) error {
 
 	return nil
 }
-

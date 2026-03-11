@@ -1,0 +1,8 @@
+{
+  "ok": false,
+  "result": null,
+  "error": {
+    "code": "error",
+    "message": "something unexpected happened"
+  }
+}

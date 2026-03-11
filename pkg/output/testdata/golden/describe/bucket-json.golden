@@ -1,0 +1,10 @@
+{
+  "bucketName": "default_logs",
+  "table": "logs",
+  "displayName": "Default Logs",
+  "status": "active",
+  "retentionDays": 35,
+  "version": 1,
+  "updatable": true,
+  "records": 1250000
+}

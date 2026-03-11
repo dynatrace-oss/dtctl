@@ -23,8 +23,10 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 12. [EdgeConnect](#edgeconnect)
 13. [Davis AI](#davis-ai)
 14. [Output Formats](#output-formats)
-15. [Tips & Tricks](#tips--tricks)
-16. [Troubleshooting](#troubleshooting)
+15. [Azure Monitoring](#azure-monitoring)
+16. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
+17. [Tips & Tricks](#tips--tricks)
+18. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -33,6 +35,28 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 ### Initial Setup
 
 Set up your first Dynatrace environment:
+
+#### Option 1: OAuth Login (Recommended)
+
+The easiest way to authenticate — uses your Dynatrace SSO credentials, no token management needed:
+
+```bash
+dtctl auth login --context my-env --environment "https://abc12345.apps.dynatrace.com"
+# Opens your browser for Dynatrace SSO login
+# Tokens are stored securely and refreshed automatically
+
+# Verify your configuration
+dtctl doctor
+```
+
+To log out:
+```bash
+dtctl auth logout
+```
+
+#### Option 2: Token-based Authentication
+
+If you prefer API tokens (e.g. for CI/CD or headless environments):
 
 ```bash
 # Create a context with your environment details
@@ -92,6 +116,11 @@ dtctl config get-contexts
 # Switch between environments
 dtctl config use-context dev
 dtctl config use-context prod
+
+# Or use the ctx shortcut:
+dtctl ctx                    # List contexts
+dtctl ctx dev                # Switch to dev
+dtctl ctx prod               # Switch to prod
 
 # Check current context
 dtctl config current-context
@@ -612,7 +641,7 @@ dtctl apply -f dashboard.yaml
 
 # Both commands show tile count and URL:
 # Dashboard "My Dashboard" (abc-123) created successfully [18 tiles]
-# URL: https://env.apps.dynatrace.com/ui/document/v0/#/dashboards/abc-123
+# URL: https://env.apps.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard/abc-123
 ```
 
 **When to use which:**
@@ -1078,6 +1107,10 @@ dtctl query "fetch logs | filter status='ERROR'" \
 **Localization Parameters:**
 - `--locale`: Query locale (e.g., 'en_US', 'de_DE')
 - `--timezone`: Query timezone (e.g., 'UTC', 'Europe/Paris', 'America/New_York')
+
+**Metadata Parameters:**
+- `--metadata`, `-M`: Include query execution metadata in output. Use bare `--metadata` for all fields, or select specific fields with `--metadata=field1,field2`. Valid fields: `analysisTimeframe`, `canonicalQuery`, `contributions`, `dqlVersion`, `executionTimeMilliseconds`, `locale`, `query`, `queryId`, `sampled`, `scannedBytes`, `scannedDataPoints`, `scannedRecords`, `timezone`
+- `--include-contributions`: Include bucket contribution details in metadata (requires API support)
 
 **Note:** All parameters are sent in the DQL query request body and work with both immediate responses and long-running queries that require polling.
 
@@ -2668,6 +2701,194 @@ See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
 
 ---
 
+## Azure Monitoring
+
+This is the recommended fast flow for Azure onboarding with federated credentials.
+
+### 1) Create Azure connection in Dynatrace
+
+```bash
+dtctl create azure connection --name "my-azure-connection" --type federatedIdentityCredential
+```
+
+Command output prints dynamic values you need for Azure setup:
+- Issuer
+- Subject (dt:connection-id/...)
+- Audience
+
+### 2) Create Service Principal and capture IDs
+
+```bash
+CLIENT_ID=$(az ad sp create-for-rbac --name "my-azure-connection" --create-password false --query appId -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+```
+
+### 3) Assign Reader role on subscription scope
+
+```bash
+IAM_SCOPE="/subscriptions/00000000-0000-0000-0000-000000000000"
+az role assignment create --assignee "$CLIENT_ID" --role Reader --scope "$IAM_SCOPE"
+```
+
+### 4) Create federated credential in Entra ID
+
+Use Issuer/Subject/Audience exactly as printed by the create command:
+
+```bash
+az ad app federated-credential create --id "$CLIENT_ID" --parameters "{'name': 'fd-Federated-Credential', 'issuer': 'https://dev.token.dynatracelabs.com', 'subject': 'dt:connection-id/<connection-object-id>', 'audiences': ['<tenant>.dev.apps.dynatracelabs.com/svc-id/com.dynatrace.da']}"
+```
+
+### 5) Finalize Azure connection in Dynatrace
+
+```bash
+dtctl update azure connection --name "my-azure-connection" --directoryId "$TENANT_ID" --applicationId "$CLIENT_ID"
+```
+
+Note: immediately after step 4, Entra propagation can take a short time. If you see AADSTS70025, retry step 5 after a few seconds.
+
+### 6) Create and verify Azure monitoring config
+
+```bash
+dtctl create azure monitoring --name "my-azure-connection" --credentials "my-azure-connection"
+dtctl get azure monitoring my-azure-connection
+dtctl describe azure monitoring my-azure-connection
+```
+
+### 7) Update Azure monitoring config (examples)
+
+Change location filtering to two regions:
+
+```bash
+dtctl update azure monitoring --name "my-azure-connection" \
+  --locationFiltering "eastus,westeurope"
+```
+
+Change feature sets to Virtual Machines and Azure Functions:
+
+```bash
+dtctl update azure monitoring --name "my-azure-connection" \
+  --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+```
+
+Create Azure monitoring config with explicit feature sets and two locations:
+
+```bash
+dtctl create azure monitoring --name "my-azure-monitoring-explicit" \
+  --credentials "my-azure-connection" \
+  --locationFiltering "eastus,westeurope" \
+  --featureSets "microsoft_compute.virtualmachines_essential,microsoft_web.sites_functionapp_essential"
+```
+
+---
+
+## GCP Monitoring (Preview)
+
+This is the recommended onboarding flow for GCP with service account impersonation.
+
+All GCP commands in this section are `Preview`.
+
+### 1) Create GCP connection in Dynatrace
+
+```bash
+dtctl create gcp connection --name "my-gcp-connection"
+```
+
+### 2) Use gcloud CLI to establish trust relation
+
+Define variables used in snippets:
+
+```bash
+PROJECT_ID="my-project-id"
+DT_GCP_PRINCIPAL="dynatrace-<tenant-id>@dtp-prod-gcp-auth.iam.gserviceaccount.com"
+CUSTOMER_SA_NAME="dynatrace-integration"
+CUSTOMER_SA_EMAIL="${CUSTOMER_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+```
+
+Create customer service account:
+
+```bash
+gcloud iam service-accounts create "${CUSTOMER_SA_NAME}" \
+  --project "${PROJECT_ID}" \
+  --display-name "Dynatrace Integration"
+```
+
+Grant required viewer permissions to customer service account:
+
+```bash
+for ROLE in roles/browser roles/monitoring.viewer roles/compute.viewer roles/cloudasset.viewer; do
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --quiet --format="none" \
+    --member "serviceAccount:${CUSTOMER_SA_EMAIL}" \
+    --role "${ROLE}"
+done
+
+```
+
+Grant `Service Account Token Creator` to Dynatrace principal (service account impersonation):
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding "${CUSTOMER_SA_EMAIL}" \
+  --project "${PROJECT_ID}" \
+  --member="serviceAccount:${DT_GCP_PRINCIPAL}" \
+  --role="roles/iam.serviceAccountTokenCreator"
+```
+
+### 3) Update GCP connection in Dynatrace
+
+Use the service account from step 2 and update connection:
+
+```bash
+dtctl update gcp connection --name "my-gcp-connection" --serviceAccountId "${CUSTOMER_SA_EMAIL}"
+```
+
+### 4) Create and verify GCP monitoring config
+
+```bash
+dtctl create gcp monitoring --name "my-gcp-monitoring" --credentials "my-gcp-connection"
+dtctl describe gcp monitoring my-gcp-monitoring
+```
+
+### 5) Discover available locations and feature sets
+
+```bash
+dtctl get gcp monitoring-locations
+dtctl get gcp monitoring-feature-sets
+```
+
+### 6) Update GCP monitoring config (examples)
+
+Change location filtering to two regions:
+
+```bash
+dtctl update gcp monitoring --name "my-gcp-monitoring" \
+  --locationFiltering "us-central1,europe-west1"
+```
+
+Change feature sets to a focused subset:
+
+```bash
+dtctl update gcp monitoring --name "my-gcp-monitoring" \
+  --featureSets "compute_engine_essential,cloud_run_essential"
+```
+
+Create GCP monitoring config with explicit feature sets and locations:
+
+```bash
+dtctl create gcp monitoring --name "my-gcp-monitoring-explicit" \
+  --credentials "my-gcp-connection" \
+  --locationFiltering "us-central1,europe-west1" \
+  --featureSets "compute_engine_essential,cloud_run_essential"
+```
+
+### 7) Delete by name or ID
+
+```bash
+dtctl delete gcp monitoring my-gcp-monitoring
+dtctl delete gcp connection my-gcp-connection
+```
+
+---
+
 ## Output Formats
 
 All `get` and `query` commands support multiple output formats.
@@ -2758,6 +2979,67 @@ No colors, no interactive prompts (for scripts):
 
 ```bash
 dtctl get workflows --plain
+```
+
+### Command Catalog (`dtctl commands`)
+
+AI agents can discover all available dtctl commands, flags, and resources at runtime:
+
+```bash
+# Full catalog in JSON
+dtctl commands -o json
+
+# Compact catalog (no descriptions, no global flags)
+dtctl commands --brief -o json
+
+# Filter to a specific resource
+dtctl commands workflow -o json
+
+# Generate a Markdown how-to guide
+dtctl commands howto
+```
+
+This is especially useful for agent bootstrap — run `dtctl commands --brief -o json` at the start of a session to learn what dtctl can do.
+
+### Agent Mode (`--agent` / `-A`)
+
+Wraps all output in a structured JSON envelope designed for AI agents and automation:
+
+```bash
+dtctl get workflows --agent
+
+# Output:
+# {
+#   "ok": true,
+#   "result": [...],
+#   "context": {
+#     "total": 5,
+#     "has_more": false,
+#     "verb": "get",
+#     "resource": "workflow",
+#     "suggestions": [
+#       "Run 'dtctl describe workflow <id>' for details",
+#       "Run 'dtctl exec workflow <id>' to trigger a workflow"
+#     ]
+#   }
+# }
+```
+
+Agent mode is auto-detected when running inside an AI agent environment (e.g., GitHub Copilot, Claude Code). To opt out, pass `--no-agent`. Agent mode implies `--plain`.
+
+```bash
+# Force agent mode off in an auto-detected environment
+dtctl get workflows --no-agent
+
+# Errors are also structured
+# {
+#   "ok": false,
+#   "error": {
+#     "code": "auth_required",
+#     "message": "Authentication failed",
+#     "suggestions": ["Run 'dtctl auth login' to refresh your token"]
+#   }
+# }
 ```
 
 ### Pagination (--chunk-size)
@@ -3037,6 +3319,16 @@ dtctl query "fetch logs" --max-result-records 5000 -o csv > logs.csv
 
 ## Troubleshooting
 
+### Quick Diagnostics with `dtctl doctor`
+
+Before diving into manual troubleshooting, run the built-in health check:
+
+```bash
+dtctl doctor
+```
+
+This runs 6 sequential checks — version, config, context, token, connectivity, and authentication — and reports pass/fail with actionable suggestions for each.
+
 ### Understanding Error Messages
 
 dtctl provides contextual error messages with troubleshooting suggestions. When an operation fails, you'll see:
@@ -3072,7 +3364,7 @@ dtctl get workflows --debug
 # ===> REQUEST <===
 # GET https://abc12345.apps.dynatrace.com/platform/automation/v1/workflows
 # HEADERS:
-#     User-Agent: dtctl/0.10.0
+#     User-Agent: dtctl/0.12.0
 #     Authorization: [REDACTED]
 #     ...
 # 
@@ -3138,6 +3430,7 @@ The detection is automatic and doesn't affect functionality. Supported AI agents
 - OpenCode (`OPENCODE` env var)
 - GitHub Copilot (`GITHUB_COPILOT` env var)
 - Cursor (`CURSOR_AGENT` env var)
+- Kiro (`KIRO` env var)
 - Codeium (`CODEIUM_AGENT` env var)
 - TabNine (`TABNINE_AGENT` env var)
 - Amazon Q (`AMAZON_Q` env var)
@@ -3162,6 +3455,9 @@ dtctl query --help
 
 # Resource-specific help
 dtctl get workflows --help
+
+# Machine-readable command catalog (for AI agents)
+dtctl commands --brief -o json
 ```
 
 ### Debugging Issues

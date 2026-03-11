@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
-	"github.com/spf13/cobra"
 )
 
 // execSLOCmd evaluates an SLO
@@ -109,7 +110,7 @@ Examples:
 				// Wait before next poll with exponential backoff
 				time.Sleep(pollInterval)
 				if pollInterval < maxPollInterval {
-					pollInterval = pollInterval * 2
+					pollInterval *= 2
 					if pollInterval > maxPollInterval {
 						pollInterval = maxPollInterval
 					}

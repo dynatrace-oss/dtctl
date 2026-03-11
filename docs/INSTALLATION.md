@@ -2,7 +2,28 @@
 
 This guide covers installing dtctl on your system.
 
-## Quick Install (Recommended)
+## Homebrew (Recommended — macOS and Linux)
+
+```bash
+brew install dynatrace-oss/tap/dtctl
+```
+
+This installs the binary and sets up shell completions (bash, zsh, fish) automatically.
+
+To upgrade:
+
+```bash
+brew upgrade dtctl
+```
+
+To uninstall:
+
+```bash
+brew uninstall dtctl
+brew untap dynatrace-oss/tap  # optional
+```
+
+## Binary Download
 
 **For most users**, download the pre-built binary for your platform:
 
@@ -81,6 +102,9 @@ Try a few commands to ensure everything works:
 # View available commands
 ./bin/dtctl get --help
 ./bin/dtctl query --help
+
+# Run health check (after configuration)
+./bin/dtctl doctor
 ```
 
 ### Installation Options (Source Builds)
@@ -108,6 +132,11 @@ dtctl version
 ```
 
 This installs to `$GOPATH/bin/dtctl` (typically `~/go/bin/dtctl`). Ensure `$GOPATH/bin` is in your `$PATH`.
+
+```bash
+# Add Go bin to PATH (zsh/bash)
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
 
 ### Option 3: Copy to System PATH
 
@@ -225,9 +254,16 @@ dtctl get <TAB><TAB>
 
 ## Updating dtctl
 
+### If Installed via Homebrew
+
+```bash
+brew update
+brew upgrade dtctl
+```
+
 ### If Installed from Release
 
-Download and install the latest release following the [Quick Install](#quick-install-recommended) steps above.
+Download and install the latest release following the [Binary Download](#binary-download) steps above.
 
 ### If Built from Source
 
@@ -254,6 +290,9 @@ sudo cp bin/dtctl /usr/local/bin/
 To remove dtctl:
 
 ```bash
+# If installed via Homebrew
+brew uninstall dtctl
+
 # If installed via Option 2 (make install)
 rm $GOPATH/bin/dtctl
 

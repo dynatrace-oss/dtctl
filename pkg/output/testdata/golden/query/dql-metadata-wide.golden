@@ -1,0 +1,21 @@
+CONTENT                          HOST NAME       STATUS   TIMESTAMP            
+Connection timeout to database   web-server-01   ERROR    2025-03-15T10:30:00Z   
+High memory usage detected       web-server-02   WARN     2025-03-15T10:29:55Z   
+Request processed successfully   api-gateway     INFO     2025-03-15T10:29:50Z   
+
+--- Query Metadata ---
+Execution time:     47ms
+Scanned records:    42,351
+Scanned bytes:      2.8 MB
+Scanned data pts:   0
+Analysis window:    2025-03-15T08:30:00.000000000Z → 2025-03-15T10:30:00.000000000Z
+Query ID:           27c4daf9-2619-4ba1-b1ad-9e276c75a351
+DQL version:        V1_0
+Canonical query:    fetch logs | limit 3 | fields timestamp, host.name, status, content
+Query:              fetch logs | limit 3 | fields timestamp, host.name, status, content
+Timezone:           Z
+Locale:             und
+Sampled:            no
+Contributions:
+  default_logs (logs)
+    scanned: 2.8 MB, matched: 100.0%

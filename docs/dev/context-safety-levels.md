@@ -119,6 +119,9 @@ dtctl config set-context prod-viewer \
 
 dtctl config use-context prod-viewer
 
+# Or use the ctx shortcut:
+# dtctl ctx prod-viewer
+
 # Allowed
 dtctl get dashboards
 dtctl query "fetch logs | limit 100"

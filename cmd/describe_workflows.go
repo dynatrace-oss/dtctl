@@ -3,8 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 )
 
 // describeWorkflowCmd shows detailed info about a workflow

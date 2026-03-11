@@ -161,19 +161,19 @@ func TestParseIntentFromMap(t *testing.T) {
 
 func TestMatchIntentToData(t *testing.T) {
 	tests := []struct {
-		name             string
-		intent           Intent
-		data             map[string]interface{}
-		expectedQuality  float64
-		expectedMatched  int
-		expectedMissing  int
+		name            string
+		intent          Intent
+		data            map[string]interface{}
+		expectedQuality float64
+		expectedMatched int
+		expectedMissing int
 	}{
 		{
 			name: "perfect match - all properties present",
 			intent: Intent{
 				IntentID: "view-trace",
 				Properties: map[string]IntentProperty{
-					"trace_id": {Type: "string", Required: true},
+					"trace_id":  {Type: "string", Required: true},
 					"timestamp": {Type: "string", Required: false},
 				},
 				RequiredProps: []string{"trace_id"},
@@ -191,7 +191,7 @@ func TestMatchIntentToData(t *testing.T) {
 			intent: Intent{
 				IntentID: "view-trace",
 				Properties: map[string]IntentProperty{
-					"trace_id": {Type: "string", Required: true},
+					"trace_id":  {Type: "string", Required: true},
 					"timestamp": {Type: "string", Required: false},
 				},
 				RequiredProps: []string{"trace_id"},

@@ -1,0 +1,15 @@
+{
+  "ok": false,
+  "result": null,
+  "error": {
+    "code": "auth_required",
+    "message": "authentication failed",
+    "operation": "get workflows",
+    "status_code": 401,
+    "request_id": "req-abc-123",
+    "suggestions": [
+      "Run 'dtctl auth login' to refresh your token",
+      "Verify your token is correct in the current context configuration"
+    ]
+  }
+}

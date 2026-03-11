@@ -2,12 +2,82 @@ version: '2'
 
 run:
   timeout: 5m
-  go: '1.24'
+  go: '1.26'
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/dynatrace-oss/dtctl
 
 linters:
-  disable:
-    - errcheck    # Too noisy for defer statements and test code
-    - staticcheck # Disabled to avoid opinionated style suggestions (QF1003, QF1001, QF1008)
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - gocritic
+    - ineffassign
+    - unused
+
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF*"    # Disable quickfix suggestions (stylistic, not bugs)
+        - "-ST1003" # Don't enforce ID naming convention (breaks JSON field mapping)
+        - "-S1016"  # Don't require struct conversion shorthand
+        # ST1005 (error string conventions) re-enabled — Go convention
+
+    errcheck:
+      exclude-functions:
+        # Cobra flag registration — panics on error, never fails at runtime
+        - "(*github.com/spf13/cobra/Command).MarkFlagRequired"
+        # HTTP response writers — errors are unrecoverable in handlers
+        - "(net/http.ResponseWriter).Write"
+        # JSON encoder — used in test mock servers and HTTP handlers
+        - "(*encoding/json.Encoder).Encode"
+
+  exclusions:
+    presets:
+      - comments          # ST1000, ST1020, ST1021, ST1022
+      - std-error-handling # errcheck: Close, Flush, Remove(All), print/printf/println, Setenv/Unsetenv, stdout/stderr
+
+    rules:
+      # Allow unchecked errors in test code (deferred cleanup, test helpers, mock servers)
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Allow unchecked fmt.Fprint* (writing to io.Writer for output)
+      - linters:
+          - errcheck
+        text: "fmt\\.Fprint"
+      # Allow unchecked w.Write / w.Close / buf.ReadFrom (io.Writer/Reader in output code)
+      - linters:
+          - errcheck
+        text: "w\\.Write|w\\.Close|buf\\.ReadFrom"
+      # Allow unchecked error builder methods (fluent API)
+      - linters:
+          - errcheck
+        text: "err\\.Add|err\\.With"
+      # Allow unchecked io.Copy / io.WriteString
+      - linters:
+          - errcheck
+        text: "io\\.Copy|io\\.WriteString"
+      # Allow unchecked clone.Close / listener.Close / resp.Body.Close
+      - linters:
+          - errcheck
+        text: "clone\\.Close|listener\\.Close|resp\\.Body\\.Close"
+      # Allow unchecked MarkFlagRequired (Cobra panics on error, safe to ignore)
+      - linters:
+          - errcheck
+        text: "MarkFlagRequired"
+      # Pre-existing: unused append results in document name collection (cosmetic, not a bug)
+      - linters:
+          - staticcheck
+        text: "SA4010"
+        path: cmd/get_documents\.go
 
 issues:
   max-issues-per-linter: 0

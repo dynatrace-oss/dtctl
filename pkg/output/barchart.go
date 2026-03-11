@@ -56,9 +56,9 @@ func (p *BarChartPrinter) renderBarChart(ts *TimeseriesData) error {
 	// Print styled header with timeframe (use \r\n for raw terminal mode)
 	timeFormat := "2006-01-02 15:04"
 	_, _ = fmt.Fprintf(p.writer, "%s%s%s %s─%s %s%s%s\r\n\r\n",
-		BrightCyan, ts.Start.UTC().Format(timeFormat), Reset,
-		Dim, Reset,
-		BrightCyan, ts.End.UTC().Format(timeFormat), Reset)
+		ColorCode(BrightCyan), ts.Start.UTC().Format(timeFormat), ColorCode(Reset),
+		ColorCode(Dim), ColorCode(Reset),
+		ColorCode(BrightCyan), ts.End.UTC().Format(timeFormat), ColorCode(Reset))
 
 	// For bar charts, we show the average value for each series
 	// Find global min/max for scaling
@@ -142,11 +142,11 @@ func (p *BarChartPrinter) renderBarChart(ts *TimeseriesData) error {
 		// Print with btop-style formatting: label │ bar │ value
 		// Use \r\n for raw terminal mode compatibility
 		_, _ = fmt.Fprintf(p.writer, "%s%-*s%s %s│%s %s %s│%s %s%7.2f%s\r\n",
-			BrightWhite, maxLabelLen, label, Reset,
-			Dim, Reset,
+			ColorCode(BrightWhite), maxLabelLen, label, ColorCode(Reset),
+			ColorCode(Dim), ColorCode(Reset),
 			bar,
-			Dim, Reset,
-			BrightCyan, s.avg, Reset)
+			ColorCode(Dim), ColorCode(Reset),
+			ColorCode(BrightCyan), s.avg, ColorCode(Reset))
 	}
 
 	return nil

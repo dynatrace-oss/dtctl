@@ -242,3 +242,161 @@ func TestParseMultipartDocument_MissingMetadata(t *testing.T) {
 		t.Errorf("Error should mention 'metadata', got: %v", err)
 	}
 }
+
+// TestDocumentMetadata_VersionAsString tests that version can be unmarshaled from a string
+// (some API versions return version as "1" instead of 1).
+func TestDocumentMetadata_VersionAsString(t *testing.T) {
+	tests := []struct {
+		name    string
+		json    string
+		want    int
+		wantErr bool
+	}{
+		{
+			name: "version as int",
+			json: `{"id":"doc-1","name":"Test","type":"dashboard","version":3,"owner":"user-1","isPrivate":false,"modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2025-01-01T00:00:00Z"}}`,
+			want: 3,
+		},
+		{
+			name: "version as string",
+			json: `{"id":"doc-1","name":"Test","type":"dashboard","version":"5","owner":"user-1","isPrivate":false,"modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2025-01-01T00:00:00Z"}}`,
+			want: 5,
+		},
+		{
+			name: "version as zero",
+			json: `{"id":"doc-1","name":"Test","type":"dashboard","version":0,"owner":"user-1","isPrivate":false,"modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2025-01-01T00:00:00Z"}}`,
+			want: 0,
+		},
+		{
+			name: "version as string zero",
+			json: `{"id":"doc-1","name":"Test","type":"dashboard","version":"0","owner":"user-1","isPrivate":false,"modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2025-01-01T00:00:00Z"}}`,
+			want: 0,
+		},
+		{
+			name:    "version as non-numeric string",
+			json:    `{"id":"doc-1","name":"Test","type":"dashboard","version":"abc","owner":"user-1","isPrivate":false,"modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2025-01-01T00:00:00Z"}}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m DocumentMetadata
+			err := json.Unmarshal([]byte(tt.json), &m)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if m.Version != tt.want {
+				t.Errorf("Version = %d, want %d", m.Version, tt.want)
+			}
+		})
+	}
+}
+
+// TestDocument_VersionAsString tests that Document can unmarshal version from string.
+func TestDocument_VersionAsString(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want int
+	}{
+		{
+			name: "version as int",
+			json: `{"id":"doc-1","name":"Test","type":"dashboard","version":2,"owner":"user-1","isPrivate":false}`,
+			want: 2,
+		},
+		{
+			name: "version as string",
+			json: `{"id":"doc-1","name":"Test","type":"dashboard","version":"7","owner":"user-1","isPrivate":false}`,
+			want: 7,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var d Document
+			if err := json.Unmarshal([]byte(tt.json), &d); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if d.Version != tt.want {
+				t.Errorf("Version = %d, want %d", d.Version, tt.want)
+			}
+		})
+	}
+}
+
+// TestDocumentList_VersionAsString tests that a list response with string versions parses correctly.
+func TestDocumentList_VersionAsString(t *testing.T) {
+	listJSON := `{
+		"documents": [
+			{"id":"doc-1","name":"Dashboard 1","type":"dashboard","version":"3","owner":"user-1","isPrivate":false,"modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2025-01-01T00:00:00Z"}},
+			{"id":"doc-2","name":"Notebook 1","type":"notebook","version":5,"owner":"user-2","isPrivate":true,"modificationInfo":{"createdBy":"user-2","createdTime":"2025-02-01T00:00:00Z","lastModifiedBy":"user-2","lastModifiedTime":"2025-02-01T00:00:00Z"}}
+		],
+		"totalCount": 2
+	}`
+
+	var list DocumentList
+	if err := json.Unmarshal([]byte(listJSON), &list); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(list.Documents) != 2 {
+		t.Fatalf("expected 2 documents, got %d", len(list.Documents))
+	}
+	if list.Documents[0].Version != 3 {
+		t.Errorf("Documents[0].Version = %d, want 3", list.Documents[0].Version)
+	}
+	if list.Documents[1].Version != 5 {
+		t.Errorf("Documents[1].Version = %d, want 5", list.Documents[1].Version)
+	}
+}
+
+// TestSnapshot_VersionAsString tests that Snapshot can unmarshal version fields from strings.
+func TestSnapshot_VersionAsString(t *testing.T) {
+	tests := []struct {
+		name           string
+		json           string
+		wantSnapshot   int
+		wantDocVersion int
+	}{
+		{
+			name:           "versions as ints",
+			json:           `{"snapshotVersion":1,"documentVersion":2,"modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z"}}`,
+			wantSnapshot:   1,
+			wantDocVersion: 2,
+		},
+		{
+			name:           "versions as strings",
+			json:           `{"snapshotVersion":"3","documentVersion":"4","modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z"}}`,
+			wantSnapshot:   3,
+			wantDocVersion: 4,
+		},
+		{
+			name:           "mixed versions",
+			json:           `{"snapshotVersion":5,"documentVersion":"6","modificationInfo":{"createdBy":"user-1","createdTime":"2025-01-01T00:00:00Z"}}`,
+			wantSnapshot:   5,
+			wantDocVersion: 6,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var s Snapshot
+			if err := json.Unmarshal([]byte(tt.json), &s); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if s.SnapshotVersion != tt.wantSnapshot {
+				t.Errorf("SnapshotVersion = %d, want %d", s.SnapshotVersion, tt.wantSnapshot)
+			}
+			if s.DocumentVersion != tt.wantDocVersion {
+				t.Errorf("DocumentVersion = %d, want %d", s.DocumentVersion, tt.wantDocVersion)
+			}
+		})
+	}
+}

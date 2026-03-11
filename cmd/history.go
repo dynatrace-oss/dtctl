@@ -3,10 +3,11 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
-	"github.com/spf13/cobra"
 )
 
 // historyCmd represents the history command
@@ -190,10 +191,71 @@ Examples:
 	},
 }
 
+// historyDocumentCmd shows version history for a document of any type
+var historyDocumentCmd = &cobra.Command{
+	Use:     "document <document-id-or-name>",
+	Aliases: []string{"documents", "doc"},
+	Short:   "Show version history of a document",
+	Long: `Show the version history (snapshots) of a document of any type.
+
+Works for any document type (dashboard, notebook, launchpad, custom app documents, etc.).
+
+Snapshots are created when updating a document with the create-snapshot option.
+Each snapshot captures the document's content at a specific point in time.
+
+Examples:
+  # Show version history by ID
+  dtctl history document a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+  # Show version history by name
+  dtctl history document "My Launchpad"
+
+  # Output as JSON
+  dtctl history document "My Launchpad" -o json
+`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		identifier := args[0]
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		// Resolve name to ID (searches across all document types)
+		res := resolver.NewResolver(c)
+		documentID, err := res.ResolveID(resolver.TypeDocument, identifier)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewHandler(c)
+		printer := NewPrinter()
+
+		snapshots, err := handler.ListSnapshots(documentID)
+		if err != nil {
+			return err
+		}
+
+		if len(snapshots.Snapshots) == 0 {
+			fmt.Println("No snapshots found for this document")
+			return nil
+		}
+
+		return printer.PrintList(snapshots.Snapshots)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(historyCmd)
 
 	historyCmd.AddCommand(historyWorkflowCmd)
 	historyCmd.AddCommand(historyDashboardCmd)
 	historyCmd.AddCommand(historyNotebookCmd)
+	historyCmd.AddCommand(historyDocumentCmd)
 }

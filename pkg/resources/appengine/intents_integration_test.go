@@ -423,12 +423,12 @@ func TestEdgeCases(t *testing.T) {
 			expected int
 		}{
 			{
-				name: "nil manifest",
+				name:     "nil manifest",
 				manifest: nil,
 				expected: 0,
 			},
 			{
-				name: "empty manifest",
+				name:     "empty manifest",
 				manifest: map[string]interface{}{},
 				expected: 0,
 			},

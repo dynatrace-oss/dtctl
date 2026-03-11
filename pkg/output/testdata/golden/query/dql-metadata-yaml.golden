@@ -1,0 +1,35 @@
+metadata:
+  executionTimeMilliseconds: 47
+  scannedRecords: 42351
+  scannedBytes: 2982690
+  queryId: 27c4daf9-2619-4ba1-b1ad-9e276c75a351
+  dqlVersion: V1_0
+  query: fetch logs | limit 3 | fields timestamp, host.name, status, content
+  canonicalQuery: |-
+    fetch logs
+    | limit 3
+    | fields timestamp, host.name, status, content
+  timezone: Z
+  locale: und
+  analysisTimeframe:
+    start: "2025-03-15T08:30:00.000000000Z"
+    end: "2025-03-15T10:30:00.000000000Z"
+  contributions:
+    buckets:
+      - name: default_logs
+        table: logs
+        scannedBytes: 2982690
+        matchedRecordsRatio: 1
+records:
+  - content: Connection timeout to database
+    host.name: web-server-01
+    status: ERROR
+    timestamp: "2025-03-15T10:30:00Z"
+  - content: High memory usage detected
+    host.name: web-server-02
+    status: WARN
+    timestamp: "2025-03-15T10:29:55Z"
+  - content: Request processed successfully
+    host.name: api-gateway
+    status: INFO
+    timestamp: "2025-03-15T10:29:50Z"

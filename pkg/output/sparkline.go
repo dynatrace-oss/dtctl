@@ -56,9 +56,9 @@ func (p *SparklinePrinter) renderSparklines(ts *TimeseriesData) error {
 	// Print styled header with timeframe (use \r\n for raw terminal mode)
 	timeFormat := "2006-01-02 15:04"
 	fmt.Fprintf(p.writer, "%s%s%s %s─%s %s%s%s\r\n\r\n",
-		BrightCyan, ts.Start.UTC().Format(timeFormat), Reset,
-		Dim, Reset,
-		BrightCyan, ts.End.UTC().Format(timeFormat), Reset)
+		ColorCode(BrightCyan), ts.Start.UTC().Format(timeFormat), ColorCode(Reset),
+		ColorCode(Dim), ColorCode(Reset),
+		ColorCode(BrightCyan), ts.End.UTC().Format(timeFormat), ColorCode(Reset))
 
 	// Find the longest label for alignment
 	maxLabelLen := 0
@@ -109,13 +109,13 @@ func (p *SparklinePrinter) renderSparklines(ts *TimeseriesData) error {
 		// Print with btop-style formatting: label │ sparkline │ stats
 		// Use \r\n for raw terminal mode compatibility
 		fmt.Fprintf(p.writer, "%s%-*s%s %s│%s %s %s│%s %s%.1f%s/%s%.1f%s/%s%.1f%s\r\n",
-			BrightWhite, maxLabelLen, label, Reset,
-			Dim, Reset,
+			ColorCode(BrightWhite), maxLabelLen, label, ColorCode(Reset),
+			ColorCode(Dim), ColorCode(Reset),
 			spark,
-			Dim, Reset,
-			BrightGreen, min, Reset,
-			BrightRed, max, Reset,
-			BrightCyan, avg, Reset)
+			ColorCode(Dim), ColorCode(Reset),
+			ColorCode(BrightGreen), min, ColorCode(Reset),
+			ColorCode(BrightRed), max, ColorCode(Reset),
+			ColorCode(BrightCyan), avg, ColorCode(Reset))
 	}
 
 	return nil
@@ -250,11 +250,12 @@ func resampleValues(values []float64, targetLen int) []float64 {
 			highVal := values[highIdx]
 
 			// Handle NaN values
-			if math.IsNaN(lowVal) {
+			switch {
+			case math.IsNaN(lowVal):
 				result[i] = highVal
-			} else if math.IsNaN(highVal) {
+			case math.IsNaN(highVal):
 				result[i] = lowVal
-			} else {
+			default:
 				result[i] = lowVal + frac*(highVal-lowVal)
 			}
 		}

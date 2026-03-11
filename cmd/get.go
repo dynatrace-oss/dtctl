@@ -7,33 +7,50 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/watch"
-	"github.com/spf13/cobra"
 )
 
 // getCmd represents the get command
 var getCmd = &cobra.Command{
 	Use:   "get",
 	Short: "Display one or many resources",
-	Long:  `Display one or many resources such as workflows, dashboards, notebooks, SLOs, etc.`,
-	RunE:  requireSubcommand,
-}
+	Long: `Display one or many resources from the Dynatrace platform.
 
-// deleteCmd represents the delete command
-var deleteCmd = &cobra.Command{
-	Use:   "delete",
-	Short: "Delete resources",
-	Long:  `Delete one or more resources.`,
-	RunE:  requireSubcommand,
-}
+When called with a resource type only, lists all resources of that type.
+When called with a resource type and ID or name, retrieves that specific resource.
+Results can be filtered with --mine and formatted with -o (json, yaml, wide, chart).
 
-// updateCmd represents the update command
-var updateCmd = &cobra.Command{
-	Use:   "update",
-	Short: "Update resources",
-	Long:  `Update resources from files.`,
-	RunE:  requireSubcommand,
+Supported resources:
+  workflows (wf)          dashboards (dash, db)     notebooks (nb)
+  slos                    slo-templates             settings
+  settings-schemas        buckets (bkt)             apps
+  functions               intents                   notifications
+  users                   groups                    edgeconnect (ec)
+  sdk-versions            analyzers                 copilot-skills
+  lookup-tables (lu)      trash                     workflow-executions (wfe)
+
+Use 'dtctl get <resource> --help' for resource-specific options.`,
+	Example: `  # List all workflows
+  dtctl get workflows
+
+  # Get a specific workflow by name or ID
+  dtctl get workflow my-workflow
+
+  # List workflows as JSON
+  dtctl get workflows -o json
+
+  # List only your own workflows
+  dtctl get workflows --mine
+
+  # Watch workflows for changes in real-time
+  dtctl get workflows --watch
+
+  # List with wide output (extra columns)
+  dtctl get workflows -o wide`,
+	RunE: requireSubcommand,
 }
 
 // forceDelete skips confirmation prompts
@@ -63,7 +80,6 @@ func executeWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher, printer
 		return err
 	}
 
-	// Wrap the printer with WatchPrinter to maintain output format
 	basePrinter := printer.(output.Printer)
 	watchPrinter := output.NewWatchPrinter(basePrinter)
 
@@ -97,8 +113,6 @@ func addWatchFlags(cmd *cobra.Command) {
 
 func init() {
 	rootCmd.AddCommand(getCmd)
-	rootCmd.AddCommand(deleteCmd)
-	rootCmd.AddCommand(updateCmd)
 
 	// Get subcommands (command definitions live in get_*.go files)
 	getCmd.AddCommand(getWorkflowsCmd)
@@ -124,6 +138,7 @@ func init() {
 	getCmd.AddCommand(getSettingsCmd)
 	getCmd.AddCommand(getExtensionsCmd)
 	getCmd.AddCommand(getExtensionConfigsCmd)
+	getCmd.AddCommand(getDocumentsCmd)
 
 	// Delete subcommands (command definitions live in get_*.go files)
 	updateCmd.AddCommand(updateExtensionConfigCmd)
@@ -139,4 +154,5 @@ func init() {
 	deleteCmd.AddCommand(deleteSettingsCmd)
 	deleteCmd.AddCommand(deleteAppCmd)
 	deleteCmd.AddCommand(deleteEdgeConnectCmd)
+	deleteCmd.AddCommand(deleteDocumentCmd)
 }

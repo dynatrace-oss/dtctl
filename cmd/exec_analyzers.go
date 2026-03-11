@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
-	"github.com/spf13/cobra"
 )
 
 // execAnalyzerCmd executes a Davis analyzer

@@ -698,7 +698,7 @@ When dtctl receives a command, resolution follows this order:
 
 1. **Global flags** -- If the first arg starts with `-`, skip alias lookup entirely
 2. **Built-in commands** -- Cobra matches registered commands first (get, describe,
-   config, alias, etc.). Built-ins always win.
+   config, alias, ctx, doctor, etc.). Built-ins always win.
 3. **Aliases** -- If no built-in matches, check the alias map. Expand and re-parse.
 4. **Unknown command** -- If no alias matches either, fall through to Cobra's error
    handling (which already provides "did you mean?" suggestions via `pkg/suggest`).

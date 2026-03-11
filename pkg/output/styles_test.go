@@ -4,8 +4,156 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"os"
 	"testing"
 )
+
+func TestColorEnabled_NOCOLORDisablesColor(t *testing.T) {
+	ResetColorCache()
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("FORCE_COLOR", "")
+	result := ColorEnabled()
+	if result {
+		t.Error("ColorEnabled() should return false when NO_COLOR is set (even if empty)")
+	}
+}
+
+func TestColorEnabled_NOCOLORTakesPrecedence(t *testing.T) {
+	ResetColorCache()
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "1")
+	result := ColorEnabled()
+	if result {
+		t.Error("ColorEnabled() should return false when NO_COLOR is set, even with FORCE_COLOR=1")
+	}
+}
+
+func TestColorEnabled_FORCECOLOREnablesColor(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "1")
+	result := ColorEnabled()
+	if !result {
+		t.Error("ColorEnabled() should return true when FORCE_COLOR=1 and NO_COLOR is not set")
+	}
+}
+
+func TestColorEnabled_FORCECOLOROnlyWithValue1(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "true")
+	// Without a TTY (test environment), and FORCE_COLOR != "1", should be false
+	result := ColorEnabled()
+	if result {
+		t.Error("ColorEnabled() should return false when FORCE_COLOR is not '1' and stdout is not a TTY")
+	}
+}
+
+func TestColorEnabled_Caching(t *testing.T) {
+	ResetColorCache()
+	t.Setenv("FORCE_COLOR", "1")
+	os.Unsetenv("NO_COLOR")
+	first := ColorEnabled()
+
+	// Change env - should still return cached value
+	t.Setenv("NO_COLOR", "1")
+	second := ColorEnabled()
+
+	if first != second {
+		t.Error("ColorEnabled() should return cached result on subsequent calls")
+	}
+}
+
+func TestResetColorCache(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "1")
+	first := ColorEnabled()
+	if !first {
+		t.Fatal("expected ColorEnabled() = true with FORCE_COLOR=1")
+	}
+
+	ResetColorCache()
+	t.Setenv("NO_COLOR", "1")
+	second := ColorEnabled()
+	if second {
+		t.Error("After ResetColorCache(), ColorEnabled() should re-evaluate and return false with NO_COLOR set")
+	}
+}
+
+func TestColorize_WithColorEnabled(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "1")
+
+	result := Colorize(BrightCyan, "hello")
+	expected := BrightCyan + "hello" + Reset
+	if result != expected {
+		t.Errorf("Colorize() = %q, want %q", result, expected)
+	}
+}
+
+func TestColorize_WithColorDisabled(t *testing.T) {
+	ResetColorCache()
+	t.Setenv("NO_COLOR", "")
+
+	result := Colorize(BrightCyan, "hello")
+	if result != "hello" {
+		t.Errorf("Colorize() with NO_COLOR = %q, want %q", result, "hello")
+	}
+}
+
+func TestColorCode_WithColorEnabled(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "1")
+
+	result := ColorCode(BrightCyan)
+	if result != BrightCyan {
+		t.Errorf("ColorCode() = %q, want %q", result, BrightCyan)
+	}
+}
+
+func TestColorCode_WithColorDisabled(t *testing.T) {
+	ResetColorCache()
+	t.Setenv("NO_COLOR", "")
+
+	result := ColorCode(BrightCyan)
+	if result != "" {
+		t.Errorf("ColorCode() with NO_COLOR = %q, want %q", result, "")
+	}
+}
+
+func TestColorEnabled_PlainModeDisablesColor(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "1")
+
+	SetPlainMode(true)
+	result := ColorEnabled()
+	if result {
+		t.Error("ColorEnabled() should return false when plain mode is enabled, even with FORCE_COLOR=1")
+	}
+}
+
+func TestColorEnabled_PlainModeTakesPrecedenceOverFORCECOLOR(t *testing.T) {
+	ResetColorCache()
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("FORCE_COLOR", "1")
+
+	SetPlainMode(true)
+	result := ColorEnabled()
+	if result {
+		t.Error("ColorEnabled() should return false when plain mode is set, even with FORCE_COLOR=1")
+	}
+
+	// After reset, plain mode should be cleared and FORCE_COLOR should work
+	ResetColorCache()
+	result = ColorEnabled()
+	if !result {
+		t.Error("After ResetColorCache(), plain mode should be cleared and FORCE_COLOR=1 should enable color")
+	}
+}
 
 func TestRenderGradientBar(t *testing.T) {
 	// Test various fill levels

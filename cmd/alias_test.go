@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 func TestAliasSetAndList(t *testing.T) {

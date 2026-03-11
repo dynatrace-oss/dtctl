@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/adrg/xdg"
 )
 
 func TestNewConfig(t *testing.T) {
@@ -126,6 +128,50 @@ func TestConfig_GetToken(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("GetToken() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_oauthKeyringNames(t *testing.T) {
+	cfg := NewConfig()
+	cfg.SetContext("prod", "https://abc123.apps.dynatrace.com", "shared-token")
+	cfg.SetContext("dev", "https://dev456.dev.apps.dynatracelabs.com", "shared-token")
+
+	got := cfg.oauthKeyringNames("shared-token")
+	want := []string{
+		"oauth:prod:shared-token",
+		"oauth:dev:shared-token",
+		"oauth:hard:shared-token",
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("oauthKeyringNames() len = %d, want %d (got=%v)", len(got), len(want), got)
+	}
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("oauthKeyringNames()[%d] = %q, want %q (all=%v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestOAuthEnvironmentFromURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "prod", url: "https://abc123.apps.dynatrace.com", want: "prod"},
+		{name: "dev", url: "https://abc.dev.apps.dynatracelabs.com", want: "dev"},
+		{name: "hard", url: "https://abc.sprint.apps.dynatracelabs.com", want: "hard"},
+		{name: "unknown", url: "https://example.com", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := oauthEnvironmentFromURL(tt.url); got != tt.want {
+				t.Errorf("oauthEnvironmentFromURL() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -296,28 +342,18 @@ func TestConfig_MultipleContexts(t *testing.T) {
 
 func TestConfig_Save(t *testing.T) {
 	// Create temp directory
-	tmpDir, err := os.MkdirTemp("", "dtctl-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() {
-		_ = os.RemoveAll(tmpDir)
-	}()
+	tmpDir := t.TempDir()
 
 	// Override XDG for this test
-	origXDG := os.Getenv("XDG_CONFIG_HOME")
-	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
-		t.Fatalf("Failed to set XDG_CONFIG_HOME: %v", err)
-	}
-	defer func() {
-		_ = os.Setenv("XDG_CONFIG_HOME", origXDG)
-	}()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	xdg.Reload()
+	defer xdg.Reload()
 
 	cfg := NewConfig()
 	cfg.SetContext("test", "https://test.dt.com", "token")
 
 	// Save should work (creates directory if needed)
-	err = cfg.Save()
+	err := cfg.Save()
 	if err != nil {
 		t.Errorf("Save() error = %v", err)
 	}
@@ -640,7 +676,7 @@ func TestLocalConfigName(t *testing.T) {
 }
 
 func TestFindLocalConfig_Integration(t *testing.T) {
-	t.Parallel()
+	// NOT parallel: os.Chdir is process-global and races with other tests
 	// Create a temp directory hierarchy
 	tmpDir, err := os.MkdirTemp("", "dtctl-find-local-*")
 	if err != nil {
@@ -700,7 +736,7 @@ current-context: local-test
 }
 
 func TestLoad_LocalConfigPrecedence(t *testing.T) {
-	t.Parallel()
+	// NOT parallel: os.Chdir is process-global and races with other tests
 	// This test verifies the Load() function logic by checking directory changes
 	// We can't fully test XDG env var changes due to library caching,
 	// but we can verify local config detection works
@@ -795,10 +831,8 @@ func TestConfig_DeleteContext(t *testing.T) {
 			wantCount:   0,
 		},
 		{
-			name: "delete from empty config",
-			setup: func() *Config {
-				return NewConfig()
-			},
+			name:        "delete from empty config",
+			setup:       NewConfig,
 			contextName: "any",
 			wantErr:     true,
 			wantCount:   0,
@@ -938,11 +972,8 @@ func TestConfig_GetToken_KeyringFallback(t *testing.T) {
 	if err == nil {
 		// Either keyring is available and returned token, or should have error
 		t.Log("Keyring available, token retrieved successfully")
-	} else {
-		// Should get specific error about keyring
-		if !strings.Contains(err.Error(), "not found in keyring") {
-			t.Errorf("GetToken() error = %v, want error about keyring", err)
-		}
+	} else if !strings.Contains(err.Error(), "not found in keyring") {
+		t.Errorf("GetToken() error = %v, want error about keyring", err)
 	}
 }
 
@@ -1022,11 +1053,9 @@ func TestSaveTo_MarshalError(t *testing.T) {
 	err := cfg.SaveTo("/root/impossible/path/config")
 	if err == nil {
 		t.Log("Warning: Expected permission error when saving to /root, but succeeded")
-	} else {
-		if !strings.Contains(err.Error(), "failed to create config directory") &&
-			!strings.Contains(err.Error(), "failed to write config file") {
-			t.Errorf("SaveTo() error = %v, want error about directory creation or file write", err)
-		}
+	} else if !strings.Contains(err.Error(), "failed to create config directory") &&
+		!strings.Contains(err.Error(), "failed to write config file") {
+		t.Errorf("SaveTo() error = %v, want error about directory creation or file write", err)
 	}
 }
 

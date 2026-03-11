@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 )
 
 // describeAppCmd shows detailed info about an app

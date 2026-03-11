@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 // isTerminal checks if the given file is a terminal
@@ -98,6 +100,14 @@ Examples:
 
   # Custom chart dimensions
   dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --width 150 --height 30
+
+  # Include query metadata (execution time, scanned records, etc.)
+  dtctl query "fetch logs | limit 10" --metadata
+  dtctl query "fetch logs | limit 10" -M -o json
+
+  # Include only selected metadata fields
+  dtctl query "fetch logs | limit 10" --metadata=executionTimeMilliseconds,scannedRecords,scannedBytes
+  dtctl query "fetch logs | limit 10" -M=queryId,analysisTimeframe -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := LoadConfig()
@@ -179,6 +189,7 @@ Examples:
 		enablePreview, _ := cmd.Flags().GetBool("enable-preview")
 		enforceQueryConsumptionLimit, _ := cmd.Flags().GetBool("enforce-query-consumption-limit")
 		includeTypes, _ := cmd.Flags().GetBool("include-types")
+		includeContributions, _ := cmd.Flags().GetBool("include-contributions")
 
 		// Get timeframe options
 		defaultTimeframeStart, _ := cmd.Flags().GetString("default-timeframe-start")
@@ -187,6 +198,21 @@ Examples:
 		// Get localization options
 		locale, _ := cmd.Flags().GetString("locale")
 		timezone, _ := cmd.Flags().GetString("timezone")
+
+		// Get metadata option
+		metadataVal, _ := cmd.Flags().GetString("metadata")
+		// In agent mode, always include metadata unless explicitly disabled
+		if agentMode && !cmd.Flags().Changed("metadata") {
+			metadataVal = "all"
+		}
+		var metadataFields []string
+		if metadataVal != "" {
+			var err error
+			metadataFields, err = output.ParseMetadataFields(metadataVal)
+			if err != nil {
+				return err
+			}
+		}
 
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
@@ -201,14 +227,30 @@ Examples:
 			EnablePreview:                enablePreview,
 			EnforceQueryConsumptionLimit: enforceQueryConsumptionLimit,
 			IncludeTypes:                 includeTypes,
+			IncludeContributions:         includeContributions,
 			DefaultTimeframeStart:        defaultTimeframeStart,
 			DefaultTimeframeEnd:          defaultTimeframeEnd,
 			Locale:                       locale,
 			Timezone:                     timezone,
+			MetadataFields:               metadataFields,
 		}
 
 		// Handle live mode
 		if live {
+			// Warn about flags that are not meaningfully applicable in live mode
+			if len(metadataFields) > 0 {
+				fmt.Fprintln(os.Stderr, "Warning: --metadata is ignored in live mode (metadata is not displayed during live updates)")
+			}
+			if agentMode {
+				fmt.Fprintln(os.Stderr, "Warning: --agent is ignored in live mode (live mode requires an interactive terminal)")
+			}
+			if includeContributions {
+				fmt.Fprintln(os.Stderr, "Warning: --include-contributions is ignored in live mode (contribution data is not displayed during live updates)")
+			}
+			if dryRun {
+				fmt.Fprintln(os.Stderr, "Warning: --dry-run is ignored in live mode (live mode always executes queries)")
+			}
+
 			if interval == 0 {
 				interval = output.DefaultLiveInterval
 			}
@@ -272,6 +314,7 @@ func init() {
 	queryCmd.Flags().Bool("enable-preview", false, "request preview results if available within timeout")
 	queryCmd.Flags().Bool("enforce-query-consumption-limit", false, "enforce query consumption limit")
 	queryCmd.Flags().Bool("include-types", false, "include type information in query results")
+	queryCmd.Flags().Bool("include-contributions", false, "include bucket contribution information in query results")
 
 	// Timeframe flags
 	queryCmd.Flags().String("default-timeframe-start", "", "query timeframe start timestamp (ISO-8601/RFC3339, e.g., '2022-04-20T12:10:04.123Z')")
@@ -280,4 +323,58 @@ func init() {
 	// Localization flags
 	queryCmd.Flags().String("locale", "", "query locale (e.g., 'en_US', 'de_DE')")
 	queryCmd.Flags().String("timezone", "", "query timezone (e.g., 'UTC', 'Europe/Paris', 'America/New_York')")
+
+	// Metadata flag
+	queryCmd.Flags().StringP("metadata", "M", "", `include query metadata in output (use = for field selection)
+bare --metadata or -M shows all fields; --metadata=field1,field2 selects specific fields
+available: executionTimeMilliseconds,scannedRecords,scannedBytes,scannedDataPoints,
+sampled,queryId,dqlVersion,query,canonicalQuery,timezone,locale,
+analysisTimeframe,contributions`)
+	queryCmd.Flags().Lookup("metadata").NoOptDefVal = "all"
+
+	// Shell completion for --metadata field names (supports comma-separated values)
+	_ = queryCmd.RegisterFlagCompletionFunc("metadata", metadataFieldCompletion)
+}
+
+// metadataFieldCompletion provides shell completion for --metadata flag values.
+// It supports comma-separated field selection: already-typed fields are excluded
+// from suggestions, and completions include the existing prefix so the shell
+// appends correctly (e.g., typing "scannedRecords," suggests "scannedRecords,queryId").
+func metadataFieldCompletion(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	allFields := output.ValidMetadataFieldNames()
+
+	// If nothing typed yet, offer "all" plus individual field names
+	if toComplete == "" {
+		suggestions := make([]string, 0, len(allFields)+1)
+		suggestions = append(suggestions, "all\tInclude all metadata fields")
+		suggestions = append(suggestions, allFields...)
+		return suggestions, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
+	}
+
+	// Split on comma to find already-selected fields and the current partial
+	parts := strings.Split(toComplete, ",")
+	currentPartial := parts[len(parts)-1]
+	prefix := ""
+	if len(parts) > 1 {
+		prefix = strings.Join(parts[:len(parts)-1], ",") + ","
+	}
+
+	// Build set of already-selected fields
+	selected := make(map[string]bool, len(parts)-1)
+	for _, p := range parts[:len(parts)-1] {
+		selected[strings.TrimSpace(p)] = true
+	}
+
+	// Suggest unselected fields that match the current partial
+	var suggestions []string
+	for _, f := range allFields {
+		if selected[f] {
+			continue
+		}
+		if strings.HasPrefix(f, currentPartial) {
+			suggestions = append(suggestions, prefix+f)
+		}
+	}
+
+	return suggestions, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 }

@@ -3,11 +3,12 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
-	"github.com/spf13/cobra"
 )
 
 // workflowFilter holds the workflow ID filter for executions
@@ -46,12 +47,19 @@ Examples:
 
 		handler := workflow.NewHandler(c)
 		printer := NewPrinter()
+		ap := enrichAgent(printer, "get", "workflow")
 
 		// Get specific workflow if ID provided
 		if len(args) > 0 {
 			wf, err := handler.Get(args[0])
 			if err != nil {
 				return err
+			}
+			if ap != nil {
+				ap.SetSuggestions([]string{
+					fmt.Sprintf("Run 'dtctl exec workflow %s' to trigger this workflow", args[0]),
+					fmt.Sprintf("Run 'dtctl get workflow-executions --workflow %s' to see past executions", args[0]),
+				})
 			}
 			return printer.Print(wf)
 		}
@@ -86,6 +94,20 @@ Examples:
 		list, err := handler.List(filters)
 		if err != nil {
 			return err
+		}
+
+		if ap != nil {
+			ap.SetTotal(len(list.Results))
+			suggestions := []string{
+				"Run 'dtctl describe workflow <id>' for details",
+				"Run 'dtctl exec workflow <id>' to trigger a workflow",
+			}
+			// If count from API exceeds returned results, more data exists
+			if list.Count > len(list.Results) {
+				ap.SetHasMore(true)
+				suggestions = append(suggestions, "More results available. Use '--chunk-size 0' to retrieve all, or filter with DQL")
+			}
+			ap.SetSuggestions(suggestions)
 		}
 
 		return printer.PrintList(list.Results)
@@ -127,12 +149,18 @@ Examples:
 
 		handler := workflow.NewExecutionHandler(c)
 		printer := NewPrinter()
+		ap := enrichAgent(printer, "get", "workflow-execution")
 
 		// Get specific execution if ID provided
 		if len(args) > 0 {
 			exec, err := handler.Get(args[0])
 			if err != nil {
 				return err
+			}
+			if ap != nil {
+				ap.SetSuggestions([]string{
+					fmt.Sprintf("Run 'dtctl logs workflow-execution %s' to view execution logs", args[0]),
+				})
 			}
 			return printer.Print(exec)
 		}
@@ -141,6 +169,14 @@ Examples:
 		list, err := handler.List(workflowFilter)
 		if err != nil {
 			return err
+		}
+
+		if ap != nil {
+			ap.SetTotal(len(list.Results))
+			ap.SetSuggestions([]string{
+				"Run 'dtctl get workflow-executions <id>' for execution details",
+				"Run 'dtctl logs workflow-execution <id>' to view execution logs",
+			})
 		}
 
 		return printer.PrintList(list.Results)
@@ -214,6 +250,22 @@ Examples:
 
 		if err := handler.Delete(workflowID); err != nil {
 			return err
+		}
+
+		// In agent mode, output structured response
+		if agentMode {
+			printer := NewPrinter()
+			ap := enrichAgent(printer, "delete", "workflow")
+			if ap != nil {
+				ap.SetSuggestions([]string{
+					"Deleted. Verify with 'dtctl get workflows'",
+				})
+			}
+			return printer.Print(map[string]string{
+				"id":     workflowID,
+				"title":  wf.Title,
+				"status": "deleted",
+			})
 		}
 
 		fmt.Printf("Workflow %q deleted\n", wf.Title)

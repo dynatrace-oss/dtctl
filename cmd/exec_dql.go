@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/exec"
 )
 
 // execDQLCmd executes a DQL query (DEPRECATED)

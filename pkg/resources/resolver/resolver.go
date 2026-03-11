@@ -26,6 +26,7 @@ const (
 	TypeWorkflow  ResourceType = "workflow"
 	TypeDashboard ResourceType = "dashboard"
 	TypeNotebook  ResourceType = "notebook"
+	TypeDocument  ResourceType = "document" // generic, searches all document types
 )
 
 // ResolveID resolves a name or ID to a resource ID
@@ -58,14 +59,10 @@ func (r *Resolver) ResolveID(resourceType ResourceType, identifier string) (stri
 
 // looksLikeID checks if a string looks like a resource ID
 func (r *Resolver) looksLikeID(str string, resourceType ResourceType) bool {
-	// Dashboards and notebooks use UUIDs (with dashes)
-	if resourceType == TypeDashboard || resourceType == TypeNotebook {
+	// All supported resource types use UUIDs (with dashes)
+	if resourceType == TypeDashboard || resourceType == TypeNotebook ||
+		resourceType == TypeWorkflow || resourceType == TypeDocument {
 		// Simple heuristic: contains dashes and is long enough
-		return strings.Contains(str, "-") && len(str) > 20
-	}
-
-	// Workflows also use UUIDs
-	if resourceType == TypeWorkflow {
 		return strings.Contains(str, "-") && len(str) > 20
 	}
 
@@ -88,6 +85,8 @@ func (r *Resolver) searchByName(resourceType ResourceType, name string) ([]Resou
 		return r.searchDashboards(name)
 	case TypeNotebook:
 		return r.searchNotebooks(name)
+	case TypeDocument:
+		return r.searchAllDocuments(name)
 	default:
 		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
@@ -162,12 +161,49 @@ func (r *Resolver) searchDocuments(name, docType string) ([]Resource, error) {
 	return matches, nil
 }
 
+// searchAllDocuments searches for documents across all types by name
+func (r *Resolver) searchAllDocuments(name string) ([]Resource, error) {
+	handler := document.NewHandler(r.client)
+
+	// No type filter - search all document types
+	filters := document.DocumentFilters{
+		Name: name,
+	}
+
+	list, err := handler.List(filters)
+	if err != nil {
+		return nil, err
+	}
+
+	var matches []Resource
+	nameLower := strings.ToLower(name)
+
+	for _, doc := range list.Documents {
+		if strings.Contains(strings.ToLower(doc.Name), nameLower) {
+			// Store the actual document type (e.g. "dashboard", "launchpad") so the
+			// disambiguation prompt can show it. We wrap it as a ResourceType string.
+			matches = append(matches, Resource{
+				ID:   doc.ID,
+				Name: doc.Name,
+				Type: ResourceType(doc.Type),
+			})
+		}
+	}
+
+	return matches, nil
+}
+
 // ambiguousNameError creates an error message for ambiguous names
 func (r *Resolver) ambiguousNameError(resourceType ResourceType, name string, matches []Resource) error {
 	msg := fmt.Sprintf("ambiguous %s name %q - multiple matches found:\n", resourceType, name)
 
 	for i, match := range matches {
-		msg += fmt.Sprintf("  %d. %s (ID: %s)\n", i+1, match.Name, match.ID)
+		if resourceType == TypeDocument {
+			// For generic documents, show the actual document type to help users distinguish
+			msg += fmt.Sprintf("  %d. %s (type: %s, ID: %s)\n", i+1, match.Name, match.Type, match.ID)
+		} else {
+			msg += fmt.Sprintf("  %d. %s (ID: %s)\n", i+1, match.Name, match.ID)
+		}
 	}
 
 	msg += "\nPlease use the exact ID to specify which resource you want."

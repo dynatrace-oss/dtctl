@@ -106,6 +106,33 @@ func TestDetectResourceType(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name: "gcp connection",
+			input: `{
+				"schemaId": "builtin:hyperscaler-authentication.connections.gcp",
+				"scope": "environment",
+				"value": {
+					"name": "gcp-conn",
+					"type": "serviceAccountImpersonation"
+				}
+			}`,
+			expected: ResourceGCPConnection,
+			wantErr:  false,
+		},
+		{
+			name: "gcp monitoring config",
+			input: `{
+				"scope": "integration-gcp",
+				"value": {
+					"description": "gcp-monitoring",
+					"googleCloud": {
+						"credentials": []
+					}
+				}
+			}`,
+			expected: ResourceGCPMonitoringConfig,
+			wantErr:  false,
+		},
+		{
 			name: "unknown resource",
 			input: `{
 				"random": "field"
@@ -508,15 +535,15 @@ func TestShowJSONDiff(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Capture stdout
-			old := os.Stdout
+			// Capture stderr
+			old := os.Stderr
 			r, w, _ := os.Pipe()
-			os.Stdout = w
+			os.Stderr = w
 
 			showJSONDiff([]byte(tt.oldData), []byte(tt.newData), tt.resourceType)
 
 			_ = w.Close()
-			os.Stdout = old
+			os.Stderr = old
 
 			var buf bytes.Buffer
 			_, _ = io.Copy(&buf, r)
@@ -544,21 +571,21 @@ func TestDocumentURL(t *testing.T) {
 			baseURL:  "https://abc12345.apps.dynatrace.com",
 			docType:  "dashboard",
 			id:       "doc-123",
-			expected: "https://abc12345.apps.dynatrace.com/ui/document/v0/#/dashboards/doc-123",
+			expected: "https://abc12345.apps.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard/doc-123",
 		},
 		{
 			name:     "notebook URL",
 			baseURL:  "https://abc12345.apps.dynatrace.com",
 			docType:  "notebook",
 			id:       "nb-456",
-			expected: "https://abc12345.apps.dynatrace.com/ui/document/v0/#/notebooks/nb-456",
+			expected: "https://abc12345.apps.dynatrace.com/ui/apps/dynatrace.notebooks/notebook/nb-456",
 		},
 		{
 			name:     "other document type URL",
 			baseURL:  "https://tenant.apps.dynatrace.com",
 			docType:  "report",
 			id:       "rpt-789",
-			expected: "https://tenant.apps.dynatrace.com/ui/document/v0/#/reports/rpt-789",
+			expected: "https://tenant.apps.dynatrace.com/ui/apps/dynatrace.reports/report/rpt-789",
 		},
 	}
 

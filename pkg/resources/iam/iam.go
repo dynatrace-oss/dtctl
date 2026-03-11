@@ -48,23 +48,6 @@ type GroupListResponse struct {
 	TotalCount  int64   `json:"totalCount"`
 }
 
-// ServiceUser represents a Dynatrace service user
-type ServiceUser struct {
-	UID         string `json:"uid" table:"UID"`
-	Email       string `json:"email" table:"EMAIL"`
-	Name        string `json:"name,omitempty" table:"NAME"`
-	Surname     string `json:"surname,omitempty" table:"SURNAME"`
-	Description string `json:"description,omitempty" table:"DESCRIPTION,wide"`
-	CreatedAt   string `json:"createdAt,omitempty" table:"CREATED_AT,wide"`
-}
-
-// ServiceUserListResponse represents a list of service users
-type ServiceUserListResponse struct {
-	Results     []ServiceUser `json:"results"`
-	NextPageKey string        `json:"nextPageKey,omitempty"`
-	TotalCount  int64         `json:"totalCount"`
-}
-
 // extractEnvironmentID extracts the environment ID from the base URL
 func extractEnvironmentID(baseURL string) (string, error) {
 	u, err := url.Parse(baseURL)
@@ -239,36 +222,4 @@ func (h *Handler) ListGroups(partialGroupName string, uuids []string, chunkSize 
 		Results:    allGroups,
 		TotalCount: totalCount,
 	}, nil
-}
-
-// ListServiceUsers lists all service users in the current environment
-func (h *Handler) ListServiceUsers(partialString string, uuids []string) (*ServiceUserListResponse, error) {
-	envID, err := extractEnvironmentID(h.client.HTTP().BaseURL)
-	if err != nil {
-		return nil, err
-	}
-
-	var result ServiceUserListResponse
-
-	req := h.client.HTTP().R().SetResult(&result)
-
-	// Add query parameters
-	if partialString != "" {
-		req.SetQueryParam("partialString", partialString)
-	}
-	if len(uuids) > 0 {
-		req.SetQueryParam("uuid", strings.Join(uuids, ","))
-	}
-
-	resp, err := req.Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/service-users", envID))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to list service users: %w", err)
-	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list service users: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return &result, nil
 }

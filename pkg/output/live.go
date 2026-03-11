@@ -156,9 +156,9 @@ func (p *LivePrinter) fetchAndPrint(ctx context.Context, fetcher DataFetcher) er
 
 	// Print timestamp header (use \r\n for raw terminal mode)
 	fmt.Fprintf(p.writer, "%sLive mode%s (refresh: %s) - Press 'q' or Ctrl+C to stop\r\n",
-		BrightCyan, Reset, p.interval)
+		ColorCode(BrightCyan), ColorCode(Reset), p.interval)
 	fmt.Fprintf(p.writer, "%sLast update:%s %s\r\n\r\n",
-		Dim, Reset, time.Now().Format("2006-01-02 15:04:05"))
+		ColorCode(Dim), ColorCode(Reset), time.Now().Format("2006-01-02 15:04:05"))
 
 	// Recreate printer with current terminal dimensions for fullscreen mode
 	if p.fullscreen {

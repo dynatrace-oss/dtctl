@@ -41,6 +41,7 @@ type DQLExecuteOptions struct {
 	EnablePreview                bool    // Request preview results
 	EnforceQueryConsumptionLimit bool    // Enforce query consumption limit
 	IncludeTypes                 bool    // Include type information in results (default: true)
+	IncludeContributions         bool    // Include bucket contribution information in results
 
 	// Timeframe options
 	DefaultTimeframeStart string // Query timeframe start timestamp (ISO-8601/RFC3339)
@@ -49,6 +50,9 @@ type DQLExecuteOptions struct {
 	// Localization options
 	Locale   string // Query locale (e.g., "en_US")
 	Timezone string // Query timezone (e.g., "UTC", "Europe/Paris")
+
+	// Metadata options
+	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, specific names = filtered
 }
 
 // DQLVerifyOptions configures DQL query verification
@@ -69,7 +73,8 @@ type DQLQueryRequest struct {
 	FetchTimeoutSeconds          int32   `json:"fetchTimeoutSeconds,omitempty"`
 	EnablePreview                bool    `json:"enablePreview,omitempty"`
 	EnforceQueryConsumptionLimit bool    `json:"enforceQueryConsumptionLimit,omitempty"`
-	IncludeTypes                 *bool   `json:"includeTypes,omitempty"` // Pointer to distinguish between unset and false
+	IncludeTypes                 *bool   `json:"includeTypes,omitempty"`         // Pointer to distinguish between unset and false
+	IncludeContributions         *bool   `json:"includeContributions,omitempty"` // Pointer to distinguish between unset and false
 	DefaultTimeframeStart        string  `json:"defaultTimeframeStart,omitempty"`
 	DefaultTimeframeEnd          string  `json:"defaultTimeframeEnd,omitempty"`
 	Locale                       string  `json:"locale,omitempty"`
@@ -112,6 +117,20 @@ type GrailMetadata struct {
 	Sampled                   bool                `json:"sampled,omitempty"`
 	Notifications             []QueryNotification `json:"notifications,omitempty"`
 	AnalysisTimeframe         *AnalysisTimeframe  `json:"analysisTimeframe,omitempty"`
+	Contributions             *Contributions      `json:"contributions,omitempty"`
+}
+
+// Contributions represents the bucket contributions for a query
+type Contributions struct {
+	Buckets []BucketContribution `json:"buckets,omitempty"`
+}
+
+// BucketContribution represents a single bucket's contribution to query results
+type BucketContribution struct {
+	Name                string  `json:"name"`
+	Table               string  `json:"table"`
+	ScannedBytes        int64   `json:"scannedBytes"`
+	MatchedRecordsRatio float64 `json:"matchedRecordsRatio"`
 }
 
 // QueryNotification represents a notification/warning from query execution
@@ -217,6 +236,10 @@ func (e *DQLExecutor) ExecuteQueryWithOptions(query string, opts DQLExecuteOptio
 	if opts.IncludeTypes {
 		includeTypes := true
 		req.IncludeTypes = &includeTypes
+	}
+	if opts.IncludeContributions {
+		includeContributions := true
+		req.IncludeContributions = &includeContributions
 	}
 
 	// Set timeframe parameters
@@ -372,8 +395,8 @@ func getHintForNotification(notificationType, message string) string {
 	return ""
 }
 
-// printNotifications prints query notifications/warnings to stderr
-func (e *DQLExecutor) printNotifications(notifications []QueryNotification) {
+// PrintNotifications prints query notifications/warnings to stderr
+func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 	useColor := isStderrTerminal()
 
 	for _, n := range notifications {
@@ -418,13 +441,19 @@ func (e *DQLExecutor) printNotifications(notifications []QueryNotification) {
 func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOptions) error {
 	// Print any notifications/warnings first
 	if notifications := result.GetNotifications(); len(notifications) > 0 {
-		e.printNotifications(notifications)
+		e.PrintNotifications(notifications)
 	}
 
 	// Extract records from result
 	records := result.Records
 	if result.Result != nil && len(result.Result.Records) > 0 {
 		records = result.Result.Records
+	}
+
+	// Extract metadata if requested
+	var meta *output.QueryMetadata
+	if len(opts.MetadataFields) > 0 {
+		meta = extractQueryMetadata(result)
 	}
 
 	// Create printer with options
@@ -435,23 +464,119 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		Fullscreen: opts.Fullscreen,
 	})
 
-	if opts.OutputFormat == "table" {
-		return e.printTable(records)
-	}
+	switch opts.OutputFormat {
+	case "table", "wide":
+		var err error
+		if opts.OutputFormat == "table" {
+			err = e.printTable(records)
+		} else {
+			// Wide format: for DQL map results, printMaps() ignores the wide flag,
+			// so output is identical to table format.
+			if len(records) == 0 {
+				fmt.Println("No results found.")
+			} else {
+				err = printer.PrintList(records)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		// Print metadata footer after the table
+		if meta != nil {
+			fmt.Print(output.FormatMetadataFooter(meta, opts.MetadataFields))
+		}
+		return nil
 
-	if opts.OutputFormat == "csv" {
-		// For CSV, print records directly without wrapping
+	case "csv":
 		if len(records) == 0 {
 			return nil
 		}
+		// Print metadata as comment header before CSV data
+		if meta != nil {
+			fmt.Print(output.FormatMetadataCSVComments(meta, opts.MetadataFields))
+		}
 		return printer.PrintList(records)
+
+	case "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+		// Chart formats do not support metadata display
+		if meta != nil {
+			fmt.Fprintln(os.Stderr, "Note: --metadata is not supported with chart output formats")
+		}
+		if len(records) > 0 {
+			return printer.Print(map[string]interface{}{"records": records})
+		}
+		return printer.Print(result)
+
+	default:
+		// JSON, YAML, and other formats: include metadata as a sibling key.
+		// MetadataToMap preserves zero values for explicitly selected fields
+		// (unlike omitempty on the struct which would suppress them).
+		out := make(map[string]interface{})
+		if len(records) > 0 {
+			out["records"] = records
+		} else if result.Result != nil {
+			out["records"] = result.Result.Records
+		}
+		if meta != nil {
+			out["metadata"] = output.MetadataToMap(meta, opts.MetadataFields)
+		}
+		if len(out) > 0 {
+			return printer.Print(out)
+		}
+		return printer.Print(result)
+	}
+}
+
+// extractQueryMetadata converts DQL response metadata to the output-layer QueryMetadata type.
+func extractQueryMetadata(result *DQLQueryResponse) *output.QueryMetadata {
+	// Find metadata from either result.Result.Metadata or result.Metadata
+	var dqlMeta *DQLMetadata
+	if result.Result != nil && result.Result.Metadata != nil {
+		dqlMeta = result.Result.Metadata
+	} else if result.Metadata != nil {
+		dqlMeta = result.Metadata
 	}
 
-	// For non-table output, include only records
-	if len(records) > 0 {
-		return printer.Print(map[string]interface{}{"records": records})
+	if dqlMeta == nil || dqlMeta.Grail == nil {
+		return nil
 	}
-	return printer.Print(result)
+
+	g := dqlMeta.Grail
+	meta := &output.QueryMetadata{
+		ExecutionTimeMilliseconds: g.ExecutionTimeMilliseconds,
+		ScannedRecords:            g.ScannedRecords,
+		ScannedBytes:              g.ScannedBytes,
+		ScannedDataPoints:         g.ScannedDataPoints,
+		Sampled:                   g.Sampled,
+		QueryID:                   g.QueryID,
+		DQLVersion:                g.DQLVersion,
+		Query:                     g.Query,
+		CanonicalQuery:            g.CanonicalQuery,
+		Timezone:                  g.Timezone,
+		Locale:                    g.Locale,
+	}
+
+	if g.AnalysisTimeframe != nil {
+		meta.AnalysisTimeframe = &output.MetadataTimeframe{
+			Start: g.AnalysisTimeframe.Start,
+			End:   g.AnalysisTimeframe.End,
+		}
+	}
+
+	if g.Contributions != nil && len(g.Contributions.Buckets) > 0 {
+		contribs := &output.MetadataContribs{}
+		for _, b := range g.Contributions.Buckets {
+			contribs.Buckets = append(contribs.Buckets, output.MetadataBucket{
+				Name:                b.Name,
+				Table:               b.Table,
+				ScannedBytes:        b.ScannedBytes,
+				MatchedRecordsRatio: b.MatchedRecordsRatio,
+			})
+		}
+		meta.Contributions = contribs
+	}
+
+	return meta
 }
 
 // pollForResults polls the query:poll endpoint until the query completes

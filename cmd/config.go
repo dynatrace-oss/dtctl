@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 // loadConfigRaw loads configuration respecting the --config flag but WITHOUT applying
@@ -161,30 +162,7 @@ Examples:
   dtctl config get-contexts -o wide
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		// Create flattened list for display
-		var items []ContextListItem
-		for _, nc := range cfg.Contexts {
-			current := ""
-			if nc.Name == cfg.CurrentContext {
-				current = "*"
-			}
-			safetyLevel := nc.Context.SafetyLevel.String()
-			items = append(items, ContextListItem{
-				Current:     current,
-				Name:        nc.Name,
-				Environment: nc.Context.Environment,
-				SafetyLevel: safetyLevel,
-				Description: nc.Context.Description,
-			})
-		}
-
-		printer := NewPrinter()
-		return printer.PrintList(items)
+		return listContexts()
 	},
 }
 
@@ -197,7 +175,6 @@ var configCurrentContextCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
 		fmt.Println(cfg.CurrentContext)
 		return nil
 	},
@@ -209,34 +186,7 @@ var configUseContextCmd = &cobra.Command{
 	Short: "Switch to a different context",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfigRaw()
-		if err != nil {
-			return err
-		}
-
-		contextName := args[0]
-
-		// Check if context exists
-		found := false
-		for _, nc := range cfg.Contexts {
-			if nc.Name == contextName {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			return fmt.Errorf("context %q not found", contextName)
-		}
-
-		cfg.CurrentContext = contextName
-
-		if err := saveConfig(cfg); err != nil {
-			return err
-		}
-
-		fmt.Printf("Switched to context %q\n", contextName)
-		return nil
+		return useContext(args[0])
 	},
 }
 
@@ -271,62 +221,12 @@ Examples:
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		contextName := args[0]
-
 		environment, _ := cmd.Flags().GetString("environment")
 		tokenRef, _ := cmd.Flags().GetString("token-ref")
 		safetyLevel, _ := cmd.Flags().GetString("safety-level")
 		description, _ := cmd.Flags().GetString("description")
 
-		cfg, err := loadConfigRaw()
-		if err != nil {
-			// Create new config if it doesn't exist
-			cfg = config.NewConfig()
-		}
-
-		// Check if this is an update to an existing context
-		isUpdate := false
-		for _, nc := range cfg.Contexts {
-			if nc.Name == contextName {
-				isUpdate = true
-				if environment == "" {
-					environment = nc.Context.Environment
-				}
-				break
-			}
-		}
-
-		// Require environment for new contexts
-		if !isUpdate && environment == "" {
-			return fmt.Errorf("--environment is required for new contexts")
-		}
-
-		// Validate safety level if provided
-		if safetyLevel != "" {
-			level := config.SafetyLevel(safetyLevel)
-			if !level.IsValid() {
-				return fmt.Errorf("invalid safety level %q. Valid values: readonly, readwrite-mine, readwrite-all, dangerously-unrestricted", safetyLevel)
-			}
-		}
-
-		opts := &config.ContextOptions{
-			SafetyLevel: config.SafetyLevel(safetyLevel),
-			Description: description,
-		}
-
-		cfg.SetContextWithOptions(contextName, environment, tokenRef, opts)
-
-		// Set as current context if it's the first one
-		if len(cfg.Contexts) == 1 || cfg.CurrentContext == "" {
-			cfg.CurrentContext = contextName
-		}
-
-		if err := saveConfig(cfg); err != nil {
-			return err
-		}
-
-		fmt.Printf("Context %q set\n", contextName)
-		return nil
+		return setContext(args[0], environment, tokenRef, safetyLevel, description)
 	},
 }
 
@@ -457,55 +357,7 @@ Examples:
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		contextName := args[0]
-
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		// Find the context
-		var found *config.NamedContext
-		for i := range cfg.Contexts {
-			if cfg.Contexts[i].Name == contextName {
-				found = &cfg.Contexts[i]
-				break
-			}
-		}
-
-		if found == nil {
-			return fmt.Errorf("context %q not found", contextName)
-		}
-
-		// Print context details
-		isCurrent := found.Name == cfg.CurrentContext
-		currentMark := ""
-		if isCurrent {
-			currentMark = " (current)"
-		}
-
-		fmt.Printf("Name:         %s%s\n", found.Name, currentMark)
-		fmt.Printf("Environment:  %s\n", found.Context.Environment)
-		fmt.Printf("Token-Ref:    %s\n", found.Context.TokenRef)
-		fmt.Printf("Safety Level: %s\n", found.Context.GetEffectiveSafetyLevel())
-
-		// Show safety level description
-		switch found.Context.GetEffectiveSafetyLevel() {
-		case config.SafetyLevelReadOnly:
-			fmt.Printf("              (No modifications allowed)\n")
-		case config.SafetyLevelReadWriteMine:
-			fmt.Printf("              (Create/update/delete own resources)\n")
-		case config.SafetyLevelReadWriteAll:
-			fmt.Printf("              (Modify all resources, no bucket deletion)\n")
-		case config.SafetyLevelDangerouslyUnrestricted:
-			fmt.Printf("              (All operations including bucket deletion)\n")
-		}
-
-		if found.Context.Description != "" {
-			fmt.Printf("Description:  %s\n", found.Context.Description)
-		}
-
-		return nil
+		return describeContext(args[0])
 	},
 }
 
@@ -531,43 +383,7 @@ Examples:
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		contextName := args[0]
-
-		cfg, err := loadConfigRaw()
-		if err != nil {
-			return err
-		}
-
-		// Check if context exists before deleting
-		found := false
-		for _, nc := range cfg.Contexts {
-			if nc.Name == contextName {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			return fmt.Errorf("context %q not found", contextName)
-		}
-
-		// Delete the context
-		if err := cfg.DeleteContext(contextName); err != nil {
-			return err
-		}
-
-		// Clear current context if we just deleted it
-		if cfg.CurrentContext == contextName {
-			cfg.CurrentContext = ""
-			fmt.Printf("Warning: deleted the current context. Use 'dtctl config use-context' to set a new one.\n")
-		}
-
-		if err := saveConfig(cfg); err != nil {
-			return err
-		}
-
-		fmt.Printf("Context %q deleted\n", contextName)
-		return nil
+		return deleteContext(args[0])
 	},
 }
 

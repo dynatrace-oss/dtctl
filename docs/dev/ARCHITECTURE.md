@@ -171,6 +171,26 @@ table.Render()
 - kubectl-compatible JSONPath syntax
 - Field selection from structured output
 
+#### Color Control: NO_COLOR standard
+
+**Standard**: [no-color.org](https://no-color.org/)
+
+**Decision logic:**
+```
+Color enabled = NOT (NO_COLOR is set) AND NOT (--plain flag) AND (stdout is a TTY OR FORCE_COLOR=1)
+```
+
+**Implementation** (`pkg/output/styles.go`):
+- `ColorEnabled()` — returns whether ANSI color output is enabled (cached with `sync.Once`)
+- `Colorize(text, colorCode)` — wraps text in ANSI escape codes only when color is enabled
+- `ColorCode(code)` — returns the ANSI code string or empty string when color is disabled
+- `ResetColorCache()` — resets the `sync.Once` cache (for testing only)
+- TTY detection uses `golang.org/x/term.IsTerminal()`
+
+**Environment variables:**
+- `NO_COLOR` (any non-empty value) — disables color output
+- `FORCE_COLOR=1` — overrides TTY detection to force color on
+
 ### Context Management: Similar to kubeconfig
 
 **Implementation:**
@@ -252,6 +272,7 @@ defer server.Close()
 #### Additional Tools:
 - **testify**: Assertions and mocking - https://github.com/stretchr/testify
 - **gomock**: Mock generation - https://github.com/golang/mock
+- **Golden (snapshot) tests**: Output formatters are covered by golden-file tests in `pkg/output/golden_test.go` — uses real production structs from `pkg/resources/*` to capture exact output across all formats (table, wide, JSON, YAML, CSV, agent, watch, chart). Update with `make test-update-golden` or `go test ./pkg/output/ -run TestGolden -update`.
 
 ### Error Handling: cockroachdb/errors
 
@@ -456,6 +477,8 @@ dtctl/
 │   │   ├── json.go             # JSON formatter
 │   │   ├── yaml.go             # YAML formatter
 │   │   ├── jsonpath.go         # JSONPath formatter
+│   │   ├── styles.go           # Color control (ColorEnabled, Colorize, ColorCode)
+│   │   ├── agent.go            # Agent output envelope
 │   │   └── printer.go          # Printer interface
 │   │
 │   ├── manifest/               # Manifest parsing

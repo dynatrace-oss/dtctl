@@ -24,8 +24,9 @@ func TestNewWatchPrinter(t *testing.T) {
 		t.Error("NewWatchPrinter() did not set basePrinter correctly")
 	}
 
-	if !watchPrinter.colorize {
-		t.Error("NewWatchPrinter() should enable colorize by default")
+	if watchPrinter.colorize != ColorEnabled() {
+		t.Errorf("NewWatchPrinter() colorize = %v, want ColorEnabled() = %v",
+			watchPrinter.colorize, ColorEnabled())
 	}
 }
 

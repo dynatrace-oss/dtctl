@@ -6,12 +6,69 @@ import (
 	"os"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/spf13/cobra"
 )
+
+// createDocumentCmd creates a document of any type from a file
+var createDocumentCmd = &cobra.Command{
+	Use:   "document -f <file> --type <type>",
+	Short: "Create a document of any type from a file",
+	Long: `Create a new document from a YAML or JSON file.
+
+The document type must be provided via --type or included as a "type" field in
+the payload. This command works for any document type: dashboard, notebook,
+launchpad, custom app documents, etc.
+
+Examples:
+  # Create a launchpad document from JSON
+  dtctl create document -f launchpad.json --type launchpad
+
+  # Create from a payload that already contains a "type" field
+  dtctl create document -f my-app-config.yaml
+
+  # Create with template variables
+  dtctl create document -f config.yaml --type my-app:config --set env=prod
+
+  # Dry run to preview
+  dtctl create document -f launchpad.json --type launchpad --dry-run
+`,
+	Aliases: []string{"doc"},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Determine the document type
+		docType, _ := cmd.Flags().GetString("type")
+
+		// If no --type flag, try to read from file payload
+		if docType == "" {
+			file, _ := cmd.Flags().GetString("file")
+			if file != "" {
+				fileData, err := os.ReadFile(file)
+				if err == nil {
+					jsonData, err := format.ValidateAndConvert(fileData)
+					if err == nil {
+						var doc map[string]interface{}
+						if err := json.Unmarshal(jsonData, &doc); err == nil {
+							if t, ok := doc["type"].(string); ok && t != "" {
+								docType = t
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if docType == "" {
+			return fmt.Errorf("document type is required: use --type flag or include a \"type\" field in the payload")
+		}
+
+		// Delegate to the shared helper
+		return createDocumentRunE(docType)(cmd, args)
+	},
+}
 
 // createNotebookCmd creates a notebook from a file
 var createNotebookCmd = &cobra.Command{
@@ -227,7 +284,7 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 			fmt.Printf("  %s: %d\n", capitalize(itemName(docType)), tileCount)
 		}
 		if result.ID != "" {
-			fmt.Printf("  URL:  %s/ui/document/v0/#/%ss/%s\n", c.BaseURL(), docType, result.ID)
+			fmt.Printf("  URL:  %s/ui/apps/dynatrace.%ss/%s/%s\n", c.BaseURL(), docType, docType, result.ID)
 		}
 		return nil
 	}
@@ -338,6 +395,15 @@ func capitalize(s string) string {
 }
 
 func init() {
+	// Generic document flags
+	createDocumentCmd.Flags().StringP("file", "f", "", "file containing document definition (required)")
+	createDocumentCmd.Flags().String("type", "", "document type (e.g. launchpad, my-app:config); extracted from payload if not provided")
+	createDocumentCmd.Flags().String("name", "", "name for the document (extracted from content if not provided)")
+	createDocumentCmd.Flags().String("description", "", "description for the document")
+	createDocumentCmd.Flags().String("id", "", "custom ID for the document (auto-generated if not provided)")
+	createDocumentCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
+	_ = createDocumentCmd.MarkFlagRequired("file")
+
 	// Notebook flags
 	createNotebookCmd.Flags().StringP("file", "f", "", "file containing notebook definition (required)")
 	createNotebookCmd.Flags().String("name", "", "name for the notebook (extracted from content if not provided)")

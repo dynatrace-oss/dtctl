@@ -1,0 +1,14 @@
+{
+  "ok": false,
+  "result": null,
+  "error": {
+    "code": "not_found",
+    "message": "workflow not found",
+    "operation": "get workflows",
+    "status_code": 404,
+    "suggestions": [
+      "Verify the resource name or ID is correct",
+      "List available resources: 'dtctl get workflows'"
+    ]
+  }
+}

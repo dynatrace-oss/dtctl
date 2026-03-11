@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 func TestConfigInitCmd(t *testing.T) {

@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/exec"
 )
 
 // execFunctionCmd executes an app function or ad-hoc code

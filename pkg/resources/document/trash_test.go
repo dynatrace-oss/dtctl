@@ -319,4 +319,3 @@ func TestTrashHandler_Delete(t *testing.T) {
 		})
 	}
 }
-

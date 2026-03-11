@@ -189,25 +189,26 @@ func parseConstraintViolations(data map[string]interface{}) []SchemaField {
 			// Try to infer type from message
 			messageLower := strings.ToLower(message)
 			// Look for "expected <type>" pattern first (more specific)
-			if strings.Contains(messageLower, "expected number") || strings.Contains(messageLower, "expected integer") {
+			switch {
+			case strings.Contains(messageLower, "expected number") || strings.Contains(messageLower, "expected integer"):
 				field.Type = "number"
-			} else if strings.Contains(messageLower, "expected string") {
+			case strings.Contains(messageLower, "expected string"):
 				field.Type = "string"
-			} else if strings.Contains(messageLower, "expected object") {
+			case strings.Contains(messageLower, "expected object"):
 				field.Type = "object"
-			} else if strings.Contains(messageLower, "expected array") {
+			case strings.Contains(messageLower, "expected array"):
 				field.Type = "array"
-			} else if strings.Contains(messageLower, "expected boolean") {
+			case strings.Contains(messageLower, "expected boolean"):
 				field.Type = "boolean"
-			} else if strings.Contains(messageLower, "string") {
+			case strings.Contains(messageLower, "string"):
 				field.Type = "string"
-			} else if strings.Contains(messageLower, "object") {
+			case strings.Contains(messageLower, "object"):
 				field.Type = "object"
-			} else if strings.Contains(messageLower, "array") {
+			case strings.Contains(messageLower, "array"):
 				field.Type = "array"
-			} else if strings.Contains(messageLower, "boolean") {
+			case strings.Contains(messageLower, "boolean"):
 				field.Type = "boolean"
-			} else if strings.Contains(messageLower, "number") || strings.Contains(messageLower, "integer") {
+			case strings.Contains(messageLower, "number") || strings.Contains(messageLower, "integer"):
 				field.Type = "number"
 			}
 
@@ -262,15 +263,16 @@ func parseSchemaFromError(errorMsg string) []SchemaField {
 						if errMsg, ok := errArray[0].(string); ok {
 							field.Hint = errMsg
 							// Extract type from error message
-							if strings.Contains(errMsg, "expected object") {
+							switch {
+							case strings.Contains(errMsg, "expected object"):
 								field.Type = "object"
-							} else if strings.Contains(errMsg, "expected string") {
+							case strings.Contains(errMsg, "expected string"):
 								field.Type = "string"
-							} else if strings.Contains(errMsg, "expected array") {
+							case strings.Contains(errMsg, "expected array"):
 								field.Type = "array"
-							} else if strings.Contains(errMsg, "expected boolean") {
+							case strings.Contains(errMsg, "expected boolean"):
 								field.Type = "boolean"
-							} else if strings.Contains(errMsg, "expected number") {
+							case strings.Contains(errMsg, "expected number"):
 								field.Type = "number"
 							}
 						}
@@ -368,15 +370,16 @@ func parseSchemaFromError(errorMsg string) []SchemaField {
 			}
 
 			// Try to extract type information from hint
-			if strings.Contains(hint, "string") {
+			switch {
+			case strings.Contains(hint, "string"):
 				field.Type = "string"
-			} else if strings.Contains(hint, "object") {
+			case strings.Contains(hint, "object"):
 				field.Type = "object"
-			} else if strings.Contains(hint, "array") {
+			case strings.Contains(hint, "array"):
 				field.Type = "array"
-			} else if strings.Contains(hint, "boolean") {
+			case strings.Contains(hint, "boolean"):
 				field.Type = "boolean"
-			} else if strings.Contains(hint, "number") {
+			case strings.Contains(hint, "number"):
 				field.Type = "number"
 			}
 

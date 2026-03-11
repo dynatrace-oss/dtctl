@@ -5,9 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/viper"
+
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
-	"github.com/spf13/viper"
 )
 
 // TestNewSafetyChecker tests the NewSafetyChecker function

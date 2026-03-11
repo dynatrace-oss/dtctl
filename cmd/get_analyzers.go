@@ -1,9 +1,10 @@
 package cmd
 
 import (
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/copilot"
-	"github.com/spf13/cobra"
 )
 
 // getAnalyzersCmd retrieves Davis analyzers
@@ -63,7 +64,7 @@ Examples:
 // getCopilotSkillsCmd retrieves Davis CoPilot skills
 var getCopilotSkillsCmd = &cobra.Command{
 	Use:     "copilot-skills",
-	Aliases: []string{"copilot-skill", "skills"},
+	Aliases: []string{"copilot-skill"},
 	Short:   "Get Davis CoPilot skills",
 	Long: `Get available Davis CoPilot skills.
 

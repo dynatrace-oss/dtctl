@@ -8,14 +8,14 @@
 
 **Your Dynatrace platform, one command away.**
 
-`dtctl` brings the power of `kubectl` to Dynatrace — manage workflows, dashboards, queries, and more from your terminal. Built for developers who prefer the command line and AI-assisted workflows.
+`dtctl` is a CLI for the Dynatrace platform — manage workflows, dashboards, queries, and more from your terminal or let AI agents do it for you. Its predictable verb-noun syntax (inspired by `kubectl`) makes it easy for both humans and AI agents to operate.
 
 ```bash
 dtctl get workflows                           # List all workflows
 dtctl query "fetch logs | limit 10"           # Run DQL queries
-dtctl diff -f workflow.yaml                   # Compare local vs remote
-dtctl edit dashboard "Production Overview"    # Edit resources in your $EDITOR
-dtctl apply -f workflow.yaml                  # Declarative configuration
+dtctl apply -f workflow.yaml --set env=prod   # Declarative configuration
+dtctl get dashboards -o json                  # Structured output for automation
+dtctl exec copilot nl2dql "error logs from last hour"
 ```
 
 ![dtctl dashboard workflow demo](docs/assets/dtctl-1.gif)
@@ -24,48 +24,65 @@ dtctl apply -f workflow.yaml                  # Declarative configuration
 
 ## Why dtctl?
 
-- **kubectl-style UX** — Familiar commands: `get`, `describe`, `edit`, `apply`, `delete`
+- **Built for AI agents** — Predictable verb-noun commands, structured output (`--plain`, `-o json`, `--agent`), machine-readable command catalog (`dtctl commands`), and YAML-based editing make dtctl a natural tool for LLM-driven automation
+- **Agent output envelope** — `--agent` flag (auto-detected in AI environments) wraps all output in a structured JSON envelope with `ok`/`result`/`error`/`context` fields, follow-up suggestions, and pagination metadata
+- **Agent Skill included** — Ships with an [Agent Skill](https://agentskills.io) that teaches AI assistants how to operate your Dynatrace environment
+- **Familiar CLI conventions** — `get`, `describe`, `edit`, `apply`, `delete` — if you (or your AI) know `kubectl`, you already know dtctl
 - **Watch mode** — Real-time monitoring with `--watch` flag for all resources
-- **AI-friendly** — Plain output modes and YAML editing for seamless AI tool integration
 - **Multi-environment** — Switch between dev/staging/prod with a single command
 - **Template support** — DQL queries with Go template variables
 - **Shell completion** — Tab completion for bash, zsh, fish, and PowerShell
+- **[NO_COLOR](https://no-color.org/) support** — Color is automatically disabled when piped; respects `NO_COLOR` env var and `FORCE_COLOR=1` override
 
 ## AI Agent Skill
 
-dtctl includes an [Agent Skill](https://agentskills.io) at `skills/dtctl/` that teaches AI assistants how to use dtctl.
+dtctl ships with an [Agent Skill](https://agentskills.io) at `skills/dtctl/` — a compact command reference that teaches AI coding assistants how to use dtctl effectively. Agents can also bootstrap themselves at runtime with `dtctl commands --brief -o json` to discover all available verbs, flags, and resources.
 
-**To use:** Copy the skill folder to `.github/skills/` (GitHub Copilot) or `.claude/skills/` (Claude Code):
+**Install with the CLI** (recommended):
+
+```bash
+dtctl skills install              # Auto-detects your AI agent
+dtctl skills install --for claude # Or specify explicitly
+dtctl skills install --global     # User-wide (supported agents)
+dtctl skills status               # Check installation status
+```
+
+**Or copy manually:**
 
 ```bash
 cp -r skills/dtctl ~/.github/skills/   # For GitHub Copilot
 cp -r skills/dtctl ~/.claude/skills/   # For Claude Code
 ```
 
-Compatible with GitHub Copilot, Claude Code, and other Agent Skills tools.
+Compatible with GitHub Copilot, Claude Code, Cursor, Kiro, OpenCode, and other Agent Skills-compatible tools.
 
 ## Quick Start
 
 ```bash
-# Install dtctl - download the latest release for your platform:
-# https://github.com/dynatrace-oss/dtctl/releases/latest
-#
-# Or build from source:
-# git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl
-# make build && make install
+# Install via Homebrew (macOS/Linux)
+brew install dynatrace-oss/tap/dtctl
 
-# Configure your environment
-dtctl config set-context my-env \
-  --environment "https://abc12345.apps.dynatrace.com" \
-  --token-ref my-token
+# Or download a binary: https://github.com/dynatrace-oss/dtctl/releases/latest
+# Or build from source: git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl && make install
 
-dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
+# Authenticate via OAuth (recommended — no token management needed)
+dtctl auth login --context my-env --environment "https://abc12345.apps.dynatrace.com"
+# Opens your browser for Dynatrace SSO login, tokens are stored automatically
+
+# Alternative: token-based authentication
+# dtctl config set-context my-env \
+#   --environment "https://abc12345.apps.dynatrace.com" \
+#   --token-ref my-token
+# dtctl config set-credentials my-token --token "dt0s16.YOUR_TOKEN"
+
+# Verify everything works
+dtctl doctor
 
 # Go!
 dtctl get workflows
-dtctl get workflows --watch                    # Real-time monitoring
+dtctl describe workflow "My Workflow" -o yaml  # Structured output
 dtctl query "fetch logs | limit 10"
-dtctl query "fetch logs" --live                # Live query results
+dtctl apply -f workflow.yaml --set env=prod    # Template variables
 dtctl create lookup -f error_codes.csv --path /lookups/production/errors --lookup-field code
 ```
 
@@ -84,11 +101,19 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 | App Intents | get, describe, find, open (deep linking across apps) |
 | And more... | Apps, EdgeConnect, Davis AI |
 
+### Utility Commands
+
+| Command | Description |
+|---------|-------------|
+| `dtctl ctx` | Quick context switching (`ctx` lists, `ctx <name>` switches, subcommands: `current`, `describe`, `set`, `delete`) |
+| `dtctl doctor` | Health check — verifies config, context, token, connectivity, and authentication |
+| `dtctl commands` | Machine-readable command catalog — lists all verbs, flags, resources, and safety levels (`--brief` for compact output, `howto` subcommand for Markdown guides) |
+
 ## Documentation
 
 | Guide | Description |
 |-------|-------------|
-| [Installation](docs/INSTALLATION.md) | Build from source, shell completion setup |
+| [Installation](docs/INSTALLATION.md) | Homebrew, binary download, build from source, shell completion |
 | [Quick Start](docs/QUICK_START.md) | Configuration, examples for all resource types |
 | [Token Scopes](docs/TOKEN_SCOPES.md) | Required API token scopes for each safety level |
 | [API Design](docs/dev/API_DESIGN.md) | Complete command reference |

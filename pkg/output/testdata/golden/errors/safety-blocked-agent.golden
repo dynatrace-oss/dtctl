@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "result": null,
+  "error": {
+    "code": "safety_blocked",
+    "message": "Context 'production' (readonly) does not allow delete operations",
+    "suggestions": [
+      "Switch to a context with write permissions"
+    ]
+  }
+}

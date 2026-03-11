@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
-	"github.com/spf13/cobra"
 )
 
 // describeSLOCmd shows detailed info about an SLO

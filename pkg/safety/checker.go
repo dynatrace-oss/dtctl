@@ -171,11 +171,17 @@ func (c *Checker) FormatError(result CheckResult) string {
 	return b.String()
 }
 
-// CheckError performs a safety check and returns an error if not allowed
+// CheckError performs a safety check and returns a *SafetyError if not allowed.
 func (c *Checker) CheckError(op Operation, ownership ResourceOwnership) error {
 	result := c.Check(op, ownership)
 	if !result.Allowed {
-		return fmt.Errorf("%s", c.FormatError(result))
+		return &SafetyError{
+			ContextName: c.contextName,
+			SafetyLevel: c.safetyLevel,
+			Operation:   op,
+			Reason:      result.Reason,
+			Suggestions: result.Suggestions,
+		}
 	}
 	return nil
 }

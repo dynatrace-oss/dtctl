@@ -18,7 +18,7 @@ func NewBrailleChartPrinter(writer io.Writer) *BrailleChartPrinter {
 	// Auto-detect terminal dimensions
 	width, height := GetTerminalSize()
 	// Leave margin for y-axis labels and borders
-	width = width - 15
+	width -= 15
 	height = (height - 10) / 4 // Braille is 4 dots per row
 	if width < 40 {
 		width = 40
@@ -70,9 +70,9 @@ func (p *BrailleChartPrinter) renderBrailleChart(ts *TimeseriesData) error {
 	// Print styled header with timeframe (use \r\n for raw terminal mode)
 	timeFormat := "2006-01-02 15:04"
 	fmt.Fprintf(p.writer, "%s%s%s %s─%s %s%s%s\r\n\r\n",
-		BrightCyan, ts.Start.UTC().Format(timeFormat), Reset,
-		Dim, Reset,
-		BrightCyan, ts.End.UTC().Format(timeFormat), Reset)
+		ColorCode(BrightCyan), ts.Start.UTC().Format(timeFormat), ColorCode(Reset),
+		ColorCode(Dim), ColorCode(Reset),
+		ColorCode(BrightCyan), ts.End.UTC().Format(timeFormat), ColorCode(Reset))
 
 	// Render each series
 	for i, s := range ts.Series {
@@ -87,7 +87,7 @@ func (p *BrailleChartPrinter) renderBrailleChart(ts *TimeseriesData) error {
 		// Print series header (use \r\n for raw terminal mode)
 		color := getSeriesColor(i)
 		fmt.Fprintf(p.writer, "%s%s● %s%s%s\r\n",
-			color, Bold, label, Reset, Reset)
+			ColorCode(color), ColorCode(Bold), label, ColorCode(Reset), ColorCode(Reset))
 
 		// Create braille graph
 		bg := NewBrailleGraph(p.width, p.height)
@@ -101,9 +101,9 @@ func (p *BrailleChartPrinter) renderBrailleChart(ts *TimeseriesData) error {
 
 		// Print stats line (use \r\n for raw terminal mode)
 		fmt.Fprintf(p.writer, "  %smin:%s %.2f  %smax:%s %.2f  %savg:%s %.2f\r\n\r\n",
-			Dim, BrightGreen, minVal,
-			Dim, BrightRed, maxVal,
-			Dim, BrightCyan, avgVal)
+			ColorCode(Dim), ColorCode(BrightGreen), minVal,
+			ColorCode(Dim), ColorCode(BrightRed), maxVal,
+			ColorCode(Dim), ColorCode(BrightCyan), avgVal)
 	}
 
 	return nil
@@ -120,17 +120,17 @@ func (p *BrailleChartPrinter) printWithYAxis(graph string, minVal, maxVal float6
 
 		// Print Y-axis label (use \r\n for raw terminal mode)
 		fmt.Fprintf(p.writer, "%s%6.1f%s %s│%s %s\r\n",
-			Dim, yVal, Reset,
-			BrightBlue, Reset,
+			ColorCode(Dim), yVal, ColorCode(Reset),
+			ColorCode(BrightBlue), ColorCode(Reset),
 			line)
 	}
 
 	// Print X-axis (use \r\n for raw terminal mode)
 	fmt.Fprintf(p.writer, "%s       %s└%s%s\r\n",
-		Reset,
-		BrightBlue,
+		ColorCode(Reset),
+		ColorCode(BrightBlue),
 		repeatString(BoxHorizontal, p.width),
-		Reset)
+		ColorCode(Reset))
 }
 
 // splitLines splits a string into lines

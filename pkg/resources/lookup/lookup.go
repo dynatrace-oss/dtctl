@@ -227,8 +227,19 @@ func (h *Handler) Get(path string) (*Lookup, error) {
 	return lookup, nil
 }
 
+// maxLookupRecords is the maximum number of records to retrieve from a lookup table.
+// The DQL API defaults to 1000 records if not specified, which silently truncates
+// large lookup tables. We set this to 1,000,000 to effectively retrieve all records.
+const maxLookupRecords = 1_000_000
+
+// GetDataResult contains the data records and any DQL notifications
+type GetDataResult struct {
+	Records       []map[string]interface{}
+	Notifications []exec.QueryNotification
+}
+
 // GetData retrieves the full data of a lookup table
-func (h *Handler) GetData(path string, limit int) ([]map[string]interface{}, error) {
+func (h *Handler) GetData(path string, limit int) (*GetDataResult, error) {
 	// Validate path
 	if err := ValidatePath(path); err != nil {
 		return nil, err
@@ -240,8 +251,13 @@ func (h *Handler) GetData(path string, limit int) ([]map[string]interface{}, err
 		query += fmt.Sprintf(" | limit %d", limit)
 	}
 
+	// Set a high MaxResultRecords to avoid silent truncation at the DQL default of 1000.
+	opts := exec.DQLExecuteOptions{
+		MaxResultRecords: maxLookupRecords,
+	}
+
 	executor := exec.NewDQLExecutor(h.client)
-	result, err := executor.ExecuteQuery(query)
+	result, err := executor.ExecuteQueryWithOptions(query, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get lookup data %q: %w", path, err)
 	}
@@ -251,25 +267,28 @@ func (h *Handler) GetData(path string, limit int) ([]map[string]interface{}, err
 		records = result.Result.Records
 	}
 
-	return records, nil
+	return &GetDataResult{
+		Records:       records,
+		Notifications: result.GetNotifications(),
+	}, nil
 }
 
 // GetWithData retrieves a lookup table with its data
-func (h *Handler) GetWithData(path string, limit int) (*LookupData, error) {
+func (h *Handler) GetWithData(path string, limit int) (*LookupData, []exec.QueryNotification, error) {
 	lookup, err := h.Get(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	data, err := h.GetData(path, limit)
+	dataResult, err := h.GetData(path, limit)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	return &LookupData{
 		Lookup: *lookup,
-		Data:   data,
-	}, nil
+		Data:   dataResult.Records,
+	}, dataResult.Notifications, nil
 }
 
 // Create creates a new lookup table
@@ -283,9 +302,10 @@ func (h *Handler) Create(req CreateRequest) (*UploadResponse, error) {
 	var dataContent []byte
 	var err error
 
-	if len(req.DataContent) > 0 {
+	switch {
+	case len(req.DataContent) > 0:
 		dataContent = req.DataContent
-	} else if req.DataSource != "" {
+	case req.DataSource != "":
 		if req.DataSource == "-" {
 			// Read from stdin
 			dataContent, err = io.ReadAll(os.Stdin)
@@ -296,7 +316,7 @@ func (h *Handler) Create(req CreateRequest) (*UploadResponse, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read data: %w", err)
 		}
-	} else {
+	default:
 		return nil, fmt.Errorf("no data source specified")
 	}
 
@@ -542,15 +562,16 @@ func formatTimestamp(ts string) string {
 	// Return relative time (e.g., "2h ago", "1d ago")
 	duration := time.Since(t)
 
-	if duration < time.Minute {
+	switch {
+	case duration < time.Minute:
 		return "just now"
-	} else if duration < time.Hour {
+	case duration < time.Hour:
 		minutes := int(duration.Minutes())
 		return fmt.Sprintf("%dm ago", minutes)
-	} else if duration < 24*time.Hour {
+	case duration < 24*time.Hour:
 		hours := int(duration.Hours())
 		return fmt.Sprintf("%dh ago", hours)
-	} else if duration < 30*24*time.Hour {
+	case duration < 30*24*time.Hour:
 		days := int(duration.Hours() / 24)
 		return fmt.Sprintf("%dd ago", days)
 	}

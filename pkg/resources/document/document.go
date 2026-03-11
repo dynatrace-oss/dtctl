@@ -4,11 +4,34 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
+
+// parseFlexibleInt parses a JSON value that may be either a number or a
+// quoted-string number (e.g. 1 or "1"). Some API versions return version
+// fields as strings instead of integers.
+func parseFlexibleInt(raw json.RawMessage) (int, error) {
+	if len(raw) == 0 {
+		return 0, nil
+	}
+
+	// Try as int first (most common case)
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n, nil
+	}
+
+	// Fall back to quoted string
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return 0, fmt.Errorf("version field is neither a number nor a string: %s", string(raw))
+	}
+	return strconv.Atoi(s)
+}
 
 // Handler handles document resources (dashboards, notebooks, etc.)
 type Handler struct {
@@ -45,6 +68,28 @@ type DocumentMetadata struct {
 	IsPrivate        bool             `json:"isPrivate"`
 	ModificationInfo ModificationInfo `json:"modificationInfo"`
 	Access           []string         `json:"access,omitempty"`
+}
+
+// UnmarshalJSON custom unmarshaler for DocumentMetadata to handle version as string or int.
+func (m *DocumentMetadata) UnmarshalJSON(data []byte) error {
+	type Alias DocumentMetadata
+	aux := &struct {
+		Version json.RawMessage `json:"version"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if len(aux.Version) > 0 {
+		v, err := parseFlexibleInt(aux.Version)
+		if err != nil {
+			return fmt.Errorf("invalid version: %w", err)
+		}
+		m.Version = v
+	}
+	return nil
 }
 
 // ModificationInfo contains creation and modification timestamps
@@ -797,11 +842,13 @@ func (d Document) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON custom unmarshaler for Document to handle nested modificationInfo
+// and version as string or int.
 func (d *Document) UnmarshalJSON(data []byte) error {
 	type Alias Document
 	aux := &struct {
 		ModificationInfo *ModificationInfo `json:"modificationInfo"`
 		Content          json.RawMessage   `json:"content"`
+		Version          json.RawMessage   `json:"version"`
 		*Alias
 	}{
 		Alias: (*Alias)(d),
@@ -809,6 +856,14 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
+	}
+
+	if len(aux.Version) > 0 {
+		v, err := parseFlexibleInt(aux.Version)
+		if err != nil {
+			return fmt.Errorf("invalid version: %w", err)
+		}
+		d.Version = v
 	}
 
 	if aux.ModificationInfo != nil {
@@ -850,15 +905,32 @@ type SnapshotModInfo struct {
 }
 
 // UnmarshalJSON custom unmarshaler for Snapshot to flatten modificationInfo
+// and handle version fields as string or int.
 func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	type Alias Snapshot
 	aux := &struct {
+		SnapshotVersion json.RawMessage `json:"snapshotVersion"`
+		DocumentVersion json.RawMessage `json:"documentVersion"`
 		*Alias
 	}{
 		Alias: (*Alias)(s),
 	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
+	}
+	if len(aux.SnapshotVersion) > 0 {
+		v, err := parseFlexibleInt(aux.SnapshotVersion)
+		if err != nil {
+			return fmt.Errorf("invalid snapshotVersion: %w", err)
+		}
+		s.SnapshotVersion = v
+	}
+	if len(aux.DocumentVersion) > 0 {
+		v, err := parseFlexibleInt(aux.DocumentVersion)
+		if err != nil {
+			return fmt.Errorf("invalid documentVersion: %w", err)
+		}
+		s.DocumentVersion = v
 	}
 	// Flatten modificationInfo fields for table display
 	s.CreatedBy = s.ModificationInfo.CreatedBy

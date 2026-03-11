@@ -34,8 +34,8 @@ func NewChartPrinter(writer io.Writer) *ChartPrinter {
 	width, height := GetTerminalSize()
 	// Leave margin for y-axis labels and headers
 	// Headers: live mode (2 lines) + timeframe (2 lines) + legend (~3 lines) = 7 lines
-	width = width - 15
-	height = height - 12
+	width -= 15
+	height -= 12
 	if width < 40 {
 		width = 40
 	}
@@ -459,9 +459,9 @@ func (p *ChartPrinter) renderChart(ts *TimeseriesData) error {
 	// Print styled header with timeframe (use \r\n for raw terminal mode)
 	timeFormat := "2006-01-02 15:04"
 	fmt.Fprintf(p.writer, "%s%s%s %s─%s %s%s%s\r\n\r\n",
-		BrightCyan, ts.Start.UTC().Format(timeFormat), Reset,
-		Dim, Reset,
-		BrightCyan, ts.End.UTC().Format(timeFormat), Reset)
+		ColorCode(BrightCyan), ts.Start.UTC().Format(timeFormat), ColorCode(Reset),
+		ColorCode(Dim), ColorCode(Reset),
+		ColorCode(BrightCyan), ts.End.UTC().Format(timeFormat), ColorCode(Reset))
 
 	var graph string
 	if len(ts.Series) == 1 {
@@ -476,19 +476,25 @@ func (p *ChartPrinter) renderChart(ts *TimeseriesData) error {
 		// Multiple series
 		data := make([][]float64, len(ts.Series))
 		legends := make([]string, len(ts.Series))
-		colors := getSeriesColors(len(ts.Series))
 
 		for i, s := range ts.Series {
 			data[i] = s.Values
 			legends[i] = s.Label
 		}
 
-		graph = asciigraph.PlotMany(data,
+		opts := []asciigraph.Option{
 			asciigraph.Height(p.height),
 			asciigraph.Width(p.width),
-			asciigraph.SeriesColors(colors...),
 			asciigraph.SeriesLegends(legends...),
-		)
+		}
+
+		// Only apply series colors if color is enabled
+		if ColorEnabled() {
+			colors := getSeriesColors(len(ts.Series))
+			opts = append(opts, asciigraph.SeriesColors(colors...))
+		}
+
+		graph = asciigraph.PlotMany(data, opts...)
 	}
 
 	// Replace \n with \r\n for raw terminal mode compatibility

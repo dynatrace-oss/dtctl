@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/adrg/xdg"
+
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
@@ -15,12 +17,9 @@ func TestConfigSetCmd(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config")
 
 	// Set the config path
-	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
-		t.Fatalf("failed to set XDG_CONFIG_HOME: %v", err)
-	}
-	defer func() {
-		_ = os.Unsetenv("XDG_CONFIG_HOME")
-	}()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	xdg.Reload()
+	defer xdg.Reload()
 
 	tests := []struct {
 		name      string
@@ -96,12 +95,9 @@ func TestConfigDeleteContextCmd(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Set the config path
-	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
-		t.Fatalf("failed to set XDG_CONFIG_HOME: %v", err)
-	}
-	defer func() {
-		_ = os.Unsetenv("XDG_CONFIG_HOME")
-	}()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	xdg.Reload()
+	defer xdg.Reload()
 
 	tests := []struct {
 		name         string

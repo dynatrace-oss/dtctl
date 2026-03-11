@@ -7,11 +7,12 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
-	"github.com/spf13/cobra"
 )
 
 // editDashboardCmd edits a dashboard
@@ -354,7 +355,176 @@ Examples:
 	},
 }
 
+// editDocumentCmd edits a document of any type
+var editDocumentCmd = &cobra.Command{
+	Use:     "document <document-id-or-name>",
+	Aliases: []string{"documents", "doc"},
+	Short:   "Edit a document",
+	Long: `Edit a document of any type by opening it in your default editor.
+
+Works for any document type (dashboard, notebook, launchpad, custom app documents, etc.).
+
+The document will be fetched, opened in your editor (defined by EDITOR env var,
+defaults to vim), and updated when you save and close the editor.
+
+By default, resources are edited in YAML format for better readability.
+Use --format=json to edit in JSON format.
+
+Examples:
+  # Edit a document in YAML (default)
+  dtctl edit document <document-id>
+  dtctl edit document "My Launchpad"
+
+  # Edit a document in JSON
+  dtctl edit document <document-id> --format=json
+`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		identifier := args[0]
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		// Resolve name to ID (searches across all document types)
+		res := resolver.NewResolver(c)
+		documentID, err := res.ResolveID(resolver.TypeDocument, identifier)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewHandler(c)
+
+		// Get the document with content
+		doc, err := handler.Get(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Get metadata separately for ownership check
+		metadata, err := handler.GetMetadata(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Determine ownership for safety check
+		currentUserID, _ := c.CurrentUserID() // Ignore error - will be empty string
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+
+		// Safety check with actual ownership
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+			return err
+		}
+
+		// Get format preference
+		editFormat, _ := cmd.Flags().GetString("format")
+		var editData []byte
+		var fileExt string
+
+		if editFormat == "yaml" {
+			// Convert JSON to YAML for editing
+			editData, err = format.JSONToYAML(doc.Content)
+			if err != nil {
+				return fmt.Errorf("failed to convert to YAML: %w", err)
+			}
+			fileExt = "*.yaml"
+		} else {
+			// Pretty print JSON for editing
+			editData, err = format.PrettyJSON(doc.Content)
+			if err != nil {
+				return fmt.Errorf("failed to format JSON: %w", err)
+			}
+			fileExt = "*.json"
+		}
+
+		// Create a temp file with appropriate extension
+		tmpfile, err := os.CreateTemp("", "dtctl-document-"+fileExt)
+		if err != nil {
+			return fmt.Errorf("failed to create temp file: %w", err)
+		}
+		defer os.Remove(tmpfile.Name())
+
+		if _, err := tmpfile.Write(editData); err != nil {
+			return fmt.Errorf("failed to write temp file: %w", err)
+		}
+		if err := tmpfile.Close(); err != nil {
+			return fmt.Errorf("failed to close temp file: %w", err)
+		}
+
+		// Get the editor
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = cfg.Preferences.Editor
+		}
+		if editor == "" {
+			editor = "vim"
+		}
+
+		// Open the editor
+		editorCmd := exec.Command(editor, tmpfile.Name())
+		editorCmd.Stdin = os.Stdin
+		editorCmd.Stdout = os.Stdout
+		editorCmd.Stderr = os.Stderr
+
+		if err := editorCmd.Run(); err != nil {
+			return fmt.Errorf("editor failed: %w", err)
+		}
+
+		// Read the edited file
+		editedData, err := os.ReadFile(tmpfile.Name())
+		if err != nil {
+			return fmt.Errorf("failed to read edited file: %w", err)
+		}
+
+		// Convert edited data to JSON (auto-detect format)
+		jsonData, err := format.ValidateAndConvert(editedData)
+		if err != nil {
+			return fmt.Errorf("invalid format: %w", err)
+		}
+
+		// Check if anything changed
+		var originalCompact, editedCompact bytes.Buffer
+		if err := json.Compact(&originalCompact, doc.Content); err != nil {
+			return fmt.Errorf("failed to compact original JSON: %w", err)
+		}
+		if err := json.Compact(&editedCompact, jsonData); err != nil {
+			return fmt.Errorf("failed to compact edited JSON: %w", err)
+		}
+
+		if bytes.Equal(originalCompact.Bytes(), editedCompact.Bytes()) {
+			fmt.Println("Edit cancelled, no changes made.")
+			return nil
+		}
+
+		// Re-fetch metadata for version (optimistic locking)
+		metadata, err = handler.GetMetadata(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Update the document
+		result, err := handler.Update(documentID, metadata.Version, jsonData, "application/json")
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Document %q updated successfully\n", result.Name)
+		return nil
+	},
+}
+
 func init() {
 	editDashboardCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
 	editNotebookCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
+	editDocumentCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
 }

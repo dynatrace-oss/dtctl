@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
 )
 
 // getUsersCmd retrieves IAM users

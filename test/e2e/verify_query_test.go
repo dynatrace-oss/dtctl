@@ -10,9 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/test/integration"
-	"gopkg.in/yaml.v3"
 )
 
 func TestQueryVerify_ValidQuery(t *testing.T) {

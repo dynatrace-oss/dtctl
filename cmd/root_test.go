@@ -1,13 +1,20 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/config"
+	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 )
 
 // TestGlobalFlags_Config tests the --config flag
@@ -560,5 +567,332 @@ func TestEnvironmentVariableBinding(t *testing.T) {
 				t.Errorf("viper.GetString(%s) = %v, want %v", tt.flagKey, got, tt.envVal)
 			}
 		})
+	}
+}
+
+// --- errorToDetail tests ---
+
+func TestErrorToDetail_DiagnosticError(t *testing.T) {
+	err := &diagnostic.Error{
+		Operation:  "get workflows",
+		StatusCode: 401,
+		Message:    "authentication failed",
+		RequestID:  "req-abc-123",
+		Suggestions: []string{
+			"Run 'dtctl auth login' to refresh your token",
+		},
+	}
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "auth_required" {
+		t.Errorf("Code = %q, want %q", detail.Code, "auth_required")
+	}
+	if detail.Message != "authentication failed" {
+		t.Errorf("Message = %q, want %q", detail.Message, "authentication failed")
+	}
+	if detail.Operation != "get workflows" {
+		t.Errorf("Operation = %q, want %q", detail.Operation, "get workflows")
+	}
+	if detail.StatusCode != 401 {
+		t.Errorf("StatusCode = %d, want %d", detail.StatusCode, 401)
+	}
+	if detail.RequestID != "req-abc-123" {
+		t.Errorf("RequestID = %q, want %q", detail.RequestID, "req-abc-123")
+	}
+	if len(detail.Suggestions) != 1 {
+		t.Fatalf("Suggestions count = %d, want 1", len(detail.Suggestions))
+	}
+}
+
+func TestErrorToDetail_DiagnosticErrorStatusCodes(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		wantCode   string
+	}{
+		{"400 bad request", 400, "bad_request"},
+		{"401 unauthorized", 401, "auth_required"},
+		{"403 forbidden", 403, "permission_denied"},
+		{"404 not found", 404, "not_found"},
+		{"409 conflict", 409, "conflict"},
+		{"429 rate limited", 429, "rate_limited"},
+		{"500 server error", 500, "server_error"},
+		{"502 bad gateway", 502, "server_error"},
+		{"0 no status code", 0, "error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := &diagnostic.Error{
+				Operation:  "test",
+				StatusCode: tt.statusCode,
+				Message:    "test error",
+			}
+			detail := errorToDetail(err)
+			if detail.Code != tt.wantCode {
+				t.Errorf("Code = %q, want %q", detail.Code, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestErrorToDetail_APIError(t *testing.T) {
+	err := &client.APIError{
+		StatusCode: 404,
+		Message:    "not found",
+		Details:    "workflow does not exist",
+	}
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "not_found" {
+		t.Errorf("Code = %q, want %q", detail.Code, "not_found")
+	}
+	if detail.Message != "not found - workflow does not exist" {
+		t.Errorf("Message = %q, want %q", detail.Message, "not found - workflow does not exist")
+	}
+	if detail.StatusCode != 404 {
+		t.Errorf("StatusCode = %d, want %d", detail.StatusCode, 404)
+	}
+}
+
+func TestErrorToDetail_APIErrorWithoutDetails(t *testing.T) {
+	err := &client.APIError{
+		StatusCode: 500,
+		Message:    "internal server error",
+	}
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "server_error" {
+		t.Errorf("Code = %q, want %q", detail.Code, "server_error")
+	}
+	if detail.Message != "internal server error" {
+		t.Errorf("Message = %q, want %q", detail.Message, "internal server error")
+	}
+}
+
+func TestErrorToDetail_SafetyError(t *testing.T) {
+	err := &safety.SafetyError{
+		ContextName: "production",
+		SafetyLevel: config.SafetyLevelReadOnly,
+		Operation:   safety.OperationDelete,
+		Reason:      "Context 'production' (readonly) does not allow delete operations",
+		Suggestions: []string{
+			"Switch to a context with write permissions",
+		},
+	}
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "safety_blocked" {
+		t.Errorf("Code = %q, want %q", detail.Code, "safety_blocked")
+	}
+	if detail.Message != "Context 'production' (readonly) does not allow delete operations" {
+		t.Errorf("Message = %q, want expected reason", detail.Message)
+	}
+	if len(detail.Suggestions) != 1 {
+		t.Fatalf("Suggestions count = %d, want 1", len(detail.Suggestions))
+	}
+}
+
+func TestErrorToDetail_CommandError(t *testing.T) {
+	err := &suggest.CommandError{
+		Command: "geet",
+		Message: `unknown command "geet"`,
+		Suggestion: &suggest.Suggestion{
+			Value:    "get",
+			Distance: 1,
+		},
+	}
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "unknown_command" {
+		t.Errorf("Code = %q, want %q", detail.Code, "unknown_command")
+	}
+	if detail.Message != `unknown command "geet"` {
+		t.Errorf("Message = %q, want expected message", detail.Message)
+	}
+	if len(detail.Suggestions) != 1 {
+		t.Fatalf("Suggestions count = %d, want 1", len(detail.Suggestions))
+	}
+	if detail.Suggestions[0] != `did you mean "get"?` {
+		t.Errorf("Suggestion = %q, want %q", detail.Suggestions[0], `did you mean "get"?`)
+	}
+}
+
+func TestErrorToDetail_CommandErrorNoSuggestion(t *testing.T) {
+	err := &suggest.CommandError{
+		Command: "xyzzy",
+		Message: `unknown command "xyzzy"`,
+	}
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "unknown_command" {
+		t.Errorf("Code = %q, want %q", detail.Code, "unknown_command")
+	}
+	if detail.Suggestions != nil {
+		t.Errorf("Suggestions should be nil, got %v", detail.Suggestions)
+	}
+}
+
+func TestErrorToDetail_FlagError(t *testing.T) {
+	err := &suggest.FlagError{
+		Flag:    "outpt",
+		Message: "unknown flag --outpt",
+		Suggestion: &suggest.Suggestion{
+			Value:    "output",
+			Distance: 1,
+		},
+	}
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "unknown_command" {
+		t.Errorf("Code = %q, want %q", detail.Code, "unknown_command")
+	}
+	if len(detail.Suggestions) != 1 {
+		t.Fatalf("Suggestions count = %d, want 1", len(detail.Suggestions))
+	}
+	if detail.Suggestions[0] != "did you mean --output?" {
+		t.Errorf("Suggestion = %q, want %q", detail.Suggestions[0], "did you mean --output?")
+	}
+}
+
+func TestErrorToDetail_GenericError(t *testing.T) {
+	err := fmt.Errorf("something unexpected happened")
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "error" {
+		t.Errorf("Code = %q, want %q", detail.Code, "error")
+	}
+	if detail.Message != "something unexpected happened" {
+		t.Errorf("Message = %q, want %q", detail.Message, "something unexpected happened")
+	}
+}
+
+func TestErrorToDetail_WrappedDiagnosticError(t *testing.T) {
+	inner := &diagnostic.Error{
+		Operation:  "apply dashboard",
+		StatusCode: 403,
+		Message:    "insufficient permissions",
+	}
+	wrapped := fmt.Errorf("command failed: %w", inner)
+
+	detail := errorToDetail(wrapped)
+
+	if detail.Code != "permission_denied" {
+		t.Errorf("Code = %q, want %q (should unwrap diagnostic.Error)", detail.Code, "permission_denied")
+	}
+	if detail.Operation != "apply dashboard" {
+		t.Errorf("Operation = %q, want %q", detail.Operation, "apply dashboard")
+	}
+}
+
+func TestErrorToDetail_DiagnosticPrecedesAPIError(t *testing.T) {
+	// diagnostic.Error wraps a client.APIError — diagnostic should take precedence
+	apiErr := &client.APIError{StatusCode: 404, Message: "not found"}
+	diagErr := diagnostic.Wrap(apiErr, "get workflows")
+
+	detail := errorToDetail(diagErr)
+
+	// Should use diagnostic.Error classification, not raw APIError
+	if detail.Code != "not_found" {
+		t.Errorf("Code = %q, want %q", detail.Code, "not_found")
+	}
+	if detail.Operation != "get workflows" {
+		t.Errorf("Operation = %q, want %q", detail.Operation, "get workflows")
+	}
+}
+
+// --- classifyGenericError tests ---
+
+func TestClassifyGenericError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode string
+	}{
+		{"context error", errors.New("no active context configured"), "context_error"},
+		{"no context", errors.New("no context set"), "context_error"},
+		{"config error", errors.New("failed to load config"), "config_error"},
+		{"configuration error", errors.New("invalid configuration"), "config_error"},
+		{"timeout error", errors.New("operation timed out"), "timeout"},
+		{"timeout variant", errors.New("request timeout after 30s"), "timeout"},
+		{"validation error", errors.New("validation failed for field name"), "validation_error"},
+		{"invalid input", errors.New("invalid resource definition"), "validation_error"},
+		{"generic error", errors.New("something went wrong"), "error"},
+		{"empty error", errors.New(""), "error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifyGenericError(tt.err)
+			if got != tt.wantCode {
+				t.Errorf("classifyGenericError(%q) = %q, want %q", tt.err, got, tt.wantCode)
+			}
+		})
+	}
+}
+
+// --- exitCodeForError tests ---
+
+func TestExitCodeForError_DiagnosticError(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		wantCode   int
+	}{
+		{"401 auth error", 401, client.ExitAuthError},
+		{"403 permission error", 403, client.ExitPermissionError},
+		{"404 not found", 404, client.ExitNotFoundError},
+		{"500 server error", 500, client.ExitError},
+		{"0 generic error", 0, client.ExitError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := &diagnostic.Error{StatusCode: tt.statusCode}
+			got := exitCodeForError(err)
+			if got != tt.wantCode {
+				t.Errorf("exitCodeForError() = %d, want %d", got, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestExitCodeForError_APIError(t *testing.T) {
+	err := &client.APIError{StatusCode: 404, Message: "not found"}
+	got := exitCodeForError(err)
+	if got != client.ExitNotFoundError {
+		t.Errorf("exitCodeForError() = %d, want %d", got, client.ExitNotFoundError)
+	}
+}
+
+func TestExitCodeForError_CommandError(t *testing.T) {
+	err := &suggest.CommandError{Command: "geet", Message: "unknown command"}
+	got := exitCodeForError(err)
+	if got != client.ExitUsageError {
+		t.Errorf("exitCodeForError() = %d, want %d", got, client.ExitUsageError)
+	}
+}
+
+func TestExitCodeForError_FlagError(t *testing.T) {
+	err := &suggest.FlagError{Flag: "outpt", Message: "unknown flag"}
+	got := exitCodeForError(err)
+	if got != client.ExitUsageError {
+		t.Errorf("exitCodeForError() = %d, want %d", got, client.ExitUsageError)
+	}
+}
+
+func TestExitCodeForError_GenericError(t *testing.T) {
+	err := errors.New("generic error")
+	got := exitCodeForError(err)
+	if got != client.ExitError {
+		t.Errorf("exitCodeForError() = %d, want %d", got, client.ExitError)
 	}
 }

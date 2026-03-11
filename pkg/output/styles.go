@@ -2,8 +2,87 @@ package output
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"sync"
+
+	"golang.org/x/term"
 )
+
+// colorEnabled caches the result of the color detection logic.
+// It is computed once on first access via colorEnabledOnce.
+var (
+	colorEnabledOnce   sync.Once
+	colorEnabledResult bool
+	plainModeEnabled   bool
+)
+
+// ColorEnabled returns whether color output should be used.
+// Respects NO_COLOR env var (https://no-color.org/), FORCE_COLOR env var,
+// and auto-detects non-TTY output.
+func ColorEnabled() bool {
+	colorEnabledOnce.Do(func() {
+		colorEnabledResult = detectColor()
+	})
+	return colorEnabledResult
+}
+
+// SetPlainMode disables color output when --plain is used.
+// Must be called before the first call to ColorEnabled() (e.g., during
+// command initialization) so the cached result reflects the flag.
+func SetPlainMode(plain bool) {
+	plainModeEnabled = plain
+}
+
+// detectColor performs the actual color detection logic.
+// Color enabled = NOT (NO_COLOR is set) AND NOT (--plain flag) AND (stdout is a TTY OR FORCE_COLOR=1)
+func detectColor() bool {
+	// --plain flag disables color (and interactive prompts)
+	if plainModeEnabled {
+		return false
+	}
+
+	// NO_COLOR: any set value (including empty) disables color.
+	// This is intentionally stricter than no-color.org (which excludes empty strings).
+	// See https://no-color.org/
+	if _, exists := os.LookupEnv("NO_COLOR"); exists {
+		return false
+	}
+
+	// FORCE_COLOR=1 overrides TTY detection (useful for CI systems)
+	if os.Getenv("FORCE_COLOR") == "1" {
+		return true
+	}
+
+	// Auto-detect: only use color when stdout is a TTY
+	return term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+// ResetColorCache resets the cached color detection result.
+// NOT safe for concurrent use — intended for testing only.
+func ResetColorCache() {
+	colorEnabledOnce = sync.Once{}
+	colorEnabledResult = false
+	plainModeEnabled = false
+}
+
+// Colorize wraps text in ANSI color codes if color is enabled.
+// If color is disabled, returns the text unmodified.
+func Colorize(color, text string) string {
+	if !ColorEnabled() {
+		return text
+	}
+	return color + text + Reset
+}
+
+// ColorCode returns the color code if color is enabled, empty string otherwise.
+// Useful for cases where Colorize() doesn't fit (e.g., multi-part color sequences).
+func ColorCode(code string) string {
+	if !ColorEnabled() {
+		return ""
+	}
+	return code
+}
 
 // ANSI color codes inspired by btop's color scheme
 const (
@@ -202,6 +281,10 @@ func (bg *BrailleGraph) Render() string {
 
 // RenderColored renders with color gradient based on row position
 func (bg *BrailleGraph) RenderColored() string {
+	if !ColorEnabled() {
+		return bg.Render()
+	}
+
 	var sb strings.Builder
 
 	for row := 0; row < bg.height; row++ {
@@ -316,16 +399,16 @@ func RenderGradientBarWithScheme(value, maxValue float64, width int, schemeIndex
 
 	// Filled portion - white blocks
 	if fullBlocks > 0 {
-		sb.WriteString(BrightWhite)
+		sb.WriteString(ColorCode(BrightWhite))
 		sb.WriteString(strings.Repeat("█", fullBlocks))
 	}
 
 	// Empty portion - dim
 	if emptyBlocks > 0 {
-		sb.WriteString(Dim)
+		sb.WriteString(ColorCode(Dim))
 		sb.WriteString(strings.Repeat("░", emptyBlocks))
 	}
-	sb.WriteString(Reset)
+	sb.WriteString(ColorCode(Reset))
 
 	return sb.String()
 }
@@ -338,7 +421,7 @@ func RenderProgressBar(value, maxValue float64, width int, showPercent bool) str
 		if pct > 100 {
 			pct = 100
 		}
-		return fmt.Sprintf("%s %s%.1f%%%s", bar, Bold, pct, Reset)
+		return fmt.Sprintf("%s %s%.1f%%%s", bar, ColorCode(Bold), pct, ColorCode(Reset))
 	}
 	return bar
 }
@@ -353,31 +436,31 @@ func DrawBox(title string, content string, width int) string {
 	}
 
 	// Top border with title
-	sb.WriteString(BrightBlue)
+	sb.WriteString(ColorCode(BrightBlue))
 	sb.WriteString(BoxTopLeft)
 	if title != "" {
 		sb.WriteString(BoxHorizontal)
-		sb.WriteString(Reset)
-		sb.WriteString(Bold)
-		sb.WriteString(BrightCyan)
+		sb.WriteString(ColorCode(Reset))
+		sb.WriteString(ColorCode(Bold))
+		sb.WriteString(ColorCode(BrightCyan))
 		sb.WriteString(title)
-		sb.WriteString(Reset)
-		sb.WriteString(BrightBlue)
+		sb.WriteString(ColorCode(Reset))
+		sb.WriteString(ColorCode(BrightBlue))
 		remaining := width - len(title) - 3
 		sb.WriteString(strings.Repeat(BoxHorizontal, remaining))
 	} else {
 		sb.WriteString(strings.Repeat(BoxHorizontal, width-2))
 	}
 	sb.WriteString(BoxTopRight)
-	sb.WriteString(Reset)
+	sb.WriteString(ColorCode(Reset))
 	sb.WriteString("\n")
 
 	// Content lines
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
-		sb.WriteString(BrightBlue)
+		sb.WriteString(ColorCode(BrightBlue))
 		sb.WriteString(BoxVertical)
-		sb.WriteString(Reset)
+		sb.WriteString(ColorCode(Reset))
 
 		// Pad line to width
 		lineLen := visibleLength(line)
@@ -388,18 +471,18 @@ func DrawBox(title string, content string, width int) string {
 		sb.WriteString(line)
 		sb.WriteString(strings.Repeat(" ", padding))
 
-		sb.WriteString(BrightBlue)
+		sb.WriteString(ColorCode(BrightBlue))
 		sb.WriteString(BoxVertical)
-		sb.WriteString(Reset)
+		sb.WriteString(ColorCode(Reset))
 		sb.WriteString("\n")
 	}
 
 	// Bottom border
-	sb.WriteString(BrightBlue)
+	sb.WriteString(ColorCode(BrightBlue))
 	sb.WriteString(BoxBottomLeft)
 	sb.WriteString(strings.Repeat(BoxHorizontal, width-2))
 	sb.WriteString(BoxBottomRight)
-	sb.WriteString(Reset)
+	sb.WriteString(ColorCode(Reset))
 
 	return sb.String()
 }
@@ -428,28 +511,28 @@ func visibleLength(s string) int {
 func DrawHeader(title string, width int) string {
 	var sb strings.Builder
 
-	sb.WriteString(BrightBlue)
+	sb.WriteString(ColorCode(BrightBlue))
 	sb.WriteString(BoxVerticalRight)
-	sb.WriteString(Reset)
-	sb.WriteString(Bold)
-	sb.WriteString(BrightCyan)
+	sb.WriteString(ColorCode(Reset))
+	sb.WriteString(ColorCode(Bold))
+	sb.WriteString(ColorCode(BrightCyan))
 	sb.WriteString(title)
-	sb.WriteString(Reset)
-	sb.WriteString(BrightBlue)
+	sb.WriteString(ColorCode(Reset))
+	sb.WriteString(ColorCode(BrightBlue))
 
 	remaining := width - len(title) - 2
 	if remaining > 0 {
 		sb.WriteString(strings.Repeat(BoxHorizontal, remaining))
 	}
 	sb.WriteString(BoxVerticalLeft)
-	sb.WriteString(Reset)
+	sb.WriteString(ColorCode(Reset))
 
 	return sb.String()
 }
 
 // DrawSeparator renders a horizontal separator
 func DrawSeparator(width int) string {
-	return BrightBlue + BoxVerticalRight + strings.Repeat(BoxHorizontal, width-2) + BoxVerticalLeft + Reset
+	return ColorCode(BrightBlue) + BoxVerticalRight + strings.Repeat(BoxHorizontal, width-2) + BoxVerticalLeft + ColorCode(Reset)
 }
 
 // Sparkline characters with different styles
@@ -489,7 +572,7 @@ func RenderColoredSparkline(values []float64, width int) string {
 	var sb strings.Builder
 	chars := SparkCharsBlock
 
-	sb.WriteString(BrightWhite)
+	sb.WriteString(ColorCode(BrightWhite))
 	for _, v := range values {
 		normalized := (v - min) / valRange
 		idx := int(normalized * float64(len(chars)-1))
@@ -501,7 +584,7 @@ func RenderColoredSparkline(values []float64, width int) string {
 		}
 		sb.WriteRune(chars[idx])
 	}
-	sb.WriteString(Reset)
+	sb.WriteString(ColorCode(Reset))
 
 	return sb.String()
 }
@@ -509,7 +592,7 @@ func RenderColoredSparkline(values []float64, width int) string {
 // StatsDisplay formats statistics in btop style
 func StatsDisplay(label string, value float64, unit string, labelWidth int) string {
 	return fmt.Sprintf("%s%-*s%s %s%.2f%s %s%s%s",
-		Dim, labelWidth, label+":", Reset,
-		Bold, value, Reset,
-		Dim, unit, Reset)
+		ColorCode(Dim), labelWidth, label+":", ColorCode(Reset),
+		ColorCode(Bold), value, ColorCode(Reset),
+		ColorCode(Dim), unit, ColorCode(Reset))
 }

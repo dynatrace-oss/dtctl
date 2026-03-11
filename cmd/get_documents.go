@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
-	"github.com/spf13/cobra"
 )
 
 // getDashboardsCmd retrieves dashboards
@@ -513,11 +514,220 @@ Examples:
 	},
 }
 
+// DocumentTypeCount holds a count per document type (for --types flag)
+type DocumentTypeCount struct {
+	Type  string `table:"TYPE" json:"type" yaml:"type"`
+	Count int    `table:"COUNT" json:"count" yaml:"count"`
+}
+
+// getDocumentsCmd retrieves generic documents (any type)
+var getDocumentsCmd = &cobra.Command{
+	Use:     "documents [id]",
+	Aliases: []string{"document", "doc"},
+	Short:   "Get documents (any type)",
+	Long: `Get one or more documents of any type.
+
+Unlike 'dtctl get dashboards' or 'dtctl get notebooks' which filter by a
+specific type, this command lists ALL document types by default.
+
+The TYPE column is always shown to disambiguate across types.
+
+Examples:
+  # List all documents (all types)
+  dtctl get documents
+  dtctl get doc
+
+  # Get a specific document by ID
+  dtctl get document <document-id>
+
+  # Filter by type
+  dtctl get documents --type dashboard
+  dtctl get documents --type launchpad
+  dtctl get documents --type my-custom-app:config
+
+  # Filter by name
+  dtctl get documents --name "production"
+
+  # List only my documents
+  dtctl get documents --mine
+
+  # Discover what document types exist in the environment
+  dtctl get documents --types
+
+  # Output as JSON
+  dtctl get documents -o json
+`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewHandler(c)
+		printer := NewPrinter()
+
+		// Get specific document if ID provided
+		if len(args) > 0 {
+			doc, err := handler.Get(args[0])
+			if err != nil {
+				return err
+			}
+			return printer.Print(doc)
+		}
+
+		// Check for --types flag (type discovery)
+		typesMode, _ := cmd.Flags().GetBool("types")
+		typeFilter, _ := cmd.Flags().GetString("type")
+		nameFilter, _ := cmd.Flags().GetString("name")
+		mineOnly, _ := cmd.Flags().GetBool("mine")
+
+		filters := document.DocumentFilters{
+			Type:      typeFilter,
+			Name:      nameFilter,
+			ChunkSize: GetChunkSize(),
+		}
+
+		// If --mine flag is set, get current user ID and filter by owner
+		if mineOnly {
+			userID, err := c.CurrentUserID()
+			if err != nil {
+				return fmt.Errorf("failed to get current user ID for --mine filter: %w", err)
+			}
+			filters.Owner = userID
+		}
+
+		if typesMode {
+			// Fetch all documents (no type filter) and count by type
+			allFilters := document.DocumentFilters{
+				Owner:     filters.Owner,
+				ChunkSize: GetChunkSize(),
+			}
+			list, err := handler.List(allFilters)
+			if err != nil {
+				return err
+			}
+			typeCounts := map[string]int{}
+			for _, doc := range list.Documents {
+				typeCounts[doc.Type]++
+			}
+			var counts []DocumentTypeCount
+			for t, n := range typeCounts {
+				counts = append(counts, DocumentTypeCount{Type: t, Count: n})
+			}
+			return printer.PrintList(counts)
+		}
+
+		// Check if watch mode is enabled
+		watchMode, _ := cmd.Flags().GetBool("watch")
+		if watchMode {
+			fetcher := func() (interface{}, error) {
+				list, err := handler.List(filters)
+				if err != nil {
+					return nil, err
+				}
+				return document.ConvertToDocuments(list), nil
+			}
+			return executeWithWatch(cmd, fetcher, printer)
+		}
+
+		list, err := handler.List(filters)
+		if err != nil {
+			return err
+		}
+
+		// Convert metadata list to documents for table display
+		docs := document.ConvertToDocuments(list)
+		return printer.PrintList(docs)
+	},
+}
+
+// deleteDocumentCmd deletes a generic document (any type)
+var deleteDocumentCmd = &cobra.Command{
+	Use:     "document <document-id-or-name>",
+	Aliases: []string{"documents", "doc"},
+	Short:   "Delete a document",
+	Long: `Delete a document by ID or name.
+
+Works for any document type (dashboard, notebook, launchpad, custom app documents, etc.).
+
+Examples:
+  # Delete by ID
+  dtctl delete document a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+  # Delete by name (interactive disambiguation if multiple matches)
+  dtctl delete document "My Launchpad"
+
+  # Delete without confirmation
+  dtctl delete document "My Launchpad" -y
+`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		identifier := args[0]
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+
+		c, err := NewClientFromConfig(cfg)
+		if err != nil {
+			return err
+		}
+
+		// Resolve name to ID (searches across all document types)
+		res := resolver.NewResolver(c)
+		documentID, err := res.ResolveID(resolver.TypeDocument, identifier)
+		if err != nil {
+			return err
+		}
+
+		handler := document.NewHandler(c)
+
+		// Get current version for optimistic locking and details for confirmation
+		metadata, err := handler.GetMetadata(documentID)
+		if err != nil {
+			return err
+		}
+
+		// Safety check with actual ownership
+		checker, err := NewSafetyChecker(cfg)
+		if err != nil {
+			return err
+		}
+		currentUserID, _ := c.CurrentUserID()
+		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
+		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
+			return err
+		}
+
+		// Confirm deletion unless --force or --plain
+		if !forceDelete && !plainMode {
+			if !prompt.ConfirmDeletion(metadata.Type, metadata.Name, documentID) {
+				fmt.Println("Deletion cancelled")
+				return nil
+			}
+		}
+
+		if err := handler.Delete(documentID, metadata.Version); err != nil {
+			return err
+		}
+
+		fmt.Printf("Document %q (%s) deleted (moved to trash)\n", metadata.Name, metadata.Type)
+		return nil
+	},
+}
+
 func init() {
 	// Watch flags
 	addWatchFlags(getDashboardsCmd)
 	addWatchFlags(getNotebooksCmd)
 	addWatchFlags(getTrashCmd)
+	addWatchFlags(getDocumentsCmd)
 
 	// Dashboard flags
 	getDashboardsCmd.Flags().String("name", "", "Filter by dashboard name (partial match, case-insensitive)")
@@ -526,6 +736,12 @@ func init() {
 	// Notebook flags
 	getNotebooksCmd.Flags().String("name", "", "Filter by notebook name (partial match, case-insensitive)")
 	getNotebooksCmd.Flags().Bool("mine", false, "Show only notebooks owned by current user")
+
+	// Generic document flags
+	getDocumentsCmd.Flags().String("type", "", "Filter by document type (e.g. dashboard, notebook, launchpad)")
+	getDocumentsCmd.Flags().String("name", "", "Filter by document name (partial match, case-insensitive)")
+	getDocumentsCmd.Flags().Bool("mine", false, "Show only documents owned by current user")
+	getDocumentsCmd.Flags().Bool("types", false, "List distinct document types and counts")
 
 	// Trash flags
 	getTrashCmd.Flags().String("type", "", "Filter by type: dashboard, notebook")
@@ -536,6 +752,7 @@ func init() {
 	// Delete confirmation flags
 	deleteDashboardCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteNotebookCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+	deleteDocumentCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteTrashCmd.Flags().Bool("permanent", false, "Permanently delete (required)")
 	deleteTrashCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 }
