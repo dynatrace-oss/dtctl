@@ -64,7 +64,7 @@ Examples:
 
 		if dryRun {
 			changes := describeBreakpointEdits(conditionChanged, condition, enabledChanged, enabled)
-			fmt.Printf("Dry run: would edit breakpoint %s (%s)\n", identifier, changes)
+			printOutf("Dry run: would edit breakpoint %s (%s)\n", identifier, changes)
 			return nil
 		}
 
@@ -173,7 +173,7 @@ Examples:
 			}
 		}
 
-		fmt.Printf("Edited breakpoint %s (%s)\n", targetDescription, describeBreakpointEdits(conditionChanged, condition, enabledChanged, enabled))
+		printOutf("Edited breakpoint %s (%s)\n", targetDescription, describeBreakpointEdits(conditionChanged, condition, enabledChanged, enabled))
 		return nil
 	},
 }

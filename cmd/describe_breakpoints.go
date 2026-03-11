@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -181,7 +180,7 @@ func runDescribeBreakpoint(cmd *cobra.Command, identifier string) error {
 
 	for i, result := range results {
 		if i > 0 {
-			fmt.Println()
+			printOutln()
 		}
 		printBreakpointStatusResult(result)
 	}
@@ -460,18 +459,18 @@ func boolValue(value interface{}) bool {
 }
 
 func printBreakpointStatusResult(result breakpointStatusResult) {
-	fmt.Printf("ID:            %s\n", result.ID)
+	printOutf("ID:            %s\n", result.ID)
 	if result.Location != "" {
-		fmt.Printf("Location:      %s\n", result.Location)
+		printOutf("Location:      %s\n", result.Location)
 	}
-	fmt.Printf("Enabled:       %t\n", result.Enabled)
+	printOutf("Enabled:       %t\n", result.Enabled)
 	if result.DisableReason != "" {
-		fmt.Printf("Disable reason:%s%s\n", strings.Repeat(" ", 1), result.DisableReason)
+		printOutf("Disable reason:%s%s\n", strings.Repeat(" ", 1), result.DisableReason)
 	}
-	fmt.Printf("Status:        %s\n", result.Status)
-	fmt.Println()
+	printOutf("Status:        %s\n", result.Status)
+	printOutln()
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(commandStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "Active rooks:\t%d\n", len(result.ActiveRooks))
 	fmt.Fprintf(w, "Pending rooks:\t%d\n", len(result.PendingRooks))
 	fmt.Fprintf(w, "Warnings:\t%d\n", len(result.Warnings))
@@ -494,18 +493,18 @@ func printBreakpointRooksSection(title string, rooks []breakpointRookInfo) {
 	if len(rooks) == 0 {
 		return
 	}
-	fmt.Println()
-	fmt.Printf("%s:\n", title)
+	printOutln()
+	printOutf("%s:\n", title)
 	for _, rook := range rooks {
 		label := strings.TrimSpace(strings.Join([]string{rook.Hostname, rook.Executable}, " / "))
 		if label == "/" || label == "" {
 			label = rook.ID
 		}
 		if rook.ID != "" && rook.ID != label {
-			fmt.Printf("  - %s (%s)\n", label, rook.ID)
+			printOutf("  - %s (%s)\n", label, rook.ID)
 			continue
 		}
-		fmt.Printf("  - %s\n", label)
+		printOutf("  - %s\n", label)
 	}
 }
 
@@ -513,14 +512,14 @@ func printBreakpointTipsSection(title string, tips []breakpointTip) {
 	if len(tips) == 0 {
 		return
 	}
-	fmt.Println()
-	fmt.Printf("%s:\n", title)
+	printOutln()
+	printOutf("%s:\n", title)
 	for _, tip := range tips {
 		if tip.DocsLink != "" {
-			fmt.Printf("  - %s (%s)\n", tip.Description, tip.DocsLink)
+			printOutf("  - %s (%s)\n", tip.Description, tip.DocsLink)
 			continue
 		}
-		fmt.Printf("  - %s\n", tip.Description)
+		printOutf("  - %s\n", tip.Description)
 	}
 }
 
@@ -528,30 +527,30 @@ func printBreakpointIssuesSection(title string, issues []breakpointStatusIssue) 
 	if len(issues) == 0 {
 		return
 	}
-	fmt.Println()
-	fmt.Printf("%s:\n", title)
+	printOutln()
+	printOutf("%s:\n", title)
 	for _, issue := range issues {
-		fmt.Printf("  - %s\n", issue.Title)
+		printOutf("  - %s\n", issue.Title)
 		if issue.Description != "" {
-			fmt.Printf("    Description: %s\n", issue.Description)
+			printOutf("    Description: %s\n", issue.Description)
 		}
 		if issue.DocsLink != "" {
-			fmt.Printf("    Docs:        %s\n", issue.DocsLink)
+			printOutf("    Docs:        %s\n", issue.DocsLink)
 		}
 		if len(issue.Rooks) > 0 {
-			fmt.Printf("    Rooks:       %d\n", len(issue.Rooks))
+			printOutf("    Rooks:       %d\n", len(issue.Rooks))
 			for _, rook := range issue.Rooks {
 				label := strings.TrimSpace(strings.Join([]string{rook.Hostname, rook.Executable}, " / "))
 				if label == "/" || label == "" {
 					label = rook.ID
 				}
-				fmt.Printf("      - %s\n", label)
+				printOutf("      - %s\n", label)
 			}
 		}
 		if len(issue.Controllers) > 0 {
-			fmt.Printf("    Controllers: %d\n", len(issue.Controllers))
+			printOutf("    Controllers: %d\n", len(issue.Controllers))
 			for _, controller := range issue.Controllers {
-				fmt.Printf("      - %s\n", controller)
+				printOutf("      - %s\n", controller)
 			}
 		}
 	}

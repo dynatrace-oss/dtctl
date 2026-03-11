@@ -270,7 +270,7 @@ func breakpointRowFromRule(rule map[string]interface{}) (breakpointRow, bool) {
 }
 
 func printBreakpointsTable(rows []breakpointRow) {
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	tw := tabwriter.NewWriter(commandStdout(), 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "id\tfilename\tline number\tactive")
 	for _, row := range rows {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%d\t%t\n", row.ID, row.Filename, row.Line, row.Active)
@@ -361,7 +361,7 @@ func printGraphQLResponse(operation string, payload map[string]interface{}) erro
 		return fmt.Errorf("failed to encode %s response: %w", operation, err)
 	}
 
-	fmt.Println(string(encoded))
+	printOutln(string(encoded))
 	return nil
 }
 

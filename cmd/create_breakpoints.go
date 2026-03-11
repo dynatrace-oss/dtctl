@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/livedebugger"
@@ -31,7 +30,7 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would create breakpoint at %s:%d\n", fileName, lineNumber)
+			printOutf("Dry run: would create breakpoint at %s:%d\n", fileName, lineNumber)
 			return nil
 		}
 
@@ -91,7 +90,7 @@ Examples:
 			}
 		}
 
-		fmt.Printf("Created breakpoint at %s:%d\n", fileName, lineNumber)
+		printOutf("Created breakpoint at %s:%d\n", fileName, lineNumber)
 		return nil
 	},
 }
