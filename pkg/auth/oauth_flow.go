@@ -420,6 +420,14 @@ type authResult struct {
 	err    error
 }
 
+var (
+	oauthOpenURL = browser.OpenURL
+	oauthHTTPDo  = func(req *http.Request) (*http.Response, error) {
+		client := &http.Client{Timeout: 30 * time.Second}
+		return client.Do(req)
+	}
+)
+
 func NewOAuthFlow(config *OAuthConfig) (*OAuthFlow, error) {
 	if config == nil {
 		config = DefaultOAuthConfig()
@@ -456,7 +464,7 @@ func (f *OAuthFlow) Start(ctx context.Context) (*TokenSet, error) {
 	fmt.Println("If the browser doesn't open automatically, please visit:")
 	fmt.Println(authURL)
 
-	if err := browser.OpenURL(authURL); err != nil {
+	if err := oauthOpenURL(authURL); err != nil {
 		fmt.Printf("Failed to open browser automatically: %v\n", err)
 		fmt.Println("Please open the URL above manually.")
 	}
@@ -486,8 +494,7 @@ func (f *OAuthFlow) RefreshToken(refreshToken string) (*TokenSet, error) {
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := oauthHTTPDo(req)
 	if err != nil {
 		return nil, fmt.Errorf("token refresh request failed: %w", err)
 	}
@@ -516,8 +523,7 @@ func (f *OAuthFlow) GetUserInfo(accessToken string) (*UserInfo, error) {
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := oauthHTTPDo(req)
 	if err != nil {
 		return nil, fmt.Errorf("user info request failed: %w", err)
 	}
@@ -648,8 +654,7 @@ func (f *OAuthFlow) exchangeCode(code string) (*TokenSet, error) {
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := oauthHTTPDo(req)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange request failed: %w", err)
 	}
