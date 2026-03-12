@@ -45,5 +45,4 @@ func init() {
 	createCmd.AddCommand(createBucketCmd)
 	createCmd.AddCommand(createLookupCmd)
 	createCmd.AddCommand(createEdgeConnectCmd)
-	createCmd.AddCommand(createExtensionConfigCmd)
 }

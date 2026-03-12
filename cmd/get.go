@@ -141,7 +141,6 @@ func init() {
 	getCmd.AddCommand(getDocumentsCmd)
 
 	// Delete subcommands (command definitions live in get_*.go files)
-	updateCmd.AddCommand(updateExtensionConfigCmd)
 
 	deleteCmd.AddCommand(deleteWorkflowCmd)
 	deleteCmd.AddCommand(deleteDashboardCmd)

@@ -341,5 +341,6 @@ func init() {
 	describeCmd.AddCommand(describeSettingsSchemaCmd)
 	describeCmd.AddCommand(describeSLOCmd)
 	describeCmd.AddCommand(describeExtensionCmd)
+	describeCmd.AddCommand(describeExtensionConfigCmd)
 	describeCmd.AddCommand(describeDocumentCmd)
 }

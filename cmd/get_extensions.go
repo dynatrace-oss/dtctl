@@ -53,7 +53,7 @@ Examples:
 			return printer.PrintList(versions.Items)
 		}
 
-		// List all extensions - default max page sizeis 100
+		// List all extensions - default max page size is 100
 		list, err := handler.List(name, 100)
 		if err != nil {
 			return err

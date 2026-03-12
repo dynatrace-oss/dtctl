@@ -75,3 +75,10 @@ type MonitoringConfigApplyResult struct {
 	ApplyResultBase `yaml:",inline"`
 	Scope           string `json:"scope,omitempty" yaml:"scope,omitempty" table:"SCOPE"`
 }
+
+// ExtensionConfigApplyResult is the result of applying an extension monitoring configuration.
+type ExtensionConfigApplyResult struct {
+	ApplyResultBase `yaml:",inline"`
+	ExtensionName   string `json:"extensionName,omitempty" yaml:"extensionName,omitempty" table:"EXTENSION"`
+	Scope           string `json:"scope,omitempty"         yaml:"scope,omitempty"         table:"SCOPE"`
+}

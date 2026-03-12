@@ -82,9 +82,11 @@ type ExtensionVariable struct {
 
 // MonitoringConfiguration represents an extension monitoring configuration instance
 type MonitoringConfiguration struct {
-	ObjectID string          `json:"objectId" table:"ID"`
-	Scope    string          `json:"scope,omitempty" table:"SCOPE"`
-	Value    json.RawMessage `json:"value,omitempty" table:"-"`
+	Type          string          `json:"type,omitempty" yaml:"type,omitempty" table:"-"`
+	ExtensionName string          `json:"extensionName,omitempty" table:"EXTENSION"`
+	ObjectID      string          `json:"objectId" table:"ID"`
+	Scope         string          `json:"scope,omitempty" table:"SCOPE"`
+	Value         json.RawMessage `json:"value,omitempty" table:"-"`
 }
 
 // MonitoringConfigurationList represents a list of monitoring configuration instances
@@ -276,8 +278,6 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 			return nil, fmt.Errorf("failed to list monitoring configurations: %w", err)
 		}
 
-		print(resp.StatusCode())
-
 		if resp.IsError() {
 			switch resp.StatusCode() {
 			case 404:
@@ -289,8 +289,10 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 			}
 		}
 
-		print(string(resp.Body()))
-
+		for i := range result.Items {
+			result.Items[i].Type = "extension_monitoring_config"
+			result.Items[i].ExtensionName = extensionName
+		}
 		allItems = append(allItems, result.Items...)
 		totalCount = result.TotalCount
 
@@ -333,6 +335,8 @@ func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*M
 		}
 	}
 
+	result.Type = "extension_monitoring_config"
+	result.ExtensionName = extensionName
 	return &result, nil
 }
 
