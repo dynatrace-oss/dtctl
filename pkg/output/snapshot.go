@@ -11,7 +11,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	rookout "github.com/dynatrace-oss/dtctl/pkg/proto/rookout"
+	"github.com/dynatrace-oss/dtctl/pkg/proto/livedebugger"
 )
 
 // SnapshotPrinter prints snapshot query records with decoded snapshot.data payload.
@@ -162,7 +162,7 @@ func decodeSnapshotDataToGeneric(data string, stringCache []string) (interface{}
 		return nil, fmt.Errorf("failed to decode snapshot.data base64: %w", err)
 	}
 
-	rawAugReport := new(rookout.AugReportMessage)
+	rawAugReport := new(livedebugger.AugReportMessage)
 	err = proto.Unmarshal(decodedData, rawAugReport)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode snapshot.data protobuf: %w", err)
@@ -218,7 +218,7 @@ type variant2Caches struct {
 	buffersCache map[int][]byte
 }
 
-func newVariant2CachesFromAugReport(augReport *rookout.AugReportMessage) *variant2Caches {
+func newVariant2CachesFromAugReport(augReport *livedebugger.AugReportMessage) *variant2Caches {
 	stringCaches := make(map[int]string)
 	buffersCache := make(map[int][]byte)
 
@@ -249,15 +249,15 @@ func (c *variant2Caches) getBufferFromCache(index int) []byte {
 	return nil
 }
 
-func toStringCacheEntries(stringCache []string) []*rookout.StringCacheEntry {
-	entries := make([]*rookout.StringCacheEntry, 0, len(stringCache))
+func toStringCacheEntries(stringCache []string) []*livedebugger.StringCacheEntry {
+	entries := make([]*livedebugger.StringCacheEntry, 0, len(stringCache))
 	for idx, key := range stringCache {
-		entries = append(entries, &rookout.StringCacheEntry{Key: key, Value: uint32(idx)})
+		entries = append(entries, &livedebugger.StringCacheEntry{Key: key, Value: uint32(idx)})
 	}
 	return entries
 }
 
-func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bool) map[string]interface{} {
+func variant2ToDict(v *livedebugger.Variant2, caches *variant2Caches, reverseLists bool) map[string]interface{} {
 	if v == nil {
 		return map[string]interface{}{"@CT": nullType, "@value": nil}
 	}
@@ -269,14 +269,14 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 		dict["@max_depth"] = true
 	}
 
-	variantType := rookout.Variant_Type(v.GetVariantTypeMaxDepth() >> 1)
+	variantType := livedebugger.Variant_Type(v.GetVariantTypeMaxDepth() >> 1)
 	originalType := strings.ToLower(caches.getStringFromCache(int(v.GetOriginalTypeIndexInCache())))
 
 	switch variantType {
-	case rookout.Variant_VARIANT_NONE, rookout.Variant_VARIANT_UNDEFINED:
+	case livedebugger.Variant_VARIANT_NONE, livedebugger.Variant_VARIANT_UNDEFINED:
 		dict["@CT"] = nullType
 		dict["@value"] = nil
-	case rookout.Variant_VARIANT_INT, rookout.Variant_VARIANT_LONG:
+	case livedebugger.Variant_VARIANT_INT, livedebugger.Variant_VARIANT_LONG:
 		if strings.HasPrefix(originalType, "bool") {
 			dict["@CT"] = boolType
 			dict["@value"] = v.GetLongValue() != 0
@@ -284,7 +284,7 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 			dict["@CT"] = intType
 			dict["@value"] = int64ToSafeJSNumber(v.GetLongValue())
 		}
-	case rookout.Variant_VARIANT_DOUBLE:
+	case livedebugger.Variant_VARIANT_DOUBLE:
 		dict["@CT"] = floatType
 		doubleValue := v.GetDoubleValue()
 		switch {
@@ -297,7 +297,7 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 		default:
 			dict["@value"] = doubleValue
 		}
-	case rookout.Variant_VARIANT_COMPLEX:
+	case livedebugger.Variant_VARIANT_COMPLEX:
 		dict["@CT"] = complexType
 		complexValue := v.GetComplexValue()
 		if complexValue == nil {
@@ -310,21 +310,21 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 			"real":      realValue,
 			"imaginary": imaginaryValue,
 		}
-	case rookout.Variant_VARIANT_STRING, rookout.Variant_VARIANT_MASKED:
+	case livedebugger.Variant_VARIANT_STRING, livedebugger.Variant_VARIANT_MASKED:
 		dict["@CT"] = stringType
 		dict["@value"] = caches.getStringFromCache(int(v.GetBytesIndexInCache()))
 		dict["@OS"] = v.GetOriginalSize()
-	case rookout.Variant_VARIANT_LARGE_INT:
+	case livedebugger.Variant_VARIANT_LARGE_INT:
 		dict["@CT"] = intType
 		dict["@value"] = caches.getStringFromCache(int(v.GetBytesIndexInCache()))
-	case rookout.Variant_VARIANT_BINARY:
+	case livedebugger.Variant_VARIANT_BINARY:
 		dict["@CT"] = binaryType
 		dict["@value"] = caches.getBufferFromCache(int(v.GetBytesIndexInCache()))
 		dict["@OS"] = v.GetOriginalSize()
-	case rookout.Variant_VARIANT_TIME:
+	case livedebugger.Variant_VARIANT_TIME:
 		dict["@CT"] = datetimeType
 		dict["@value"] = formatRookoutTimestamp(v.GetTimeValue())
-	case rookout.Variant_VARIANT_ENUM:
+	case livedebugger.Variant_VARIANT_ENUM:
 		dict["@CT"] = enumType
 		dict["@value"] = map[string]interface{}{
 			"@ordinal_value": int32(v.GetLongValue()),
@@ -332,8 +332,8 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 			"@value":         caches.getStringFromCache(int(v.GetBytesIndexInCache())),
 		}
 		addAttributesToDict(dict, v, caches, reverseLists)
-	case rookout.Variant_VARIANT_LIST, rookout.Variant_VARIANT_SET:
-		if variantType == rookout.Variant_VARIANT_SET || originalType == "set" {
+	case livedebugger.Variant_VARIANT_LIST, livedebugger.Variant_VARIANT_SET:
+		if variantType == livedebugger.Variant_VARIANT_SET || originalType == "set" {
 			dict["@CT"] = setType
 		} else {
 			dict["@CT"] = listType
@@ -348,7 +348,7 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 		dict["@value"] = listValues
 		dict["@OS"] = v.GetOriginalSize()
 		addAttributesToDict(dict, v, caches, reverseLists)
-	case rookout.Variant_VARIANT_MAP:
+	case livedebugger.Variant_VARIANT_MAP:
 		dict["@CT"] = dictType
 		mapEntries := make([][]interface{}, len(v.GetCollectionKeys()))
 		for i, key := range v.GetCollectionKeys() {
@@ -360,10 +360,10 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 		dict["@OS"] = v.GetOriginalSize()
 		dict["@value"] = mapEntries
 		addAttributesToDict(dict, v, caches, reverseLists)
-	case rookout.Variant_VARIANT_OBJECT:
+	case livedebugger.Variant_VARIANT_OBJECT:
 		dict["@CT"] = userObjectType
 		addAttributesToDict(dict, v, caches, reverseLists)
-	case rookout.Variant_VARIANT_NAMESPACE:
+	case livedebugger.Variant_VARIANT_NAMESPACE:
 		namespaceDict := make(map[string]interface{})
 		for i, attrNameIndex := range v.GetAttributeNamesInCache() {
 			if i < len(v.GetAttributeValues()) {
@@ -372,10 +372,10 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 			}
 		}
 		return namespaceDict
-	case rookout.Variant_VARIANT_UKNOWN_OBJECT:
+	case livedebugger.Variant_VARIANT_UKNOWN_OBJECT:
 		dict["@CT"] = unknownObjectType
 		addAttributesToDict(dict, v, caches, reverseLists)
-	case rookout.Variant_VARIANT_ERROR:
+	case livedebugger.Variant_VARIANT_ERROR:
 		errorValue := v.GetErrorValue()
 		if errorValue == nil {
 			dict["@OT"] = "Error"
@@ -391,7 +391,7 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 				"exc":        variant2ToDict(errorValue.GetExc(), caches, reverseLists),
 			},
 		}
-	case rookout.Variant_VARIANT_TRACEBACK:
+	case livedebugger.Variant_VARIANT_TRACEBACK:
 		dict["@CT"] = dictType
 		stackTrace := make([]map[string]map[string]interface{}, len(v.GetCodeValues()))
 		for i, codeValue := range v.GetCodeValues() {
@@ -408,13 +408,13 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 		}
 		dict["@value"] = stackTrace
 		addAttributesToDict(dict, v, caches, reverseLists)
-	case rookout.Variant_VARIANT_DYNAMIC:
+	case livedebugger.Variant_VARIANT_DYNAMIC:
 		return map[string]interface{}{"@CT": dynamicType}
-	case rookout.Variant_VARIANT_FORMATTED_MESSAGE:
+	case livedebugger.Variant_VARIANT_FORMATTED_MESSAGE:
 		return map[string]interface{}{"@CT": stringType, "@value": caches.getStringFromCache(int(v.GetBytesIndexInCache()))}
-	case rookout.Variant_VARIANT_MAX_DEPTH:
+	case livedebugger.Variant_VARIANT_MAX_DEPTH:
 		return map[string]interface{}{"@CT": namespaceType}
-	case rookout.Variant_VARIANT_LIVETAIL:
+	case livedebugger.Variant_VARIANT_LIVETAIL:
 		return map[string]interface{}{"@CT": nullType, "@value": nil}
 	default:
 		dict["@CT"] = nullType
@@ -424,7 +424,7 @@ func variant2ToDict(v *rookout.Variant2, caches *variant2Caches, reverseLists bo
 	return dict
 }
 
-func addAttributesToDict(dict map[string]interface{}, v *rookout.Variant2, caches *variant2Caches, reverseLists bool) {
+func addAttributesToDict(dict map[string]interface{}, v *livedebugger.Variant2, caches *variant2Caches, reverseLists bool) {
 	if len(v.GetAttributeNamesInCache()) == 0 {
 		return
 	}
@@ -445,7 +445,7 @@ func reverseInterfaces(values []interface{}) {
 	}
 }
 
-func formatRookoutTimestamp(ts *rookout.Timestamp) string {
+func formatRookoutTimestamp(ts *livedebugger.Timestamp) string {
 	if ts == nil {
 		return ""
 	}

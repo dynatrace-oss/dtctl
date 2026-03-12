@@ -15,10 +15,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/livedebugger"
-	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
-
-var debugFilters string
 
 type liveDebuggerDeps struct {
 	loadConfig             func() (*config.Config, error)
@@ -51,89 +48,6 @@ type breakpointRow struct {
 	Filename string `table:"FILENAME" json:"filename" yaml:"filename"`
 	Line     int    `table:"LINE NUMBER" json:"lineNumber" yaml:"lineNumber"`
 	Active   bool   `table:"ACTIVE" json:"active" yaml:"active"`
-}
-
-var debugCmd = &cobra.Command{
-	Use:   "debug",
-	Short: "Manage Live Debugger workspace filters",
-	Long: `Configure Live Debugger workspace filters for the current project.
-
-Examples:
-  dtctl debug --filters k8s.namespace.name=prod
-  dtctl debug --filters k8s.namespace.name=prod,dt.entity.host=HOST-123
-	dtctl create breakpoint OrderController.java:306
-	dtctl get breakpoints`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		verbose := isDebugVerbose()
-		deps := defaultLiveDebuggerDeps()
-
-		if strings.TrimSpace(debugFilters) == "" {
-			return fmt.Errorf("--filters is required")
-		}
-
-		cfg, err := deps.loadConfig()
-		if err != nil {
-			return err
-		}
-
-		ctx, err := cfg.CurrentContextObj()
-		if err != nil {
-			return err
-		}
-
-		c, err := deps.newClient(cfg)
-		if err != nil {
-			return err
-		}
-
-		handler, err := deps.newHandler(c, ctx.Environment)
-		if err != nil {
-			return err
-		}
-
-		workspaceResp, workspaceID, err := deps.getOrCreateWorkspace(handler, currentProjectPath())
-		if err != nil {
-			if verbose {
-				_ = printGraphQLResponse("getOrCreateWorkspaceV2", workspaceResp)
-			}
-			return err
-		}
-		if verbose {
-			if err := printGraphQLResponse("getOrCreateWorkspaceV2", workspaceResp); err != nil {
-				return err
-			}
-		}
-
-		if strings.TrimSpace(debugFilters) != "" {
-			checker, err := NewSafetyChecker(cfg)
-			if err != nil {
-				return err
-			}
-			if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-				return err
-			}
-
-			parsedFilters, err := parseFilters(debugFilters)
-			if err != nil {
-				return err
-			}
-
-			updateResp, err := handler.UpdateWorkspaceFilters(workspaceID, livedebugger.BuildFilterSets(parsedFilters))
-			if err != nil {
-				if verbose {
-					_ = printGraphQLResponse("updateWorkspaceV2", updateResp)
-				}
-				return err
-			}
-			if verbose {
-				if err := printGraphQLResponse("updateWorkspaceV2", updateResp); err != nil {
-					return err
-				}
-			}
-		}
-
-		return printBreakpointMessage("debug", "Updated Live Debugger workspace filters")
-	},
 }
 
 func runGetBreakpoints(cmd *cobra.Command, args []string) error {
@@ -364,8 +278,4 @@ func buildGraphQLResponse(operation string, payload map[string]interface{}) map[
 		"operation": operation,
 		"response":  payload,
 	}
-}
-
-func init() {
-	debugCmd.Flags().StringVar(&debugFilters, "filters", "", "filters to apply (comma-separated key=value pairs)")
 }

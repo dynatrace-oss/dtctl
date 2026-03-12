@@ -4,7 +4,7 @@
 // 	protoc        v4.25.5
 // source: controller_info.proto
 
-package rookout
+package livedebugger
 
 import (
 	reflect "reflect"

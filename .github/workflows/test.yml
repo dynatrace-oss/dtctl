@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: go test -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v ./pkg/proto/rookout`
+        run: go test -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v ./pkg/proto/livedebugger`
         
       - name: Enforce coverage threshold
         if: matrix.os == 'ubuntu-latest'

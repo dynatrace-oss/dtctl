@@ -9,7 +9,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	rookout "github.com/dynatrace-oss/dtctl/pkg/proto/rookout"
+	"github.com/dynatrace-oss/dtctl/pkg/proto/livedebugger"
 )
 
 func TestParseSnapshotStringMap_ArrayFormat(t *testing.T) {
@@ -72,18 +72,18 @@ func TestSnapshotPrinter_EnrichesRecord(t *testing.T) {
 		{"hello": 3},
 	}
 
-	rootValue := &rookout.Variant2{
-		VariantTypeMaxDepth:      uint32(rookout.Variant_VARIANT_STRING) << 1,
+	rootValue := &livedebugger.Variant2{
+		VariantTypeMaxDepth:      uint32(livedebugger.Variant_VARIANT_STRING) << 1,
 		OriginalTypeIndexInCache: 2,
 		BytesIndexInCache:        3,
 		OriginalSize:             5,
 	}
-	rootNamespace := &rookout.Variant2{
-		VariantTypeMaxDepth:   uint32(rookout.Variant_VARIANT_NAMESPACE) << 1,
+	rootNamespace := &livedebugger.Variant2{
+		VariantTypeMaxDepth:   uint32(livedebugger.Variant_VARIANT_NAMESPACE) << 1,
 		AttributeNamesInCache: []uint32{1},
-		AttributeValues:       []*rookout.Variant2{rootValue},
+		AttributeValues:       []*livedebugger.Variant2{rootValue},
 	}
-	aug := &rookout.AugReportMessage{Arguments2: rootNamespace}
+	aug := &livedebugger.AugReportMessage{Arguments2: rootNamespace}
 	payload, err := proto.Marshal(aug)
 	if err != nil {
 		t.Fatalf("marshal aug report: %v", err)
@@ -171,45 +171,45 @@ func TestSnapshotPrinter_HandlesVariant2EdgeCases(t *testing.T) {
 		{"item-b": 6},
 	}
 
-	formatted := &rookout.Variant2{
-		VariantTypeMaxDepth:      uint32(rookout.Variant_VARIANT_FORMATTED_MESSAGE) << 1,
+	formatted := &livedebugger.Variant2{
+		VariantTypeMaxDepth:      uint32(livedebugger.Variant_VARIANT_FORMATTED_MESSAGE) << 1,
 		BytesIndexInCache:        2,
 		OriginalTypeIndexInCache: 1,
 	}
-	largeInt := &rookout.Variant2{
-		VariantTypeMaxDepth:      uint32(rookout.Variant_VARIANT_LARGE_INT) << 1,
+	largeInt := &livedebugger.Variant2{
+		VariantTypeMaxDepth:      uint32(livedebugger.Variant_VARIANT_LARGE_INT) << 1,
 		BytesIndexInCache:        3,
 		OriginalTypeIndexInCache: 1,
 	}
-	setList := &rookout.Variant2{
-		VariantTypeMaxDepth:      uint32(rookout.Variant_VARIANT_SET) << 1,
+	setList := &livedebugger.Variant2{
+		VariantTypeMaxDepth:      uint32(livedebugger.Variant_VARIANT_SET) << 1,
 		OriginalTypeIndexInCache: 4,
-		CollectionValues: []*rookout.Variant2{
-			{VariantTypeMaxDepth: uint32(rookout.Variant_VARIANT_STRING) << 1, BytesIndexInCache: 5, OriginalTypeIndexInCache: 1},
-			{VariantTypeMaxDepth: uint32(rookout.Variant_VARIANT_STRING) << 1, BytesIndexInCache: 6, OriginalTypeIndexInCache: 1},
+		CollectionValues: []*livedebugger.Variant2{
+			{VariantTypeMaxDepth: uint32(livedebugger.Variant_VARIANT_STRING) << 1, BytesIndexInCache: 5, OriginalTypeIndexInCache: 1},
+			{VariantTypeMaxDepth: uint32(livedebugger.Variant_VARIANT_STRING) << 1, BytesIndexInCache: 6, OriginalTypeIndexInCache: 1},
 		},
 	}
-	errorVariant := &rookout.Variant2{
-		VariantTypeMaxDepth: uint32(rookout.Variant_VARIANT_ERROR) << 1,
-		ErrorValue: &rookout.Error2{ //nolint:all
+	errorVariant := &livedebugger.Variant2{
+		VariantTypeMaxDepth: uint32(livedebugger.Variant_VARIANT_ERROR) << 1,
+		ErrorValue: &livedebugger.Error2{ //nolint:all
 			Message:    "boom",
 			Parameters: formatted,
 			Exc:        largeInt,
 		},
 	}
-	timeVariant := &rookout.Variant2{
-		VariantTypeMaxDepth:      uint32(rookout.Variant_VARIANT_TIME) << 1,
+	timeVariant := &livedebugger.Variant2{
+		VariantTypeMaxDepth:      uint32(livedebugger.Variant_VARIANT_TIME) << 1,
 		OriginalTypeIndexInCache: 1,
-		TimeValue:                &rookout.Timestamp{Seconds: 1700000000, Nanos: 123000000},
+		TimeValue:                &livedebugger.Timestamp{Seconds: 1700000000, Nanos: 123000000},
 	}
 
-	root := &rookout.Variant2{
-		VariantTypeMaxDepth:   uint32(rookout.Variant_VARIANT_NAMESPACE) << 1,
+	root := &livedebugger.Variant2{
+		VariantTypeMaxDepth:   uint32(livedebugger.Variant_VARIANT_NAMESPACE) << 1,
 		AttributeNamesInCache: []uint32{1, 2, 3, 4, 5},
-		AttributeValues:       []*rookout.Variant2{formatted, largeInt, setList, errorVariant, timeVariant},
+		AttributeValues:       []*livedebugger.Variant2{formatted, largeInt, setList, errorVariant, timeVariant},
 	}
 
-	aug := &rookout.AugReportMessage{Arguments2: root, ReverseListOrder: true}
+	aug := &livedebugger.AugReportMessage{Arguments2: root, ReverseListOrder: true}
 	payload, err := proto.Marshal(aug)
 	if err != nil {
 		t.Fatalf("marshal aug report: %v", err)

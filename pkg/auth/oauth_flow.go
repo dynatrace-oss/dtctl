@@ -108,7 +108,6 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 			"davis:analyzers:read",
 			"app-engine:apps:run",
 			"app-engine:edge-connects:read",
-			"dev-obs:breakpoints:set",
 		}
 
 	case config.SafetyLevelReadWriteMine:

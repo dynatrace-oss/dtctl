@@ -4,7 +4,7 @@
 // 	protoc        v4.25.5
 // source: variant2.proto
 
-package rookout
+package livedebugger
 
 import (
 	reflect "reflect"

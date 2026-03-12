@@ -61,7 +61,6 @@ func TestCommandsCmd_MutatingVerbsCorrect(t *testing.T) {
 	mutatingVerbs := map[string]bool{
 		"apply":   true,
 		"create":  true,
-		"debug":   true,
 		"edit":    true,
 		"delete":  true,
 		"exec":    true,
@@ -257,8 +256,6 @@ func TestCommandsCmd_PatternsAndAntipatterns(t *testing.T) {
 // checks is listed in commands.MutatingVerbs. This catches drift between
 // the catalog and the actual command implementations.
 func TestMutatingVerbsMatchSafetyCheckerUsage(t *testing.T) {
-	listing := commands.Build(rootCmd)
-
 	// Find all .go files in cmd/ that contain NewSafetyChecker
 	cmdDir := "."
 	entries, err := os.ReadDir(cmdDir)
@@ -303,15 +300,13 @@ func TestMutatingVerbsMatchSafetyCheckerUsage(t *testing.T) {
 
 	// Every verb with safety checks should be in MutatingVerbs
 	for verb := range verbsWithSafetyChecks {
-		if _, exists := listing.Verbs[verb]; !exists {
-			continue
-		}
 		_, ok := commands.MutatingVerbs[verb]
 		require.True(t, ok,
 			"verb %q has NewSafetyChecker calls but is missing from commands.MutatingVerbs", verb)
 	}
 
 	// Every verb in MutatingVerbs should exist in the real command tree
+	listing := commands.Build(rootCmd)
 	for verb := range commands.MutatingVerbs {
 		_, ok := listing.Verbs[verb]
 		require.True(t, ok,

@@ -24,7 +24,6 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"automation:workflows:read",
 				"storage:logs:read",
 				"storage:buckets:read",
-				"dev-obs:breakpoints:set",
 			},
 			mustNotInclude: []string{
 				"document:documents:write",
@@ -33,8 +32,9 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"storage:buckets:write",
 				"storage:bucket-definitions:delete",
 				"storage:bucket-definitions:truncate",
+				"dev-obs:breakpoints:set",
 			},
-			minScopeCount: 36, // readonly has many read scopes
+			minScopeCount: 35, // readonly has many read scopes
 		},
 		{
 			name:        "readwrite-mine scopes",
@@ -173,7 +173,7 @@ func TestOAuthConfigWithSafetyLevel(t *testing.T) {
 			name:         "Production with readonly",
 			env:          EnvironmentProd,
 			safetyLevel:  config.SafetyLevelReadOnly,
-			expectScopes: 36,
+			expectScopes: 35,
 		},
 		{
 			name:         "Development with readwrite-all",
