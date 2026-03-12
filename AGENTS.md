@@ -193,6 +193,22 @@ Never put customer names, employee names, usernames, or specific Dynatrace envir
 ❌ **Don't** skip safety checks on mutating commands  
 ✅ **Do** add safety checks to ALL create/edit/apply/delete/update commands
 
+## Releasing a New Version
+
+When creating a new release, **all** of the following must be done:
+
+1. **Bump in-code version** — update `pkg/version/version.go` (`var Version = "X.Y.Z"`). This is the fallback version used in the User-Agent header for `go install` builds (GoReleaser overrides it via `-ldflags` for tagged releases, but the default must stay current).
+2. **Update CHANGELOG.md** — add a new `## [X.Y.Z] - YYYY-MM-DD` section at the top following Keep a Changelog format.
+3. **Commit** both changes together (or sequentially).
+4. **Create an annotated tag** — `git tag -a vX.Y.Z -m "vX.Y.Z - <summary>"`.
+5. **Push** the commit(s) and tag to origin.
+
+**Verification checklist**:
+- [ ] `pkg/version/version.go` matches the new tag
+- [ ] `CHANGELOG.md` has an entry for the new version
+- [ ] Tag is annotated (not lightweight)
+- [ ] Tag points at the commit that includes the version bump
+
 ## Code Examples
 
 - Simple CRUD: `pkg/resources/bucket/`
