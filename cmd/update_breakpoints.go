@@ -19,7 +19,7 @@ const (
 	breakpointRookoutOnPremTargetName = "send_rookout_data_on_prem"
 )
 
-var editBreakpointCmd = &cobra.Command{
+var updateBreakpointCmd = &cobra.Command{
 	Use:     "breakpoint [<id|filename:line>]",
 	Aliases: []string{"breakpoints", "bp"},
 	Short:   "Update Live Debugger breakpoints and workspace filters",
@@ -532,9 +532,9 @@ func getOptionalBoolFlag(cmd *cobra.Command, flagName string, trailingArgs []str
 }
 
 func init() {
-	updateCmd.AddCommand(editBreakpointCmd)
-	editBreakpointCmd.Flags().String("condition", "", "Condition expression for the breakpoint")
-	editBreakpointCmd.Flags().String("enabled", "", "Enable or disable the breakpoint")
-	editBreakpointCmd.Flags().String("filters", "", "workspace filters to apply (comma-separated key:value pairs)")
-	editBreakpointCmd.Flags().Lookup("enabled").NoOptDefVal = "true"
+	updateCmd.AddCommand(updateBreakpointCmd)
+	updateBreakpointCmd.Flags().String("condition", "", "Condition expression for the breakpoint")
+	updateBreakpointCmd.Flags().String("enabled", "", "Enable or disable the breakpoint")
+	updateBreakpointCmd.Flags().String("filters", "", "workspace filters to apply (comma-separated key:value pairs)")
+	updateBreakpointCmd.Flags().Lookup("enabled").NoOptDefVal = "true"
 }
