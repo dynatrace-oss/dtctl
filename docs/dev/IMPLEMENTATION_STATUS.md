@@ -15,7 +15,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Configuration management (YAML config, contexts, token storage)
 - [x] Context safety levels (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)
 - [x] HTTP client with retry, rate limiting, error handling
-- [x] Output formatters: JSON, YAML, table, wide, CSV, snapshot, chart, sparkline, barchart
+- [x] Output formatters: JSON, YAML, table, wide, CSV, chart, sparkline, barchart
 - [x] Global flags: `--context`, `--output`, `--verbose`, `--debug`, `--dry-run`, `--chunk-size`, `--show-diff`, `--agent`, `--no-agent`
 - [x] Shell completion (bash, zsh, fish)
 - [x] Automatic pagination with `--chunk-size` (default 500)
@@ -125,7 +125,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] File-based queries: `dtctl query -f query.dql`
 - [x] Template variables: `--set key=value`
 - [x] All output formats supported
-- [x] Decoded Live Debugger snapshots: `dtctl query "fetch application.snapshots | limit 5" -o snapshot`
+- [x] Decoded Live Debugger snapshots: `dtctl query "fetch application.snapshots | limit 5" --decode-snapshots`
 - [x] Chart output for timeseries: `dtctl query "timeseries ..." -o chart`
 - [x] Live mode with periodic updates: `--live`, `--interval`
 - [x] Watch mode with incremental updates: `--watch`, `--interval`

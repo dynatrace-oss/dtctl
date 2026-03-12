@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `dtctl describe <id|filename:line>` for breakpoint rollout/status breakdown
   - `dtctl update breakpoint <id|filename:line> --condition/--enabled`
   - `dtctl delete breakpoint <id|filename:line|--all>` with confirmation / `-y` / `--dry-run`
-- **Snapshot query output mode**
-  - `dtctl query ... -o snapshot` decodes Live Debugger snapshot payloads and enriches records with `parsed_snapshot`
+- **Snapshot query decoding**
+  - `dtctl query ... --decode-snapshots` decodes Live Debugger snapshot payloads with simplified plain values
+  - `dtctl query ... --decode-snapshots=full` preserves full decoded tree with type annotations
+  - Composable with any output format (`-o json`, `-o yaml`, `-o table`, etc.)
 
 
 ### Documentation

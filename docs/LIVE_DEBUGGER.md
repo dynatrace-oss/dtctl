@@ -12,7 +12,7 @@ The current Live Debugger flow in `dtctl` supports:
 - describing breakpoint status with `dtctl describe <id|filename:line>`
 - updating breakpoints with `dtctl update breakpoint ...`
 - deleting breakpoints with `dtctl delete breakpoint ...`
-- viewing decoded snapshot output with `dtctl query ... -o snapshot`
+- viewing decoded snapshot output with `dtctl query ... --decode-snapshots`
 
 `dtctl` resolves or creates a Live Debugger workspace for the current project path, so commands operate on the workspace associated with the directory you run them from.
 
@@ -178,20 +178,28 @@ dtctl delete breakpoint OrderController.java:306 --dry-run
 
 ## 7. View decoded snapshots
 
-Live Debugger snapshot data can be viewed through query output using `-o snapshot`.
+Live Debugger snapshot data can be decoded using the `--decode-snapshots` flag on `query`.
 
 Example:
 
 ```bash
-dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" -o snapshot
+# Simplified output (variant wrappers flattened to plain values)
+dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots
+
+# Full decoded tree with type annotations
+dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots=full
+
+# Compose with any output format
+dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots -o json
+dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots -o yaml
 ```
 
-The snapshot formatter enriches each record with a decoded `parsed_snapshot` field built from:
+The `--decode-snapshots` flag enriches each record with a decoded `parsed_snapshot` field built from:
 
 - `snapshot.data`
 - `snapshot.string_map`
 
-This makes snapshot output readable directly from the CLI without manual protobuf decoding.
+By default, `--decode-snapshots` simplifies variant wrappers to plain values (e.g., `{"type": "Integer", "value": 42}` becomes `42`). Use `--decode-snapshots=full` to preserve the full decoded tree with type annotations.
 
 ## Output and troubleshooting
 
@@ -240,8 +248,11 @@ dtctl update breakpoint OrderController.java:306 --condition "orderId != null"
 # Disable the breakpoint
 dtctl update breakpoint OrderController.java:306 --enabled false
 
-# View snapshots
-dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" -o snapshot
+# View snapshots (simplified)
+dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots
+
+# View snapshots as YAML
+dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots -o yaml
 
 # Delete the breakpoint
 dtctl delete breakpoint OrderController.java:306

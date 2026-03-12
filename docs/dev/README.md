@@ -66,7 +66,7 @@ User-facing Live Debugger workflow documentation:
 - **Workspace Filters** - Target runtimes with `dtctl update breakpoint --filters`
 - **Breakpoint Lifecycle** - Create, get, describe, edit, and delete breakpoint commands
 - **Status Inspection** - Use `dtctl describe <id|filename:line>` to inspect rollout and errors
-- **Snapshot Viewing** - Use `dtctl query ... -o snapshot` for decoded snapshot output
+- **Snapshot Viewing** - Use `dtctl query ... --decode-snapshots` for decoded snapshot output
 
 **Use this for**: Understanding the current CLI workflow for Live Debugger features and keeping user-facing docs aligned with implementation.
 

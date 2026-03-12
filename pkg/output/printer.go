@@ -73,8 +73,6 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 		return &YAMLPrinter{writer: writer}
 	case "csv":
 		return &CSVPrinter{writer: writer}
-	case "snapshot":
-		return &SnapshotPrinter{writer: writer}
 	case "chart":
 		if width > 0 || height > 0 {
 			return NewChartPrinterWithSize(writer, width, height)

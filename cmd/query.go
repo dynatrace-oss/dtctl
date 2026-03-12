@@ -37,7 +37,7 @@ func isStderrTerminal() bool {
 
 func isSupportedQueryOutputFormat(format string) bool {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "", "table", "wide", "json", "yaml", "yml", "csv", "snapshot", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+	case "", "table", "wide", "json", "yaml", "yml", "csv", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
 		return true
 	default:
 		return false
@@ -227,8 +227,23 @@ Examples:
 			}
 		}
 
+		// Get snapshot decode option
+		decodeVal, _ := cmd.Flags().GetString("decode-snapshots")
+		var decodeMode exec.DecodeMode
+		if cmd.Flags().Changed("decode-snapshots") {
+			switch decodeVal {
+			case "", "simplified":
+				decodeMode = exec.DecodeSimplified
+			case "full":
+				decodeMode = exec.DecodeFull
+			default:
+				return fmt.Errorf("unsupported --decode-snapshots value %q (use \"simplified\" or \"full\")", decodeVal)
+			}
+		}
+
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
+			Decode:                       decodeMode,
 			Width:                        width,
 			Height:                       height,
 			Fullscreen:                   fullscreen,
@@ -290,6 +305,17 @@ Examples:
 				if result.Result != nil && len(result.Result.Records) > 0 {
 					records = result.Result.Records
 				}
+				// Apply snapshot decoding if requested
+				if decodeMode != exec.DecodeNone && len(records) > 0 {
+					simplify := decodeMode == exec.DecodeSimplified
+					records = output.DecodeSnapshotRecords(records, simplify)
+
+					// For tabular formats, replace parsed_snapshot with a summary string
+					switch outputFormat {
+					case "", "table", "wide", "csv":
+						records = output.SummarizeSnapshotForTable(records)
+					}
+				}
 				return map[string]interface{}{"records": records}, nil
 			}
 
@@ -345,8 +371,22 @@ sampled,queryId,dqlVersion,query,canonicalQuery,timezone,locale,
 analysisTimeframe,contributions`)
 	queryCmd.Flags().Lookup("metadata").NoOptDefVal = "all"
 
+	// Snapshot decode flag
+	queryCmd.Flags().String("decode-snapshots", "", `decode Live Debugger snapshot payloads in query results
+bare --decode-snapshots simplifies variant wrappers to plain values;
+--decode-snapshots=full preserves the full decoded tree with type annotations`)
+	queryCmd.Flags().Lookup("decode-snapshots").NoOptDefVal = "simplified"
+
 	// Shell completion for --metadata field names (supports comma-separated values)
 	_ = queryCmd.RegisterFlagCompletionFunc("metadata", metadataFieldCompletion)
+
+	// Shell completion for --decode-snapshots values
+	_ = queryCmd.RegisterFlagCompletionFunc("decode-snapshots", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"simplified\tFlatten variant wrappers to plain values (default)",
+			"full\tPreserve full decoded tree with type annotations",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // metadataFieldCompletion provides shell completion for --metadata flag values.

@@ -1,7 +1,6 @@
 package output
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
@@ -64,7 +63,7 @@ func TestParseSnapshotStringMap_MapFormatRejectsHugeIndex(t *testing.T) {
 	}
 }
 
-func TestSnapshotPrinter_EnrichesRecord(t *testing.T) {
+func TestDecodeSnapshotRecords_EnrichesRecord(t *testing.T) {
 	stringsCache := []map[string]uint32{
 		{"": 0},
 		{"root": 1},
@@ -95,34 +94,27 @@ func TestSnapshotPrinter_EnrichesRecord(t *testing.T) {
 		t.Fatalf("marshal string map: %v", err)
 	}
 
-	obj := map[string]interface{}{
-		"records": []map[string]interface{}{
-			{
-				"snapshot.data":       encoded,
-				"snapshot.string_map": string(stringMapRaw),
-				"snapshot.id":         "abc",
-			},
+	records := []map[string]interface{}{
+		{
+			"snapshot.data":       encoded,
+			"snapshot.string_map": string(stringMapRaw),
+			"snapshot.id":         "abc",
 		},
 	}
 
-	var out bytes.Buffer
-	printer := &SnapshotPrinter{writer: &out}
-	if err := printer.Print(obj); err != nil {
-		t.Fatalf("Print() error = %v", err)
+	// Test without simplification (full mode)
+	decoded := DecodeSnapshotRecords(records, false)
+	if len(decoded) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(decoded))
 	}
+	record := decoded[0]
 
-	var got map[string]interface{}
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatalf("unmarshal output: %v", err)
+	// Raw encoded fields should be removed after successful decode
+	if _, ok := record["snapshot.data"]; ok {
+		t.Fatal("snapshot.data should be removed after decode")
 	}
-
-	records, ok := got["records"].([]interface{})
-	if !ok || len(records) != 1 {
-		t.Fatalf("records missing or invalid: %#v", got["records"])
-	}
-	record, ok := records[0].(map[string]interface{})
-	if !ok {
-		t.Fatalf("record invalid: %#v", records[0])
+	if _, ok := record["snapshot.string_map"]; ok {
+		t.Fatal("snapshot.string_map should be removed after decode")
 	}
 
 	parsedSnapshot, ok := record["parsed_snapshot"].(map[string]interface{})
@@ -160,7 +152,7 @@ func TestSnapshotPrinter_EnrichesRecord(t *testing.T) {
 	}
 }
 
-func TestSnapshotPrinter_HandlesVariant2EdgeCases(t *testing.T) {
+func TestDecodeSnapshotRecords_HandlesVariant2EdgeCases(t *testing.T) {
 	stringMap := []map[string]uint32{
 		{"": 0},
 		{"msg": 1},
@@ -220,25 +212,16 @@ func TestSnapshotPrinter_HandlesVariant2EdgeCases(t *testing.T) {
 		t.Fatalf("marshal string map: %v", err)
 	}
 
-	obj := map[string]interface{}{
-		"records": []map[string]interface{}{{
-			"snapshot.data":       base64.StdEncoding.EncodeToString(payload),
-			"snapshot.string_map": string(stringMapRaw),
-		}},
-	}
+	records := []map[string]interface{}{{
+		"snapshot.data":       base64.StdEncoding.EncodeToString(payload),
+		"snapshot.string_map": string(stringMapRaw),
+	}}
 
-	var out bytes.Buffer
-	printer := &SnapshotPrinter{writer: &out}
-	if err := printer.Print(obj); err != nil {
-		t.Fatalf("Print() error = %v", err)
+	decoded := DecodeSnapshotRecords(records, false)
+	if len(decoded) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(decoded))
 	}
-
-	var got map[string]interface{}
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatalf("unmarshal output: %v", err)
-	}
-
-	record := got["records"].([]interface{})[0].(map[string]interface{})
+	record := decoded[0]
 	parsed := record["parsed_snapshot"].(map[string]interface{})
 
 	formattedOut := parsed["msg"].(map[string]interface{})
@@ -273,6 +256,381 @@ func TestSnapshotPrinter_HandlesVariant2EdgeCases(t *testing.T) {
 	timeOut := parsed["item-a"].(map[string]interface{})
 	if timeOut["value"] != "2023-11-14T22:13:20.123000Z" {
 		t.Fatalf("timestamp format mismatch: %#v", timeOut)
+	}
+}
+
+func TestDecodeSnapshotRecords_Simplified(t *testing.T) {
+	stringsCache := []map[string]uint32{
+		{"": 0},
+		{"root": 1},
+		{"java.lang.String": 2},
+		{"hello": 3},
+	}
+
+	rootValue := &livedebugger.Variant2{
+		VariantTypeMaxDepth:      uint32(livedebugger.Variant_VARIANT_STRING) << 1,
+		OriginalTypeIndexInCache: 2,
+		BytesIndexInCache:        3,
+		OriginalSize:             5,
+	}
+	rootNamespace := &livedebugger.Variant2{
+		VariantTypeMaxDepth:   uint32(livedebugger.Variant_VARIANT_NAMESPACE) << 1,
+		AttributeNamesInCache: []uint32{1},
+		AttributeValues:       []*livedebugger.Variant2{rootValue},
+	}
+	aug := &livedebugger.AugReportMessage{Arguments2: rootNamespace}
+	payload, err := proto.Marshal(aug)
+	if err != nil {
+		t.Fatalf("marshal aug report: %v", err)
+	}
+
+	encoded := toBase64(payload)
+	stringMapRaw, err := json.Marshal(stringsCache)
+	if err != nil {
+		t.Fatalf("marshal string map: %v", err)
+	}
+
+	records := []map[string]interface{}{
+		{
+			"snapshot.data":       encoded,
+			"snapshot.string_map": string(stringMapRaw),
+			"snapshot.id":         "abc",
+		},
+	}
+
+	decoded := DecodeSnapshotRecords(records, true)
+	record := decoded[0]
+
+	// Raw encoded fields should be removed after successful decode
+	if _, ok := record["snapshot.data"]; ok {
+		t.Fatal("snapshot.data should be removed after decode")
+	}
+	if _, ok := record["snapshot.string_map"]; ok {
+		t.Fatal("snapshot.string_map should be removed after decode")
+	}
+
+	// Non-snapshot fields should be preserved
+	if record["snapshot.id"] != "abc" {
+		t.Fatalf("snapshot.id = %v, want \"abc\"", record["snapshot.id"])
+	}
+
+	parsedSnapshot, ok := record["parsed_snapshot"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parsed_snapshot missing: %#v", record)
+	}
+
+	// With simplification, "root" should be the plain value "hello", not a wrapper
+	rootVal, ok := parsedSnapshot["root"]
+	if !ok {
+		t.Fatalf("parsed_snapshot.root missing: %#v", parsedSnapshot)
+	}
+	if rootVal != "hello" {
+		t.Fatalf("simplified root = %#v, want \"hello\"", rootVal)
+	}
+}
+
+func TestSimplifySnapshotValues_Primitives(t *testing.T) {
+	tests := []struct {
+		name  string
+		input interface{}
+		want  interface{}
+	}{
+		{
+			name:  "integer wrapper",
+			input: map[string]interface{}{"type": "Integer", "value": int64(42)},
+			want:  int64(42),
+		},
+		{
+			name:  "string wrapper",
+			input: map[string]interface{}{"type": "java.lang.String", "value": "hello"},
+			want:  "hello",
+		},
+		{
+			name:  "boolean wrapper",
+			input: map[string]interface{}{"type": "boolean", "value": true},
+			want:  true,
+		},
+		{
+			name:  "null wrapper",
+			input: map[string]interface{}{"type": "null", "value": nil},
+			want:  nil,
+		},
+		{
+			name:  "float wrapper",
+			input: map[string]interface{}{"type": "Double", "value": 3.14},
+			want:  3.14,
+		},
+		{
+			name:  "plain string passthrough",
+			input: "just a string",
+			want:  "just a string",
+		},
+		{
+			name:  "plain int passthrough",
+			input: 42,
+			want:  42,
+		},
+		{
+			name:  "nil passthrough",
+			input: nil,
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SimplifySnapshotValues(tt.input)
+			if got != tt.want {
+				t.Fatalf("SimplifySnapshotValues() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSimplifySnapshotValues_Object(t *testing.T) {
+	input := map[string]interface{}{
+		"type": "com.example.User",
+		"@attributes": map[string]interface{}{
+			"name": map[string]interface{}{
+				"type":  "java.lang.String",
+				"value": "alice",
+			},
+			"age": map[string]interface{}{
+				"type":  "Integer",
+				"value": int64(30),
+			},
+		},
+	}
+
+	got := SimplifySnapshotValues(input)
+	gotMap, ok := got.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map, got %T: %#v", got, got)
+	}
+	if gotMap["name"] != "alice" {
+		t.Fatalf("name = %#v, want \"alice\"", gotMap["name"])
+	}
+	if gotMap["age"] != int64(30) {
+		t.Fatalf("age = %#v, want 30", gotMap["age"])
+	}
+}
+
+func TestSimplifySnapshotValues_List(t *testing.T) {
+	input := map[string]interface{}{
+		"type": "java.util.ArrayList",
+		"value": []interface{}{
+			map[string]interface{}{"type": "Integer", "value": int64(1)},
+			map[string]interface{}{"type": "Integer", "value": int64(2)},
+			map[string]interface{}{"type": "Integer", "value": int64(3)},
+		},
+	}
+
+	got := SimplifySnapshotValues(input)
+	gotSlice, ok := got.([]interface{})
+	if !ok {
+		t.Fatalf("expected slice, got %T: %#v", got, got)
+	}
+	if len(gotSlice) != 3 {
+		t.Fatalf("len = %d, want 3", len(gotSlice))
+	}
+	if gotSlice[0] != int64(1) || gotSlice[1] != int64(2) || gotSlice[2] != int64(3) {
+		t.Fatalf("list = %#v, want [1, 2, 3]", gotSlice)
+	}
+}
+
+func TestSimplifySnapshotValues_Map(t *testing.T) {
+	input := map[string]interface{}{
+		"@CT":  dictType, // preserved by normalizeSnapshotFieldNames for isDictType
+		"type": "java.util.HashMap",
+		"value": []interface{}{
+			[]interface{}{
+				map[string]interface{}{"type": "java.lang.String", "value": "key1"},
+				map[string]interface{}{"type": "Integer", "value": int64(100)},
+			},
+			[]interface{}{
+				map[string]interface{}{"type": "java.lang.String", "value": "key2"},
+				map[string]interface{}{"type": "Integer", "value": int64(200)},
+			},
+		},
+	}
+
+	got := SimplifySnapshotValues(input)
+	gotMap, ok := got.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map, got %T: %#v", got, got)
+	}
+	if gotMap["key1"] != int64(100) {
+		t.Fatalf("key1 = %#v, want 100", gotMap["key1"])
+	}
+	if gotMap["key2"] != int64(200) {
+		t.Fatalf("key2 = %#v, want 200", gotMap["key2"])
+	}
+}
+
+func TestSimplifySnapshotValues_Namespace(t *testing.T) {
+	// A namespace (plain map without type wrappers) should recurse
+	input := map[string]interface{}{
+		"frame": map[string]interface{}{
+			"filename": map[string]interface{}{"type": "String", "value": "App.java"},
+			"line":     map[string]interface{}{"type": "Integer", "value": int64(42)},
+		},
+		"message": map[string]interface{}{"type": "String", "value": "test message"},
+	}
+
+	got := SimplifySnapshotValues(input)
+	gotMap, ok := got.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map, got %T: %#v", got, got)
+	}
+
+	frame, ok := gotMap["frame"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("frame should be map, got %T: %#v", gotMap["frame"], gotMap["frame"])
+	}
+	if frame["filename"] != "App.java" {
+		t.Fatalf("frame.filename = %#v, want \"App.java\"", frame["filename"])
+	}
+	if frame["line"] != int64(42) {
+		t.Fatalf("frame.line = %#v, want 42", frame["line"])
+	}
+	if gotMap["message"] != "test message" {
+		t.Fatalf("message = %#v, want \"test message\"", gotMap["message"])
+	}
+}
+
+func TestSimplifySnapshotValues_NestedObject(t *testing.T) {
+	// Object with nested object in attributes
+	input := map[string]interface{}{
+		"type": "com.example.Order",
+		"@attributes": map[string]interface{}{
+			"id": map[string]interface{}{"type": "Integer", "value": int64(1)},
+			"customer": map[string]interface{}{
+				"type": "com.example.Customer",
+				"@attributes": map[string]interface{}{
+					"name": map[string]interface{}{"type": "String", "value": "bob"},
+				},
+			},
+		},
+	}
+
+	got := SimplifySnapshotValues(input)
+	gotMap, ok := got.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map, got %T", got)
+	}
+	if gotMap["id"] != int64(1) {
+		t.Fatalf("id = %#v, want 1", gotMap["id"])
+	}
+	customer, ok := gotMap["customer"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("customer should be map, got %T", gotMap["customer"])
+	}
+	if customer["name"] != "bob" {
+		t.Fatalf("customer.name = %#v, want \"bob\"", customer["name"])
+	}
+}
+
+func TestDecodeSnapshotRecords_NoSnapshotData(t *testing.T) {
+	records := []map[string]interface{}{
+		{"some_field": "some_value"},
+	}
+
+	decoded := DecodeSnapshotRecords(records, true)
+	if len(decoded) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(decoded))
+	}
+	if _, exists := decoded[0]["parsed_snapshot"]; exists {
+		t.Fatal("parsed_snapshot should not be present for records without snapshot.data")
+	}
+}
+
+func TestSummarizeSnapshotForTable(t *testing.T) {
+	tests := []struct {
+		name string
+		rec  map[string]interface{}
+		want string
+	}{
+		{
+			name: "typical snapshot with frame and traceback",
+			rec: map[string]interface{}{
+				"parsed_snapshot": map[string]interface{}{
+					"rookout": map[string]interface{}{
+						"frame": map[string]interface{}{
+							"filename": "App.java",
+							"function": "main",
+							"line":     42,
+							"locals": map[string]interface{}{
+								"x": 1, "y": 2, "z": 3,
+							},
+						},
+						"traceback": []interface{}{"frame1", "frame2"},
+					},
+				},
+			},
+			want: "main() at App.java:42 | 3 locals, 2 frames",
+		},
+		{
+			name: "no locals, no traceback",
+			rec: map[string]interface{}{
+				"parsed_snapshot": map[string]interface{}{
+					"rookout": map[string]interface{}{
+						"frame": map[string]interface{}{
+							"filename": "App.java",
+							"function": "run",
+							"line":     10,
+						},
+					},
+				},
+			},
+			want: "run() at App.java:10",
+		},
+		{
+			name: "no parsed_snapshot — unchanged",
+			rec: map[string]interface{}{
+				"snapshot.id": "abc",
+			},
+			want: "", // no parsed_snapshot to summarize
+		},
+		{
+			name: "unknown structure — fallback",
+			rec: map[string]interface{}{
+				"parsed_snapshot": map[string]interface{}{
+					"custom": map[string]interface{}{
+						"a": 1, "b": 2,
+					},
+				},
+			},
+			want: "<2 fields>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			records := []map[string]interface{}{tt.rec}
+			summarized := SummarizeSnapshotForTable(records)
+			if len(summarized) != 1 {
+				t.Fatalf("expected 1 record, got %d", len(summarized))
+			}
+			result, ok := summarized[0]["parsed_snapshot"].(string)
+			if tt.want == "" {
+				if ok {
+					t.Fatalf("expected no summary, got %q", result)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("expected string summary, got %T: %v", summarized[0]["parsed_snapshot"], summarized[0]["parsed_snapshot"])
+			}
+			if result != tt.want {
+				t.Fatalf("summary = %q, want %q", result, tt.want)
+			}
+			// Verify input records are not mutated
+			if orig, exists := records[0]["parsed_snapshot"]; exists {
+				if _, isString := orig.(string); isString {
+					t.Fatal("original record was mutated: parsed_snapshot should still be a map")
+				}
+			}
+		})
 	}
 }
 
