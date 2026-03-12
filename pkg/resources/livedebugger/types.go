@@ -29,11 +29,11 @@ type BreakpointRule struct {
 }
 
 type RuleStatusNode struct {
-	RuleID              string                 `json:"ruleId"`
-	Status              string                 `json:"status"`
-	RookStatuses        []map[string]interface{} `json:"rookStatuses"`
-	AgentStatuses       []map[string]interface{} `json:"agentStatuses"`
-	ControllerStatuses  []map[string]interface{} `json:"controllerStatuses"`
+	RuleID             string                   `json:"ruleId"`
+	Status             string                   `json:"status"`
+	RookStatuses       []map[string]interface{} `json:"rookStatuses"`
+	AgentStatuses      []map[string]interface{} `json:"agentStatuses"`
+	ControllerStatuses []map[string]interface{} `json:"controllerStatuses"`
 }
 
 type DeleteAllRulesResponse struct {
