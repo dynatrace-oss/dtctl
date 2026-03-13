@@ -2984,7 +2984,7 @@ dtctl get extension-configs com.dynatrace.extension.host-monitoring
 dtctl get extension-configs com.dynatrace.extension.host-monitoring --version 1.2.3
 
 # Describe a specific monitoring configuration
-dtctl describe extension-config com.dynatrace.extension.host-monitoring <object-id>
+dtctl describe extension-config com.dynatrace.extension.host-monitoring --config-id <object-id>
 ```
 
 ### Apply Monitoring Configuration
