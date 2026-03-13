@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"gopkg.in/yaml.v3"
 )
 
 func TestNewHandler(t *testing.T) {
@@ -901,6 +902,96 @@ func TestDeleteMonitoringConfiguration(t *testing.T) {
 
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestMonitoringConfiguration_MarshalYAML(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   MonitoringConfiguration
+		contains []string
+		excludes []string
+	}{
+		{
+			name: "structured value serialized as YAML map",
+			config: MonitoringConfiguration{
+				Type:          "extension_monitoring_config",
+				ExtensionName: "com.dynatrace.extension.host-monitoring",
+				ObjectID:      "test-id-001",
+				Scope:         "environment",
+				Value:         json.RawMessage(`{"enabled":true,"description":"test config","version":"1.0.0"}`),
+			},
+			contains: []string{
+				"extensionName: com.dynatrace.extension.host-monitoring",
+				"objectId: test-id-001",
+				"scope: environment",
+				"enabled: true",
+				"description: test config",
+				"version: 1.0.0",
+			},
+			// Must NOT contain byte array representation
+			excludes: []string{
+				"- 123",
+				"- 34",
+			},
+		},
+		{
+			name: "empty value omitted",
+			config: MonitoringConfiguration{
+				ExtensionName: "com.dynatrace.extension.jmx",
+				ObjectID:      "test-id-002",
+				Scope:         "HOST-ABC",
+			},
+			contains: []string{
+				"objectId: test-id-002",
+				"scope: HOST-ABC",
+			},
+			excludes: []string{
+				"value:",
+			},
+		},
+		{
+			name: "nested value preserved",
+			config: MonitoringConfiguration{
+				ObjectID: "test-id-003",
+				Value:    json.RawMessage(`{"endpoints":[{"host":"example.invalid","port":5432}]}`),
+			},
+			contains: []string{
+				"objectId: test-id-003",
+				"host: example.invalid",
+				"port: 5432",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.config.MarshalYAML()
+			if err != nil {
+				t.Fatalf("MarshalYAML() unexpected error: %v", err)
+			}
+			if result == nil {
+				t.Fatal("MarshalYAML() returned nil")
+			}
+
+			// Marshal the result to YAML string for content checks
+			yamlBytes, err := yaml.Marshal(result)
+			if err != nil {
+				t.Fatalf("failed to marshal YAML result: %v", err)
+			}
+			yamlStr := string(yamlBytes)
+
+			for _, want := range tt.contains {
+				if !strings.Contains(yamlStr, want) {
+					t.Errorf("YAML output missing expected content %q\ngot:\n%s", want, yamlStr)
+				}
+			}
+			for _, exclude := range tt.excludes {
+				if strings.Contains(yamlStr, exclude) {
+					t.Errorf("YAML output should not contain %q\ngot:\n%s", exclude, yamlStr)
+				}
 			}
 		})
 	}

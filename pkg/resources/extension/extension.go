@@ -90,6 +90,32 @@ type MonitoringConfiguration struct {
 	Value         json.RawMessage `json:"value,omitempty" table:"-"`
 }
 
+// MarshalYAML implements yaml.Marshaler to properly serialize json.RawMessage Value
+// as a structured object instead of a byte array.
+func (m MonitoringConfiguration) MarshalYAML() (interface{}, error) {
+	var parsedValue interface{}
+	if len(m.Value) > 0 {
+		if err := json.Unmarshal(m.Value, &parsedValue); err != nil {
+			// If we can't parse the JSON, fall back to string representation
+			parsedValue = string(m.Value)
+		}
+	}
+
+	return struct {
+		Type          string      `yaml:"type,omitempty"`
+		ExtensionName string      `yaml:"extensionName,omitempty"`
+		ObjectID      string      `yaml:"objectId"`
+		Scope         string      `yaml:"scope,omitempty"`
+		Value         interface{} `yaml:"value,omitempty"`
+	}{
+		Type:          m.Type,
+		ExtensionName: m.ExtensionName,
+		ObjectID:      m.ObjectID,
+		Scope:         m.Scope,
+		Value:         parsedValue,
+	}, nil
+}
+
 // MonitoringConfigurationList represents a list of monitoring configuration instances
 type MonitoringConfigurationList struct {
 	Items       []MonitoringConfiguration `json:"items"`
