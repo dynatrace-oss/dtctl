@@ -11,18 +11,18 @@ import (
 
 // extensionDescription is a rich struct for JSON/YAML output of describe extension
 type extensionDescription struct {
-	Name                string                          `json:"name" yaml:"name"`
-	Version             string                          `json:"version" yaml:"version"`
-	Author              string                          `json:"author,omitempty" yaml:"author,omitempty"`
-	MinDynatraceVersion string                          `json:"minDynatraceVersion,omitempty" yaml:"minDynatraceVersion,omitempty"`
-	MinEECVersion       string                          `json:"minEECVersion,omitempty" yaml:"minEECVersion,omitempty"`
-	FileHash            string                          `json:"fileHash,omitempty" yaml:"fileHash,omitempty"`
-	DataSources         []string                        `json:"dataSources,omitempty" yaml:"dataSources,omitempty"`
-	FeatureSets         map[string][]string             `json:"featureSets,omitempty" yaml:"featureSets,omitempty"`
-	Variables           []extension.ExtensionVariable   `json:"variables,omitempty" yaml:"variables,omitempty"`
-	ActiveVersion       string                          `json:"activeVersion,omitempty" yaml:"activeVersion,omitempty"`
-	AvailableVersions   []string                        `json:"availableVersions,omitempty" yaml:"availableVersions,omitempty"`
-	MonitoringConfigs   []monitoringConfigSummary       `json:"monitoringConfigurations,omitempty" yaml:"monitoringConfigurations,omitempty"`
+	Name                string                        `json:"name" yaml:"name"`
+	Version             string                        `json:"version" yaml:"version"`
+	Author              string                        `json:"author,omitempty" yaml:"author,omitempty"`
+	MinDynatraceVersion string                        `json:"minDynatraceVersion,omitempty" yaml:"minDynatraceVersion,omitempty"`
+	MinEECVersion       string                        `json:"minEECVersion,omitempty" yaml:"minEECVersion,omitempty"`
+	FileHash            string                        `json:"fileHash,omitempty" yaml:"fileHash,omitempty"`
+	DataSources         []string                      `json:"dataSources,omitempty" yaml:"dataSources,omitempty"`
+	FeatureSets         map[string][]string           `json:"featureSets,omitempty" yaml:"featureSets,omitempty"`
+	Variables           []extension.ExtensionVariable `json:"variables,omitempty" yaml:"variables,omitempty"`
+	ActiveVersion       string                        `json:"activeVersion,omitempty" yaml:"activeVersion,omitempty"`
+	AvailableVersions   []string                      `json:"availableVersions,omitempty" yaml:"availableVersions,omitempty"`
+	MonitoringConfigs   []monitoringConfigSummary     `json:"monitoringConfigurations,omitempty" yaml:"monitoringConfigurations,omitempty"`
 }
 
 type monitoringConfigSummary struct {
