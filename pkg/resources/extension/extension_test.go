@@ -105,18 +105,32 @@ func TestList(t *testing.T) {
 		{
 			name:       "with name filter",
 			chunkSize:  0,
-			nameFilter: "com.dynatrace",
+			nameFilter: "sql",
 			pages: []ExtensionList{
 				{
-					TotalCount: 1,
+					TotalCount: 4,
 					Items: []Extension{
 						{ExtensionName: "com.dynatrace.extension.host-monitoring", ActiveVersion: "1.0.0"},
+						{ExtensionName: "com.dynatrace.extension.sql-oracle", ActiveVersion: "2.0.0"},
+						{ExtensionName: "com.dynatrace.extension.mysql", ActiveVersion: "3.0.0"},
+						{ExtensionName: "com.dynatrace.extension.sql-db2", ActiveVersion: "1.5.0"},
 					},
 				},
 			},
 			validate: func(t *testing.T, result *ExtensionList) {
-				if len(result.Items) != 1 {
-					t.Errorf("expected 1 filtered extension, got %d", len(result.Items))
+				// API returns all 4, client-side filter keeps only those containing "sql" (case-insensitive)
+				if len(result.Items) != 3 {
+					t.Errorf("expected 3 filtered extensions, got %d", len(result.Items))
+				}
+				expected := map[string]bool{
+					"com.dynatrace.extension.sql-oracle": true,
+					"com.dynatrace.extension.mysql":      true,
+					"com.dynatrace.extension.sql-db2":    true,
+				}
+				for _, ext := range result.Items {
+					if !expected[ext.ExtensionName] {
+						t.Errorf("unexpected extension in filtered result: %s", ext.ExtensionName)
+					}
 				}
 			},
 		},
@@ -454,6 +468,8 @@ func TestListMonitoringConfigurations(t *testing.T) {
 		chunkSize     int64
 		statusCode    int
 		response      MonitoringConfigurationList
+		expectedCount int
+		expectedIDs   []string
 		expectError   bool
 		errorContains string
 	}{
@@ -469,6 +485,7 @@ func TestListMonitoringConfigurations(t *testing.T) {
 					{ObjectID: "config-2", Scope: "HOST_GROUP-456"},
 				},
 			},
+			expectedCount: 2,
 		},
 		{
 			name:          "with version filter",
@@ -477,11 +494,15 @@ func TestListMonitoringConfigurations(t *testing.T) {
 			chunkSize:     0,
 			statusCode:    200,
 			response: MonitoringConfigurationList{
-				TotalCount: 1,
+				TotalCount: 3,
 				Items: []MonitoringConfiguration{
-					{ObjectID: "config-1", Scope: "HOST-123"},
+					{ObjectID: "config-1", Scope: "HOST-123", Value: json.RawMessage(`{"version":"1.2.3","enabled":true}`)},
+					{ObjectID: "config-2", Scope: "HOST-456", Value: json.RawMessage(`{"version":"2.0.0","enabled":true}`)},
+					{ObjectID: "config-3", Scope: "HOST-789", Value: json.RawMessage(`{"version":"1.2.3","enabled":false}`)},
 				},
 			},
+			expectedCount: 2,
+			expectedIDs:   []string{"config-1", "config-3"},
 		},
 		{
 			name:          "extension not found",
@@ -535,8 +556,19 @@ func TestListMonitoringConfigurations(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if len(result.Items) != len(tt.response.Items) {
-				t.Errorf("expected %d configs, got %d", len(tt.response.Items), len(result.Items))
+			expectedCount := tt.expectedCount
+			if expectedCount == 0 {
+				expectedCount = len(tt.response.Items)
+			}
+			if len(result.Items) != expectedCount {
+				t.Errorf("expected %d configs, got %d", expectedCount, len(result.Items))
+			}
+			if len(tt.expectedIDs) > 0 {
+				for i, id := range tt.expectedIDs {
+					if i < len(result.Items) && result.Items[i].ObjectID != id {
+						t.Errorf("expected item %d to have ID %q, got %q", i, id, result.Items[i].ObjectID)
+					}
+				}
 			}
 		})
 	}

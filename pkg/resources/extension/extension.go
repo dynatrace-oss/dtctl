@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
@@ -177,15 +178,25 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 		allExtensions = append(allExtensions, result.Items...)
 		totalCount = result.TotalCount
 
-		if chunkSize == 0 {
-			return &result, nil
-		}
-
-		if result.NextPageKey == "" {
+		if chunkSize == 0 || result.NextPageKey == "" {
 			break
 		}
 
 		nextPageKey = result.NextPageKey
+	}
+
+	// Client-side filtering: the API accepts the name parameter but ignores it,
+	// so we filter locally using a case-insensitive substring match.
+	if name != "" {
+		nameLower := strings.ToLower(name)
+		filtered := allExtensions[:0]
+		for _, ext := range allExtensions {
+			if strings.Contains(strings.ToLower(ext.ExtensionName), nameLower) {
+				filtered = append(filtered, ext)
+			}
+		}
+		allExtensions = filtered
+		totalCount = len(filtered)
 	}
 
 	return &ExtensionList{
@@ -340,14 +351,28 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 		allItems = append(allItems, result.Items...)
 		totalCount = result.TotalCount
 
-		if chunkSize == 0 {
-			return &result, nil
-		}
-
-		if result.NextPageKey == "" {
+		if chunkSize == 0 || result.NextPageKey == "" {
 			break
 		}
 		nextPageKey = result.NextPageKey
+	}
+
+	// Client-side filtering: the API accepts the version parameter but ignores it,
+	// so we filter locally by extracting the version from the config value JSON.
+	if version != "" {
+		filtered := allItems[:0]
+		for _, item := range allItems {
+			if len(item.Value) > 0 {
+				var val map[string]interface{}
+				if err := json.Unmarshal(item.Value, &val); err == nil {
+					if v, ok := val["version"].(string); ok && v == version {
+						filtered = append(filtered, item)
+					}
+				}
+			}
+		}
+		allItems = filtered
+		totalCount = len(filtered)
 	}
 
 	return &MonitoringConfigurationList{
