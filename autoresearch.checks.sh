@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Correctness gate: all tests must pass, golden files must be consistent
-# Output is suppressed on success; only errors are shown.
-go test ./... -count=1 2>&1 | grep -E "^(FAIL|---\s+FAIL)" || true
+# Correctness gate: all tests must pass.
+# Suppress version-mismatch noise from proto stubs; only surface real failures.
+OUTPUT=$(go test ./... -count=1 2>&1) || true
 
-# Fail if any package failed
-if go test ./... -count=1 2>&1 | grep -q "^FAIL"; then
-    echo "ERROR: one or more test packages failed"
+FAILED=$(echo "$OUTPUT" | grep -E "^FAIL" | head -20 || true)
+if [ -n "$FAILED" ]; then
+    echo "ERROR: test failures detected:"
+    echo "$FAILED"
+    echo "$OUTPUT" | grep -E "^--- FAIL" | head -20 || true
     exit 1
 fi
