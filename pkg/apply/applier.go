@@ -761,6 +761,11 @@ func (a *Applier) dryRunExtensionConfig(doc map[string]interface{}) error {
 	objectID, _ := doc["objectId"].(string)
 	scope, _ := doc["scope"].(string)
 
+	// Validate required fields to align dry-run with real apply behavior
+	if extensionName == "" {
+		return fmt.Errorf("extensionName is required for extension monitoring configuration")
+	}
+
 	if objectID != "" {
 		fmt.Println("Dry run: would update extension monitoring configuration")
 		fmt.Printf("  Config ID: %s\n", objectID)
