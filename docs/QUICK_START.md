@@ -23,11 +23,12 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 12. [EdgeConnect](#edgeconnect)
 13. [Davis AI](#davis-ai)
 14. [Live Debugger](#live-debugger)
-15. [Output Formats](#output-formats)
-16. [Azure Monitoring](#azure-monitoring)
-17. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
-18. [Tips & Tricks](#tips--tricks)
-19. [Troubleshooting](#troubleshooting)
+15. [Extensions 2.0](#extensions-20)
+16. [Output Formats](#output-formats)
+17. [Azure Monitoring](#azure-monitoring)
+18. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
+19. [Tips & Tricks](#tips--tricks)
+20. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -2944,6 +2945,77 @@ dtctl query "fetch application.snapshots | limit 5" --decode-snapshots -o yaml
 ```
 
 `--decode-snapshots` enriches each record with `parsed_snapshot` decoded from `snapshot.data` and `snapshot.string_map`. By default, variant wrappers are simplified to plain values; use `--decode-snapshots=full` to preserve type annotations.
+
+---
+
+## Extensions 2.0
+
+Extensions 2.0 manages installed extension packages and their monitoring configurations.
+
+### List and View Extensions
+
+```bash
+# List all installed extensions
+dtctl get extensions
+
+# Filter extensions by name
+dtctl get extensions --name "com.dynatrace"
+
+# Get versions of a specific extension
+dtctl get extension com.dynatrace.extension.host-monitoring
+
+# Wide output (shows author, feature sets, data sources)
+dtctl get extension com.dynatrace.extension.host-monitoring -o wide
+
+# Describe an extension (schema, feature sets, data sources)
+dtctl describe extension com.dynatrace.extension.host-monitoring
+
+# Describe a specific version
+dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3
+```
+
+### Monitoring Configurations
+
+```bash
+# List monitoring configurations for an extension
+dtctl get extension-configs com.dynatrace.extension.host-monitoring
+
+# Filter by version
+dtctl get extension-configs com.dynatrace.extension.host-monitoring --version 1.2.3
+
+# Describe a specific monitoring configuration
+dtctl describe extension-config com.dynatrace.extension.host-monitoring <object-id>
+```
+
+### Apply Monitoring Configuration
+
+```bash
+# Create a new monitoring configuration
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+
+# Create with a specific scope
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --scope HOST-1234
+
+# Update an existing configuration (objectId in file)
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+
+# Apply with template variables
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --set env=prod
+
+# Dry run to preview
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --dry-run
+```
+
+**Example monitoring configuration** (`config.yaml`):
+
+```yaml
+scope: environment
+value:
+  enabled: true
+  description: "Host monitoring"
+  featureSets:
+    - host_performance
+```
 
 ---
 

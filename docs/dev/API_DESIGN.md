@@ -922,15 +922,66 @@ dtctl exec copilot document-search "performance" --exclude doc-123,doc-456
 # dtctl get accounts                               # List accounts (if multi-account)
 ```
 
-### 16. Hub (Extensions)
+### 16. Extensions 2.0
+
+**API Spec**: [Extensions 2.0 API](https://docs.dynatrace.com/docs/dynatrace-api/environment-api/extensions-2-0)
+
+Extensions 2.0 manages installed extension packages and their monitoring configurations.
 
 ```bash
-# Extensions (not implemented yet)
-# dtctl get extensions                             # List installed extensions
-# dtctl describe extension <id>                    # Extension details
-# dtctl install extension <extension-id>           # Install from Hub
-# dtctl uninstall extension <id>                   # Uninstall extension
+# Resource names: extensions/extension (short: ext, exts)
+#                 extension-configs/extension-config (short: ext-config, ext-configs)
 
+# List all installed extensions
+dtctl get extensions
+
+# Filter extensions by name
+dtctl get extensions --name "com.dynatrace"
+
+# Get versions of a specific extension
+dtctl get extension com.dynatrace.extension.host-monitoring
+
+# Get versions with wide output (shows author, feature sets, data sources)
+dtctl get extension com.dynatrace.extension.host-monitoring -o wide
+
+# Describe an extension (schema, feature sets, data sources, file info)
+dtctl describe extension com.dynatrace.extension.host-monitoring
+
+# Describe a specific version
+dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3
+
+# List monitoring configurations for an extension
+dtctl get extension-configs com.dynatrace.extension.host-monitoring
+
+# Filter monitoring configurations by version
+dtctl get extension-configs com.dynatrace.extension.host-monitoring --version 1.2.3
+
+# Describe a specific monitoring configuration
+dtctl describe extension-config com.dynatrace.extension.host-monitoring <object-id>
+
+# Apply (create or update) a monitoring configuration from YAML
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+
+# Apply with scope override
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --scope HOST-1234
+
+# Apply with template variables
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --set env=prod
+
+# Dry run to preview
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --dry-run
+```
+
+**Behavior notes**:
+- `get extensions` lists all installed extension packages with name, latest version, and active version.
+- `get extension <name>` lists all installed versions of a specific extension.
+- `describe extension` displays schema details, feature sets, data sources, and file information for the latest (or specified) version.
+- `get extension-configs` lists monitoring configurations with scope, version, and status.
+- `apply extension-config` creates a new configuration if no `objectId` is present in the file, or updates an existing one if `objectId` is set.
+- The Extensions API limits page sizes to 100; dtctl automatically caps the `--chunk-size` value.
+- Template variables (`--set`) are supported for manifest files.
+
+```bash
 # Certificates (not implemented yet)
 # dtctl get certificates                           # List certificates
 ```
