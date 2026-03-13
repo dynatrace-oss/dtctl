@@ -22,7 +22,7 @@ func NewHandler(c *client.Client) *Handler {
 // Extension represents an Extensions 2.0 extension
 type Extension struct {
 	ExtensionName string `json:"extensionName" table:"NAME"`
-	ActiveVersion string `json:"activeVersion,omitempty" table:"ACTIVE VERSION"`
+	Version       string `json:"version,omitempty" table:"VERSION"`
 }
 
 // ExtensionList represents a paginated list of extensions

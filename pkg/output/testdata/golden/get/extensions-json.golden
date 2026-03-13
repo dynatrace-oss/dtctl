@@ -1,11 +1,11 @@
 [
   {
     "extensionName": "com.dynatrace.extension.host-monitoring",
-    "activeVersion": "1.2.3"
+    "version": "1.2.3"
   },
   {
     "extensionName": "com.dynatrace.extension.jmx",
-    "activeVersion": "2.0.1"
+    "version": "2.0.1"
   },
   {
     "extensionName": "custom:my-custom-extension"

@@ -32,7 +32,7 @@ func TestExtensionList(t *testing.T) {
 				t.Logf("  ... and %d more", len(result.Items)-5)
 				break
 			}
-			t.Logf("  - %s (active: %s)", ext.ExtensionName, ext.ActiveVersion)
+			t.Logf("  - %s (active: %s)", ext.ExtensionName, ext.Version)
 		}
 	})
 
@@ -171,7 +171,7 @@ func TestExtensionGetEnvironmentConfig(t *testing.T) {
 
 	var activeExt *extension.Extension
 	for _, ext := range result.Items {
-		if ext.ActiveVersion != "" {
+		if ext.Version != "" {
 			activeExt = &ext
 			break
 		}
@@ -234,7 +234,7 @@ func TestMonitoringConfigurationLifecycle(t *testing.T) {
 
 	var activeExt *extension.Extension
 	for _, ext := range result.Items {
-		if ext.ActiveVersion != "" {
+		if ext.Version != "" {
 			activeExt = &ext
 			break
 		}
@@ -244,8 +244,8 @@ func TestMonitoringConfigurationLifecycle(t *testing.T) {
 		t.Skip("No extension with an active version found - cannot test monitoring configuration lifecycle")
 	}
 
-	t.Logf("Using extension %q (active version: %s) for monitoring config lifecycle test",
-		activeExt.ExtensionName, activeExt.ActiveVersion)
+	t.Logf("Using extension %q (version: %s) for monitoring config lifecycle test",
+		activeExt.ExtensionName, activeExt.Version)
 
 	t.Run("complete lifecycle", func(t *testing.T) {
 		// Step 1: Create monitoring configuration

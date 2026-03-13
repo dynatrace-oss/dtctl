@@ -45,8 +45,8 @@ func TestList(t *testing.T) {
 				{
 					TotalCount: 2,
 					Items: []Extension{
-						{ExtensionName: "com.dynatrace.extension.host-monitoring", ActiveVersion: "1.2.3"},
-						{ExtensionName: "com.dynatrace.extension.jmx", ActiveVersion: "2.0.0"},
+						{ExtensionName: "com.dynatrace.extension.host-monitoring", Version: "1.2.3"},
+						{ExtensionName: "com.dynatrace.extension.jmx", Version: "2.0.0"},
 					},
 				},
 			},
@@ -67,14 +67,14 @@ func TestList(t *testing.T) {
 					TotalCount:  3,
 					NextPageKey: "page2",
 					Items: []Extension{
-						{ExtensionName: "ext-1", ActiveVersion: "1.0.0"},
-						{ExtensionName: "ext-2", ActiveVersion: "2.0.0"},
+						{ExtensionName: "ext-1", Version: "1.0.0"},
+						{ExtensionName: "ext-2", Version: "2.0.0"},
 					},
 				},
 				{
 					TotalCount: 3,
 					Items: []Extension{
-						{ExtensionName: "ext-3", ActiveVersion: "3.0.0"},
+						{ExtensionName: "ext-3", Version: "3.0.0"},
 					},
 				},
 			},
@@ -110,10 +110,10 @@ func TestList(t *testing.T) {
 				{
 					TotalCount: 4,
 					Items: []Extension{
-						{ExtensionName: "com.dynatrace.extension.host-monitoring", ActiveVersion: "1.0.0"},
-						{ExtensionName: "com.dynatrace.extension.sql-oracle", ActiveVersion: "2.0.0"},
-						{ExtensionName: "com.dynatrace.extension.mysql", ActiveVersion: "3.0.0"},
-						{ExtensionName: "com.dynatrace.extension.sql-db2", ActiveVersion: "1.5.0"},
+						{ExtensionName: "com.dynatrace.extension.host-monitoring", Version: "1.0.0"},
+						{ExtensionName: "com.dynatrace.extension.sql-oracle", Version: "2.0.0"},
+						{ExtensionName: "com.dynatrace.extension.mysql", Version: "3.0.0"},
+						{ExtensionName: "com.dynatrace.extension.sql-db2", Version: "1.5.0"},
 					},
 				},
 			},
@@ -141,7 +141,7 @@ func TestList(t *testing.T) {
 				{
 					TotalCount: 1,
 					Items: []Extension{
-						{ExtensionName: "ext-1", ActiveVersion: "1.0.0"},
+						{ExtensionName: "ext-1", Version: "1.0.0"},
 					},
 				},
 			},

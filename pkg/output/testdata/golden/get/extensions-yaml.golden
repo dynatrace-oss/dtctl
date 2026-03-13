@@ -1,6 +1,6 @@
 - extensionname: com.dynatrace.extension.host-monitoring
-  activeversion: 1.2.3
+  version: 1.2.3
 - extensionname: com.dynatrace.extension.jmx
-  activeversion: 2.0.1
+  version: 2.0.1
 - extensionname: custom:my-custom-extension
-  activeversion: ""
+  version: ""
