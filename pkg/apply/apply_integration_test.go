@@ -599,3 +599,86 @@ func TestApply_DryRun_Dashboard(t *testing.T) {
 		t.Fatalf("Apply() dryRun dashboard error = %v", err)
 	}
 }
+
+// --- Apply: GCP Monitoring Config (create) ---
+
+func TestApply_GCPMonitoringConfig_Create(t *testing.T) {
+	const gcpExtBase = "/platform/extensions/v2/extensions/com.dynatrace.extension.da-gcp"
+	const gcpMonBase = "/platform/extensions/v2/extensions/com.dynatrace.extension.da-gcp/monitoring-configurations"
+
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		gcpExtBase: func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"items": []map[string]interface{}{{"version": "1.0.0"}},
+			})
+		},
+		gcpMonBase: func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items": []interface{}{}, "totalCount": 0,
+				})
+			case http.MethodPost:
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"objectId": "gmc-new-1",
+					"scope":    "integration-gcp",
+					"value":    map[string]interface{}{"description": "My GCP Config"},
+				})
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	gcpMonJSON := `{"scope":"integration-gcp","value":{"description":"My GCP Config","projectId":"my-proj","serviceAccountKey":"{}"}}`
+	results, err := a.Apply([]byte(gcpMonJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() GCPMonitoringConfig error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	base := results[0].(*MonitoringConfigApplyResult).ApplyResultBase
+	if base.Action != ActionCreated {
+		t.Errorf("expected 'created', got %q", base.Action)
+	}
+}
+
+// --- Apply: Dashboard create (applyDocument path) ---
+
+func TestApply_DashboardCreate(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/document/v1/documents": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("expected POST, got %s", r.Method)
+			}
+			boundary := "resp-boundary"
+			w.Header().Set("Content-Type", fmt.Sprintf("multipart/form-data; boundary=%s", boundary))
+			fmt.Fprintf(w, "--%s\r\nContent-Disposition: form-data; name=\"metadata\"\r\nContent-Type: application/json\r\n\r\n{\"id\":\"dash-new-1\",\"name\":\"My Dashboard\",\"type\":\"dashboard\",\"version\":1}\r\n--%s--\r\n", boundary, boundary)
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	dashJSON := `{"type":"dashboard","tiles":{"items":[]}}`
+	results, err := a.Apply([]byte(dashJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() dashboard create error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	base := results[0].(*DashboardApplyResult).ApplyResultBase
+	if base.Action != ActionCreated {
+		t.Errorf("expected 'created', got %q", base.Action)
+	}
+}
