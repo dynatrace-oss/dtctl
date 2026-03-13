@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -686,7 +687,7 @@ func TestUpdateMonitoringConfiguration(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error but got nil")
 				}
-				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -701,17 +702,4 @@ func TestUpdateMonitoringConfiguration(t *testing.T) {
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchStr(s, substr)
-}
-
-func searchStr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
