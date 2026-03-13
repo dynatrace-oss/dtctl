@@ -1,0 +1,4 @@
+NAME,ACTIVE VERSION
+com.dynatrace.extension.host-monitoring,1.2.3
+com.dynatrace.extension.jmx,2.0.1
+custom:my-custom-extension,

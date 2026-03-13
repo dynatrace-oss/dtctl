@@ -179,6 +179,8 @@ Examples:
 }
 
 func init() {
+	applyCmd.AddCommand(applyExtensionConfigCmd)
+
 	applyExtensionConfigCmd.Flags().StringP("file", "f", "", "file containing the monitoring configuration (scope + value) (required)")
 	applyExtensionConfigCmd.Flags().String("scope", "", "scope for the monitoring configuration (e.g. HOST-1234, only for create)")
 	applyExtensionConfigCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")

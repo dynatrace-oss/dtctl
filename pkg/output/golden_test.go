@@ -11,6 +11,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
@@ -322,6 +323,63 @@ func dqlTimeseriesFixture() []map[string]interface{} {
 	}
 }
 
+func extensionFixtures() []extension.Extension {
+	return []extension.Extension{
+		{
+			ExtensionName: "com.dynatrace.extension.host-monitoring",
+			ActiveVersion: "1.2.3",
+		},
+		{
+			ExtensionName: "com.dynatrace.extension.jmx",
+			ActiveVersion: "2.0.1",
+		},
+		{
+			ExtensionName: "custom:my-custom-extension",
+			ActiveVersion: "",
+		},
+	}
+}
+
+func extensionVersionFixtures() []extension.ExtensionVersion {
+	return []extension.ExtensionVersion{
+		{
+			Version:       "1.2.3",
+			ExtensionName: "com.dynatrace.extension.host-monitoring",
+			Active:        true,
+		},
+		{
+			Version:       "1.2.2",
+			ExtensionName: "com.dynatrace.extension.host-monitoring",
+			Active:        false,
+		},
+		{
+			Version:       "1.1.0",
+			ExtensionName: "com.dynatrace.extension.host-monitoring",
+			Active:        false,
+		},
+	}
+}
+
+func monitoringConfigFixtures() []extension.MonitoringConfiguration {
+	return []extension.MonitoringConfiguration{
+		{
+			ExtensionName: "com.dynatrace.extension.host-monitoring",
+			ObjectID:      "a1b2c3d4-e5f6-4a7b-8c9d-000000000001",
+			Scope:         "environment",
+		},
+		{
+			ExtensionName: "com.dynatrace.extension.host-monitoring",
+			ObjectID:      "a1b2c3d4-e5f6-4a7b-8c9d-000000000002",
+			Scope:         "HOST-ABC123",
+		},
+		{
+			ExtensionName: "com.dynatrace.extension.jmx",
+			ObjectID:      "b2c3d4e5-f6a7-4b8c-9d0e-000000000003",
+			Scope:         "HOST_GROUP-XYZ789",
+		},
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Golden tests: text formats (table, wide, json, yaml, csv)
 // ---------------------------------------------------------------------------
@@ -496,6 +554,75 @@ func TestGolden_GetSettings(t *testing.T) {
 				t.Fatalf("PrintList failed: %v", err)
 			}
 			assertGolden(t, "get/settings-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_GetExtensions(t *testing.T) {
+	extensions := extensionFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(extensions); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/extensions-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_GetExtensionVersions(t *testing.T) {
+	versions := extensionVersionFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(versions); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/extension-versions-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_GetExtensionConfigs(t *testing.T) {
+	configs := monitoringConfigFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(configs); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/extension-configs-"+name, buf.String())
 		})
 	}
 }

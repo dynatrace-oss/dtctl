@@ -37,6 +37,7 @@ Supported resources:
   users                   groups                    edgeconnect (ec)
   sdk-versions            analyzers                 copilot-skills
   lookup-tables (lu)      trash                     workflow-executions (wfe)
+  extensions (ext)        extension-configs (extcfg)
 
 Use 'dtctl get <resource> --help' for resource-specific options.`,
 	Example: `  # List all workflows

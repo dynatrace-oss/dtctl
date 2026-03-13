@@ -1,0 +1,17 @@
+[
+  {
+    "extensionName": "com.dynatrace.extension.host-monitoring",
+    "objectId": "a1b2c3d4-e5f6-4a7b-8c9d-000000000001",
+    "scope": "environment"
+  },
+  {
+    "extensionName": "com.dynatrace.extension.host-monitoring",
+    "objectId": "a1b2c3d4-e5f6-4a7b-8c9d-000000000002",
+    "scope": "HOST-ABC123"
+  },
+  {
+    "extensionName": "com.dynatrace.extension.jmx",
+    "objectId": "b2c3d4e5-f6a7-4b8c-9d0e-000000000003",
+    "scope": "HOST_GROUP-XYZ789"
+  }
+]

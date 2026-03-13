@@ -40,6 +40,8 @@ func extractApplyBase(result apply.ApplyResult) *apply.ApplyResultBase {
 		return &r.ApplyResultBase
 	case *apply.MonitoringConfigApplyResult:
 		return &r.ApplyResultBase
+	case apply.MonitoringConfigApplyResult:
+		return &r.ApplyResultBase
 	case *apply.ExtensionConfigApplyResult:
 		return &r.ApplyResultBase
 	case apply.ExtensionConfigApplyResult:

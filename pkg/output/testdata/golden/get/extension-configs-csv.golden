@@ -1,0 +1,4 @@
+EXTENSION,ID,SCOPE
+com.dynatrace.extension.host-monitoring,a1b2c3d4-e5f6-4a7b-8c9d-000000000001,environment
+com.dynatrace.extension.host-monitoring,a1b2c3d4-e5f6-4a7b-8c9d-000000000002,HOST-ABC123
+com.dynatrace.extension.jmx,b2c3d4e5-f6a7-4b8c-9d0e-000000000003,HOST_GROUP-XYZ789

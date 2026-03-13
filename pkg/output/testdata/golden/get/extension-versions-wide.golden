@@ -1,0 +1,4 @@
+VERSION   NAME                                      ACTIVE 
+1.2.3     com.dynatrace.extension.host-monitoring   true     
+1.2.2     com.dynatrace.extension.host-monitoring   false    
+1.1.0     com.dynatrace.extension.host-monitoring   false    

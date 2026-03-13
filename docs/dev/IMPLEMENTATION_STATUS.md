@@ -74,6 +74,8 @@ This document tracks the current implementation status of dtctl. For future plan
 | analyzer | ✅ | ✅ | - | - | - | - |
 | copilot | ✅ | - | - | - | - | - |
 | lookup | ✅ | ✅ | ✅ | ✅ | - | ✅ |
+| extension | ✅ | ✅ | - | - | - | - |
+| extension-config | ✅ | ✅ | - | - | - | ✅ |
 | intent | ✅ | ✅ | - | - | - | - |
 
 #### Cloud Connections

@@ -1,0 +1,9 @@
+- version: 1.2.3
+  extensionname: com.dynatrace.extension.host-monitoring
+  active: true
+- version: 1.2.2
+  extensionname: com.dynatrace.extension.host-monitoring
+  active: false
+- version: 1.1.0
+  extensionname: com.dynatrace.extension.host-monitoring
+  active: false

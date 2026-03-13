@@ -1,0 +1,15 @@
+[
+  {
+    "version": "1.2.3",
+    "extensionName": "com.dynatrace.extension.host-monitoring",
+    "active": true
+  },
+  {
+    "version": "1.2.2",
+    "extensionName": "com.dynatrace.extension.host-monitoring"
+  },
+  {
+    "version": "1.1.0",
+    "extensionName": "com.dynatrace.extension.host-monitoring"
+  }
+]
