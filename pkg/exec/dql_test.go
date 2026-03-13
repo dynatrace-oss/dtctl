@@ -2,6 +2,7 @@ package exec
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1588,5 +1589,79 @@ func TestExtractQueryMetadata_ResultMetadataPrecedence(t *testing.T) {
 	}
 	if meta.QueryID != "result-level-id" {
 		t.Errorf("expected result-level metadata to take precedence, got QueryID=%q", meta.QueryID)
+	}
+}
+
+func TestDQLExecutor_Execute_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := DQLQueryResponse{
+			State: "SUCCEEDED",
+			Result: &DQLResult{
+				Records: []map[string]interface{}{
+					{"host.name": "server-01", "dt.entity.host": "HOST-1"},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	// Execute writes output to stdout/file — just verify no error
+	err = executor.Execute("fetch hosts", "json")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestDQLExecutor_ExecuteWithOptions_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := DQLQueryResponse{
+			State: "SUCCEEDED",
+			Result: &DQLResult{
+				Records: []map[string]interface{}{{"event.name": "deploy"}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	err = executor.ExecuteWithOptions("fetch events", DQLExecuteOptions{OutputFormat: "json"})
+	if err != nil {
+		t.Fatalf("ExecuteWithOptions() error = %v", err)
+	}
+}
+
+func TestDQLExecutor_ExecuteWithOptions_QueryError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":"invalid query"}`)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	err = executor.ExecuteWithOptions("INVALID QUERY", DQLExecuteOptions{})
+	if err == nil {
+		t.Fatal("expected error for bad query, got nil")
 	}
 }
