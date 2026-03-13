@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
 
 func TestNewHandler(t *testing.T) {
