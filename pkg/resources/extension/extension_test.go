@@ -241,7 +241,7 @@ func TestGet(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error but got nil")
 				}
-				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -322,7 +322,7 @@ func TestGetVersion(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error but got nil")
 				}
-				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -399,7 +399,7 @@ func TestGetEnvironmentConfig(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error but got nil")
 				}
-				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -495,7 +495,7 @@ func TestListMonitoringConfigurations(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error but got nil")
 				}
-				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return
@@ -589,7 +589,7 @@ func TestCreateMonitoringConfiguration(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error but got nil")
 				}
-				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
 				}
 				return

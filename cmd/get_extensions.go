@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 )
 
 // getExtensionsCmd retrieves Extensions 2.0 extensions
