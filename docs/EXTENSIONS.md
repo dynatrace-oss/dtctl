@@ -1,0 +1,165 @@
+# Extensions 2.0
+
+dtctl provides full support for managing Dynatrace Extensions 2.0 — listing extensions, inspecting versions and feature sets, and managing monitoring configurations.
+
+## Listing Extensions
+
+```bash
+# List all installed extensions
+dtctl get extensions
+
+# Filter by name
+dtctl get extensions --name "com.dynatrace.extension.host"
+
+# Output as JSON
+dtctl get extensions -o json
+```
+
+## Viewing Extension Versions
+
+```bash
+# List all versions of an extension
+dtctl get extension com.dynatrace.extension.host-monitoring
+
+# JSON output (useful for scripting)
+dtctl get extension com.dynatrace.extension.host-monitoring -o yaml
+```
+
+## Describing an Extension
+
+The `describe` command shows full details including versions, data sources, feature sets, variables, and monitoring configurations:
+
+```bash
+# Describe the active version
+dtctl describe extension com.dynatrace.extension.host-monitoring
+
+# Describe a specific version
+dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3
+
+# Get structured output for automation
+dtctl describe extension com.dynatrace.extension.host-monitoring -o json
+```
+
+## Monitoring Configurations
+
+Monitoring configurations define how an extension collects data for a specific scope (e.g., a host or host group).
+
+### Listing Configurations
+
+```bash
+# List all monitoring configs for an extension
+dtctl get extension-configs com.dynatrace.extension.host-monitoring
+
+# Get a specific config by ID
+dtctl get extension-config com.dynatrace.extension.host-monitoring --config-id <id>
+```
+
+> **Note:** dtctl adds `type` and `extensionName` fields to monitoring configuration responses for internal resource detection. These fields are not present in the raw Dynatrace REST API response.
+
+### Describing a Configuration
+
+```bash
+# Show full details of a monitoring configuration
+dtctl describe extension-config com.dynatrace.extension.host-monitoring --config-id <id>
+
+# JSON output
+dtctl describe extension-config com.dynatrace.extension.host-monitoring --config-id <id> -o json
+```
+
+### Creating a Configuration
+
+Create a YAML file (e.g., `config.yaml`):
+
+```yaml
+scope: HOST-ABC123
+value:
+  enabled: true
+  description: "Production host monitoring"
+  version: "1.2.3"
+  featureSets:
+    - default
+```
+
+Apply it:
+
+```bash
+# Create a new monitoring configuration
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+
+# Preview without applying
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --dry-run
+
+# Override scope from the command line
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --scope HOST-XYZ789
+```
+
+### Updating a Configuration
+
+To update, include the `objectId` in the file:
+
+```yaml
+objectId: existing-config-id
+scope: HOST-ABC123
+value:
+  enabled: false
+  description: "Updated - disabled for maintenance"
+  version: "1.2.3"
+```
+
+```bash
+dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+```
+
+### Using with Generic Apply
+
+Extension configs can also be applied via `dtctl apply -f` by including a `type` field:
+
+```yaml
+type: extension_monitoring_config
+extensionName: com.dynatrace.extension.host-monitoring
+scope: HOST-ABC123
+value:
+  enabled: true
+  version: "1.2.3"
+```
+
+```bash
+dtctl apply -f extension-config.yaml
+```
+
+## Using Template Variables
+
+Templates let you reuse config files across environments:
+
+```yaml
+scope: "{{.host}}"
+value:
+  enabled: true
+  description: "Monitoring for {{.env}}"
+  version: "{{.version}}"
+```
+
+```bash
+dtctl apply extension-config com.dynatrace.extension.host-monitoring \
+  -f config.yaml \
+  --set host=HOST-ABC123 \
+  --set env=production \
+  --set version=1.2.3
+```
+
+## Aliases
+
+All extension commands support short aliases:
+
+| Command | Aliases |
+|---------|---------|
+| `extensions` | `extension`, `ext`, `exts` |
+| `extension-configs` | `extension-config`, `ext-configs`, `ext-config` |
+
+```bash
+# These are equivalent
+dtctl get extensions
+dtctl get ext
+
+dtctl describe ext com.dynatrace.extension.host-monitoring
+```
