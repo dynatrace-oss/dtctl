@@ -108,11 +108,19 @@ type ExtensionStatus struct {
 	Timestamp string `json:"timestamp,omitempty"`
 }
 
+// maxPageSize is the maximum page size accepted by the Extensions 2.0 API.
+const maxPageSize = 100
+
 // List lists all extensions with automatic pagination
 func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 	var allExtensions []Extension
 	var totalCount int
 	nextPageKey := ""
+
+	// Cap page size to API maximum
+	if chunkSize > maxPageSize {
+		chunkSize = maxPageSize
+	}
 
 	for {
 		var result ExtensionList
@@ -261,6 +269,11 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 	var allItems []MonitoringConfiguration
 	var totalCount int
 	nextPageKey := ""
+
+	// Cap page size to API maximum
+	if chunkSize > maxPageSize {
+		chunkSize = maxPageSize
+	}
 
 	for {
 		var result MonitoringConfigurationList

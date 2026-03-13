@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -117,6 +118,23 @@ func TestList(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "chunk size capped to API maximum",
+			chunkSize: 500,
+			pages: []ExtensionList{
+				{
+					TotalCount: 1,
+					Items: []Extension{
+						{ExtensionName: "ext-1", ActiveVersion: "1.0.0"},
+					},
+				},
+			},
+			validate: func(t *testing.T, result *ExtensionList) {
+				if len(result.Items) != 1 {
+					t.Errorf("expected 1 extension, got %d", len(result.Items))
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -127,6 +145,16 @@ func TestList(t *testing.T) {
 					t.Errorf("unexpected path: %s", r.URL.Path)
 					w.WriteHeader(http.StatusNotFound)
 					return
+				}
+
+				// Simulate API page-size limit (rejects > maxPageSize)
+				if ps := r.URL.Query().Get("page-size"); ps != "" {
+					pageSizeVal, _ := strconv.ParseInt(ps, 10, 64)
+					if pageSizeVal > maxPageSize {
+						w.WriteHeader(http.StatusBadRequest)
+						w.Write([]byte(`{"error":"page-size exceeds maximum"}`))
+						return
+					}
 				}
 
 				if tt.nameFilter != "" {
