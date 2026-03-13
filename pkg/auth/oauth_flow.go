@@ -54,6 +54,15 @@ const (
 	EnvironmentHard Environment = "hard"
 )
 
+func defaultOAuthOpenURL(targetURL string) error {
+	return browser.OpenURL(targetURL)
+}
+
+func defaultOAuthHTTPDo(req *http.Request) (*http.Response, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	return client.Do(req)
+}
+
 // GetScopesForSafetyLevel returns the OAuth scopes required for a given safety level
 func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 	// Normalize empty string to default
@@ -147,6 +156,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 			"app-engine:functions:run",
 			"app-engine:edge-connects:read",
 			"email:emails:send",
+			"dev-obs:breakpoints:set",
 		}
 
 	case config.SafetyLevelReadWriteAll:
@@ -213,6 +223,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 			"app-engine:edge-connects:read",
 			"app-engine:edge-connects:write",
 			"email:emails:send",
+			"dev-obs:breakpoints:set",
 		}
 
 	case config.SafetyLevelDangerouslyUnrestricted:
@@ -288,6 +299,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 			"app-engine:edge-connects:write",
 			"app-engine:edge-connects:delete",
 			"email:emails:send",
+			"dev-obs:breakpoints:set",
 		}
 
 	default:
@@ -409,6 +421,8 @@ type OAuthFlow struct {
 	server        *http.Server
 	resultChan    chan *authResult
 	resultOnce    sync.Once
+	openURL       func(string) error
+	httpDo        func(*http.Request) (*http.Response, error)
 }
 
 type authResult struct {
@@ -437,6 +451,8 @@ func NewOAuthFlow(config *OAuthConfig) (*OAuthFlow, error) {
 		codeChallenge: challenge,
 		state:         state,
 		resultChan:    make(chan *authResult, 1),
+		openURL:       defaultOAuthOpenURL,
+		httpDo:        defaultOAuthHTTPDo,
 	}, nil
 }
 
@@ -452,7 +468,12 @@ func (f *OAuthFlow) Start(ctx context.Context) (*TokenSet, error) {
 	fmt.Println("If the browser doesn't open automatically, please visit:")
 	fmt.Println(authURL)
 
-	if err := browser.OpenURL(authURL); err != nil {
+	openURL := f.openURL
+	if openURL == nil {
+		openURL = defaultOAuthOpenURL
+	}
+
+	if err := openURL(authURL); err != nil {
 		fmt.Printf("Failed to open browser automatically: %v\n", err)
 		fmt.Println("Please open the URL above manually.")
 	}
@@ -482,8 +503,12 @@ func (f *OAuthFlow) RefreshToken(refreshToken string) (*TokenSet, error) {
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	httpDo := f.httpDo
+	if httpDo == nil {
+		httpDo = defaultOAuthHTTPDo
+	}
+
+	resp, err := httpDo(req)
 	if err != nil {
 		return nil, fmt.Errorf("token refresh request failed: %w", err)
 	}
@@ -512,8 +537,12 @@ func (f *OAuthFlow) GetUserInfo(accessToken string) (*UserInfo, error) {
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	httpDo := f.httpDo
+	if httpDo == nil {
+		httpDo = defaultOAuthHTTPDo
+	}
+
+	resp, err := httpDo(req)
 	if err != nil {
 		return nil, fmt.Errorf("user info request failed: %w", err)
 	}
@@ -644,8 +673,12 @@ func (f *OAuthFlow) exchangeCode(code string) (*TokenSet, error) {
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	httpDo := f.httpDo
+	if httpDo == nil {
+		httpDo = defaultOAuthHTTPDo
+	}
+
+	resp, err := httpDo(req)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange request failed: %w", err)
 	}

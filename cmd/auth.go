@@ -135,9 +135,15 @@ This command will:
 
 After successful login, you can use dtctl commands without needing to manage API tokens manually.
 
+If --context and --environment are omitted, the current context is used. This is useful
+for re-authenticating when both the access token and refresh token have expired.
+
 Note: OAuth tokens require keyring support. If keyring is not available on your system,
 you'll need to use API token authentication instead (dtctl config set-credentials).`,
-	Example: `  # Login and create a context named "my-env"
+	Example: `  # Re-authenticate the current context (e.g. after token expiry)
+  dtctl auth login
+
+  # Login and create a new context named "my-env"
   dtctl auth login --context my-env --environment https://abc12345.apps.dynatrace.com
 
   # Login with a specific token name
@@ -153,12 +159,29 @@ you'll need to use API token authentication instead (dtctl config set-credential
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
 		safetyLevelStr, _ := cmd.Flags().GetString("safety-level")
 
-		// Validate required flags
-		if contextName == "" {
-			return fmt.Errorf("--context is required")
-		}
-		if environment == "" {
-			return fmt.Errorf("--environment is required")
+		// If --context or --environment are not provided, fall back to the current context
+		if contextName == "" || environment == "" {
+			cfg, err := LoadConfig()
+			if err != nil {
+				return fmt.Errorf("--context and --environment are required (no existing config found: %w)", err)
+			}
+			if cfg.CurrentContext == "" {
+				return fmt.Errorf("--context and --environment are required when no current context is set")
+			}
+			ctx, err := cfg.CurrentContextObj()
+			if err != nil {
+				return fmt.Errorf("--context and --environment are required (failed to load current context: %w)", err)
+			}
+			if contextName == "" {
+				contextName = cfg.CurrentContext
+			}
+			if environment == "" {
+				environment = ctx.Environment
+			}
+			// Preserve the existing token name so the stored token is updated in-place
+			if tokenName == "" && ctx.TokenRef != "" {
+				tokenName = ctx.TokenRef
+			}
 		}
 
 		// Default token name to context name if not provided
@@ -424,13 +447,11 @@ func init() {
 	authWhoamiCmd.Flags().BoolVar(&refresh, "refresh", false, "force refresh of cached user info")
 
 	// Flags for login
-	authLoginCmd.Flags().String("context", "", "name for the context to create (required)")
-	authLoginCmd.Flags().String("environment", "", "Dynatrace environment URL (required)")
-	authLoginCmd.Flags().String("token-name", "", "name for storing the OAuth token (defaults to <context>-oauth)")
+	authLoginCmd.Flags().String("context", "", "name for the context to create or update (defaults to current context)")
+	authLoginCmd.Flags().String("environment", "", "Dynatrace environment URL (defaults to current context's environment)")
+	authLoginCmd.Flags().String("token-name", "", "name for storing the OAuth token (defaults to existing token name or <context>-oauth)")
 	authLoginCmd.Flags().String("timeout", "5m", "timeout for the authentication flow")
 	authLoginCmd.Flags().String("safety-level", string(config.DefaultSafetyLevel), "safety level for the context (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
-	authLoginCmd.MarkFlagRequired("context")
-	authLoginCmd.MarkFlagRequired("environment")
 
 	// Flags for logout
 	authLogoutCmd.Flags().Bool("remove-context", false, "also remove the context configuration")

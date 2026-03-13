@@ -3,6 +3,7 @@ package extension
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
@@ -173,7 +174,7 @@ func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
 			req.SetQueryParam("next-page-key", nextPageKey)
 		}
 
-		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s", extensionName))
+		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get extension: %w", err)
 		}
@@ -209,7 +210,7 @@ func (h *Handler) GetVersion(extensionName, version string) (*ExtensionDetails, 
 	var result ExtensionDetails
 	resp, err := h.client.HTTP().R().
 		SetResult(&result).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", extensionName, version))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension version: %w", err)
@@ -235,7 +236,7 @@ func (h *Handler) GetEnvironmentConfig(extensionName string) (*ExtensionEnvironm
 
 	resp, err := h.client.HTTP().R().
 		SetResult(&result).
-		Get(fmt.Sprintf("/platform/extensions/v2/%s/environment-configuration", extensionName))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environmentConfiguration", url.PathEscape(extensionName)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
@@ -277,7 +278,7 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 			req.SetQueryParam("next-page-key", nextPageKey)
 		}
 
-		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", extensionName))
+		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to list monitoring configurations: %w", err)
 		}
@@ -322,7 +323,7 @@ func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*M
 
 	resp, err := h.client.HTTP().R().
 		SetResult(&result).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", extensionName, configID))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get monitoring configuration: %w", err)
@@ -357,7 +358,7 @@ func (h *Handler) CreateMonitoringConfiguration(extensionName string, body Monit
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
 		SetResult(&result).
-		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", extensionName))
+		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create monitoring configuration: %w", err)
@@ -384,7 +385,7 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
 		SetResult(&result).
-		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", extensionName, configID))
+		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to update monitoring configuration: %w", err)
 	}

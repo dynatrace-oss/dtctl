@@ -47,44 +47,48 @@ Examples:
 			return err
 		}
 
-		// Print monitoring configuration details
-		fmt.Printf("Extension:  %s\n", extensionName)
-		fmt.Printf("Config ID:  %s\n", config.ObjectID)
-		if config.Scope != "" {
-			fmt.Printf("Scope:      %s\n", config.Scope)
-		}
+		// For table output, show detailed human-readable information
+		if outputFormat == "" || outputFormat == "table" {
+			fmt.Printf("Extension:  %s\n", extensionName)
+			fmt.Printf("Config ID:  %s\n", config.ObjectID)
+			if config.Scope != "" {
+				fmt.Printf("Scope:      %s\n", config.Scope)
+			}
 
-		// Parse and display value fields
-		if len(config.Value) > 0 {
-			var val map[string]interface{}
-			if err := json.Unmarshal(config.Value, &val); err == nil {
-				if enabled, ok := val["enabled"]; ok {
-					fmt.Printf("Enabled:    %v\n", enabled)
-				}
-				if desc, ok := val["description"]; ok && desc != "" {
-					fmt.Printf("Description: %s\n", desc)
-				}
-				if version, ok := val["version"]; ok && version != "" {
-					fmt.Printf("Version:    %s\n", version)
-				}
-				if fs, ok := val["featureSets"].([]interface{}); ok && len(fs) > 0 {
-					fmt.Println()
-					fmt.Println("Feature Sets:")
-					for _, f := range fs {
-						fmt.Printf("  - %v\n", f)
+			if len(config.Value) > 0 {
+				var val map[string]interface{}
+				if err := json.Unmarshal(config.Value, &val); err == nil {
+					if enabled, ok := val["enabled"]; ok {
+						fmt.Printf("Enabled:    %v\n", enabled)
+					}
+					if desc, ok := val["description"]; ok && desc != "" {
+						fmt.Printf("Description: %s\n", desc)
+					}
+					if version, ok := val["version"]; ok && version != "" {
+						fmt.Printf("Version:    %s\n", version)
+					}
+					if fs, ok := val["featureSets"].([]interface{}); ok && len(fs) > 0 {
+						fmt.Println()
+						fmt.Println("Feature Sets:")
+						for _, f := range fs {
+							fmt.Printf("  - %v\n", f)
+						}
 					}
 				}
-			}
 
-			fmt.Println()
-			fmt.Println("Value:")
-			valueJSON, err := json.MarshalIndent(json.RawMessage(config.Value), "  ", "  ")
-			if err == nil {
-				fmt.Printf("  %s\n", string(valueJSON))
+				fmt.Println()
+				fmt.Println("Value:")
+				valueJSON, err := json.MarshalIndent(json.RawMessage(config.Value), "  ", "  ")
+				if err == nil {
+					fmt.Printf("  %s\n", string(valueJSON))
+				}
 			}
+			return nil
 		}
 
-		return nil
+		// For other formats (JSON, YAML, etc.), use the printer
+		printer := NewPrinter()
+		return printer.Print(config)
 	},
 }
 

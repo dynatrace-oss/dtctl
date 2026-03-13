@@ -435,7 +435,7 @@ func TestOAuthConfigScopes(t *testing.T) {
 	}
 
 	// Verify some expected scopes are present
-	expectedScopes := []string{"openid", "storage:logs:read", "storage:buckets:read"}
+	expectedScopes := []string{"openid", "storage:logs:read", "storage:buckets:read", "dev-obs:breakpoints:set"}
 
 	for _, expected := range expectedScopes {
 		found := false

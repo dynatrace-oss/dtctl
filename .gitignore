@@ -45,3 +45,6 @@ completions/
 
 # API specs (copied for reference, not tracked)
 .api-spec/
+
+# Snapshot data
+snapshot.json

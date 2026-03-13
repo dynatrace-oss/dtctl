@@ -13,12 +13,16 @@ fields of a resource using command-line flags. This is useful for quick,
 targeted changes without exporting and re-importing a full resource definition.
 
 Available resources:
+  breakpoint              Update breakpoint condition/enabled state or workspace filters
   azure connection        Update Azure connection credentials
   azure monitoring        Update Azure monitoring configuration
   gcp connection          Update GCP connection credentials (Preview)
   gcp monitoring          Update GCP monitoring configuration (Preview)`,
 	Example: `  # Update an Azure connection
   dtctl update azure connection <id> --name "New Name"
+
+  # Update Live Debugger workspace filters
+  dtctl update breakpoint --filters k8s.namespace.name:prod
 
   # Update an Azure monitoring config
   dtctl update azure monitoring <id> --enabled=false

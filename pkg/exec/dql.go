@@ -22,13 +22,26 @@ func NewDQLExecutor(c *client.Client) *DQLExecutor {
 	return &DQLExecutor{client: c}
 }
 
+// DecodeMode controls snapshot payload decoding behavior.
+type DecodeMode int
+
+const (
+	// DecodeNone disables snapshot decoding (default).
+	DecodeNone DecodeMode = iota
+	// DecodeSimplified decodes and simplifies variant wrappers to plain values.
+	DecodeSimplified
+	// DecodeFull decodes but preserves the full variant tree with type annotations.
+	DecodeFull
+)
+
 // DQLExecuteOptions configures DQL query execution
 type DQLExecuteOptions struct {
 	// Output formatting options
 	OutputFormat string
-	Width        int  // Chart width (0 = default)
-	Height       int  // Chart height (0 = default)
-	Fullscreen   bool // Use terminal dimensions for chart
+	Decode       DecodeMode // Snapshot payload decoding mode
+	Width        int        // Chart width (0 = default)
+	Height       int        // Chart height (0 = default)
+	Fullscreen   bool       // Use terminal dimensions for chart
 
 	// Query limit options
 	MaxResultRecords       int64   // Maximum number of result records (0 = use default)
@@ -448,6 +461,18 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 	records := result.Records
 	if result.Result != nil && len(result.Result.Records) > 0 {
 		records = result.Result.Records
+	}
+
+	// Apply snapshot decoding if requested
+	if opts.Decode != DecodeNone && len(records) > 0 {
+		simplify := opts.Decode == DecodeSimplified
+		records = output.DecodeSnapshotRecords(records, simplify)
+
+		// For tabular formats, replace parsed_snapshot with a summary string
+		switch opts.OutputFormat {
+		case "", "table", "wide", "csv":
+			records = output.SummarizeSnapshotForTable(records)
+		}
 	}
 
 	// Extract metadata if requested

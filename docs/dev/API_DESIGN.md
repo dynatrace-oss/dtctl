@@ -68,6 +68,7 @@ dtctl is the "Runtime" companion to Monaco's "Build time."
 - **Default**: Human-readable TUI tables (ASCII).
 - **JSON** (`-o json`): Raw API response for piping (jq).
 - **YAML** (`-o yaml`): Reconstructed YAML for copy-pasting.
+- **Snapshot decoding** (`--decode-snapshots`): Decoded Live Debugger snapshot payloads, composable with any output format.
 - **Charts**: Sparklines, bar charts, and line charts for timeseries data.
 
 ### 5. Handling Identity (Naming)
@@ -188,7 +189,7 @@ dtctl query "fetch logs | limit 10"
 
 ```
 --context string      # Use a specific context
--o, --output string   # Output format: json|yaml|table|wide|name|custom-columns=...
+-o, --output string   # Output format: json|yaml|csv|table|wide|chart|sparkline|barchart|braille
 --plain               # Plain output for machine processing (no colors, no interactive prompts)
 --no-headers          # Omit headers in table output
 -v, --verbose         # Verbose output (-v for details, -vv for full HTTP debug)
@@ -1722,6 +1723,47 @@ HOST-B  ████████████████████████
 to JSON output with a warning. When more than 10 series are present, only the first 10 are displayed.
 
 **Color**: Charts, sparklines, bar charts, and watch mode use ANSI colors when enabled. Color follows the [no-color.org](https://no-color.org/) standard — it is automatically disabled when piped, when `NO_COLOR` is set, or when `--plain` is used. Set `FORCE_COLOR=1` to override TTY detection.
+
+### Snapshot Decoding (Live Debugger Query Output)
+```bash
+# Decode and simplify snapshot payloads (variant wrappers → plain values)
+dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots
+
+# Full decoded tree with type annotations
+dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots=full
+
+# Compose with any output format
+dtctl query "fetch application.snapshots | limit 5" --decode-snapshots -o json
+dtctl query "fetch application.snapshots | limit 5" --decode-snapshots -o yaml
+```
+
+The `--decode-snapshots` flag enriches each record with `parsed_snapshot`, decoded from:
+- `snapshot.data`
+- `snapshot.string_map`
+
+By default, `--decode-snapshots` simplifies variant wrappers to plain values (e.g., `{"type": "Integer", "value": 42}` becomes `42`). Use `--decode-snapshots=full` to preserve the full decoded tree with type annotations.
+
+This flag is composable with any output format (`-o json`, `-o yaml`, `-o table`, `-o csv`, etc.), unlike the previous `-o snapshot` which was a standalone format locked to JSON output.
+
+## Live Debugger Command Pattern
+
+Live Debugger follows the standard verb-noun grammar and avoids introducing a separate command tree:
+
+```bash
+dtctl update breakpoint --filters key:value[,key:value...]     # configure workspace filters
+dtctl create breakpoint File.java:line                         # create breakpoint
+dtctl get breakpoints                                          # list breakpoints
+dtctl describe <breakpoint-id|filename:line>                   # describe breakpoint rollout/status
+dtctl update breakpoint <id|filename:line> --condition "..."   # update condition
+dtctl update breakpoint <id|filename:line> --enabled true|false # enable/disable
+dtctl delete breakpoint <id|filename:line|--all>               # delete breakpoints
+```
+
+`--filters` accepts both `key:value` and `key=value` forms.
+
+Design notes:
+- `dtctl describe` keeps existing resource-subcommand behavior; breakpoint describe is only routed for breakpoint-like identifiers.
+- Mutating operations (`update` filter update, `create`, `update`, `delete`) must run safety checks, including in dry-run mode.
 
 ## Examples
 

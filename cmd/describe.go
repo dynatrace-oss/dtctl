@@ -325,6 +325,7 @@ func init() {
 	describeAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
 	rootCmd.AddCommand(describeCmd)
 	describeCmd.AddCommand(describeWorkflowCmd)
+	describeCmd.AddCommand(describeBreakpointCmd)
 	describeCmd.AddCommand(describeWorkflowExecutionCmd)
 	describeCmd.AddCommand(describeDashboardCmd)
 	describeCmd.AddCommand(describeNotebookCmd)

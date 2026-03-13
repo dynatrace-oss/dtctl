@@ -125,6 +125,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] File-based queries: `dtctl query -f query.dql`
 - [x] Template variables: `--set key=value`
 - [x] All output formats supported
+- [x] Decoded Live Debugger snapshots: `dtctl query "fetch application.snapshots | limit 5" --decode-snapshots`
 - [x] Chart output for timeseries: `dtctl query "timeseries ..." -o chart`
 - [x] Live mode with periodic updates: `--live`, `--interval`
 - [x] Watch mode with incremental updates: `--watch`, `--interval`
@@ -245,6 +246,17 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Open URL in browser: `--browser` flag
 - [x] JSON file support: `--data-file` flag
 - [x] Intent metadata: properties, required fields, descriptions
+
+### Live Debugger Features
+- [x] Configure workspace filters: `dtctl update breakpoint --filters key:value[,key:value...]` (also supports `key=value`)
+- [x] Create breakpoint: `dtctl create breakpoint File.java:line`
+- [x] List breakpoints: `dtctl get breakpoints`
+- [x] Describe breakpoint status by ID or location: `dtctl describe <id|filename:line>`
+- [x] Update breakpoint condition/enabled state: `dtctl update breakpoint <id|filename:line> --condition ... --enabled ...`
+- [x] Delete breakpoint by ID/location and bulk delete with confirmation: `dtctl delete breakpoint <id|filename:line|--all> [-y] [--dry-run]`
+- [x] Verbose GraphQL troubleshooting output with `-v/--debug`
+- [x] Safety checks applied to create/update/delete and workspace filter updates
+- [x] User guide: `docs/LIVE_DEBUGGER.md`
 
 ### Wait Features
 - [x] Wait for DQL query conditions: `dtctl wait query`

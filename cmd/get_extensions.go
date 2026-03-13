@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +26,6 @@ Examples:
   dtctl get extensions -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Fetching extensions...")
 		name, _ := cmd.Flags().GetString("name")
 
 		cfg, err := LoadConfig()
@@ -53,8 +50,7 @@ Examples:
 			return printer.PrintList(versions.Items)
 		}
 
-		// List all extensions - default max page size is 100
-		list, err := handler.List(name, 100)
+		list, err := handler.List(name, GetChunkSize())
 		if err != nil {
 			return err
 		}
@@ -109,7 +105,7 @@ Examples:
 		}
 
 		// List all monitoring configurations
-		list, err := handler.ListMonitoringConfigurations(extensionName, version, 100)
+		list, err := handler.ListMonitoringConfigurations(extensionName, version, GetChunkSize())
 		if err != nil {
 			return err
 		}

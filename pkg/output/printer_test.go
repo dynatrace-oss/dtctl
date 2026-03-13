@@ -28,6 +28,15 @@ func TestNewPrinterWithWriter(t *testing.T) {
 	}
 }
 
+func TestNewPrinterWithWriter_UnknownFormat(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPrinterWithWriter("unknown-format", &buf)
+	if p == nil {
+		t.Fatal("NewPrinterWithWriter returned nil for unknown format")
+	}
+	// Unknown formats should fall through to table printer
+}
+
 func TestNewPrinterWithOptions_PlainMode(t *testing.T) {
 	var buf bytes.Buffer
 

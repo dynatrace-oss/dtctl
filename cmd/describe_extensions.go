@@ -9,6 +9,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// extensionDescription is a rich struct for JSON/YAML output of describe extension
+type extensionDescription struct {
+	Name                string                          `json:"name" yaml:"name"`
+	Version             string                          `json:"version" yaml:"version"`
+	Author              string                          `json:"author,omitempty" yaml:"author,omitempty"`
+	MinDynatraceVersion string                          `json:"minDynatraceVersion,omitempty" yaml:"minDynatraceVersion,omitempty"`
+	MinEECVersion       string                          `json:"minEECVersion,omitempty" yaml:"minEECVersion,omitempty"`
+	FileHash            string                          `json:"fileHash,omitempty" yaml:"fileHash,omitempty"`
+	DataSources         []string                        `json:"dataSources,omitempty" yaml:"dataSources,omitempty"`
+	FeatureSets         map[string][]string             `json:"featureSets,omitempty" yaml:"featureSets,omitempty"`
+	Variables           []extension.ExtensionVariable   `json:"variables,omitempty" yaml:"variables,omitempty"`
+	ActiveVersion       string                          `json:"activeVersion,omitempty" yaml:"activeVersion,omitempty"`
+	AvailableVersions   []string                        `json:"availableVersions,omitempty" yaml:"availableVersions,omitempty"`
+	MonitoringConfigs   []monitoringConfigSummary       `json:"monitoringConfigurations,omitempty" yaml:"monitoringConfigurations,omitempty"`
+}
+
+type monitoringConfigSummary struct {
+	ObjectID    string `json:"objectId" yaml:"objectId"`
+	Scope       string `json:"scope,omitempty" yaml:"scope,omitempty"`
+	Enabled     *bool  `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
 // describeExtensionCmd shows detailed info about an extension
 var describeExtensionCmd = &cobra.Command{
 	Use:     "extension <extension-name>",
@@ -72,99 +95,149 @@ Examples:
 			return err
 		}
 
-		// Print extension details
-		fmt.Printf("Name:           %s\n", details.ExtensionName)
-		fmt.Printf("Version:        %s\n", details.Version)
-
-		if details.Author.Name != "" {
-			fmt.Printf("Author:         %s\n", details.Author.Name)
-		}
-		if details.MinDynatraceVersion != "" {
-			fmt.Printf("Min Dynatrace:  %s\n", details.MinDynatraceVersion)
-		}
-		if details.MinEECVersion != "" {
-			fmt.Printf("Min EEC:        %s\n", details.MinEECVersion)
-		}
-		if details.FileHash != "" {
-			fmt.Printf("File Hash:      %s\n", details.FileHash)
-		}
-		if len(details.DataSources) > 0 {
-			fmt.Println()
-			fmt.Printf("Data Sources:   %s\n", strings.Join(details.DataSources, ", "))
-		}
-		// Print feature sets
-		if len(details.FeatureSets) > 0 {
-			fmt.Println()
-			fmt.Println("Feature Sets:")
-			for _, fs := range details.FeatureSets {
-				fmt.Printf("  - %s\n", fs)
-				if detail, ok := details.FeatureSetDetails[fs]; ok && len(detail.Metrics) > 0 {
-					for _, m := range detail.Metrics {
-						fmt.Printf("      %s\n", m.Key)
-					}
-				}
-			}
-		}
-		// Print variables
-		if len(details.Variables) > 0 {
-			fmt.Println()
-			fmt.Println("Variables:")
-			for _, v := range details.Variables {
-				displayName := v.Name
-				if v.DisplayName != "" {
-					displayName = v.DisplayName
-				}
-				fmt.Printf("  - %s (%s)\n", displayName, v.Type)
-			}
-		}
-
-		// Print environment config (active version)
+		// Get environment config (active version)
+		var activeVersion string
 		envConfig, envErr := handler.GetEnvironmentConfig(extensionName)
 		if envErr == nil && envConfig.Version != "" {
-			fmt.Printf("Active Version: %s\n", envConfig.Version)
+			activeVersion = envConfig.Version
 		}
 
-		// Print available versions
-		if len(versions.Items) > 0 {
-			fmt.Println()
-			fmt.Println("Available Versions:")
-			for _, v := range versions.Items {
-				marker := "  "
-				if envErr == nil && envConfig.Version == v.Version {
-					marker = "* "
-				}
-				fmt.Printf("  %s%s\n", marker, v.Version)
-			}
-		}
-
-		// Print monitoring configurations summary
+		// Get monitoring configurations summary
+		var configSummaries []monitoringConfigSummary
 		configs, configErr := handler.ListMonitoringConfigurations(extensionName, "", 0)
-		if configErr == nil && len(configs.Items) > 0 {
-			fmt.Println()
-			fmt.Printf("Monitoring Configurations: %d\n", configs.TotalCount)
+		if configErr == nil {
 			for _, cfg := range configs.Items {
-				scope := cfg.Scope
-				if scope == "" {
-					scope = "(environment)"
+				summary := monitoringConfigSummary{
+					ObjectID: cfg.ObjectID,
+					Scope:    cfg.Scope,
 				}
-				fmt.Printf("  - %s  scope=%s\n", cfg.ObjectID, scope)
-
-				// Show a summary of the config value
 				if cfg.Value != nil {
 					var val map[string]interface{}
 					if err := json.Unmarshal(cfg.Value, &val); err == nil {
-						if enabled, ok := val["enabled"]; ok {
-							fmt.Printf("    enabled: %v\n", enabled)
+						if enabled, ok := val["enabled"].(bool); ok {
+							summary.Enabled = &enabled
 						}
-						if desc, ok := val["description"]; ok && desc != "" {
-							fmt.Printf("    description: %v\n", desc)
+						if desc, ok := val["description"].(string); ok && desc != "" {
+							summary.Description = desc
+						}
+					}
+				}
+				configSummaries = append(configSummaries, summary)
+			}
+		}
+
+		// For table output, show detailed human-readable information
+		if outputFormat == "" || outputFormat == "table" {
+			fmt.Printf("Name:           %s\n", details.ExtensionName)
+			fmt.Printf("Version:        %s\n", details.Version)
+
+			if details.Author.Name != "" {
+				fmt.Printf("Author:         %s\n", details.Author.Name)
+			}
+			if details.MinDynatraceVersion != "" {
+				fmt.Printf("Min Dynatrace:  %s\n", details.MinDynatraceVersion)
+			}
+			if details.MinEECVersion != "" {
+				fmt.Printf("Min EEC:        %s\n", details.MinEECVersion)
+			}
+			if details.FileHash != "" {
+				fmt.Printf("File Hash:      %s\n", details.FileHash)
+			}
+			if len(details.DataSources) > 0 {
+				fmt.Println()
+				fmt.Printf("Data Sources:   %s\n", strings.Join(details.DataSources, ", "))
+			}
+			if len(details.FeatureSets) > 0 {
+				fmt.Println()
+				fmt.Println("Feature Sets:")
+				for _, fs := range details.FeatureSets {
+					fmt.Printf("  - %s\n", fs)
+					if detail, ok := details.FeatureSetDetails[fs]; ok && len(detail.Metrics) > 0 {
+						for _, m := range detail.Metrics {
+							fmt.Printf("      %s\n", m.Key)
 						}
 					}
 				}
 			}
+			if len(details.Variables) > 0 {
+				fmt.Println()
+				fmt.Println("Variables:")
+				for _, v := range details.Variables {
+					displayName := v.Name
+					if v.DisplayName != "" {
+						displayName = v.DisplayName
+					}
+					fmt.Printf("  - %s (%s)\n", displayName, v.Type)
+				}
+			}
+			if activeVersion != "" {
+				fmt.Printf("Active Version: %s\n", activeVersion)
+			}
+			if len(versions.Items) > 0 {
+				fmt.Println()
+				fmt.Println("Available Versions:")
+				for _, v := range versions.Items {
+					marker := "  "
+					if activeVersion == v.Version {
+						marker = "* "
+					}
+					fmt.Printf("  %s%s\n", marker, v.Version)
+				}
+			}
+			if len(configSummaries) > 0 {
+				fmt.Println()
+				fmt.Printf("Monitoring Configurations: %d\n", len(configSummaries))
+				for _, cfg := range configSummaries {
+					scope := cfg.Scope
+					if scope == "" {
+						scope = "(environment)"
+					}
+					fmt.Printf("  - %s  scope=%s\n", cfg.ObjectID, scope)
+					if cfg.Enabled != nil {
+						fmt.Printf("    enabled: %v\n", *cfg.Enabled)
+					}
+					if cfg.Description != "" {
+						fmt.Printf("    description: %v\n", cfg.Description)
+					}
+				}
+			}
+			return nil
 		}
 
-		return nil
+		// For other formats (JSON, YAML, etc.), use the printer
+		featureSets := make(map[string][]string)
+		for _, fs := range details.FeatureSets {
+			var metrics []string
+			if detail, ok := details.FeatureSetDetails[fs]; ok {
+				for _, m := range detail.Metrics {
+					metrics = append(metrics, m.Key)
+				}
+			}
+			featureSets[fs] = metrics
+		}
+
+		var availableVersions []string
+		for _, v := range versions.Items {
+			availableVersions = append(availableVersions, v.Version)
+		}
+
+		desc := &extensionDescription{
+			Name:                details.ExtensionName,
+			Version:             details.Version,
+			Author:              details.Author.Name,
+			MinDynatraceVersion: details.MinDynatraceVersion,
+			MinEECVersion:       details.MinEECVersion,
+			FileHash:            details.FileHash,
+			DataSources:         details.DataSources,
+			FeatureSets:         featureSets,
+			Variables:           details.Variables,
+			ActiveVersion:       activeVersion,
+			AvailableVersions:   availableVersions,
+			MonitoringConfigs:   configSummaries,
+		}
+
+		printer := NewPrinter()
+		return printer.Print(desc)
 	},
 }
 

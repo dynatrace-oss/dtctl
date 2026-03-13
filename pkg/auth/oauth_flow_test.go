@@ -114,6 +114,17 @@ func TestOAuthConfigForEnvironment(t *testing.T) {
 			if len(config.Scopes) == 0 {
 				t.Error("Scopes should not be empty")
 			}
+
+			foundBreakpointScope := false
+			for _, scope := range config.Scopes {
+				if scope == "dev-obs:breakpoints:set" {
+					foundBreakpointScope = true
+					break
+				}
+			}
+			if !foundBreakpointScope {
+				t.Error("Scopes should include dev-obs:breakpoints:set")
+			}
 		})
 	}
 }

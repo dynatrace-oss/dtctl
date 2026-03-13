@@ -21,6 +21,14 @@ type TokenManager struct {
 	flow        *OAuthFlow
 	tokenStore  *config.TokenStore
 	environment Environment
+	deps        tokenStoreDeps
+}
+
+type tokenStoreDeps struct {
+	keyringAvailable func() bool
+	getToken         func(ts *config.TokenStore, name string) (string, error)
+	setToken         func(ts *config.TokenStore, name, token string) error
+	deleteToken      func(ts *config.TokenStore, name string) error
 }
 
 // NewTokenManager creates a new token manager
@@ -30,9 +38,15 @@ func NewTokenManager(oauthConfig *OAuthConfig) (*TokenManager, error) {
 	}
 
 	return &TokenManager{
-		flow:        &OAuthFlow{config: oauthConfig},
+		flow:        &OAuthFlow{config: oauthConfig, openURL: defaultOAuthOpenURL, httpDo: defaultOAuthHTTPDo},
 		tokenStore:  config.NewTokenStore(),
 		environment: oauthConfig.Environment,
+		deps: tokenStoreDeps{
+			keyringAvailable: config.IsKeyringAvailable,
+			getToken:         func(ts *config.TokenStore, name string) (string, error) { return ts.GetToken(name) },
+			setToken:         func(ts *config.TokenStore, name, token string) error { return ts.SetToken(name, token) },
+			deleteToken:      func(ts *config.TokenStore, name string) error { return ts.DeleteToken(name) },
+		},
 	}, nil
 }
 
@@ -123,8 +137,8 @@ func (tm *TokenManager) SaveToken(tokenName string, tokens *TokenSet) error {
 func (tm *TokenManager) DeleteToken(tokenName string) error {
 	keyringName := tm.getKeyringName(tokenName)
 
-	if config.IsKeyringAvailable() {
-		return tm.tokenStore.DeleteToken(keyringName)
+	if tm.deps.keyringAvailable() {
+		return tm.deps.deleteToken(tm.tokenStore, keyringName)
 	}
 
 	// OAuth tokens require keyring, so if keyring is not available,
@@ -157,8 +171,8 @@ func (tm *TokenManager) loadToken(tokenName string) (*StoredToken, error) {
 	keyringName := tm.getKeyringName(tokenName)
 
 	// Try to load from keyring
-	if config.IsKeyringAvailable() {
-		data, err := tm.tokenStore.GetToken(keyringName)
+	if tm.deps.keyringAvailable() {
+		data, err := tm.deps.getToken(tm.tokenStore, keyringName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load token from keyring: %w", err)
 		}
@@ -185,14 +199,14 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 	}
 
 	// Save to keyring
-	if config.IsKeyringAvailable() {
-		if err := tm.tokenStore.SetToken(keyringName, string(data)); err != nil {
+	if tm.deps.keyringAvailable() {
+		if err := tm.deps.setToken(tm.tokenStore, keyringName, string(data)); err != nil {
 			compact := compactStoredTokenForKeyring(stored)
 			compactData, marshalErr := json.Marshal(compact)
 			if marshalErr != nil {
 				return fmt.Errorf("failed to save token to keyring: %w", err)
 			}
-			if compactErr := tm.tokenStore.SetToken(keyringName, string(compactData)); compactErr != nil {
+			if compactErr := tm.deps.setToken(tm.tokenStore, keyringName, string(compactData)); compactErr != nil {
 				return fmt.Errorf("failed to save token to keyring: %w (compact fallback also failed: %v)", err, compactErr)
 			}
 			return nil

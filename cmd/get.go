@@ -13,6 +13,12 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/watch"
 )
 
+var getBreakpointsCmd = &cobra.Command{
+	Use:   "breakpoints",
+	Short: "List all breakpoints in the current workspace",
+	RunE:  runGetBreakpoints,
+}
+
 // getCmd represents the get command
 var getCmd = &cobra.Command{
 	Use:   "get",
@@ -136,6 +142,7 @@ func init() {
 	getCmd.AddCommand(getCopilotSkillsCmd)
 	getCmd.AddCommand(getSettingsSchemasCmd)
 	getCmd.AddCommand(getSettingsCmd)
+	getCmd.AddCommand(getBreakpointsCmd)
 	getCmd.AddCommand(getExtensionsCmd)
 	getCmd.AddCommand(getExtensionConfigsCmd)
 	getCmd.AddCommand(getDocumentsCmd)

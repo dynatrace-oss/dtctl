@@ -371,7 +371,7 @@ func TestGetEnvironmentConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := "/platform/extensions/v2/" + tt.extensionName + "/environment-configuration"
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/environmentConfiguration"
 				if r.URL.Path != expectedPath {
 					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
 					w.WriteHeader(http.StatusNotFound)

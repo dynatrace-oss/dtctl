@@ -115,6 +115,7 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 |-------|-------------|
 | [Installation](docs/INSTALLATION.md) | Homebrew, binary download, build from source, shell completion |
 | [Quick Start](docs/QUICK_START.md) | Configuration, examples for all resource types |
+| [Live Debugger](docs/LIVE_DEBUGGER.md) | Workspace filters, breakpoints, status inspection, and snapshot viewing |
 | [Token Scopes](docs/TOKEN_SCOPES.md) | Required API token scopes for each safety level |
 | [API Design](docs/dev/API_DESIGN.md) | Complete command reference |
 | [Architecture](docs/dev/ARCHITECTURE.md) | Technical implementation details |
