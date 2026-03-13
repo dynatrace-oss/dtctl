@@ -38,6 +38,7 @@ Supported resource types:
   - SLOs
   - Grail buckets
   - Settings objects
+  - Extension monitoring configurations
 
 Examples:
   # Create a new dashboard (no ID in file)

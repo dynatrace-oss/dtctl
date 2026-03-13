@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dynatrace-oss/dtctl/pkg/apply"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
@@ -142,22 +143,37 @@ Examples:
 		}
 
 		handler := extension.NewHandler(c)
+		printer := NewPrinter()
 
 		if isUpdate {
 			result, err := handler.UpdateMonitoringConfiguration(extensionName, configID, config)
 			if err != nil {
 				return fmt.Errorf("failed to update monitoring configuration: %w", err)
 			}
-			fmt.Printf("Monitoring configuration %q updated successfully for extension %q\n", result.ObjectID, extensionName)
-		} else {
-			result, err := handler.CreateMonitoringConfiguration(extensionName, config)
-			if err != nil {
-				return fmt.Errorf("failed to create monitoring configuration: %w", err)
-			}
-			fmt.Printf("Monitoring configuration %q created successfully for extension %q\n", result.ObjectID, extensionName)
+			return printer.Print(&apply.ExtensionConfigApplyResult{
+				ApplyResultBase: apply.ApplyResultBase{
+					Action:       apply.ActionUpdated,
+					ResourceType: "extension_config",
+					ID:           result.ObjectID,
+				},
+				ExtensionName: extensionName,
+				Scope:         result.Scope,
+			})
 		}
 
-		return nil
+		result, err := handler.CreateMonitoringConfiguration(extensionName, config)
+		if err != nil {
+			return fmt.Errorf("failed to create monitoring configuration: %w", err)
+		}
+		return printer.Print(&apply.ExtensionConfigApplyResult{
+			ApplyResultBase: apply.ApplyResultBase{
+				Action:       apply.ActionCreated,
+				ResourceType: "extension_config",
+				ID:           result.ObjectID,
+			},
+			ExtensionName: extensionName,
+			Scope:         result.Scope,
+		})
 	},
 }
 

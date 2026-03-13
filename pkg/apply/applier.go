@@ -730,6 +730,11 @@ func (a *Applier) dryRun(resourceType ResourceType, data []byte) error {
 		return a.dryRunDocument(resourceType, doc, data)
 	}
 
+	// Extension monitoring configs have specific fields
+	if resourceType == ResourceExtensionConfig {
+		return a.dryRunExtensionConfig(doc)
+	}
+
 	// For other resources, show basic info
 	fmt.Printf("Dry run: would apply %s resource\n", resourceType)
 
@@ -744,6 +749,29 @@ func (a *Applier) dryRun(resourceType ResourceType, data []byte) error {
 	}
 	if name != "" {
 		fmt.Printf("  Name: %s\n", name)
+	}
+
+	fmt.Println("\nResource content validated successfully")
+	return nil
+}
+
+// dryRunExtensionConfig performs dry-run validation for extension monitoring configs
+func (a *Applier) dryRunExtensionConfig(doc map[string]interface{}) error {
+	extensionName, _ := doc["extensionName"].(string)
+	objectID, _ := doc["objectId"].(string)
+	scope, _ := doc["scope"].(string)
+
+	if objectID != "" {
+		fmt.Println("Dry run: would update extension monitoring configuration")
+		fmt.Printf("  Config ID: %s\n", objectID)
+	} else {
+		fmt.Println("Dry run: would create extension monitoring configuration")
+	}
+	if extensionName != "" {
+		fmt.Printf("  Extension: %s\n", extensionName)
+	}
+	if scope != "" {
+		fmt.Printf("  Scope:     %s\n", scope)
 	}
 
 	fmt.Println("\nResource content validated successfully")
@@ -1487,11 +1515,8 @@ func (a *Applier) applyExtensionConfig(data []byte) (ApplyResult, error) {
 	handler := extension.NewHandler(a.client)
 
 	if objectID == "" {
-		// Safety check for create
-		if a.safetyChecker != nil {
-			if err := a.safetyChecker.CheckError(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
-				return nil, err
-			}
+		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
+			return nil, err
 		}
 
 		result, err := handler.CreateMonitoringConfiguration(extensionName, config)
@@ -1510,11 +1535,8 @@ func (a *Applier) applyExtensionConfig(data []byte) (ApplyResult, error) {
 		}, nil
 	}
 
-	// Safety check for update
-	if a.safetyChecker != nil {
-		if err := a.safetyChecker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
-			return nil, err
-		}
+	if err := a.checkSafety(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
+		return nil, err
 	}
 
 	result, err := handler.UpdateMonitoringConfiguration(extensionName, objectID, config)

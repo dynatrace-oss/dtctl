@@ -265,6 +265,10 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 		var result MonitoringConfigurationList
 		req := h.client.HTTP().R().SetResult(&result)
 
+		if version != "" {
+			req.SetQueryParam("version", version)
+		}
+
 		if chunkSize > 0 {
 			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
 		}
