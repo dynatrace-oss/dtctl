@@ -1665,3 +1665,34 @@ func TestDQLExecutor_ExecuteWithOptions_QueryError(t *testing.T) {
 		t.Fatal("expected error for bad query, got nil")
 	}
 }
+
+func TestDQLExecutor_PrintNotifications_Warning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	executor := NewDQLExecutor(c)
+
+	// Should not panic or error — output goes to os.Stderr
+	notifications := []QueryNotification{
+		{Severity: "WARNING", Message: "scan limit reached", NotificationType: "SCAN_LIMIT"},
+		{Severity: "ERROR", Message: "result limit reached", NotificationType: "RESULT_LIMIT_RECORDS"},
+		{Severity: "INFO", Message: "info message"},
+		{Message: "no severity set"},
+	}
+	executor.PrintNotifications(notifications) // Just verify no panic
+}
+
+func TestDQLExecutor_PrintNotifications_Empty(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer server.Close()
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	executor := NewDQLExecutor(c)
+	executor.PrintNotifications(nil)          // nil — should be no-op
+	executor.PrintNotifications([]QueryNotification{}) // empty — should be no-op
+}
