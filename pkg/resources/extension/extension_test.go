@@ -512,6 +512,103 @@ func TestListMonitoringConfigurations(t *testing.T) {
 	}
 }
 
+func TestGetMonitoringConfiguration(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		configID      string
+		statusCode    int
+		response      MonitoringConfiguration
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful get",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			configID:      "config-1",
+			statusCode:    200,
+			response:      MonitoringConfiguration{ObjectID: "config-1", Scope: "HOST-123"},
+		},
+		{
+			name:          "config not found",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			configID:      "nonexistent",
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.restricted",
+			configID:      "config-1",
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/monitoring-configurations/" + tt.configID
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected method: %s (expected GET)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 200 {
+					json.NewEncoder(w).Encode(tt.response)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.GetMonitoringConfiguration(tt.extensionName, tt.configID)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if result.ObjectID != tt.response.ObjectID {
+				t.Errorf("expected objectId %q, got %q", tt.response.ObjectID, result.ObjectID)
+			}
+			if result.Scope != tt.response.Scope {
+				t.Errorf("expected scope %q, got %q", tt.response.Scope, result.Scope)
+			}
+			// Verify enrichment fields
+			if result.Type != "extension_monitoring_config" {
+				t.Errorf("expected type %q, got %q", "extension_monitoring_config", result.Type)
+			}
+			if result.ExtensionName != tt.extensionName {
+				t.Errorf("expected extensionName %q, got %q", tt.extensionName, result.ExtensionName)
+			}
+		})
+	}
+}
+
 func TestCreateMonitoringConfiguration(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -699,6 +796,83 @@ func TestUpdateMonitoringConfiguration(t *testing.T) {
 
 			if result.ObjectID != tt.response.ObjectID {
 				t.Errorf("expected objectId %q, got %q", tt.response.ObjectID, result.ObjectID)
+			}
+		})
+	}
+}
+
+func TestDeleteMonitoringConfiguration(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		configID      string
+		statusCode    int
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful delete",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			configID:      "config-1",
+			statusCode:    204,
+		},
+		{
+			name:          "config not found",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			configID:      "nonexistent",
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.restricted",
+			configID:      "config-1",
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/monitoring-configurations/" + tt.configID
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodDelete {
+					t.Errorf("unexpected method: %s (expected DELETE)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				w.WriteHeader(tt.statusCode)
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			err = handler.DeleteMonitoringConfiguration(tt.extensionName, tt.configID)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}

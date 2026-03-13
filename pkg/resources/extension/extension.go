@@ -403,3 +403,26 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 
 	return &result, nil
 }
+
+// DeleteMonitoringConfiguration deletes a monitoring configuration for an extension
+func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) error {
+	resp, err := h.client.HTTP().R().
+		Delete(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
+
+	if err != nil {
+		return fmt.Errorf("failed to delete monitoring configuration: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case 404:
+			return fmt.Errorf("monitoring configuration %q not found for extension %q", configID, extensionName)
+		case 403:
+			return fmt.Errorf("access denied to extension %q", extensionName)
+		default:
+			return fmt.Errorf("failed to delete monitoring configuration: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	return nil
+}

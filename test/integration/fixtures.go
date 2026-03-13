@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 )
 
 // WorkflowFixture returns a minimal workflow JSON for integration testing
@@ -378,5 +379,28 @@ func NotebookCreateRequestModified(prefix string) document.CreateRequest {
 		Name:    fmt.Sprintf("%s-notebook-modified", prefix),
 		Type:    "notebook",
 		Content: NotebookFixtureModified(prefix),
+	}
+}
+
+// MonitoringConfigFixture returns a monitoring configuration create request for integration testing.
+// extensionName must be a pre-installed extension in the target environment.
+func MonitoringConfigFixture(prefix, extensionName string) extension.MonitoringConfigurationCreate {
+	return extension.MonitoringConfigurationCreate{
+		Scope: "environment",
+		Value: map[string]any{
+			"enabled":     true,
+			"description": fmt.Sprintf("%s-monitoring-config", prefix),
+		},
+	}
+}
+
+// MonitoringConfigFixtureModified returns a modified monitoring configuration for update testing
+func MonitoringConfigFixtureModified(prefix string) extension.MonitoringConfigurationCreate {
+	return extension.MonitoringConfigurationCreate{
+		Scope: "environment",
+		Value: map[string]any{
+			"enabled":     false,
+			"description": fmt.Sprintf("%s-monitoring-config-modified", prefix),
+		},
 	}
 }

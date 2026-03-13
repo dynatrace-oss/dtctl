@@ -12,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
@@ -20,10 +21,11 @@ import (
 
 // Resource represents a tracked resource for cleanup
 type Resource struct {
-	Type    string // "workflow", "dashboard", "notebook", "bucket"
-	ID      string // Resource ID or name
-	Name    string // Human-readable name for logging
-	Version int    // Version for documents (dashboards/notebooks)
+	Type          string // "workflow", "dashboard", "notebook", "bucket", "extension-config"
+	ID            string // Resource ID or name
+	Name          string // Human-readable name for logging
+	Version       int    // Version for documents (dashboards/notebooks)
+	ExtensionName string // Extension name (for extension-config resources)
 }
 
 // CleanupTracker tracks created resources and handles cleanup
@@ -56,6 +58,16 @@ func (c *CleanupTracker) TrackDocument(resourceType, id, name string, version in
 		ID:      id,
 		Name:    name,
 		Version: version,
+	})
+}
+
+// TrackExtensionConfig adds an extension monitoring configuration for cleanup
+func (c *CleanupTracker) TrackExtensionConfig(extensionName, configID string) {
+	c.resources = append(c.resources, Resource{
+		Type:          "extension-config",
+		ID:            configID,
+		Name:          fmt.Sprintf("%s/%s", extensionName, configID),
+		ExtensionName: extensionName,
 	})
 }
 
@@ -190,6 +202,15 @@ func (c *CleanupTracker) deleteResource(resource Resource) error {
 		}
 		return err
 
+	case "extension-config":
+		handler := extension.NewHandler(c.client)
+		err := handler.DeleteMonitoringConfiguration(resource.ExtensionName, resource.ID)
+		// Ignore 404 errors - resource already deleted is OK
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource.Type)
 	}
@@ -280,6 +301,15 @@ func (c *CleanupTracker) verifyDeletion(resource Resource) error {
 			return nil
 		}
 		return fmt.Errorf("lookup %s still exists after deletion", resource.ID)
+
+	case "extension-config":
+		handler := extension.NewHandler(c.client)
+		_, err := handler.GetMonitoringConfiguration(resource.ExtensionName, resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("extension-config %s still exists after deletion", resource.ID)
 
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource.Type)
