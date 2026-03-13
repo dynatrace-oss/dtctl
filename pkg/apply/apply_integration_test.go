@@ -368,3 +368,112 @@ func TestApply_WithTemplateVars(t *testing.T) {
 	}
 	fmt.Println("template vars test passed:", results[0].(*WorkflowApplyResult).Name)
 }
+
+// --- Apply: Azure Connection ---
+
+func TestApply_AzureConnection_Create(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		// GET to check if exists — not found
+		"/platform/classic/environment-api/v2/settings/objects/az-obj-1": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"objectId": "az-obj-1",
+				"schemaId": "builtin:hyperscaler-authentication.connections.azure",
+				"scope":    "environment",
+				"value":    map[string]interface{}{"name": "My Azure", "type": "serviceCredentials"},
+			})
+		},
+		"/platform/classic/environment-api/v2/settings/objects": func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				// List: empty (connection doesn't exist yet)
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items":      []interface{}{},
+					"totalCount": 0,
+				})
+			case http.MethodPost:
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]map[string]interface{}{
+					{"objectId": "az-obj-1"},
+				})
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	// Azure connection JSON: single object with schemaId
+	azJSON := `{"schemaId":"builtin:hyperscaler-authentication.connections.azure","scope":"environment","value":{"name":"My Azure","type":"serviceCredentials","tenantId":"tenant-1","appId":"app-1","key":"secret"}}`
+	results, err := a.Apply([]byte(azJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() Azure connection error = %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 result")
+	}
+}
+
+// --- Apply: GCP Connection ---
+
+func TestApply_GCPConnection_Create(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/classic/environment-api/v2/settings/objects/gcp-obj-1": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"objectId": "gcp-obj-1",
+				"schemaId": "builtin:hyperscaler-authentication.connections.gcp",
+				"scope":    "environment",
+				"value":    map[string]interface{}{"name": "My GCP", "projectId": "my-project"},
+			})
+		},
+		"/platform/classic/environment-api/v2/settings/objects": func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items":      []interface{}{},
+					"totalCount": 0,
+				})
+			case http.MethodPost:
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode([]map[string]interface{}{
+					{"objectId": "gcp-obj-1"},
+				})
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	// GCP connection JSON array
+	gcpJSON := `[{"schemaId":"builtin:hyperscaler-authentication.connections.gcp","scope":"environment","value":{"name":"My GCP","projectId":"my-project","clientEmail":"sa@proj.iam.gserviceaccount.com"}}]`
+	results, err := a.Apply([]byte(gcpJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() GCP connection error = %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 result")
+	}
+}
+
+// --- Apply: unsupported type in Apply ---
+
+func TestApply_UnsupportedResourceType(t *testing.T) {
+	srv, c := newApplyTestServer(t, nil)
+	defer srv.Close()
+	a := NewApplier(c)
+
+	// Force an unknown type past detectResourceType by using an impossible path
+	// (Since ResourceUnknown can't normally reach Apply's switch, we test via error path)
+	_, err := a.Apply([]byte(`{"random":"data","no":"matching","fields":"here","extra":"values"}`), ApplyOptions{})
+	if err == nil {
+		t.Fatal("expected error for unknown resource type")
+	}
+}
