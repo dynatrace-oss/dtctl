@@ -1693,6 +1693,6 @@ func TestDQLExecutor_PrintNotifications_Empty(t *testing.T) {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	executor := NewDQLExecutor(c)
-	executor.PrintNotifications(nil)          // nil — should be no-op
+	executor.PrintNotifications(nil)                   // nil — should be no-op
 	executor.PrintNotifications([]QueryNotification{}) // empty — should be no-op
 }

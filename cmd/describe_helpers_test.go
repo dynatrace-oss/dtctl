@@ -68,8 +68,8 @@ func TestStringFromRecord(t *testing.T) {
 	}{
 		{"name", "server-01"},
 		{"missing", ""},
-		{"count", "42"},     // non-string → fmt.Sprintf("%v", ...)
-		{"active", "true"},  // non-string → fmt.Sprintf("%v", ...)
+		{"count", "42"},    // non-string → fmt.Sprintf("%v", ...)
+		{"active", "true"}, // non-string → fmt.Sprintf("%v", ...)
 	}
 	for _, tc := range cases {
 		got := stringFromRecord(record, tc.key)
