@@ -1,3 +1,4 @@
 {"type":"config","name":"dtctl: Test Coverage + Test Suite Speed","metricName":"score","metricUnit":"","bestDirection":"higher"}
 {"run":1,"commit":"9dfd787","metric":1991.96,"metrics":{"coverage_pct":59.5,"test_time_s":29.87},"status":"keep","description":"Baseline: score=1991.96, coverage=59.5%, time=29.87s (parallel execution — pkg/exec 23s is bottleneck)","timestamp":1773415661415,"segment":0}
 {"run":2,"commit":"55539b1","metric":2572.54,"metrics":{"coverage_pct":59.4,"test_time_s":23.09},"status":"keep","description":"Add NewForTesting() + update all resource/exec tests: time 29.87s→23.09s, score 1991→2572 (+29%)","timestamp":1773415815670,"segment":0}
+{"run":3,"commit":"896a7b7","metric":3082.51,"metrics":{"coverage_pct":59.4,"test_time_s":19.27},"status":"keep","description":"Fix doctor test: inject http.Client, early-return on connectivity fail; cmd/ 13s→2.7s; score +55% vs baseline","timestamp":1773416097718,"segment":0}
