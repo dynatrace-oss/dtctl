@@ -104,7 +104,7 @@ Examples:
 
 		// Get monitoring configurations summary
 		var configSummaries []monitoringConfigSummary
-		configs, configErr := handler.ListMonitoringConfigurations(extensionName, "", 0)
+		configs, configErr := handler.ListMonitoringConfigurations(extensionName, "", handler.GetChunkSize())
 		if configErr == nil {
 			for _, cfg := range configs.Items {
 				summary := monitoringConfigSummary{
