@@ -477,3 +477,125 @@ func TestApply_UnsupportedResourceType(t *testing.T) {
 		t.Fatal("expected error for unknown resource type")
 	}
 }
+
+// --- Apply: Azure Monitoring Config (create, no objectId) ---
+
+func TestApply_AzureMonitoringConfig_Create(t *testing.T) {
+	const extensionBase = "/platform/extensions/v2/extensions/com.dynatrace.extension.da-azure"
+	const monitoringBase = "/platform/extensions/v2/extensions/com.dynatrace.extension.da-azure/monitoring-configurations"
+
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		// GetLatestVersion
+		extensionBase: func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"items": []map[string]interface{}{
+					{"version": "1.2.3"},
+				},
+			})
+		},
+		// Create (POST) and FindByName (GET)
+		monitoringBase: func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				// FindByName → List: return empty
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"items":      []interface{}{},
+					"totalCount": 0,
+				})
+			case http.MethodPost:
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"objectId": "mc-new-1",
+					"scope":    "integration-azure",
+					"value":    map[string]interface{}{"description": "My Azure Config", "version": "1.2.3"},
+				})
+			default:
+				t.Errorf("unexpected method %s", r.Method)
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	azMonJSON := `{"scope":"integration-azure","value":{"description":"My Azure Config","subscriptionId":"sub-1","tenantId":"tenant-1","credentials":"cred-1"}}`
+	results, err := a.Apply([]byte(azMonJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() AzureMonitoringConfig error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	base := results[0].(*MonitoringConfigApplyResult).ApplyResultBase
+	if base.Action != ActionCreated {
+		t.Errorf("expected 'created', got %q", base.Action)
+	}
+}
+
+// --- Apply: SLO update (has id, exists) ---
+
+func TestApply_SLOUpdate_Exists(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/slo/v1/slos/slo-existing": func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":      "slo-existing",
+					"name":    "My SLO",
+					"version": "1",
+				})
+			case http.MethodPut:
+				w.WriteHeader(http.StatusOK)
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	sloJSON := `{"id":"slo-existing","name":"My SLO","criteria":{"pass":[{"criteria":[{"metric":"<100","steps":600}]}]}}`
+	results, err := a.Apply([]byte(sloJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() SLO update error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	base := results[0].(*SLOApplyResult).ApplyResultBase
+	if base.Action != ActionUpdated {
+		t.Errorf("expected 'updated', got %q", base.Action)
+	}
+}
+
+// --- Apply: dryRun dashboard (checks document existence) ---
+
+func TestApply_DryRun_Dashboard(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/document/v1/documents/dash-123/metadata": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":   "dash-123",
+				"name": "Existing Dashboard",
+				"type": "dashboard",
+			})
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	dashJSON := `{"type":"dashboard","id":"dash-123","tiles":{"items":[{"tileType":"MARKDOWN"}]}}`
+	_, err := a.Apply([]byte(dashJSON), ApplyOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("Apply() dryRun dashboard error = %v", err)
+	}
+}
