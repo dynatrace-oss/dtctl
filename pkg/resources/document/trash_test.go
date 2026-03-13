@@ -96,7 +96,7 @@ func TestTrashHandler_List(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -155,7 +155,7 @@ func TestTrashHandler_Get(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("client.New() error = %v", err)
 	}
@@ -189,7 +189,7 @@ func TestTrashHandler_Get_NotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("client.New() error = %v", err)
 	}
@@ -253,7 +253,7 @@ func TestTrashHandler_Restore(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -305,7 +305,7 @@ func TestTrashHandler_Delete(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}

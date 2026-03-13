@@ -81,7 +81,7 @@ func TestResolveCredential(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("client.New() error = %v", err)
 	}
@@ -113,7 +113,7 @@ func TestResolveCredential_DoesNotMaskListFailureAsNotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("client.New() error = %v", err)
 	}

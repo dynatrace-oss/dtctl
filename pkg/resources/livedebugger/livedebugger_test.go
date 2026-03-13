@@ -30,7 +30,7 @@ func newGraphQLTestHandler(t *testing.T, statusCode int, responder func(body map
 	}))
 	t.Cleanup(server.Close)
 
-	c, err := client.New(server.URL, "dt0c01.test")
+	c, err := client.NewForTesting(server.URL, "dt0c01.test")
 	if err != nil {
 		t.Fatalf("client.New failed: %v", err)
 	}

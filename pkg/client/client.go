@@ -44,6 +44,17 @@ func NewFromConfig(cfg *config.Config) (*Client, error) {
 	return New(ctx.Environment, token)
 }
 
+// NewForTesting creates a client with retries disabled, suitable for unit tests
+// that use httptest servers. This avoids the 3×1s retry wait on 500/429 responses.
+func NewForTesting(baseURL, token string) (*Client, error) {
+	c, err := New(baseURL, token)
+	if err != nil {
+		return nil, err
+	}
+	c.http.SetRetryCount(0)
+	return c, nil
+}
+
 // New creates a new client with base URL and token
 func New(baseURL, token string) (*Client, error) {
 	if baseURL == "" {

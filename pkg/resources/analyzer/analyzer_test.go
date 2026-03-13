@@ -92,7 +92,7 @@ func TestHandler_List(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -182,7 +182,7 @@ func TestHandler_Get(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -267,7 +267,7 @@ func TestHandler_GetDocumentation(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -336,7 +336,7 @@ func TestHandler_GetInputSchema(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -399,7 +399,7 @@ func TestHandler_GetResultSchema(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -492,7 +492,7 @@ func TestHandler_Execute(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -589,7 +589,7 @@ func TestHandler_Poll(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -667,7 +667,7 @@ func TestHandler_Cancel(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -746,7 +746,7 @@ func TestHandler_Validate(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}

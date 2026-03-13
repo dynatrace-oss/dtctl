@@ -113,7 +113,7 @@ func TestList(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -209,7 +209,7 @@ func TestGet(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -326,7 +326,7 @@ func TestCreate(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -439,7 +439,7 @@ func TestUpdate(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -518,7 +518,7 @@ func TestDelete(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -589,7 +589,7 @@ func TestTruncate(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -630,7 +630,7 @@ func TestGetRaw(t *testing.T) {
 		}))
 		defer server.Close()
 
-		c, err := client.New(server.URL, "test-token")
+		c, err := client.NewForTesting(server.URL, "test-token")
 		if err != nil {
 			t.Fatalf("failed to create client: %v", err)
 		}
@@ -659,7 +659,7 @@ func TestGetRaw(t *testing.T) {
 		}))
 		defer server.Close()
 
-		c, err := client.New(server.URL, "test-token")
+		c, err := client.NewForTesting(server.URL, "test-token")
 		if err != nil {
 			t.Fatalf("failed to create client: %v", err)
 		}

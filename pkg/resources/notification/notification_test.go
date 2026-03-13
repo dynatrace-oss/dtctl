@@ -125,7 +125,7 @@ func TestListEventNotifications(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -213,7 +213,7 @@ func TestGetEventNotification(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -298,7 +298,7 @@ func TestCreateEventNotification(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -372,7 +372,7 @@ func TestDeleteEventNotification(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -476,7 +476,7 @@ func TestListResourceNotifications(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -555,7 +555,7 @@ func TestGetResourceNotification(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -621,7 +621,7 @@ func TestDeleteResourceNotification(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}

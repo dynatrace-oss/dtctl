@@ -60,7 +60,7 @@ func TestHandler_ListApps(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -118,7 +118,7 @@ func TestHandler_GetApp(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}

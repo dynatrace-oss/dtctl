@@ -56,7 +56,7 @@ func TestHandler_ListSkills(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -176,7 +176,7 @@ func TestHandler_Chat(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -286,7 +286,7 @@ func TestHandler_ChatWithOptions(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -373,7 +373,7 @@ func TestHandler_Nl2Dql(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -465,7 +465,7 @@ func TestHandler_Dql2Nl(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -611,7 +611,7 @@ func TestHandler_DocumentSearch(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}

@@ -103,7 +103,7 @@ func TestResolveID_AlreadyID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestResolveID_WorkflowByName_SingleMatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestResolveID_WorkflowByName_MultipleMatches(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestResolveID_WorkflowByName_NoMatches(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestResolveID_DashboardByName_SingleMatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestResolveID_NotebookByName_SingleMatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestResolveID_UnsupportedResourceType(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestResolveID_APIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestSearchWorkflows_CaseInsensitiveMatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestSearchWorkflows_PartialMatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestSearchDocuments_Dashboard(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -594,7 +594,7 @@ func TestSearchDocuments_Notebook(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}

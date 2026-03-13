@@ -77,7 +77,7 @@ func TestHandler_List(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -146,7 +146,7 @@ func TestHandler_Get(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -240,7 +240,7 @@ func TestHandler_Delete(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -311,7 +311,7 @@ func TestHandler_GetRaw(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -401,7 +401,7 @@ func TestHandler_Update(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -485,7 +485,7 @@ func TestHandler_Create(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -574,7 +574,7 @@ func TestHandler_ListHistory(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -669,7 +669,7 @@ func TestHandler_GetHistoryRecord(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}
@@ -767,7 +767,7 @@ func TestHandler_RestoreHistory(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("client.New() error = %v", err)
 			}

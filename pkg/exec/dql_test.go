@@ -72,7 +72,7 @@ func TestDQLExecutor_ExecuteQueryWithOptions_CustomHeaders(t *testing.T) {
 			defer server.Close()
 
 			// Create client pointing to test server
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -130,7 +130,7 @@ func TestDQLExecutor_ExecuteQuery_BackwardCompatibility(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestDQLExecutor_ExecuteQueryWithOptions_PollingWithBodyParams(t *testing.T)
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestDQLExecutor_ExecuteQueryWithOptions_ErrorHandling(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
@@ -536,7 +536,7 @@ func TestNewDQLExecutor(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -563,7 +563,7 @@ func TestDQLExecutor_ExecuteQueryWithOptions_RunningNoToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -602,7 +602,7 @@ func TestDQLExecutor_ExecuteQueryWithOptions_PollFailed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -639,7 +639,7 @@ func TestDQLExecutor_ExecuteQueryWithOptions_AllParameters(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -735,7 +735,7 @@ func TestDQLExecutor_ExecuteQueryWithOptions_IncludeContributions_OmittedWhenFal
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -778,7 +778,7 @@ func TestDQLExecutor_ExecuteQueryWithOptions_IncludeContributions_SentWhenTrue(t
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -823,7 +823,7 @@ func TestVerifyQuery_Valid(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -867,7 +867,7 @@ func TestVerifyQuery_Invalid(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -920,7 +920,7 @@ func TestVerifyQuery_WithCanonical(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -969,7 +969,7 @@ func TestVerifyQuery_WithTimezone(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -1009,7 +1009,7 @@ func TestVerifyQuery_WithLocale(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -1050,7 +1050,7 @@ func TestVerifyQuery_WithAllOptions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -1095,7 +1095,7 @@ func TestVerifyQuery_WithAllOptions(t *testing.T) {
 // TestVerifyQuery_NetworkError tests handling of network errors
 func TestVerifyQuery_NetworkError(t *testing.T) {
 	// Create client pointing to non-existent server
-	c, err := client.New("http://localhost:0", "test-token")
+	c, err := client.NewForTesting("http://localhost:0", "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -1121,7 +1121,7 @@ func TestVerifyQuery_AuthError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c, err := client.New(server.URL, "test-token")
+	c, err := client.NewForTesting(server.URL, "test-token")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -1170,7 +1170,7 @@ func TestVerifyQuery_ServerError(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c, err := client.New(server.URL, "test-token")
+			c, err := client.NewForTesting(server.URL, "test-token")
 			if err != nil {
 				t.Fatalf("failed to create client: %v", err)
 			}
