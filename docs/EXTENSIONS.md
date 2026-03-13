@@ -8,8 +8,8 @@ dtctl provides full support for managing Dynatrace Extensions 2.0 — listing ex
 # List all installed extensions
 dtctl get extensions
 
-# Filter by name
-dtctl get extensions --name "com.dynatrace.extension.host"
+# Filter by name (case-insensitive substring match)
+dtctl get extensions --name "sql"
 
 # Output as JSON
 dtctl get extensions -o json
@@ -19,10 +19,10 @@ dtctl get extensions -o json
 
 ```bash
 # List all versions of an extension
-dtctl get extension com.dynatrace.extension.host-monitoring
+dtctl get extension com.dynatrace.extension.postgres
 
 # JSON output (useful for scripting)
-dtctl get extension com.dynatrace.extension.host-monitoring -o yaml
+dtctl get extension com.dynatrace.extension.postgres -o yaml
 ```
 
 ## Describing an Extension
@@ -31,13 +31,13 @@ The `describe` command shows full details including versions, data sources, feat
 
 ```bash
 # Describe the active version
-dtctl describe extension com.dynatrace.extension.host-monitoring
+dtctl describe extension com.dynatrace.extension.postgres
 
 # Describe a specific version
-dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3
 
 # Get structured output for automation
-dtctl describe extension com.dynatrace.extension.host-monitoring -o json
+dtctl describe extension com.dynatrace.extension.postgres -o json
 ```
 
 ## Monitoring Configurations
@@ -48,10 +48,10 @@ Monitoring configurations define how an extension collects data for a specific s
 
 ```bash
 # List all monitoring configs for an extension
-dtctl get extension-configs com.dynatrace.extension.host-monitoring
+dtctl get extension-configs com.dynatrace.extension.postgres
 
 # Get a specific config by ID
-dtctl get extension-config com.dynatrace.extension.host-monitoring --config-id <id>
+dtctl get extension-config com.dynatrace.extension.postgres --config-id <id>
 ```
 
 > **Note:** dtctl adds `type` and `extensionName` fields to monitoring configuration responses for internal resource detection. These fields are not present in the raw Dynatrace REST API response.
@@ -60,10 +60,10 @@ dtctl get extension-config com.dynatrace.extension.host-monitoring --config-id <
 
 ```bash
 # Show full details of a monitoring configuration
-dtctl describe extension-config com.dynatrace.extension.host-monitoring --config-id <id>
+dtctl describe extension-config com.dynatrace.extension.postgres --config-id <id>
 
 # JSON output
-dtctl describe extension-config com.dynatrace.extension.host-monitoring --config-id <id> -o json
+dtctl describe extension-config com.dynatrace.extension.postgres --config-id <id> -o json
 ```
 
 ### Creating a Configuration
@@ -74,8 +74,8 @@ Create a YAML file (e.g., `config.yaml`):
 scope: HOST-ABC123
 value:
   enabled: true
-  description: "Production host monitoring"
-  version: "1.2.3"
+  description: "Production PostgreSQL monitoring"
+  version: "2.9.3"
   featureSets:
     - default
 ```
@@ -84,13 +84,13 @@ Apply it:
 
 ```bash
 # Create a new monitoring configuration
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml
 
 # Preview without applying
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --dry-run
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml --dry-run
 
 # Override scope from the command line
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --scope HOST-XYZ789
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml --scope HOST-XYZ789
 ```
 
 ### Updating a Configuration
@@ -103,11 +103,11 @@ scope: HOST-ABC123
 value:
   enabled: false
   description: "Updated - disabled for maintenance"
-  version: "1.2.3"
+  version: "2.9.3"
 ```
 
 ```bash
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml
 ```
 
 ### Using with Generic Apply
@@ -116,11 +116,11 @@ Extension configs can also be applied via `dtctl apply -f` by including a `type`
 
 ```yaml
 type: extension_monitoring_config
-extensionName: com.dynatrace.extension.host-monitoring
+extensionName: com.dynatrace.extension.postgres
 scope: HOST-ABC123
 value:
   enabled: true
-  version: "1.2.3"
+  version: "2.9.3"
 ```
 
 ```bash
@@ -140,11 +140,11 @@ value:
 ```
 
 ```bash
-dtctl apply extension-config com.dynatrace.extension.host-monitoring \
+dtctl apply extension-config com.dynatrace.extension.postgres \
   -f config.yaml \
   --set host=HOST-ABC123 \
   --set env=production \
-  --set version=1.2.3
+  --set version=2.9.3
 ```
 
 ## Aliases
@@ -161,5 +161,5 @@ All extension commands support short aliases:
 dtctl get extensions
 dtctl get ext
 
-dtctl describe ext com.dynatrace.extension.host-monitoring
+dtctl describe ext com.dynatrace.extension.postgres
 ```

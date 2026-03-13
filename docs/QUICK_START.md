@@ -2962,48 +2962,48 @@ dtctl get extensions
 dtctl get extensions --name "com.dynatrace"
 
 # Get versions of a specific extension
-dtctl get extension com.dynatrace.extension.host-monitoring
+dtctl get extension com.dynatrace.extension.postgres
 
 # Wide output (shows author, feature sets, data sources)
-dtctl get extension com.dynatrace.extension.host-monitoring -o wide
+dtctl get extension com.dynatrace.extension.postgres -o wide
 
 # Describe an extension (schema, feature sets, data sources)
-dtctl describe extension com.dynatrace.extension.host-monitoring
+dtctl describe extension com.dynatrace.extension.postgres
 
 # Describe a specific version
-dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3
 ```
 
 ### Monitoring Configurations
 
 ```bash
 # List monitoring configurations for an extension
-dtctl get extension-configs com.dynatrace.extension.host-monitoring
+dtctl get extension-configs com.dynatrace.extension.postgres
 
 # Filter by version
-dtctl get extension-configs com.dynatrace.extension.host-monitoring --version 1.2.3
+dtctl get extension-configs com.dynatrace.extension.postgres --version 2.9.3
 
 # Describe a specific monitoring configuration
-dtctl describe extension-config com.dynatrace.extension.host-monitoring --config-id <object-id>
+dtctl describe extension-config com.dynatrace.extension.postgres --config-id <object-id>
 ```
 
 ### Apply Monitoring Configuration
 
 ```bash
 # Create a new monitoring configuration
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml
 
 # Create with a specific scope
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --scope HOST-1234
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml --scope HOST-1234
 
 # Update an existing configuration (objectId in file)
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml
 
 # Apply with template variables
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --set env=prod
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml --set env=prod
 
 # Dry run to preview
-dtctl apply extension-config com.dynatrace.extension.host-monitoring -f config.yaml --dry-run
+dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml --dry-run
 ```
 
 **Example monitoring configuration** (`config.yaml`):
