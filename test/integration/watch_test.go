@@ -30,7 +30,7 @@ func TestWatch_BasicFunctionality(t *testing.T) {
 		ShowInitial: true,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
 	defer cancel()
 
 	err := watcher.Start(ctx)
@@ -65,7 +65,7 @@ func TestWatch_DetectChanges(t *testing.T) {
 		ShowInitial: true,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2200*time.Millisecond)
 	defer cancel()
 
 	err := watcher.Start(ctx)
@@ -99,13 +99,13 @@ func TestWatch_StopGracefully(t *testing.T) {
 		done <- watcher.Start(ctx)
 	}()
 
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	watcher.Stop()
 
 	select {
 	case err := <-done:
 		require.NoError(t, err)
-	case <-time.After(2 * time.Second):
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Watcher did not stop gracefully")
 	}
 }
@@ -127,7 +127,7 @@ func TestWatch_ContextCancellation(t *testing.T) {
 		ShowInitial: true,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
 	err := watcher.Start(ctx)
