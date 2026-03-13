@@ -53,6 +53,10 @@ Checks performed:
 }
 
 func runDoctorChecks() []checkResult {
+	return runDoctorChecksWithClient(&http.Client{Timeout: 10 * time.Second})
+}
+
+func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 	var results []checkResult
 
 	// 1. Version
@@ -141,7 +145,6 @@ func runDoctorChecks() []checkResult {
 	})
 
 	// 5. Environment connectivity
-	httpClient := &http.Client{Timeout: 10 * time.Second}
 	req, reqErr := http.NewRequest(http.MethodHead, ctx.Environment, nil)
 	if reqErr != nil {
 		results = append(results, checkResult{
@@ -157,6 +160,8 @@ func runDoctorChecks() []checkResult {
 				Status: "fail",
 				Detail: fmt.Sprintf("cannot reach %s: %s", ctx.Environment, connErr.Error()),
 			})
+			// No point testing authentication if the server is unreachable
+			return results
 		} else {
 			resp.Body.Close()
 			results = append(results, checkResult{

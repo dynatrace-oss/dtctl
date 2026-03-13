@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
@@ -198,9 +199,13 @@ func TestDoctorConnectivityFailure(t *testing.T) {
 	defer func() { cfgFile = originalCfgFile }()
 	cfgFile = configPath
 
-	// Use an unreachable URL
+	// Start a server then immediately close it so the port refuses connections fast
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	unreachableURL := srv.URL
+	srv.Close()
+
 	cfg := config.NewConfig()
-	cfg.SetContext("test", "http://127.0.0.1:1", "test-token")
+	cfg.SetContext("test", unreachableURL, "test-token")
 	if err := cfg.SetToken("test-token", "dt0c01.ST.test-token-value.test-secret"); err != nil {
 		t.Fatalf("failed to set token: %v", err)
 	}
@@ -209,7 +214,9 @@ func TestDoctorConnectivityFailure(t *testing.T) {
 		t.Fatalf("failed to save config: %v", err)
 	}
 
-	results := runDoctorChecks()
+	// Use a very short timeout so the test doesn't wait on any OS-level delay
+	fastClient := &http.Client{Timeout: 100 * time.Millisecond}
+	results := runDoctorChecksWithClient(fastClient)
 
 	found := false
 	for _, r := range results {
