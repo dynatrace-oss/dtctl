@@ -13,21 +13,12 @@ var getWfeTaskResultCmd = &cobra.Command{
 	Short:   "Get the return value of a workflow execution task",
 	Long: `Get the structured return value produced by a task in a workflow execution.
 
-Unlike 'dtctl logs wfe', which prints stdout/stderr log output, this command
-retrieves the structured data returned by the task (e.g. the object returned
-by a JavaScript task's default export function).
+Unlike 'dtctl logs wfe' (stdout/stderr), this retrieves the data returned by the
+task (e.g. the object from a JavaScript task's default export function).
 
 Examples:
-  # Get the return value of a specific task
   dtctl get wfe-task-result <execution-id> --task <task-name>
-  dtctl get workflow-execution-task-result <execution-id> --task <task-name>
-
-  # Output as JSON
-  dtctl get wfe-task-result <execution-id> --task <task-name> -o json
-
-  # Output as YAML
-  dtctl get wfe-task-result <execution-id> --task <task-name> -o yaml
-`,
+  dtctl get wfe-task-result <execution-id> -t <task-name> -o json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		executionID := args[0]

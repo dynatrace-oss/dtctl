@@ -522,14 +522,12 @@ Retrieve the structured return value of a specific task (distinct from log outpu
 
 ```bash
 # Get the return value of a task
-dtctl results workflow-execution exec-456 --task my_task
-# or use short alias
-dtctl results wfe exec-456 --task my_task
-dtctl results wfe exec-456 -t my_task
+dtctl get wfe-task-result exec-456 --task my_task
+dtctl get wfe-task-result exec-456 -t my_task
 
 # Output as JSON or YAML
-dtctl results wfe exec-456 --task my_task -o json
-dtctl results wfe exec-456 --task my_task -o yaml
+dtctl get wfe-task-result exec-456 --task my_task -o json
+dtctl get wfe-task-result exec-456 --task my_task -o yaml
 ```
 
 ### Watch Workflows

@@ -171,10 +171,7 @@ func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, err
 	return body, nil
 }
 
-// GetTaskResult retrieves the return value of a specific task execution.
-// This calls GET /platform/automation/v1/executions/{id}/tasks/{taskName}/result
-// and returns the raw JSON-decoded result as returned by the task (e.g. the
-// object returned by a JavaScript task's default export function).
+// GetTaskResult retrieves the structured return value of a specific task execution
 func (h *ExecutionHandler) GetTaskResult(executionID, taskName string) (any, error) {
 	var result any
 
