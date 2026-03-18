@@ -228,10 +228,11 @@ func wrapForAgent(agent Agent, content string, data TemplateData) (string, error
 		sb.WriteString("---\n\n")
 		sb.WriteString(content)
 	case "openclaw":
-		// OpenClaw skills use YAML frontmatter with name and description.
+		// OpenClaw uses AgentSkills format: SKILL.md with YAML frontmatter
+		// containing name and description fields.
 		sb.WriteString("---\n")
 		sb.WriteString("name: dtctl\n")
-		sb.WriteString("description: Operate Dynatrace via dtctl CLI — run DQL queries, manage dashboards/notebooks/workflows/SLOs, explore settings, and create observability artifacts. Use when the user asks about Dynatrace data, metrics, traces, logs, dashboards, notebooks, SLOs, settings, or anything requiring Dynatrace platform interaction.\n")
+		sb.WriteString(fmt.Sprintf("description: Operate Dynatrace via dtctl CLI (v%s) — run DQL queries, manage dashboards/notebooks/workflows/SLOs, explore settings, and create observability artifacts. Use when the user asks about Dynatrace data, metrics, traces, logs, dashboards, notebooks, SLOs, settings, or anything requiring Dynatrace platform interaction.\n", data.Version))
 		sb.WriteString("---\n\n")
 		sb.WriteString(content)
 	default:

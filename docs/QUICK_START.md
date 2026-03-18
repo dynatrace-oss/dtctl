@@ -3569,7 +3569,7 @@ Your platform token needs appropriate scopes for the resources you want to manag
 
 ### AI Agent Detection
 
-If you're using dtctl through an AI coding assistant (like Claude Code, GitHub Copilot, Cursor, etc.), dtctl automatically detects this and includes it in the User-Agent header for telemetry purposes. This helps improve the CLI experience for AI-assisted workflows.
+If you're using dtctl through an AI coding assistant (like Claude Code, GitHub Copilot, Cursor, OpenClaw, etc.), dtctl automatically detects this and includes it in the User-Agent header for telemetry purposes. This helps improve the CLI experience for AI-assisted workflows.
 
 The detection is automatic and doesn't affect functionality. Supported AI agents:
 - Claude Code (`CLAUDECODE` env var)
@@ -3577,6 +3577,7 @@ The detection is automatic and doesn't affect functionality. Supported AI agents
 - GitHub Copilot (`GITHUB_COPILOT` env var)
 - Cursor (`CURSOR_AGENT` env var)
 - Kiro (`KIRO` env var)
+- OpenClaw (`OPENCLAW` env var)
 - Codeium (`CODEIUM_AGENT` env var)
 - TabNine (`TABNINE_AGENT` env var)
 - Amazon Q (`AMAZON_Q` env var)

@@ -311,6 +311,7 @@ dtctl automatically detects when running under AI coding assistants and includes
 - **GitHub Copilot**: Detected via `GITHUB_COPILOT` environment variable
 - **Cursor**: Detected via `CURSOR_AGENT` environment variable
 - **Kiro**: Detected via `KIRO` environment variable
+- **OpenClaw**: Detected via `OPENCLAW` environment variable
 - **Codeium**: Detected via `CODEIUM_AGENT` environment variable
 - **TabNine**: Detected via `TABNINE_AGENT` environment variable
 - **Amazon Q**: Detected via `AMAZON_Q` environment variable
