@@ -31,7 +31,6 @@ func TestFindAgent(t *testing.T) {
 		{"kiro", true},
 		{"opencode", true},
 		{"openclaw", true},
-		{"openclaw", true},
 		{"unknown", false},
 		{"", false},
 	}
