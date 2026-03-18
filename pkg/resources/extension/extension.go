@@ -153,16 +153,15 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 		var result ExtensionList
 		req := h.client.HTTP().R().SetResult(&result)
 
-		if name != "" {
-			req.SetQueryParam("name", name)
-		}
-
-		if chunkSize > 0 {
-			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-		}
-
 		if nextPageKey != "" {
 			req.SetQueryParam("next-page-key", nextPageKey)
+		} else {
+			if name != "" {
+				req.SetQueryParam("name", name)
+			}
+			if chunkSize > 0 {
+				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
+			}
 		}
 
 		resp, err := req.Get("/platform/extensions/v2/extensions")
@@ -316,16 +315,15 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 		var result MonitoringConfigurationList
 		req := h.client.HTTP().R().SetResult(&result)
 
-		if version != "" {
-			req.SetQueryParam("version", version)
-		}
-
-		if chunkSize > 0 {
-			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-		}
-
 		if nextPageKey != "" {
 			req.SetQueryParam("next-page-key", nextPageKey)
+		} else {
+			if version != "" {
+				req.SetQueryParam("version", version)
+			}
+			if chunkSize > 0 {
+				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
+			}
 		}
 
 		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))

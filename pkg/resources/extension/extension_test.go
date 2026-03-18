@@ -163,6 +163,13 @@ func TestList(t *testing.T) {
 					return
 				}
 
+				// Simulate API constraint: page-size must not be combined with next-page-key
+				if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("next-page-key") != "" {
+					w.WriteHeader(http.StatusBadRequest)
+					w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated.","constraintViolations":[{"path":"page-size","message":"must not be used in combination with next-page-key query parameter."}]}}`))
+					return
+				}
+
 				// Simulate API page-size limit (rejects > maxPageSize)
 				if ps := r.URL.Query().Get("page-size"); ps != "" {
 					pageSizeVal, _ := strconv.ParseInt(ps, 10, 64)
