@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
@@ -14,9 +16,8 @@ var getWfeTaskResultCmd = &cobra.Command{
 	Long: `Get the structured return value produced by a task in a workflow execution.
 
 Unlike 'dtctl logs wfe' (stdout/stderr), this retrieves the data returned by the
-task (e.g. the object from a JavaScript task's default export function).
-
-Examples:
+task (e.g. the object from a JavaScript task's default export function).`,
+	Example: `  # Get the return value of a specific task
   dtctl get wfe-task-result <execution-id> --task <task-name>
   dtctl get wfe-task-result <execution-id> -t <task-name> -o json`,
 	Args: cobra.ExactArgs(1),
@@ -42,6 +43,14 @@ Examples:
 		}
 
 		printer := NewPrinter()
+		ap := enrichAgent(printer, "get", "wfe-task-result")
+		if ap != nil {
+			ap.SetSuggestions([]string{
+				fmt.Sprintf("Run 'dtctl get wfe %s' to view the full execution", executionID),
+				fmt.Sprintf("Run 'dtctl logs wfe %s --task %s' to view task logs", executionID, taskName),
+			})
+		}
+
 		return printer.Print(result)
 	},
 }

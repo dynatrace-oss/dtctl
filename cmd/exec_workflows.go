@@ -16,10 +16,8 @@ var execWorkflowCmd = &cobra.Command{
 	Use:     "workflow <workflow-id>",
 	Aliases: []string{"wf"},
 	Short:   "Execute a workflow",
-	Long: `Execute an automation workflow.
-
-Examples:
-  # Execute workflow
+	Long:    `Execute an automation workflow.`,
+	Example: `  # Execute workflow
   dtctl exec workflow my-workflow-id
 
   # Execute with parameters
@@ -30,8 +28,18 @@ Examples:
 
   # Execute with custom timeout
   dtctl exec workflow my-workflow-id --wait --timeout 10m
-`,
+
+  # Execute, wait, and print each task's return value when done
+  dtctl exec workflow my-workflow-id --wait --show-results`,
 	Args: cobra.ExactArgs(1),
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		showResults, _ := cmd.Flags().GetBool("show-results")
+		wait, _ := cmd.Flags().GetBool("wait")
+		if showResults && !wait {
+			return fmt.Errorf("--show-results requires --wait")
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workflowID := args[0]
 
@@ -102,12 +110,11 @@ Examples:
 					printer := NewPrinter()
 					for _, task := range tasks {
 						fmt.Printf("\n--- %s [%s] ---\n", task.Name, task.State)
-						taskResult, err := execHandler.GetTaskResult(result.ID, task.Name)
-						if err != nil {
-							fmt.Printf("(failed to fetch result: %v)\n", err)
+						if task.Result == nil {
+							fmt.Printf("(no structured return value)\n")
 							continue
 						}
-						if err := printer.Print(taskResult); err != nil {
+						if err := printer.Print(task.Result); err != nil {
 							fmt.Printf("(failed to print result: %v)\n", err)
 						}
 					}

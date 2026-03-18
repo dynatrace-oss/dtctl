@@ -391,50 +391,50 @@ func TestSortTasksByStartTime(t *testing.T) {
 // --- GetTaskResult ---
 
 func TestGetTaskResult_Success(t *testing.T) {
-mux := http.NewServeMux()
-mux.HandleFunc("/platform/automation/v1/executions/exec-1/tasks/rca_analysis/result", func(w http.ResponseWriter, r *http.Request) {
-if r.Method != http.MethodGet {
-t.Errorf("unexpected method: got %s, want GET", r.Method)
-}
-w.Header().Set("Content-Type", "application/json")
-json.NewEncoder(w).Encode(map[string]any{"results": []any{map[string]any{"id": "1"}}})
-})
-h, cleanup := newExecTestHandler(t, mux)
-defer cleanup()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/automation/v1/executions/exec-1/tasks/rca_analysis/result", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected method: got %s, want GET", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"results": []any{map[string]any{"id": "1"}}})
+	})
+	h, cleanup := newExecTestHandler(t, mux)
+	defer cleanup()
 
-result, err := h.GetTaskResult("exec-1", "rca_analysis")
-if err != nil {
-t.Fatalf("GetTaskResult() error = %v", err)
-}
-if result == nil {
-t.Fatal("GetTaskResult() returned nil")
-}
+	result, err := h.GetTaskResult("exec-1", "rca_analysis")
+	if err != nil {
+		t.Fatalf("GetTaskResult() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("GetTaskResult() returned nil")
+	}
 }
 
 func TestGetTaskResult_NotFound(t *testing.T) {
-mux := http.NewServeMux()
-mux.HandleFunc("/platform/automation/v1/executions/exec-bad/tasks/missing/result", func(w http.ResponseWriter, r *http.Request) {
-w.WriteHeader(http.StatusNotFound)
-})
-h, cleanup := newExecTestHandler(t, mux)
-defer cleanup()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/automation/v1/executions/exec-bad/tasks/missing/result", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	h, cleanup := newExecTestHandler(t, mux)
+	defer cleanup()
 
-_, err := h.GetTaskResult("exec-bad", "missing")
-if err == nil {
-t.Fatal("expected error for 404 response")
-}
+	_, err := h.GetTaskResult("exec-bad", "missing")
+	if err == nil {
+		t.Fatal("expected error for 404 response")
+	}
 }
 
 func TestGetTaskResult_ServerError(t *testing.T) {
-mux := http.NewServeMux()
-mux.HandleFunc("/platform/automation/v1/executions/exec-err/tasks/t1/result", func(w http.ResponseWriter, r *http.Request) {
-w.WriteHeader(http.StatusInternalServerError)
-})
-h, cleanup := newExecTestHandler(t, mux)
-defer cleanup()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/automation/v1/executions/exec-err/tasks/t1/result", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	h, cleanup := newExecTestHandler(t, mux)
+	defer cleanup()
 
-_, err := h.GetTaskResult("exec-err", "t1")
-if err == nil {
-t.Fatal("expected error for 500 response")
-}
+	_, err := h.GetTaskResult("exec-err", "t1")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
 }
