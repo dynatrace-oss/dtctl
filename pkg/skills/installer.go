@@ -85,6 +85,14 @@ var agents = []Agent{
 		EnvVar:      "OPENCODE",
 		DetectName:  "opencode",
 	},
+	{
+		Name:        "openclaw",
+		DisplayName: "OpenClaw",
+		ProjectPath: filepath.Join("skills", "dtctl"),
+		GlobalPath:  filepath.Join(".openclaw", "workspace", "skills", "dtctl"),
+		EnvVar:      "OPENCLAW",
+		DetectName:  "openclaw",
+	},
 }
 
 // InstallResult describes the outcome of an install operation.
@@ -141,7 +149,7 @@ func DetectAgent() (Agent, bool) {
 	return Agent{}, false
 }
 
-// SkillDirName returns the SKILL.md filename used for installation checks.
+// skillFileName is the SKILL.md filename used for installation checks.
 const skillFileName = "SKILL.md"
 
 // Install copies the embedded skill directory (SKILL.md + references/) into

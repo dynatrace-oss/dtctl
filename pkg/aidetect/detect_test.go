@@ -110,6 +110,16 @@ func TestDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "OpenClaw detected",
+			envVars: map[string]string{
+				"OPENCLAW": "1",
+			},
+			expected: AgentInfo{
+				Detected: true,
+				Name:     "openclaw",
+			},
+		},
+		{
 			name: "generic AI agent detected",
 			envVars: map[string]string{
 				"AI_AGENT": "custom",

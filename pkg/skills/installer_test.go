@@ -9,7 +9,7 @@ import (
 
 func TestSupportedAgents(t *testing.T) {
 	agents := SupportedAgents()
-	expected := []string{"claude", "copilot", "cursor", "kiro", "junie", "opencode"}
+	expected := []string{"claude", "copilot", "cursor", "kiro", "junie", "opencode", "openclaw"}
 	if len(agents) != len(expected) {
 		t.Fatalf("expected %d agents, got %d: %v", len(expected), len(agents), agents)
 	}
@@ -31,6 +31,7 @@ func TestFindAgent(t *testing.T) {
 		{"kiro", true},
 		{"junie", true},
 		{"opencode", true},
+		{"openclaw", true},
 		{"unknown", false},
 		{"", false},
 	}
@@ -51,7 +52,7 @@ func TestFindAgent(t *testing.T) {
 func TestDetectAgent(t *testing.T) {
 	// Each subtest clears ALL agent env vars to ensure full isolation.
 	allEnvVars := []string{
-		"CLAUDECODE", "CURSOR_AGENT", "GITHUB_COPILOT", "JUNIE", "KIRO", "OPENCODE",
+		"CLAUDECODE", "CURSOR_AGENT", "GITHUB_COPILOT", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW",
 		"CODEIUM_AGENT", "TABNINE_AGENT", "AMAZON_Q", "AI_AGENT",
 	}
 
@@ -139,6 +140,18 @@ func TestDetectAgent(t *testing.T) {
 		}
 		if agent.Name != "junie" {
 			t.Errorf("expected junie, got %q", agent.Name)
+		}
+	})
+
+	t.Run("detects openclaw", func(t *testing.T) {
+		clearAllEnvVars(t)
+		t.Setenv("OPENCLAW", "1")
+		agent, detected := DetectAgent()
+		if !detected {
+			t.Fatal("expected agent detected")
+		}
+		if agent.Name != "openclaw" {
+			t.Errorf("expected openclaw, got %q", agent.Name)
 		}
 	})
 }
@@ -487,6 +500,7 @@ func TestAgentPaths(t *testing.T) {
 		{"kiro", ".kiro/skills/dtctl"},
 		{"junie", ".junie/skills/dtctl"},
 		{"opencode", ".opencode/skills/dtctl"},
+		{"openclaw", "skills/dtctl"},
 	}
 
 	for _, tt := range tests {
@@ -517,6 +531,7 @@ func TestAgentGlobalPaths(t *testing.T) {
 		{"kiro", "", false},
 		{"junie", ".junie/skills/dtctl", true},
 		{"opencode", ".config/opencode/skills/dtctl", true},
+		{"openclaw", ".openclaw/workspace/skills/dtctl", true},
 	}
 
 	for _, tt := range tests {
@@ -673,5 +688,67 @@ func TestCopyEmbeddedFS_SkipsGoFiles(t *testing.T) {
 	embedGoPath := filepath.Join(result.Path, "embed.go")
 	if _, err := os.Stat(embedGoPath); err == nil {
 		t.Error("embed.go should NOT be copied to the install directory")
+	}
+}
+
+func TestInstallOpenClaw_CopiesReferences(t *testing.T) {
+	tmpDir := t.TempDir()
+	agent, ok := FindAgent("openclaw")
+	if !ok {
+		t.Fatal("openclaw agent not found")
+	}
+	result, err := Install(agent, tmpDir, false, false)
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+
+	// Verify SKILL.md exists in skill directory
+	skillFile := filepath.Join(result.Path, "SKILL.md")
+	if _, err := os.Stat(skillFile); err != nil {
+		t.Fatalf("SKILL.md not found at %s", skillFile)
+	}
+	// Verify references directory was created
+	refsDir := filepath.Join(result.Path, "references")
+	if _, err := os.Stat(refsDir); err != nil {
+		t.Fatalf("references/ directory not found at %s", refsDir)
+	}
+	// Verify at least one reference file exists
+	entries, err := os.ReadDir(refsDir)
+	if err != nil {
+		t.Fatalf("failed to read references dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("references/ directory is empty, expected reference files")
+	}
+}
+
+func TestUninstallOpenClaw_CleansReferences(t *testing.T) {
+	tmpDir := t.TempDir()
+	agent, ok := FindAgent("openclaw")
+	if !ok {
+		t.Fatal("openclaw agent not found")
+	}
+	// Install first
+	_, err := Install(agent, tmpDir, false, false)
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+	// Verify references exist
+	refsDir := filepath.Join(tmpDir, "skills", "dtctl", "references")
+	if _, err := os.Stat(refsDir); err != nil {
+		t.Fatalf("references/ not created during install: %v", err)
+	}
+	// Uninstall
+	removed, err := Uninstall(agent, tmpDir)
+	if err != nil {
+		t.Fatalf("Uninstall failed: %v", err)
+	}
+	if len(removed) == 0 {
+		t.Error("Uninstall removed nothing")
+	}
+	// Verify entire skill directory cleaned up (including references)
+	skillDir := filepath.Join(tmpDir, "skills", "dtctl")
+	if _, err := os.Stat(skillDir); err == nil {
+		t.Error("skill directory still exists after uninstall")
 	}
 }

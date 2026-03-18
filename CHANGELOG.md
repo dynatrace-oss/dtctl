@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.18.0] - 2026-03-18
 
 ### Added
+- **OpenClaw agent support** — `dtctl skills install --for openclaw` installs SKILL.md with YAML frontmatter and reference files to the OpenClaw workspace skills directory; includes auto-detection via `OPENCLAW` env var, global install support, and proper cleanup on uninstall
 - **Visual output improvements** — bold table headers, status-aware coloring (green/red/yellow for known states), dimmed UUIDs, colored error prefix, dimmed empty-state message, and a new `-o describe` vertical key-value format (similar to `kubectl describe`); all styling respects `NO_COLOR`, `FORCE_COLOR`, `--plain`, and TTY detection
 
 ### Changed

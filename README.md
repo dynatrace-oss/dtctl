@@ -42,7 +42,8 @@ dtctl ships with an [Agent Skill](https://agentskills.io) at `skills/dtctl/` —
 
 ```bash
 dtctl skills install              # Auto-detects your AI agent
-dtctl skills install --for claude # Or specify explicitly
+dtctl skills install --for claude   # Or specify explicitly
+dtctl skills install --for openclaw  # For OpenClaw agents
 dtctl skills install --global     # User-wide (supported agents)
 dtctl skills status               # Check installation status
 ```
@@ -50,11 +51,12 @@ dtctl skills status               # Check installation status
 **Or copy manually:**
 
 ```bash
-cp -r skills/dtctl ~/.github/skills/   # For GitHub Copilot
-cp -r skills/dtctl ~/.claude/skills/   # For Claude Code
+cp -r skills/dtctl ~/.github/skills/                      # For GitHub Copilot
+cp -r skills/dtctl ~/.claude/skills/                       # For Claude Code
+cp -r skills/dtctl ~/.openclaw/workspace/skills/dtctl/     # For OpenClaw
 ```
 
-Compatible with GitHub Copilot, Claude Code, Cursor, Kiro, Junie, OpenCode, and other [Agent Skills](https://agentskills.io)-compatible tools.
+Compatible with GitHub Copilot, Claude Code, Cursor, Kiro, Junie, OpenCode, OpenClaw, and other [Agent Skills](https://agentskills.io)-compatible tools.
 
 ## Quick Start
 

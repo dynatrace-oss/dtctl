@@ -22,6 +22,7 @@ var knownAgents = map[string]string{
 	"JUNIE":          "junie",
 	"KIRO":           "kiro",
 	"OPENCODE":       "opencode",
+	"OPENCLAW":       "openclaw",
 	"AI_AGENT":       "generic-ai",
 }
 
