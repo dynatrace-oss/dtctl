@@ -38,7 +38,13 @@ dtctl exec copilot nl2dql "error logs from last hour"
 
 dtctl ships with an [Agent Skill](https://agentskills.io) at `skills/dtctl/` — a compact command reference that teaches AI coding assistants how to use dtctl effectively. Agents can also bootstrap themselves at runtime with `dtctl commands --brief -o json` to discover all available verbs, flags, and resources.
 
-**Install with the CLI** (recommended):
+**Install via [skills.sh](https://skills.sh):**
+
+```bash
+npx skills add dynatrace-oss/dtctl
+```
+
+**Or install with dtctl itself:**
 
 ```bash
 dtctl skills install              # Auto-detects your AI agent
