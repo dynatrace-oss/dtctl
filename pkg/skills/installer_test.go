@@ -9,7 +9,7 @@ import (
 
 func TestSupportedAgents(t *testing.T) {
 	agents := SupportedAgents()
-	expected := []string{"claude", "copilot", "cursor", "kiro", "opencode"}
+	expected := []string{"claude", "copilot", "cursor", "kiro", "opencode", "openclaw"}
 	if len(agents) != len(expected) {
 		t.Fatalf("expected %d agents, got %d", len(expected), len(agents))
 	}
@@ -30,6 +30,7 @@ func TestFindAgent(t *testing.T) {
 		{"cursor", true},
 		{"kiro", true},
 		{"opencode", true},
+		{"openclaw", true},
 		{"unknown", false},
 		{"", false},
 	}
