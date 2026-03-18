@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Describe label formatting** — underscores in struct tags now render as spaces (e.g., `Display Name` instead of `Display_name`), and known acronyms (ID, UUID, SLO, URL, API, HTTP, etc.) are preserved in their uppercase form
+- **Pagination page-size errors** — fixed HTTP 400 errors on paginated requests for extensions, SLOs, IAM, and document resources by not sending `page-size` together with `page-key`/`next-page-key`
 
 ## [0.15.0] - 2026-03-11
 

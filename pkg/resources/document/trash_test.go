@@ -90,6 +90,20 @@ func TestTrashHandler_List(t *testing.T) {
 					t.Errorf("Expected path /platform/document/v1/trash/documents, got %s", r.URL.Path)
 				}
 
+				// Simulate API constraint: page-size and filter must not be combined with page-key
+				if r.URL.Query().Get("page-key") != "" {
+					if r.URL.Query().Get("page-size") != "" {
+						t.Error("page-size must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if r.URL.Query().Get("filter") != "" {
+						t.Error("filter must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+				}
+
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				_ = json.NewEncoder(w).Encode(tt.mockResponse)
@@ -123,6 +137,99 @@ func TestTrashHandler_List(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTrashHandler_List_Pagination tests paginated listing of trashed documents
+func TestTrashHandler_List_Pagination(t *testing.T) {
+	deletedTime := time.Now().Add(-24 * time.Hour)
+	pageIndex := 0
+	pages := []TrashList{
+		{
+			Documents: []TrashDocumentListEntry{
+				{
+					ID:   "doc1",
+					Type: "dashboard",
+					Name: "Dashboard 1",
+					DeletionInfo: DeletionInfo{
+						DeletedBy:   "user@example.invalid",
+						DeletedTime: deletedTime,
+					},
+				},
+				{
+					ID:   "doc2",
+					Type: "notebook",
+					Name: "Notebook 1",
+					DeletionInfo: DeletionInfo{
+						DeletedBy:   "admin@example.invalid",
+						DeletedTime: deletedTime,
+					},
+				},
+			},
+			TotalCount:  3,
+			NextPageKey: "page2",
+		},
+		{
+			Documents: []TrashDocumentListEntry{
+				{
+					ID:   "doc3",
+					Type: "dashboard",
+					Name: "Dashboard 2",
+					DeletionInfo: DeletionInfo{
+						DeletedBy:   "user@example.invalid",
+						DeletedTime: deletedTime,
+					},
+				},
+			},
+			TotalCount: 3,
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/platform/document/v1/trash/documents" {
+			t.Errorf("Expected path /platform/document/v1/trash/documents, got %s", r.URL.Path)
+		}
+
+		// Simulate API constraint: page-size and filter must not be combined with page-key
+		if r.URL.Query().Get("page-key") != "" {
+			if r.URL.Query().Get("page-size") != "" {
+				t.Error("page-size must not be sent with page-key")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if r.URL.Query().Get("filter") != "" {
+				t.Error("filter must not be sent with page-key")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+
+		if pageIndex >= len(pages) {
+			t.Error("received more requests than expected pages")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(pages[pageIndex])
+		pageIndex++
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("client.New() error = %v", err)
+	}
+	c.HTTP().SetRetryCount(0)
+
+	handler := NewTrashHandler(c)
+	docs, err := handler.List(TrashListOptions{ChunkSize: 10, Type: "dashboard"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(docs) != 3 {
+		t.Errorf("expected 3 documents across pages, got %d", len(docs))
 	}
 }
 

@@ -93,6 +93,66 @@ func TestList_ServerError(t *testing.T) {
 	}
 }
 
+func TestList_Pagination(t *testing.T) {
+	pageIndex := 0
+	pages := []DocumentList{
+		{
+			Documents: []DocumentMetadata{
+				{ID: "doc-1", Name: "Dashboard 1", Type: "dashboard"},
+				{ID: "doc-2", Name: "Dashboard 2", Type: "dashboard"},
+			},
+			TotalCount:  3,
+			NextPageKey: "page2",
+		},
+		{
+			Documents: []DocumentMetadata{
+				{ID: "doc-3", Name: "Dashboard 3", Type: "dashboard"},
+			},
+			TotalCount: 3,
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
+		// Simulate API constraint: page-size and filter must not be combined with page-key
+		if r.URL.Query().Get("page-key") != "" {
+			if r.URL.Query().Get("page-size") != "" {
+				t.Error("page-size must not be sent with page-key")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if r.URL.Query().Get("filter") != "" {
+				t.Error("filter must not be sent with page-key")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+
+		if pageIndex >= len(pages) {
+			t.Error("received more requests than expected pages")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(pages[pageIndex])
+		pageIndex++
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	result, err := h.List(DocumentFilters{ChunkSize: 10, Type: "dashboard"})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(result.Documents) != 3 {
+		t.Errorf("expected 3 documents across pages, got %d", len(result.Documents))
+	}
+	if result.TotalCount != 3 {
+		t.Errorf("expected TotalCount 3, got %d", result.TotalCount)
+	}
+}
+
 // --- GetMetadata ---
 
 func TestGetMetadata_Success(t *testing.T) {

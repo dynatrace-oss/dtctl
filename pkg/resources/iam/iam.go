@@ -82,22 +82,20 @@ func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int6
 		var result UserListResponse
 		req := h.client.HTTP().R().SetResult(&result)
 
-		// Add query parameters
-		if partialString != "" {
-			req.SetQueryParam("partialString", partialString)
-		}
-		if len(uuids) > 0 {
-			req.SetQueryParam("uuid", strings.Join(uuids, ","))
-		}
-
-		// Set page size if chunking is enabled (chunkSize > 0)
-		if chunkSize > 0 {
-			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-		}
-
-		// Set page key for subsequent requests
+		// When using nextPageKey, ONLY send the page key parameter.
+		// The API rejects requests that combine page-size with page-key.
 		if nextPageKey != "" {
 			req.SetQueryParam("page-key", nextPageKey)
+		} else {
+			if partialString != "" {
+				req.SetQueryParam("partialString", partialString)
+			}
+			if len(uuids) > 0 {
+				req.SetQueryParam("uuid", strings.Join(uuids, ","))
+			}
+			if chunkSize > 0 {
+				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
+			}
 		}
 
 		resp, err := req.Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/users", envID))
@@ -174,22 +172,20 @@ func (h *Handler) ListGroups(partialGroupName string, uuids []string, chunkSize 
 		var result GroupListResponse
 		req := h.client.HTTP().R().SetResult(&result)
 
-		// Add query parameters
-		if partialGroupName != "" {
-			req.SetQueryParam("partialGroupName", partialGroupName)
-		}
-		if len(uuids) > 0 {
-			req.SetQueryParam("uuid", strings.Join(uuids, ","))
-		}
-
-		// Set page size if chunking is enabled (chunkSize > 0)
-		if chunkSize > 0 {
-			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-		}
-
-		// Set page key for subsequent requests
+		// When using nextPageKey, ONLY send the page key parameter.
+		// The API rejects requests that combine page-size with page-key.
 		if nextPageKey != "" {
 			req.SetQueryParam("page-key", nextPageKey)
+		} else {
+			if partialGroupName != "" {
+				req.SetQueryParam("partialGroupName", partialGroupName)
+			}
+			if len(uuids) > 0 {
+				req.SetQueryParam("uuid", strings.Join(uuids, ","))
+			}
+			if chunkSize > 0 {
+				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
+			}
 		}
 
 		// Note: Groups are at the account level, but we use environment for now

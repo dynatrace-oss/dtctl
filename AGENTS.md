@@ -193,6 +193,72 @@ Never put customer names, employee names, usernames, or specific Dynatrace envir
 ❌ **Don't** skip safety checks on mutating commands  
 ✅ **Do** add safety checks to ALL create/edit/apply/delete/update commands
 
+❌ **Don't** send `page-size` (or filter params) together with `next-page-key`/`page-key` on paginated requests  
+✅ **Do** use the `if/else` pagination pattern (see below)
+
+## Pagination Pattern (CRITICAL)
+
+Dynatrace APIs **reject** requests that combine `page-size` with `next-page-key`/`page-key` (HTTP 400). When implementing paginated list endpoints, use an **if/else branch** so that subsequent page requests send **only** the page key and omit all other query parameters (page-size, filters, etc.).
+
+### Correct pattern
+
+```go
+for {
+    req := h.client.HTTP().R().SetResult(&result)
+
+    if nextPageKey != "" {
+        req.SetQueryParam("page-key", nextPageKey)
+    } else {
+        // First request only: set filters and page size
+        if filter != "" {
+            req.SetQueryParam("filter", filter)
+        }
+        if chunkSize > 0 {
+            req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
+        }
+    }
+
+    resp, err := req.Get("/platform/...")
+    // ... handle response, break if no more pages
+}
+```
+
+### Wrong pattern (causes HTTP 400 on page 2+)
+
+```go
+for {
+    req := h.client.HTTP().R().SetResult(&result)
+
+    // BUG: these are sent on EVERY request, including subsequent pages
+    if filter != "" {
+        req.SetQueryParam("filter", filter)
+    }
+    if chunkSize > 0 {
+        req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
+    }
+    if nextPageKey != "" {
+        req.SetQueryParam("page-key", nextPageKey)
+    }
+
+    resp, err := req.Get("/platform/...")
+}
+```
+
+### Test guard (required for all paginated mock servers)
+
+Every test mock server for a paginated endpoint **must** include a constraint guard that rejects the invalid combination, so the bug is caught in tests:
+
+```go
+// Simulate API constraint: page-size must not be combined with page-key
+if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
+    w.WriteHeader(http.StatusBadRequest)
+    w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated."}}`))
+    return
+}
+```
+
+**Reference implementations**: `pkg/resources/settings/settings.go`, `pkg/resources/extension/extension.go`
+
 ## Code Examples
 
 - Simple CRUD: `pkg/resources/bucket/`

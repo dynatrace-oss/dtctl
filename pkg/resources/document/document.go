@@ -146,18 +146,17 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 		var result DocumentList
 		req := h.client.HTTP().R().SetResult(&result)
 
-		if filterStr != "" {
-			req.SetQueryParam("filter", filterStr)
-		}
-
-		// Set page size if chunking is enabled (ChunkSize > 0)
-		if filters.ChunkSize > 0 {
-			req.SetQueryParam("page-size", fmt.Sprintf("%d", filters.ChunkSize))
-		}
-
-		// Set page key for subsequent requests
+		// When using nextPageKey, ONLY send the page key parameter.
+		// The API rejects requests that combine page-size with page-key.
 		if nextPageKey != "" {
 			req.SetQueryParam("page-key", nextPageKey)
+		} else {
+			if filterStr != "" {
+				req.SetQueryParam("filter", filterStr)
+			}
+			if filters.ChunkSize > 0 {
+				req.SetQueryParam("page-size", fmt.Sprintf("%d", filters.ChunkSize))
+			}
 		}
 
 		resp, err := req.Get("/platform/document/v1/documents")

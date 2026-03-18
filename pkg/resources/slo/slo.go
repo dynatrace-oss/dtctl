@@ -96,18 +96,15 @@ func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
 		var result SLOList
 		req := h.client.HTTP().R().SetResult(&result)
 
-		if filter != "" {
-			req.SetQueryParam("filter", filter)
-		}
-
-		// Set page size if chunking is enabled (chunkSize > 0)
-		if chunkSize > 0 {
-			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-		}
-
-		// Set page key for subsequent requests
 		if nextPageKey != "" {
 			req.SetQueryParam("page-key", nextPageKey)
+		} else {
+			if filter != "" {
+				req.SetQueryParam("filter", filter)
+			}
+			if chunkSize > 0 {
+				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
+			}
 		}
 
 		resp, err := req.Get("/platform/slo/v1/slos")

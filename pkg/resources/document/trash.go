@@ -124,18 +124,17 @@ func (h *TrashHandler) List(opts TrashListOptions) ([]TrashDocumentListEntry, er
 		var result TrashList
 		req := h.client.HTTP().R().SetResult(&result)
 
-		if filterStr != "" {
-			req.SetQueryParam("filter", filterStr)
-		}
-
-		// Set page size if chunking is enabled
-		if opts.ChunkSize > 0 {
-			req.SetQueryParam("page-size", fmt.Sprintf("%d", opts.ChunkSize))
-		}
-
-		// Set page key for subsequent requests
+		// When using nextPageKey, ONLY send the page key parameter.
+		// The API rejects requests that combine page-size with page-key.
 		if nextPageKey != "" {
 			req.SetQueryParam("page-key", nextPageKey)
+		} else {
+			if filterStr != "" {
+				req.SetQueryParam("filter", filterStr)
+			}
+			if opts.ChunkSize > 0 {
+				req.SetQueryParam("page-size", fmt.Sprintf("%d", opts.ChunkSize))
+			}
 		}
 
 		resp, err := req.Get("/platform/document/v1/trash/documents")
