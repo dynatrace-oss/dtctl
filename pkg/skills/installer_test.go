@@ -31,6 +31,7 @@ func TestFindAgent(t *testing.T) {
 		{"kiro", true},
 		{"opencode", true},
 		{"openclaw", true},
+		{"openclaw", true},
 		{"unknown", false},
 		{"", false},
 	}
@@ -729,5 +730,91 @@ func TestInstalledFileContent(t *testing.T) {
 				t.Errorf("installed %s file has only %d lines, expected 200+", agent.Name, lines)
 			}
 		})
+	}
+}
+
+func TestRenderWithData_OpenClawFormat(t *testing.T) {
+	agent, ok := FindAgent("openclaw")
+	if !ok {
+		t.Fatal("openclaw agent not found")
+	}
+	data := TemplateData{Version: "1.2.3"}
+	content, err := RenderWithData(agent, data)
+	if err != nil {
+		t.Fatalf("RenderWithData failed: %v", err)
+	}
+	if !strings.HasPrefix(content, "---\n") {
+		t.Error("openclaw output should start with YAML frontmatter delimiter")
+	}
+	if !strings.Contains(content, "name: dtctl") {
+		t.Error("openclaw output should contain 'name: dtctl' in frontmatter")
+	}
+	if !strings.Contains(content, "description:") {
+		t.Error("openclaw output should contain 'description:' in frontmatter")
+	}
+	if !strings.Contains(content, "v1.2.3") {
+		t.Error("openclaw output should contain version in description")
+	}
+}
+
+func TestInstallOpenClaw_CopiesReferences(t *testing.T) {
+	tmpDir := t.TempDir()
+	agent, ok := FindAgent("openclaw")
+	if !ok {
+		t.Fatal("openclaw agent not found")
+	}
+	result, err := Install(agent, tmpDir, false, false)
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+	if !result.Replaced && result.Path == "" {
+		t.Fatal("Install returned empty path")
+	}
+	// Verify SKILL.md exists
+	if _, err := os.Stat(result.Path); err != nil {
+		t.Fatalf("SKILL.md not found at %s", result.Path)
+	}
+	// Verify references directory was created
+	refsDir := filepath.Join(filepath.Dir(result.Path), "references")
+	if _, err := os.Stat(refsDir); err != nil {
+		t.Fatalf("references/ directory not found at %s", refsDir)
+	}
+	// Verify at least one reference file exists
+	entries, err := os.ReadDir(refsDir)
+	if err != nil {
+		t.Fatalf("failed to read references dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("references/ directory is empty, expected reference files")
+	}
+}
+
+func TestUninstallOpenClaw_CleansReferences(t *testing.T) {
+	tmpDir := t.TempDir()
+	agent, ok := FindAgent("openclaw")
+	if !ok {
+		t.Fatal("openclaw agent not found")
+	}
+	// Install first
+	_, err := Install(agent, tmpDir, false, false)
+	if err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+	// Verify references exist
+	refsDir := filepath.Join(tmpDir, "skills", "dtctl", "references")
+	if _, err := os.Stat(refsDir); err != nil {
+		t.Fatalf("references/ not created during install: %v", err)
+	}
+	// Uninstall
+	removed, err := Uninstall(agent, tmpDir)
+	if err != nil {
+		t.Fatalf("Uninstall failed: %v", err)
+	}
+	if len(removed) == 0 {
+		t.Error("Uninstall removed nothing")
+	}
+	// Verify references cleaned up
+	if _, err := os.Stat(refsDir); err == nil {
+		t.Error("references/ directory still exists after uninstall")
 	}
 }

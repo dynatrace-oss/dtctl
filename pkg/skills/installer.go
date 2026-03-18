@@ -331,6 +331,15 @@ func Uninstall(agent Agent, baseDir string) ([]string, error) {
 		} else {
 			removed = append(removed, projectPath)
 		}
+		// For OpenClaw, also remove the references/ directory tree.
+		if agent.Name == "openclaw" {
+			refsDir := filepath.Join(filepath.Dir(projectPath), "references")
+			if _, err := os.Stat(refsDir); err == nil {
+				if err := os.RemoveAll(refsDir); err != nil {
+					errs = append(errs, fmt.Sprintf("failed to remove %s: %v", refsDir, err))
+				}
+			}
+		}
 	}
 
 	// Check global
