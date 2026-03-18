@@ -130,6 +130,32 @@ func TestList(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "paginated list with filter",
+			chunkSize: 10,
+			filter:    "name contains 'test'",
+			pages: []SLOList{
+				{
+					TotalCount:  2,
+					NextPageKey: "page2",
+					SLOs: []SLO{
+						{ID: "slo-1", Name: "Test SLO 1"},
+					},
+				},
+				{
+					TotalCount: 2,
+					SLOs: []SLO{
+						{ID: "slo-2", Name: "Test SLO 2"},
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *SLOList) {
+				if len(result.SLOs) != 2 {
+					t.Errorf("expected 2 SLOs across pages, got %d", len(result.SLOs))
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -142,27 +168,37 @@ func TestList(t *testing.T) {
 					return
 				}
 
-				// Simulate API constraint: page-size must not be combined with page-key
-				if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated.","constraintViolations":[{"path":"page-size","message":"must not be used in combination with page-key query parameter."}]}}`))
-					return
+				// Simulate API constraint: page-size and filter must not be combined with page-key
+				if r.URL.Query().Get("page-key") != "" {
+					if r.URL.Query().Get("page-size") != "" {
+						t.Error("page-size must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if r.URL.Query().Get("filter") != "" {
+						t.Error("filter must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
 				}
 
-				// Verify filter parameter if provided
-				if tt.filter != "" {
+				// Verify filter parameter if provided (only on first page)
+				if tt.filter != "" && r.URL.Query().Get("page-key") == "" {
 					filter := r.URL.Query().Get("filter")
 					if filter != tt.filter {
 						t.Errorf("expected filter %q, got %q", tt.filter, filter)
 					}
 				}
 
+				if pageIndex >= len(tt.pages) {
+					t.Error("received more requests than expected pages")
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(tt.pages[pageIndex])
-
-				if pageIndex < len(tt.pages)-1 {
-					pageIndex++
-				}
+				pageIndex++
 			}))
 			defer server.Close()
 

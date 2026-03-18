@@ -90,11 +90,18 @@ func TestTrashHandler_List(t *testing.T) {
 					t.Errorf("Expected path /platform/document/v1/trash/documents, got %s", r.URL.Path)
 				}
 
-				// Simulate API constraint: page-size must not be combined with page-key
-				if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated.","constraintViolations":[{"path":"page-size","message":"must not be used in combination with page-key query parameter."}]}}`))
-					return
+				// Simulate API constraint: page-size and filter must not be combined with page-key
+				if r.URL.Query().Get("page-key") != "" {
+					if r.URL.Query().Get("page-size") != "" {
+						t.Error("page-size must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if r.URL.Query().Get("filter") != "" {
+						t.Error("filter must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
 				}
 
 				w.Header().Set("Content-Type", "application/json")
@@ -183,19 +190,30 @@ func TestTrashHandler_List_Pagination(t *testing.T) {
 			t.Errorf("Expected path /platform/document/v1/trash/documents, got %s", r.URL.Path)
 		}
 
-		// Simulate API constraint: page-size must not be combined with page-key
-		if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated.","constraintViolations":[{"path":"page-size","message":"must not be used in combination with page-key query parameter."}]}}`))
+		// Simulate API constraint: page-size and filter must not be combined with page-key
+		if r.URL.Query().Get("page-key") != "" {
+			if r.URL.Query().Get("page-size") != "" {
+				t.Error("page-size must not be sent with page-key")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if r.URL.Query().Get("filter") != "" {
+				t.Error("filter must not be sent with page-key")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+
+		if pageIndex >= len(pages) {
+			t.Error("received more requests than expected pages")
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(pages[pageIndex])
-		if pageIndex < len(pages)-1 {
-			pageIndex++
-		}
+		pageIndex++
 	}))
 	defer server.Close()
 
@@ -206,7 +224,7 @@ func TestTrashHandler_List_Pagination(t *testing.T) {
 	c.HTTP().SetRetryCount(0)
 
 	handler := NewTrashHandler(c)
-	docs, err := handler.List(TrashListOptions{ChunkSize: 10})
+	docs, err := handler.List(TrashListOptions{ChunkSize: 10, Type: "dashboard"})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

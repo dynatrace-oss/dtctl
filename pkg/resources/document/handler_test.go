@@ -114,23 +114,34 @@ func TestList_Pagination(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
-		// Simulate API constraint: page-size must not be combined with page-key
-		if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated.","constraintViolations":[{"path":"page-size","message":"must not be used in combination with page-key query parameter."}]}}`))
+		// Simulate API constraint: page-size and filter must not be combined with page-key
+		if r.URL.Query().Get("page-key") != "" {
+			if r.URL.Query().Get("page-size") != "" {
+				t.Error("page-size must not be sent with page-key")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if r.URL.Query().Get("filter") != "" {
+				t.Error("filter must not be sent with page-key")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+
+		if pageIndex >= len(pages) {
+			t.Error("received more requests than expected pages")
+			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(pages[pageIndex])
-		if pageIndex < len(pages)-1 {
-			pageIndex++
-		}
+		pageIndex++
 	})
 	h, cleanup := newDocTestHandler(t, mux)
 	defer cleanup()
 
-	result, err := h.List(DocumentFilters{ChunkSize: 10})
+	result, err := h.List(DocumentFilters{ChunkSize: 10, Type: "dashboard"})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

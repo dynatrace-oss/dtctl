@@ -219,22 +219,34 @@ func TestListUsers(t *testing.T) {
 					return
 				}
 
-				// Simulate API constraint: page-size must not be combined with page-key
-				if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated.","constraintViolations":[{"path":"page-size","message":"must not be used in combination with page-key query parameter."}]}}`))
-					return
+				// Simulate API constraint: page-size and filter params must not be combined with page-key
+				if r.URL.Query().Get("page-key") != "" {
+					if r.URL.Query().Get("page-size") != "" {
+						t.Error("page-size must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if r.URL.Query().Get("partialString") != "" {
+						t.Error("partialString must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if r.URL.Query().Get("uuid") != "" {
+						t.Error("uuid must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
 				}
 
-				// Verify query parameters
-				if tt.partialString != "" {
+				// Verify query parameters (only on first page)
+				if tt.partialString != "" && r.URL.Query().Get("page-key") == "" {
 					partial := r.URL.Query().Get("partialString")
 					if partial != tt.partialString {
 						t.Errorf("expected partialString %q, got %q", tt.partialString, partial)
 					}
 				}
 
-				if len(tt.uuids) > 0 {
+				if len(tt.uuids) > 0 && r.URL.Query().Get("page-key") == "" {
 					uuidParam := r.URL.Query().Get("uuid")
 					expectedUUIDs := strings.Join(tt.uuids, ",")
 					if uuidParam != expectedUUIDs {
@@ -242,13 +254,16 @@ func TestListUsers(t *testing.T) {
 					}
 				}
 
+				if pageIndex >= len(tt.pages) {
+					t.Error("received more requests than expected pages")
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(tt.pages[pageIndex])
-
-				if pageIndex < len(tt.pages)-1 {
-					pageIndex++
-				}
+				pageIndex++
 			}))
 			defer server.Close()
 
@@ -456,28 +471,43 @@ func TestListGroups(t *testing.T) {
 					return
 				}
 
-				// Simulate API constraint: page-size must not be combined with page-key
-				if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated.","constraintViolations":[{"path":"page-size","message":"must not be used in combination with page-key query parameter."}]}}`))
-					return
+				// Simulate API constraint: page-size and filter params must not be combined with page-key
+				if r.URL.Query().Get("page-key") != "" {
+					if r.URL.Query().Get("page-size") != "" {
+						t.Error("page-size must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if r.URL.Query().Get("partialGroupName") != "" {
+						t.Error("partialGroupName must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					if r.URL.Query().Get("uuid") != "" {
+						t.Error("uuid must not be sent with page-key")
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
 				}
 
-				// Verify query parameters
-				if tt.partialGroupName != "" {
+				// Verify query parameters (only on first page)
+				if tt.partialGroupName != "" && r.URL.Query().Get("page-key") == "" {
 					partial := r.URL.Query().Get("partialGroupName")
 					if partial != tt.partialGroupName {
 						t.Errorf("expected partialGroupName %q, got %q", tt.partialGroupName, partial)
 					}
 				}
 
+				if pageIndex >= len(tt.pages) {
+					t.Error("received more requests than expected pages")
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(tt.pages[pageIndex])
-
-				if pageIndex < len(tt.pages)-1 {
-					pageIndex++
-				}
+				pageIndex++
 			}))
 			defer server.Close()
 
