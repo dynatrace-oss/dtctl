@@ -1,3 +1,7 @@
 # Force LF line endings for golden test files to ensure consistent
 # comparison across platforms (Windows, macOS, Linux).
 *.golden text eol=lf
+
+# Force LF for embedded skill files so go:embed produces identical
+# content regardless of the platform's git autocrlf setting.
+skills/dtctl/** text eol=lf
