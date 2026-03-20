@@ -214,8 +214,8 @@ func TestFprintHint_WithColor(t *testing.T) {
 	FprintHint(&buf, "use --verbose for details")
 
 	got := buf.String()
-	if !strings.Contains(got, Bold+Yellow) {
-		t.Errorf("expected bold+yellow ANSI code in output, got: %s", got)
+	if !strings.Contains(got, Cyan) {
+		t.Errorf("expected cyan ANSI code in output, got: %s", got)
 	}
 	if !strings.Contains(got, "Hint:") {
 		t.Errorf("expected 'Hint:' prefix, got: %s", got)

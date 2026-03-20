@@ -157,10 +157,8 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 		// but filter params must be sent on every request (page tokens may not preserve them).
 		if nextPageKey != "" {
 			req.SetQueryParam("next-page-key", nextPageKey)
-		} else {
-			if chunkSize > 0 {
-				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-			}
+		} else if chunkSize > 0 {
+			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
 		}
 		if name != "" {
 			req.SetQueryParam("name", name)
@@ -321,10 +319,8 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 		// but filter params must be sent on every request (page tokens may not preserve them).
 		if nextPageKey != "" {
 			req.SetQueryParam("next-page-key", nextPageKey)
-		} else {
-			if chunkSize > 0 {
-				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-			}
+		} else if chunkSize > 0 {
+			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
 		}
 		if version != "" {
 			req.SetQueryParam("version", version)

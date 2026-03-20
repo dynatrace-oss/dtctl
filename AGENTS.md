@@ -211,10 +211,8 @@ for {
 
     if nextPageKey != "" {
         req.SetQueryParam("page-key", nextPageKey)
-    } else {
-        if chunkSize > 0 {
-            req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-        }
+    } else if chunkSize > 0 {
+        req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
     }
     // Always send filter, regardless of pagination
     if filter != "" {

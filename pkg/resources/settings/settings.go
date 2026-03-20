@@ -187,10 +187,8 @@ func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*Setting
 		// but filter params must be sent on every request (page tokens may not preserve them).
 		if nextPageKey != "" {
 			req.SetQueryParam("nextPageKey", nextPageKey)
-		} else {
-			if chunkSize > 0 {
-				req.SetQueryParam("pageSize", fmt.Sprintf("%d", chunkSize))
-			}
+		} else if chunkSize > 0 {
+			req.SetQueryParam("pageSize", fmt.Sprintf("%d", chunkSize))
 		}
 		if schemaID != "" {
 			req.SetQueryParam("schemaIds", schemaID)

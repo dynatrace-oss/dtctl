@@ -86,10 +86,8 @@ func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int6
 		// but filter params must be sent on every request (page tokens may not preserve them).
 		if nextPageKey != "" {
 			req.SetQueryParam("page-key", nextPageKey)
-		} else {
-			if chunkSize > 0 {
-				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-			}
+		} else if chunkSize > 0 {
+			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
 		}
 		if partialString != "" {
 			req.SetQueryParam("partialString", partialString)
@@ -176,10 +174,8 @@ func (h *Handler) ListGroups(partialGroupName string, uuids []string, chunkSize 
 		// but filter params must be sent on every request (page tokens may not preserve them).
 		if nextPageKey != "" {
 			req.SetQueryParam("page-key", nextPageKey)
-		} else {
-			if chunkSize > 0 {
-				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-			}
+		} else if chunkSize > 0 {
+			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
 		}
 		if partialGroupName != "" {
 			req.SetQueryParam("partialGroupName", partialGroupName)

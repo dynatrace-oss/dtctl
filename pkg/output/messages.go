@@ -45,7 +45,7 @@ func FprintHumanError(w io.Writer, format string, args ...interface{}) {
 	fmt.Fprintf(w, "%s %s\n", prefix, msg)
 }
 
-// PrintHint prints a hint message to stderr, indented with a dim arrow.
+// PrintHint prints a hint message to stderr, indented with a cyan label.
 // Use this for actionable suggestions that follow an error or warning.
 func PrintHint(format string, args ...interface{}) {
 	FprintHint(os.Stderr, format, args...)
@@ -54,7 +54,7 @@ func PrintHint(format string, args ...interface{}) {
 // FprintHint prints a hint message to the given writer.
 func FprintHint(w io.Writer, format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	label := Colorize(Bold+Yellow, "Hint:")
+	label := Colorize(Cyan, "Hint:")
 	fmt.Fprintf(w, "  %s %s\n", label, msg)
 }
 
@@ -71,19 +71,23 @@ func FprintInfo(w io.Writer, format string, args ...interface{}) {
 	fmt.Fprintf(w, format+"\n", args...)
 }
 
-// DoctorOK returns a styled "[OK]" tag for doctor check output.
+// doctorTagWidth is the fixed visual width for doctor status tags.
+// All tags are padded to this width so columns align regardless of tag length.
+const doctorTagWidth = 6
+
+// DoctorOK returns a styled "[OK]" tag for doctor check output, padded to doctorTagWidth.
 func DoctorOK() string {
-	return Colorize(Bold+Green, "[OK]  ")
+	return Colorize(Bold+Green, fmt.Sprintf("%-*s", doctorTagWidth, "[OK]"))
 }
 
-// DoctorWarn returns a styled "[WARN]" tag for doctor check output.
+// DoctorWarn returns a styled "[WARN]" tag for doctor check output, padded to doctorTagWidth.
 func DoctorWarn() string {
-	return Colorize(Bold+Yellow, "[WARN]")
+	return Colorize(Bold+Yellow, fmt.Sprintf("%-*s", doctorTagWidth, "[WARN]"))
 }
 
-// DoctorFail returns a styled "[FAIL]" tag for doctor check output.
+// DoctorFail returns a styled "[FAIL]" tag for doctor check output, padded to doctorTagWidth.
 func DoctorFail() string {
-	return Colorize(Bold+Red, "[FAIL]")
+	return Colorize(Bold+Red, fmt.Sprintf("%-*s", doctorTagWidth, "[FAIL]"))
 }
 
 // DescribeSection prints a bold section header (e.g., "Tasks:", "Criteria:").

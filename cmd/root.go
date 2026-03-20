@@ -475,7 +475,10 @@ func init() {
 		return output.Colorize(output.Bold, s)
 	})
 
-	// Custom usage template with bold section headers
+	// Custom usage template with bold section headers.
+	// NOTE: This is a copy of Cobra's default usage template with {{bold ...}} wrappers.
+	// If upgrading Cobra, compare against the upstream default template for changes:
+	//   https://github.com/spf13/cobra/blob/main/command.go (search "usageTemplate")
 	rootCmd.SetUsageTemplate(`{{bold "Usage:"}}{{if .Runnable}}
   {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
   {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}

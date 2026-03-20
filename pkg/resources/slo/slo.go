@@ -100,10 +100,8 @@ func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
 		// but filter must be sent on every request (page tokens may not preserve it).
 		if nextPageKey != "" {
 			req.SetQueryParam("page-key", nextPageKey)
-		} else {
-			if chunkSize > 0 {
-				req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
-			}
+		} else if chunkSize > 0 {
+			req.SetQueryParam("page-size", fmt.Sprintf("%d", chunkSize))
 		}
 		if filter != "" {
 			req.SetQueryParam("filter", filter)

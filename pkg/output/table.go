@@ -408,10 +408,7 @@ func (p *TablePrinter) printMaps(v reflect.Value, table *tablewriter.Table) erro
 	sort.Strings(keys)
 
 	// Convert keys to headers (kubectl style: uppercase, bold)
-	var headers []string
-	for _, k := range keys {
-		headers = append(headers, k)
-	}
+	headers := append([]string{}, keys...)
 	table.SetHeader(formatHeaders(headers))
 
 	// Add rows
