@@ -1,0 +1,21 @@
+objectid: gcp-conn-x1y2z3
+schemaid: ""
+schemaversion: ""
+scope: ""
+author: ""
+created: 0
+modified: 0
+summary: ""
+value:
+  principal: ""
+  name: production-gcp
+  type: SERVICE_ACCOUNT_IMPERSONATION
+  serviceaccountimpersonation:
+    serviceaccountid: sa-monitor@project-id.iam.gserviceaccount.com
+    consumers:
+      - ME
+      - DA
+name: production-gcp
+type: SERVICE_ACCOUNT_IMPERSONATION
+principal: ""
+serviceaccountid: ""

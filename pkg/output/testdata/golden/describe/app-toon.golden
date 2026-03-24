@@ -1,0 +1,12 @@
+description: A custom monitoring application
+id: my.custom-app
+modificationInfo:
+  createdBy: user-a@example.invalid
+  createdTime: "2025-01-10T08:00:00Z"
+  lastModifiedBy: user-b@example.invalid
+  lastModifiedTime: "2025-03-15T10:30:00Z"
+name: Custom App
+resourceStatus:
+  status: OK
+  subResourceTypes[#2]: function,action
+version: 1.4.2

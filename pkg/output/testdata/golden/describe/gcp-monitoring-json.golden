@@ -1,0 +1,34 @@
+{
+  "objectId": "gcpmon-a1b2c3d4",
+  "value": {
+    "enabled": true,
+    "description": "Production GCP monitoring",
+    "version": "2.0",
+    "googleCloud": {
+      "credentials": [
+        {
+          "description": "Main SA credential",
+          "enabled": true,
+          "connectionId": "gcp-conn-x1y2z3",
+          "serviceAccount": "sa-monitor@project-id.iam.gserviceaccount.com"
+        }
+      ],
+      "locationFiltering": [
+        "us-east1",
+        "eu-west1"
+      ],
+      "projectFiltering": [
+        "my-project-123"
+      ],
+      "smartscapeConfiguration": {
+        "enabled": false
+      }
+    },
+    "featureSets": [
+      "default"
+    ]
+  },
+  "description": "Production GCP monitoring",
+  "enabled": true,
+  "version": "2.0"
+}

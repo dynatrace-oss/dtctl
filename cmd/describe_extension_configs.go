@@ -49,7 +49,7 @@ Examples:
 		}
 
 		// For table output, show detailed human-readable information
-		if outputFormat == "" || outputFormat == "table" {
+		if outputFormat == "table" {
 			const w = 13
 			output.DescribeKV("Extension:", w, "%s", extensionName)
 			output.DescribeKV("Config ID:", w, "%s", config.ObjectID)
@@ -90,6 +90,7 @@ Examples:
 
 		// For other formats (JSON, YAML, etc.), use the printer
 		printer := NewPrinter()
+		enrichAgent(printer, "describe", "extension-config")
 		return printer.Print(config)
 	},
 }

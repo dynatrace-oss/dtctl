@@ -1,0 +1,31 @@
+objectid: gcpmon-a1b2c3d4
+scope: ""
+value:
+  enabled: true
+  description: Production GCP monitoring
+  version: "2.0"
+  googlecloud:
+    credentials:
+      - description: Main SA credential
+        enabled: true
+        connectionid: gcp-conn-x1y2z3
+        serviceaccount: sa-monitor@project-id.iam.gserviceaccount.com
+    locationfiltering:
+      - us-east1
+      - eu-west1
+    projectfiltering:
+      - my-project-123
+    folderfiltering: []
+    tagfiltering: []
+    labelfiltering: []
+    tagenrichment: []
+    labelenrichment: []
+    observabilityscopesenabled: false
+    smartscapeconfiguration:
+      enabled: false
+    resources: []
+  featuresets:
+    - default
+description: Production GCP monitoring
+enabled: true
+version: "2.0"

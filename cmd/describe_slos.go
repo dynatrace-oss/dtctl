@@ -45,63 +45,70 @@ Examples:
 			return err
 		}
 
-		// Print SLO details
-		const w = 13
-		output.DescribeKV("ID:", w, "%s", s.ID)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 13
+			output.DescribeKV("ID:", w, "%s", s.ID)
 
-		// Try to decode the object ID to show the UID
-		if decoded, err := settings.DecodeObjectID(s.ID); err == nil && decoded.UID != "" {
-			output.DescribeKV("UID:", w, "%s", decoded.UID)
-		}
+			// Try to decode the object ID to show the UID
+			if decoded, err := settings.DecodeObjectID(s.ID); err == nil && decoded.UID != "" {
+				output.DescribeKV("UID:", w, "%s", decoded.UID)
+			}
 
-		output.DescribeKV("Name:", w, "%s", s.Name)
-		if s.Description != "" {
-			output.DescribeKV("Description:", w, "%s", s.Description)
-		}
-		if s.Version != "" {
-			// Try to decode the version to show the modification timestamp
-			if decodedVersion, err := settings.DecodeVersion(s.Version); err == nil {
-				if decodedVersion.Timestamp != nil {
-					output.DescribeKV("Modified:", w, "%s", decodedVersion.Timestamp.Format("2006-01-02 15:04:05 UTC"))
+			output.DescribeKV("Name:", w, "%s", s.Name)
+			if s.Description != "" {
+				output.DescribeKV("Description:", w, "%s", s.Description)
+			}
+			if s.Version != "" {
+				// Try to decode the version to show the modification timestamp
+				if decodedVersion, err := settings.DecodeVersion(s.Version); err == nil {
+					if decodedVersion.Timestamp != nil {
+						output.DescribeKV("Modified:", w, "%s", decodedVersion.Timestamp.Format("2006-01-02 15:04:05 UTC"))
+					}
 				}
 			}
-		}
-		if s.ExternalID != "" {
-			output.DescribeKV("External ID:", w, "%s", s.ExternalID)
-		}
+			if s.ExternalID != "" {
+				output.DescribeKV("External ID:", w, "%s", s.ExternalID)
+			}
 
-		// Print tags
-		if len(s.Tags) > 0 {
-			output.DescribeKV("Tags:", w, "%s", strings.Join(s.Tags, ", "))
-		}
+			// Print tags
+			if len(s.Tags) > 0 {
+				output.DescribeKV("Tags:", w, "%s", strings.Join(s.Tags, ", "))
+			}
 
-		// Print criteria
-		if len(s.Criteria) > 0 {
-			fmt.Println()
-			output.DescribeSection("Criteria:")
-			for _, c := range s.Criteria {
-				timeframe := c.TimeframeFrom
-				if c.TimeframeTo != "" {
-					timeframe = fmt.Sprintf("%s to %s", c.TimeframeFrom, c.TimeframeTo)
-				}
-				fmt.Printf("  - Timeframe: %s\n", timeframe)
-				fmt.Printf("    Target:    %.2f%%\n", c.Target)
-				if c.Warning != nil {
-					fmt.Printf("    Warning:   %.2f%%\n", *c.Warning)
+			// Print criteria
+			if len(s.Criteria) > 0 {
+				fmt.Println()
+				output.DescribeSection("Criteria:")
+				for _, c := range s.Criteria {
+					timeframe := c.TimeframeFrom
+					if c.TimeframeTo != "" {
+						timeframe = fmt.Sprintf("%s to %s", c.TimeframeFrom, c.TimeframeTo)
+					}
+					fmt.Printf("  - Timeframe: %s\n", timeframe)
+					fmt.Printf("    Target:    %.2f%%\n", c.Target)
+					if c.Warning != nil {
+						fmt.Printf("    Warning:   %.2f%%\n", *c.Warning)
+					}
 				}
 			}
-		}
 
-		// Print custom SLI if present
-		if len(s.CustomSli) > 0 {
-			fmt.Println()
-			output.DescribeSection("Custom SLI:")
-			sliJSON, err := json.MarshalIndent(s.CustomSli, "  ", "  ")
-			if err == nil {
-				fmt.Printf("  %s\n", string(sliJSON))
+			// Print custom SLI if present
+			if len(s.CustomSli) > 0 {
+				fmt.Println()
+				output.DescribeSection("Custom SLI:")
+				sliJSON, err := json.MarshalIndent(s.CustomSli, "  ", "  ")
+				if err == nil {
+					fmt.Printf("  %s\n", string(sliJSON))
+				}
 			}
+
+			return nil
 		}
 
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "slo")
+		return printer.Print(s)
 	},
 }

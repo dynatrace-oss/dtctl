@@ -1,0 +1,30 @@
+{
+  "objectId": "azmon-a1b2c3d4",
+  "value": {
+    "enabled": true,
+    "description": "Production Azure monitoring",
+    "version": "1.0",
+    "azure": {
+      "deploymentScope": "MANAGEMENT_GROUP",
+      "subscriptionFilteringMode": "ALL",
+      "credentials": [
+        {
+          "enabled": true,
+          "description": "Main credential",
+          "connectionId": "azure-conn-a1b2c3d4",
+          "servicePrincipalId": "",
+          "type": "CLIENT_SECRET"
+        }
+      ],
+      "configurationMode": "STANDARD",
+      "deploymentMode": "FULL"
+    },
+    "featureSets": [
+      "default",
+      "advanced"
+    ]
+  },
+  "description": "Production Azure monitoring",
+  "enabled": true,
+  "version": "1.0"
+}

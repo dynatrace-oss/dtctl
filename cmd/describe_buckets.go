@@ -40,25 +40,32 @@ Examples:
 			return err
 		}
 
-		// Print bucket details
-		const w = 16
-		output.DescribeKV("Name:", w, "%s", b.BucketName)
-		output.DescribeKV("Display Name:", w, "%s", b.DisplayName)
-		output.DescribeKV("Table:", w, "%s", b.Table)
-		output.DescribeKV("Status:", w, "%s", b.Status)
-		output.DescribeKV("Retention:", w, "%d days", b.RetentionDays)
-		output.DescribeKV("Updatable:", w, "%v", b.Updatable)
-		output.DescribeKV("Version:", w, "%d", b.Version)
-		if b.MetricInterval != "" {
-			output.DescribeKV("Metric Interval:", w, "%s", b.MetricInterval)
-		}
-		if b.Records != nil {
-			output.DescribeKV("Records:", w, "%d", *b.Records)
-		}
-		if b.EstimatedUncompressedBytes != nil {
-			output.DescribeKV("Est. Size:", w, "%s", formatBytes(*b.EstimatedUncompressedBytes))
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 16
+			output.DescribeKV("Name:", w, "%s", b.BucketName)
+			output.DescribeKV("Display Name:", w, "%s", b.DisplayName)
+			output.DescribeKV("Table:", w, "%s", b.Table)
+			output.DescribeKV("Status:", w, "%s", b.Status)
+			output.DescribeKV("Retention:", w, "%d days", b.RetentionDays)
+			output.DescribeKV("Updatable:", w, "%v", b.Updatable)
+			output.DescribeKV("Version:", w, "%d", b.Version)
+			if b.MetricInterval != "" {
+				output.DescribeKV("Metric Interval:", w, "%s", b.MetricInterval)
+			}
+			if b.Records != nil {
+				output.DescribeKV("Records:", w, "%d", *b.Records)
+			}
+			if b.EstimatedUncompressedBytes != nil {
+				output.DescribeKV("Est. Size:", w, "%s", formatBytes(*b.EstimatedUncompressedBytes))
+			}
+
+			return nil
 		}
 
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "bucket")
+		return printer.Print(b)
 	},
 }

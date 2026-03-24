@@ -146,24 +146,32 @@ var describeAzureConnectionCmd = &cobra.Command{
 			return err
 		}
 
-		const w = 6
-		output.DescribeKV("ID:", w, "%s", item.ObjectID)
-		output.DescribeKV("Name:", w, "%s", item.Value.Name)
-		output.DescribeKV("Type:", w, "%s", item.Value.Type)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 6
+			output.DescribeKV("ID:", w, "%s", item.ObjectID)
+			output.DescribeKV("Name:", w, "%s", item.Value.Name)
+			output.DescribeKV("Type:", w, "%s", item.Value.Type)
 
-		if item.Value.ClientSecret != nil {
-			output.DescribeSection("Client Secret Config:")
-			output.DescribeKV("  Application ID:", 19, "%s", item.Value.ClientSecret.ApplicationID)
-			output.DescribeKV("  Directory ID:", 19, "%s", item.Value.ClientSecret.DirectoryID)
-			output.DescribeKV("  Consumers:", 19, "%v", item.Value.ClientSecret.Consumers)
+			if item.Value.ClientSecret != nil {
+				output.DescribeSection("Client Secret Config:")
+				output.DescribeKV("  Application ID:", 19, "%s", item.Value.ClientSecret.ApplicationID)
+				output.DescribeKV("  Directory ID:", 19, "%s", item.Value.ClientSecret.DirectoryID)
+				output.DescribeKV("  Consumers:", 19, "%v", item.Value.ClientSecret.Consumers)
+			}
+
+			if item.Value.FederatedIdentityCredential != nil {
+				output.DescribeSection("Federated Identity Config:")
+				output.DescribeKV("  Consumers:", 14, "%v", item.Value.FederatedIdentityCredential.Consumers)
+			}
+
+			return nil
 		}
 
-		if item.Value.FederatedIdentityCredential != nil {
-			output.DescribeSection("Federated Identity Config:")
-			output.DescribeKV("  Consumers:", 14, "%v", item.Value.FederatedIdentityCredential.Consumers)
-		}
-
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "azure-connection")
+		return printer.Print(item)
 	},
 }
 
@@ -199,29 +207,37 @@ var describeAzureMonitoringConfigCmd = &cobra.Command{
 			}
 		}
 
-		const w = 13
-		output.DescribeKV("ID:", w, "%s", item.ObjectID)
-		output.DescribeKV("Description:", w, "%s", item.Value.Description)
-		output.DescribeKV("Enabled:", w, "%v", item.Value.Enabled)
-		output.DescribeKV("Version:", w, "%s", item.Value.Version)
-		output.DescribeSection("Azure Config:")
-		output.DescribeKV("  Deployment Scope:", 32, "%s", item.Value.Azure.DeploymentScope)
-		output.DescribeKV("  Subscription Filtering Mode:", 32, "%s", item.Value.Azure.SubscriptionFilteringMode)
-		output.DescribeKV("  Configuration Mode:", 32, "%s", item.Value.Azure.ConfigurationMode)
-		output.DescribeKV("  Deployment Mode:", 32, "%s", item.Value.Azure.DeploymentMode)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 13
+			output.DescribeKV("ID:", w, "%s", item.ObjectID)
+			output.DescribeKV("Description:", w, "%s", item.Value.Description)
+			output.DescribeKV("Enabled:", w, "%v", item.Value.Enabled)
+			output.DescribeKV("Version:", w, "%s", item.Value.Version)
+			output.DescribeSection("Azure Config:")
+			output.DescribeKV("  Deployment Scope:", 32, "%s", item.Value.Azure.DeploymentScope)
+			output.DescribeKV("  Subscription Filtering Mode:", 32, "%s", item.Value.Azure.SubscriptionFilteringMode)
+			output.DescribeKV("  Configuration Mode:", 32, "%s", item.Value.Azure.ConfigurationMode)
+			output.DescribeKV("  Deployment Mode:", 32, "%s", item.Value.Azure.DeploymentMode)
 
-		if len(item.Value.Azure.Credentials) > 0 {
-			output.DescribeSection("  Credentials:")
-			for _, cred := range item.Value.Azure.Credentials {
-				output.DescribeKV("    - Description:", 21, "%s", cred.Description)
-				output.DescribeKV("      Connection ID:", 21, "%s", cred.ConnectionId)
-				output.DescribeKV("      Type:", 21, "%s", cred.Type)
+			if len(item.Value.Azure.Credentials) > 0 {
+				output.DescribeSection("  Credentials:")
+				for _, cred := range item.Value.Azure.Credentials {
+					output.DescribeKV("    - Description:", 21, "%s", cred.Description)
+					output.DescribeKV("      Connection ID:", 21, "%s", cred.ConnectionId)
+					output.DescribeKV("      Type:", 21, "%s", cred.Type)
+				}
 			}
+
+			printAzureMonitoringConfigStatus(c, item.ObjectID)
+
+			return nil
 		}
 
-		printAzureMonitoringConfigStatus(c, item.ObjectID)
-
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "azure-monitoring")
+		return printer.Print(item)
 	},
 }
 

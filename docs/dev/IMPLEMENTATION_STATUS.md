@@ -31,7 +31,7 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### Verbs Implemented
 - [x] `get` - List/retrieve resources
-- [x] `describe` - Detailed resource info
+- [x] `describe` - Detailed resource info (all subcommands support `-o json|yaml|toon|csv` and agent mode)
 - [x] `create` - Create from manifest
 - [x] `delete` - Delete resources
 - [x] `edit` - Edit in $EDITOR
@@ -313,7 +313,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for the complete implementation pla
 - [x] Unit tests for core packages
 - [x] Integration tests
 - [x] E2E tests
-- [x] Golden (snapshot) tests for all output formatters (`pkg/output/golden_test.go`, 79 golden files)
+- [x] Golden (snapshot) tests for all output formatters (`pkg/output/golden_test.go`, 139 golden files)
 - [ ] Improve test coverage (target: 80%+)
 
 ### Code Quality

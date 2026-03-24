@@ -1,0 +1,18 @@
+path: /lookups/grail/pm/error_codes
+displayname: Error Codes
+description: Mapping of error codes to descriptions
+filesize: 2048
+records: 42
+lookupfield: code
+columns:
+  - code
+  - description
+  - severity
+modified: "2025-03-15T10:30:00Z"
+previewdata:
+  - code: E001
+    description: Connection timeout
+    severity: HIGH
+  - code: E002
+    description: Invalid input
+    severity: LOW

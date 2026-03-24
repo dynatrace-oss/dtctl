@@ -35,17 +35,25 @@ var describeGCPConnectionCmd = &cobra.Command{
 			return err
 		}
 
-		const w = 6
-		output.DescribeKV("ID:", w, "%s", item.ObjectID)
-		output.DescribeKV("Name:", w, "%s", item.Value.Name)
-		output.DescribeKV("Type:", w, "%s", item.Value.Type)
-		if item.Value.ServiceAccountImpersonation != nil {
-			output.DescribeSection("Service Account Impersonation:")
-			output.DescribeKV("  Service Account ID:", 23, "%s", item.Value.ServiceAccountImpersonation.ServiceAccountID)
-			output.DescribeKV("  Consumers:", 23, "%v", item.Value.ServiceAccountImpersonation.Consumers)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 6
+			output.DescribeKV("ID:", w, "%s", item.ObjectID)
+			output.DescribeKV("Name:", w, "%s", item.Value.Name)
+			output.DescribeKV("Type:", w, "%s", item.Value.Type)
+			if item.Value.ServiceAccountImpersonation != nil {
+				output.DescribeSection("Service Account Impersonation:")
+				output.DescribeKV("  Service Account ID:", 23, "%s", item.Value.ServiceAccountImpersonation.ServiceAccountID)
+				output.DescribeKV("  Consumers:", 23, "%v", item.Value.ServiceAccountImpersonation.Consumers)
+			}
+
+			return nil
 		}
 
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "gcp-connection")
+		return printer.Print(item)
 	},
 }
 
@@ -81,37 +89,45 @@ var describeGCPMonitoringConfigCmd = &cobra.Command{
 			}
 		}
 
-		const w = 13
-		output.DescribeKV("ID:", w, "%s", item.ObjectID)
-		output.DescribeKV("Description:", w, "%s", item.Value.Description)
-		output.DescribeKV("Enabled:", w, "%v", item.Value.Enabled)
-		output.DescribeKV("Version:", w, "%s", item.Value.Version)
-		output.DescribeSection("Google Cloud Config:")
-		output.DescribeKV("  Location Filtering:", 23, "%v", item.Value.GoogleCloud.LocationFiltering)
-		output.DescribeKV("  Project Filtering:", 23, "%v", item.Value.GoogleCloud.ProjectFiltering)
-		output.DescribeKV("  Folder Filtering:", 23, "%v", item.Value.GoogleCloud.FolderFiltering)
-		output.DescribeKV("  Feature Sets:", 23, "%v", item.Value.FeatureSets)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 13
+			output.DescribeKV("ID:", w, "%s", item.ObjectID)
+			output.DescribeKV("Description:", w, "%s", item.Value.Description)
+			output.DescribeKV("Enabled:", w, "%v", item.Value.Enabled)
+			output.DescribeKV("Version:", w, "%s", item.Value.Version)
+			output.DescribeSection("Google Cloud Config:")
+			output.DescribeKV("  Location Filtering:", 23, "%v", item.Value.GoogleCloud.LocationFiltering)
+			output.DescribeKV("  Project Filtering:", 23, "%v", item.Value.GoogleCloud.ProjectFiltering)
+			output.DescribeKV("  Folder Filtering:", 23, "%v", item.Value.GoogleCloud.FolderFiltering)
+			output.DescribeKV("  Feature Sets:", 23, "%v", item.Value.FeatureSets)
 
-		if len(item.Value.GoogleCloud.Credentials) > 0 {
-			output.DescribeSection("  Credentials:")
-			for _, cred := range item.Value.GoogleCloud.Credentials {
-				output.DescribeKV("    - Description:", 23, "%s", cred.Description)
-				output.DescribeKV("      Connection ID:", 23, "%s", cred.ConnectionID)
-				output.DescribeKV("      Service Account:", 23, "%s", cred.ServiceAccount)
+			if len(item.Value.GoogleCloud.Credentials) > 0 {
+				output.DescribeSection("  Credentials:")
+				for _, cred := range item.Value.GoogleCloud.Credentials {
+					output.DescribeKV("    - Description:", 23, "%s", cred.Description)
+					output.DescribeKV("      Connection ID:", 23, "%s", cred.ConnectionID)
+					output.DescribeKV("      Service Account:", 23, "%s", cred.ServiceAccount)
+				}
 			}
+
+			if principal, principalErr := connHandler.GetDynatracePrincipal(); principalErr == nil {
+				output.DescribeSection("Dynatrace:")
+				output.DescribeKV("  Principal ID:", 17, "%s", principal.ObjectID)
+				if principal.Principal != "" {
+					output.DescribeKV("  Principal:", 17, "%s", principal.Principal)
+				}
+			}
+
+			printGCPMonitoringConfigStatus(c, item.ObjectID)
+
+			return nil
 		}
 
-		if principal, principalErr := connHandler.GetDynatracePrincipal(); principalErr == nil {
-			output.DescribeSection("Dynatrace:")
-			output.DescribeKV("  Principal ID:", 17, "%s", principal.ObjectID)
-			if principal.Principal != "" {
-				output.DescribeKV("  Principal:", 17, "%s", principal.Principal)
-			}
-		}
-
-		printGCPMonitoringConfigStatus(c, item.ObjectID)
-
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "gcp-monitoring")
+		return printer.Print(item)
 	},
 }
 

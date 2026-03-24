@@ -1,0 +1,21 @@
+objectid: azure-conn-a1b2c3d4
+schemaid: ""
+schemaversion: ""
+scope: ""
+author: ""
+created: 0
+modified: 0
+summary: ""
+value:
+  name: production-azure
+  type: CLIENT_SECRET
+  clientsecret:
+    applicationid: app-id-1234-5678
+    directoryid: dir-id-abcd-efgh
+    clientsecret: ""
+    consumers:
+      - ME
+      - DA
+  federatedidentitycredential: null
+name: production-azure
+type: CLIENT_SECRET

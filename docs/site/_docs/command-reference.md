@@ -16,7 +16,7 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 | Verb | Description |
 |------|-------------|
 | `get` | List or retrieve resources |
-| `describe` | Show detailed information about a resource |
+| `describe` | Show detailed information about a resource (supports `-o` for structured output) |
 | `create` | Create a resource from file or arguments |
 | `delete` | Delete resources |
 | `edit` | Edit a resource interactively (YAML or JSON) |

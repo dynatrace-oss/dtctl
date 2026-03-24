@@ -42,35 +42,42 @@ Examples:
 			return err
 		}
 
-		// Print EdgeConnect details
-		const w = 10
-		output.DescribeKV("ID:", w, "%s", ec.ID)
-		output.DescribeKV("Name:", w, "%s", ec.Name)
-		output.DescribeKV("Managed:", w, "%v", ec.ManagedByDynatraceOperator)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 10
+			output.DescribeKV("ID:", w, "%s", ec.ID)
+			output.DescribeKV("Name:", w, "%s", ec.Name)
+			output.DescribeKV("Managed:", w, "%v", ec.ManagedByDynatraceOperator)
 
-		if len(ec.HostPatterns) > 0 {
-			fmt.Println()
-			output.DescribeSection("Host Patterns:")
-			for _, pattern := range ec.HostPatterns {
-				fmt.Printf("  - %s\n", pattern)
+			if len(ec.HostPatterns) > 0 {
+				fmt.Println()
+				output.DescribeSection("Host Patterns:")
+				for _, pattern := range ec.HostPatterns {
+					fmt.Printf("  - %s\n", pattern)
+				}
 			}
+
+			if ec.OAuthClientID != "" {
+				fmt.Println()
+				output.DescribeKV("OAuth Client ID:", 0, "%s", ec.OAuthClientID)
+			}
+
+			if ec.ModificationInfo != nil {
+				fmt.Println()
+				if ec.ModificationInfo.CreatedTime != "" {
+					output.DescribeKV("Created:", w, "%s (by %s)", ec.ModificationInfo.CreatedTime, ec.ModificationInfo.CreatedBy)
+				}
+				if ec.ModificationInfo.LastModifiedTime != "" {
+					output.DescribeKV("Modified:", w, "%s (by %s)", ec.ModificationInfo.LastModifiedTime, ec.ModificationInfo.LastModifiedBy)
+				}
+			}
+
+			return nil
 		}
 
-		if ec.OAuthClientID != "" {
-			fmt.Println()
-			output.DescribeKV("OAuth Client ID:", 0, "%s", ec.OAuthClientID)
-		}
-
-		if ec.ModificationInfo != nil {
-			fmt.Println()
-			if ec.ModificationInfo.CreatedTime != "" {
-				output.DescribeKV("Created:", w, "%s (by %s)", ec.ModificationInfo.CreatedTime, ec.ModificationInfo.CreatedBy)
-			}
-			if ec.ModificationInfo.LastModifiedTime != "" {
-				output.DescribeKV("Modified:", w, "%s (by %s)", ec.ModificationInfo.LastModifiedTime, ec.ModificationInfo.LastModifiedBy)
-			}
-		}
-
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "edgeconnect")
+		return printer.Print(ec)
 	},
 }

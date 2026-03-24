@@ -9,9 +9,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
@@ -802,6 +809,526 @@ func TestGolden_DescribeBucket(t *testing.T) {
 				t.Fatalf("Print failed: %v", err)
 			}
 			assertGolden(t, "describe/bucket-"+name, buf.String())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Describe fixtures: additional resource types
+// ---------------------------------------------------------------------------
+
+func describeSLOFixture() slo.SLO {
+	return slo.SLO{
+		ID:          "a1b2c3d4-0001-4000-8000-000000000001",
+		Name:        "API Availability",
+		Description: "99.9% availability for public API endpoints",
+		Version:     "3",
+		Criteria: []slo.Criteria{
+			{TimeframeFrom: "-7d", Target: 99.9, Warning: float64Ptr(99.5)},
+			{TimeframeFrom: "-30d", Target: 99.0},
+		},
+		Tags: []string{"service:api", "tier:1"},
+	}
+}
+
+func describeDocumentFixture() document.Document {
+	return document.Document{
+		ID:          "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+		Name:        "Production Overview",
+		Type:        "dashboard",
+		Owner:       "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+		IsPrivate:   false,
+		Created:     fixedTime,
+		Description: "Main production monitoring dashboard",
+		Version:     3,
+		Modified:    fixedTime.Add(2 * time.Hour),
+	}
+}
+
+func describeAppFixture() appengine.App {
+	return appengine.App{
+		ID:          "my.custom-app",
+		Name:        "Custom App",
+		Version:     "1.4.2",
+		Description: "A custom monitoring application",
+		IsBuiltin:   false,
+		ResourceStatus: &appengine.ResourceStatus{
+			Status:           "OK",
+			SubResourceTypes: []string{"function", "action"},
+		},
+		ModificationInfo: &appengine.ModificationInfo{
+			CreatedBy:        "user-a@example.invalid",
+			CreatedTime:      "2025-01-10T08:00:00Z",
+			LastModifiedBy:   "user-b@example.invalid",
+			LastModifiedTime: "2025-03-15T10:30:00Z",
+		},
+	}
+}
+
+func describeSettingsFixture() settings.SettingsObject {
+	return settings.SettingsObject{
+		ObjectID:      "vu9U3hXa3q0AAAABABhidWlsdGluOmFsZXJ0aW5nLnByb2ZpbGUABnRlbmFudAAGdGVuYW50ACRhMWIyYzNkNC1lNWY2LTRhN2ItOGM5ZC0wZTFmMmEzYjRjNWQ",
+		SchemaID:      "builtin:alerting.profile",
+		SchemaVersion: "1.0.5",
+		Scope:         "environment",
+		Summary:       "Default Alerting Profile",
+		Value: map[string]any{
+			"name":            "Default",
+			"severityRules":   []any{},
+			"eventTypeFilter": []any{},
+		},
+		ObjectIDShort: "vu9U3hXa3q0AAAABAB...",
+		UID:           "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+		ScopeType:     "tenant",
+		ScopeID:       "tenant",
+	}
+}
+
+func describeEdgeConnectFixture() edgeconnect.EdgeConnect {
+	return edgeconnect.EdgeConnect{
+		ID:           "ec-a1b2c3d4",
+		Name:         "production-edge",
+		HostPatterns: []string{"*.prod.example.invalid", "api.example.invalid"},
+		ModificationInfo: &edgeconnect.ModificationInfo{
+			CreatedBy:        "admin@example.invalid",
+			CreatedTime:      "2025-01-15T09:00:00Z",
+			LastModifiedBy:   "admin@example.invalid",
+			LastModifiedTime: "2025-03-10T14:30:00Z",
+		},
+		ManagedByDynatraceOperator: true,
+		Metadata: &edgeconnect.Metadata{
+			Version: "5",
+		},
+	}
+}
+
+func describeUserFixture() iam.User {
+	return iam.User{
+		UID:         "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+		Email:       "jane.doe@example.invalid",
+		Name:        "Jane",
+		Surname:     "Doe",
+		Description: "Platform engineering team lead",
+	}
+}
+
+func describeGroupFixture() iam.Group {
+	return iam.Group{
+		UUID:      "g1h2i3j4-k5l6-4m7n-8o9p-0q1r2s3t4u5v",
+		GroupName: "platform-admins",
+		Type:      "LOCAL",
+	}
+}
+
+// lookupDescribeFixture is an inline struct to avoid import cycle with lookup package.
+type lookupDescribeFixture struct {
+	Path        string                   `json:"path"`
+	DisplayName string                   `json:"displayName,omitempty"`
+	Description string                   `json:"description,omitempty"`
+	FileSize    int64                    `json:"fileSize,omitempty"`
+	Records     int                      `json:"records,omitempty"`
+	LookupField string                   `json:"lookupField,omitempty"`
+	Columns     []string                 `json:"columns,omitempty"`
+	Modified    string                   `json:"modified,omitempty"`
+	PreviewData []map[string]interface{} `json:"previewData"`
+}
+
+func describeLookupFixture() lookupDescribeFixture {
+	return lookupDescribeFixture{
+		Path:        "/lookups/grail/pm/error_codes",
+		DisplayName: "Error Codes",
+		Description: "Mapping of error codes to descriptions",
+		FileSize:    2048,
+		Records:     42,
+		LookupField: "code",
+		Columns:     []string{"code", "description", "severity"},
+		Modified:    "2025-03-15T10:30:00Z",
+		PreviewData: []map[string]interface{}{
+			{"code": "E001", "description": "Connection timeout", "severity": "HIGH"},
+			{"code": "E002", "description": "Invalid input", "severity": "LOW"},
+		},
+	}
+}
+
+func describeAzureConnectionFixture() azureconnection.AzureConnection {
+	return azureconnection.AzureConnection{
+		ObjectID: "azure-conn-a1b2c3d4",
+		Value: azureconnection.Value{
+			Name: "production-azure",
+			Type: "CLIENT_SECRET",
+			ClientSecret: &azureconnection.ClientSecretCredential{
+				ApplicationID: "app-id-1234-5678",
+				DirectoryID:   "dir-id-abcd-efgh",
+				Consumers:     []string{"ME", "DA"},
+			},
+		},
+		Name: "production-azure",
+		Type: "CLIENT_SECRET",
+	}
+}
+
+func describeAzureMonitoringConfigFixture() azuremonitoringconfig.AzureMonitoringConfig {
+	return azuremonitoringconfig.AzureMonitoringConfig{
+		ObjectID:    "azmon-a1b2c3d4",
+		Description: "Production Azure monitoring",
+		Enabled:     true,
+		Version:     "1.0",
+		Value: azuremonitoringconfig.Value{
+			Enabled:     true,
+			Description: "Production Azure monitoring",
+			Version:     "1.0",
+			Azure: azuremonitoringconfig.AzureConfig{
+				DeploymentScope:           "MANAGEMENT_GROUP",
+				SubscriptionFilteringMode: "ALL",
+				ConfigurationMode:         "STANDARD",
+				DeploymentMode:            "FULL",
+				Credentials: []azuremonitoringconfig.Credential{
+					{
+						Enabled:      true,
+						Description:  "Main credential",
+						ConnectionId: "azure-conn-a1b2c3d4",
+						Type:         "CLIENT_SECRET",
+					},
+				},
+			},
+			FeatureSets: []string{"default", "advanced"},
+		},
+	}
+}
+
+func describeGCPConnectionFixture() gcpconnection.GCPConnection {
+	return gcpconnection.GCPConnection{
+		ObjectID: "gcp-conn-x1y2z3",
+		Value: gcpconnection.Value{
+			Name: "production-gcp",
+			Type: "SERVICE_ACCOUNT_IMPERSONATION",
+			ServiceAccountImpersonation: &gcpconnection.ServiceAccountImpersonation{
+				ServiceAccountID: "sa-monitor@project-id.iam.gserviceaccount.com",
+				Consumers:        []string{"ME", "DA"},
+			},
+		},
+		Name: "production-gcp",
+		Type: "SERVICE_ACCOUNT_IMPERSONATION",
+	}
+}
+
+func describeGCPMonitoringConfigFixture() gcpmonitoringconfig.GCPMonitoringConfig {
+	return gcpmonitoringconfig.GCPMonitoringConfig{
+		ObjectID:    "gcpmon-a1b2c3d4",
+		Description: "Production GCP monitoring",
+		Enabled:     true,
+		Version:     "2.0",
+		Value: gcpmonitoringconfig.Value{
+			Enabled:     true,
+			Description: "Production GCP monitoring",
+			Version:     "2.0",
+			GoogleCloud: gcpmonitoringconfig.GoogleCloudConfig{
+				LocationFiltering: []string{"us-east1", "eu-west1"},
+				ProjectFiltering:  []string{"my-project-123"},
+				FolderFiltering:   []string{},
+				Credentials: []gcpmonitoringconfig.Credential{
+					{
+						Description:    "Main SA credential",
+						Enabled:        true,
+						ConnectionID:   "gcp-conn-x1y2z3",
+						ServiceAccount: "sa-monitor@project-id.iam.gserviceaccount.com",
+					},
+				},
+			},
+			FeatureSets: []string{"default"},
+		},
+	}
+}
+
+func describeExecutionFixture() workflow.Execution {
+	endedAt := fixedTime.Add(45 * time.Second)
+	triggerStr := "schedule"
+	return workflow.Execution{
+		ID:          "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+		Workflow:    "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+		Title:       "Deploy to Production",
+		State:       "SUCCEEDED",
+		StartedAt:   fixedTime,
+		EndedAt:     &endedAt,
+		Runtime:     45,
+		Trigger:     &triggerStr,
+		TriggerType: "Schedule",
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Golden tests: describe (additional resource types)
+// ---------------------------------------------------------------------------
+
+func TestGolden_DescribeSLO(t *testing.T) {
+	s := describeSLOFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(s); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/slo-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeDocument(t *testing.T) {
+	d := describeDocumentFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(d); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/document-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeApp(t *testing.T) {
+	a := describeAppFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(a); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/app-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeSettings(t *testing.T) {
+	s := describeSettingsFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(s); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/settings-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeEdgeConnect(t *testing.T) {
+	ec := describeEdgeConnectFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(ec); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/edgeconnect-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeUser(t *testing.T) {
+	u := describeUserFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(u); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/user-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeGroup(t *testing.T) {
+	g := describeGroupFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(g); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/group-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeLookup(t *testing.T) {
+	lu := describeLookupFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(lu); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/lookup-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeAzureConnection(t *testing.T) {
+	ac := describeAzureConnectionFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(ac); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/azure-connection-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeAzureMonitoring(t *testing.T) {
+	am := describeAzureMonitoringConfigFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(am); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/azure-monitoring-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeGCPConnection(t *testing.T) {
+	gc := describeGCPConnectionFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(gc); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/gcp-connection-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeGCPMonitoring(t *testing.T) {
+	gm := describeGCPMonitoringConfigFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(gm); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/gcp-monitoring-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeExecution(t *testing.T) {
+	e := describeExecutionFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(e); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/execution-"+name, buf.String())
 		})
 	}
 }

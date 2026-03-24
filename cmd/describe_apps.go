@@ -41,30 +41,37 @@ Examples:
 			return err
 		}
 
-		// Print app details
-		const w = 13
-		output.DescribeKV("ID:", w, "%s", app.ID)
-		output.DescribeKV("Name:", w, "%s", app.Name)
-		output.DescribeKV("Version:", w, "%s", app.Version)
-		output.DescribeKV("Description:", w, "%s", app.Description)
-		output.DescribeKV("Builtin:", w, "%v", app.IsBuiltin)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 13
+			output.DescribeKV("ID:", w, "%s", app.ID)
+			output.DescribeKV("Name:", w, "%s", app.Name)
+			output.DescribeKV("Version:", w, "%s", app.Version)
+			output.DescribeKV("Description:", w, "%s", app.Description)
+			output.DescribeKV("Builtin:", w, "%v", app.IsBuiltin)
 
-		if app.ResourceStatus != nil {
-			output.DescribeKV("Status:", w, "%s", app.ResourceStatus.Status)
-			if len(app.ResourceStatus.SubResourceTypes) > 0 {
-				output.DescribeKV("Resources:", w, "%s", strings.Join(app.ResourceStatus.SubResourceTypes, ", "))
+			if app.ResourceStatus != nil {
+				output.DescribeKV("Status:", w, "%s", app.ResourceStatus.Status)
+				if len(app.ResourceStatus.SubResourceTypes) > 0 {
+					output.DescribeKV("Resources:", w, "%s", strings.Join(app.ResourceStatus.SubResourceTypes, ", "))
+				}
 			}
+
+			if app.ModificationInfo != nil {
+				if app.ModificationInfo.CreatedTime != "" {
+					output.DescribeKV("Created:", w, "%s (by %s)", app.ModificationInfo.CreatedTime, app.ModificationInfo.CreatedBy)
+				}
+				if app.ModificationInfo.LastModifiedTime != "" {
+					output.DescribeKV("Modified:", w, "%s (by %s)", app.ModificationInfo.LastModifiedTime, app.ModificationInfo.LastModifiedBy)
+				}
+			}
+
+			return nil
 		}
 
-		if app.ModificationInfo != nil {
-			if app.ModificationInfo.CreatedTime != "" {
-				output.DescribeKV("Created:", w, "%s (by %s)", app.ModificationInfo.CreatedTime, app.ModificationInfo.CreatedBy)
-			}
-			if app.ModificationInfo.LastModifiedTime != "" {
-				output.DescribeKV("Modified:", w, "%s (by %s)", app.ModificationInfo.LastModifiedTime, app.ModificationInfo.LastModifiedBy)
-			}
-		}
-
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "app")
+		return printer.Print(app)
 	},
 }

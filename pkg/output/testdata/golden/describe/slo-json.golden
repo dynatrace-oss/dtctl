@@ -1,0 +1,21 @@
+{
+  "id": "a1b2c3d4-0001-4000-8000-000000000001",
+  "name": "API Availability",
+  "description": "99.9% availability for public API endpoints",
+  "version": "3",
+  "criteria": [
+    {
+      "timeframeFrom": "-7d",
+      "target": 99.9,
+      "warning": 99.5
+    },
+    {
+      "timeframeFrom": "-30d",
+      "target": 99
+    }
+  ],
+  "tags": [
+    "service:api",
+    "tier:1"
+  ]
+}

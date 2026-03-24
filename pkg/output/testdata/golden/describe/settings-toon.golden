@@ -1,0 +1,9 @@
+objectId: vu9U3hXa3q0AAAABABhidWlsdGluOmFsZXJ0aW5nLnByb2ZpbGUABnRlbmFudAAGdGVuYW50ACRhMWIyYzNkNC1lNWY2LTRhN2ItOGM5ZC0wZTFmMmEzYjRjNWQ
+schemaId: "builtin:alerting.profile"
+schemaVersion: 1.0.5
+scope: environment
+summary: Default Alerting Profile
+value:
+  eventTypeFilter[#0]:
+  name: Default
+  severityRules[#0]:

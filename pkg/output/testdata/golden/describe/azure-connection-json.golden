@@ -1,0 +1,17 @@
+{
+  "objectId": "azure-conn-a1b2c3d4",
+  "value": {
+    "name": "production-azure",
+    "type": "CLIENT_SECRET",
+    "clientSecret": {
+      "applicationId": "app-id-1234-5678",
+      "directoryId": "dir-id-abcd-efgh",
+      "consumers": [
+        "ME",
+        "DA"
+      ]
+    }
+  },
+  "name": "production-azure",
+  "type": "CLIENT_SECRET"
+}

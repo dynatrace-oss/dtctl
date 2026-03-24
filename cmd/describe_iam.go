@@ -41,21 +41,28 @@ Examples:
 			return err
 		}
 
-		// Print user details
-		const w = 13
-		output.DescribeKV("UUID:", w, "%s", user.UID)
-		output.DescribeKV("Email:", w, "%s", user.Email)
-		if user.Name != "" {
-			output.DescribeKV("Name:", w, "%s", user.Name)
-		}
-		if user.Surname != "" {
-			output.DescribeKV("Surname:", w, "%s", user.Surname)
-		}
-		if user.Description != "" {
-			output.DescribeKV("Description:", w, "%s", user.Description)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 13
+			output.DescribeKV("UUID:", w, "%s", user.UID)
+			output.DescribeKV("Email:", w, "%s", user.Email)
+			if user.Name != "" {
+				output.DescribeKV("Name:", w, "%s", user.Name)
+			}
+			if user.Surname != "" {
+				output.DescribeKV("Surname:", w, "%s", user.Surname)
+			}
+			if user.Description != "" {
+				output.DescribeKV("Description:", w, "%s", user.Description)
+			}
+
+			return nil
 		}
 
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "user")
+		return printer.Print(user)
 	},
 }
 
@@ -99,12 +106,19 @@ Examples:
 
 		group := list.Results[0]
 
-		// Print group details
-		const w = 11
-		output.DescribeKV("UUID:", w, "%s", group.UUID)
-		output.DescribeKV("Name:", w, "%s", group.GroupName)
-		output.DescribeKV("Type:", w, "%s", group.Type)
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 11
+			output.DescribeKV("UUID:", w, "%s", group.UUID)
+			output.DescribeKV("Name:", w, "%s", group.GroupName)
+			output.DescribeKV("Type:", w, "%s", group.Type)
 
-		return nil
+			return nil
+		}
+
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "group")
+		return printer.Print(group)
 	},
 }

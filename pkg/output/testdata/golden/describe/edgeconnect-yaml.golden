@@ -1,0 +1,16 @@
+id: ec-a1b2c3d4
+name: production-edge
+hostpatterns:
+  - '*.prod.example.invalid'
+  - api.example.invalid
+oauthclientid: ""
+oauthclientsecret: ""
+oauthclientresource: ""
+modificationinfo:
+  createdby: admin@example.invalid
+  createdtime: "2025-01-15T09:00:00Z"
+  lastmodifiedby: admin@example.invalid
+  lastmodifiedtime: "2025-03-10T14:30:00Z"
+managedbydynatraceoperator: true
+metadata:
+  version: "5"

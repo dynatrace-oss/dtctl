@@ -1,0 +1,16 @@
+{
+  "objectId": "gcp-conn-x1y2z3",
+  "value": {
+    "name": "production-gcp",
+    "type": "SERVICE_ACCOUNT_IMPERSONATION",
+    "serviceAccountImpersonation": {
+      "serviceAccountId": "sa-monitor@project-id.iam.gserviceaccount.com",
+      "consumers": [
+        "ME",
+        "DA"
+      ]
+    }
+  },
+  "name": "production-gcp",
+  "type": "SERVICE_ACCOUNT_IMPERSONATION"
+}

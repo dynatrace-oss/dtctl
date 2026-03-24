@@ -129,7 +129,7 @@ Examples:
 		}
 
 		// For table output, show detailed human-readable information
-		if outputFormat == "" || outputFormat == "table" {
+		if outputFormat == "table" {
 			const w = 16
 			output.DescribeKV("Name:", w, "%s", details.ExtensionName)
 			output.DescribeKV("Version:", w, "%s", details.Version)
@@ -240,6 +240,7 @@ Examples:
 		}
 
 		printer := NewPrinter()
+		enrichAgent(printer, "describe", "extension")
 		return printer.Print(desc)
 	},
 }

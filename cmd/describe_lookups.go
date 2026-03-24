@@ -53,8 +53,9 @@ Examples:
 		}
 
 		// For structured formats, use printer
-		if outputFormat == "json" || outputFormat == "yaml" || outputFormat == "toon" {
+		if outputFormat != "table" {
 			printer := NewPrinter()
+			enrichAgent(printer, "describe", "lookup")
 			lookupData := struct {
 				*lookup.Lookup
 				PreviewData []map[string]interface{} `json:"previewData"`

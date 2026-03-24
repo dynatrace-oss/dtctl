@@ -33,6 +33,18 @@ func printDocumentDetails(metadata *document.DocumentMetadata) {
 	}
 }
 
+// printDocumentOrFormat prints document details as table or uses the printer for other formats.
+func printDocumentOrFormat(metadata *document.DocumentMetadata, resource string) error {
+	if outputFormat == "table" {
+		printDocumentDetails(metadata)
+		return nil
+	}
+
+	printer := NewPrinter()
+	enrichAgent(printer, "describe", resource)
+	return printer.Print(metadata)
+}
+
 // describeDashboardCmd shows detailed info about a dashboard
 var describeDashboardCmd = &cobra.Command{
 	Use:     "dashboard <dashboard-id-or-name>",
@@ -77,9 +89,7 @@ Examples:
 			return err
 		}
 
-		printDocumentDetails(metadata)
-
-		return nil
+		return printDocumentOrFormat(metadata, "dashboard")
 	},
 }
 
@@ -127,9 +137,7 @@ Examples:
 			return err
 		}
 
-		printDocumentDetails(metadata)
-
-		return nil
+		return printDocumentOrFormat(metadata, "notebook")
 	},
 }
 
@@ -178,9 +186,7 @@ Examples:
 			return err
 		}
 
-		printDocumentDetails(metadata)
-
-		return nil
+		return printDocumentOrFormat(metadata, "document")
 	},
 }
 
@@ -216,24 +222,31 @@ Examples:
 			return err
 		}
 
-		// Print detailed information
-		const w = 18
-		output.DescribeKV("ID:", w, "%s", doc.ID)
-		output.DescribeKV("Name:", w, "%s", doc.Name)
-		output.DescribeKV("Type:", w, "%s", doc.Type)
-		output.DescribeKV("Version:", w, "%d", doc.Version)
-		output.DescribeKV("Owner:", w, "%s", doc.Owner)
-		output.DescribeKV("Deleted By:", w, "%s", doc.DeletedBy)
-		output.DescribeKV("Deleted At:", w, "%s", doc.DeletedAt.Format("2006-01-02 15:04:05"))
+		// For table output, show detailed human-readable information
+		if outputFormat == "table" {
+			const w = 18
+			output.DescribeKV("ID:", w, "%s", doc.ID)
+			output.DescribeKV("Name:", w, "%s", doc.Name)
+			output.DescribeKV("Type:", w, "%s", doc.Type)
+			output.DescribeKV("Version:", w, "%d", doc.Version)
+			output.DescribeKV("Owner:", w, "%s", doc.Owner)
+			output.DescribeKV("Deleted By:", w, "%s", doc.DeletedBy)
+			output.DescribeKV("Deleted At:", w, "%s", doc.DeletedAt.Format("2006-01-02 15:04:05"))
 
-		// Show modification info if available
-		if !doc.ModificationInfo.LastModifiedTime.IsZero() {
-			output.DescribeKV("Last Modified:", w, "%s", doc.ModificationInfo.LastModifiedTime.Format("2006-01-02 15:04:05"))
-		}
-		if doc.ModificationInfo.LastModifiedBy != "" {
-			output.DescribeKV("Last Modified By:", w, "%s", doc.ModificationInfo.LastModifiedBy)
+			// Show modification info if available
+			if !doc.ModificationInfo.LastModifiedTime.IsZero() {
+				output.DescribeKV("Last Modified:", w, "%s", doc.ModificationInfo.LastModifiedTime.Format("2006-01-02 15:04:05"))
+			}
+			if doc.ModificationInfo.LastModifiedBy != "" {
+				output.DescribeKV("Last Modified By:", w, "%s", doc.ModificationInfo.LastModifiedBy)
+			}
+
+			return nil
 		}
 
-		return nil
+		// For other formats, use standard printer
+		printer := NewPrinter()
+		enrichAgent(printer, "describe", "trash")
+		return printer.Print(doc)
 	},
 }

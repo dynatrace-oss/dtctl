@@ -1,0 +1,16 @@
+description: Production GCP monitoring
+enabled: true
+objectId: gcpmon-a1b2c3d4
+value:
+  description: Production GCP monitoring
+  enabled: true
+  featureSets[#1]: default
+  googleCloud:
+    credentials[#1]{connectionId,description,enabled,serviceAccount}:
+      gcp-conn-x1y2z3,Main SA credential,true,sa-monitor@project-id.iam.gserviceaccount.com
+    locationFiltering[#2]: us-east1,eu-west1
+    projectFiltering[#1]: my-project-123
+    smartscapeConfiguration:
+      enabled: false
+  version: "2.0"
+version: "2.0"

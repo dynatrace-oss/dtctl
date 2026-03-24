@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`describe` commands respect `-o` flag** — all `describe` subcommands now support `--output json|yaml|toon|csv` and agent mode (`-A`); previously most describe commands hardcoded `fmt.Printf` output and ignored the format flag; fixed partial implementations in `describe lookup` (inverted routing), `describe extension` and `describe extension-config` (dead `outputFormat == ""` check)
+
 ## [0.19.1] - 2026-03-20
 
 ### Fixed

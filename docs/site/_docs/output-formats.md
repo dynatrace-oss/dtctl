@@ -55,7 +55,7 @@ wf-def456     Incident Remediation     enabled  Event       user@example.com 202
 
 ## Describe
 
-The `describe` command renders a vertical key-value view with full detail:
+The `describe` command renders a vertical key-value view with full detail by default:
 
 ```bash
 dtctl describe workflow wf-123
@@ -70,6 +70,19 @@ Owner:       user@example.com
 Created:     2025-01-01 10:00:00
 Modified:    2025-01-14 15:30:00
 Tasks:       3
+```
+
+All `describe` subcommands support the `-o` / `--output` flag to get structured output:
+
+```bash
+# JSON output for scripting
+dtctl describe workflow wf-123 -o json
+
+# YAML output for round-tripping
+dtctl describe slo my-slo -o yaml
+
+# Agent mode envelope
+dtctl describe dashboard my-dash -A
 ```
 
 ## CSV

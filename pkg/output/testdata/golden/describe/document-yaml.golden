@@ -1,0 +1,10 @@
+description: Main production monitoring dashboard
+id: b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e
+isPrivate: false
+modificationInfo:
+  createdTime: 2025-03-15T10:30:00Z
+  lastModifiedTime: 2025-03-15T12:30:00Z
+name: Production Overview
+owner: 7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d
+type: dashboard
+version: 3

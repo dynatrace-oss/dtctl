@@ -1,0 +1,18 @@
+{
+  "id": "ec-a1b2c3d4",
+  "name": "production-edge",
+  "hostPatterns": [
+    "*.prod.example.invalid",
+    "api.example.invalid"
+  ],
+  "modificationInfo": {
+    "createdBy": "admin@example.invalid",
+    "createdTime": "2025-01-15T09:00:00Z",
+    "lastModifiedBy": "admin@example.invalid",
+    "lastModifiedTime": "2025-03-10T14:30:00Z"
+  },
+  "managedByDynatraceOperator": true,
+  "metadata": {
+    "version": "5"
+  }
+}

@@ -1,0 +1,18 @@
+id: my.custom-app
+name: Custom App
+version: 1.4.2
+description: A custom monitoring application
+isbuiltin: false
+resourcestatus:
+  status: OK
+  subresourcetypes:
+    - function
+    - action
+  subresourcestatuses: []
+signatureinfo: null
+manifest: {}
+modificationinfo:
+  createdby: user-a@example.invalid
+  createdtime: "2025-01-10T08:00:00Z"
+  lastmodifiedby: user-b@example.invalid
+  lastmodifiedtime: "2025-03-15T10:30:00Z"

@@ -126,6 +126,14 @@ dtctl describe workflow wf-abc123
 dtctl describe workflow "Daily Health Check"
 ```
 
+All `describe` subcommands support agent mode, returning the full resource object in the JSON envelope:
+
+```bash
+dtctl describe workflow wf-abc123 --agent
+dtctl describe slo my-slo -A
+dtctl describe dashboard my-dash -o json -A
+```
+
 ### Dry-run
 
 Use `--dry-run` to preview mutating operations without making changes:
