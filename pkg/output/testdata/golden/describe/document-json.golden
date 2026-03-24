@@ -2,14 +2,18 @@
   "id": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
   "name": "Production Overview",
   "type": "dashboard",
-  "owner": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
-  "isPrivate": false,
   "description": "Main production monitoring dashboard",
   "version": 3,
+  "owner": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+  "isPrivate": false,
   "modificationInfo": {
-    "createdBy": "",
+    "createdBy": "admin@example.invalid",
     "createdTime": "2025-03-15T10:30:00Z",
-    "lastModifiedBy": "",
+    "lastModifiedBy": "editor@example.invalid",
     "lastModifiedTime": "2025-03-15T12:30:00Z"
-  }
+  },
+  "access": [
+    "read",
+    "write"
+  ]
 }

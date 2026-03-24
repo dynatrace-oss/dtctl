@@ -831,17 +831,22 @@ func describeSLOFixture() slo.SLO {
 	}
 }
 
-func describeDocumentFixture() document.Document {
-	return document.Document{
+func describeDocumentFixture() document.DocumentMetadata {
+	return document.DocumentMetadata{
 		ID:          "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
 		Name:        "Production Overview",
 		Type:        "dashboard",
 		Owner:       "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
 		IsPrivate:   false,
-		Created:     fixedTime,
 		Description: "Main production monitoring dashboard",
 		Version:     3,
-		Modified:    fixedTime.Add(2 * time.Hour),
+		ModificationInfo: document.ModificationInfo{
+			CreatedBy:        "admin@example.invalid",
+			CreatedTime:      fixedTime,
+			LastModifiedBy:   "editor@example.invalid",
+			LastModifiedTime: fixedTime.Add(2 * time.Hour),
+		},
+		Access: []string{"read", "write"},
 	}
 }
 
