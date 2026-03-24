@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 
 	toon "github.com/toon-format/toon-go"
 )
@@ -74,7 +73,7 @@ func ClassifyHTTPError(statusCode int) string {
 type AgentPrinter struct {
 	writer       io.Writer
 	ctx          *ResponseContext
-	resultFormat string // "toon" (default) or "json"
+	resultFormat string // "json" (default) or "toon"
 }
 
 // NewAgentPrinter creates an AgentPrinter that writes envelope-wrapped JSON to writer.
@@ -88,7 +87,7 @@ func NewAgentPrinter(writer io.Writer, ctx *ResponseContext) *AgentPrinter {
 }
 
 // SetResultFormat controls how the result field is encoded inside the agent
-// envelope. Supported values are "toon" (default) and "json". Any other
+// envelope. Supported values are "toon" and "json" (default). Any other
 // value is treated as "json" (i.e. the result is embedded as a native JSON
 // value in the envelope).
 func (p *AgentPrinter) SetResultFormat(format string) {
@@ -123,6 +122,10 @@ func (p *AgentPrinter) Print(data interface{}) error {
 // emit as a JSON string value inside the envelope). For "json" (or any
 // other format) it returns the data as-is so json.Encoder serialises it
 // as a native JSON value.
+//
+// If TOON encoding fails, the method falls back to returning the raw data
+// (which json.Encoder will serialise as native JSON) and adds a warning
+// to the response context so the consumer can detect the fallback.
 func (p *AgentPrinter) encodeResult(data interface{}) (interface{}, error) {
 	if p.resultFormat != "toon" || data == nil {
 		return data, nil
@@ -130,17 +133,22 @@ func (p *AgentPrinter) encodeResult(data interface{}) (interface{}, error) {
 
 	generic, err := toGeneric(data)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: TOON encoding failed (toGeneric): %v; falling back to JSON\n", err)
+		p.addWarning(fmt.Sprintf("TOON encoding failed (toGeneric): %v; fell back to JSON", err))
 		return data, nil // fall back to raw data on conversion error
 	}
 
 	encoded, err := toon.MarshalString(generic, toon.WithLengthMarkers(true))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: TOON encoding failed (marshal): %v; falling back to JSON\n", err)
+		p.addWarning(fmt.Sprintf("TOON encoding failed (marshal): %v; fell back to JSON", err))
 		return data, nil // fall back to raw data on marshal error
 	}
 
 	return encoded, nil
+}
+
+// addWarning appends a warning message to the response context.
+func (p *AgentPrinter) addWarning(msg string) {
+	p.ctx.Warnings = append(p.ctx.Warnings, msg)
 }
 
 // PrintList writes a list result wrapped in the agent envelope.

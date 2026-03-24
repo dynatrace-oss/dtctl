@@ -39,7 +39,11 @@ func (p *ToonPrinter) marshal(obj interface{}) error {
 		return err
 	}
 
-	_, err = p.writer.Write(data)
+	if _, err = p.writer.Write(data); err != nil {
+		return err
+	}
+	// Append a trailing newline for consistency with JSON and YAML printers.
+	_, err = p.writer.Write([]byte("\n"))
 	return err
 }
 
