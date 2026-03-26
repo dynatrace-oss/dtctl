@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PII redaction for DQL query results** — new `--pii` flag on `dtctl query` replaces detected PII (emails, names, IPs, credentials, etc.) with category placeholders (`[EMAIL]`, `[PERSON]`) in lite mode, or stable session-scoped pseudonyms (`<EMAIL_0>`, `<PERSON_1>`) in full mode (`--pii=full`); pseudonyms enable correlation across records while keeping data safe for AI agents; sessions are persisted to disk and can be resolved by a human operator via the separate `dtctl-pii-resolve` tool; supports RUM `usr.*` field detection, optional Presidio NER integration for free-text analysis, custom field rules via `.dtctl-pii.yaml` project files and config preferences, and `--no-pii` to override; configurable via flag, `DTCTL_PII` env var, or `preferences.pii.mode` in config; see [docs/PII_REDACTION.md](docs/PII_REDACTION.md) for the full guide
+
 ## [0.20.1] - 2026-03-25
 
 ### Added

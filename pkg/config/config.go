@@ -94,8 +94,32 @@ type NamedToken struct {
 
 // Preferences holds user preferences
 type Preferences struct {
-	Output string `yaml:"output,omitempty"`
-	Editor string `yaml:"editor,omitempty"`
+	Output string     `yaml:"output,omitempty"`
+	Editor string     `yaml:"editor,omitempty"`
+	PII    *PIIConfig `yaml:"pii,omitempty"`
+}
+
+// PIIConfig holds PII redaction preferences.
+type PIIConfig struct {
+	// Mode controls PII redaction: "" (disabled), "lite", or "full".
+	// Lite replaces PII with category placeholders ([EMAIL], [PERSON]).
+	// Full uses stable pseudonyms (<EMAIL_0>, <PERSON_1>) with optional Presidio NER.
+	Mode string `yaml:"mode,omitempty"`
+	// PresidioURL is the base URL of a Microsoft Presidio Analyzer API
+	// (e.g., "http://localhost:5002"). Only used in full mode.
+	PresidioURL string `yaml:"presidio-url,omitempty"`
+	// CustomFields defines per-field PII rules (redact, skip, custom category).
+	CustomFields []PIICustomField `yaml:"custom-fields,omitempty"`
+}
+
+// PIICustomField defines a custom PII field rule in the config file.
+type PIICustomField struct {
+	// Field is the field path to match. Exact ("data.customerRef") or glob suffix ("usr.*").
+	Field string `yaml:"field"`
+	// Category is the PII category label. Defaults to "REDACTED" if empty.
+	Category string `yaml:"category,omitempty"`
+	// Skip, when true, excludes the field from PII redaction.
+	Skip bool `yaml:"skip,omitempty"`
 }
 
 // DefaultConfigPath returns the default config file path following XDG Base Directory spec

@@ -13,6 +13,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/pii"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
 
@@ -134,6 +135,15 @@ Examples:
 		}
 
 		executor := exec.NewDQLExecutor(c)
+
+		// Resolve PII mode from flag / env / config
+		piiFlag, _ := cmd.Flags().GetString("pii")
+		noPII, _ := cmd.Flags().GetBool("no-pii")
+		var configPIIMode string
+		if cfg.Preferences.PII != nil {
+			configPIIMode = cfg.Preferences.PII.Mode
+		}
+		piiMode := pii.ResolveMode(piiFlag, cmd.Flags().Changed("pii"), noPII, configPIIMode)
 
 		queryFile, _ := cmd.Flags().GetString("file")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
@@ -261,6 +271,53 @@ Examples:
 			Locale:                       locale,
 			Timezone:                     timezone,
 			MetadataFields:               metadataFields,
+			PIIMode:                      piiMode,
+		}
+
+		// Resolve Presidio URL for full PII mode
+		if piiMode == pii.ModeFull && cfg.Preferences.PII != nil && cfg.Preferences.PII.PresidioURL != "" {
+			opts.PIIPresidioURL = cfg.Preferences.PII.PresidioURL
+		}
+		// Also check PRESIDIO_URL env var
+		if piiMode == pii.ModeFull && opts.PIIPresidioURL == "" {
+			if envURL := os.Getenv("PRESIDIO_URL"); envURL != "" {
+				opts.PIIPresidioURL = envURL
+			}
+		}
+		// Wire context name for session metadata
+		if piiMode != pii.ModeOff {
+			opts.PIIContext = cfg.CurrentContext
+
+			// Load custom PII field rules from project file + config
+			var projectRules, configRules []pii.CustomRule
+
+			// Search upward for .dtctl-pii.yaml project file
+			if cwd, err := os.Getwd(); err == nil {
+				if rulesPath := pii.FindCustomRulesFile(cwd); rulesPath != "" {
+					if rules, err := pii.LoadCustomRulesFile(rulesPath); err == nil {
+						projectRules = rules
+					} else {
+						fmt.Fprintf(os.Stderr, "Warning: failed to load %s: %v\n", rulesPath, err)
+					}
+				}
+			}
+
+			// Load custom fields from config preferences
+			if cfg.Preferences.PII != nil {
+				for _, cf := range cfg.Preferences.PII.CustomFields {
+					category := cf.Category
+					if category == "" && !cf.Skip {
+						category = "REDACTED"
+					}
+					configRules = append(configRules, pii.CustomRule{
+						Field:    cf.Field,
+						Category: category,
+						Skip:     cf.Skip,
+					})
+				}
+			}
+
+			opts.PIICustomRules = pii.MergeRules(projectRules, configRules)
 		}
 
 		// Handle live mode
@@ -376,6 +433,22 @@ analysisTimeframe,contributions`)
 bare --decode-snapshots simplifies variant wrappers to plain values;
 --decode-snapshots=full preserves the full decoded tree with type annotations`)
 	queryCmd.Flags().Lookup("decode-snapshots").NoOptDefVal = "simplified"
+
+	// PII redaction flags
+	queryCmd.Flags().String("pii", "", `redact PII from query results
+bare --pii uses lite mode (simple placeholders like [EMAIL]);
+--pii=full uses pseudonyms (<EMAIL_0>) with optional Presidio NER.
+Overrides DTCTL_PII env var and config preferences.pii.mode`)
+	queryCmd.Flags().Lookup("pii").NoOptDefVal = "lite"
+	queryCmd.Flags().Bool("no-pii", false, "disable PII redaction (overrides env and config)")
+
+	// Shell completion for --pii values
+	_ = queryCmd.RegisterFlagCompletionFunc("pii", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"lite\tSimple category placeholders ([EMAIL], [PERSON])",
+			"full\tStable pseudonyms (<EMAIL_0>) with optional Presidio NER",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
 
 	// Shell completion for --metadata field names (supports comma-separated values)
 	_ = queryCmd.RegisterFlagCompletionFunc("metadata", metadataFieldCompletion)

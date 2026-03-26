@@ -10,6 +10,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/pii"
 )
 
 // DQLExecutor handles DQL query execution
@@ -66,6 +67,12 @@ type DQLExecuteOptions struct {
 
 	// Metadata options
 	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, specific names = filtered
+
+	// PII redaction options
+	PIIMode        pii.Mode         // PII redaction mode (off, lite, full)
+	PIIPresidioURL string           // Optional Presidio API URL for NER (full mode only)
+	PIIContext     string           // Dynatrace context name (for session metadata)
+	PIICustomRules []pii.CustomRule // User-defined PII field rules
 }
 
 // DQLVerifyOptions configures DQL query verification
@@ -437,6 +444,32 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		switch opts.OutputFormat {
 		case "", "table", "wide", "csv":
 			records = output.SummarizeSnapshotForTable(records)
+		}
+	}
+
+	// Apply PII redaction if enabled
+	if opts.PIIMode != pii.ModeOff && len(records) > 0 {
+		redactor, redactErr := pii.NewRedactor(pii.Config{
+			Mode:        opts.PIIMode,
+			PresidioURL: opts.PIIPresidioURL,
+			Context:     opts.PIIContext,
+			CustomRules: opts.PIICustomRules,
+		})
+		if redactErr != nil {
+			return fmt.Errorf("failed to initialize PII redactor: %w", redactErr)
+		}
+
+		records = redactor.RedactRecords(records)
+
+		// In full mode, persist the session and report session ID
+		if opts.PIIMode == pii.ModeFull {
+			if err := redactor.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to save PII session: %v\n", err)
+			} else if redactor.SessionID() != "" {
+				stats := redactor.Stats()
+				fmt.Fprintf(os.Stderr, "PII session %s: redacted %d fields across %d records\n",
+					redactor.SessionID(), stats.RedactedFields, stats.TotalRecords)
+			}
 		}
 	}
 

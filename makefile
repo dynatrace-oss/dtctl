@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot
+.PHONY: all build build-pii-resolve clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -18,6 +18,11 @@ all: build
 build:
 	@echo "Building dtctl..."
 	@go build $(LDFLAGS) -o bin/dtctl .
+
+# Build the PII resolve tool (separate trust boundary — human-only)
+build-pii-resolve:
+	@echo "Building dtctl-pii-resolve..."
+	@go build $(LDFLAGS) -o bin/dtctl-pii-resolve ./cmd/pii-resolve
 
 # Build for macOS (arm64)
 build-darwin-arm64:
