@@ -23,10 +23,12 @@ func resetSkillsFlags(t *testing.T) {
 		{"install-global", "global", "false"},
 		{"install-force", "force", "false"},
 		{"install-list", "list", "false"},
+		{"install-cross-client", "cross-client", "false"},
 	} {
 		_ = skillsInstallCmd.Flags().Set(cmd.flag, cmd.def)
 	}
 	_ = skillsUninstallCmd.Flags().Set("for", "")
+	_ = skillsUninstallCmd.Flags().Set("cross-client", "false")
 	_ = skillsStatusCmd.Flags().Set("for", "")
 }
 
@@ -930,5 +932,253 @@ func TestSkillsList_RunE(t *testing.T) {
 	err := skillsInstallCmd.RunE(skillsInstallCmd, []string{})
 	if err != nil {
 		t.Fatalf("list error: %v", err)
+	}
+}
+
+// --- Cross-client CLI tests ---
+
+func TestSkillsInstall_CrossClient(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+
+	err := skillsInstallCmd.RunE(skillsInstallCmd, []string{})
+	if err != nil {
+		t.Fatalf("RunE error: %v", err)
+	}
+
+	// Verify SKILL.md was created in the cross-client directory
+	expectedPath := filepath.Join(tmpDir, ".agents", "skills", "dtctl", "SKILL.md")
+	data, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatalf("SKILL.md not created: %v", err)
+	}
+	if !strings.Contains(string(data), "dtctl") {
+		t.Error("SKILL.md should contain 'dtctl'")
+	}
+
+	// Verify references/ directory exists
+	refsDir := filepath.Join(tmpDir, ".agents", "skills", "dtctl", "references")
+	if info, err := os.Stat(refsDir); err != nil || !info.IsDir() {
+		t.Error("references/ directory should exist")
+	}
+}
+
+func TestSkillsInstall_CrossClient_DoesNotRequireAgentDetection(t *testing.T) {
+	clearAgentEnvVars(t) // No agent env vars set
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+
+	// Should succeed even though no agent is detected
+	err := skillsInstallCmd.RunE(skillsInstallCmd, []string{})
+	if err != nil {
+		t.Fatalf("cross-client install should not require agent detection: %v", err)
+	}
+}
+
+func TestSkillsInstall_CrossClientAndForConflict(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+	_ = skillsInstallCmd.Flags().Set("for", "claude")
+
+	err := skillsInstallCmd.RunE(skillsInstallCmd, []string{})
+	if err == nil {
+		t.Fatal("expected error when both --cross-client and --for are used")
+	}
+	if !strings.Contains(err.Error(), "cannot be used together") {
+		t.Errorf("error should mention 'cannot be used together', got: %v", err)
+	}
+}
+
+func TestSkillsInstall_CrossClient_Overwrite(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	// First install
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+	if err := skillsInstallCmd.RunE(skillsInstallCmd, []string{}); err != nil {
+		t.Fatalf("first install error: %v", err)
+	}
+
+	// Second install without force should fail
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+	err := skillsInstallCmd.RunE(skillsInstallCmd, []string{})
+	if err == nil {
+		t.Fatal("expected error on overwrite without --force")
+	}
+
+	// Third install with force should succeed
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+	_ = skillsInstallCmd.Flags().Set("force", "true")
+	err = skillsInstallCmd.RunE(skillsInstallCmd, []string{})
+	if err != nil {
+		t.Fatalf("force install error: %v", err)
+	}
+}
+
+func TestSkillsInstall_CrossClient_AgentMode(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = true
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+
+	err := skillsInstallCmd.RunE(skillsInstallCmd, []string{})
+	if err != nil {
+		t.Fatalf("RunE error: %v", err)
+	}
+
+	// Verify files exist on disk
+	expectedPath := filepath.Join(tmpDir, ".agents", "skills", "dtctl", "SKILL.md")
+	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+		t.Error("SKILL.md not created in agent mode")
+	}
+}
+
+func TestSkillsUninstall_CrossClient(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	// Install cross-client first
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+	if err := skillsInstallCmd.RunE(skillsInstallCmd, []string{}); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+
+	skillDir := filepath.Join(tmpDir, ".agents", "skills", "dtctl")
+	if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); os.IsNotExist(err) {
+		t.Fatal("SKILL.md should exist before uninstall")
+	}
+
+	// Uninstall
+	resetSkillsFlags(t)
+	_ = skillsUninstallCmd.Flags().Set("cross-client", "true")
+	if err := skillsUninstallCmd.RunE(skillsUninstallCmd, []string{}); err != nil {
+		t.Fatalf("uninstall error: %v", err)
+	}
+
+	// Verify the directory is gone
+	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+		t.Error("skill directory should not exist after uninstall")
+	}
+}
+
+func TestSkillsUninstall_CrossClientAndForConflict(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	resetSkillsFlags(t)
+	_ = skillsUninstallCmd.Flags().Set("cross-client", "true")
+	_ = skillsUninstallCmd.Flags().Set("for", "claude")
+
+	err := skillsUninstallCmd.RunE(skillsUninstallCmd, []string{})
+	if err == nil {
+		t.Fatal("expected error when both --cross-client and --for are used")
+	}
+	if !strings.Contains(err.Error(), "cannot be used together") {
+		t.Errorf("error should mention 'cannot be used together', got: %v", err)
+	}
+}
+
+func TestSkillsStatus_CrossClient_ViaForFlag(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	// Install cross-client
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+	if err := skillsInstallCmd.RunE(skillsInstallCmd, []string{}); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+
+	// Check status via --for cross-client
+	resetSkillsFlags(t)
+	_ = skillsStatusCmd.Flags().Set("for", "cross-client")
+	err := skillsStatusCmd.RunE(skillsStatusCmd, []string{})
+	if err != nil {
+		t.Fatalf("status error: %v", err)
+	}
+}
+
+func TestSkillsStatus_ShowsCrossClient(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = true
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	// Install cross-client
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("cross-client", "true")
+	if err := skillsInstallCmd.RunE(skillsInstallCmd, []string{}); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+
+	// Status for all agents (should include cross-client)
+	resetSkillsFlags(t)
+	err := skillsStatusCmd.RunE(skillsStatusCmd, []string{})
+	if err != nil {
+		t.Fatalf("status error: %v", err)
 	}
 }

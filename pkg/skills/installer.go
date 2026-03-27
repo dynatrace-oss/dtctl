@@ -34,6 +34,19 @@ type Agent struct {
 	DetectName string
 }
 
+// CrossClientAgent is a pseudo-agent representing the cross-client shared
+// directory defined by the agentskills.io convention. Skills installed here
+// are automatically discovered by any agent that scans ~/.agents/skills/ or
+// <project>/.agents/skills/.
+var CrossClientAgent = Agent{
+	Name:        "cross-client",
+	DisplayName: "Cross-Client (agentskills.io)",
+	ProjectPath: filepath.Join(".agents", "skills", "dtctl"),
+	GlobalPath:  filepath.Join(".agents", "skills", "dtctl"),
+	EnvVar:      "",
+	DetectName:  "",
+}
+
 // agents is the registry of all supported AI coding assistants.
 // All agents follow the agentskills.io standard: <client>/skills/<name>/SKILL.md
 var agents = []Agent{
@@ -111,7 +124,8 @@ type StatusResult struct {
 	Global    bool
 }
 
-// SupportedAgents returns the list of all supported agent names.
+// SupportedAgents returns the list of all supported agent names
+// (excluding the cross-client pseudo-agent).
 func SupportedAgents() []string {
 	names := make([]string, len(agents))
 	for i, a := range agents {
@@ -120,13 +134,17 @@ func SupportedAgents() []string {
 	return names
 }
 
-// AllAgents returns the full agent registry.
+// AllAgents returns the full agent registry (excluding the cross-client
+// pseudo-agent).
 func AllAgents() []Agent {
 	return agents
 }
 
-// FindAgent looks up an agent by canonical name.
+// FindAgent looks up an agent by canonical name. Also matches "cross-client".
 func FindAgent(name string) (Agent, bool) {
+	if name == CrossClientAgent.Name {
+		return CrossClientAgent, true
+	}
 	for _, a := range agents {
 		if a.Name == name {
 			return a, true
@@ -301,11 +319,13 @@ func Status(agent Agent, baseDir string) *StatusResult {
 	}
 }
 
-// StatusAll checks installation state for all supported agents.
+// StatusAll checks installation state for all supported agents and the
+// cross-client location.
 func StatusAll(baseDir string) []*StatusResult {
-	results := make([]*StatusResult, len(agents))
-	for i, a := range agents {
-		results[i] = Status(a, baseDir)
+	results := make([]*StatusResult, 0, len(agents)+1)
+	results = append(results, Status(CrossClientAgent, baseDir))
+	for _, a := range agents {
+		results = append(results, Status(a, baseDir))
 	}
 	return results
 }

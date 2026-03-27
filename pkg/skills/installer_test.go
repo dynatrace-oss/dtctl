@@ -470,8 +470,10 @@ func TestStatusAll(t *testing.T) {
 	Install(agent, tmpDir, false, false)
 
 	results := StatusAll(tmpDir)
-	if len(results) != len(AllAgents()) {
-		t.Fatalf("expected %d results, got %d", len(AllAgents()), len(results))
+	// StatusAll returns cross-client + all agents
+	expectedCount := len(AllAgents()) + 1
+	if len(results) != expectedCount {
+		t.Fatalf("expected %d results, got %d", expectedCount, len(results))
 	}
 
 	installedCount := 0
@@ -750,5 +752,270 @@ func TestUninstallOpenClaw_CleansReferences(t *testing.T) {
 	skillDir := filepath.Join(tmpDir, "skills", "dtctl")
 	if _, err := os.Stat(skillDir); err == nil {
 		t.Error("skill directory still exists after uninstall")
+	}
+}
+
+// --- Cross-client tests ---
+
+func TestCrossClientAgent(t *testing.T) {
+	t.Run("has correct paths", func(t *testing.T) {
+		expectedProject := filepath.Join(".agents", "skills", "dtctl")
+		if CrossClientAgent.ProjectPath != expectedProject {
+			t.Errorf("ProjectPath = %q, want %q", CrossClientAgent.ProjectPath, expectedProject)
+		}
+		expectedGlobal := filepath.Join(".agents", "skills", "dtctl")
+		if CrossClientAgent.GlobalPath != expectedGlobal {
+			t.Errorf("GlobalPath = %q, want %q", CrossClientAgent.GlobalPath, expectedGlobal)
+		}
+	})
+
+	t.Run("has correct name", func(t *testing.T) {
+		if CrossClientAgent.Name != "cross-client" {
+			t.Errorf("Name = %q, want %q", CrossClientAgent.Name, "cross-client")
+		}
+	})
+
+	t.Run("has display name", func(t *testing.T) {
+		if CrossClientAgent.DisplayName == "" {
+			t.Error("DisplayName should not be empty")
+		}
+	})
+
+	t.Run("not in regular agents list", func(t *testing.T) {
+		for _, a := range AllAgents() {
+			if a.Name == "cross-client" {
+				t.Error("cross-client should not appear in AllAgents()")
+			}
+		}
+	})
+
+	t.Run("not in SupportedAgents", func(t *testing.T) {
+		for _, name := range SupportedAgents() {
+			if name == "cross-client" {
+				t.Error("cross-client should not appear in SupportedAgents()")
+			}
+		}
+	})
+}
+
+func TestFindAgent_CrossClient(t *testing.T) {
+	agent, ok := FindAgent("cross-client")
+	if !ok {
+		t.Fatal("FindAgent should find cross-client")
+	}
+	if agent.Name != "cross-client" {
+		t.Errorf("agent.Name = %q, want %q", agent.Name, "cross-client")
+	}
+}
+
+func TestInstall_CrossClient(t *testing.T) {
+	t.Run("installs to cross-client project path", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		result, err := Install(CrossClientAgent, tmpDir, false, false)
+		if err != nil {
+			t.Fatalf("Install error: %v", err)
+		}
+
+		expectedDir := filepath.Join(tmpDir, ".agents", "skills", "dtctl")
+		if result.Path != expectedDir {
+			t.Errorf("Path = %q, want %q", result.Path, expectedDir)
+		}
+		if result.Agent.Name != "cross-client" {
+			t.Errorf("Agent.Name = %q, want %q", result.Agent.Name, "cross-client")
+		}
+
+		// Verify SKILL.md exists and has content
+		skillFile := filepath.Join(expectedDir, "SKILL.md")
+		data, err := os.ReadFile(skillFile)
+		if err != nil {
+			t.Fatalf("failed to read SKILL.md: %v", err)
+		}
+		if len(data) == 0 {
+			t.Error("SKILL.md is empty")
+		}
+		if !strings.Contains(string(data), "dtctl") {
+			t.Error("SKILL.md should contain 'dtctl'")
+		}
+
+		// Verify references/ directory exists
+		refsDir := filepath.Join(expectedDir, "references")
+		if info, err := os.Stat(refsDir); err != nil || !info.IsDir() {
+			t.Errorf("references/ directory should exist at %s", refsDir)
+		}
+	})
+
+	t.Run("identical content to agent-specific install", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		// Install cross-client
+		crossResult, err := Install(CrossClientAgent, tmpDir, false, false)
+		if err != nil {
+			t.Fatalf("cross-client Install error: %v", err)
+		}
+		crossData, err := os.ReadFile(filepath.Join(crossResult.Path, "SKILL.md"))
+		if err != nil {
+			t.Fatalf("ReadFile error: %v", err)
+		}
+
+		// Install a regular agent
+		agent, _ := FindAgent("claude")
+		agentResult, err := Install(agent, tmpDir, false, false)
+		if err != nil {
+			t.Fatalf("claude Install error: %v", err)
+		}
+		agentData, err := os.ReadFile(filepath.Join(agentResult.Path, "SKILL.md"))
+		if err != nil {
+			t.Fatalf("ReadFile error: %v", err)
+		}
+
+		if string(crossData) != string(agentData) {
+			t.Error("cross-client and agent-specific SKILL.md content should be identical")
+		}
+	})
+
+	t.Run("refuses overwrite without force", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		_, err := Install(CrossClientAgent, tmpDir, false, false)
+		if err != nil {
+			t.Fatalf("first Install error: %v", err)
+		}
+
+		_, err = Install(CrossClientAgent, tmpDir, false, false)
+		if err == nil {
+			t.Fatal("expected error on duplicate install")
+		}
+		if !strings.Contains(err.Error(), "already exists") {
+			t.Errorf("error should mention 'already exists', got: %v", err)
+		}
+	})
+
+	t.Run("overwrites with force", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		_, err := Install(CrossClientAgent, tmpDir, false, false)
+		if err != nil {
+			t.Fatalf("first Install error: %v", err)
+		}
+
+		result, err := Install(CrossClientAgent, tmpDir, false, true)
+		if err != nil {
+			t.Fatalf("overwrite Install error: %v", err)
+		}
+		if !result.Replaced {
+			t.Error("expected Replaced=true on overwrite")
+		}
+	})
+
+	t.Run("supports global install", func(t *testing.T) {
+		// Just verify the path resolves correctly (don't actually write to $HOME)
+		path, err := resolvePath(CrossClientAgent, "/tmp/project", true)
+		if err != nil {
+			t.Fatalf("resolvePath error: %v", err)
+		}
+		home, _ := os.UserHomeDir()
+		expected := filepath.Join(home, ".agents", "skills", "dtctl")
+		if path != expected {
+			t.Errorf("path = %q, want %q", path, expected)
+		}
+	})
+}
+
+func TestUninstall_CrossClient(t *testing.T) {
+	t.Run("removes project-local cross-client install", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		result, _ := Install(CrossClientAgent, tmpDir, false, false)
+
+		// Verify SKILL.md exists
+		skillFile := filepath.Join(result.Path, "SKILL.md")
+		if _, err := os.Stat(skillFile); err != nil {
+			t.Fatal("SKILL.md should exist before uninstall")
+		}
+
+		removed, err := Uninstall(CrossClientAgent, tmpDir)
+		if err != nil {
+			t.Fatalf("Uninstall error: %v", err)
+		}
+		if len(removed) != 1 {
+			t.Fatalf("expected 1 removed, got %d", len(removed))
+		}
+
+		// Verify directory is gone
+		if _, err := os.Stat(result.Path); !os.IsNotExist(err) {
+			t.Error("skill directory should not exist after uninstall")
+		}
+	})
+
+	t.Run("returns empty for non-installed", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		removed, err := Uninstall(CrossClientAgent, tmpDir)
+		if err != nil {
+			t.Fatalf("Uninstall error: %v", err)
+		}
+		if len(removed) != 0 {
+			t.Errorf("expected 0 removed, got %d", len(removed))
+		}
+	})
+}
+
+func TestStatus_CrossClient(t *testing.T) {
+	t.Run("installed project-local", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		Install(CrossClientAgent, tmpDir, false, false)
+
+		result := Status(CrossClientAgent, tmpDir)
+		if !result.Installed {
+			t.Error("expected Installed=true")
+		}
+		if result.Global {
+			t.Error("expected Global=false")
+		}
+		expectedDir := filepath.Join(tmpDir, ".agents", "skills", "dtctl")
+		if result.Path != expectedDir {
+			t.Errorf("Path = %q, want %q", result.Path, expectedDir)
+		}
+	})
+
+	t.Run("not installed", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		result := Status(CrossClientAgent, tmpDir)
+		if result.Installed {
+			t.Error("expected Installed=false")
+		}
+	})
+}
+
+func TestStatusAll_IncludesCrossClient(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Install only cross-client
+	Install(CrossClientAgent, tmpDir, false, false)
+
+	results := StatusAll(tmpDir)
+
+	// Find the cross-client entry
+	var crossClientResult *StatusResult
+	for _, r := range results {
+		if r.Agent.Name == "cross-client" {
+			crossClientResult = r
+			break
+		}
+	}
+
+	if crossClientResult == nil {
+		t.Fatal("cross-client entry not found in StatusAll results")
+	}
+	if !crossClientResult.Installed {
+		t.Error("cross-client should be marked as installed")
+	}
+
+	// Verify it's the first entry
+	if results[0].Agent.Name != "cross-client" {
+		t.Errorf("cross-client should be the first entry, got %q", results[0].Agent.Name)
 	}
 }

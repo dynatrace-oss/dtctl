@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Cross-client skill installation** — `dtctl skills install --cross-client` installs skills to the shared `~/.agents/skills/` directory defined by the [agentskills.io](https://agentskills.io) convention, so any compatible agent automatically discovers them without needing per-agent installation
+
 ## [0.20.1] - 2026-03-25
 
 ### Added
