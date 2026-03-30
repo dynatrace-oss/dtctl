@@ -35,18 +35,21 @@ func TestAuthLogin_FlagValidation(t *testing.T) {
 		args        []string
 		setupConfig bool // whether to write a config with a current context
 		wantErrSub  string
+		wantHint    string
 	}{
 		{
 			name:        "no flags no config errors helpfully",
 			args:        []string{"auth", "login"},
 			setupConfig: false,
 			wantErrSub:  "--context and --environment are required",
+			wantHint:    "dtctl ctx",
 		},
 		{
 			name:        "no flags empty current context errors helpfully",
 			args:        []string{"auth", "login"},
 			setupConfig: true, // config exists but CurrentContext is empty (handled below)
 			wantErrSub:  "--context and --environment are required when no current context is set",
+			wantHint:    "dtctl ctx",
 		},
 	}
 
@@ -78,6 +81,9 @@ func TestAuthLogin_FlagValidation(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantErrSub) {
 				t.Errorf("expected error containing %q, got: %v", tt.wantErrSub, err)
+			}
+			if !strings.Contains(err.Error(), tt.wantHint) {
+				t.Errorf("expected error to contain hint %q, got: %v", tt.wantHint, err)
 			}
 
 			// Reset
