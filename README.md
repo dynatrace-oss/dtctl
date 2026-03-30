@@ -126,6 +126,29 @@ dtctl create lookup -f error_codes.csv --path /lookups/production/errors --looku
 | `dtctl doctor` | Health check — verifies config, context, token, connectivity, and authentication |
 | `dtctl commands` | Machine-readable command catalog — lists all verbs, flags, resources, and safety levels (`--brief` for compact output, `howto` subcommand for Markdown guides) |
 
+### Tracing
+
+dtctl supports [OpenTelemetry](https://opentelemetry.io/) distributed tracing. When enabled, every outgoing HTTP request is captured as a trace span and exported to your Dynatrace environment via OTLP.
+
+```bash
+# Enable tracing with a flag
+dtctl get workflows --trace
+
+# Or enable via environment variable
+export DTCTL_TRACE=1
+dtctl get workflows
+```
+
+Traces are exported to the Dynatrace environment configured in your active context. The API token must have the `openTelemetryTrace.ingest` scope.
+
+To correlate dtctl as a child span within an existing trace (e.g., from a CI/CD pipeline), set the standard [W3C Trace Context](https://www.w3.org/TR/trace-context/) environment variables:
+
+```bash
+export TRACEPARENT="00-abc123...-def456...-01"
+export TRACESTATE="vendor=value"
+dtctl get workflows --trace
+```
+
 ## Documentation
 
 | Guide | Description |

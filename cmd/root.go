@@ -1,14 +1,19 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -17,6 +22,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
+	"github.com/dynatrace-oss/dtctl/pkg/tracing"
 )
 
 var (
@@ -30,6 +36,12 @@ var (
 	chunkSize    int64
 	agentMode    bool // --agent/-A flag: wrap output in machine-readable envelope
 	noAgent      bool // --no-agent flag: opt out of auto-detected agent mode
+	traceMode    bool // --trace flag: enable OpenTelemetry tracing
+
+	// tracing state (initialized lazily in NewClientFromConfig)
+	tracingShutdown func(context.Context) error
+	traceCtx        context.Context
+	traceSpan       trace.Span
 )
 
 // rootCmd represents the base command
@@ -72,6 +84,16 @@ func Execute() {
 		}
 	}
 	// --- End alias resolution ---
+
+	// End the root trace span and flush pending spans on exit
+	defer func() {
+		if traceSpan != nil {
+			traceSpan.End()
+		}
+		if tracingShutdown != nil {
+			_ = tracingShutdown(context.Background())
+		}
+	}()
 
 	if err := rootCmd.Execute(); err != nil {
 		errStr := err.Error()
@@ -472,6 +494,59 @@ func NewClientFromConfig(cfg *config.Config) (*client.Client, error) {
 	} else {
 		c.SetVerbosity(verbosity)
 	}
+
+	// Initialize OpenTelemetry tracing if --trace or DTCTL_TRACE is set
+	if traceMode && tracingShutdown == nil {
+		ctxObj, err := cfg.CurrentContextObj()
+		if err != nil {
+			return nil, fmt.Errorf("tracing init: %w", err)
+		}
+		token, err := client.GetTokenWithOAuthSupport(cfg, ctxObj.TokenRef)
+		if err != nil {
+			return nil, fmt.Errorf("tracing init: %w", err)
+		}
+
+		// Strip scheme for OTLP endpoint (otlptracehttp adds https://)
+		endpoint := strings.TrimPrefix(strings.TrimPrefix(ctxObj.Environment, "https://"), "http://")
+
+		shutdown, err := tracing.Init(context.Background(), endpoint, token)
+		if err != nil {
+			return nil, fmt.Errorf("tracing init: %w", err)
+		}
+		tracingShutdown = shutdown
+
+		// Continue an existing trace if TRACEPARENT is set (e.g. pipeline orchestrator),
+		// otherwise start a new root trace.
+		parentCtx := context.Background()
+		if tp := os.Getenv("TRACEPARENT"); tp != "" {
+			prop := propagation.TraceContext{}
+			carrier := propagation.MapCarrier{"traceparent": tp}
+			if ts := os.Getenv("TRACESTATE"); ts != "" {
+				carrier["tracestate"] = ts
+			}
+			parentCtx = prop.Extract(parentCtx, carrier)
+		}
+		tracer := otel.Tracer("dtctl")
+		ctx, span := tracer.Start(parentCtx, "dtctl")
+		traceCtx = ctx
+		traceSpan = span
+
+		c.SetTracing(true)
+		// Inject the root span context into every outgoing request
+		// so all HTTP spans nest under the command root span.
+		c.HTTP().OnBeforeRequest(func(_ *resty.Client, req *resty.Request) error {
+			req.SetContext(traceCtx)
+			return nil
+		})
+	} else if traceMode {
+		// Tracing already initialized (e.g. second client in same invocation)
+		c.SetTracing(true)
+		c.HTTP().OnBeforeRequest(func(_ *resty.Client, req *resty.Request) error {
+			req.SetContext(traceCtx)
+			return nil
+		})
+	}
+
 	return c, nil
 }
 
@@ -529,11 +604,13 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().BoolVarP(&agentMode, "agent", "A", false, "agent output mode: wrap output in a structured JSON envelope with metadata")
 	rootCmd.PersistentFlags().BoolVar(&noAgent, "no-agent", false, "disable auto-detected agent mode")
 	rootCmd.PersistentFlags().Int64Var(&chunkSize, "chunk-size", 500, "Paginate through all results in chunks of this size. 0 returns only the first page.")
+	rootCmd.PersistentFlags().BoolVar(&traceMode, "trace", false, "enable OpenTelemetry tracing of outgoing HTTP requests")
 
 	// Bind flags to viper
 	_ = viper.BindPFlag("context", rootCmd.PersistentFlags().Lookup("context"))
 	_ = viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output"))
 	_ = viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viper.BindPFlag("trace", rootCmd.PersistentFlags().Lookup("trace"))
 }
 
 // initConfig reads in config file and ENV variables if set
@@ -578,6 +655,11 @@ func initConfig() {
 
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("DTCTL")
+
+	// Allow DTCTL_TRACE=1 env var to enable tracing even without --trace flag
+	if !traceMode && viper.GetBool("trace") {
+		traceMode = true
+	}
 
 	// Read config file if it exists
 	if err := viper.ReadInConfig(); err == nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
@@ -112,6 +113,24 @@ func isRetryable(r *resty.Response, err error) bool {
 // HTTP returns the underlying resty client
 func (c *Client) HTTP() *resty.Client {
 	return c.http
+}
+
+// SetTracing wraps the underlying HTTP transport with OpenTelemetry instrumentation.
+// When enabled, every outgoing request automatically creates a trace span and
+// injects W3C traceparent headers for distributed tracing.
+func (c *Client) SetTracing(enabled bool) {
+	if !enabled {
+		return
+	}
+	base := c.http.GetClient().Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	// Guard against double-wrapping if SetTracing is called more than once
+	if _, ok := base.(*otelhttp.Transport); ok {
+		return
+	}
+	c.http.SetTransport(otelhttp.NewTransport(base))
 }
 
 // sensitiveHeaders lists headers that should always be redacted in debug output
