@@ -165,16 +165,31 @@ you'll need to use API token authentication instead (dtctl config set-credential
 
 		// If --context or --environment are not provided, fall back to the current context
 		if contextName == "" || environment == "" {
+			contextHint := "Use 'dtctl ctx' to list available context names, then pass --context <name> --environment <url>"
 			cfg, err := LoadConfig()
 			if err != nil {
-				return fmt.Errorf("--context and --environment are required (no existing config found: %w)", err)
+				return &diagnostic.Error{
+					Operation:   "auth login",
+					Message:     "--context and --environment are required (no existing config found)",
+					Suggestions: []string{contextHint},
+					Err:         err,
+				}
 			}
 			if cfg.CurrentContext == "" {
-				return fmt.Errorf("--context and --environment are required when no current context is set")
+				return &diagnostic.Error{
+					Operation:   "auth login",
+					Message:     "--context and --environment are required when no current context is set",
+					Suggestions: []string{contextHint, "Set a current context with 'dtctl ctx use-context <name>'"},
+				}
 			}
 			ctx, err := cfg.CurrentContextObj()
 			if err != nil {
-				return fmt.Errorf("--context and --environment are required (failed to load current context: %w)", err)
+				return &diagnostic.Error{
+					Operation:   "auth login",
+					Message:     "--context and --environment are required (failed to load current context)",
+					Suggestions: []string{contextHint},
+					Err:         err,
+				}
 			}
 			if contextName == "" {
 				contextName = cfg.CurrentContext
