@@ -27,8 +27,9 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 16. [Output Formats](#output-formats)
 17. [Azure Monitoring](#azure-monitoring)
 18. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
-19. [Tips & Tricks](#tips--tricks)
-20. [Troubleshooting](#troubleshooting)
+19. [AI Agent Skills](#ai-agent-skills)
+20. [Tips & Tricks](#tips--tricks)
+21. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -3229,6 +3230,79 @@ dtctl get notebooks --chunk-size=0
 # Use smaller chunks (useful for slow connections)
 dtctl get notebooks --chunk-size=100
 ```
+
+---
+
+## AI Agent Skills
+
+dtctl includes skill files that teach AI coding assistants how to use the CLI effectively. Skills follow the [agentskills.io](https://agentskills.io) open standard and are installed as directories containing a `SKILL.md` document and a `references/` folder.
+
+### Install Skills
+
+```bash
+# Auto-detect agent from environment and install
+dtctl skills install
+
+# Install for a specific agent
+dtctl skills install --for claude
+dtctl skills install --for copilot
+dtctl skills install --for opencode
+
+# Install globally (user-wide, not just this project)
+dtctl skills install --for claude --global
+
+# Overwrite an existing installation
+dtctl skills install --for claude --force
+```
+
+### Cross-Client Installation
+
+The `--cross-client` flag installs to the shared `.agents/skills/` directory defined by the agentskills.io convention. Skills installed here are automatically discovered by any compatible agent without needing per-agent installation.
+
+```bash
+# Install to <project>/.agents/skills/dtctl/
+dtctl skills install --cross-client
+
+# Install globally to ~/.agents/skills/dtctl/
+dtctl skills install --cross-client --global
+```
+
+> **Note**: `--cross-client` and `--for` cannot be used together on install/uninstall. For status checks, use `--for cross-client`.
+
+### Check Installation Status
+
+```bash
+# Show status for all agents (including cross-client)
+dtctl skills status
+
+# Check a specific agent
+dtctl skills status --for claude
+
+# Check cross-client directory
+dtctl skills status --for cross-client
+```
+
+### Uninstall Skills
+
+```bash
+# Auto-detect and uninstall
+dtctl skills uninstall
+
+# Uninstall for a specific agent
+dtctl skills uninstall --for copilot
+
+# Remove from cross-client directory
+dtctl skills uninstall --cross-client
+```
+
+### List Supported Agents
+
+```bash
+# Show all supported agents and their installation paths
+dtctl skills install --list
+```
+
+Supported agents: **claude**, **copilot**, **cursor**, **junie**, **kiro**, **opencode**, **openclaw**.
 
 ---
 

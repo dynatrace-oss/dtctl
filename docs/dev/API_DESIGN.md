@@ -321,6 +321,28 @@ Example User-Agent: `dtctl/0.12.0 (AI-Agent: opencode)`
 
 This telemetry helps improve the CLI experience for AI-assisted workflows. Detection is automatic and doesn't affect functionality.
 
+### Skills Management
+
+dtctl includes a `skills` command for installing skill files that teach AI coding assistants how to use dtctl effectively. Skills follow the [agentskills.io](https://agentskills.io) open standard.
+
+**Supported agents**: claude, copilot, cursor, junie, kiro, opencode, openclaw
+
+**Installation modes**:
+
+| Mode | Command | Path |
+|------|---------|------|
+| Per-agent (project) | `dtctl skills install --for claude` | `<project>/.claude/skills/dtctl/` |
+| Per-agent (global) | `dtctl skills install --for claude --global` | `~/.claude/skills/dtctl/` |
+| Cross-client (project) | `dtctl skills install --cross-client` | `<project>/.agents/skills/dtctl/` |
+| Cross-client (global) | `dtctl skills install --cross-client --global` | `~/.agents/skills/dtctl/` |
+| Auto-detect | `dtctl skills install` | Detects agent from env vars |
+
+**Cross-client directory**: The `--cross-client` flag installs to the shared `.agents/skills/` directory defined by the agentskills.io convention. Skills installed here are automatically discovered by any compatible agent without needing per-agent installation. The `--for cross-client` syntax on `status` is also supported.
+
+**Subcommands**: `install`, `uninstall`, `status`
+
+**Agent-mode output**: All subcommands support `--agent` / `-A` for structured JSON output.
+
 ## Resource Types
 
 > **Note**: Like kubectl, dtctl supports both singular and plural resource names (e.g., `dashboard` or `dashboards`, `notebook` or `notebooks`), as well as short aliases for convenience.

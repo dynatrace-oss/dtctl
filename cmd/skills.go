@@ -154,8 +154,11 @@ Examples:
 }
 
 // agentCompletionFunc provides shell completion for the --for flag.
+// Includes cross-client as a valid completion for status queries.
 func agentCompletionFunc(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	var completions []string
+	completions := []string{
+		skills.CrossClientAgent.Name + "\t" + skills.CrossClientAgent.DisplayName,
+	}
 	for _, a := range skills.AllAgents() {
 		completions = append(completions, a.Name+"\t"+a.DisplayName)
 	}
@@ -469,7 +472,7 @@ func statusToAgentEntry(r *skills.StatusResult) skillsStatusAgentEntry {
 // printStatus prints a single agent's status in human-readable format.
 func printStatus(r *skills.StatusResult, detectedAgent skills.Agent, detected bool) {
 	suffix := ""
-	if detected && detectedAgent.Name == r.Agent.Name {
+	if detected && detectedAgent.Name == r.Agent.Name && r.Agent.EnvVar != "" {
 		suffix = fmt.Sprintf(" (detected via %s env)", r.Agent.EnvVar)
 	}
 	output.PrintInfo("Agent:     %s%s", r.Agent.DisplayName, suffix)

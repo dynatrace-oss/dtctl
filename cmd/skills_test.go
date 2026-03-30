@@ -902,8 +902,15 @@ func TestAgentCompletionFunc(t *testing.T) {
 		t.Errorf("directive = %v, want ShellCompDirectiveNoFileComp", directive)
 	}
 
-	if len(completions) != len(skills.AllAgents()) {
-		t.Fatalf("expected %d completions, got %d", len(skills.AllAgents()), len(completions))
+	// AllAgents() + cross-client
+	expectedCount := len(skills.AllAgents()) + 1
+	if len(completions) != expectedCount {
+		t.Fatalf("expected %d completions (agents + cross-client), got %d", expectedCount, len(completions))
+	}
+
+	// First completion should be cross-client
+	if !strings.HasPrefix(completions[0], "cross-client\t") {
+		t.Errorf("first completion should be cross-client, got %q", completions[0])
 	}
 
 	for _, c := range completions {
@@ -1180,5 +1187,88 @@ func TestSkillsStatus_ShowsCrossClient(t *testing.T) {
 	err := skillsStatusCmd.RunE(skillsStatusCmd, []string{})
 	if err != nil {
 		t.Fatalf("status error: %v", err)
+	}
+}
+
+// --- printStatus env var guard test ---
+
+func TestPrintStatus_CrossClient_NoBlankEnvVar(t *testing.T) {
+	// When cross-client is the agent and also happens to match the detected agent,
+	// printStatus must not produce "(detected via  env)" with a blank env var.
+	crossClientResult := &skills.StatusResult{
+		Agent:     skills.CrossClientAgent,
+		Installed: true,
+		Path:      "/tmp/.agents/skills/dtctl",
+		Global:    false,
+	}
+
+	// Even if detected=true and detectedAgent matches, the empty EnvVar should
+	// prevent the suffix from being added. Since CrossClientAgent has no EnvVar
+	// and won't be returned by DetectAgent(), this tests the guard directly.
+	// We call printStatus and it should not panic or produce bad output.
+	printStatus(crossClientResult, skills.CrossClientAgent, true)
+}
+
+// --- --for cross-client on install/uninstall tests ---
+
+func TestSkillsInstall_ForCrossClient(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("for", "cross-client")
+
+	err := skillsInstallCmd.RunE(skillsInstallCmd, []string{})
+	if err != nil {
+		t.Fatalf("RunE error: %v", err)
+	}
+
+	// Verify SKILL.md was created in the cross-client directory
+	expectedPath := filepath.Join(tmpDir, ".agents", "skills", "dtctl", "SKILL.md")
+	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+		t.Errorf("SKILL.md not found at %s", expectedPath)
+	}
+}
+
+func TestSkillsUninstall_ForCrossClient(t *testing.T) {
+	clearAgentEnvVars(t)
+	origAgentMode := agentMode
+	defer func() { agentMode = origAgentMode }()
+	agentMode = false
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	_ = os.Chdir(tmpDir)
+
+	// Install first via --for cross-client
+	resetSkillsFlags(t)
+	_ = skillsInstallCmd.Flags().Set("for", "cross-client")
+	if err := skillsInstallCmd.RunE(skillsInstallCmd, []string{}); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+
+	skillDir := filepath.Join(tmpDir, ".agents", "skills", "dtctl")
+	if _, err := os.Stat(filepath.Join(skillDir, "SKILL.md")); os.IsNotExist(err) {
+		t.Fatal("SKILL.md should exist before uninstall")
+	}
+
+	// Uninstall via --for cross-client
+	resetSkillsFlags(t)
+	_ = skillsUninstallCmd.Flags().Set("for", "cross-client")
+	if err := skillsUninstallCmd.RunE(skillsUninstallCmd, []string{}); err != nil {
+		t.Fatalf("uninstall error: %v", err)
+	}
+
+	// Verify the directory is gone
+	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+		t.Error("skill directory should not exist after uninstall")
 	}
 }
