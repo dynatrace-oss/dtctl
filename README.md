@@ -74,15 +74,17 @@ Cross-platform way with no prerequisites:
 3. Add the folder to `PATH` environment variable 
 4. Run `dtctl version` to verify installation and authentication
 
+```bash
+# Install via Homebrew (macOS/Linux)
+brew install dynatrace-oss/tap/dtctl
+```
+
 ```powershell
 # Install via PowerShell (Windows)
 irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
 ```
 
 ```bash
-# Install via Homebrew (macOS/Linux)
-brew install dynatrace-oss/tap/dtctl
-
 # Or build from source: git clone https://github.com/dynatrace-oss/dtctl.git && cd dtctl && make install
 
 # Authenticate via OAuth (recommended — no token management needed)
