@@ -26,6 +26,7 @@ type FilterSegment struct {
 	Name              string     `json:"name" table:"NAME"`
 	Description       string     `json:"description,omitempty" table:"DESCRIPTION,wide"`
 	IsPublic          bool       `json:"isPublic" table:"PUBLIC"`
+	VariablesDisplay  string     `json:"-" yaml:"-" table:"VARIABLES,wide"`
 	Owner             string     `json:"owner,omitempty" table:"OWNER,wide"`
 	Version           int        `json:"version,omitempty" table:"-"`
 	IsReadyMade       bool       `json:"isReadyMade,omitempty" table:"-"`
@@ -56,8 +57,14 @@ type FilterSegmentList struct {
 
 // List lists all filter segments.
 // The filter-segments API returns all segments in one response (no pagination).
+// Variables are requested so the wide table view can show whether each segment
+// requires variable bindings.
 func (h *Handler) List() (*FilterSegmentList, error) {
-	resp, err := h.client.HTTP().R().Get(basePath)
+	resp, err := h.client.HTTP().R().
+		SetQueryParamsFromValues(map[string][]string{
+			"add-fields": {"VARIABLES"},
+		}).
+		Get(basePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list segments: %w", err)
 	}
@@ -71,7 +78,20 @@ func (h *Handler) List() (*FilterSegmentList, error) {
 		return nil, fmt.Errorf("failed to parse segments response: %w", err)
 	}
 
+	// Populate VariablesDisplay for wide table output
+	for i := range result.FilterSegments {
+		result.FilterSegments[i].VariablesDisplay = variablesDisplay(result.FilterSegments[i].Variables)
+	}
+
 	return &result, nil
+}
+
+// variablesDisplay returns a human-readable summary of a segment's variables.
+func variablesDisplay(v *Variables) string {
+	if v == nil || v.Type == "" {
+		return ""
+	}
+	return v.Type
 }
 
 // Get gets a specific filter segment by UID.

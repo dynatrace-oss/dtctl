@@ -1,4 +1,4 @@
-UID,NAME,DESCRIPTION,PUBLIC,OWNER
-a1b2c3d4-e5f6-4a7b-8c9d-seg000000001,Kubernetes Alpha,Filters data for Kubernetes cluster alpha,true,admin@example.invalid
-b2c3d4e5-f6a7-4b8c-9d0e-seg000000002,Production Services,All production microservices,false,platform-team@example.invalid
-c3d4e5f6-a7b8-4c9d-0e1f-seg000000003,Error Logs,,true,sre-team@example.invalid
+UID,NAME,DESCRIPTION,PUBLIC,VARIABLES,OWNER
+a1b2c3d4-e5f6-4a7b-8c9d-seg000000001,Kubernetes Alpha,Filters data for Kubernetes cluster alpha,true,query,admin@example.invalid
+b2c3d4e5-f6a7-4b8c-9d0e-seg000000002,Production Services,All production microservices,false,,platform-team@example.invalid
+c3d4e5f6-a7b8-4c9d-0e1f-seg000000003,Error Logs,,true,,sre-team@example.invalid
