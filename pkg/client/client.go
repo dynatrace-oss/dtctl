@@ -116,6 +116,9 @@ func (c *Client) HTTP() *resty.Client {
 
 // SetToken updates the bearer token used for all subsequent HTTP requests.
 // This is used to inject a freshly refreshed OAuth token without recreating the client.
+//
+// SetToken is NOT safe for concurrent use. Callers must ensure that no other
+// goroutine is issuing requests on the same Client while SetToken is called.
 func (c *Client) SetToken(token string) {
 	c.token = token
 	c.http.SetAuthToken(token)

@@ -1778,123 +1778,123 @@ func TestEnhanceQueryError(t *testing.T) {
 
 // TestDQLExecutor_PollTokenRefresh verifies that a 401 during polling triggers a token refresh and retries.
 func TestDQLExecutor_PollTokenRefresh(t *testing.T) {
-pollCallCount := 0
-refreshCallCount := 0
+	pollCallCount := 0
+	refreshCallCount := 0
 
-server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-if r.URL.Path == "/platform/storage/query/v1/query:execute" {
-resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-abc"}
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusAccepted)
-_ = json.NewEncoder(w).Encode(resp)
-return
-}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/platform/storage/query/v1/query:execute" {
+			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-abc"}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
 
-if r.URL.Path == "/platform/storage/query/v1/query:poll" {
-pollCallCount++
-if pollCallCount == 1 {
-// First poll: simulate expired JWT
-w.WriteHeader(http.StatusUnauthorized)
-_, _ = w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
-return
-}
-// Second poll (after refresh): succeed
-resp := DQLQueryResponse{
-State:  "SUCCEEDED",
-Result: &DQLResult{Records: []map[string]interface{}{{"key": "value"}}},
-}
-w.Header().Set("Content-Type", "application/json")
-_ = json.NewEncoder(w).Encode(resp)
-}
-}))
-defer server.Close()
+		if r.URL.Path == "/platform/storage/query/v1/query:poll" {
+			pollCallCount++
+			if pollCallCount == 1 {
+				// First poll: simulate expired JWT
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
+				return
+			}
+			// Second poll (after refresh): succeed
+			resp := DQLQueryResponse{
+				State:  "SUCCEEDED",
+				Result: &DQLResult{Records: []map[string]interface{}{{"key": "value"}}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		}
+	}))
+	defer server.Close()
 
-c, err := client.NewForTesting(server.URL, "old-token")
-if err != nil {
-t.Fatalf("failed to create client: %v", err)
-}
+	c, err := client.NewForTesting(server.URL, "old-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
-executor := NewDQLExecutor(c).WithTokenRefresher(func() (string, error) {
-refreshCallCount++
-return "new-token", nil
-})
+	executor := NewDQLExecutor(c).WithTokenRefresher(func() (string, error) {
+		refreshCallCount++
+		return "new-token", nil
+	})
 
-result, err := executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
-if err != nil {
-t.Fatalf("unexpected error: %v", err)
-}
-if result.State != "SUCCEEDED" {
-t.Errorf("expected state SUCCEEDED, got %s", result.State)
-}
-if refreshCallCount != 1 {
-t.Errorf("expected token refresh to be called once, got %d", refreshCallCount)
-}
-if pollCallCount != 2 {
-t.Errorf("expected 2 poll calls (1 expired + 1 success), got %d", pollCallCount)
-}
+	result, err := executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.State != "SUCCEEDED" {
+		t.Errorf("expected state SUCCEEDED, got %s", result.State)
+	}
+	if refreshCallCount != 1 {
+		t.Errorf("expected token refresh to be called once, got %d", refreshCallCount)
+	}
+	if pollCallCount != 2 {
+		t.Errorf("expected 2 poll calls (1 expired + 1 success), got %d", pollCallCount)
+	}
 }
 
 // TestDQLExecutor_PollTokenRefresh_FailsWhenRefresherErrors verifies that a refresh error aborts polling.
 func TestDQLExecutor_PollTokenRefresh_FailsWhenRefresherErrors(t *testing.T) {
-server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-if r.URL.Path == "/platform/storage/query/v1/query:execute" {
-resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-abc"}
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusAccepted)
-_ = json.NewEncoder(w).Encode(resp)
-return
-}
-// Always return 401
-w.WriteHeader(http.StatusUnauthorized)
-_, _ = w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
-}))
-defer server.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/platform/storage/query/v1/query:execute" {
+			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-abc"}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		// Always return 401
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
+	}))
+	defer server.Close()
 
-c, err := client.NewForTesting(server.URL, "old-token")
-if err != nil {
-t.Fatalf("failed to create client: %v", err)
-}
+	c, err := client.NewForTesting(server.URL, "old-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
-executor := NewDQLExecutor(c).WithTokenRefresher(func() (string, error) {
-return "", fmt.Errorf("refresh service unavailable")
-})
+	executor := NewDQLExecutor(c).WithTokenRefresher(func() (string, error) {
+		return "", fmt.Errorf("refresh service unavailable")
+	})
 
-_, err = executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
-if err == nil {
-t.Fatal("expected error, got nil")
-}
-if !strings.Contains(err.Error(), "token refresh failed") {
-t.Errorf("expected error to mention token refresh failure, got: %v", err)
-}
+	_, err = executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "token refresh failed") {
+		t.Errorf("expected error to mention token refresh failure, got: %v", err)
+	}
 }
 
 // TestDQLExecutor_PollTokenRefresh_NoRefresherReturnsError verifies that without a refresher a 401 is a hard error.
 func TestDQLExecutor_PollTokenRefresh_NoRefresherReturnsError(t *testing.T) {
-server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-if r.URL.Path == "/platform/storage/query/v1/query:execute" {
-resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-abc"}
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusAccepted)
-_ = json.NewEncoder(w).Encode(resp)
-return
-}
-w.WriteHeader(http.StatusUnauthorized)
-_, _ = w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
-}))
-defer server.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/platform/storage/query/v1/query:execute" {
+			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-abc"}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
+	}))
+	defer server.Close()
 
-c, err := client.NewForTesting(server.URL, "old-token")
-if err != nil {
-t.Fatalf("failed to create client: %v", err)
-}
+	c, err := client.NewForTesting(server.URL, "old-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
 
-executor := NewDQLExecutor(c) // no token refresher
+	executor := NewDQLExecutor(c) // no token refresher
 
-_, err = executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
-if err == nil {
-t.Fatal("expected error, got nil")
-}
-if !strings.Contains(err.Error(), "401") {
-t.Errorf("expected error to contain status 401, got: %v", err)
-}
+	_, err = executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Errorf("expected error to contain status 401, got: %v", err)
+	}
 }

@@ -692,6 +692,9 @@ func (e *DQLExecutor) pollForResultsWithOptions(requestToken string, opts DQLExe
 		}
 
 		if resp.IsError() {
+			if resp.StatusCode() == 401 && tokenJustRefreshed {
+				return result, fmt.Errorf("poll returned 401 after token refresh — credentials may be invalid: %s", resp.String())
+			}
 			return result, fmt.Errorf("poll failed with status %d: %s", resp.StatusCode(), resp.String())
 		}
 
