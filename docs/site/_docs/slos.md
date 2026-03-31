@@ -56,15 +56,21 @@ dtctl apply -f slo.yaml
 ### Example SLO YAML
 
 ```yaml
-name: Checkout Availability
-description: 99.9% availability target for the checkout service
-enabled: true
-evaluationType: AGGREGATE
-target: 99.9
-warning: 99.95
-filter: "type(SERVICE),entityName(checkout-service)"
-metricExpression: "(100)*(builtin:service.errors.server.successCount:splitBy())/(builtin:service.requestCount.server:splitBy())"
-timeframe: "-1w"
+name: Service Availability
+description: 97% of requests are successful over the last 7 days
+criteria:
+  - timeframeFrom: -7d
+    target: 97.0
+    warning: 98.0
+customSli:
+  indicator: |
+    timeseries { total=sum(dt.service.request.count), failures=sum(dt.service.request.failure_count) }
+    , by: { dt.smartscape.service }
+    | fieldsAdd sli=(((total[]-failures[])/total[])*(100))
+    | fieldsAdd dt.smartscape.entity.name = getNodeName(dt.smartscape.service)
+    | fieldsRemove total, failures, smartscapeIds
+tags:
+  - slo-type:availability
 ```
 
 | Field               | Description                                              |

@@ -58,9 +58,27 @@ Examples:
 			return err
 		}
 
+		// Check if results are already available (immediate response)
+		if len(evalResult.EvaluationResults) > 0 {
+			fmt.Printf("SLO Evaluation Complete\n")
+
+			// Check output format
+			outputFmt, _ := cmd.Flags().GetString("output")
+			if outputFmt == "" || outputFmt == "table" {
+				// Print in table format
+				printer := output.NewPrinter("table")
+				return printer.PrintList(evalResult.EvaluationResults)
+			}
+
+			// Print in requested format (json/yaml)
+			printer := output.NewPrinter(outputFmt)
+			return printer.Print(evalResult)
+		}
+
+		// If no immediate results, check for evaluation token for async polling
 		evaluationToken := evalResult.EvaluationToken
 		if evaluationToken == "" {
-			return fmt.Errorf("no evaluation token returned")
+			return fmt.Errorf("no evaluation token returned and no immediate results available")
 		}
 
 		// Get timeout from flags
@@ -99,7 +117,7 @@ Examples:
 					if outputFmt == "" || outputFmt == "table" {
 						// Print in table format
 						printer := output.NewPrinter("table")
-						return printer.Print(result.EvaluationResults)
+						return printer.PrintList(result.EvaluationResults)
 					}
 
 					// Print in requested format (json/yaml)

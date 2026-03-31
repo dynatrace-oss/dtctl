@@ -1404,13 +1404,21 @@ dtctl apply -f slo-definition.yaml
 **Example SLO** (`slo-definition.yaml`):
 
 ```yaml
-name: API Response Time
-description: 95% of requests should complete within 500ms
-target: 95.0
-warning: 97.0
-evaluationType: AGGREGATE
-filter: type("SERVICE") AND entityName.equals("my-api")
-metricExpression: "(100)*(builtin:service.response.time:splitBy():sort(value(avg,descending)):limit(10):avg:partition(\"latency\",value(\"good\",lt(500))))/(builtin:service.requestCount.total:splitBy():sort(value(avg,descending)):limit(10):avg)"
+name: Service Availability
+description: 97% of requests are successful over the last 7 days
+criteria:
+  - timeframeFrom: -7d
+    target: 97.0
+    warning: 98.0
+customSli:
+  indicator: |
+    timeseries { total=sum(dt.service.request.count), failures=sum(dt.service.request.failure_count) }
+    , by: { dt.smartscape.service }
+    | fieldsAdd sli=(((total[]-failures[])/total[])*(100))
+    | fieldsAdd dt.smartscape.entity.name = getNodeName(dt.smartscape.service)
+    | fieldsRemove total, failures, smartscapeIds
+tags:
+  - slo-type:availability
 ```
 
 ### Evaluate SLOs
