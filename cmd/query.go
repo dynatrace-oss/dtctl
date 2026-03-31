@@ -153,7 +153,7 @@ Examples:
 			return err
 		}
 
-		executor := exec.NewDQLExecutor(c)
+		executor := NewDQLExecutorFromConfig(cfg, c)
 
 		queryFile, _ := cmd.Flags().GetString("file")
 		setFlags, _ := cmd.Flags().GetStringArray("set")

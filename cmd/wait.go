@@ -203,7 +203,7 @@ Examples:
 		}
 
 		// Create executor and waiter
-		executor := exec.NewDQLExecutor(c)
+		executor := NewDQLExecutorFromConfig(cfg, c)
 		waiter := wait.NewQueryWaiter(executor, waitConfig)
 
 		// Execute wait

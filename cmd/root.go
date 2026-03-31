@@ -14,6 +14,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
+	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
@@ -473,6 +474,24 @@ func NewClientFromConfig(cfg *config.Config) (*client.Client, error) {
 		c.SetVerbosity(verbosity)
 	}
 	return c, nil
+}
+
+// NewDQLExecutorFromConfig creates a DQL executor from a config and client, with OAuth
+// token refresh support. When the OAuth token expires during a long-running query poll
+// (which can exceed the 5-minute token lifetime), the executor automatically fetches a
+// fresh token and retries without aborting the query.
+func NewDQLExecutorFromConfig(cfg *config.Config, c *client.Client) *exec.DQLExecutor {
+	executor := exec.NewDQLExecutor(c)
+	if config.IsKeyringAvailable() {
+		ctx, err := cfg.CurrentContextObj()
+		if err == nil && ctx.TokenRef != "" {
+			tokenRef := ctx.TokenRef
+			executor = executor.WithTokenRefresher(func() (string, error) {
+				return client.GetTokenWithOAuthSupport(cfg, tokenRef)
+			})
+		}
+	}
+	return executor
 }
 
 func init() {

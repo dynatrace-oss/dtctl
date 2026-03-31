@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
@@ -43,7 +42,7 @@ Examples:
 			return err
 		}
 
-		executor := exec.NewDQLExecutor(c)
+		executor := NewDQLExecutorFromConfig(cfg, c)
 
 		queryFile, _ := cmd.Flags().GetString("file")
 

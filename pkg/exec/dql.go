@@ -14,12 +14,22 @@ import (
 
 // DQLExecutor handles DQL query execution
 type DQLExecutor struct {
-	client *client.Client
+	client         *client.Client
+	tokenRefresher func() (string, error)
 }
 
 // NewDQLExecutor creates a new DQL executor
 func NewDQLExecutor(c *client.Client) *DQLExecutor {
 	return &DQLExecutor{client: c}
+}
+
+// WithTokenRefresher sets an optional callback that is invoked when a poll request
+// receives a 401 Unauthorized response (e.g. because the OAuth token expired during
+// a long-running query). The callback must return a fresh access token. The executor
+// updates the underlying HTTP client with the new token and retries the poll.
+func (e *DQLExecutor) WithTokenRefresher(refresher func() (string, error)) *DQLExecutor {
+	e.tokenRefresher = refresher
+	return e
 }
 
 // DecodeMode controls snapshot payload decoding behavior.
@@ -651,8 +661,12 @@ func (e *DQLExecutor) pollForResults(requestToken string) (DQLQueryResponse, err
 // pollForResultsWithOptions polls the query:poll endpoint until the query completes with options
 func (e *DQLExecutor) pollForResultsWithOptions(requestToken string, opts DQLExecuteOptions) (DQLQueryResponse, error) {
 	var result DQLQueryResponse
+	// tokenJustRefreshed prevents an infinite refresh loop: if we get a 401 immediately
+	// after a successful token refresh the credentials are fundamentally broken, so we abort.
+	tokenJustRefreshed := false
 
 	for {
+		result = DQLQueryResponse{}
 		httpReq := e.client.HTTP().R().
 			SetQueryParam("request-token", requestToken).
 			SetQueryParam("request-timeout-milliseconds", "60000").
@@ -664,9 +678,24 @@ func (e *DQLExecutor) pollForResultsWithOptions(requestToken string, opts DQLExe
 			return result, fmt.Errorf("failed to poll query: %w", err)
 		}
 
+		// On 401 (e.g. "jwt expired") try to refresh the OAuth token once per
+		// consecutive failure. A successful poll in between resets the guard so that a
+		// second expiry later in the same long-running query can also be recovered.
+		if resp.StatusCode() == 401 && e.tokenRefresher != nil && !tokenJustRefreshed {
+			newToken, refreshErr := e.tokenRefresher()
+			if refreshErr != nil {
+				return result, fmt.Errorf("poll request returned 401 and token refresh failed: %w", refreshErr)
+			}
+			e.client.SetToken(newToken)
+			tokenJustRefreshed = true
+			continue
+		}
+
 		if resp.IsError() {
 			return result, fmt.Errorf("poll failed with status %d: %s", resp.StatusCode(), resp.String())
 		}
+
+		tokenJustRefreshed = false // reset after any successful response
 
 		if result.State == "SUCCEEDED" || result.State == "FAILED" {
 			break

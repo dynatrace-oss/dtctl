@@ -114,6 +114,13 @@ func (c *Client) HTTP() *resty.Client {
 	return c.http
 }
 
+// SetToken updates the bearer token used for all subsequent HTTP requests.
+// This is used to inject a freshly refreshed OAuth token without recreating the client.
+func (c *Client) SetToken(token string) {
+	c.token = token
+	c.http.SetAuthToken(token)
+}
+
 // sensitiveHeaders lists headers that should always be redacted in debug output
 var sensitiveHeaders = []string{"authorization", "x-api-key", "cookie", "set-cookie"}
 
