@@ -1009,6 +1009,10 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 			return nil, fmt.Errorf("scope is required to create a settings object")
 		}
 
+		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
+			return nil, err
+		}
+
 		req := settings.SettingsObjectCreate{
 			SchemaID: schemaID,
 			Scope:    scope,
@@ -1042,6 +1046,10 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 			return nil, fmt.Errorf("scope is required to create a settings object (objectId %q not found)", objectID)
 		}
 
+		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
+			return nil, err
+		}
+
 		req := settings.SettingsObjectCreate{
 			SchemaID: schemaID,
 			Scope:    scope,
@@ -1065,6 +1073,10 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 	}
 
 	// Update existing settings object
+	if err := a.checkSafety(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
+		return nil, err
+	}
+
 	updated, err := handler.UpdateWithContext(objectID, value, schemaID, scope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update settings object: %w", err)
