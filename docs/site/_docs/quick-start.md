@@ -83,4 +83,5 @@ dtctl exec copilot nl2dql "error logs from last hour"
 ## What's Next?
 
 - [Configuration]({{ '/docs/configuration/' | relative_url }}) -- multiple environments, safety levels, aliases
+- [Pre-apply hooks]({{ '/docs/configuration/#pre-apply-hooks' | relative_url }}) -- validate resources with external tools before applying
 - Individual resource guides for workflows, dashboards, DQL, SLOs, and more

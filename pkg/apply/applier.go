@@ -2,12 +2,14 @@ package apply
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/hook"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
@@ -39,6 +41,8 @@ type Applier struct {
 	baseURL       string
 	safetyChecker *safety.Checker
 	currentUserID string
+	preApplyHook  string // hook command (empty = no hook)
+	sourceFile    string // original filename for hook context
 }
 
 // NewApplier creates a new applier
@@ -54,6 +58,21 @@ func NewApplier(c *client.Client) *Applier {
 // WithSafetyChecker sets the safety checker for the applier
 func (a *Applier) WithSafetyChecker(checker *safety.Checker) *Applier {
 	a.safetyChecker = checker
+	return a
+}
+
+// WithPreApplyHook sets the pre-apply hook command.
+// The command is run via sh -c with the resource type and source file as
+// positional parameters ($1 and $2), and the processed JSON on stdin.
+func (a *Applier) WithPreApplyHook(command string) *Applier {
+	a.preApplyHook = command
+	return a
+}
+
+// WithSourceFile sets the original filename (passed to hook as context).
+// This is the file path from "dtctl apply -f <file>" — informational only.
+func (a *Applier) WithSourceFile(filename string) *Applier {
+	a.sourceFile = filename
 	return a
 }
 
@@ -76,6 +95,7 @@ type ApplyOptions struct {
 	DryRun       bool
 	Force        bool
 	ShowDiff     bool
+	NoHooks      bool // skip pre-apply hooks
 }
 
 // ResourceType represents the type of resource
@@ -121,6 +141,27 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 	resourceType, err := detectResourceType(jsonData)
 	if err != nil {
 		return nil, err
+	}
+
+	// Run pre-apply hook (if configured and not skipped)
+	if !opts.NoHooks && a.preApplyHook != "" {
+		result, err := hook.RunPreApply(
+			context.Background(),
+			a.preApplyHook,
+			string(resourceType),
+			a.sourceFile,
+			jsonData,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if result.ExitCode != 0 {
+			return nil, &HookRejectedError{
+				Command:  a.preApplyHook,
+				ExitCode: result.ExitCode,
+				Stderr:   result.Stderr,
+			}
+		}
 	}
 
 	if opts.DryRun {

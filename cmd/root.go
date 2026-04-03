@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
+	"github.com/dynatrace-oss/dtctl/pkg/apply"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
@@ -90,17 +91,24 @@ func Execute() {
 		// Check for URL-related hints (e.g., wrong domain like live.dynatrace.com)
 		urlHints := getURLHintsForError(err)
 
+		// Check for auth-related hints (e.g., expired OAuth session)
+		authHints := getAuthHintsForError(err)
+
+		allHints := make([]string, 0, len(urlHints)+len(authHints))
+		allHints = append(allHints, urlHints...)
+		allHints = append(allHints, authHints...)
+
 		if agentMode || plainMode {
 			detail := errorToDetail(err)
-			detail.Suggestions = append(detail.Suggestions, urlHints...)
+			detail.Suggestions = append(detail.Suggestions, allHints...)
 			_ = output.PrintError(os.Stderr, detail)
 			os.Exit(exitCodeForError(err))
 		}
 
 		output.PrintHumanError("%s", err)
-		if len(urlHints) > 0 {
+		if len(allHints) > 0 {
 			fmt.Fprintln(os.Stderr)
-			for _, hint := range urlHints {
+			for _, hint := range allHints {
 				output.PrintHint("%s", hint)
 			}
 		}
@@ -222,6 +230,19 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// apply.HookRejectedError — pre-apply hook rejected the resource
+	var hookErr *apply.HookRejectedError
+	if errors.As(err, &hookErr) {
+		return &output.ErrorDetail{
+			Code:    "hook_rejected",
+			Message: "pre-apply hook rejected the resource",
+			Suggestions: []string{
+				"check hook stderr output for details",
+				"use --no-hooks to skip pre-apply hooks",
+			},
+		}
+	}
+
 	// suggest.CommandError — unknown command with "did you mean?" suggestions
 	var cmdErr *suggest.CommandError
 	if errors.As(err, &cmdErr) {
@@ -298,6 +319,28 @@ func getURLHintsForError(err error) []string {
 	}
 
 	return diagnostic.URLSuggestions(ctx.Environment)
+}
+
+// getAuthHintsForError returns actionable hints when the error looks like an
+// OAuth token refresh failure (e.g., expired session, revoked refresh token).
+func getAuthHintsForError(err error) []string {
+	if !isTokenRefreshError(err) {
+		return nil
+	}
+	return []string{
+		"Run 'dtctl auth login' to re-authenticate",
+	}
+}
+
+// isTokenRefreshError returns true if the error looks like an OAuth token
+// refresh failure (expired session, invalid grant, etc.).
+func isTokenRefreshError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "failed to refresh token") ||
+		strings.Contains(msg, "token expired and refresh failed")
 }
 
 // isURLRelatedError returns true if the error could plausibly be caused by

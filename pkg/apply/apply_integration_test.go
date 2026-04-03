@@ -836,3 +836,553 @@ func stringContains(s, substr string) bool {
 	}
 	return false
 }
+
+// --- Pre-apply hook tests ---
+
+func TestApply_HookRejects(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c).
+		WithPreApplyHook("echo 'validation failed' >&2; exit 1").
+		WithSourceFile("test.yaml")
+
+	// Use a valid workflow JSON so resource type detection succeeds
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	_, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err == nil {
+		t.Fatal("Apply() should have returned error when hook rejects, got nil")
+	}
+
+	var hookErr *HookRejectedError
+	if !errorAs(err, &hookErr) {
+		t.Fatalf("expected HookRejectedError, got: %T: %v", err, err)
+	}
+	if hookErr.ExitCode != 1 {
+		t.Errorf("ExitCode = %d, want 1", hookErr.ExitCode)
+	}
+	if !stringContains(hookErr.Stderr, "validation failed") {
+		t.Errorf("Stderr = %q, want it to contain 'validation failed'", hookErr.Stderr)
+	}
+}
+
+func TestApply_HookAllows(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-001",
+					"title": "Test WF",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c).
+		WithPreApplyHook("true").
+		WithSourceFile("test.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	results, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestApply_NoHooksFlagSkipsHook(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-001",
+					"title": "Test WF",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c).
+		WithPreApplyHook("exit 1"). // would reject
+		WithSourceFile("test.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	results, err := a.Apply([]byte(workflowJSON), ApplyOptions{NoHooks: true})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil (hook should be skipped)", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestApply_HookRunsOnDryRun(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c).
+		WithPreApplyHook("exit 1"). // rejects
+		WithSourceFile("test.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	_, err := a.Apply([]byte(workflowJSON), ApplyOptions{DryRun: true})
+	if err == nil {
+		t.Fatal("Apply() should have returned error (hook rejects even in dry-run)")
+	}
+
+	var hookErr *HookRejectedError
+	if !errorAs(err, &hookErr) {
+		t.Fatalf("expected HookRejectedError, got: %T: %v", err, err)
+	}
+}
+
+func TestApply_NoHookConfigured(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-001",
+					"title": "Test WF",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	// No hook configured — apply should proceed normally
+	a := NewApplier(c)
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	results, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestWithPreApplyHook_FluentAPI(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c)
+	returned := a.WithPreApplyHook("true")
+	if returned != a {
+		t.Error("WithPreApplyHook should return the same applier (fluent API)")
+	}
+	returned = a.WithSourceFile("test.yaml")
+	if returned != a {
+		t.Error("WithSourceFile should return the same applier (fluent API)")
+	}
+}
+
+func TestApply_HookReceivesCorrectResourceType(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-001",
+					"title": "Test WF",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	// Hook verifies $1 is "workflow"
+	a := NewApplier(c).
+		WithPreApplyHook(`test "$1" = "workflow"`).
+		WithSourceFile("my-wf.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	results, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil (hook should see $1=workflow)", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestApply_HookReceivesCorrectSourceFile(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-001",
+					"title": "Test WF",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	// Hook verifies $2 is the source file path
+	a := NewApplier(c).
+		WithPreApplyHook(`test "$2" = "configs/my workflow.yaml"`).
+		WithSourceFile("configs/my workflow.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	results, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil (hook should see $2=source file)", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestApply_HookReceivesProcessedJSON(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-001",
+					"title": "Rendered Title",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	// Hook verifies stdin contains the rendered (not raw) JSON
+	a := NewApplier(c).
+		WithPreApplyHook(`input=$(cat); echo "$input" | grep -q "Rendered Title"`).
+		WithSourceFile("template.yaml")
+
+	// Template input — after rendering, "{{.name}}" becomes "Rendered Title"
+	templateJSON := `{"title":"{{.name}}","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	results, err := a.Apply([]byte(templateJSON), ApplyOptions{
+		TemplateVars: map[string]interface{}{"name": "Rendered Title"},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil (hook should see rendered JSON)", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestApply_HookRejectsWithMultiLineStderr(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c).
+		WithPreApplyHook(`echo "error line 1" >&2; echo "error line 2" >&2; exit 1`).
+		WithSourceFile("test.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	_, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err == nil {
+		t.Fatal("Apply() should have returned error")
+	}
+
+	var hookErr *HookRejectedError
+	if !errorAs(err, &hookErr) {
+		t.Fatalf("expected HookRejectedError, got: %T: %v", err, err)
+	}
+	if !stringContains(hookErr.Stderr, "error line 1") || !stringContains(hookErr.Stderr, "error line 2") {
+		t.Errorf("Stderr = %q, want both error lines", hookErr.Stderr)
+	}
+}
+
+func TestApply_HookDashboardResourceType(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/document/v1/documents": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				boundary := "resp-boundary"
+				w.Header().Set("Content-Type", fmt.Sprintf("multipart/form-data; boundary=%s", boundary))
+				fmt.Fprintf(w, "--%s\r\nContent-Disposition: form-data; name=\"metadata\"\r\nContent-Type: application/json\r\n\r\n{\"id\":\"dash-new\",\"name\":\"Test\",\"type\":\"dashboard\",\"version\":1}\r\n--%s--\r\n", boundary, boundary)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	// Hook verifies $1 is "dashboard" for dashboard resources
+	a := NewApplier(c).
+		WithPreApplyHook(`test "$1" = "dashboard"`).
+		WithSourceFile("dash.yaml")
+
+	dashJSON := `{"type":"dashboard","tiles":{"items":[]}}`
+	results, err := a.Apply([]byte(dashJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil (hook should see $1=dashboard)", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestApply_HookSLOResourceType(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/slo/v1/slos": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":   "slo-001",
+					"name": "Test SLO",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	// Hook verifies $1 is "slo"
+	a := NewApplier(c).
+		WithPreApplyHook(`test "$1" = "slo"`).
+		WithSourceFile("slo.yaml")
+
+	sloJSON := `{"name":"Test SLO","criteria":{"pass":[{"criteria":[{"metric":"<100","steps":600}]}]},"target":99.0,"timeframe":"now-7d","metricExpression":"100*..."}`
+	results, err := a.Apply([]byte(sloJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil (hook should see $1=slo)", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestApply_EmptyPreApplyHookField(t *testing.T) {
+	// Empty string hook (different from nil/no hook) should be a no-op
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-001",
+					"title": "Test WF",
+				})
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		},
+	})
+	defer srv.Close()
+
+	// Explicitly set empty string hook
+	a := NewApplier(c).
+		WithPreApplyHook("").
+		WithSourceFile("test.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	results, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v, want nil (empty hook should be no-op)", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("len(results) = %d, want 1", len(results))
+	}
+}
+
+func TestApply_HookErrorIsPropagated(t *testing.T) {
+	// Test that non-exec errors (like command not found via sh -c)
+	// are properly propagated through Apply
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	// Command not found manifests as exit code 127 via sh -c
+	a := NewApplier(c).
+		WithPreApplyHook("nonexistent-binary-xyz-123").
+		WithSourceFile("test.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	_, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err == nil {
+		t.Fatal("Apply() should have returned error for command-not-found hook")
+	}
+
+	var hookErr *HookRejectedError
+	if !errorAs(err, &hookErr) {
+		t.Fatalf("expected HookRejectedError, got: %T: %v", err, err)
+	}
+	if hookErr.ExitCode != 127 {
+		t.Errorf("ExitCode = %d, want 127 (command not found)", hookErr.ExitCode)
+	}
+}
+
+func TestApply_HookRunsBeforeAPICall(t *testing.T) {
+	// Verify hook runs BEFORE any API call is made.
+	// If hook rejects, no API call should happen.
+	apiCalled := false
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			apiCalled = true
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":    "wf-001",
+				"title": "Test WF",
+			})
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c).
+		WithPreApplyHook("exit 1").
+		WithSourceFile("test.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	_, _ = a.Apply([]byte(workflowJSON), ApplyOptions{})
+
+	if apiCalled {
+		t.Error("API was called despite hook rejection — hook should run before API calls")
+	}
+}
+
+func TestApply_HookWithDryRunStillRejects(t *testing.T) {
+	// Verify that hook rejection in dry-run still prevents dry-run result
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c).
+		WithPreApplyHook("echo 'blocked by policy' >&2; exit 1").
+		WithSourceFile("test.yaml")
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	_, err := a.Apply([]byte(workflowJSON), ApplyOptions{DryRun: true})
+	if err == nil {
+		t.Fatal("Apply() should have returned error (hook rejects even in dry-run)")
+	}
+
+	var hookErr *HookRejectedError
+	if !errorAs(err, &hookErr) {
+		t.Fatalf("expected HookRejectedError, got: %T: %v", err, err)
+	}
+	if !stringContains(hookErr.Stderr, "blocked by policy") {
+		t.Errorf("Stderr = %q, want it to contain 'blocked by policy'", hookErr.Stderr)
+	}
+}
+
+func TestApply_HookStderrInErrorObject(t *testing.T) {
+	// Verify the HookRejectedError contains the correct command
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	hookCommand := "my-validator --strict"
+	a := NewApplier(c).
+		WithPreApplyHook(hookCommand).
+		WithSourceFile("test.yaml")
+
+	// This will fail because "my-validator" doesn't exist (exit 127)
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	_, err := a.Apply([]byte(workflowJSON), ApplyOptions{})
+	if err == nil {
+		t.Fatal("Apply() should have returned error")
+	}
+
+	var hookErr *HookRejectedError
+	if !errorAs(err, &hookErr) {
+		t.Fatalf("expected HookRejectedError, got: %T: %v", err, err)
+	}
+	if hookErr.Command != hookCommand {
+		t.Errorf("Command = %q, want %q", hookErr.Command, hookCommand)
+	}
+}
+
+// errorAs is a simple helper since the apply package tests use stdlib only.
+func errorAs(err error, target interface{}) bool {
+	hookErr, ok := target.(**HookRejectedError)
+	if !ok {
+		return false
+	}
+	for err != nil {
+		if e, ok := err.(*HookRejectedError); ok {
+			*hookErr = e
+			return true
+		}
+		// Check for wrapped errors
+		type unwrapper interface {
+			Unwrap() error
+		}
+		u, ok := err.(unwrapper)
+		if !ok {
+			return false
+		}
+		err = u.Unwrap()
+	}
+	return false
+}

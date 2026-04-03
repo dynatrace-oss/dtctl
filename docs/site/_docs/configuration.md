@@ -148,6 +148,76 @@ dtctl config describe-context prod
 
 Safety levels are client-side only. For actual security, configure your API tokens with minimum required scopes.
 
+## Pre-Apply Hooks
+
+Pre-apply hooks run an external command to validate resources before `dtctl apply` sends them to the API. The hook receives the **processed JSON on stdin** (after YAML-to-JSON conversion and template rendering) and the **resource type** (`$1`) and **source filename** (`$2`) as positional parameters. A non-zero exit code aborts the apply.
+
+### Configuration
+
+Hooks are configured globally in `preferences` or per-context:
+
+```yaml
+# ~/.config/dtctl/config
+preferences:
+  hooks:
+    pre-apply: "node validate.js"
+
+contexts:
+  - name: production
+    context:
+      environment: https://abc12345.apps.dynatrace.com
+      token-ref: prod-token
+      hooks:
+        pre-apply: "opa eval --bundle /policies -i /dev/stdin"
+  - name: dev
+    context:
+      environment: https://dev.apps.dynatrace.com
+      token-ref: dev-token
+      hooks:
+        pre-apply: "none"  # explicitly disable the global hook
+```
+
+Per-context hooks take precedence over global hooks. The special value `"none"` disables the global hook for a specific context.
+
+### Hook Contract
+
+| Aspect | Behavior |
+|--------|----------|
+| **Invocation** | `sh -c '<command>' -- <resource-type> <source-file>` |
+| **$1** | Resource type (e.g., `dashboard`, `workflow`, `slo`) |
+| **$2** | Source filename from `-f` (informational -- read content from stdin) |
+| **Stdin** | Processed JSON (after YAML-to-JSON + template rendering) |
+| **Exit 0** | Proceed with apply |
+| **Exit non-zero** | Abort apply, show stderr to user |
+| **Timeout** | 30 seconds |
+
+### Writing a Hook
+
+A hook is any command that reads JSON from stdin and exits 0 (allow) or non-zero (reject):
+
+```bash
+#!/bin/bash
+# validate.sh -- require dashboards to have a title
+resource_type="$1"
+
+if [ "$resource_type" = "dashboard" ]; then
+  title=$(cat | jq -r '.title // empty')
+  if [ -z "$title" ]; then
+    echo "Error: dashboard must have a title" >&2
+    exit 1
+  fi
+fi
+```
+
+### Usage
+
+```bash
+dtctl apply -f dashboard.yaml            # hook runs automatically
+dtctl apply -f dashboard.yaml --no-hooks # skip hook
+dtctl apply -f dashboard.yaml --dry-run  # hook still runs (validates before preview)
+dtctl apply -f dashboard.yaml -v         # verbose: logs hook command and duration
+```
+
 ## Command Aliases
 
 Create shortcuts for frequently used commands.

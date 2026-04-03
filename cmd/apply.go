@@ -84,6 +84,7 @@ that contains the dashboard ID. The 'create' command always creates new resource
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		showDiff, _ := cmd.Flags().GetBool("show-diff")
+		noHooks, _ := cmd.Flags().GetBool("no-hooks")
 
 		// Read the file
 		fileData, err := os.ReadFile(file)
@@ -120,6 +121,13 @@ that contains the dashboard ID. The 'create' command always creates new resource
 				return err
 			}
 			applier = applier.WithSafetyChecker(checker)
+		}
+
+		// Configure pre-apply hook
+		if !noHooks {
+			if hookCmd := cfg.GetPreApplyHook(); hookCmd != "" {
+				applier = applier.WithPreApplyHook(hookCmd).WithSourceFile(file)
+			}
 		}
 
 		// Apply the resource
@@ -179,6 +187,7 @@ func init() {
 	applyCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	applyCmd.Flags().Bool("dry-run", false, "preview changes without applying")
 	applyCmd.Flags().Bool("show-diff", false, "show diff of changes when updating existing resources")
+	applyCmd.Flags().Bool("no-hooks", false, "skip pre-apply hooks")
 
 	_ = applyCmd.MarkFlagRequired("file")
 }

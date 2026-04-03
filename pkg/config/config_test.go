@@ -1240,3 +1240,301 @@ tokens:
 		})
 	}
 }
+
+func TestGetPreApplyHook_ContextOverridesGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PreApply: "global-hook"},
+		},
+		CurrentContext: "prod",
+		Contexts: []NamedContext{{
+			Name: "prod",
+			Context: Context{
+				Environment: "https://prod.example.invalid",
+				TokenRef:    "prod-token",
+				Hooks:       Hooks{PreApply: "prod-hook"},
+			},
+		}},
+	}
+	got := cfg.GetPreApplyHook()
+	if got != "prod-hook" {
+		t.Errorf("GetPreApplyHook() = %q, want %q", got, "prod-hook")
+	}
+}
+
+func TestGetPreApplyHook_FallsBackToGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PreApply: "global-hook"},
+		},
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+			},
+		}},
+	}
+	got := cfg.GetPreApplyHook()
+	if got != "global-hook" {
+		t.Errorf("GetPreApplyHook() = %q, want %q", got, "global-hook")
+	}
+}
+
+func TestGetPreApplyHook_NoneDisablesGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PreApply: "global-hook"},
+		},
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+				Hooks:       Hooks{PreApply: "none"},
+			},
+		}},
+	}
+	got := cfg.GetPreApplyHook()
+	if got != "" {
+		t.Errorf("GetPreApplyHook() = %q, want empty (none should disable global hook)", got)
+	}
+}
+
+func TestGetPreApplyHook_NoHookConfigured(t *testing.T) {
+	cfg := &Config{
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+			},
+		}},
+	}
+	got := cfg.GetPreApplyHook()
+	if got != "" {
+		t.Errorf("GetPreApplyHook() = %q, want empty", got)
+	}
+}
+
+func TestGetPreApplyHook_NoCurrentContext(t *testing.T) {
+	// When no current context is set, fall back to global
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PreApply: "global-hook"},
+		},
+	}
+	got := cfg.GetPreApplyHook()
+	if got != "global-hook" {
+		t.Errorf("GetPreApplyHook() = %q, want %q", got, "global-hook")
+	}
+}
+
+func TestGetPreApplyHook_CurrentContextPointsToNonexistent(t *testing.T) {
+	// current-context points to a name that doesn't exist in contexts[]
+	// Should fall back to global hook
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PreApply: "global-hook"},
+		},
+		CurrentContext: "nonexistent",
+		Contexts:       []NamedContext{}, // empty — "nonexistent" won't be found
+	}
+	got := cfg.GetPreApplyHook()
+	if got != "global-hook" {
+		t.Errorf("GetPreApplyHook() = %q, want %q (should fall back to global)", got, "global-hook")
+	}
+}
+
+func TestGetPreApplyHook_MultipleContextsOnlyOneHasHook(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PreApply: "global-hook"},
+		},
+		CurrentContext: "staging",
+		Contexts: []NamedContext{
+			{
+				Name: "dev",
+				Context: Context{
+					Environment: "https://dev.example.invalid",
+					TokenRef:    "dev-token",
+					Hooks:       Hooks{PreApply: "dev-hook"},
+				},
+			},
+			{
+				Name: "staging",
+				Context: Context{
+					Environment: "https://staging.example.invalid",
+					TokenRef:    "staging-token",
+					// No hook — should fall back to global
+				},
+			},
+			{
+				Name: "prod",
+				Context: Context{
+					Environment: "https://prod.example.invalid",
+					TokenRef:    "prod-token",
+					Hooks:       Hooks{PreApply: "prod-hook"},
+				},
+			},
+		},
+	}
+	got := cfg.GetPreApplyHook()
+	if got != "global-hook" {
+		t.Errorf("GetPreApplyHook() = %q, want %q (staging has no hook, should use global)", got, "global-hook")
+	}
+
+	// Switch to dev context — should use dev-hook
+	cfg.CurrentContext = "dev"
+	got = cfg.GetPreApplyHook()
+	if got != "dev-hook" {
+		t.Errorf("GetPreApplyHook() = %q, want %q (dev context has hook)", got, "dev-hook")
+	}
+
+	// Switch to prod context — should use prod-hook
+	cfg.CurrentContext = "prod"
+	got = cfg.GetPreApplyHook()
+	if got != "prod-hook" {
+		t.Errorf("GetPreApplyHook() = %q, want %q (prod context has hook)", got, "prod-hook")
+	}
+}
+
+func TestHooks_YAMLRoundTrip(t *testing.T) {
+	cfg := &Config{
+		APIVersion:     "v1",
+		Kind:           "Config",
+		CurrentContext: "test",
+		Preferences: Preferences{
+			Output: "table",
+			Editor: "vim",
+			Hooks:  Hooks{PreApply: "global-validate.sh"},
+		},
+		Contexts: []NamedContext{
+			{
+				Name: "test",
+				Context: Context{
+					Environment: "https://test.example.invalid",
+					TokenRef:    "test-token",
+					Hooks:       Hooks{PreApply: "context-validate.sh"},
+				},
+			},
+		},
+		Tokens: []NamedToken{
+			{Name: "test-token", Token: "secret"},
+		},
+	}
+
+	// Save to temp file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+	if err := cfg.SaveTo(configPath); err != nil {
+		t.Fatalf("SaveTo() error = %v", err)
+	}
+
+	// Load back
+	loaded, err := LoadFrom(configPath)
+	if err != nil {
+		t.Fatalf("LoadFrom() error = %v", err)
+	}
+
+	// Verify global hook survived
+	if loaded.Preferences.Hooks.PreApply != "global-validate.sh" {
+		t.Errorf("Preferences.Hooks.PreApply = %q, want %q", loaded.Preferences.Hooks.PreApply, "global-validate.sh")
+	}
+
+	// Verify context hook survived
+	if len(loaded.Contexts) != 1 {
+		t.Fatalf("Contexts count = %d, want 1", len(loaded.Contexts))
+	}
+	if loaded.Contexts[0].Context.Hooks.PreApply != "context-validate.sh" {
+		t.Errorf("Context.Hooks.PreApply = %q, want %q", loaded.Contexts[0].Context.Hooks.PreApply, "context-validate.sh")
+	}
+
+	// Verify GetPreApplyHook returns context hook (precedence)
+	got := loaded.GetPreApplyHook()
+	if got != "context-validate.sh" {
+		t.Errorf("GetPreApplyHook() = %q, want %q", got, "context-validate.sh")
+	}
+}
+
+func TestHooks_YAMLRoundTrip_NoneValue(t *testing.T) {
+	cfg := &Config{
+		APIVersion:     "v1",
+		Kind:           "Config",
+		CurrentContext: "test",
+		Preferences: Preferences{
+			Output: "table",
+			Hooks:  Hooks{PreApply: "global-hook"},
+		},
+		Contexts: []NamedContext{
+			{
+				Name: "test",
+				Context: Context{
+					Environment: "https://test.example.invalid",
+					TokenRef:    "test-token",
+					Hooks:       Hooks{PreApply: "none"},
+				},
+			},
+		},
+		Tokens: []NamedToken{
+			{Name: "test-token", Token: "secret"},
+		},
+	}
+
+	// Save and reload
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+	if err := cfg.SaveTo(configPath); err != nil {
+		t.Fatalf("SaveTo() error = %v", err)
+	}
+	loaded, err := LoadFrom(configPath)
+	if err != nil {
+		t.Fatalf("LoadFrom() error = %v", err)
+	}
+
+	// "none" should survive round-trip and disable global hook
+	got := loaded.GetPreApplyHook()
+	if got != "" {
+		t.Errorf("GetPreApplyHook() = %q, want empty (none should disable global hook after round-trip)", got)
+	}
+}
+
+func TestHooks_YAMLRoundTrip_EmptyHooks(t *testing.T) {
+	// Config with no hooks at all should round-trip cleanly
+	cfg := &Config{
+		APIVersion:     "v1",
+		Kind:           "Config",
+		CurrentContext: "test",
+		Preferences:    Preferences{Output: "table"},
+		Contexts: []NamedContext{
+			{
+				Name: "test",
+				Context: Context{
+					Environment: "https://test.example.invalid",
+					TokenRef:    "test-token",
+				},
+			},
+		},
+		Tokens: []NamedToken{
+			{Name: "test-token", Token: "secret"},
+		},
+	}
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+	if err := cfg.SaveTo(configPath); err != nil {
+		t.Fatalf("SaveTo() error = %v", err)
+	}
+	loaded, err := LoadFrom(configPath)
+	if err != nil {
+		t.Fatalf("LoadFrom() error = %v", err)
+	}
+
+	got := loaded.GetPreApplyHook()
+	if got != "" {
+		t.Errorf("GetPreApplyHook() = %q, want empty (no hooks configured)", got)
+	}
+}

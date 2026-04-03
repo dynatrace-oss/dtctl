@@ -78,12 +78,18 @@ func (s SafetyLevel) String() string {
 	return string(s)
 }
 
+// Hooks holds hook commands for lifecycle events
+type Hooks struct {
+	PreApply string `yaml:"pre-apply,omitempty"`
+}
+
 // Context holds the connection information for a Dynatrace environment
 type Context struct {
 	Environment string      `yaml:"environment" table:"ENVIRONMENT"`
 	TokenRef    string      `yaml:"token-ref" table:"TOKEN-REF"`
 	SafetyLevel SafetyLevel `yaml:"safety-level,omitempty" table:"SAFETY-LEVEL"`
 	Description string      `yaml:"description,omitempty" table:"DESCRIPTION,wide"`
+	Hooks       Hooks       `yaml:"hooks,omitempty"`
 }
 
 // NamedToken holds a token with its name
@@ -96,6 +102,7 @@ type NamedToken struct {
 type Preferences struct {
 	Output string `yaml:"output,omitempty"`
 	Editor string `yaml:"editor,omitempty"`
+	Hooks  Hooks  `yaml:"hooks,omitempty"`
 }
 
 // DefaultConfigPath returns the default config file path following XDG Base Directory spec
@@ -391,6 +398,23 @@ func (c *Context) GetEffectiveSafetyLevel() SafetyLevel {
 		return DefaultSafetyLevel
 	}
 	return c.SafetyLevel
+}
+
+// GetPreApplyHook returns the effective pre-apply hook command.
+// Per-context hooks take precedence over global (preferences) hooks.
+// The special value "none" explicitly disables the global hook for a context.
+func (c *Config) GetPreApplyHook() string {
+	// Per-context hook wins
+	if ctx, err := c.CurrentContextObj(); err == nil {
+		if ctx.Hooks.PreApply != "" {
+			if ctx.Hooks.PreApply == "none" {
+				return "" // explicitly disabled
+			}
+			return ctx.Hooks.PreApply
+		}
+	}
+	// Fall back to global
+	return c.Preferences.Hooks.PreApply
 }
 
 // DeleteContext removes a context by name.

@@ -321,6 +321,7 @@ func TestApplyFlags(t *testing.T) {
 	}{
 		{"file", ""},
 		{"show-diff", "false"},
+		{"no-hooks", "false"},
 	}
 
 	for _, tt := range tests {

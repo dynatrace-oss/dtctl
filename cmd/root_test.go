@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
+	"github.com/dynatrace-oss/dtctl/pkg/apply"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
@@ -809,6 +811,47 @@ func TestErrorToDetail_DiagnosticPrecedesAPIError(t *testing.T) {
 	}
 }
 
+func TestErrorToDetail_HookRejectedError(t *testing.T) {
+	err := &apply.HookRejectedError{
+		Command:  "node validate.js",
+		ExitCode: 1,
+		Stderr:   "validation failed: missing required field 'owner'",
+	}
+
+	detail := errorToDetail(err)
+
+	if detail.Code != "hook_rejected" {
+		t.Errorf("Code = %q, want %q", detail.Code, "hook_rejected")
+	}
+	if detail.Message != "pre-apply hook rejected the resource" {
+		t.Errorf("Message = %q, want %q", detail.Message, "pre-apply hook rejected the resource")
+	}
+	if len(detail.Suggestions) != 2 {
+		t.Fatalf("Suggestions count = %d, want 2", len(detail.Suggestions))
+	}
+	if detail.Suggestions[0] != "check hook stderr output for details" {
+		t.Errorf("Suggestions[0] = %q, want %q", detail.Suggestions[0], "check hook stderr output for details")
+	}
+	if detail.Suggestions[1] != "use --no-hooks to skip pre-apply hooks" {
+		t.Errorf("Suggestions[1] = %q, want %q", detail.Suggestions[1], "use --no-hooks to skip pre-apply hooks")
+	}
+}
+
+func TestErrorToDetail_HookRejectedErrorWrapped(t *testing.T) {
+	inner := &apply.HookRejectedError{
+		Command:  "bash lint.sh",
+		ExitCode: 2,
+		Stderr:   "lint failed",
+	}
+	wrapped := fmt.Errorf("apply failed: %w", inner)
+
+	detail := errorToDetail(wrapped)
+
+	if detail.Code != "hook_rejected" {
+		t.Errorf("Code = %q, want %q (should unwrap HookRejectedError)", detail.Code, "hook_rejected")
+	}
+}
+
 // --- classifyGenericError tests ---
 
 func TestClassifyGenericError(t *testing.T) {
@@ -970,6 +1013,107 @@ func TestIsURLRelatedError(t *testing.T) {
 			got := isURLRelatedError(tt.err)
 			if got != tt.want {
 				t.Errorf("isURLRelatedError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsTokenRefreshError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "generic error",
+			err:  errors.New("workflow not found"),
+			want: false,
+		},
+		{
+			name: "compact storage refresh failure",
+			err:  fmt.Errorf("failed to refresh token from compact storage: %w", fmt.Errorf("failed to refresh token: token refresh failed: 400 Bad Request - {\"error\":\"invalid_grant\"}")),
+			want: true,
+		},
+		{
+			name: "token expired and refresh failed",
+			err:  fmt.Errorf("token expired and refresh failed: %w", fmt.Errorf("failed to refresh token: some error")),
+			want: true,
+		},
+		{
+			name: "simple refresh failure",
+			err:  fmt.Errorf("failed to refresh token: some error"),
+			want: true,
+		},
+		{
+			name: "unrelated auth error",
+			err:  fmt.Errorf("unauthorized: invalid API token"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTokenRefreshError(tt.err)
+			if got != tt.want {
+				t.Errorf("isTokenRefreshError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetAuthHintsForError(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantHints bool
+	}{
+		{
+			name:      "nil error returns no hints",
+			err:       nil,
+			wantHints: false,
+		},
+		{
+			name:      "generic error returns no hints",
+			err:       errors.New("workflow not found"),
+			wantHints: false,
+		},
+		{
+			name:      "token refresh error returns login hint",
+			err:       fmt.Errorf("failed to refresh token from compact storage: failed to refresh token: token refresh failed: 400 Bad Request"),
+			wantHints: true,
+		},
+		{
+			name:      "expired token returns login hint",
+			err:       fmt.Errorf("token expired and refresh failed: some error"),
+			wantHints: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hints := getAuthHintsForError(tt.err)
+			if tt.wantHints {
+				if len(hints) == 0 {
+					t.Error("expected hints, got none")
+				}
+				// Verify the hint mentions the login command
+				found := false
+				for _, h := range hints {
+					if strings.Contains(h, "dtctl auth login") {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected hint to mention 'dtctl auth login', got %v", hints)
+				}
+			} else if len(hints) > 0 {
+				t.Errorf("expected no hints, got %v", hints)
 			}
 		})
 	}
