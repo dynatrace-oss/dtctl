@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -154,5 +156,107 @@ func TestAuthLogin_PartialFlags_EnvironmentFromContext(t *testing.T) {
 
 	if err != nil && strings.Contains(err.Error(), "--context and --environment are required") {
 		t.Errorf("expected environment to be filled from current context, but got: %v", err)
+	}
+}
+
+// TestAuthLogin_KeyringRecovery verifies that the auth login command
+// attempts to create a keyring collection when CheckKeyring returns an
+// error containing ErrMsgCollectionUnlock, and that a successful recovery
+// allows the flow to continue past the keyring gate.
+func TestAuthLogin_KeyringRecovery(t *testing.T) {
+	viper.Reset()
+
+	const (
+		ctxName = "recover-ctx"
+		envURL  = "https://abc12345.apps.dynatrace.com"
+	)
+
+	configPath := setupAuthTestConfig(t, ctxName, envURL, ctxName+"-oauth")
+	cfgFile = configPath
+	defer func() { cfgFile = "" }()
+
+	// Track whether EnsureKeyringCollection was called.
+	ensureCalled := false
+
+	// First call to CheckKeyring returns the unlock error; after recovery
+	// it returns nil (simulating a fixed keyring).
+	calls := 0
+	origCheck := authCheckKeyringFunc
+	origEnsure := authEnsureKeyringFunc
+	defer func() {
+		authCheckKeyringFunc = origCheck
+		authEnsureKeyringFunc = origEnsure
+	}()
+
+	authCheckKeyringFunc = func() error {
+		calls++
+		if calls == 1 {
+			return fmt.Errorf("keyring probe failed: %s", config.ErrMsgCollectionUnlock)
+		}
+		return nil // recovered
+	}
+	authEnsureKeyringFunc = func(_ context.Context) error {
+		ensureCalled = true
+		return nil
+	}
+
+	rootCmd.SetArgs([]string{"auth", "login", "--context", ctxName, "--environment", envURL})
+	err := rootCmd.Execute()
+
+	if !ensureCalled {
+		t.Fatal("expected EnsureKeyringCollection to be called during recovery")
+	}
+
+	// After recovery the command should proceed past the keyring gate.
+	// It will eventually fail further along (no real keyring for token
+	// storage, or OAuth infrastructure issues), but not with the initial
+	// keyring gate error about requiring a working keyring.
+	if err != nil && strings.Contains(err.Error(), "OAuth login requires a working system keyring") {
+		t.Errorf("expected recovery to succeed and proceed past keyring gate, got: %v", err)
+	}
+}
+
+// TestAuthLogin_KeyringRecoveryFailure verifies that when
+// EnsureKeyringCollection fails, the command returns an actionable
+// diagnostic error with suggestions.
+func TestAuthLogin_KeyringRecoveryFailure(t *testing.T) {
+	viper.Reset()
+
+	const (
+		ctxName = "fail-ctx"
+		envURL  = "https://abc12345.apps.dynatrace.com"
+	)
+
+	configPath := setupAuthTestConfig(t, ctxName, envURL, ctxName+"-oauth")
+	cfgFile = configPath
+	defer func() { cfgFile = "" }()
+
+	origCheck := authCheckKeyringFunc
+	origEnsure := authEnsureKeyringFunc
+	defer func() {
+		authCheckKeyringFunc = origCheck
+		authEnsureKeyringFunc = origEnsure
+	}()
+
+	// CheckKeyring always fails with the unlock error.
+	authCheckKeyringFunc = func() error {
+		return fmt.Errorf("keyring probe failed: %s", config.ErrMsgCollectionUnlock)
+	}
+	// EnsureKeyringCollection fails too.
+	authEnsureKeyringFunc = func(_ context.Context) error {
+		return fmt.Errorf("D-Bus connection refused")
+	}
+
+	rootCmd.SetArgs([]string{"auth", "login", "--context", ctxName, "--environment", envURL})
+	err := rootCmd.Execute()
+
+	if err == nil {
+		t.Fatal("expected error when keyring recovery fails")
+	}
+	if !strings.Contains(err.Error(), "keyring") {
+		t.Errorf("expected keyring-related error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "token-based authentication") {
+		t.Errorf("expected suggestion about token-based auth, got: %v", err)
 	}
 }

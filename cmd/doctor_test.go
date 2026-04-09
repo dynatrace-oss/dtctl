@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -368,6 +369,57 @@ func TestDoctorKeyringCheck(t *testing.T) {
 			}
 			if !strings.Contains(r.Detail, config.EnvDisableKeyring) {
 				t.Errorf("expected keyring detail to mention %s, got %q", config.EnvDisableKeyring, r.Detail)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected 'Keyring' check in results")
+		for _, r := range results {
+			t.Logf("  %s: %s: %s", r.Name, r.Status, r.Detail)
+		}
+	}
+}
+
+// TestDoctorKeyringCollectionRecoverySuggestion verifies that when the keyring
+// error contains the collection-unlock message, the doctor output includes the
+// recovery suggestion telling the user to run 'dtctl auth login'.
+func TestDoctorKeyringCollectionRecoverySuggestion(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+
+	originalCfgFile := cfgFile
+	defer func() { cfgFile = originalCfgFile }()
+	cfgFile = configPath
+
+	cfg := config.NewConfig()
+	cfg.SetContext("test", "https://test.apps.dynatrace.com", "test-token")
+	if err := cfg.SetToken("test-token", "dt0c01.ST.test-token-value.test-secret"); err != nil {
+		t.Fatalf("failed to set token: %v", err)
+	}
+	cfg.CurrentContext = "test"
+	if err := cfg.SaveTo(configPath); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	// Override checkKeyringFunc to return an error that contains the
+	// collection-unlock message.
+	origFunc := checkKeyringFunc
+	defer func() { checkKeyringFunc = origFunc }()
+	checkKeyringFunc = func() error {
+		return fmt.Errorf("keyring probe failed: %s", config.ErrMsgCollectionUnlock)
+	}
+
+	results := runDoctorChecks()
+
+	found := false
+	for _, r := range results {
+		if r.Name == "Keyring" {
+			found = true
+			if r.Status != "warn" {
+				t.Errorf("expected keyring status 'warn', got %q", r.Status)
+			}
+			if !strings.Contains(r.Detail, "dtctl auth login") {
+				t.Errorf("expected recovery suggestion mentioning 'dtctl auth login', got %q", r.Detail)
 			}
 		}
 	}

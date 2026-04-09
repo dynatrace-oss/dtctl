@@ -4,11 +4,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"time"
 
-	dbus "github.com/godbus/dbus/v5"
 	"github.com/zalando/go-keyring"
-	ss "github.com/zalando/go-keyring/secret_service"
 )
 
 const (
@@ -17,6 +14,12 @@ const (
 
 	// EnvDisableKeyring can be set to disable keyring integration
 	EnvDisableKeyring = "DTCTL_DISABLE_KEYRING"
+
+	// ErrMsgCollectionUnlock is the error substring returned by the Secret Service
+	// backend when a persistent keyring collection does not exist or cannot be
+	// unlocked. Centralised here so callers match on a single constant instead
+	// of a fragile raw string.
+	ErrMsgCollectionUnlock = "failed to unlock correct collection"
 )
 
 // TokenStore provides secure token storage using the OS keyring
@@ -33,10 +36,16 @@ func NewTokenStore() *TokenStore {
 	}
 }
 
+// isKeyringDisabled reports whether the keyring has been intentionally
+// disabled via the DTCTL_DISABLE_KEYRING environment variable.
+func isKeyringDisabled() bool {
+	return os.Getenv(EnvDisableKeyring) != ""
+}
+
 // CheckKeyring probes the OS keyring and returns nil if it is usable,
 // or a descriptive error explaining why it is not.
 func CheckKeyring() error {
-	if os.Getenv(EnvDisableKeyring) != "" {
+	if isKeyringDisabled() {
 		return fmt.Errorf("keyring disabled via %s environment variable", EnvDisableKeyring)
 	}
 
@@ -50,74 +59,6 @@ func CheckKeyring() error {
 // IsKeyringAvailable checks if keyring storage is available on this system
 func IsKeyringAvailable() bool {
 	return CheckKeyring() == nil
-}
-
-// EnsureKeyringCollection checks whether a usable Secret Service collection
-// exists and, if not, creates a persistent "login" collection.
-// On Linux/WSL gnome-keyring may start with only a transient "session"
-// collection; this function creates the permanent one, which may trigger
-// an OS password prompt.
-func EnsureKeyringCollection() error {
-	svc, err := ss.NewSecretService()
-	if err != nil {
-		return fmt.Errorf("cannot connect to Secret Service: %w", err)
-	}
-
-	// If the "login" collection already exists, nothing to do.
-	loginPath := dbus.ObjectPath("/org/freedesktop/secrets/collection/login")
-	if svc.CheckCollectionPath(loginPath) == nil {
-		return nil
-	}
-
-	// Create a persistent collection via D-Bus with alias "default".
-	// gnome-keyring only accepts the "default" alias. Using this alias
-	// ensures GetLoginCollection() can discover the collection via its
-	// fallback to /org/freedesktop/secrets/aliases/default.
-	props := map[string]dbus.Variant{
-		"org.freedesktop.Secret.Collection.Label": dbus.MakeVariant("Login"),
-	}
-	var collectionPath, promptPath dbus.ObjectPath
-	obj := svc.Object("org.freedesktop.secrets", "/org/freedesktop/secrets")
-	err = obj.Call("org.freedesktop.Secret.Service.CreateCollection", 0, props, "default").
-		Store(&collectionPath, &promptPath)
-	if err != nil {
-		return fmt.Errorf("failed to create keyring collection: %w", err)
-	}
-
-	// If no prompt was returned, the collection was created immediately.
-	if promptPath == dbus.ObjectPath("/") {
-		return nil
-	}
-
-	// A prompt was returned — trigger it so the OS displays a password dialog.
-	promptObj := svc.Object("org.freedesktop.secrets", promptPath)
-	if err := promptObj.Call("org.freedesktop.Secret.Prompt.Prompt", 0, "").Err; err != nil {
-		return fmt.Errorf("failed to trigger keyring prompt: %w", err)
-	}
-
-	// Poll until the default alias points to a real collection, indicating
-	// the user completed the password prompt. D-Bus signal delivery is
-	// unreliable in some environments (notably WSL), so polling is more
-	// robust than waiting for the Prompt.Completed signal.
-	deadline := time.After(2 * time.Minute)
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-deadline:
-			return fmt.Errorf("timed out waiting for keyring password prompt to complete")
-		case <-ticker.C:
-			var alias dbus.ObjectPath
-			call := obj.Call("org.freedesktop.Secret.Service.ReadAlias", 0, "default")
-			if call.Err == nil {
-				_ = call.Store(&alias)
-				if alias != "/" && alias != "" {
-					return nil
-				}
-			}
-		}
-	}
 }
 
 // SetToken stores a token securely in the OS keyring

@@ -22,6 +22,10 @@ type checkResult struct {
 	Detail string
 }
 
+// checkKeyringFunc is the function used to probe keyring availability.
+// It defaults to config.CheckKeyring and can be overridden in tests.
+var checkKeyringFunc = config.CheckKeyring
+
 // doctorCmd runs health checks on the dtctl configuration and connectivity
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -141,9 +145,9 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 	}
 
 	// 5. Keyring status
-	if keyringErr := config.CheckKeyring(); keyringErr != nil {
+	if keyringErr := checkKeyringFunc(); keyringErr != nil {
 		detail := fmt.Sprintf("%s: %v", config.KeyringBackend(), keyringErr)
-		if strings.Contains(keyringErr.Error(), "failed to unlock correct collection") {
+		if strings.Contains(keyringErr.Error(), config.ErrMsgCollectionUnlock) {
 			detail += " (run 'dtctl auth login' to create the collection automatically)"
 		}
 		results = append(results, checkResult{
