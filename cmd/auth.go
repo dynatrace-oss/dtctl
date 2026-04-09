@@ -247,12 +247,14 @@ you'll need to use API token authentication instead (dtctl config set-credential
 			if !recovered {
 				return &diagnostic.Error{
 					Operation: "auth login",
-					Message:   fmt.Sprintf("OAuth login requires a working system keyring: %v", keyringErr),
+					Message:   "OAuth login requires a system keyring, but none is available on this system",
 					Suggestions: []string{
-						"Check that a D-Bus session bus is available (echo $DBUS_SESSION_BUS_ADDRESS)",
-						"Ensure a Secret Service provider is running (e.g. gnome-keyring-daemon --start --components=secrets)",
-						"Unset DTCTL_DISABLE_KEYRING if it was set unintentionally",
-						"Use API token authentication instead: dtctl config set-credentials",
+						"Use token-based authentication instead (recommended for headless/CI environments):",
+						fmt.Sprintf("  dtctl config set-context %s --environment %q --token-ref my-token", contextName, environment),
+						"  dtctl config set-credentials my-token --token <YOUR_PLATFORM_TOKEN>",
+						"Create a platform token at: Identity & Access Management > Access Tokens > Generate new token > Platform token",
+						"For required token scopes, see: dtctl help token-scopes (or docs/TOKEN_SCOPES.md)",
+						"On Linux, install a keyring backend (e.g., gnome-keyring, kwallet, or pass) if you prefer OAuth",
 					},
 				}
 			}
