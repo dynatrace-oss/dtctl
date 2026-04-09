@@ -3,12 +3,41 @@ package apply
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
+
+// requireSegmentFiltersAST reads the request body and validates that all
+// include filters are JSON AST (start with '{'). Returns true if the request
+// should continue, false if an error was written to the response.
+func requireSegmentFiltersAST(t *testing.T, r *http.Request, w http.ResponseWriter) bool {
+	t.Helper()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return true // can't read body — let normal handler run
+	}
+	var reqBody struct {
+		Includes []struct {
+			Filter string `json:"filter"`
+		} `json:"includes"`
+	}
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return true // not valid JSON or no includes — let normal handler run
+	}
+	for i, inc := range reqBody.Includes {
+		if inc.Filter != "" && (len(inc.Filter) == 0 || inc.Filter[0] != '{') {
+			t.Errorf("include[%d] filter should be AST in API request, got DQL: %s", i, inc.Filter)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":"filter must be AST, got DQL"}`))
+			return false
+		}
+	}
+	return true
+}
 
 // newApplyTestServer creates a multiplexed test server that handles multiple resource endpoints.
 func newApplyTestServer(t *testing.T, handlers map[string]http.HandlerFunc) (*httptest.Server, *client.Client) {
@@ -691,6 +720,9 @@ func TestApply_SegmentCreate_NoUID(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Errorf("expected POST, got %s", r.Method)
 			}
+			if !requireSegmentFiltersAST(t, r, w) {
+				return
+			}
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"uid":  "seg-new-001",
@@ -704,7 +736,7 @@ func TestApply_SegmentCreate_NoUID(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	segJSON := `{"name":"Test Segment","isPublic":true,"includes":[{"dataObject":"logs","filter":"status == \"ERROR\""}]}`
+	segJSON := `{"name":"Test Segment","isPublic":true,"includes":[{"dataObject":"logs","filter":"status = \"ERROR\""}]}`
 	results, err := a.Apply([]byte(segJSON), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
@@ -734,7 +766,10 @@ func TestApply_SegmentUpdate_Exists(t *testing.T) {
 					"version": 3,
 					"owner":   "user@example.invalid",
 				})
-			case http.MethodPut:
+			case http.MethodPatch:
+				if !requireSegmentFiltersAST(t, r, w) {
+					return
+				}
 				lockVer := r.URL.Query().Get("optimistic-locking-version")
 				if lockVer != "3" {
 					t.Errorf("expected optimistic-locking-version=3, got %q", lockVer)
@@ -751,7 +786,7 @@ func TestApply_SegmentUpdate_Exists(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	segJSON := `{"uid":"seg-uid-001","name":"Updated Segment","isPublic":true,"includes":[{"dataObject":"logs","filter":"status == \"ERROR\""}]}`
+	segJSON := `{"uid":"seg-uid-001","name":"Updated Segment","isPublic":true,"includes":[{"dataObject":"logs","filter":"status = \"ERROR\""}]}`
 	results, err := a.Apply([]byte(segJSON), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
@@ -773,6 +808,9 @@ func TestApply_SegmentCreate_IDNotFound(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		},
 		"/platform/storage/filter-segments/v1/filter-segments": func(w http.ResponseWriter, r *http.Request) {
+			if !requireSegmentFiltersAST(t, r, w) {
+				return
+			}
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"uid":  "seg-missing",
@@ -786,7 +824,7 @@ func TestApply_SegmentCreate_IDNotFound(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	segJSON := `{"uid":"seg-missing","name":"New Segment","isPublic":false,"includes":[{"dataObject":"logs","filter":"status == \"ERROR\""}]}`
+	segJSON := `{"uid":"seg-missing","name":"New Segment","isPublic":false,"includes":[{"dataObject":"logs","filter":"status = \"ERROR\""}]}`
 	results, err := a.Apply([]byte(segJSON), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
@@ -816,7 +854,7 @@ func TestApply_Segment_GetServerError_NoFallthrough(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	segJSON := `{"uid":"seg-uid-001","name":"Test Segment","isPublic":true,"includes":[{"dataObject":"logs","filter":"status == \"ERROR\""}]}`
+	segJSON := `{"uid":"seg-uid-001","name":"Test Segment","isPublic":true,"includes":[{"dataObject":"logs","filter":"status = \"ERROR\""}]}`
 	_, err := a.Apply([]byte(segJSON), ApplyOptions{})
 	if err == nil {
 		t.Fatal("Apply() should have returned an error for server error, got nil")

@@ -88,7 +88,7 @@ variables:
 | `isPublic`    | `true` for environment-wide visibility, `false` for owner-only (default)    |
 | `includes`    | Array of filter rules. Each specifies a `dataObject` and a `filter` expression. Includes are OR-combined within a segment. |
 | `dataObject`  | Data type to filter: `logs`, `spans`, `events`, `metrics`, `entities`, or `_all_data_object` for all |
-| `filter`      | DQL filter expression applied to the data object                            |
+| `filter`      | DQL filter expression applied to the data object. dtctl automatically converts DQL to the API's internal JSON AST format on create/update, and converts back to DQL on get/describe. You can also provide a raw JSON AST string (starting with `{`) which will be passed through unchanged. |
 | `variables`   | Optional variable definition with `type` and `value` fields                 |
 
 ## Editing a Segment

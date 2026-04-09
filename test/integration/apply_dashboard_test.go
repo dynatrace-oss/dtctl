@@ -98,7 +98,7 @@ func TestApplyDashboard_VariousFormats(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Apply the dashboard
-			err := applier.Apply([]byte(tc.manifest), apply.ApplyOptions{})
+			_, err := applier.Apply([]byte(tc.manifest), apply.ApplyOptions{})
 			if err != nil {
 				t.Fatalf("failed to apply dashboard: %v", err)
 			}
@@ -141,7 +141,7 @@ func TestApplyDashboard_RoundTrip(t *testing.T) {
 		}
 	}`
 
-	err := applier.Apply([]byte(manifest), apply.ApplyOptions{})
+	_, err := applier.Apply([]byte(manifest), apply.ApplyOptions{})
 	if err != nil {
 		t.Fatalf("failed to create initial dashboard: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestApplyDashboard_FromFile(t *testing.T) {
 
 			// Try to apply (this will actually create the dashboard)
 			// In a real test environment, you'd want to clean these up
-			err = applier.Apply(data, apply.ApplyOptions{DryRun: true})
+			_, err = applier.Apply(data, apply.ApplyOptions{DryRun: true})
 			if err != nil {
 				t.Errorf("failed to dry-run apply dashboard from %s: %v", tf.path, err)
 			}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,18 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
+
+// astFilterFor converts a DQL expression to its AST form for use in mock API
+// responses. Test helpers call this to simulate real API behaviour where the
+// server always stores and returns JSON AST, never plain DQL.
+func astFilterFor(t *testing.T, dql string) string {
+	t.Helper()
+	ast, err := FilterToAST(dql)
+	if err != nil {
+		t.Fatalf("astFilterFor(%q): %v", dql, err)
+	}
+	return ast
+}
 
 func TestNewHandler(t *testing.T) {
 	c, err := client.New("https://test.dynatrace.com", "test-token")
@@ -31,6 +44,7 @@ func TestList(t *testing.T) {
 	tests := []struct {
 		name          string
 		statusCode    int
+		buildResponse func(t *testing.T) interface{} // builds response body; nil uses responseBody field
 		responseBody  interface{}
 		expectError   bool
 		errorContains string
@@ -66,6 +80,43 @@ func TestList(t *testing.T) {
 				}
 				if result.FilterSegments[1].Name != "prod-logs" {
 					t.Errorf("expected second segment name 'prod-logs', got %q", result.FilterSegments[1].Name)
+				}
+			},
+		},
+		{
+			name:       "list with AST filters converts to DQL",
+			statusCode: 200,
+			buildResponse: func(t *testing.T) interface{} {
+				return FilterSegmentList{
+					FilterSegments: []FilterSegment{
+						{
+							UID:      "seg-uid-003",
+							Name:     "with-includes",
+							IsPublic: true,
+							Includes: []Include{
+								{DataObject: "logs", Filter: astFilterFor(t, `status = "ERROR"`)},
+								{DataObject: "spans", Filter: astFilterFor(t, `span.kind = "SERVER" OR span.kind = "CLIENT"`)},
+							},
+						},
+					},
+					TotalCount: 1,
+				}
+			},
+			expectError: false,
+			validate: func(t *testing.T, result *FilterSegmentList) {
+				if len(result.FilterSegments) != 1 {
+					t.Fatalf("expected 1 segment, got %d", len(result.FilterSegments))
+				}
+				seg := result.FilterSegments[0]
+				if len(seg.Includes) != 2 {
+					t.Fatalf("expected 2 includes, got %d", len(seg.Includes))
+				}
+				// Verify AST→DQL conversion happened
+				if seg.Includes[0].Filter != `status = "ERROR"` {
+					t.Errorf("expected DQL filter for include[0], got %q", seg.Includes[0].Filter)
+				}
+				if seg.Includes[1].Filter != `span.kind = "SERVER" OR span.kind = "CLIENT"` {
+					t.Errorf("expected DQL filter for include[1], got %q", seg.Includes[1].Filter)
 				}
 			},
 		},
@@ -109,11 +160,15 @@ func TestList(t *testing.T) {
 				if r.URL.Query().Get("page-size") != "" {
 					t.Error("list endpoint should not send page-size (API has no pagination)")
 				}
+				responseBody := tt.responseBody
+				if tt.buildResponse != nil {
+					responseBody = tt.buildResponse(t)
+				}
 				w.WriteHeader(tt.statusCode)
-				if str, ok := tt.responseBody.(string); ok {
+				if str, ok := responseBody.(string); ok {
 					w.Write([]byte(str))
 				} else {
-					json.NewEncoder(w).Encode(tt.responseBody)
+					json.NewEncoder(w).Encode(responseBody)
 				}
 			}))
 			defer server.Close()
@@ -149,6 +204,7 @@ func TestGet(t *testing.T) {
 		name          string
 		uid           string
 		statusCode    int
+		buildResponse func(t *testing.T) interface{} // builds response body; nil uses responseBody field
 		responseBody  interface{}
 		expectError   bool
 		errorContains string
@@ -158,22 +214,24 @@ func TestGet(t *testing.T) {
 			name:       "successful get",
 			uid:        "seg-uid-001",
 			statusCode: 200,
-			responseBody: FilterSegment{
-				UID:         "seg-uid-001",
-				Name:        "k8s-alpha",
-				Description: "Kubernetes cluster alpha",
-				IsPublic:    true,
-				Owner:       "user@example.invalid",
-				Version:     3,
-				Includes: []Include{
-					{DataObject: "_all_data_object", Filter: `k8s.cluster.name = "alpha"`},
-					{DataObject: "logs", Filter: `dt.system.bucket = "custom-logs"`},
-				},
-				Variables: &Variables{
-					Type:  "query",
-					Value: `fetch logs | limit 1`,
-				},
-				AllowedOperations: []string{"READ", "WRITE", "DELETE"},
+			buildResponse: func(t *testing.T) interface{} {
+				return FilterSegment{
+					UID:         "seg-uid-001",
+					Name:        "k8s-alpha",
+					Description: "Kubernetes cluster alpha",
+					IsPublic:    true,
+					Owner:       "user@example.invalid",
+					Version:     3,
+					Includes: []Include{
+						{DataObject: "_all_data_object", Filter: astFilterFor(t, `k8s.cluster.name = "alpha"`)},
+						{DataObject: "logs", Filter: astFilterFor(t, `dt.system.bucket = "custom-logs"`)},
+					},
+					Variables: &Variables{
+						Type:  "query",
+						Value: `fetch logs | limit 1`,
+					},
+					AllowedOperations: []string{"READ", "WRITE", "DELETE"},
+				}
 			},
 			expectError: false,
 			validate: func(t *testing.T, seg *FilterSegment) {
@@ -186,8 +244,15 @@ func TestGet(t *testing.T) {
 				if len(seg.Includes) != 2 {
 					t.Errorf("expected 2 includes, got %d", len(seg.Includes))
 				}
+				// Verify AST→DQL conversion happened: filters should be DQL, not AST
 				if seg.Includes[0].DataObject != "_all_data_object" {
 					t.Errorf("expected first include dataObject '_all_data_object', got %q", seg.Includes[0].DataObject)
+				}
+				if seg.Includes[0].Filter != `k8s.cluster.name = "alpha"` {
+					t.Errorf("expected first filter as DQL, got %q", seg.Includes[0].Filter)
+				}
+				if seg.Includes[1].Filter != `dt.system.bucket = "custom-logs"` {
+					t.Errorf("expected second filter as DQL, got %q", seg.Includes[1].Filter)
 				}
 				if seg.Variables == nil {
 					t.Error("expected variables to be non-nil")
@@ -239,6 +304,12 @@ func TestGet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Build response body: prefer buildResponse function, fall back to static field
+			responseBody := tt.responseBody
+			if tt.buildResponse != nil {
+				responseBody = tt.buildResponse(t)
+			}
+
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				expectedPath := fmt.Sprintf("/platform/storage/filter-segments/v1/filter-segments/%s", tt.uid)
 				if r.URL.Path != expectedPath {
@@ -255,10 +326,10 @@ func TestGet(t *testing.T) {
 					}
 				}
 				w.WriteHeader(tt.statusCode)
-				if str, ok := tt.responseBody.(string); ok {
+				if str, ok := responseBody.(string); ok {
 					w.Write([]byte(str))
 				} else {
-					json.NewEncoder(w).Encode(tt.responseBody)
+					json.NewEncoder(w).Encode(responseBody)
 				}
 			}))
 			defer server.Close()
@@ -366,6 +437,25 @@ func TestCreate(t *testing.T) {
 				if r.URL.Path != "/platform/storage/filter-segments/v1/filter-segments" {
 					t.Errorf("expected path '/platform/storage/filter-segments/v1/filter-segments', got %q", r.URL.Path)
 				}
+
+				// Validate that DQL filters were converted to AST before sending
+				body, _ := io.ReadAll(r.Body)
+				var reqBody struct {
+					Includes []struct {
+						Filter string `json:"filter"`
+					} `json:"includes"`
+				}
+				if err := json.Unmarshal(body, &reqBody); err == nil {
+					for i, inc := range reqBody.Includes {
+						if inc.Filter != "" && !isFilterAST(inc.Filter) {
+							t.Errorf("include[%d] filter should be AST in API request, got DQL: %s", i, inc.Filter)
+							w.WriteHeader(http.StatusBadRequest)
+							w.Write([]byte(`{"error":"filter must be AST, got DQL"}`))
+							return
+						}
+					}
+				}
+
 				w.WriteHeader(tt.statusCode)
 				if str, ok := tt.responseBody.(string); ok {
 					w.Write([]byte(str))
@@ -460,8 +550,8 @@ func TestUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != "PUT" {
-					t.Errorf("expected PUT method, got %s", r.Method)
+				if r.Method != "PATCH" {
+					t.Errorf("expected PATCH method, got %s", r.Method)
 				}
 				expectedPath := fmt.Sprintf("/platform/storage/filter-segments/v1/filter-segments/%s", tt.uid)
 				if r.URL.Path != expectedPath {
@@ -476,6 +566,25 @@ func TestUpdate(t *testing.T) {
 				if lockVer != expectedVer {
 					t.Errorf("expected optimistic-locking-version %q, got %q", expectedVer, lockVer)
 				}
+
+				// Validate that DQL filters were converted to AST before sending
+				body, _ := io.ReadAll(r.Body)
+				var reqBody struct {
+					Includes []struct {
+						Filter string `json:"filter"`
+					} `json:"includes"`
+				}
+				if err := json.Unmarshal(body, &reqBody); err == nil {
+					for i, inc := range reqBody.Includes {
+						if inc.Filter != "" && !isFilterAST(inc.Filter) {
+							t.Errorf("include[%d] filter should be AST in API request, got DQL: %s", i, inc.Filter)
+							w.WriteHeader(http.StatusBadRequest)
+							w.Write([]byte(`{"error":"filter must be AST, got DQL"}`))
+							return
+						}
+					}
+				}
+
 				w.WriteHeader(tt.statusCode)
 				w.Write([]byte(tt.responseBody))
 			}))
@@ -487,7 +596,7 @@ func TestUpdate(t *testing.T) {
 			}
 			h := NewHandler(c)
 
-			updateData := []byte(`{"name":"updated-segment","isPublic":true}`)
+			updateData := []byte(`{"name":"updated-segment","isPublic":true,"includes":[{"dataObject":"logs","filter":"status = \"ERROR\""}]}`)
 			err = h.Update(tt.uid, tt.version, updateData)
 
 			if tt.expectError {
@@ -578,6 +687,7 @@ func TestDelete(t *testing.T) {
 
 func TestGetRaw(t *testing.T) {
 	t.Run("successful get raw", func(t *testing.T) {
+		// Server returns AST filters (simulating real API behaviour)
 		expectedSegment := FilterSegment{
 			UID:      "seg-uid-001",
 			Name:     "test-segment",
@@ -585,7 +695,7 @@ func TestGetRaw(t *testing.T) {
 			Owner:    "user@example.invalid",
 			Version:  1,
 			Includes: []Include{
-				{DataObject: "logs", Filter: `status = "ERROR"`},
+				{DataObject: "logs", Filter: astFilterFor(t, `status = "ERROR"`)},
 			},
 		}
 
@@ -617,6 +727,13 @@ func TestGetRaw(t *testing.T) {
 		}
 		if seg.Name != expectedSegment.Name {
 			t.Errorf("expected name %q, got %q", expectedSegment.Name, seg.Name)
+		}
+		// Verify AST→DQL conversion happened in GetRaw output
+		if len(seg.Includes) != 1 {
+			t.Fatalf("expected 1 include, got %d", len(seg.Includes))
+		}
+		if seg.Includes[0].Filter != `status = "ERROR"` {
+			t.Errorf("expected DQL filter in GetRaw output, got %q", seg.Includes[0].Filter)
 		}
 	})
 
@@ -690,5 +807,104 @@ func TestIsNotFound(t *testing.T) {
 				t.Errorf("IsNotFound(%v) = %v, want %v", tt.err, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestConvertIncludesForAPI_PreservesFieldOrder(t *testing.T) {
+	// Input has fields in a specific order: name, includes, isPublic, description.
+	// convertIncludesForAPI must preserve this order, not alphabetize it.
+	input := []byte(`{"name":"test","includes":[{"dataObject":"logs","filter":"status = \"ERROR\""}],"isPublic":true,"description":"keep order"}`)
+
+	result, err := convertIncludesForAPI(input)
+	if err != nil {
+		t.Fatalf("convertIncludesForAPI() error: %v", err)
+	}
+
+	// The result must still have "name" before "includes" before "isPublic" before "description".
+	resultStr := string(result)
+	nameIdx := strings.Index(resultStr, `"name"`)
+	includesIdx := strings.Index(resultStr, `"includes"`)
+	isPublicIdx := strings.Index(resultStr, `"isPublic"`)
+	descIdx := strings.Index(resultStr, `"description"`)
+
+	if nameIdx < 0 || includesIdx < 0 || isPublicIdx < 0 || descIdx < 0 {
+		t.Fatalf("missing expected fields in result: %s", resultStr)
+	}
+	if nameIdx >= includesIdx {
+		t.Errorf("field order not preserved: 'name' (%d) should come before 'includes' (%d) in: %s", nameIdx, includesIdx, resultStr)
+	}
+	if includesIdx >= isPublicIdx {
+		t.Errorf("field order not preserved: 'includes' (%d) should come before 'isPublic' (%d) in: %s", includesIdx, isPublicIdx, resultStr)
+	}
+	if isPublicIdx >= descIdx {
+		t.Errorf("field order not preserved: 'isPublic' (%d) should come before 'description' (%d) in: %s", isPublicIdx, descIdx, resultStr)
+	}
+
+	// Also verify the filter was actually converted to AST
+	var payload struct {
+		Includes []struct {
+			Filter string `json:"filter"`
+		} `json:"includes"`
+	}
+	if err := json.Unmarshal(result, &payload); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+	if len(payload.Includes) != 1 {
+		t.Fatalf("expected 1 include, got %d", len(payload.Includes))
+	}
+	if !isFilterAST(payload.Includes[0].Filter) {
+		t.Errorf("expected AST filter, got: %s", payload.Includes[0].Filter)
+	}
+}
+
+func TestCreate_InvalidDQL_PropagatesError(t *testing.T) {
+	// The server should never be called — the error should happen client-side
+	// during DQL→AST conversion before the HTTP request is made.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called when DQL conversion fails")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	h := NewHandler(c)
+
+	// Use "==" which is explicitly rejected by the parser with a helpful message
+	input := []byte(`{"name":"test","includes":[{"dataObject":"logs","filter":"status == \"ERROR\""}]}`)
+	_, err = h.Create(input)
+	if err == nil {
+		t.Fatal("expected error for invalid DQL filter, got nil")
+	}
+	if !strings.Contains(err.Error(), "==") {
+		t.Errorf("expected error message to mention '==', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "include[0]") {
+		t.Errorf("expected error to identify include index, got: %v", err)
+	}
+}
+
+func TestUpdate_InvalidDQL_PropagatesError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("server should not be called when DQL conversion fails")
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	h := NewHandler(c)
+
+	input := []byte(`{"name":"test","includes":[{"dataObject":"logs","filter":"status == \"ERROR\""}]}`)
+	err = h.Update("seg-uid-001", 1, input)
+	if err == nil {
+		t.Fatal("expected error for invalid DQL filter, got nil")
+	}
+	if !strings.Contains(err.Error(), "==") {
+		t.Errorf("expected error message to mention '==', got: %v", err)
 	}
 }

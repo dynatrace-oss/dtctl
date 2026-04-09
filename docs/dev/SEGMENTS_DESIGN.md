@@ -360,6 +360,33 @@ When segments are used, the agent output envelope's `context` should reflect the
 
 ---
 
+## Filter Format Conversion (DQL ↔ AST)
+
+The Dynatrace Filter Segments API requires the `filter` field in segment includes to be a **stringified JSON AST** (the FilterField syntax tree), not a plain DQL string. dtctl transparently converts between the two formats so users always work with human-readable DQL.
+
+**How it works:**
+
+- **Inbound (create/update/apply/edit)**: Before sending to the API, dtctl detects whether each include filter is plain DQL or already JSON AST. Plain DQL is converted to AST; existing AST is passed through unchanged.
+- **Outbound (get/describe/edit)**: After receiving from the API, dtctl converts AST filters back to human-readable DQL for display. If conversion fails (e.g., unknown AST node types), the raw AST is left as-is.
+- **Auto-detection**: A filter starting with `{` is treated as AST; plain DQL never starts with `{`.
+
+**Supported DQL syntax** (for the FilterField grammar):
+- Comparison operators: `=`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not in`
+- Logical operators: `AND` (explicit or implicit via whitespace), `OR`
+- Parenthesized groups: `(a = "1" OR b = "2") AND c = "3"`
+- Quoted and unquoted values, backtick-escaped keys
+
+**Unsupported syntax** (error with clear message suggesting JSON AST escape hatch):
+- `exists` / `not-exists`, wildcards, `matches-phrase`, variable references, `in (val1, val2)` list syntax
+
+**Escape hatch**: Users can always provide the raw JSON AST directly as the filter value — it will be passed through unchanged.
+
+Implementation: `pkg/resources/segment/filterast.go` (parser + renderer), wired in `segment.go` via `convertIncludesForAPI()` and `convertIncludesForDisplay()`.
+
+Design document: [FILTER_AST_PLAN.md](FILTER_AST_PLAN.md)
+
+---
+
 ## Implementation Phases
 
 ### Phase 1: Resource Handler + Read Commands

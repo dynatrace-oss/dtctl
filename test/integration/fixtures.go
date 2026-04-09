@@ -414,7 +414,7 @@ func SegmentFixture(prefix string) []byte {
 		"includes": []map[string]interface{}{
 			{
 				"dataObject": "logs",
-				"filter":     "status == \"ERROR\"",
+				"filter":     "status = \"ERROR\"",
 			},
 		},
 	}
@@ -432,11 +432,11 @@ func SegmentFixtureModified(prefix string) []byte {
 		"includes": []map[string]interface{}{
 			{
 				"dataObject": "logs",
-				"filter":     "status == \"ERROR\"",
+				"filter":     "status = \"ERROR\"",
 			},
 			{
 				"dataObject": "spans",
-				"filter":     "span.kind == \"SERVER\"",
+				"filter":     "span.kind = \"SERVER\"",
 			},
 		},
 	}
@@ -521,7 +521,36 @@ func SegmentFixtureMultiInclude(prefix string) []byte {
 		"includes": []map[string]interface{}{
 			{
 				"dataObject": "logs",
-				"filter":     "loglevel == \"ERROR\" OR loglevel == \"WARN\"",
+				"filter":     "loglevel = \"ERROR\" OR loglevel = \"WARN\"",
+			},
+		},
+	}
+
+	data, _ := json.Marshal(seg)
+	return data
+}
+
+// SegmentFixtureComplexFilter returns a segment with a complex filter
+// expression that exercises parenthesized groups, mixed AND/OR, and implicit
+// AND. This tests DQL→AST→DQL round-trip fidelity for non-trivial filters.
+//
+// Note: The Segments API only supports operators =, starts-with, contains,
+// ends-with, and in. The DQL parser currently handles = and in (single-value
+// only; tuple syntax like `in ("a","b")` is not supported). This fixture uses
+// only the = operator to test structural complexity rather than operator variety.
+func SegmentFixtureComplexFilter(prefix string) []byte {
+	seg := map[string]interface{}{
+		"name":        fmt.Sprintf("%s-segment-complex", prefix),
+		"description": "Integration test segment with complex filter",
+		"isPublic":    false,
+		"includes": []map[string]interface{}{
+			{
+				"dataObject": "logs",
+				"filter":     `(status = "ERROR" OR status = "WARN") AND dt.system.bucket = "custom-logs"`,
+			},
+			{
+				"dataObject": "spans",
+				"filter":     `span.kind = "CLIENT" http.method = "GET"`,
 			},
 		},
 	}
