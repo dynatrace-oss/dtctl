@@ -3582,7 +3582,7 @@ Before diving into manual troubleshooting, run the built-in health check:
 dtctl doctor
 ```
 
-This runs 6 sequential checks — version, config, context, token, connectivity, and authentication — and reports pass/fail with actionable suggestions for each.
+This runs 8 sequential checks — version, config, context, URL validation, keyring, token, connectivity, and authentication — and reports pass/fail with actionable suggestions for each.
 
 ### Understanding Error Messages
 
@@ -3644,6 +3644,21 @@ This is useful for:
 - Verifying request parameters
 - Checking response format
 - Troubleshooting performance issues
+
+### Keyring Issues on Linux/WSL
+
+If `dtctl doctor` shows a keyring warning or `dtctl auth login` fails with a keyring error, the persistent keyring collection may not exist yet. Run:
+
+```bash
+dtctl auth login --context my-env --environment "https://YOUR_ENV.apps.dynatrace.com"
+```
+
+dtctl will detect the missing collection and offer to create it automatically — you may be prompted for a password.
+
+If automatic creation fails:
+- Ensure a Secret Service provider is running: `gnome-keyring-daemon --start --components=secrets`
+- Or switch to token-based authentication (see Option 2 above)
+- To disable keyring entirely: `export DTCTL_DISABLE_KEYRING=1`
 
 ### "config file not found"
 

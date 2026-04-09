@@ -46,7 +46,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `share/unshare` - Share dashboards and notebooks
 - [x] `alias` - Manage command aliases (set, list, delete, import, export)
 - [x] `ctx` - Quick context management (list, switch, describe, set, delete)
-- [x] `doctor` - Health check (config, context, token, connectivity, auth)
+- [x] `doctor` - Health check (config, context, URL validation, keyring, token, connectivity, auth)
 - [x] `commands` - Machine-readable command catalog (JSON/YAML, `--brief`, resource filter, `howto` subcommand)
 - [x] `skills` - AI agent skill file management (install, uninstall, status for Claude, Copilot, Cursor, Kiro, Junie, OpenCode, OpenClaw; cross-client via `--cross-client`)
 

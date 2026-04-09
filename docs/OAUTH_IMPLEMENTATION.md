@@ -73,6 +73,19 @@ The implementation uses OAuth 2.0 with PKCE for enhanced security:
 - Token expiration tracking for proactive refresh
 - Keyring payload size fallback: if a backend rejects a full token record (for example with `data passed to Set was too big`), dtctl stores a compact record (refresh token + metadata) and refreshes access token on demand
 
+### Automatic Keyring Collection Creation (Linux/WSL)
+
+On Linux and WSL, gnome-keyring may start with only a transient "session" collection and no persistent "login" collection. When `dtctl auth login` detects that the keyring is unreachable due to a missing collection (`failed to unlock correct collection`), it automatically attempts to create one:
+
+1. Connects to the D-Bus Secret Service
+2. Creates a persistent collection with the "default" alias
+3. Triggers an OS password prompt if required
+4. Polls for up to 2 minutes for the user to complete the prompt
+
+If automatic creation fails, the error message includes actionable suggestions (token-based auth, Secret Service provider setup).
+
+`dtctl doctor` also includes a dedicated Keyring check that reports backend status and suggests running `dtctl auth login` to create the collection if needed.
+
 ### Keyring Size-Limit Behavior
 
 Some keyring backends impose per-item size limits. With large OAuth responses (for example many scopes and/or large JWTs), saving the full serialized token set may fail.

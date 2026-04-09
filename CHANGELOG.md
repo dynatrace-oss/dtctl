@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Automatic keyring collection creation** — on Linux/WSL, `dtctl auth login` now detects when a persistent Secret Service keyring collection is missing and offers to create one automatically, prompting for a password if needed; `dtctl doctor` reports keyring status and suggests running `auth login` to recover
+
 ## [0.22.0] - 2026-04-01
 
 ### Added
