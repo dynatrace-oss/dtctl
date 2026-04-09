@@ -126,6 +126,12 @@ func TestAuthLogin_CurrentContextFallback(t *testing.T) {
 	if strings.Contains(err.Error(), "--context and --environment are required") {
 		t.Errorf("expected current-context fallback to work, but got flag validation error: %v", err)
 	}
+
+	// The error should include the underlying keyring probe reason
+	// (e.g. "disabled via DTCTL_DISABLE_KEYRING") instead of a generic message.
+	if strings.Contains(err.Error(), "keyring") && !strings.Contains(err.Error(), config.EnvDisableKeyring) {
+		t.Errorf("expected keyring error to include probe reason (%s env var), got: %v", config.EnvDisableKeyring, err)
+	}
 }
 
 // TestAuthLogin_PartialFlags verifies that supplying only --context (without

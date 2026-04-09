@@ -336,3 +336,45 @@ func TestDoctorURLValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestDoctorKeyringCheck(t *testing.T) {
+	t.Setenv("DTCTL_DISABLE_KEYRING", "1")
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+
+	originalCfgFile := cfgFile
+	defer func() { cfgFile = originalCfgFile }()
+	cfgFile = configPath
+
+	cfg := config.NewConfig()
+	cfg.SetContext("test", "https://test.apps.dynatrace.com", "test-token")
+	if err := cfg.SetToken("test-token", "dt0c01.ST.test-token-value.test-secret"); err != nil {
+		t.Fatalf("failed to set token: %v", err)
+	}
+	cfg.CurrentContext = "test"
+	if err := cfg.SaveTo(configPath); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	results := runDoctorChecks()
+
+	found := false
+	for _, r := range results {
+		if r.Name == "Keyring" {
+			found = true
+			if r.Status != "warn" {
+				t.Errorf("expected keyring status 'warn' (disabled via env), got %q", r.Status)
+			}
+			if !strings.Contains(r.Detail, config.EnvDisableKeyring) {
+				t.Errorf("expected keyring detail to mention %s, got %q", config.EnvDisableKeyring, r.Detail)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected 'Keyring' check in results")
+		for _, r := range results {
+			t.Logf("  %s: %s: %s", r.Name, r.Status, r.Detail)
+		}
+	}
+}

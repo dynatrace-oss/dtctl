@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -33,9 +34,10 @@ Checks performed:
   2. Configuration file exists and is valid
   3. Current context is set
   4. Environment URL pattern is valid (detects common domain mistakes)
-  5. Token is retrievable (keyring or config)
-  6. Environment URL is reachable (HTTP connectivity)
-  7. API authentication works (user identity)`,
+  5. Keyring status (secure token storage)
+  6. Token is retrievable (keyring or config)
+  7. Environment URL is reachable (HTTP connectivity)
+  8. API authentication works (user identity)`,
 	Example: `  # Run all checks
   dtctl doctor
 
@@ -138,7 +140,26 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 		})
 	}
 
-	// 5. Token retrieval
+	// 5. Keyring status
+	if keyringErr := config.CheckKeyring(); keyringErr != nil {
+		detail := fmt.Sprintf("%s: %v", config.KeyringBackend(), keyringErr)
+		if strings.Contains(keyringErr.Error(), "failed to unlock correct collection") {
+			detail += " (run 'dtctl auth login' to create the collection automatically)"
+		}
+		results = append(results, checkResult{
+			Name:   "Keyring",
+			Status: "warn",
+			Detail: detail,
+		})
+	} else {
+		results = append(results, checkResult{
+			Name:   "Keyring",
+			Status: "ok",
+			Detail: config.KeyringBackend(),
+		})
+	}
+
+	// 6. Token retrieval
 	token, tokenErr := client.GetTokenWithOAuthSupport(cfg, ctx.TokenRef)
 	if tokenErr != nil || token == "" {
 		detail := "token not found"

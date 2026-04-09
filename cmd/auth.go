@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -230,8 +231,31 @@ you'll need to use API token authentication instead (dtctl config set-credential
 		}
 
 		// Ensure keyring is available before starting OAuth flow
-		if !config.IsKeyringAvailable() {
-			return fmt.Errorf("OAuth login requires a working system keyring, but none is available; please configure a keyring (or disable keyring usage if supported) and try again, or use an alternative authentication method")
+		if keyringErr := config.CheckKeyring(); keyringErr != nil {
+			recovered := false
+			// On Linux/WSL the persistent keyring collection may not exist yet.
+			// Attempt to create it — this may trigger an OS password prompt.
+			if strings.Contains(keyringErr.Error(), "failed to unlock correct collection") {
+				output.PrintInfo("No keyring collection found — creating one (you may be prompted for a password)...")
+				if initErr := config.EnsureKeyringCollection(); initErr == nil {
+					if config.CheckKeyring() == nil {
+						output.PrintSuccess("Keyring collection created successfully")
+						recovered = true
+					}
+				}
+			}
+			if !recovered {
+				return &diagnostic.Error{
+					Operation: "auth login",
+					Message:   fmt.Sprintf("OAuth login requires a working system keyring: %v", keyringErr),
+					Suggestions: []string{
+						"Check that a D-Bus session bus is available (echo $DBUS_SESSION_BUS_ADDRESS)",
+						"Ensure a Secret Service provider is running (e.g. gnome-keyring-daemon --start --components=secrets)",
+						"Unset DTCTL_DISABLE_KEYRING if it was set unintentionally",
+						"Use API token authentication instead: dtctl config set-credentials",
+					},
+				}
+			}
 		}
 
 		// Warn about potentially wrong environment URLs

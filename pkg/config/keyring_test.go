@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -38,51 +39,42 @@ func TestKeyringBackend(t *testing.T) {
 	}
 }
 
-func TestContains(t *testing.T) {
-	tests := []struct {
-		name    string
-		s       string
-		substrs []string
-		want    bool
-	}{
-		{
-			name:    "contains one",
-			s:       "hello world",
-			substrs: []string{"world"},
-			want:    true,
-		},
-		{
-			name:    "contains multiple check",
-			s:       "secret service error",
-			substrs: []string{"keychain", "secret service"},
-			want:    true,
-		},
-		{
-			name:    "contains none",
-			s:       "some error",
-			substrs: []string{"keychain", "dbus"},
-			want:    false,
-		},
-		{
-			name:    "empty string",
-			s:       "",
-			substrs: []string{"test"},
-			want:    false,
-		},
-		{
-			name:    "empty substrs",
-			s:       "hello",
-			substrs: []string{},
-			want:    false,
-		},
-	}
+func TestCheckKeyring_Disabled(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := contains(tt.s, tt.substrs...); got != tt.want {
-				t.Errorf("contains() = %v, want %v", got, tt.want)
-			}
-		})
+	err := CheckKeyring()
+	if err == nil {
+		t.Fatal("CheckKeyring() should return error when keyring is disabled")
+	}
+	if !strings.Contains(err.Error(), EnvDisableKeyring) {
+		t.Errorf("error should mention %s, got: %v", EnvDisableKeyring, err)
+	}
+}
+
+func TestCheckKeyring_ReturnsNilOrError(t *testing.T) {
+	// Smoke test: the function should not panic regardless of environment.
+	// In CI (no keyring) it returns an error; on a desktop it may return nil.
+	err := CheckKeyring()
+	if err != nil {
+		t.Logf("CheckKeyring() returned error (expected in CI): %v", err)
+	}
+}
+
+func TestIsKeyringAvailable_MatchesCheckKeyring(t *testing.T) {
+	available := IsKeyringAvailable()
+	err := CheckKeyring()
+	if available != (err == nil) {
+		t.Errorf("IsKeyringAvailable()=%v but CheckKeyring() returned %v", available, err)
+	}
+}
+
+func TestEnsureKeyringCollection_Smoke(t *testing.T) {
+	// EnsureKeyringCollection requires D-Bus and Secret Service.
+	// In most test environments these are unavailable, so the function
+	// should return an error without panicking.
+	err := EnsureKeyringCollection()
+	if err != nil {
+		t.Logf("EnsureKeyringCollection() error (expected in CI): %v", err)
 	}
 }
 
