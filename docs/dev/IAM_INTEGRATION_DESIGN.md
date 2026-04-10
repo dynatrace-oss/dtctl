@@ -17,7 +17,7 @@ plane than the rest of dtctl.
 
 1. **Single binary** -- users manage environments _and_ IAM from one tool
 2. **Unified config** -- one config file, one context concept, no second tool to configure
-3. **Consistent UX** -- same verb-noun pattern, same output formats, same `--agent` mode
+3. **Familiar UX** -- verb-noun grammar within the `iam` namespace, same output formats, same `--agent` mode
 4. **Automation-ready** -- client-credentials flow for CI/CD alongside interactive PKCE
 5. **Incremental adoption** -- IAM features are additive; existing commands unchanged
 
@@ -91,13 +91,48 @@ dtctl iam bulk create-bindings -f bindings.yaml
 dtctl iam whoami
 ```
 
+### Grammar Deviation: Namespace-First vs Verb-First
+
+This is a deliberate break from dtctl's core `<verb> <resource>` grammar.
+Every other dtctl command is verb-first:
+
+```
+dtctl get workflows          # verb noun
+dtctl describe dashboard X   # verb noun
+dtctl delete slo my-slo      # verb noun
+```
+
+The IAM command tree is namespace-first:
+
+```
+dtctl iam get groups         # namespace verb noun (three levels)
+dtctl iam describe user X    # namespace verb noun
+dtctl iam delete policy Y    # namespace verb noun
+```
+
+This is a conscious trade-off, not an accident. The three-level depth matches
+how other CLIs handle IAM:
+
+| CLI | Pattern | Levels |
+|-----|---------|--------|
+| AWS | `aws iam create-role` | 2 (service + compound verb-noun) |
+| gcloud | `gcloud iam roles create` | 3 (service noun verb) |
+| Azure | `az ad user create` | 3 (service noun verb) |
+| dtctl | `dtctl iam get groups` | 3 (namespace verb noun) |
+
+dtctl's pattern is closest to `az ad` -- a service namespace followed by
+dtctl's existing verb-noun grammar. This preserves verb-noun consistency
+_within_ the namespace while acknowledging that IAM is a different API plane
+that needs its own entry point.
+
 ### Rationale
 
 - **Namespace isolation.** IAM resources (users, groups, policies) are
   account-level concepts. Putting them under `iam` avoids ambiguity with
   potential environment-level resources of the same name.
 - **Auth boundary.** All `dtctl iam` commands know they need account-level
-  auth and an `account-uuid`. The subcommand is a natural validation gate.
+  auth and an `account-uuid`. The subcommand is a natural validation gate
+  that checks for `account-uuid` before dispatching to any child command.
 - **Discoverability.** `dtctl iam --help` lists all IAM operations in one
   place. Users don't need to guess which top-level verbs support IAM resources.
 - **Industry precedent.** AWS CLI: `aws iam`. Google Cloud: `gcloud iam`.
@@ -116,6 +151,31 @@ concepts. No natural place for `analyze` or `bulk` operations.
 Rejected. Conflates two different APIs behind a flag. Makes it easy to
 accidentally target the wrong scope. Does not scale to IAM-specific verbs
 like `analyze` and `bulk`.
+
+### IAM-Specific Verbs: `analyze` and `bulk`
+
+`analyze` and `bulk` are new verbs that only exist within the `iam` namespace.
+They don't appear in dtctl's top-level verb vocabulary:
+
+```
+dtctl iam analyze user-permissions alice@co.com
+dtctl iam analyze permissions-matrix
+dtctl iam bulk add-users-to-group -f users.csv
+```
+
+These are IAM-specific because:
+
+- **`analyze`** computes derived results (effective permissions, compliance
+  matrices) rather than fetching stored resources. Reframing them as `get`
+  (e.g., `dtctl iam get permissions-matrix`) would be misleading -- there is
+  no "permissions-matrix" resource in the API, it's a client-side computation
+  across multiple API calls.
+- **`bulk`** is a batch orchestration pattern, not a CRUD verb. It reads a
+  file and executes multiple create/update operations with progress reporting.
+
+If `analyze` or `bulk` ever become useful for non-IAM resources, they can be
+promoted to top-level verbs at that point. For now, scoping them to `iam`
+avoids premature abstraction.
 
 ### Handling Existing `get users` / `get groups`
 
@@ -462,13 +522,26 @@ const (
 | Safety Level | iam get/describe | iam create | iam delete | iam analyze |
 |-------------|-----------------|------------|------------|-------------|
 | `readonly` | yes | no | no | yes |
-| `readwrite-mine` | yes | yes | own only (*) | yes |
+| `readwrite-mine` | yes | no | no | yes |
 | `readwrite-all` | yes | yes | yes | yes |
 | `dangerously-unrestricted` | yes | yes | yes | yes |
 
-(*) Ownership for IAM resources is determined by the `owner` field where
-available. For resources without ownership (e.g., policy bindings),
-`readwrite-mine` blocks deletion.
+**Why `readwrite-mine` blocks all IAM mutations:**
+
+The environment-level `readwrite-mine` safety level uses resource ownership
+(the `owner` field) to distinguish "my resources" from shared ones. This model
+does not translate to account-level IAM:
+
+- Most IAM resources (policies, bindings, boundaries) have no `owner` field.
+- Groups and users are inherently shared, account-wide resources.
+- "I created this group" does not imply "I should be the only one who can
+  delete it" -- IAM is a shared administrative concern.
+
+Rather than introducing a broken ownership heuristic, `readwrite-mine` simply
+does not permit IAM mutations. Users who need to modify IAM resources must use
+a context with `readwrite-all` or higher. This is the honest mapping:
+`readwrite-mine` means "I can manage my own stuff" -- and IAM resources are
+never "my own stuff."
 
 ### Dry-Run Support
 
@@ -541,7 +614,246 @@ know which account the data came from.
 
 ---
 
-## What Not to Port from dtiam
+## Decision 9: Error UX for Common Failure Modes
+
+IAM commands have a different failure surface than environment commands. The
+first 6 months of usage will be dominated by configuration and auth errors,
+not API errors. Getting the error messages right matters more than the happy
+path.
+
+### Failure Mode 1: No `account-uuid` Configured
+
+The most common error. User has dtctl working for environment commands and
+tries `dtctl iam get groups` without setting up account config.
+
+```
+Error: account-uuid not configured for context "production"
+
+Set it with:
+  dtctl ctx set production --account-uuid YOUR_ACCOUNT_UUID
+
+Find your account UUID in Dynatrace:
+  Account Management > Account settings > Account UUID
+```
+
+### Failure Mode 2: Token Lacks Account-Level Scopes
+
+User has a PKCE token that works for environment commands, but it was minted
+before IAM scopes were added (or the built-in client ID doesn't have them).
+
+```
+Error: token does not have required scopes for IAM operations
+
+Missing scopes: account-idm-read, account-env-read
+
+Your current token was issued via interactive login (PKCE). To get
+account-level scopes, either:
+
+  1. Re-authenticate:  dtctl auth login
+     (works if the dtctl OAuth client has been granted account scopes)
+
+  2. Use client credentials:
+     dtctl ctx set-credentials iam-cred \
+       --client-id dt0s01.XXXXX \
+       --client-secret dt0s01.XXXXX.YYYYY
+     dtctl ctx set production --account-token-ref iam-cred
+```
+
+This error is detected either from an HTTP 403 with a scope-related message,
+or preemptively by inspecting the JWT claims if the token is a JWT.
+
+### Failure Mode 3: Account UUID Does Not Match Environment
+
+User sets `account-uuid` to the wrong account (one that doesn't own the
+configured environment). IAM commands work but return unexpected results.
+
+This cannot be detected automatically in general, but `dtctl doctor` can
+cross-check: call `iam get environments` and verify the current environment
+URL appears in the result list.
+
+```
+Warning: environment "abc123" not found in account "12345678-abcd-..."
+
+The configured account-uuid may not own this environment.
+Environments in this account: def456, ghi789
+
+Check your account UUID:
+  dtctl ctx set production --account-uuid CORRECT_UUID
+```
+
+### Failure Mode 4: Account API Unreachable
+
+Network partition between environment API (reachable) and account API
+(unreachable). Different hosts, different DNS, potentially different
+firewalls.
+
+```
+Error: cannot reach account management API at api.dynatrace.com
+
+The environment API at abc123.apps.dynatrace.com is reachable,
+but the account API is not. This may be a network or firewall issue.
+
+Check: can you reach https://api.dynatrace.com from this machine?
+```
+
+### Failure Mode 5: Rate Limiting on Account API
+
+The account management API may have stricter rate limits than environment
+APIs, especially for bulk operations.
+
+```
+Error: rate limited by account management API (HTTP 429)
+
+Retry-After: 30 seconds
+Operation: iam bulk add-users-to-group (processing row 47 of 200)
+
+The operation will resume automatically. To reduce rate limit impact,
+use smaller batch sizes with --batch-size flag.
+```
+
+---
+
+## Decision 10: Help Text and Discoverability
+
+### `dtctl --help` Layout
+
+The `iam` subcommand appears in the main help output, grouped separately from
+the CRUD verbs to signal that it's a namespace, not a verb:
+
+```
+Usage:
+  dtctl [command]
+
+Resource Commands:
+  get         List resources
+  describe    Show detailed resource information
+  create      Create a resource
+  delete      Delete a resource
+  apply       Create or update resources from file
+  edit        Edit a resource in your editor
+  ...
+
+Query & Execution:
+  query       Execute DQL queries
+  exec        Execute workflows, automations
+  ...
+
+Platform Administration:
+  iam         Manage Identity and Access Management (account-level)
+
+Configuration:
+  ctx         Manage contexts and configuration
+  auth        Authentication management
+  doctor      Check connectivity and configuration
+  ...
+```
+
+The placement under "Platform Administration" (or similar heading) signals
+that `iam` is a different kind of command -- a namespace for a different API
+plane, not another CRUD verb.
+
+### `dtctl iam --help` Layout
+
+```
+Manage Dynatrace Identity and Access Management resources.
+
+IAM operates at the account level (not environment level). Requires
+account-uuid to be configured: dtctl ctx set --account-uuid UUID
+
+Usage:
+  dtctl iam [command]
+
+Resource Commands:
+  get         List IAM resources (users, groups, policies, ...)
+  describe    Show detailed IAM resource information
+  create      Create IAM resources
+  delete      Delete IAM resources
+
+Analysis & Bulk:
+  analyze     Analyze permissions and compliance
+  bulk        Bulk operations from CSV/YAML/JSON files
+  export      Export IAM resources for backup
+
+Utilities:
+  whoami      Show current account and identity information
+
+Use "dtctl iam [command] --help" for more information about a command.
+```
+
+### Tab Completion
+
+All `dtctl iam` subcommands and resource types are included in shell
+completion. `dtctl iam get <TAB>` shows: `users groups policies bindings
+boundaries environments service-users`.
+
+---
+
+## Decision 11: Migration from Standalone dtiam
+
+Users of the `dtiam` prototype need a path to migrate their
+`~/.config/dtiam/config` to dtctl's config format. The formats are similar
+(both kubectl-inspired YAML) but differ in field names and token storage.
+
+### dtiam Config Format
+
+```yaml
+api-version: v1
+kind: Config
+current-context: production
+contexts:
+  - name: production
+    context:
+      account-uuid: abc-123-def
+      credentials-ref: prod-creds
+credentials:
+  - name: prod-creds
+    credential:
+      client-id: dt0s01.XXXXX
+      client-secret: dt0s01.XXXXX.YYYYY
+```
+
+### Equivalent dtctl Config
+
+```yaml
+apiVersion: v1
+kind: Config
+current-context: production
+contexts:
+  - name: production
+    context:
+      environment: https://abc123.apps.dynatrace.com   # must be added manually
+      token-ref: prod-token                             # for environment access
+      account-uuid: abc-123-def                         # from dtiam
+      account-token-ref: prod-iam-creds                 # maps to dtiam credentials
+tokens:
+  - name: prod-iam-creds
+    type: oauth-client-credentials
+    client-id: dt0s01.XXXXX
+    # client-secret in keyring
+```
+
+### Migration Approach
+
+A documented manual migration is sufficient for the prototype's small user
+base. Include a section in `docs/MIGRATING_FROM_DTIAM.md` with:
+
+1. Side-by-side field mapping table
+2. Step-by-step commands to recreate the config:
+   ```bash
+   dtctl ctx set production --account-uuid abc-123-def
+   dtctl ctx set-credentials prod-iam-creds \
+     --client-id dt0s01.XXXXX \
+     --client-secret dt0s01.XXXXX.YYYYY
+   dtctl ctx set production --account-token-ref prod-iam-creds
+   ```
+3. Note that `environment` must be added manually (dtiam has no environment
+   URL since it only talks to the account API)
+4. Verification: `dtctl iam get environments` should match `dtiam get environments`
+
+An automated `dtctl iam import-config` command is not worth the investment
+for the current user base but could be added later if adoption warrants it.
+
+---
 
 | dtiam feature | Reason to skip |
 |--------------|---------------|
@@ -567,7 +879,7 @@ know which account the data came from.
 
 ### Phase 1: Foundation
 
-**Goal:** Config + auth + smoke test.
+**Goal:** Config + auth + smoke test + diagnostics.
 
 - Add `account-uuid` and `account-token-ref` to `Context` struct
 - Add `dtctl ctx set-account` / `dtctl ctx set --account-uuid` commands
@@ -577,6 +889,15 @@ know which account the data came from.
 - Add `DTCTL_ACCOUNT_UUID` / `DTCTL_ACCOUNT_TOKEN` env var support
 - Implement `dtctl iam whoami` as a connectivity smoke test
 - Add account-level keyring key patterns
+- **Extend `dtctl doctor`** to check account-level config when `account-uuid`
+  is set:
+  - Verify `api.dynatrace.com` (or tier equivalent) is reachable
+  - Verify the current token has account-level scopes (inspect JWT claims or
+    make a lightweight API call like `iam get environments`)
+  - Cross-check that the configured environment appears in the account's
+    environment list (detects wrong account UUID)
+  - Report results as new doctor checks: `account-api-reachable`,
+    `account-scopes-valid`, `account-environment-match`
 
 ### Phase 2: Read-Only IAM
 
@@ -645,10 +966,15 @@ know which account the data came from.
    whether page tokens embed filters (like Settings API) or require resending
    them (like Document API).
 
-6. **Token platform support.** dtiam supports `get/create/delete tokens` for
-   platform tokens. Should this be part of `dtctl iam` or a separate
-   `dtctl token` command? Platform tokens are conceptually different from IAM
-   but live on the same API plane.
+6. **Platform tokens: out of scope for `dtctl iam`.** dtiam supports
+   `get/create/delete tokens` for platform tokens. Platform tokens are
+   account-scoped credentials, not authorization policies. Putting them under
+   `dtctl iam` would make the IAM namespace responsible for everything
+   account-scoped, not just identity and access -- that's scope creep.
+   Platform tokens should be a separate top-level resource (`dtctl get tokens`,
+   `dtctl create token`) or live under a future `dtctl account` namespace if
+   one is ever needed. This is a separate design decision tracked outside this
+   document.
 
 ---
 
@@ -703,6 +1029,6 @@ know which account the data came from.
 | Multi-context config | Phase 1 | Unified into dtctl's config |
 | OAuth2 client credentials | Phase 1 | |
 | Bearer token auth | Phase 1 | Via existing dtctl token support |
-| Platform tokens CRUD | TBD | See open question 6 |
+| Platform tokens CRUD | Out of scope | Not IAM; separate top-level resource or `dtctl account` namespace |
 | App Engine registry | Not planned | Already exists as `dtctl get apps` (env-level) |
 | Settings schema search | Not planned | Already exists as `dtctl get settings` (env-level) |
