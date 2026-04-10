@@ -25,7 +25,12 @@ func EnsureKeyringCollection(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("cannot connect to Secret Service: %w", err)
 	}
-	defer svc.Conn.Close()
+	// NOTE: Do NOT call svc.Conn.Close(). NewSecretService() uses
+	// dbus.SessionBus() which returns a shared, process-wide connection.
+	// The dbus docs explicitly warn: "This method must not be called on
+	// shared connections." Closing it could break go-keyring (called via
+	// CheckKeyring right after this function). The connection is cleaned
+	// up automatically when the process exits.
 
 	// If the "login" collection already exists, nothing to do.
 	loginPath := dbus.ObjectPath("/org/freedesktop/secrets/collection/login")

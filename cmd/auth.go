@@ -26,7 +26,7 @@ var (
 // implementations and can be overridden in tests.
 var (
 	authCheckKeyringFunc  = config.CheckKeyring
-	authEnsureKeyringFunc = func(ctx context.Context) error { return config.EnsureKeyringCollection(ctx) }
+	authEnsureKeyringFunc = config.EnsureKeyringCollection
 )
 
 // authCmd represents the auth command
