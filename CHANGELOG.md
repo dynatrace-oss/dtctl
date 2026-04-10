@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`activate gcp|azure monitoring` command** — new `dtctl activate` verb that completes cloud monitoring onboarding in one step: optionally updates the linked connection credentials (service account for GCP; directory/application ID for Azure) and enables the monitoring config; `--serviceAccountId`, `--directoryId`, `--applicationId` are all optional — if omitted, only the enabled state is toggled
+- **Cloud monitoring configs created as disabled** — `dtctl create gcp monitoring` and `dtctl create azure monitoring` now create configs in a disabled state (`enabled: false`); use `dtctl activate gcp|azure monitoring` to enable
+
 ## [0.22.0] - 2026-04-01
 
 ### Added

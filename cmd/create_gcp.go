@@ -122,7 +122,7 @@ func printGCPPrincipalHint(handler *gcpconnection.Handler, serviceAccountID stri
 	fmt.Printf("  --member=\"serviceAccount:%s\" \\\n", dynatracePrincipal)
 	fmt.Println("  --role=\"roles/iam.serviceAccountTokenCreator\"")
 	fmt.Println()
-	fmt.Println("5) Update connection in Dynatrace:")
+	fmt.Println("5) Update connection in Dynatrace with customer service account:")
 	fmt.Printf("dtctl update gcp connection --name %q --serviceAccountId \"${CUSTOMER_SA_EMAIL}\"\n", createGCPConnectionName)
 	fmt.Println()
 	fmt.Println("Optional: check Domain Restricted Sharing policy allows Dynatrace customer:")
@@ -161,6 +161,7 @@ Examples:
 		if err != nil {
 			return err
 		}
+		credential.Enabled = false // Created in disabled state; use 'dtctl activate gcp monitoring' to enable
 
 		locations, err := gcpmonitoringconfig.ParseOrDefaultLocations(createGCPMonitoringConfigLocationFiltering, monitoringHandler)
 		if err != nil {
@@ -180,7 +181,7 @@ Examples:
 		payload := gcpmonitoringconfig.GCPMonitoringConfig{
 			Scope: "integration-gcp",
 			Value: gcpmonitoringconfig.Value{
-				Enabled:     true,
+				Enabled:     false,
 				Description: createGCPMonitoringConfigName,
 				Version:     version,
 				GoogleCloud: gcpmonitoringconfig.GoogleCloudConfig{
@@ -210,7 +211,8 @@ Examples:
 			return err
 		}
 
-		output.PrintSuccess("GCP monitoring config created: %s", created.ObjectID)
+		output.PrintSuccess("GCP monitoring config created (disabled): %s", created.ObjectID)
+		output.PrintInfo("Run 'dtctl activate gcp monitoring --name %q' to enable it", createGCPMonitoringConfigName)
 		return nil
 	},
 }

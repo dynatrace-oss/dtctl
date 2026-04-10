@@ -85,11 +85,11 @@ This document tracks the current implementation status of dtctl. For future plan
 | Resource | get | describe | create | delete | apply |
 |----------|-----|----------|--------|--------|-------|
 | azure connection | ✅ | ✅ | ✅ | ✅ | ✅ |
-| azure monitoring | ✅ | ✅ | ✅ | ✅ | ✅ |
+| azure monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ activate |
 | aws connection | - | - | - | - | - |
 | aws monitoring | - | - | - | - | - |
 | gcp connection (Preview) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| gcp monitoring (Preview) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| gcp monitoring (Preview) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ activate |
 
 #### Advanced Operations
 
@@ -212,7 +212,8 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Get by description or ID: `dtctl get azure monitoring <description-or-id>`
 - [x] Describe config: `dtctl describe azure monitoring <id-or-name>`
 - [x] Runtime status in describe (Smartscape, metrics, recent events)
-- [x] Create config: `dtctl create azure monitoring --name <name> --credentials <connection-name-or-id>`
+- [x] Create config (created as disabled): `dtctl create azure monitoring --name <name> --credentials <connection-name-or-id>`
+- [x] Activate config (update connection + enable): `dtctl activate azure monitoring --name <name> [--directoryId <tenant-id>] [--applicationId <client-id>]`
 - [x] Update config: `dtctl update azure monitoring --name <name> [--locationFiltering ...] [--featureSets ...]`
 - [x] Delete by name or ID: `dtctl delete azure monitoring <name-or-id>`
 - [x] Apply from manifest (idempotent): `dtctl apply -f azure_monitoring_config.yaml`
@@ -249,7 +250,8 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Get by description or ID: `dtctl get gcp monitoring <description-or-id>`
 - [x] Describe config: `dtctl describe gcp monitoring <id-or-name>`
 - [x] Runtime status in describe (Smartscape, metrics, recent events)
-- [x] Create config: `dtctl create gcp monitoring --name <name> --credentials <connection-name-or-id>`
+- [x] Create config (created as disabled): `dtctl create gcp monitoring --name <name> --credentials <connection-name-or-id>`
+- [x] Activate config (update connection + enable): `dtctl activate gcp monitoring --name <name> [--serviceAccountId <email>]`
 - [x] Update config: `dtctl update gcp monitoring --name <name> [--locationFiltering ...] [--featureSets ...]`
 - [x] Delete by name or ID: `dtctl delete gcp monitoring <name-or-id>`
 - [x] Apply from manifest (idempotent): `dtctl apply -f gcp_monitoring_config.yaml`

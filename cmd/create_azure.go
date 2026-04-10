@@ -119,6 +119,7 @@ Examples:
 		if err != nil {
 			return err
 		}
+		credential.Enabled = false // Created in disabled state; use 'dtctl activate azure monitoring' to enable
 
 		locations, err := azuremonitoringconfig.ParseOrDefaultLocations(createAzureMonitoringConfigLocationFiltering, monitoringHandler)
 		if err != nil {
@@ -138,7 +139,7 @@ Examples:
 		payload := azuremonitoringconfig.AzureMonitoringConfig{
 			Scope: "integration-azure",
 			Value: azuremonitoringconfig.Value{
-				Enabled:     true,
+				Enabled:     false,
 				Description: createAzureMonitoringConfigName,
 				Version:     version,
 				Azure: azuremonitoringconfig.AzureConfig{
@@ -163,7 +164,8 @@ Examples:
 			return err
 		}
 
-		output.PrintSuccess("Azure monitoring config created: %s", created.ObjectID)
+		output.PrintSuccess("Azure monitoring config created (disabled): %s", created.ObjectID)
+		output.PrintInfo("Run 'dtctl activate azure monitoring --name %q' to enable it", createAzureMonitoringConfigName)
 		return nil
 	},
 }
@@ -200,7 +202,7 @@ func printFederatedCreateInstructions(baseURL, objectID, connectionName string) 
 		fmt.Println("3. Create Federated Credential:")
 		fmt.Printf("   az ad app federated-credential create --id \"$CLIENT_ID\" --parameters \"{'name': 'fd-Federated-Credential', 'issuer': '%s', 'subject': 'dt:connection-id/%s', 'audiences': ['%s/svc-id/com.dynatrace.da']}\"\n", issuer, objectID, host)
 		fmt.Println()
-		fmt.Println("4. Finalize connection in Dynatrace (set directoryId + applicationId):")
+		fmt.Println("4. Update connection in Dynatrace (set directoryId + applicationId):")
 		fmt.Printf("   dtctl update azure connection --name %q --directoryId \"$TENANT_ID\" --applicationId \"$CLIENT_ID\"\n", connectionName)
 	} else {
 		fmt.Printf("   CLIENT_ID=$(az ad sp create-for-rbac --name %q --create-password false --query appId -o tsv)\n", connectionName)
@@ -213,7 +215,7 @@ func printFederatedCreateInstructions(baseURL, objectID, connectionName string) 
 		fmt.Println("3. Create Federated Credential:")
 		fmt.Printf("   az ad app federated-credential create --id \"$CLIENT_ID\" --parameters \"{'name': 'fd-Federated-Credential', 'issuer': '%s', 'subject': 'dt:connection-id/%s', 'audiences': ['%s/svc-id/com.dynatrace.da']}\"\n", issuer, objectID, host)
 		fmt.Println()
-		fmt.Println("4. Finalize connection in Dynatrace (set directoryId + applicationId):")
+		fmt.Println("4. Update connection in Dynatrace (set directoryId + applicationId):")
 		fmt.Printf("   dtctl update azure connection --name %q --directoryId \"$TENANT_ID\" --applicationId \"$CLIENT_ID\"\n", connectionName)
 	}
 	fmt.Println()

@@ -2774,15 +2774,28 @@ dtctl update azure connection --name "my-azure-connection" --directoryId "$TENAN
 
 Note: immediately after step 4, Entra propagation can take a short time. If you see AADSTS70025, retry step 5 after a few seconds.
 
-### 6) Create and verify Azure monitoring config
+### 6) Create Azure monitoring config (created as disabled)
 
 ```bash
-dtctl create azure monitoring --name "my-azure-connection" --credentials "my-azure-connection"
-dtctl get azure monitoring my-azure-connection
-dtctl describe azure monitoring my-azure-connection
+dtctl create azure monitoring --name "my-azure-monitoring" --credentials "my-azure-connection"
 ```
 
-### 7) Update Azure monitoring config (examples)
+### 7) Activate Azure monitoring config
+
+Activates the monitoring config and optionally updates the linked connection credentials in one step:
+
+```bash
+dtctl activate azure monitoring --name "my-azure-monitoring" --directoryId "$TENANT_ID" --applicationId "$CLIENT_ID"
+```
+
+Verify the config is now enabled:
+
+```bash
+dtctl get azure monitoring my-azure-monitoring
+dtctl describe azure monitoring my-azure-monitoring
+```
+
+### 8) Update Azure monitoring config (examples)
 
 Change location filtering to two regions:
 
@@ -2869,21 +2882,34 @@ Use the service account from step 2 and update connection:
 dtctl update gcp connection --name "my-gcp-connection" --serviceAccountId "${CUSTOMER_SA_EMAIL}"
 ```
 
-### 4) Create and verify GCP monitoring config
+### 4) Create GCP monitoring config (created as disabled)
 
 ```bash
 dtctl create gcp monitoring --name "my-gcp-monitoring" --credentials "my-gcp-connection"
+```
+
+### 5) Activate GCP monitoring config
+
+Activates the monitoring config and optionally updates the linked connection credentials in one step:
+
+```bash
+dtctl activate gcp monitoring --name "my-gcp-monitoring" --serviceAccountId "${CUSTOMER_SA_EMAIL}"
+```
+
+Verify the config is now enabled:
+
+```bash
 dtctl describe gcp monitoring my-gcp-monitoring
 ```
 
-### 5) Discover available locations and feature sets
+### 6) Discover available locations and feature sets
 
 ```bash
 dtctl get gcp monitoring-locations
 dtctl get gcp monitoring-feature-sets
 ```
 
-### 6) Update GCP monitoring config (examples)
+### 7) Update GCP monitoring config (examples)
 
 Change location filtering to two regions:
 
@@ -2908,7 +2934,7 @@ dtctl create gcp monitoring --name "my-gcp-monitoring-explicit" \
   --featureSets "compute_engine_essential,cloud_run_essential"
 ```
 
-### 7) Delete by name or ID
+### 8) Delete by name or ID
 
 ```bash
 dtctl delete gcp monitoring my-gcp-monitoring
