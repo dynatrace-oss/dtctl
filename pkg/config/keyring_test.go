@@ -92,11 +92,9 @@ func TestEnsureKeyringCollection_Smoke(t *testing.T) {
 		if !secretServiceErr {
 			t.Errorf("expected Secret Service unavailability error, got: %v", err)
 		}
-	} else {
+	} else if !strings.Contains(err.Error(), "only supported on Linux") {
 		// On non-Linux platforms the stub should report the OS.
-		if !strings.Contains(err.Error(), "only supported on Linux") {
-			t.Errorf("expected 'only supported on Linux' error, got: %v", err)
-		}
+		t.Errorf("expected 'only supported on Linux' error, got: %v", err)
 	}
 }
 
