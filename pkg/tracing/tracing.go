@@ -64,7 +64,15 @@ func Init(ctx context.Context, spanName string) (context.Context, func(context.C
 		),
 	)
 	if err != nil {
-		res = resource.Default()
+		// Merge failed (e.g. schema URL conflict between Default and the custom
+		// resource). Fall back to the service attributes alone so that
+		// service.name and service.version are still present in spans rather
+		// than being silently dropped by falling back to resource.Default().
+		res = resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName(svcName),
+			semconv.ServiceVersion(version.Version),
+		)
 	}
 
 	// Route SDK-internal errors (e.g. failed span exports) to stderr so they

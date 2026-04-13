@@ -65,26 +65,11 @@ func execute() int {
 	// Setup enhanced error handling after all subcommands are registered
 	setupErrorHandlers(rootCmd)
 
-	// Initialise OpenTelemetry tracing. The root span covers the entire
-	// invocation; shutdown flushes buffered spans before the process exits
-	// (critical for short-lived processes that OneAgent cannot instrument).
-	tracingCtx, shutdownTracing, tracingErr := tracing.Init(
-		context.Background(), buildSpanName(),
-	)
-	tracingRootCtx = tracingCtx
-	defer func() {
-		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		shutdownTracing(flushCtx)
-	}()
-	if tracingErr != nil {
-		// Non-fatal: warn and continue. The CLI still works; spans may not export.
-		fmt.Fprintf(os.Stderr, "dtctl: tracing: %v\n", tracingErr)
-	}
-
-	// --- Alias resolution (before Cobra parses args) ---
-	// Load config quietly; if it fails, skip alias resolution (the real
-	// command will produce the proper error later).
+	// --- Alias resolution (before Cobra parses args AND before tracing init) ---
+	// Resolving aliases first ensures the span name reflects the real command,
+	// not the pre-expansion alias. Load config quietly; if it fails, skip alias
+	// resolution (the real command will produce the proper error later).
+	spanArgs := os.Args[1:]
 	if cfg, err := config.Load(); err == nil {
 		// os.Args[0] is the binary name; work with os.Args[1:]
 		expanded, isShell, err := resolveAlias(os.Args[1:], cfg)
@@ -102,9 +87,29 @@ func execute() int {
 
 		if expanded != nil {
 			rootCmd.SetArgs(expanded)
+			spanArgs = expanded
 		}
 	}
 	// --- End alias resolution ---
+
+	// Initialise OpenTelemetry tracing. Done after alias resolution so that
+	// the span name reflects the actual command (not a pre-alias invocation).
+	// The root span covers the entire invocation; shutdown flushes buffered
+	// spans before the process exits (critical for short-lived processes that
+	// OneAgent cannot instrument).
+	tracingCtx, shutdownTracing, tracingErr := tracing.Init(
+		context.Background(), buildSpanName(spanArgs),
+	)
+	tracingRootCtx = tracingCtx
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		shutdownTracing(flushCtx)
+	}()
+	if tracingErr != nil {
+		// Non-fatal: warn and continue. The CLI still works; spans may not export.
+		fmt.Fprintf(os.Stderr, "dtctl: tracing: %v\n", tracingErr)
+	}
 
 	if err := rootCmd.Execute(); err != nil {
 		errStr := err.Error()
@@ -607,19 +612,58 @@ func NewClientFromConfig(cfg *config.Config) (*client.Client, error) {
 	return c, nil
 }
 
-// buildSpanName derives a safe OTel span name from the command-line arguments.
-// Only the verb and resource (first two positional tokens) are included; further
-// positional arguments (e.g. resource IDs or names) and all flag names/values are
-// excluded to avoid leaking sensitive data into trace span names.
-func buildSpanName() string {
+// flagsTakingValues is the set of persistent long flags that consume the next
+// argument as their value when written without an inline '='.  Boolean and
+// count flags are intentionally omitted so their neighbour is not skipped.
+//
+// NOTE: This must be kept in sync with the PersistentFlags definitions in
+// init() at the bottom of this file.  If a new string/int/etc. flag is added
+// there, add it here too; conversely, bool/count flags must NOT appear here.
+var flagsTakingValues = map[string]bool{
+	"--config":     true,
+	"--context":    true,
+	"--output":     true,
+	"--chunk-size": true,
+}
+
+// buildSpanName derives a safe OTel span name from the supplied command-line
+// arguments (typically the alias-expanded args). Only the verb and resource
+// (first two positional tokens) are included; further positional arguments
+// (e.g. resource IDs or names) and all flag names/values are excluded to avoid
+// leaking sensitive data into trace span names.
+//
+// Leading flags are skipped so that invocations like
+//
+//	dtctl --context prod get workflows
+//
+// correctly produce "dtctl get workflows" instead of just "dtctl".
+// For long flags that accept a separate value token (see flagsTakingValues),
+// that value token is also skipped.
+func buildSpanName(args []string) string {
 	var parts []string
-	for _, arg := range os.Args[1:] {
-		if strings.HasPrefix(arg, "-") {
-			break
-		}
-		parts = append(parts, arg)
-		if len(parts) == 2 {
-			break
+	i := 0
+	for i < len(args) && len(parts) < 2 {
+		arg := args[i]
+		if strings.HasPrefix(arg, "--") {
+			// Long flag: skip it.
+			i++
+			// For value-taking flags without inline '=' (e.g. --context prod),
+			// also skip the associated value token.
+			flagName := arg
+			if eqIdx := strings.Index(arg, "="); eqIdx >= 0 {
+				flagName = arg[:eqIdx]
+			}
+			if flagsTakingValues[flagName] && !strings.Contains(arg, "=") &&
+				i < len(args) && !strings.HasPrefix(args[i], "-") {
+				i++ // skip the value token
+			}
+		} else if strings.HasPrefix(arg, "-") {
+			// Short flag: skip it. Don't skip the next token to avoid
+			// misidentifying a boolean flag's neighbour as its value.
+			i++
+		} else {
+			parts = append(parts, arg)
+			i++
 		}
 	}
 	if len(parts) == 0 {
