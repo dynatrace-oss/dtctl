@@ -683,7 +683,8 @@ func extractSafeArgs(args []string) []string {
 	i := 0
 	for i < len(args) && len(parts) < 2 {
 		arg := args[i]
-		if strings.HasPrefix(arg, "--") {
+		switch {
+		case strings.HasPrefix(arg, "--"):
 			// Long flag: skip it.
 			i++
 			// For value-taking flags without inline '=' (e.g. --context prod),
@@ -696,7 +697,7 @@ func extractSafeArgs(args []string) []string {
 				i < len(args) && !strings.HasPrefix(args[i], "-") {
 				i++ // skip the value token
 			}
-		} else if strings.HasPrefix(arg, "-") {
+		case strings.HasPrefix(arg, "-"):
 			// Short flag (e.g. -v, -o json, -Av).
 			// For value-taking short flags, also skip the next token.
 			i++
@@ -704,7 +705,7 @@ func extractSafeArgs(args []string) []string {
 				i < len(args) && !strings.HasPrefix(args[i], "-") {
 				i++ // skip the value token
 			}
-		} else {
+		default:
 			parts = append(parts, arg)
 			i++
 		}
