@@ -138,5 +138,5 @@ func (envCarrier) Get(key string) string {
 	return ""
 }
 
-func (envCarrier) Set(string, string)  {}
-func (envCarrier) Keys() []string      { return []string{"traceparent", "tracestate"} }
+func (envCarrier) Set(string, string) {}
+func (envCarrier) Keys() []string     { return []string{"traceparent", "tracestate"} }

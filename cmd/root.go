@@ -55,6 +55,13 @@ SLOs, queries, and other Dynatrace platform capabilities.`,
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
+	os.Exit(execute())
+}
+
+// execute runs the CLI and returns an exit code. Separating it from Execute
+// ensures that deferred functions (e.g. tracing shutdown/flush) run before
+// os.Exit is called, which os.Exit would otherwise bypass.
+func execute() int {
 	// Setup enhanced error handling after all subcommands are registered
 	setupErrorHandlers(rootCmd)
 
@@ -83,14 +90,14 @@ func Execute() {
 		expanded, isShell, err := resolveAlias(os.Args[1:], cfg)
 		if err != nil {
 			output.PrintHumanError("%s", err)
-			os.Exit(1)
+			return 1
 		}
 
 		if isShell {
 			if err := execShellAlias(expanded[0]); err != nil {
-				os.Exit(1)
+				return 1
 			}
-			return
+			return 0
 		}
 
 		if expanded != nil {
@@ -126,7 +133,7 @@ func Execute() {
 			detail := errorToDetail(err)
 			detail.Suggestions = append(detail.Suggestions, allHints...)
 			_ = output.PrintError(os.Stderr, detail)
-			os.Exit(exitCodeForError(err))
+			return exitCodeForError(err)
 		}
 
 		output.PrintHumanError("%s", err)
@@ -136,8 +143,9 @@ func Execute() {
 				output.PrintHint("%s", hint)
 			}
 		}
-		os.Exit(exitCodeForError(err))
+		return exitCodeForError(err)
 	}
+	return 0
 }
 
 // collectFlags gathers all flag names from a command and its parents

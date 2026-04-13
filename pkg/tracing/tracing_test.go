@@ -105,4 +105,3 @@ func TestInit_NoOTLPEndpoint_NoError(t *testing.T) {
 		t.Errorf("unexpected error when OTLP endpoint is not set: %v", err)
 	}
 }
-
