@@ -12,6 +12,9 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -37,7 +40,14 @@ var (
 	noAgent      bool // --no-agent flag: opt out of auto-detected agent mode
 
 	// tracingRootCtx holds the context carrying the root OTel span for this
-	// invocation. Set by Execute() and consumed by NewClientFromConfig.
+	// invocation. Set by execute() and read by NewClientFromConfig to inject
+	// W3C trace context headers on outgoing Dynatrace API requests.
+	//
+	// This is a package-level variable (rather than a function parameter) because
+	// NewClientFromConfig is referenced as a function value in breakpoint_helpers.go
+	// and changing its signature would cascade across 100+ call sites. The global is
+	// acceptable here because dtctl is a single-invocation CLI: execute() sets it
+	// once before any client is created, and the process exits shortly after.
 	tracingRootCtx context.Context
 )
 
@@ -97,10 +107,12 @@ func execute() int {
 	// The root span covers the entire invocation; shutdown flushes buffered
 	// spans before the process exits (critical for short-lived processes that
 	// OneAgent cannot instrument).
+	spanName := buildSpanName(spanArgs)
 	tracingCtx, shutdownTracing, tracingErr := tracing.Init(
-		context.Background(), buildSpanName(spanArgs),
+		context.Background(), spanName, verbosity,
 	)
 	tracingRootCtx = tracingCtx
+	rootSpan := trace.SpanFromContext(tracingCtx)
 	defer func() {
 		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -134,6 +146,10 @@ func execute() int {
 		allHints = append(allHints, urlHints...)
 		allHints = append(allHints, authHints...)
 
+		// Record the error on the root span so it appears in traces.
+		rootSpan.SetStatus(codes.Error, err.Error())
+		rootSpan.RecordError(err)
+
 		if agentMode || plainMode {
 			detail := errorToDetail(err)
 			detail.Suggestions = append(detail.Suggestions, allHints...)
@@ -150,6 +166,7 @@ func execute() int {
 		}
 		return exitCodeForError(err)
 	}
+	rootSpan.SetStatus(codes.Ok, "")
 	return 0
 }
 
@@ -617,13 +634,20 @@ func NewClientFromConfig(cfg *config.Config) (*client.Client, error) {
 // count flags are intentionally omitted so their neighbour is not skipped.
 //
 // NOTE: This must be kept in sync with the PersistentFlags definitions in
-// init() at the bottom of this file.  If a new string/int/etc. flag is added
-// there, add it here too; conversely, bool/count flags must NOT appear here.
+// init() at the bottom of this file.  TestFlagsTakingValues_SyncGuard verifies
+// this automatically.
 var flagsTakingValues = map[string]bool{
 	"--config":     true,
 	"--context":    true,
 	"--output":     true,
 	"--chunk-size": true,
+}
+
+// shortFlagsTakingValues maps short flag letters to true when they consume the
+// next argument as their value.  Must be kept in sync with init().
+// TestFlagsTakingValues_SyncGuard verifies this automatically.
+var shortFlagsTakingValues = map[string]bool{
+	"-o": true, // --output
 }
 
 // buildSpanName derives a safe OTel span name from the supplied command-line
@@ -638,7 +662,8 @@ var flagsTakingValues = map[string]bool{
 //
 // correctly produce "dtctl get workflows" instead of just "dtctl".
 // For long flags that accept a separate value token (see flagsTakingValues),
-// that value token is also skipped.
+// and short flags that accept a value (see shortFlagsTakingValues), those
+// value tokens are also skipped.
 func buildSpanName(args []string) string {
 	var parts []string
 	i := 0
@@ -658,9 +683,13 @@ func buildSpanName(args []string) string {
 				i++ // skip the value token
 			}
 		} else if strings.HasPrefix(arg, "-") {
-			// Short flag: skip it. Don't skip the next token to avoid
-			// misidentifying a boolean flag's neighbour as its value.
+			// Short flag (e.g. -v, -o json, -Av).
+			// For value-taking short flags, also skip the next token.
 			i++
+			if shortFlagsTakingValues[arg] &&
+				i < len(args) && !strings.HasPrefix(args[i], "-") {
+				i++ // skip the value token
+			}
 		} else {
 			parts = append(parts, arg)
 			i++

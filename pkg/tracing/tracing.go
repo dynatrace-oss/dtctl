@@ -23,7 +23,8 @@
 // All standard OTEL_* env vars (OTEL_EXPORTER_OTLP_HEADERS, OTEL_SERVICE_NAME, etc.)
 // are forwarded to the SDK automatically. When no endpoint is configured the SDK still
 // generates valid span contexts that are propagated to Dynatrace API requests via the
-// traceparent header, but no spans are exported.
+// traceparent header, but no spans are exported. The overhead in this case is negligible
+// (no network I/O, only in-memory span context generation).
 package tracing
 
 import (
@@ -49,7 +50,12 @@ const tracerName = "dtctl"
 //   - a shutdown function that MUST be deferred to flush spans before process exit
 //   - a non-nil error only when OTEL_EXPORTER_OTLP_ENDPOINT is set but the exporter
 //     cannot be created; the returned context and span are always valid
-func Init(ctx context.Context, spanName string) (context.Context, func(context.Context), error) {
+//
+// verbosity controls OTel-internal error output: at level 0 SDK-internal errors
+// (e.g. failed span exports) are silently discarded; at level 1+ they are printed
+// to stderr. This avoids noisy output in normal CLI usage when an OTLP endpoint is
+// misconfigured.
+func Init(ctx context.Context, spanName string, verbosity int) (context.Context, func(context.Context), error) {
 	svcName := os.Getenv("OTEL_SERVICE_NAME")
 	if svcName == "" {
 		svcName = tracerName
@@ -75,12 +81,16 @@ func Init(ctx context.Context, spanName string) (context.Context, func(context.C
 		)
 	}
 
-	// Route SDK-internal errors (e.g. failed span exports) to stderr so they
-	// are visible when debugging. Only active when OTEL_EXPORTER_OTLP_ENDPOINT
-	// is set and the BatchSpanProcessor encounters a delivery failure.
-	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		fmt.Fprintf(os.Stderr, "dtctl: otel: %v\n", err)
-	}))
+	// Route SDK-internal errors (e.g. failed span exports) to stderr only when
+	// verbose output is enabled. At verbosity 0 errors are silently discarded
+	// to avoid noisy output when an OTLP endpoint is misconfigured.
+	if verbosity > 0 {
+		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+			fmt.Fprintf(os.Stderr, "dtctl: otel: %v\n", err)
+		}))
+	} else {
+		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(_ error) {}))
+	}
 
 	// W3C TraceContext + Baggage propagators — registered globally so the OTel
 	// HTTP instrumentation middleware and manual carrier injections both work.
