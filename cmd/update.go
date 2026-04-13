@@ -1,6 +1,10 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
 
 // updateCmd represents the update command.
 var updateCmd = &cobra.Command{
@@ -32,6 +36,26 @@ Available resources:
 	RunE: requireSubcommand,
 }
 
+// updateSettingsHintCmd redirects users to 'apply' for file-based settings updates.
+var updateSettingsHintCmd = &cobra.Command{
+	Use:     "settings",
+	Aliases: []string{"setting"},
+	Short:   "Update a settings object (use 'apply' instead)",
+	Hidden:  true,
+	// Accept any args/flags so the command doesn't fail before RunE.
+	Args:               cobra.ArbitraryArgs,
+	DisableFlagParsing: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return fmt.Errorf("to update settings objects from a file, use 'dtctl apply -f <file>' instead\n\n" +
+			"The file should include objectId, schemaId, scope, and value fields.\n" +
+			"If the objectId exists it will be updated; otherwise a new object is created.\n\n" +
+			"Example:\n" +
+			"  dtctl apply -f settings.yaml\n" +
+			"  dtctl apply -f settings.yaml --dry-run")
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(updateCmd)
+	updateCmd.AddCommand(updateSettingsHintCmd)
 }
