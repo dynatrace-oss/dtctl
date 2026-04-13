@@ -121,7 +121,7 @@ func execute() int {
 	}()
 	if tracingErr != nil {
 		// Non-fatal: warn and continue. The CLI still works; spans may not export.
-		fmt.Fprintf(os.Stderr, "dtctl: tracing: %v\n", tracingErr)
+		fmt.Fprintf(os.Stderr, "dtctl: tracing: %v (check OTEL_EXPORTER_OTLP_ENDPOINT or unset it to disable export)\n", tracingErr)
 	}
 
 	if err := rootCmd.Execute(); err != nil {
