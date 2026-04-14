@@ -1,0 +1,4 @@
+ID                                        NAME                     
+com.dynatrace.extension.host-monitoring   Host Monitoring            
+com.dynatrace.extension.jmx               JMX Extension              
+custom:my-custom-extension                Custom Metrics Collector   

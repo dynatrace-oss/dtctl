@@ -364,6 +364,11 @@ email:emails:send
 | `extensions:configurations:read` | Read monitoring configurations |
 | `extensions:configurations:write` | Create, update, delete monitoring configurations |
 
+### Hub Catalog API
+| Scope | Description |
+|-------|-------------|
+| `extensions:definitions:read` | Browse Hub catalog extensions and releases (read-only) |
+
 ### Davis AI
 | Scope | Description |
 |-------|-------------|

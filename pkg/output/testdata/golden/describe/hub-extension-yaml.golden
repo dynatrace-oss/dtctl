@@ -1,0 +1,4 @@
+id: com.dynatrace.extension.host-monitoring
+name: Host Monitoring
+type: EXTENSION_2
+description: Comprehensive host performance monitoring

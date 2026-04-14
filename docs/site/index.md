@@ -134,6 +134,10 @@ dtctl exec copilot nl2dql "error logs from last hour"
       <td>get, describe, apply monitoring configs</td>
     </tr>
     <tr>
+      <td>Hub Extensions</td>
+      <td>get, describe, list releases, filter by keyword</td>
+    </tr>
+    <tr>
       <td>App Functions</td>
       <td>get, describe, execute</td>
     </tr>

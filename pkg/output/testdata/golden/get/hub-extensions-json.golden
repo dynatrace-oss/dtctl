@@ -1,0 +1,19 @@
+[
+  {
+    "id": "com.dynatrace.extension.host-monitoring",
+    "name": "Host Monitoring",
+    "type": "EXTENSION_2",
+    "description": "Comprehensive host performance monitoring"
+  },
+  {
+    "id": "com.dynatrace.extension.jmx",
+    "name": "JMX Extension",
+    "type": "EXTENSION_2",
+    "description": "Java management extensions monitoring"
+  },
+  {
+    "id": "custom:my-custom-extension",
+    "name": "Custom Metrics Collector",
+    "type": "EXTENSION_2"
+  }
+]

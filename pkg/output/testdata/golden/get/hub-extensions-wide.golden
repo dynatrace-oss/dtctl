@@ -1,0 +1,4 @@
+ID                                        NAME                       DESCRIPTION                               
+com.dynatrace.extension.host-monitoring   Host Monitoring            Comprehensive host performance monitoring   
+com.dynatrace.extension.jmx               JMX Extension              Java management extensions monitoring       
+custom:my-custom-extension                Custom Metrics Collector                                               

@@ -1016,6 +1016,41 @@ dtctl apply extension-config com.dynatrace.extension.postgres -f config.yaml --d
 # dtctl get certificates                           # List certificates
 ```
 
+### 16a. Hub Catalog Extensions
+
+**API Spec**: [Hub Catalog API](https://docs.dynatrace.com/docs/dynatrace-api/hub-api) (v1)
+
+The Hub catalog lets users browse available extensions before installing them. All commands are read-only.
+
+```bash
+# Resource names: hub-extensions/hub-extension
+#                 hub-extension-releases/hub-extension-release
+
+# List all available Hub extensions
+dtctl get hub-extensions
+
+# Filter by keyword (client-side, case-insensitive substring match on name, ID, description)
+dtctl get hub-extensions --filter kafka
+
+# Wide output (includes description)
+dtctl get hub-extensions -o wide
+
+# Get a specific Hub extension by ID
+dtctl get hub-extensions com.dynatrace.extension.host-monitoring
+
+# Describe a Hub extension
+dtctl describe hub-extensions com.dynatrace.extension.host-monitoring
+
+# List releases for an extension
+dtctl get hub-extension-releases com.dynatrace.extension.host-monitoring
+```
+
+**Behavior notes**:
+- The Hub API does not support server-side filtering; `--filter` fetches all pages and applies a case-insensitive substring match against `id`, `name`, and `description` fields.
+- Pagination follows `PaginationDefault` style (`page-key` / `page-size`).
+- Extension IDs are URL-path-escaped to handle dots and special characters safely.
+- These commands are read-only and do not require safety checks.
+
 ### 17. Lookup Tables (Grail Resource Store)
 
 Lookup tables are tabular files stored in Grail Resource Store that can be loaded and joined with observability data in DQL queries for data enrichment.

@@ -24,12 +24,13 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 13. [Davis AI](#davis-ai)
 14. [Live Debugger](#live-debugger)
 15. [Extensions 2.0](#extensions-20)
-16. [Output Formats](#output-formats)
-17. [Azure Monitoring](#azure-monitoring)
-18. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
-19. [AI Agent Skills](#ai-agent-skills)
-20. [Tips & Tricks](#tips--tricks)
-21. [Troubleshooting](#troubleshooting)
+16. [Hub Catalog](#hub-catalog)
+17. [Output Formats](#output-formats)
+18. [Azure Monitoring](#azure-monitoring)
+19. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
+20. [AI Agent Skills](#ai-agent-skills)
+21. [Tips & Tricks](#tips--tricks)
+22. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -3054,6 +3055,47 @@ value:
   featureSets:
     - host_performance
 ```
+
+---
+
+## Hub Catalog
+
+Browse the Dynatrace Hub extension catalog to discover available extensions before installing them. All Hub commands are read-only.
+
+### Browse Hub Extensions
+
+```bash
+# List all available extensions in the Hub
+dtctl get hub-extensions
+
+# Filter by keyword (case-insensitive, matches name, ID, or description)
+dtctl get hub-extensions --filter kafka
+
+# Wide output (includes description column)
+dtctl get hub-extensions -o wide
+
+# Get a specific Hub extension by ID
+dtctl get hub-extensions com.dynatrace.extension.host-monitoring
+
+# Describe a Hub extension
+dtctl describe hub-extensions com.dynatrace.extension.host-monitoring
+
+# Output as JSON
+dtctl describe hub-extensions com.dynatrace.extension.host-monitoring -o json
+```
+
+### View Extension Releases
+
+```bash
+# List all releases for a Hub extension
+dtctl get hub-extension-releases com.dynatrace.extension.host-monitoring
+
+# Output as JSON or YAML
+dtctl get hub-extension-releases com.dynatrace.extension.host-monitoring -o json
+dtctl get hub-extension-releases com.dynatrace.extension.host-monitoring -o yaml
+```
+
+**Required Token Scopes:** The Hub catalog API uses the same `extensions:definitions:read` scope as the installed extensions API. See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope reference.
 
 ---
 

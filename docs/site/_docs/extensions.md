@@ -207,3 +207,43 @@ snmp:
         privProtocol: AES
         privPassword: "{{ .snmp_priv }}"
 ```
+
+## Hub Catalog
+
+The Dynatrace Hub catalog lets you browse available extensions before installing them. These commands are read-only and do not require write scopes.
+
+### Browsing Hub Extensions
+
+```bash
+# List all available extensions in the Hub
+dtctl get hub-extensions
+
+# Filter by keyword (case-insensitive, matches name, ID, or description)
+dtctl get hub-extensions --filter kafka
+
+# Wide output (includes description)
+dtctl get hub-extensions -o wide
+
+# Get a specific Hub extension by ID
+dtctl get hub-extensions com.dynatrace.extension.host-monitoring
+
+# Describe a Hub extension
+dtctl describe hub-extensions com.dynatrace.extension.host-monitoring
+```
+
+### Viewing Extension Releases
+
+```bash
+# List all releases for an extension
+dtctl get hub-extension-releases com.dynatrace.extension.host-monitoring
+
+# Output as JSON
+dtctl get hub-extension-releases com.dynatrace.extension.host-monitoring -o json
+```
+
+### Aliases
+
+| Full Name | Alias |
+|-----------|-------|
+| `hub-extensions` | `hub-extension` |
+| `hub-extension-releases` | `hub-extension-release` |

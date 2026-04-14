@@ -79,6 +79,8 @@ This document tracks the current implementation status of dtctl. For future plan
 | intent | ✅ | ✅ | - | - | - | - |
 | segment | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | anomaly-detector | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| hub-extension | ✅ | ✅ | - | - | - | - |
+| hub-extension-releases | ✅ | - | - | - | - | - |
 
 #### Cloud Connections
 
@@ -111,6 +113,8 @@ This document tracks the current implementation status of dtctl. For future plan
 | copilot | - | ✅ | - | - | - | - | - | - |
 | segment | - | - | - | - | - | - | - | ✅ |
 | anomaly-detector | - | - | - | - | - | - | - | - |
+| hub-extension | - | - | - | - | - | - | - | - |
+| hub-extension-releases | - | - | - | - | - | - | - | - |
 
 ### Watch Mode Features
 - [x] Watch all `get` commands: `dtctl get workflows --watch`
@@ -186,6 +190,13 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Source defaults to `"dtctl"` when omitted
 - [x] Recent problems cross-reference via DQL in describe output
 - [x] Template variables: `--set threshold=95`
+
+### Hub Catalog Features
+- [x] List Hub extensions: `dtctl get hub-extensions` (alias: `hub-extension`)
+- [x] Filter by name, ID, or description: `dtctl get hub-extensions --filter <substring>` (client-side)
+- [x] Get a specific extension: `dtctl get hub-extensions <id>`
+- [x] Describe extension details: `dtctl describe hub-extensions <id>`
+- [x] List releases for an extension: `dtctl get hub-extension-releases <id>`
 
 ### App Functions Features
 - [x] List all functions: `dtctl get functions`

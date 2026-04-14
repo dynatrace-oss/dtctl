@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **File-based OAuth token storage** — new `DTCTL_TOKEN_STORAGE=file` environment variable enables file-based OAuth token persistence as a fallback when the OS keyring is unavailable (headless Linux, WSL, CI/CD, containers); tokens are stored under `$XDG_DATA_HOME/dtctl/oauth-tokens/` with `0600` permissions; `dtctl doctor` reports the active storage backend; all OAuth flows (login, logout, token refresh, DQL queries) work transparently with either backend
+- **Hub catalog extensions** — browse the Dynatrace Hub extension catalog with `get hub-extensions`, `describe hub-extensions`, and `get hub-extension-releases`; client-side `--filter` flag for case-insensitive substring matching against name, ID, or description; all commands are read-only
 
 ## [0.23.0] - 2026-04-10
 

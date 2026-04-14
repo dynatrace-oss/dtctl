@@ -75,6 +75,8 @@ dtctl supports both singular and plural resource names, plus short aliases.
 | `lookups` | `lookup` | get, describe, create, delete |
 | `extensions` | `extension`, `ext`, `exts` | get, describe |
 | `extension-configs` | `extension-config`, `ext-configs`, `ext-config` | get, describe, apply |
+| `hub-extensions` | `hub-extension` | get, describe |
+| `hub-extension-releases` | `hub-extension-release` | get |
 | `apps` | `app` | get, describe, delete |
 | `functions` | `function`, `func` | get, describe, exec |
 | `intents` | `intent` | get, describe, find, open |
