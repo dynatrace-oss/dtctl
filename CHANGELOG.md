@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Extension installation** — install extensions with `dtctl create extension`; `--hub-extension <id>` installs a Hub catalog extension (optionally pin a release with `--version`); `-f <file.zip>` uploads a custom extension package; `--dry-run` previews without applying; requires the `extensions:definitions:write` token scope
+- **Extended `describe extension` command** — `--monitoring-configuration-schema` outputs the JSON Schema for monitoring configurations of a specific extension version; `--active-gate-groups` lists available ActiveGate groups for a version; `--no-fluff` strips `documentation`, `displayName`, and `customMessage` fields from schema output (use with `--monitoring-configuration-schema`)
 - **`enable gcp|azure monitoring` command** — new `dtctl enable` verb that completes cloud monitoring onboarding in one step: optionally updates the linked connection credentials (service account for GCP; directory/application ID for Azure) and enables the monitoring config; `--serviceAccountId`, `--directoryId`, `--applicationId` are all optional — if omitted, only the enabled state is toggled; supports `--dry-run`
 - **Cloud monitoring configs created as disabled** — `dtctl create gcp monitoring` and `dtctl create azure monitoring` now create configs in a disabled state (`enabled: false`); use `dtctl enable gcp|azure monitoring` to enable
 

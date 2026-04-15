@@ -1,0 +1,12 @@
+- groupname: esx-linux-ag
+  availableactivegates: 2
+  activegates:
+    - id: 187309619
+      errors: []
+    - id: 1981204261
+      errors: []
+- groupname: windows-prod
+  availableactivegates: 1
+  activegates:
+    - id: 305812744
+      errors: []

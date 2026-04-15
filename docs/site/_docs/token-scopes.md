@@ -195,9 +195,11 @@ storage:fieldsets:write
 
 | Operation | Required Scope |
 |---|---|
-| List / Get / Describe | `extension:extensions:read` |
-| Upload / Activate / Delete | `extension:extensions:write` |
-| Hub catalog | `hub:catalog:read`, `hub:catalog:write` |
+| List / Get / Describe | `extensions:definitions:read` |
+| Upload custom extension, install from Hub | `extensions:definitions:write` |
+| Read monitoring configurations | `extensions:configurations:read` |
+| Create / Update / Delete monitoring configurations | `extensions:configurations:write` |
+| Hub catalog (browse) | `extensions:definitions:read` |
 
 ### Davis AI
 

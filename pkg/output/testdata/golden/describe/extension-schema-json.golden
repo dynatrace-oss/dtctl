@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "displayName": "PostgreSQL Monitoring Configuration",
+  "properties": {
+    "credentials": {
+      "displayName": "Credentials",
+      "documentation": "Authentication settings for the PostgreSQL server.",
+      "properties": {
+        "password": {
+          "displayName": "Password",
+          "type": "string"
+        },
+        "username": {
+          "customMessage": "Use a read-only user for security.",
+          "displayName": "Username",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "enabled": {
+      "customMessage": "Disabling will stop all metric collection.",
+      "default": true,
+      "displayName": "Enable monitoring",
+      "documentation": "When set to false, monitoring is suspended.",
+      "type": "boolean"
+    },
+    "host": {
+      "description": "PostgreSQL server hostname or IP address.",
+      "displayName": "Hostname",
+      "type": "string"
+    },
+    "port": {
+      "default": 5432,
+      "description": "PostgreSQL server port.",
+      "displayName": "Port",
+      "type": "integer"
+    }
+  },
+  "type": "object"
+}
