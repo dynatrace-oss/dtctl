@@ -6,6 +6,7 @@
 #
 # Environment variables:
 #   DTCTL_INSTALL_DIR  Override install directory (default: ~/.local/bin on Linux, /usr/local/bin on macOS)
+#   GITHUB_TOKEN       GitHub personal access token to avoid API rate-limiting (optional)
 
 set -e
 
@@ -39,7 +40,12 @@ fi
 
 # Fetch latest release tag
 echo "Fetching latest release..."
-tag=$(curl -fsSL "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"//;s/".*//')
+if [ -n "$GITHUB_TOKEN" ]; then
+    api_response=$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest")
+else
+    api_response=$(curl -fsSL "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest")
+fi
+tag=$(printf '%s' "$api_response" | grep '"tag_name"' | sed 's/.*"tag_name": *"//;s/".*//')
 if [ -z "$tag" ]; then
     echo "Error: could not determine latest release."
     exit 1
@@ -54,7 +60,11 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 echo "Downloading ${asset}..."
-curl -fsSL "$url" -o "${tmpdir}/${asset}"
+if [ -n "$GITHUB_TOKEN" ]; then
+    curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "$url" -o "${tmpdir}/${asset}"
+else
+    curl -fsSL "$url" -o "${tmpdir}/${asset}"
+fi
 
 # Extract
 echo "Extracting..."
