@@ -2161,3 +2161,28 @@ func TestGolden_GetHubExtensionReleases(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Golden tests: create extension (single ExtensionVersion)
+// ---------------------------------------------------------------------------
+
+func TestGolden_DescribeExtensionVersion(t *testing.T) {
+	v := extensionVersionFixtures()[0]
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(v); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-version-"+name, buf.String())
+		})
+	}
+}
