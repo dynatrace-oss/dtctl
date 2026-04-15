@@ -468,16 +468,6 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 	return &result, nil
 }
 
-// hubExtensionRelease is used internally for fetching hub releases when resolving "latest".
-type hubExtensionRelease struct {
-	Version string `json:"version"`
-}
-
-// hubExtensionReleaseList is the API response for listing Hub extension releases.
-type hubExtensionReleaseList struct {
-	Items []hubExtensionRelease `json:"items"`
-}
-
 // Upload uploads a custom extension zip file to the Dynatrace environment.
 // The zipData should contain the raw bytes of the extension zip package.
 // The optional fileName is used as the multipart filename; if empty, "extension.zip" is used.
@@ -528,49 +518,33 @@ func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, er
 	return &result, nil
 }
 
-// InstallFromHub installs a Dynatrace Hub extension by its catalog ID into the environment.
-// If version is empty, the latest available release is used.
-func (h *Handler) InstallFromHub(extensionID, version string) (*ExtensionVersion, error) {
-	if version == "" {
-		// Fetch the latest release from the Hub catalog
-		var releases hubExtensionReleaseList
-
-		resp, err := h.client.HTTP().R().
-			SetResult(&releases).
-			Get(fmt.Sprintf("/platform/hub/v1/catalog/extensions/%s/releases", url.PathEscape(extensionID)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch Hub extension releases for %q: %w", extensionID, err)
-		}
-		if resp.IsError() {
-			return nil, fmt.Errorf("failed to fetch Hub extension releases for %q: status %d: %s", extensionID, resp.StatusCode(), resp.String())
-		}
-		if len(releases.Items) == 0 {
-			return nil, fmt.Errorf("no releases found for Hub extension %q", extensionID)
-		}
-		version = releases.Items[0].Version
-	}
-
+// InstallFromHub installs a Dynatrace Hub extension into the environment using the
+// Extensions 2.0 API. extensionName is the hub extension catalog ID (path parameter).
+// version is optional — when provided it is sent as a query parameter to select a
+// specific release; when empty the API resolves the latest available version.
+func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersion, error) {
 	var result ExtensionVersion
 
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Post(fmt.Sprintf("/platform/hub/v1/catalog/extensions/%s/releases/%s:install",
-			url.PathEscape(extensionID), url.PathEscape(version)))
+	req := h.client.HTTP().R().SetResult(&result)
+	if version != "" {
+		req.SetQueryParam("version", version)
+	}
 
+	resp, err := req.Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to install Hub extension %q: %w", extensionID, err)
+		return nil, fmt.Errorf("failed to install Hub extension %q: %w", extensionName, err)
 	}
 
 	if resp.IsError() {
 		switch resp.StatusCode() {
 		case http.StatusNotFound:
-			return nil, fmt.Errorf("Hub extension %q version %q not found", extensionID, version)
+			return nil, fmt.Errorf("Hub extension %q not found", extensionName)
 		case http.StatusForbidden:
 			return nil, fmt.Errorf("access denied: insufficient permissions to install extensions")
 		case http.StatusConflict:
-			return nil, fmt.Errorf("Hub extension %q version %q is already installed", extensionID, version)
+			return nil, fmt.Errorf("Hub extension %q version %q is already installed", extensionName, version)
 		default:
-			return nil, fmt.Errorf("failed to install Hub extension %q: status %d: %s", extensionID, resp.StatusCode(), resp.String())
+			return nil, fmt.Errorf("failed to install Hub extension %q: status %d: %s", extensionName, resp.StatusCode(), resp.String())
 		}
 	}
 

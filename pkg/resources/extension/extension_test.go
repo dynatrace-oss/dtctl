@@ -1155,53 +1155,40 @@ t.Errorf("expected version %q, got %q", tt.response.Version, result.Version)
 }
 }
 
+
 func TestInstallFromHub(t *testing.T) {
 tests := []struct {
 name          string
-extensionID   string
+extensionName string
 version       string
-releasesResp  *hubExtensionReleaseList
 installCode   int
 installResp   ExtensionVersion
 expectError   bool
 errorContains string
 }{
 {
-name:        "install specific version",
-extensionID: "com.dynatrace.extension.host-monitoring",
-version:     "1.2.3",
-installCode: 200,
+name:          "install specific version",
+extensionName: "com.dynatrace.extension.host-monitoring",
+version:       "1.2.3",
+installCode:   200,
 installResp: ExtensionVersion{
 ExtensionName: "com.dynatrace.extension.host-monitoring",
 Version:       "1.2.3",
 },
 },
 {
-name:        "install latest version",
-extensionID: "com.dynatrace.extension.host-monitoring",
-version:     "",
-releasesResp: &hubExtensionReleaseList{
-Items: []hubExtensionRelease{{Version: "2.0.0"}, {Version: "1.9.0"}},
-},
-installCode: 200,
+name:          "install without version (latest)",
+extensionName: "com.dynatrace.extension.host-monitoring",
+version:       "",
+installCode:   200,
 installResp: ExtensionVersion{
 ExtensionName: "com.dynatrace.extension.host-monitoring",
 Version:       "2.0.0",
 },
 },
 {
-name:        "no releases available",
-extensionID: "com.dynatrace.extension.unknown",
-version:     "",
-releasesResp: &hubExtensionReleaseList{
-Items: []hubExtensionRelease{},
-},
-expectError:   true,
-errorContains: "no releases found",
-},
-{
-name:          "extension not found in hub",
-extensionID:   "com.dynatrace.extension.nonexistent",
+name:          "extension not found",
+extensionName: "com.dynatrace.extension.nonexistent",
 version:       "1.0.0",
 installCode:   404,
 expectError:   true,
@@ -1209,7 +1196,7 @@ errorContains: "not found",
 },
 {
 name:          "access denied",
-extensionID:   "com.dynatrace.extension.restricted",
+extensionName: "com.dynatrace.extension.restricted",
 version:       "1.0.0",
 installCode:   403,
 expectError:   true,
@@ -1217,7 +1204,7 @@ errorContains: "access denied",
 },
 {
 name:          "already installed",
-extensionID:   "com.dynatrace.extension.host-monitoring",
+extensionName: "com.dynatrace.extension.host-monitoring",
 version:       "1.0.0",
 installCode:   409,
 expectError:   true,
@@ -1228,27 +1215,31 @@ errorContains: "already installed",
 for _, tt := range tests {
 t.Run(tt.name, func(t *testing.T) {
 server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-releasesPath := "/platform/hub/v1/catalog/extensions/" + tt.extensionID + "/releases"
-installBase := "/platform/hub/v1/catalog/extensions/" + tt.extensionID + "/releases/"
-
-if r.Method == http.MethodGet && r.URL.Path == releasesPath {
-w.Header().Set("Content-Type", "application/json")
-w.WriteHeader(http.StatusOK)
-json.NewEncoder(w).Encode(tt.releasesResp)
+expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName
+if r.URL.Path != expectedPath {
+t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+w.WriteHeader(http.StatusNotFound)
 return
 }
+if r.Method != http.MethodPost {
+t.Errorf("unexpected method: %s (expected POST)", r.Method)
+w.WriteHeader(http.StatusMethodNotAllowed)
+return
+}
+// Verify version query parameter
+gotVersion := r.URL.Query().Get("version")
+if tt.version != "" && gotVersion != tt.version {
+t.Errorf("expected version query param %q, got %q", tt.version, gotVersion)
+}
+if tt.version == "" && gotVersion != "" {
+t.Errorf("expected no version query param, got %q", gotVersion)
+}
 
-if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, installBase) {
 w.Header().Set("Content-Type", "application/json")
 w.WriteHeader(tt.installCode)
 if tt.installCode == 200 {
 json.NewEncoder(w).Encode(tt.installResp)
 }
-return
-}
-
-t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
-w.WriteHeader(http.StatusNotFound)
 }))
 defer server.Close()
 
@@ -1258,7 +1249,7 @@ t.Fatalf("failed to create client: %v", err)
 }
 
 handler := NewHandler(c)
-result, err := handler.InstallFromHub(tt.extensionID, tt.version)
+result, err := handler.InstallFromHub(tt.extensionName, tt.version)
 
 if tt.expectError {
 if err == nil {
