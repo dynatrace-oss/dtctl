@@ -34,6 +34,65 @@ Get full details about a specific extension version, including its configuration
 dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3
 ```
 
+### Monitoring Configuration Schema
+
+Retrieve only the JSON Schema for monitoring configurations. Useful for generating configuration templates or understanding required fields:
+
+```bash
+# Full schema
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema
+
+# Lean schema: strips displayName, documentation, and customMessage fields
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 \
+  --monitoring-configuration-schema --no-fluff
+
+# Output as JSON or YAML
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 \
+  --monitoring-configuration-schema --no-fluff -o json
+```
+
+### Active Gate Groups
+
+List the active gate groups available for routing extension data collection:
+
+```bash
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --active-gate-groups
+```
+
+## Installing Extensions
+
+### Upload a Custom Extension
+
+Upload a locally built Extensions 2.0 zip package:
+
+```bash
+dtctl create extension -f my-custom-extension.zip
+```
+
+Use `--dry-run` to verify the file is readable without uploading:
+
+```bash
+dtctl create extension -f my-custom-extension.zip --dry-run
+```
+
+Requires the `extensions:definitions:write` scope.
+
+### Install from the Hub
+
+Install a Dynatrace Hub extension directly into your environment:
+
+```bash
+# Install the latest available version
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring
+
+# Install a specific version
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring --version 1.2.3
+```
+
+Use `dtctl get hub-extensions` and `dtctl get hub-extension-releases` to discover available extensions and versions before installing.
+
+Requires the `extensions:definitions:write` scope.
+
 ## Monitoring Configurations
 
 Monitoring configurations define how an extension collects data -- which endpoints to monitor, credentials, polling intervals, and feature flags.

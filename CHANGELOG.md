@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`create extension`** — install Extensions 2.0 packages into the environment; two modes: upload a local zip file (`-f my-extension.zip`) or install directly from the Dynatrace Hub by catalog ID (`--hub-extension com.dynatrace.extension.host-monitoring [--version 1.2.3]`); both paths require `extensions:definitions:write`; `--dry-run` previews the operation without contacting the API
+- **`describe extension --monitoring-configuration-schema`** — output only the JSON Schema for monitoring configurations of a specific extension version; combine with `--no-fluff` to strip `displayName`, `documentation`, and `customMessage` fields for a leaner schema suited to programmatic use or AI agents
+- **`describe extension --active-gate-groups`** — list the active gate groups available for a specific extension version, with the count of available ActiveGate instances and any reported errors per instance
+- **OAuth scope `extensions:definitions:write`** — added to `readwrite-mine`, `readwrite-all`, and `dangerously-unrestricted` safety levels to support extension upload and Hub install
 - **Windows uninstall script** — added `uninstall.ps1` to remove `%LOCALAPPDATA%\dtctl` and its User PATH entry, with optional full cleanup flags (`-RemoveConfig -RemoveCache -RemoveData`) for config/cache/data directories
 
 ### Fixed

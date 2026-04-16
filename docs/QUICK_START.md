@@ -3011,6 +3011,31 @@ dtctl describe extension com.dynatrace.extension.postgres
 
 # Describe a specific version
 dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3
+
+# Show only the monitoring configuration schema
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema
+
+# Lean schema (strips displayName, documentation, customMessage)
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema --no-fluff
+
+# List active gate groups for a version
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --active-gate-groups
+```
+
+### Install Extensions
+
+```bash
+# Upload a custom extension from a local zip file
+dtctl create extension -f my-custom-extension.zip
+
+# Install a Dynatrace Hub extension (latest version)
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring
+
+# Install a specific version from the Hub
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring --version 1.2.3
+
+# Preview without making changes
+dtctl create extension -f my-custom-extension.zip --dry-run
 ```
 
 ### Monitoring Configurations

@@ -83,6 +83,7 @@ settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
 extensions:definitions:read,
+extensions:definitions:write,
 extensions:configurations:read,
 extensions:configurations:write,
 storage:logs:read,
@@ -138,6 +139,7 @@ settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
 extensions:definitions:read,
+extensions:definitions:write,
 extensions:configurations:read,
 extensions:configurations:write,
 storage:logs:read,
@@ -214,6 +216,7 @@ settings:objects:read,
 settings:objects:write,
 settings:objects:admin,
 extensions:definitions:read,
+extensions:definitions:write,
 extensions:configurations:read,
 extensions:configurations:write,
 storage:logs:read,
@@ -360,14 +363,14 @@ email:emails:send
 ### Extensions API
 | Scope | Description |
 |-------|-------------|
-| `extensions:definitions:read` | Read extension definitions |
+| `extensions:definitions:read` | Read extension definitions and Hub catalog |
+| `extensions:definitions:write` | Upload custom extensions and install Hub extensions |
 | `extensions:configurations:read` | Read monitoring configurations |
 | `extensions:configurations:write` | Create, update, delete monitoring configurations |
 
 ### Hub Catalog API
-| Scope | Description |
-|-------|-------------|
-| `extensions:definitions:read` | Browse Hub catalog extensions and releases (read-only) |
+
+Hub catalog browsing uses `extensions:definitions:read` (see Extensions API above). No additional scopes are required for read-only Hub commands.
 
 ### Davis AI
 | Scope | Description |
