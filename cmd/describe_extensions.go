@@ -34,6 +34,36 @@ type monitoringConfigSummary struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
+// fluffKeys are schema fields removed by --no-fluff: they add human-readable context
+// but bulk up the schema when you only need the structural definition.
+var fluffKeys = map[string]bool{
+	"documentation": true,
+	"customMessage": true,
+	"displayName":   true,
+}
+
+// stripSchemaFluff recursively removes fluffKeys from a parsed JSON Schema object.
+func stripSchemaFluff(v interface{}) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		for k := range val {
+			if fluffKeys[k] {
+				delete(val, k)
+			} else {
+				val[k] = stripSchemaFluff(val[k])
+			}
+		}
+		return val
+	case []interface{}:
+		for i, item := range val {
+			val[i] = stripSchemaFluff(item)
+		}
+		return val
+	default:
+		return v
+	}
+}
+
 // describeExtensionCmd shows detailed info about an extension
 var describeExtensionCmd = &cobra.Command{
 	Use:     "extension <extension-name>",
@@ -48,11 +78,24 @@ Examples:
 
   # Describe a specific version
   dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3
+
+  # Show only the monitoring configuration schema for a specific version
+  dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 --monitoring-configuration-schema
+
+  # List active gate groups available for a specific version
+  dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 --active-gate-groups
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		extensionName := args[0]
 		versionFlag, _ := cmd.Flags().GetString("version")
+		monConfigSchema, _ := cmd.Flags().GetBool("monitoring-configuration-schema")
+		activeGateGroups, _ := cmd.Flags().GetBool("active-gate-groups")
+		noFluff, _ := cmd.Flags().GetBool("no-fluff")
+
+		if monConfigSchema && activeGateGroups {
+			return fmt.Errorf("--monitoring-configuration-schema and --active-gate-groups are mutually exclusive")
+		}
 
 		_, c, printer, err := Setup()
 		if err != nil {
@@ -89,6 +132,62 @@ Examples:
 
 		if targetVersion == "" {
 			return fmt.Errorf("no versions found for extension %q", extensionName)
+		}
+
+		// --monitoring-configuration-schema: output only the JSON Schema for monitoring configs
+		if monConfigSchema {
+			schema, err := handler.GetMonitoringConfigurationSchema(extensionName, targetVersion)
+			if err != nil {
+				return err
+			}
+			var schemaObj interface{}
+			if err := json.Unmarshal(schema, &schemaObj); err != nil {
+				return fmt.Errorf("failed to parse schema: %w", err)
+			}
+			if noFluff {
+				schemaObj = stripSchemaFluff(schemaObj)
+			}
+			if outputFormat == "table" {
+				indented, err := json.MarshalIndent(schemaObj, "", "  ")
+				if err != nil {
+					return fmt.Errorf("failed to format schema: %w", err)
+				}
+				fmt.Println(string(indented))
+				return nil
+			}
+			enrichAgent(printer, "describe", "extension")
+			return printer.Print(schemaObj)
+		}
+
+		// --active-gate-groups: output only the active gate groups for this version
+		if activeGateGroups {
+			groups, err := handler.GetActiveGateGroups(extensionName, targetVersion)
+			if err != nil {
+				return err
+			}
+			if outputFormat == "table" {
+				if len(groups.Items) == 0 {
+					fmt.Println("No active gate groups found.")
+					return nil
+				}
+				output.DescribeSection(fmt.Sprintf("Active Gate Groups (%d):", len(groups.Items)))
+				for _, g := range groups.Items {
+					fmt.Printf("  %s  (available: %d)\n", g.GroupName, g.AvailableActiveGates)
+					for _, ag := range g.ActiveGates {
+						var errList []interface{}
+						_ = json.Unmarshal(ag.Errors, &errList)
+						if len(errList) > 0 {
+							errBytes, _ := json.Marshal(errList)
+							fmt.Printf("    - id: %d  errors: %s\n", ag.ID, string(errBytes))
+						} else {
+							fmt.Printf("    - id: %d\n", ag.ID)
+						}
+					}
+				}
+				return nil
+			}
+			enrichAgent(printer, "describe", "extension")
+			return printer.Print(groups)
 		}
 
 		// Get detailed information for the target version
@@ -239,4 +338,7 @@ Examples:
 
 func init() {
 	describeExtensionCmd.Flags().String("version", "", "Show details for a specific extension version")
+	describeExtensionCmd.Flags().Bool("monitoring-configuration-schema", false, "Output only the monitoring configuration schema for this extension version")
+	describeExtensionCmd.Flags().Bool("active-gate-groups", false, "List active gate groups available for this extension version")
+	describeExtensionCmd.Flags().Bool("no-fluff", false, "Strip documentation, customMessage, and displayName fields from schema output (use with --monitoring-configuration-schema)")
 }

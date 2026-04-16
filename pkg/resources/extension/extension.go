@@ -138,6 +138,24 @@ type ExtensionStatus struct {
 	Timestamp string `json:"timestamp,omitempty"`
 }
 
+// ActiveGateEntry represents a single ActiveGate instance within an active gate group
+type ActiveGateEntry struct {
+	ID     int64           `json:"id"`
+	Errors json.RawMessage `json:"errors,omitempty"`
+}
+
+// ActiveGateGroupItem represents one active gate group available for an extension version
+type ActiveGateGroupItem struct {
+	GroupName            string            `json:"groupName" table:"GROUP"`
+	AvailableActiveGates int               `json:"availableActiveGates" table:"AVAILABLE"`
+	ActiveGates          []ActiveGateEntry `json:"activeGates,omitempty" table:"-"`
+}
+
+// ActiveGateGroupList represents the list of active gate groups for an extension version
+type ActiveGateGroupList struct {
+	Items []ActiveGateGroupItem `json:"items"`
+}
+
 // maxPageSize is the maximum page size accepted by the Extensions 2.0 API.
 const maxPageSize = 100
 
@@ -572,4 +590,54 @@ func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) 
 	}
 
 	return nil
+}
+
+// GetMonitoringConfigurationSchema retrieves the monitoring configuration schema for a specific
+// extension version. The schema is an arbitrary JSON Schema document returned verbatim.
+func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string) (json.RawMessage, error) {
+	resp, err := h.client.HTTP().R().
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/schema", url.PathEscape(extensionName), url.PathEscape(version)))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get monitoring configuration schema: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case 404:
+			return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+		case 403:
+			return nil, fmt.Errorf("access denied to extension %q", extensionName)
+		default:
+			return nil, fmt.Errorf("failed to get monitoring configuration schema: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	return json.RawMessage(resp.Body()), nil
+}
+
+// GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
+func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGateGroupList, error) {
+	var result ActiveGateGroupList
+
+	resp, err := h.client.HTTP().R().
+		SetResult(&result).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/active-gate-groups", url.PathEscape(extensionName), url.PathEscape(version)))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active gate groups: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case 404:
+			return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+		case 403:
+			return nil, fmt.Errorf("access denied to extension %q", extensionName)
+		default:
+			return nil, fmt.Errorf("failed to get active gate groups: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	return &result, nil
 }

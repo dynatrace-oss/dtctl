@@ -1273,3 +1273,200 @@ t.Errorf("expected version %q, got %q", tt.installResp.Version, result.Version)
 })
 }
 }
+func TestGetMonitoringConfigurationSchema(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		version       string
+		statusCode    int
+		responseBody  string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful get schema",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.2.3",
+			statusCode:    200,
+			responseBody:  `{"type":"object","properties":{"enabled":{"type":"boolean"},"description":{"type":"string"}}}`,
+		},
+		{
+			name:          "extension version not found",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "99.99.99",
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.0.0",
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/" + tt.version + "/schema"
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected method: %s (expected GET)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 200 {
+					w.Write([]byte(tt.responseBody))
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.GetMonitoringConfigurationSchema(tt.extensionName, tt.version)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if string(result) != tt.responseBody {
+				t.Errorf("expected schema body %q, got %q", tt.responseBody, string(result))
+			}
+		})
+	}
+}
+
+func TestGetActiveGateGroups(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		version       string
+		statusCode    int
+		response      ActiveGateGroupList
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful get active gate groups",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.2.3",
+			statusCode:    200,
+			response: ActiveGateGroupList{
+				Items: []ActiveGateGroupItem{
+					{
+						GroupName:            "esx-linux-ag",
+						AvailableActiveGates: 2,
+						ActiveGates: []ActiveGateEntry{
+							{ID: 187309619, Errors: json.RawMessage(`[]`)},
+							{ID: 1981204261, Errors: json.RawMessage(`[]`)},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:          "empty groups",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.2.3",
+			statusCode:    200,
+			response:      ActiveGateGroupList{Items: []ActiveGateGroupItem{}},
+		},
+		{
+			name:          "extension version not found",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "99.99.99",
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.0.0",
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/" + tt.version + "/active-gate-groups"
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected method: %s (expected GET)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 200 {
+					json.NewEncoder(w).Encode(tt.response)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.GetActiveGateGroups(tt.extensionName, tt.version)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(result.Items) != len(tt.response.Items) {
+				t.Errorf("expected %d groups, got %d", len(tt.response.Items), len(result.Items))
+			}
+			if len(tt.response.Items) > 0 {
+				if result.Items[0].GroupName != tt.response.Items[0].GroupName {
+					t.Errorf("expected GroupName %q, got %q", tt.response.Items[0].GroupName, result.Items[0].GroupName)
+				}
+				if result.Items[0].AvailableActiveGates != tt.response.Items[0].AvailableActiveGates {
+					t.Errorf("expected AvailableActiveGates %d, got %d", tt.response.Items[0].AvailableActiveGates, result.Items[0].AvailableActiveGates)
+				}
+			}
+		})
+	}
+}
