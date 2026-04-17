@@ -24,7 +24,7 @@ content:
   tiles: []
 `,
 			id:          "abc-123",
-			wantContain: `id: "abc-123"`,
+			wantContain: `id: abc-123`,
 			wantFirst:   true,
 		},
 		{
@@ -42,14 +42,14 @@ name: My Dashboard
 name: My Workflow
 `,
 			id:          "wf-456",
-			wantContain: `id: "wf-456"`,
+			wantContain: `id: wf-456`,
 		},
 		{
 			name: "yaml: empty file gets id prepended",
 			content: `name: Minimal
 `,
 			id:          "min-001",
-			wantContain: `id: "min-001"`,
+			wantContain: `id: min-001`,
 		},
 		// ── JSON ──────────────────────────────────────────────────────────────────
 		{
@@ -130,7 +130,7 @@ content:
 		}
 
 		got := readFileForTest(t, f)
-		if !strings.Contains(got, `id: "dash-abc-123"`) {
+		if !strings.Contains(got, `id: dash-abc-123`) {
 			t.Errorf("id not found in file:\n%s", got)
 		}
 		if !strings.Contains(got, "name: Test Dashboard") {

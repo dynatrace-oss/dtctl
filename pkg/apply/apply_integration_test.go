@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -1423,4 +1425,204 @@ func errorAs(err error, target interface{}) bool {
 		err = u.Unwrap()
 	}
 	return false
+}
+
+// ── WriteID / OverrideID end-to-end tests ──────────────────────────────────
+
+// workflowCreateHandlers returns the standard mock handlers for workflow creation.
+func workflowCreateHandlers(t *testing.T, returnID string) map[string]http.HandlerFunc {
+	t.Helper()
+	return map[string]http.HandlerFunc{
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("expected POST, got %s", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":    returnID,
+				"title": "My Workflow",
+			})
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	}
+}
+
+// dashboardCreateHandlers returns mock handlers for document creation returning the given id.
+func dashboardCreateHandlers(t *testing.T, returnID string) map[string]http.HandlerFunc {
+	t.Helper()
+	return map[string]http.HandlerFunc{
+		"/platform/document/v1/documents": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("expected POST, got %s", r.Method)
+			}
+			boundary := "resp-boundary"
+			w.Header().Set("Content-Type", fmt.Sprintf("multipart/form-data; boundary=%s", boundary))
+			fmt.Fprintf(w,
+				"--%s\r\nContent-Disposition: form-data; name=\"metadata\"\r\nContent-Type: application/json\r\n\r\n{\"id\":%q,\"name\":\"My Dashboard\",\"type\":\"dashboard\",\"version\":1}\r\n--%s--\r\n",
+				boundary, returnID, boundary,
+			)
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	}
+}
+
+// TestApply_WorkflowCreate_WriteID verifies that when --write-id is set, the
+// generated ID is stamped into the source file after a successful create.
+func TestApply_WorkflowCreate_WriteID(t *testing.T) {
+	srv, c := newApplyTestServer(t, workflowCreateHandlers(t, "wf-stamped-001"))
+	defer srv.Close()
+
+	// Write a temporary workflow file without an id field.
+	dir := t.TempDir()
+	srcFile := dir + "/wf.yaml"
+	if err := os.WriteFile(srcFile, []byte("title: My Workflow\ntasks: {}\ntrigger: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewApplier(c).WithSourceFile(srcFile)
+	wfJSON := `{"title":"My Workflow","tasks":{},"trigger":{}}`
+	_, err := a.Apply([]byte(wfJSON), ApplyOptions{WriteID: true})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	got, err := os.ReadFile(srcFile)
+	if err != nil {
+		t.Fatalf("read source file: %v", err)
+	}
+	if !strings.Contains(string(got), "wf-stamped-001") {
+		t.Errorf("expected id 'wf-stamped-001' to be stamped into file, got:\n%s", got)
+	}
+}
+
+// TestApply_WorkflowCreate_OverrideID verifies that --id injects the given ID
+// into the workflow JSON sent to the API, routing to a PUT (update) rather than POST.
+func TestApply_WorkflowCreate_OverrideID(t *testing.T) {
+	putCalled := false
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/automation/v1/workflows/wf-override-42": func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				// Resource exists — verify the override ID caused a GET.
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-override-42",
+					"title": "Existing Workflow",
+					"owner": "",
+				})
+			case http.MethodPut:
+				putCalled = true
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    "wf-override-42",
+					"title": "My Workflow",
+				})
+			default:
+				t.Errorf("unexpected method %s", r.Method)
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c)
+	// Template has no id — OverrideID injects it before the apply logic runs.
+	wfJSON := `{"title":"My Workflow","tasks":{},"trigger":{}}`
+	results, err := a.Apply([]byte(wfJSON), ApplyOptions{OverrideID: "wf-override-42"})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if !putCalled {
+		t.Error("expected PUT (update) to be called when OverrideID points to existing resource")
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	base := results[0].(*WorkflowApplyResult).ApplyResultBase
+	if base.Action != ActionUpdated {
+		t.Errorf("expected action 'updated', got %q", base.Action)
+	}
+}
+
+// TestApply_DashboardCreate_WriteID verifies write-back for dashboard creation.
+func TestApply_DashboardCreate_WriteID(t *testing.T) {
+	srv, c := newApplyTestServer(t, dashboardCreateHandlers(t, "dash-stamped-007"))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	srcFile := dir + "/dashboard.yaml"
+	if err := os.WriteFile(srcFile, []byte("type: dashboard\ntiles:\n  items: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewApplier(c).WithSourceFile(srcFile)
+	dashJSON := `{"type":"dashboard","tiles":{"items":[]}}`
+	_, err := a.Apply([]byte(dashJSON), ApplyOptions{WriteID: true})
+	if err != nil {
+		t.Fatalf("Apply() dashboard create error = %v", err)
+	}
+
+	got, err := os.ReadFile(srcFile)
+	if err != nil {
+		t.Fatalf("read source file: %v", err)
+	}
+	if !strings.Contains(string(got), "dash-stamped-007") {
+		t.Errorf("expected id 'dash-stamped-007' to be stamped into file, got:\n%s", got)
+	}
+}
+
+// TestApply_WorkflowCreate_IDNotFound_NoHint verifies that when a file already
+// has an id field but the resource doesn't exist yet, no misleading hint is
+// emitted (the file is already self-contained after creation).
+func TestApply_WorkflowCreate_IDNotFound_NoHint(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/automation/v1/workflows/wf-missing-2": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":    "wf-missing-2",
+				"title": "New Workflow",
+			})
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	// Use a temp file with the id already present.
+	dir := t.TempDir()
+	srcFile := dir + "/wf.yaml"
+	if err := os.WriteFile(srcFile, []byte("id: wf-missing-2\ntitle: New Workflow\ntasks: {}\ntrigger: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := NewApplier(c).WithSourceFile(srcFile)
+	wfJSON := `{"id":"wf-missing-2","title":"New Workflow","tasks":{},"trigger":{}}`
+	results, err := a.Apply([]byte(wfJSON), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	base := results[0].(*WorkflowApplyResult).ApplyResultBase
+	if base.Action != ActionCreated {
+		t.Errorf("expected action 'created', got %q", base.Action)
+	}
+	// Source file must be unchanged — no new id stamped (it already had one).
+	content, _ := os.ReadFile(srcFile)
+	if string(content) != "id: wf-missing-2\ntitle: New Workflow\ntasks: {}\ntrigger: {}\n" {
+		t.Errorf("source file should be unchanged, got:\n%s", content)
+	}
 }

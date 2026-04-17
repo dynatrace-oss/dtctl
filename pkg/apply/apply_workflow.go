@@ -3,7 +3,6 @@ package apply
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
@@ -33,15 +32,8 @@ func (a *Applier) applyWorkflow(data []byte, opts ApplyOptions) (ApplyResult, er
 		}
 
 		var warnings []string
-		if opts.WriteID && result.ID != "" {
-			if err := writeIDToFile(a.sourceFile, result.ID); err != nil {
-				stderrWarn(&warnings, "could not write ID back to file: %v", err)
-			} else if a.sourceFile != "" {
-				fmt.Fprintf(os.Stderr, "Wrote id %s to %s\n", result.ID, a.sourceFile)
-			}
-		} else {
-			printWriteIDHint(a.sourceFile, result.ID, "workflow")
-		}
+		// File had no id field before this apply — stamp it back or hint.
+		applyWriteBack(a.sourceFile, result.ID, "workflow", opts.WriteID, false, &warnings)
 
 		return &WorkflowApplyResult{
 			ApplyResultBase: ApplyResultBase{
@@ -69,15 +61,9 @@ func (a *Applier) applyWorkflow(data []byte, opts ApplyOptions) (ApplyResult, er
 		}
 
 		var warnings []string
-		if opts.WriteID && result.ID != "" {
-			if err := writeIDToFile(a.sourceFile, result.ID); err != nil {
-				stderrWarn(&warnings, "could not write ID back to file: %v", err)
-			} else if a.sourceFile != "" {
-				fmt.Fprintf(os.Stderr, "Wrote id %s to %s\n", result.ID, a.sourceFile)
-			}
-		} else {
-			printWriteIDHint(a.sourceFile, result.ID, "workflow")
-		}
+		// File already had an id field (we got here because the resource wasn't found).
+		// No stamp or hint needed — the file is already self-contained.
+		applyWriteBack(a.sourceFile, result.ID, "workflow", opts.WriteID, true, &warnings)
 
 		return &WorkflowApplyResult{
 			ApplyResultBase: ApplyResultBase{

@@ -2,6 +2,7 @@ package apply
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -55,7 +56,6 @@ func isJSONContent(content []byte) bool {
 // injectIDIntoJSON inserts "id": "<id>" as the first key in a JSON object.
 // Returns nil if the file already has an "id" key.
 func injectIDIntoJSON(content []byte, id string) ([]byte, error) {
-	// Quick check: if "id" key already present, no-op
 	if jsonHasIDKey(content) {
 		return nil, nil
 	}
@@ -110,7 +110,8 @@ func injectIDIntoYAML(content []byte, id string) ([]byte, error) {
 		}
 	}
 
-	idLine := fmt.Sprintf("id: %q", id)
+	// Use bare YAML scalar (no quotes) — idiomatic and more readable.
+	idLine := "id: " + id
 	newLines := make([]string, 0, len(lines)+1)
 	newLines = append(newLines, lines[:insertAt]...)
 	newLines = append(newLines, idLine)
@@ -119,11 +120,18 @@ func injectIDIntoYAML(content []byte, id string) ([]byte, error) {
 	return []byte(strings.Join(newLines, "\n")), nil
 }
 
-// jsonHasIDKey does a fast (non-parsing) check for a top-level "id" key.
+// jsonHasIDKey checks whether the JSON object has a top-level "id" key.
+// Uses proper JSON parsing to avoid false positives from string values that
+// happen to contain the characters "id".
 func jsonHasIDKey(content []byte) bool {
-	return bytes.Contains(content, []byte(`"id"`)) ||
-		bytes.Contains(content, []byte(`"id" `)) ||
-		bytes.Contains(content, []byte(`"id":"`))
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(content, &doc); err != nil {
+		// Fall back to conservative behaviour: assume id is present so we don't
+		// corrupt a file we can't parse.
+		return true
+	}
+	_, ok := doc["id"]
+	return ok
 }
 
 // detectJSONIndent returns the leading whitespace of the first real key after '{'.
@@ -136,6 +144,28 @@ func detectJSONIndent(afterBrace []byte) string {
 		}
 	}
 	return "  " // fallback: 2 spaces
+}
+
+// applyWriteBack either writes the resource ID back into the source file (when
+// --write-id is set) or prints a recovery hint to stderr (when it is not).
+// fileAlreadyHasID must be true when the source file already contained an "id"
+// field before the apply — in that case neither the write-back nor the hint is
+// needed, and the function is a no-op.
+// If resourceID is empty the function is always a no-op.
+func applyWriteBack(sourceFile, resourceID, resourceType string, writeID bool, fileAlreadyHasID bool, warnings *[]string) {
+	if fileAlreadyHasID || resourceID == "" {
+		// File already had an id, or the API didn't return one — nothing to do.
+		return
+	}
+	if writeID {
+		if err := writeIDToFile(sourceFile, resourceID); err != nil {
+			stderrWarn(warnings, "could not write ID back to file: %v", err)
+		} else if sourceFile != "" {
+			fmt.Fprintf(os.Stderr, "Wrote id %s to %s\n", resourceID, sourceFile)
+		}
+	} else {
+		printWriteIDHint(sourceFile, resourceID, resourceType)
+	}
 }
 
 // printWriteIDHint prints a stderr hint when a resource was created without --write-id.

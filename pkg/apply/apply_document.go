@@ -65,14 +65,9 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 			resultID = "(ID not returned)"
 		}
 
-		if opts.WriteID && resultID != "(ID not returned)" {
-			if err := writeIDToFile(a.sourceFile, resultID); err != nil {
-				stderrWarn(&resultWarnings, "could not write ID back to file: %v", err)
-			} else if a.sourceFile != "" {
-				fmt.Fprintf(os.Stderr, "Wrote id %s to %s\n", resultID, a.sourceFile)
-			}
-		} else {
-			printWriteIDHint(a.sourceFile, resultID, docType)
+		// File had no id field before this apply — stamp it back or hint.
+		if resultID != "(ID not returned)" {
+			applyWriteBack(a.sourceFile, resultID, docType, opts.WriteID, false, &resultWarnings)
 		}
 
 		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings), nil
@@ -120,15 +115,11 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 			resultID = id
 		}
 
-		if opts.WriteID {
-			if err := writeIDToFile(a.sourceFile, resultID); err != nil {
-				stderrWarn(&resultWarnings, "could not write ID back to file: %v", err)
-			} else if a.sourceFile != "" {
-				fmt.Fprintf(os.Stderr, "Wrote id %s to %s\n", resultID, a.sourceFile)
-			}
-		} else {
-			printWriteIDHint(a.sourceFile, resultID, docType)
-		}
+		// For the UUID case the API generated a fresh id — stamp it if requested.
+		// For the non-UUID case the file already carries the id field, so neither
+		// the write-back nor the hint is needed (applyWriteBack treats it as a no-op).
+		fileAlreadyHasID := !isUUID(id) // non-UUID id was in the file and is preserved
+		applyWriteBack(a.sourceFile, resultID, docType, opts.WriteID, fileAlreadyHasID, &resultWarnings)
 
 		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings), nil
 	}
