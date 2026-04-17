@@ -38,7 +38,46 @@ dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3
 
 # Get structured output for automation
 dtctl describe extension com.dynatrace.extension.postgres -o json
+
+# Output only the monitoring configuration JSON Schema
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema
+
+# Strip documentation/display noise from the schema (useful for scripting)
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema --no-fluff
+
+# List available ActiveGate groups for a specific version
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --active-gate-groups
 ```
+
+## Installing Extensions
+
+### Upload a Custom Extension
+
+Upload a locally-built extension zip file:
+
+```bash
+dtctl create extension -f my-extension.zip
+
+# Preview without applying
+dtctl create extension -f my-extension.zip --dry-run
+```
+
+### Install from the Hub
+
+Install an extension directly from the Dynatrace Hub catalog:
+
+```bash
+# Install the latest available version
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring
+
+# Install a specific version
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring --version 1.2.3
+
+# Preview without applying
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring --dry-run
+```
+
+> **Required scope**: `extensions:definitions:write`
 
 ## Monitoring Configurations
 

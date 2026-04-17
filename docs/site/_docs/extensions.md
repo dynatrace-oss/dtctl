@@ -34,6 +34,44 @@ Get full details about a specific extension version, including its configuration
 dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3
 ```
 
+Retrieve the monitoring configuration JSON Schema for a version:
+
+```bash
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema
+
+# Strip documentation/display noise for scripting
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema --no-fluff
+```
+
+List the ActiveGate groups available for a specific version:
+
+```bash
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --active-gate-groups
+```
+
+## Installing Extensions
+
+### Upload a Custom Extension
+
+```bash
+dtctl create extension -f my-extension.zip
+
+# Preview without applying
+dtctl create extension -f my-extension.zip --dry-run
+```
+
+### Install from the Hub
+
+```bash
+# Latest version
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring
+
+# Specific version
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring --version 1.2.3
+```
+
+> **Required scope**: `extensions:definitions:write`
+
 ## Monitoring Configurations
 
 Monitoring configurations define how an extension collects data -- which endpoints to monitor, credentials, polling intervals, and feature flags.

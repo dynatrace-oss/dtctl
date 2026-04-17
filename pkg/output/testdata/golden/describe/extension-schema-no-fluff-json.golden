@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "credentials": {
+      "properties": {
+        "password": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "enabled": {
+      "default": true,
+      "type": "boolean"
+    },
+    "host": {
+      "description": "PostgreSQL server hostname or IP address.",
+      "type": "string"
+    },
+    "port": {
+      "default": 5432,
+      "description": "PostgreSQL server port.",
+      "type": "integer"
+    }
+  },
+  "type": "object"
+}

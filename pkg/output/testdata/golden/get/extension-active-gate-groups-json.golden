@@ -1,0 +1,23 @@
+[
+  {
+    "groupName": "esx-linux-ag",
+    "availableActiveGates": 2,
+    "activeGates": [
+      {
+        "id": 187309619
+      },
+      {
+        "id": 1981204261
+      }
+    ]
+  },
+  {
+    "groupName": "windows-prod",
+    "availableActiveGates": 1,
+    "activeGates": [
+      {
+        "id": 305812744
+      }
+    ]
+  }
+]

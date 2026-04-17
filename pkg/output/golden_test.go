@@ -2161,3 +2161,159 @@ func TestGolden_GetHubExtensionReleases(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Golden tests: create extension (single ExtensionVersion)
+// ---------------------------------------------------------------------------
+
+func TestGolden_DescribeExtensionVersion(t *testing.T) {
+	v := extensionVersionFixtures()[0]
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(v); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-version-"+name, buf.String())
+		})
+	}
+}
+
+func activeGateGroupFixtures() []extension.ActiveGateGroupItem {
+	return []extension.ActiveGateGroupItem{
+		{
+			GroupName:            "esx-linux-ag",
+			AvailableActiveGates: 2,
+			ActiveGates: []extension.ActiveGateEntry{
+				{ID: 187309619},
+				{ID: 1981204261},
+			},
+		},
+		{
+			GroupName:            "windows-prod",
+			AvailableActiveGates: 1,
+			ActiveGates: []extension.ActiveGateEntry{
+				{ID: 305812744},
+			},
+		},
+	}
+}
+
+func TestGolden_GetActiveGateGroups(t *testing.T) {
+	groups := activeGateGroupFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(groups); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/extension-active-gate-groups-"+name, buf.String())
+		})
+	}
+}
+
+// monitoringConfigSchemaFixture returns a synthetic JSON Schema document that
+// mirrors the structure returned by the Extensions 2.0 schema endpoint.
+// It intentionally includes documentation, customMessage, and displayName fields
+// so that the --no-fluff stripping can be verified.
+func monitoringConfigSchemaFixture() interface{} {
+	return map[string]interface{}{
+		"$schema":     "http://json-schema.org/draft-07/schema#",
+		"displayName": "PostgreSQL Monitoring Configuration",
+		"type":        "object",
+		"properties": map[string]interface{}{
+			"enabled": map[string]interface{}{
+				"type":          "boolean",
+				"displayName":   "Enable monitoring",
+				"documentation": "When set to false, monitoring is suspended.",
+				"customMessage": "Disabling will stop all metric collection.",
+				"default":       true,
+			},
+			"host": map[string]interface{}{
+				"type":        "string",
+				"displayName": "Hostname",
+				"description": "PostgreSQL server hostname or IP address.",
+			},
+			"port": map[string]interface{}{
+				"type":        "integer",
+				"displayName": "Port",
+				"description": "PostgreSQL server port.",
+				"default":     5432,
+			},
+			"credentials": map[string]interface{}{
+				"type":          "object",
+				"displayName":   "Credentials",
+				"documentation": "Authentication settings for the PostgreSQL server.",
+				"properties": map[string]interface{}{
+					"username": map[string]interface{}{
+						"type":          "string",
+						"displayName":   "Username",
+						"customMessage": "Use a read-only user for security.",
+					},
+					"password": map[string]interface{}{
+						"type":        "string",
+						"displayName": "Password",
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestGolden_DescribeExtensionSchema(t *testing.T) {
+	schema := monitoringConfigSchemaFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(schema); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-schema-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeExtensionSchemaNoFluff(t *testing.T) {
+	schema := monitoringConfigSchemaFixture()
+	stripped := extension.StripSchemaFluff(schema)
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(stripped); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-schema-no-fluff-"+name, buf.String())
+		})
+	}
+}
