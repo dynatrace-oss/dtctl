@@ -6,14 +6,14 @@ dtctl uses the [OpenTelemetry](https://opentelemetry.io/) SDK to create and expo
 
 ### How it works
 
-| Scenario | Behaviour |
-|---|---|
-| `TRACEPARENT` is **not set** | dtctl creates a new root span with a random trace-id |
-| `TRACEPARENT` **is set** | dtctl inherits the trace-id and starts a child span — this invocation becomes part of the caller's trace |
-| `TRACESTATE` **is set** | forwarded as-is alongside `traceparent` |
-| `TRACEPARENT` is **malformed** | silently ignored per W3C spec; a new root span is created |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` **is set** | spans are exported to that OTLP endpoint via HTTP/protobuf |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` **not set** | trace context is still generated and forwarded (no network export) |
+| Scenario                                  | Behaviour                                                                                                |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `TRACEPARENT` is **not set**              | dtctl creates a new root span with a random trace-id                                                     |
+| `TRACEPARENT` **is set**                  | dtctl inherits the trace-id and starts a child span — this invocation becomes part of the caller's trace |
+| `TRACESTATE` **is set**                   | forwarded as-is alongside `traceparent`                                                                  |
+| `TRACEPARENT` is **malformed**            | silently ignored per W3C spec; a new root span is created                                                |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` **is set**  | spans are exported to that OTLP endpoint via HTTP/protobuf                                               |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` **not set** | trace context is still generated and forwarded (no network export)                                       |
 
 ### Export spans to Dynatrace via OTLP
 
@@ -50,12 +50,12 @@ GitHub Actions example:
 
 ### Environment variables
 
-| Variable | Description |
-|---|---|
-| `TRACEPARENT` | W3C traceparent to inherit (`version-traceId-parentId-flags`) |
-| `TRACESTATE` | W3C tracestate to forward alongside traceparent |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint to export spans to (e.g. Dynatrace ingest URL) |
-| `OTEL_EXPORTER_OTLP_HEADERS` | HTTP headers for the OTLP exporter, comma-separated `key=value` (e.g. `Authorization=Api-Token ...`) |
-| `OTEL_SERVICE_NAME` | Service name in the trace (default: `dtctl`) |
+| Variable                      | Description                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `TRACEPARENT`                 | W3C traceparent to inherit (`version-traceId-parentId-flags`)                                        |
+| `TRACESTATE`                  | W3C tracestate to forward alongside traceparent                                                      |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint to export spans to (e.g. Dynatrace ingest URL)                                    |
+| `OTEL_EXPORTER_OTLP_HEADERS`  | HTTP headers for the OTLP exporter, comma-separated `key=value` (e.g. `Authorization=Api-Token ...`) |
+| `OTEL_SERVICE_NAME`           | Service name in the trace (default: `dtctl`)                                                         |
 
 All other standard `OTEL_*` environment variables (e.g. `OTEL_RESOURCE_ATTRIBUTES`) are also passed through to the OTel SDK automatically.

@@ -151,9 +151,9 @@ dtctl apply extension-config com.dynatrace.extension.postgres \
 
 All extension commands support short aliases:
 
-| Command | Aliases |
-|---------|---------|
-| `extensions` | `extension`, `ext`, `exts` |
+| Command             | Aliases                                         |
+| ------------------- | ----------------------------------------------- |
+| `extensions`        | `extension`, `ext`, `exts`                      |
 | `extension-configs` | `extension-config`, `ext-configs`, `ext-config` |
 
 ```bash
@@ -199,7 +199,7 @@ dtctl get hub-extension-releases com.dynatrace.extension.host-monitoring -o json
 
 ### Aliases
 
-| Command | Aliases |
-|---------|---------|
-| `hub-extensions` | `hub-extension` |
+| Command                  | Aliases                 |
+| ------------------------ | ----------------------- |
+| `hub-extensions`         | `hub-extension`         |
 | `hub-extension-releases` | `hub-extension-release` |

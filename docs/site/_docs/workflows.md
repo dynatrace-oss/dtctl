@@ -85,7 +85,7 @@ tasks:
     description: Post results to Slack
     input:
       channel: "#ops-alerts"
-      message: "Health check completed: {{ result('check_health').status }}"
+      message: "Health check completed: {% raw %}{{ result('check_health').status }}{% endraw %}"
     conditions:
       states:
         check_health: OK

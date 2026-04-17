@@ -20,6 +20,8 @@ dtctl's [safety levels](configuration#safety-levels) are a client-side guardrail
 
 Read-only access for monitoring and troubleshooting. Approximately 30 scopes:
 
+This level does not include the Live Debugger write scope `dev-obs:breakpoints:set`.
+
 ```
 automation:workflows:read
 automation:calendars:read
@@ -67,6 +69,7 @@ automation:workflows:write
 automation:workflows:run
 automation:calendars:write
 automation:rules:write
+dev-obs:breakpoints:set
 document:documents:write
 document:documents:delete
 document:trash-documents:delete
@@ -218,6 +221,14 @@ storage:fieldsets:write
 |---|---|
 | List / Get | `notification:notifications:read` |
 | Create / Update | `notification:notifications:write` |
+
+### Live Debugger
+
+| Operation | Required Scope |
+|---|---|
+| Set / update / delete breakpoints | `dev-obs:breakpoints:set` |
+
+`dev-obs:breakpoints:set` is not included in the `readonly` safety level.
 
 ### OpenPipeline
 

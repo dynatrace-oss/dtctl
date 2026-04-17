@@ -14,6 +14,8 @@ Thank you for your interest in contributing to dtctl! This document provides gui
 - [Commit Messages](#commit-messages)
 - [Reporting Bugs](#reporting-bugs)
 - [Suggesting Features](#suggesting-features)
+- [Documentation Guidelines](#documentation-guidelines)
+- [Getting Help](#getting-help)
 
 ## Code of Conduct
 
@@ -398,6 +400,49 @@ All pull requests must pass:
 2. **Linting**: `golangci-lint` must pass with zero errors
 3. **Security**: `govulncheck` must find no vulnerabilities
 4. **Coverage**: Overall coverage must be ≥70%
+
+## Documentation Guidelines
+
+### Go Template Variables in Code Examples
+
+Documentation published to GitHub Pages uses Jekyll with Liquid templating. Since dtctl uses Go template syntax (`{{ .variable }}`), which has identical delimiters to Liquid, template variables in code examples must be escaped.
+
+**Problem**: Go template variables in markdown code examples are interpreted by Jekyll's Liquid engine and get stripped from published HTML.
+
+**Original markdown**:
+```bash
+dtctl query "fetch logs | filter environment == '{{ .env }}' | limit {{ .n }}" \
+  --set env=production --set n=50
+```
+
+**Published HTML** (broken):
+```
+dtctl query "fetch logs | filter environment == '' | limit " \
+  --set env=production --set n=50
+```
+
+**Solution**: Wrap code blocks containing Go template variables with Jekyll `{% raw %}...{% endraw %}` tags.
+
+**Fixed markdown**:
+```markdown
+{% raw %}
+```bash
+dtctl query "fetch logs | filter environment == '{{ .env }}' | limit {{ .n }}" \
+  --set env=production --set n=50
+```
+{% endraw %}
+```
+
+### When to Use `{% raw %}` Tags
+
+- ✅ **DO wrap** any code block with `{{ .variable }}` or similar Go template syntax
+- ✅ **DO wrap** YAML examples with Go templates (`{{ .env }}`, `{{ .db_password }}`, etc.)
+- ❌ **DON'T wrap** Jekyll Liquid syntax (e.g., `{{ '/docs/path' | relative_url }}`) — this should work as-is
+- ❌ **DON'T wrap** non-template content — plain code blocks don't need wrapping
+
+### CI Validation
+
+A GitHub Actions workflow (`lint-docs-templates.yml`) automatically checks all PRs for unescaped Go template variables in `docs/site/_docs/` markdown files. Fix any violations by wrapping the code block with the pattern above.
 
 ## Getting Help
 

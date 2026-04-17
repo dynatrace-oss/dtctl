@@ -154,6 +154,7 @@ A typical workflow for configuring OpenPipeline via the Settings API:
 
 Use template variables to deploy the same settings configuration across multiple environments:
 
+{% raw %}
 ```yaml
 # pipeline-template.yaml
 customId: "{{ .env }}-log-pipeline"
@@ -180,6 +181,7 @@ dtctl create settings -f pipeline-template.yaml \
   --schema builtin:openpipeline.logs.pipelines --scope environment \
   --set env=production
 ```
+{% endraw %}
 
 ## Migration from OpenPipeline Commands
 

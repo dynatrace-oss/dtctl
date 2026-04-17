@@ -1,0 +1,83 @@
+name: Lint Docs - Template Variables
+
+on:
+  pull_request:
+    paths:
+      - 'docs/site/_docs/**'
+      - '.github/workflows/lint-docs-templates.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/site/_docs/**'
+      - '.github/workflows/lint-docs-templates.yml'
+
+jobs:
+  lint-templates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for unescaped Go template variables in docs
+        run: |
+          python3 <<'PYEOF'
+          import pathlib
+          import re
+          import sys
+
+          docs_dir = pathlib.Path("docs/site/_docs")
+          liquid_expression = re.compile(
+              r"^\s*(?:"
+              r"['\"][^'\"]+['\"]\s*(?:\|\s*[a-zA-Z_][\w-]*(?:\s*:\s*[^|]+)?\s*)*"
+              r"|"
+              r"[a-zA-Z_][\w.]*(?:\s*\|\s*[a-zA-Z_][\w-]*(?:\s*:\s*[^|]+)?\s*)*"
+              r")\s*$"
+          )
+          curly_expression = re.compile(r"\{\{\s*(.*?)\s*\}\}")
+
+          violations = []
+
+          for path in sorted(docs_dir.glob("*.md")):
+              in_raw_block = False
+
+              for line_num, line in enumerate(path.read_text().splitlines(), start=1):
+                  if "{% raw %}" in line:
+                      in_raw_block = True
+
+                  if not in_raw_block:
+                      for match in curly_expression.finditer(line):
+                          expression = match.group(1)
+                          if not liquid_expression.fullmatch(expression):
+                              violations.append((path, line_num, line.rstrip()))
+
+                  if "{% endraw %}" in line:
+                      in_raw_block = False
+
+          if violations:
+              print()
+              print("⚠️  Unescaped non-Liquid template expressions found in documentation.")
+              print()
+              for path, line_num, line in violations:
+                  print(f"❌ {path}:{line_num}")
+                  print(f"   {line}")
+              print()
+              print("📌 Solution: wrap code blocks containing Go or workflow template syntax with Jekyll {% raw %} tags:")
+              print()
+              print("   Before:")
+              print("   ```bash")
+              print("   dtctl query \"fetch logs | filter environment == '{{ .env }}' | limit {{ .n }}\" \\")
+              print("   ```")
+              print()
+              print("   After:")
+              print("   {% raw %}")
+              print("   ```bash")
+              print("   dtctl query \"fetch logs | filter environment == '{{ .env }}' | limit {{ .n }}\" \\")
+              print("   ```")
+              print("   {% endraw %}")
+              print()
+              print("   Inline values also need escaping, for example:")
+              print("   message: \"Health check completed: {% raw %}{{ result('check_health').status }}{% endraw %}\"")
+              sys.exit(1)
+
+          print("✅ No unescaped non-Liquid template expressions found.")
+          PYEOF

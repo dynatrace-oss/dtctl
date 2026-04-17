@@ -55,10 +55,12 @@ dtctl update azure connection \
 ### Step 6: Create a Monitoring Configuration
 
 ```bash
-# Create a monitoring config linked to the connection
+# Create a monitoring config linked to the connection (created in disabled state)
 dtctl create azure monitoring-config \
   --connection "my-azure-connection"
 ```
+
+> **Note:** Monitoring configurations are created in a **disabled** state. Use `dtctl enable azure monitoring` in the next step to activate them.
 
 ### Step 7: Update Location Filtering and Feature Sets
 
@@ -67,6 +69,18 @@ dtctl create azure monitoring-config \
 dtctl update azure monitoring-config <config-id> \
   --locations westeurope,northeurope \
   --feature-sets compute,storage
+```
+
+### Step 8: Enable the Monitoring Configuration
+
+```bash
+# Enable the monitoring config (optionally updating connection credentials at the same time)
+dtctl enable azure monitoring --name "my-azure-monitoring"
+
+# Or update directory/application IDs and enable in one step:
+dtctl enable azure monitoring --name "my-azure-monitoring" \
+  --directoryId "$TENANT_ID" \
+  --applicationId "$CLIENT_ID"
 ```
 
 ## GCP Monitoring (Preview)
@@ -109,9 +123,12 @@ dtctl update gcp connection \
 ### Step 4: Create a Monitoring Configuration
 
 ```bash
+# Create a monitoring config linked to the connection (created in disabled state)
 dtctl create gcp monitoring-config \
   --connection "my-gcp-connection"
 ```
+
+> **Note:** Monitoring configurations are created in a **disabled** state. Use `dtctl enable gcp monitoring` in the final step to activate them.
 
 ### Step 5: Discover Locations and Feature Sets
 
@@ -134,6 +151,17 @@ dtctl delete gcp monitoring-config <config-id>
 
 # Delete the connection
 dtctl delete gcp connection --name "my-gcp-connection"
+```
+
+### Step 7: Enable the Monitoring Configuration
+
+```bash
+# Enable the monitoring config (optionally setting the service account at the same time)
+dtctl enable gcp monitoring --name "my-gcp-monitoring"
+
+# Or update the service account and enable in one step:
+dtctl enable gcp monitoring --name "my-gcp-monitoring" \
+  --serviceAccountId "sa@project.iam.gserviceaccount.com"
 ```
 
 ## EdgeConnect

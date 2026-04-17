@@ -20,10 +20,10 @@ If you prefer to install manually:
 
 Go to the [releases page](https://github.com/dynatrace-oss/dtctl/releases/latest) and download the Windows zip file for your architecture:
 
-| Architecture | File |
-|---|---|
+| Architecture    | File                              |
+| --------------- | --------------------------------- |
 | 64-bit (x86_64) | `dtctl_VERSION_windows_amd64.zip` |
-| ARM64 | `dtctl_VERSION_windows_arm64.zip` |
+| ARM64           | `dtctl_VERSION_windows_arm64.zip` |
 
 Most Windows PCs use the **amd64** variant. ARM64 is for devices like the Surface Pro X or Copilot+ PCs with Snapdragon processors.
 
@@ -159,11 +159,11 @@ source ~/.bashrc
 
 dtctl stores configuration and credentials under `%LOCALAPPDATA%\dtctl`:
 
-| Item | Path |
-|---|---|
+| Item        | Path                          |
+| ----------- | ----------------------------- |
 | Config file | `%LOCALAPPDATA%\dtctl\config` |
-| Cached data | `%LOCALAPPDATA%\dtctl\cache` |
-| Credentials | Windows Credential Manager |
+| Cached data | `%LOCALAPPDATA%\dtctl\cache`  |
+| Credentials | Windows Credential Manager    |
 
 Credentials are stored securely in **Windows Credential Manager** (viewable via Control Panel > Credential Manager > Windows Credentials).
 
@@ -320,6 +320,7 @@ Remove-Item -Recurse -Force "$env:LOCALAPPDATA\dtctl"
 ### "dtctl is not recognized as an internal or external command"
 
 The binary is not in your PATH. Either:
+
 1. Use the full path: `& "$env:LOCALAPPDATA\dtctl\dtctl.exe"`
 2. Add the bin directory to your PATH (see step 3 above)
 3. Restart your terminal after modifying PATH
@@ -337,6 +338,7 @@ If extracting to `Program Files` or another protected location, run PowerShell a
 ### Antivirus blocks dtctl.exe
 
 Some antivirus software may flag unsigned binaries. You can:
+
 1. Verify the checksum matches the official release (see [Verify Download Integrity](#verify-download-integrity))
 2. Add an exclusion for `%LOCALAPPDATA%\dtctl\dtctl.exe` in your antivirus settings
 

@@ -67,10 +67,12 @@ fetch logs
 
 Use Go template syntax with `--set` to parameterize queries:
 
+{% raw %}
 ```bash
 dtctl query "fetch logs | filter environment == '{{ .env }}' | limit {{ .n }}" \
   --set env=production --set n=50
 ```
+{% endraw %}
 
 Template variables work with both inline queries and file-based queries:
 

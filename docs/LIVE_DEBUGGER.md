@@ -23,13 +23,13 @@ The current Live Debugger flow in `dtctl` supports:
 Before using Live Debugger commands:
 
 1. Configure a Dynatrace context with `dtctl config set-context`
-2. Authenticate with OAuth using `dtctl auth login`
+2. Authenticate with OAuth using `dtctl auth login`, or configure platform token credentials
 3. Run Live Debugger commands from the project directory you want associated with the workspace
 
 ### Authentication note
 
-Live Debugger breakpoint operations currently require OAuth authentication.
-The `dev-obs:breakpoints:set` scope is supported via `dtctl auth login`, but is not currently supported when authenticating with API tokens (for example via `dtctl config set-credentials`).
+Live Debugger breakpoint operations support both OAuth authentication and platform tokens.
+When using a platform token, include the `dev-obs:breakpoints:set` scope in the token scopes.
 
 ## 1. Configure workspace filters
 

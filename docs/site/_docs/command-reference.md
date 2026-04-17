@@ -27,6 +27,7 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 | `history` | Show version history (snapshots) of a document |
 | `restore` | Restore a document to a previous version |
 | `diff` | Show differences between local and remote resources |
+| `enable` | Enable a cloud monitoring configuration (GCP/Azure) in one step |
 | `share` | Share a document with users or groups |
 | `unshare` | Remove sharing from a document |
 | `verify` | Verify DQL query syntax |
