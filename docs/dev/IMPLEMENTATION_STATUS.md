@@ -35,7 +35,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `create` - Create from manifest
 - [x] `delete` - Delete resources
 - [x] `edit` - Edit in $EDITOR
-- [x] `apply` - Create or update
+- [x] `apply` - Create or update (supports `--write-id` to stamp generated ID back into source file, `--id` to inject/override resource ID)
 - [x] `diff` - Compare resources (local vs remote, file vs file, resource vs resource)
 - [x] `exec` - Execute workflows, analyzers, copilot, functions, SLOs
 - [x] `logs` - View execution logs
