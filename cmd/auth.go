@@ -47,15 +47,15 @@ type WhoamiResult struct {
 
 // SessionStatus summarizes OAuth token state for display by `auth status` and `doctor`.
 type SessionStatus struct {
-	Context               string    `json:"context" yaml:"context"`
-	Environment           string    `json:"environment" yaml:"environment"`
-	IsOAuth               bool      `json:"isOAuth" yaml:"isOAuth"`
-	Storage               string    `json:"storage,omitempty" yaml:"storage,omitempty"`
+	Context               string     `json:"context" yaml:"context"`
+	Environment           string     `json:"environment" yaml:"environment"`
+	IsOAuth               bool       `json:"isOAuth" yaml:"isOAuth"`
+	Storage               string     `json:"storage,omitempty" yaml:"storage,omitempty"`
 	AccessTokenPresent    bool       `json:"accessTokenPresent" yaml:"accessTokenPresent"`
 	AccessTokenExpiresAt  *time.Time `json:"accessTokenExpiresAt,omitempty" yaml:"accessTokenExpiresAt,omitempty"`
 	RefreshTokenPresent   bool       `json:"refreshTokenPresent" yaml:"refreshTokenPresent"`
 	RefreshTokenExpiresAt *time.Time `json:"refreshTokenExpiresAt,omitempty" yaml:"refreshTokenExpiresAt,omitempty"`
-	GrantedScopes         []string  `json:"grantedScopes,omitempty" yaml:"grantedScopes,omitempty"`
+	GrantedScopes         []string   `json:"grantedScopes,omitempty" yaml:"grantedScopes,omitempty"`
 }
 
 // buildSessionStatusFunc builds a SessionStatus for a given context + token name.
