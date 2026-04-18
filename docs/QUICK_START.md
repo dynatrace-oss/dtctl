@@ -462,6 +462,15 @@ dtctl create workflow -f my-workflow.yaml
 
 # Apply (create or update if exists)
 dtctl apply -f my-workflow.yaml
+
+# First apply: stamp the generated ID back into the file for idempotent future applies
+dtctl apply -f my-workflow.yaml --write-id
+
+# Forgot --write-id on the first run? Recover without creating another duplicate:
+dtctl apply -f my-workflow.yaml --write-id --id <id-from-first-run>
+
+# CI/scripting: apply a template file to a specific known workflow
+dtctl apply -f my-workflow.yaml --id $WORKFLOW_ID
 ```
 
 **Example workflow file** (`my-workflow.yaml`):
@@ -679,6 +688,15 @@ dtctl create dashboard -f dashboard.yaml
 
 # Apply a dashboard (creates if new, updates if exists)
 dtctl apply -f dashboard.yaml
+
+# First apply: stamp the generated ID back into the file so future applies update in place
+dtctl apply -f dashboard.yaml --write-id
+
+# Forgot --write-id? Recover without creating another duplicate:
+dtctl apply -f dashboard.yaml --write-id --id <id-from-first-run>
+
+# CI/scripting: apply a template to a specific known dashboard
+dtctl apply -f dashboard.yaml --id $DASHBOARD_ID
 
 # Both commands show tile count and URL:
 # Dashboard "My Dashboard" (abc-123) created successfully [18 tiles]

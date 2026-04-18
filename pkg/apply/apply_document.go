@@ -65,6 +65,11 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 			resultID = "(ID not returned)"
 		}
 
+		// File had no id field before this apply — stamp it back or hint.
+		if resultID != "(ID not returned)" {
+			applyWriteBack(a.sourceFile, resultID, docType, opts.WriteID, false, &resultWarnings)
+		}
+
 		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings), nil
 	}
 
@@ -109,6 +114,12 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 		if resultID == "" {
 			resultID = id
 		}
+
+		// For the UUID case the API generated a fresh id — stamp it if requested.
+		// For the non-UUID case the file already carries the id field, so neither
+		// the write-back nor the hint is needed (applyWriteBack treats it as a no-op).
+		fileAlreadyHasID := !isUUID(id) // non-UUID id was in the file and is preserved
+		applyWriteBack(a.sourceFile, resultID, docType, opts.WriteID, fileAlreadyHasID, &resultWarnings)
 
 		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings), nil
 	}
