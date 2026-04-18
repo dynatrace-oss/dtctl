@@ -802,23 +802,57 @@ func (h *Handler) RemoveDirectShareRecipients(shareID string, recipientIDs []str
 
 // EnvironmentShare represents an environment-wide share for a document
 // (a document shared with everyone in the environment, reflected as isPrivate=false on the document).
+// The Document Service API returns `access` as a string array (e.g. ["read"] or
+// ["read","write"]), not a single string. The create endpoint accepts either form
+// and normalises server-side.
 type EnvironmentShare struct {
-	ID         string `json:"id" table:"ID"`
-	DocumentID string `json:"documentId" table:"DOCUMENT_ID"`
-	Access     string `json:"access" table:"ACCESS"`
+	ID         string   `json:"id" table:"ID"`
+	DocumentID string   `json:"documentId" table:"DOCUMENT_ID"`
+	Access     []string `json:"access" table:"ACCESS"`
 }
 
-// EnvironmentShareList represents a list of environment shares
+// HasAccess reports whether the share grants the given access level.
+// Accepts "read" (present if "read" or "write" is in Access) or "read-write"
+// (present if "write" is in Access).
+func (s EnvironmentShare) HasAccess(level string) bool {
+	want := accessToLevels(level)
+	for _, w := range want {
+		found := false
+		for _, a := range s.Access {
+			if a == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func accessToLevels(level string) []string {
+	switch level {
+	case "read-write":
+		return []string{"read", "write"}
+	default:
+		return []string{"read"}
+	}
+}
+
+// EnvironmentShareList represents a list of environment shares.
+// The API's JSON key is kebab-case: "environment-shares".
 type EnvironmentShareList struct {
-	Shares      []EnvironmentShare `json:"environmentShares"`
+	Shares      []EnvironmentShare `json:"environment-shares"`
 	TotalCount  int                `json:"totalCount"`
 	NextPageKey string             `json:"nextPageKey,omitempty"`
 }
 
-// CreateEnvironmentShareRequest contains the data needed to create an environment share
+// CreateEnvironmentShareRequest contains the data needed to create an environment share.
+// Access is sent as an array to match the server schema.
 type CreateEnvironmentShareRequest struct {
-	DocumentID string `json:"documentId"`
-	Access     string `json:"access"` // "read" or "read-write"
+	DocumentID string   `json:"documentId"`
+	Access     []string `json:"access"` // ["read"] or ["read","write"]
 }
 
 // CreateEnvironmentShare creates an environment-wide share for a document
@@ -898,8 +932,8 @@ func (h *Handler) DeleteEnvironmentShare(shareID string) error {
 
 // EnsureEnvironmentShare idempotently ensures the document has an environment share at the given access level.
 // - If no share exists, creates one.
-// - If a share exists at the same access level, no-op.
-// - If a share exists at a different access level, deletes it and creates a new one.
+// - If a share already grants the requested level, no-op.
+// - If a share exists but grants a different level, deletes it and creates a new one.
 // Returns the current (or newly-created) share.
 func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*EnvironmentShare, error) {
 	existing, err := h.ListEnvironmentShares(documentID)
@@ -908,7 +942,7 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 	}
 	for i := range existing.Shares {
 		s := existing.Shares[i]
-		if s.Access == access {
+		if s.HasAccess(access) {
 			return &s, nil
 		}
 		if err := h.DeleteEnvironmentShare(s.ID); err != nil {
@@ -917,7 +951,7 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 	}
 	return h.CreateEnvironmentShare(CreateEnvironmentShareRequest{
 		DocumentID: documentID,
-		Access:     access,
+		Access:     accessToLevels(access),
 	})
 }
 

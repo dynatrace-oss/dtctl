@@ -339,20 +339,20 @@ func TestCreateEnvironmentShare(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
-		if body.DocumentID != "doc-1" || body.Access != "read" {
+		if body.DocumentID != "doc-1" || len(body.Access) != 1 || body.Access[0] != "read" {
 			t.Errorf("unexpected body: %+v", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(EnvironmentShare{ID: "share-1", DocumentID: "doc-1", Access: "read"})
+		json.NewEncoder(w).Encode(EnvironmentShare{ID: "share-1", DocumentID: "doc-1", Access: []string{"read"}})
 	})
 	h, cleanup := newDocTestHandler(t, mux)
 	defer cleanup()
 
-	got, err := h.CreateEnvironmentShare(CreateEnvironmentShareRequest{DocumentID: "doc-1", Access: "read"})
+	got, err := h.CreateEnvironmentShare(CreateEnvironmentShareRequest{DocumentID: "doc-1", Access: []string{"read"}})
 	if err != nil {
 		t.Fatalf("CreateEnvironmentShare: %v", err)
 	}
-	if got.ID != "share-1" || got.Access != "read" {
+	if got.ID != "share-1" || len(got.Access) != 1 || got.Access[0] != "read" {
 		t.Errorf("unexpected result: %+v", got)
 	}
 }
@@ -366,7 +366,7 @@ func TestListEnvironmentShares_FiltersByDocumentID(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(EnvironmentShareList{
-			Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: "read"}},
+			Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
 			TotalCount: 1,
 		})
 	})
@@ -389,7 +389,7 @@ func TestEnsureEnvironmentShare_AlreadyExists_NoOp(t *testing.T) {
 		if r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(EnvironmentShareList{
-				Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: "read"}},
+				Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
 				TotalCount: 1,
 			})
 			return
@@ -425,7 +425,7 @@ func TestEnsureEnvironmentShare_CreatesWhenAbsent(t *testing.T) {
 		}
 		if r.Method == http.MethodPost {
 			postCalls++
-			json.NewEncoder(w).Encode(EnvironmentShare{ID: "s-new", DocumentID: "doc-1", Access: "read"})
+			json.NewEncoder(w).Encode(EnvironmentShare{ID: "s-new", DocumentID: "doc-1", Access: []string{"read"}})
 		}
 	})
 	h, cleanup := newDocTestHandler(t, mux)
@@ -451,14 +451,14 @@ func TestEnsureEnvironmentShare_ReplacesDifferentAccess(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet {
 			json.NewEncoder(w).Encode(EnvironmentShareList{
-				Shares:     []EnvironmentShare{{ID: "s-old", DocumentID: "doc-1", Access: "read"}},
+				Shares:     []EnvironmentShare{{ID: "s-old", DocumentID: "doc-1", Access: []string{"read"}}},
 				TotalCount: 1,
 			})
 			return
 		}
 		if r.Method == http.MethodPost {
 			postCalls++
-			json.NewEncoder(w).Encode(EnvironmentShare{ID: "s-new", DocumentID: "doc-1", Access: "read-write"})
+			json.NewEncoder(w).Encode(EnvironmentShare{ID: "s-new", DocumentID: "doc-1", Access: []string{"read", "write"}})
 		}
 	})
 	mux.HandleFunc("/platform/document/v1/environment-shares/s-old", func(w http.ResponseWriter, r *http.Request) {
@@ -474,7 +474,7 @@ func TestEnsureEnvironmentShare_ReplacesDifferentAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureEnvironmentShare: %v", err)
 	}
-	if got.ID != "s-new" || got.Access != "read-write" {
+	if got.ID != "s-new" || !got.HasAccess("read-write") {
 		t.Errorf("unexpected result: %+v", got)
 	}
 	if deletedID != "s-old" {
