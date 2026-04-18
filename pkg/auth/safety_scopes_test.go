@@ -43,6 +43,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"openid",
 				"document:documents:read",
 				"document:documents:write",
+				"document:documents:delete",
 				"automation:workflows:read",
 				"automation:workflows:write",
 				"automation:workflows:run",
@@ -57,7 +58,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"storage:bucket-definitions:truncate",
 				"storage:records:delete",
 			},
-			minScopeCount: 45,
+			minScopeCount: 46,
 		},
 		{
 			name:        "readwrite-all scopes",
@@ -66,6 +67,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"openid",
 				"document:documents:read",
 				"document:documents:write",
+				"document:documents:delete",
 				"automation:workflows:read",
 				"automation:workflows:write",
 				"automation:workflows:run",
@@ -83,7 +85,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"storage:bucket-definitions:truncate",
 				"storage:records:delete",
 			},
-			minScopeCount: 63,
+			minScopeCount: 64,
 		},
 		{
 			name:        "dangerously-unrestricted scopes",
@@ -120,7 +122,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 			mustNotInclude: []string{
 				"storage:bucket-definitions:delete",
 			},
-			minScopeCount: 63,
+			minScopeCount: 64,
 		},
 	}
 
@@ -179,7 +181,7 @@ func TestOAuthConfigWithSafetyLevel(t *testing.T) {
 			name:         "Development with readwrite-all",
 			env:          EnvironmentDev,
 			safetyLevel:  config.SafetyLevelReadWriteAll,
-			expectScopes: 63,
+			expectScopes: 64,
 		},
 		{
 			name:         "Hardening with dangerously-unrestricted",

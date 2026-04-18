@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`delete notebook|dashboard` now works at `readwrite-mine` and `readwrite-all` safety levels** — the OAuth scopes requested at login were missing `document:documents:delete` for both `readwrite-mine` and `readwrite-all`, so `dtctl delete notebook <id>` returned `403 access denied to document` for every document, including ones the same invocation had just created. Document deletion is a soft-delete (moves to trash, recoverable), matches the scope contract already documented in `docs/site/_docs/token-scopes.md`, and does not require `dangerously-unrestricted`. Permanent trash purging (`document:trash.documents:delete`) remains gated to `dangerously-unrestricted`. Fixes [#160](https://github.com/dynatrace-oss/dtctl/issues/160).
+
 ### Added
 - **`apply --write-id` and `apply --id` flags** — two complementary flags for idempotent applies; `--write-id` stamps the generated resource ID back into the source file after a successful create, so every subsequent apply updates in place without creating duplicates; `--id` injects or overrides the resource ID at the CLI level without modifying the file, ideal for CI pipelines using reusable template files; works for dashboards, notebooks, and workflows; a recovery hint is printed to stderr when a resource is created without `--write-id`
 - **`enable gcp|azure monitoring` command** — new `dtctl enable` verb that completes cloud monitoring onboarding in one step: optionally updates the linked connection credentials (service account for GCP; directory/application ID for Azure) and enables the monitoring config; `--serviceAccountId`, `--directoryId`, `--applicationId` are all optional — if omitted, only the enabled state is toggled; supports `--dry-run`
