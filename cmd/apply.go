@@ -7,6 +7,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
 
@@ -112,6 +115,11 @@ resources in sync with their file definitions.
 		noHooks, _ := cmd.Flags().GetBool("no-hooks")
 		overrideID, _ := cmd.Flags().GetString("id")
 		writeID, _ := cmd.Flags().GetBool("write-id")
+		shareEnvironment, _ := cmd.Flags().GetString("share-environment")
+
+		if shareEnvironment != "" && shareEnvironment != "read" && shareEnvironment != "read-write" {
+			return fmt.Errorf("invalid --share-environment value %q, must be 'read' or 'read-write'", shareEnvironment)
+		}
 
 		// Read the file
 		fileData, err := os.ReadFile(file)
@@ -171,6 +179,12 @@ resources in sync with their file definitions.
 			return err
 		}
 
+		if shareEnvironment != "" && !dryRun {
+			if err := ensureEnvironmentShareForResults(c, results, shareEnvironment); err != nil {
+				return fmt.Errorf("apply succeeded but environment share failed: %w", err)
+			}
+		}
+
 		// Print structured output using the global -o flag.
 		// The concrete type (DashboardApplyResult, WorkflowApplyResult, DryRunResult, etc.)
 		// determines which columns/fields appear in the output.
@@ -219,6 +233,31 @@ func init() {
 	applyCmd.Flags().Bool("no-hooks", false, "skip pre-apply hooks")
 	applyCmd.Flags().String("id", "", "override or inject resource ID (use with --write-id to stamp ID into file)")
 	applyCmd.Flags().Bool("write-id", false, "write the created resource ID back into the source file for idempotent future applies")
+	applyCmd.Flags().String("share-environment", "", "share the applied notebook/dashboard with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")
+	applyCmd.Flags().Lookup("share-environment").NoOptDefVal = "read"
 
 	_ = applyCmd.MarkFlagRequired("file")
+}
+
+// ensureEnvironmentShareForResults walks apply results and creates an environment share for every notebook/dashboard.
+// Other resource types are silently skipped — environment shares only apply to documents.
+func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyResult, access string) error {
+	handler := document.NewHandler(c)
+	for _, r := range results {
+		base := extractApplyBase(r)
+		if base == nil {
+			continue
+		}
+		if base.ResourceType != "notebook" && base.ResourceType != "dashboard" {
+			continue
+		}
+		if base.ID == "" {
+			continue
+		}
+		if _, err := handler.EnsureEnvironmentShare(base.ID, access); err != nil {
+			return fmt.Errorf("document %q: %w", base.ID, err)
+		}
+		output.PrintInfo("Shared %s %q with environment (%s)", base.ResourceType, base.ID, access)
+	}
+	return nil
 }

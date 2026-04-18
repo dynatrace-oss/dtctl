@@ -800,6 +800,223 @@ func (h *Handler) RemoveDirectShareRecipients(shareID string, recipientIDs []str
 	return nil
 }
 
+// EnvironmentShare represents an environment-wide share for a document
+// (a document shared with everyone in the environment, reflected as isPrivate=false on the document).
+// The Document Service API returns `access` as a string array (e.g. ["read"] or
+// ["read","write"]), not a single string. The create endpoint accepts either form
+// and normalises server-side.
+type EnvironmentShare struct {
+	ID         string   `json:"id" table:"ID"`
+	DocumentID string   `json:"documentId" table:"DOCUMENT_ID"`
+	Access     []string `json:"access" table:"ACCESS"`
+	// ClaimCount > 0 means at least one user has claimed this share. A created-but-unclaimed
+	// share exists on the server but doesn't flip the document's isPrivate flag.
+	ClaimCount int `json:"claimCount" table:"CLAIM_COUNT"`
+}
+
+// HasAccess reports whether the share grants the given access level.
+// Accepts "read" (present if "read" or "write" is in Access) or "read-write"
+// (present if "write" is in Access).
+func (s EnvironmentShare) HasAccess(level string) bool {
+	want := accessToLevels(level)
+	for _, w := range want {
+		found := false
+		for _, a := range s.Access {
+			if a == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func accessToLevels(level string) []string {
+	switch level {
+	case "read-write":
+		return []string{"read", "write"}
+	default:
+		return []string{"read"}
+	}
+}
+
+// EnvironmentShareList represents a list of environment shares.
+// The API's JSON key is kebab-case: "environment-shares".
+type EnvironmentShareList struct {
+	Shares      []EnvironmentShare `json:"environment-shares"`
+	TotalCount  int                `json:"totalCount"`
+	NextPageKey string             `json:"nextPageKey,omitempty"`
+}
+
+// CreateEnvironmentShareRequest contains the data needed to create an environment share.
+// The Document Service API schema is asymmetric: GET returns access as an array
+// (e.g. ["read"] or ["read","write"]), but POST accepts a single level string
+// ("read" or "read-write") and the server expands it server-side into the array.
+type CreateEnvironmentShareRequest struct {
+	DocumentID string `json:"documentId"`
+	Access     string `json:"access"` // "read" or "read-write"
+}
+
+// CreateEnvironmentShare creates an environment-wide share for a document
+func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*EnvironmentShare, error) {
+	var result EnvironmentShare
+
+	resp, err := h.client.HTTP().R().
+		SetBody(req).
+		SetResult(&result).
+		Post("/platform/document/v1/environment-shares")
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create environment share: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case 404:
+			return nil, fmt.Errorf("document %q not found", req.DocumentID)
+		case 403:
+			return nil, fmt.Errorf("access denied to share document %q with environment", req.DocumentID)
+		case 409:
+			return nil, fmt.Errorf("an environment share already exists for document %q", req.DocumentID)
+		default:
+			return nil, fmt.Errorf("failed to create environment share: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	return &result, nil
+}
+
+// ListEnvironmentShares lists environment shares for a document (or all if documentID is empty)
+func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareList, error) {
+	var result EnvironmentShareList
+
+	req := h.client.HTTP().R().SetResult(&result)
+
+	if documentID != "" {
+		req.SetQueryParam("filter", fmt.Sprintf("documentId=='%s'", documentID))
+	}
+
+	resp, err := req.Get("/platform/document/v1/environment-shares")
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to list environment shares: %w", err)
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("failed to list environment shares: status %d: %s", resp.StatusCode(), resp.String())
+	}
+
+	return &result, nil
+}
+
+// DeleteEnvironmentShare deletes an environment share
+func (h *Handler) DeleteEnvironmentShare(shareID string) error {
+	resp, err := h.client.HTTP().R().
+		Delete(fmt.Sprintf("/platform/document/v1/environment-shares/%s", shareID))
+
+	if err != nil {
+		return fmt.Errorf("failed to delete environment share: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case 404:
+			return fmt.Errorf("environment share %q not found", shareID)
+		case 403:
+			return fmt.Errorf("access denied to delete environment share %q", shareID)
+		default:
+			return fmt.Errorf("failed to delete environment share: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	return nil
+}
+
+// SetDocumentPublic flips a document's isPrivate flag to false, making it discoverable
+// to everyone in the environment via the Notebooks/Dashboards app's listing. Requires
+// the current document version for optimistic-locking. Uses the documents PATCH endpoint
+// with a multipart form body (the same shape content updates use).
+//
+// This is the half of the "Share with environment" UI action that the environment-share
+// API does not cover: the env-share creates a claimable grant, but isPrivate=false is a
+// separate owner-settable metadata flag.
+func (h *Handler) SetDocumentPublic(id string, version int) error {
+	resp, err := h.client.HTTP().R().
+		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
+		SetMultipartFormData(map[string]string{"isPrivate": "false"}).
+		Patch(fmt.Sprintf("/platform/document/v1/documents/%s", id))
+	if err != nil {
+		return fmt.Errorf("failed to update document visibility: %w", err)
+	}
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case 404:
+			return fmt.Errorf("document %q not found", id)
+		case 403:
+			return fmt.Errorf("access denied to update document %q", id)
+		case 409:
+			return fmt.Errorf("document version conflict (document was modified)")
+		default:
+			return fmt.Errorf("failed to update document visibility: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+	return nil
+}
+
+// EnsureEnvironmentShare idempotently ensures the document has an environment share at the given
+// access level, AND that the document itself is marked public (isPrivate=false). The two are
+// complementary: the share is a per-user claimable grant, isPrivate=false is the
+// metadata flag that makes the document discoverable in the app's listing. Together they
+// reproduce the UI's "Share with environment" action.
+//
+// Idempotency:
+// - If a share at the requested level already exists, reuses it.
+// - If a share at a different level exists, deletes and replaces it.
+// - If isPrivate is already false, the visibility PATCH is still sent (server treats as no-op).
+//
+// Returns the current (or newly-created) share.
+func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*EnvironmentShare, error) {
+	existing, err := h.ListEnvironmentShares(documentID)
+	if err != nil {
+		return nil, err
+	}
+	var share *EnvironmentShare
+	for i := range existing.Shares {
+		s := existing.Shares[i]
+		if s.HasAccess(access) {
+			share = &s
+			break
+		}
+		if err := h.DeleteEnvironmentShare(s.ID); err != nil {
+			return nil, fmt.Errorf("failed to replace existing environment share: %w", err)
+		}
+	}
+	if share == nil {
+		created, err := h.CreateEnvironmentShare(CreateEnvironmentShareRequest{
+			DocumentID: documentID,
+			Access:     access,
+		})
+		if err != nil {
+			return nil, err
+		}
+		share = created
+	}
+	// Flip the document to public. Fetch current version for optimistic locking.
+	meta, err := h.GetMetadata(documentID)
+	if err != nil {
+		return share, fmt.Errorf("share created but could not read document metadata to flip isPrivate: %w", err)
+	}
+	if meta.IsPrivate {
+		if err := h.SetDocumentPublic(documentID, meta.Version); err != nil {
+			return share, err
+		}
+	}
+	return share, nil
+}
+
 // MarshalJSON custom marshaler for Document to include content when present
 func (d Document) MarshalJSON() ([]byte, error) {
 	type Alias Document
