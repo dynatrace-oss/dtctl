@@ -70,6 +70,7 @@ Create and manage your own resources in sandbox/development environments.
 ```
 document:documents:read,
 document:documents:write,
+document:documents:delete,
 document:direct-shares:read,
 document:direct-shares:write,
 document:direct-shares:delete,
@@ -117,11 +118,12 @@ email:emails:send
 
 ### `readwrite-all`
 
-Full resource management for team environments (no data deletion).
+Full resource management for team environments (no data deletion; document deletes are soft — moved to trash).
 
 ```
 document:documents:read,
 document:documents:write,
+document:documents:delete,
 document:direct-shares:read,
 document:direct-shares:write,
 document:direct-shares:delete,
