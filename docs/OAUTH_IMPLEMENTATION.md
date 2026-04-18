@@ -14,7 +14,7 @@ Created two main files:
 
 ### 2. Login Command (`cmd/auth.go`)
 
-Added three new subcommands to `dtctl auth`:
+Added four subcommands to `dtctl auth`:
 
 #### `dtctl auth login`
 - Opens browser to Dynatrace SSO login page  
@@ -45,6 +45,17 @@ Example:
 ```bash
 dtctl auth refresh  # Refresh current context tokens
 dtctl auth refresh my-env  # Refresh specific context
+```
+
+#### `dtctl auth status`
+- Shows OAuth session health for the current context without making a network call
+- Reports access token validity and time-to-expiry, refresh token presence and expiry
+- Supports `-o json/yaml` for scripting
+
+Example:
+```bash
+dtctl auth status
+dtctl auth status -o json
 ```
 
 ### 3. Client OAuth Support (`pkg/client/oauth_support.go`)
@@ -90,10 +101,10 @@ If automatic creation fails, the error message includes actionable suggestions (
 
 Some keyring backends impose per-item size limits. With large OAuth responses (for example many scopes and/or large JWTs), saving the full serialized token set may fail.
 
-dtctl now handles this automatically:
-- First tries to store the full token set in keyring
-- If the keyring reports an oversized-value error, stores a compact token representation instead
-- On the next token read, detects compact storage and performs refresh immediately using the stored refresh token
+dtctl now handles this automatically with a three-tier fallback:
+1. **Full** — stores access token, refresh token, ID token, scope, and expiry
+2. **Medium-compact** — drops the access and ID token JWTs (the largest fields) but keeps scope and expiry metadata; `auth status` and `doctor` remain informative
+3. **Minimal compact** — stores only the refresh token and token name; access token is fetched on the next command invocation
 
 Result: `dtctl auth login` succeeds even when keyring item size limits are reached, while tokens remain keyring-backed.
 
@@ -113,19 +124,11 @@ Result: `dtctl auth login` succeeds even when keyring item size limits are reach
 
 ## Requested Scopes
 
-The default OAuth scopes requested are:
-- `storage:logs:read`
-- `storage:buckets:read`
-- `storage:events:read`
-- `storage:metrics:read`
-- `app-engine:apps:run`
-- `automation:workflows:read`
-- `automation:workflows:write`
-- `automation:calendars:read`
-- `automation:calendars:write`
-- `openid`
-- `email`
-- `profile`
+Scopes vary by safety level (see `pkg/auth/oauth_flow.go` → `GetScopesForSafetyLevel`). All levels include:
+- `openid` — required for OIDC
+- `offline_access` — requests a refresh token so dtctl can renew access tokens automatically without requiring a new browser login
+
+Additional scopes (storage, automation, settings, IAM, etc.) are added based on the safety level chosen at login. See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for the full per-level breakdown.
 
 ## Dependencies Added
 

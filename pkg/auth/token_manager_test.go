@@ -200,3 +200,54 @@ func TestCompactStoredTokenForKeyring(t *testing.T) {
 		t.Errorf("ExpiresAt = %v, want zero value", compact.ExpiresAt)
 	}
 }
+
+func TestMediumCompactStoredTokenForKeyring(t *testing.T) {
+	expiresAt := time.Now().Add(30 * time.Minute).UTC()
+	stored := &StoredToken{
+		Name: "my-token",
+		TokenSet: TokenSet{
+			AccessToken:  "access",
+			RefreshToken: "refresh",
+			IDToken:      "id",
+			TokenType:    "Bearer",
+			ExpiresIn:    1800,
+			Scope:        "openid offline_access profile",
+			ExpiresAt:    expiresAt,
+		},
+	}
+
+	compact := mediumCompactStoredTokenForKeyring(stored)
+	if compact == nil {
+		t.Fatalf("mediumCompactStoredTokenForKeyring() returned nil")
+	}
+
+	if compact.Name != stored.Name {
+		t.Errorf("Name = %q, want %q", compact.Name, stored.Name)
+	}
+	if compact.RefreshToken != stored.RefreshToken {
+		t.Errorf("RefreshToken = %q, want %q", compact.RefreshToken, stored.RefreshToken)
+	}
+	if compact.TokenType != stored.TokenType {
+		t.Errorf("TokenType = %q, want %q", compact.TokenType, stored.TokenType)
+	}
+	if compact.Scope != stored.Scope {
+		t.Errorf("Scope = %q, want %q", compact.Scope, stored.Scope)
+	}
+	if !compact.ExpiresAt.Equal(expiresAt) {
+		t.Errorf("ExpiresAt = %v, want %v", compact.ExpiresAt, expiresAt)
+	}
+
+	if compact.AccessToken != "" {
+		t.Errorf("AccessToken = %q, want empty", compact.AccessToken)
+	}
+	if compact.IDToken != "" {
+		t.Errorf("IDToken = %q, want empty", compact.IDToken)
+	}
+	if compact.ExpiresIn != 0 {
+		t.Errorf("ExpiresIn = %d, want 0", compact.ExpiresIn)
+	}
+
+	if mediumCompactStoredTokenForKeyring(nil) != nil {
+		t.Error("expected nil input to return nil")
+	}
+}

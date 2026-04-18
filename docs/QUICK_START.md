@@ -264,6 +264,27 @@ dtctl auth whoami -o json
 
 **Note:** The `whoami` command requires the `app-engine:apps:run` scope for full user details. If that scope is unavailable, it falls back to extracting the user ID from the JWT token.
 
+### Token Health
+
+Check whether your OAuth session is still valid and when it expires:
+
+```bash
+dtctl auth status
+
+# Output:
+# Context:       prod
+# Environment:   https://abc12345.apps.dynatrace.com
+# Auth type:     OAuth
+# Storage:       macOS Keychain
+# Access token:  valid for 42m10s (expires 2026-04-17T14:32:00Z)
+# Refresh token: present
+
+# Output as JSON (includes full expiry timestamps)
+dtctl auth status -o json
+```
+
+This command reads from local storage only — it makes no network call. Useful for confirming that automatic token refresh is in place before running long operations.
+
 ### Command Aliases
 
 dtctl supports custom command aliases to create shortcuts for frequently used commands. Aliases can be simple text replacements, parameterized templates, or shell commands.
