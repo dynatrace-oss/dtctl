@@ -3,10 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
 
@@ -112,6 +116,11 @@ resources in sync with their file definitions.
 		noHooks, _ := cmd.Flags().GetBool("no-hooks")
 		overrideID, _ := cmd.Flags().GetString("id")
 		writeID, _ := cmd.Flags().GetBool("write-id")
+		shareEnvironment, _ := cmd.Flags().GetString("share-environment")
+
+		if err := validateShareEnvironmentValue(shareEnvironment); err != nil {
+			return err
+		}
 
 		// Read the file
 		fileData, err := os.ReadFile(file)
@@ -171,6 +180,14 @@ resources in sync with their file definitions.
 			return err
 		}
 
+		// Run environment sharing before printing so per-document "Shared X" stderr
+		// lines appear adjacent to the apply output. Errors are collected rather than
+		// returned immediately so the user always sees the apply results.
+		var shareErr error
+		if shareEnvironment != "" && !dryRun {
+			shareErr = ensureEnvironmentShareForResults(c, results, shareEnvironment)
+		}
+
 		// Print structured output using the global -o flag.
 		// The concrete type (DashboardApplyResult, WorkflowApplyResult, DryRunResult, etc.)
 		// determines which columns/fields appear in the output.
@@ -198,14 +215,23 @@ resources in sync with their file definitions.
 		}
 
 		if len(results) == 1 {
-			return printer.Print(results[0])
+			if err := printer.Print(results[0]); err != nil {
+				return err
+			}
+		} else {
+			// Multiple results (e.g., connection list apply) — use list output
+			items := make([]interface{}, len(results))
+			for i, r := range results {
+				items[i] = r
+			}
+			if err := printer.PrintList(items); err != nil {
+				return err
+			}
 		}
-		// Multiple results (e.g., connection list apply) — use list output
-		items := make([]interface{}, len(results))
-		for i, r := range results {
-			items[i] = r
+		if shareErr != nil {
+			return fmt.Errorf("apply succeeded but environment share failed: %w", shareErr)
 		}
-		return printer.PrintList(items)
+		return nil
 	},
 }
 
@@ -219,6 +245,59 @@ func init() {
 	applyCmd.Flags().Bool("no-hooks", false, "skip pre-apply hooks")
 	applyCmd.Flags().String("id", "", "override or inject resource ID (use with --write-id to stamp ID into file)")
 	applyCmd.Flags().Bool("write-id", false, "write the created resource ID back into the source file for idempotent future applies")
+	applyCmd.Flags().String("share-environment", "", "share the applied notebook/dashboard with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")
+	applyCmd.Flags().Lookup("share-environment").NoOptDefVal = "read"
 
 	_ = applyCmd.MarkFlagRequired("file")
+}
+
+// validateShareEnvironmentValue rejects any --share-environment value outside
+// the empty string, "read", or "read-write".
+func validateShareEnvironmentValue(v string) error {
+	switch v {
+	case "", "read", "read-write":
+		return nil
+	default:
+		return fmt.Errorf("invalid --share-environment value %q, must be 'read' or 'read-write'", v)
+	}
+}
+
+// ensureEnvironmentShareForResults walks apply results and creates an environment share for every notebook/dashboard.
+// Other resource types are silently skipped — environment shares only apply to documents.
+//
+// Per-document failures do not abort the walk: we attempt a share for every eligible
+// result and return a combined error at the end so multi-document applies are partially
+// successful when possible.
+func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyResult, access string) error {
+	handler := document.NewHandler(c)
+	var errs []error
+	for _, r := range results {
+		base := extractApplyBase(r)
+		if base == nil {
+			continue
+		}
+		if base.ResourceType != "notebook" && base.ResourceType != "dashboard" {
+			continue
+		}
+		if base.ID == "" {
+			continue
+		}
+		if _, err := handler.EnsureEnvironmentShare(base.ID, access); err != nil {
+			output.PrintWarning("failed to share %s %q with environment: %v", base.ResourceType, base.ID, err)
+			errs = append(errs, fmt.Errorf("document %q: %w", base.ID, err))
+			continue
+		}
+		output.PrintInfo("Shared %s %q with environment (%s)", base.ResourceType, base.ID, access)
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	ids := make([]string, 0, len(errs))
+	for _, e := range errs {
+		ids = append(ids, e.Error())
+	}
+	return fmt.Errorf("%d documents failed to share: %s", len(errs), strings.Join(ids, "; "))
 }
