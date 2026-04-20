@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/dqlcost"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/copilot"
 )
@@ -147,6 +148,28 @@ Examples:
 		result, err := handler.Nl2Dql(text)
 		if err != nil {
 			return err
+		}
+
+		// Opt-in cost lint on CoPilot-generated DQL.
+		costLint, _ := cmd.Flags().GetBool("cost-lint")
+		rewriteCost, _ := cmd.Flags().GetBool("rewrite-cost")
+		if result != nil && result.DQL != "" {
+			if rewriteCost {
+				rewritten, changes := dqlcost.Rewrite(result.DQL, dqlcost.DefaultRewriteOptions())
+				if len(changes) > 0 {
+					fmt.Fprintf(os.Stderr, "Applied %d cost rewrite(s):\n", len(changes))
+					for _, c := range changes {
+						fmt.Fprintf(os.Stderr, "  [%s] %s\n", c.Rule, c.Message)
+					}
+					result.DQL = rewritten
+				}
+			}
+			if costLint {
+				findings := dqlcost.Lint(result.DQL)
+				if len(findings) > 0 {
+					fmt.Fprintf(os.Stderr, "Cost lint findings on generated DQL:\n%s\n", dqlcost.Format(findings))
+				}
+			}
 		}
 
 		// Check output format
@@ -292,6 +315,8 @@ func init() {
 
 	// CoPilot nl2dql flags
 	execCopilotNl2DqlCmd.Flags().StringP("file", "f", "", "read prompt from file")
+	execCopilotNl2DqlCmd.Flags().Bool("cost-lint", false, "run DQL cost-anti-pattern lint on generated query")
+	execCopilotNl2DqlCmd.Flags().Bool("rewrite-cost", false, "apply safe cost rewrites (inline from:, scanLimitGBytes, limit reorder) to generated query")
 
 	// CoPilot dql2nl flags
 	execCopilotDql2NlCmd.Flags().StringP("file", "f", "", "read DQL query from file")
