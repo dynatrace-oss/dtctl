@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`delete notebook|dashboard` now works at `readwrite-mine` and `readwrite-all` safety levels** — the OAuth scopes requested at login were missing `document:documents:delete` for both `readwrite-mine` and `readwrite-all`, so `dtctl delete notebook <id>` returned `403 access denied to document` for every document, including ones the same invocation had just created. Document deletion is a soft-delete (moves to trash, recoverable), matches the scope contract already documented in `docs/site/_docs/token-scopes.md`, and does not require `dangerously-unrestricted`. Permanent trash purging (`document:trash.documents:delete`) remains gated to `dangerously-unrestricted`. Fixes [#160](https://github.com/dynatrace-oss/dtctl/issues/160).
+
 ### Added
 - **`offline_access` OAuth scope** — all four safety levels now request the OIDC `offline_access` scope, causing the token endpoint to return a refresh token; this enables automatic access-token refresh on every subsequent command without re-running `dtctl auth login`
 - **`auth status` command** — new `dtctl auth status` subcommand reports OAuth session health for the current context: access token validity and time-to-expiry, refresh token presence and expiry; supports `-o json/yaml` for scripting

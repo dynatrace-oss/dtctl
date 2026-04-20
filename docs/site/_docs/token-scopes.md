@@ -85,7 +85,7 @@ notification:notifications:write
 
 ### readwrite-all
 
-Full resource management across the environment. Does not include data or bucket deletion:
+Full resource management across the environment. Document deletes are soft (moved to trash, recoverable via `dtctl get trash`); does not include data, bucket, or permanent trash deletion:
 
 ```
 # All readwrite-mine scopes above, plus:

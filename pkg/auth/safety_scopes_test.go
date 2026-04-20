@@ -28,6 +28,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 			},
 			mustNotInclude: []string{
 				"document:documents:write",
+				"document:documents:delete",
 				"automation:workflows:write",
 				"storage:logs:write",
 				"storage:buckets:write",
@@ -45,6 +46,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"offline_access",
 				"document:documents:read",
 				"document:documents:write",
+				"document:documents:delete",
 				"automation:workflows:read",
 				"automation:workflows:write",
 				"automation:workflows:run",
@@ -70,6 +72,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"offline_access",
 				"document:documents:read",
 				"document:documents:write",
+				"document:documents:delete",
 				"automation:workflows:read",
 				"automation:workflows:write",
 				"automation:workflows:run",
