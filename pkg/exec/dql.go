@@ -91,6 +91,47 @@ type DQLExecuteOptions struct {
 
 	// Segment options
 	Segments []FilterSegmentRef // Filter segments to apply to the query
+
+	// Guardrail options
+	DisableGuardrails bool // When true, skip automatic injection of safe defaults (scan limit, etc.)
+}
+
+// GuardrailDefaults controls the automatic cost-safety values injected into
+// DQLQueryRequest when the caller leaves them unset. Tests and CLI flags can
+// override these. Zero values mean "leave the field unset in the request"
+// so the server's own defaults apply.
+type GuardrailDefaults struct {
+	ScanLimitGbytes  float64 // default 500 GiB hard ceiling on scanned data
+	MaxResultRecords int64   // 0 = defer to server default (no client-side injection)
+}
+
+// DefaultGuardrails is the package-level default set of cost guardrails.
+// Override via SetDefaultGuardrails (e.g. from config on CLI startup).
+// MaxResultRecords is 0 so client-side request body stays empty and the
+// server's own default applies — matches long-standing test expectations.
+var DefaultGuardrails = GuardrailDefaults{
+	ScanLimitGbytes:  500,
+	MaxResultRecords: 0,
+}
+
+// SetDefaultGuardrails replaces the package-level guardrail defaults. Safe
+// to call at startup. Not goroutine-safe during query execution.
+func SetDefaultGuardrails(g GuardrailDefaults) {
+	DefaultGuardrails = g
+}
+
+// applyGuardrailDefaults mutates opts in place, filling in the guardrail
+// fields when the caller has not set them. Honors opts.DisableGuardrails.
+func applyGuardrailDefaults(opts *DQLExecuteOptions) {
+	if opts == nil || opts.DisableGuardrails {
+		return
+	}
+	if opts.DefaultScanLimitGbytes == 0 && DefaultGuardrails.ScanLimitGbytes > 0 {
+		opts.DefaultScanLimitGbytes = DefaultGuardrails.ScanLimitGbytes
+	}
+	if opts.MaxResultRecords == 0 && DefaultGuardrails.MaxResultRecords > 0 {
+		opts.MaxResultRecords = DefaultGuardrails.MaxResultRecords
+	}
 }
 
 // DQLVerifyOptions configures DQL query verification
@@ -243,6 +284,8 @@ func (e *DQLExecutor) ExecuteQuery(query string) (*DQLQueryResponse, error) {
 
 // ExecuteQueryWithOptions executes a DQL query with options and returns the raw result
 func (e *DQLExecutor) ExecuteQueryWithOptions(query string, opts DQLExecuteOptions) (*DQLQueryResponse, error) {
+	applyGuardrailDefaults(&opts)
+
 	req := DQLQueryRequest{
 		Query:                      query,
 		RequestTimeoutMilliseconds: 60000, // Wait up to 60 seconds for results

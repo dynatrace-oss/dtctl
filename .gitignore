@@ -49,3 +49,6 @@ completions/
 
 # Snapshot data
 snapshot.json
+
+# dqlbench reports (generated artifacts)
+test/dqlbench/reports/

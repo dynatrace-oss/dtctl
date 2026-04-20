@@ -1,0 +1,10 @@
+id: errors-last-24h
+description: "Errors by service — raw query lacks from: and scanLimit"
+query: |
+  fetch logs | filter loglevel == "ERROR" | summarize c = count(), by:{dt.entity.service}
+expect_rules: [COST001, COST008]
+after_rewrite_no_rules: [COST001, COST008]
+must_contain: ["fetch logs", "loglevel"]
+must_not_contain: []
+budget:
+  max_scanned_bytes: 5000000000

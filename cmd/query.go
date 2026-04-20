@@ -210,6 +210,7 @@ Examples:
 		maxResultRecords, _ := cmd.Flags().GetInt64("max-result-records")
 		maxResultBytes, _ := cmd.Flags().GetInt64("max-result-bytes")
 		defaultScanLimitGbytes, _ := cmd.Flags().GetFloat64("default-scan-limit-gbytes")
+		noGuardrails, _ := cmd.Flags().GetBool("no-guardrails")
 
 		// Get query execution options
 		defaultSamplingRatio, _ := cmd.Flags().GetFloat64("default-sampling-ratio")
@@ -337,6 +338,7 @@ Examples:
 			DefaultTimeframeEnd:          defaultTimeframeEnd,
 			Locale:                       locale,
 			Timezone:                     timezone,
+			DisableGuardrails:            noGuardrails,
 			MetadataFields:               metadataFields,
 			Segments:                     segments,
 		}
@@ -663,7 +665,8 @@ func init() {
 	// Query limit flags
 	queryCmd.Flags().Int64("max-result-records", 0, "maximum number of result records to return (0 = use default, typically 1000)")
 	queryCmd.Flags().Int64("max-result-bytes", 0, "maximum result size in bytes (0 = use default)")
-	queryCmd.Flags().Float64("default-scan-limit-gbytes", 0, "scan limit in gigabytes (0 = use default)")
+	queryCmd.Flags().Float64("default-scan-limit-gbytes", 0, "scan limit in gigabytes (0 = use guardrail default of 500)")
+	queryCmd.Flags().Bool("no-guardrails", false, "disable automatic cost guardrails (scan limit, result cap)")
 
 	// Query execution flags
 	queryCmd.Flags().Float64("default-sampling-ratio", 0, "default sampling ratio (0 = use default, normalized to power of 10 <= 100000)")
