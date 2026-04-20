@@ -36,6 +36,8 @@ Before writing, modifying, or executing any DQL that fetches Dynatrace data (for
 
 If there is any conflict between memory/assumptions and the reference, prefer the reference.
 
+**Cost-first rule for generated DQL:** prefer `timeseries` over `fetch logs | makeTimeseries` when a metric exists; always include inline `from:`, a bucket filter where applicable, and `scanLimitGBytes:` on `fetch`. See the "Cost-Optimized Patterns" section at the top of `references/DQL-reference.md` and the "Cost Checklist for Tile DQL" in `references/resources/dashboards.md` before emitting tile queries.
+
 ## Prerequisites
 
 If dtctl is not installed or not working, see [references/troubleshooting.md](references/troubleshooting.md) for installation and setup.
