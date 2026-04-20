@@ -140,6 +140,16 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 	bodyBytes := resp.Body()
 	body := string(bodyBytes)
 	if err := json.Unmarshal(bodyBytes, &jsonBody); err == nil {
+		// App functions return HTTP 200 even for application-level errors, using
+		// a {"data": ..., "error": "message"} envelope. A non-null "error" field
+		// signals failure, so we surface it as a Go error to give callers a
+		// non-zero exit code and stderr output.
+		// See: https://developer.dynatrace.com/develop/guides/app-functions/handle-errors/#custom-error-reporting
+		if jsonMap, ok := jsonBody.(map[string]interface{}); ok {
+			if errVal, hasError := jsonMap["error"]; hasError && errVal != nil {
+				return nil, fmt.Errorf("app function returned an error: %v", errVal)
+			}
+		}
 		// Valid JSON response
 		return &FunctionInvokeResponse{
 			StatusCode: resp.StatusCode(),
