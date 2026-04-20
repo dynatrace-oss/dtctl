@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/dqlcost"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
@@ -187,6 +188,9 @@ Examples:
 		timezone, _ := cmd.Flags().GetString("timezone")
 		locale, _ := cmd.Flags().GetString("locale")
 		failOnWarn, _ := cmd.Flags().GetBool("fail-on-warn")
+		costLint, _ := cmd.Flags().GetBool("cost-lint")
+		strictCost, _ := cmd.Flags().GetBool("strict-cost")
+		rewriteCost, _ := cmd.Flags().GetBool("rewrite-cost")
 
 		opts := exec.DQLVerifyOptions{
 			GenerateCanonicalQuery: canonical,
@@ -233,6 +237,36 @@ Examples:
 			// Default: human-readable format
 			if err := formatVerifyResultHuman(result, query, canonical); err != nil {
 				return fmt.Errorf("failed to format output: %w", err)
+			}
+		}
+
+		// Run cost lint if requested. Uses canonical query when available, else
+		// the raw input query — regex rules tolerate both.
+		if costLint || strictCost {
+			target := query
+			if result != nil && result.CanonicalQuery != "" {
+				target = result.CanonicalQuery
+			}
+			findings := dqlcost.Lint(target)
+			if len(findings) > 0 {
+				fmt.Fprintf(os.Stderr, "\nCost lint findings:\n%s", dqlcost.Format(findings))
+				if strictCost && dqlcost.MaxSeverity(findings) >= dqlcost.SeverityWarn {
+					exitCode = 1
+				}
+			}
+		}
+
+		// Emit rewritten query to stdout when --rewrite-cost is set. Useful for
+		// piping into scripts or copying back into source files manually.
+		if rewriteCost {
+			rewritten, changes := dqlcost.Rewrite(query, dqlcost.DefaultRewriteOptions())
+			if len(changes) > 0 {
+				fmt.Fprintf(os.Stderr, "\nApplied %d cost rewrite(s):\n", len(changes))
+				for _, c := range changes {
+					fmt.Fprintf(os.Stderr, "  [%s] %s\n", c.Rule, c.Message)
+				}
+				fmt.Fprintln(os.Stderr, "\nRewritten query:")
+				fmt.Println(rewritten)
 			}
 		}
 
@@ -431,4 +465,7 @@ func init() {
 	verifyQueryCmd.Flags().String("timezone", "", "timezone for query verification (IANA, CET, +01:00, etc.)")
 	verifyQueryCmd.Flags().String("locale", "", "locale for query verification (en, en_US, de_AT, etc.)")
 	verifyQueryCmd.Flags().Bool("fail-on-warn", false, "exit with non-zero status on warnings (useful for CI/CD)")
+	verifyQueryCmd.Flags().Bool("cost-lint", false, "run DQL cost-anti-pattern lint rules (COST001-COST009)")
+	verifyQueryCmd.Flags().Bool("strict-cost", false, "exit non-zero when cost lint reports warn-or-higher findings")
+	verifyQueryCmd.Flags().Bool("rewrite-cost", false, "print a safely rewritten version of the query to stdout")
 }
