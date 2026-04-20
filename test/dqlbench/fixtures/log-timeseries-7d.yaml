@@ -1,0 +1,10 @@
+id: log-timeseries-7d
+description: "Week-long log timeseries — should trip long-window rule"
+query: |
+  fetch logs, from:now()-7d | makeTimeseries c = count(), interval:1h
+expect_rules: [COST002, COST008, COST009]
+after_rewrite_no_rules: [COST008]
+must_contain: ["makeTimeseries"]
+must_not_contain: []
+budget:
+  max_scanned_bytes: 20000000000

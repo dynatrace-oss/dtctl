@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot
+.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden test-dqlbench-unit test-dqlbench install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -75,6 +75,23 @@ test-update-golden:
 	@echo "Updating golden files..."
 	@go test ./... -update
 	@echo "Golden files updated. Review changes with: git diff pkg/output/testdata/"
+
+# Run DQL cost-lint snapshot harness (no tenant required)
+test-dqlbench-unit:
+	@echo "Running dqlbench snapshot harness..."
+	@go test -count=1 ./test/dqlbench/harness/...
+
+# Run DQL cost-lint harness against live tenant (requires DTCTL_INTEGRATION_ENV + TOKEN)
+test-dqlbench:
+	@echo "Running dqlbench tenant harness..."
+	@if [ -f .integrationtests.env ]; then \
+		echo "Loading environment from .integrationtests.env"; \
+		export $$(cat .integrationtests.env | grep -v '^#' | xargs); \
+	fi; \
+	if [ -z "$$DTCTL_INTEGRATION_ENV" ] || [ -z "$$DTCTL_INTEGRATION_TOKEN" ]; then \
+		echo "Error: DTCTL_INTEGRATION_ENV and DTCTL_INTEGRATION_TOKEN required"; exit 1; \
+	fi; \
+	go test -count=1 -tags dqlbench ./test/dqlbench/harness/...
 
 # Run all tests (unit + integration)
 test-all: test-unit test-integration

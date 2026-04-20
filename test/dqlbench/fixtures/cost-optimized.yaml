@@ -1,0 +1,14 @@
+id: cost-optimized
+description: "Canonical cost-optimized query — should produce zero error findings"
+query: |
+  fetch logs, from:now()-1h, scanLimitGBytes:50
+  | filter dt.system.bucket == "default_logs"
+  | filter loglevel == "ERROR"
+  | fieldsKeep timestamp, content, k8s.pod.name
+  | makeTimeseries c = count(), by:{k8s.pod.name}, from:now()-1h
+expect_rules: []
+after_rewrite_no_rules: [COST001, COST003, COST004, COST005, COST008, COST009]
+must_contain: ["fetch logs", "scanLimitGBytes"]
+must_not_contain: ["sort timestamp desc"]
+budget:
+  max_scanned_bytes: 1000000000

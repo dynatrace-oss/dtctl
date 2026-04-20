@@ -3,10 +3,13 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
+	"github.com/dynatrace-oss/dtctl/pkg/dqlcost"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
 
@@ -112,11 +115,49 @@ resources in sync with their file definitions.
 		noHooks, _ := cmd.Flags().GetBool("no-hooks")
 		overrideID, _ := cmd.Flags().GetString("id")
 		writeID, _ := cmd.Flags().GetBool("write-id")
+		costLint, _ := cmd.Flags().GetBool("cost-lint")
+		strictCost, _ := cmd.Flags().GetBool("strict-cost")
+		rewriteCost, _ := cmd.Flags().GetBool("rewrite-cost")
 
 		// Read the file
 		fileData, err := os.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
+		}
+
+		// Run cost lint on embedded tile DQL before submission. Best-effort:
+		// extraction failures on non-dashboard documents are silently ignored.
+		if costLint || strictCost {
+			if rep, lintErr := dqlcost.LintDocument(fileData); lintErr == nil && len(rep.Tiles) > 0 {
+				fmt.Fprintf(os.Stderr, "\nCost lint findings (%d tile(s) with issues):\n", len(rep.Tiles))
+				for _, tile := range rep.Tiles {
+					fmt.Fprintf(os.Stderr, "  %s:\n%s", tile.Path, indent(dqlcost.Format(tile.Findings), "    "))
+				}
+				if strictCost && rep.HasWarnOrHigher() {
+					return fmt.Errorf("--strict-cost: tile queries have warn-or-higher findings; fix or rerun without --strict-cost")
+				}
+			}
+		}
+
+		// --rewrite-cost emits a sibling `.rewritten.yaml` next to the source
+		// file with safe cost rewrites applied to each tile query, then exits
+		// without submitting. User reviews the diff and re-runs apply on the
+		// rewritten file if happy with the changes. Never mutates the original.
+		if rewriteCost {
+			rewritten, changed, err := rewriteDocumentBytes(fileData)
+			if err != nil {
+				return fmt.Errorf("cost rewrite failed: %w", err)
+			}
+			if !changed {
+				fmt.Fprintln(os.Stderr, "No cost rewrites applied — source file is already cost-optimized.")
+				return nil
+			}
+			siblingPath := deriveRewrittenPath(file)
+			if err := os.WriteFile(siblingPath, rewritten, 0o644); err != nil {
+				return fmt.Errorf("write rewritten file: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "Cost-rewritten document written to %s — review the diff, then `dtctl apply -f %s`.\n", siblingPath, siblingPath)
+			return nil
 		}
 
 		// Parse template variables
@@ -219,6 +260,62 @@ func init() {
 	applyCmd.Flags().Bool("no-hooks", false, "skip pre-apply hooks")
 	applyCmd.Flags().String("id", "", "override or inject resource ID (use with --write-id to stamp ID into file)")
 	applyCmd.Flags().Bool("write-id", false, "write the created resource ID back into the source file for idempotent future applies")
+	applyCmd.Flags().Bool("cost-lint", false, "run DQL cost-anti-pattern lint on every tile query before applying")
+	applyCmd.Flags().Bool("strict-cost", false, "fail apply when cost lint reports warn-or-higher findings")
+	applyCmd.Flags().Bool("rewrite-cost", false, "write a cost-optimized sibling file (.rewritten.<ext>) and exit without applying")
 
 	_ = applyCmd.MarkFlagRequired("file")
+}
+
+// rewriteDocumentBytes applies cost rewrites to all tile queries in a
+// dashboard/notebook document and returns the rewritten bytes.
+func rewriteDocumentBytes(data []byte) ([]byte, bool, error) {
+	out, changed, changes, err := dqlcost.RewriteDocument(data)
+	if err != nil {
+		return nil, false, err
+	}
+	if changed {
+		fmt.Fprintf(os.Stderr, "Applied %d cost rewrite(s) across tile queries:\n", len(changes))
+		for _, c := range changes {
+			fmt.Fprintf(os.Stderr, "  [%s] %s\n", c.Rule, c.Message)
+		}
+	}
+	return out, changed, nil
+}
+
+// deriveRewrittenPath returns the sibling path for the rewritten output,
+// preserving the original file extension: foo.yaml → foo.rewritten.yaml.
+func deriveRewrittenPath(source string) string {
+	ext := filepath.Ext(source)
+	base := strings.TrimSuffix(source, ext)
+	return base + ".rewritten" + ext
+}
+
+// indent prefixes every line of s with prefix.
+func indent(s, prefix string) string {
+	if s == "" {
+		return ""
+	}
+	out := ""
+	for _, line := range splitLines(s) {
+		out += prefix + line + "\n"
+	}
+	return out
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	cur := ""
+	for _, r := range s {
+		if r == '\n' {
+			lines = append(lines, cur)
+			cur = ""
+			continue
+		}
+		cur += string(r)
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
 }
