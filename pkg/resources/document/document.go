@@ -889,27 +889,47 @@ func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*En
 	return &result, nil
 }
 
-// ListEnvironmentShares lists environment shares for a document (or all if documentID is empty)
+// ListEnvironmentShares lists environment shares for a document (or all if documentID is empty).
+// Handles pagination automatically, fetching all pages before returning.
 func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareList, error) {
-	var result EnvironmentShareList
-
-	req := h.client.HTTP().R().SetResult(&result)
-
+	var allShares []EnvironmentShare
+	var nextPageKey string
+	filter := ""
 	if documentID != "" {
-		req.SetQueryParam("filter", fmt.Sprintf("documentId=='%s'", documentID))
+		filter = fmt.Sprintf("documentId=='%s'", documentID)
 	}
 
-	resp, err := req.Get("/platform/document/v1/environment-shares")
+	for {
+		var page EnvironmentShareList
+		req := h.client.HTTP().R().SetResult(&page)
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to list environment shares: %w", err)
+		if nextPageKey != "" {
+			req.SetQueryParam("page-key", nextPageKey)
+		}
+		// Document API: send filter on every request (page tokens don't preserve it)
+		if filter != "" {
+			req.SetQueryParam("filter", filter)
+		}
+
+		resp, err := req.Get("/platform/document/v1/environment-shares")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list environment shares: %w", err)
+		}
+		if resp.IsError() {
+			return nil, fmt.Errorf("failed to list environment shares: status %d: %s", resp.StatusCode(), resp.String())
+		}
+
+		allShares = append(allShares, page.Shares...)
+		if page.NextPageKey == "" {
+			break
+		}
+		nextPageKey = page.NextPageKey
 	}
 
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list environment shares: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return &result, nil
+	return &EnvironmentShareList{
+		Shares:     allShares,
+		TotalCount: len(allShares),
+	}, nil
 }
 
 // DeleteEnvironmentShare deletes an environment share
@@ -966,6 +986,35 @@ func (h *Handler) SetDocumentPublic(id string, version int) error {
 	return nil
 }
 
+// setDocumentPublicWithRetry retries SetDocumentPublic up to maxRetries times on version
+// conflicts (409), re-fetching the document metadata each time to get the latest version.
+func (h *Handler) setDocumentPublicWithRetry(id string, maxRetries int) error {
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		meta, err := h.GetMetadata(id)
+		if err != nil {
+			return fmt.Errorf("could not read document metadata to flip isPrivate: %w", err)
+		}
+		if !meta.IsPrivate {
+			return nil // already public
+		}
+		err = h.SetDocumentPublic(id, meta.Version)
+		if err == nil {
+			return nil
+		}
+		// Only retry on version conflict
+		if attempt < maxRetries && isVersionConflict(err) {
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("failed to set document %q public after %d retries due to version conflicts", id, maxRetries)
+}
+
+// isVersionConflict checks whether an error is a document version conflict (409).
+func isVersionConflict(err error) bool {
+	return err != nil && fmt.Sprintf("%v", err) == "document version conflict (document was modified)"
+}
+
 // EnsureEnvironmentShare idempotently ensures the document has an environment share at the given
 // access level, AND that the document itself is marked public (isPrivate=false). The two are
 // complementary: the share is a per-user claimable grant, isPrivate=false is the
@@ -975,7 +1024,8 @@ func (h *Handler) SetDocumentPublic(id string, version int) error {
 // Idempotency:
 // - If a share at the requested level already exists, reuses it.
 // - If a share at a different level exists, deletes and replaces it.
-// - If isPrivate is already false, the visibility PATCH is still sent (server treats as no-op).
+// - If isPrivate is already false, the visibility PATCH is skipped.
+// - The visibility PATCH retries up to 3 times on version conflicts (409).
 //
 // Returns the current (or newly-created) share.
 func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*EnvironmentShare, error) {
@@ -1004,15 +1054,9 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 		}
 		share = created
 	}
-	// Flip the document to public. Fetch current version for optimistic locking.
-	meta, err := h.GetMetadata(documentID)
-	if err != nil {
-		return share, fmt.Errorf("share created but could not read document metadata to flip isPrivate: %w", err)
-	}
-	if meta.IsPrivate {
-		if err := h.SetDocumentPublic(documentID, meta.Version); err != nil {
-			return share, err
-		}
+	// Flip the document to public with retry on version conflicts.
+	if err := h.setDocumentPublicWithRetry(documentID, 3); err != nil {
+		return share, fmt.Errorf("share created but failed to flip isPrivate: %w", err)
 	}
 	return share, nil
 }

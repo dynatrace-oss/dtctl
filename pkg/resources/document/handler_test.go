@@ -382,7 +382,156 @@ func TestListEnvironmentShares_FiltersByDocumentID(t *testing.T) {
 	}
 }
 
-func TestEnsureEnvironmentShare_AlreadyExists_NoOp(t *testing.T) {
+func TestDeleteEnvironmentShare(t *testing.T) {
+	deleted := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Errorf("expected DELETE, got %s", r.Method)
+		}
+		deleted = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	err := h.DeleteEnvironmentShare("share-1")
+	if err != nil {
+		t.Fatalf("DeleteEnvironmentShare: %v", err)
+	}
+	if !deleted {
+		t.Error("expected DELETE to be called")
+	}
+}
+
+func TestDeleteEnvironmentShare_NotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares/missing", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	err := h.DeleteEnvironmentShare("missing")
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+}
+
+func TestListEnvironmentShares_Pagination(t *testing.T) {
+	page := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
+		// Verify filter is sent on every page
+		filter := r.URL.Query().Get("filter")
+		if filter != "documentId=='doc-1'" {
+			t.Errorf("page %d: expected filter, got %q", page, filter)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if page == 0 {
+			page++
+			json.NewEncoder(w).Encode(EnvironmentShareList{
+				Shares:      []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
+				TotalCount:  2,
+				NextPageKey: "page2token",
+			})
+		} else {
+			json.NewEncoder(w).Encode(EnvironmentShareList{
+				Shares:     []EnvironmentShare{{ID: "s2", DocumentID: "doc-1", Access: []string{"read"}}},
+				TotalCount: 2,
+			})
+		}
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	got, err := h.ListEnvironmentShares("doc-1")
+	if err != nil {
+		t.Fatalf("ListEnvironmentShares: %v", err)
+	}
+	if len(got.Shares) != 2 {
+		t.Errorf("expected 2 shares across pages, got %d", len(got.Shares))
+	}
+	if got.Shares[0].ID != "s1" || got.Shares[1].ID != "s2" {
+		t.Errorf("unexpected shares: %+v", got.Shares)
+	}
+}
+
+func TestEnsureEnvironmentShare_SkipsPatchWhenAlreadyPublic(t *testing.T) {
+	patchCalls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(EnvironmentShareList{
+			Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
+			TotalCount: 1,
+		})
+	})
+	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 3, IsPrivate: false})
+	})
+	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			patchCalls++
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	_, err := h.EnsureEnvironmentShare("doc-1", "read")
+	if err != nil {
+		t.Fatalf("EnsureEnvironmentShare: %v", err)
+	}
+	if patchCalls != 0 {
+		t.Errorf("expected 0 PATCH calls when already public, got %d", patchCalls)
+	}
+}
+
+func TestEnsureEnvironmentShare_RetriesOnVersionConflict(t *testing.T) {
+	patchCalls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(EnvironmentShareList{
+			Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
+			TotalCount: 1,
+		})
+	})
+	metaCalls := 0
+	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
+		metaCalls++
+		w.Header().Set("Content-Type", "application/json")
+		// Return incrementing version each time
+		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: metaCalls, IsPrivate: true})
+	})
+	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			patchCalls++
+			if patchCalls < 3 {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	_, err := h.EnsureEnvironmentShare("doc-1", "read")
+	if err != nil {
+		t.Fatalf("EnsureEnvironmentShare: %v", err)
+	}
+	if patchCalls != 3 {
+		t.Errorf("expected 3 PATCH attempts (2 conflicts + 1 success), got %d", patchCalls)
+	}
+	if metaCalls != 3 {
+		t.Errorf("expected 3 metadata fetches (one per retry), got %d", metaCalls)
+	}
+}
+
+func TestEnsureEnvironmentShare_ExistingShare_FlipsPrivate(t *testing.T) {
 	createCalls := 0
 	patchCalls := 0
 	mux := http.NewServeMux()
