@@ -48,11 +48,27 @@ Examples:
 
   # Describe a specific version
   dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3
+
+  # Show only the monitoring configuration schema for a specific version
+  dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 --monitoring-configuration-schema
+
+  # List active gate groups available for a specific version
+  dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 --active-gate-groups
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		extensionName := args[0]
 		versionFlag, _ := cmd.Flags().GetString("version")
+		monConfigSchema, _ := cmd.Flags().GetBool("monitoring-configuration-schema")
+		activeGateGroups, _ := cmd.Flags().GetBool("active-gate-groups")
+		noFluff, _ := cmd.Flags().GetBool("no-fluff")
+
+		if monConfigSchema && activeGateGroups {
+			return fmt.Errorf("--monitoring-configuration-schema and --active-gate-groups are mutually exclusive")
+		}
+		if noFluff && !monConfigSchema {
+			return fmt.Errorf("--no-fluff only applies to --monitoring-configuration-schema")
+		}
 
 		_, c, printer, err := Setup()
 		if err != nil {
@@ -89,6 +105,65 @@ Examples:
 
 		if targetVersion == "" {
 			return fmt.Errorf("no versions found for extension %q", extensionName)
+		}
+
+		// --monitoring-configuration-schema: output only the JSON Schema for monitoring configs
+		if monConfigSchema {
+			schema, err := handler.GetMonitoringConfigurationSchema(extensionName, targetVersion)
+			if err != nil {
+				return err
+			}
+			var schemaObj interface{}
+			if err := json.Unmarshal(schema, &schemaObj); err != nil {
+				return fmt.Errorf("failed to parse schema: %w", err)
+			}
+			if noFluff {
+				schemaObj = extension.StripSchemaFluff(schemaObj)
+			}
+			// Table format has no structured columns for an arbitrary JSON Schema,
+			// so print it as indented JSON directly. enrichAgent is skipped because
+			// there is no printer involved.
+			if outputFormat == "table" {
+				indented, err := json.MarshalIndent(schemaObj, "", "  ")
+				if err != nil {
+					return fmt.Errorf("failed to format schema: %w", err)
+				}
+				fmt.Println(string(indented))
+				return nil
+			}
+			enrichAgent(printer, "describe", "extension")
+			return printer.Print(schemaObj)
+		}
+
+		// --active-gate-groups: output only the active gate groups for this version
+		if activeGateGroups {
+			groups, err := handler.GetActiveGateGroups(extensionName, targetVersion)
+			if err != nil {
+				return err
+			}
+			if outputFormat == "table" {
+				if len(groups.Items) == 0 {
+					fmt.Println("No active gate groups found.")
+					return nil
+				}
+				output.DescribeSection(fmt.Sprintf("Active Gate Groups (%d):", len(groups.Items)))
+				for _, g := range groups.Items {
+					fmt.Printf("  %s  (available: %d)\n", g.GroupName, g.AvailableActiveGates)
+					for _, ag := range g.ActiveGates {
+						var errList []interface{}
+						_ = json.Unmarshal(ag.Errors, &errList)
+						if len(errList) > 0 {
+							errBytes, _ := json.Marshal(errList)
+							fmt.Printf("    - id: %d  errors: %s\n", ag.ID, string(errBytes))
+						} else {
+							fmt.Printf("    - id: %d\n", ag.ID)
+						}
+					}
+				}
+				return nil
+			}
+			enrichAgent(printer, "describe", "extension")
+			return printer.PrintList(groups.Items)
 		}
 
 		// Get detailed information for the target version
@@ -239,4 +314,7 @@ Examples:
 
 func init() {
 	describeExtensionCmd.Flags().String("version", "", "Show details for a specific extension version")
+	describeExtensionCmd.Flags().Bool("monitoring-configuration-schema", false, "Output only the monitoring configuration schema for this extension version")
+	describeExtensionCmd.Flags().Bool("active-gate-groups", false, "List active gate groups available for this extension version")
+	describeExtensionCmd.Flags().Bool("no-fluff", false, "Strip documentation, customMessage, and displayName fields from schema output (use with --monitoring-configuration-schema)")
 }

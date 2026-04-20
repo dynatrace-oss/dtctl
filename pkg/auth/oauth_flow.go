@@ -75,6 +75,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 	case config.SafetyLevelReadOnly:
 		return []string{
 			"openid",
+			"offline_access",
 			"document:documents:read",
 			"document:direct-shares:read",
 			"document:trash.documents:read",
@@ -114,8 +115,10 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 	case config.SafetyLevelReadWriteMine:
 		return []string{
 			"openid",
+			"offline_access",
 			"document:documents:read",
 			"document:documents:write",
+			"document:documents:delete",
 			"document:direct-shares:read",
 			"document:direct-shares:write",
 			"document:direct-shares:delete",
@@ -131,6 +134,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 			"settings:objects:read",
 			"settings:objects:write",
 			"extensions:definitions:read",
+			"extensions:definitions:write",
 			"extensions:configurations:read",
 			"extensions:configurations:write",
 			"storage:logs:read",
@@ -163,8 +167,10 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 	case config.SafetyLevelReadWriteAll:
 		return []string{
 			"openid",
+			"offline_access",
 			"document:documents:read",
 			"document:documents:write",
+			"document:documents:delete",
 			"document:direct-shares:read",
 			"document:direct-shares:write",
 			"document:direct-shares:delete",
@@ -182,6 +188,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 			"settings:objects:read",
 			"settings:objects:write",
 			"extensions:definitions:read",
+			"extensions:definitions:write",
 			"extensions:configurations:read",
 			"extensions:configurations:write",
 			"storage:logs:read",
@@ -230,6 +237,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 	case config.SafetyLevelDangerouslyUnrestricted:
 		return []string{
 			"openid",
+			"offline_access",
 			"document:documents:read",
 			"document:documents:write",
 			"document:documents:delete",
@@ -248,6 +256,7 @@ func GetScopesForSafetyLevel(level config.SafetyLevel) []string {
 			"settings:objects:read",
 			"settings:objects:write",
 			"extensions:definitions:read",
+			"extensions:definitions:write",
 			"extensions:configurations:read",
 			"extensions:configurations:write",
 			"storage:logs:read",

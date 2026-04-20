@@ -161,6 +161,23 @@ func TestTokenManagerGetTokenAndRefreshPaths(t *testing.T) {
 			t.Fatalf("expected expired+refresh failure error")
 		}
 	})
+
+	t.Run("medium compact storage skips immediate refresh when not expired", func(t *testing.T) {
+		// Medium-compact: no access token but ExpiresAt is set (not zero).
+		// Should NOT trigger an unconditional refresh — falls through to needsRefresh().
+		tm.deps.getToken = func(ts *config.TokenStore, name string) (string, error) {
+			return storedJSON(t, StoredToken{Name: name, TokenSet: TokenSet{RefreshToken: "r1", ExpiresAt: time.Now().Add(2 * time.Hour)}}), nil
+		}
+		refreshCalled := false
+		tm.flow.httpDo = func(req *http.Request) (*http.Response, error) {
+			refreshCalled = true
+			return nil, errors.New("should not be called")
+		}
+		tm.GetToken("abc") //nolint:errcheck — return value not asserted; we only care about side effects
+		if refreshCalled {
+			t.Fatalf("medium-compact token with future ExpiresAt should not trigger immediate refresh")
+		}
+	})
 }
 
 func TestTokenManagerRefreshTokenNoRefreshToken(t *testing.T) {

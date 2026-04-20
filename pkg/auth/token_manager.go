@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
@@ -75,8 +77,8 @@ func (tm *TokenManager) GetToken(tokenName string) (string, error) {
 		return "", err
 	}
 
-	// If only refresh token is stored (compact keyring format), refresh immediately
-	if stored.AccessToken == "" && stored.RefreshToken != "" {
+	// If only refresh token is stored (minimal compact keyring format, no expiry), refresh immediately
+	if stored.AccessToken == "" && stored.RefreshToken != "" && stored.ExpiresAt.IsZero() {
 		refreshed, err := tm.RefreshToken(tokenName)
 		if err != nil {
 			return "", fmt.Errorf("failed to refresh token from compact storage: %w", err)
@@ -230,6 +232,17 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 	// Save to keyring
 	if tm.deps.keyringAvailable() {
 		if err := tm.deps.setToken(tm.tokenStore, keyringName, string(data)); err != nil {
+			// Full token is too large for the keyring. Try medium-compact first: drop the
+			// access and ID token JWTs but keep scope and expiry so auth status / doctor
+			// can still show meaningful information.
+			medium := mediumCompactStoredTokenForKeyring(stored)
+			mediumData, marshalErr := json.Marshal(medium)
+			if marshalErr == nil {
+				if mediumErr := tm.deps.setToken(tm.tokenStore, keyringName, string(mediumData)); mediumErr == nil {
+					return nil
+				}
+			}
+			// Still too large — fall back to minimal compact (refresh token + name only).
 			compact := compactStoredTokenForKeyring(stored)
 			compactData, marshalErr := json.Marshal(compact)
 			if marshalErr != nil {
@@ -254,6 +267,22 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 	return fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", config.EnvTokenStorage)
 }
 
+// mediumCompactStoredTokenForKeyring drops the large access/ID token JWTs but
+// preserves scope and expiry so auth status and doctor can still display useful info.
+func mediumCompactStoredTokenForKeyring(stored *StoredToken) *StoredToken {
+	if stored == nil {
+		return nil
+	}
+
+	compact := *stored
+	compact.AccessToken = ""
+	compact.IDToken = ""
+	compact.ExpiresIn = 0
+	return &compact
+}
+
+// compactStoredTokenForKeyring drops everything except the refresh token and name.
+// Used only when mediumCompactStoredTokenForKeyring is still too large for the keyring.
 func compactStoredTokenForKeyring(stored *StoredToken) *StoredToken {
 	if stored == nil {
 		return nil
@@ -290,4 +319,35 @@ func IsTokenExpired(tokens *TokenSet) bool {
 		return true
 	}
 	return time.Now().After(tokens.ExpiresAt)
+}
+
+// DecodeRefreshTokenExpiry returns the exp claim from a JWT refresh token.
+// Returns zero time and false if the token is not a decodable JWT with an exp claim.
+func DecodeRefreshTokenExpiry(refreshToken string) (time.Time, bool) {
+	if refreshToken == "" {
+		return time.Time{}, false
+	}
+
+	parts := strings.Split(refreshToken, ".")
+	if len(parts) != 3 {
+		return time.Time{}, false
+	}
+
+	decoded, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	var claims struct {
+		Exp int64 `json:"exp"`
+	}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return time.Time{}, false
+	}
+
+	if claims.Exp == 0 {
+		return time.Time{}, false
+	}
+
+	return time.Unix(claims.Exp, 0), true
 }

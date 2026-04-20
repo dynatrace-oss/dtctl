@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -1034,6 +1035,454 @@ func TestMonitoringConfiguration_MarshalYAML(t *testing.T) {
 			for _, exclude := range tt.excludes {
 				if strings.Contains(yamlStr, exclude) {
 					t.Errorf("YAML output should not contain %q\ngot:\n%s", exclude, yamlStr)
+				}
+			}
+		})
+	}
+}
+
+func TestUpload(t *testing.T) {
+	tests := []struct {
+		name          string
+		fileName      string
+		zipData       []byte
+		statusCode    int
+		response      ExtensionVersion
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:       "successful upload",
+			fileName:   "custom-extension.zip",
+			zipData:    []byte("PK\x03\x04fake-zip-content"),
+			statusCode: 200,
+			response: ExtensionVersion{
+				ExtensionName: "custom:my-extension",
+				Version:       "1.0.0",
+			},
+		},
+		{
+			name:       "empty fileName defaults to extension.zip",
+			fileName:   "",
+			zipData:    []byte("PK\x03\x04fake-zip-content"),
+			statusCode: 200,
+			response: ExtensionVersion{
+				ExtensionName: "custom:my-extension",
+				Version:       "1.0.0",
+			},
+		},
+		{
+			name:          "invalid extension package",
+			fileName:      "bad.zip",
+			zipData:       []byte("not-a-zip"),
+			statusCode:    400,
+			expectError:   true,
+			errorContains: "invalid extension package",
+		},
+		{
+			name:          "access denied",
+			fileName:      "my-extension.zip",
+			zipData:       []byte("PK\x03\x04fake"),
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+		{
+			name:          "version already exists",
+			fileName:      "my-extension.zip",
+			zipData:       []byte("PK\x03\x04fake"),
+			statusCode:    409,
+			expectError:   true,
+			errorContains: "already exists",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/platform/extensions/v2/extensions" {
+					t.Errorf("unexpected path: %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("unexpected method: %s (expected POST)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				ct := r.Header.Get("Content-Type")
+				if !strings.HasPrefix(ct, "multipart/form-data") {
+					t.Errorf("expected multipart/form-data content type, got %s", ct)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 200 {
+					json.NewEncoder(w).Encode(tt.response)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.Upload(tt.fileName, tt.zipData)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.ExtensionName != tt.response.ExtensionName {
+				t.Errorf("expected extensionName %q, got %q", tt.response.ExtensionName, result.ExtensionName)
+			}
+			if result.Version != tt.response.Version {
+				t.Errorf("expected version %q, got %q", tt.response.Version, result.Version)
+			}
+		})
+	}
+}
+
+func TestInstallFromHub(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		version       string
+		installCode   int
+		installResp   ExtensionVersion
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "install specific version",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.2.3",
+			installCode:   200,
+			installResp: ExtensionVersion{
+				ExtensionName: "com.dynatrace.extension.host-monitoring",
+				Version:       "1.2.3",
+			},
+		},
+		{
+			name:          "install without version (latest)",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "",
+			installCode:   200,
+			installResp: ExtensionVersion{
+				ExtensionName: "com.dynatrace.extension.host-monitoring",
+				Version:       "2.0.0",
+			},
+		},
+		{
+			name:          "extension not found",
+			extensionName: "com.dynatrace.extension.nonexistent",
+			version:       "1.0.0",
+			installCode:   404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.restricted",
+			version:       "1.0.0",
+			installCode:   403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+		{
+			name:          "already installed",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.0.0",
+			installCode:   409,
+			expectError:   true,
+			errorContains: `version "1.0.0" is already installed`,
+		},
+		{
+			name:          "already installed (latest, no version specified)",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "",
+			installCode:   409,
+			expectError:   true,
+			errorContains: "(latest version) is already installed",
+		},
+		{
+			name:          "extension name with special characters is URL-encoded",
+			extensionName: "com.example.extension+special",
+			version:       "1.0.0",
+			installCode:   200,
+			installResp: ExtensionVersion{
+				ExtensionName: "com.example.extension+special",
+				Version:       "1.0.0",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + url.PathEscape(tt.extensionName)
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("unexpected method: %s (expected POST)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				// Verify version query parameter
+				gotVersion := r.URL.Query().Get("version")
+				if tt.version != "" && gotVersion != tt.version {
+					t.Errorf("expected version query param %q, got %q", tt.version, gotVersion)
+				}
+				if tt.version == "" && gotVersion != "" {
+					t.Errorf("expected no version query param, got %q", gotVersion)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.installCode)
+				if tt.installCode == 200 {
+					json.NewEncoder(w).Encode(tt.installResp)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.InstallFromHub(tt.extensionName, tt.version)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.ExtensionName != tt.installResp.ExtensionName {
+				t.Errorf("expected extensionName %q, got %q", tt.installResp.ExtensionName, result.ExtensionName)
+			}
+			if result.Version != tt.installResp.Version {
+				t.Errorf("expected version %q, got %q", tt.installResp.Version, result.Version)
+			}
+		})
+	}
+}
+func TestGetMonitoringConfigurationSchema(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		version       string
+		statusCode    int
+		responseBody  string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful get schema",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.2.3",
+			statusCode:    200,
+			responseBody:  `{"type":"object","properties":{"enabled":{"type":"boolean"},"description":{"type":"string"}}}`,
+		},
+		{
+			name:          "extension version not found",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "99.99.99",
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.0.0",
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/" + tt.version + "/schema"
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected method: %s (expected GET)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 200 {
+					w.Write([]byte(tt.responseBody))
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.GetMonitoringConfigurationSchema(tt.extensionName, tt.version)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if string(result) != tt.responseBody {
+				t.Errorf("expected schema body %q, got %q", tt.responseBody, string(result))
+			}
+		})
+	}
+}
+
+func TestGetActiveGateGroups(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		version       string
+		statusCode    int
+		response      ActiveGateGroupList
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful get active gate groups",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.2.3",
+			statusCode:    200,
+			response: ActiveGateGroupList{
+				Items: []ActiveGateGroupItem{
+					{
+						GroupName:            "esx-linux-ag",
+						AvailableActiveGates: 2,
+						ActiveGates: []ActiveGateEntry{
+							{ID: 187309619, Errors: json.RawMessage(`[]`)},
+							{ID: 1981204261, Errors: json.RawMessage(`[]`)},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:          "empty groups",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.2.3",
+			statusCode:    200,
+			response:      ActiveGateGroupList{Items: []ActiveGateGroupItem{}},
+		},
+		{
+			name:          "extension version not found",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "99.99.99",
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "com.dynatrace.extension.host-monitoring",
+			version:       "1.0.0",
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/" + tt.version + "/active-gate-groups"
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected method: %s (expected GET)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 200 {
+					json.NewEncoder(w).Encode(tt.response)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.GetActiveGateGroups(tt.extensionName, tt.version)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(result.Items) != len(tt.response.Items) {
+				t.Errorf("expected %d groups, got %d", len(tt.response.Items), len(result.Items))
+			}
+			if len(tt.response.Items) > 0 {
+				if result.Items[0].GroupName != tt.response.Items[0].GroupName {
+					t.Errorf("expected GroupName %q, got %q", tt.response.Items[0].GroupName, result.Items[0].GroupName)
+				}
+				if result.Items[0].AvailableActiveGates != tt.response.Items[0].AvailableActiveGates {
+					t.Errorf("expected AvailableActiveGates %d, got %d", tt.response.Items[0].AvailableActiveGates, result.Items[0].AvailableActiveGates)
 				}
 			}
 		})

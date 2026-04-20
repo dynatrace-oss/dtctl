@@ -1,8 +1,11 @@
 package extension
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -133,6 +136,24 @@ type ExtensionEnvironmentConfig struct {
 type ExtensionStatus struct {
 	Status    string `json:"status"`
 	Timestamp string `json:"timestamp,omitempty"`
+}
+
+// ActiveGateEntry represents a single ActiveGate instance within an active gate group
+type ActiveGateEntry struct {
+	ID     int64           `json:"id"`
+	Errors json.RawMessage `json:"errors,omitempty"`
+}
+
+// ActiveGateGroupItem represents one active gate group available for an extension version
+type ActiveGateGroupItem struct {
+	GroupName            string            `json:"groupName" table:"GROUP"`
+	AvailableActiveGates int               `json:"availableActiveGates" table:"AVAILABLE"`
+	ActiveGates          []ActiveGateEntry `json:"activeGates,omitempty" table:"-"`
+}
+
+// ActiveGateGroupList represents the list of active gate groups for an extension version
+type ActiveGateGroupList struct {
+	Items []ActiveGateGroupItem `json:"items"`
 }
 
 // maxPageSize is the maximum page size accepted by the Extensions 2.0 API.
@@ -465,6 +486,92 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 	return &result, nil
 }
 
+// Upload uploads a custom extension zip file to the Dynatrace environment.
+// The zipData should contain the raw bytes of the extension zip package.
+// The optional fileName is used as the multipart filename; if empty, "extension.zip" is used.
+func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, error) {
+	if fileName == "" {
+		fileName = "extension.zip"
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart field: %w", err)
+	}
+	if _, err := part.Write(zipData); err != nil {
+		return nil, fmt.Errorf("failed to write extension data: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	var result ExtensionVersion
+
+	resp, err := h.client.HTTP().R().
+		SetHeader("Content-Type", writer.FormDataContentType()).
+		SetBody(body.Bytes()).
+		SetResult(&result).
+		Post("/platform/extensions/v2/extensions")
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload extension: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case http.StatusBadRequest:
+			return nil, fmt.Errorf("invalid extension package: status %d: %s", resp.StatusCode(), resp.String())
+		case http.StatusForbidden:
+			return nil, fmt.Errorf("access denied: insufficient permissions to upload extensions")
+		case http.StatusConflict:
+			return nil, fmt.Errorf("extension version already exists: %s", resp.String())
+		default:
+			return nil, fmt.Errorf("failed to upload extension: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	return &result, nil
+}
+
+// InstallFromHub installs a Dynatrace Hub extension into the environment using the
+// Extensions 2.0 API. extensionName is the hub extension catalog ID (path parameter).
+// version is optional — when provided it is sent as a query parameter to select a
+// specific release; when empty the API resolves the latest available version.
+func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersion, error) {
+	var result ExtensionVersion
+
+	req := h.client.HTTP().R().SetResult(&result)
+	if version != "" {
+		req.SetQueryParam("version", version)
+	}
+
+	resp, err := req.Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to install Hub extension %q: %w", extensionName, err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case http.StatusNotFound:
+			return nil, fmt.Errorf("hub extension %q not found", extensionName)
+		case http.StatusForbidden:
+			return nil, fmt.Errorf("access denied: insufficient permissions to install extensions")
+		case http.StatusConflict:
+			if version == "" {
+				return nil, fmt.Errorf("hub extension %q (latest version) is already installed", extensionName)
+			}
+			return nil, fmt.Errorf("hub extension %q version %q is already installed", extensionName, version)
+		default:
+			return nil, fmt.Errorf("failed to install Hub extension %q: status %d: %s", extensionName, resp.StatusCode(), resp.String())
+		}
+	}
+
+	return &result, nil
+}
+
 // DeleteMonitoringConfiguration deletes a monitoring configuration for an extension
 func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) error {
 	resp, err := h.client.HTTP().R().
@@ -486,4 +593,54 @@ func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) 
 	}
 
 	return nil
+}
+
+// GetMonitoringConfigurationSchema retrieves the monitoring configuration schema for a specific
+// extension version. The schema is an arbitrary JSON Schema document returned verbatim.
+func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string) (json.RawMessage, error) {
+	resp, err := h.client.HTTP().R().
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/schema", url.PathEscape(extensionName), url.PathEscape(version)))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get monitoring configuration schema: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case http.StatusNotFound:
+			return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+		case http.StatusForbidden:
+			return nil, fmt.Errorf("access denied to extension %q", extensionName)
+		default:
+			return nil, fmt.Errorf("failed to get monitoring configuration schema: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	return json.RawMessage(resp.Body()), nil
+}
+
+// GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
+func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGateGroupList, error) {
+	var result ActiveGateGroupList
+
+	resp, err := h.client.HTTP().R().
+		SetResult(&result).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/active-gate-groups", url.PathEscape(extensionName), url.PathEscape(version)))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active gate groups: %w", err)
+	}
+
+	if resp.IsError() {
+		switch resp.StatusCode() {
+		case http.StatusNotFound:
+			return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+		case http.StatusForbidden:
+			return nil, fmt.Errorf("access denied to extension %q", extensionName)
+		default:
+			return nil, fmt.Errorf("failed to get active gate groups: status %d: %s", resp.StatusCode(), resp.String())
+		}
+	}
+
+	return &result, nil
 }

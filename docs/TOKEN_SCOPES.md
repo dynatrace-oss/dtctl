@@ -70,6 +70,7 @@ Create and manage your own resources in sandbox/development environments.
 ```
 document:documents:read,
 document:documents:write,
+document:documents:delete,
 document:direct-shares:read,
 document:direct-shares:write,
 document:direct-shares:delete,
@@ -86,6 +87,7 @@ settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
 extensions:definitions:read,
+extensions:definitions:write,
 extensions:configurations:read,
 extensions:configurations:write,
 storage:logs:read,
@@ -117,11 +119,12 @@ email:emails:send
 
 ### `readwrite-all`
 
-Full resource management for team environments (no data deletion).
+Full resource management for team environments (no data deletion; document deletes are soft — moved to trash).
 
 ```
 document:documents:read,
 document:documents:write,
+document:documents:delete,
 document:direct-shares:read,
 document:direct-shares:write,
 document:direct-shares:delete,
@@ -142,6 +145,7 @@ settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
 extensions:definitions:read,
+extensions:definitions:write,
 extensions:configurations:read,
 extensions:configurations:write,
 storage:logs:read,
@@ -219,6 +223,7 @@ settings:objects:read,
 settings:objects:write,
 settings:objects:admin,
 extensions:definitions:read,
+extensions:definitions:write,
 extensions:configurations:read,
 extensions:configurations:write,
 storage:logs:read,
@@ -373,6 +378,7 @@ email:emails:send
 | Scope                             | Description                                      |
 | --------------------------------- | ------------------------------------------------ |
 | `extensions:definitions:read`     | Read extension definitions                       |
+| `extensions:definitions:write`    | Upload custom extensions, install Hub extensions |
 | `extensions:configurations:read`  | Read monitoring configurations                   |
 | `extensions:configurations:write` | Create, update, delete monitoring configurations |
 

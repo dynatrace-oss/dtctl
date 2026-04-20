@@ -204,6 +204,18 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 		Detail: fmt.Sprintf("retrieved from %s (%s)", tokenSource, maskedToken),
 	})
 
+	// OAuth session state (only applies when the stored token is OAuth)
+	session, sessionErr := buildSessionStatusFunc(cfg.CurrentContext, ctx, ctx.TokenRef)
+	if sessionErr != nil {
+		results = append(results, checkResult{
+			Name:   "OAuth session",
+			Status: "fail",
+			Detail: fmt.Sprintf("could not read session state: %s", sessionErr.Error()),
+		})
+	} else if session.IsOAuth {
+		results = append(results, oauthSessionCheckResult(session))
+	}
+
 	// 6. Environment connectivity
 	req, reqErr := http.NewRequest(http.MethodHead, ctx.Environment, nil)
 	if reqErr != nil {
@@ -287,6 +299,37 @@ func printDoctorResults(results []checkResult) {
 			icon = output.DoctorFail()
 		}
 		fmt.Printf("%s %-16s %s\n", icon, r.Name, r.Detail)
+	}
+}
+
+func oauthSessionCheckResult(session *SessionStatus) checkResult {
+	if !session.RefreshTokenPresent {
+		return checkResult{
+			Name:   "OAuth session",
+			Status: "warn",
+			Detail: "no refresh token; run 'dtctl auth login' to enable automatic refresh",
+		}
+	}
+
+	accessExpired := session.AccessTokenExpiresAt != nil && time.Now().After(*session.AccessTokenExpiresAt)
+	if accessExpired {
+		return checkResult{
+			Name:   "OAuth session",
+			Status: "warn",
+			Detail: "access token expired; will refresh on next API call",
+		}
+	}
+
+	var parts []string
+	if session.AccessTokenExpiresAt != nil {
+		parts = append(parts, fmt.Sprintf("access expires in %s", time.Until(*session.AccessTokenExpiresAt).Round(time.Second)))
+	}
+	parts = append(parts, "refresh token present")
+
+	return checkResult{
+		Name:   "OAuth session",
+		Status: "ok",
+		Detail: strings.Join(parts, "; "),
 	}
 }
 

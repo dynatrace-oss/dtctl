@@ -45,6 +45,66 @@ type WhoamiResult struct {
 	Environment  string `json:"environment" yaml:"environment"`
 }
 
+// SessionStatus summarizes OAuth token state for display by `auth status` and `doctor`.
+type SessionStatus struct {
+	Context               string     `json:"context" yaml:"context"`
+	Environment           string     `json:"environment" yaml:"environment"`
+	IsOAuth               bool       `json:"isOAuth" yaml:"isOAuth"`
+	Storage               string     `json:"storage,omitempty" yaml:"storage,omitempty"`
+	AccessTokenPresent    bool       `json:"accessTokenPresent" yaml:"accessTokenPresent"`
+	AccessTokenExpiresAt  *time.Time `json:"accessTokenExpiresAt,omitempty" yaml:"accessTokenExpiresAt,omitempty"`
+	RefreshTokenPresent   bool       `json:"refreshTokenPresent" yaml:"refreshTokenPresent"`
+	RefreshTokenExpiresAt *time.Time `json:"refreshTokenExpiresAt,omitempty" yaml:"refreshTokenExpiresAt,omitempty"`
+	GrantedScopes         []string   `json:"grantedScopes,omitempty" yaml:"grantedScopes,omitempty"`
+}
+
+// buildSessionStatusFunc builds a SessionStatus for a given context + token name.
+// Overridable in tests.
+var buildSessionStatusFunc = buildSessionStatus
+
+func buildSessionStatus(contextName string, ctx *config.Context, tokenName string) (*SessionStatus, error) {
+	status := &SessionStatus{
+		Context:     contextName,
+		Environment: ctx.Environment,
+	}
+
+	if tokenName == "" {
+		return status, nil
+	}
+
+	oauthConfig := auth.OAuthConfigFromEnvironmentURLWithSafety(ctx.Environment, ctx.SafetyLevel)
+	tokenManager, err := auth.NewTokenManager(oauthConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	stored, err := tokenManager.GetTokenInfo(tokenName)
+	if err != nil || stored == nil {
+		// Not an OAuth token (e.g. platform token) or not stored yet.
+		return status, nil
+	}
+
+	status.IsOAuth = true
+	status.Storage = config.OAuthStorageBackend()
+	status.AccessTokenPresent = stored.AccessToken != ""
+	if !stored.ExpiresAt.IsZero() {
+		t := stored.ExpiresAt
+		status.AccessTokenExpiresAt = &t
+	}
+	status.RefreshTokenPresent = stored.RefreshToken != ""
+
+	if exp, ok := auth.DecodeRefreshTokenExpiry(stored.RefreshToken); ok {
+		status.RefreshTokenExpiresAt = &exp
+	}
+
+	scopes := strings.Fields(stored.Scope)
+	if len(scopes) > 0 {
+		status.GrantedScopes = scopes
+	}
+
+	return status, nil
+}
+
 // authWhoamiCmd shows current user identity
 var authWhoamiCmd = &cobra.Command{
 	Use:   "whoami",
@@ -132,6 +192,136 @@ JWT token's 'sub' claim.`,
 
 		return printer.Print(result)
 	},
+}
+
+// authStatusCmd shows OAuth session health for the current context
+var authStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Display OAuth session status and token health",
+	Long: `Display the OAuth session state for the current context.
+
+Shows whether an access token is stored, when it expires, whether a
+refresh token is present (so the CLI can automatically refresh expired
+access tokens), and the scopes granted to the session.
+
+For platform tokens (non-OAuth), reports the auth type and skips
+OAuth-specific fields.`,
+	Example: `  # Show session status for the current context
+  dtctl auth status
+
+  # Output as JSON
+  dtctl auth status -o json`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		if cfg.CurrentContext == "" {
+			return fmt.Errorf("no current context set")
+		}
+
+		ctx, err := cfg.CurrentContextObj()
+		if err != nil {
+			return fmt.Errorf("failed to get current context: %w", err)
+		}
+
+		status, err := buildSessionStatusFunc(cfg.CurrentContext, ctx, ctx.TokenRef)
+		if err != nil {
+			return fmt.Errorf("failed to build session status: %w", err)
+		}
+
+		if outputFormat == "table" || outputFormat == "" {
+			printSessionStatusTable(status)
+			return nil
+		}
+
+		return NewPrinter().Print(status)
+	},
+}
+
+func printSessionStatusTable(status *SessionStatus) {
+	const w = 17
+	output.DescribeKV("Context:", w, "%s", status.Context)
+	output.DescribeKV("Environment:", w, "%s", status.Environment)
+
+	if !status.IsOAuth {
+		output.DescribeKV("Auth type:", w, "%s", "platform token")
+		return
+	}
+
+	output.DescribeKV("Auth type:", w, "%s", "OAuth")
+	if status.Storage != "" {
+		output.DescribeKV("Storage:", w, "%s", status.Storage)
+	}
+
+	output.DescribeKV("Access token:", w, "%s", accessTokenSummary(status))
+	output.DescribeKV("Refresh token:", w, "%s", refreshTokenSummary(status))
+
+	if !status.RefreshTokenPresent {
+		fmt.Fprintln(os.Stderr)
+		output.PrintWarning("No refresh token — run 'dtctl auth login' to enable automatic token refresh")
+	}
+}
+
+// accessTokenSummary returns a human-readable one-liner for the access token state.
+func accessTokenSummary(status *SessionStatus) string {
+	now := time.Now()
+
+	// No token at all and no refresh token to recover from.
+	if !status.AccessTokenPresent && !status.RefreshTokenPresent {
+		return "not present — run 'dtctl auth login'"
+	}
+
+	// Access token JWT is not cached locally (e.g. medium-compact keyring storage
+	// dropped it to fit the OS keyring size limit). The refresh token — confirmed
+	// present by the guard above — will be used to mint a new access token on the
+	// next API call. Don't claim "valid" here: accessTokenPresent is false in the
+	// structured output, so the two would contradict each other.
+	if !status.AccessTokenPresent {
+		if status.AccessTokenExpiresAt != nil {
+			return fmt.Sprintf("not cached locally (previous expiry %s; will refresh on next call)",
+				status.AccessTokenExpiresAt.Format(time.RFC3339))
+		}
+		return "not cached locally (will refresh on next call)"
+	}
+
+	// Access token is cached locally — report expiry when we know it.
+	if status.AccessTokenExpiresAt != nil {
+		remaining := status.AccessTokenExpiresAt.Sub(now).Round(time.Second)
+		if remaining > 0 {
+			return fmt.Sprintf("valid for %s (expires %s)",
+				remaining, status.AccessTokenExpiresAt.Format(time.RFC3339))
+		}
+		if status.RefreshTokenPresent {
+			return "expired"
+		}
+		return fmt.Sprintf("expired at %s — run 'dtctl auth login'",
+			status.AccessTokenExpiresAt.Format(time.RFC3339))
+	}
+
+	// Access token is cached but we don't know when it expires.
+	if status.RefreshTokenPresent {
+		return "valid"
+	}
+	return "present"
+}
+
+// refreshTokenSummary returns a human-readable one-liner for the refresh token state.
+func refreshTokenSummary(status *SessionStatus) string {
+	if !status.RefreshTokenPresent {
+		return "not present"
+	}
+	if status.RefreshTokenExpiresAt == nil {
+		return "present"
+	}
+	remaining := time.Until(*status.RefreshTokenExpiresAt).Round(time.Second)
+	if remaining > 0 {
+		return fmt.Sprintf("valid for %s (expires %s)",
+			remaining, status.RefreshTokenExpiresAt.Format(time.RFC3339))
+	}
+	return fmt.Sprintf("expired at %s — run 'dtctl auth login'",
+		status.RefreshTokenExpiresAt.Format(time.RFC3339))
 }
 
 // resolveLoginContext fills in any missing contextName, environment, and tokenName
@@ -548,6 +738,7 @@ func init() {
 	rootCmd.AddCommand(authCmd)
 
 	authCmd.AddCommand(authWhoamiCmd)
+	authCmd.AddCommand(authStatusCmd)
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	authCmd.AddCommand(authRefreshCmd)

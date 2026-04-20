@@ -264,6 +264,27 @@ dtctl auth whoami -o json
 
 **Note:** The `whoami` command requires the `app-engine:apps:run` scope for full user details. If that scope is unavailable, it falls back to extracting the user ID from the JWT token.
 
+### Token Health
+
+Check whether your OAuth session is still valid and when it expires:
+
+```bash
+dtctl auth status
+
+# Output:
+# Context:       prod
+# Environment:   https://abc12345.apps.dynatrace.com
+# Auth type:     OAuth
+# Storage:       macOS Keychain
+# Access token:  valid for 42m10s (expires 2026-04-17T14:32:00Z)
+# Refresh token: present
+
+# Output as JSON (includes full expiry timestamps)
+dtctl auth status -o json
+```
+
+This command reads from local storage only — it makes no network call. Useful for confirming that automatic token refresh is in place before running long operations.
+
 ### Command Aliases
 
 dtctl supports custom command aliases to create shortcuts for frequently used commands. Aliases can be simple text replacements, parameterized templates, or shell commands.
@@ -3050,6 +3071,31 @@ dtctl describe extension com.dynatrace.extension.postgres
 
 # Describe a specific version
 dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3
+
+# Get the monitoring configuration JSON Schema for a version
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema
+
+# Same, with documentation noise stripped
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --monitoring-configuration-schema --no-fluff
+
+# List ActiveGate groups available for a version
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --active-gate-groups
+```
+
+### Installing Extensions
+
+```bash
+# Install an extension from the Dynatrace Hub (latest version)
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring
+
+# Install a specific Hub version
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring --version 1.2.3
+
+# Upload a custom extension from a local zip file
+dtctl create extension -f my-extension.zip
+
+# Dry run to preview without applying
+dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring --dry-run
 ```
 
 ### Monitoring Configurations

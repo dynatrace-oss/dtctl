@@ -484,16 +484,21 @@ func (p *ChartPrinter) renderChart(ts *TimeseriesData) error {
 			legends[i] = s.Label
 		}
 
+		// SeriesColors must always be set when SeriesLegends is set; addLegends in
+		// the asciigraph library accesses SeriesColors[i] for each legend entry and
+		// panics if the slice is shorter than SeriesLegends.
+		var colors []asciigraph.AnsiColor
+		if ColorEnabled() {
+			colors = getSeriesColors(len(ts.Series))
+		} else {
+			colors = make([]asciigraph.AnsiColor, len(ts.Series)) // Default (0) = no color
+		}
+
 		opts := []asciigraph.Option{
 			asciigraph.Height(p.height),
 			asciigraph.Width(p.width),
 			asciigraph.SeriesLegends(legends...),
-		}
-
-		// Only apply series colors if color is enabled
-		if ColorEnabled() {
-			colors := getSeriesColors(len(ts.Series))
-			opts = append(opts, asciigraph.SeriesColors(colors...))
+			asciigraph.SeriesColors(colors...),
 		}
 
 		graph = asciigraph.PlotMany(data, opts...)

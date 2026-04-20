@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -329,6 +330,32 @@ func dqlTimeseriesFixture() []map[string]interface{} {
 				42.3, 38.9, 25.4, 19.8, 14.2,
 				11.1, 13.7,
 			},
+		},
+	}
+}
+
+// dqlMultiSeriesTimeseriesFixture returns two records with different dimension labels,
+// producing a multi-series chart that exercises the PlotMany code path.
+// interval must be a string (nanoseconds) to match the real DQL API response format.
+func dqlMultiSeriesTimeseriesFixture() []map[string]interface{} {
+	return []map[string]interface{}{
+		{
+			"timeframe": map[string]interface{}{
+				"start": "2025-03-15T09:00:00Z",
+				"end":   "2025-03-15T10:00:00Z",
+			},
+			"interval":               "300000000000",
+			"dt.entity.host":         "HOST-A",
+			"avg(dt.host.cpu.usage)": []interface{}{12.5, 15.3, 18.7, 22.1, 35.6, 42.3, 38.9, 25.4, 19.8, 14.2, 11.1, 13.7},
+		},
+		{
+			"timeframe": map[string]interface{}{
+				"start": "2025-03-15T09:00:00Z",
+				"end":   "2025-03-15T10:00:00Z",
+			},
+			"interval":               "300000000000",
+			"dt.entity.host":         "HOST-B",
+			"avg(dt.host.cpu.usage)": []interface{}{55.0, 58.2, 61.4, 59.9, 57.3, 62.1, 65.8, 63.0, 60.5, 58.8, 56.2, 54.7},
 		},
 	}
 }
@@ -1873,6 +1900,28 @@ func TestGolden_QueryDQL_Chart(t *testing.T) {
 	assertGolden(t, "query/dql-chart", stripANSI(buf.String()))
 }
 
+// TestGolden_QueryDQL_Chart_MultiSeries exercises the PlotMany code path (2+ series).
+// Previously, omitting SeriesColors when color was disabled caused a panic inside
+// asciigraph.addLegends (legend.go:31), which accesses SeriesColors[i] for each legend.
+func TestGolden_QueryDQL_Chart_MultiSeries(t *testing.T) {
+	records := dqlMultiSeriesTimeseriesFixture()
+
+	var buf bytes.Buffer
+	printer := NewPrinterWithOpts(PrinterOptions{
+		Format: "chart",
+		Writer: &buf,
+		Width:  80,
+		Height: 15,
+	})
+	if err := printer.PrintList(records); err != nil {
+		t.Fatalf("PrintList failed: %v", err)
+	}
+	// Chart output uses \r\n for raw terminal compatibility; normalize to \n so
+	// the golden file is portable across platforms and survives git's CRLF handling.
+	output := strings.ReplaceAll(stripANSI(buf.String()), "\r\n", "\n")
+	assertGolden(t, "query/dql-chart-multi-series", output)
+}
+
 func TestGolden_QueryDQL_Sparkline(t *testing.T) {
 	records := dqlTimeseriesFixture()
 
@@ -2158,6 +2207,162 @@ func TestGolden_GetHubExtensionReleases(t *testing.T) {
 				t.Fatalf("PrintList failed: %v", err)
 			}
 			assertGolden(t, "get/hub-extension-releases-"+name, buf.String())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Golden tests: create extension (single ExtensionVersion)
+// ---------------------------------------------------------------------------
+
+func TestGolden_DescribeExtensionVersion(t *testing.T) {
+	v := extensionVersionFixtures()[0]
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(v); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-version-"+name, buf.String())
+		})
+	}
+}
+
+func activeGateGroupFixtures() []extension.ActiveGateGroupItem {
+	return []extension.ActiveGateGroupItem{
+		{
+			GroupName:            "esx-linux-ag",
+			AvailableActiveGates: 2,
+			ActiveGates: []extension.ActiveGateEntry{
+				{ID: 187309619},
+				{ID: 1981204261},
+			},
+		},
+		{
+			GroupName:            "windows-prod",
+			AvailableActiveGates: 1,
+			ActiveGates: []extension.ActiveGateEntry{
+				{ID: 305812744},
+			},
+		},
+	}
+}
+
+func TestGolden_GetActiveGateGroups(t *testing.T) {
+	groups := activeGateGroupFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(groups); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/extension-active-gate-groups-"+name, buf.String())
+		})
+	}
+}
+
+// monitoringConfigSchemaFixture returns a synthetic JSON Schema document that
+// mirrors the structure returned by the Extensions 2.0 schema endpoint.
+// It intentionally includes documentation, customMessage, and displayName fields
+// so that the --no-fluff stripping can be verified.
+func monitoringConfigSchemaFixture() interface{} {
+	return map[string]interface{}{
+		"$schema":     "http://json-schema.org/draft-07/schema#",
+		"displayName": "PostgreSQL Monitoring Configuration",
+		"type":        "object",
+		"properties": map[string]interface{}{
+			"enabled": map[string]interface{}{
+				"type":          "boolean",
+				"displayName":   "Enable monitoring",
+				"documentation": "When set to false, monitoring is suspended.",
+				"customMessage": "Disabling will stop all metric collection.",
+				"default":       true,
+			},
+			"host": map[string]interface{}{
+				"type":        "string",
+				"displayName": "Hostname",
+				"description": "PostgreSQL server hostname or IP address.",
+			},
+			"port": map[string]interface{}{
+				"type":        "integer",
+				"displayName": "Port",
+				"description": "PostgreSQL server port.",
+				"default":     5432,
+			},
+			"credentials": map[string]interface{}{
+				"type":          "object",
+				"displayName":   "Credentials",
+				"documentation": "Authentication settings for the PostgreSQL server.",
+				"properties": map[string]interface{}{
+					"username": map[string]interface{}{
+						"type":          "string",
+						"displayName":   "Username",
+						"customMessage": "Use a read-only user for security.",
+					},
+					"password": map[string]interface{}{
+						"type":        "string",
+						"displayName": "Password",
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestGolden_DescribeExtensionSchema(t *testing.T) {
+	schema := monitoringConfigSchemaFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(schema); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-schema-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeExtensionSchemaNoFluff(t *testing.T) {
+	schema := monitoringConfigSchemaFixture()
+	stripped := extension.StripSchemaFluff(schema)
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(stripped); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-schema-no-fluff-"+name, buf.String())
 		})
 	}
 }
