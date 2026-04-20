@@ -34,6 +34,7 @@ slo:slos:read,
 slo:objective-templates:read,
 settings:schemas:read,
 settings:objects:read,
+app-settings:objects:read,
 extensions:definitions:read,
 extensions:configurations:read,
 storage:logs:read,
@@ -86,6 +87,7 @@ slo:objective-templates:read,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
+app-settings:objects:read,
 extensions:definitions:read,
 extensions:definitions:write,
 extensions:configurations:read,
@@ -144,6 +146,7 @@ slo:objective-templates:read,
 settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
+app-settings:objects:read,
 extensions:definitions:read,
 extensions:definitions:write,
 extensions:configurations:read,
@@ -222,6 +225,7 @@ settings:schemas:read,
 settings:objects:read,
 settings:objects:write,
 settings:objects:admin,
+app-settings:objects:read,
 extensions:definitions:read,
 extensions:definitions:write,
 extensions:configurations:read,
@@ -372,6 +376,12 @@ email:emails:send
 | `settings:objects:read`  | Read settings objects           |
 | `settings:objects:write` | Create, update, delete settings |
 | `settings:objects:admin` | Admin access for ownership      |
+
+### App Settings API
+
+| Scope                        | Description              |
+| ---------------------------- | ------------------------ |
+| `app-settings:objects:read`  | Read app settings objects |
 
 ### Extensions API
 

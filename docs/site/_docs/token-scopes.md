@@ -42,6 +42,7 @@ storage:buckets:read
 storage:filter-segments:read
 settings:objects:read
 settings:schemas:read
+app-settings:objects:read
 app-engine:apps:read
 app-engine:edge-connects:read
 extension:extensions:read
@@ -190,6 +191,12 @@ storage:fieldsets:write
 | List / Get / Describe | `settings:objects:read` |
 | Create / Update / Delete | `settings:objects:write` |
 | Schema discovery | `settings:schemas:read` |
+
+### App Settings
+
+| Operation | Required Scope |
+|---|---|
+| List / Get / Describe | `app-settings:objects:read` |
 
 ### Extensions
 
