@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -1915,7 +1916,10 @@ func TestGolden_QueryDQL_Chart_MultiSeries(t *testing.T) {
 	if err := printer.PrintList(records); err != nil {
 		t.Fatalf("PrintList failed: %v", err)
 	}
-	assertGolden(t, "query/dql-chart-multi-series", stripANSI(buf.String()))
+	// Chart output uses \r\n for raw terminal compatibility; normalize to \n so
+	// the golden file is portable across platforms and survives git's CRLF handling.
+	output := strings.ReplaceAll(stripANSI(buf.String()), "\r\n", "\n")
+	assertGolden(t, "query/dql-chart-multi-series", output)
 }
 
 func TestGolden_QueryDQL_Sparkline(t *testing.T) {
