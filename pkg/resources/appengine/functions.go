@@ -147,7 +147,13 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 		// See: https://developer.dynatrace.com/develop/guides/app-functions/handle-errors/#custom-error-reporting
 		if jsonMap, ok := jsonBody.(map[string]interface{}); ok {
 			if errVal, hasError := jsonMap["error"]; hasError && errVal != nil {
-				return nil, fmt.Errorf("app function returned an error: %v", errVal)
+				// Only treat string errors as failures (per Dynatrace docs, the
+				// error field is a string message). Skip empty strings and
+				// non-string values to avoid false positives on responses that
+				// happen to contain an "error" key with a different type.
+				if errStr, ok := errVal.(string); ok && errStr != "" {
+					return nil, fmt.Errorf("app function returned an error: %s", errStr)
+				}
 			}
 		}
 		// Valid JSON response

@@ -50,6 +50,31 @@ func TestFunctionHandler_InvokeFunction_CustomError(t *testing.T) {
 			body:    `"hello world"`,
 			wantErr: false,
 		},
+		{
+			name:    "empty error string is not an error",
+			body:    `{"data":{"key":"value"},"error":""}`,
+			wantErr: false,
+		},
+		{
+			name:    "error false is not an error",
+			body:    `{"data":null,"error":false}`,
+			wantErr: false,
+		},
+		{
+			name:    "error zero is not an error",
+			body:    `{"data":null,"error":0}`,
+			wantErr: false,
+		},
+		{
+			name:    "array response is not an error",
+			body:    `[1,2,3]`,
+			wantErr: false,
+		},
+		{
+			name:    "structured error object is not treated as error",
+			body:    `{"data":null,"error":{"code":400,"message":"bad request"}}`,
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {

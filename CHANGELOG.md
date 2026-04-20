@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **App function custom error detection** — `dtctl exec function` now detects the Dynatrace app-function error envelope (`{"error": "message", "data": ...}`) on HTTP 200 responses and surfaces the error message with a non-zero exit code instead of silently returning success
 - **`apply --write-id` and `apply --id` flags** — two complementary flags for idempotent applies; `--write-id` stamps the generated resource ID back into the source file after a successful create, so every subsequent apply updates in place without creating duplicates; `--id` injects or overrides the resource ID at the CLI level without modifying the file, ideal for CI pipelines using reusable template files; works for dashboards, notebooks, and workflows; a recovery hint is printed to stderr when a resource is created without `--write-id`
 - **`enable gcp|azure monitoring` command** — new `dtctl enable` verb that completes cloud monitoring onboarding in one step: optionally updates the linked connection credentials (service account for GCP; directory/application ID for Azure) and enables the monitoring config; `--serviceAccountId`, `--directoryId`, `--applicationId` are all optional — if omitted, only the enabled state is toggled; supports `--dry-run`
 - **Cloud monitoring configs created as disabled** — `dtctl create gcp monitoring` and `dtctl create azure monitoring` now create configs in a disabled state (`enabled: false`); use `dtctl enable gcp|azure monitoring` to enable
