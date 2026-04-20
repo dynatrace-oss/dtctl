@@ -3,6 +3,7 @@ package document
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -883,6 +884,17 @@ type CreateEnvironmentShareRequest struct {
 	Access     string `json:"access"` // "read" or "read-write"
 }
 
+// ErrShareConflict is returned when creating an environment share fails because
+// one already exists for the document (HTTP 409). Callers can use errors.Is to
+// detect this case without fragile string matching.
+// ErrShareConflict is returned when creating an environment share fails because
+// one already exists for the document (HTTP 409).
+var ErrShareConflict = fmt.Errorf("environment share conflict")
+
+// ErrVersionConflict is returned when a document PATCH fails due to optimistic
+// locking (HTTP 409). Callers can use errors.Is to detect this without string matching.
+var ErrVersionConflict = fmt.Errorf("document version conflict")
+
 // CreateEnvironmentShare creates an environment-wide share for a document
 func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*EnvironmentShare, error) {
 	var result EnvironmentShare
@@ -903,7 +915,7 @@ func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*En
 		case 403:
 			return nil, fmt.Errorf("access denied to share document %q with environment", req.DocumentID)
 		case 409:
-			return nil, fmt.Errorf("an environment share already exists for document %q", req.DocumentID)
+			return nil, fmt.Errorf("an environment share already exists for document %q: %w", req.DocumentID, ErrShareConflict)
 		default:
 			return nil, fmt.Errorf("failed to create environment share: status %d: %s", resp.StatusCode(), resp.String())
 		}
@@ -1006,7 +1018,7 @@ func (h *Handler) SetDocumentPublic(id string, version int) error {
 		case 403:
 			return fmt.Errorf("access denied to update document %q", id)
 		case 409:
-			return fmt.Errorf("document version conflict (document was modified)")
+			return fmt.Errorf("document was modified concurrently: %w", ErrVersionConflict)
 		default:
 			return fmt.Errorf("failed to update document visibility: status %d: %s", resp.StatusCode(), resp.String())
 		}
@@ -1042,7 +1054,7 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 	}
 	if meta.IsPrivate {
 		if err := h.SetDocumentPublic(documentID, meta.Version); err != nil {
-			if !strings.Contains(err.Error(), "version conflict") {
+			if !errors.Is(err, ErrVersionConflict) {
 				return share, err
 			}
 			// Retry once: re-fetch metadata and try again.
@@ -1067,7 +1079,7 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 		return nil, err
 	}
 
-	share, toDelete := h.findOrCollectShares(existing.Shares, access)
+	share, toDelete := findOrCollectShares(existing.Shares, access)
 	if share != nil {
 		return share, nil
 	}
@@ -1089,7 +1101,9 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 
 	// Handle race condition: another process may have created the share
 	// between our list and create calls, resulting in a 409 conflict.
-	if !strings.Contains(err.Error(), "already exists") {
+	// NOTE: 409 recovery is single-shot. If a second concurrent process races again
+	// after the re-list, the final CreateEnvironmentShare will return an error.
+	if !errors.Is(err, ErrShareConflict) {
 		return nil, err
 	}
 
@@ -1098,7 +1112,7 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 		return nil, fmt.Errorf("create returned conflict and re-list failed: %w", reErr)
 	}
 
-	share, toDelete = h.findOrCollectShares(reListed.Shares, access)
+	share, toDelete = findOrCollectShares(reListed.Shares, access)
 	if share != nil {
 		return share, nil
 	}
@@ -1117,7 +1131,7 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 
 // findOrCollectShares scans shares for an exact access match. Returns the match (if any)
 // and a list of non-matching share IDs suitable for deletion.
-func (h *Handler) findOrCollectShares(shares []EnvironmentShare, access string) (*EnvironmentShare, []string) {
+func findOrCollectShares(shares []EnvironmentShare, access string) (*EnvironmentShare, []string) {
 	var match *EnvironmentShare
 	var toDelete []string
 	for i := range shares {
