@@ -54,6 +54,15 @@ dtctl create dashboard -f dashboard.yaml
 
 # Apply (creates if new, updates if existing — idempotent)
 dtctl apply -f dashboard.yaml
+
+# First apply: stamp the generated ID back into the file so future applies update in place
+dtctl apply -f dashboard.yaml --write-id
+
+# Forgot --write-id on the first run? Recover without creating another duplicate:
+dtctl apply -f dashboard.yaml --write-id --id <id-from-first-run>
+
+# CI/scripting: apply a template to a specific known dashboard
+dtctl apply -f dashboard.yaml --id $DASHBOARD_ID
 ```
 
 On success, dtctl prints the tile count and a direct URL to the dashboard in Dynatrace.

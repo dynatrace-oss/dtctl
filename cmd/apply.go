@@ -28,6 +28,25 @@ This is similar to 'kubectl apply' - use it to keep resources in sync with their
 file definitions. For round-trip workflows, use 'dtctl get <resource> -o yaml' to
 export, edit, and apply back.
 
+Idempotent local workflow (--write-id):
+  Use --write-id on first apply to stamp the generated ID back into the source file.
+  Every subsequent apply will then update in place automatically — no manual ID
+  tracking required.
+
+    dtctl apply -f dashboard.yaml --write-id   # creates, stamps id into file
+    dtctl apply -f dashboard.yaml              # updates the same dashboard
+
+  If you forgot --write-id on the first run, use --id to recover without creating
+  a duplicate:
+
+    dtctl apply -f dashboard.yaml --write-id --id <id-from-first-run>
+
+Template-driven deployments (--id):
+  Keep a reusable template file (no ID) and supply the target ID externally.
+  Ideal for CI pipelines or deploying the same template to a known resource.
+
+    dtctl apply -f template.yaml --id $DASHBOARD_ID
+
 Template variables can be used with the --set flag for reusable configurations,
 making it easy to deploy the same resource across multiple environments.
 
@@ -41,13 +60,19 @@ Supported resource types:
   - Extension monitoring configurations
 
 Examples:
-  # Create a new dashboard (no ID in file)
-  dtctl apply -f dashboard.yaml
+  # Create a new dashboard and stamp the ID back into the file
+  dtctl apply -f dashboard.yaml --write-id
 
   # Update existing dashboard (file exported with 'get' command includes ID)
   dtctl get dashboard my-dash -o yaml > dashboard.yaml
   # Edit dashboard.yaml...
   dtctl apply -f dashboard.yaml  # Updates the existing dashboard
+
+  # Forgot --write-id on first run? Recover without creating a duplicate:
+  dtctl apply -f dashboard.yaml --write-id --id <id-from-first-run>
+
+  # CI/scripting: apply template to a known target resource
+  dtctl apply -f template.yaml --id $DASHBOARD_ID
 
   # Update a settings object
   dtctl get settings <objectId> -o yaml > setting.yaml
@@ -72,8 +97,8 @@ Examples:
   # Apply with wide table (includes URL for dashboards/notebooks)
   dtctl apply -f notebook.yaml -o wide
 
-Note: To update a dashboard via command line, use the apply command with a file
-that contains the dashboard ID. The 'create' command always creates new resources.
+Note: The 'create' command always creates new resources. Use 'apply' to keep
+resources in sync with their file definitions.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file, _ := cmd.Flags().GetString("file")
@@ -85,6 +110,8 @@ that contains the dashboard ID. The 'create' command always creates new resource
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
 		showDiff, _ := cmd.Flags().GetBool("show-diff")
 		noHooks, _ := cmd.Flags().GetBool("no-hooks")
+		overrideID, _ := cmd.Flags().GetString("id")
+		writeID, _ := cmd.Flags().GetBool("write-id")
 
 		// Read the file
 		fileData, err := os.ReadFile(file)
@@ -135,6 +162,8 @@ that contains the dashboard ID. The 'create' command always creates new resource
 			TemplateVars: templateVars,
 			DryRun:       dryRun,
 			ShowDiff:     showDiff,
+			OverrideID:   overrideID,
+			WriteID:      writeID,
 		}
 
 		results, err := applier.Apply(fileData, opts)
@@ -188,6 +217,8 @@ func init() {
 	applyCmd.Flags().Bool("dry-run", false, "preview changes without applying")
 	applyCmd.Flags().Bool("show-diff", false, "show diff of changes when updating existing resources")
 	applyCmd.Flags().Bool("no-hooks", false, "skip pre-apply hooks")
+	applyCmd.Flags().String("id", "", "override or inject resource ID (use with --write-id to stamp ID into file)")
+	applyCmd.Flags().Bool("write-id", false, "write the created resource ID back into the source file for idempotent future applies")
 
 	_ = applyCmd.MarkFlagRequired("file")
 }

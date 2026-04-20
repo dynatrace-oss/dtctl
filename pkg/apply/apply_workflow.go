@@ -9,7 +9,7 @@ import (
 )
 
 // applyWorkflow applies a workflow resource
-func (a *Applier) applyWorkflow(data []byte) (ApplyResult, error) {
+func (a *Applier) applyWorkflow(data []byte, opts ApplyOptions) (ApplyResult, error) {
 	// Parse to check for ID
 	var wf map[string]interface{}
 	if err := json.Unmarshal(data, &wf); err != nil {
@@ -30,12 +30,18 @@ func (a *Applier) applyWorkflow(data []byte) (ApplyResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create workflow: %w", err)
 		}
+
+		var warnings []string
+		// File had no id field before this apply — stamp it back or hint.
+		applyWriteBack(a.sourceFile, result.ID, "workflow", opts.WriteID, false, &warnings)
+
 		return &WorkflowApplyResult{
 			ApplyResultBase: ApplyResultBase{
 				Action:       ActionCreated,
 				ResourceType: "workflow",
 				ID:           result.ID,
 				Name:         result.Title,
+				Warnings:     warnings,
 			},
 		}, nil
 	}
@@ -53,12 +59,19 @@ func (a *Applier) applyWorkflow(data []byte) (ApplyResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create workflow: %w", err)
 		}
+
+		var warnings []string
+		// File already had an id field (we got here because the resource wasn't found).
+		// No stamp or hint needed — the file is already self-contained.
+		applyWriteBack(a.sourceFile, result.ID, "workflow", opts.WriteID, true, &warnings)
+
 		return &WorkflowApplyResult{
 			ApplyResultBase: ApplyResultBase{
 				Action:       ActionCreated,
 				ResourceType: "workflow",
 				ID:           result.ID,
 				Name:         result.Title,
+				Warnings:     warnings,
 			},
 		}, nil
 	}

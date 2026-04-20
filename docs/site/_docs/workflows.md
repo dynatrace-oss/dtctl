@@ -49,6 +49,15 @@ dtctl create workflow -f my-workflow.yaml
 
 # Apply (creates if new, updates if existing — idempotent)
 dtctl apply -f my-workflow.yaml
+
+# First apply: stamp the generated ID back into the file so future applies update in place
+dtctl apply -f my-workflow.yaml --write-id
+
+# Forgot --write-id on the first run? Recover without creating another duplicate:
+dtctl apply -f my-workflow.yaml --write-id --id <id-from-first-run>
+
+# CI/scripting: apply a template to a specific known workflow
+dtctl apply -f my-workflow.yaml --id $WORKFLOW_ID
 ```
 
 ### Example Workflow YAML

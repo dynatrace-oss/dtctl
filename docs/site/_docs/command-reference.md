@@ -267,6 +267,26 @@ dtctl create settings -f pipeline.yaml --schema ... --dry-run
 dtctl delete workflow "Test Workflow" --dry-run
 ```
 
+### Idempotent Applies
+
+Use `--write-id` and `--id` to prevent duplicate resources on repeated runs:
+
+```bash
+# First apply: stamp the generated ID back into the source file
+dtctl apply -f dashboard.yaml --write-id
+
+# All future runs update the same resource
+dtctl apply -f dashboard.yaml
+
+# Forgot --write-id on the first run? Recover without creating another duplicate:
+dtctl apply -f dashboard.yaml --write-id --id <id-from-first-run>
+
+# CI/scripting: apply a template file to a known target resource
+dtctl apply -f template.yaml --id $DASHBOARD_ID
+```
+
+`--write-id` is a no-op when the file already contains an `id` field.
+
 ### Pipeline Integration
 
 ```bash

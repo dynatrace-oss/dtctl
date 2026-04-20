@@ -95,7 +95,9 @@ type ApplyOptions struct {
 	DryRun       bool
 	Force        bool
 	ShowDiff     bool
-	NoHooks      bool // skip pre-apply hooks
+	NoHooks      bool   // skip pre-apply hooks
+	OverrideID   string // override or inject resource ID (from --id flag)
+	WriteID      bool   // write created resource ID back into the source file (from --write-id flag)
 }
 
 // ResourceType represents the type of resource
@@ -143,6 +145,16 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 		return nil, err
 	}
 
+	// Inject override ID if provided via --id flag.
+	// This merges the ID into the JSON before any resource handler sees it,
+	// so all resource types benefit uniformly.
+	if opts.OverrideID != "" {
+		jsonData, err = injectID(jsonData, opts.OverrideID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to inject --id into resource: %w", err)
+		}
+	}
+
 	// Run pre-apply hook (if configured and not skipped)
 	if !opts.NoHooks && a.preApplyHook != "" {
 		result, err := hook.RunPreApply(
@@ -186,7 +198,7 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 	var result ApplyResult
 	switch resourceType {
 	case ResourceWorkflow:
-		result, err = a.applyWorkflow(jsonData)
+		result, err = a.applyWorkflow(jsonData, opts)
 	case ResourceDashboard:
 		result, err = a.applyDocument(jsonData, "dashboard", opts)
 	case ResourceNotebook:
@@ -449,4 +461,14 @@ func capitalize(s string) string {
 		return s
 	}
 	return string(s[0]-32) + s[1:]
+}
+
+// injectID sets the "id" field in a JSON object, overwriting any existing value.
+func injectID(data []byte, id string) ([]byte, error) {
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	doc["id"] = id
+	return json.Marshal(doc)
 }
