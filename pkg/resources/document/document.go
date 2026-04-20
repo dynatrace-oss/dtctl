@@ -834,6 +834,29 @@ func (s EnvironmentShare) HasAccess(level string) bool {
 	return true
 }
 
+// ExactAccess reports whether the share grants exactly the given access level
+// (no more, no less). Use this when deciding whether to replace a share: a
+// "read-write" share is NOT an exact match for "read".
+func (s EnvironmentShare) ExactAccess(level string) bool {
+	want := accessToLevels(level)
+	if len(s.Access) != len(want) {
+		return false
+	}
+	for _, w := range want {
+		found := false
+		for _, a := range s.Access {
+			if a == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 func accessToLevels(level string) []string {
 	switch level {
 	case "read-write":
@@ -998,80 +1021,114 @@ func (h *Handler) SetDocumentPublic(id string, version int) error {
 // reproduce the UI's "Share with environment" action.
 //
 // Idempotency:
-// - If a share at the requested level already exists, reuses it.
-// - If a share at a different level exists, deletes and replaces it.
-// - If isPrivate is already false, the visibility PATCH is skipped.
-// - If a concurrent create races and returns 409, re-lists to recover the existing share.
+//   - If a share at exactly the requested level already exists, reuses it.
+//   - If a share at a different level exists, deletes and replaces it.
+//   - If isPrivate is already false, the visibility PATCH is skipped.
+//   - If a concurrent create races and returns 409, re-lists and if the existing share has
+//     different access, deletes it and retries the create.
 //
 // Returns the current (or newly-created) share.
 func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*EnvironmentShare, error) {
-	existing, err := h.ListEnvironmentShares(documentID)
+	share, err := h.ensureShareAtAccess(documentID, access)
 	if err != nil {
 		return nil, err
 	}
 
-	// First pass: find a matching share or collect non-matching ones for deletion.
-	var share *EnvironmentShare
-	var toDelete []string
-	for i := range existing.Shares {
-		s := existing.Shares[i]
-		if s.HasAccess(access) {
-			share = &s
-			// Don't break — continue to avoid deleting shares found later.
-		} else {
-			toDelete = append(toDelete, s.ID)
-		}
-	}
-
-	// Delete non-matching shares only if we need to create/replace.
-	if share == nil {
-		for _, id := range toDelete {
-			if err := h.DeleteEnvironmentShare(id); err != nil {
-				return nil, fmt.Errorf("failed to replace existing environment share: %w", err)
-			}
-		}
-		created, err := h.CreateEnvironmentShare(CreateEnvironmentShareRequest{
-			DocumentID: documentID,
-			Access:     access,
-		})
-		if err != nil {
-			// Handle race condition: another process may have created the share
-			// between our list and create calls, resulting in a 409 conflict.
-			if strings.Contains(err.Error(), "already exists") {
-				reListed, reErr := h.ListEnvironmentShares(documentID)
-				if reErr != nil {
-					return nil, fmt.Errorf("create returned conflict and re-list failed: %w", reErr)
-				}
-				for i := range reListed.Shares {
-					s := reListed.Shares[i]
-					if s.HasAccess(access) {
-						share = &s
-						break
-					}
-				}
-				if share == nil {
-					// 409 but no matching share found — the existing share has different access.
-					return nil, err
-				}
-			} else {
-				return nil, err
-			}
-		} else {
-			share = created
-		}
-	}
-
 	// Flip the document to public. Fetch current version for optimistic locking.
+	// Retry once on version conflict (another concurrent update bumped the version).
 	meta, err := h.GetMetadata(documentID)
 	if err != nil {
 		return share, fmt.Errorf("share created but could not read document metadata to flip isPrivate: %w", err)
 	}
 	if meta.IsPrivate {
 		if err := h.SetDocumentPublic(documentID, meta.Version); err != nil {
-			return share, err
+			if !strings.Contains(err.Error(), "version conflict") {
+				return share, err
+			}
+			// Retry once: re-fetch metadata and try again.
+			meta, err = h.GetMetadata(documentID)
+			if err != nil {
+				return share, fmt.Errorf("share created but retry metadata fetch failed: %w", err)
+			}
+			if meta.IsPrivate {
+				if err := h.SetDocumentPublic(documentID, meta.Version); err != nil {
+					return share, err
+				}
+			}
 		}
 	}
 	return share, nil
+}
+
+// ensureShareAtAccess handles the share creation/replacement logic, including 409 race recovery.
+func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentShare, error) {
+	existing, err := h.ListEnvironmentShares(documentID)
+	if err != nil {
+		return nil, err
+	}
+
+	share, toDelete := h.findOrCollectShares(existing.Shares, access)
+	if share != nil {
+		return share, nil
+	}
+
+	// Delete non-matching shares and create a new one at the requested access level.
+	for _, id := range toDelete {
+		if err := h.DeleteEnvironmentShare(id); err != nil {
+			return nil, fmt.Errorf("failed to replace existing environment share: %w", err)
+		}
+	}
+
+	created, err := h.CreateEnvironmentShare(CreateEnvironmentShareRequest{
+		DocumentID: documentID,
+		Access:     access,
+	})
+	if err == nil {
+		return created, nil
+	}
+
+	// Handle race condition: another process may have created the share
+	// between our list and create calls, resulting in a 409 conflict.
+	if !strings.Contains(err.Error(), "already exists") {
+		return nil, err
+	}
+
+	reListed, reErr := h.ListEnvironmentShares(documentID)
+	if reErr != nil {
+		return nil, fmt.Errorf("create returned conflict and re-list failed: %w", reErr)
+	}
+
+	share, toDelete = h.findOrCollectShares(reListed.Shares, access)
+	if share != nil {
+		return share, nil
+	}
+
+	// 409 but the existing share has different access — delete and retry create.
+	for _, id := range toDelete {
+		if err := h.DeleteEnvironmentShare(id); err != nil {
+			return nil, fmt.Errorf("failed to replace racing environment share: %w", err)
+		}
+	}
+	return h.CreateEnvironmentShare(CreateEnvironmentShareRequest{
+		DocumentID: documentID,
+		Access:     access,
+	})
+}
+
+// findOrCollectShares scans shares for an exact access match. Returns the match (if any)
+// and a list of non-matching share IDs suitable for deletion.
+func (h *Handler) findOrCollectShares(shares []EnvironmentShare, access string) (*EnvironmentShare, []string) {
+	var match *EnvironmentShare
+	var toDelete []string
+	for i := range shares {
+		s := shares[i]
+		if s.ExactAccess(access) {
+			match = &s
+		} else {
+			toDelete = append(toDelete, s.ID)
+		}
+	}
+	return match, toDelete
 }
 
 // MarshalJSON custom marshaler for Document to include content when present
