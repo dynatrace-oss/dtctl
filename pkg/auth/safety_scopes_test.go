@@ -27,6 +27,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 			},
 			mustNotInclude: []string{
 				"document:documents:write",
+				"document:documents:delete",
 				"automation:workflows:write",
 				"storage:logs:write",
 				"storage:buckets:write",
