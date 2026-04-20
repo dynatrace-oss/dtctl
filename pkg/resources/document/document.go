@@ -889,27 +889,52 @@ func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*En
 	return &result, nil
 }
 
-// ListEnvironmentShares lists environment shares for a document (or all if documentID is empty)
+// ListEnvironmentShares lists environment shares for a document (or all if documentID is empty).
+// Paginates automatically using the Document API style (page-size sent on every request).
 func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareList, error) {
-	var result EnvironmentShareList
+	var allShares []EnvironmentShare
+	var totalCount int
+	nextPageKey := ""
 
-	req := h.client.HTTP().R().SetResult(&result)
-
+	filterStr := ""
 	if documentID != "" {
-		req.SetQueryParam("filter", fmt.Sprintf("documentId=='%s'", documentID))
+		filterStr = fmt.Sprintf("documentId=='%s'", documentID)
 	}
 
-	resp, err := req.Get("/platform/document/v1/environment-shares")
+	for {
+		var result EnvironmentShareList
+		req := h.client.HTTP().R().SetResult(&result)
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to list environment shares: %w", err)
+		client.PaginationParams{
+			Style:         client.PaginationDocumentAPI,
+			PageKeyParam:  "page-key",
+			PageSizeParam: "page-size",
+			NextPageKey:   nextPageKey,
+			Filters:       map[string]string{"filter": filterStr},
+		}.Apply(req)
+
+		resp, err := req.Get("/platform/document/v1/environment-shares")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list environment shares: %w", err)
+		}
+
+		if resp.IsError() {
+			return nil, fmt.Errorf("failed to list environment shares: status %d: %s", resp.StatusCode(), resp.String())
+		}
+
+		allShares = append(allShares, result.Shares...)
+		totalCount = result.TotalCount
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
 	}
 
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list environment shares: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return &result, nil
+	return &EnvironmentShareList{
+		Shares:     allShares,
+		TotalCount: totalCount,
+	}, nil
 }
 
 // DeleteEnvironmentShare deletes an environment share
@@ -975,7 +1000,8 @@ func (h *Handler) SetDocumentPublic(id string, version int) error {
 // Idempotency:
 // - If a share at the requested level already exists, reuses it.
 // - If a share at a different level exists, deletes and replaces it.
-// - If isPrivate is already false, the visibility PATCH is still sent (server treats as no-op).
+// - If isPrivate is already false, the visibility PATCH is skipped.
+// - If a concurrent create races and returns 409, re-lists to recover the existing share.
 //
 // Returns the current (or newly-created) share.
 func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*EnvironmentShare, error) {
@@ -983,27 +1009,58 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 	if err != nil {
 		return nil, err
 	}
+
+	// First pass: find a matching share or collect non-matching ones for deletion.
 	var share *EnvironmentShare
+	var toDelete []string
 	for i := range existing.Shares {
 		s := existing.Shares[i]
 		if s.HasAccess(access) {
 			share = &s
-			break
-		}
-		if err := h.DeleteEnvironmentShare(s.ID); err != nil {
-			return nil, fmt.Errorf("failed to replace existing environment share: %w", err)
+			// Don't break — continue to avoid deleting shares found later.
+		} else {
+			toDelete = append(toDelete, s.ID)
 		}
 	}
+
+	// Delete non-matching shares only if we need to create/replace.
 	if share == nil {
+		for _, id := range toDelete {
+			if err := h.DeleteEnvironmentShare(id); err != nil {
+				return nil, fmt.Errorf("failed to replace existing environment share: %w", err)
+			}
+		}
 		created, err := h.CreateEnvironmentShare(CreateEnvironmentShareRequest{
 			DocumentID: documentID,
 			Access:     access,
 		})
 		if err != nil {
-			return nil, err
+			// Handle race condition: another process may have created the share
+			// between our list and create calls, resulting in a 409 conflict.
+			if strings.Contains(err.Error(), "already exists") {
+				reListed, reErr := h.ListEnvironmentShares(documentID)
+				if reErr != nil {
+					return nil, fmt.Errorf("create returned conflict and re-list failed: %w", reErr)
+				}
+				for i := range reListed.Shares {
+					s := reListed.Shares[i]
+					if s.HasAccess(access) {
+						share = &s
+						break
+					}
+				}
+				if share == nil {
+					// 409 but no matching share found — the existing share has different access.
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
+		} else {
+			share = created
 		}
-		share = created
 	}
+
 	// Flip the document to public. Fetch current version for optimistic locking.
 	meta, err := h.GetMetadata(documentID)
 	if err != nil {

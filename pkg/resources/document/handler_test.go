@@ -518,6 +518,90 @@ func TestEnsureEnvironmentShare_ReplacesDifferentAccess(t *testing.T) {
 	}
 }
 
+func TestEnsureEnvironmentShare_SkipsPatchWhenAlreadyPublic(t *testing.T) {
+	patchCalls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(EnvironmentShareList{
+			Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
+			TotalCount: 1,
+		})
+	})
+	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 5, IsPrivate: false})
+	})
+	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			patchCalls++
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	got, err := h.EnsureEnvironmentShare("doc-1", "read")
+	if err != nil {
+		t.Fatalf("EnsureEnvironmentShare: %v", err)
+	}
+	if got.ID != "s1" {
+		t.Errorf("expected existing share, got %+v", got)
+	}
+	if patchCalls != 0 {
+		t.Errorf("expected no PATCH when isPrivate=false, got %d calls", patchCalls)
+	}
+}
+
+func TestEnsureEnvironmentShare_Handles409Race(t *testing.T) {
+	listCalls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			listCalls++
+			if listCalls == 1 {
+				// First list: empty (simulates race — another process hasn't created yet)
+				json.NewEncoder(w).Encode(EnvironmentShareList{Shares: nil, TotalCount: 0})
+			} else {
+				// Second list (after 409): share now exists from the other process
+				json.NewEncoder(w).Encode(EnvironmentShareList{
+					Shares:     []EnvironmentShare{{ID: "s-race", DocumentID: "doc-1", Access: []string{"read"}}},
+					TotalCount: 1,
+				})
+			}
+			return
+		}
+		if r.Method == http.MethodPost {
+			// Simulate conflict from concurrent create
+			w.WriteHeader(http.StatusConflict)
+			fmt.Fprintf(w, `{"error":{"message":"an environment share already exists for document \"doc-1\""}}`)
+		}
+	})
+	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 2, IsPrivate: true})
+	})
+	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	got, err := h.EnsureEnvironmentShare("doc-1", "read")
+	if err != nil {
+		t.Fatalf("EnsureEnvironmentShare should recover from 409 race: %v", err)
+	}
+	if got.ID != "s-race" {
+		t.Errorf("expected recovered share s-race, got %+v", got)
+	}
+	if listCalls != 2 {
+		t.Errorf("expected 2 list calls (initial + re-list after 409), got %d", listCalls)
+	}
+}
+
 // --- documentListItemToDocument / ConvertToDocuments ---
 
 func TestConvertToDocuments(t *testing.T) {
