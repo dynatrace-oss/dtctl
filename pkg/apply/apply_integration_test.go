@@ -1626,3 +1626,275 @@ func TestApply_WorkflowCreate_IDNotFound_NoHint(t *testing.T) {
 		t.Errorf("source file should be unchanged, got:\n%s", content)
 	}
 }
+
+// ── Array apply tests (regression for #180) ──────────────────────────────
+
+// TestApply_SettingsArray_RoundTrip is the primary regression test for #180.
+// It verifies that the output of `get settings --schema X` (a YAML array of
+// settings objects) can be fed back into `apply` without error.
+func TestApply_SettingsArray_RoundTrip(t *testing.T) {
+	createCount := 0
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/classic/environment-api/v2/settings/objects": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("expected POST, got %s", r.Method)
+			}
+			createCount++
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"objectId": fmt.Sprintf("obj-%d", createCount)},
+			})
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	// Simulates the output of: dtctl get settings --schema builtin:rum.web.enablement -o json
+	settingsArray := `[
+		{"schemaId":"builtin:rum.web.enablement","scope":"APPLICATION-111","value":{"enabled":true,"costControl":50}},
+		{"schemaId":"builtin:rum.web.enablement","scope":"APPLICATION-222","value":{"enabled":true,"costControl":100}},
+		{"schemaId":"builtin:rum.web.enablement","scope":"APPLICATION-333","value":{"enabled":false,"costControl":25}}
+	]`
+
+	results, err := a.Apply([]byte(settingsArray), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() settings array error = %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	if createCount != 3 {
+		t.Errorf("expected 3 API calls, got %d", createCount)
+	}
+	for i, r := range results {
+		base := r.(*SettingsApplyResult).ApplyResultBase
+		if base.Action != ActionCreated {
+			t.Errorf("result %d: expected 'created', got %q", i, base.Action)
+		}
+	}
+}
+
+// TestApply_SettingsArray_PartialFailure verifies that a failure in one element
+// does not abort the entire batch and the error reports both succeeded and failed items.
+func TestApply_SettingsArray_PartialFailure(t *testing.T) {
+	callCount := 0
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/classic/environment-api/v2/settings/objects": func(w http.ResponseWriter, r *http.Request) {
+			callCount++
+			if callCount == 2 {
+				// Second element fails
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":{"code":400,"message":"invalid value"}}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"objectId": fmt.Sprintf("obj-%d", callCount)},
+			})
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	settingsArray := `[
+		{"schemaId":"builtin:rum.web.enablement","scope":"APPLICATION-111","value":{"enabled":true}},
+		{"schemaId":"builtin:rum.web.enablement","scope":"APPLICATION-222","value":{"enabled":true}},
+		{"schemaId":"builtin:rum.web.enablement","scope":"APPLICATION-333","value":{"enabled":true}}
+	]`
+
+	results, err := a.Apply([]byte(settingsArray), ApplyOptions{})
+	if err == nil {
+		t.Fatal("expected error for partial failure, got nil")
+	}
+
+	var listErr *ListApplyError
+	if e, ok := err.(*ListApplyError); !ok {
+		t.Fatalf("expected *ListApplyError, got %T: %v", err, err)
+	} else {
+		listErr = e
+	}
+
+	// 2 succeeded, 1 failed
+	if len(results) != 2 {
+		t.Errorf("expected 2 successful results, got %d", len(results))
+	}
+	if listErr.Failed != 1 {
+		t.Errorf("expected 1 failure, got %d", listErr.Failed)
+	}
+	if listErr.Total != 3 {
+		t.Errorf("expected total=3, got %d", listErr.Total)
+	}
+}
+
+// TestApply_SettingsArray_DryRun verifies that dry-run works with array input.
+func TestApply_SettingsArray_DryRun(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	settingsArray := `[
+		{"schemaId":"builtin:rum.web.enablement","scope":"APP-1","value":{"enabled":true}},
+		{"schemaId":"builtin:rum.web.enablement","scope":"APP-2","value":{"enabled":false}}
+	]`
+
+	results, err := a.Apply([]byte(settingsArray), ApplyOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("Apply() dry-run array error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 dry-run results, got %d", len(results))
+	}
+}
+
+// TestApply_Array_OverrideIDRejected verifies that --id flag is rejected for array input.
+func TestApply_Array_OverrideIDRejected(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	settingsArray := `[{"schemaId":"builtin:rum.web.enablement","scope":"APP-1","value":{"enabled":true}}]`
+	_, err := a.Apply([]byte(settingsArray), ApplyOptions{OverrideID: "some-id"})
+	if err == nil {
+		t.Fatal("expected error when --id is used with array input")
+	}
+	if !strings.Contains(err.Error(), "--id flag cannot be used with array input") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// TestApply_Array_HookRunsOnce verifies that pre-apply hook runs once for array input
+// (not once per element).
+func TestApply_Array_HookRunsOnce(t *testing.T) {
+	hookRunCount := 0
+	// Create a temp script that increments a counter file
+	dir := t.TempDir()
+	counterFile := dir + "/count"
+	os.WriteFile(counterFile, []byte("0"), 0o644)
+
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/classic/environment-api/v2/settings/objects": func(w http.ResponseWriter, r *http.Request) {
+			hookRunCount++ // just track calls
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"objectId": fmt.Sprintf("obj-%d", hookRunCount)},
+			})
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c).
+		WithPreApplyHook("true"). // succeeds
+		WithSourceFile("test.yaml")
+
+	settingsArray := `[
+		{"schemaId":"builtin:rum.web.enablement","scope":"APP-1","value":{"enabled":true}},
+		{"schemaId":"builtin:rum.web.enablement","scope":"APP-2","value":{"enabled":false}}
+	]`
+
+	results, err := a.Apply([]byte(settingsArray), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+}
+
+// TestApply_WorkflowArray verifies that array apply works for non-settings resources too,
+// ensuring the generic approach works across all resource types.
+func TestApply_WorkflowArray(t *testing.T) {
+	createCount := 0
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("expected POST, got %s", r.Method)
+			}
+			createCount++
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":    fmt.Sprintf("wf-%d", createCount),
+				"title": fmt.Sprintf("Workflow %d", createCount),
+			})
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	wfArray := `[
+		{"title":"Workflow A","tasks":{},"trigger":{}},
+		{"title":"Workflow B","tasks":{},"trigger":{}}
+	]`
+
+	results, err := a.Apply([]byte(wfArray), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() workflow array error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if createCount != 2 {
+		t.Errorf("expected 2 API calls, got %d", createCount)
+	}
+}
+
+// TestApply_SettingsArray_YAML_RoundTrip is the exact reproduction of the bug
+// reported in #180 — YAML array input (as produced by `get settings --schema X -o yaml`).
+func TestApply_SettingsArray_YAML_RoundTrip(t *testing.T) {
+	createCount := 0
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/classic/environment-api/v2/settings/objects": func(w http.ResponseWriter, r *http.Request) {
+			createCount++
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"objectId": fmt.Sprintf("obj-%d", createCount)},
+			})
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	// This is exactly what `dtctl get settings --schema builtin:rum.web.enablement -o yaml`
+	// produces — a YAML list of settings objects.
+	yamlArray := `- schemaId: builtin:rum.web.enablement
+  scope: APPLICATION-111
+  value:
+    enabled: true
+    costControl: 50
+- schemaId: builtin:rum.web.enablement
+  scope: APPLICATION-222
+  value:
+    enabled: false
+    costControl: 100
+`
+
+	results, err := a.Apply([]byte(yamlArray), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() YAML settings array error = %v (this was bug #180)", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+}

@@ -24,3 +24,19 @@ func (e *HookRejectedError) Error() string {
 	msg += fmt.Sprintf("\nHook command: %s\nExit code: %d", e.Command, e.ExitCode)
 	return msg
 }
+
+// ListApplyError is returned when some items in a batch apply fail.
+// It includes results for successful items alongside the error details.
+type ListApplyError struct {
+	Total    int
+	Failed   int
+	Messages []string
+}
+
+func (e *ListApplyError) Error() string {
+	msg := fmt.Sprintf("%d of %d items failed to apply", e.Failed, e.Total)
+	for _, m := range e.Messages {
+		msg += "\n  " + m
+	}
+	return msg
+}
