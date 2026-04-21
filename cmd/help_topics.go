@@ -29,7 +29,7 @@ Quick Reference:
   dangerously-unrestricted    Dev environments, bucket management     Full access token
 
 For the full list of scopes per safety level, see:
-  https://dtctl.dev/docs/token-scopes/
+  https://dynatrace-oss.github.io/dtctl/docs/token-scopes/
 
 For creating platform tokens, see:
   https://docs.dynatrace.com/docs/manage/identity-access-management/access-tokens-and-oauth-clients/platform-tokens`,
