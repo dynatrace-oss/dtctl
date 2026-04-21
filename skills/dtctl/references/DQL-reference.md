@@ -1,68 +1,17 @@
 # DQL Syntax Guide
 
-## Cost-Optimized Patterns (Read First)
+## Cost-Optimized DQL
 
-Grail bills per GiB **scanned** (uncompressed). A dashboard tile billed 10×/day × 365 makes every byte matter. Always apply these before writing a query — especially for dashboard/notebook tiles that auto-refresh.
+For the authoritative DQL optimization guide (command order, filter pushdown, cardinality, timeframe sizing, anti-patterns), see [`dt-dql-essentials/references/optimization.md`](https://github.com/Dynatrace/dynatrace-for-ai/blob/main/skills/dt-dql-essentials/references/optimization.md) in the `dynatrace-for-ai` skills. Consult that guide **before writing DQL for dashboards, notebooks, or workflows**.
 
-### The five levers, in order of impact
+### dtctl-specific cost affordances
 
-1. **`timeseries` on metrics is free under DPS. Everything else is billed.** Prefer `timeseries` whenever the data already exists as a metric. Only fall back to `fetch logs | makeTimeseries` when the signal lives in log content.
-2. **Always set an inline `from:` on `fetch`.** A `fetch logs` with no `from:` defaults to full Grail retention and can scan terabytes. Dashboard tiles should default to `from:now()-2h`.
-3. **Filter on indexed fields first, before any transform.** Filters pushed down on `dt.system.bucket`, `dt.entity.*`, `k8s.namespace.name`, `loglevel`, `status` prune whole storage blocks. Filters using `lower()`, `upper()`, arithmetic, or on fields produced by `fieldsAdd`/`parse` do **not** push down.
-4. **Cap with `scanLimitGBytes:` and `samplingRatio:`.** Hard ceiling + linear scan reduction. For sampled aggregates, multiply the result back (`value = value[] * samplingRatio`).
-5. **Column-prune with `fieldsKeep` / `fieldsRemove`** after early filters, before transforms. Reduces bytes read per row.
+Two items not covered upstream:
 
-### Good vs bad
+- **Scan-cost knobs on `fetch`** — `scanLimitGBytes:<n>` caps the bytes the query will read (hard ceiling against runaway scans); `samplingRatio:<n>` linearly reduces scanned data on long-window log queries (multiply aggregates back by the ratio). Prefer both on billable `fetch logs/events/spans/bizevents` in tile queries.
+- **Cost lint / rewrite via dtctl** — run `dtctl verify query '<dql>' --cost-lint` to flag cost anti-patterns on any query (use `--strict-cost` in CI to fail on findings; `--rewrite-cost` to print a safely rewritten form). The same flags work on `dtctl exec copilot nl2dql` and `dtctl apply` (which walks every tile query in a dashboard/notebook YAML).
 
-**Bad — full-retention scan, transform defeats pushdown, sort before filter:**
-```dql
-fetch logs
-| sort timestamp desc
-| filter lower(k8s.namespace.name) == "payments"
-| filter matchesValue(content, "*error*")
-| summarize c = count(), by:{k8s.pod.name}
-```
-
-**Good — bounded, pushdown-friendly, column-pruned, sampled:**
-```dql
-fetch logs, from:now()-1h, scanLimitGBytes:50, samplingRatio:100
-| filter dt.system.bucket == "default_logs"
-| filter k8s.namespace.name == "payments"
-| filter matchesPhrase(content, "error")
-| fieldsKeep timestamp, content, k8s.pod.name
-| makeTimeseries c = count(), by:{k8s.pod.name}, from:now()-1h
-```
-
-**Best — skip the log scan entirely by using a metric:**
-```dql
-timeseries c = sum(log.payments.errors), by:{k8s.pod.name}, from:now()-1h
-```
-
-### Canonical pipeline order
-
-```
-fetch <source>, from:<relative>, scanLimitGBytes:<n>, samplingRatio:<n>
-| filter <indexed field equality / in() / matchesPhrase>    -- early, pushdown-friendly
-| fieldsKeep <only fields you need>                          -- bytes-per-row reduction
-| parse / fieldsAdd                                          -- transforms last
-| summarize / makeTimeseries
-| sort                                                       -- NEVER right after fetch
-| limit                                                      -- after summarize, not before
-```
-
-### Anti-patterns to avoid
-
-- `fetch logs` / `fetch events` / `fetch spans` / `fetch bizevents` **with no `from:`** — defaults to full retention.
-- `filter lower(x) == "..."` — transform breaks index pushdown. Use case-sensitive equality, or normalize at ingest. **Measured ~9× scan amplification on production logs (46.6 GiB vs 5.3 GiB over the same 1h window).**
-- `sort timestamp desc` immediately after `fetch` before any filter — forces full scan to sort.
-- `limit N` **before** `summarize` — semantically truncates the aggregation to a partial sample. Note: on live Grail data, this pattern actually scans **less** than `summarize | limit N` because Grail short-circuits the scan when `limit` is early. Choose ordering based on intent, not scan cost.
-- `matchesValue(content, "*foo*")` with leading wildcard — no token-index shortcut. Prefer `matchesPhrase(content, "foo")`.
-- Negation filters (`!=`, `not`) — inclusive filters are faster. Rewrite as positive matches when possible.
-- `fetch logs | makeTimeseries ...` when a metric already covers the signal. Use `timeseries` instead.
-- Dashboard tiles without `scanLimitGBytes:` — a single misconfigured tile can dominate a tenant's DPS bill.
-- Timeframes > 24h on `fetch logs` without `samplingRatio:` — sample first, then optionally widen.
-
-See [Dynatrace DQL best practices](https://docs.dynatrace.com/docs/platform/grail/dynatrace-query-language/dql-best-practices), [Optimize dashboards running log queries](https://docs.dynatrace.com/docs/analyze-explore-automate/logs/lma-analysis/lma-log-query-dashboard), and [DPS log query consumption](https://docs.dynatrace.com/docs/license/capabilities/log-management/dps-log-query).
+One calibration worth knowing: `limit N | summarize` is **semantically** distinct from `summarize | limit N` (partial sample vs full aggregate), not a cost anti-pattern — Grail short-circuits the scan when `limit` appears early. Choose ordering by intent.
 
 ## Copy These Templates Exactly
 

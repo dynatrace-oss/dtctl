@@ -195,40 +195,30 @@ Pick the visualization based on data shape, not aesthetics:
 
 **Key rule**: `barChart` expects a numeric or time x-axis. If your x-axis is string categories (namespace, container name, service name), use `pieChart` for proportions or `table` for precise values.
 
-## Cost Checklist for Tile DQL
+## Cost Considerations for Tile DQL
 
-Dashboard tiles re-execute on every refresh and viewer load. A tile that scans 40 GiB once costs little; the same tile refreshed 10×/day × 365 scans 146 TiB/year. Apply this checklist to every `type: data` tile before `dtctl apply`.
+Dashboard tiles re-execute on every refresh and viewer load, so tile-query cost compounds. For general DQL optimization guidance (command order, filter pushdown, cardinality, timeframe sizing), see [`dt-dql-essentials/references/optimization.md`](https://github.com/Dynatrace/dynatrace-for-ai/blob/main/skills/dt-dql-essentials/references/optimization.md).
 
-**Per-tile checklist:**
+**dtctl-specific tile guidance** — apply these to every `type: data` tile in addition to the general optimization guide:
 
-- [ ] **Inline `from:`** on `fetch` — default `from:now()-2h`; never rely on dashboard-level timeframe alone for cost control.
-- [ ] **Prefer `timeseries`** over `fetch logs | makeTimeseries` when a metric exists (metrics queries are free under DPS).
-- [ ] **Bucket filter** present when multiple buckets exist — `filter dt.system.bucket == "default_logs"`.
-- [ ] **`scanLimitGBytes:`** guardrail on every `fetch` (e.g. `scanLimitGBytes:50`) — hard ceiling protects against query runaway.
-- [ ] **Early filters on indexed fields** — push down before `summarize` / `makeTimeseries`. No `lower()` / `upper()` / arithmetic on the filtered field.
-- [ ] **`fieldsKeep`** after filters, before transforms — only keep what the visualization actually renders.
-- [ ] **`samplingRatio:`** on log queries wider than 24h (multiply aggregates back by the ratio).
-- [ ] **`sort` / `limit` placed last** — never immediately after `fetch`; `limit` after `summarize`, not before.
-- [ ] **Disable auto-refresh** on expensive tiles (`settings.autoRefresh: false`) — each refresh re-bills the full scan.
+- Add a **`scanLimitGBytes:`** guardrail inline on billable `fetch` — hard ceiling protects against query runaway on refresh. Add **`samplingRatio:`** on log queries wider than 24h.
+- **Disable auto-refresh** on expensive tiles — each refresh re-bills the full scan.
+- **Run `dtctl verify query '<dql>' --cost-lint`** on every tile query before `dtctl apply`, or add `--cost-lint` / `--strict-cost` directly on `dtctl apply` to walk all tile queries in the YAML in one shot. `--rewrite-cost` writes a sibling `.rewritten.yaml` with mechanical fixes applied.
 
-**Tile-level cost example:**
+**Cost-aware tile example:**
 ```yaml
 "errors-by-service":
   title: "Errors by service (last 2h)"
   type: data
   query: |
     fetch logs, from:now()-2h, scanLimitGBytes:50
-    | filter dt.system.bucket == "default_logs"
     | filter loglevel == "ERROR"
-    | fieldsKeep timestamp, k8s.namespace.name
     | makeTimeseries errors = count(), by:{k8s.namespace.name}, interval:5m
   visualization: lineChart
   visualizationSettings:
     autoSelectVisualization: false
   davis: { enabled: false, davisVisualization: { isAvailable: true } }
 ```
-
-**Run `dtctl verify query <dql> --cost-lint` on every tile query** before committing the dashboard YAML — it flags the anti-patterns above with rule IDs (`COST001`–`COST009`).
 
 ## Testing Queries Before Deploying
 
