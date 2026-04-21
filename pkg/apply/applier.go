@@ -140,9 +140,14 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 	}
 
 	// Detect resource type
-	resourceType, err := detectResourceType(jsonData)
+	resourceType, isArray, err := detectResourceType(jsonData)
 	if err != nil {
 		return nil, err
+	}
+
+	// Array input: split into individual elements and apply each one
+	if isArray {
+		return a.applyList(resourceType, jsonData, opts)
 	}
 
 	// Inject override ID if provided via --id flag.
@@ -184,6 +189,14 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 		return []ApplyResult{result}, nil
 	}
 
+	return a.applySingle(resourceType, jsonData, opts)
+}
+
+// applySingle applies a single resource object and returns the result.
+func (a *Applier) applySingle(resourceType ResourceType, jsonData []byte, opts ApplyOptions) ([]ApplyResult, error) {
+	var result ApplyResult
+	var err error
+
 	// Connection resources can return multiple results
 	switch resourceType {
 	case ResourceAzureConnection:
@@ -195,7 +208,6 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 	}
 
 	// Apply single-result resource types
-	var result ApplyResult
 	switch resourceType {
 	case ResourceWorkflow:
 		result, err = a.applyWorkflow(jsonData, opts)
@@ -228,57 +240,130 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 	return []ApplyResult{result}, nil
 }
 
-// detectResourceType determines the resource type from JSON data
-func detectResourceType(data []byte) (ResourceType, error) {
-	// Check for array (Azure Connection list)
-	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
-		var rawList []map[string]interface{}
-		if err := json.Unmarshal(data, &rawList); err == nil && len(rawList) > 0 {
-			if schema, ok := rawList[0]["schemaId"].(string); ok && schema == azureconnection.SchemaID {
-				return ResourceAzureConnection, nil
-			}
-			if schema, ok := rawList[0]["schemaId"].(string); ok && schema == gcpconnection.SchemaID {
-				return ResourceGCPConnection, nil
+// applyList splits a JSON array into individual elements and applies each one.
+// It continues on error, collecting all results and returning a combined error
+// summary so that a single failure does not abort the entire batch.
+func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOptions) ([]ApplyResult, error) {
+	// --id flag makes no sense for arrays (which element gets the ID?)
+	if opts.OverrideID != "" {
+		return nil, fmt.Errorf("--id flag cannot be used with array input (array contains %s resources)", resourceType)
+	}
+
+	var elements []json.RawMessage
+	if err := json.Unmarshal(data, &elements); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON array: %w", err)
+	}
+
+	// Run pre-apply hook once on the full array (if configured and not skipped)
+	if !opts.NoHooks && a.preApplyHook != "" {
+		result, err := hook.RunPreApply(
+			context.Background(),
+			a.preApplyHook,
+			string(resourceType),
+			a.sourceFile,
+			data,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if result.ExitCode != 0 {
+			return nil, &HookRejectedError{
+				Command:  a.preApplyHook,
+				ExitCode: result.ExitCode,
+				Stderr:   result.Stderr,
 			}
 		}
 	}
 
+	var results []ApplyResult
+	var errors []string
+
+	for i, elem := range elements {
+		if opts.DryRun {
+			r, err := a.dryRun(resourceType, elem)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("item %d: %s", i+1, err))
+				continue
+			}
+			results = append(results, r)
+			continue
+		}
+
+		itemResults, err := a.applySingle(resourceType, elem, opts)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("item %d: %s", i+1, err))
+			continue
+		}
+		results = append(results, itemResults...)
+	}
+
+	if len(errors) > 0 {
+		return results, &ListApplyError{
+			Total:    len(elements),
+			Failed:   len(errors),
+			Messages: errors,
+		}
+	}
+
+	return results, nil
+}
+
+// detectResourceType determines the resource type from JSON data.
+// Returns the resource type and whether the input is an array of resources.
+func detectResourceType(data []byte) (ResourceType, bool, error) {
+	// Check for array input
+	if bytes.HasPrefix(bytes.TrimSpace(data), []byte("[")) {
+		var rawList []json.RawMessage
+		if err := json.Unmarshal(data, &rawList); err != nil {
+			return ResourceUnknown, false, fmt.Errorf("failed to parse JSON array: %w", err)
+		}
+		if len(rawList) == 0 {
+			return ResourceUnknown, false, fmt.Errorf("empty array: cannot detect resource type")
+		}
+		// Detect type from the first element
+		elemType, _, err := detectResourceType(rawList[0])
+		if err != nil {
+			return ResourceUnknown, false, fmt.Errorf("cannot detect resource type from array element: %w", err)
+		}
+		return elemType, true, nil
+	}
+
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return ResourceUnknown, fmt.Errorf("failed to parse JSON: %w", err)
+		return ResourceUnknown, false, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
 	// Azure Connection detection (single object)
 	if schema, ok := raw["schemaId"].(string); ok && schema == azureconnection.SchemaID {
-		return ResourceAzureConnection, nil
+		return ResourceAzureConnection, false, nil
 	}
 	if schema, ok := raw["schemaId"].(string); ok && schema == gcpconnection.SchemaID {
-		return ResourceGCPConnection, nil
+		return ResourceGCPConnection, false, nil
 	}
 	// Anomaly Detector detection (raw Settings format)
 	if schema, ok := raw["schemaId"].(string); ok && schema == anomalydetector.SchemaID {
-		return ResourceAnomalyDetector, nil
+		return ResourceAnomalyDetector, false, nil
 	}
 
 	// Azure Monitoring Config detection
 	if scope, ok := raw["scope"].(string); ok && scope == "integration-azure" {
-		return ResourceAzureMonitoringConfig, nil
+		return ResourceAzureMonitoringConfig, false, nil
 	}
 
 	// GCP Monitoring Config detection
 	if scope, ok := raw["scope"].(string); ok && scope == "integration-gcp" {
-		return ResourceGCPMonitoringConfig, nil
+		return ResourceGCPMonitoringConfig, false, nil
 	}
 
 	// Check for explicit type field
 	if typeField, ok := raw["type"].(string); ok {
 		switch typeField {
 		case "dashboard":
-			return ResourceDashboard, nil
+			return ResourceDashboard, false, nil
 		case "notebook":
-			return ResourceNotebook, nil
+			return ResourceNotebook, false, nil
 		case "extension_monitoring_config":
-			return ResourceExtensionConfig, nil
+			return ResourceExtensionConfig, false, nil
 		}
 	}
 
@@ -286,7 +371,7 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	// Workflows have "tasks" and "trigger" fields
 	if _, hasTasks := raw["tasks"]; hasTasks {
 		if _, hasTrigger := raw["trigger"]; hasTrigger {
-			return ResourceWorkflow, nil
+			return ResourceWorkflow, false, nil
 		}
 	}
 
@@ -295,31 +380,31 @@ func detectResourceType(data []byte) (ResourceType, error) {
 		// Further distinguish between dashboard and notebook
 		if typeField, ok := raw["type"].(string); ok {
 			if typeField == "dashboard" {
-				return ResourceDashboard, nil
+				return ResourceDashboard, false, nil
 			}
 			if typeField == "notebook" {
-				return ResourceNotebook, nil
+				return ResourceNotebook, false, nil
 			}
 		}
-		return ResourceDashboard, nil // Default to dashboard for documents
+		return ResourceDashboard, false, nil // Default to dashboard for documents
 	}
 
 	// Check for direct content format (tiles for dashboard, sections for notebook)
 	if _, hasTiles := raw["tiles"]; hasTiles {
-		return ResourceDashboard, nil
+		return ResourceDashboard, false, nil
 	}
 	if _, hasSections := raw["sections"]; hasSections {
-		return ResourceNotebook, nil
+		return ResourceNotebook, false, nil
 	}
 
 	// Also check for "content" field which contains the actual document
 	if content, hasContent := raw["content"]; hasContent {
 		if contentMap, ok := content.(map[string]interface{}); ok {
 			if _, hasTiles := contentMap["tiles"]; hasTiles {
-				return ResourceDashboard, nil
+				return ResourceDashboard, false, nil
 			}
 			if _, hasSections := contentMap["sections"]; hasSections {
-				return ResourceNotebook, nil
+				return ResourceNotebook, false, nil
 			}
 		}
 	}
@@ -329,14 +414,14 @@ func detectResourceType(data []byte) (ResourceType, error) {
 		if _, hasName := raw["name"]; hasName {
 			// Check for SLO-specific fields
 			if _, hasCustomSli := raw["customSli"]; hasCustomSli {
-				return ResourceSLO, nil
+				return ResourceSLO, false, nil
 			}
 			if _, hasSliRef := raw["sliReference"]; hasSliRef {
-				return ResourceSLO, nil
+				return ResourceSLO, false, nil
 			}
 			// If it has criteria and name but no tasks/trigger, it's likely an SLO
 			if _, hasTasks := raw["tasks"]; !hasTasks {
-				return ResourceSLO, nil
+				return ResourceSLO, false, nil
 			}
 		}
 	}
@@ -344,7 +429,7 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	// Buckets have "bucketName" and "table" fields
 	if _, hasBucketName := raw["bucketName"]; hasBucketName {
 		if _, hasTable := raw["table"]; hasTable {
-			return ResourceBucket, nil
+			return ResourceBucket, false, nil
 		}
 	}
 
@@ -363,23 +448,23 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	if hasSchemaID {
 		if schemaIDValue == azureconnection.SchemaID {
 			// This is a single Azure Connection (credential), not a list
-			return ResourceAzureConnection, nil
+			return ResourceAzureConnection, false, nil
 		}
 		if schemaIDValue == gcpconnection.SchemaID {
-			return ResourceGCPConnection, nil
+			return ResourceGCPConnection, false, nil
 		}
 		if schemaIDValue == anomalydetector.SchemaID {
-			return ResourceAnomalyDetector, nil
+			return ResourceAnomalyDetector, false, nil
 		}
 		if _, hasScope := raw["scope"]; hasScope {
 			if _, hasValue := raw["value"]; hasValue {
 				if scope, ok := raw["scope"].(string); ok && scope == "integration-gcp" {
-					return ResourceGCPMonitoringConfig, nil
+					return ResourceGCPMonitoringConfig, false, nil
 				}
 				if scope, ok := raw["scope"].(string); ok && scope == "integration-azure" {
-					return ResourceAzureMonitoringConfig, nil
+					return ResourceAzureMonitoringConfig, false, nil
 				}
-				return ResourceSettings, nil
+				return ResourceSettings, false, nil
 			}
 		}
 	}
@@ -389,7 +474,7 @@ func detectResourceType(data []byte) (ResourceType, error) {
 		if _, hasEventTemplate := raw["eventTemplate"]; hasEventTemplate {
 			if analyzerMap, ok := analyzerRaw.(map[string]interface{}); ok {
 				if _, hasName := analyzerMap["name"]; hasName {
-					return ResourceAnomalyDetector, nil
+					return ResourceAnomalyDetector, false, nil
 				}
 			}
 		}
@@ -399,7 +484,7 @@ func detectResourceType(data []byte) (ResourceType, error) {
 	// We also check for "name" since it's required, and exclude known overlapping resources.
 	if _, hasIncludes := raw["includes"]; hasIncludes {
 		if _, hasIsPublic := raw["isPublic"]; hasIsPublic {
-			return ResourceSegment, nil
+			return ResourceSegment, false, nil
 		}
 		// Fallback: "includes" + "name" without workflow/bucket/SLO markers
 		if _, hasName := raw["name"]; hasName {
@@ -407,12 +492,12 @@ func detectResourceType(data []byte) (ResourceType, error) {
 			_, hasBucketName := raw["bucketName"]
 			_, hasCriteria := raw["criteria"]
 			if !hasTasks && !hasBucketName && !hasCriteria {
-				return ResourceSegment, nil
+				return ResourceSegment, false, nil
 			}
 		}
 	}
 
-	return ResourceUnknown, fmt.Errorf("could not detect resource type from file content")
+	return ResourceUnknown, false, fmt.Errorf("could not detect resource type from file content")
 }
 
 // dryRun validates what would be applied without actually applying.

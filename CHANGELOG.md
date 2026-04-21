@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`apply` now accepts array input for bulk resource updates** — `dtctl apply -f` can now process files containing arrays of resources (e.g., the output of `dtctl get settings --schema ... -o yaml`); each element is applied individually with per-item error reporting so a single failure does not abort the batch; works for all resource types, not just settings; fixes [#180](https://github.com/dynatrace-oss/dtctl/issues/180)
+
 ## [0.25.0] - 2026-04-20
 
 ### Added

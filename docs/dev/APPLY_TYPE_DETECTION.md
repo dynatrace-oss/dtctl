@@ -62,6 +62,19 @@ When adding new resources:
 - **Order matters**: Detection checks run sequentially; ambiguous fields may match wrong type
 - **API validation only**: Invalid resource structure is caught by API, not detection
 
+## Array Input
+
+`dtctl apply` accepts both single objects and arrays. When the input is a JSON/YAML array:
+
+1. `detectResourceType()` detects the array, inspects the **first element** to determine the resource type, and returns `isArray=true`
+2. `applyList()` splits the array into individual elements and calls `applySingle()` for each
+3. Partial failures do not abort the batch — successful results are collected alongside errors
+4. A `ListApplyError` reports how many items failed out of the total
+
+This enables round-trip workflows: `dtctl get settings --schema X -o yaml > file.yaml` → edit → `dtctl apply -f file.yaml`.
+
+The `--id` flag is rejected for array input (ambiguous: which element gets the ID?).
+
 ---
 
 **Implementation**: `pkg/apply/applier.go:108-208` | **Tests**: `pkg/apply/applier_test.go`

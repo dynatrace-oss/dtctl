@@ -14,10 +14,11 @@ import (
 
 func TestDetectResourceType(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected ResourceType
-		wantErr  bool
+		name      string
+		input     string
+		expected  ResourceType
+		wantArray bool
+		wantErr   bool
 	}{
 		{
 			name: "dashboard with tiles at root",
@@ -140,17 +141,56 @@ func TestDetectResourceType(t *testing.T) {
 			expected: ResourceUnknown,
 			wantErr:  true,
 		},
+		// Array detection tests — regression for #180
+		{
+			name: "array of settings objects",
+			input: `[
+				{"schemaId": "builtin:rum.web.enablement", "scope": "APPLICATION-123", "value": {"enabled": true}},
+				{"schemaId": "builtin:rum.web.enablement", "scope": "APPLICATION-456", "value": {"enabled": false}}
+			]`,
+			expected:  ResourceSettings,
+			wantArray: true,
+		},
+		{
+			name: "array of workflows",
+			input: `[
+				{"tasks": {"t1": {}}, "trigger": {"type": "event"}},
+				{"tasks": {"t2": {}}, "trigger": {"type": "schedule"}}
+			]`,
+			expected:  ResourceWorkflow,
+			wantArray: true,
+		},
+		{
+			name: "array of SLOs",
+			input: `[
+				{"name": "SLO 1", "criteria": {"threshold": 95}, "customSli": {"enabled": true}},
+				{"name": "SLO 2", "criteria": {"threshold": 99}, "customSli": {"enabled": true}}
+			]`,
+			expected:  ResourceSLO,
+			wantArray: true,
+		},
+		{
+			name:     "empty array",
+			input:    `[]`,
+			expected: ResourceUnknown,
+			wantErr:  true,
+		},
+		{
+			name:     "array of unknown objects",
+			input:    `[{"random": "field"}]`,
+			expected: ResourceUnknown,
+			wantErr:  true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Validate JSON
-			var testJSON map[string]interface{}
-			if err := json.Unmarshal([]byte(tt.input), &testJSON); err != nil {
-				t.Fatalf("test input is not valid JSON: %v", err)
+			// Validate JSON (accept both objects and arrays)
+			if !json.Valid([]byte(tt.input)) && !tt.wantErr {
+				t.Fatalf("test input is not valid JSON: %s", tt.input)
 			}
 
-			result, err := detectResourceType([]byte(tt.input))
+			result, isArray, err := detectResourceType([]byte(tt.input))
 
 			if tt.wantErr {
 				if err == nil {
@@ -164,6 +204,9 @@ func TestDetectResourceType(t *testing.T) {
 
 			if result != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, result)
+			}
+			if isArray != tt.wantArray {
+				t.Errorf("expected isArray=%v, got %v", tt.wantArray, isArray)
 			}
 		})
 	}
@@ -698,7 +741,7 @@ func TestDetectResourceTypeEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := detectResourceType([]byte(tt.input))
+			result, _, err := detectResourceType([]byte(tt.input))
 
 			if tt.wantErr {
 				if err == nil {

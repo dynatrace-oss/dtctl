@@ -141,3 +141,33 @@ func TestHookRejectedError_ImplementsError(t *testing.T) {
 		t.Error("Error() returned empty string")
 	}
 }
+
+func TestListApplyError_Message(t *testing.T) {
+	err := &ListApplyError{
+		Total:    5,
+		Failed:   2,
+		Messages: []string{"item 2: invalid value", "item 4: scope not found"},
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "2 of 5 items failed to apply") {
+		t.Errorf("Error() missing summary, got: %s", msg)
+	}
+	if !strings.Contains(msg, "item 2: invalid value") {
+		t.Errorf("Error() missing detail for item 2, got: %s", msg)
+	}
+	if !strings.Contains(msg, "item 4: scope not found") {
+		t.Errorf("Error() missing detail for item 4, got: %s", msg)
+	}
+}
+
+func TestListApplyError_ImplementsError(t *testing.T) {
+	var err error = &ListApplyError{
+		Total:    1,
+		Failed:   1,
+		Messages: []string{"item 1: failed"},
+	}
+	if err.Error() == "" {
+		t.Error("Error() returned empty string")
+	}
+}

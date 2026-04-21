@@ -63,6 +63,11 @@ Supported resource types:
   - Settings objects
   - Extension monitoring configurations
 
+Array input (bulk apply):
+  Files containing an array of resources (e.g., from 'dtctl get settings --schema ...
+  -o yaml') are applied element-by-element. Partial failures do not abort the batch;
+  successful results are printed and a summary error reports any failures.
+
 Examples:
   # Create a new dashboard and stamp the ID back into the file
   dtctl apply -f dashboard.yaml --write-id
@@ -82,6 +87,11 @@ Examples:
   dtctl get settings <objectId> -o yaml > setting.yaml
   # Edit setting.yaml (modify the 'value' field)...
   dtctl apply -f setting.yaml  # Updates the existing setting
+
+  # Bulk update settings (round-trip from get --schema)
+  dtctl get settings --schema builtin:rum.web.enablement -o yaml > rum-settings.yaml
+  # Edit rum-settings.yaml (modify values for specific applications)...
+  dtctl apply -f rum-settings.yaml  # Updates all settings in the file
 
   # Apply with template variables
   dtctl apply -f dashboard.yaml --set environment=prod --set owner=team-a
@@ -175,9 +185,12 @@ resources in sync with their file definitions.
 			WriteID:      writeID,
 		}
 
-		results, err := applier.Apply(fileData, opts)
-		if err != nil {
-			return err
+		results, applyErr := applier.Apply(fileData, opts)
+
+		// For ListApplyError (partial batch failure), we still want to print
+		// the successful results before returning the error.
+		if applyErr != nil && len(results) == 0 {
+			return applyErr
 		}
 
 		// Run environment sharing before printing so per-document "Shared X" stderr
@@ -231,7 +244,7 @@ resources in sync with their file definitions.
 		if shareErr != nil {
 			return fmt.Errorf("apply succeeded but environment share failed: %w", shareErr)
 		}
-		return nil
+		return applyErr
 	},
 }
 

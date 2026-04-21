@@ -105,6 +105,22 @@ dtctl get settings --schema builtin:openpipeline.logs.pipelines --scope environm
 dtctl apply -f pipeline.yaml
 ```
 
+### Bulk updates
+
+When listing settings by schema, the output is an array of settings objects. This array can be edited and applied back directly:
+
+```bash
+# Export all RUM settings
+dtctl get settings --schema builtin:rum.web.enablement -o yaml > rum-settings.yaml
+
+# Edit rum-settings.yaml (modify values for specific applications)...
+
+# Apply all changes in one command
+dtctl apply -f rum-settings.yaml
+```
+
+Each item is applied individually. If some items fail, the successful ones are still applied and a summary error reports the failures.
+
 The version is automatically handled when using `dtctl apply` with a file that was previously retrieved via `dtctl get`.
 
 ## Deleting Settings Objects
