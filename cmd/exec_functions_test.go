@@ -222,7 +222,7 @@ func TestWriteFunctionResultToFile_FallbackType(t *testing.T) {
 }
 
 func TestWriteFunctionResultToFile_FileCreationError(t *testing.T) {
-	outfile := "/nonexistent-dir-dtctl-test/result.json"
+	outfile := "/nonexistent/result.json"
 
 	result := &appengine.FunctionInvokeResponse{
 		StatusCode: 200,
