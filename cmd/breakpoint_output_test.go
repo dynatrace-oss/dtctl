@@ -30,6 +30,27 @@ func captureStdout(t *testing.T, run func()) string {
 	return string(data)
 }
 
+func captureStderr(t *testing.T, run func()) string {
+	t.Helper()
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create stderr pipe: %v", err)
+	}
+
+	os.Stderr = w
+	run()
+	_ = w.Close()
+	os.Stderr = origStderr
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("failed to read stderr capture: %v", err)
+	}
+
+	return string(data)
+}
+
 func TestPrintBreakpointMessage_Table(t *testing.T) {
 	originalOutputFormat := outputFormat
 	originalAgentMode := agentMode
