@@ -2,7 +2,7 @@
 
 **Status:** Design Proposal
 **Created:** 2026-04-10
-**Updated:** 2026-04-15
+**Updated:** 2026-04-22
 **Author:** dtctl team
 **Reference:** [timstewart-dynatrace/dtiam](https://github.com/timstewart-dynatrace/dtiam) prototype
 **Replaces:** `IAM_INTEGRATION_DESIGN.md`, `ACCOUNT_NAMESPACE_DESIGN.md`
@@ -74,7 +74,7 @@ The Account Management API at `api.dynatrace.com` exposes these endpoints:
 | **Cost allocation** | `/v1/subscriptions/{uuid}/cost-allocation` | `account-uac-read` | Cost breakdown by cost center / product |
 | **Cost allocation mgmt** | `/v1/accounts/{uuid}/settings/...` | `account-uac-read/write` | Cost center and product CRUD |
 | **Environments** | `/env/v2/accounts/{uuid}/environments` | `account-env-read` | List environments (v2, no management zones) |
-| **Audit logs** | `/audit/v1/accounts/{uuid}` | `account-idm-read` | Account-level change audit trail |
+| **Audit logs** | `/audit/v1/accounts/{uuid}` | `account-audit-logs-read` | Account-level change audit trail |
 | **Notifications** | `/v1/accounts/{uuid}/notifications` | (TBD) | Budget, cost, forecast, BYOK alerts |
 | **Limits** | `/iam/v1/accounts/{uuid}/limits` | `account-idm-read` | Account resource quotas |
 | **Reference data** | `/ref/v1/...` | (TBD) | Time zones, geographic regions |
@@ -450,9 +450,13 @@ func AccountOAuthConfig(env Environment, safetyLevel config.SafetyLevel, account
 
 | Safety Level | Account Scopes |
 |-------------|---------------|
-| `readonly` | `openid`, `account-idm-read`, `account-env-read`, `account-uac-read`, `iam:policies:read`, `iam:bindings:read`, `iam:boundaries:read`, `iam:effective-permissions:read` |
+| `readonly` | `openid`, `account-idm-read`, `account-audit-logs-read`, `account-env-read`, `account-uac-read`, `iam:policies:read`, `iam:bindings:read`, `iam:boundaries:read` |
 | `readwrite-mine` | Above + `account-idm-write` |
 | `readwrite-all` | Above + `iam-policies-management`, `account-uac-write` |
+
+Note: `iam:effective-permissions:read` is **not** in the `readonly` set
+above. It is only needed for the Phase 3 effective permissions analysis
+and is requested at that phase rather than up-front (see Appendix A).
 
 **Caveat:** The built-in dtctl client ID (`dt0s12.dtctl-prod`) must be granted
 these scopes by Dynatrace. If it is not, users get a clear OAuth error and are
@@ -1030,16 +1034,21 @@ dtctl account get subscriptions
 dtctl account describe subscription <uuid>
 
 # Usage & Cost
-dtctl account get usage --subscription <uuid> [--env <id>] [--capability <key>]
-dtctl account get cost --subscription <uuid> [--env <id>] [--capability <key>]
+dtctl account get usage --per-environment [--from <date>] [--to <date>] [--env <id>] [--capability <key>] [--cluster <id>]
+# Note: subscription-level `dtctl account get usage` (without --per-environment) is
+# deferred to Phase 2a pending API time-filter support (see Phase 2).
+dtctl account get cost --subscription <uuid> [--granularity daily|weekly|monthly]
 dtctl account get cost --subscription <uuid> --per-environment --from 2026-01-01 --to 2026-03-31
 dtctl account get forecast
+dtctl account get rate-card
 
 # Audit Logs
+dtctl account get audit-logs                                 # default: last 7 days
 dtctl account get audit-logs [--from <time>] [--to <time>] [--filter <expr>]
 
 # Notifications
-dtctl account get notifications [--type BUDGET|COST|FORECAST|BYOK_REVOKED|BYOK_ACTIVATED]
+dtctl account get notifications [--from <date>] [--to <date>]
+                                [--type BUDGET|COST|FORECAST|BYOK_REVOKED|BYOK_ACTIVATED]
                                 [--severity SEVERE|WARN|INFO]
 
 # Environments (account-level view)
@@ -1048,7 +1057,8 @@ dtctl account get environments
 # Cost Allocation
 dtctl account get cost-centers
 dtctl account get products
-dtctl account get cost-allocation --subscription <uuid> --env <id> --field COSTCENTER|PRODUCT
+dtctl account get cost-allocation --subscription <uuid> --env <id> --field COSTCENTER|PRODUCT [--from <date>] [--to <date>]
+# Note: --env is REQUIRED (no account-wide mode in Phase 1); --from/--to default to current month.
 ```
 
 ### Relationship to `dtctl iam`
@@ -1078,32 +1088,84 @@ resolution. No config fields needed.
 The highest-value addition. Provides subscription metadata, usage telemetry,
 cost data, and forecasting -- all read-only.
 
-| Endpoint | Method | Path |
-|----------|--------|------|
-| List subscriptions | GET | `/sub/v2/accounts/{uuid}/subscriptions` |
-| Get subscription | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}` |
-| Get usage | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` |
-| Get usage/env | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` |
-| Get cost | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost` |
-| Get cost/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/cost` |
-| Get forecast | GET | `/sub/v2/accounts/{uuid}/subscriptions/forecast` |
+| Endpoint | Method | Path | Phase |
+|----------|--------|------|-------|
+| List subscriptions | GET | `/sub/v2/accounts/{uuid}/subscriptions` | 1 |
+| Get subscription | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}` | 1 |
+| Get usage | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` | 2a |
+| Get usage/env | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | 2a |
+| Get cost | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost` | 1 |
+| Get cost/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/cost` | 1 |
+| Get forecast | GET | `/sub/v2/accounts/{uuid}/subscriptions/forecast` | 1 |
+| Get rate cards | GET | `/sub/v1/accounts/{uuid}/rate-cards` | 1 |
 
 **Auth scope:** `account-uac-read` for all read operations.
 
 **Subscription auto-selection:** When `--subscription` is required but not
 provided and exactly one active subscription exists, use it automatically.
+"Active" means the subscription's `status` field is not `TERMINATED` or
+`EXPIRED` -- dtctl checks the `status` field in the subscription list response
+when deciding whether to auto-select.
+
+**Cost `--granularity` flag.** The subscription cost endpoint
+(`/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost`) returns daily
+records for the full subscription lifetime (typical response 18--54 KB,
+single GET, no pagination). There is no server-side aggregation option, so
+dtctl adds `--granularity daily|weekly|monthly` (default `monthly`) and
+performs the rollup client-side before printing. This is safe because the
+response size is bounded -- subscriptions are capped at 1 year, so the
+daily record count is bounded at roughly 365.
+
+**Date guardrails on per-environment cost and usage.** The environment cost
+v3 and usage v3 endpoints scale with `days x environments x capabilities`.
+A multi-day walk on a large account has been measured at ~133 seconds with
+200+ pages of results and has produced 502 errors in testing. To keep these
+commands usable by default:
+
+- `--from` / `--to` default to the **last 30 days** for both
+  `dtctl account get cost --per-environment` and
+  `dtctl account get usage --per-environment`.
+- dtctl warns on stderr when the requested range would produce a large
+  result set (warn when `--to` minus `--from` is greater than 30 days).
+- The API supports server-side filtering via `environmentIds`,
+  `capabilityKeys`, and `clusterIds` (Managed only). These are exposed as
+  `--env`, `--capability`, and `--cluster` flags respectively so users can
+  narrow the query before it hits the server.
+
+**Forecast 404 handling.** The forecast endpoint returns HTTP 404 on some
+accounts (confirmed on the HARDENING tier). When a 404 is received from
+`/sub/v2/accounts/{uuid}/subscriptions/forecast`, dtctl surfaces a
+user-friendly message -- `"No forecast available for this account."` --
+instead of a raw HTTP error.
+
+**Rate card.** `dtctl account get rate-card` exposes
+`GET /sub/v1/accounts/{uuid}/rate-cards` (typical response 8--36 KB, not
+paginated). It is useful for FinOps users who want to check pricing without
+opening the web UI.
 
 ### Audit Logs
 
 ```bash
-dtctl account get audit-logs                                 # default: last 24h
+dtctl account get audit-logs                                 # default: last 7 days
 dtctl account get audit-logs --from 2026-04-01 --to 2026-04-10
 dtctl account get audit-logs --filter "resource = 'POLICY' and eventType = 'DELETE'"
 ```
 
 | Method | Path | Auth Scope |
 |--------|------|------------|
-| GET | `/audit/v1/accounts/{uuid}` | `account-idm-read` |
+| GET | `/audit/v1/accounts/{uuid}` | `account-audit-logs-read` |
+
+**Implementation notes:**
+
+- **Always send the `limit` parameter.** The server has a bug where
+  omitting `limit` results in HTTP 400. dtctl always sets a default
+  `limit` on the outgoing request.
+- **Default date range: last 7 days.** `--from` and `--to` default to the
+  last 7 days so the bounded-by-default behavior matches the rest of the
+  command surface.
+- **Surface the `warnings` field.** The audit logs response body includes a
+  `warnings` field when results have been truncated. dtctl prints any
+  warnings to stderr so users know the listing is incomplete.
 
 ### Notifications
 
@@ -1111,8 +1173,13 @@ The notifications API uses POST for what is semantically a read operation.
 The handler translates CLI flags into the POST request body transparently.
 
 ```bash
+dtctl account get notifications [--from <date>] [--to <date>] [--type ...] [--severity ...]
 dtctl account get notifications --type BUDGET --severity SEVERE
 ```
+
+**Default date range.** `--from` defaults to the last 30 days when not
+specified (bounded-by-default, matches cost/usage defaults). `--to`
+defaults to now.
 
 ### Environments (Account-Level)
 
@@ -1123,6 +1190,29 @@ their `id`, `name`, `active` status, and `url` (via the v2 API). The
 Both `dtctl iam get environments` and `dtctl account get environments` use
 the same underlying data, with `iam` presenting a simplified view for policy
 scoping context.
+
+**Endpoint scope.** `dtctl account get environments` returns **all**
+environments associated with the account -- this is not filtered to the
+subset of environments that are active in a billing subscription. The
+`--help` description for the command reflects this: "Lists all environments
+associated with this account. For billing-environment-only views, use
+subscriptions."
+
+### Cost Allocation Guardrails
+
+The cost allocation endpoint (`/v1/subscriptions/{uuid}/cost-allocation`)
+has no batch mode: each environment requires a separate call. On a large
+account with 9 environments, a full account-wide walk is ~9 sequential
+calls totalling ~700 KB with no way to detect silent 502 failures partway
+through. To keep Phase 1 reliable:
+
+- `--env` is a **required** flag on `dtctl account get cost-allocation`
+  (no account-wide mode in Phase 1 -- users must explicitly choose one
+  environment per invocation).
+- `--from` / `--to` default to the current month.
+- Rationale: there is no batch endpoint; issuing sequential per-environment
+  calls on large accounts is unreliable today, so Phase 1 asks users to
+  scope queries explicitly.
 
 ### Pagination Patterns
 
@@ -1146,14 +1236,19 @@ pattern (`readwrite-all` required).
 ```
 pkg/resources/account/
     subscription.go      # SubscriptionHandler: List, Get
-    usage.go             # UsageHandler: GetUsage, GetUsageByEnvironment
+    usage.go             # UsageHandler (per-environment only in Phase 1): GetUsageByEnvironment
     cost.go              # CostHandler: GetCost, GetCostByEnvironment
     forecast.go          # ForecastHandler: GetForecast, GetEvents
+    rate_card.go         # RateCardHandler: Get
     audit.go             # AuditHandler: List (with filters)
     notification.go      # NotificationHandler: List (with filters)
     environment.go       # EnvironmentHandler: List (shared with IAM)
-    cost_allocation.go   # CostAllocationHandler: GetAllocation, GetCostCenters, GetProducts
+    cost_allocation.go   # CostAllocationHandler: GetAllocation (per-environment), GetCostCenters, GetProducts
 ```
+
+Note: subscription-level usage (`GetUsage`, `GetUsageByEnvironment` without
+a date range) is intentionally not in Phase 1 -- it is deferred to Phase 2a
+pending an API-side time-filter. See the Phase 2 section.
 
 ---
 
@@ -1263,9 +1358,16 @@ IAM:
 
 Account:
 - `SubscriptionHandler` (List, Get)
-- `UsageHandler`, `CostHandler`, `ForecastHandler`
-- Register `dtctl account get subscriptions/usage/cost/forecast`
-- Subscription auto-selection
+- `CostHandler` (including `--granularity daily|weekly|monthly` client-side rollup)
+- `UsageHandler` -- **per-environment only** in Phase 1 (subscription-level
+  `GetUsage` / `GetUsageByEnvironment` are deferred to Phase 2a pending
+  API time-filter support)
+- `ForecastHandler` (with 404 user-friendly message handling)
+- `RateCardHandler`
+- `CostCenterHandler`, `ProductHandler` (read-only pass-through, small
+  responses, no guardrails needed)
+- Register `dtctl account get subscriptions/cost/usage --per-environment/forecast/rate-card/cost-centers/products`
+- Subscription auto-selection (active = `status` not `TERMINATED` / `EXPIRED`)
 
 Both:
 - Golden tests for all resource types
@@ -1283,11 +1385,23 @@ Account read:
 - `AuditHandler`, `NotificationHandler`
 - `dtctl account get audit-logs`, `get notifications`
 
+**Phase 2a (waiting on API change).** `dtctl account get usage` at the
+subscription level is unlocked once the usage endpoints
+(`/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` and
+`.../environments/usage`) accept `startTime` / `endTime` query parameters.
+Today the response is 558 KB--1.15 MB with no time filter -- the full
+subscription history is always returned, which makes it unsafe to ship as
+a CLI default. When the API adds time filtering, the subscription-level
+`UsageHandler` methods are added and `dtctl account get usage` (without
+`--per-environment`) is enabled.
+
 ### Phase 3: Advanced Features
 
 - `iam bulk add-users-to-group`, `create-groups`, `create-bindings`
 - `iam export all`
-- `account get cost-allocation`, `cost-centers`, `products`
+- `account get cost-allocation` (per-environment, required `--env`)
+- Effective permissions analysis (uses `iam:effective-permissions:read`
+  scope, added in this phase only)
 - (Optional) cost center/product write operations
 
 ---
@@ -1303,8 +1417,9 @@ Account read:
    | Scope | When needed |
    |-------|-------------|
    | `account-idm-read` | Phase 1 read-only (users, groups, service users, limits) |
+   | `account-audit-logs-read` | Phase 2 read-only (audit logs) |
    | `account-env-read` | Phase 1 read-only (list environments) |
-   | `account-uac-read` | Phase 1 read-only (subscriptions, usage, cost) |
+   | `account-uac-read` | Phase 1 read-only (subscriptions, cost, rate card, cost centers, products) |
    | `iam:policies:read` | Phase 1 read-only (list/get policies) |
    | `iam:bindings:read` | Phase 1 read-only (list/get bindings) |
    | `iam:boundaries:read` | Phase 1 read-only (list/get boundaries) |
@@ -1313,8 +1428,9 @@ Account read:
    | `iam-policies-management` | Phase 2 mutations (policy, binding, boundary CRUD) |
    | `account-uac-write` | Phase 3 optional (cost center/product management) |
 
-   The minimum set to unblock Phase 1 is the first six scopes (all read-only).
-   Write scopes can be added ahead of Phase 2.
+   The minimum set to unblock Phase 1 is the first six Phase 1 read-only
+   scopes (all `-read` / `:read`). `account-audit-logs-read` is needed for
+   Phase 2 (audit logs), and write scopes for Phase 2 mutations.
 
 2. **`access-info` with client-credentials tokens.** PKCE tokens work (the
    endpoint only needs `openid` scope, already included in all safety levels).
@@ -1359,11 +1475,12 @@ These scopes are requested in the OAuth flow with `resource=urn:dtaccount:{uuid}
 | `openid` | Required for all OAuth flows |
 | `account-idm-read` | List/get groups, users, service users, limits |
 | `account-idm-write` | Create/delete groups, users, service users |
+| `account-audit-logs-read` | Read account-level audit logs |
 | `account-env-read` | List environments in account |
 | `account-uac-read` | Subscriptions, usage, cost, cost allocation |
 | `account-uac-write` | Cost center/product management |
 | `iam-policies-management` | Full policy, binding, and boundary CRUD |
-| `iam:effective-permissions:read` | Effective permissions analysis |
+| `iam:effective-permissions:read` | Effective permissions analysis (Phase 3 only) |
 | `iam:policies:read` | Read policies |
 | `iam:bindings:read` | Read bindings |
 | `iam:boundaries:read` | Read boundaries |
@@ -1371,10 +1488,14 @@ These scopes are requested in the OAuth flow with `resource=urn:dtaccount:{uuid}
 ### Combined Account Scope Set (readonly)
 
 ```
-openid, account-idm-read, account-env-read, account-uac-read,
-iam:policies:read, iam:bindings:read, iam:boundaries:read,
-iam:effective-permissions:read
+openid, account-idm-read, account-audit-logs-read, account-env-read,
+account-uac-read, iam:policies:read, iam:bindings:read, iam:boundaries:read
 ```
+
+`iam:effective-permissions:read` is **not** part of the Phase 1 readonly
+combined scope set. It is only needed for the Phase 3 permissions analysis
+feature (effective permissions, matrix, least-privilege) and is requested
+at that phase rather than being bundled into the default readonly login.
 
 These are **separate from** the environment-level scopes. A context with both
 environment and account configured results in two tokens with two different
@@ -1400,19 +1521,20 @@ scope sets and two different `resource` values.
 |----------|--------|------|-----------|-------|
 | List subscriptions | GET | `/sub/v2/accounts/{uuid}/subscriptions` | No | 1 |
 | Get subscription | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}` | No | 1 |
-| Get usage | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` | No | 1 |
-| Get usage/env | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | No | 1 |
+| Get usage | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` | No | 2a (needs `startTime`/`endTime`) |
+| Get usage/env | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | No | 2a (needs `startTime`/`endTime`) |
 | Get cost | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost` | No | 1 |
 | Get cost/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/cost` | Yes (cursor) | 1 |
 | Get forecast | GET | `/sub/v2/accounts/{uuid}/subscriptions/forecast` | No | 1 |
 | Get events | GET | `/sub/v2/accounts/{uuid}/subscriptions/events` | No | 1 |
+| Get rate cards | GET | `/sub/v1/accounts/{uuid}/rate-cards` | No | 1 |
 | List audit logs | GET | `/audit/v1/accounts/{uuid}` | No (limit) | 2 |
 | List notifications | POST | `/v1/accounts/{uuid}/notifications` | Yes (offset) | 2 |
 | List environments (v2) | GET | `/env/v2/accounts/{uuid}/environments` | No | 1 |
 | Access info (IAM svc) | GET | `{iamBaseURL}/api/public/environment-access/access-info` | No | 1 |
 | Get cost allocation | GET | `/v1/subscriptions/{uuid}/cost-allocation` | Yes (cursor) | 3 |
-| List cost centers | GET | `/v1/accounts/{uuid}/settings/costcenters` | Yes (offset) | 3 |
-| List products | GET | `/v1/accounts/{uuid}/settings/products` | Yes (offset) | 3 |
+| List cost centers | GET | `/v1/accounts/{uuid}/settings/costcenters` | Yes (offset) | 1 |
+| List products | GET | `/v1/accounts/{uuid}/settings/products` | Yes (offset) | 1 |
 
 ## Appendix D: What's Excluded (and Why)
 
