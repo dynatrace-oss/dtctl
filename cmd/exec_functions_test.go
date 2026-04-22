@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -71,6 +72,15 @@ func TestWriteFunctionResultToFile_InvokeResponse_JSONBody(t *testing.T) {
 	if string(got) != result.Body {
 		t.Errorf("file content = %q, want %q", string(got), result.Body)
 	}
+	info, err := os.Stat(outfile)
+	if err != nil {
+		t.Fatalf("failed to stat outfile: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("file permissions = %o, want 0600", perm)
+		}
+	}
 }
 
 func TestWriteFunctionResultToFile_InvokeResponse_PlainTextBody(t *testing.T) {
@@ -92,6 +102,15 @@ func TestWriteFunctionResultToFile_InvokeResponse_PlainTextBody(t *testing.T) {
 	}
 	if string(got) != "hello world" {
 		t.Errorf("file content = %q, want %q", string(got), "hello world")
+	}
+	info, err := os.Stat(outfile)
+	if err != nil {
+		t.Fatalf("failed to stat outfile: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("file permissions = %o, want 0600", perm)
+		}
 	}
 }
 
@@ -123,6 +142,15 @@ func TestWriteFunctionResultToFile_ExecutorResponse(t *testing.T) {
 	if parsed["ok"] != true {
 		t.Errorf("ok = %v, want true", parsed["ok"])
 	}
+	info, err := os.Stat(outfile)
+	if err != nil {
+		t.Fatalf("failed to stat outfile: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("file permissions = %o, want 0600", perm)
+		}
+	}
 }
 
 func TestWriteFunctionResultToFile_ExecutorResponse_NoLogs(t *testing.T) {
@@ -144,6 +172,15 @@ func TestWriteFunctionResultToFile_ExecutorResponse_NoLogs(t *testing.T) {
 	}
 	if !strings.Contains(string(got), "simple string result") {
 		t.Errorf("file content %q does not contain expected result", string(got))
+	}
+	info, err := os.Stat(outfile)
+	if err != nil {
+		t.Fatalf("failed to stat outfile: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("file permissions = %o, want 0600", perm)
+		}
 	}
 }
 
@@ -172,6 +209,15 @@ func TestWriteFunctionResultToFile_FallbackType(t *testing.T) {
 	}
 	if parsed["id"] != "abc-123" {
 		t.Errorf("id = %v, want %q", parsed["id"], "abc-123")
+	}
+	info, err := os.Stat(outfile)
+	if err != nil {
+		t.Fatalf("failed to stat outfile: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("file permissions = %o, want 0600", perm)
+		}
 	}
 }
 
@@ -300,6 +346,15 @@ func TestExecFunction_Outfile_WritesBodyToFile(t *testing.T) {
 	}
 	if string(got) != responseBody {
 		t.Errorf("outfile content = %q, want %q", string(got), responseBody)
+	}
+	info, err := os.Stat(outfile)
+	if err != nil {
+		t.Fatalf("failed to stat outfile: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("file permissions = %o, want 0600", perm)
+		}
 	}
 }
 
