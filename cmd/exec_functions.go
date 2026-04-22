@@ -118,6 +118,12 @@ func writeFunctionResultToFile(result interface{}, outfile string) error {
 		if err := enc.Encode(r.Result); err != nil {
 			return fmt.Errorf("failed to write to output file: %w", err)
 		}
+	case *appengine.DeferredExecutionResponse:
+		enc := json.NewEncoder(f)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(r); err != nil {
+			return fmt.Errorf("failed to write to output file: %w", err)
+		}
 	default:
 		enc := json.NewEncoder(f)
 		enc.SetIndent("", "  ")
@@ -138,6 +144,11 @@ type executorOutfileSummary struct {
 	Result string `json:"result" yaml:"result" table:"RESULT"`
 }
 
+type deferredOutfileSummary struct {
+	ID     string `json:"id"     yaml:"id"     table:"ID"`
+	Result string `json:"result" yaml:"result" table:"RESULT"`
+}
+
 type genericOutfileSummary struct {
 	Result string `json:"result" yaml:"result" table:"RESULT"`
 }
@@ -154,6 +165,8 @@ func outfileSummary(result interface{}, outfile string) interface{} {
 			return executorOutfileSummary{Logs: r.Logs, Result: ref}
 		}
 		return genericOutfileSummary{Result: ref}
+	case *appengine.DeferredExecutionResponse:
+		return deferredOutfileSummary{ID: r.ID, Result: ref}
 	default:
 		return genericOutfileSummary{Result: ref}
 	}
