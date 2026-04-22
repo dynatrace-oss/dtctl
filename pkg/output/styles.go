@@ -55,7 +55,14 @@ func detectColor() bool {
 	}
 
 	// Auto-detect: only use color when stdout is a TTY
-	return term.IsTerminal(int(os.Stdout.Fd()))
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return false
+	}
+
+	// On Windows, ANSI/VT escape sequences must be explicitly enabled via
+	// SetConsoleMode. If the call fails (e.g., older Windows), disable color
+	// to avoid printing raw escape sequences. On other platforms this is a no-op.
+	return enableVTProcessing()
 }
 
 // ResetColorCache resets the cached color detection result.
