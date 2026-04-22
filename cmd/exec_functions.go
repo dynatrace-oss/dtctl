@@ -83,12 +83,13 @@ Examples:
 			return err
 		}
 
+		// If --outfile is set, write the raw result to disk and replace result with a
+		// summary struct so the printer only shows metadata (not the full payload).
 		if outfile != "" {
 			if err := writeFunctionResultToFile(result, outfile); err != nil {
 				return err
 			}
-			printer := NewPrinter()
-			return printer.Print(outfileSummary(result, outfile))
+			result = outfileSummary(result, outfile)
 		}
 
 		printer := NewPrinter()
