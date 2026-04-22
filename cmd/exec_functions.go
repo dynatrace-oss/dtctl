@@ -110,10 +110,16 @@ Examples:
 func extractBodyValue(result interface{}) (value interface{}, isPlainString bool, metadata string) {
 	switch r := result.(type) {
 	case *appengine.FunctionInvokeResponse:
-		if r.StatusCode != 0 {
-			metadata = fmt.Sprintf("Status: %d", r.StatusCode)
-		}
 		if envelope, ok := r.RawBody.(map[string]interface{}); ok {
+			// Prefer the envelope's statusCode; functions often respond with HTTP
+			// 200 but set their own status code inside the envelope.
+			statusCode := r.StatusCode
+			if sc, ok := envelope["statusCode"].(float64); ok {
+				statusCode = int(sc)
+			}
+			if statusCode != 0 {
+				metadata = fmt.Sprintf("Status: %d", statusCode)
+			}
 			if bodyVal, hasBody := envelope["body"]; hasBody {
 				if bodyStr, ok := bodyVal.(string); ok {
 					var parsed interface{}
@@ -125,6 +131,14 @@ func extractBodyValue(result interface{}) (value interface{}, isPlainString bool
 				return bodyVal, false, metadata
 			}
 			return envelope, false, metadata
+		}
+		if r.StatusCode != 0 {
+			metadata = fmt.Sprintf("Status: %d", r.StatusCode)
+		}
+		if r.RawBody != nil {
+			// Non-nil but non-object RawBody (e.g. JSON array or scalar) — return
+			// it so -o yaml and other format flags apply.
+			return r.RawBody, false, metadata
 		}
 		return r.Body, true, metadata
 

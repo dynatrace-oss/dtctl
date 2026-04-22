@@ -297,6 +297,40 @@ func TestPrintBodyOnly_InvokeResponse_ZeroStatusNoStderr(t *testing.T) {
 	}
 }
 
+// TestPrintBodyOnly_InvokeResponse_EnvelopeStatusCodePreferred verifies that
+// the envelope's own statusCode is used for the stderr metadata rather than
+// the outer HTTP status (which is often always 200).
+func TestPrintBodyOnly_InvokeResponse_EnvelopeStatusCodePreferred(t *testing.T) {
+	saveGlobals(t)
+	outputFormat = "json"
+	agentMode = false
+	plainMode = false
+
+	input := &appengine.FunctionInvokeResponse{
+		StatusCode: 200, // outer HTTP status
+		RawBody: map[string]interface{}{
+			"statusCode": float64(404), // function's own status
+			"body":       `{"error":"not found"}`,
+		},
+	}
+
+	var stderrOut string
+	captureStdout(t, func() {
+		stderrOut = captureStderr(t, func() {
+			if err := printBodyOnly(input); err != nil {
+				t.Fatalf("printBodyOnly returned unexpected error: %v", err)
+			}
+		})
+	})
+
+	if !strings.Contains(stderrOut, "Status: 404") {
+		t.Errorf("expected envelope statusCode 404 on stderr, got: %q", stderrOut)
+	}
+	if strings.Contains(stderrOut, "200") {
+		t.Errorf("outer HTTP status 200 leaked into stderr, expected 404: %q", stderrOut)
+	}
+}
+
 // TestPrintBodyOnly_InvokeResponse_StatusOnStderr verifies that the HTTP status
 // code is written to stderr (not stdout) when --body-only is active.
 func TestPrintBodyOnly_InvokeResponse_StatusOnStderr(t *testing.T) {

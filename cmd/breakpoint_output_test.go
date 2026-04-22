@@ -18,6 +18,8 @@ func captureStdout(t *testing.T, run func()) string {
 	}
 
 	os.Stdout = w
+	t.Cleanup(func() { _ = w.Close(); os.Stdout = origStdout })
+
 	run()
 	_ = w.Close()
 	os.Stdout = origStdout
@@ -39,6 +41,8 @@ func captureStderr(t *testing.T, run func()) string {
 	}
 
 	os.Stderr = w
+	t.Cleanup(func() { _ = w.Close(); os.Stderr = origStderr })
+
 	run()
 	_ = w.Close()
 	os.Stderr = origStderr
