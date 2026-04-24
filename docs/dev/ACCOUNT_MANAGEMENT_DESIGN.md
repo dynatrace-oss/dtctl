@@ -1,0 +1,1551 @@
+# Account Management Design
+
+**Status:** Design Proposal
+**Created:** 2026-04-10
+**Updated:** 2026-04-22
+**Author:** dtctl team
+**Reference:** [timstewart-dynatrace/dtiam](https://github.com/timstewart-dynatrace/dtiam) prototype
+**API Spec:** [https://api.dynatrace.com/spec-json](https://api.dynatrace.com/spec-json)
+**Replaces:** `IAM_INTEGRATION_DESIGN.md`, `ACCOUNT_NAMESPACE_DESIGN.md`
+
+## Overview
+
+This document proposes extending dtctl with two account-level subcommand
+namespaces: `dtctl iam` for *identity and access management*, and
+`dtctl account` for *account administration*, like subscriptions, cost, audit logs. 
+Both operate on the Dynatrace Account Management API plane
+(`api.dynatrace.com`), which is fundamentally different from the environment
+plane that dtctl uses today.
+
+The design draws from the `dtiam` prototype, adapts it to dtctl's
+architecture, and introduces account UUID auto-discovery via the IAM
+service's `access-info` endpoint.
+
+## Goals
+
+1. **Single binary** -- users manage environments *and* account-level resources from one tool
+2. **Unified config** -- one config file, one context concept
+3. **Familiar UX** -- verb-noun grammar within both namespaces, same output formats, same `--agent` mode
+4. **Auto-discovery** -- detect account UUID from the user's session when possible, though allow explicit configuration in context
+5. **Automation-ready** -- client-credentials flow for CI/CD alongside interactive PKCE
+6. **Incremental adoption** -- account features are additive; existing commands unchanged
+7. **FinOps visibility** -- subscription cost, usage, and forecast from the CLI
+
+## Non-Goals
+
+- Replacing the Dynatrace web UI for IAM or account administration
+- Supporting Dynatrace Classic (non-Platform) IAM APIs
+- Implementing dtiam's template engine (dtctl's `apply -f` covers this)
+- Implement dtiam's `analyze` command (business logic should stay outside of dtctl)
+- Breaking existing config files or commands
+- Supporting Dynatrace Managed cluster-level APIs
+
+---
+
+## Background: Three API Planes
+
+dtctl today operates on the **environment plane**. Account-level operations
+use two additional service endpoints:
+
+| Plane | Base URL (prod) | Identity Anchor | Purpose |
+|-------|----------------|-----------------|---------|
+| **Environment** | `https://{envID}.apps.dynatrace.com` | Environment ID | Dashboards, workflows, SLOs, settings, etc. |
+| **Account Management API** | `https://api.dynatrace.com` | Account UUID | IAM, subscriptions, cost, audit logs |
+| **IAM Service** | `https://iam.dynatrace.com` | User session | Environment discovery, access-info |
+
+### API Base URLs by Tier
+
+| Tier | Environment | Account Management API | IAM Service | SSO |
+|------|-------------|----------------------|-------------|-----|
+| **Production** | `{id}.apps.dynatrace.com` | `api.dynatrace.com` | `iam.dynatrace.com` | `sso.dynatrace.com` |
+| **Hardening** | `{id}.sprint.apps.dynatracelabs.com` | `api-hardening.internal.dynatracelabs.com` | `iam-hardening.dynatracelabs.com` | `sso-sprint.dynatracelabs.com` |
+| **Development** | `{id}.dev.apps.dynatracelabs.com` | `api-dev.internal.dynatracelabs.com` | `iam-dev.dynatracelabs.com` | `sso-dev.dynatracelabs.com` |
+
+Auto-detection from the environment URL (same logic as `pkg/auth/`
+`DetectEnvironment()`) determines which tier's URLs to use.
+
+### Account Management API Surface
+
+The Account Management API at `api.dynatrace.com` exposes these endpoints:
+
+| Domain | Base Path | Auth Scope | Purpose |
+|--------|-----------|------------|---------|
+| **IAM** | `/iam/v1/accounts/{uuid}/...` | `account-idm-read/write` | Users, groups, policies, bindings, boundaries |
+| **Subscriptions** | `/sub/v2/accounts/{uuid}/...` | `account-uac-read` | DPS subscriptions, usage, cost |
+| **Cost allocation** | `/v1/accounts/{uuid}/settings/costcenters`, `/v1/accounts/{uuid}/settings/products` | `account-uac-read` | Cost center and product field values |
+| **Cost allocation mgmt** | `/v1/accounts/{uuid}/settings/...` | `account-uac-read/write` | Cost center and product CRUD |
+| **Environments** | `/env/v2/accounts/{uuid}/environments` | `account-env-read` | List environments (v2, no management zones) |
+| **Audit logs** | `/audit/v1/accounts/{uuid}` | `account-audit-logs-read` | Account-level change audit trail |
+| **Notifications** | `/v1/accounts/{uuid}/notifications` | (TBD) | Budget, cost, forecast, BYOK alerts |
+| **Limits** | `/iam/v1/accounts/{uuid}/limits` | `account-idm-read` | Account resource quotas |
+| **Reference data** | `/ref/v1/...` | (TBD) | Time zones (`/ref/v1/time-zones`), regions (`/ref/v1/regions`), permissions (`/ref/v1/account/permissions`) |
+
+### IAM Service: access-info Endpoint
+
+The IAM service exposes a public endpoint that returns all accounts and
+environments accessible to the currently authenticated user:
+
+```
+GET {iamBaseURL}/api/public/environment-access/access-info
+Authorization: Bearer <user-token>
+```
+
+Response:
+
+```json
+{
+  "accounts": [
+    {
+      "account": {
+        "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "name": "Playground",
+        "environments": [
+          {
+            "id": "wkf10640",
+            "name": "Dynatrace Playground",
+            "urlAlias": "playground",
+            "scopes": ["PLATFORM", "DYNATRACE_CLASSIC"]
+          }
+        ]
+      }
+    },
+    {
+      "account": {
+        "id": "b91c54d8-3e72-4f1a-9a3d-7c4e8f2a1b60",
+        "name": "Dynatrace ACME Corp",
+        "environments": [
+          {
+            "id": "abc12345",
+            "name": "ACME Production",
+            "urlAlias": null,
+            "scopes": ["PLATFORM", "DYNATRACE_CLASSIC"]
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Key observations:
+- Returns **all** accounts and environments the user can access
+- Each environment has `id`, `name`, `urlAlias`, and `scopes`
+- `scopes` indicates capabilities: `PLATFORM` (new platform) and/or `DYNATRACE_CLASSIC`
+- `name` can be `null` or empty for some environments
+- `urlAlias` enables friendly URLs (e.g., `playground.apps.dynatrace.com`)
+- This is the same data the Dynatrace web UI login flow uses
+- **Enables auto-discovery of account UUID** from a known environment ID
+- Important: This endpoint does not provide environments where the user has account-level access only (account-only administration)
+
+**This endpoint fundamentally changes the "Is Account UUID Implicit from Tenant?"
+answer from "No" to "Yes, if the user has a valid session."**
+
+---
+
+## Part 1: Shared Infrastructure
+
+These decisions apply to both `dtctl iam` and `dtctl account` namespaces.
+
+### Decision 1: Config Schema -- Optional `account-uuid`
+
+The `Context` struct gains an **optional** `account-uuid` field. In the best
+case, the account UUID is auto-discovered at runtime via the IAM
+`access-info` endpoint (see Decision 2). However, auto-discovery requires a
+valid environment URL **and** an authenticated session. Some users may:
+
+- Not have an environment URL set (account-only administration)
+- Operate in restricted networks where `iam.dynatrace.com` is unreachable
+- Prefer explicit configuration over implicit discovery
+
+For these cases, `account-uuid` can be set directly in the context:
+
+```yaml
+contexts:
+  # Typical context: environment + auto-discovered account UUID
+  - name: production
+    context:
+      environment: https://abc123.apps.dynatrace.com
+      token-ref: prod-token
+      safety-level: readwrite-all
+      description: "Production environment"
+
+  # Explicit account UUID (overrides auto-discovery when set)
+  - name: production-explicit
+    context:
+      environment: https://abc123.apps.dynatrace.com
+      account-uuid: b91c54d8-3e72-4f1a-9a3d-7c4e8f2a1b60
+      token-ref: prod-token
+      safety-level: readwrite-all
+      description: "Production environment with explicit account"
+
+  # Account-only context: no environment, only account-level operations
+  - name: account-admin
+    context:
+      account-uuid: b91c54d8-3e72-4f1a-9a3d-7c4e8f2a1b60
+      token-ref: account-admin-token
+      safety-level: readwrite-all
+      description: "Account administration (no environment)"
+```
+
+The `Context` struct adds one optional field:
+
+```go
+type Context struct {
+    Environment     string      `yaml:"environment" table:"ENVIRONMENT"`
+    AccountUUID     string      `yaml:"account-uuid,omitempty" table:"ACCOUNT-UUID,wide"`
+    TokenRef        string      `yaml:"token-ref" table:"TOKEN-REF"`
+    SafetyLevel     SafetyLevel `yaml:"safety-level,omitempty" table:"SAFETY-LEVEL"`
+    Description     string      `yaml:"description,omitempty" table:"DESCRIPTION,wide"`
+}
+```
+
+When `account-uuid` is set in the config, auto-discovery is skipped entirely.
+When it is empty (the default), auto-discovery runs as described in Decision 2.
+
+#### Account-Only Contexts
+
+A context may omit `environment` and set only `account-uuid`. This enables
+pure account-level administration (`dtctl iam`, `dtctl account`) without
+needing a specific environment. Environment-level commands (`dtctl get`,
+`dtctl describe`, etc.) return a clear error when the context has no
+environment:
+
+```
+Error: context "account-admin" has no environment configured
+
+Account-level commands (dtctl iam, dtctl account) work with this context.
+For environment-level commands, switch to a context with an environment:
+  dtctl ctx use <context-with-environment>
+```
+
+#### Setting `account-uuid` via CLI
+
+```bash
+# Set account UUID on an existing context
+dtctl ctx set account-uuid b91c54d8-3e72-4f1a-9a3d-7c4e8f2a1b60
+
+# Set it during context creation
+dtctl ctx add account-admin \
+  --account-uuid b91c54d8-3e72-4f1a-9a3d-7c4e8f2a1b60 \
+  --token-ref account-admin-token \
+  --safety-level readwrite-all
+
+# Clear account UUID (fall back to auto-discovery)
+dtctl ctx set account-uuid ""
+
+# Auto-discover and persist the account UUID into the config
+dtctl ctx discover-account --save
+```
+
+The `dtctl ctx discover-account --save` command queries the `access-info`
+endpoint, resolves the account UUID for the current environment, and writes
+it into the context config. This is a convenience for users who want the
+speed of explicit config without manually looking up the UUID.
+
+#### Environment Variables (Runtime Overrides)
+
+For CI/CD or debugging, env vars override **both** config and auto-discovery:
+
+| Variable | Description |
+|----------|-------------|
+| `DTCTL_ACCOUNT_UUID` | Override config and auto-discovered account UUID |
+| `DTCTL_ACCOUNT_TOKEN` | Override account-level token (skips PKCE/client-cred flow) |
+
+These are runtime overrides only -- they are never persisted to the config.
+
+#### How Others Handle Account/Project Scoping
+
+| CLI | Scoping concept | How it's set | Stored where |
+|-----|----------------|--------------|-------------|
+| **Azure CLI** | Tenant + Subscription | `az account set --subscription ID` | `~/.azure/azureProfile.json` |
+| **gcloud** | Project | `gcloud config set project ID` | `~/.config/gcloud/properties` |
+| **kubectl** | Cluster | Embedded in context | `~/.kube/config` |
+| **dtctl** (proposed) | Account UUID | Auto-discovered or explicit `account-uuid` in context | Config file (optional) or runtime |
+
+### Decision 2: Account UUID Auto-Discovery
+
+The `access-info` endpoint enables automatic account UUID resolution.
+
+#### Resolution Order
+
+When an `iam` or `account` command needs the account UUID:
+
+1. `DTCTL_ACCOUNT_UUID` environment variable (runtime override, highest priority)
+2. `account-uuid` field in the current context's config (explicit config)
+3. **Auto-discover** via `access-info` endpoint (requires `environment` to be set):
+   a. Call `{iamBaseURL}/api/public/environment-access/access-info`
+   b. Match the current context's environment ID against the response
+   c. If an account is linked to that environment, use it automatically
+4. Error with setup instructions (including how to set `account-uuid` in config)
+
+#### Auto-Discovery Implementation
+
+```go
+// pkg/client/account_discovery.go
+
+// AccessInfoResponse represents the IAM access-info endpoint response
+type AccessInfoResponse struct {
+    Accounts []AccessInfoAccount `json:"accounts"`
+}
+
+// AccessInfoAccount represents one account entry in the access-info response
+type AccessInfoAccount struct {
+    Account AccessInfoAccountDetail `json:"account"`
+}
+
+// AccessInfoAccountDetail holds account details including environments
+type AccessInfoAccountDetail struct {
+    ID           string                    `json:"id"`
+    Name         string                    `json:"name"`
+    Environments []AccessInfoEnvironment   `json:"environments"`
+}
+
+// AccessInfoEnvironment represents an environment within an account
+type AccessInfoEnvironment struct {
+    ID       string   `json:"id"`
+    Name     string   `json:"name"`
+    URLAlias *string  `json:"urlAlias"`
+    Scopes   []string `json:"scopes"`
+}
+
+// DiscoverAccountUUID finds the account UUID for a given environment ID
+// by querying the IAM access-info endpoint.
+func DiscoverAccountUUID(token string, iamBaseURL string, environmentID string) (string, string, error) {
+    // Returns (accountUUID, accountName, error)
+}
+```
+
+#### IAM Base URL Selection
+
+```go
+// iamBaseURLForTier returns the IAM service URL for the detected tier
+func iamBaseURLForTier(env Environment) string {
+    switch env {
+    case EnvironmentProd:
+        return "https://iam.dynatrace.com"
+    case EnvironmentHard:
+        return "https://iam-hardening.dynatracelabs.com"
+    case EnvironmentDev:
+        return "https://iam-dev.dynatracelabs.com"
+    default:
+        return "https://iam.dynatrace.com"
+    }
+}
+```
+
+#### UX for Auto-Discovery
+
+```bash
+# Auto-discovery happens transparently:
+$ dtctl iam get groups
+# stderr: Using account "Dynatrace ACME Corp" (b91c54d8-...) for environment abc12345
+# ... group listing follows ...
+
+# Inspect which account maps to your environment:
+$ dtctl ctx discover-account
+Found account "Dynatrace ACME Corp" (b91c54d8-...) for environment abc12345
+```
+
+#### `dtctl ctx discover-account` Command
+
+Uses the `access-info` endpoint to show all accessible accounts and
+identify the one matching the current environment:
+
+```bash
+$ dtctl ctx discover-account
+Accounts accessible to you:
+
+  ACCOUNT                          UUID                                    ENVIRONMENTS
+  Playground                       f47ac10b-58cc-4372-a567-0e02b2c3d479    wkf10640 (Dynatrace Playground)
+  Dynatrace ACME Corp              b91c54d8-3e72-4f1a-9a3d-7c4e8f2a1b60    abc12345 (ACME Production) ← current
+  Dynatrace DevOps                 d3a7e6c1-4b92-4f58-8d1e-9c6b3a2f7e04    abc98765 xyz98765
+  Demo live                        a2c4e6f8-1b3d-4a5c-8e7f-9d0b2c4a6e81    xyz12345 (Demo Live)
+
+Current environment "abc12345" belongs to account "Dynatrace ACME Corp" (b91c54d8-...)
+```
+
+This serves as a diagnostic tool -- users can see all accounts/environments
+they have access to and verify the mapping is correct.
+
+With `--save`, the discovered UUID is persisted to the current context's
+`account-uuid` field. Without `--save`, it is displayed but not stored.
+
+### Decision 3: Authentication
+
+#### The `resource` Parameter Problem
+
+dtctl's existing PKCE flow already uses the OAuth `resource` parameter,
+set to the environment URL (e.g., `https://abc123.apps.dynatrace.com`).
+This scopes the resulting token to that specific environment.
+
+The Account Management API (`api.dynatrace.com`) requires a **different**
+`resource` value: `urn:dtaccount:{accountUuid}`. This means a single OAuth
+token **cannot** be used for both environment-level and account-level API
+calls -- they are scoped to different resources.
+
+The IAM service (`iam.dynatrace.com`) reuses the existing environment-scoped
+token (it only needs the `openid` scope, which is already included in all
+safety levels). No separate token is needed for `access-info` and similar
+IAM service endpoints.
+
+**Consequence: two tokens per context.** When an `iam` or `account` command
+auto-discovers the account UUID, dtctl needs two tokens:
+
+| Token | `resource` parameter | Used for |
+|-------|---------------------|----------|
+| **Environment token** (existing) | `https://{envID}.apps.dynatrace.com` | All existing dtctl commands, IAM service (`iam.dynatrace.com`) |
+| **Account token** (new) | `urn:dtaccount:{accountUuid}` | Account Management API (`api.dynatrace.com`): IAM, subscriptions, cost, audit |
+
+#### Path A: Interactive Users (PKCE)
+
+Two separate PKCE flows are needed. The auth login command is extended to
+handle both when an account UUID is discoverable:
+
+```bash
+# Login for environment only (existing behavior)
+dtctl auth login
+
+# Login for environment + account (when account UUID is discoverable)
+dtctl auth login
+# Step 1: PKCE flow with resource=https://abc123.apps.dynatrace.com (existing)
+# Step 2: Auto-discover account UUID via access-info (or read from config)
+# Step 3: PKCE flow with resource=urn:dtaccount:b91c54d8-... (new)
+# Both tokens stored in keyring under different keys
+
+# Login for account only (if you only need account-level commands,
+# or if your context has no environment URL)
+dtctl auth login --account-only
+```
+
+The second flow reuses the same SSO session (the user is already
+authenticated in the browser from step 1), so in practice it's a
+near-instant redirect rather than a second interactive login.
+
+**Implementation in `pkg/auth/oauth_flow.go`:**
+
+The `OAuthConfig` struct already has an `EnvironmentURL` field that maps to
+the `resource` parameter. For account-level tokens, a new flow is created
+with `resource` set to the account URN:
+
+```go
+// AccountOAuthConfig creates an OAuth config for the account management API
+func AccountOAuthConfig(env Environment, safetyLevel config.SafetyLevel, accountUUID string) *OAuthConfig {
+    base := OAuthConfigForEnvironment(env, safetyLevel)
+    return &OAuthConfig{
+        AuthURL:        base.AuthURL,
+        TokenURL:       base.TokenURL,
+        UserInfoURL:    base.UserInfoURL,
+        ClientID:       base.ClientID,
+        Scopes:         accountScopesForSafetyLevel(safetyLevel),
+        Port:           base.Port,
+        Environment:    env,
+        SafetyLevel:    safetyLevel,
+        EnvironmentURL: fmt.Sprintf("urn:dtaccount:%s", accountUUID), // resource parameter
+    }
+}
+```
+
+**Account-level scopes by safety level:**
+
+| Safety Level | Account Scopes |
+|-------------|---------------|
+| `readonly` | `openid`, `account-idm-read`, `account-audit-logs-read`, `account-env-read`, `account-uac-read`, `iam:policies:read`, `iam:bindings:read`, `iam:boundaries:read` |
+| `readwrite-mine` | Above + `account-idm-write` |
+| `readwrite-all` | Above + `iam-policies-management`, `account-uac-write` |
+
+Note: `iam:effective-permissions:read` is **not** in the `readonly` set
+above. It is only needed for the Phase 3 effective permissions analysis
+and is requested at that phase rather than up-front (see Appendix A).
+
+**Caveat:** The built-in dtctl client ID (`dt0s12.dtctl-prod`) must be granted
+these scopes by Dynatrace. If it is not, users get a clear OAuth error and are
+directed to use their own credentials (Path B).
+
+#### Path B: Automation / CI (Client Credentials)
+
+Client-credentials tokens also require the `resource` parameter. The token
+request must include `resource=urn:dtaccount:{accountUuid}`:
+
+```
+POST https://sso.dynatrace.com/sso/oauth2/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&client_id=dt0s01.XXXXX
+&client_secret=dt0s01.XXXXX.YYYYY
+&scope=account-idm-read account-idm-write iam-policies-management account-env-read
+&resource=urn:dtaccount:3e4f5a6b-c7d8-4e9f-a1b2-c3d4e5f6a7b8
+```
+
+Config:
+
+```yaml
+tokens:
+  - name: iam-service-cred
+    type: oauth-client-credentials     # NEW token type
+    client-id: dt0s01.XXXXX
+    # client-secret stored in keyring under "dtctl:iam-service-cred"
+```
+
+For client-credentials, the account UUID is resolved at runtime (via
+`DTCTL_ACCOUNT_UUID` env var or `access-info` auto-discovery) and used
+as the `resource` parameter in the token request.
+
+#### IAM Service Authentication (`iam.dynatrace.com`)
+
+The IAM service endpoints (e.g., `access-info`) accept the existing
+environment-scoped PKCE token -- no separate token or `resource` parameter
+is needed. The `openid` scope (already included in all safety levels) is
+sufficient. This means auto-discovery of the account UUID works without
+any additional auth flow.
+
+#### Token Resolution Order (for iam/account commands)
+
+For commands targeting `api.dynatrace.com` (all `dtctl iam` and
+`dtctl account` commands):
+
+1. `DTCTL_ACCOUNT_TOKEN` environment variable
+2. Cached account token in keyring (keyed by auto-discovered account UUID)
+3. Auto-trigger account PKCE flow if environment token exists but no account token
+4. Error: "No valid token for account-level operations"
+
+For commands targeting `iam.dynatrace.com` (auto-discovery, `access-info`):
+
+1. Use the existing environment token (already has `openid` scope)
+
+#### Token Keyring Storage
+
+Account tokens use a distinct keyring key to avoid collisions:
+
+| Token type | Keyring key pattern | `resource` parameter |
+|-----------|-------------------|---------------------|
+| Environment (existing) | `oauth:{env}:{tokenRef}` | `https://{envID}.apps.dynatrace.com` |
+| Account (PKCE, new) | `account-oauth:{accountUUID}:{tokenRef}` | `urn:dtaccount:{accountUUID}` |
+| Account (client-cred, new) | `client-cred:{name}` | `urn:dtaccount:{accountUUID}` |
+
+### Decision 4: HTTP Client Architecture
+
+Extend the existing client with account-level capabilities rather than
+creating a completely separate client:
+
+```go
+// pkg/client/account_client.go
+
+// AccountClient handles requests to the Dynatrace Account Management API.
+type AccountClient struct {
+    http        *resty.Client
+    accountUUID string
+}
+
+func (c *AccountClient) HTTP() *resty.Client { return c.http }
+func (c *AccountClient) AccountUUID() string { return c.accountUUID }
+```
+
+```go
+// pkg/client/client.go
+
+// AccountClient returns a client configured for the account management API.
+func (c *Client) AccountClient(accountUUID, token string) *AccountClient {
+    return &AccountClient{
+        http:        newRestyClient(accountBaseURL, token),
+        accountUUID: accountUUID,
+    }
+}
+```
+
+Account Management API base URL auto-detection from the environment tier:
+
+```go
+func accountBaseURLForTier(env Environment) string {
+    switch env {
+    case EnvironmentProd:
+        return "https://api.dynatrace.com"
+    case EnvironmentHard:
+        return "https://api-hardening.internal.dynatracelabs.com"
+    case EnvironmentDev:
+        return "https://api-dev.internal.dynatracelabs.com"
+    default:
+        return "https://api.dynatrace.com"
+    }
+}
+```
+
+IAM and account resource handlers both receive `*AccountClient`. This keeps
+the separation clean and prevents accidentally sending environment-scoped
+tokens to the account API.
+
+### Decision 5: Keyring Token Storage
+
+See Decision 3 for the full token keyring key patterns. Key points:
+
+- Environment tokens and account tokens use **separate keyring entries**
+  because they are minted with different `resource` parameters and cannot
+  be interchanged.
+- Client secrets for client-credentials tokens never appear in the YAML
+  config file, consistent with dtctl's existing keyring-first approach.
+- Account PKCE tokens are stored alongside environment tokens, keyed by
+  account UUID, so multiple accounts can coexist.
+
+### Decision 6: Agent Mode
+
+The `--agent` / `-A` JSON envelope works transparently for both namespaces.
+A `context.account` field is added for all account-level commands:
+
+```json
+{
+  "ok": true,
+  "result": [...],
+  "context": {
+    "verb": "iam-get",
+    "resource": "groups",
+    "account": "3e4f5a6b-c7d8-...",
+    "suggestions": ["dtctl iam describe group 'DevOps Team'"]
+  }
+}
+```
+
+### Decision 7: Error UX for Common Failure Modes
+
+#### No Account UUID Discoverable
+
+```
+Error: could not determine account UUID for context "production"
+
+Auto-discovery via access-info failed: no valid session.
+
+Set the account UUID explicitly:
+  dtctl ctx set account-uuid YOUR_ACCOUNT_UUID
+
+Or authenticate and let dtctl discover it:
+  dtctl auth login
+  dtctl ctx discover-account        (to verify the mapping)
+  dtctl ctx discover-account --save (to persist it in the config)
+
+Or override with an environment variable:
+  export DTCTL_ACCOUNT_UUID=YOUR_ACCOUNT_UUID
+
+Find your account UUID in:
+  Dynatrace Account Management > Account settings
+```
+
+#### No Environment Configured (Account-Only Context)
+
+When auto-discovery is attempted on a context without `environment`:
+
+```
+Error: could not auto-discover account UUID for context "account-admin"
+
+No environment URL is configured in this context and no account-uuid is set.
+Auto-discovery requires an environment URL to match against the access-info response.
+
+Set the account UUID explicitly:
+  dtctl ctx set account-uuid YOUR_ACCOUNT_UUID
+
+Or switch to a context that has an environment URL:
+  dtctl ctx use <context-with-environment>
+```
+
+#### Token Lacks Account-Level Scopes / Wrong Resource
+
+```
+Error: no account-level token available for context "production"
+
+Account API calls require a token with resource=urn:dtaccount:b91c54d8-...
+Your current token is scoped to the environment (https://abc123.apps.dynatrace.com).
+
+Authenticate for account access:
+  dtctl auth login              (will perform a second auth for account scope)
+  dtctl auth login --account-only
+
+Or pass a token directly:
+  export DTCTL_ACCOUNT_TOKEN=dt0c01.XXXXX...
+```
+
+#### Account UUID Does Not Match Environment
+
+Detected by `dtctl doctor` cross-checking the `access-info` response:
+
+```
+Warning: environment "abc123" not found in any accessible account
+
+The access-info endpoint did not return an account containing this environment.
+Check your permissions or run "dtctl ctx discover-account" to inspect.
+```
+
+---
+
+## Part 2: `dtctl iam` -- Identity & Access Management
+
+### Command Structure
+
+```
+dtctl iam get users
+dtctl iam get groups
+dtctl iam get policies                                        # account level (default)
+dtctl iam get policies --level environment [--level-id <envID>]
+dtctl iam get policies --level global
+dtctl iam get bindings [--group NAME]                          # account level (default)
+dtctl iam get bindings --level environment [--level-id <envID>] [--group NAME]
+dtctl iam get boundaries                                       # account level (default)
+dtctl iam get boundaries --level environment [--level-id <envID>]
+dtctl iam get environments
+dtctl iam get service-users
+
+dtctl iam describe user <email-or-uid>
+dtctl iam describe group <name-or-uuid>
+dtctl iam describe policy <name-or-uuid>                       # account level (default)
+dtctl iam describe policy <name-or-uuid> --level environment [--level-id <envID>]
+dtctl iam describe boundary <name-or-uuid>                     # account level (default)
+dtctl iam describe boundary <name-or-uuid> --level environment [--level-id <envID>]
+
+dtctl iam create group --name "Team" [--description "..."]
+dtctl iam create policy --name "viewer" --statement "ALLOW ..."                           # account level (default)
+dtctl iam create policy --name "viewer" --statement "ALLOW ..." --level environment [--level-id <envID>]
+dtctl iam create binding --policy "viewer" --group "Team" [--boundary "prod"]             # account level (default)
+dtctl iam create binding --policy "viewer" --group "Team" --level environment [--level-id <envID>] [--boundary "prod"]
+dtctl iam create boundary --name "prod" --zones "Production,Staging"                      # account level (default)
+dtctl iam create boundary --name "prod" --zones "Production,Staging" --level environment [--level-id <envID>]
+dtctl iam create service-user --name "CI Pipeline" [--add-to-group "Team"]
+
+dtctl iam delete group <name-or-uuid>
+dtctl iam delete policy <name-or-uuid>                         # account level (default)
+dtctl iam delete policy <name-or-uuid> --level environment [--level-id <envID>]
+dtctl iam delete binding --group <g> --policy <p>              # account level (default)
+dtctl iam delete binding --group <g> --policy <p> --level environment [--level-id <envID>]
+dtctl iam delete user <email-or-uid>
+dtctl iam delete service-user <name-or-uuid>
+
+dtctl iam bulk add-users-to-group -f users.csv
+dtctl iam bulk create-groups -f groups.yaml
+dtctl iam bulk create-bindings -f bindings.yaml
+
+dtctl iam whoami
+```
+
+### Grammar Deviation: Namespace-First vs Verb-First
+
+This is a deliberate break from dtctl's core `<verb> <resource>` grammar.
+The three-level depth matches how other CLIs handle IAM:
+
+| CLI | Pattern | Levels |
+|-----|---------|--------|
+| AWS | `aws iam create-role` | 2 |
+| gcloud | `gcloud iam roles create` | 3 |
+| Azure | `az ad user create` | 3 |
+| dtctl | `dtctl iam get groups` | 3 |
+
+**Rationale:** Namespace isolation (IAM resources are account-level),
+auth boundary (all `dtctl iam` require an account-level session), discoverability
+(`dtctl iam --help` lists all IAM operations), and industry precedent.
+
+### IAM-Specific Verbs: `bulk`
+
+- **`bulk`** is batch orchestration (CSV/YAML/JSON file processing with
+  progress reporting), not a CRUD verb.
+
+### Handling Existing `get users` / `get groups`
+
+| Command | Scope | Shows |
+|---------|-------|-------|
+| `dtctl get users` | Environment | Users with access to the current environment |
+| `dtctl iam get users` | Account | All users in the Dynatrace account |
+| `dtctl get groups` | Environment | Groups visible from the current environment |
+| `dtctl iam get groups` | Account | All groups in the account with full membership |
+
+If an account UUID is discoverable, `dtctl get users` output includes a hint:
+`Tip: Use "dtctl iam get users" for the full account-level view`.
+
+### Policies, Bindings, and Permissions: Two Systems
+
+Dynatrace IAM has **two separate systems** for granting access to groups:
+
+| System | API | Scope Required | Use Case |
+|--------|-----|---------------|----------|
+| **Policy Bindings** | Policy Management API (`/repo/{level}/bindings/`) | `iam-policies-management` | Platform-style: custom policies with `ALLOW` statement syntax |
+| **Permissions** | Permission Management API (`/groups/{uuid}/permissions`) | `account-idm-write` | Legacy: assign predefined permission names like `tenant-manage-security-problems` |
+
+**dtctl focuses on the policy bindings system** as it is the current platform
+approach. The key concept:
+
+1. **Policies** are created at a **level** (`account` or `environment`), and
+   contain a `statementQuery` with `ALLOW`/`DENY` syntax.
+2. **Bindings** connect a policy to one or more groups at the same level.
+   A binding says: "group X gets the permissions defined in policy Y for
+   environment Z" (or for the entire account).
+3. Bindings can optionally include **boundaries** to further restrict scope.
+
+The `--level` flag is optional on `get`, `describe`, `create`, and `delete`
+for policies, bindings, and boundaries. It defaults to `account`. Valid values:
+
+| `--level` | `--level-id` | Meaning |
+|-----------|-------------|----------|
+| `account` (**default**) | (defaults to account UUID from context) | Policy applies to all environments in the account |
+| `environment` | Environment ID (defaults to current context's environment) | Policy applies to one specific environment |
+
+`global` policies are managed by Dynatrace and cannot be created or deleted.
+
+#### Create Policy: API Detail
+
+```
+POST /iam/v1/repo/{levelType}/{levelId}/policies
+Auth: iam-policies-management
+
+{
+  "name": "event-writer",
+  "description": "Allow event ingestion",
+  "tags": [],
+  "statementQuery": "ALLOW storage:events:write, storage:events:read;"
+}
+
+Response 201:
+{
+  "uuid": "c8f3d291-...",
+  "name": "event-writer",
+  "statementQuery": "ALLOW storage:events:write, storage:events:read;",
+  "statements": [
+    {"effect": "ALLOW", "permissions": ["storage:events:write", "storage:events:read"]}
+  ]
+}
+```
+
+#### Create Binding: API Detail
+
+```
+POST /iam/v1/repo/{levelType}/{levelId}/bindings/{policyUuid}
+Auth: iam-policies-management
+
+{
+  "groups": ["e5a7b310-9c42-4d83-a618-2f9d04c7e5b1"],
+  "boundaries": []  // optional
+}
+
+Response 204 (no body)
+```
+
+The binding endpoint appends to existing bindings -- it does not replace them.
+
+#### Policy Validation
+
+Before creating a policy, the statement can be validated:
+
+```
+POST /iam/v1/repo/{levelType}/{levelId}/policies/validation
+```
+
+dtctl should validate automatically and show clear errors for invalid
+statements before submitting the create request.
+
+### IAM API Endpoints
+
+Most under `https://api.dynatrace.com/iam/v1/accounts/{accountUUID}/`; environments and boundaries use different base paths:
+
+| Resource | Full Path |
+|----------|-----------|
+| Users | `/iam/v1/accounts/{accountUUID}/users` |
+| Groups | `/iam/v1/accounts/{accountUUID}/groups` (GET list); `/iam/v1/accounts/{accountUUID}/groups/{uuid}` (PUT update, DELETE) |
+| Group members | `/iam/v1/accounts/{accountUUID}/groups/{uuid}/users` (GET) |
+| Service Users | `/iam/v1/accounts/{accountUUID}/service-users`, `/iam/v1/accounts/{accountUUID}/service-users/{uid}` |
+| Policies | `/iam/v1/repo/{levelType}/{levelId}/policies` |
+| Bindings | `/iam/v1/repo/{levelType}/{levelId}/bindings/{policyUuid}` |
+| Boundaries | `/iam/v1/repo/account/{accountId}/boundaries` (account level only) |
+| Permissions | `/iam/v1/accounts/{accountUUID}/groups/{uuid}/permissions` (legacy) |
+| Environments | `/env/v2/accounts/{accountUUID}/environments` (separate base path) |
+| Limits | `/iam/v1/accounts/{accountUUID}/limits` |
+
+Policy levels: `account/{accountUUID}`, `environment/{envID}`, `global/global`.
+
+### Resource Handler Pattern
+
+```
+pkg/resources/iam/
+    iam.go                    # Existing environment-scoped handlers
+    account/                  # NEW: account-level IAM handlers
+        groups.go
+        users.go
+        policies.go
+        bindings.go
+        boundaries.go
+        environments.go
+        service_users.go
+        limits.go
+        permissions.go        # analyze: effective perms, matrix, least-privilege
+```
+
+### IAM Safety Checks
+
+```go
+const (
+    OperationIAMCreate  Operation = "iam-create"
+    OperationIAMUpdate  Operation = "iam-update"
+    OperationIAMDelete  Operation = "iam-delete"
+)
+```
+
+| Safety Level | iam get/describe | iam create | iam delete |
+|-------------|-----------------|------------|------------|
+| `readonly` | yes | no | no |
+| `readwrite-mine` | yes | no | no |
+| `readwrite-all` | yes | yes | yes |
+
+`readwrite-mine` blocks all IAM mutations because IAM resources have no
+meaningful `owner` field -- they are inherently shared, account-wide resources.
+
+### Service Users: Concepts and Auto-Group Behavior
+
+When you create a service user via the API, Dynatrace **automatically creates
+a dedicated group** for that service user. The response includes:
+
+```json
+{
+  "uid": "a4c8e2f6-3b7d-4a19-8e5c-d1f3a7b9c2e4",
+  "email": "a4c8e2f6-...@service.sso.dynatrace.com",
+  "name": "CI Pipeline",
+  "surname": "SERVICE_IDENTITY",
+  "description": "Event ingestion for CI",
+  "createdAt": "2026-04-15T10:00:00Z",
+  "groupUuid": "c7d9e1f3-a5b2-4c84-9d6e-f8a0b3c5d7e2"
+}
+```
+
+The `groupUuid` is the auto-created group. To give the service user
+permissions, you must **bind a policy to that group** (or add the service
+user to an existing group that already has bindings).
+
+### Recipe: Service User Setup (End-to-End)
+
+This is the most common IAM automation use case: create a service user
+with specific permissions for a particular environment.
+
+#### Step-by-Step (Individual Commands)
+
+```bash
+# 1. Create a policy (account level by default)
+dtctl iam create policy \
+  --name "event-writer" \
+  --description "Allow event ingestion" \
+  --statement "ALLOW storage:events:write, storage:events:read;"
+# → Created policy "event-writer" (uuid: c8f3d291-...)
+
+# 2. Create a group
+dtctl iam create group \
+  --name "Event Writers" \
+  --description "Service accounts for event ingestion"
+# → Created group "Event Writers" (uuid: e5a7b310-...)
+
+# 3. Bind the policy to the group (account level by default)
+#    This is the step that actually grants the permissions.
+dtctl iam create binding \
+  --policy "event-writer" \
+  --group "Event Writers"
+# → Bound policy "event-writer" to group "Event Writers" at account level
+
+# 4. Create a service user and add it to the group
+dtctl iam create service-user \
+  --name "CI Pipeline" \
+  --description "Event ingestion for CI" \
+  --add-to-group "Event Writers"
+# → Created service user "CI Pipeline" (uid: a4c8e2f6-...)
+# → Added to group "Event Writers"
+```
+
+#### Alternative: Bind Policy to Service User's Auto-Group
+
+If you want a 1:1 mapping (one service user, one policy, no shared group):
+
+```bash
+# 1. Create the policy (account level by default)
+dtctl iam create policy \
+  --name "event-writer" \
+  --statement "ALLOW storage:events:write, storage:events:read;"
+
+# 2. Create the service user (without --add-to-group)
+dtctl iam create service-user --name "CI Pipeline"
+# → Created service user "CI Pipeline" (uid: a4c8e2f6-...)
+# → Auto-created group: c7d9e1f3-...
+
+# 3. Bind the policy to the auto-created group (account level by default)
+dtctl iam create binding \
+  --policy "event-writer" \
+  --group c7d9e1f3-a5b2-4c84-9d6e-f8a0b3c5d7e2
+```
+
+#### Declarative: apply -f (Future)
+
+Once `dtctl iam apply` is supported (Phase 3+), the entire setup can be
+declared in a single YAML file:
+
+```yaml
+# service-user-setup.yaml
+apiVersion: iam/v1
+kind: Policy
+metadata:
+  name: event-writer
+  level: account   # recommended: account-level policies are reusable across environments
+spec:
+  description: Allow event ingestion
+  statementQuery: |
+    ALLOW storage:events:write, storage:events:read;
+---
+apiVersion: iam/v1
+kind: Group
+metadata:
+  name: Event Writers
+spec:
+  description: Service accounts for event ingestion
+  policyBindings:
+    - policy: event-writer
+      level: account
+---
+apiVersion: iam/v1
+kind: ServiceUser
+metadata:
+  name: CI Pipeline
+spec:
+  description: Event ingestion for CI
+  groups:
+    - Event Writers
+```
+
+```bash
+dtctl iam apply -f service-user-setup.yaml
+```
+
+The apply command would resolve dependencies (create policy before binding)
+and handle idempotency (skip if already exists with same config).
+
+#### Auth Scope Requirements
+
+This workflow requires two scopes:
+
+| Operation | Scope |
+|-----------|-------|
+| Create/delete policies, bindings, boundaries | `iam-policies-management` |
+| Create/delete groups, service users, manage membership | `account-idm-write` |
+
+Both are included in the `readwrite-all` safety level.
+
+---
+
+## Part 3: `dtctl account` -- Account Administration
+
+### Command Structure
+
+```
+# Subscriptions
+dtctl account get subscriptions
+dtctl account describe subscription <uuid>
+
+# Usage & Cost
+dtctl account get usage --per-environment [--from <date>] [--to <date>] [--env <id>] [--capability <key>] [--cluster <id>]
+# Note: subscription-level `dtctl account get usage` (without --per-environment) is
+# deferred to Phase 2a pending API time-filter support (see Phase 2).
+dtctl account get cost --subscription <uuid> [--granularity daily|weekly|monthly]
+dtctl account get cost --subscription <uuid> --per-environment --from 2026-01-01 --to 2026-03-31
+dtctl account get forecast
+dtctl account get rate-card
+
+# Audit Logs
+dtctl account get audit-logs                                 # default: last 7 days
+dtctl account get audit-logs [--from <time>] [--to <time>] [--filter <expr>]
+
+# Notifications
+dtctl account get notifications [--from <date>] [--to <date>]
+                                [--type BUDGET|COST|FORECAST|BYOK_REVOKED|BYOK_ACTIVATED]
+                                [--severity SEVERE|WARN|INFO]
+
+# Environments (account-level view)
+dtctl account get environments
+
+# Cost Allocation
+dtctl account get cost-centers
+dtctl account get products
+dtctl account get cost-allocation --subscription <uuid> --env <id> --field COSTCENTER|PRODUCT [--from <date>] [--to <date>]
+# Note: --env is REQUIRED (no account-wide mode in Phase 1); --from/--to default to current month.
+```
+
+### Relationship to `dtctl iam`
+
+`dtctl account` and `dtctl iam` are **siblings**, not parent-child:
+
+```
+dtctl
+  ├── get / describe / create / delete / ...   (environment plane)
+  ├── iam                                       (account plane: identity & access)
+  └── account                                   (account plane: administration)
+```
+
+Both share the same auto-discovered account UUID, `AccountClient`, auth, and token
+resolution. No config fields needed.
+
+### What Belongs Where
+
+| Namespace | Resources | Rationale |
+|-----------|-----------|-----------|
+| `dtctl iam` | Users, groups, service users, policies, bindings, boundaries, limits | Identity and access control |
+| `dtctl account` | Subscriptions, cost, usage, audit logs, notifications, environments, cost allocation | Account administration and FinOps |
+| Top-level | All existing environment-level resources | Environment plane (unchanged) |
+
+### Subscription & Cost API
+
+The highest-value addition. Provides subscription metadata, usage telemetry,
+cost data, and forecasting -- all read-only.
+
+| Endpoint | Method | Path | Phase |
+|----------|--------|------|-------|
+| List subscriptions | GET | `/sub/v2/accounts/{uuid}/subscriptions` | 1 |
+| Get subscription | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}` | 1 |
+| Get usage | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` | 2a |
+| Get usage/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | 2a |
+| Get cost | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost` | 1 |
+| Get cost/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/cost` | 1 |
+| Get forecast | GET | `/sub/v2/accounts/{uuid}/subscriptions/forecast` | 1 |
+| Get rate cards | GET | `/sub/v1/accounts/{uuid}/rate-cards` | 1 |
+
+**Auth scope:** `account-uac-read` for all read operations.
+
+**Subscription auto-selection:** When `--subscription` is required but not
+provided and exactly one active subscription exists, use it automatically.
+"Active" means the subscription's `status` field is not `TERMINATED` or
+`EXPIRED` -- dtctl checks the `status` field in the subscription list response
+when deciding whether to auto-select.
+
+**Cost `--granularity` flag.** The subscription cost endpoint
+(`/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost`) returns daily
+records for the full subscription lifetime (typical response 18--54 KB,
+single GET, no pagination). There is no server-side aggregation option, so
+dtctl adds `--granularity daily|weekly|monthly` (default `monthly`) and
+performs the rollup client-side before printing. This is safe because the
+response size is bounded -- subscriptions are capped at 1 year, so the
+daily record count is bounded at roughly 365.
+
+**Date guardrails on per-environment cost and usage.** The environment cost
+v3 and usage v3 endpoints scale with `days x environments x capabilities`.
+A multi-day walk on a large account has been measured at ~133 seconds with
+200+ pages of results and has produced 502 errors in testing. To keep these
+commands usable by default:
+
+- `--from` / `--to` default to the **last 30 days** for both
+  `dtctl account get cost --per-environment` and
+  `dtctl account get usage --per-environment`.
+- dtctl warns on stderr when the requested range would produce a large
+  result set (warn when `--to` minus `--from` is greater than 30 days).
+- The API supports server-side filtering via `environmentIds`,
+  `capabilityKeys`, and `clusterIds` (Managed only). These are exposed as
+  `--env`, `--capability`, and `--cluster` flags respectively so users can
+  narrow the query before it hits the server.
+
+**Forecast 404 handling.** The forecast endpoint returns HTTP 404 on some
+accounts (confirmed on the HARDENING tier). When a 404 is received from
+`/sub/v2/accounts/{uuid}/subscriptions/forecast`, dtctl surfaces a
+user-friendly message -- `"No forecast available for this account."` --
+instead of a raw HTTP error.
+
+**Rate card.** `dtctl account get rate-card` exposes
+`GET /sub/v1/accounts/{uuid}/rate-cards` (typical response 8--36 KB, not
+paginated). It is useful for FinOps users who want to check pricing without
+opening the web UI.
+
+### Audit Logs
+
+```bash
+dtctl account get audit-logs                                 # default: last 7 days
+dtctl account get audit-logs --from 2026-04-01 --to 2026-04-10
+dtctl account get audit-logs --filter "resource = 'POLICY' and eventType = 'DELETE'"
+```
+
+| Method | Path | Auth Scope |
+|--------|------|------------|
+| GET | `/audit/v1/accounts/{uuid}` | `account-audit-logs-read` |
+
+**Implementation notes:**
+
+- **Always send the `limit` parameter.** The server has a bug where
+  omitting `limit` results in HTTP 400. dtctl always sets a default
+  `limit` on the outgoing request.
+- **Default date range: last 7 days.** `--from` and `--to` default to the
+  last 7 days so the bounded-by-default behavior matches the rest of the
+  command surface.
+- **Surface the `warnings` field.** The audit logs response body includes a
+  `warnings` field when results have been truncated. dtctl prints any
+  warnings to stderr so users know the listing is incomplete.
+
+### Notifications
+
+The notifications API uses POST for what is semantically a read operation.
+The handler translates CLI flags into the POST request body transparently.
+
+```bash
+dtctl account get notifications [--from <date>] [--to <date>] [--type ...] [--severity ...]
+dtctl account get notifications --type BUDGET --severity SEVERE
+```
+
+**Default date range.** `--from` defaults to the last 30 days when not
+specified (bounded-by-default, matches cost/usage defaults). `--to`
+defaults to now.
+
+### Environments (Account-Level)
+
+The account `get environments` endpoint returns all environments with
+their `id`, `name`, `active` status, and `url` (via the v2 API). The
+`access-info` endpoint additionally provides `urlAlias` and `scopes`.
+
+Both `dtctl iam get environments` and `dtctl account get environments` use
+the same underlying data, with `iam` presenting a simplified view for policy
+scoping context.
+
+**Endpoint scope.** `dtctl account get environments` returns **all**
+environments associated with the account -- this is not filtered to the
+subset of environments that are active in a billing subscription. The
+`--help` description for the command reflects this: "Lists all environments
+associated with this account. For billing-environment-only views, use
+subscriptions."
+
+### Cost Allocation Guardrails
+
+The cost allocation endpoint (`/v1/accounts/{uuid}/settings/costcenters` and
+`/v1/accounts/{uuid}/settings/products`)
+has no batch mode: each environment requires a separate call. On a large
+account with 9 environments, a full account-wide walk is ~9 sequential
+calls totalling ~700 KB with no way to detect silent 502 failures partway
+through. To keep Phase 1 reliable:
+
+- `--env` is a **required** flag on `dtctl account get cost-allocation`
+  (no account-wide mode in Phase 1 -- users must explicitly choose one
+  environment per invocation).
+- `--from` / `--to` default to the current month.
+- Rationale: there is no batch endpoint; issuing sequential per-environment
+  calls on large accounts is unreliable today, so Phase 1 asks users to
+  scope queries explicitly.
+
+### Pagination Patterns
+
+Different account-level endpoints use different pagination styles:
+
+| Endpoint | Style | Notes |
+|----------|-------|-------|
+| Cost/env (`/sub/v3/`) | Cursor (`page-key`/`page-size`) | Standard dtctl pattern: don't combine |
+| Cost allocation | Cursor (`page-key`) | Settings pattern: page token embeds ALL params |
+| Cost centers/products | Offset (`page`/`page-size`) | Offset-based, different from most dtctl resources |
+| Others | Not paginated | Single response |
+
+### Account Safety Checks
+
+All Phase 1 `dtctl account` commands are **read-only** and require no safety
+checks. If cost allocation writes are added later, they follow the standard
+pattern (`readwrite-all` required).
+
+### Package Layout
+
+```
+pkg/resources/account/
+    subscription.go      # SubscriptionHandler: List, Get
+    usage.go             # UsageHandler (per-environment only in Phase 1): GetUsageByEnvironment
+    cost.go              # CostHandler: GetCost, GetCostByEnvironment
+    forecast.go          # ForecastHandler: GetForecast, GetEvents
+    rate_card.go         # RateCardHandler: Get
+    audit.go             # AuditHandler: List (with filters)
+    notification.go      # NotificationHandler: List (with filters)
+    environment.go       # EnvironmentHandler: List (shared with IAM)
+    cost_allocation.go   # CostAllocationHandler: GetAllocation (per-environment), GetCostCenters, GetProducts
+```
+
+Note: subscription-level usage (`GetUsage`, `GetUsageByEnvironment` without
+a date range) is intentionally not in Phase 1 -- it is deferred to Phase 2a
+pending an API-side time-filter. See the Phase 2 section.
+
+---
+
+## Part 4: `dtctl --help` Layout
+
+```
+Resource Commands:
+  get         List resources
+  describe    Show detailed resource information
+  create      Create a resource
+  delete      Delete a resource
+  apply       Create or update resources from file
+  edit        Edit a resource in your editor
+
+Query & Execution:
+  query       Execute DQL queries
+  exec        Execute workflows, automations
+
+Platform Administration:
+  iam         Manage Identity and Access Management (account-level)
+  account     View subscriptions, cost, usage, and audit logs (account-level)
+
+Configuration:
+  ctx         Manage contexts and configuration
+  auth        Authentication management
+  doctor      Check connectivity and configuration
+```
+
+---
+
+## Part 5: Doctor Integration
+
+Extend `dtctl doctor` to check account-level connectivity when an account
+UUID is discoverable:
+
+| Check | Description |
+|-------|-------------|
+| `account-api-reachable` | Verify `api.dynatrace.com` (or tier equivalent) is reachable |
+| `iam-service-reachable` | Verify `iam.dynatrace.com` (or tier equivalent) is reachable |
+| `account-scopes-valid` | Verify current token has account-level scopes |
+| `account-environment-match` | Cross-check via `access-info` that the configured environment belongs to the configured account |
+
+---
+
+## Part 6: Migration from Standalone dtiam
+
+A documented manual migration is sufficient for the prototype's small user
+base. Include a section in `docs/MIGRATING_FROM_DTIAM.md` with:
+
+1. Side-by-side field mapping table
+2. Step-by-step commands to recreate the config
+3. Verification: `dtctl iam get environments` should match `dtiam get environments`
+
+An automated import command is not worth the investment for the current user
+base.
+
+### What to Port from dtiam (Logic, Not Code)
+
+- **Resource handler logic** -- API paths, request/response parsing, name resolution
+- **Permissions analysis** -- effective permissions calculator, matrix, least-privilege
+- **Bulk operations** -- CSV/YAML/JSON file processing for batch management
+
+### What dtctl Already Has Better
+
+| dtiam feature | dtctl advantage |
+|--------------|----------------|
+| Separate config file | dtctl's config: keyring, safety levels, aliases |
+| Custom HTTP client | dtctl's `pkg/client/`: retry, rate limiting, pagination |
+| Output formatting | dtctl's `pkg/output/`: charts, agent envelope, color, golden tests |
+| Global state singleton | dtctl passes config through function parameters |
+| Template engine | dtctl's `apply -f` with YAML/JSON |
+
+---
+
+## Implementation Phases
+
+### Phase 1: Foundation + Read-Only Access
+
+**Goal:** End-to-end read access — auth, auto-discovery, all read handlers, and
+golden tests ship together as one testable milestone.
+
+**Pre-work (resolve before starting):**
+- Confirm whether `dt0s12.dtctl-prod` can be granted account-level OAuth scopes (Open Question 1)
+- Confirm hardening/dev Account Management API base URLs (Open Question 2 from original list, now resolved in the tier table)
+
+**Track A — Infrastructure** (can start immediately):
+- Add optional `account-uuid` field to `Context` struct in `pkg/config/`
+- Implement `AccountClient` in `pkg/client/`
+- Implement `access-info` client for auto-discovery via IAM service URLs
+- Implement account UUID resolution order (env var → config → auto-discovery)
+- Add `dtctl ctx discover-account` command (with `--save` to persist UUID)
+- Add `dtctl ctx set account-uuid` / `dtctl ctx add --account-uuid` support
+- Add client-credentials grant flow to `pkg/auth/`
+- Extend PKCE scope lists with account-level scopes
+- Add `DTCTL_ACCOUNT_UUID` / `DTCTL_ACCOUNT_TOKEN` env var override support
+- Support account-only contexts (no `environment`, only `account-uuid`)
+- Add account-level keyring key patterns
+- Extend `dtctl doctor` with account-level checks
+
+**Track B — Read-Only Handlers** (starts once `AccountClient` has a working stub):
+
+IAM:
+- `GroupHandler`, `UserHandler`, `PolicyHandler`, `BindingHandler`,
+  `BoundaryHandler`, `EnvironmentHandler`, `ServiceUserHandler`, `LimitsHandler`
+- Register `dtctl iam get/describe <resource>` commands
+- Implement `dtctl iam whoami` as connectivity smoke test
+
+Account:
+- `SubscriptionHandler` (List, Get)
+- `CostHandler` (including `--granularity daily|weekly|monthly` client-side rollup)
+- `UsageHandler` -- **per-environment only** in Phase 1 (subscription-level
+  `GetUsage` / `GetUsageByEnvironment` are deferred to Phase 2a pending
+  API time-filter support)
+- `ForecastHandler` (with 404 user-friendly message handling)
+- `RateCardHandler`
+- `CostCenterHandler`, `ProductHandler` (read-only pass-through, small
+  responses, no guardrails needed)
+- Register `dtctl account get subscriptions/cost/usage --per-environment/forecast/rate-card/cost-centers/products`
+- Subscription auto-selection (active = `status` not `TERMINATED` / `EXPIRED`)
+
+Both:
+- Golden tests for all resource types
+- Agent mode context enrichment
+
+### Phase 2: Audit, Notifications, IAM Mutations
+
+IAM mutations:
+- `iam create/delete group/policy/binding/boundary/service-user`
+- Group/user membership management
+- Safety checks with `OperationIAMCreate/Update/Delete`
+- `--dry-run` support
+
+Account read:
+- `AuditHandler`, `NotificationHandler`
+- `dtctl account get audit-logs`, `get notifications`
+
+**Phase 2a (waiting on API change).** `dtctl account get usage` at the
+subscription level is unlocked once the usage endpoints
+(`/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` and
+`/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/usage`) accept `startTime` / `endTime` query parameters.
+Today the response is 558 KB--1.15 MB with no time filter -- the full
+subscription history is always returned, which makes it unsafe to ship as
+a CLI default. When the API adds time filtering, the subscription-level
+`UsageHandler` methods are added and `dtctl account get usage` (without
+`--per-environment`) is enabled.
+
+### Phase 3: Advanced Features
+
+- `iam bulk add-users-to-group`, `create-groups`, `create-bindings`
+- `iam export all`
+- `account get cost-allocation` (per-environment, required `--env`)
+- Effective permissions analysis (uses `iam:effective-permissions:read`
+  scope, added in this phase only)
+- (Optional) cost center/product write operations
+
+---
+
+## Open Questions
+
+1. **Built-in client ID scopes.** Does `dt0s12.dtctl-prod` have (or can it
+   get) the account-level OAuth scopes? If not, client-credentials is the
+   only path, which hurts interactive UX.
+
+   Scopes required on `dt0s12.dtctl-prod` (all with `resource=urn:dtaccount:{uuid}`):
+
+   | Scope | When needed |
+   |-------|-------------|
+   | `account-idm-read` | Phase 1 read-only (users, groups, service users, limits) |
+   | `account-audit-logs-read` | Phase 2 read-only (audit logs) |
+   | `account-env-read` | Phase 1 read-only (list environments) |
+   | `account-uac-read` | Phase 1 read-only (subscriptions, cost, rate card, cost centers, products) |
+   | `iam:policies:read` | Phase 1 read-only (list/get policies) |
+   | `iam:bindings:read` | Phase 1 read-only (list/get bindings) |
+   | `iam:boundaries:read` | Phase 1 read-only (list/get boundaries) |
+   | `iam:effective-permissions:read` | Phase 3 (permissions analysis) |
+   | `account-idm-write` | Phase 2 mutations (create/delete groups, users, service users) |
+   | `iam-policies-management` | Phase 2 mutations (policy, binding, boundary CRUD) |
+   | `account-uac-write` | Phase 3 optional (cost center/product management) |
+
+   The minimum set to unblock Phase 1 is the first six Phase 1 read-only
+   scopes (all `-read` / `:read`). `account-audit-logs-read` is needed for
+   Phase 2 (audit logs), and write scopes for Phase 2 mutations.
+
+2. **`access-info` with client-credentials tokens.** PKCE tokens work (the
+   endpoint only needs `openid` scope, already included in all safety levels).
+   But client-credentials tokens represent a service user, not a person -- the
+   `access-info` response may differ or the call may fail entirely. If so,
+   auto-discovery must be disabled for client-credentials contexts and an
+   explicit `account-uuid` required instead.
+
+3. **Rate limiting.** The account management API may have stricter rate limits
+   than environment APIs. Need to test and configure retry behavior.
+
+4. **Pagination on IAM endpoints.** Need to identify exact param names and
+   whether page tokens embed filters.
+
+5. **Dual PKCE flow UX.** The two-step login (environment token + account
+   token) should feel like a single operation. The second flow reuses the
+   SSO session, so it should be near-instant. Need to verify this works
+   smoothly across all tier SSO endpoints and that the callback port doesn't
+   conflict between the two flows.
+
+---
+
+## Appendix A: OAuth Scope and Resource Reference
+
+### The `resource` Parameter
+
+Dynatrace OAuth tokens are scoped by the `resource` parameter at mint time.
+A single token cannot be used for both environment and account API calls.
+
+| Target | `resource` value | Example |
+|--------|-----------------|----------|
+| Environment API | Environment URL | `https://abc123.apps.dynatrace.com` |
+| Account Management API | Account URN | `urn:dtaccount:3e4f5a6b-c7d8-4e9f-a1b2-c3d4e5f6a7b8` |
+| IAM Service | (none needed) | Uses environment token with `openid` scope |
+
+### Account-Level Scopes
+
+These scopes are requested in the OAuth flow with `resource=urn:dtaccount:{uuid}`:
+
+| Scope | Purpose |
+|-------|---------|
+| `openid` | Required for all OAuth flows |
+| `account-idm-read` | List/get groups, users, service users, limits |
+| `account-idm-write` | Create/delete groups, users, service users |
+| `account-audit-logs-read` | Read account-level audit logs |
+| `account-env-read` | List environments in account |
+| `account-uac-read` | Subscriptions, usage, cost, cost allocation |
+| `account-uac-write` | Cost center/product management |
+| `iam-policies-management` | Full policy, binding, and boundary CRUD |
+| `iam:effective-permissions:read` | Effective permissions analysis (Phase 3 only) |
+| `iam:policies:read` | Read policies |
+| `iam:bindings:read` | Read bindings |
+| `iam:boundaries:read` | Read boundaries |
+
+### Combined Account Scope Set (readonly)
+
+```
+openid, account-idm-read, account-audit-logs-read, account-env-read,
+account-uac-read, iam:policies:read, iam:bindings:read, iam:boundaries:read
+```
+
+`iam:effective-permissions:read` is **not** part of the Phase 1 readonly
+combined scope set. It is only needed for the Phase 3 permissions analysis
+feature (effective permissions, matrix, least-privilege) and is requested
+at that phase rather than being bundled into the default readonly login.
+
+These are **separate from** the environment-level scopes. A context with both
+environment and account configured results in two tokens with two different
+scope sets and two different `resource` values.
+
+## Appendix B: dtiam Feature Matrix
+
+| dtiam Feature | dtctl Phase | Notes |
+|--------------|-------------|-------|
+| get/describe groups, users, policies, bindings, boundaries | Phase 1 | |
+| get environments | Phase 1 | |
+| create/delete groups, users, policies, bindings, boundaries | Phase 2 | |
+| group membership, boundary attach/detach | Phase 2 | |
+| service user CRUD | Phase 2 | |
+| analyze user-permissions, permissions-matrix | Phase 3 | |
+| bulk operations, export | Phase 3 | |
+| Template system | Not planned | `apply -f` covers this |
+| Platform tokens CRUD | Separate design | Not IAM; separate resource |
+
+## Appendix C: Full Account API Endpoint Reference
+
+| Resource | Method | Path | Paginated | Phase |
+|----------|--------|------|-----------|-------|
+| List subscriptions | GET | `/sub/v2/accounts/{uuid}/subscriptions` | No | 1 |
+| Get subscription | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}` | No | 1 |
+| Get usage | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` | No | 2a (needs `startTime`/`endTime`) |
+| Get usage/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | Yes (cursor) | 2a (needs `startTime`/`endTime`) |
+| Get cost | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost` | No | 1 |
+| Get cost/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/cost` | Yes (cursor) | 1 |
+| Get forecast | GET | `/sub/v2/accounts/{uuid}/subscriptions/forecast` | No | 1 |
+| Get rate cards | GET | `/sub/v1/accounts/{uuid}/rate-cards` | No | 1 |
+| List audit logs | GET | `/audit/v1/accounts/{uuid}` | No (limit) | 2 |
+| List notifications | POST | `/v1/accounts/{uuid}/notifications` | Yes (offset) | 2 |
+| List environments (v2) | GET | `/env/v2/accounts/{uuid}/environments` | No | 1 |
+| Access info (IAM svc) | GET | `{iamBaseURL}/api/public/environment-access/access-info` | No | 1 |
+| Get cost allocation | GET | `/v1/accounts/{uuid}/settings/costcenters` (per field) | Yes (cursor) | 3 |
+| List cost centers | GET | `/v1/accounts/{uuid}/settings/costcenters` | Yes (offset) | 1 |
+| List products | GET | `/v1/accounts/{uuid}/settings/products` | Yes (offset) | 1 |
+
+## Appendix D: What's Excluded (and Why)
+
+| API / Feature | Reason |
+|--------------|--------|
+| Reference Data API (timezones, regions) | No actionable CLI use case |
+| Platform Tokens CRUD | Credentials management, not IAM. Separate design. |
+| Environment edit (name/timezone) | Low-value, infrequent. Web UI is sufficient. |
+| Lens (Adoption & Environments dashboards) | Web-UI-only, no public API |
+| SAML/SCIM configuration | Highly sensitive; web UI is the right interface |
+| Contact/billing information | Account metadata; web UI only |
+| IP allowlist configuration | Environment-level security; could be added separately |
