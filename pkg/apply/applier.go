@@ -188,8 +188,15 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 			return nil, &HookRejectedError{
 				Command:  a.preApplyHook,
 				ExitCode: result.ExitCode,
+				Stdout:   result.Stdout,
 				Stderr:   result.Stderr,
 			}
+		}
+		if result.Stdout != "" {
+			fmt.Fprint(os.Stdout, result.Stdout)
+		}
+		if result.Stderr != "" {
+			fmt.Fprint(os.Stderr, result.Stderr)
 		}
 	}
 
@@ -334,8 +341,15 @@ func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOp
 			return nil, &HookRejectedError{
 				Command:  a.preApplyHook,
 				ExitCode: result.ExitCode,
+				Stdout:   result.Stdout,
 				Stderr:   result.Stderr,
 			}
+		}
+		if result.Stdout != "" {
+			fmt.Fprint(os.Stdout, result.Stdout)
+		}
+		if result.Stderr != "" {
+			fmt.Fprint(os.Stderr, result.Stderr)
 		}
 	}
 

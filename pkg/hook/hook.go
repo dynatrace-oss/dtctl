@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -55,9 +54,9 @@ func RunPreApply(ctx context.Context, command string, resourceType string, sourc
 	args := append(tokens[1:], resourceType, sourceFile)
 	cmd := exec.CommandContext(ctx, tokens[0], args...)
 	cmd.Stdin = bytes.NewReader(jsonData)
-	cmd.Stdout = io.Discard
 
-	var stderr bytes.Buffer
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	start := time.Now()
@@ -70,6 +69,7 @@ func RunPreApply(ctx context.Context, command string, resourceType string, sourc
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return &Result{
 				ExitCode: exitErr.ExitCode(),
+				Stdout:   stdout.String(),
 				Stderr:   stderr.String(),
 				Duration: elapsed,
 			}, nil
@@ -77,7 +77,7 @@ func RunPreApply(ctx context.Context, command string, resourceType string, sourc
 		return nil, fmt.Errorf("pre-apply hook failed to execute: %w", err)
 	}
 
-	return &Result{ExitCode: 0, Stderr: stderr.String(), Duration: elapsed}, nil
+	return &Result{ExitCode: 0, Stdout: stdout.String(), Stderr: stderr.String(), Duration: elapsed}, nil
 }
 
 // RunPostApply executes the post-apply hook command.

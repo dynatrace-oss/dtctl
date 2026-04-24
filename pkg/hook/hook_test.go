@@ -117,6 +117,23 @@ func TestRunPreApply_ReceivesResourceTypeAndSourceAsArgs(t *testing.T) {
 	}
 }
 
+func TestRunPreApply_CapturesStdoutAndStderr(t *testing.T) {
+	cmd := writeScript(t, "echo hello-stdout; echo hello-stderr >&2\n")
+	result, err := RunPreApply(context.Background(), cmd, "dashboard", "test.yaml", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0", result.ExitCode)
+	}
+	if !strings.Contains(result.Stdout, "hello-stdout") {
+		t.Errorf("Stdout = %q, want it to contain hello-stdout", result.Stdout)
+	}
+	if !strings.Contains(result.Stderr, "hello-stderr") {
+		t.Errorf("Stderr = %q, want it to contain hello-stderr", result.Stderr)
+	}
+}
+
 func TestRunPostApply_Success(t *testing.T) {
 	cmd := writeScript(t, "cat > /dev/null; echo hello-stdout; echo hello-stderr >&2\n")
 	result, err := RunPostApply(context.Background(), cmd, "dashboard", "test.yaml", []byte(`[{"id":"x"}]`))

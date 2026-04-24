@@ -10,11 +10,18 @@ import (
 type HookRejectedError struct {
 	Command  string
 	ExitCode int
+	Stdout   string
 	Stderr   string
 }
 
 func (e *HookRejectedError) Error() string {
 	msg := "pre-apply hook rejected the resource"
+	if e.Stdout != "" {
+		msg += "\n\nHook stdout:\n"
+		for _, line := range strings.Split(strings.TrimSpace(e.Stdout), "\n") {
+			msg += "  " + line + "\n"
+		}
+	}
 	if e.Stderr != "" {
 		msg += "\n\nHook stderr:\n"
 		for _, line := range strings.Split(strings.TrimSpace(e.Stderr), "\n") {
