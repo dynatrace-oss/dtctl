@@ -42,6 +42,7 @@ type Applier struct {
 	safetyChecker *safety.Checker
 	currentUserID string
 	preApplyHook  string // hook command (empty = no hook)
+	postApplyHook string // post-apply hook command (empty = no hook)
 	sourceFile    string // original filename for hook context
 }
 
@@ -62,10 +63,21 @@ func (a *Applier) WithSafetyChecker(checker *safety.Checker) *Applier {
 }
 
 // WithPreApplyHook sets the pre-apply hook command.
-// The command is run via sh -c with the resource type and source file as
-// positional parameters ($1 and $2), and the processed JSON on stdin.
+// The command is tokenized with strings.Fields and executed directly; the
+// resource type and source file are appended as the final two arguments.
+// The processed JSON is piped on stdin.
 func (a *Applier) WithPreApplyHook(command string) *Applier {
 	a.preApplyHook = command
+	return a
+}
+
+// WithPostApplyHook sets the post-apply hook command.
+// Invocation is identical to the pre-apply hook (direct exec, resource type
+// and source file appended as args). Stdin is the apply result JSON. The
+// hook runs after a successful apply; a non-zero exit is treated as a
+// warning (the resource is already persisted), not an error.
+func (a *Applier) WithPostApplyHook(command string) *Applier {
+	a.postApplyHook = command
 	return a
 }
 
@@ -189,7 +201,59 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 		return []ApplyResult{result}, nil
 	}
 
-	return a.applySingle(resourceType, jsonData, opts)
+	results, err := a.applySingle(resourceType, jsonData, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Run post-apply hook (if configured and not skipped).
+	// Any hook failure is surfaced as a warning on stderr — the resource
+	// is already persisted, so it does not flip the overall exit status.
+	a.runPostApplyHook(resourceType, results, opts)
+
+	return results, nil
+}
+
+// runPostApplyHook runs the post-apply hook for a successful apply, once per
+// Apply() call. Stderr is always written to os.Stderr; stdout goes to
+// os.Stdout. A non-zero exit is reported as a warning but does not fail the
+// overall apply.
+func (a *Applier) runPostApplyHook(resourceType ResourceType, results []ApplyResult, opts ApplyOptions) {
+	if opts.NoHooks || a.postApplyHook == "" || opts.DryRun {
+		return
+	}
+
+	// Marshal the apply result(s) as JSON for the hook's stdin. Always use
+	// an array shape so the hook can iterate uniformly even for single
+	// resources.
+	stdinJSON, err := json.Marshal(results)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to marshal apply result for post-apply hook: %v\n", err)
+		return
+	}
+
+	result, err := hook.RunPostApply(
+		context.Background(),
+		a.postApplyHook,
+		string(resourceType),
+		a.sourceFile,
+		stdinJSON,
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: post-apply hook failed to execute: %v\n", err)
+		return
+	}
+
+	// Post-apply output is always shown to the user, success or failure.
+	if result.Stdout != "" {
+		fmt.Fprint(os.Stdout, result.Stdout)
+	}
+	if result.Stderr != "" {
+		fmt.Fprint(os.Stderr, result.Stderr)
+	}
+	if result.ExitCode != 0 {
+		fmt.Fprintf(os.Stderr, "Warning: post-apply hook exited with code %d (resource was applied successfully)\n", result.ExitCode)
+	}
 }
 
 // applySingle applies a single resource object and returns the result.
@@ -304,6 +368,9 @@ func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOp
 			Messages: errors,
 		}
 	}
+
+	// Run post-apply hook once on the full batch of successful results.
+	a.runPostApplyHook(resourceType, results, opts)
 
 	return results, nil
 }

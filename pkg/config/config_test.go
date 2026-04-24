@@ -1538,3 +1538,78 @@ func TestHooks_YAMLRoundTrip_EmptyHooks(t *testing.T) {
 		t.Errorf("GetPreApplyHook() = %q, want empty (no hooks configured)", got)
 	}
 }
+
+func TestGetPostApplyHook_ContextOverridesGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PostApply: "global-post"},
+		},
+		CurrentContext: "prod",
+		Contexts: []NamedContext{{
+			Name: "prod",
+			Context: Context{
+				Environment: "https://prod.example.invalid",
+				TokenRef:    "prod-token",
+				Hooks:       Hooks{PostApply: "prod-post"},
+			},
+		}},
+	}
+	if got := cfg.GetPostApplyHook(); got != "prod-post" {
+		t.Errorf("GetPostApplyHook() = %q, want %q", got, "prod-post")
+	}
+}
+
+func TestGetPostApplyHook_FallsBackToGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PostApply: "global-post"},
+		},
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+			},
+		}},
+	}
+	if got := cfg.GetPostApplyHook(); got != "global-post" {
+		t.Errorf("GetPostApplyHook() = %q, want %q", got, "global-post")
+	}
+}
+
+func TestGetPostApplyHook_NoneDisablesGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PostApply: "global-post"},
+		},
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+				Hooks:       Hooks{PostApply: "none"},
+			},
+		}},
+	}
+	if got := cfg.GetPostApplyHook(); got != "" {
+		t.Errorf("GetPostApplyHook() = %q, want empty (none should disable)", got)
+	}
+}
+
+func TestGetPostApplyHook_NoHookConfigured(t *testing.T) {
+	cfg := &Config{
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+			},
+		}},
+	}
+	if got := cfg.GetPostApplyHook(); got != "" {
+		t.Errorf("GetPostApplyHook() = %q, want empty", got)
+	}
+}

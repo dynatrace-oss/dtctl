@@ -80,7 +80,8 @@ func (s SafetyLevel) String() string {
 
 // Hooks holds hook commands for lifecycle events
 type Hooks struct {
-	PreApply string `yaml:"pre-apply,omitempty"`
+	PreApply  string `yaml:"pre-apply,omitempty"`
+	PostApply string `yaml:"post-apply,omitempty"`
 }
 
 // Context holds the connection information for a Dynatrace environment
@@ -434,6 +435,21 @@ func (c *Config) GetPreApplyHook() string {
 	}
 	// Fall back to global
 	return c.Preferences.Hooks.PreApply
+}
+
+// GetPostApplyHook returns the effective post-apply hook command.
+// Per-context hooks take precedence over global (preferences) hooks.
+// The special value "none" explicitly disables the global hook for a context.
+func (c *Config) GetPostApplyHook() string {
+	if ctx, err := c.CurrentContextObj(); err == nil {
+		if ctx.Hooks.PostApply != "" {
+			if ctx.Hooks.PostApply == "none" {
+				return ""
+			}
+			return ctx.Hooks.PostApply
+		}
+	}
+	return c.Preferences.Hooks.PostApply
 }
 
 // DeleteContext removes a context by name.
