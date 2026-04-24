@@ -5,6 +5,7 @@
 **Updated:** 2026-04-22
 **Author:** dtctl team
 **Reference:** [timstewart-dynatrace/dtiam](https://github.com/timstewart-dynatrace/dtiam) prototype
+**API Spec:** [https://api.dynatrace.com/spec-json](https://api.dynatrace.com/spec-json)
 **Replaces:** `IAM_INTEGRATION_DESIGN.md`, `ACCOUNT_NAMESPACE_DESIGN.md`
 
 ## Overview
@@ -71,13 +72,13 @@ The Account Management API at `api.dynatrace.com` exposes these endpoints:
 |--------|-----------|------------|---------|
 | **IAM** | `/iam/v1/accounts/{uuid}/...` | `account-idm-read/write` | Users, groups, policies, bindings, boundaries |
 | **Subscriptions** | `/sub/v2/accounts/{uuid}/...` | `account-uac-read` | DPS subscriptions, usage, cost |
-| **Cost allocation** | `/v1/subscriptions/{uuid}/cost-allocation` | `account-uac-read` | Cost breakdown by cost center / product |
+| **Cost allocation** | `/v1/accounts/{uuid}/settings/costcenters`, `/v1/accounts/{uuid}/settings/products` | `account-uac-read` | Cost center and product field values |
 | **Cost allocation mgmt** | `/v1/accounts/{uuid}/settings/...` | `account-uac-read/write` | Cost center and product CRUD |
 | **Environments** | `/env/v2/accounts/{uuid}/environments` | `account-env-read` | List environments (v2, no management zones) |
 | **Audit logs** | `/audit/v1/accounts/{uuid}` | `account-audit-logs-read` | Account-level change audit trail |
 | **Notifications** | `/v1/accounts/{uuid}/notifications` | (TBD) | Budget, cost, forecast, BYOK alerts |
 | **Limits** | `/iam/v1/accounts/{uuid}/limits` | `account-idm-read` | Account resource quotas |
-| **Reference data** | `/ref/v1/...` | (TBD) | Time zones, geographic regions |
+| **Reference data** | `/ref/v1/...` | (TBD) | Time zones (`/ref/v1/time-zones`), regions (`/ref/v1/regions`), permissions (`/ref/v1/account/permissions`) |
 
 ### IAM Service: access-info Endpoint
 
@@ -836,20 +837,20 @@ statements before submitting the create request.
 
 ### IAM API Endpoints
 
-All under `https://api.dynatrace.com/iam/v1/accounts/{accountUUID}/`:
+Most under `https://api.dynatrace.com/iam/v1/accounts/{accountUUID}/`; environments and boundaries use different base paths:
 
-| Resource | Path |
-|----------|------|
-| Users | `/users` |
-| Groups | `/groups`, `/groups/{uuid}` |
-| Group members | `/groups/{uuid}/members` (GET) |
-| Service Users | `/service-users`, `/service-users/{uid}` |
-| Policies | `/repo/{levelType}/{levelId}/policies` |
-| Bindings | `/repo/{levelType}/{levelId}/bindings/{policyUuid}` |
-| Boundaries | `/repo/{levelType}/{levelId}/boundaries` |
-| Permissions | `/groups/{uuid}/permissions` (legacy) |
-| Environments | `/environments` |
-| Limits | `/limits` |
+| Resource | Full Path |
+|----------|-----------|
+| Users | `/iam/v1/accounts/{accountUUID}/users` |
+| Groups | `/iam/v1/accounts/{accountUUID}/groups` (GET list); `/iam/v1/accounts/{accountUUID}/groups/{uuid}` (PUT update, DELETE) |
+| Group members | `/iam/v1/accounts/{accountUUID}/groups/{uuid}/users` (GET) |
+| Service Users | `/iam/v1/accounts/{accountUUID}/service-users`, `/iam/v1/accounts/{accountUUID}/service-users/{uid}` |
+| Policies | `/iam/v1/repo/{levelType}/{levelId}/policies` |
+| Bindings | `/iam/v1/repo/{levelType}/{levelId}/bindings/{policyUuid}` |
+| Boundaries | `/iam/v1/repo/account/{accountId}/boundaries` (account level only) |
+| Permissions | `/iam/v1/accounts/{accountUUID}/groups/{uuid}/permissions` (legacy) |
+| Environments | `/env/v2/accounts/{accountUUID}/environments` (separate base path) |
+| Limits | `/iam/v1/accounts/{accountUUID}/limits` |
 
 Policy levels: `account/{accountUUID}`, `environment/{envID}`, `global/global`.
 
@@ -1094,7 +1095,7 @@ cost data, and forecasting -- all read-only.
 | List subscriptions | GET | `/sub/v2/accounts/{uuid}/subscriptions` | 1 |
 | Get subscription | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}` | 1 |
 | Get usage | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` | 2a |
-| Get usage/env | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | 2a |
+| Get usage/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | 2a |
 | Get cost | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost` | 1 |
 | Get cost/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/cost` | 1 |
 | Get forecast | GET | `/sub/v2/accounts/{uuid}/subscriptions/forecast` | 1 |
@@ -1201,7 +1202,8 @@ subscriptions."
 
 ### Cost Allocation Guardrails
 
-The cost allocation endpoint (`/v1/subscriptions/{uuid}/cost-allocation`)
+The cost allocation endpoint (`/v1/accounts/{uuid}/settings/costcenters` and
+`/v1/accounts/{uuid}/settings/products`)
 has no batch mode: each environment requires a separate call. On a large
 account with 9 environments, a full account-wide walk is ~9 sequential
 calls totalling ~700 KB with no way to detect silent 502 failures partway
@@ -1389,7 +1391,7 @@ Account read:
 **Phase 2a (waiting on API change).** `dtctl account get usage` at the
 subscription level is unlocked once the usage endpoints
 (`/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` and
-`.../environments/usage`) accept `startTime` / `endTime` query parameters.
+`/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/usage`) accept `startTime` / `endTime` query parameters.
 Today the response is 558 KB--1.15 MB with no time filter -- the full
 subscription history is always returned, which makes it unsafe to ship as
 a CLI default. When the API adds time filtering, the subscription-level
@@ -1523,17 +1525,16 @@ scope sets and two different `resource` values.
 | List subscriptions | GET | `/sub/v2/accounts/{uuid}/subscriptions` | No | 1 |
 | Get subscription | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}` | No | 1 |
 | Get usage | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/usage` | No | 2a (needs `startTime`/`endTime`) |
-| Get usage/env | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | No | 2a (needs `startTime`/`endTime`) |
+| Get usage/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/usage` | Yes (cursor) | 2a (needs `startTime`/`endTime`) |
 | Get cost | GET | `/sub/v2/accounts/{uuid}/subscriptions/{subUuid}/cost` | No | 1 |
 | Get cost/env | GET | `/sub/v3/accounts/{uuid}/subscriptions/{subUuid}/environments/cost` | Yes (cursor) | 1 |
 | Get forecast | GET | `/sub/v2/accounts/{uuid}/subscriptions/forecast` | No | 1 |
-| Get events | GET | `/sub/v2/accounts/{uuid}/subscriptions/events` | No | 1 |
 | Get rate cards | GET | `/sub/v1/accounts/{uuid}/rate-cards` | No | 1 |
 | List audit logs | GET | `/audit/v1/accounts/{uuid}` | No (limit) | 2 |
 | List notifications | POST | `/v1/accounts/{uuid}/notifications` | Yes (offset) | 2 |
 | List environments (v2) | GET | `/env/v2/accounts/{uuid}/environments` | No | 1 |
 | Access info (IAM svc) | GET | `{iamBaseURL}/api/public/environment-access/access-info` | No | 1 |
-| Get cost allocation | GET | `/v1/subscriptions/{uuid}/cost-allocation` | Yes (cursor) | 3 |
+| Get cost allocation | GET | `/v1/accounts/{uuid}/settings/costcenters` (per field) | Yes (cursor) | 3 |
 | List cost centers | GET | `/v1/accounts/{uuid}/settings/costcenters` | Yes (offset) | 1 |
 | List products | GET | `/v1/accounts/{uuid}/settings/products` | Yes (offset) | 1 |
 
