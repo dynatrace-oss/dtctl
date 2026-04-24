@@ -680,27 +680,36 @@ Check your permissions or run "dtctl ctx discover-account" to inspect.
 ```
 dtctl iam get users
 dtctl iam get groups
+dtctl iam get policies                                        # account level (default)
 dtctl iam get policies --level environment [--level-id <envID>]
-dtctl iam get policies --level account
 dtctl iam get policies --level global
+dtctl iam get bindings [--group NAME]                          # account level (default)
 dtctl iam get bindings --level environment [--level-id <envID>] [--group NAME]
+dtctl iam get boundaries                                       # account level (default)
 dtctl iam get boundaries --level environment [--level-id <envID>]
 dtctl iam get environments
 dtctl iam get service-users
 
 dtctl iam describe user <email-or-uid>
 dtctl iam describe group <name-or-uuid>
+dtctl iam describe policy <name-or-uuid>                       # account level (default)
 dtctl iam describe policy <name-or-uuid> --level environment [--level-id <envID>]
+dtctl iam describe boundary <name-or-uuid>                     # account level (default)
 dtctl iam describe boundary <name-or-uuid> --level environment [--level-id <envID>]
 
 dtctl iam create group --name "Team" [--description "..."]
+dtctl iam create policy --name "viewer" --statement "ALLOW ..."                           # account level (default)
 dtctl iam create policy --name "viewer" --statement "ALLOW ..." --level environment [--level-id <envID>]
+dtctl iam create binding --policy "viewer" --group "Team" [--boundary "prod"]             # account level (default)
 dtctl iam create binding --policy "viewer" --group "Team" --level environment [--level-id <envID>] [--boundary "prod"]
+dtctl iam create boundary --name "prod" --zones "Production,Staging"                      # account level (default)
 dtctl iam create boundary --name "prod" --zones "Production,Staging" --level environment [--level-id <envID>]
 dtctl iam create service-user --name "CI Pipeline" [--add-to-group "Team"]
 
 dtctl iam delete group <name-or-uuid>
+dtctl iam delete policy <name-or-uuid>                         # account level (default)
 dtctl iam delete policy <name-or-uuid> --level environment [--level-id <envID>]
+dtctl iam delete binding --group <g> --policy <p>              # account level (default)
 dtctl iam delete binding --group <g> --policy <p> --level environment [--level-id <envID>]
 dtctl iam delete user <email-or-uid>
 dtctl iam delete service-user <name-or-uuid>
@@ -757,19 +766,19 @@ Dynatrace IAM has **two separate systems** for granting access to groups:
 **dtctl focuses on the policy bindings system** as it is the current platform
 approach. The key concept:
 
-1. **Policies** are created at a **level** (`account` or `environment`) and
+1. **Policies** are created at a **level** (`account` or `environment`), and
    contain a `statementQuery` with `ALLOW`/`DENY` syntax.
 2. **Bindings** connect a policy to one or more groups at the same level.
    A binding says: "group X gets the permissions defined in policy Y for
    environment Z" (or for the entire account).
 3. Bindings can optionally include **boundaries** to further restrict scope.
 
-The `--level` flag is required on `create policy`, `create binding`,
-`create boundary`, and their `delete` counterparts. Valid values:
+The `--level` flag is optional on `get`, `describe`, `create`, and `delete`
+for policies, bindings, and boundaries. It defaults to `account`. Valid values:
 
 | `--level` | `--level-id` | Meaning |
 |-----------|-------------|----------|
-| `account` | (defaults to account UUID from context) | Policy applies to all environments in the account |
+| `account` (**default**) | (defaults to account UUID from context) | Policy applies to all environments in the account |
 | `environment` | Environment ID (defaults to current context's environment) | Policy applies to one specific environment |
 
 `global` policies are managed by Dynatrace and cannot be created or deleted.
@@ -909,13 +918,11 @@ with specific permissions for a particular environment.
 #### Step-by-Step (Individual Commands)
 
 ```bash
-# 1. Create a policy at the environment level
-#    --level-id defaults to the current context's environment if omitted
+# 1. Create a policy (account level by default)
 dtctl iam create policy \
   --name "event-writer" \
   --description "Allow event ingestion" \
-  --statement "ALLOW storage:events:write, storage:events:read;" \
-  --level environment
+  --statement "ALLOW storage:events:write, storage:events:read;"
 # → Created policy "event-writer" (uuid: c8f3d291-...)
 
 # 2. Create a group
@@ -924,14 +931,12 @@ dtctl iam create group \
   --description "Service accounts for event ingestion"
 # → Created group "Event Writers" (uuid: e5a7b310-...)
 
-# 3. Bind the policy to the group
+# 3. Bind the policy to the group (account level by default)
 #    This is the step that actually grants the permissions.
-#    Uses the same --level as the policy.
 dtctl iam create binding \
   --policy "event-writer" \
-  --group "Event Writers" \
-  --level environment
-# → Bound policy "event-writer" to group "Event Writers" at environment level
+  --group "Event Writers"
+# → Bound policy "event-writer" to group "Event Writers" at account level
 
 # 4. Create a service user and add it to the group
 dtctl iam create service-user \
@@ -947,22 +952,20 @@ dtctl iam create service-user \
 If you want a 1:1 mapping (one service user, one policy, no shared group):
 
 ```bash
-# 1. Create the policy (same as above)
+# 1. Create the policy (account level by default)
 dtctl iam create policy \
   --name "event-writer" \
-  --statement "ALLOW storage:events:write, storage:events:read;" \
-  --level environment
+  --statement "ALLOW storage:events:write, storage:events:read;"
 
 # 2. Create the service user (without --add-to-group)
 dtctl iam create service-user --name "CI Pipeline"
 # → Created service user "CI Pipeline" (uid: a4c8e2f6-...)
 # → Auto-created group: c7d9e1f3-...
 
-# 3. Bind the policy to the auto-created group
+# 3. Bind the policy to the auto-created group (account level by default)
 dtctl iam create binding \
   --policy "event-writer" \
-  --group c7d9e1f3-a5b2-4c84-9d6e-f8a0b3c5d7e2 \
-  --level environment
+  --group c7d9e1f3-a5b2-4c84-9d6e-f8a0b3c5d7e2
 ```
 
 #### Declarative: apply -f (Future)
@@ -976,7 +979,7 @@ apiVersion: iam/v1
 kind: Policy
 metadata:
   name: event-writer
-  level: environment
+  level: account   # recommended: account-level policies are reusable across environments
 spec:
   description: Allow event ingestion
   statementQuery: |
@@ -990,7 +993,7 @@ spec:
   description: Service accounts for event ingestion
   policyBindings:
     - policy: event-writer
-      level: environment
+      level: account
 ---
 apiVersion: iam/v1
 kind: ServiceUser
