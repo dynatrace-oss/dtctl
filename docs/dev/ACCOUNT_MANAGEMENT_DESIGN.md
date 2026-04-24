@@ -274,9 +274,7 @@ When an `iam` or `account` command needs the account UUID:
 3. **Auto-discover** via `access-info` endpoint (requires `environment` to be set):
    a. Call `{iamBaseURL}/api/public/environment-access/access-info`
    b. Match the current context's environment ID against the response
-   c. If exactly one account owns that environment, use it automatically
-   d. If multiple accounts contain the environment (unlikely but possible),
-      prompt interactively or fail in `--plain` mode
+   c. If an account is linked to that environment, use it automatically
 4. Error with setup instructions (including how to set `account-uuid` in config)
 
 #### Auto-Discovery Implementation
