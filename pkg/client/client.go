@@ -59,6 +59,14 @@ func NewForTesting(baseURL, token string) (*Client, error) {
 	return c, nil
 }
 
+// noopRestyLogger discards all resty-internal log output.
+// Error information is surfaced through returned error values, not internal logs.
+type noopRestyLogger struct{}
+
+func (noopRestyLogger) Errorf(string, ...interface{}) {}
+func (noopRestyLogger) Warnf(string, ...interface{})  {}
+func (noopRestyLogger) Debugf(string, ...interface{}) {}
+
 // New creates a new client with base URL and token
 func New(baseURL, token string) (*Client, error) {
 	if baseURL == "" {
@@ -78,6 +86,7 @@ func New(baseURL, token string) (*Client, error) {
 	}
 
 	httpClient := resty.New().
+		SetLogger(&noopRestyLogger{}).
 		SetBaseURL(baseURL).
 		SetAuthScheme("Bearer").
 		SetAuthToken(token).
@@ -100,9 +109,9 @@ func New(baseURL, token string) (*Client, error) {
 // isRetryable determines if a request should be retried
 func isRetryable(r *resty.Response, err error) bool {
 	if err != nil {
-		// Don't retry on context deadline exceeded - this is expected for long-running
-		// queries that should use polling instead of resubmitting the query
-		if errors.Is(err, context.DeadlineExceeded) {
+		// Don't retry on context cancellation — retrying is pointless when the context
+		// is already done (covers both user-initiated cancellation and deadline exceeded).
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return false
 		}
 		return true

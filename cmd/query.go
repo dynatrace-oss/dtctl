@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -149,6 +151,17 @@ Examples:
 		}
 
 		executor := NewDQLExecutorFromConfig(cfg, c)
+
+		// Set up signal handling so a running Grail query is cancelled on Ctrl+C / SIGTERM.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+		go func() {
+			<-sigCh
+			cancel()
+		}()
 
 		queryFile, _ := cmd.Flags().GetString("file")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
@@ -373,10 +386,13 @@ Examples:
 			livePrinter := output.NewLivePrinterWithOpts(printer, interval, os.Stdout, printerOpts)
 
 			// Create data fetcher that re-executes the query
-			fetcher := func(ctx context.Context) (interface{}, error) {
-				result, err := executor.ExecuteQueryWithOptions(query, opts)
+			fetcher := func(fetchCtx context.Context) (interface{}, error) {
+				result, err := executor.ExecuteQueryWithContext(fetchCtx, query, opts)
 				if err != nil {
 					return nil, err
+				}
+				if result == nil {
+					return nil, nil // context cancelled; message already printed
 				}
 				// Extract records
 				records := result.Records
@@ -397,10 +413,10 @@ Examples:
 				return map[string]interface{}{"records": records}, nil
 			}
 
-			return livePrinter.RunLive(context.Background(), fetcher)
+			return livePrinter.RunLive(ctx, fetcher)
 		}
 
-		return executor.ExecuteWithOptions(query, opts)
+		return executor.ExecuteWithContext(ctx, query, opts)
 	},
 }
 

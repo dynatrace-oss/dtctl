@@ -32,6 +32,11 @@ func (e *DQLExecutor) WithTokenRefresher(refresher func() (string, error)) *DQLE
 	return e
 }
 
+// pollRequestTimeoutMs is the server-side hold time per poll HTTP round trip in milliseconds.
+// The server will return after this duration even if the query is still running, allowing
+// the client to loop and re-poll. Must stay in sync with the execute request timeout.
+const pollRequestTimeoutMs = 1000
+
 // DecodeMode controls snapshot payload decoding behavior.
 type DecodeMode int
 
@@ -229,9 +234,17 @@ func (e *DQLExecutor) Execute(query string, outputFormat string) error {
 
 // ExecuteWithOptions executes a DQL query with full options
 func (e *DQLExecutor) ExecuteWithOptions(query string, opts DQLExecuteOptions) error {
-	result, err := e.ExecuteQueryWithOptions(query, opts)
+	return e.ExecuteWithContext(context.Background(), query, opts)
+}
+
+// ExecuteWithContext executes a DQL query with a cancellable context and prints the results.
+func (e *DQLExecutor) ExecuteWithContext(ctx context.Context, query string, opts DQLExecuteOptions) error {
+	result, err := e.ExecuteQueryWithContext(ctx, query, opts)
 	if err != nil {
 		return err
+	}
+	if result == nil {
+		return nil // context was cancelled; message already printed to stderr
 	}
 	return e.printResults(result, opts)
 }
@@ -243,9 +256,16 @@ func (e *DQLExecutor) ExecuteQuery(query string) (*DQLQueryResponse, error) {
 
 // ExecuteQueryWithOptions executes a DQL query with options and returns the raw result
 func (e *DQLExecutor) ExecuteQueryWithOptions(query string, opts DQLExecuteOptions) (*DQLQueryResponse, error) {
+	return e.ExecuteQueryWithContext(context.Background(), query, opts)
+}
+
+// ExecuteQueryWithContext executes a DQL query with a cancellable context.
+// If ctx is cancelled while the query is polling, a best-effort cancel request is sent
+// to the Grail backend before returning.
+func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string, opts DQLExecuteOptions) (*DQLQueryResponse, error) {
 	req := DQLQueryRequest{
 		Query:                      query,
-		RequestTimeoutMilliseconds: 60000, // Wait up to 60 seconds for results
+		RequestTimeoutMilliseconds: pollRequestTimeoutMs,
 	}
 
 	// Set query limit parameters in request body if specified
@@ -304,14 +324,15 @@ func (e *DQLExecutor) ExecuteQueryWithOptions(query string, opts DQLExecuteOptio
 
 	var result DQLQueryResponse
 
-	// Create context with 5 minute timeout to accommodate Grail's maximum query time
-	// The server will return 202 if query takes longer than requestTimeoutMilliseconds
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	// The initial execute request uses an independent context (not the caller's)
+	// so that it always completes and returns the requestToken. Without the token
+	// we cannot cancel the query on the backend.
+	execCtx, execCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer execCancel()
 
 	// Note: Client-level retries won't trigger for 202 responses (success status)
 	httpReq := e.client.HTTP().R().
-		SetContext(ctx).
+		SetContext(execCtx).
 		SetHeader("Content-Type", "application/json").
 		SetBody(req).
 		SetResult(&result)
@@ -322,16 +343,36 @@ func (e *DQLExecutor) ExecuteQueryWithOptions(query string, opts DQLExecuteOptio
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
 
+	// If the caller's context was cancelled while the initial request was in-flight
+	// (e.g. SIGINT), cancel the backend query now that we have the token.
+	if ctx.Err() != nil {
+		if result.RequestToken != "" {
+			e.CancelQuery(result.RequestToken)
+		} else {
+			fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
+		}
+		return nil, nil
+	}
+
 	// Handle both 200 (completed) and 202 (accepted/running) responses
 	if resp.StatusCode() == 202 || (resp.StatusCode() == 200 && result.State == "RUNNING") {
 		if result.RequestToken == "" {
 			return nil, fmt.Errorf("query is running but no request token provided")
 		}
-		// Query is running, poll for results
-		result, err = e.pollForResultsWithOptions(result.RequestToken, opts)
-		if err != nil {
-			return nil, err
+		// Poll for results using the caller's context (cancellable by signal).
+		pollCtx, pollCancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer pollCancel()
+
+		pollResult, pollErr := e.pollForResultsWithContext(pollCtx, result.RequestToken, opts)
+		if pollErr != nil {
+			// If context was cancelled, send a best-effort cancel to the backend
+			if pollCtx.Err() != nil {
+				e.CancelQuery(result.RequestToken)
+				return nil, nil
+			}
+			return nil, pollErr
 		}
+		result = pollResult
 	} else if resp.IsError() {
 		return nil, enhanceQueryError(resp.StatusCode(), resp.Body())
 	}
@@ -660,21 +701,40 @@ func (e *DQLExecutor) pollForResults(requestToken string) (DQLQueryResponse, err
 
 // pollForResultsWithOptions polls the query:poll endpoint until the query completes with options
 func (e *DQLExecutor) pollForResultsWithOptions(requestToken string, opts DQLExecuteOptions) (DQLQueryResponse, error) {
+	return e.pollForResultsWithContext(context.Background(), requestToken, opts)
+}
+
+// pollForResultsWithContext polls the query:poll endpoint until the query completes.
+// It returns immediately if ctx is cancelled; the caller is responsible for calling
+// CancelQuery if backend cancellation is desired.
+func (e *DQLExecutor) pollForResultsWithContext(ctx context.Context, requestToken string, opts DQLExecuteOptions) (DQLQueryResponse, error) {
 	var result DQLQueryResponse
 	// tokenJustRefreshed prevents an infinite refresh loop: if we get a 401 immediately
 	// after a successful token refresh the credentials are fundamentally broken, so we abort.
 	tokenJustRefreshed := false
 
 	for {
+		// Check for cancellation before each poll attempt
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		default:
+		}
+
 		result = DQLQueryResponse{}
 		httpReq := e.client.HTTP().R().
+			SetContext(ctx).
 			SetQueryParam("request-token", requestToken).
-			SetQueryParam("request-timeout-milliseconds", "60000").
+			SetQueryParam("request-timeout-milliseconds", fmt.Sprintf("%d", pollRequestTimeoutMs)).
 			SetResult(&result)
 
 		resp, err := httpReq.Get("/platform/storage/query/v1/query:poll")
 
 		if err != nil {
+			// If the error is due to context cancellation, return that directly
+			if ctx.Err() != nil {
+				return result, ctx.Err()
+			}
 			return result, fmt.Errorf("failed to poll query: %w", err)
 		}
 
@@ -712,6 +772,32 @@ func (e *DQLExecutor) pollForResultsWithOptions(requestToken string, opts DQLExe
 	}
 
 	return result, nil
+}
+
+// CancelQuery sends a best-effort cancellation request for a running query.
+// It uses a fresh context so the HTTP call can complete even if the parent context is cancelled.
+// Errors are written to stderr but not returned — cancellation is best-effort.
+func (e *DQLExecutor) CancelQuery(requestToken string) {
+	if requestToken == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	resp, err := e.client.HTTP().R().
+		SetContext(ctx).
+		SetQueryParam("request-token", requestToken).
+		Post("/platform/storage/query/v1/query:cancel")
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nFailed to cancel query: %v\n", err)
+		return
+	}
+	if resp.IsError() {
+		fmt.Fprintf(os.Stderr, "\nFailed to cancel query (status %d)\n", resp.StatusCode())
+		return
+	}
+	fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
 }
 
 // ExecuteFromFile executes a DQL query from a file
