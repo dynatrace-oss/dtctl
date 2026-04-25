@@ -632,6 +632,17 @@ func TestIsRetryable_ContextDeadline(t *testing.T) {
 	}
 }
 
+func TestIsRetryable_ContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	// context.Canceled is the error produced when the user presses Ctrl+C.
+	// It must not trigger retries, otherwise the resty WARN/ERROR logs
+	// reappear and the process hangs for the full retry back-off period.
+	if isRetryable(nil, context.Canceled) {
+		t.Error("isRetryable() should return false for context.Canceled")
+	}
+}
+
 func TestIsRetryable_StatusCodes(t *testing.T) {
 	t.Parallel()
 

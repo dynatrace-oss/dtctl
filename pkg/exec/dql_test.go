@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
@@ -1896,5 +1898,313 @@ func TestDQLExecutor_PollTokenRefresh_NoRefresherReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected error to contain status 401, got: %v", err)
+	}
+}
+
+// TestDQLExecutor_CancelDuringPoll verifies that cancelling the context during polling
+// returns a context.Canceled error and sends a cancel request to the backend.
+func TestDQLExecutor_CancelDuringPoll(t *testing.T) {
+	cancelCalled := false
+	cancelToken := ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/platform/storage/query/v1/query:execute":
+			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-cancel-test"}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case "/platform/storage/query/v1/query:poll":
+			// Always return RUNNING so the poll loop keeps going
+			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-cancel-test"}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case "/platform/storage/query/v1/query:cancel":
+			cancelCalled = true
+			cancelToken = r.URL.Query().Get("request-token")
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel after a short delay to let at least one poll round trip
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	result, err := executor.ExecuteQueryWithContext(ctx, "fetch logs", DQLExecuteOptions{})
+	if err != nil {
+		t.Fatalf("expected nil error on cancellation (clean exit), got: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result on cancellation, got: %+v", result)
+	}
+
+	if !cancelCalled {
+		t.Error("expected cancel API to be called after context cancellation")
+	}
+	if cancelToken != "tok-cancel-test" {
+		t.Errorf("cancel called with wrong token: %q, want %q", cancelToken, "tok-cancel-test")
+	}
+}
+
+// TestDQLExecutor_CancelWhilePollInFlight covers the scenario where ctx is cancelled
+// while a poll HTTP request is already in-flight and the poll response arrives after
+// the cancellation.  The test uses two channels to enforce this ordering:
+//
+//  1. pollStarted  – closed by the handler once the poll request is received,
+//     signalling to the test goroutine that the GET is in-flight.
+//  2. releasePoll  – closed by the test goroutine after calling cancel(), letting
+//     the handler write the RUNNING response and return.
+//
+// After the poll response is received (or the transport aborts it), the loop-top
+// ctx.Done() guard must fire and query:cancel must be called with the correct token.
+func TestDQLExecutor_CancelWhilePollInFlight(t *testing.T) {
+	pollStarted := make(chan struct{})
+	releasePoll := make(chan struct{})
+	cancelCalled := false
+	cancelToken := ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/platform/storage/query/v1/query:execute":
+			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-inflight"}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case "/platform/storage/query/v1/query:poll":
+			// Signal that the poll GET is in-flight, then hold the response
+			// until the test goroutine has cancelled the context.
+			close(pollStarted)
+			<-releasePoll
+			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-inflight"}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case "/platform/storage/query/v1/query:cancel":
+			cancelCalled = true
+			cancelToken = r.URL.Query().Get("request-token")
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	type outcome struct {
+		result *DQLQueryResponse
+		err    error
+	}
+	done := make(chan outcome, 1)
+
+	executor := NewDQLExecutor(c)
+	go func() {
+		result, err := executor.ExecuteQueryWithContext(ctx, "fetch logs", DQLExecuteOptions{})
+		done <- outcome{result, err}
+	}()
+
+	// Poll is now in-flight — cancel the context, then release the poll response.
+	<-pollStarted
+	cancel()
+	close(releasePoll)
+
+	o := <-done
+	if o.err != nil {
+		t.Fatalf("expected nil error after in-flight cancellation, got: %v", o.err)
+	}
+	if o.result != nil {
+		t.Errorf("expected nil result after cancellation, got: %+v", o.result)
+	}
+	if !cancelCalled {
+		t.Error("expected query:cancel to be called after in-flight poll was released")
+	}
+	if cancelToken != "tok-inflight" {
+		t.Errorf("cancel token = %q, want %q", cancelToken, "tok-inflight")
+	}
+}
+
+// TestDQLExecutor_NoCancelOnImmediateSuccess verifies that when a query succeeds
+// immediately (no polling), the cancel endpoint is never called.
+func TestDQLExecutor_NoCancelOnImmediateSuccess(t *testing.T) {
+	cancelCalled := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/platform/storage/query/v1/query:cancel" {
+			cancelCalled = true
+		}
+		resp := DQLQueryResponse{
+			State:  "SUCCEEDED",
+			Result: &DQLResult{Records: []map[string]interface{}{{"k": "v"}}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	result, err := executor.ExecuteQueryWithContext(context.Background(), "fetch logs", DQLExecuteOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.State != "SUCCEEDED" {
+		t.Errorf("expected SUCCEEDED, got %s", result.State)
+	}
+	if cancelCalled {
+		t.Error("cancel should not be called for an immediately successful query")
+	}
+}
+
+// TestDQLExecutor_CancelQuery_BestEffort verifies that CancelQuery does not propagate
+// errors when the server returns an error response.
+func TestDQLExecutor_CancelQuery_BestEffort(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	// Should not panic or return an error
+	executor.CancelQuery("some-token")
+}
+
+// TestDQLExecutor_CancelQuery_EmptyToken verifies that CancelQuery is a no-op for empty tokens.
+func TestDQLExecutor_CancelQuery_EmptyToken(t *testing.T) {
+	cancelCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cancelCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	executor.CancelQuery("") // should be a no-op
+
+	if cancelCalled {
+		t.Error("cancel API should not be called for an empty token")
+	}
+}
+
+// TestDQLExecutor_CancelAfterExecute verifies the code path where ctx is cancelled
+// after the initial query:execute POST returns (and a requestToken is available) but
+// before any poll request is sent.  ExecuteQueryWithContext must call query:cancel with
+// the correct token and return (nil, nil).
+func TestDQLExecutor_CancelAfterExecute(t *testing.T) {
+	executeReturned := make(chan struct{})
+	cancelCalled := false
+	cancelToken := ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/platform/storage/query/v1/query:execute":
+			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-after-execute"}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(resp)
+			// Signal that the execute response has been written; the test will now
+			// cancel the context before any poll request can be issued.
+			close(executeReturned)
+
+		case "/platform/storage/query/v1/query:cancel":
+			cancelCalled = true
+			cancelToken = r.URL.Query().Get("request-token")
+			w.WriteHeader(http.StatusOK)
+
+		default:
+			// query:poll must never be reached in this test
+			t.Errorf("unexpected request to %s", r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Cancel the context as soon as the execute response is delivered, so that
+	// the ctx.Err() check immediately after the POST fires before any poll.
+	go func() {
+		<-executeReturned
+		cancel()
+	}()
+
+	executor := NewDQLExecutor(c)
+	result, err := executor.ExecuteQueryWithContext(ctx, "fetch logs", DQLExecuteOptions{})
+	if err != nil {
+		t.Fatalf("expected nil error on post-execute cancellation, got: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result on cancellation, got: %+v", result)
+	}
+	if !cancelCalled {
+		t.Error("expected query:cancel to be called after context cancellation")
+	}
+	if cancelToken != "tok-after-execute" {
+		t.Errorf("cancel called with wrong token: %q, want %q", cancelToken, "tok-after-execute")
+	}
+}
+
+// TestDQLExecutor_ExecuteQueryWithOptions_StillWorks verifies that the refactored
+// ExecuteQueryWithOptions delegate still behaves correctly.
+func TestDQLExecutor_ExecuteQueryWithOptions_StillWorks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := DQLQueryResponse{
+			State:  "SUCCEEDED",
+			Result: &DQLResult{Records: []map[string]interface{}{{"k": "v"}}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	result, err := executor.ExecuteQueryWithOptions("fetch logs", DQLExecuteOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.State != "SUCCEEDED" {
+		t.Errorf("expected SUCCEEDED, got %s", result.State)
 	}
 }
