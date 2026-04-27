@@ -82,6 +82,7 @@ davis:analyzers:write
 slo:write
 openPipeline:configurations:write
 notification:notifications:write
+iam:service-users:use
 ```
 
 ### readwrite-all
@@ -253,6 +254,7 @@ storage:fieldsets:write
 | List users | `iam:users:read` |
 | List groups | `iam:groups:read`, `iam:groups:write` |
 | List service users | `iam:service-users:read`, `iam:service-users:write` |
+| Use service user as workflow actor | `iam:service-users:use` |
 | View policies | `iam:policies:read`, `iam:policies:write` |
 | View bindings | `iam:bindings:read`, `iam:bindings:write` |
 
