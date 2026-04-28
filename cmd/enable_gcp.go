@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -28,12 +27,18 @@ var enableGCPMonitoringCmd = &cobra.Command{
 	Use:     "monitoring [id]",
 	Aliases: []string{"monitoring-config"},
 	Short:   "Enable GCP monitoring configuration",
-	Long: `Enable a GCP monitoring configuration by optionally updating the linked connection
-credentials and then enabling the monitoring config in a single step.
+	Long: `Enable a GCP monitoring configuration and optionally populate the service account
+on the linked connection's monitoring credential.
 
-If --serviceAccountId is provided, the linked GCP connection will be updated
-with the specified service account before enabling the monitoring config.
-If the connection credentials are already set, --serviceAccountId can be omitted.
+If --serviceAccountId is provided, dtctl will:
+  1. Fetch the linked GCP connection and verify the service account matches
+  2. Populate the (possibly empty) serviceAccount field in the monitoring credential
+  3. Enable the monitoring config and all credentials
+
+If the serviceAccount on the connection differs from --serviceAccountId, the command
+will error and suggest updating the connection first with 'dtctl update gcp connection'.
+
+If --serviceAccountId is omitted, only the enabled state is toggled (no credential validation).
 
 Examples:
   dtctl enable gcp monitoring --name "my-gcp-monitoring" --serviceAccountId "sa@project.iam.gserviceaccount.com"
@@ -53,7 +58,7 @@ Examples:
 			}
 			output.PrintInfo("Dry run: would resolve GCP monitoring config %q", name)
 			if enableGCPMonitoringServiceAccountID != "" {
-				output.PrintInfo("Dry run: would update linked GCP connection with service account %q", enableGCPMonitoringServiceAccountID)
+				output.PrintInfo("Dry run: would validate service account %q against linked GCP connection and populate empty credential field", enableGCPMonitoringServiceAccountID)
 			}
 			output.PrintInfo("Dry run: would enable monitoring config and all credentials")
 			return nil
@@ -90,46 +95,37 @@ Examples:
 			configName = existing.ObjectID
 		}
 
-		// Step 1: Update connection credentials if --serviceAccountId provided
+		// Step 1: Populate serviceAccount in monitoring credentials if --serviceAccountId provided
 		if enableGCPMonitoringServiceAccountID != "" {
 			if len(existing.Value.GoogleCloud.Credentials) == 0 {
 				return fmt.Errorf("monitoring config %q has no credentials configured", configName)
 			}
 			if len(existing.Value.GoogleCloud.Credentials) > 1 {
-				output.PrintWarning("monitoring config %q has %d credentials — only the first connection will be updated; use 'dtctl update gcp connection' for the others",
+				output.PrintWarning("monitoring config %q has %d credentials — only the first connection will be validated; use 'dtctl update gcp connection' for others",
 					configName, len(existing.Value.GoogleCloud.Credentials))
 			}
 
 			connectionID := existing.Value.GoogleCloud.Credentials[0].ConnectionID
-			output.PrintInfo("Updating GCP connection %q with service account...", connectionID)
+			output.PrintInfo("Validating service account against GCP connection %q...", connectionID)
 
 			conn, err := connectionHandler.Get(connectionID)
 			if err != nil {
 				return fmt.Errorf("failed to get linked connection %q: %w", connectionID, err)
 			}
 
-			value := conn.Value
-			if value.Type == "" {
-				value.Type = "serviceAccountImpersonation"
+			connSA := ""
+			if conn.Value.ServiceAccountImpersonation != nil {
+				connSA = conn.Value.ServiceAccountImpersonation.ServiceAccountID
 			}
-			if value.ServiceAccountImpersonation == nil {
-				value.ServiceAccountImpersonation = &gcpconnection.ServiceAccountImpersonation{
-					Consumers: []string{"SVC:com.dynatrace.da"},
-				}
-			}
-			if len(value.ServiceAccountImpersonation.Consumers) == 0 {
-				value.ServiceAccountImpersonation.Consumers = []string{"SVC:com.dynatrace.da"}
-			}
-			value.ServiceAccountImpersonation.ServiceAccountID = enableGCPMonitoringServiceAccountID
 
-			_, err = connectionHandler.Update(conn.ObjectID, value)
-			if err != nil {
-				if strings.Contains(err.Error(), "GCP authentication failed") {
-					return fmt.Errorf("%w\nIAM Policy update can take a couple of minutes before it becomes active, please retry in a moment", err)
-				}
-				return fmt.Errorf("failed to update connection credentials: %w", err)
+			if connSA != "" && enableGCPMonitoringServiceAccountID != connSA {
+				return fmt.Errorf(
+					"serviceAccountId %q does not match the service account on linked connection %q (%q)\n"+
+						"Update the connection first with: dtctl update gcp connection --name %q --serviceAccountId %q",
+					enableGCPMonitoringServiceAccountID, connectionID, connSA,
+					conn.Value.Name, enableGCPMonitoringServiceAccountID,
+				)
 			}
-			output.PrintSuccess("GCP connection %q updated", connectionID)
 		}
 
 		// Step 2: Enable monitoring config and all credentials
@@ -138,6 +134,10 @@ Examples:
 		value.Enabled = true
 		for i := range value.GoogleCloud.Credentials {
 			value.GoogleCloud.Credentials[i].Enabled = true
+		}
+		// Populate serviceAccount only on the first credential — the only one validated above
+		if enableGCPMonitoringServiceAccountID != "" && len(value.GoogleCloud.Credentials) > 0 && value.GoogleCloud.Credentials[0].ServiceAccount == "" {
+			value.GoogleCloud.Credentials[0].ServiceAccount = enableGCPMonitoringServiceAccountID
 		}
 
 		payload := gcpmonitoringconfig.GCPMonitoringConfig{Scope: existing.Scope, Value: value}
