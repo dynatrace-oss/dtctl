@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-04-28
+
+### Fixed
+- **`enable gcp monitoring` now handles UI-created configs with an empty `serviceAccount` field** — GCP monitoring configurations created through the Dynatrace UI store an empty string (`""`) in `credentials[].serviceAccount`; when `dtctl enable gcp monitoring --serviceAccountId <sa>` issued a `PUT` with this field unchanged, the API rejected the request with HTTP 400 (`serviceAccount '' violates Size must be between 1 and 500`); `dtctl enable gcp monitoring` now validates that `--serviceAccountId` matches the service account on the linked GCP connection and writes it into the monitoring config's credential payload before the `PUT`, so UI-created configs can be enabled in one step without manual JSON editing; updating connection credentials remains the responsibility of `dtctl update gcp connection`; fixes [#197](https://github.com/dynatrace-oss/dtctl/pull/197)
+
 ## [0.26.0] - 2026-04-28
 
 ### Added
