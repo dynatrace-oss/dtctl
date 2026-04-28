@@ -1,3 +1,5 @@
+//go:build !windows
+
 package exec
 
 import (
@@ -7,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/signal"
-	"runtime"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -23,10 +24,6 @@ import (
 // (sent to this process) and a real HTTP server, so it covers the signal
 // plumbing that the unit tests skip by calling cancel() directly.
 func TestDQLExecutor_SIGINT_CancelsBackendQuery(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Interrupt cannot be sent to self on windows")
-	}
-
 	pollStarted := make(chan struct{})
 	var cancelCalled atomic.Bool
 	var cancelToken atomic.Value
