@@ -461,6 +461,81 @@ func TestLookupDelete_NotFound(t *testing.T) {
 	}
 }
 
+// TestLookupCreate_BOMPrefixedCSV is a regression test for issue #187.
+// Files saved as CSV by Excel and many Windows editors are prefixed with a
+// UTF-8 byte order mark (EF BB BF). Before the fix, that BOM was included in
+// the first column name when auto-detecting a parse pattern, producing a DPL
+// expression that the upload API rejected as extraneous-input. This
+// test uploads a BOM-prefixed CSV against the live API and asserts that the
+// auto-detection path now succeeds and parses every data row.
+func TestLookupCreate_BOMPrefixedCSV(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := lookup.NewHandler(env.Client)
+	lookupPath := fmt.Sprintf("/lookups/dtctl_test/%s/bom_prefixed", env.TestPrefix)
+
+	// Real-world payload: UTF-8 BOM + CRLF line endings, exactly what Excel on
+	// macOS produces. Reproduces the failure mode from the issue verbatim.
+	csvData := []byte("\xEF\xBB\xBF" +
+		"code,description,severity,action\r\n" +
+		"ERR001,Database connection timeout,critical,page-oncall\r\n" +
+		"ERR002,Rate limit exceeded,warning,notify-slack\r\n" +
+		"ERR003,Authentication failed,high,review-logs\r\n" +
+		"ERR004,Disk space low,warning,expand-volume")
+
+	req := lookup.CreateRequest{
+		FilePath:    lookupPath,
+		LookupField: "code",
+		DataContent: csvData,
+		DisplayName: fmt.Sprintf("BOM Test %s", env.TestPrefix),
+	}
+
+	uploadResp, err := handler.Create(req)
+	if err != nil {
+		t.Fatalf("Create() with BOM-prefixed CSV failed: %v", err)
+	}
+	env.Cleanup.Track("lookup", lookupPath, req.DisplayName)
+
+	if uploadResp.Records != 4 {
+		t.Errorf("Records = %d, want 4 (one per non-header row)", uploadResp.Records)
+	}
+	t.Logf("✓ Created lookup from BOM-prefixed CSV: %d records", uploadResp.Records)
+
+	// Wait for the lookup to be queryable, then verify the column names are
+	// not BOM-corrupted. The first column must be "code", not "\ufeffcode".
+	if err := waitForLookupQueryable(t, handler, lookupPath, 30*time.Second); err != nil {
+		t.Fatalf("Lookup did not become queryable: %v", err)
+	}
+
+	dataResult, err := handler.GetData(lookupPath, 0)
+	if err != nil {
+		t.Fatalf("GetData() failed: %v", err)
+	}
+	if len(dataResult.Records) != 4 {
+		t.Errorf("data row count = %d, want 4", len(dataResult.Records))
+	}
+	if len(dataResult.Records) > 0 {
+		first := dataResult.Records[0]
+		if _, ok := first["code"]; !ok {
+			t.Errorf("first record missing 'code' column; got columns %v", keysOf(first))
+		}
+		for col := range first {
+			if strings.ContainsRune(col, '\ufeff') {
+				t.Errorf("column name contains BOM: %q", col)
+			}
+		}
+	}
+}
+
+func keysOf(m map[string]interface{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 func TestLookupList(t *testing.T) {
 	env := integration.SetupIntegration(t)
 	defer env.Cleanup.Cleanup(t)

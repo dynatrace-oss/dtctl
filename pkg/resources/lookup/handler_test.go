@@ -3,8 +3,12 @@ package lookup
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -49,6 +53,80 @@ func TestCreate_WithDataContent_Success(t *testing.T) {
 	}
 	if resp.Records != 2 {
 		t.Errorf("expected 2 records, got %d", resp.Records)
+	}
+}
+
+// parseUploadRequest reads the multipart upload body sent to the lookup
+// endpoint and returns the JSON request part decoded plus the raw content.
+func parseUploadRequest(t *testing.T, r *http.Request) (UploadRequest, []byte) {
+	t.Helper()
+	_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("parse content-type: %v", err)
+	}
+	mr := multipart.NewReader(r.Body, params["boundary"])
+
+	var (
+		req     UploadRequest
+		content []byte
+	)
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("next part: %v", err)
+		}
+		body, err := io.ReadAll(part)
+		if err != nil {
+			t.Fatalf("read part: %v", err)
+		}
+		switch part.FormName() {
+		case "request":
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Fatalf("decode request part: %v (body=%q)", err, body)
+			}
+		case "content":
+			content = body
+		}
+	}
+	return req, content
+}
+
+// TestCreate_StripsBOMFromAutoDetectedPattern is the regression test for #187:
+// when a CSV file is BOM-prefixed, the auto-detected parsePattern sent to the
+// upload API must not contain the BOM. Otherwise the server-side DPL parser
+// rejects the pattern with "extraneous input ”".
+func TestCreate_StripsBOMFromAutoDetectedPattern(t *testing.T) {
+	var captured UploadRequest
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/resource-store/v1/files/tabular/lookup:upload", func(w http.ResponseWriter, r *http.Request) {
+		captured, _ = parseUploadRequest(t, r)
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(UploadResponse{Records: 1})
+	})
+	h, cleanup := newLookupTestHandler(t, mux)
+	defer cleanup()
+
+	bomCSV := append([]byte{0xEF, 0xBB, 0xBF}, []byte("code,description\nERR1,boom")...)
+	if _, err := h.Create(CreateRequest{
+		FilePath:    "/lookups/test/bom",
+		LookupField: "code",
+		DataContent: bomCSV,
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	want := "LD:code ',' LD:description"
+	if captured.ParsePattern != want {
+		t.Errorf("parsePattern = %q, want %q", captured.ParsePattern, want)
+	}
+	if strings.ContainsRune(captured.ParsePattern, '\ufeff') {
+		t.Errorf("parsePattern still contains BOM: %q", captured.ParsePattern)
+	}
+	if captured.SkippedRecords != 1 {
+		t.Errorf("skippedRecords = %d, want 1", captured.SkippedRecords)
 	}
 }
 

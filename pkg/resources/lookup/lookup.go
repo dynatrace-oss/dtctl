@@ -491,8 +491,19 @@ func ValidatePath(path string) error {
 	return nil
 }
 
-// DetectCSVPattern auto-detects CSV pattern from data
+// utf8BOM is the UTF-8 byte order mark that some editors (notably Excel on
+// Windows/macOS) prepend when saving CSV files. The DPL parser used by the
+// lookup upload API rejects the BOM as invalid input, so it must be stripped
+// before auto-detecting the parse pattern; otherwise the BOM ends up inside
+// the first column name and produces an unparseable pattern.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// DetectCSVPattern auto-detects a DPL parse pattern from CSV data by reading
+// the header row and emitting one LD field per column. A leading UTF-8 BOM is
+// stripped so it is not embedded in the first column name. CRLF line endings
+// are handled transparently by encoding/csv.
 func DetectCSVPattern(data []byte) (pattern string, skippedRecords int, err error) {
+	data = bytes.TrimPrefix(data, utf8BOM)
 	reader := csv.NewReader(bytes.NewReader(data))
 
 	// Read header row

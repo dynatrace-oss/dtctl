@@ -141,6 +141,31 @@ func TestDetectCSVPattern(t *testing.T) {
 			wantErr:            false,
 		},
 		{
+			// Regression test for #187: Excel on macOS/Windows prepends a UTF-8
+			// BOM (0xEF 0xBB 0xBF) when saving as CSV. Without stripping it, the
+			// first column name became "\ufeffcode" and the server-side DPL
+			// parser rejected the resulting pattern with "extraneous input ''".
+			name:               "CSV with UTF-8 BOM",
+			csvData:            "\ufeffcode,description,severity,action\nERR001,timeout,critical,page",
+			wantPattern:        "LD:code ',' LD:description ',' LD:severity ',' LD:action",
+			wantSkippedRecords: 1,
+			wantErr:            false,
+		},
+		{
+			name:               "CSV with BOM and CRLF line endings",
+			csvData:            "\ufeffid,name\r\n1,alice\r\n2,bob",
+			wantPattern:        "LD:id ',' LD:name",
+			wantSkippedRecords: 1,
+			wantErr:            false,
+		},
+		{
+			name:               "BOM-only single column CSV",
+			csvData:            "\ufeffid\n1",
+			wantPattern:        "LD:id",
+			wantSkippedRecords: 1,
+			wantErr:            false,
+		},
+		{
 			name:    "empty CSV",
 			csvData: "",
 			wantErr: true,
