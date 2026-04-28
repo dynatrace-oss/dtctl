@@ -2305,11 +2305,11 @@ func TestDTClientContextHeader_WithAIAgentAndContext(t *testing.T) {
 
 func TestDQLExecutor_ClientContextHeader_OnExecuteAndPoll(t *testing.T) {
 	tests := []struct {
-		name            string
-		clientContext   string
-		wantContext     string // empty means key must be absent
-		setAIAgentEnv   bool
-		wantAgent       string
+		name          string
+		clientContext string
+		wantContext   string // empty means key must be absent
+		setAIAgentEnv bool
+		wantAgent     string
 	}{
 		{
 			name:          "no context no agent",
