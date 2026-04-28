@@ -155,7 +155,7 @@ Apply hooks run external commands around `dtctl apply`:
 - **Pre-apply** (`pre-apply`): runs **before** the resource is sent to the API. Receives the processed JSON on stdin and can reject the apply (non-zero exit aborts).
 - **Post-apply** (`post-apply`): runs **after** a successful apply. Receives the apply result as JSON on stdin. Useful for cleanup, notifications, or writing metadata to disk. A non-zero exit is reported as a warning — the resource is already persisted.
 
-Both hooks are invoked the same way: the command string is tokenized on whitespace and executed directly (no shell indirection). The resource type and source file are appended as the final two positional arguments.
+Both hooks are invoked the same way: the command string is tokenized using POSIX-style shell quoting (so `"path with spaces"` and `'quoted args'` are honoured) and executed directly — there is **no shell interpretation** of the command line itself. The resource type and source file are appended as the final two positional arguments.
 
 ### Configuration
 
@@ -194,14 +194,19 @@ Per-context hooks take precedence over global hooks. The special value `"none"` 
 | **$1** | Resource type (e.g., `dashboard`, `workflow`, `slo`) | same |
 | **$2** | Source filename from `-f` | same |
 | **Stdin** | Processed resource JSON (YAML→JSON + template rendering applied) | Apply result JSON (array of per-resource result objects: `action`, `resourceType`, `id`, `name`, etc.) |
-| **Stdout** | Discarded | Forwarded to the user's stdout |
-| **Stderr** | Shown only on non-zero exit (hook rejection) | Always shown |
+| **Stdout** | Always forwarded to the user's stdout | Forwarded to the user's stdout |
+| **Stderr** | Always forwarded to the user's stderr | Always forwarded to the user's stderr |
 | **Exit 0** | Proceed with apply | Reported as success |
-| **Exit non-zero** | Abort apply, show stderr | Warning only — apply already succeeded; stderr is shown and a warning line is printed |
+| **Exit non-zero** | Abort apply, show stdout+stderr | Warning only — apply already succeeded; stdout+stderr are shown and a warning line is printed |
 | **Timeout** | 30 seconds | 30 seconds |
 | **Dry-run** | Pre-apply runs (validates before the preview) | Post-apply is skipped |
+| **Array apply (partial failure)** | Runs once on the full array | Runs once on the resources that *were* persisted, even when later items in the batch fail |
 
-Because the command is tokenized on whitespace and executed directly, the script path must not contain spaces, and anything beyond a simple `<interpreter> <path>` invocation should live inside the script itself, not in the config value. There is no shell interpretation of the command string.
+Because the command is tokenized but then executed directly (no `sh -c`), pipes, redirections, glob expansion, and environment-variable expansion in the command string itself are **not** supported — put any shell logic inside the script the hook invokes.
+
+> **Agent mode (`--agent` / `-A`).** When dtctl writes its JSON envelope to stdout, both pre-apply and post-apply hook output is redirected to stderr automatically so the envelope on stdout stays clean for machine consumers. Use stderr for any human-readable hook diagnostics.
+
+> **Shell positional parameters in config values.** The config loader expands `$VAR` / `${VAR}` against the process environment but preserves shell positional parameters (`$1`, `$2`, `$@`, …) verbatim. You can write `pre-apply: "bash validate.sh \"$1\" \"$2\""` and have those tokens reach the hook unchanged.
 
 ### Writing Hooks
 

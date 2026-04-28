@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1393,6 +1394,185 @@ func TestApply_PostApplyHookSkippedByNoHooks(t *testing.T) {
 
 	if _, err := os.Stat(marker); err == nil {
 		t.Errorf("post-apply hook ran despite NoHooks=true")
+	}
+}
+
+// TestApply_HookOutputsRoutedToConfiguredWriters verifies that
+// WithHookOutputs redirects hook stdout/stderr away from the process's
+// os.Stdout/os.Stderr. This is the agent-mode contract: in -A mode, hook
+// stdout must NOT prepend non-JSON noise to the envelope on os.Stdout.
+func TestApply_HookOutputsRoutedToConfiguredWriters(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": "wf-y", "title": "Y"})
+		},
+	})
+	defer srv.Close()
+
+	preHook := writeHookScript(t, `echo pre-stdout; echo pre-stderr >&2`)
+	postHook := writeHookScript(t, `echo post-stdout; echo post-stderr >&2`)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	a := NewApplier(c).
+		WithPreApplyHook(preHook).
+		WithPostApplyHook(postHook).
+		WithSourceFile("wf.yaml").
+		WithHookOutputs(&stdoutBuf, &stderrBuf)
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	if _, err := a.Apply([]byte(workflowJSON), ApplyOptions{}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	gotStdout := stdoutBuf.String()
+	gotStderr := stderrBuf.String()
+	if !strings.Contains(gotStdout, "pre-stdout") || !strings.Contains(gotStdout, "post-stdout") {
+		t.Errorf("configured stdout writer = %q, want it to contain pre-stdout and post-stdout", gotStdout)
+	}
+	if !strings.Contains(gotStderr, "pre-stderr") || !strings.Contains(gotStderr, "post-stderr") {
+		t.Errorf("configured stderr writer = %q, want it to contain pre-stderr and post-stderr", gotStderr)
+	}
+}
+
+// TestApply_HookOutputsAgentModeStdoutClean simulates agent mode by
+// pointing both hook outputs at stderr. Hook stdout must NOT land on the
+// process's stdout (where the agent JSON envelope is written).
+func TestApply_HookOutputsAgentModeStdoutClean(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": "wf-z", "title": "Z"})
+		},
+	})
+	defer srv.Close()
+
+	preHook := writeHookScript(t, `echo pre-noise`)
+	postHook := writeHookScript(t, `echo post-noise`)
+
+	var stderrBuf bytes.Buffer
+	// Both writers point at the stderr buffer — agent-mode policy.
+	a := NewApplier(c).
+		WithPreApplyHook(preHook).
+		WithPostApplyHook(postHook).
+		WithSourceFile("wf.yaml").
+		WithHookOutputs(&stderrBuf, &stderrBuf)
+
+	workflowJSON := `{"title":"Test WF","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}`
+	if _, err := a.Apply([]byte(workflowJSON), ApplyOptions{}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	got := stderrBuf.String()
+	if !strings.Contains(got, "pre-noise") || !strings.Contains(got, "post-noise") {
+		t.Errorf("expected hook stdout to land on stderr buffer in agent mode; got=%q", got)
+	}
+}
+
+// TestApply_PostApplyRunsForPartialSuccess verifies that when an array apply
+// succeeds for some items and fails for others, the post-apply hook still
+// runs for the items that were persisted. The hook is the only signal a
+// notification/cleanup pipeline gets — skipping it on partial failure
+// would mean those resources are silently created without notification.
+func TestApply_PostApplyRunsForPartialSuccess(t *testing.T) {
+	wfCount := 0
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			wfCount++
+			// Succeed on the first item, fail on the second.
+			if wfCount == 1 {
+				w.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"id": "wf-ok", "title": "ok"})
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"message":"simulated failure"}}`))
+		},
+	})
+	defer srv.Close()
+
+	dir := t.TempDir()
+	stdinFile := filepath.Join(dir, "stdin.json")
+	hookBody := fmt.Sprintf(`cat > %q`, stdinFile)
+	a := NewApplier(c).
+		WithPostApplyHook(writeHookScript(t, hookBody)).
+		WithSourceFile("wfs.yaml")
+
+	// Two-item array: first succeeds, second fails.
+	arrayJSON := `[
+{"title":"ok","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}},
+{"title":"bad","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}
+]`
+	results, err := a.Apply([]byte(arrayJSON), ApplyOptions{})
+	if err == nil {
+		t.Fatalf("Apply() expected partial-failure error, got nil; results=%+v", results)
+	}
+	listErr, ok := err.(*ListApplyError)
+	if !ok {
+		t.Fatalf("expected *ListApplyError, got %T: %v", err, err)
+	}
+	if listErr.Failed != 1 || listErr.Total != 2 {
+		t.Errorf("ListApplyError = %+v, want Failed=1 Total=2", listErr)
+	}
+	if len(results) != 1 {
+		t.Errorf("results length = %d, want 1 (the successful item)", len(results))
+	}
+
+	// Post-apply hook must have fired for the persisted resource.
+	data, err := os.ReadFile(stdinFile)
+	if err != nil {
+		t.Fatalf("post-apply hook did not run for partial-success batch: %v", err)
+	}
+	// The hook fired (file was written) — that's the core invariant. The
+	// exact id field depends on the mock server response shape; we assert
+	// only the structural shape (a JSON array with the created workflow).
+	if !strings.Contains(string(data), `"action":"created"`) ||
+		!strings.Contains(string(data), `"resourceType":"workflow"`) {
+		t.Errorf("post-apply stdin should describe the applied workflow; got %q", data)
+	}
+}
+
+// TestApply_PostApplyHookSkippedWhenAllFailed verifies the corollary: if no
+// items in the batch succeed, post-apply should NOT fire (there is nothing
+// to notify about, and an empty array on stdin would be misleading).
+func TestApply_PostApplyHookSkippedWhenAllFailed(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		},
+	})
+	defer srv.Close()
+
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran.txt")
+	a := NewApplier(c).
+		WithPostApplyHook(writeHookScript(t, fmt.Sprintf(`touch %q`, marker))).
+		WithSourceFile("wfs.yaml")
+
+	arrayJSON := `[
+{"title":"a","tasks":{"t1":{"action":"dynatrace.automations:run-javascript"}},"trigger":{}}
+]`
+	if _, err := a.Apply([]byte(arrayJSON), ApplyOptions{}); err == nil {
+		t.Fatal("Apply() expected error for all-failed batch")
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Errorf("post-apply hook should not fire when no items were persisted")
 	}
 }
 
