@@ -177,12 +177,10 @@ resources in sync with their file definitions.
 			if hookCmd := cfg.GetPostApplyHook(); hookCmd != "" {
 				applier = applier.WithPostApplyHook(hookCmd).WithSourceFile(file)
 			}
-			// In agent mode, the JSON envelope is written to os.Stdout. Hook
-			// stdout would prepend non-JSON noise to that envelope and break
-			// machine consumers, so route both hook streams to stderr.
-			if GetAgentMode() {
-				applier = applier.WithHookOutputs(os.Stderr, os.Stderr)
-			}
+			// Hook output (stdout and stderr) always goes to stderr so that
+			// stdout carries only the structured result — JSON, YAML, or table
+			// — regardless of output mode, and regardless of hook success or failure.
+			applier = applier.WithHookOutputs(os.Stderr, os.Stderr)
 		}
 
 		// Apply the resource

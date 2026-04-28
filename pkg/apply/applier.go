@@ -214,6 +214,12 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 		if err != nil {
 			return nil, err
 		}
+		if result.Stdout != "" {
+			fmt.Fprint(a.hookStdoutWriter(), result.Stdout)
+		}
+		if result.Stderr != "" {
+			fmt.Fprint(a.hookStderrWriter(), result.Stderr)
+		}
 		if result.ExitCode != 0 {
 			return nil, &HookRejectedError{
 				Command:  a.preApplyHook,
@@ -221,12 +227,6 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 				Stdout:   result.Stdout,
 				Stderr:   result.Stderr,
 			}
-		}
-		if result.Stdout != "" {
-			fmt.Fprint(a.hookStdoutWriter(), result.Stdout)
-		}
-		if result.Stderr != "" {
-			fmt.Fprint(a.hookStderrWriter(), result.Stderr)
 		}
 	}
 
@@ -373,6 +373,12 @@ func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOp
 		if err != nil {
 			return nil, err
 		}
+		if result.Stdout != "" {
+			fmt.Fprint(a.hookStdoutWriter(), result.Stdout)
+		}
+		if result.Stderr != "" {
+			fmt.Fprint(a.hookStderrWriter(), result.Stderr)
+		}
 		if result.ExitCode != 0 {
 			return nil, &HookRejectedError{
 				Command:  a.preApplyHook,
@@ -380,12 +386,6 @@ func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOp
 				Stdout:   result.Stdout,
 				Stderr:   result.Stderr,
 			}
-		}
-		if result.Stdout != "" {
-			fmt.Fprint(a.hookStdoutWriter(), result.Stdout)
-		}
-		if result.Stderr != "" {
-			fmt.Fprint(a.hookStderrWriter(), result.Stderr)
 		}
 	}
 

@@ -154,7 +154,7 @@ func execute() int {
 		if agentMode || plainMode {
 			detail := errorToDetail(err)
 			detail.Suggestions = append(detail.Suggestions, allHints...)
-			_ = output.PrintError(os.Stderr, detail)
+			_ = output.PrintError(os.Stdout, detail)
 			return exitCodeForError(err)
 		}
 
