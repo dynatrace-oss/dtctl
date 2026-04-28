@@ -157,8 +157,6 @@ Examples:
 }
 
 func init() {
-	addWatchFlags(getSLOsCmd)
-
 	// SLO flags
 	getSLOsCmd.Flags().String("filter", "", "Filter SLOs (e.g., \"name~'production'\")")
 	getSLOTemplatesCmd.Flags().String("filter", "", "Filter templates (e.g., \"builtIn==true\")")

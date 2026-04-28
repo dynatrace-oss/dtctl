@@ -4,6 +4,41 @@ import (
 	"testing"
 )
 
+func TestDiffer_KeylessItems_ParticipateInDiff(t *testing.T) {
+	// Items with no id/Id/ID/name/Name field used to be silently dropped,
+	// causing watch mode to never report any changes for resources keyed by
+	// objectId, entityId, etc.
+	differ := NewDiffer()
+
+	initial := []interface{}{
+		map[string]interface{}{"objectId": "x", "value": 1},
+		map[string]interface{}{"objectId": "y", "value": 2},
+	}
+	changes := differ.Detect(initial)
+	if len(changes) != 2 {
+		t.Errorf("first call should classify both items as added, got %d", len(changes))
+	}
+
+	// Identical second call - no changes expected. Without the hash fallback,
+	// the differ would re-add both items every poll.
+	changes = differ.Detect(initial)
+	if len(changes) != 0 {
+		t.Errorf("expected 0 changes for identical re-poll, got %d (%v)", len(changes), changes)
+	}
+
+	// Mutating one item must surface as a real change.
+	updated := []interface{}{
+		map[string]interface{}{"objectId": "x", "value": 1},
+		map[string]interface{}{"objectId": "y", "value": 99},
+	}
+	changes = differ.Detect(updated)
+	// One Added (new hash) and one Deleted (old hash gone) is acceptable.
+	// What's NOT acceptable is zero changes, which is what the bug produced.
+	if len(changes) == 0 {
+		t.Errorf("expected hash-based diff to detect mutation; got 0 changes")
+	}
+}
+
 func TestDiffer_DetectAdditions(t *testing.T) {
 	differ := NewDiffer()
 

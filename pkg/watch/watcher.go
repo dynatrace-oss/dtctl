@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"reflect"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
@@ -11,7 +13,7 @@ import (
 
 func NewWatcher(opts WatcherOptions) *Watcher {
 	if opts.Interval < time.Second {
-		opts.Interval = 2 * time.Second
+		opts.Interval = time.Second
 	}
 
 	return &Watcher{
@@ -43,20 +45,26 @@ func (w *Watcher) Start(ctx context.Context) error {
 			if err := w.poll(ctx, false); err != nil {
 				if isTransient(err) {
 					log.Printf("Warning: Temporary error, retrying: %v\n", err)
+					if !w.sleep(ctx, w.interval) {
+						return nil
+					}
 					continue
 				}
 				if isRateLimited(err) {
 					backoff := extractRetryAfter(err)
-					if backoff > 0 {
-						time.Sleep(backoff)
-					} else {
-						time.Sleep(w.interval * 2)
+					if backoff <= 0 {
+						backoff = w.interval * 2
+					}
+					if !w.sleep(ctx, backoff) {
+						return nil
 					}
 					continue
 				}
 				if isNetworkError(err) {
 					log.Printf("Warning: Connection lost, retrying...\n")
-					time.Sleep(w.interval * 2)
+					if !w.sleep(ctx, w.interval*2) {
+						return nil
+					}
 					continue
 				}
 				return err
@@ -65,8 +73,26 @@ func (w *Watcher) Start(ctx context.Context) error {
 	}
 }
 
+// sleep waits for d, returning false if the watcher was cancelled
+// (via ctx or Stop) during the wait.
+func (w *Watcher) sleep(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return true
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-w.stopCh:
+		return false
+	}
+}
+
 func (w *Watcher) Stop() {
-	close(w.stopCh)
+	w.stopOnce.Do(func() { close(w.stopCh) })
 }
 
 func (w *Watcher) poll(ctx context.Context, initial bool) error {
@@ -80,10 +106,12 @@ func (w *Watcher) poll(ctx context.Context, initial bool) error {
 		return err
 	}
 
-	if initial && w.showInitial {
-		// Initialize differ state so next poll doesn't see everything as "added"
+	if initial {
+		// Always seed the differ's baseline on the initial poll, so that
+		// the next poll has something to diff against. Without this,
+		// --watch-only would print every existing resource as ADDED.
 		w.differ.Detect(resources)
-		if w.printer != nil {
+		if w.showInitial && w.printer != nil {
 			return w.printer.PrintList(resources)
 		}
 		return nil
@@ -168,8 +196,30 @@ func isNetworkError(err error) bool {
 		contains(errStr, "network unreachable")
 }
 
+// retryAfterPattern matches "Retry-After: <seconds>" in an error message,
+// case-insensitively. Dynatrace clients surface this as part of the rate-limit
+// error string. The header value is in seconds per RFC 7231.
+// Note: RFC 7231 also allows an HTTP-date value (e.g. "Thu, 01 Jan 2026 …");
+// that form is not handled here. Dynatrace only ever sends the integer form.
+var retryAfterPattern = regexp.MustCompile(`(?i)retry[-_ ]?after[:=\s]+(\d+)`)
+
 func extractRetryAfter(err error) time.Duration {
-	return 0
+	if err == nil {
+		return 0
+	}
+	m := retryAfterPattern.FindStringSubmatch(err.Error())
+	if len(m) < 2 {
+		return 0
+	}
+	secs, parseErr := strconv.Atoi(m[1])
+	if parseErr != nil || secs <= 0 {
+		return 0
+	}
+	// Cap the back-off so a hostile or buggy server can't pin us forever.
+	if secs > 300 {
+		secs = 300
+	}
+	return time.Duration(secs) * time.Second
 }
 
 func contains(s, substr string) bool {

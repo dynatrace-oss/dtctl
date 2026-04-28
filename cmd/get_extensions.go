@@ -104,8 +104,6 @@ Examples:
 }
 
 func init() {
-	addWatchFlags(getExtensionsCmd)
-
 	// Extension flags
 	getExtensionsCmd.Flags().String("name", "", "Filter extensions by name")
 

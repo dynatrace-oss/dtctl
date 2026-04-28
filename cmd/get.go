@@ -73,7 +73,7 @@ func executeWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher, printer
 	watchOnly, _ := cmd.Flags().GetBool("watch-only")
 
 	if interval < time.Second {
-		interval = 2 * time.Second
+		interval = time.Second
 	}
 
 	cfg, err := LoadConfig()

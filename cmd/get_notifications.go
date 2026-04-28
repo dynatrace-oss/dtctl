@@ -120,8 +120,6 @@ Examples:
 }
 
 func init() {
-	addWatchFlags(getNotificationsCmd)
-
 	// Notification flags
 	getNotificationsCmd.Flags().String("type", "", "Filter by notification type")
 

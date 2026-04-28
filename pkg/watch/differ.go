@@ -1,6 +1,8 @@
 package watch
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -22,9 +24,14 @@ func (d *Differ) Detect(current []interface{}) []Change {
 	currentMap := make(map[string]interface{})
 	for _, item := range current {
 		id := extractID(item)
-		if id != "" {
-			currentMap[id] = item
+		if id == "" {
+			// Resource has no id/Id/ID/name/Name field - fall back to a content
+			// hash so the item still participates in change detection. Two
+			// items with identical content collide, but that's fine: they're
+			// indistinguishable to the user too.
+			id = "hash:" + contentHash(item)
 		}
+		currentMap[id] = item
 	}
 
 	// Detect additions and modifications - only return actual changes
@@ -120,6 +127,19 @@ func extractID(item interface{}) string {
 	}
 
 	return ""
+}
+
+func contentHash(item interface{}) string {
+	b, err := json.Marshal(item)
+	if err != nil {
+		// Stable sentinel: all unmarshalable items share this key and collide,
+		// which is fine — they're equally indistinguishable to the user.
+		// A pointer address (%p) would change across polls, making every such
+		// item appear as a new addition on every tick.
+		return "unmarshalable"
+	}
+	sum := sha1.Sum(b)
+	return hex.EncodeToString(sum[:])
 }
 
 func deepEqual(a, b interface{}) bool {

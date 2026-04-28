@@ -133,8 +133,6 @@ Examples:
 }
 
 func init() {
-	addWatchFlags(getSegmentsCmd)
-
 	// Delete confirmation flags
 	deleteSegmentCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteSegmentCmd.Flags().String("confirm", "", "Confirm deletion by providing the segment UID (for non-interactive use)")

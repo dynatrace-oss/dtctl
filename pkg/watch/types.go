@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"sync"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -34,5 +35,6 @@ type Watcher struct {
 	differ      *Differ
 	printer     output.Printer
 	stopCh      chan struct{}
+	stopOnce    sync.Once
 	showInitial bool
 }

@@ -117,8 +117,6 @@ Examples:
 }
 
 func init() {
-	addWatchFlags(getBucketsCmd)
-
 	// Delete confirmation flags
 	deleteBucketCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteBucketCmd.Flags().String("confirm", "", "Confirm deletion by providing the bucket name (for non-interactive use)")

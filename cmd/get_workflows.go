@@ -264,7 +264,6 @@ Examples:
 
 func init() {
 	addWatchFlags(getWorkflowsCmd)
-	addWatchFlags(getWorkflowExecutionsCmd)
 
 	getWorkflowExecutionsCmd.Flags().StringVarP(&workflowFilter, "workflow", "w", "", "Filter executions by workflow ID")
 	getWorkflowsCmd.Flags().Bool("mine", false, "Show only workflows owned by current user")

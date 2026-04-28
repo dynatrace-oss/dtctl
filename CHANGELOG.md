@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Eight `--watch` mode correctness bugs** — `--watch-only` no longer floods output with false `ADDED` events on the first poll (differ baseline was never seeded); `Watcher.Stop()` no longer panics on a second call (guarded with `sync.Once`); Ctrl+C no longer hangs for seconds during rate-limit or network-error backoff (`time.Sleep` replaced with a context-aware helper); `Retry-After` headers on HTTP 429 responses are now parsed and honoured instead of always being ignored (stub replaced with a real parser, capped at 5 min); `--interval` values below 1 s are now correctly clamped to 1 s instead of 2 s; `--watch`/`--watch-only` flags no longer appear in `--help` for commands that never call `executeWithWatch` (`buckets`, `slos`, `notifications`, `workflow-executions`, `extensions`, `segments`); transient errors (timeout, temporary failure, connection reset) now back off for one interval before retrying instead of hammering the endpoint immediately; resources keyed by `objectId`/`entityId` (no `id`/`name` field) now participate in change detection via a stable content hash instead of being silently dropped every poll; fixes [#189](https://github.com/dynatrace-oss/dtctl/issues/189)
+
 ### Added
 - **`iam:service-users:use` OAuth scope** — added to the `readwrite-mine`, `readwrite-all`, and `dangerously-unrestricted` safety levels so `dtctl create workflow` can use a Dynatrace [service user as the workflow actor](https://docs.dynatrace.com/docs/analyze-explore-automate/workflows/security#service-users); existing sessions need to re-run `dtctl auth login` to pick up the new scope; note that this slightly broadens the privilege footprint of `readwrite-mine` since holders can now act as a service user when creating workflows
 
