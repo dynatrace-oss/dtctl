@@ -1613,3 +1613,63 @@ func TestGetPostApplyHook_NoHookConfigured(t *testing.T) {
 		t.Errorf("GetPostApplyHook() = %q, want empty", got)
 	}
 }
+
+func TestExpandEnvPreservingShellParams(t *testing.T) {
+	t.Setenv("DTCTL_TEST_FOO", "expanded-foo")
+	t.Setenv("DTCTL_TEST_BAR", "expanded-bar")
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "real env var ${VAR} is expanded",
+			in:   "${DTCTL_TEST_FOO}/x",
+			want: "expanded-foo/x",
+		},
+		{
+			name: "real env var bare $VAR is expanded",
+			in:   "$DTCTL_TEST_FOO/x",
+			want: "expanded-foo/x",
+		},
+		{
+			name: "shell positional $1 is preserved verbatim",
+			in:   `bash validate.sh "$1" "$2"`,
+			want: `bash validate.sh "$1" "$2"`,
+		},
+		{
+			name: "two-digit positional ${10} is preserved",
+			in:   `echo "${10}"`,
+			want: `echo "${10}"`,
+		},
+		{
+			name: "shell special $@ is preserved",
+			in:   `forward "$@"`,
+			want: `forward "$@"`,
+		},
+		{
+			name: "shell special $? $$ $! are preserved",
+			in:   `echo $? $$ $!`,
+			want: `echo $? $$ $!`,
+		},
+		{
+			name: "unset env var falls back to empty (matches os.ExpandEnv)",
+			in:   "prefix-${DTCTL_TEST_DEFINITELY_UNSET_XYZ}-suffix",
+			want: "prefix--suffix",
+		},
+		{
+			name: "mixed real env + positional in same string",
+			in:   `${DTCTL_TEST_FOO}/run.sh "$1" --bar="${DTCTL_TEST_BAR}"`,
+			want: `expanded-foo/run.sh "$1" --bar="expanded-bar"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := expandEnvPreservingShellParams(tt.in); got != tt.want {
+				t.Errorf("expandEnvPreservingShellParams(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

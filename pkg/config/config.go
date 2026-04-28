@@ -186,8 +186,14 @@ func LoadFrom(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Expand environment variables in the config file
-	expandedData := []byte(os.ExpandEnv(string(data)))
+	// Expand environment variables in the config file.
+	//
+	// We deliberately do NOT use os.ExpandEnv: it expands every $-prefixed
+	// token, including shell positional parameters like $1/$2/$@ that can
+	// legitimately appear in opaque config values such as hook commands.
+	// expandEnvPreservingShellParams leaves those alone and substitutes only
+	// real environment variable names.
+	expandedData := []byte(expandEnvPreservingShellParams(string(data)))
 
 	var cfg Config
 	if err := yaml.Unmarshal(expandedData, &cfg); err != nil {
@@ -195,6 +201,139 @@ func LoadFrom(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// expandEnvPreservingShellParams expands $VAR and ${VAR} references using
+// the process environment, but leaves shell positional parameters and
+// special parameters intact (e.g. $1, ${10}, $@, $*, $#, $?, $!, $$, $0).
+// This lets users embed those tokens in opaque config values such as hook
+// commands without having them silently rewritten to the empty string at
+// config load.
+//
+// Lookups for ordinary names that are not set in the environment fall back
+// to "" (matching os.ExpandEnv); use "${VAR}" in the config when an
+// unexpanded literal is desired (and `VAR` is in scope to be unset).
+//
+// We implement the scan ourselves rather than calling os.Expand so the
+// brace form (`${10}`) is preserved exactly for shell positionals — the
+// stdlib helper passes the bare name to the mapper, losing the braces.
+func expandEnvPreservingShellParams(s string) string {
+	var b strings.Builder
+	i := 0
+	for i < len(s) {
+		c := s[i]
+		if c != '$' || i+1 >= len(s) {
+			b.WriteByte(c)
+			i++
+			continue
+		}
+
+		// Brace form: ${...}
+		if s[i+1] == '{' {
+			end := strings.IndexByte(s[i+2:], '}')
+			if end < 0 {
+				// No closing brace — treat as literal.
+				b.WriteByte(c)
+				i++
+				continue
+			}
+			name := s[i+2 : i+2+end]
+			if isShellPositionalOrSpecial(name) {
+				b.WriteString(s[i : i+2+end+1]) // preserve `${name}` verbatim
+			} else {
+				b.WriteString(os.Getenv(name))
+			}
+			i += 2 + end + 1
+			continue
+		}
+
+		// Bare form: $NAME or $1 or $@ etc.
+		nameLen := bareEnvNameLen(s[i+1:])
+		if nameLen == 0 {
+			// `$` followed by something that is not a valid name char and
+			// not a special parameter — write `$` literally.
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		name := s[i+1 : i+1+nameLen]
+		if isShellPositionalOrSpecial(name) {
+			b.WriteString(s[i : i+1+nameLen]) // preserve `$name` verbatim
+		} else {
+			b.WriteString(os.Getenv(name))
+		}
+		i += 1 + nameLen
+	}
+	return b.String()
+}
+
+// bareEnvNameLen returns how many bytes at the start of s form a bare
+// (unbraced) shell variable reference, not counting the leading `$` (which
+// must already be stripped by the caller). Returns 0 if s does not start
+// with a valid name character or single-char special parameter.
+//
+// Matches POSIX bare-form references: `$NAME` (alpha/underscore-led name),
+// `$1` (positional digit, single-char only without braces), `$@`, `$*`,
+// `$#`, `$?`, `$!`, `$$`, `$-`.
+func bareEnvNameLen(s string) int {
+	if len(s) == 0 {
+		return 0
+	}
+	c := s[0]
+	// Single-digit positional ($0..$9 — multi-digit needs braces in POSIX).
+	if c >= '0' && c <= '9' {
+		return 1
+	}
+	// Single-char special parameters.
+	switch c {
+	case '@', '*', '#', '?', '!', '$', '-':
+		return 1
+	}
+	// Identifier: [A-Za-z_][A-Za-z0-9_]*
+	if !isNameStart(c) {
+		return 0
+	}
+	n := 1
+	for n < len(s) && isNameCont(s[n]) {
+		n++
+	}
+	return n
+}
+
+func isNameStart(c byte) bool {
+	return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
+
+func isNameCont(c byte) bool {
+	return isNameStart(c) || (c >= '0' && c <= '9')
+}
+
+// isShellPositionalOrSpecial reports whether name refers to a shell
+// positional parameter ($0, $1, ${10}, ...) or special parameter
+// ($@, $*, $#, $?, $!, $$, $-) and should therefore be preserved verbatim
+// rather than expanded against the process environment.
+func isShellPositionalOrSpecial(name string) bool {
+	if name == "" {
+		return false
+	}
+	// Purely numeric → positional parameter.
+	allDigits := true
+	for i := 0; i < len(name); i++ {
+		if name[i] < '0' || name[i] > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		return true
+	}
+	if len(name) == 1 {
+		switch name[0] {
+		case '@', '*', '#', '?', '!', '$', '-':
+			return true
+		}
+	}
+	return false
 }
 
 // Save saves the configuration to the default path
