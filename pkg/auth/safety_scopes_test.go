@@ -58,6 +58,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"email:emails:send",
 				"dev-obs:breakpoints:set",
 				"hub:catalog:read",
+				"iam:service-users:use",
 			},
 			mustNotInclude: []string{
 				"storage:logs:write",
@@ -89,6 +90,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"email:emails:send",
 				"dev-obs:breakpoints:set",
 				"hub:catalog:read",
+				"iam:service-users:use",
 			},
 			mustNotInclude: []string{
 				"storage:bucket-definitions:delete",
@@ -119,6 +121,7 @@ func TestGetScopesForSafetyLevel(t *testing.T) {
 				"dev-obs:breakpoints:set",
 				"hub:catalog:read",
 				"extensions:definitions:write",
+				"iam:service-users:use",
 			},
 			mustNotInclude: []string{},
 			minScopeCount:  73,

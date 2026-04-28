@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`iam:service-users:use` OAuth scope** — added to the `readwrite-mine`, `readwrite-all`, and `dangerously-unrestricted` safety levels so `dtctl create workflow` can use a Dynatrace [service user as the workflow actor](https://docs.dynatrace.com/docs/analyze-explore-automate/workflows/security#service-users); existing sessions need to re-run `dtctl auth login` to pick up the new scope; note that this slightly broadens the privilege footprint of `readwrite-mine` since holders can now act as a service user when creating workflows
+
 ## [0.25.1] - 2026-04-21
 
 ### Fixed
