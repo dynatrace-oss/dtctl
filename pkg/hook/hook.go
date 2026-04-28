@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/google/shlex"
 )
 
 // DefaultTimeout is the maximum time a hook is allowed to run.
@@ -20,14 +22,42 @@ type Result struct {
 	Duration time.Duration
 }
 
+// tokenizeCommand splits a hook command string into argv using POSIX-style
+// shell quoting rules so that paths with spaces and quoted arguments work:
+//
+//	bash "/Users/joe/My Hooks/validate.sh"   -> ["bash", "/Users/joe/My Hooks/validate.sh"]
+//	node validate.js --rule "no-empty-titles" -> ["node", "validate.js", "--rule", "no-empty-titles"]
+//
+// The command is NOT run through a shell, so pipes/redirections/glob
+// expansion still require an explicit interpreter (e.g. `bash -c '<script>'`).
+//
+// Returns (nil, nil) for an empty or whitespace-only command, signalling
+// "no-op hook". Returns an error if the quoting is malformed (e.g. an
+// unterminated single-quoted string).
+func tokenizeCommand(command string) ([]string, error) {
+	if strings.TrimSpace(command) == "" {
+		return nil, nil
+	}
+	tokens, err := shlex.Split(command)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse hook command (check for unmatched quotes): %w", err)
+	}
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+	return tokens, nil
+}
+
 // RunPreApply executes the pre-apply hook command.
 //
-// The command string is tokenized with strings.Fields and executed directly
-// (NOT via "sh -c"). The resource type and source file are appended as the
-// two final arguments of the process. Processed JSON is piped to stdin.
+// The command string is tokenized with POSIX-style shell quoting (see
+// tokenizeCommand) and executed directly (NOT via "sh -c"). The resource
+// type and source file are appended as the two final arguments of the
+// process. Processed JSON is piped to stdin.
 //
 // Example: command `bash /path/to/validate.sh` becomes
 // exec.Command("bash", "/path/to/validate.sh", "<rtype>", "<sourceFile>").
+// Quoting is honoured, so `bash "/path with spaces/validate.sh"` works.
 //
 // sourceFile is the original filename that was passed to "dtctl apply -f".
 // It is informational only — the hook MUST read the resource content from
@@ -47,11 +77,16 @@ func RunPreApply(ctx context.Context, command string, resourceType string, sourc
 	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 	defer cancel()
 
-	tokens := strings.Fields(command)
+	tokens, err := tokenizeCommand(command)
+	if err != nil {
+		return nil, fmt.Errorf("pre-apply hook: %w", err)
+	}
 	if len(tokens) == 0 {
 		return &Result{ExitCode: 0}, nil
 	}
-	args := append(tokens[1:], resourceType, sourceFile)
+	args := make([]string, 0, len(tokens)-1+2)
+	args = append(args, tokens[1:]...)
+	args = append(args, resourceType, sourceFile)
 	cmd := exec.CommandContext(ctx, tokens[0], args...)
 	cmd.Stdin = bytes.NewReader(jsonData)
 
@@ -60,7 +95,7 @@ func RunPreApply(ctx context.Context, command string, resourceType string, sourc
 	cmd.Stderr = &stderr
 
 	start := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	elapsed := time.Since(start)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -82,9 +117,10 @@ func RunPreApply(ctx context.Context, command string, resourceType string, sourc
 
 // RunPostApply executes the post-apply hook command.
 //
-// Invoked the same way as RunPreApply — tokenize, append resource type and
-// source file as the two final args, run directly (no "sh -c"). Stdin is
-// the apply result as JSON, so the hook can read the created/updated
+// Invoked the same way as RunPreApply — POSIX-style tokenize, append
+// resource type and source file as the two final args, run directly (no
+// "sh -c"). Stdin is the apply result as JSON, so the hook can read the
+// created/updated
 // resource's id, name, url, etc. Stdout and stderr are both captured and
 // returned; the caller is responsible for printing them to the user (a
 // post-apply hook's output is always relevant, including on success).
@@ -100,11 +136,16 @@ func RunPostApply(ctx context.Context, command string, resourceType string, sour
 	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 	defer cancel()
 
-	tokens := strings.Fields(command)
+	tokens, err := tokenizeCommand(command)
+	if err != nil {
+		return nil, fmt.Errorf("post-apply hook: %w", err)
+	}
 	if len(tokens) == 0 {
 		return &Result{ExitCode: 0}, nil
 	}
-	args := append(tokens[1:], resourceType, sourceFile)
+	args := make([]string, 0, len(tokens)-1+2)
+	args = append(args, tokens[1:]...)
+	args = append(args, resourceType, sourceFile)
 	cmd := exec.CommandContext(ctx, tokens[0], args...)
 	cmd.Stdin = bytes.NewReader(resultJSON)
 
@@ -113,7 +154,7 @@ func RunPostApply(ctx context.Context, command string, resourceType string, sour
 	cmd.Stderr = &stderr
 
 	start := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	elapsed := time.Since(start)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {

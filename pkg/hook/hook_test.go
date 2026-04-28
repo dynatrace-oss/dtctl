@@ -186,3 +186,66 @@ func TestRunPostApply_ReceivesResultJSONAndArgs(t *testing.T) {
 		t.Errorf("ExitCode = %d, want 0; stderr=%q", result.ExitCode, result.Stderr)
 	}
 }
+
+// TestRunPreApply_PathWithSpaces verifies that quoting in the hook command
+// string survives tokenization, so paths containing spaces work. This is the
+// common macOS case ("/Users/joe/Library/Application Support/...") that
+// naive whitespace splitting would silently break.
+func TestRunPreApply_PathWithSpaces(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "dir with spaces")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	scriptPath := filepath.Join(dir, "hook.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	command := `bash "` + scriptPath + `"`
+	result, err := RunPreApply(context.Background(), command, "dashboard", "test.yaml", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; stderr=%q", result.ExitCode, result.Stderr)
+	}
+}
+
+// TestRunPreApply_QuotedArgsPreserved verifies that quoted arguments
+// containing spaces are passed as a single argv entry, not split.
+func TestRunPreApply_QuotedArgsPreserved(t *testing.T) {
+	// Hook script asserts $1 (the first user arg, before the appended
+	// resourceType/sourceFile) is the multi-word string passed via quoting.
+	scriptDir := t.TempDir()
+	scriptPath := filepath.Join(scriptDir, "hook.sh")
+	body := `#!/usr/bin/env bash
+test "$1" = "two words" || { echo "got '$1'" >&2; exit 1; }
+test "$2" = workflow || { echo "got '$2'" >&2; exit 1; }
+test "$3" = my.yaml || { echo "got '$3'" >&2; exit 1; }
+`
+	if err := os.WriteFile(scriptPath, []byte(body), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	command := `bash ` + scriptPath + ` "two words"`
+	result, err := RunPreApply(context.Background(), command, "workflow", "my.yaml", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; stderr=%q", result.ExitCode, result.Stderr)
+	}
+}
+
+// TestRunPreApply_UnterminatedQuoteIsError verifies that a malformed command
+// string (unterminated quote) produces a clear error instead of silently
+// running with the wrong tokens.
+func TestRunPreApply_UnterminatedQuoteIsError(t *testing.T) {
+	_, err := RunPreApply(context.Background(), `bash "missing-end`, "dashboard", "x.yaml", []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for unterminated quote, got nil")
+	}
+	if !strings.Contains(err.Error(), "hook command") {
+		t.Errorf("error = %v, want it to mention hook command parsing", err)
+	}
+}
