@@ -20,6 +20,15 @@ func loadConfigRaw() (*config.Config, error) {
 	return config.Load()
 }
 
+// loadRawConfig loads the configuration without expanding environment variables,
+// mirroring the path selection logic of LoadConfig/saveConfig.
+func loadRawConfig() (*config.Config, error) {
+	if cfgFile != "" {
+		return config.LoadFromWithoutExpansion(cfgFile)
+	}
+	return config.LoadWithoutExpansion()
+}
+
 // saveConfig saves configuration respecting the --config flag and local config presence
 func saveConfig(cfg *config.Config) error {
 	if cfgFile != "" {

@@ -178,6 +178,25 @@ func Load() (*Config, error) {
 
 // LoadFrom loads the configuration from a specific path
 func LoadFrom(path string) (*Config, error) {
+	return loadFrom(path, true)
+}
+
+// LoadFromWithoutExpansion loads the configuration from a specific path without
+// expanding environment variables. Use this to inspect raw template values.
+func LoadFromWithoutExpansion(path string) (*Config, error) {
+	return loadFrom(path, false)
+}
+
+// LoadWithoutExpansion loads the configuration without expanding environment variables,
+// using the same search order as Load (local config, then global config).
+func LoadWithoutExpansion() (*Config, error) {
+	if local := FindLocalConfig(); local != "" {
+		return LoadFromWithoutExpansion(local)
+	}
+	return LoadFromWithoutExpansion(DefaultConfigPath())
+}
+
+func loadFrom(path string, expandEnv bool) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -186,17 +205,19 @@ func LoadFrom(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Expand environment variables in the config file.
-	//
-	// We deliberately do NOT use os.ExpandEnv: it expands every $-prefixed
-	// token, including shell positional parameters like $1/$2/$@ that can
-	// legitimately appear in opaque config values such as hook commands.
-	// expandEnvPreservingShellParams leaves those alone and substitutes only
-	// real environment variable names.
-	expandedData := []byte(expandEnvPreservingShellParams(string(data)))
+	if expandEnv {
+		// Expand environment variables in the config file.
+		//
+		// We deliberately do NOT use os.ExpandEnv: it expands every $-prefixed
+		// token, including shell positional parameters like $1/$2/$@ that can
+		// legitimately appear in opaque config values such as hook commands.
+		// expandEnvPreservingShellParams leaves those alone and substitutes only
+		// real environment variable names.
+		data = []byte(expandEnvPreservingShellParams(string(data)))
+	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(expandedData, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
@@ -603,13 +624,13 @@ func (c *Config) DeleteContext(name string) error {
 	return fmt.Errorf("context %q not found", name)
 }
 
-// PruneEmptyEnvironments removes contexts whose Environment field is empty,
-// except the named keepContext. This cleans up unfilled template placeholders
-// (e.g. from "dtctl config init") after a successful "dtctl auth login".
-func (c *Config) PruneEmptyEnvironments(keepContext string) {
+// PruneEmptyEnvironments removes contexts whose names are in placeholderNames,
+// except the named keepContext. Pass the context names from the raw (unexpanded)
+// config file to avoid pruning contexts backed by currently-unset env vars.
+func (c *Config) PruneEmptyEnvironments(keepContext string, placeholderNames map[string]bool) {
 	kept := c.Contexts[:0]
 	for _, nc := range c.Contexts {
-		if nc.Context.Environment == "" && nc.Name != keepContext {
+		if placeholderNames[nc.Name] && nc.Name != keepContext {
 			continue
 		}
 		kept = append(kept, nc)
