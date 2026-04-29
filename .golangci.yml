@@ -78,6 +78,14 @@ linters:
           - staticcheck
         text: "SA4010"
         path: cmd/get_documents\.go
+      # SA5011: staticcheck does not model t.Fatal/t.Fatalf as terminating,
+      # so it reports spurious nil-pointer dereference warnings after nil-guard
+      # checks in test code. The pattern `if x == nil { t.Fatal(...) }; x.Field`
+      # is safe — suppress in all test files.
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "SA5011"
 
 issues:
   max-issues-per-linter: 0

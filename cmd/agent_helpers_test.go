@@ -75,7 +75,6 @@ func TestExtractApplyBase_PointerTypes(t *testing.T) {
 			base := extractApplyBase(tt.result)
 			if base == nil {
 				t.Fatal("expected non-nil base")
-				return
 			}
 			if base.ResourceType != tt.want {
 				t.Errorf("expected ResourceType=%q, got %q", tt.want, base.ResourceType)
@@ -95,7 +94,6 @@ func TestExtractApplyBase_ValueTypes(t *testing.T) {
 	base := extractApplyBase(result)
 	if base == nil {
 		t.Fatal("expected non-nil base for value type")
-		return
 	}
 	if base.ResourceType != "workflow" {
 		t.Errorf("expected ResourceType=workflow, got %q", base.ResourceType)
