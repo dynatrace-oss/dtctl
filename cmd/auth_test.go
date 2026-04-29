@@ -241,8 +241,8 @@ func TestAuthLogin_KeyringRecovery(t *testing.T) {
 // are pruned, except for the context that was just logged into.
 func TestFinalizeLoginConfig(t *testing.T) {
 	tests := []struct {
-		name             string
-		setupContexts    []struct{ name, env, tok string }
+		name          string
+		setupContexts []struct{ name, env, tok string }
 		// placeholderNames overrides which context names are treated as prunable
 		// placeholders. nil means: derive from setupContexts where env == "".
 		// Set explicitly to map[string]bool{} to simulate a context whose env is
@@ -260,8 +260,8 @@ func TestFinalizeLoginConfig(t *testing.T) {
 				{"my-environment", "", "my-token"},
 			},
 			loginContext: "dev",
-			loginEnv:    "https://abc12345.apps.dynatrace.com/",
-			loginToken:  "dev-oauth",
+			loginEnv:     "https://abc12345.apps.dynatrace.com/",
+			loginToken:   "dev-oauth",
 			wantContexts: []string{"dev"},
 			wantCurrent:  "dev",
 		},
@@ -273,8 +273,8 @@ func TestFinalizeLoginConfig(t *testing.T) {
 				{"prod", "https://prod.apps.dynatrace.com/", "prod-oauth"},
 			},
 			loginContext: "dev",
-			loginEnv:    "https://dev.apps.dynatracelabs.com/",
-			loginToken:  "dev-oauth",
+			loginEnv:     "https://dev.apps.dynatracelabs.com/",
+			loginToken:   "dev-oauth",
 			wantContexts: []string{"prod", "dev"},
 			wantCurrent:  "dev",
 		},
@@ -285,8 +285,8 @@ func TestFinalizeLoginConfig(t *testing.T) {
 				{"staging", "https://staging.apps.dynatrace.com/", "staging-oauth"},
 			},
 			loginContext: "dev",
-			loginEnv:    "https://dev.apps.dynatracelabs.com/",
-			loginToken:  "dev-oauth",
+			loginEnv:     "https://dev.apps.dynatracelabs.com/",
+			loginToken:   "dev-oauth",
 			wantContexts: []string{"prod", "staging", "dev"},
 			wantCurrent:  "dev",
 		},
@@ -294,10 +294,10 @@ func TestFinalizeLoginConfig(t *testing.T) {
 			name:          "no existing contexts — fresh config",
 			setupContexts: []struct{ name, env, tok string }{},
 			loginContext:  "dev",
-			loginEnv:     "https://abc12345.apps.dynatrace.com/",
-			loginToken:   "dev-oauth",
-			wantContexts: []string{"dev"},
-			wantCurrent:  "dev",
+			loginEnv:      "https://abc12345.apps.dynatrace.com/",
+			loginToken:    "dev-oauth",
+			wantContexts:  []string{"dev"},
+			wantCurrent:   "dev",
 		},
 		{
 			// Simulates: config has `environment: ${CI_DT_URL}` and CI_DT_URL is
