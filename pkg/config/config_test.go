@@ -1541,10 +1541,10 @@ func TestHooks_YAMLRoundTrip_EmptyHooks(t *testing.T) {
 
 func TestConfig_PruneEmptyEnvironments(t *testing.T) {
 	tests := []struct {
-		name          string
-		contexts      []NamedContext
-		keepContext   string
-		wantNames     []string
+		name        string
+		contexts    []NamedContext
+		keepContext string
+		wantNames   []string
 	}{
 		{
 			name: "removes context with empty environment",
