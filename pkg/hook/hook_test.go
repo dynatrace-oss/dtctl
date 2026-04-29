@@ -205,7 +205,7 @@ func TestRunPreApply_PathWithSpaces(t *testing.T) {
 		t.Fatalf("write script: %v", err)
 	}
 
-	command := `bash "` + scriptPath + `"`
+	command := `bash "` + filepath.ToSlash(scriptPath) + `"`
 	result, err := RunPreApply(context.Background(), command, "dashboard", "test.yaml", []byte(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -231,7 +231,7 @@ test "$3" = my.yaml || { echo "got '$3'" >&2; exit 1; }
 		t.Fatalf("write script: %v", err)
 	}
 
-	command := `bash ` + scriptPath + ` "two words"`
+	command := `bash ` + filepath.ToSlash(scriptPath) + ` "two words"`
 	result, err := RunPreApply(context.Background(), command, "workflow", "my.yaml", []byte(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
