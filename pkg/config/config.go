@@ -448,6 +448,20 @@ func (c *Config) DeleteContext(name string) error {
 	return fmt.Errorf("context %q not found", name)
 }
 
+// PruneEmptyEnvironments removes contexts whose Environment field is empty,
+// except the named keepContext. This cleans up unfilled template placeholders
+// (e.g. from "dtctl config init") after a successful "dtctl auth login".
+func (c *Config) PruneEmptyEnvironments(keepContext string) {
+	kept := c.Contexts[:0]
+	for _, nc := range c.Contexts {
+		if nc.Context.Environment == "" && nc.Name != keepContext {
+			continue
+		}
+		kept = append(kept, nc)
+	}
+	c.Contexts = kept
+}
+
 // SetToken creates or updates a token.
 // If keyring is available, the token is stored securely in the OS keyring
 // and only a reference is kept in the config file.

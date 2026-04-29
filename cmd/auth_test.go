@@ -236,6 +236,102 @@ func TestAuthLogin_KeyringRecovery(t *testing.T) {
 	}
 }
 
+// TestFinalizeLoginConfig verifies that after a successful login the config is
+// updated correctly and any template placeholder contexts (empty environment)
+// are pruned, except for the context that was just logged into.
+func TestFinalizeLoginConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		setupContexts []struct{ name, env, tok string }
+		loginContext  string
+		loginEnv     string
+		loginToken   string
+		wantContexts []string
+		wantCurrent  string
+	}{
+		{
+			name: "prunes my-environment placeholder after login",
+			setupContexts: []struct{ name, env, tok string }{
+				{"my-environment", "", "my-token"},
+			},
+			loginContext: "gmg",
+			loginEnv:    "https://gmg80500.dev.apps.dynatracelabs.com/",
+			loginToken:  "gmg-oauth",
+			wantContexts: []string{"gmg"},
+			wantCurrent:  "gmg",
+		},
+		{
+			name: "prunes multiple placeholder contexts",
+			setupContexts: []struct{ name, env, tok string }{
+				{"my-environment", "", "my-token"},
+				{"staging", "", "staging-token"},
+				{"prod", "https://prod.apps.dynatrace.com/", "prod-oauth"},
+			},
+			loginContext: "dev",
+			loginEnv:    "https://dev.apps.dynatracelabs.com/",
+			loginToken:  "dev-oauth",
+			wantContexts: []string{"prod", "dev"},
+			wantCurrent:  "dev",
+		},
+		{
+			name: "keeps all contexts with real environments",
+			setupContexts: []struct{ name, env, tok string }{
+				{"prod", "https://prod.apps.dynatrace.com/", "prod-oauth"},
+				{"staging", "https://staging.apps.dynatrace.com/", "staging-oauth"},
+			},
+			loginContext: "dev",
+			loginEnv:    "https://dev.apps.dynatracelabs.com/",
+			loginToken:  "dev-oauth",
+			wantContexts: []string{"prod", "staging", "dev"},
+			wantCurrent:  "dev",
+		},
+		{
+			name:          "no existing contexts — fresh config",
+			setupContexts: []struct{ name, env, tok string }{},
+			loginContext:  "gmg",
+			loginEnv:     "https://gmg80500.dev.apps.dynatracelabs.com/",
+			loginToken:   "gmg-oauth",
+			wantContexts: []string{"gmg"},
+			wantCurrent:  "gmg",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			for _, c := range tt.setupContexts {
+				cfg.SetContext(c.name, c.env, c.tok)
+			}
+
+			finalizeLoginConfig(cfg, tt.loginContext, tt.loginEnv, tt.loginToken, config.SafetyLevelReadWriteAll)
+
+			if cfg.CurrentContext != tt.wantCurrent {
+				t.Errorf("CurrentContext = %q, want %q", cfg.CurrentContext, tt.wantCurrent)
+			}
+			if len(cfg.Contexts) != len(tt.wantContexts) {
+				got := make([]string, len(cfg.Contexts))
+				for i, nc := range cfg.Contexts {
+					got[i] = nc.Name
+				}
+				t.Fatalf("context count = %d %v, want %d %v", len(cfg.Contexts), got, len(tt.wantContexts), tt.wantContexts)
+			}
+			for i, want := range tt.wantContexts {
+				if cfg.Contexts[i].Name != want {
+					t.Errorf("contexts[%d].Name = %q, want %q", i, cfg.Contexts[i].Name, want)
+				}
+			}
+			// The login context must always be present with the correct environment.
+			nc, err := cfg.GetContext(tt.loginContext)
+			if err != nil {
+				t.Fatalf("login context %q not found after finalize: %v", tt.loginContext, err)
+			}
+			if nc.Context.Environment != tt.loginEnv {
+				t.Errorf("login context environment = %q, want %q", nc.Context.Environment, tt.loginEnv)
+			}
+		})
+	}
+}
+
 // TestResolveLoginContext tests the resolveLoginContext helper that determines
 // contextName, environment, and tokenName from an existing config when not all
 // values are supplied as explicit CLI flags.

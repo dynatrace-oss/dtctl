@@ -359,6 +359,17 @@ func resolveLoginContext(cfg *config.Config, contextName, environment, tokenName
 	return contextName, environment, tokenName, nil
 }
 
+// finalizeLoginConfig updates cfg after a successful OAuth login: sets the
+// context, activates it, and prunes any contexts with empty environments
+// (unfilled template placeholders created by "dtctl config init").
+func finalizeLoginConfig(cfg *config.Config, contextName, environment, tokenName string, safetyLevel config.SafetyLevel) {
+	cfg.SetContextWithOptions(contextName, environment, tokenName, &config.ContextOptions{
+		SafetyLevel: safetyLevel,
+	})
+	cfg.CurrentContext = contextName
+	cfg.PruneEmptyEnvironments(contextName)
+}
+
 // authLoginCmd initiates browser-based OAuth login
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
@@ -561,11 +572,7 @@ instead (dtctl config set-credentials).`,
 
 		output.PrintSuccess("Tokens stored in %s as '%s'", config.OAuthStorageBackend(), tokenName)
 
-		// Create or update context with safety level
-		cfg.SetContextWithOptions(contextName, environment, tokenName, &config.ContextOptions{
-			SafetyLevel: safetyLevel,
-		})
-		cfg.CurrentContext = contextName
+		finalizeLoginConfig(cfg, contextName, environment, tokenName, safetyLevel)
 
 		// Save config (respects local .dtctl.yaml if present)
 		if err := saveConfig(cfg); err != nil {
