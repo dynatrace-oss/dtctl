@@ -286,6 +286,53 @@ func TestExtractUserIDFromToken(t *testing.T) {
 	}
 }
 
+func TestIsPlatformToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		want  bool
+	}{
+		{
+			name:  "platform token",
+			token: "dt0s16.ABCDEFGHIJK.secret-portion-of-token",
+			want:  true,
+		},
+		{
+			name:  "platform token with empty payload",
+			token: "dt0s16.",
+			want:  true,
+		},
+		{
+			name:  "classic environment API token",
+			token: "dt0c01.ST.test-public.test-secret",
+			want:  false,
+		},
+		{
+			name:  "OAuth client ID prefix",
+			token: "dt0s12.dtctl-prod",
+			want:  false,
+		},
+		{
+			name:  "OAuth access token (JWT shape)",
+			token: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature",
+			want:  false,
+		},
+		{
+			name:  "empty",
+			token: "",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsPlatformToken(tt.token); got != tt.want {
+				t.Errorf("IsPlatformToken(%q) = %v, want %v", tt.token, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestClient_RetryBehavior(t *testing.T) {
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

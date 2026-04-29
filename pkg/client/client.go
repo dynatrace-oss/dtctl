@@ -310,6 +310,16 @@ func (c *Client) CurrentUserID() (string, error) {
 	return ExtractUserIDFromToken(c.token)
 }
 
+// platformTokenPrefix identifies Dynatrace platform tokens — opaque bearer
+// tokens (not JWTs) that cannot be granted iam:users:read / iam:groups:read,
+// so /platform/metadata/v1/user returns 403 when authenticated with one.
+const platformTokenPrefix = "dt0s16."
+
+// IsPlatformToken reports whether token is a Dynatrace platform token.
+func IsPlatformToken(token string) bool {
+	return strings.HasPrefix(token, platformTokenPrefix)
+}
+
 // ExtractUserIDFromToken extracts the user ID (sub claim) from a JWT token.
 func ExtractUserIDFromToken(token string) (string, error) {
 	parts := strings.Split(token, ".")

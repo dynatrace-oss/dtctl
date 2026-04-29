@@ -257,19 +257,28 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 
 	userInfo, authErr := c.CurrentUser()
 	if authErr != nil {
-		// Try fallback to user ID extraction from JWT
-		userID, jwtErr := c.CurrentUserID()
-		if jwtErr != nil {
+		// Platform tokens cannot be granted iam:users:read, so the metadata API
+		// returns 403 by design — surface this as a known limitation, not a
+		// failure. For other (OAuth/JWT) tokens, fall back to decoding the user
+		// ID directly out of the token; CurrentUserID would re-issue the same
+		// metadata call we already failed, so go straight to the JWT path.
+		if client.IsPlatformToken(token) {
 			results = append(results, checkResult{
 				Name:   "Authentication",
-				Status: "fail",
-				Detail: fmt.Sprintf("API call failed: %s", authErr.Error()),
+				Status: "warn",
+				Detail: "platform token: user identity unavailable via metadata API (requires iam:users:read scope, not grantable to platform tokens)",
 			})
-		} else {
+		} else if userID, jwtErr := client.ExtractUserIDFromToken(token); jwtErr == nil {
 			results = append(results, checkResult{
 				Name:   "Authentication",
 				Status: "warn",
 				Detail: fmt.Sprintf("metadata API unavailable, but token is valid (user: %s)", userID),
+			})
+		} else {
+			results = append(results, checkResult{
+				Name:   "Authentication",
+				Status: "fail",
+				Detail: fmt.Sprintf("API call failed: %s", authErr.Error()),
 			})
 		}
 	} else {
