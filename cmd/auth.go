@@ -359,6 +359,18 @@ func resolveLoginContext(cfg *config.Config, contextName, environment, tokenName
 	return contextName, environment, tokenName, nil
 }
 
+// finalizeLoginConfig updates cfg after a successful OAuth login: sets the
+// context, activates it, and prunes placeholder contexts whose names are in
+// placeholderNames (computed from the raw config file before env-var expansion,
+// to avoid permanently deleting contexts backed by unset env vars).
+func finalizeLoginConfig(cfg *config.Config, contextName, environment, tokenName string, safetyLevel config.SafetyLevel, placeholderNames map[string]bool) {
+	cfg.SetContextWithOptions(contextName, environment, tokenName, &config.ContextOptions{
+		SafetyLevel: safetyLevel,
+	})
+	cfg.CurrentContext = contextName
+	cfg.PruneEmptyEnvironments(contextName, placeholderNames)
+}
+
 // authLoginCmd initiates browser-based OAuth login
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
@@ -561,11 +573,18 @@ instead (dtctl config set-credentials).`,
 
 		output.PrintSuccess("Tokens stored in %s as '%s'", config.OAuthStorageBackend(), tokenName)
 
-		// Create or update context with safety level
-		cfg.SetContextWithOptions(contextName, environment, tokenName, &config.ContextOptions{
-			SafetyLevel: safetyLevel,
-		})
-		cfg.CurrentContext = contextName
+		// Identify placeholder contexts from the raw (unexpanded) config so that
+		// contexts backed by unset env vars are not permanently pruned.
+		placeholderNames := make(map[string]bool)
+		if rawCfg, err := loadRawConfig(); err == nil {
+			for _, nc := range rawCfg.Contexts {
+				if nc.Context.Environment == "" {
+					placeholderNames[nc.Name] = true
+				}
+			}
+		}
+
+		finalizeLoginConfig(cfg, contextName, environment, tokenName, safetyLevel, placeholderNames)
 
 		// Save config (respects local .dtctl.yaml if present)
 		if err := saveConfig(cfg); err != nil {

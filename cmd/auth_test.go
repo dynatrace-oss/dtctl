@@ -236,6 +236,133 @@ func TestAuthLogin_KeyringRecovery(t *testing.T) {
 	}
 }
 
+// TestFinalizeLoginConfig verifies that after a successful login the config is
+// updated correctly and any template placeholder contexts (empty environment)
+// are pruned, except for the context that was just logged into.
+func TestFinalizeLoginConfig(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupContexts []struct{ name, env, tok string }
+		// placeholderNames overrides which context names are treated as prunable
+		// placeholders. nil means: derive from setupContexts where env == "".
+		// Set explicitly to map[string]bool{} to simulate a context whose env is
+		// empty only because its env var was unset at load time (not a true placeholder).
+		placeholderNames map[string]bool
+		loginContext     string
+		loginEnv         string
+		loginToken       string
+		wantContexts     []string
+		wantCurrent      string
+	}{
+		{
+			name: "prunes my-environment placeholder after login",
+			setupContexts: []struct{ name, env, tok string }{
+				{"my-environment", "", "my-token"},
+			},
+			loginContext: "dev",
+			loginEnv:     "https://abc12345.apps.dynatrace.com/",
+			loginToken:   "dev-oauth",
+			wantContexts: []string{"dev"},
+			wantCurrent:  "dev",
+		},
+		{
+			name: "prunes multiple placeholder contexts",
+			setupContexts: []struct{ name, env, tok string }{
+				{"my-environment", "", "my-token"},
+				{"staging", "", "staging-token"},
+				{"prod", "https://prod.apps.dynatrace.com/", "prod-oauth"},
+			},
+			loginContext: "dev",
+			loginEnv:     "https://dev.apps.dynatracelabs.com/",
+			loginToken:   "dev-oauth",
+			wantContexts: []string{"prod", "dev"},
+			wantCurrent:  "dev",
+		},
+		{
+			name: "keeps all contexts with real environments",
+			setupContexts: []struct{ name, env, tok string }{
+				{"prod", "https://prod.apps.dynatrace.com/", "prod-oauth"},
+				{"staging", "https://staging.apps.dynatrace.com/", "staging-oauth"},
+			},
+			loginContext: "dev",
+			loginEnv:     "https://dev.apps.dynatracelabs.com/",
+			loginToken:   "dev-oauth",
+			wantContexts: []string{"prod", "staging", "dev"},
+			wantCurrent:  "dev",
+		},
+		{
+			name:          "no existing contexts — fresh config",
+			setupContexts: []struct{ name, env, tok string }{},
+			loginContext:  "dev",
+			loginEnv:      "https://abc12345.apps.dynatrace.com/",
+			loginToken:    "dev-oauth",
+			wantContexts:  []string{"dev"},
+			wantCurrent:   "dev",
+		},
+		{
+			// Simulates: config has `environment: ${CI_DT_URL}` and CI_DT_URL is
+			// unset at login time, so os.ExpandEnv produces Environment=="". The
+			// raw config has a non-empty template value, so ci-env is NOT in
+			// placeholderNames and must be preserved.
+			name: "preserves context backed by unset env var",
+			setupContexts: []struct{ name, env, tok string }{
+				{"ci-env", "", "ci-token"}, // expanded from ${CI_DT_URL} which is unset
+			},
+			placeholderNames: map[string]bool{}, // ci-env is NOT a placeholder in raw config
+			loginContext:     "dev",
+			loginEnv:         "https://abc12345.apps.dynatrace.com/",
+			loginToken:       "dev-oauth",
+			wantContexts:     []string{"ci-env", "dev"},
+			wantCurrent:      "dev",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			for _, c := range tt.setupContexts {
+				cfg.SetContext(c.name, c.env, c.tok)
+			}
+
+			placeholderNames := tt.placeholderNames
+			if placeholderNames == nil {
+				placeholderNames = make(map[string]bool)
+				for _, c := range tt.setupContexts {
+					if c.env == "" {
+						placeholderNames[c.name] = true
+					}
+				}
+			}
+
+			finalizeLoginConfig(cfg, tt.loginContext, tt.loginEnv, tt.loginToken, config.SafetyLevelReadWriteAll, placeholderNames)
+
+			if cfg.CurrentContext != tt.wantCurrent {
+				t.Errorf("CurrentContext = %q, want %q", cfg.CurrentContext, tt.wantCurrent)
+			}
+			if len(cfg.Contexts) != len(tt.wantContexts) {
+				got := make([]string, len(cfg.Contexts))
+				for i, nc := range cfg.Contexts {
+					got[i] = nc.Name
+				}
+				t.Fatalf("context count = %d %v, want %d %v", len(cfg.Contexts), got, len(tt.wantContexts), tt.wantContexts)
+			}
+			for i, want := range tt.wantContexts {
+				if cfg.Contexts[i].Name != want {
+					t.Errorf("contexts[%d].Name = %q, want %q", i, cfg.Contexts[i].Name, want)
+				}
+			}
+			// The login context must always be present with the correct environment.
+			nc, err := cfg.GetContext(tt.loginContext)
+			if err != nil {
+				t.Fatalf("login context %q not found after finalize: %v", tt.loginContext, err)
+			}
+			if nc.Context.Environment != tt.loginEnv {
+				t.Errorf("login context environment = %q, want %q", nc.Context.Environment, tt.loginEnv)
+			}
+		})
+	}
+}
+
 // TestResolveLoginContext tests the resolveLoginContext helper that determines
 // contextName, environment, and tokenName from an existing config when not all
 // values are supplied as explicit CLI flags.

@@ -1538,3 +1538,97 @@ func TestHooks_YAMLRoundTrip_EmptyHooks(t *testing.T) {
 		t.Errorf("GetPreApplyHook() = %q, want empty (no hooks configured)", got)
 	}
 }
+
+func TestConfig_PruneEmptyEnvironments(t *testing.T) {
+	tests := []struct {
+		name        string
+		contexts    []NamedContext
+		keepContext string
+		wantNames   []string
+	}{
+		{
+			name: "removes context with empty environment",
+			contexts: []NamedContext{
+				{Name: "placeholder", Context: Context{Environment: ""}},
+				{Name: "real", Context: Context{Environment: "https://abc12345.apps.dynatrace.com/"}},
+			},
+			keepContext: "real",
+			wantNames:   []string{"real"},
+		},
+		{
+			name: "keeps all contexts with real environments",
+			contexts: []NamedContext{
+				{Name: "prod", Context: Context{Environment: "https://prod.apps.dynatrace.com/"}},
+				{Name: "dev", Context: Context{Environment: "https://dev.apps.dynatracelabs.com/"}},
+			},
+			keepContext: "prod",
+			wantNames:   []string{"prod", "dev"},
+		},
+		{
+			name: "removes multiple placeholder contexts",
+			contexts: []NamedContext{
+				{Name: "my-environment", Context: Context{Environment: ""}},
+				{Name: "another-placeholder", Context: Context{Environment: ""}},
+				{Name: "real", Context: Context{Environment: "https://abc12345.apps.dynatrace.com/"}},
+			},
+			keepContext: "real",
+			wantNames:   []string{"real"},
+		},
+		{
+			name: "keepContext is never removed even with empty environment",
+			contexts: []NamedContext{
+				{Name: "new-ctx", Context: Context{Environment: ""}},
+				{Name: "other", Context: Context{Environment: ""}},
+			},
+			keepContext: "new-ctx",
+			wantNames:   []string{"new-ctx"},
+		},
+		{
+			name:        "empty config is a no-op",
+			contexts:    []NamedContext{},
+			keepContext: "anything",
+			wantNames:   []string{},
+		},
+		{
+			name: "single non-empty keepContext is preserved",
+			contexts: []NamedContext{
+				{Name: "prod", Context: Context{Environment: "https://abc12345.apps.dynatrace.com/"}},
+			},
+			keepContext: "prod",
+			wantNames:   []string{"prod"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig()
+			cfg.Contexts = tt.contexts
+
+			placeholderNames := make(map[string]bool)
+			for _, nc := range tt.contexts {
+				if nc.Context.Environment == "" {
+					placeholderNames[nc.Name] = true
+				}
+			}
+			cfg.PruneEmptyEnvironments(tt.keepContext, placeholderNames)
+
+			if len(cfg.Contexts) != len(tt.wantNames) {
+				t.Fatalf("after prune: got %d contexts, want %d; names: %v",
+					len(cfg.Contexts), len(tt.wantNames), contextNames(cfg.Contexts))
+			}
+			for i, want := range tt.wantNames {
+				if cfg.Contexts[i].Name != want {
+					t.Errorf("contexts[%d].Name = %q, want %q", i, cfg.Contexts[i].Name, want)
+				}
+			}
+		})
+	}
+}
+
+func contextNames(contexts []NamedContext) []string {
+	names := make([]string, len(contexts))
+	for i, nc := range contexts {
+		names[i] = nc.Name
+	}
+	return names
+}
