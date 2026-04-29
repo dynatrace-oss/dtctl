@@ -182,6 +182,7 @@ func TestApplyCmd_ShareEnvironmentFlagValidation(t *testing.T) {
 			f := applyCmd.Flags().Lookup("share-environment")
 			if f == nil {
 				t.Fatal("--share-environment flag not registered")
+				return
 			}
 			orig := f.Value.String()
 			defer func() { _ = f.Value.Set(orig) }()

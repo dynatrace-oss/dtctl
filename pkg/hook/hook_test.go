@@ -19,7 +19,9 @@ func writeScript(t *testing.T, body string) string {
 	if err := os.WriteFile(path, []byte("#!/usr/bin/env bash\n"+body), 0o755); err != nil {
 		t.Fatalf("writeScript: %v", err)
 	}
-	return "bash " + path
+	// Use forward slashes so shlex tokenization works on Windows too
+	// (backslashes in Windows paths are consumed as escape chars by shlex).
+	return "bash " + filepath.ToSlash(path)
 }
 
 func TestRunPreApply_Success(t *testing.T) {

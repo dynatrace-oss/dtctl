@@ -29,6 +29,7 @@ func TestGlobalFlags(t *testing.T) {
 			flag := rootCmd.PersistentFlags().Lookup(tt.flagName)
 			if flag == nil {
 				t.Fatalf("Global flag --%s not found", tt.flagName)
+				return
 			}
 
 			if flag.DefValue != tt.defaultValue {
@@ -70,6 +71,7 @@ func TestQueryFlags(t *testing.T) {
 			flag := queryCmd.Flags().Lookup(tt.flagName)
 			if flag == nil {
 				t.Fatalf("Query flag --%s not found", tt.flagName)
+				return
 			}
 
 			if flag.DefValue != tt.defaultValue {
@@ -109,6 +111,7 @@ func TestVerifyQueryFlags(t *testing.T) {
 			flag := queryCmd.Flags().Lookup(tt.flagName)
 			if flag == nil {
 				t.Fatalf("Verify query flag --%s not found", tt.flagName)
+				return
 			}
 			if flag.DefValue != tt.defaultValue {
 				t.Errorf("Flag --%s default = %q, want %q", tt.flagName, flag.DefValue, tt.defaultValue)
@@ -121,6 +124,7 @@ func TestVerifyQueryFlags(t *testing.T) {
 		flag := queryCmd.Flags().Lookup("set")
 		if flag == nil {
 			t.Fatal("Verify query flag --set not found")
+			return
 		}
 		// StringArray flags have "[]" as default value
 		if flag.DefValue != "[]" {
@@ -146,6 +150,7 @@ func TestExecFlags(t *testing.T) {
 			flag := execWorkflowCmd.Flags().Lookup(tt.flagName)
 			if flag == nil {
 				t.Fatalf("Exec workflow flag --%s not found", tt.flagName)
+				return
 			}
 
 			if flag.DefValue != tt.defaultValue {

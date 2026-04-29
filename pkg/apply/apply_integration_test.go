@@ -26,7 +26,9 @@ func writeHookScript(t *testing.T, body string) string {
 	if err := os.WriteFile(path, []byte("#!/usr/bin/env bash\n"+body), 0o755); err != nil {
 		t.Fatalf("writeHookScript: %v", err)
 	}
-	return "bash " + path
+	// Use forward slashes so shlex tokenization works on Windows too
+	// (backslashes in Windows paths are consumed as escape chars by shlex).
+	return "bash " + filepath.ToSlash(path)
 }
 
 // requireSegmentFiltersAST reads the request body and validates that all
