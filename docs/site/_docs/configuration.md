@@ -205,7 +205,7 @@ Per-context hooks take precedence over global hooks. The special value `"none"` 
 Because the command is tokenized but then executed directly (no `sh -c`), pipes, redirections, glob expansion, and environment-variable expansion in the command string itself are **not** supported — put any shell logic inside the script the hook invokes.
 
 > **Agent mode (`--agent` / `-A`).** When dtctl writes its JSON envelope to stdout, both pre-apply and post-apply hook output is redirected to stderr automatically so the envelope on stdout stays clean for machine consumers. Use stderr for any human-readable hook diagnostics.
-
+>
 > **Shell positional parameters in config values.** The config loader expands `$VAR` / `${VAR}` against the process environment but preserves shell positional parameters (`$1`, `$2`, `$@`, …) verbatim. You can write `pre-apply: "bash validate.sh \"$1\" \"$2\""` and have those tokens reach the hook unchanged.
 
 ### Writing Hooks
