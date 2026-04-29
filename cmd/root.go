@@ -154,6 +154,10 @@ func execute() int {
 		if agentMode || plainMode {
 			detail := errorToDetail(err)
 			detail.Suggestions = append(detail.Suggestions, allHints...)
+			// Agent/plain mode: error envelopes go to stdout (not stderr) because
+			// machine consumers read all structured output — success and failure — from
+			// stdout. Relying on stderr for structured error data is unreliable in these
+			// modes; consumers must parse stdout for the full response envelope.
 			_ = output.PrintError(os.Stdout, detail)
 			return exitCodeForError(err)
 		}

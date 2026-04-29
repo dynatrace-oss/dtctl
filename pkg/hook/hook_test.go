@@ -1,7 +1,9 @@
 package hook
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -247,5 +249,77 @@ func TestRunPreApply_UnterminatedQuoteIsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "hook command") {
 		t.Errorf("error = %v, want it to mention hook command parsing", err)
+	}
+}
+
+func TestRunPreApply_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before Run — exec.CommandContext must propagate the error
+
+	cmd := writeScript(t, "sleep 10\n")
+	_, err := RunPreApply(ctx, cmd, "dashboard", "test.yaml", []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+func TestRunPreApply_LargeJSONPayload(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteString(`{"items":[`)
+	for i := range 1000 {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		fmt.Fprintf(&buf, `{"id":"item-%s","value":%s}`,
+			strings.Repeat("x", 80), strings.Repeat("1", 10))
+	}
+	buf.WriteString(`]}`)
+	payload := buf.Bytes()
+	if len(payload) < 50000 {
+		t.Fatalf("payload too small: %d bytes", len(payload))
+	}
+
+	cmd := writeScript(t, `count=$(wc -c | tr -d ' '); test "$count" -gt 50000`)
+	result, err := RunPreApply(context.Background(), cmd, "workflow", "large.json", payload)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0 (hook should receive full payload); stderr=%q", result.ExitCode, result.Stderr)
+	}
+}
+
+func TestRunPreApply_BinaryDataOnStdin(t *testing.T) {
+	data := []byte{0x00, 0x01, 0x02, 0xff, 0xfe}
+	// Drain stdin and exit 0 — verifies binary data doesn't cause pipe or exec failures.
+	cmd := writeScript(t, "cat > /dev/null\n")
+	result, err := RunPreApply(context.Background(), cmd, "dashboard", "test.yaml", data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0 (binary data should pass through)", result.ExitCode)
+	}
+}
+
+func TestRunPreApply_EmptySourceFile(t *testing.T) {
+	cmd := writeScript(t, `test "$2" = ""`)
+	result, err := RunPreApply(context.Background(), cmd, "workflow", "", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0 (empty sourceFile should be passed as empty $2); stderr=%q", result.ExitCode, result.Stderr)
+	}
+}
+
+func TestRunPreApply_HighExitCode(t *testing.T) {
+	cmd := writeScript(t, "exit 255\n")
+	result, err := RunPreApply(context.Background(), cmd, "dashboard", "test.yaml", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ExitCode != 255 {
+		t.Errorf("ExitCode = %d, want 255", result.ExitCode)
 	}
 }
