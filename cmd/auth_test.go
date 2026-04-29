@@ -241,24 +241,29 @@ func TestAuthLogin_KeyringRecovery(t *testing.T) {
 // are pruned, except for the context that was just logged into.
 func TestFinalizeLoginConfig(t *testing.T) {
 	tests := []struct {
-		name         string
-		setupContexts []struct{ name, env, tok string }
-		loginContext  string
-		loginEnv     string
-		loginToken   string
-		wantContexts []string
-		wantCurrent  string
+		name             string
+		setupContexts    []struct{ name, env, tok string }
+		// placeholderNames overrides which context names are treated as prunable
+		// placeholders. nil means: derive from setupContexts where env == "".
+		// Set explicitly to map[string]bool{} to simulate a context whose env is
+		// empty only because its env var was unset at load time (not a true placeholder).
+		placeholderNames map[string]bool
+		loginContext     string
+		loginEnv         string
+		loginToken       string
+		wantContexts     []string
+		wantCurrent      string
 	}{
 		{
 			name: "prunes my-environment placeholder after login",
 			setupContexts: []struct{ name, env, tok string }{
 				{"my-environment", "", "my-token"},
 			},
-			loginContext: "gmg",
-			loginEnv:    "https://gmg80500.dev.apps.dynatracelabs.com/",
-			loginToken:  "gmg-oauth",
-			wantContexts: []string{"gmg"},
-			wantCurrent:  "gmg",
+			loginContext: "dev",
+			loginEnv:    "https://abc12345.apps.dynatrace.com/",
+			loginToken:  "dev-oauth",
+			wantContexts: []string{"dev"},
+			wantCurrent:  "dev",
 		},
 		{
 			name: "prunes multiple placeholder contexts",
@@ -288,11 +293,27 @@ func TestFinalizeLoginConfig(t *testing.T) {
 		{
 			name:          "no existing contexts — fresh config",
 			setupContexts: []struct{ name, env, tok string }{},
-			loginContext:  "gmg",
-			loginEnv:     "https://gmg80500.dev.apps.dynatracelabs.com/",
-			loginToken:   "gmg-oauth",
-			wantContexts: []string{"gmg"},
-			wantCurrent:  "gmg",
+			loginContext:  "dev",
+			loginEnv:     "https://abc12345.apps.dynatrace.com/",
+			loginToken:   "dev-oauth",
+			wantContexts: []string{"dev"},
+			wantCurrent:  "dev",
+		},
+		{
+			// Simulates: config has `environment: ${CI_DT_URL}` and CI_DT_URL is
+			// unset at login time, so os.ExpandEnv produces Environment=="". The
+			// raw config has a non-empty template value, so ci-env is NOT in
+			// placeholderNames and must be preserved.
+			name: "preserves context backed by unset env var",
+			setupContexts: []struct{ name, env, tok string }{
+				{"ci-env", "", "ci-token"}, // expanded from ${CI_DT_URL} which is unset
+			},
+			placeholderNames: map[string]bool{}, // ci-env is NOT a placeholder in raw config
+			loginContext:     "dev",
+			loginEnv:         "https://abc12345.apps.dynatrace.com/",
+			loginToken:       "dev-oauth",
+			wantContexts:     []string{"ci-env", "dev"},
+			wantCurrent:      "dev",
 		},
 	}
 
@@ -303,7 +324,17 @@ func TestFinalizeLoginConfig(t *testing.T) {
 				cfg.SetContext(c.name, c.env, c.tok)
 			}
 
-			finalizeLoginConfig(cfg, tt.loginContext, tt.loginEnv, tt.loginToken, config.SafetyLevelReadWriteAll)
+			placeholderNames := tt.placeholderNames
+			if placeholderNames == nil {
+				placeholderNames = make(map[string]bool)
+				for _, c := range tt.setupContexts {
+					if c.env == "" {
+						placeholderNames[c.name] = true
+					}
+				}
+			}
+
+			finalizeLoginConfig(cfg, tt.loginContext, tt.loginEnv, tt.loginToken, config.SafetyLevelReadWriteAll, placeholderNames)
 
 			if cfg.CurrentContext != tt.wantCurrent {
 				t.Errorf("CurrentContext = %q, want %q", cfg.CurrentContext, tt.wantCurrent)

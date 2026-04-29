@@ -1569,10 +1569,10 @@ func TestConfig_PruneEmptyEnvironments(t *testing.T) {
 			contexts: []NamedContext{
 				{Name: "my-environment", Context: Context{Environment: ""}},
 				{Name: "another-placeholder", Context: Context{Environment: ""}},
-				{Name: "gmg", Context: Context{Environment: "https://gmg80500.dev.apps.dynatracelabs.com/"}},
+				{Name: "real", Context: Context{Environment: "https://abc12345.apps.dynatrace.com/"}},
 			},
-			keepContext: "gmg",
-			wantNames:   []string{"gmg"},
+			keepContext: "real",
+			wantNames:   []string{"real"},
 		},
 		{
 			name: "keepContext is never removed even with empty environment",
@@ -1590,12 +1590,12 @@ func TestConfig_PruneEmptyEnvironments(t *testing.T) {
 			wantNames:   []string{},
 		},
 		{
-			name: "single placeholder context that is the keep context",
+			name: "single non-empty keepContext is preserved",
 			contexts: []NamedContext{
-				{Name: "gmg", Context: Context{Environment: "https://gmg80500.dev.apps.dynatracelabs.com/"}},
+				{Name: "prod", Context: Context{Environment: "https://abc12345.apps.dynatrace.com/"}},
 			},
-			keepContext: "gmg",
-			wantNames:   []string{"gmg"},
+			keepContext: "prod",
+			wantNames:   []string{"prod"},
 		},
 	}
 
@@ -1604,7 +1604,13 @@ func TestConfig_PruneEmptyEnvironments(t *testing.T) {
 			cfg := NewConfig()
 			cfg.Contexts = tt.contexts
 
-			cfg.PruneEmptyEnvironments(tt.keepContext)
+			placeholderNames := make(map[string]bool)
+			for _, nc := range tt.contexts {
+				if nc.Context.Environment == "" {
+					placeholderNames[nc.Name] = true
+				}
+			}
+			cfg.PruneEmptyEnvironments(tt.keepContext, placeholderNames)
 
 			if len(cfg.Contexts) != len(tt.wantNames) {
 				t.Fatalf("after prune: got %d contexts, want %d; names: %v",
