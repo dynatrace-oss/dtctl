@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
-	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 )
 
@@ -44,23 +43,9 @@ Examples:
 		if outputFormat == "table" {
 			const w = 13
 			output.DescribeKV("ID:", w, "%s", s.ID)
-
-			// Try to decode the object ID to show the UID
-			if decoded, err := settings.DecodeObjectID(s.ID); err == nil && decoded.UID != "" {
-				output.DescribeKV("UID:", w, "%s", decoded.UID)
-			}
-
 			output.DescribeKV("Name:", w, "%s", s.Name)
 			if s.Description != "" {
 				output.DescribeKV("Description:", w, "%s", s.Description)
-			}
-			if s.Version != "" {
-				// Try to decode the version to show the modification timestamp
-				if decodedVersion, err := settings.DecodeVersion(s.Version); err == nil {
-					if decodedVersion.Timestamp != nil {
-						output.DescribeKV("Modified:", w, "%s", decodedVersion.Timestamp.Format("2006-01-02 15:04:05 UTC"))
-					}
-				}
 			}
 			if s.ExternalID != "" {
 				output.DescribeKV("External ID:", w, "%s", s.ExternalID)

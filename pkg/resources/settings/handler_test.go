@@ -165,10 +165,10 @@ func TestListObjects_Pagination(t *testing.T) {
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
 
-		// Simulate Settings API constraint: pageSize, schemaIds, and scopes
-		// must NOT be combined with nextPageKey (all are embedded in the page token).
+		// The Settings API rejects pageSize, schemaIds, scopes, and fields when
+		// nextPageKey is present — they are all embedded in the page token.
 		if r.URL.Query().Get("nextPageKey") != "" {
-			for _, param := range []string{"pageSize", "schemaIds", "scopes"} {
+			for _, param := range []string{"pageSize", "schemaIds", "scopes", "fields"} {
 				if r.URL.Query().Get(param) != "" {
 					t.Errorf("%s must not be sent with nextPageKey", param)
 					w.WriteHeader(http.StatusBadRequest)
@@ -176,13 +176,16 @@ func TestListObjects_Pagination(t *testing.T) {
 					return
 				}
 			}
-			// Second page: no more pages
+			// Second page
 			json.NewEncoder(w).Encode(SettingsObjectsList{
 				Items:      []SettingsObject{{ObjectID: "obj2", Summary: "Second"}},
 				TotalCount: 2,
 			})
 		} else {
-			// First page: has next page key
+			// First page: fields must be present
+			if r.URL.Query().Get("fields") == "" {
+				t.Error("fields must be sent on first page request")
+			}
 			json.NewEncoder(w).Encode(SettingsObjectsList{
 				Items:       []SettingsObject{{ObjectID: "obj1", Summary: "First"}},
 				TotalCount:  2,
@@ -205,6 +208,51 @@ func TestListObjects_Pagination(t *testing.T) {
 	}
 }
 
+func TestListObjects_ScopePopulatedFromAPI(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/classic/environment-api/v2/settings/objects", func(w http.ResponseWriter, r *http.Request) {
+		// Verify fields param is present so scope is requested
+		if r.URL.Query().Get("fields") == "" {
+			t.Error("fields query param not sent — scope will not be included in response")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(SettingsObjectsList{
+			Items: []SettingsObject{
+				{ObjectID: "obj-app", SchemaID: "builtin:rum.web.name", Scope: "APPLICATION-00A21C71EC30483F", Summary: "My App"},
+				{ObjectID: "obj-svc", SchemaID: "builtin:anomaly-detection.services", Scope: "SERVICE-000118600941601B", Summary: "My Service"},
+				{ObjectID: "obj-env", SchemaID: "builtin:alerting.profile", Scope: "environment", Summary: "Default"},
+			},
+			TotalCount: 3,
+		})
+	})
+	h, cleanup := newTestHandler(t, mux)
+	defer cleanup()
+
+	result, err := h.ListObjects("", "", 0)
+	if err != nil {
+		t.Fatalf("ListObjects() error = %v", err)
+	}
+
+	cases := []struct {
+		idx           int
+		wantScopeType string
+		wantScopeID   string
+	}{
+		{0, "APPLICATION", "00A21C71EC30483F"},
+		{1, "SERVICE", "000118600941601B"},
+		{2, "environment", ""},
+	}
+	for _, tc := range cases {
+		item := result.Items[tc.idx]
+		if item.ScopeType != tc.wantScopeType {
+			t.Errorf("item[%d] ScopeType = %q, want %q", tc.idx, item.ScopeType, tc.wantScopeType)
+		}
+		if item.ScopeID != tc.wantScopeID {
+			t.Errorf("item[%d] ScopeID = %q, want %q", tc.idx, item.ScopeID, tc.wantScopeID)
+		}
+	}
+}
+
 func TestListObjects_PaginationWithFilters(t *testing.T) {
 	callCount := 0
 	mux := http.NewServeMux()
@@ -212,10 +260,10 @@ func TestListObjects_PaginationWithFilters(t *testing.T) {
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
 
-		// Simulate Settings API constraint: pageSize, schemaIds, and scopes
-		// must NOT be combined with nextPageKey.
+		// The Settings API rejects pageSize, schemaIds, scopes, and fields when
+		// nextPageKey is present — they are all embedded in the page token.
 		if r.URL.Query().Get("nextPageKey") != "" {
-			for _, param := range []string{"pageSize", "schemaIds", "scopes"} {
+			for _, param := range []string{"pageSize", "schemaIds", "scopes", "fields"} {
 				if r.URL.Query().Get(param) != "" {
 					t.Errorf("%s must not be sent with nextPageKey", param)
 					w.WriteHeader(http.StatusBadRequest)
@@ -322,19 +370,6 @@ func TestGet_ByObjectID_Forbidden(t *testing.T) {
 	_, err := h.Get("locked")
 	if err == nil {
 		t.Fatal("expected error, got nil")
-	}
-}
-
-// --- getByUID (via GetWithContext with UUID-format id) ---
-
-func TestGetWithContext_ByUID_NotFoundWhenNoSchema(t *testing.T) {
-	h, cleanup := newTestHandler(t, http.NewServeMux())
-	defer cleanup()
-
-	// UUID format but no schema provided: should fail immediately
-	_, err := h.GetWithContext("12345678-1234-1234-1234-123456789012", "", "")
-	if err == nil {
-		t.Fatal("expected error when no schema provided for UID lookup")
 	}
 }
 
@@ -562,23 +597,3 @@ func TestGetRaw_NotFound(t *testing.T) {
 	}
 }
 
-// --- isUUID helper (supplemental cases) ---
-
-func TestIsUUID_Extra(t *testing.T) {
-	cases := []struct {
-		input string
-		want  bool
-	}{
-		{"12345678-1234-1234-1234-123456789012", true},
-		{"1234567812341234123412345678901", false}, // too short
-		{"not-a-uuid-at-all", false},
-		{"", false},
-		{"12345678123412341234123456789012", true}, // no hyphens
-	}
-	for _, tc := range cases {
-		got := isUUID(tc.input)
-		if got != tc.want {
-			t.Errorf("isUUID(%q) = %v, want %v", tc.input, got, tc.want)
-		}
-	}
-}

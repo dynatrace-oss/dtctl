@@ -28,19 +28,12 @@ defaults to vim), and updated when you save and close the editor.
 By default, settings are edited in YAML format for better readability.
 Use --format=json to edit in JSON format.
 
-The object ID can be provided as either:
-- Full object ID (e.g., 14daea00-ea60-323d-9f79-9ea2d899bccd)
-- UID (requires --schema and --scope flags)
-
 Examples:
   # Edit a settings object in YAML (default)
-  dtctl edit setting 14daea00-ea60-323d-9f79-9ea2d899bccd
+  dtctl edit setting vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ...
 
   # Edit a settings object in JSON
-  dtctl edit setting 14daea00-ea60-323d-9f79-9ea2d899bccd --format=json
-
-  # Edit using UID (requires schema and scope)
-  dtctl edit setting my-uid --schema builtin:rum.frontend.name --scope environment
+  dtctl edit setting vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ... --format=json
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -53,26 +46,10 @@ Examples:
 
 		handler := settings.NewHandler(c)
 
-		// Get schema and scope flags for UID resolution
-		schemaID, _ := cmd.Flags().GetString("schema")
-		scope, _ := cmd.Flags().GetString("scope")
-
 		// Get the settings object as raw JSON
 		data, err := handler.GetRaw(identifier)
 		if err != nil {
-			// If GetRaw fails and we have schema/scope, try with context
-			if schemaID != "" && scope != "" {
-				obj, err := handler.GetWithContext(identifier, schemaID, scope)
-				if err != nil {
-					return err
-				}
-				data, err = json.MarshalIndent(obj.Value, "", "  ")
-				if err != nil {
-					return fmt.Errorf("failed to marshal settings value: %w", err)
-				}
-			} else {
-				return err
-			}
+			return err
 		}
 
 		// Get format preference
@@ -162,12 +139,7 @@ Examples:
 		}
 
 		// Update the settings object
-		var result *settings.SettingsObject
-		if schemaID != "" && scope != "" {
-			result, err = handler.UpdateWithContext(identifier, value, schemaID, scope)
-		} else {
-			result, err = handler.Update(identifier, value)
-		}
+		result, err := handler.Update(identifier, value)
 		if err != nil {
 			return err
 		}
@@ -179,6 +151,4 @@ Examples:
 
 func init() {
 	editSettingCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
-	editSettingCmd.Flags().StringP("schema", "", "", "schema ID (required if using UID instead of object ID)")
-	editSettingCmd.Flags().StringP("scope", "", "", "scope (required if using UID instead of object ID)")
 }
