@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **`dtctl doctor` no longer fails on platform tokens** — the authentication check called `/platform/metadata/v1/user`, which requires the `iam:users:read` scope; platform tokens (`dt0s16.*`) cannot currently be granted that scope, so the call always returned `403 Forbidden` and `doctor` reported `[FAIL] Authentication API call failed: failed to fetch user info: 403 Forbidden`; the check now detects platform tokens via `client.IsPlatformToken` and surfaces this as a `warn` with an explanation (`platform token: user identity unavailable via metadata API`) instead of failing the run; OAuth/JWT tokens keep the existing metadata-API + JWT-fallback behaviour; fixes [#190](https://github.com/dynatrace-oss/dtctl/issues/190)
+- **`dtctl config set-credentials` now invalidates stale OAuth token cache** — when a platform token is rotated and re-added under the same name, the cached OAuth access/refresh tokens from the previous credential are now deleted from both the OS keyring and the file-based token store; previously the cached refresh token would be reused, causing `token expired and refresh failed` errors even after supplying a fresh platform token
+- **Stale OAuth session no longer blocks platform token fallback** — when a cached OAuth refresh token has been revoked server-side (`invalid_grant`), dtctl now automatically evicts the stale cache entry and falls back to the underlying platform token stored via `dtctl config set-credentials`; previously the `invalid_grant` error was surfaced directly, requiring the user to either create a new token name or manually re-run `set-credentials` to clear the cache
 
 ## [0.26.2] - 2026-04-29
 

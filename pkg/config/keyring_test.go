@@ -147,3 +147,11 @@ func TestMigrateTokensToKeyring_NoKeyring(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenStore_DeleteToken_KeyringUnavailableIsNoop(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
+	ts := NewTokenStore()
+	if err := ts.DeleteToken("definitely-missing-token"); err != nil {
+		t.Fatalf("DeleteToken() error = %v, want nil", err)
+	}
+}

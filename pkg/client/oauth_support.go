@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/auth"
@@ -27,8 +28,11 @@ func GetTokenWithOAuthSupport(cfg *config.Config, tokenRef string) (string, erro
 				return token, nil
 			}
 
-			// Only "not found" errors should fall back to regular API token lookup.
-			if !isOAuthTokenNotFoundError(err) {
+			// Fall back to regular API token lookup when:
+			//   - the OAuth entry does not exist, or
+			//   - the cached OAuth session was revoked server-side (invalid_grant);
+			//     the auth layer has already evicted the stale cache entry.
+			if !isOAuthTokenNotFoundError(err) && !errors.Is(err, auth.ErrOAuthSessionRevoked) {
 				return "", err
 			}
 		}
