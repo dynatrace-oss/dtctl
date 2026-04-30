@@ -58,17 +58,34 @@ type Document struct {
 	Content     []byte    `json:"-" table:"-"`
 }
 
-// DocumentMetadata represents detailed document metadata
+// DocumentMetadata represents detailed document metadata.
+// Fields after Access are only populated when requested via DocumentFilters.AddFields.
 type DocumentMetadata struct {
-	ID               string           `json:"id"`
-	Name             string           `json:"name"`
-	Type             string           `json:"type"`
-	Description      string           `json:"description,omitempty"`
-	Version          int              `json:"version"`
-	Owner            string           `json:"owner"`
-	IsPrivate        bool             `json:"isPrivate"`
-	ModificationInfo ModificationInfo `json:"modificationInfo"`
-	Access           []string         `json:"access,omitempty"`
+	ID                string           `json:"id"`
+	Name              string           `json:"name"`
+	Type              string           `json:"type"`
+	Description       string           `json:"description,omitempty"`
+	Version           int              `json:"version"`
+	Owner             string           `json:"owner"`
+	IsPrivate         bool             `json:"isPrivate"`
+	ModificationInfo  ModificationInfo `json:"modificationInfo"`
+	Access            []string         `json:"access,omitempty"`
+	OriginAppID       string           `json:"originAppId,omitempty" yaml:"originAppId,omitempty"`
+	OriginExtensionID string           `json:"originExtensionId,omitempty" yaml:"originExtensionId,omitempty"`
+	Labels            []string         `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ShareInfo         *ShareInfo       `json:"shareInfo,omitempty" yaml:"shareInfo,omitempty"`
+	UserContext       *UserContext     `json:"userContext,omitempty" yaml:"userContext,omitempty"`
+}
+
+// ShareInfo describes share state for a document.
+type ShareInfo struct {
+	IsShared                bool `json:"isShared" yaml:"isShared"`
+	IsSharedWithCurrentUser bool `json:"isSharedWithCurrentUser,omitempty" yaml:"isSharedWithCurrentUser,omitempty"`
+}
+
+// UserContext describes per-user metadata for a document.
+type UserContext struct {
+	LastAccessedTime time.Time `json:"lastAccessedTime" yaml:"lastAccessedTime"`
 }
 
 // UnmarshalJSON custom unmarshaler for DocumentMetadata to handle version as string or int.
@@ -108,13 +125,17 @@ type DocumentList struct {
 	NextPageKey string             `json:"nextPageKey,omitempty"`
 }
 
-// DocumentFilters contains filter options for listing documents
+// DocumentFilters contains filter options for listing documents.
+// When Filter is non-empty it is sent verbatim and overrides Type/Name/Owner.
 type DocumentFilters struct {
-	Type      string // e.g., "dashboard", "notebook"
-	Name      string // Filter by name
-	Owner     string // Filter by owner ID
-	Filter    string // Raw filter string for complex queries
-	ChunkSize int64  // Page size for pagination (0 = no chunking, use API default)
+	Type        string   // e.g., "dashboard", "notebook"
+	Name        string   // Filter by name
+	Owner       string   // Filter by owner ID
+	Filter      string   // Raw filter string, sent verbatim (overrides Type/Name/Owner)
+	ChunkSize   int64    // Page size for pagination (0 = no chunking, use API default)
+	Sort        string   // Sort fields, comma-separated, prefix with "-" for descending
+	AddFields   []string // Fields the API omits by default (e.g. "originExtensionId", "labels")
+	AdminAccess bool     // List as effective owner; requires document:documents:admin
 }
 
 // List retrieves documents matching the provided filters with automatic pagination
@@ -143,6 +164,17 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 		}
 	}
 
+	queryFilters := map[string]string{"filter": filterStr}
+	if filters.Sort != "" {
+		queryFilters["sort"] = filters.Sort
+	}
+	if len(filters.AddFields) > 0 {
+		queryFilters["add-fields"] = strings.Join(filters.AddFields, ",")
+	}
+	if filters.AdminAccess {
+		queryFilters["admin-access"] = "true"
+	}
+
 	for {
 		var result DocumentList
 		req := h.client.HTTP().R().SetResult(&result)
@@ -153,7 +185,7 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 			PageSizeParam: "page-size",
 			NextPageKey:   nextPageKey,
 			PageSize:      int64(filters.ChunkSize),
-			Filters:       map[string]string{"filter": filterStr},
+			Filters:       queryFilters,
 		}.Apply(req)
 
 		resp, err := req.Get("/platform/document/v1/documents")

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
@@ -56,22 +57,9 @@ Examples:
 		}
 
 		// List all dashboards
-		nameFilter, _ := cmd.Flags().GetString("name")
-		mineOnly, _ := cmd.Flags().GetBool("mine")
-
-		filters := document.DocumentFilters{
-			Type:      "dashboard",
-			Name:      nameFilter,
-			ChunkSize: GetChunkSize(),
-		}
-
-		// If --mine flag is set, get current user ID and filter by owner
-		if mineOnly {
-			userID, err := c.CurrentUserID()
-			if err != nil {
-				return fmt.Errorf("failed to get current user ID for --mine filter: %w", err)
-			}
-			filters.Owner = userID
+		filters, err := buildDocumentFilters(cmd, c, "dashboard")
+		if err != nil {
+			return err
 		}
 
 		// Check if watch mode is enabled
@@ -140,22 +128,9 @@ Examples:
 		}
 
 		// List all notebooks
-		nameFilter, _ := cmd.Flags().GetString("name")
-		mineOnly, _ := cmd.Flags().GetBool("mine")
-
-		filters := document.DocumentFilters{
-			Type:      "notebook",
-			Name:      nameFilter,
-			ChunkSize: GetChunkSize(),
-		}
-
-		// If --mine flag is set, get current user ID and filter by owner
-		if mineOnly {
-			userID, err := c.CurrentUserID()
-			if err != nil {
-				return fmt.Errorf("failed to get current user ID for --mine filter: %w", err)
-			}
-			filters.Owner = userID
+		filters, err := buildDocumentFilters(cmd, c, "notebook")
+		if err != nil {
+			return err
 		}
 
 		// Check if watch mode is enabled
@@ -546,22 +521,10 @@ Examples:
 		// Check for --types flag (type discovery)
 		typesMode, _ := cmd.Flags().GetBool("types")
 		typeFilter, _ := cmd.Flags().GetString("type")
-		nameFilter, _ := cmd.Flags().GetString("name")
-		mineOnly, _ := cmd.Flags().GetBool("mine")
 
-		filters := document.DocumentFilters{
-			Type:      typeFilter,
-			Name:      nameFilter,
-			ChunkSize: GetChunkSize(),
-		}
-
-		// If --mine flag is set, get current user ID and filter by owner
-		if mineOnly {
-			userID, err := c.CurrentUserID()
-			if err != nil {
-				return fmt.Errorf("failed to get current user ID for --mine filter: %w", err)
-			}
-			filters.Owner = userID
+		filters, err := buildDocumentFilters(cmd, c, typeFilter)
+		if err != nil {
+			return err
 		}
 
 		if typesMode {
@@ -680,6 +643,56 @@ Examples:
 	},
 }
 
+// buildDocumentFilters reads the listing flags from cmd. implicitType is the
+// type baked into the subcommand (empty for `dtctl get documents`).
+func buildDocumentFilters(cmd *cobra.Command, c *client.Client, implicitType string) (document.DocumentFilters, error) {
+	rawFilter, _ := cmd.Flags().GetString("filter")
+	nameFilter, _ := cmd.Flags().GetString("name")
+	mineOnly, _ := cmd.Flags().GetBool("mine")
+	sortOrder, _ := cmd.Flags().GetString("sort")
+	addFields, _ := cmd.Flags().GetStringSlice("add-fields")
+	adminAccess, _ := cmd.Flags().GetBool("admin-access")
+
+	filters := document.DocumentFilters{
+		ChunkSize:   GetChunkSize(),
+		Sort:        sortOrder,
+		AddFields:   addFields,
+		AdminAccess: adminAccess,
+	}
+
+	if rawFilter != "" {
+		if nameFilter != "" || mineOnly || implicitType != "" {
+			fmt.Fprintln(os.Stderr, "warning: --filter overrides --name/--type/--mine; the raw filter is sent verbatim to the API")
+		}
+		filters.Filter = rawFilter
+		return filters, nil
+	}
+
+	filters.Type = implicitType
+	filters.Name = nameFilter
+	if mineOnly {
+		userID, err := c.CurrentUserID()
+		if err != nil {
+			return filters, fmt.Errorf("failed to get current user ID for --mine filter: %w", err)
+		}
+		filters.Owner = userID
+	}
+	return filters, nil
+}
+
+// addDocumentListFlags registers the flags shared by dashboards/notebooks/documents listing commands.
+func addDocumentListFlags(cmd *cobra.Command, includeType bool) {
+	if includeType {
+		cmd.Flags().String("type", "", "Filter by document type (e.g. dashboard, notebook, launchpad)")
+	}
+	cmd.Flags().String("name", "", "Filter by name (partial match, case-insensitive)")
+	cmd.Flags().Bool("mine", false, "Show only documents owned by current user")
+	cmd.Flags().String("filter", "", "Raw Document API filter expression, sent verbatim (overrides --name/--type/--mine)")
+	cmd.Flags().String("sort", "", "Sort fields, comma-separated, prefix with '-' for descending (e.g. \"name,-modificationInfo.lastModifiedTime\")")
+	cmd.Flags().StringSlice("add-fields", nil, "Request fields the API omits by default (e.g. originExtensionId,labels,shareInfo.isShared)")
+	cmd.Flags().Bool("admin-access", false, "List documents as effective owner; requires document:documents:admin permission")
+}
+
 func init() {
 	// Watch flags
 	addWatchFlags(getDashboardsCmd)
@@ -688,17 +701,13 @@ func init() {
 	addWatchFlags(getDocumentsCmd)
 
 	// Dashboard flags
-	getDashboardsCmd.Flags().String("name", "", "Filter by dashboard name (partial match, case-insensitive)")
-	getDashboardsCmd.Flags().Bool("mine", false, "Show only dashboards owned by current user")
+	addDocumentListFlags(getDashboardsCmd, false)
 
 	// Notebook flags
-	getNotebooksCmd.Flags().String("name", "", "Filter by notebook name (partial match, case-insensitive)")
-	getNotebooksCmd.Flags().Bool("mine", false, "Show only notebooks owned by current user")
+	addDocumentListFlags(getNotebooksCmd, false)
 
 	// Generic document flags
-	getDocumentsCmd.Flags().String("type", "", "Filter by document type (e.g. dashboard, notebook, launchpad)")
-	getDocumentsCmd.Flags().String("name", "", "Filter by document name (partial match, case-insensitive)")
-	getDocumentsCmd.Flags().Bool("mine", false, "Show only documents owned by current user")
+	addDocumentListFlags(getDocumentsCmd, true)
 	getDocumentsCmd.Flags().Bool("types", false, "List distinct document types and counts")
 
 	// Trash flags

@@ -79,6 +79,111 @@ func TestList_WithFilters(t *testing.T) {
 	}
 }
 
+func TestList_RawFilterPassthrough(t *testing.T) {
+	rawFilter := "originAppId exists and type in ('dashboard','notebook')"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("filter") != rawFilter {
+			t.Errorf("expected filter %q sent verbatim, got %q", rawFilter, r.URL.Query().Get("filter"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentList{TotalCount: 0})
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	// Type/Name/Owner are ignored when Filter is set
+	_, err := h.List(DocumentFilters{
+		Filter: rawFilter,
+		Type:   "dashboard",
+		Name:   "ignored",
+		Owner:  "alice",
+	})
+	if err != nil {
+		t.Fatalf("List() with raw filter error = %v", err)
+	}
+}
+
+func TestList_SortAddFieldsAdminAccess(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("sort") != "name,-modificationInfo.lastModifiedTime" {
+			t.Errorf("expected sort param, got %q", r.URL.Query().Get("sort"))
+		}
+		if r.URL.Query().Get("add-fields") != "originExtensionId,labels,shareInfo.isShared" {
+			t.Errorf("expected add-fields joined comma-separated, got %q", r.URL.Query().Get("add-fields"))
+		}
+		if r.URL.Query().Get("admin-access") != "true" {
+			t.Errorf("expected admin-access=true, got %q", r.URL.Query().Get("admin-access"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentList{TotalCount: 0})
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	_, err := h.List(DocumentFilters{
+		Sort:        "name,-modificationInfo.lastModifiedTime",
+		AddFields:   []string{"originExtensionId", "labels", "shareInfo.isShared"},
+		AdminAccess: true,
+	})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+}
+
+func TestList_OmitsUnsetExtraQueryParams(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
+		for _, p := range []string{"sort", "add-fields", "admin-access"} {
+			if r.URL.Query().Has(p) {
+				t.Errorf("expected %q not sent when unset, got %q", p, r.URL.Query().Get(p))
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentList{TotalCount: 0})
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	if _, err := h.List(DocumentFilters{Type: "dashboard"}); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+}
+
+func TestDocumentMetadata_AddFieldsRoundTrip(t *testing.T) {
+	body := []byte(`{
+		"id": "doc-1",
+		"name": "test",
+		"type": "dashboard",
+		"version": 1,
+		"originAppId": "cloud-monitoring",
+		"originExtensionId": "ext-id",
+		"labels": ["a","b"],
+		"shareInfo": {"isShared": true, "isSharedWithCurrentUser": false},
+		"userContext": {"lastAccessedTime": "2026-04-29T10:00:00Z"}
+	}`)
+	var m DocumentMetadata
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if m.OriginAppID != "cloud-monitoring" {
+		t.Errorf("expected OriginAppID %q, got %q", "cloud-monitoring", m.OriginAppID)
+	}
+	if m.OriginExtensionID != "ext-id" {
+		t.Errorf("expected OriginExtensionID %q, got %q", "ext-id", m.OriginExtensionID)
+	}
+	if len(m.Labels) != 2 || m.Labels[0] != "a" || m.Labels[1] != "b" {
+		t.Errorf("expected Labels [a b], got %v", m.Labels)
+	}
+	if m.ShareInfo == nil || !m.ShareInfo.IsShared {
+		t.Errorf("expected ShareInfo.IsShared=true, got %+v", m.ShareInfo)
+	}
+	if m.UserContext == nil || m.UserContext.LastAccessedTime.IsZero() {
+		t.Errorf("expected UserContext.LastAccessedTime set, got %+v", m.UserContext)
+	}
+}
+
 func TestList_ServerError(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
