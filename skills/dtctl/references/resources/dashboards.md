@@ -195,6 +195,31 @@ Pick the visualization based on data shape, not aesthetics:
 
 **Key rule**: `barChart` expects a numeric or time x-axis. If your x-axis is string categories (namespace, container name, service name), use `pieChart` for proportions or `table` for precise values.
 
+## Cost Considerations for Tile DQL
+
+Dashboard tiles re-execute on every refresh and viewer load, so tile-query cost compounds. For general DQL optimization guidance (command order, filter pushdown, cardinality, timeframe sizing), see [`dt-dql-essentials/references/optimization.md`](https://github.com/Dynatrace/dynatrace-for-ai/blob/main/skills/dt-dql-essentials/references/optimization.md).
+
+**dtctl-specific tile guidance** — apply these to every `type: data` tile in addition to the general optimization guide:
+
+- Add a **`scanLimitGBytes:`** guardrail inline on billable `fetch` — hard ceiling protects against query runaway on refresh. Add **`samplingRatio:`** on log queries wider than 24h.
+- **Disable auto-refresh** on expensive tiles — each refresh re-bills the full scan.
+- **Run `dtctl verify query '<dql>' --cost-lint`** on every tile query before `dtctl apply`, or add `--cost-lint` / `--strict-cost` directly on `dtctl apply` to walk all tile queries in the YAML in one shot. `--rewrite-cost` writes a sibling `.rewritten.yaml` with mechanical fixes applied.
+
+**Cost-aware tile example:**
+```yaml
+"errors-by-service":
+  title: "Errors by service (last 2h)"
+  type: data
+  query: |
+    fetch logs, from:now()-2h, scanLimitGBytes:50
+    | filter loglevel == "ERROR"
+    | makeTimeseries errors = count(), by:{k8s.namespace.name}, interval:5m
+  visualization: lineChart
+  visualizationSettings:
+    autoSelectVisualization: false
+  davis: { enabled: false, davisVisualization: { isAvailable: true } }
+```
+
 ## Testing Queries Before Deploying
 
 **Always validate tile queries with `dtctl query` before embedding in a dashboard.** A broken query shows as an empty or errored tile with no useful feedback.
