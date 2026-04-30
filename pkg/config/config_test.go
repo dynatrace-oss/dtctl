@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +10,31 @@ import (
 
 	"github.com/adrg/xdg"
 )
+
+// mockKeyring is an in-memory keyringBackend for tests that need no OS keyring.
+type mockKeyring struct{ data map[string]string }
+
+func newMockKeyring() *mockKeyring           { return &mockKeyring{data: make(map[string]string)} }
+func (m *mockKeyring) Available() bool       { return true }
+func (m *mockKeyring) Set(n, v string) error { m.data[n] = v; return nil }
+func (m *mockKeyring) Delete(n string) error { delete(m.data, n); return nil }
+func (m *mockKeyring) Get(n string) (string, error) {
+	v, ok := m.data[n]
+	if !ok {
+		return "", fmt.Errorf("token %q not found in keyring", n)
+	}
+	return v, nil
+}
+
+// unavailableKeyring simulates an environment without OS keyring (headless/WSL).
+type unavailableKeyring struct{}
+
+func (u *unavailableKeyring) Available() bool { return false }
+func (u *unavailableKeyring) Get(string) (string, error) {
+	return "", fmt.Errorf("keyring unavailable")
+}
+func (u *unavailableKeyring) Set(string, string) error { return fmt.Errorf("keyring unavailable") }
+func (u *unavailableKeyring) Delete(string) error      { return fmt.Errorf("keyring unavailable") }
 
 func TestNewConfig(t *testing.T) {
 	cfg := NewConfig()
@@ -1095,6 +1121,131 @@ func TestConfig_SetToken_UpdateExisting(t *testing.T) {
 
 	if !found {
 		t.Error("Updated token not found in config")
+	}
+}
+
+func TestConfig_SetToken_InvalidatesOAuthCache(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	// Seed cached OAuth tokens for three environments.
+	kr.data["oauth:prod:rotated-token"] = `{"access_token":"old-access","refresh_token":"stale-refresh"}`
+	kr.data["oauth:dev:rotated-token"] = `{"access_token":"old-dev","refresh_token":"stale-dev"}`
+	kr.data["oauth:hard:rotated-token"] = `{"access_token":"old-hard","refresh_token":"stale-hard"}`
+
+	cfg := NewConfig()
+	if err := cfg.setTokenWithKeyring("rotated-token", "brand-new-platform-token", kr, nil); err != nil {
+		t.Fatalf("setTokenWithKeyring() error = %v", err)
+	}
+
+	// All cached OAuth entries must be gone.
+	for _, key := range []string{"oauth:prod:rotated-token", "oauth:dev:rotated-token", "oauth:hard:rotated-token"} {
+		if _, ok := kr.data[key]; ok {
+			t.Errorf("OAuth cache entry %q still exists after setTokenWithKeyring", key)
+		}
+	}
+
+	// The new platform token must be stored.
+	if got := kr.data["rotated-token"]; got != "brand-new-platform-token" {
+		t.Errorf("platform token = %q, want %q", got, "brand-new-platform-token")
+	}
+
+	// Config entry should be empty (reference only, value lives in keyring).
+	if len(cfg.Tokens) != 1 || cfg.Tokens[0].Token != "" {
+		t.Errorf("config token should be empty reference, got %+v", cfg.Tokens)
+	}
+}
+
+func TestConfig_SetToken_InvalidatesOAuthCache_DynamicEnv(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	// Seed a cached OAuth token for the "prod" environment.
+	kr.data["oauth:prod:dyn-token"] = `{"refresh_token":"stale"}`
+
+	cfg := NewConfig()
+	// Add a context whose URL maps to "prod" so oauthKeyringNames discovers it dynamically.
+	cfg.Contexts = []NamedContext{
+		{Name: "my-env", Context: Context{
+			Environment: "https://abc12345.apps.dynatrace.com",
+			TokenRef:    "dyn-token",
+		}},
+	}
+
+	if err := cfg.setTokenWithKeyring("dyn-token", "new-value", kr, nil); err != nil {
+		t.Fatalf("setTokenWithKeyring() error = %v", err)
+	}
+
+	if _, ok := kr.data["oauth:prod:dyn-token"]; ok {
+		t.Error("dynamically-discovered OAuth cache entry still exists after setTokenWithKeyring")
+	}
+}
+
+func TestConfig_SetToken_InvalidatesOAuthFileCache(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	fileStore := NewOAuthFileStoreWithDir(dir)
+
+	// Seed file-based OAuth cache entries.
+	for _, key := range []string{"oauth:prod:file-tok", "oauth:dev:file-tok", "oauth:hard:file-tok"} {
+		if err := fileStore.SetToken(key, `{"refresh_token":"stale"}`); err != nil {
+			t.Fatalf("seed file store %s: %v", key, err)
+		}
+	}
+
+	// Use a mock keyring that reports unavailable so the file-store path is
+	// the only cache backend (simulates headless/WSL).
+	kr := &unavailableKeyring{}
+
+	cfg := NewConfig()
+	if err := cfg.setTokenWithKeyring("file-tok", "new-platform-token", kr, fileStore); err != nil {
+		t.Fatalf("setTokenWithKeyring() error = %v", err)
+	}
+
+	// All file-based OAuth entries must be gone.
+	for _, key := range []string{"oauth:prod:file-tok", "oauth:dev:file-tok", "oauth:hard:file-tok"} {
+		if tok, err := fileStore.GetToken(key); err == nil {
+			t.Errorf("file OAuth cache entry %q still exists: %s", key, tok)
+		}
+	}
+
+	// Token should be stored in config (keyring unavailable).
+	if len(cfg.Tokens) != 1 || cfg.Tokens[0].Token != "new-platform-token" {
+		t.Errorf("config token = %+v, want token in config (keyring unavailable)", cfg.Tokens)
+	}
+}
+
+func TestConfig_SetToken_InvalidatesBothKeyringAndFileCache(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	kr.data["oauth:prod:both-tok"] = `{"refresh_token":"kr-stale"}`
+
+	dir := t.TempDir()
+	fileStore := NewOAuthFileStoreWithDir(dir)
+	if err := fileStore.SetToken("oauth:prod:both-tok", `{"refresh_token":"file-stale"}`); err != nil {
+		t.Fatalf("seed file store: %v", err)
+	}
+
+	cfg := NewConfig()
+	if err := cfg.setTokenWithKeyring("both-tok", "fresh-token", kr, fileStore); err != nil {
+		t.Fatalf("setTokenWithKeyring() error = %v", err)
+	}
+
+	// Keyring OAuth cache must be cleared.
+	if _, ok := kr.data["oauth:prod:both-tok"]; ok {
+		t.Error("keyring OAuth cache entry still exists")
+	}
+
+	// File OAuth cache must be cleared.
+	if tok, err := fileStore.GetToken("oauth:prod:both-tok"); err == nil {
+		t.Errorf("file OAuth cache entry still exists: %s", tok)
+	}
+
+	// Platform token stored in keyring.
+	if got := kr.data["both-tok"]; got != "fresh-token" {
+		t.Errorf("keyring platform token = %q, want %q", got, "fresh-token")
 	}
 }
 

@@ -606,15 +606,44 @@ func (c *Config) DeleteContext(name string) error {
 // SetToken creates or updates a token.
 // If keyring is available, the token is stored securely in the OS keyring
 // and only a reference is kept in the config file.
+// Any cached OAuth tokens for this credential name are invalidated so that
+// a rotated platform token does not keep using a stale refresh token.
 func (c *Config) SetToken(name, token string) error {
-	// Try to store in keyring first
-	if IsKeyringAvailable() {
-		ts := NewTokenStore()
-		if err := ts.SetToken(name, token); err != nil {
+	return c.setTokenWithKeyring(name, token, nil, nil)
+}
+
+// setTokenWithKeyring is the testable core of SetToken; accepts an explicit
+// keyringBackend and OAuthFileStore so tests avoid the OS keyring.
+func (c *Config) setTokenWithKeyring(name, token string, kr keyringBackend, fileStore *OAuthFileStore) error {
+	if kr == nil {
+		kr = newOSKeyring()
+	}
+	if fileStore == nil {
+		fileStore = NewOAuthFileStore()
+	}
+
+	keyringAvailable := kr.Available()
+	if keyringAvailable {
+		if err := kr.Set(name, token); err != nil {
 			return fmt.Errorf("failed to store token in keyring: %w", err)
 		}
 		// Store empty token in config (reference only)
 		token = ""
+	}
+
+	// Invalidate cached OAuth tokens for all known environments.
+	// When a platform token is rotated, the old OAuth refresh token
+	// is no longer valid and must not be reused.
+	// Both keyring and file-based caches are cleared, because GetToken
+	// checks both backends.
+	// Deletion is best-effort: a failure here means the user will get
+	// an invalid_grant error on the next request and must re-authenticate,
+	// which is acceptable.
+	for _, key := range c.oauthKeyringNames(name) {
+		if keyringAvailable {
+			_ = kr.Delete(key)
+		}
+		_ = fileStore.DeleteToken(key)
 	}
 
 	// Update or add token entry in config

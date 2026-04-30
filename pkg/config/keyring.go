@@ -31,6 +31,24 @@ const (
 	ErrMsgCollectionUnlock = "failed to unlock correct collection"
 )
 
+// keyringBackend abstracts secure credential storage so callers can be tested
+// without a live OS keyring.
+type keyringBackend interface {
+	Available() bool
+	Get(name string) (string, error)
+	Set(name, value string) error
+	Delete(name string) error
+}
+
+// osKeyring is the production implementation backed by the OS keyring.
+type osKeyring struct{ store *TokenStore }
+
+func newOSKeyring() *osKeyring                       { return &osKeyring{store: NewTokenStore()} }
+func (k *osKeyring) Available() bool                 { return IsKeyringAvailable() }
+func (k *osKeyring) Get(name string) (string, error) { return k.store.GetToken(name) }
+func (k *osKeyring) Set(name, value string) error    { return k.store.SetToken(name, value) }
+func (k *osKeyring) Delete(name string) error        { return k.store.DeleteToken(name) }
+
 // TokenStore provides secure token storage using the OS keyring
 type TokenStore struct {
 	// fallbackToFile indicates whether to fall back to file-based storage
