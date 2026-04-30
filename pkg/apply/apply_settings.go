@@ -71,7 +71,7 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 	}
 
 	// Check if settings object exists
-	_, err := handler.GetWithContext(objectID, schemaID, scope)
+	_, err := handler.Get(objectID)
 	if err != nil {
 		// Doesn't exist - try to create it
 		if schemaID == "" {
@@ -112,7 +112,7 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 		return nil, err
 	}
 
-	updated, err := handler.UpdateWithContext(objectID, value, schemaID, scope)
+	updated, err := handler.Update(objectID, value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update settings object: %w", err)
 	}
