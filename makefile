@@ -148,10 +148,14 @@ fmt:
 
 # Markdown linting
 markdownlint:
-	docker run -v $(CURDIR):/workdir --rm $(MD_LINT_CLI_IMAGE) "**/*.md"
+	docker run -v $(CURDIR):/workdir:ro --rm \
+		--network=none --read-only --security-opt=no-new-privileges --cap-drop ALL \
+		$(MD_LINT_CLI_IMAGE) "**/*.md"
 
 markdownlint-fix:
-	docker run -v $(CURDIR):/workdir --rm $(MD_LINT_CLI_IMAGE) "**/*.md" --fix
+	docker run -v $(CURDIR):/workdir --rm \
+		--network=none --security-opt=no-new-privileges --cap-drop ALL --cap-add DAC_OVERRIDE \
+		$(MD_LINT_CLI_IMAGE) "**/*.md" --fix
 
 # Release (using goreleaser)
 release:
