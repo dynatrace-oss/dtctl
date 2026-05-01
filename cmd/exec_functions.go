@@ -1,9 +1,15 @@
 package cmd
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 )
 
 // execFunctionCmd executes an app function or ad-hoc code
@@ -40,6 +46,15 @@ Examples:
 
   # Execute with payload
   dtctl exec function -f script.js --payload '{"input":"data"}'
+
+  # Print only the response body; status code goes to stderr
+  dtctl exec function myapp/myfunction --body-only
+
+  # Clean body-only stream — suppress status/logs on stderr
+  dtctl exec function myapp/myfunction --body-only 2>/dev/null
+
+  # Combine with output format flags
+  dtctl exec function myapp/myfunction --body-only -o yaml
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		_, c, err := SetupClient()
@@ -71,16 +86,92 @@ Examples:
 			opts.FunctionName = args[0]
 		}
 
+		// Read before Execute so all flag reads are co-located
+		bodyOnly, _ := cmd.Flags().GetBool("body-only")
+
 		// Execute the function
 		result, err := executor.Execute(opts)
 		if err != nil {
 			return err
+		}
+		if bodyOnly {
+			return printBodyOnly(result)
 		}
 
 		// Handle different result types and print
 		printer := NewPrinter()
 		return printer.Print(result)
 	},
+}
+
+// extractBodyValue extracts the printable body from a function execution result.
+// Returns the Go value to print, whether it is a plain string (format flag does
+// not apply), and any metadata line to emit on stderr before the body.
+func extractBodyValue(result interface{}) (value interface{}, isPlainString bool, metadata string) {
+	switch r := result.(type) {
+	case *appengine.FunctionInvokeResponse:
+		if envelope, ok := r.RawBody.(map[string]interface{}); ok {
+			// Prefer the envelope's statusCode; functions often respond with HTTP
+			// 200 but set their own status code inside the envelope.
+			statusCode := r.StatusCode
+			if sc, ok := envelope["statusCode"].(float64); ok {
+				statusCode = int(sc)
+			}
+			if statusCode != 0 {
+				metadata = fmt.Sprintf("Status: %d", statusCode)
+			}
+			if bodyVal, hasBody := envelope["body"]; hasBody {
+				if bodyStr, ok := bodyVal.(string); ok {
+					var parsed interface{}
+					if err := json.Unmarshal([]byte(bodyStr), &parsed); err == nil {
+						return parsed, false, metadata
+					}
+					return bodyStr, true, metadata
+				}
+				return bodyVal, false, metadata
+			}
+			return envelope, false, metadata
+		}
+		if r.StatusCode != 0 {
+			metadata = fmt.Sprintf("Status: %d", r.StatusCode)
+		}
+		if r.RawBody != nil {
+			// Non-nil but non-object RawBody (e.g. JSON array or scalar) — return
+			// it so -o yaml and other format flags apply.
+			return r.RawBody, false, metadata
+		}
+		return r.Body, true, metadata
+
+	case *appengine.FunctionExecutorResponse:
+		logs := strings.TrimRight(r.Logs, "\n")
+		if r.Result == nil {
+			return "null", true, logs
+		}
+		return r.Result, false, logs
+
+	default:
+		return result, false, ""
+	}
+}
+
+// printBodyOnly writes just the function response body to stdout. Metadata
+// (status code, execution logs) goes to stderr so that 2>/dev/null gives a
+// clean body-only stream. The body is formatted according to the global -o
+// flag; plain-text bodies are always written verbatim.
+func printBodyOnly(result interface{}) error {
+	value, isPlainString, metadata := extractBodyValue(result)
+
+	if metadata != "" {
+		fmt.Fprintln(os.Stderr, metadata)
+	}
+
+	if isPlainString {
+		_, err := fmt.Fprintln(os.Stdout, value)
+		return err
+	}
+
+	printer := NewPrinter()
+	return printer.Print(value)
 }
 
 func init() {
@@ -91,4 +182,5 @@ func init() {
 	execFunctionCmd.Flags().String("code", "", "JavaScript code to execute (for ad-hoc execution)")
 	execFunctionCmd.Flags().StringP("file", "f", "", "read JavaScript code from file (for ad-hoc execution)")
 	execFunctionCmd.Flags().Bool("defer", false, "defer execution (async, for resumable functions)")
+	execFunctionCmd.Flags().Bool("body-only", false, "strip the HTTP envelope and print only the inner response body; metadata (status code, logs) goes to stderr")
 }
