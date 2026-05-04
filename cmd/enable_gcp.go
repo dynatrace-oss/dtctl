@@ -36,7 +36,10 @@ If --serviceAccountId is provided, dtctl will:
   2. Populate the serviceAccount field in the monitoring credential
   3. Enable the monitoring config and all credentials
 
-If the connection credentials are already set, --serviceAccountId can be omitted.
+If the linked connection already has a service account configured, --serviceAccountId
+can be omitted; in that case the connection update step is skipped and only the
+monitoring config is enabled. Passing --serviceAccountId always overwrites the
+service account on the linked connection.
 
 Examples:
   dtctl enable gcp monitoring --name "my-gcp-monitoring" --serviceAccountId "sa@project.iam.gserviceaccount.com"
@@ -122,6 +125,9 @@ Examples:
 			}
 			if len(connValue.ServiceAccountImpersonation.Consumers) == 0 {
 				connValue.ServiceAccountImpersonation.Consumers = []string{"SVC:com.dynatrace.da"}
+			}
+			if prev := connValue.ServiceAccountImpersonation.ServiceAccountID; prev != "" && prev != enableGCPMonitoringServiceAccountID {
+				output.PrintWarning("Overwriting service account on connection %q (was %q)", connectionID, prev)
 			}
 			connValue.ServiceAccountImpersonation.ServiceAccountID = enableGCPMonitoringServiceAccountID
 
