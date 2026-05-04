@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--filter`, `--sort`, `--add-fields`, `--admin-access` flags for `get dashboards`, `get notebooks`, `get documents`** — exposes four Document API query parameters previously unavailable in the CLI: `--filter` sends a raw Document API filter expression verbatim (overrides `--name`/`--type`/`--mine`); `--sort` accepts comma-separated field names, prefix with `-` for descending (e.g. `"name,-modificationInfo.lastModifiedTime"`); `--add-fields` requests fields the API omits by default (e.g. `originExtensionId`, `labels`, `shareInfo.isShared`); `--admin-access` lists documents as effective owner and requires the `document:documents:admin` permission; fixes [#196](https://github.com/dynatrace-oss/dtctl/issues/196)
+
 ### Fixed
 - **`dtctl doctor` no longer fails on platform tokens** — the authentication check called `/platform/metadata/v1/user`, which requires the `iam:users:read` scope; platform tokens (`dt0s16.*`) cannot currently be granted that scope, so the call always returned `403 Forbidden` and `doctor` reported `[FAIL] Authentication API call failed: failed to fetch user info: 403 Forbidden`; the check now detects platform tokens via `client.IsPlatformToken` and surfaces this as a `warn` with an explanation (`platform token: user identity unavailable via metadata API`) instead of failing the run; OAuth/JWT tokens keep the existing metadata-API + JWT-fallback behaviour; fixes [#190](https://github.com/dynatrace-oss/dtctl/issues/190)
 

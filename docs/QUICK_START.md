@@ -656,6 +656,19 @@ dtctl get notebooks --mine
 # Combine filters
 dtctl get dashboards --mine --name "production"
 
+# Sort results (prefix field with '-' for descending)
+dtctl get dashboards --sort "name,-modificationInfo.lastModifiedTime"
+
+# Request fields the API omits by default
+dtctl get dashboards --add-fields "originExtensionId,labels,shareInfo.isShared"
+
+# List as effective owner (requires document:documents:admin)
+dtctl get dashboards --admin-access
+
+# Raw Document API filter — sent verbatim, overrides --name/--mine
+dtctl get dashboards --filter "originAppId exists"
+dtctl get documents --filter "type in ('dashboard','notebook') and name contains 'report'"
+
 # Get a specific document by ID
 dtctl get dashboard dash-123
 dtctl get notebook nb-456
