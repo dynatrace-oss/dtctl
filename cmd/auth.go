@@ -573,12 +573,13 @@ instead (dtctl config set-credentials).`,
 
 		output.PrintSuccess("Tokens stored in %s as '%s'", config.OAuthStorageBackend(), tokenName)
 
-		// Identify placeholder contexts from the raw (unexpanded) config so that
-		// contexts backed by unset env vars are not permanently pruned.
+		// Identify placeholder contexts from the raw (unexpanded) config.
+		// A context is a placeholder if its environment expands to the empty string
+		// (either literally empty or an unset env-var reference like ${DT_ENVIRONMENT_URL}).
 		placeholderNames := make(map[string]bool)
 		if rawCfg, err := loadRawConfig(); err == nil {
 			for _, nc := range rawCfg.Contexts {
-				if nc.Context.Environment == "" {
+				if os.ExpandEnv(nc.Context.Environment) == "" {
 					placeholderNames[nc.Name] = true
 				}
 			}

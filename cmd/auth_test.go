@@ -301,14 +301,28 @@ func TestFinalizeLoginConfig(t *testing.T) {
 		},
 		{
 			// Simulates: config has `environment: ${CI_DT_URL}` and CI_DT_URL is
-			// unset at login time, so os.ExpandEnv produces Environment=="". The
-			// raw config has a non-empty template value, so ci-env is NOT in
-			// placeholderNames and must be preserved.
-			name: "preserves context backed by unset env var",
+			// unset at login time. os.ExpandEnv produces "" so ci-env IS treated
+			// as a placeholder and pruned after login.
+			name: "prunes context backed by unset env var",
 			setupContexts: []struct{ name, env, tok string }{
 				{"ci-env", "", "ci-token"}, // expanded from ${CI_DT_URL} which is unset
 			},
-			placeholderNames: map[string]bool{}, // ci-env is NOT a placeholder in raw config
+			placeholderNames: map[string]bool{"ci-env": true}, // ci-env IS a placeholder: ExpandEnv("${CI_DT_URL}") == ""
+			loginContext:     "dev",
+			loginEnv:         "https://abc12345.apps.dynatrace.com/",
+			loginToken:       "dev-oauth",
+			wantContexts:     []string{"dev"},
+			wantCurrent:      "dev",
+		},
+		{
+			// Simulates: config has `environment: ${CI_DT_URL}` and CI_DT_URL IS
+			// set to a real URL at login time. os.ExpandEnv produces a non-empty URL
+			// so ci-env is NOT a placeholder and must be preserved.
+			name: "preserves context backed by set env var",
+			setupContexts: []struct{ name, env, tok string }{
+				{"ci-env", "https://ci.apps.dynatrace.com/", "ci-token"}, // expanded from ${CI_DT_URL} which IS set
+			},
+			placeholderNames: map[string]bool{}, // ci-env is NOT a placeholder: ExpandEnv("${CI_DT_URL}") != ""
 			loginContext:     "dev",
 			loginEnv:         "https://abc12345.apps.dynatrace.com/",
 			loginToken:       "dev-oauth",
