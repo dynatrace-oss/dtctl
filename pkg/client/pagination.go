@@ -17,7 +17,7 @@ import (
 //     Filter params must be resent (the page token does not embed them).
 //
 //   - SettingsAPI: when nextPageKey is present, NO other params may be sent
-//     (pageSize, schemaIds, scopes are all embedded in the page token).
+//     (pageSize, schemaIds, scopes, and fields are all embedded in the page token).
 type PaginationStyle int
 
 const (
@@ -30,7 +30,7 @@ const (
 	PaginationDocumentAPI
 
 	// PaginationSettingsAPI is used by the Settings API (/platform/classic/environment-api/v2/settings/).
-	// When nextPageKey is present, no other query params may be sent.
+	// When nextPageKey is present, no other query params may be sent (not even fields).
 	PaginationSettingsAPI
 )
 
