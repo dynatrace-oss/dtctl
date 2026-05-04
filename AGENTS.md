@@ -204,7 +204,7 @@ Dynatrace APIs **reject** requests that combine `page-size` with `next-page-key`
 
 **Exception — Document API**: The Document API (`/platform/document/v1/documents`) does **not** reject `page-size` + `page-key`. It also does **not** embed the page size in the page token (defaulting to 20/page if `page-size` is omitted). For Document API endpoints, send `page-size` on every request alongside `page-key`. See `pkg/resources/document/document.go` for the reference implementation.
 
-**Exception — Settings API**: The Settings API (`/platform/classic/environment-api/v2/settings/objects`) rejects ALL other query params when `nextPageKey` is present — not just `pageSize`, but also `schemaIds` and `scopes` (HTTP 400: "must not be used in combination with nextPageKey query parameter"). The page token embeds everything. For Settings API endpoints, send ONLY `nextPageKey` on page 2+. See `pkg/resources/settings/settings.go` for the reference implementation.
+**Exception — Settings API**: The Settings API (`/platform/classic/environment-api/v2/settings/objects`) rejects ALL other query params when `nextPageKey` is present — not just `pageSize`, but also `schemaIds`, `scopes`, and `fields` (HTTP 400: "must not be used in combination with nextPageKey query parameter"). The page token embeds everything. For Settings API endpoints, send ONLY `nextPageKey` on page 2+. See `pkg/resources/settings/settings.go` for the reference implementation.
 
 ### Correct pattern (default — most APIs)
 
@@ -332,13 +332,13 @@ if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
 }
 ```
 
-For Settings API mocks, the guard must also reject `schemaIds` and `scopes` with `nextPageKey`:
+For Settings API mocks, the guard must also reject `schemaIds`, `scopes`, and `fields` with `nextPageKey`:
 
 ```go
-// Simulate Settings API constraint: pageSize, schemaIds, and scopes
+// Simulate Settings API constraint: pageSize, schemaIds, scopes, and fields
 // must NOT be combined with nextPageKey (all are embedded in the page token).
 if r.URL.Query().Get("nextPageKey") != "" {
-    for _, param := range []string{"pageSize", "schemaIds", "scopes"} {
+    for _, param := range []string{"pageSize", "schemaIds", "scopes", "fields"} {
         if r.URL.Query().Get(param) != "" {
             w.WriteHeader(http.StatusBadRequest)
             fmt.Fprintf(w, `{"error":{"code":400,"message":"Constraints violated."}}`)

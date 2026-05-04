@@ -50,6 +50,11 @@ Examples:
 			if s.ExternalID != "" {
 				output.DescribeKV("External ID:", w, "%s", s.ExternalID)
 			}
+			if s.Version != "" {
+				if ts := slo.DecodeVersionTimestamp(s.Version); ts != nil {
+					output.DescribeKV("Modified:", w, "%s", ts.Format("2006-01-02 15:04:05 UTC"))
+				}
+			}
 
 			// Print tags
 			if len(s.Tags) > 0 {

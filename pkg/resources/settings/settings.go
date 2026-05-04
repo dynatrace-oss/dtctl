@@ -176,7 +176,8 @@ func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*Setting
 			Filters:       map[string]string{"schemaIds": schemaID, "scopes": scope},
 		}.Apply(req)
 
-		// fields may only be sent on the first page; subsequent pages carry the spec in the nextPageKey
+		// fields may only be sent on the first page; subsequent pages carry the spec in the nextPageKey.
+		// value is included so that -o json / -o yaml list output contains the full configuration payload.
 		if nextPageKey == "" {
 			req.SetQueryParam("fields", "objectId,scope,schemaId,schemaVersion,externalId,summary,value,modificationInfo")
 		}
@@ -237,6 +238,7 @@ func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*Setting
 // Get gets a specific settings object by objectId
 func (h *Handler) Get(objectID string) (*SettingsObject, error) {
 	resp, err := h.client.HTTP().R().
+		SetQueryParam("fields", "objectId,scope,schemaId,schemaVersion,externalId,summary,value,modificationInfo").
 		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
 
 	if err != nil {

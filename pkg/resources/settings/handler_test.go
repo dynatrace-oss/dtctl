@@ -325,6 +325,10 @@ func TestListObjects_NotFound(t *testing.T) {
 func TestGet_ByObjectID_Success(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/classic/environment-api/v2/settings/objects/my-object-id", func(w http.ResponseWriter, r *http.Request) {
+		// Verify fields param is present so scope is included in the response
+		if r.URL.Query().Get("fields") == "" {
+			t.Error("fields query param not sent — scope will not be included in response")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(SettingsObject{
 			ObjectID: "my-object-id",
