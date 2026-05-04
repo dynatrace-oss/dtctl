@@ -57,18 +57,10 @@ Examples:
 
 // getSettingsCmd retrieves settings objects
 var getSettingsCmd = &cobra.Command{
-	Use:     "settings [object-id-or-uid]",
+	Use:     "settings [object-id]",
 	Aliases: []string{"setting"},
 	Short:   "Get settings objects",
-	Long: `Get settings objects for a schema.
-
-You can retrieve a specific settings object by providing either:
-- The full objectId (base64-encoded composite key) - no flags needed
-- The UID (UUID format) - REQUIRES --schema flag
-
-When using a UID, you MUST specify --schema to narrow the search. This prevents
-expensive operations that could search through thousands of objects and put load
-on the Dynatrace backend.
+	Long: `Get settings objects for a schema, or a specific object by objectId.
 
 Examples:
   # List settings objects for a schema
@@ -77,14 +69,8 @@ Examples:
   # List settings with a specific scope
   dtctl get settings --schema builtin:openpipeline.logs.pipelines --scope environment
 
-  # Get by objectId (direct API call, no flags needed)
+  # Get a specific settings object by objectId
   dtctl get settings vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ...
-
-  # Get by UID (requires --schema flag)
-  dtctl get settings e1cd3543-8603-3895-bcee-34d20c700074 --schema builtin:openpipeline.logs.pipelines
-
-  # Get by UID with custom scope
-  dtctl get settings e1cd3543-8603-3895-bcee-34d20c700074 --schema builtin:openpipeline.logs.pipelines --scope environment
 
   # Output as JSON
   dtctl get settings --schema builtin:openpipeline.logs.pipelines -o json
@@ -102,7 +88,7 @@ Examples:
 
 		// Get specific object if ID provided
 		if len(args) > 0 {
-			obj, err := handler.GetWithContext(args[0], schemaID, scope)
+			obj, err := handler.Get(args[0])
 			if err != nil {
 				return err
 			}
@@ -125,29 +111,21 @@ Examples:
 
 // deleteSettingsCmd deletes a settings object
 var deleteSettingsCmd = &cobra.Command{
-	Use:   "settings <object-id-or-uid>",
+	Use:   "settings <object-id>",
 	Short: "Delete a settings object",
-	Long: `Delete a settings object by objectId or UID.
-
-You can specify either the full objectId or the UID (UUID format).
-When using a UID, you MUST specify --schema.
+	Long: `Delete a settings object by objectId.
 
 Examples:
   # Delete by objectId
   dtctl delete settings vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ...
 
-  # Delete by UID (requires --schema)
-  dtctl delete settings e1cd3543-8603-3895-bcee-34d20c700074 --schema builtin:openpipeline.logs.pipelines
-
   # Delete without confirmation
-  dtctl delete settings <object-id-or-uid> -y
+  dtctl delete settings <object-id> -y
 `,
 	Aliases: []string{"setting"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		objectID := args[0]
-		schemaID, _ := cmd.Flags().GetString("schema")
-		scope, _ := cmd.Flags().GetString("scope")
 
 		_, c, err := SetupWithSafety(safety.OperationDelete)
 		if err != nil {
@@ -157,7 +135,7 @@ Examples:
 		handler := settings.NewHandler(c)
 
 		// Get current settings object for confirmation
-		obj, err := handler.GetWithContext(objectID, schemaID, scope)
+		obj, err := handler.Get(objectID)
 		if err != nil {
 			return err
 		}
@@ -174,7 +152,7 @@ Examples:
 			}
 		}
 
-		if err := handler.DeleteWithContext(objectID, schemaID, scope); err != nil {
+		if err := handler.Delete(objectID); err != nil {
 			return err
 		}
 
@@ -185,11 +163,9 @@ Examples:
 
 func init() {
 	// Settings flags
-	getSettingsCmd.Flags().String("schema", "", "Schema ID (required when listing or using UID)")
+	getSettingsCmd.Flags().String("schema", "", "Schema ID (required when listing settings objects)")
 	getSettingsCmd.Flags().String("scope", "", "Scope to filter settings (e.g., 'environment')")
 
 	// Delete settings flags
-	deleteSettingsCmd.Flags().String("schema", "", "Schema ID (required when using UID)")
-	deleteSettingsCmd.Flags().String("scope", "", "Scope for UID resolution (optional, defaults to 'environment')")
 	deleteSettingsCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 }

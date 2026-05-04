@@ -165,13 +165,72 @@ func TestSettingsGetNonExistentObject(t *testing.T) {
 		t.Fatal("Expected error for non-existent object, got nil")
 	}
 
-	// When calling Get with a UUID-formatted ID, a schema ID is required for UID resolution
-	expectedErr := "schema ID is required when looking up settings by UID"
-	if !strings.Contains(err.Error(), expectedErr) {
-		t.Errorf("Expected error containing %q, got: %v", expectedErr, err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Expected 'not found' error, got: %v", err)
 	}
 
 	t.Logf("✓ Got expected error: %v", err)
+}
+
+func TestSettingsListObjectsScopePopulated(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := settings.NewHandler(env.Client)
+
+	// Use a schema that has entity-scoped objects (not singletons) so we can
+	// verify scope splitting into ScopeType/ScopeID.
+	schemaID := "builtin:anomaly-detection.services"
+	t.Logf("Listing objects for schema: %s", schemaID)
+
+	list, err := handler.ListObjects(schemaID, "", 0)
+	if err != nil {
+		t.Fatalf("ListObjects() error = %v", err)
+	}
+
+	if list.TotalCount == 0 {
+		t.Skip("No settings objects found for this schema — cannot verify scope population")
+	}
+
+	t.Logf("✓ Listed %d objects", list.TotalCount)
+
+	for i, obj := range list.Items {
+		if obj.Scope == "" {
+			t.Errorf("item[%d] Scope is empty — fields parameter may not be working", i)
+			continue
+		}
+		if obj.ScopeType == "" {
+			t.Errorf("item[%d] ScopeType is empty for scope %q", i, obj.Scope)
+		}
+		if i < 3 {
+			t.Logf("  item[%d]: scope=%q scopeType=%q scopeID=%q", i, obj.Scope, obj.ScopeType, obj.ScopeID)
+		}
+	}
+}
+
+func TestSettingsListObjectsObjectIDShortPopulated(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := settings.NewHandler(env.Client)
+
+	schemaID := "builtin:anomaly-detection.services"
+	list, err := handler.ListObjects(schemaID, "", 0)
+	if err != nil {
+		t.Fatalf("ListObjects() error = %v", err)
+	}
+	if list.TotalCount == 0 {
+		t.Skip("No settings objects found")
+	}
+
+	obj := list.Items[0]
+	if obj.ObjectIDShort == "" {
+		t.Error("ObjectIDShort is empty")
+	}
+	if len(obj.ObjectID) > 23 && !strings.HasSuffix(obj.ObjectIDShort, "...") {
+		t.Errorf("ObjectIDShort %q should end with '...' for long objectId", obj.ObjectIDShort)
+	}
+	t.Logf("✓ ObjectIDShort=%q for objectId length %d", obj.ObjectIDShort, len(obj.ObjectID))
 }
 
 // TestSettingsCRUDLifecycle tests the full lifecycle of a settings object
