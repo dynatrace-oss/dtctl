@@ -600,4 +600,3 @@ func TestGetRaw_NotFound(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
-
