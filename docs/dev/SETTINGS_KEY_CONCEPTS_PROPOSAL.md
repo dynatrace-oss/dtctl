@@ -9,8 +9,6 @@
 
 A review of dtctl's Settings 2.0 implementation against the documented key concepts surfaced one correctness bug (broken optimistic locking), two missing capabilities that materially impact day-to-day workflows (`externalId` upsert, `adminAccess`), and several smaller gaps. This document proposes a remediation plan, ordered by impact and risk.
 
-A pre-existing concern about `objectId` binary decoding and O(N) UID resolution (see `objectid-uid-concern-analysis.md` at the repo root) is folded into the same plan because it touches the same struct and code paths.
-
 ## Conformance matrix
 
 | Key concept | Status | Where |
@@ -24,13 +22,12 @@ A pre-existing concern about `objectId` binary decoding and O(N) UID resolution 
 | `multiObject` / `ordered` schema flags | ✅ surfaced | `Schema` struct |
 | **`updateToken` (optimistic locking)** | ❌ **broken** | `If-Match: <schemaVersion>` used instead — see Proposal 1 |
 | **`externalId`** | ⚠️ partial | Field exists; no upsert path through `apply` — see Proposal 2 |
-| **`adminAccess`** | ❌ missing | No flag — see Proposal 4 |
-| `insertAfter` / `insertBefore` | ❌ missing | Ordered schemas can only append — Proposal 5 |
-| Effective-values view | ❌ missing | No way to see inherited config — Proposal 6 |
-| `maxObjects` on schema | ❌ not surfaced | Add to `Schema` for `describe schema` — Proposal 7 |
-| `forceSecretResubmission` | ❌ not exposed | Edge case — Proposal 8 |
-| Batch-write partial failures | ⚠️ single-item only | `Create` always wraps `[obj]`; not a bug today — Proposal 9 |
-| `objectId` binary decoding | ⚠️ policy concern | See `objectid-uid-concern-analysis.md` — Proposal 3 |
+| **`adminAccess`** | ❌ missing | No flag — see Proposal 3 |
+| `insertAfter` / `insertBefore` | ❌ missing | Ordered schemas can only append — Proposal 4 |
+| Effective-values view | ❌ missing | No way to see inherited config — Proposal 5 |
+| `maxObjects` on schema | ❌ not surfaced | Add to `Schema` for `describe schema` — Proposal 6 |
+| `forceSecretResubmission` | ❌ not exposed | Edge case — Proposal 7 |
+| Batch-write partial failures | ⚠️ single-item only | `Create` always wraps `[obj]`; not a bug today — Proposal 8 |
 
 ## Proposals
 
@@ -55,7 +52,7 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 
 **Backward compatibility.** External — none (the field is server-supplied and round-tripped). Internal — `SettingsObject` gains a field; YAML/JSON output of `dtctl get settings` will start including `updateToken`. Acceptable; document in `CHANGELOG.md`.
 
-**Verification.** Manual concurrent-edit test against `gmg` dev tenant: two terminals running `dtctl edit settings <id>` on the same object; second save should fail with a clear "object was modified" error. Integration test that simulates 409 from the mock server.
+**Verification.** Manual concurrent-edit test against a development tenant: two terminals running `dtctl edit settings <id>` on the same object; second save should fail with a clear "object was modified" error. Integration test that simulates 409 from the mock server.
 
 ---
 
@@ -82,30 +79,7 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 
 ---
 
-### Proposal 3 — Remove `objectId` decoding & UUID input (P1)
-
-**Problem and rationale.** Already analysed in `objectid-uid-concern-analysis.md` (repo root). Two issues:
-
-- The reverse-engineered binary format documented in `docs/dev/SETTINGS_OBJECTID_DECODING.md` creates a de facto contract the Settings platform team explicitly did not agree to.
-- `getByUID` (`settings.go:305–375`) iterates all objects across all scopes for a schema to resolve a UUID. Measured 1.6–2.3 s on the dev tenant; tens of seconds on large production tenants.
-
-**Proposal.** Adopt the recommendation from the existing analysis verbatim:
-
-1. Delete `pkg/resources/settings/decoder.go` and tests.
-2. Remove `getByUID`, `isUUID`, `*WithContext` variants, and the `ObjectIDShort` / `UID` / `ScopeType` / `ScopeID` *decoded* fields.
-3. Keep `ScopeType` / `ScopeID` but compute them by splitting `Scope` on the first `-` (already done in `populateDisplayFields`).
-4. Surface a clear error when input looks like a UUID: _"objectId expected — use `dtctl get settings --schema <schema>` to find the objectId"_.
-5. Delete `docs/dev/SETTINGS_OBJECTID_DECODING.md`, `docs/dev/SETTINGS_OBJECTID_FAQ.md`, `docs/dev/SETTINGS_UID_RESOLUTION.md`.
-
-**Files.** As above.
-
-**Backward compatibility.** Loss of UUID-as-input. Per the analysis, UUIDs have no customer-facing source in the product, so the loss is theoretical. Loss of `UID` column in `-o wide` — also no actionable use today. Document in `CHANGELOG.md` as a deprecation removal.
-
-**Verification.** Existing tests for scope parsing remain green; UUID-input tests are removed; new test asserts the "use --schema" error message.
-
----
-
-### Proposal 4 — `--admin-access` flag (P1)
+### Proposal 3 — `--admin-access` flag (P1)
 
 **Problem.** Settings objects can carry owner-based access control (OBAC). Today there is no way for dtctl to bypass OBAC on objects it didn't create, blocking break-glass and CI flows. Documents already gained this flag in commit `bdb2288`; settings should follow the same pattern.
 
@@ -121,7 +95,7 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 
 ---
 
-### Proposal 5 — `insertAfter` / `insertBefore` for ordered schemas (P2)
+### Proposal 4 — `insertAfter` / `insertBefore` for ordered schemas (P2)
 
 **Problem.** Some schemas are `ordered: true` (e.g. management-zone rules, request-naming rules). `Schema.Ordered` is surfaced, but `SettingsObjectCreate` has no `insertAfter`/`insertBefore` field, so users can only append. There's no CLI surface for repositioning.
 
@@ -138,7 +112,7 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 
 ---
 
-### Proposal 6 — Effective-values view (P2)
+### Proposal 5 — Effective-values view (P2)
 
 **Problem.** `dtctl get settings --schema X --scope Y` only returns explicitly persisted objects. The most common settings question — "what configuration is actually active for this entity?" — requires walking the scope hierarchy plus defaults. The Settings API exposes this via `GET /settings/effectiveValues` (or schema-specific equivalents).
 
@@ -154,7 +128,7 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 
 ---
 
-### Proposal 7 — Surface `maxObjects` on `Schema` (P3)
+### Proposal 6 — Surface `maxObjects` on `Schema` (P3)
 
 **Problem.** `maxObjects` is part of the schema definition and tells users the per-scope cap. Today users discover the cap by hitting HTTP 409.
 
@@ -164,7 +138,7 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 
 ---
 
-### Proposal 8 — `forceSecretResubmission` (P3)
+### Proposal 7 — `forceSecretResubmission` (P3)
 
 **Problem.** When updating a settings object that contains secrets, modifying any non-secret property requires re-supplying the secret value (or setting `forceSecretResubmission=true`). Today the user can only work around this by passing the redacted secret back unchanged, which fails.
 
@@ -176,7 +150,7 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 
 ---
 
-### Proposal 9 — Batch-write semantics (parking lot)
+### Proposal 8 — Batch-write semantics (parking lot)
 
 **Problem.** `Create` always wraps a single object in `[…]` and treats the response as a single item. The Settings API supports multi-object batch create with per-item failures. Today `apply` calls one-by-one, so we don't benefit from batching.
 
@@ -194,10 +168,9 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 
 1. **P0 — Proposal 1 (`updateToken`)** — correctness fix, small surface area.
 2. **P0 — Proposal 2 (`externalId` upsert)** — eliminates a real footgun in `apply`.
-3. **P1 — Proposal 3 (remove `objectId` decoder)** — deliver on the existing analysis. Touches the same struct as 1+2, batch with them.
-4. **P1 — Proposal 4 (`--admin-access`)** — small, parallels the documents flag.
-5. **P2 — Proposals 5, 6** — independent, can be parallelised.
-6. **P3 — Proposals 7, 8** — bundle with whoever is in the file next.
+3. **P1 — Proposal 3 (`--admin-access`)** — small, parallels the documents flag.
+4. **P2 — Proposals 4, 5** — independent, can be parallelised.
+5. **P3 — Proposals 6, 7** — bundle with whoever is in the file next.
 
 ## Open questions
 
@@ -208,6 +181,5 @@ Each proposal is sized to be its own PR (and, where useful, its own follow-up TD
 ## References
 
 - Dynatrace Settings API — Key concepts: https://docs.dynatrace.com/docs/dynatrace-api/environment-api/settings/key-concepts
-- Pre-existing analysis: `objectid-uid-concern-analysis.md` (repo root)
 - Pagination rules for Settings API: `AGENTS.md` § "Pagination Pattern (CRITICAL)"
 - Documents `--admin-access` precedent: commit `bdb2288`
