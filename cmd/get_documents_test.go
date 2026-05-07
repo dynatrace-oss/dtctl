@@ -50,8 +50,8 @@ func TestBuildDocumentFilters_DefaultsImplicitType(t *testing.T) {
 	}
 }
 
-func TestBuildDocumentFilters_RawFilterOverrides(t *testing.T) {
-	cmd := newDocFlagsCmd(true)
+func TestBuildDocumentFilters_RawFilterPreservesImplicitType(t *testing.T) {
+	cmd := newDocFlagsCmd(false)
 	_ = cmd.Flags().Set("filter", "originAppId exists")
 	_ = cmd.Flags().Set("name", "ignored")
 
@@ -59,14 +59,30 @@ func TestBuildDocumentFilters_RawFilterOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if filters.Filter != "originAppId exists" {
-		t.Errorf("expected raw Filter passed through, got %q", filters.Filter)
+	// Implicit type must be ANDed into the filter so dtctl get dashboards --filter
+	// still returns only dashboards, not all document types.
+	want := "type=='dashboard' and (originAppId exists)"
+	if filters.Filter != want {
+		t.Errorf("expected Filter %q, got %q", want, filters.Filter)
 	}
 	if filters.Type != "" {
-		t.Errorf("expected Type cleared when raw Filter set, got %q", filters.Type)
+		t.Errorf("expected Type empty (encoded in Filter), got %q", filters.Type)
 	}
 	if filters.Name != "" {
 		t.Errorf("expected Name cleared when raw Filter set, got %q", filters.Name)
+	}
+}
+
+func TestBuildDocumentFilters_RawFilterPassthroughWithoutImplicitType(t *testing.T) {
+	cmd := newDocFlagsCmd(true)
+	_ = cmd.Flags().Set("filter", "originAppId exists")
+
+	filters, err := buildDocumentFilters(cmd, nil, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if filters.Filter != "originAppId exists" {
+		t.Errorf("expected raw Filter passed verbatim, got %q", filters.Filter)
 	}
 }
 

@@ -80,7 +80,9 @@ Examples:
 			return err
 		}
 
-		// Convert metadata list to documents for table display
+		if len(filters.AddFields) > 0 {
+			return printer.PrintList(list.Documents)
+		}
 		docs := document.ConvertToDocuments(list)
 		return printer.PrintList(docs)
 	},
@@ -151,7 +153,9 @@ Examples:
 			return err
 		}
 
-		// Convert metadata list to documents for table display
+		if len(filters.AddFields) > 0 {
+			return printer.PrintList(list.Documents)
+		}
 		docs := document.ConvertToDocuments(list)
 		return printer.PrintList(docs)
 	},
@@ -566,7 +570,9 @@ Examples:
 			return err
 		}
 
-		// Convert metadata list to documents for table display
+		if len(filters.AddFields) > 0 {
+			return printer.PrintList(list.Documents)
+		}
 		docs := document.ConvertToDocuments(list)
 		return printer.PrintList(docs)
 	},
@@ -661,10 +667,17 @@ func buildDocumentFilters(cmd *cobra.Command, c *client.Client, implicitType str
 	}
 
 	if rawFilter != "" {
-		if nameFilter != "" || mineOnly || implicitType != "" {
-			fmt.Fprintln(os.Stderr, "warning: --filter overrides --name/--type/--mine; the raw filter is sent verbatim to the API")
+		if nameFilter != "" || mineOnly {
+			fmt.Fprintln(os.Stderr, "warning: --filter overrides --name/--mine; the raw filter is sent verbatim to the API")
 		}
-		filters.Filter = rawFilter
+		// For type-scoped commands (dashboards, notebooks), enforce the implicit
+		// type even when --filter is provided, so dtctl get dashboards --filter "..."
+		// still returns only dashboards.
+		if implicitType != "" {
+			filters.Filter = fmt.Sprintf("type=='%s' and (%s)", implicitType, rawFilter)
+		} else {
+			filters.Filter = rawFilter
+		}
 		return filters, nil
 	}
 
