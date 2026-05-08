@@ -1531,5 +1531,21 @@ func (d Document) MarshalYAML() (interface{}, error) {
 		}
 	}
 
+	if d.OriginAppID != "" {
+		output["originAppId"] = d.OriginAppID
+	}
+	if d.OriginExtensionID != "" {
+		output["originExtensionId"] = d.OriginExtensionID
+	}
+	if len(d.Labels) > 0 {
+		output["labels"] = d.Labels
+	}
+	if d.ShareInfo != nil {
+		output["shareInfo"] = d.ShareInfo
+	}
+	if d.UserContext != nil {
+		output["userContext"] = d.UserContext
+	}
+
 	return output, nil
 }

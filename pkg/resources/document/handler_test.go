@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
 
@@ -970,6 +972,61 @@ func TestDocument_JSONMarshal_IncludesPopulatedAddFields(t *testing.T) {
 	for _, key := range []string{`"originExtensionId":"ext-123"`, `"labels":["prod"]`, `"shareInfo":{"isShared":true}`} {
 		if !strings.Contains(out, key) {
 			t.Errorf("expected JSON to contain %s; got: %s", key, out)
+		}
+	}
+}
+
+// TestDocument_YAMLMarshal_OmitsEmptyAddFields ensures the custom MarshalYAML
+// keeps default `-o yaml` payloads minimal when --add-fields is not used.
+func TestDocument_YAMLMarshal_OmitsEmptyAddFields(t *testing.T) {
+	d := Document{ID: "d1", Name: "Plain", Type: "dashboard", Version: 1}
+	b, err := yaml.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{"originAppId", "originExtensionId", "labels", "shareInfo", "userContext"} {
+		if strings.Contains(out, key) {
+			t.Errorf("expected %q absent from YAML without --add-fields, got: %s", key, out)
+		}
+	}
+}
+
+// TestDocument_YAMLMarshal_IncludesPopulatedAddFields locks in the YAML half
+// of the --add-fields fix: the custom MarshalYAML had been built around an
+// explicit map and silently dropped the new optional fields, even when
+// populated. Without this assertion, --add-fields would regress to broken
+// YAML output while JSON kept working.
+func TestDocument_YAMLMarshal_IncludesPopulatedAddFields(t *testing.T) {
+	d := Document{
+		ID:                "d1",
+		Name:              "With extras",
+		Type:              "dashboard",
+		Version:           1,
+		OriginAppID:       "dynatrace.app",
+		OriginExtensionID: "ext-123",
+		Labels:            []string{"prod", "team-a"},
+		ShareInfo:         &ShareInfo{IsShared: true, IsSharedWithCurrentUser: true},
+		UserContext:       &UserContext{},
+	}
+	b, err := yaml.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{
+		"originAppId: dynatrace.app",
+		"originExtensionId: ext-123",
+		"labels:",
+		"- prod",
+		"- team-a",
+		"shareInfo:",
+		"isShared: true",
+		"isSharedWithCurrentUser: true",
+		"userContext:",
+	} {
+		if !strings.Contains(out, key) {
+			t.Errorf("expected YAML to contain %q; got:\n%s", key, out)
 		}
 	}
 }
