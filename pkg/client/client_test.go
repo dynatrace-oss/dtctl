@@ -270,6 +270,17 @@ func TestExtractUserIDFromToken(t *testing.T) {
 			want:    "",
 			wantErr: true,
 		},
+		{
+			// Regression for #210: platform tokens have three dot-separated
+			// parts but are not JWTs. Without the IsPlatformToken guard,
+			// base64-decoding the middle segment yields random bytes and
+			// json.Unmarshal reports e.g. "invalid character '#' looking for
+			// beginning of value", which is what the bug report shows.
+			name:    "platform token rejected (not a JWT)",
+			token:   "dt0s16.ABCDEFGHIJKLMNOPQRSTUVWX.YZ0123456789abcdefghijkl",
+			want:    "",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -628,6 +639,20 @@ func TestClient_CurrentUserID(t *testing.T) {
 			token:       "invalid-token",
 			wantErr:     true,
 			errContains: "invalid JWT token format",
+		},
+		{
+			// Regression for #210: when /platform/metadata/v1/user fails
+			// (e.g. 403 because the token lacks app-engine:apps:run) and the
+			// token is a platform token, we must not silently fall through to
+			// the JWT decoder — that produces a confusing "invalid character
+			// '#' looking for beginning of value" error. Surface an actionable
+			// message instead.
+			name:        "platform token + metadata 403 returns actionable error",
+			apiSuccess:  false,
+			apiStatus:   http.StatusForbidden,
+			token:       "dt0s16.ABCDEFGHIJKLMNOPQRSTUVWX.YZ0123456789abcdefghijkl",
+			wantErr:     true,
+			errContains: "platform token",
 		},
 	}
 
