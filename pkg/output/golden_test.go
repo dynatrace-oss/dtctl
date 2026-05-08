@@ -720,6 +720,66 @@ func TestGolden_GetDocumentsGeneric(t *testing.T) {
 	}
 }
 
+// documentsWithAddFieldsFixtures models the output of
+// `dtctl get dashboards --add-fields originExtensionId,labels,shareInfo,userContext`
+// after ConvertToDocuments has carried the requested fields through.
+// Used to lock in two guarantees: (1) JSON/YAML payloads include the
+// requested fields, and (2) default table/wide output is unchanged because
+// the optional fields are tagged `table:"-"`.
+func documentsWithAddFieldsFixtures() []document.Document {
+	return []document.Document{
+		{
+			ID:                "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+			Name:              "Production Overview",
+			Type:              "dashboard",
+			Owner:             "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+			IsPrivate:         false,
+			Created:           fixedTime,
+			Description:       "Main production monitoring dashboard",
+			Version:           3,
+			Modified:          fixedTime.Add(2 * time.Hour),
+			OriginExtensionID: "com.dynatrace.example.extension",
+			Labels:            []string{"prod", "team-a"},
+			ShareInfo:         &document.ShareInfo{IsShared: true, IsSharedWithCurrentUser: true},
+			UserContext:       &document.UserContext{LastAccessedTime: fixedTime.Add(time.Hour)},
+		},
+		{
+			ID:        "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+			Name:      "Runbook: Incident Response",
+			Type:      "notebook",
+			Owner:     "8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
+			IsPrivate: true,
+			Created:   fixedTime.Add(-24 * time.Hour),
+			Version:   1,
+			Modified:  fixedTime.Add(-12 * time.Hour),
+			// Second row deliberately leaves AddFields empty to verify
+			// `omitempty` keeps individual rows lean.
+		},
+	}
+}
+
+func TestGolden_GetDocumentsAddFields(t *testing.T) {
+	docs := documentsWithAddFieldsFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(docs); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/documents-addfields-"+name, buf.String())
+		})
+	}
+}
+
 func TestGolden_GetSettings(t *testing.T) {
 	objs := settingsFixtures()
 

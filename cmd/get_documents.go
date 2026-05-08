@@ -80,11 +80,7 @@ Examples:
 			return err
 		}
 
-		if len(filters.AddFields) > 0 {
-			return printer.PrintList(list.Documents)
-		}
-		docs := document.ConvertToDocuments(list)
-		return printer.PrintList(docs)
+		return printer.PrintList(document.ConvertToDocuments(list))
 	},
 }
 
@@ -153,11 +149,7 @@ Examples:
 			return err
 		}
 
-		if len(filters.AddFields) > 0 {
-			return printer.PrintList(list.Documents)
-		}
-		docs := document.ConvertToDocuments(list)
-		return printer.PrintList(docs)
+		return printer.PrintList(document.ConvertToDocuments(list))
 	},
 }
 
@@ -570,11 +562,7 @@ Examples:
 			return err
 		}
 
-		if len(filters.AddFields) > 0 {
-			return printer.PrintList(list.Documents)
-		}
-		docs := document.ConvertToDocuments(list)
-		return printer.PrintList(docs)
+		return printer.PrintList(document.ConvertToDocuments(list))
 	},
 }
 
@@ -700,7 +688,7 @@ func addDocumentListFlags(cmd *cobra.Command, includeType bool) {
 	}
 	cmd.Flags().String("name", "", "Filter by name (partial match, case-insensitive)")
 	cmd.Flags().Bool("mine", false, "Show only documents owned by current user")
-	cmd.Flags().String("filter", "", "Raw Document API filter expression, sent verbatim (overrides --name/--type/--mine)")
+	cmd.Flags().String("filter", "", "Raw Document API filter expression, ANDed with the type scope (overrides --name/--mine)")
 	cmd.Flags().String("sort", "", "Sort fields, comma-separated, prefix with '-' for descending (e.g. \"name,-modificationInfo.lastModifiedTime\")")
 	cmd.Flags().StringSlice("add-fields", nil, "Request fields the API omits by default (e.g. originExtensionId,labels,shareInfo.isShared)")
 	cmd.Flags().Bool("admin-access", false, "List documents as effective owner; requires document:documents:admin permission")
