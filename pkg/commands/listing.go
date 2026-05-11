@@ -63,8 +63,9 @@ type TimeFormats struct {
 // MutatingVerbs maps verb names to their safety operation type.
 // Verbs not listed here are read-only (mutating: false).
 //
-// This map must be kept in sync with actual NewSafetyChecker calls in cmd/.
-// The TestMutatingVerbsMatchSafetyCheckerUsage test in cmd/commands_test.go
+// This map must be kept in sync with actual safety-check call sites in cmd/
+// (both NewSafetyChecker and SetupWithSafety helpers). The
+// TestMutatingVerbsMatchSafetyCheckerUsage test in cmd/commands_test.go
 // cross-references this map against the real command tree to detect drift.
 var MutatingVerbs = map[string]string{
 	"apply":   "OperationCreate",
@@ -76,6 +77,7 @@ var MutatingVerbs = map[string]string{
 	"unshare": "OperationUpdate",
 	"update":  "OperationUpdate",
 	"exec":    "OperationCreate", // semantically mutating (runs workflows, functions)
+	"enable":  "OperationUpdate", // PUTs updated monitoring/credential config to the tenant
 }
 
 // ResourceAliases are the standard resource aliases built into dtctl.
