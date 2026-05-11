@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`dtctl commands -o json` now reports the `enable` verb as mutating** — the structured command catalog reported `enable` with `"mutating": false` and an empty `safety_operation`, even though `dtctl enable gcp monitoring` and `dtctl enable azure monitoring` go through `SetupWithSafety(safety.OperationUpdate)` and `PUT` updated monitoring/credential config to the tenant; consumers of the catalog (AI agents, plugins, CI policy gates) consequently misclassified `enable` as read-only; `enable` is now listed in `commands.MutatingVerbs` with `OperationUpdate`, and the drift-detection test (`TestMutatingVerbsMatchSafetyCheckerUsage`) now scans for both `NewSafetyChecker` and `SetupWithSafety(` call sites so future verbs wired up exclusively via the helper cannot silently regress the same way; runtime safety enforcement was unaffected (the actual `enable` commands already enforced `OperationUpdate`); fixes [#203](https://github.com/dynatrace-oss/dtctl/issues/203)
+
 ## [0.27.0] - 2026-05-05
 
 ### Added
