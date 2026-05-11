@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`dtctl get anomaly-detector -o json|yaml` output is now consumable by `dtctl apply -f`** — get previously serialized a hybrid shape mixing top-level table-display fields (e.g. `analyzer` as the short string `"static (>90)"`, `eventType`) with a nested `value` containing the real Settings payload, which the apply detector recognized as neither the raw Settings format nor the flattened authoring format and rejected with `Error: could not detect resource type from file content`; the `AnomalyDetector` struct now serializes the raw Settings envelope (`{schemaId, scope, value, objectId, schemaVersion}`) via custom `MarshalJSON`/`MarshalYAML`, matching dashboard/notebook/SLO behavior — `dtctl get anomaly-detector <id> -o json > file.json && dtctl apply -f file.json` now round-trips cleanly and is the supported way to copy detectors between environments; table/wide/csv output is unchanged; fixes [#216](https://github.com/dynatrace-oss/dtctl/issues/216)
+
 ## [0.27.0] - 2026-05-05
 
 ### Added
