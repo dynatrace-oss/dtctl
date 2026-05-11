@@ -80,9 +80,7 @@ Examples:
 			return err
 		}
 
-		// Convert metadata list to documents for table display
-		docs := document.ConvertToDocuments(list)
-		return printer.PrintList(docs)
+		return printer.PrintList(document.ConvertToDocuments(list))
 	},
 }
 
@@ -151,9 +149,7 @@ Examples:
 			return err
 		}
 
-		// Convert metadata list to documents for table display
-		docs := document.ConvertToDocuments(list)
-		return printer.PrintList(docs)
+		return printer.PrintList(document.ConvertToDocuments(list))
 	},
 }
 
@@ -566,9 +562,7 @@ Examples:
 			return err
 		}
 
-		// Convert metadata list to documents for table display
-		docs := document.ConvertToDocuments(list)
-		return printer.PrintList(docs)
+		return printer.PrintList(document.ConvertToDocuments(list))
 	},
 }
 
@@ -661,10 +655,17 @@ func buildDocumentFilters(cmd *cobra.Command, c *client.Client, implicitType str
 	}
 
 	if rawFilter != "" {
-		if nameFilter != "" || mineOnly || implicitType != "" {
-			fmt.Fprintln(os.Stderr, "warning: --filter overrides --name/--type/--mine; the raw filter is sent verbatim to the API")
+		if nameFilter != "" || mineOnly {
+			fmt.Fprintln(os.Stderr, "warning: --filter overrides --name/--mine; the raw filter is sent verbatim to the API")
 		}
-		filters.Filter = rawFilter
+		// For type-scoped commands (dashboards, notebooks), enforce the implicit
+		// type even when --filter is provided, so dtctl get dashboards --filter "..."
+		// still returns only dashboards.
+		if implicitType != "" {
+			filters.Filter = fmt.Sprintf("type=='%s' and (%s)", implicitType, rawFilter)
+		} else {
+			filters.Filter = rawFilter
+		}
 		return filters, nil
 	}
 
@@ -687,7 +688,7 @@ func addDocumentListFlags(cmd *cobra.Command, includeType bool) {
 	}
 	cmd.Flags().String("name", "", "Filter by name (partial match, case-insensitive)")
 	cmd.Flags().Bool("mine", false, "Show only documents owned by current user")
-	cmd.Flags().String("filter", "", "Raw Document API filter expression, sent verbatim (overrides --name/--type/--mine)")
+	cmd.Flags().String("filter", "", "Raw Document API filter expression, ANDed with the type scope (overrides --name/--mine)")
 	cmd.Flags().String("sort", "", "Sort fields, comma-separated, prefix with '-' for descending (e.g. \"name,-modificationInfo.lastModifiedTime\")")
 	cmd.Flags().StringSlice("add-fields", nil, "Request fields the API omits by default (e.g. originExtensionId,labels,shareInfo.isShared)")
 	cmd.Flags().Bool("admin-access", false, "List documents as effective owner; requires document:documents:admin permission")

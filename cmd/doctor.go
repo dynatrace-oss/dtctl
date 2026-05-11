@@ -257,16 +257,18 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 
 	userInfo, authErr := c.CurrentUser()
 	if authErr != nil {
-		// Platform tokens cannot be granted iam:users:read, so the metadata API
-		// returns 403 by design — surface this as a known limitation, not a
-		// failure. For other (OAuth/JWT) tokens, fall back to decoding the user
-		// ID directly out of the token; CurrentUserID would re-issue the same
-		// metadata call we already failed, so go straight to the JWT path.
+		// /platform/metadata/v1/user requires the 'app-engine:apps:run' scope.
+		// Platform tokens that lack it return 403, and unlike OAuth/JWT tokens
+		// they can't be JWT-decoded as a fallback (they aren't JWTs). Surface
+		// this as a known limitation, not a failure. For OAuth/JWT tokens we
+		// fall back to decoding the user ID directly out of the token;
+		// CurrentUserID would re-issue the same metadata call we already
+		// failed, so go straight to the JWT path.
 		if client.IsPlatformToken(token) {
 			results = append(results, checkResult{
 				Name:   "Authentication",
 				Status: "warn",
-				Detail: "platform token: user identity unavailable via metadata API (requires iam:users:read scope, not grantable to platform tokens)",
+				Detail: "platform token: user identity unavailable via metadata API (token likely lacks 'app-engine:apps:run' scope; platform tokens are not JWTs, so no fallback)",
 			})
 		} else if userID, jwtErr := client.ExtractUserIDFromToken(token); jwtErr == nil {
 			results = append(results, checkResult{

@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
@@ -882,5 +885,148 @@ func TestConvertToDocuments(t *testing.T) {
 	}
 	if docs[0].ID != "d1" || docs[1].ID != "d2" {
 		t.Errorf("unexpected documents: %v", docs)
+	}
+}
+
+// TestConvertToDocuments_PreservesAddFields verifies that fields populated
+// via DocumentFilters.AddFields (originAppId, originExtensionId, labels,
+// shareInfo, userContext) survive the DocumentMetadata -> Document
+// conversion. Without this, --add-fields output is silently stripped before
+// the printer ever sees it.
+func TestConvertToDocuments_PreservesAddFields(t *testing.T) {
+	share := &ShareInfo{IsShared: true, IsSharedWithCurrentUser: true}
+	userCtx := &UserContext{}
+	list := &DocumentList{
+		Documents: []DocumentMetadata{
+			{
+				ID:                "d1",
+				Name:              "Dashboard with extras",
+				Type:              "dashboard",
+				Version:           1,
+				OriginAppID:       "dynatrace.app",
+				OriginExtensionID: "ext-123",
+				Labels:            []string{"prod", "team-a"},
+				ShareInfo:         share,
+				UserContext:       userCtx,
+			},
+		},
+	}
+
+	docs := ConvertToDocuments(list)
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 doc, got %d", len(docs))
+	}
+	d := docs[0]
+	if d.OriginAppID != "dynatrace.app" {
+		t.Errorf("OriginAppID not preserved: got %q", d.OriginAppID)
+	}
+	if d.OriginExtensionID != "ext-123" {
+		t.Errorf("OriginExtensionID not preserved: got %q", d.OriginExtensionID)
+	}
+	if len(d.Labels) != 2 || d.Labels[0] != "prod" || d.Labels[1] != "team-a" {
+		t.Errorf("Labels not preserved: got %v", d.Labels)
+	}
+	if d.ShareInfo == nil || !d.ShareInfo.IsShared || !d.ShareInfo.IsSharedWithCurrentUser {
+		t.Errorf("ShareInfo not preserved: got %+v", d.ShareInfo)
+	}
+	if d.UserContext != userCtx {
+		t.Errorf("UserContext pointer not preserved")
+	}
+}
+
+// TestDocument_JSONMarshal_OmitsEmptyAddFields ensures the new optional
+// fields are absent from JSON output when not populated, so default
+// `dtctl get dashboards -o json` payload shape is unchanged.
+func TestDocument_JSONMarshal_OmitsEmptyAddFields(t *testing.T) {
+	d := Document{ID: "d1", Name: "Plain", Type: "dashboard", Version: 1}
+	b, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{"originAppId", "originExtensionId", "labels", "shareInfo", "userContext"} {
+		if strings.Contains(out, key) {
+			t.Errorf("expected %q absent from JSON without --add-fields, got: %s", key, out)
+		}
+	}
+}
+
+// TestDocument_JSONMarshal_IncludesPopulatedAddFields ensures the new
+// optional fields ARE present in JSON output when populated, which is the
+// observable behavior of `dtctl get dashboards --add-fields ... -o json`.
+func TestDocument_JSONMarshal_IncludesPopulatedAddFields(t *testing.T) {
+	d := Document{
+		ID:                "d1",
+		Name:              "With extras",
+		Type:              "dashboard",
+		Version:           1,
+		OriginExtensionID: "ext-123",
+		Labels:            []string{"prod"},
+		ShareInfo:         &ShareInfo{IsShared: true},
+	}
+	b, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{`"originExtensionId":"ext-123"`, `"labels":["prod"]`, `"shareInfo":{"isShared":true}`} {
+		if !strings.Contains(out, key) {
+			t.Errorf("expected JSON to contain %s; got: %s", key, out)
+		}
+	}
+}
+
+// TestDocument_YAMLMarshal_OmitsEmptyAddFields ensures the custom MarshalYAML
+// keeps default `-o yaml` payloads minimal when --add-fields is not used.
+func TestDocument_YAMLMarshal_OmitsEmptyAddFields(t *testing.T) {
+	d := Document{ID: "d1", Name: "Plain", Type: "dashboard", Version: 1}
+	b, err := yaml.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{"originAppId", "originExtensionId", "labels", "shareInfo", "userContext"} {
+		if strings.Contains(out, key) {
+			t.Errorf("expected %q absent from YAML without --add-fields, got: %s", key, out)
+		}
+	}
+}
+
+// TestDocument_YAMLMarshal_IncludesPopulatedAddFields locks in the YAML half
+// of the --add-fields fix: the custom MarshalYAML had been built around an
+// explicit map and silently dropped the new optional fields, even when
+// populated. Without this assertion, --add-fields would regress to broken
+// YAML output while JSON kept working.
+func TestDocument_YAMLMarshal_IncludesPopulatedAddFields(t *testing.T) {
+	d := Document{
+		ID:                "d1",
+		Name:              "With extras",
+		Type:              "dashboard",
+		Version:           1,
+		OriginAppID:       "dynatrace.app",
+		OriginExtensionID: "ext-123",
+		Labels:            []string{"prod", "team-a"},
+		ShareInfo:         &ShareInfo{IsShared: true, IsSharedWithCurrentUser: true},
+		UserContext:       &UserContext{},
+	}
+	b, err := yaml.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{
+		"originAppId: dynatrace.app",
+		"originExtensionId: ext-123",
+		"labels:",
+		"- prod",
+		"- team-a",
+		"shareInfo:",
+		"isShared: true",
+		"isSharedWithCurrentUser: true",
+		"userContext:",
+	} {
+		if !strings.Contains(out, key) {
+			t.Errorf("expected YAML to contain %q; got:\n%s", key, out)
+		}
 	}
 }

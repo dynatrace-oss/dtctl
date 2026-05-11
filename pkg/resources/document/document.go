@@ -44,7 +44,13 @@ func NewHandler(c *client.Client) *Handler {
 	return &Handler{client: c}
 }
 
-// Document represents a document resource
+// Document represents a document resource.
+//
+// The trailing optional fields (OriginAppID, OriginExtensionID, Labels,
+// ShareInfo, UserContext) are populated only when requested via
+// DocumentFilters.AddFields. They are tagged `omitempty`/`table:"-"` so
+// default JSON/YAML output stays minimal and table column layout is stable
+// regardless of whether --add-fields was passed.
 type Document struct {
 	ID          string    `json:"id" table:"ID"`
 	Name        string    `json:"name" table:"NAME"`
@@ -56,6 +62,12 @@ type Document struct {
 	Version     int       `json:"version" table:"VERSION,wide"`
 	Modified    time.Time `json:"-" table:"MODIFIED,wide"`
 	Content     []byte    `json:"-" table:"-"`
+
+	OriginAppID       string       `json:"originAppId,omitempty" yaml:"originAppId,omitempty" table:"-"`
+	OriginExtensionID string       `json:"originExtensionId,omitempty" yaml:"originExtensionId,omitempty" table:"-"`
+	Labels            []string     `json:"labels,omitempty" yaml:"labels,omitempty" table:"-"`
+	ShareInfo         *ShareInfo   `json:"shareInfo,omitempty" yaml:"shareInfo,omitempty" table:"-"`
+	UserContext       *UserContext `json:"userContext,omitempty" yaml:"userContext,omitempty" table:"-"`
 }
 
 // DocumentMetadata represents detailed document metadata.
@@ -651,18 +663,27 @@ func extractNameFromResponse(body []byte) string {
 	return ""
 }
 
-// documentListItemToDocument converts a DocumentMetadata to a Document for table display
+// documentListItemToDocument converts a DocumentMetadata to a Document for
+// table display. AddFields-derived metadata (originAppId, originExtensionId,
+// labels, shareInfo, userContext) is carried through so that JSON/YAML
+// callers see the requested fields; they remain hidden from the default
+// table view via `table:"-"` on Document.
 func documentListItemToDocument(metadata DocumentMetadata) Document {
 	return Document{
-		ID:          metadata.ID,
-		Name:        metadata.Name,
-		Type:        metadata.Type,
-		Description: metadata.Description,
-		Version:     metadata.Version,
-		Owner:       metadata.Owner,
-		IsPrivate:   metadata.IsPrivate,
-		Created:     metadata.ModificationInfo.CreatedTime,
-		Modified:    metadata.ModificationInfo.LastModifiedTime,
+		ID:                metadata.ID,
+		Name:              metadata.Name,
+		Type:              metadata.Type,
+		Description:       metadata.Description,
+		Version:           metadata.Version,
+		Owner:             metadata.Owner,
+		IsPrivate:         metadata.IsPrivate,
+		Created:           metadata.ModificationInfo.CreatedTime,
+		Modified:          metadata.ModificationInfo.LastModifiedTime,
+		OriginAppID:       metadata.OriginAppID,
+		OriginExtensionID: metadata.OriginExtensionID,
+		Labels:            metadata.Labels,
+		ShareInfo:         metadata.ShareInfo,
+		UserContext:       metadata.UserContext,
 	}
 }
 
@@ -1508,6 +1529,22 @@ func (d Document) MarshalYAML() (interface{}, error) {
 			"createdTime":      d.Created,
 			"lastModifiedTime": d.Modified,
 		}
+	}
+
+	if d.OriginAppID != "" {
+		output["originAppId"] = d.OriginAppID
+	}
+	if d.OriginExtensionID != "" {
+		output["originExtensionId"] = d.OriginExtensionID
+	}
+	if len(d.Labels) > 0 {
+		output["labels"] = d.Labels
+	}
+	if d.ShareInfo != nil {
+		output["shareInfo"] = d.ShareInfo
+	}
+	if d.UserContext != nil {
+		output["userContext"] = d.UserContext
 	}
 
 	return output, nil
