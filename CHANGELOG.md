@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Platform token creation instructions now point at the correct URL** — `docs/site/_docs/configuration.md`, `docs/QUICK_START.md`, and the `dtctl auth login` keyring-unavailable error suggestion told users to navigate to `Identity & Access Management > Access Tokens` inside the Dynatrace platform UI, but that path leads to *classic* API tokens (`dt0c01.*`); platform tokens (`dt0s16.*`, the format dtctl uses) are managed exclusively via the Account Management portal at `https://myaccount.dynatrace.com/platformTokens`; all three locations now point at the correct URL; fixes [#201](https://github.com/dynatrace-oss/dtctl/issues/201)
 - **`--mine` filter no longer crashes on platform tokens** — `dtctl get dashboards --mine` (and `get documents`/`get workflows --mine`) failed with `failed to parse JWT claims: invalid character '#' looking for beginning of value` when the configured token was a Dynatrace platform token (`dt0s16.*`) and `/platform/metadata/v1/user` returned 403; the JWT fallback in `Client.CurrentUserID` blindly base64-decoded the middle segment of the platform token, which is not a JWT payload, producing the misleading parse error; `ExtractUserIDFromToken` now rejects platform tokens up front, and `CurrentUserID` returns an actionable message pointing at the missing `app-engine:apps:run` scope; fixes [#210](https://github.com/dynatrace-oss/dtctl/issues/210)
 
 ### Changed

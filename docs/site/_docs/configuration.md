@@ -34,10 +34,10 @@ dtctl config set-credentials my-token \
 
 ### Creating a Platform Token
 
-1. In Dynatrace, navigate to **Identity & Access Management > Access Tokens**
-2. Select **Generate new token** and choose **Platform token**
+1. Go to [https://myaccount.dynatrace.com/platformTokens](https://myaccount.dynatrace.com/platformTokens) (Account Management > **My platform tokens**)
+2. Select **Platform token** and fill in name, expiration, account, and environments
 3. Add the required scopes for your use case
-4. Copy the token immediately -- it's only shown once
+4. Select **Generate** and copy the token immediately -- it's only shown once
 
 See the [Dynatrace Platform Tokens documentation](https://docs.dynatrace.com/docs/manage/identity-access-management/access-tokens-and-oauth-clients/platform-tokens) for detailed instructions.
 
