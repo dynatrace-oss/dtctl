@@ -153,22 +153,69 @@ visualizationSettings:
       - '["field2"]'
 ```
 
-### Thresholds (color rules)
+### Coloring
 
-Apply to tables, single values, or chart baselines. Comparators: `<=`, `>=`, `=`, `<`, `>`.
-```yaml
-visualizationSettings:
-  thresholds:
-    - field: errors
-      id: 1
-      isEnabled: true
-      rules:
-        - { color: { Default: "var(--dt-colors-charts-status-ideal-default, #2f6862)" }, comparator: "<=", id: 0, value: 100 }
-        - { color: { Default: "var(--dt-colors-charts-status-warning-default, #eea53c)" }, comparator: "<=", id: 1, value: 500 }
-        - { color: { Default: "var(--dt-colors-charts-status-critical-default, #c62239)" }, comparator: ">", id: 2, value: 500 }
-```
+Three distinct systems exist — use the right one for each scenario.
 
 Theme colors: green `#2f6862`, yellow `#eea53c`, red `#c62239`.
+
+#### 1. `coloring.colorRules` — singleValue and table cell coloring
+
+**Always author this directly. Do not use the `thresholds` format when you need a catch-all baseline color.**
+The `thresholds` format is silently converted to `coloring.colorRules` on save, but the conversion drops any rule without an explicit lower bound — leaving values below your first threshold uncolored (white tile), with no error or warning.
+
+Use `value: -1` as the catch-all sentinel (safe for any non-negative metric). Rules are evaluated last-wins, so order from most permissive to most specific:
+
+```yaml
+# Lower is better (e.g. error count, open bugs)
+coloring:
+  colorRules:
+    - { colorMode: custom-color, comparator: ">", customColor: { Default: "#2f6862" }, field: myField, value: -1 }
+    - { colorMode: custom-color, comparator: ">", customColor: { Default: "#eea53c" }, field: myField, value: 10 }
+    - { colorMode: custom-color, comparator: ">", customColor: { Default: "#c62239" }, field: myField, value: 25 }
+
+# Higher is better (e.g. pass rate %) — flip the color order
+coloring:
+  colorRules:
+    - { colorMode: custom-color, comparator: ">", customColor: { Default: "#c62239" }, field: myField, value: -1 }
+    - { colorMode: custom-color, comparator: ">", customColor: { Default: "#eea53c" }, field: myField, value: 24 }
+    - { colorMode: custom-color, comparator: ">", customColor: { Default: "#2f6862" }, field: myField, value: 74 }
+```
+
+#### 2. `coloring.thresholdRules` — line/area chart background color zones
+
+For filled color bands behind a chart line. Uses `mode: range` with explicit `min`/`max`. This format is undocumented in the UI — the only way to discover it is by exporting a dashboard that has zones configured via the UI.
+
+```yaml
+# Lower is better
+coloring:
+  thresholdRules:
+    - { color: "#2f6862", colorMode: single-color, label: "Good",     min: 0,   max: 10,   mode: range, position: left, strokeOnly: false }
+    - { color: "#eea53c", colorMode: single-color, label: "Warning",  min: 10,  max: 25,   mode: range, position: left, strokeOnly: false }
+    - { color: "#c62239", colorMode: single-color, label: "Critical", min: 25,  max: 9999, mode: range, position: left, strokeOnly: false }
+
+# Higher is better — flip the color order
+coloring:
+  thresholdRules:
+    - { color: "#c62239", colorMode: single-color, label: "Low",    min: 0,    max: 1000, mode: range, position: left, strokeOnly: false }
+    - { color: "#eea53c", colorMode: single-color, label: "Medium", min: 1000, max: 3000, mode: range, position: left, strokeOnly: false }
+    - { color: "#2f6862", colorMode: single-color, label: "High",   min: 3000, max: 9999, mode: range, position: left, strokeOnly: false }
+```
+
+#### 3. `thresholds` — table rows, no baseline needed
+
+Use only when coloring a table column where every value is guaranteed to match at least one rule (i.e. a true catch-all baseline color is not needed):
+
+```yaml
+thresholds:
+  - field: daysAtFail
+    id: 1
+    isEnabled: true
+    rules:
+      - { color: { Default: "#2f6862" }, comparator: ">=", id: 0, value: 0 }
+      - { color: { Default: "#eea53c" }, comparator: ">",  id: 1, value: 14 }
+      - { color: { Default: "#c62239" }, comparator: ">",  id: 2, value: 30 }
+```
 
 ### Unit overrides (for duration fields)
 ```yaml
@@ -211,6 +258,7 @@ Check that:
 - The query returns records (not an empty `[]`)
 - Field names/aliases match what `recordField`, `identifier`, or `field` reference in visualizationSettings
 - Time series queries use `makeTimeseries` (not `summarize`) for charts
+- Fields used in `coloring.colorRules` are numeric — `toLong()` and `round()` serialize as quoted strings in DQL JSON output, causing threshold comparators to fail silently (white tile, no error). Use integer arithmetic directly instead: `passing * 100 / total` rather than `toLong(round(passing * 100.0 / total))`
 
 ## DQL Patterns for Dashboard Tiles
 
@@ -265,35 +313,13 @@ smartscapeEdges "*" | filter startsWith(source_id, "SERVICE-")
 smartscapeEdges "*" | filter matchesValue(toString(source_id), "SERVICE-*")
 ```
 
-## Thresholds vs Coloring Rules
+## Coloring Format Notes
 
-The YAML `thresholds` format works on create/apply, but the UI may rewrite it to `coloring.colorRules` when you export. Both formats are valid:
+**Do not use the `thresholds` format when you need a catch-all baseline color.** The UI converts `thresholds` → `coloring.colorRules` on save but silently drops any rule without an explicit lower bound. Values below your first threshold render white with no error or warning. This is easy to miss because the dashboard deploys successfully — the tile just has no color.
 
-```yaml
-# Format 1: thresholds (recommended for authoring)
-visualizationSettings:
-  thresholds:
-    - field: error_rate
-      id: 1
-      isEnabled: true
-      rules:
-        - { color: { Default: "#2f6862" }, comparator: "<=", id: 0, value: 1 }
-        - { color: { Default: "#eea53c" }, comparator: "<=", id: 1, value: 5 }
-        - { color: { Default: "#c62239" }, comparator: ">", id: 2, value: 5 }
+Always author `coloring.colorRules` directly (see Coloring section above). The `thresholds` format is safe only for table columns where every possible value is guaranteed to match at least one explicit rule.
 
-# Format 2: coloring.colorRules (UI-exported format)
-visualizationSettings:
-  coloring:
-    colorRules:
-      - colorMode: custom-color
-        comparator: ">"
-        customColor:
-          Default: "#c62239"
-        field: error_rate
-        value: 5
-```
-
-If round-tripping (export → edit → apply), keep whichever format the export uses.
+When round-tripping a dashboard (export → edit → apply), keep whatever format the export produced.
 
 ## Important Notes
 - Field is `.name` NOT `.title` (opposite of workflows).
