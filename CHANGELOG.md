@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`--mine` filter no longer crashes on platform tokens** — `dtctl get dashboards --mine` (and `get documents`/`get workflows --mine`) failed with `failed to parse JWT claims: invalid character '#' looking for beginning of value` when the configured token was a Dynatrace platform token (`dt0s16.*`) and `/platform/metadata/v1/user` returned 403; the JWT fallback in `Client.CurrentUserID` blindly base64-decoded the middle segment of the platform token, which is not a JWT payload, producing the misleading parse error; `ExtractUserIDFromToken` now rejects platform tokens up front, and `CurrentUserID` returns an actionable message pointing at the missing `app-engine:apps:run` scope; fixes [#210](https://github.com/dynatrace-oss/dtctl/issues/210)
+
+### Changed
+- **`dtctl doctor` warning text for platform tokens now identifies the correct scope** — the previous message blamed `iam:users:read`, but `/platform/metadata/v1/user` actually requires `app-engine:apps:run` (which *is* grantable to platform tokens); the warning now reads `platform token: user identity unavailable via metadata API (token likely lacks 'app-engine:apps:run' scope; platform tokens are not JWTs, so no fallback)`, which correctly tells users how to fix it
+
 ## [0.27.0] - 2026-05-05
 
 ### Added

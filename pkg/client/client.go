@@ -306,13 +306,25 @@ func (c *Client) CurrentUserID() (string, error) {
 		return userInfo.UserID, nil
 	}
 
+	// Platform tokens are not JWTs, so the JWT fallback below would parse
+	// garbage and fail with a confusing decode error (see issue #210). Surface
+	// an actionable message instead.
+	if IsPlatformToken(c.token) {
+		if err == nil {
+			err = fmt.Errorf("metadata API returned no user ID")
+		}
+		return "", fmt.Errorf("cannot determine current user ID for a platform token: %w "+
+			"(ensure the token has the 'app-engine:apps:run' scope so /platform/metadata/v1/user can return the user identity)", err)
+	}
+
 	// Fallback to JWT decoding
 	return ExtractUserIDFromToken(c.token)
 }
 
 // platformTokenPrefix identifies Dynatrace platform tokens — opaque bearer
-// tokens (not JWTs) that cannot be granted iam:users:read / iam:groups:read,
-// so /platform/metadata/v1/user returns 403 when authenticated with one.
+// tokens (not JWTs). The /platform/metadata/v1/user endpoint requires the
+// 'app-engine:apps:run' scope; platform tokens that lack it get a 403, and
+// the token itself cannot be JWT-decoded as a user-ID fallback.
 const platformTokenPrefix = "dt0s16."
 
 // IsPlatformToken reports whether token is a Dynatrace platform token.
@@ -321,7 +333,13 @@ func IsPlatformToken(token string) bool {
 }
 
 // ExtractUserIDFromToken extracts the user ID (sub claim) from a JWT token.
+// Platform tokens (dt0s16.*) are not JWTs even though they have three
+// dot-separated parts, so they're rejected up front rather than producing
+// a misleading base64/JSON decode error.
 func ExtractUserIDFromToken(token string) (string, error) {
+	if IsPlatformToken(token) {
+		return "", fmt.Errorf("cannot extract user ID: token is a Dynatrace platform token, not a JWT")
+	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return "", fmt.Errorf("invalid JWT token format")
