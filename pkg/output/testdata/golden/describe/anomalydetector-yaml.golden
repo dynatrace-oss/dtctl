@@ -1,10 +1,7 @@
-objectid: vu9U3hXa3q0AAAABACdidWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAA
-title: Aurora cluster CPU utilization
-enabled: true
-analyzershort: static (>90)
-eventtype: PERFORMANCE_EVENT
-source: Clouds
-description: Monitors Aurora cluster CPU utilization to detect performance bottlenecks
+schemaId: builtin:davis.anomaly-detectors
+schemaVersion: 1.0.15
+scope: environment
+objectId: vu9U3hXa3q0AAAABACdidWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAA
 value:
   analyzer:
     input:
@@ -33,4 +30,3 @@ value:
         value: CPU utilization is high
   source: Clouds
   title: Aurora cluster CPU utilization
-schemaversion: 1.0.15

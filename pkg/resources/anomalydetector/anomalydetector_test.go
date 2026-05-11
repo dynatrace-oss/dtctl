@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
 
@@ -1196,5 +1198,134 @@ func TestList_Empty(t *testing.T) {
 	}
 	if len(detectors) != 0 {
 		t.Fatalf("List() returned %d items, want 0", len(detectors))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Wire format / round-trip tests (issue #216)
+// ---------------------------------------------------------------------------
+
+// fixtureForRoundTrip mirrors what `Get` returns for a real detector.
+func fixtureForRoundTrip() AnomalyDetector {
+	value := map[string]any{
+		"title":       "Round-Trip Detector",
+		"enabled":     true,
+		"description": "Tests that get output is consumable by apply",
+		"source":      "dtctl",
+		"analyzer": map[string]any{
+			"name": "dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer",
+			"input": []any{
+				map[string]any{"key": "alertCondition", "value": "ABOVE"},
+				map[string]any{"key": "threshold", "value": "90"},
+			},
+		},
+		"eventTemplate": map[string]any{
+			"properties": []any{
+				map[string]any{"key": "event.type", "value": "PERFORMANCE_EVENT"},
+				map[string]any{"key": "event.name", "value": "High CPU"},
+			},
+		},
+	}
+	return flatten(settingsItem{
+		ObjectID:      "vu9U3hXa3q0AAAA",
+		SchemaID:      SchemaID,
+		SchemaVersion: "1.0.42",
+		Scope:         Scope,
+		Value:         value,
+	})
+}
+
+func TestMarshalJSON_EmitsRawSettingsEnvelope(t *testing.T) {
+	ad := fixtureForRoundTrip()
+
+	data, err := json.Marshal(ad)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Must contain the raw Settings envelope (round-trippable through apply).
+	if out["schemaId"] != SchemaID {
+		t.Errorf("schemaId = %v, want %q", out["schemaId"], SchemaID)
+	}
+	if out["scope"] != Scope {
+		t.Errorf("scope = %v, want %q", out["scope"], Scope)
+	}
+	if out["objectId"] != "vu9U3hXa3q0AAAA" {
+		t.Errorf("objectId = %v, want %q", out["objectId"], "vu9U3hXa3q0AAAA")
+	}
+	if out["schemaVersion"] != "1.0.42" {
+		t.Errorf("schemaVersion = %v, want %q", out["schemaVersion"], "1.0.42")
+	}
+	if _, hasValue := out["value"]; !hasValue {
+		t.Error("missing 'value' in output")
+	}
+
+	// Must NOT contain display-only fields at the top level — they would create
+	// a hybrid shape that neither the Settings API nor apply can consume.
+	for _, leaked := range []string{"title", "enabled", "analyzer", "eventType", "source", "description"} {
+		if _, has := out[leaked]; has {
+			t.Errorf("display field %q leaked into JSON output", leaked)
+		}
+	}
+}
+
+func TestMarshalYAML_EmitsRawSettingsEnvelope(t *testing.T) {
+	ad := fixtureForRoundTrip()
+
+	data, err := yaml.Marshal(ad)
+	if err != nil {
+		t.Fatalf("yaml.Marshal: %v", err)
+	}
+
+	var out map[string]any
+	if err := yaml.Unmarshal(data, &out); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v\n---\n%s", err, data)
+	}
+
+	if out["schemaId"] != SchemaID {
+		t.Errorf("schemaId = %v, want %q", out["schemaId"], SchemaID)
+	}
+	if out["scope"] != Scope {
+		t.Errorf("scope = %v, want %q", out["scope"], Scope)
+	}
+	for _, leaked := range []string{"title", "enabled", "analyzer", "eventType"} {
+		if _, has := out[leaked]; has {
+			t.Errorf("display field %q leaked into YAML output", leaked)
+		}
+	}
+}
+
+// TestGetOutput_ConsumableByUpdate closes the loop: the JSON output of a Get
+// must be parseable by toAPIValue, which is what handler.Update calls. Before
+// the fix, JSON output had `analyzer` as a string, which would have caused
+// flattenedToAPIValue to fail with `'analyzer' is required and must be an object`.
+func TestGetOutput_ConsumableByUpdate(t *testing.T) {
+	ad := fixtureForRoundTrip()
+
+	data, err := json.Marshal(ad)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	value, err := toAPIValue(data)
+	if err != nil {
+		t.Fatalf("toAPIValue rejected get output: %v\n---\n%s", err, data)
+	}
+
+	if value["title"] != "Round-Trip Detector" {
+		t.Errorf("title = %v, want %q", value["title"], "Round-Trip Detector")
+	}
+	// analyzer must be a map (raw API shape), not the derived display string.
+	analyzer, ok := value["analyzer"].(map[string]any)
+	if !ok {
+		t.Fatalf("analyzer is %T, want map[string]any", value["analyzer"])
+	}
+	if name, _ := analyzer["name"].(string); !strings.Contains(name, "StaticThreshold") {
+		t.Errorf("analyzer.name = %v, want StaticThreshold variant", name)
 	}
 }
