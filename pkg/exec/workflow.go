@@ -21,6 +21,7 @@ func NewWorkflowExecutor(c *client.Client) *WorkflowExecutor {
 
 // WorkflowExecutionRequest represents a workflow execution request
 type WorkflowExecutionRequest struct {
+	Input  map[string]any         `json:"input,omitempty"`
 	Params map[string]interface{} `json:"params,omitempty"`
 }
 
@@ -32,16 +33,7 @@ type WorkflowExecutionResponse struct {
 }
 
 // Execute executes a workflow
-func (e *WorkflowExecutor) Execute(workflowID string, params map[string]string) (*WorkflowExecutionResponse, error) {
-	req := WorkflowExecutionRequest{
-		Params: make(map[string]interface{}),
-	}
-
-	// Convert string params to interface map
-	for k, v := range params {
-		req.Params[k] = v
-	}
-
+func (e *WorkflowExecutor) Execute(workflowID string, req WorkflowExecutionRequest) (*WorkflowExecutionResponse, error) {
 	var result WorkflowExecutionResponse
 
 	resp, err := e.client.HTTP().R().

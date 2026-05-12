@@ -23,7 +23,7 @@ func WorkflowFixture(prefix string) []byte {
 				"name":   "test_task",
 				"action": "dynatrace.automations:run-javascript",
 				"input": map[string]interface{}{
-					"script": "export default async function() { return { result: 'Integration test success' }; }",
+					"script": "import { execution } from '@dynatrace-sdk/automation-utils';\nexport default async function() { const ex = await execution(); return { result: ex.input }; }",
 				},
 			},
 		},
@@ -236,6 +236,17 @@ func BucketUpdateRequest(prefix string) map[string]interface{} {
 func WorkflowExecutionParams() map[string]interface{} {
 	return map[string]interface{}{
 		"testParam": "testValue",
+	}
+}
+
+// WorkflowExecutionInput returns sample workflow input for integration testing.
+func WorkflowExecutionInput() map[string]interface{} {
+	return map[string]interface{}{
+		"message": "hello from dtctl",
+		"count":   3,
+		"options": map[string]interface{}{
+			"dryRun": true,
+		},
 	}
 }
 

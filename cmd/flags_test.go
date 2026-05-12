@@ -136,9 +136,10 @@ func TestExecFlags(t *testing.T) {
 		flagName     string
 		defaultValue string
 	}{
-		{"params", "[]"},
+		{"input", ""},
 		{"wait", "false"},
 		{"timeout", "30m0s"},
+		{"show-results", "false"},
 	}
 
 	for _, tt := range workflowFlags {

@@ -6,12 +6,20 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/cmd/testutil"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	workflowpkg "github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 )
+
+func newExecWorkflowCmdForTest() *cobra.Command {
+	cmd := &cobra.Command{PreRunE: execWorkflowCmd.PreRunE}
+	registerWorkflowExecFlags(cmd)
+	return cmd
+}
 
 func TestGetWfeTaskResult_RunE(t *testing.T) {
 	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{
@@ -177,8 +185,7 @@ func TestExecWorkflowAgent_Success(t *testing.T) {
 	}
 
 	// Set up a command with --wait and --show-results flags
-	cmd := *execWorkflowCmd // shallow copy to avoid mutating the global
-	testutil.ResetCommandFlags(&cmd)
+	cmd := newExecWorkflowCmdForTest()
 	_ = cmd.Flags().Set("wait", "true")
 	_ = cmd.Flags().Set("show-results", "true")
 
@@ -186,7 +193,7 @@ func TestExecWorkflowAgent_Success(t *testing.T) {
 	ctx := &output.ResponseContext{}
 	ap := output.NewAgentPrinter(&buf, ctx)
 
-	err = execWorkflowAgent(&cmd, c, executor, execResult, ap)
+	err = execWorkflowAgent(cmd, c, executor, execResult, ap)
 	if err != nil {
 		t.Fatalf("execWorkflowAgent: %v", err)
 	}
@@ -248,8 +255,7 @@ func TestExecWorkflowAgent_NoWait(t *testing.T) {
 		State:    "RUNNING",
 	}
 
-	cmd := *execWorkflowCmd
-	testutil.ResetCommandFlags(&cmd)
+	cmd := newExecWorkflowCmdForTest()
 	// --wait defaults to false
 
 	var buf bytes.Buffer
@@ -257,7 +263,7 @@ func TestExecWorkflowAgent_NoWait(t *testing.T) {
 	ap := output.NewAgentPrinter(&buf, ctx)
 
 	// No mock server needed — without --wait we don't poll
-	err := execWorkflowAgent(&cmd, nil, nil, execResult, ap)
+	err := execWorkflowAgent(cmd, nil, nil, execResult, ap)
 	if err != nil {
 		t.Fatalf("execWorkflowAgent: %v", err)
 	}
@@ -304,15 +310,14 @@ func TestExecWorkflowAgent_ErrorState(t *testing.T) {
 		State:    "RUNNING",
 	}
 
-	cmd := *execWorkflowCmd
-	testutil.ResetCommandFlags(&cmd)
+	cmd := newExecWorkflowCmdForTest()
 	_ = cmd.Flags().Set("wait", "true")
 
 	var buf bytes.Buffer
 	ctx := &output.ResponseContext{}
 	ap := output.NewAgentPrinter(&buf, ctx)
 
-	err = execWorkflowAgent(&cmd, c, executor, execResult, ap)
+	err = execWorkflowAgent(cmd, c, executor, execResult, ap)
 	if err != nil {
 		t.Fatalf("execWorkflowAgent should not return error (it sets warnings): %v", err)
 	}
@@ -337,11 +342,10 @@ func TestExecWorkflowAgent_ErrorState(t *testing.T) {
 
 func TestExecWorkflowShowResults_PreRunE(t *testing.T) {
 	// --show-results without --wait should fail
-	cmd := *execWorkflowCmd
-	testutil.ResetCommandFlags(&cmd)
+	cmd := newExecWorkflowCmdForTest()
 	_ = cmd.Flags().Set("show-results", "true")
 
-	err := cmd.PreRunE(&cmd, []string{"wf-123"})
+	err := cmd.PreRunE(cmd, []string{"wf-123"})
 	if err == nil {
 		t.Fatal("expected error when --show-results used without --wait")
 	}
@@ -351,7 +355,7 @@ func TestExecWorkflowShowResults_PreRunE(t *testing.T) {
 
 	// --show-results with --wait should pass
 	_ = cmd.Flags().Set("wait", "true")
-	err = cmd.PreRunE(&cmd, []string{"wf-123"})
+	err = cmd.PreRunE(cmd, []string{"wf-123"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
