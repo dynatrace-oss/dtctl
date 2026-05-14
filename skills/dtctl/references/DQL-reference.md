@@ -1,5 +1,18 @@
 # DQL Syntax Guide
 
+## Cost-Optimized DQL
+
+For the authoritative DQL optimization guide (command order, filter pushdown, cardinality, timeframe sizing, anti-patterns), see [`dt-dql-essentials/references/optimization.md`](https://github.com/Dynatrace/dynatrace-for-ai/blob/main/skills/dt-dql-essentials/references/optimization.md) in the `dynatrace-for-ai` skills. Consult that guide **before writing DQL for dashboards, notebooks, or workflows**.
+
+### dtctl-specific cost affordances
+
+Two items not covered upstream:
+
+- **Scan-cost knobs on `fetch`** — `scanLimitGBytes:<n>` caps the bytes the query will read (hard ceiling against runaway scans); `samplingRatio:<n>` linearly reduces scanned data on long-window log queries (multiply aggregates back by the ratio). Prefer both on billable `fetch logs/events/spans/bizevents` in tile queries.
+- **Cost lint / rewrite via dtctl** — run `dtctl verify query '<dql>' --cost-lint` to flag cost anti-patterns on any query (use `--strict-cost` in CI to fail on findings; `--rewrite-cost` to print a safely rewritten form). The same flags work on `dtctl exec copilot nl2dql` and `dtctl apply` (which walks every tile query in a dashboard/notebook YAML).
+
+One calibration worth knowing: `limit N | summarize` is **semantically** distinct from `summarize | limit N` (partial sample vs full aggregate), not a cost anti-pattern — Grail short-circuits the scan when `limit` appears early. Choose ordering by intent.
+
 ## Copy These Templates Exactly
 
 **Filter multiple values:**
