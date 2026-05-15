@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -195,9 +196,10 @@ func (h *Handler) Execute(name string, input map[string]interface{}, timeoutSeco
 	return fromSDKExecuteResult(sdkResult), nil
 }
 
-// ExecuteAndWait runs an analyzer and waits for completion
-func (h *Handler) ExecuteAndWait(name string, input map[string]interface{}, maxWaitSeconds int) (*ExecuteResult, error) {
-	sdkResult, err := h.sdk.ExecuteAndWait(name, input, maxWaitSeconds)
+// ExecuteAndWait runs an analyzer and waits for completion.
+// The context can be used to cancel a long-running poll (e.g. on SIGINT).
+func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[string]interface{}, maxWaitSeconds int) (*ExecuteResult, error) {
+	sdkResult, err := h.sdk.ExecuteAndWait(ctx, name, input, maxWaitSeconds)
 	if err != nil {
 		return nil, err
 	}

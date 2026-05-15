@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -149,7 +150,7 @@ func TestExecuteAndWait_ImmediateCompletion(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ExecuteAndWait("dt.test", map[string]interface{}{}, 60)
+	result, err := h.ExecuteAndWait(context.Background(), "dt.test", map[string]interface{}{}, 60)
 	if err != nil {
 		t.Fatalf("ExecuteAndWait() error: %v", err)
 	}
@@ -196,7 +197,7 @@ func TestExecuteAndWait_PollsUntilComplete(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ExecuteAndWait("dt.test", map[string]interface{}{}, 60)
+	result, err := h.ExecuteAndWait(context.Background(), "dt.test", map[string]interface{}{}, 60)
 	if err != nil {
 		t.Fatalf("ExecuteAndWait() error: %v", err)
 	}
@@ -233,7 +234,7 @@ func TestExecuteAndWait_Aborted(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.ExecuteAndWait("dt.test", map[string]interface{}{}, 60)
+	_, err := h.ExecuteAndWait(context.Background(), "dt.test", map[string]interface{}{}, 60)
 	if err == nil {
 		t.Fatal("ExecuteAndWait() expected error for ABORTED execution")
 	}
@@ -267,7 +268,7 @@ func TestExecuteAndWait_Timeout(t *testing.T) {
 
 	h := NewHandler(newTestClient(t, mux))
 	// maxWaitSeconds=0 should timeout immediately
-	_, err := h.ExecuteAndWait("dt.test", map[string]interface{}{}, 0)
+	_, err := h.ExecuteAndWait(context.Background(), "dt.test", map[string]interface{}{}, 0)
 	if err == nil {
 		t.Fatal("ExecuteAndWait() expected timeout error")
 	}

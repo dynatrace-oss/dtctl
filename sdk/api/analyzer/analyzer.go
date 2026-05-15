@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -226,8 +227,9 @@ const (
 	defaultPollInterval   = 2 * time.Second
 )
 
-// ExecuteAndWait runs an analyzer and waits for completion
-func (h *Handler) ExecuteAndWait(name string, input map[string]interface{}, maxWaitSeconds int) (*ExecuteResult, error) {
+// ExecuteAndWait runs an analyzer and waits for completion.
+// The context can be used to cancel a long-running poll (e.g. on SIGINT).
+func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[string]interface{}, maxWaitSeconds int) (*ExecuteResult, error) {
 	// Start execution with initial timeout
 	result, err := h.Execute(name, input, defaultInitialTimeout)
 	if err != nil {
@@ -252,6 +254,12 @@ func (h *Handler) ExecuteAndWait(name string, input map[string]interface{}, maxW
 			return nil, fmt.Errorf("analyzer execution timed out after %d seconds", maxWaitSeconds)
 		}
 
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		pollResult, err := h.Poll(name, result.RequestToken, defaultPollTimeout)
 		if err != nil {
 			return nil, err
@@ -272,7 +280,11 @@ func (h *Handler) ExecuteAndWait(name string, input map[string]interface{}, maxW
 			}
 		}
 
-		time.Sleep(defaultPollInterval)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(defaultPollInterval):
+		}
 	}
 }
 

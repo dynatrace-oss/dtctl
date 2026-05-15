@@ -333,7 +333,11 @@ func (h *Handler) GetEnvironmentConfig(extensionName, version string) (*Extensio
 	return &result, nil
 }
 
-// ListMonitoringConfigurations lists monitoring configurations for an extension
+// ListMonitoringConfigurations lists monitoring configurations for an extension.
+// If version is non-empty, results are filtered client-side by matching the
+// "version" key inside each configuration's value JSON. Configurations whose
+// value cannot be parsed or that lack a "version" key are excluded from the
+// filtered result.
 func (h *Handler) ListMonitoringConfigurations(extensionName, version string, chunkSize int64) (*MonitoringConfigurationList, error) {
 	var allItems []MonitoringConfiguration
 	var totalCount int
