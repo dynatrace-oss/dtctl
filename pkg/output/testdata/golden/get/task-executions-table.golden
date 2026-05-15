@@ -1,4 +1,4 @@
-ID                   NAME                  STATE     STARTED               RUNTIME 
+ID                   NAME                  STATE     STARTED               RUNTIME   
 a1b2c3d4-task-0001   fetch_active_events   SUCCESS   2025-03-15 10:30:00   5         
 a1b2c3d4-task-0002   rca_analysis          SUCCESS   2025-03-15 10:30:05   7         
 a1b2c3d4-task-0003   send_notification     ERROR     2025-03-15 10:30:12   3         

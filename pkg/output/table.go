@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 )
 
 // uuidRegex matches standard UUID format (8-4-4-4-12 hex digits)
@@ -138,37 +139,68 @@ func getFieldByPath(v reflect.Value, indices []int) reflect.Value {
 	return v
 }
 
-// configureKubectlStyle configures the tablewriter to match kubectl's output style
-func configureKubectlStyle(table *tablewriter.Table) {
-	table.SetAutoWrapText(false)
-	table.SetAutoFormatHeaders(false) // We format headers ourselves in formatHeaders()
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetCenterSeparator("")
-	table.SetColumnSeparator("")
-	table.SetRowSeparator("")
-	table.SetHeaderLine(false)
-	table.SetBorder(false)
-	table.SetTablePadding("   ") // Three spaces between columns like kubectl
-	table.SetNoWhiteSpace(true)
+// kubectlStyleOptions returns tablewriter options that match kubectl's output style:
+// no borders, no separators, left-aligned, three-space column padding.
+func kubectlStyleOptions() []tablewriter.Option {
+	return []tablewriter.Option{
+		tablewriter.WithConfig(tablewriter.Config{
+			Header: tw.CellConfig{
+				Formatting: tw.CellFormatting{
+					AutoFormat: tw.Off, // We format headers ourselves in formatHeaders()
+					AutoWrap:   tw.WrapNone,
+				},
+				Alignment: tw.CellAlignment{Global: tw.AlignLeft},
+				Padding:   tw.CellPadding{Global: tw.Padding{Left: "", Right: "   "}},
+			},
+			Row: tw.CellConfig{
+				Formatting: tw.CellFormatting{
+					AutoWrap: tw.WrapNone,
+				},
+				Alignment: tw.CellAlignment{Global: tw.AlignLeft},
+				Padding:   tw.CellPadding{Global: tw.Padding{Left: "", Right: "   "}},
+			},
+		}),
+		tablewriter.WithRendition(tw.Rendition{
+			Borders: tw.Border{Left: tw.Off, Right: tw.Off, Top: tw.Off, Bottom: tw.Off},
+			Settings: tw.Settings{
+				Separators: tw.Separators{
+					ShowHeader:     tw.Off,
+					ShowFooter:     tw.Off,
+					BetweenRows:    tw.Off,
+					BetweenColumns: tw.Off,
+				},
+				Lines: tw.Lines{
+					ShowTop:        tw.Off,
+					ShowBottom:     tw.Off,
+					ShowHeaderLine: tw.Off,
+					ShowFooterLine: tw.Off,
+				},
+			},
+		}),
+	}
 }
 
-// formatHeaders formats header strings for display using tablewriter.Title()
+// toAny converts a []string to []any for use with tablewriter's variadic API.
+func toAny(ss []string) []any {
+	result := make([]any, len(ss))
+	for i, s := range ss {
+		result[i] = s
+	}
+	return result
+}
+
+// formatHeaders formats header strings for display using tw.Title()
 // (replaces underscores/dots with spaces and uppercases), then optionally wraps
 // each header in ANSI bold when color is enabled.
 //
-// We handle formatting ourselves instead of using SetAutoFormatHeaders(true) +
-// SetHeaderColor() because the tablewriter library (v0.0.5) has a bug in its
-// printHeading() function: when ANSI escape sequences are present (is_esc_seq)
-// AND noWhiteSpace is true, it inserts an extra space between the padded header
-// and the column separator, causing headers to misalign with data rows. By
-// pre-applying ANSI codes to the header strings directly, the library never
-// enters its is_esc_seq code path, and alignment stays correct.
+// We handle formatting ourselves instead of using AutoFormat because we want
+// to pre-apply ANSI bold codes to the header strings directly for consistent
+// alignment with data rows.
 func formatHeaders(headers []string) []string {
 	formatted := make([]string, len(headers))
 	bold := ColorEnabled()
 	for i, h := range headers {
-		h = tablewriter.Title(h)
+		h = tw.Title(h)
 		if bold {
 			h = Colorize(Bold, h)
 		}
@@ -216,8 +248,7 @@ func colorizeTableValue(value string) string {
 
 // Print prints a single object as a table
 func (p *TablePrinter) Print(obj interface{}) error {
-	table := tablewriter.NewWriter(p.writer)
-	configureKubectlStyle(table)
+	table := tablewriter.NewTable(p.writer, kubectlStyleOptions()...)
 
 	// Use reflection to get field names and values
 	v := reflect.ValueOf(obj)
@@ -244,17 +275,16 @@ func (p *TablePrinter) Print(obj interface{}) error {
 		values = append(values, colorizeTableValue(formatValue(value)))
 	}
 
-	table.SetHeader(formatHeaders(headers))
-	table.Append(values)
-	table.Render()
+	table.Header(toAny(formatHeaders(headers))...)
+	_ = table.Append(toAny(values)...)
+	_ = table.Render()
 
 	return nil
 }
 
 // PrintList prints a list of objects as a table
 func (p *TablePrinter) PrintList(obj interface{}) error {
-	table := tablewriter.NewWriter(p.writer)
-	configureKubectlStyle(table)
+	table := tablewriter.NewTable(p.writer, kubectlStyleOptions()...)
 
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Ptr {
@@ -304,7 +334,7 @@ func (p *TablePrinter) PrintList(obj interface{}) error {
 		headers = append(headers, f.name)
 	}
 
-	table.SetHeader(formatHeaders(headers))
+	table.Header(toAny(formatHeaders(headers))...)
 
 	// Add rows
 	for i := 0; i < v.Len(); i++ {
@@ -325,10 +355,10 @@ func (p *TablePrinter) PrintList(obj interface{}) error {
 			value := getFieldByPath(elem, f.indices)
 			row = append(row, colorizeTableValue(formatValue(value)))
 		}
-		table.Append(row)
+		_ = table.Append(toAny(row)...)
 	}
 
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 
@@ -409,7 +439,7 @@ func (p *TablePrinter) printMaps(v reflect.Value, table *tablewriter.Table) erro
 
 	// Convert keys to headers (kubectl style: uppercase, bold)
 	headers := append([]string{}, keys...)
-	table.SetHeader(formatHeaders(headers))
+	table.Header(toAny(formatHeaders(headers))...)
 
 	// Add rows
 	for _, row := range rows {
@@ -418,10 +448,10 @@ func (p *TablePrinter) printMaps(v reflect.Value, table *tablewriter.Table) erro
 			val := row[key]
 			values = append(values, colorizeTableValue(formatTableMapValue(val)))
 		}
-		table.Append(values)
+		_ = table.Append(toAny(values)...)
 	}
 
-	table.Render()
+	_ = table.Render()
 	return nil
 }
 

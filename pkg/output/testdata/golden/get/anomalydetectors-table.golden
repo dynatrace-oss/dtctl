@@ -1,4 +1,4 @@
-TITLE                            ENABLED   ANALYZER        EVENT TYPE           SOURCE 
+TITLE                            ENABLED   ANALYZER        EVENT TYPE           SOURCE   
 Aurora cluster CPU utilization   true      static (>90)    PERFORMANCE_EVENT    Clouds   
 VPC endpoint packet drops        true      auto-adaptive   AVAILABILITY_EVENT   Clouds   
 EC2 instance CPU utilization     false     static (>85)    PERFORMANCE_EVENT    dtctl    

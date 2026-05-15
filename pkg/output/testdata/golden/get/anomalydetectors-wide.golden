@@ -1,4 +1,4 @@
-OBJECT ID                                                        TITLE                            ENABLED   ANALYZER        EVENT TYPE           SOURCE   DESCRIPTION                                                               
+OBJECT ID                                                        TITLE                            ENABLED   ANALYZER        EVENT TYPE           SOURCE   DESCRIPTION                                                                 
 vu9U3hXa3q0AAAABACdidWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAA   Aurora cluster CPU utilization   true      static (>90)    PERFORMANCE_EVENT    Clouds   Monitors Aurora cluster CPU utilization to detect performance bottlenecks   
 xw0V4iYb4r1BBBBBAC1idWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAB   VPC endpoint packet drops        true      auto-adaptive   AVAILABILITY_EVENT   Clouds                                                                               
 yz1W5jZc5s2CCCCCAD2idWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAC   EC2 instance CPU utilization     false     static (>85)    PERFORMANCE_EVENT    dtctl    Disabled detector for EC2 CPU monitoring                                    
