@@ -17,10 +17,19 @@ cmd/          # Cobra commands (get, describe, create, delete, apply, exec, ctx,
 pkg/
   ├── client/    # HTTP client (auth, retry, rate limiting, pagination)
   ├── config/    # Multi-context config (~/.config/dtctl/config, keyring tokens)
-  ├── resources/ # Resource handlers (one per API)
+  ├── resources/ # Resource handlers — thin CLI wrappers that delegate to sdk/api/
   ├── output/    # Formatters (table, JSON, YAML, charts, agent envelope, color control)
   └── exec/      # DQL query execution
+sdk/            # Separate Go module (github.com/dynatrace-oss/dtctl/sdk)
+  ├── api/         # Typed API wrappers (one package per Dynatrace API surface)
+  ├── httpclient/  # HTTP client, response helpers, pagination, typed errors
+  ├── auth/        # Token type detection
+  ├── urls/        # Environment URL validation/normalization
+  ├── credstore/   # OS keyring and file-based credential storage
+  └── agentmode/   # AI agent environment detection
 ```
+
+**SDK delegation pattern**: CLI resource handlers in `pkg/resources/` import types from `sdk/api/` (often via type aliases) and delegate HTTP calls to SDK functions. The SDK contains **no file I/O, no CLI concerns, no display logic**. File reading (e.g., `ReadFileOrStdin`, `ParseInputFromFile`) stays in `pkg/resources/`.
 
 ## Agent Output Mode
 
@@ -62,16 +71,20 @@ When adding a new AI agent to the skills system, update **all** of the following
 
 ## Adding a Resource
 
-1. Create `pkg/resources/<name>/<name>.go` with Get/List/Create/Delete functions
-2. Add to `cmd/get.go`, `cmd/describe.go`, etc.
-3. Register in resolver
-4. Add tests: `test/e2e/<name>_test.go`
+1. **SDK layer** (`sdk/api/<name>/`): Create typed API wrapper with CRUD functions using `httpclient.Client`. No file I/O, no display logic.
+2. **CLI layer** (`pkg/resources/<name>/`): Create resource handler that delegates to SDK. Handle file reading, display fields, name resolution here.
+3. **Commands**: Add to `cmd/get.go`, `cmd/describe.go`, etc.
+4. Register in resolver
+5. Add tests: `sdk/api/<name>/*_test.go` (SDK unit tests) + `test/e2e/<name>_test.go` (E2E)
 
-**Handler signature**:
+**SDK handler signature** (in `sdk/api/<name>/`):
 ```go
-func GetResource(client *client.Client, id string) (interface{}, error)
-func ListResources(client *client.Client, filters map[string]string) ([]interface{}, error)
+func NewHandler(client *httpclient.Client) *Handler
+func (h *Handler) Get(id string) (*Resource, error)
+func (h *Handler) List(opts ListOptions) ([]Resource, error)
 ```
+
+**CLI handler** (in `pkg/resources/<name>/`): imports SDK types (often via type alias) and wraps with file I/O, display fields, etc.
 
 ## Design Principles
 

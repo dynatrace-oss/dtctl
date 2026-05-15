@@ -59,6 +59,7 @@ Thin, typed Go clients for Dynatrace REST APIs. Each package covers one API surf
 ## Design principles
 
 - **No global state.** Everything is constructed explicitly.
+- **No file I/O.** The SDK never reads from files or stdin. Functions like `ReadFileOrStdin` and `ParseInputFromFile` belong in the CLI layer (`pkg/resources/`). SDK functions accept Go types, never file paths.
 - **Minimal dependencies.** No Cobra, Viper, logrus, or OpenTelemetry.
 - **One-way dependency.** CLI -> SDK, never SDK -> CLI.
 - **Logging is injected.** The SDK accepts a `Logger` interface; it never imports a logging library.

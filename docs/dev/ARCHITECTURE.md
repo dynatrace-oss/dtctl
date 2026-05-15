@@ -520,7 +520,30 @@ dtctl/
 ├── README.md
 ├── API_DESIGN.md
 ├── ARCHITECTURE.md
-└── AGENTS.md
+├── AGENTS.md
+└── sdk/                        # Separate Go module (github.com/dynatrace-oss/dtctl/sdk)
+    ├── go.mod
+    ├── api/                    # Typed API wrappers (one package per API surface)
+    │   ├── analyzer/           # Query analyzer
+    │   ├── appengine/          # App Engine functions
+    │   ├── bucket/             # Grail buckets
+    │   ├── copilot/            # Davis Copilot
+    │   ├── document/           # Documents + trash
+    │   ├── edgeconnect/        # EdgeConnect
+    │   ├── extension/          # Extensions 2.0
+    │   ├── hub/                # Hub items
+    │   ├── iam/                # Account IAM
+    │   ├── livedebugger/       # Live debugger
+    │   ├── notification/       # Notifications
+    │   ├── segment/            # Data segments
+    │   ├── settings/           # Settings 2.0
+    │   ├── slo/                # SLOs
+    │   └── workflow/           # Workflows + executions
+    ├── httpclient/             # HTTP client, response helpers, pagination, typed errors
+    ├── auth/                   # Token type detection
+    ├── urls/                   # URL validation/normalization
+    ├── credstore/              # Credential storage
+    └── agentmode/              # AI agent detection
 ```
 
 ---
@@ -731,6 +754,8 @@ func init() {
 ```
 
 ### 2. Resource Handler Pattern
+
+> **Note**: Resource handlers in `pkg/resources/` now delegate HTTP calls to typed API wrappers in `sdk/api/`. The SDK module contains no file I/O or display logic — those remain in the CLI layer. See `sdk/README.md` for SDK design principles.
 
 ```go
 // pkg/resources/document/handler.go
