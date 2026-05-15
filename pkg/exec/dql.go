@@ -275,22 +275,6 @@ func isQueryError(err error, target **QueryError) bool {
 	return errors.As(err, target)
 }
 
-// enhanceQueryError parses the API error response and produces helpful messages
-// for known error types, falling back to the raw response for unknown errors.
-func enhanceQueryError(statusCode int, body []byte) error {
-	// Delegate parsing to the SDK's error type.
-	var apiErr sdkquery.ErrorResponse
-	if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Error.Details.ErrorType == "FILTER_SEGMENT_REQUIRES_VARIABLE" {
-		return formatSegmentVariableError(&QueryError{
-			StatusCode: statusCode,
-			Message:    apiErr.Error.Message,
-			ErrorType:  apiErr.Error.Details.ErrorType,
-			Arguments:  apiErr.Error.Details.Arguments,
-		})
-	}
-	return fmt.Errorf("query failed with status %d: %s", statusCode, string(body))
-}
-
 // formatSegmentVariableError produces a helpful error message when a segment
 // requires variable bindings, including ready-to-use -S inline and --segments-file examples.
 func formatSegmentVariableError(qErr *QueryError) error {
@@ -327,7 +311,12 @@ func (e *DQLExecutor) VerifyQuery(query string, opts DQLVerifyOptions) (*DQLVeri
 	}
 
 	handler := e.sdkHandler(opts.ClientContext)
-	return handler.Verify(context.Background(), req)
+
+	// Create context with 30-second timeout (verify is fast)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	return handler.Verify(ctx, req)
 }
 
 // getHintForNotification returns a CLI hint for a given notification type or message
