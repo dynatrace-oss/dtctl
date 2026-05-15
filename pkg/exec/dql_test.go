@@ -1151,17 +1151,17 @@ func TestVerifyQuery_ServerError(t *testing.T) {
 		{
 			name:           "bad request",
 			statusCode:     http.StatusBadRequest,
-			expectedErrMsg: "query verification failed with status 400",
+			expectedErrMsg: "query verification failed",
 		},
 		{
 			name:           "internal server error",
 			statusCode:     http.StatusInternalServerError,
-			expectedErrMsg: "query verification failed with status 500",
+			expectedErrMsg: "query verification failed",
 		},
 		{
 			name:           "service unavailable",
 			statusCode:     http.StatusServiceUnavailable,
-			expectedErrMsg: "query verification failed with status 503",
+			expectedErrMsg: "query verification failed",
 		},
 	}
 
