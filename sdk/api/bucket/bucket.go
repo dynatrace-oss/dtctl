@@ -136,10 +136,3 @@ func (h *Handler) Truncate(bucketName string) error {
 	return nil
 }
 
-func (h *Handler) GetRaw(bucketName string) ([]byte, error) {
-	bucket, err := h.Get(bucketName)
-	if err != nil {
-		return nil, err
-	}
-	return json.MarshalIndent(bucket, "", "  ")
-}

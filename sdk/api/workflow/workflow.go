@@ -98,21 +98,6 @@ func (h *Handler) Delete(id string) error {
 	return nil
 }
 
-// GetRaw retrieves a workflow as raw JSON.
-func (h *Handler) GetRaw(id string) ([]byte, error) {
-	resp, err := h.client.HTTP().R().
-		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s", id))
-	if err != nil {
-		return nil, fmt.Errorf("get workflow: %w", err)
-	}
-
-	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
-	}
-
-	return resp.Body(), nil
-}
-
 // Update updates a workflow.
 func (h *Handler) Update(id string, data []byte) (*Workflow, error) {
 	var result Workflow

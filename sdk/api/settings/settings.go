@@ -3,7 +3,6 @@ package settings
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -38,38 +37,14 @@ type SchemaList struct {
 
 // SettingsObject represents a settings object.
 type SettingsObject struct {
-	ObjectID         string            `json:"objectId" table:"OBJECT_ID,wide"`
-	SchemaID         string            `json:"schemaId" table:"SCHEMA_ID"`
-	SchemaVersion    string            `json:"schemaVersion,omitempty" table:"VERSION,wide"`
-	Scope            string            `json:"scope" table:"SCOPE,wide"`
-	ExternalID       string            `json:"externalId,omitempty" table:"-"`
-	Summary          string            `json:"summary,omitempty" table:"SUMMARY"`
-	Value            map[string]any    `json:"value,omitempty" table:"-"`
-	ModificationInfo *ModificationInfo `json:"modificationInfo,omitempty" table:"-"`
-
-	// Display fields (computed, not from API)
-	ObjectIDShort string `json:"-" yaml:"-" table:"OBJECT_ID_SHORT"`
-	ScopeType     string `json:"-" yaml:"-" table:"SCOPE_TYPE,wide"`
-	ScopeID       string `json:"-" yaml:"-" table:"SCOPE_ID,wide"`
-}
-
-// populateDisplayFields computes ObjectIDShort from ObjectID and parses
-// ScopeType / ScopeID from the Scope field.
-// Scope format: "<TYPE>-<ID>" for entity scopes, bare type name for singletons.
-func (s *SettingsObject) populateDisplayFields() {
-	if len(s.ObjectID) > 23 {
-		s.ObjectIDShort = s.ObjectID[:20] + "..."
-	} else {
-		s.ObjectIDShort = s.ObjectID
-	}
-
-	if s.Scope != "" {
-		parts := strings.SplitN(s.Scope, "-", 2)
-		s.ScopeType = parts[0]
-		if len(parts) == 2 {
-			s.ScopeID = parts[1]
-		}
-	}
+	ObjectID         string            `json:"objectId"`
+	SchemaID         string            `json:"schemaId"`
+	SchemaVersion    string            `json:"schemaVersion,omitempty"`
+	Scope            string            `json:"scope"`
+	ExternalID       string            `json:"externalId,omitempty"`
+	Summary          string            `json:"summary,omitempty"`
+	Value            map[string]any    `json:"value,omitempty"`
+	ModificationInfo *ModificationInfo `json:"modificationInfo,omitempty"`
 }
 
 // ModificationInfo contains modification timestamps.
@@ -196,10 +171,6 @@ func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*Setting
 			}
 		}
 
-		for i := range result.Items {
-			result.Items[i].populateDisplayFields()
-		}
-
 		allItems = append(allItems, result.Items...)
 		totalCount = result.TotalCount
 
@@ -237,8 +208,6 @@ func (h *Handler) Get(objectID string) (*SettingsObject, error) {
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
 		return nil, fmt.Errorf("parse settings object response: %w", err)
 	}
-
-	result.populateDisplayFields()
 
 	return &result, nil
 }
@@ -293,19 +262,15 @@ func (h *Handler) Create(req SettingsObjectCreate) (*SettingsObjectResponse, err
 }
 
 // ValidateUpdate validates a settings object update without applying it.
-func (h *Handler) ValidateUpdate(objectID string, value map[string]any) error {
-	obj, err := h.Get(objectID)
-	if err != nil {
-		return err
-	}
-
+// The schemaVersion is used for the If-Match header (obtain it from Get).
+func (h *Handler) ValidateUpdate(objectID, schemaVersion string, value map[string]any) error {
 	body := map[string]any{"value": value}
 
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
-		SetHeader("If-Match", obj.SchemaVersion).
+		SetHeader("If-Match", schemaVersion).
 		SetQueryParam("validateOnly", "true").
-		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", obj.ObjectID))
+		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
 	if err != nil {
 		return fmt.Errorf("validate settings object update: %w", err)
 	}
@@ -317,38 +282,30 @@ func (h *Handler) ValidateUpdate(objectID string, value map[string]any) error {
 }
 
 // Update updates an existing settings object.
-func (h *Handler) Update(objectID string, value map[string]any) (*SettingsObject, error) {
-	obj, err := h.Get(objectID)
-	if err != nil {
-		return nil, err
-	}
-
+// The schemaVersion is used for the If-Match header (obtain it from Get).
+func (h *Handler) Update(objectID, schemaVersion string, value map[string]any) error {
 	body := map[string]any{"value": value}
 
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
-		SetHeader("If-Match", obj.SchemaVersion).
-		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", obj.ObjectID))
+		SetHeader("If-Match", schemaVersion).
+		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
 	if err != nil {
-		return nil, fmt.Errorf("update settings object %q: %w", objectID, err)
+		return fmt.Errorf("update settings object %q: %w", objectID, err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, fmt.Errorf("update settings object %q: %w", objectID, err)
+		return fmt.Errorf("update settings object %q: %w", objectID, err)
 	}
 
-	return h.Get(obj.ObjectID)
+	return nil
 }
 
 // Delete deletes a settings object.
-func (h *Handler) Delete(objectID string) error {
-	obj, err := h.Get(objectID)
-	if err != nil {
-		return err
-	}
-
+// The schemaVersion is used for the If-Match header (obtain it from Get).
+func (h *Handler) Delete(objectID, schemaVersion string) error {
 	resp, err := h.client.HTTP().R().
-		SetHeader("If-Match", obj.SchemaVersion).
-		Delete(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", obj.ObjectID))
+		SetHeader("If-Match", schemaVersion).
+		Delete(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
 	if err != nil {
 		return fmt.Errorf("delete settings object %q: %w", objectID, err)
 	}
@@ -357,14 +314,4 @@ func (h *Handler) Delete(objectID string) error {
 	}
 
 	return nil
-}
-
-// GetRaw gets a settings object as raw JSON bytes (for editing).
-func (h *Handler) GetRaw(objectID string) ([]byte, error) {
-	obj, err := h.Get(objectID)
-	if err != nil {
-		return nil, err
-	}
-
-	return json.MarshalIndent(obj.Value, "", "  ")
 }

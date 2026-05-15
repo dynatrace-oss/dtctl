@@ -1,7 +1,6 @@
 package slo
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -304,24 +303,3 @@ func (h *Handler) PollEvaluation(token string, timeoutMs int) (*EvaluationRespon
 	return &result, nil
 }
 
-// GetRaw gets an SLO as raw JSON bytes (for editing)
-func (h *Handler) GetRaw(id string) ([]byte, error) {
-	resp, err := h.client.HTTP().R().
-		Get(fmt.Sprintf("/platform/slo/v1/slos/%s", id))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get SLO: %w", err)
-	}
-
-	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, fmt.Errorf("failed to get SLO: %w", err)
-	}
-
-	// Pretty print the JSON
-	var data interface{}
-	if err := json.Unmarshal(resp.Body(), &data); err != nil {
-		return resp.Body(), nil
-	}
-
-	return json.MarshalIndent(data, "", "  ")
-}
