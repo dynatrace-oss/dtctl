@@ -756,8 +756,6 @@ type CreateEnvironmentShareRequest struct {
 // ErrShareConflict is returned when creating an environment share fails because
 // one already exists for the document (HTTP 409). Callers can use errors.Is to
 // detect this case without fragile string matching.
-// ErrShareConflict is returned when creating an environment share fails because
-// one already exists for the document (HTTP 409).
 var ErrShareConflict = fmt.Errorf("environment share conflict")
 
 // ErrVersionConflict is returned when a document PATCH fails due to optimistic

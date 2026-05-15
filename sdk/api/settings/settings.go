@@ -144,7 +144,8 @@ func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*Setting
 
 		req.SetQueryParamsFromValues(params)
 
-		// fields may only be sent on the first page; subsequent pages carry the spec in the nextPageKey.
+		// Settings API embeds ALL query params (including fields) in the nextPageKey
+		// token. Sending fields on page 2+ causes HTTP 400. Only set on first request.
 		if nextPageKey == "" {
 			req.SetQueryParam("fields", "objectId,scope,schemaId,schemaVersion,externalId,summary,value,modificationInfo")
 		}

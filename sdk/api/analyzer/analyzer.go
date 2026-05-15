@@ -257,12 +257,19 @@ func (h *Handler) ExecuteAndWait(name string, input map[string]interface{}, maxW
 			return nil, err
 		}
 
-		if pollResult.Result != nil && pollResult.Result.ExecutionStatus == "COMPLETED" {
-			return pollResult, nil
-		}
-
-		if pollResult.Result != nil && pollResult.Result.ExecutionStatus == "ABORTED" {
-			return pollResult, fmt.Errorf("analyzer execution was aborted")
+		if pollResult.Result != nil {
+			switch pollResult.Result.ExecutionStatus {
+			case "COMPLETED":
+				return pollResult, nil
+			case "ABORTED":
+				return pollResult, fmt.Errorf("analyzer execution was aborted")
+			case "FAILED":
+				return pollResult, fmt.Errorf("analyzer execution failed")
+			case "RUNNING":
+				// continue polling
+			default:
+				return pollResult, fmt.Errorf("analyzer execution ended with unexpected status %q", pollResult.Result.ExecutionStatus)
+			}
 		}
 
 		time.Sleep(defaultPollInterval)
