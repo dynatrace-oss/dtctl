@@ -130,11 +130,23 @@ func New(baseURL string, opts ...Option) (*Client, error) {
 		c.http.SetRetryWaitTime(1 * time.Second)
 		c.http.SetRetryMaxWaitTime(10 * time.Second)
 	}
-	c.http.AddRetryCondition(isRetryable)
+	c.http.AddRetryCondition(func(r *resty.Response, err error) bool {
+		retry := isRetryable(r, err)
+		if retry {
+			if err != nil {
+				c.logger.Debugf("retrying request due to error: %v", err)
+			} else {
+				c.logger.Debugf("retrying request due to status %d", r.StatusCode())
+			}
+		}
+		return retry
+	})
 
 	if c.http.GetClient().Timeout == 0 {
 		c.http.SetTimeout(6 * time.Minute)
 	}
+
+	c.logger.Debugf("initialized HTTP client for %s", baseURL)
 
 	return c, nil
 }
