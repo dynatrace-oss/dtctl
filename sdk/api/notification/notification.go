@@ -19,13 +19,13 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // EventNotification represents an event notification.
 type EventNotification struct {
-	ID               string         `json:"id" table:"ID"`
-	NotificationType string         `json:"notificationType" table:"TYPE"`
-	Enabled          bool           `json:"enabled" table:"ENABLED"`
-	AppID            string         `json:"appId,omitempty" table:"APP_ID,wide"`
-	Owner            string         `json:"owner,omitempty" table:"OWNER,wide"`
-	TriggerConfig    map[string]any `json:"triggerConfig,omitempty" table:"-"`
-	ActionConfig     map[string]any `json:"actionConfig,omitempty" table:"-"`
+	ID               string         `json:"id"`
+	NotificationType string         `json:"notificationType"`
+	Enabled          bool           `json:"enabled"`
+	AppID            string         `json:"appId,omitempty"`
+	Owner            string         `json:"owner,omitempty"`
+	TriggerConfig    map[string]any `json:"triggerConfig,omitempty"`
+	ActionConfig     map[string]any `json:"actionConfig,omitempty"`
 }
 
 // EventNotificationList represents a list of event notifications.
@@ -36,10 +36,10 @@ type EventNotificationList struct {
 
 // ResourceNotification represents a resource notification.
 type ResourceNotification struct {
-	ID               string `json:"id" table:"ID"`
-	NotificationType string `json:"notificationType" table:"TYPE"`
-	ResourceID       string `json:"resourceId" table:"RESOURCE_ID"`
-	AppID            string `json:"appId,omitempty" table:"APP_ID,wide"`
+	ID               string `json:"id"`
+	NotificationType string `json:"notificationType"`
+	ResourceID       string `json:"resourceId"`
+	AppID            string `json:"appId,omitempty"`
 }
 
 // ResourceNotificationList represents a list of resource notifications.

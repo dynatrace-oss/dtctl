@@ -21,8 +21,8 @@ type Workspace struct {
 }
 
 type BreakpointRule struct {
-	ID            string                 `json:"id" table:"ID"`
-	IsDisabled    bool                   `json:"is_disabled" table:"ACTIVE"`
+	ID            string                 `json:"id"`
+	IsDisabled    bool                   `json:"is_disabled"`
 	DisableReason string                 `json:"disable_reason,omitempty"`
 	AugJSON       map[string]interface{} `json:"aug_json"`
 	Processing    map[string]interface{} `json:"processing"`

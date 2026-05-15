@@ -138,10 +138,6 @@ func TestHandler_GetApp(t *testing.T) {
 	}
 }
 
-// TestParseFullFunctionName was removed because parseFullFunctionName is now an
-// unexported function in the SDK package (sdk/api/appengine). These tests should
-// be added to sdk/api/appengine/appengine_test.go.
-
 func TestContains(t *testing.T) {
 	tests := []struct {
 		name  string

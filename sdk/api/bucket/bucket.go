@@ -7,32 +7,37 @@ import (
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
+// Handler handles Grail bucket resources.
 type Handler struct {
 	client *httpclient.Client
 }
 
+// NewHandler creates a new bucket handler.
 func NewHandler(c *httpclient.Client) *Handler {
 	return &Handler{client: c}
 }
 
+// Bucket represents a Grail bucket definition.
 type Bucket struct {
-	BucketName                 string `json:"bucketName" table:"NAME"`
-	Table                      string `json:"table" table:"TABLE"`
-	DisplayName                string `json:"displayName" table:"DISPLAY_NAME"`
-	Status                     string `json:"status" table:"STATUS"`
-	RetentionDays              int    `json:"retentionDays" table:"RETENTION_DAYS"`
-	IncludedQueryLimitDays     int    `json:"includedQueryLimitDays,omitempty" table:"-"`
-	MetricInterval             string `json:"metricInterval,omitempty" table:"INTERVAL,wide"`
-	Version                    int    `json:"version" table:"-"`
-	Updatable                  bool   `json:"updatable" table:"UPDATABLE,wide"`
-	Records                    *int64 `json:"records,omitempty" table:"RECORDS,wide"`
-	EstimatedUncompressedBytes *int64 `json:"estimatedUncompressedBytes,omitempty" table:"-"`
+	BucketName                 string `json:"bucketName"`
+	Table                      string `json:"table"`
+	DisplayName                string `json:"displayName"`
+	Status                     string `json:"status"`
+	RetentionDays              int    `json:"retentionDays"`
+	IncludedQueryLimitDays     int    `json:"includedQueryLimitDays,omitempty"`
+	MetricInterval             string `json:"metricInterval,omitempty"`
+	Version                    int    `json:"version"`
+	Updatable                  bool   `json:"updatable"`
+	Records                    *int64 `json:"records,omitempty"`
+	EstimatedUncompressedBytes *int64 `json:"estimatedUncompressedBytes,omitempty"`
 }
 
+// BucketList represents a list of bucket definitions.
 type BucketList struct {
 	Buckets []Bucket `json:"buckets"`
 }
 
+// BucketCreate represents the request body for creating a bucket.
 type BucketCreate struct {
 	BucketName             string `json:"bucketName"`
 	Table                  string `json:"table"`
@@ -41,12 +46,14 @@ type BucketCreate struct {
 	IncludedQueryLimitDays int    `json:"includedQueryLimitDays,omitempty"`
 }
 
+// BucketUpdate represents the request body for updating a bucket.
 type BucketUpdate struct {
 	DisplayName            string `json:"displayName,omitempty"`
 	RetentionDays          int    `json:"retentionDays,omitempty"`
 	IncludedQueryLimitDays int    `json:"includedQueryLimitDays,omitempty"`
 }
 
+// List lists all bucket definitions.
 func (h *Handler) List() (*BucketList, error) {
 	resp, err := h.client.HTTP().R().
 		SetQueryParam("add-fields", "records").
@@ -64,6 +71,7 @@ func (h *Handler) List() (*BucketList, error) {
 	return &result, nil
 }
 
+// Get gets a specific bucket by name.
 func (h *Handler) Get(bucketName string) (*Bucket, error) {
 	resp, err := h.client.HTTP().R().
 		SetQueryParam("add-fields", "records,estimatedUncompressedBytes").
@@ -81,6 +89,7 @@ func (h *Handler) Get(bucketName string) (*Bucket, error) {
 	return &result, nil
 }
 
+// Create creates a new bucket.
 func (h *Handler) Create(req BucketCreate) (*Bucket, error) {
 	resp, err := h.client.HTTP().R().
 		SetBody(req).
@@ -98,6 +107,8 @@ func (h *Handler) Create(req BucketCreate) (*Bucket, error) {
 	return &result, nil
 }
 
+// Update updates an existing bucket.
+// The version parameter is required for optimistic locking.
 func (h *Handler) Update(bucketName string, version int, req BucketUpdate) error {
 	resp, err := h.client.HTTP().R().
 		SetBody(req).
@@ -112,6 +123,7 @@ func (h *Handler) Update(bucketName string, version int, req BucketUpdate) error
 	return nil
 }
 
+// Delete deletes a bucket by name.
 func (h *Handler) Delete(bucketName string) error {
 	resp, err := h.client.HTTP().R().
 		Delete(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", bucketName))
@@ -124,6 +136,7 @@ func (h *Handler) Delete(bucketName string) error {
 	return nil
 }
 
+// Truncate empties a bucket (removes all data).
 func (h *Handler) Truncate(bucketName string) error {
 	resp, err := h.client.HTTP().R().
 		Post(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s:truncate", bucketName))

@@ -26,13 +26,12 @@ type AnalyzerCategory struct {
 
 // Analyzer represents an analyzer definition
 type Analyzer struct {
-	Name         string            `json:"name" table:"NAME"`
-	DisplayName  string            `json:"displayName" table:"DISPLAY NAME"`
-	Description  string            `json:"description,omitempty" table:"DESCRIPTION,wide"`
-	Category     *AnalyzerCategory `json:"category,omitempty" table:"-"`
-	CategoryName string            `json:"-" table:"CATEGORY"`
-	Type         string            `json:"type,omitempty" table:"TYPE"`
-	BaseAnalyzer string            `json:"baseAnalyzer,omitempty" table:"-"`
+	Name         string            `json:"name"`
+	DisplayName  string            `json:"displayName"`
+	Description  string            `json:"description,omitempty"`
+	Category     *AnalyzerCategory `json:"category,omitempty"`
+	Type         string            `json:"type,omitempty"`
+	BaseAnalyzer string            `json:"baseAnalyzer,omitempty"`
 }
 
 // AnalyzerList represents a list of analyzers
@@ -44,17 +43,16 @@ type AnalyzerList struct {
 
 // AnalyzerDefinition represents detailed analyzer definition
 type AnalyzerDefinition struct {
-	Name         string            `json:"name" table:"NAME"`
-	DisplayName  string            `json:"displayName" table:"DISPLAY NAME"`
-	Description  string            `json:"description,omitempty" table:"DESCRIPTION"`
-	Category     *AnalyzerCategory `json:"category,omitempty" table:"-"`
-	CategoryName string            `json:"-" table:"CATEGORY"`
-	Type         string            `json:"type,omitempty" table:"TYPE"`
-	BaseAnalyzer string            `json:"baseAnalyzer,omitempty" table:"BASE ANALYZER"`
-	Labels       []string          `json:"labels,omitempty" table:"-"`
-	Input        json.RawMessage   `json:"input,omitempty" table:"-"`
-	Output       json.RawMessage   `json:"output,omitempty" table:"-"`
-	AnalyzerCall json.RawMessage   `json:"analyzerCall,omitempty" table:"-"`
+	Name         string            `json:"name"`
+	DisplayName  string            `json:"displayName"`
+	Description  string            `json:"description,omitempty"`
+	Category     *AnalyzerCategory `json:"category,omitempty"`
+	Type         string            `json:"type,omitempty"`
+	BaseAnalyzer string            `json:"baseAnalyzer,omitempty"`
+	Labels       []string          `json:"labels,omitempty"`
+	Input        json.RawMessage   `json:"input,omitempty"`
+	Output       json.RawMessage   `json:"output,omitempty"`
+	AnalyzerCall json.RawMessage   `json:"analyzerCall,omitempty"`
 }
 
 // ExecuteRequest represents an analyzer execution request
@@ -64,13 +62,9 @@ type ExecuteRequest struct {
 
 // ExecuteResult represents an analyzer execution result
 type ExecuteResult struct {
-	RequestToken string          `json:"requestToken,omitempty" table:"REQUEST TOKEN,wide"`
-	TTLInSeconds int64           `json:"ttlInSeconds,omitempty" table:"-"`
-	Result       *AnalyzerResult `json:"result" table:"-"`
-	// Flattened fields for table display
-	ResultID        string `json:"-" table:"RESULT ID"`
-	ResultStatus    string `json:"-" table:"STATUS"`
-	ExecutionStatus string `json:"-" table:"EXECUTION"`
+	RequestToken string          `json:"requestToken,omitempty"`
+	TTLInSeconds int64           `json:"ttlInSeconds,omitempty"`
+	Result       *AnalyzerResult `json:"result"`
 }
 
 // AnalyzerResult represents the result of an analyzer execution
@@ -106,10 +100,7 @@ func (h *Handler) List(filter string) (*AnalyzerList, error) {
 	}
 	req.SetQueryParam("add-fields", "category,type")
 
-	var result AnalyzerList
-	resp, err := req.
-		SetResult(&result).
-		Get("/platform/davis/analyzers/v1/analyzers")
+	resp, err := req.Get("/platform/davis/analyzers/v1/analyzers")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list analyzers: %w", err)
 	}
@@ -117,11 +108,9 @@ func (h *Handler) List(filter string) (*AnalyzerList, error) {
 		return nil, fmt.Errorf("failed to list analyzers: %w", err)
 	}
 
-	// Populate CategoryName for table display
-	for i := range result.Analyzers {
-		if result.Analyzers[i].Category != nil {
-			result.Analyzers[i].CategoryName = result.Analyzers[i].Category.DisplayName
-		}
+	var result AnalyzerList
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("list analyzers: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -129,9 +118,7 @@ func (h *Handler) List(filter string) (*AnalyzerList, error) {
 
 // Get retrieves a specific analyzer definition
 func (h *Handler) Get(name string) (*AnalyzerDefinition, error) {
-	var result AnalyzerDefinition
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get analyzer: %w", err)
@@ -144,9 +131,9 @@ func (h *Handler) Get(name string) (*AnalyzerDefinition, error) {
 		return nil, fmt.Errorf("failed to get analyzer: %w", err)
 	}
 
-	// Populate CategoryName for table display
-	if result.Category != nil {
-		result.CategoryName = result.Category.DisplayName
+	var result AnalyzerDefinition
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get analyzer: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -172,9 +159,7 @@ func (h *Handler) GetDocumentation(name string) (string, error) {
 
 // GetInputSchema retrieves the JSON schema for analyzer input
 func (h *Handler) GetInputSchema(name string) (map[string]interface{}, error) {
-	var result map[string]interface{}
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/json-schema/input", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get input schema: %w", err)
@@ -182,20 +167,28 @@ func (h *Handler) GetInputSchema(name string) (map[string]interface{}, error) {
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to get input schema: %w", err)
 	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get input schema: parse response: %w", err)
+	}
 	return result, nil
 }
 
 // GetResultSchema retrieves the JSON schema for analyzer result
 func (h *Handler) GetResultSchema(name string) (map[string]interface{}, error) {
-	var result map[string]interface{}
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/json-schema/result", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get result schema: %w", err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to get result schema: %w", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get result schema: parse response: %w", err)
 	}
 	return result, nil
 }
@@ -211,7 +204,6 @@ func (h *Handler) Execute(name string, input map[string]interface{}, timeoutSeco
 	var result ExecuteResult
 	resp, err := req.
 		SetBody(input).
-		SetResult(&result).
 		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:execute", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute analyzer: %w", err)
@@ -220,19 +212,11 @@ func (h *Handler) Execute(name string, input map[string]interface{}, timeoutSeco
 		return nil, fmt.Errorf("failed to execute analyzer: %w", err)
 	}
 
-	// Populate flattened fields for table display
-	result.populateTableFields()
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("execute analyzer: parse response: %w", err)
+	}
 
 	return &result, nil
-}
-
-// populateTableFields copies Result fields to top-level for table display
-func (r *ExecuteResult) populateTableFields() {
-	if r.Result != nil {
-		r.ResultID = r.Result.ResultID
-		r.ResultStatus = r.Result.ResultStatus
-		r.ExecutionStatus = r.Result.ExecutionStatus
-	}
 }
 
 // Default polling parameters for ExecuteAndWait.
@@ -296,7 +280,6 @@ func (h *Handler) Poll(name string, requestToken string, timeoutSeconds int) (*E
 
 	var result ExecuteResult
 	resp, err := req.
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:poll", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to poll analyzer: %w", err)
@@ -309,8 +292,9 @@ func (h *Handler) Poll(name string, requestToken string, timeoutSeconds int) (*E
 		return nil, fmt.Errorf("failed to poll analyzer: %w", err)
 	}
 
-	// Populate flattened fields for table display
-	result.populateTableFields()
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("poll analyzer: parse response: %w", err)
+	}
 
 	return &result, nil
 }
@@ -320,9 +304,7 @@ func (h *Handler) Cancel(name string, requestToken string) (*ExecuteResult, erro
 	req := h.client.HTTP().R().
 		SetQueryParam("request-token", requestToken)
 
-	var result ExecuteResult
 	resp, err := req.
-		SetResult(&result).
 		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:cancel", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel analyzer: %w", err)
@@ -330,21 +312,29 @@ func (h *Handler) Cancel(name string, requestToken string) (*ExecuteResult, erro
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to cancel analyzer: %w", err)
 	}
+
+	var result ExecuteResult
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("cancel analyzer: parse response: %w", err)
+	}
 	return &result, nil
 }
 
 // Validate validates the input for an analyzer execution
 func (h *Handler) Validate(name string, input map[string]interface{}) (*ValidationResult, error) {
-	var result ValidationResult
 	resp, err := h.client.HTTP().R().
 		SetBody(input).
-		SetResult(&result).
 		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:validate", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate analyzer input: %w", err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to validate analyzer input: %w", err)
+	}
+
+	var result ValidationResult
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("validate analyzer input: parse response: %w", err)
 	}
 	return &result, nil
 }

@@ -19,14 +19,14 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // Schema represents a settings schema.
 type Schema struct {
-	SchemaID    string         `json:"schemaId" table:"SCHEMA_ID"`
-	DisplayName string         `json:"displayName" table:"DISPLAY_NAME"`
-	Description string         `json:"description,omitempty" table:"-"`
-	Version     string         `json:"version" table:"VERSION"`
-	MultiObject bool           `json:"multiObject,omitempty" table:"MULTI,wide"`
-	Ordered     bool           `json:"ordered,omitempty" table:"ORDERED,wide"`
-	Properties  map[string]any `json:"properties,omitempty" table:"-"`
-	Scopes      []string       `json:"scopes,omitempty" table:"-"`
+	SchemaID    string         `json:"schemaId"`
+	DisplayName string         `json:"displayName"`
+	Description string         `json:"description,omitempty"`
+	Version     string         `json:"version"`
+	MultiObject bool           `json:"multiObject,omitempty"`
+	Ordered     bool           `json:"ordered,omitempty"`
+	Properties  map[string]any `json:"properties,omitempty"`
+	Scopes      []string       `json:"scopes,omitempty"`
 }
 
 // SchemaList represents a list of schemas.

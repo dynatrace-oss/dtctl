@@ -10,21 +10,21 @@ import (
 
 // Execution represents a workflow execution.
 type Execution struct {
-	ID          string     `json:"id" table:"ID"`
-	Workflow    string     `json:"workflow" table:"WORKFLOW"`
-	Title       string     `json:"title" table:"TITLE"`
-	State       string     `json:"state" table:"STATE"`
-	StateInfo   *string    `json:"stateInfo,omitempty" table:"-"`
-	StartedAt   time.Time  `json:"startedAt" table:"STARTED"`
-	EndedAt     *time.Time `json:"endedAt,omitempty" table:"-"`
-	Runtime     int        `json:"runtime,omitempty" table:"RUNTIME"`
-	Trigger     *string    `json:"trigger,omitempty" table:"-"`
-	TriggerType string     `json:"triggerType,omitempty" table:"TRIGGER"`
-	User        *string    `json:"user,omitempty" table:"-"`
-	Actor       string     `json:"actor,omitempty" table:"-"`
-	Input       any        `json:"input,omitempty" table:"-"`
-	Params      any        `json:"params,omitempty" table:"-"`
-	Result      any        `json:"result,omitempty" table:"-"`
+	ID          string     `json:"id"`
+	Workflow    string     `json:"workflow"`
+	Title       string     `json:"title"`
+	State       string     `json:"state"`
+	StateInfo   *string    `json:"stateInfo,omitempty"`
+	StartedAt   time.Time  `json:"startedAt"`
+	EndedAt     *time.Time `json:"endedAt,omitempty"`
+	Runtime     int        `json:"runtime,omitempty"`
+	Trigger     *string    `json:"trigger,omitempty"`
+	TriggerType string     `json:"triggerType,omitempty"`
+	User        *string    `json:"user,omitempty"`
+	Actor       string     `json:"actor,omitempty"`
+	Input       any        `json:"input,omitempty"`
+	Params      any        `json:"params,omitempty"`
+	Result      any        `json:"result,omitempty"`
 }
 
 // ExecutionList represents a list of executions.
@@ -45,9 +45,7 @@ func NewExecutionHandler(c *httpclient.Client) *ExecutionHandler {
 
 // List retrieves all executions with optional workflow filter.
 func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
-	var result ExecutionList
-
-	req := h.client.HTTP().R().SetResult(&result)
+	req := h.client.HTTP().R()
 
 	if workflowID != "" {
 		req.SetQueryParam("workflow", workflowID)
@@ -59,7 +57,12 @@ func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list executions: %w", err)
+	}
+
+	var result ExecutionList
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("list executions: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -67,17 +70,19 @@ func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
 
 // Get retrieves a specific execution.
 func (h *ExecutionHandler) Get(id string) (*Execution, error) {
-	var result Execution
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/automation/v1/executions/%s", id))
 	if err != nil {
 		return nil, fmt.Errorf("get execution: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get execution: %w", err)
+	}
+
+	var result Execution
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get execution: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -92,7 +97,7 @@ func (h *ExecutionHandler) Cancel(id string) error {
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return err
+		return fmt.Errorf("cancel execution: %w", err)
 	}
 
 	return nil
@@ -100,15 +105,15 @@ func (h *ExecutionHandler) Cancel(id string) error {
 
 // TaskExecution represents a task execution within a workflow execution.
 type TaskExecution struct {
-	ID        string     `json:"id" table:"ID"`
-	Name      string     `json:"name" table:"NAME"`
-	State     string     `json:"state" table:"STATE"`
-	StartedAt *time.Time `json:"startedAt,omitempty" table:"STARTED"`
-	EndedAt   *time.Time `json:"endedAt,omitempty" table:"-"`
-	Runtime   int        `json:"runtime,omitempty" table:"RUNTIME"`
-	StateInfo *string    `json:"stateInfo,omitempty" table:"-"`
-	Input     any        `json:"input,omitempty" table:"-"`
-	Result    any        `json:"result,omitempty" table:"-"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	State     string     `json:"state"`
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	Runtime   int        `json:"runtime,omitempty"`
+	StateInfo *string    `json:"stateInfo,omitempty"`
+	Input     any        `json:"input,omitempty"`
+	Result    any        `json:"result,omitempty"`
 }
 
 // TaskExecutionMap is a map of task name to task execution.
@@ -116,17 +121,19 @@ type TaskExecutionMap map[string]TaskExecution
 
 // ListTasks retrieves all task executions for a workflow execution.
 func (h *ExecutionHandler) ListTasks(executionID string) ([]TaskExecution, error) {
-	var result TaskExecutionMap
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/tasks", executionID))
 	if err != nil {
 		return nil, fmt.Errorf("list task executions: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list task executions: %w", err)
+	}
+
+	var result TaskExecutionMap
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("list task executions: parse response: %w", err)
 	}
 
 	// Convert map to slice
@@ -147,7 +154,7 @@ func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, err
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return "", err
+		return "", fmt.Errorf("get task log: %w", err)
 	}
 
 	// The API returns a JSON-encoded string, so we need to unquote it.
@@ -156,17 +163,19 @@ func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, err
 
 // GetTaskResult retrieves the structured return value of a specific task execution.
 func (h *ExecutionHandler) GetTaskResult(executionID, taskName string) (any, error) {
-	var result any
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/tasks/%s/result", executionID, taskName))
 	if err != nil {
 		return nil, fmt.Errorf("get task result: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get task result: %w", err)
+	}
+
+	var result any
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get task result: parse response: %w", err)
 	}
 
 	return result, nil
@@ -181,7 +190,7 @@ func (h *ExecutionHandler) GetExecutionLog(executionID string) (string, error) {
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return "", err
+		return "", fmt.Errorf("get execution log: %w", err)
 	}
 
 	// The API returns a JSON-encoded string, so we need to unquote it.

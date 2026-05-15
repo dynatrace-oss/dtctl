@@ -3,6 +3,7 @@ package livedebugger
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -444,12 +445,10 @@ func (h *Handler) executeGraphQL(query string, variables map[string]interface{})
 		"variables": variables,
 	}
 
-	var response map[string]interface{}
 	resp, err := h.client.HTTP().R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("dt-external-source", "dtctl").
 		SetBody(requestBody).
-		SetResult(&response).
 		Post(h.graphqlURL)
 	if err != nil {
 		return nil, fmt.Errorf("call live debugger graphql: %w", err)
@@ -457,6 +456,11 @@ func (h *Handler) executeGraphQL(query string, variables map[string]interface{})
 
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("live debugger graphql request: %w", err)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(resp.Body(), &response); err != nil {
+		return nil, fmt.Errorf("live debugger graphql: parse response: %w", err)
 	}
 
 	if errorsValue, ok := response["errors"]; ok {
@@ -489,22 +493,7 @@ func buildGraphQLURL(environmentURL string) (string, error) {
 // (e.g., "abc12345.apps.dynatrace.com"). For custom domains or managed
 // environments, callers should use NewHandlerWithOrgID instead.
 func extractOrgID(environmentURL string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(environmentURL))
-	if err != nil {
-		return "", fmt.Errorf("invalid context environment URL %q: %w", environmentURL, err)
-	}
-
-	host := parsed.Hostname()
-	if host == "" {
-		return "", fmt.Errorf("context environment URL has no host: %q", environmentURL)
-	}
-
-	parts := strings.Split(host, ".")
-	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
-		return "", fmt.Errorf("failed to extract org id from host %q", host)
-	}
-
-	return parts[0], nil
+	return httpclient.ExtractSubdomain(environmentURL)
 }
 
 func generateMutableRuleID() string {

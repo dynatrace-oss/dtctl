@@ -3,7 +3,6 @@ package iam
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -21,11 +20,11 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // User represents a Dynatrace user.
 type User struct {
-	UID         string `json:"uid" table:"UID"`
-	Email       string `json:"email" table:"EMAIL"`
-	Name        string `json:"name,omitempty" table:"NAME"`
-	Surname     string `json:"surname,omitempty" table:"SURNAME"`
-	Description string `json:"description,omitempty" table:"DESCRIPTION,wide"`
+	UID         string `json:"uid"`
+	Email       string `json:"email"`
+	Name        string `json:"name,omitempty"`
+	Surname     string `json:"surname,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // UserListResponse represents a list of users.
@@ -37,9 +36,9 @@ type UserListResponse struct {
 
 // Group represents a Dynatrace group.
 type Group struct {
-	UUID      string `json:"uuid" table:"UUID"`
-	GroupName string `json:"groupName" table:"NAME"`
-	Type      string `json:"type" table:"TYPE"`
+	UUID      string `json:"uuid"`
+	GroupName string `json:"groupName"`
+	Type      string `json:"type"`
 }
 
 // GroupListResponse represents a list of groups.
@@ -51,18 +50,7 @@ type GroupListResponse struct {
 
 // extractEnvironmentID extracts the environment ID from the base URL.
 func extractEnvironmentID(baseURL string) (string, error) {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse base URL: %w", err)
-	}
-
-	hostname := u.Hostname()
-	parts := strings.Split(hostname, ".")
-	if len(parts) == 0 {
-		return "", fmt.Errorf("invalid hostname format: %s", hostname)
-	}
-
-	return parts[0], nil
+	return httpclient.ExtractSubdomain(baseURL)
 }
 
 // ListUsers lists all users in the current environment with automatic pagination.

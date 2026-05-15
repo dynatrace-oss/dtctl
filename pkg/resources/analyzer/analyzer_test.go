@@ -834,7 +834,3 @@ func TestParseInputFromFile_FileNotFound(t *testing.T) {
 		t.Error("ParseInputFromFile() expected error for nonexistent file, got nil")
 	}
 }
-
-// TestExecuteResult_populateTableFields was removed because populateTableFields
-// is now an unexported method in the SDK package (sdk/api/analyzer). These tests
-// should be added to sdk/api/analyzer/analyzer_test.go.

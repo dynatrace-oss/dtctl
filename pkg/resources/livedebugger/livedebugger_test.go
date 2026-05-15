@@ -65,11 +65,6 @@ func TestNewHandler(t *testing.T) {
 	})
 }
 
-// TestBuildGraphQLURL and TestExtractOrgID were removed because buildGraphQLURL
-// and extractOrgID are now unexported functions in the SDK package
-// (sdk/api/livedebugger). These tests should be added to
-// sdk/api/livedebugger/livedebugger_test.go.
-
 func TestExtractWorkspaceID(t *testing.T) {
 	if _, err := ExtractWorkspaceID(map[string]interface{}{}); err == nil {
 		t.Fatalf("expected missing data error")
@@ -90,9 +85,6 @@ func TestExtractWorkspaceID(t *testing.T) {
 		t.Fatalf("unexpected workspace id: %q", id)
 	}
 }
-
-// TestGenerateMutableRuleID was removed because generateMutableRuleID is now
-// an unexported function in the SDK package (sdk/api/livedebugger).
 
 func TestBuildFilterSets_UsesLabelsAndEmptyFilters(t *testing.T) {
 	input := map[string][]string{
@@ -145,9 +137,6 @@ func TestBuildFilterSets_Empty(t *testing.T) {
 		t.Fatalf("expected empty filter sets, got %#v", sets)
 	}
 }
-
-// TestExecuteGraphQL was removed because executeGraphQL is now an unexported
-// method in the SDK package (sdk/api/livedebugger).
 
 func TestHandlerMethods(t *testing.T) {
 	h := newGraphQLTestHandler(t, http.StatusOK, func(body map[string]interface{}) map[string]interface{} {

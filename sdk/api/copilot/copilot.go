@@ -22,7 +22,7 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // Skill represents an available CoPilot skill (just a string type)
 type Skill struct {
-	Name string `table:"NAME"`
+	Name string
 }
 
 // SkillsResponse represents the list of available skills
@@ -61,8 +61,8 @@ type ConversationContext struct {
 
 // ConversationResponse represents a response from the CoPilot conversation endpoint
 type ConversationResponse struct {
-	Text  string             `json:"text" table:"RESPONSE"`
-	State *ConversationState `json:"state,omitempty" table:"-"`
+	Text  string             `json:"text"`
+	State *ConversationState `json:"state,omitempty"`
 }
 
 // StreamChunk represents a chunk in a streaming response (ndjson event format)
@@ -83,15 +83,18 @@ type StreamChunkData struct {
 
 // ListSkills retrieves all available CoPilot skills
 func (h *Handler) ListSkills() (*SkillList, error) {
-	var result SkillsResponse
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get("/platform/davis/copilot/v1/skills")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skills: %w", err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to list skills: %w", err)
+	}
+
+	var result SkillsResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("list skills: parse response: %w", err)
 	}
 
 	// Convert string array to Skill structs for display
@@ -111,17 +114,20 @@ func (h *Handler) Chat(text string, state *ConversationState, ctx []Conversation
 		Context: ctx,
 	}
 
-	var result ConversationResponse
 	resp, err := h.client.HTTP().R().
 		SetHeader("Accept", "application/json").
 		SetBody(req).
-		SetResult(&result).
 		Post("/platform/davis/copilot/v1/skills/conversations:message")
 	if err != nil {
 		return nil, fmt.Errorf("failed to send message: %w", err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to send message: %w", err)
+	}
+
+	var result ConversationResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("send message: parse response: %w", err)
 	}
 	return &result, nil
 }
@@ -245,24 +251,27 @@ type Nl2DqlRequest struct {
 
 // Nl2DqlResponse represents the response from the NL to DQL skill
 type Nl2DqlResponse struct {
-	DQL          string `json:"dql" table:"DQL"`
-	MessageToken string `json:"messageToken" table:"-"`
-	Status       string `json:"status" table:"STATUS"`
+	DQL          string `json:"dql"`
+	MessageToken string `json:"messageToken"`
+	Status       string `json:"status"`
 }
 
 // Nl2Dql converts natural language to a DQL query
 func (h *Handler) Nl2Dql(text string) (*Nl2DqlResponse, error) {
 	req := Nl2DqlRequest{Text: text}
-	var result Nl2DqlResponse
 	resp, err := h.client.HTTP().R().
 		SetBody(req).
-		SetResult(&result).
 		Post("/platform/davis/copilot/v1/skills/nl2dql:generate")
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate DQL: %w", err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to generate DQL: %w", err)
+	}
+
+	var result Nl2DqlResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("generate DQL: parse response: %w", err)
 	}
 	return &result, nil
 }
@@ -274,25 +283,28 @@ type Dql2NlRequest struct {
 
 // Dql2NlResponse represents the response from the DQL to NL skill
 type Dql2NlResponse struct {
-	Summary      string `json:"summary" table:"SUMMARY"`
-	Explanation  string `json:"explanation" table:"EXPLANATION"`
-	MessageToken string `json:"messageToken" table:"-"`
-	Status       string `json:"status" table:"STATUS"`
+	Summary      string `json:"summary"`
+	Explanation  string `json:"explanation"`
+	MessageToken string `json:"messageToken"`
+	Status       string `json:"status"`
 }
 
 // Dql2Nl explains a DQL query in natural language
 func (h *Handler) Dql2Nl(dql string) (*Dql2NlResponse, error) {
 	req := Dql2NlRequest{DQL: dql}
-	var result Dql2NlResponse
 	resp, err := h.client.HTTP().R().
 		SetBody(req).
-		SetResult(&result).
 		Post("/platform/davis/copilot/v1/skills/dql2nl:explain")
 	if err != nil {
 		return nil, fmt.Errorf("failed to explain DQL: %w", err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to explain DQL: %w", err)
+	}
+
+	var result Dql2NlResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("explain DQL: parse response: %w", err)
 	}
 	return &result, nil
 }
@@ -315,11 +327,9 @@ type DocumentMetadata struct {
 
 // ScoredDocument represents a document with its relevance score
 type ScoredDocument struct {
-	DocumentID       string           `json:"documentId" table:"ID"`
-	RelevanceScore   float64          `json:"relevanceScore" table:"SCORE"`
-	DocumentMetadata DocumentMetadata `json:"documentMetadata" table:"-"`
-	Name             string           `table:"NAME"`
-	Type             string           `table:"TYPE"`
+	DocumentID       string           `json:"documentId"`
+	RelevanceScore   float64          `json:"relevanceScore"`
+	DocumentMetadata DocumentMetadata `json:"documentMetadata"`
 }
 
 // DocumentSearchResponse represents the response from document search
@@ -342,10 +352,8 @@ func (h *Handler) DocumentSearch(texts []string, collections []string, exclude [
 		Collections: collections,
 		Exclude:     exclude,
 	}
-	var result DocumentSearchResponse
 	resp, err := h.client.HTTP().R().
 		SetBody(req).
-		SetResult(&result).
 		Post("/platform/davis/copilot/v1/skills/document-search:execute")
 	if err != nil {
 		return nil, fmt.Errorf("failed to search documents: %w", err)
@@ -354,10 +362,9 @@ func (h *Handler) DocumentSearch(texts []string, collections []string, exclude [
 		return nil, fmt.Errorf("failed to search documents: %w", err)
 	}
 
-	// Populate display fields from metadata
-	for i := range result.Results {
-		result.Results[i].Name = result.Results[i].DocumentMetadata.Name
-		result.Results[i].Type = result.Results[i].DocumentMetadata.Type
+	var result DocumentSearchResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("search documents: parse response: %w", err)
 	}
 
 	return &DocumentSearchResult{

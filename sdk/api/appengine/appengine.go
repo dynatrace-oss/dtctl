@@ -3,6 +3,7 @@ package appengine
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -19,15 +20,15 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // App represents an installed app
 type App struct {
-	ID               string                 `json:"id" table:"ID"`
-	Name             string                 `json:"name" table:"NAME"`
-	Version          string                 `json:"version" table:"VERSION"`
-	Description      string                 `json:"description" table:"DESCRIPTION,wide"`
-	IsBuiltin        bool                   `json:"isBuiltin,omitempty" table:"BUILTIN,wide"`
-	ResourceStatus   *ResourceStatus        `json:"resourceStatus,omitempty" table:"-"`
-	SignatureInfo    *SignatureInfo         `json:"signatureInfo,omitempty" table:"-"`
-	Manifest         map[string]interface{} `json:"manifest,omitempty" table:"-"`
-	ModificationInfo *ModificationInfo      `json:"modificationInfo,omitempty" table:"-"`
+	ID               string                 `json:"id"`
+	Name             string                 `json:"name"`
+	Version          string                 `json:"version"`
+	Description      string                 `json:"description"`
+	IsBuiltin        bool                   `json:"isBuiltin,omitempty"`
+	ResourceStatus   *ResourceStatus        `json:"resourceStatus,omitempty"`
+	SignatureInfo    *SignatureInfo         `json:"signatureInfo,omitempty"`
+	Manifest         map[string]interface{} `json:"manifest,omitempty"`
+	ModificationInfo *ModificationInfo      `json:"modificationInfo,omitempty"`
 }
 
 // ResourceStatus represents the status of an app's resources
@@ -114,14 +115,14 @@ func (h *Handler) DeleteApp(appID string) error {
 
 // AppFunction represents a function within an app
 type AppFunction struct {
-	AppID        string `json:"appId" table:"APP_ID,wide"`
-	AppName      string `json:"appName" table:"APP"`
-	FunctionName string `json:"functionName" table:"FUNCTION"`
-	Title        string `json:"title,omitempty" table:"TITLE,wide"`
-	Description  string `json:"description,omitempty" table:"DESCRIPTION,wide"`
-	Resumable    bool   `json:"resumable" table:"RESUMABLE,wide"`
-	Stateful     bool   `json:"stateful,omitempty" table:"STATEFUL,wide"`
-	FullName     string `json:"fullName" table:"FULL_NAME"`
+	AppID        string `json:"appId"`
+	AppName      string `json:"appName"`
+	FunctionName string `json:"functionName"`
+	Title        string `json:"title,omitempty"`
+	Description  string `json:"description,omitempty"`
+	Resumable    bool   `json:"resumable"`
+	Stateful     bool   `json:"stateful,omitempty"`
+	FullName     string `json:"fullName"`
 }
 
 // ListFunctions lists all functions across apps (or filtered by app ID)
@@ -138,7 +139,7 @@ func (h *Handler) ListFunctions(appIDFilter string) ([]AppFunction, error) {
 			continue
 		}
 
-		if app.ResourceStatus == nil || !contains(app.ResourceStatus.SubResourceTypes, "FUNCTIONS") {
+		if app.ResourceStatus == nil || !slices.Contains(app.ResourceStatus.SubResourceTypes, "FUNCTIONS") {
 			continue
 		}
 
@@ -207,7 +208,7 @@ func (h *Handler) GetFunction(fullName string) (*AppFunction, error) {
 		return nil, err
 	}
 
-	if app.ResourceStatus == nil || !contains(app.ResourceStatus.SubResourceTypes, "FUNCTIONS") {
+	if app.ResourceStatus == nil || !slices.Contains(app.ResourceStatus.SubResourceTypes, "FUNCTIONS") {
 		return nil, fmt.Errorf("app %q does not have functions", appID)
 	}
 
@@ -255,15 +256,6 @@ func (h *Handler) GetFunction(fullName string) (*AppFunction, error) {
 }
 
 // Helper functions
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
 func parseFullFunctionName(fullName string) (appID, functionName string) {
 	for i := 0; i < len(fullName); i++ {
 		if fullName[i] == '/' {

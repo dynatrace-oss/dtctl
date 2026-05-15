@@ -21,10 +21,10 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // HubExtension represents a Dynatrace Hub catalog extension.
 type HubExtension struct {
-	ID          string `json:"id" table:"ID"`
-	Name        string `json:"name" table:"NAME"`
-	Type        string `json:"type,omitempty" table:"-"`
-	Description string `json:"description,omitempty" table:"DESCRIPTION,wide"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // HubExtensionList represents a paginated list of Hub extensions.
@@ -36,9 +36,9 @@ type HubExtensionList struct {
 
 // HubExtensionRelease represents a release of a Hub extension.
 type HubExtensionRelease struct {
-	Version     string `json:"version" yaml:"version" table:"VERSION"`
-	ReleaseDate string `json:"releaseDate,omitempty" yaml:"releaseDate,omitempty" table:"RELEASE_DATE,wide"`
-	Notes       string `json:"notes,omitempty" yaml:"notes,omitempty" table:"-"`
+	Version     string `json:"version" yaml:"version"`
+	ReleaseDate string `json:"releaseDate,omitempty" yaml:"releaseDate,omitempty"`
+	Notes       string `json:"notes,omitempty" yaml:"notes,omitempty"`
 }
 
 // HubExtensionReleaseList represents a list of Hub extension releases.

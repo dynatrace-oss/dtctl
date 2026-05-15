@@ -54,22 +54,22 @@ func NewHandler(c *httpclient.Client) *Handler {
 // default JSON/YAML output stays minimal and table column layout is stable
 // regardless of whether --add-fields was passed.
 type Document struct {
-	ID          string    `json:"id" table:"ID"`
-	Name        string    `json:"name" table:"NAME"`
-	Type        string    `json:"type" table:"TYPE"`
-	Owner       string    `json:"owner" table:"OWNER"`
-	IsPrivate   bool      `json:"isPrivate" table:"PRIVATE"`
-	Created     time.Time `json:"-" table:"CREATED"`
-	Description string    `json:"description,omitempty" table:"DESCRIPTION,wide"`
-	Version     int       `json:"version" table:"VERSION,wide"`
-	Modified    time.Time `json:"-" table:"MODIFIED,wide"`
-	Content     []byte    `json:"-" table:"-"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	Owner       string    `json:"owner"`
+	IsPrivate   bool      `json:"isPrivate"`
+	Created     time.Time `json:"-"`
+	Description string    `json:"description,omitempty"`
+	Version     int       `json:"version"`
+	Modified    time.Time `json:"-"`
+	Content     []byte    `json:"-"`
 
-	OriginAppID       string       `json:"originAppId,omitempty" yaml:"originAppId,omitempty" table:"-"`
-	OriginExtensionID string       `json:"originExtensionId,omitempty" yaml:"originExtensionId,omitempty" table:"-"`
-	Labels            []string     `json:"labels,omitempty" yaml:"labels,omitempty" table:"-"`
-	ShareInfo         *ShareInfo   `json:"shareInfo,omitempty" yaml:"shareInfo,omitempty" table:"-"`
-	UserContext       *UserContext `json:"userContext,omitempty" yaml:"userContext,omitempty" table:"-"`
+	OriginAppID       string       `json:"originAppId,omitempty" yaml:"originAppId,omitempty"`
+	OriginExtensionID string       `json:"originExtensionId,omitempty" yaml:"originExtensionId,omitempty"`
+	Labels            []string     `json:"labels,omitempty" yaml:"labels,omitempty"`
+	ShareInfo         *ShareInfo   `json:"shareInfo,omitempty" yaml:"shareInfo,omitempty"`
+	UserContext       *UserContext `json:"userContext,omitempty" yaml:"userContext,omitempty"`
 }
 
 // DocumentMetadata represents detailed document metadata.
@@ -191,7 +191,7 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 
 	for {
 		var result DocumentList
-		req := h.client.HTTP().R().SetResult(&result)
+		req := h.client.HTTP().R()
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDocumentAPI,
@@ -209,6 +209,10 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 
 		if err := httpclient.CheckResponse(resp); err != nil {
 			return nil, fmt.Errorf("failed to list documents: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list documents: parse response: %w", err)
 		}
 
 		allDocuments = append(allDocuments, result.Documents...)
@@ -256,10 +260,7 @@ func (h *Handler) Get(id string) (*Document, error) {
 
 // GetMetadata retrieves only the metadata for a document
 func (h *Handler) GetMetadata(id string) (*DocumentMetadata, error) {
-	var result DocumentMetadata
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/document/v1/documents/%s/metadata", id))
 
 	if err != nil {
@@ -268,6 +269,11 @@ func (h *Handler) GetMetadata(id string) (*DocumentMetadata, error) {
 
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to get document metadata %q: %w", id, err)
+	}
+
+	var result DocumentMetadata
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get document metadata: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -491,24 +497,6 @@ func extractIDFromResponse(body []byte) string {
 	return ""
 }
 
-// extractNameFromResponse attempts to extract a name from a response body
-func extractNameFromResponse(body []byte) string {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return ""
-	}
-
-	if name, ok := raw["name"].(string); ok && name != "" {
-		return name
-	}
-	if metadata, ok := raw["documentMetadata"].(map[string]interface{}); ok {
-		if name, ok := metadata["name"].(string); ok && name != "" {
-			return name
-		}
-	}
-	return ""
-}
-
 // documentListItemToDocument converts a DocumentMetadata to a Document for
 // table display. AddFields-derived metadata (originAppId, originExtensionId,
 // labels, shareInfo, userContext) is carried through so that JSON/YAML
@@ -544,9 +532,9 @@ func ConvertToDocuments(list *DocumentList) []Document {
 
 // DirectShare represents a direct share for a document
 type DirectShare struct {
-	ID         string `json:"id" table:"ID"`
-	DocumentID string `json:"documentId" table:"DOCUMENT_ID"`
-	Access     string `json:"access" table:"ACCESS"`
+	ID         string `json:"id"`
+	DocumentID string `json:"documentId"`
+	Access     string `json:"access"`
 }
 
 // DirectShareList represents a list of direct shares
@@ -558,8 +546,8 @@ type DirectShareList struct {
 
 // SsoEntity represents an SSO user or group
 type SsoEntity struct {
-	ID   string `json:"id" table:"ID"`
-	Type string `json:"type" table:"TYPE"` // "user" or "group"
+	ID   string `json:"id"`
+	Type string `json:"type"` // "user" or "group"
 }
 
 // CreateDirectShareRequest contains the data needed to create a direct share
@@ -571,11 +559,8 @@ type CreateDirectShareRequest struct {
 
 // CreateDirectShare creates a direct share for a document
 func (h *Handler) CreateDirectShare(req CreateDirectShareRequest) (*DirectShare, error) {
-	var result DirectShare
-
 	resp, err := h.client.HTTP().R().
 		SetBody(req).
-		SetResult(&result).
 		Post("/platform/document/v1/direct-shares")
 
 	if err != nil {
@@ -586,14 +571,17 @@ func (h *Handler) CreateDirectShare(req CreateDirectShareRequest) (*DirectShare,
 		return nil, fmt.Errorf("failed to create direct share for document %q: %w", req.DocumentID, err)
 	}
 
+	var result DirectShare
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("create direct share: parse response: %w", err)
+	}
+
 	return &result, nil
 }
 
 // ListDirectShares lists direct shares for a document
 func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) {
-	var result DirectShareList
-
-	req := h.client.HTTP().R().SetResult(&result)
+	req := h.client.HTTP().R()
 
 	if documentID != "" {
 		req.SetQueryParam("filter", fmt.Sprintf("documentId=='%s'", documentID))
@@ -607,6 +595,11 @@ func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) 
 
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to list direct shares: %w", err)
+	}
+
+	var result DirectShareList
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("list direct shares: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -676,12 +669,12 @@ func (h *Handler) RemoveDirectShareRecipients(shareID string, recipientIDs []str
 // ["read","write"]), not a single string. The create endpoint accepts either form
 // and normalises server-side.
 type EnvironmentShare struct {
-	ID         string   `json:"id" table:"ID"`
-	DocumentID string   `json:"documentId" table:"DOCUMENT_ID"`
-	Access     []string `json:"access" table:"ACCESS"`
+	ID         string   `json:"id"`
+	DocumentID string   `json:"documentId"`
+	Access     []string `json:"access"`
 	// ClaimCount > 0 means at least one user has claimed this share. A created-but-unclaimed
 	// share exists on the server but doesn't flip the document's isPrivate flag.
-	ClaimCount int `json:"claimCount" table:"CLAIM_COUNT"`
+	ClaimCount int `json:"claimCount"`
 }
 
 // HasAccess reports whether the share grants the given access level.
@@ -766,11 +759,8 @@ var ErrVersionConflict = fmt.Errorf("document version conflict")
 
 // CreateEnvironmentShare creates an environment-wide share for a document
 func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*EnvironmentShare, error) {
-	var result EnvironmentShare
-
 	resp, err := h.client.HTTP().R().
 		SetBody(req).
-		SetResult(&result).
 		Post("/platform/document/v1/environment-shares")
 
 	if err != nil {
@@ -783,6 +773,11 @@ func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*En
 			return nil, fmt.Errorf("an environment share already exists for document %q: %w", req.DocumentID, ErrShareConflict)
 		}
 		return nil, fmt.Errorf("failed to create environment share for document %q: %w", req.DocumentID, err)
+	}
+
+	var result EnvironmentShare
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("create environment share: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -802,7 +797,7 @@ func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareLis
 
 	for {
 		var result EnvironmentShareList
-		req := h.client.HTTP().R().SetResult(&result)
+		req := h.client.HTTP().R()
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDocumentAPI,
@@ -819,6 +814,10 @@ func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareLis
 
 		if err := httpclient.CheckResponse(resp); err != nil {
 			return nil, fmt.Errorf("failed to list environment shares: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list environment shares: parse response: %w", err)
 		}
 
 		allShares = append(allShares, result.Shares...)
@@ -963,12 +962,12 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 
 // Snapshot represents a document snapshot (version)
 type Snapshot struct {
-	SnapshotVersion  int             `json:"snapshotVersion" table:"VERSION"`
-	DocumentVersion  int             `json:"documentVersion" table:"DOC_VERSION,wide"`
-	Description      string          `json:"description,omitempty" table:"DESCRIPTION"`
-	ModificationInfo SnapshotModInfo `json:"modificationInfo" table:"-"`
-	CreatedBy        string          `json:"-" table:"CREATED_BY"`
-	CreatedTime      time.Time       `json:"-" table:"CREATED"`
+	SnapshotVersion  int             `json:"snapshotVersion"`
+	DocumentVersion  int             `json:"documentVersion"`
+	Description      string          `json:"description,omitempty"`
+	ModificationInfo SnapshotModInfo `json:"modificationInfo"`
+	CreatedBy        string          `json:"-"`
+	CreatedTime      time.Time       `json:"-"`
 }
 
 // SnapshotModInfo contains creation info for a snapshot
@@ -1026,7 +1025,7 @@ func (h *Handler) ListSnapshots(documentID string) (*SnapshotList, error) {
 
 	for {
 		var result SnapshotList
-		req := h.client.HTTP().R().SetResult(&result)
+		req := h.client.HTTP().R()
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:        httpclient.PaginationDefault,
@@ -1041,6 +1040,10 @@ func (h *Handler) ListSnapshots(documentID string) (*SnapshotList, error) {
 
 		if err := httpclient.CheckResponse(resp); err != nil {
 			return nil, fmt.Errorf("failed to list snapshots for document %q: %w", documentID, err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list snapshots: parse response: %w", err)
 		}
 
 		allSnapshots = append(allSnapshots, result.Snapshots...)
@@ -1060,10 +1063,7 @@ func (h *Handler) ListSnapshots(documentID string) (*SnapshotList, error) {
 
 // GetSnapshot retrieves metadata for a specific snapshot
 func (h *Handler) GetSnapshot(documentID string, version int) (*Snapshot, error) {
-	var result Snapshot
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/document/v1/documents/%s/snapshots/%d", documentID, version))
 
 	if err != nil {
@@ -1074,17 +1074,17 @@ func (h *Handler) GetSnapshot(documentID string, version int) (*Snapshot, error)
 		return nil, fmt.Errorf("failed to get snapshot %d for document %q: %w", version, documentID, err)
 	}
 
+	var result Snapshot
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get snapshot: parse response: %w", err)
+	}
+
 	return &result, nil
 }
 
 // RestoreSnapshot restores a document to a specific snapshot version
 func (h *Handler) RestoreSnapshot(documentID string, version int) (*DocumentMetadata, error) {
-	var result struct {
-		DocumentMetadata DocumentMetadata `json:"documentMetadata"`
-	}
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Post(fmt.Sprintf("/platform/document/v1/documents/%s/snapshots/%d:restore", documentID, version))
 
 	if err != nil {
@@ -1093,6 +1093,13 @@ func (h *Handler) RestoreSnapshot(documentID string, version int) (*DocumentMeta
 
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to restore snapshot %d for document %q: %w", version, documentID, err)
+	}
+
+	var result struct {
+		DocumentMetadata DocumentMetadata `json:"documentMetadata"`
+	}
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("restore snapshot: parse response: %w", err)
 	}
 
 	return &result.DocumentMetadata, nil

@@ -1,6 +1,7 @@
 package slo
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -18,14 +19,14 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // SLO represents a service-level objective
 type SLO struct {
-	ID          string                 `json:"id" table:"ID"`
-	Name        string                 `json:"name" table:"NAME"`
-	Description string                 `json:"description,omitempty" table:"DESCRIPTION,wide"`
-	Version     string                 `json:"version,omitempty" table:"-"`
-	Criteria    []Criteria             `json:"criteria,omitempty" table:"-"`
-	Tags        []string               `json:"tags,omitempty" table:"-"`
-	CustomSli   map[string]interface{} `json:"customSli,omitempty" table:"-"`
-	ExternalID  string                 `json:"externalId,omitempty" table:"-"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	Version     string                 `json:"version,omitempty"`
+	Criteria    []Criteria             `json:"criteria,omitempty"`
+	Tags        []string               `json:"tags,omitempty"`
+	CustomSli   map[string]interface{} `json:"customSli,omitempty"`
+	ExternalID  string                 `json:"externalId,omitempty"`
 }
 
 // Criteria represents SLO criteria
@@ -45,14 +46,14 @@ type SLOList struct {
 
 // Template represents an SLO objective template
 type Template struct {
-	ID              string             `json:"id" table:"ID"`
-	Name            string             `json:"name" table:"NAME"`
-	Description     string             `json:"description,omitempty" table:"DESCRIPTION,wide"`
-	BuiltIn         bool               `json:"builtIn" table:"BUILTIN"`
-	ApplicableScope string             `json:"applicableScope,omitempty" table:"SCOPE,wide"`
-	Indicator       string             `json:"indicator,omitempty" table:"-"`
-	Variables       []TemplateVariable `json:"variables,omitempty" table:"-"`
-	Version         string             `json:"version,omitempty" table:"-"`
+	ID              string             `json:"id"`
+	Name            string             `json:"name"`
+	Description     string             `json:"description,omitempty"`
+	BuiltIn         bool               `json:"builtIn"`
+	ApplicableScope string             `json:"applicableScope,omitempty"`
+	Indicator       string             `json:"indicator,omitempty"`
+	Variables       []TemplateVariable `json:"variables,omitempty"`
+	Version         string             `json:"version,omitempty"`
 }
 
 // TemplateVariable represents a variable in an SLO template
@@ -70,11 +71,11 @@ type TemplateList struct {
 
 // EvaluationResult represents an SLO evaluation result
 type EvaluationResult struct {
-	Criteria    string   `json:"criteria" table:"CRITERIA"`
-	Status      string   `json:"status" table:"STATUS"`
-	Value       *float64 `json:"value,omitempty" table:"VALUE"`
-	ErrorBudget *float64 `json:"errorBudget,omitempty" table:"ERROR_BUDGET"`
-	Message     string   `json:"message,omitempty" table:"MESSAGE,wide"`
+	Criteria    string   `json:"criteria"`
+	Status      string   `json:"status"`
+	Value       *float64 `json:"value,omitempty"`
+	ErrorBudget *float64 `json:"errorBudget,omitempty"`
+	Message     string   `json:"message,omitempty"`
 }
 
 // EvaluationResponse represents the response from SLO evaluation
@@ -93,7 +94,7 @@ func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
 
 	for {
 		var result SLOList
-		req := h.client.HTTP().R().SetResult(&result)
+		req := h.client.HTTP().R()
 
 		params := httpclient.PaginationParams{
 			Style:         httpclient.PaginationDefault,
@@ -112,6 +113,10 @@ func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
 
 		if err := httpclient.CheckResponse(resp); err != nil {
 			return nil, fmt.Errorf("failed to list SLOs: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list SLOs: parse response: %w", err)
 		}
 
 		allSLOs = append(allSLOs, result.SLOs...)
@@ -137,10 +142,7 @@ func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
 
 // Get gets a specific SLO by ID
 func (h *Handler) Get(id string) (*SLO, error) {
-	var result SLO
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/slo/v1/slos/%s", id))
 
 	if err != nil {
@@ -151,16 +153,18 @@ func (h *Handler) Get(id string) (*SLO, error) {
 		return nil, fmt.Errorf("failed to get SLO: %w", err)
 	}
 
+	var result SLO
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get SLO: parse response: %w", err)
+	}
+
 	return &result, nil
 }
 
 // Create creates a new SLO
 func (h *Handler) Create(data []byte) (*SLO, error) {
-	var result SLO
-
 	resp, err := h.client.HTTP().R().
 		SetBody(data).
-		SetResult(&result).
 		SetHeader("Content-Type", "application/json").
 		Post("/platform/slo/v1/slos")
 
@@ -170,6 +174,11 @@ func (h *Handler) Create(data []byte) (*SLO, error) {
 
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to create SLO: %w", err)
+	}
+
+	var result SLO
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("create SLO: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -213,9 +222,7 @@ func (h *Handler) Delete(id string, version string) error {
 
 // ListTemplates lists all SLO templates
 func (h *Handler) ListTemplates(filter string) (*TemplateList, error) {
-	var result TemplateList
-
-	req := h.client.HTTP().R().SetResult(&result)
+	req := h.client.HTTP().R()
 
 	if filter != "" {
 		req.SetQueryParam("filter", filter)
@@ -231,15 +238,17 @@ func (h *Handler) ListTemplates(filter string) (*TemplateList, error) {
 		return nil, fmt.Errorf("failed to list SLO templates: %w", err)
 	}
 
+	var result TemplateList
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("list SLO templates: parse response: %w", err)
+	}
+
 	return &result, nil
 }
 
 // GetTemplate gets a specific SLO template by ID
 func (h *Handler) GetTemplate(id string) (*Template, error) {
-	var result Template
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/slo/v1/objective-templates/%s", id))
 
 	if err != nil {
@@ -248,6 +257,11 @@ func (h *Handler) GetTemplate(id string) (*Template, error) {
 
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to get SLO template: %w", err)
+	}
+
+	var result Template
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get SLO template: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -259,11 +273,8 @@ func (h *Handler) Evaluate(id string) (*EvaluationResponse, error) {
 		"id": id,
 	}
 
-	var result EvaluationResponse
-
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
-		SetResult(&result).
 		SetHeader("Content-Type", "application/json").
 		Post("/platform/slo/v1/slos/evaluation:start")
 
@@ -275,15 +286,17 @@ func (h *Handler) Evaluate(id string) (*EvaluationResponse, error) {
 		return nil, fmt.Errorf("failed to evaluate SLO: %w", err)
 	}
 
+	var result EvaluationResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("evaluate SLO: parse response: %w", err)
+	}
+
 	return &result, nil
 }
 
 // PollEvaluation polls for SLO evaluation results
 func (h *Handler) PollEvaluation(token string, timeoutMs int) (*EvaluationResponse, error) {
-	var result EvaluationResponse
-
 	req := h.client.HTTP().R().
-		SetResult(&result).
 		SetQueryParam("evaluation-token", token)
 
 	if timeoutMs > 0 {
@@ -298,6 +311,11 @@ func (h *Handler) PollEvaluation(token string, timeoutMs int) (*EvaluationRespon
 
 	if err := httpclient.CheckResponse(resp); err != nil {
 		return nil, fmt.Errorf("failed to poll SLO evaluation: %w", err)
+	}
+
+	var result EvaluationResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("poll SLO evaluation: parse response: %w", err)
 	}
 
 	return &result, nil

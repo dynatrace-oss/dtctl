@@ -543,14 +543,14 @@ func TestHandler_ListHistory(t *testing.T) {
 			workflowID: "wf-nonexistent",
 			statusCode: http.StatusNotFound,
 			wantErr:    true,
-			errMsg:     "API error (404): 404 Not Found",
+			errMsg:     "list workflow history: API error (404): 404 Not Found",
 		},
 		{
 			name:       "access denied (403)",
 			workflowID: "wf-forbidden",
 			statusCode: http.StatusForbidden,
 			wantErr:    true,
-			errMsg:     "API error (403): 403 Forbidden",
+			errMsg:     "list workflow history: API error (403): 403 Forbidden",
 		},
 		{
 			name:       "server error (500)",
@@ -633,7 +633,7 @@ func TestHandler_GetHistoryRecord(t *testing.T) {
 			version:    1,
 			statusCode: http.StatusNotFound,
 			wantErr:    true,
-			errMsg:     "API error (404): 404 Not Found",
+			errMsg:     "get workflow history record: API error (404): 404 Not Found",
 		},
 		{
 			name:       "access denied (403)",
@@ -641,7 +641,7 @@ func TestHandler_GetHistoryRecord(t *testing.T) {
 			version:    1,
 			statusCode: http.StatusForbidden,
 			wantErr:    true,
-			errMsg:     "API error (403): 403 Forbidden",
+			errMsg:     "get workflow history record: API error (403): 403 Forbidden",
 		},
 		{
 			name:       "server error (500)",
@@ -728,7 +728,7 @@ func TestHandler_RestoreHistory(t *testing.T) {
 			version:    1,
 			statusCode: http.StatusNotFound,
 			wantErr:    true,
-			errMsg:     "API error (404): 404 Not Found",
+			errMsg:     "restore workflow: API error (404): 404 Not Found",
 		},
 		{
 			name:       "access denied (403)",
@@ -736,7 +736,7 @@ func TestHandler_RestoreHistory(t *testing.T) {
 			version:    1,
 			statusCode: http.StatusForbidden,
 			wantErr:    true,
-			errMsg:     "API error (403): 403 Forbidden",
+			errMsg:     "restore workflow: API error (403): 403 Forbidden",
 		},
 		{
 			name:       "server error (500)",

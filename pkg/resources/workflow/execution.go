@@ -3,19 +3,89 @@ package workflow
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkworkflow "github.com/dynatrace-oss/dtctl/sdk/api/workflow"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Re-export SDK types so existing CLI code continues to compile unchanged.
-type (
-	Execution        = sdkworkflow.Execution
-	ExecutionList    = sdkworkflow.ExecutionList
-	TaskExecution    = sdkworkflow.TaskExecution
-	TaskExecutionMap = sdkworkflow.TaskExecutionMap
-)
+// Re-export SDK types that have no table tags.
+type TaskExecutionMap = sdkworkflow.TaskExecutionMap
+
+// Execution represents a workflow execution (CLI version with table tags).
+type Execution struct {
+	ID          string     `json:"id" table:"ID"`
+	Workflow    string     `json:"workflow" table:"WORKFLOW"`
+	Title       string     `json:"title" table:"TITLE"`
+	State       string     `json:"state" table:"STATE"`
+	StateInfo   *string    `json:"stateInfo,omitempty" table:"-"`
+	StartedAt   time.Time  `json:"startedAt" table:"STARTED"`
+	EndedAt     *time.Time `json:"endedAt,omitempty" table:"-"`
+	Runtime     int        `json:"runtime,omitempty" table:"RUNTIME"`
+	Trigger     *string    `json:"trigger,omitempty" table:"-"`
+	TriggerType string     `json:"triggerType,omitempty" table:"TRIGGER"`
+	User        *string    `json:"user,omitempty" table:"-"`
+	Actor       string     `json:"actor,omitempty" table:"-"`
+	Input       any        `json:"input,omitempty" table:"-"`
+	Params      any        `json:"params,omitempty" table:"-"`
+	Result      any        `json:"result,omitempty" table:"-"`
+}
+
+// ExecutionList represents a list of executions.
+type ExecutionList struct {
+	Count   int         `json:"count"`
+	Results []Execution `json:"results"`
+}
+
+// TaskExecution represents a task execution within a workflow execution (CLI version with table tags).
+type TaskExecution struct {
+	ID        string     `json:"id" table:"ID"`
+	Name      string     `json:"name" table:"NAME"`
+	State     string     `json:"state" table:"STATE"`
+	StartedAt *time.Time `json:"startedAt,omitempty" table:"STARTED"`
+	EndedAt   *time.Time `json:"endedAt,omitempty" table:"-"`
+	Runtime   int        `json:"runtime,omitempty" table:"RUNTIME"`
+	StateInfo *string    `json:"stateInfo,omitempty" table:"-"`
+	Input     any        `json:"input,omitempty" table:"-"`
+	Result    any        `json:"result,omitempty" table:"-"`
+}
+
+// fromSDKExecution converts an SDK Execution to a CLI Execution.
+func fromSDKExecution(s *sdkworkflow.Execution) Execution {
+	return Execution{
+		ID:          s.ID,
+		Workflow:    s.Workflow,
+		Title:       s.Title,
+		State:       s.State,
+		StateInfo:   s.StateInfo,
+		StartedAt:   s.StartedAt,
+		EndedAt:     s.EndedAt,
+		Runtime:     s.Runtime,
+		Trigger:     s.Trigger,
+		TriggerType: s.TriggerType,
+		User:        s.User,
+		Actor:       s.Actor,
+		Input:       s.Input,
+		Params:      s.Params,
+		Result:      s.Result,
+	}
+}
+
+// fromSDKTaskExecution converts an SDK TaskExecution to a CLI TaskExecution.
+func fromSDKTaskExecution(s *sdkworkflow.TaskExecution) TaskExecution {
+	return TaskExecution{
+		ID:        s.ID,
+		Name:      s.Name,
+		State:     s.State,
+		StartedAt: s.StartedAt,
+		EndedAt:   s.EndedAt,
+		Runtime:   s.Runtime,
+		StateInfo: s.StateInfo,
+		Input:     s.Input,
+		Result:    s.Result,
+	}
+}
 
 // ExecutionHandler handles execution resources.
 // It delegates to the SDK handler and adds CLI-specific convenience methods.
@@ -32,12 +102,25 @@ func NewExecutionHandler(c *client.Client) *ExecutionHandler {
 
 // List retrieves all executions with optional workflow filter
 func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
-	return h.sdk.List(workflowID)
+	sdkResult, err := h.sdk.List(workflowID)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Execution, len(sdkResult.Results))
+	for i := range sdkResult.Results {
+		results[i] = fromSDKExecution(&sdkResult.Results[i])
+	}
+	return &ExecutionList{Count: sdkResult.Count, Results: results}, nil
 }
 
 // Get retrieves a specific execution
 func (h *ExecutionHandler) Get(id string) (*Execution, error) {
-	return h.sdk.Get(id)
+	sdkResult, err := h.sdk.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	e := fromSDKExecution(sdkResult)
+	return &e, nil
 }
 
 // Cancel cancels an active execution
@@ -47,7 +130,15 @@ func (h *ExecutionHandler) Cancel(id string) error {
 
 // ListTasks retrieves all task executions for a workflow execution
 func (h *ExecutionHandler) ListTasks(executionID string) ([]TaskExecution, error) {
-	return h.sdk.ListTasks(executionID)
+	sdkResult, err := h.sdk.ListTasks(executionID)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]TaskExecution, len(sdkResult))
+	for i := range sdkResult {
+		tasks[i] = fromSDKTaskExecution(&sdkResult[i])
+	}
+	return tasks, nil
 }
 
 // GetTaskLog retrieves the log output of a specific task execution
@@ -68,7 +159,7 @@ func (h *ExecutionHandler) GetExecutionLog(executionID string) (string, error) {
 // GetFullExecutionLog retrieves logs for all tasks in an execution, formatted with headers
 func (h *ExecutionHandler) GetFullExecutionLog(executionID string) (string, error) {
 	// Get all tasks
-	tasks, err := h.sdk.ListTasks(executionID)
+	tasks, err := h.ListTasks(executionID)
 	if err != nil {
 		return "", err
 	}

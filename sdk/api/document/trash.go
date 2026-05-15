@@ -12,16 +12,16 @@ import (
 
 // TrashedDocument represents a document in the trash (from GET /trash/documents/{id})
 type TrashedDocument struct {
-	ID               string           `json:"id" yaml:"id" table:"ID"`
-	Name             string           `json:"name" yaml:"name" table:"NAME"`
-	Type             string           `json:"type" yaml:"type" table:"TYPE"`
-	Version          int              `json:"version" yaml:"version" table:"VERSION,wide"`
-	Owner            string           `json:"owner" yaml:"owner" table:"OWNER,wide"`
-	DeletionInfo     DeletionInfo     `json:"deletionInfo" yaml:"deletionInfo" table:"-"`
-	ModificationInfo ModificationInfo `json:"modificationInfo,omitempty" yaml:"modificationInfo,omitempty" table:"-"`
+	ID               string           `json:"id" yaml:"id"`
+	Name             string           `json:"name" yaml:"name"`
+	Type             string           `json:"type" yaml:"type"`
+	Version          int              `json:"version" yaml:"version"`
+	Owner            string           `json:"owner" yaml:"owner"`
+	DeletionInfo     DeletionInfo     `json:"deletionInfo" yaml:"deletionInfo"`
+	ModificationInfo ModificationInfo `json:"modificationInfo,omitempty" yaml:"modificationInfo,omitempty"`
 	// Computed fields for display
-	DeletedBy string    `json:"-" yaml:"-" table:"DELETED BY"`
-	DeletedAt time.Time `json:"-" yaml:"-" table:"DELETED AT"`
+	DeletedBy string    `json:"-" yaml:"-"`
+	DeletedAt time.Time `json:"-" yaml:"-"`
 }
 
 // UnmarshalJSON custom unmarshaler for TrashedDocument to handle version as string or int.
@@ -48,13 +48,13 @@ func (t *TrashedDocument) UnmarshalJSON(data []byte) error {
 
 // TrashDocumentListEntry represents a document in the trash list (from GET /trash/documents)
 type TrashDocumentListEntry struct {
-	ID           string       `json:"id" yaml:"id" table:"ID"`
-	Name         string       `json:"name" yaml:"name" table:"NAME"`
-	Type         string       `json:"type" yaml:"type" table:"TYPE"`
-	DeletionInfo DeletionInfo `json:"deletionInfo" yaml:"deletionInfo" table:"-"`
+	ID           string       `json:"id" yaml:"id"`
+	Name         string       `json:"name" yaml:"name"`
+	Type         string       `json:"type" yaml:"type"`
+	DeletionInfo DeletionInfo `json:"deletionInfo" yaml:"deletionInfo"`
 	// Computed fields for display
-	DeletedBy string    `json:"-" yaml:"-" table:"DELETED BY"`
-	DeletedAt time.Time `json:"-" yaml:"-" table:"DELETED AT"`
+	DeletedBy string    `json:"-" yaml:"-"`
+	DeletedAt time.Time `json:"-" yaml:"-"`
 }
 
 // DeletionInfo contains deletion metadata

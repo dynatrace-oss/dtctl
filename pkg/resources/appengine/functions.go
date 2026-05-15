@@ -10,17 +10,40 @@ import (
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Re-export SDK types so existing CLI code continues to compile unchanged.
+// Re-export SDK types that have no table tags.
 type (
 	FunctionInvokeRequest    = sdkae.FunctionInvokeRequest
 	FunctionInvokeResponse   = sdkae.FunctionInvokeResponse
-	DeferredExecutionRequest  = sdkae.DeferredExecutionRequest
-	DeferredExecutionResponse = sdkae.DeferredExecutionResponse
+	DeferredExecutionRequest = sdkae.DeferredExecutionRequest
 	FunctionExecutorRequest  = sdkae.FunctionExecutorRequest
 	FunctionExecutorResponse = sdkae.FunctionExecutorResponse
-	SDKVersion               = sdkae.SDKVersion
-	SDKVersionsResponse      = sdkae.SDKVersionsResponse
 )
+
+// DeferredExecutionResponse represents a deferred execution response (CLI version with table tags).
+type DeferredExecutionResponse struct {
+	ID string `json:"id" table:"ID"`
+}
+
+// SDKVersion represents an SDK version (CLI version with table tags).
+type SDKVersion struct {
+	Version string `json:"version" table:"VERSION"`
+	Default bool   `json:"default" table:"DEFAULT"`
+}
+
+// SDKVersionsResponse represents SDK versions response.
+type SDKVersionsResponse struct {
+	Versions []SDKVersion `json:"versions"`
+}
+
+// fromSDKDeferredExecutionResponse converts an SDK DeferredExecutionResponse to CLI.
+func fromSDKDeferredExecutionResponse(s *sdkae.DeferredExecutionResponse) *DeferredExecutionResponse {
+	return &DeferredExecutionResponse{ID: s.ID}
+}
+
+// fromSDKVersion converts an SDK SDKVersion to CLI.
+func fromSDKVersion(s *sdkae.SDKVersion) SDKVersion {
+	return SDKVersion{Version: s.Version, Default: s.Default}
+}
 
 // ReadFileOrStdin reads content from a file or stdin.
 // This is a CLI-layer helper and intentionally not part of the SDK.
@@ -66,7 +89,11 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 
 // DeferExecution defers execution of a resumable function
 func (h *FunctionHandler) DeferExecution(req *DeferredExecutionRequest) (*DeferredExecutionResponse, error) {
-	return h.sdk.DeferExecution(req)
+	sdkResult, err := h.sdk.DeferExecution(req)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDeferredExecutionResponse(sdkResult), nil
 }
 
 // ExecuteCode executes ad-hoc JavaScript code using the function executor
@@ -76,5 +103,13 @@ func (h *FunctionHandler) ExecuteCode(sourceCode, payload string) (*FunctionExec
 
 // GetSDKVersions lists available SDK versions
 func (h *FunctionHandler) GetSDKVersions() (*SDKVersionsResponse, error) {
-	return h.sdk.GetSDKVersions()
+	sdkResult, err := h.sdk.GetSDKVersions()
+	if err != nil {
+		return nil, err
+	}
+	versions := make([]SDKVersion, len(sdkResult.Versions))
+	for i := range sdkResult.Versions {
+		versions[i] = fromSDKVersion(&sdkResult.Versions[i])
+	}
+	return &SDKVersionsResponse{Versions: versions}, nil
 }

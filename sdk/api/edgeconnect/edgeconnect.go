@@ -19,15 +19,15 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // EdgeConnect represents an EdgeConnect configuration.
 type EdgeConnect struct {
-	ID                         string            `json:"id,omitempty" table:"ID"`
-	Name                       string            `json:"name" table:"NAME"`
-	HostPatterns               []string          `json:"hostPatterns,omitempty" table:"-"`
-	OAuthClientID              string            `json:"oauthClientId,omitempty" table:"-"`
-	OAuthClientSecret          string            `json:"oauthClientSecret,omitempty" table:"-"`
-	OAuthClientResource        string            `json:"oauthClientResource,omitempty" table:"-"`
-	ModificationInfo           *ModificationInfo `json:"modificationInfo,omitempty" table:"-"`
-	ManagedByDynatraceOperator bool              `json:"managedByDynatraceOperator,omitempty" table:"MANAGED,wide"`
-	Metadata                   *Metadata         `json:"metadata,omitempty" table:"-"`
+	ID                         string            `json:"id,omitempty"`
+	Name                       string            `json:"name"`
+	HostPatterns               []string          `json:"hostPatterns,omitempty"`
+	OAuthClientID              string            `json:"oauthClientId,omitempty"`
+	OAuthClientSecret          string            `json:"oauthClientSecret,omitempty"`
+	OAuthClientResource        string            `json:"oauthClientResource,omitempty"`
+	ModificationInfo           *ModificationInfo `json:"modificationInfo,omitempty"`
+	ManagedByDynatraceOperator bool              `json:"managedByDynatraceOperator,omitempty"`
+	Metadata                   *Metadata         `json:"metadata,omitempty"`
 }
 
 // ModificationInfo contains modification timestamps.

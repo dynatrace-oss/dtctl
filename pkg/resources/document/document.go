@@ -1,34 +1,214 @@
 package document
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkdocument "github.com/dynatrace-oss/dtctl/sdk/api/document"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Re-export SDK types so existing CLI code continues to compile unchanged.
+// Document is the CLI read model for a document resource.
+// It mirrors the SDK type but adds table tags for CLI table output.
+type Document struct {
+	ID          string    `json:"id" table:"ID"`
+	Name        string    `json:"name" table:"NAME"`
+	Type        string    `json:"type" table:"TYPE"`
+	Owner       string    `json:"owner" table:"OWNER"`
+	IsPrivate   bool      `json:"isPrivate" table:"PRIVATE"`
+	Created     time.Time `json:"-" table:"CREATED"`
+	Description string    `json:"description,omitempty" table:"DESCRIPTION,wide"`
+	Version     int       `json:"version" table:"VERSION,wide"`
+	Modified    time.Time `json:"-" table:"MODIFIED,wide"`
+	Content     []byte    `json:"-" table:"-"`
+
+	OriginAppID       string                `json:"originAppId,omitempty" yaml:"originAppId,omitempty" table:"-"`
+	OriginExtensionID string                `json:"originExtensionId,omitempty" yaml:"originExtensionId,omitempty" table:"-"`
+	Labels            []string              `json:"labels,omitempty" yaml:"labels,omitempty" table:"-"`
+	ShareInfo         *sdkdocument.ShareInfo   `json:"shareInfo,omitempty" yaml:"shareInfo,omitempty" table:"-"`
+	UserContext       *sdkdocument.UserContext `json:"userContext,omitempty" yaml:"userContext,omitempty" table:"-"`
+}
+
+// UnmarshalJSON delegates to the SDK Document unmarshaler to handle flexible version fields.
+func (d *Document) UnmarshalJSON(data []byte) error {
+	var sdk sdkdocument.Document
+	if err := json.Unmarshal(data, &sdk); err != nil {
+		return err
+	}
+	*d = *fromSDKDocument(&sdk)
+	return nil
+}
+
+// fromSDKDocument converts an SDK Document to the CLI Document.
+func fromSDKDocument(d *sdkdocument.Document) *Document {
+	return &Document{
+		ID:                d.ID,
+		Name:              d.Name,
+		Type:              d.Type,
+		Owner:             d.Owner,
+		IsPrivate:         d.IsPrivate,
+		Created:           d.Created,
+		Description:       d.Description,
+		Version:           d.Version,
+		Modified:          d.Modified,
+		Content:           d.Content,
+		OriginAppID:       d.OriginAppID,
+		OriginExtensionID: d.OriginExtensionID,
+		Labels:            d.Labels,
+		ShareInfo:         d.ShareInfo,
+		UserContext:       d.UserContext,
+	}
+}
+
+// DirectShare is the CLI read model for a direct share.
+type DirectShare struct {
+	ID         string `json:"id" table:"ID"`
+	DocumentID string `json:"documentId" table:"DOCUMENT_ID"`
+	Access     string `json:"access" table:"ACCESS"`
+}
+
+// fromSDKDirectShare converts an SDK DirectShare to the CLI DirectShare.
+func fromSDKDirectShare(d *sdkdocument.DirectShare) *DirectShare {
+	return &DirectShare{
+		ID:         d.ID,
+		DocumentID: d.DocumentID,
+		Access:     d.Access,
+	}
+}
+
+// DirectShareList represents a list of direct shares.
+type DirectShareList struct {
+	Shares      []DirectShare `json:"directShares"`
+	TotalCount  int           `json:"totalCount"`
+	NextPageKey string        `json:"nextPageKey,omitempty"`
+}
+
+// fromSDKDirectShareList converts an SDK DirectShareList to the CLI DirectShareList.
+func fromSDKDirectShareList(l *sdkdocument.DirectShareList) *DirectShareList {
+	shares := make([]DirectShare, len(l.Shares))
+	for i, s := range l.Shares {
+		shares[i] = *fromSDKDirectShare(&s)
+	}
+	return &DirectShareList{
+		Shares:      shares,
+		TotalCount:  l.TotalCount,
+		NextPageKey: l.NextPageKey,
+	}
+}
+
+// EnvironmentShare is the CLI read model for an environment share.
+type EnvironmentShare struct {
+	ID         string   `json:"id" table:"ID"`
+	DocumentID string   `json:"documentId" table:"DOCUMENT_ID"`
+	Access     []string `json:"access" table:"ACCESS"`
+	ClaimCount int      `json:"claimCount" table:"CLAIM_COUNT"`
+}
+
+// HasAccess reports whether the share grants the given access level.
+// Delegates to the SDK EnvironmentShare.HasAccess method.
+func (s EnvironmentShare) HasAccess(level string) bool {
+	sdkShare := sdkdocument.EnvironmentShare{Access: s.Access}
+	return sdkShare.HasAccess(level)
+}
+
+// fromSDKEnvironmentShare converts an SDK EnvironmentShare to the CLI EnvironmentShare.
+func fromSDKEnvironmentShare(s *sdkdocument.EnvironmentShare) *EnvironmentShare {
+	return &EnvironmentShare{
+		ID:         s.ID,
+		DocumentID: s.DocumentID,
+		Access:     s.Access,
+		ClaimCount: s.ClaimCount,
+	}
+}
+
+// EnvironmentShareList represents a list of environment shares.
+type EnvironmentShareList struct {
+	Shares      []EnvironmentShare `json:"environment-shares"`
+	TotalCount  int                `json:"totalCount"`
+	NextPageKey string             `json:"nextPageKey,omitempty"`
+}
+
+// fromSDKEnvironmentShareList converts an SDK EnvironmentShareList to the CLI EnvironmentShareList.
+func fromSDKEnvironmentShareList(l *sdkdocument.EnvironmentShareList) *EnvironmentShareList {
+	shares := make([]EnvironmentShare, len(l.Shares))
+	for i, s := range l.Shares {
+		shares[i] = *fromSDKEnvironmentShare(&s)
+	}
+	return &EnvironmentShareList{
+		Shares:      shares,
+		TotalCount:  l.TotalCount,
+		NextPageKey: l.NextPageKey,
+	}
+}
+
+// Snapshot is the CLI read model for a document snapshot.
+type Snapshot struct {
+	SnapshotVersion  int                        `json:"snapshotVersion" table:"VERSION"`
+	DocumentVersion  int                        `json:"documentVersion" table:"DOC_VERSION,wide"`
+	Description      string                     `json:"description,omitempty" table:"DESCRIPTION"`
+	ModificationInfo sdkdocument.SnapshotModInfo `json:"modificationInfo" table:"-"`
+	CreatedBy        string                     `json:"-" table:"CREATED_BY"`
+	CreatedTime      time.Time                  `json:"-" table:"CREATED"`
+}
+
+// UnmarshalJSON delegates to the SDK Snapshot unmarshaler to handle flexible int/string versions.
+func (s *Snapshot) UnmarshalJSON(data []byte) error {
+	var sdk sdkdocument.Snapshot
+	if err := json.Unmarshal(data, &sdk); err != nil {
+		return err
+	}
+	*s = fromSDKSnapshot(&sdk)
+	return nil
+}
+
+// fromSDKSnapshot converts an SDK Snapshot to the CLI Snapshot.
+func fromSDKSnapshot(s *sdkdocument.Snapshot) Snapshot {
+	return Snapshot{
+		SnapshotVersion:  s.SnapshotVersion,
+		DocumentVersion:  s.DocumentVersion,
+		Description:      s.Description,
+		ModificationInfo: s.ModificationInfo,
+		CreatedBy:        s.CreatedBy,
+		CreatedTime:      s.CreatedTime,
+	}
+}
+
+// SnapshotList represents a list of snapshots.
+type SnapshotList struct {
+	Snapshots   []Snapshot `json:"snapshots"`
+	TotalCount  int        `json:"totalCount"`
+	NextPageKey string     `json:"nextPageKey,omitempty"`
+}
+
+// fromSDKSnapshotList converts an SDK SnapshotList to the CLI SnapshotList.
+func fromSDKSnapshotList(l *sdkdocument.SnapshotList) *SnapshotList {
+	snapshots := make([]Snapshot, len(l.Snapshots))
+	for i, s := range l.Snapshots {
+		snapshots[i] = fromSDKSnapshot(&s)
+	}
+	return &SnapshotList{
+		Snapshots:   snapshots,
+		TotalCount:  l.TotalCount,
+		NextPageKey: l.NextPageKey,
+	}
+}
+
+// Re-export SDK types that don't have table tags (pure data types).
 type (
-	Document                      = sdkdocument.Document
 	DocumentMetadata              = sdkdocument.DocumentMetadata
 	DocumentList                  = sdkdocument.DocumentList
 	DocumentFilters               = sdkdocument.DocumentFilters
 	ModificationInfo              = sdkdocument.ModificationInfo
 	ShareInfo                     = sdkdocument.ShareInfo
-	UserContext                    = sdkdocument.UserContext
+	UserContext                   = sdkdocument.UserContext
 	CreateRequest                 = sdkdocument.CreateRequest
-	DirectShare                   = sdkdocument.DirectShare
-	DirectShareList               = sdkdocument.DirectShareList
 	SsoEntity                     = sdkdocument.SsoEntity
 	CreateDirectShareRequest      = sdkdocument.CreateDirectShareRequest
-	EnvironmentShare              = sdkdocument.EnvironmentShare
-	EnvironmentShareList          = sdkdocument.EnvironmentShareList
 	CreateEnvironmentShareRequest = sdkdocument.CreateEnvironmentShareRequest
-	Snapshot                      = sdkdocument.Snapshot
 	SnapshotModInfo               = sdkdocument.SnapshotModInfo
-	SnapshotList                  = sdkdocument.SnapshotList
 )
 
 // Re-export SDK sentinel errors.
@@ -39,9 +219,18 @@ var (
 
 // Re-export SDK functions.
 var (
-	ConvertToDocuments     = sdkdocument.ConvertToDocuments
 	ParseMultipartDocument = sdkdocument.ParseMultipartDocument
 )
+
+// ConvertToDocuments converts a list of DocumentMetadata to a list of Documents for table output.
+func ConvertToDocuments(list *DocumentList) []Document {
+	sdkDocs := sdkdocument.ConvertToDocuments(list)
+	docs := make([]Document, len(sdkDocs))
+	for i := range sdkDocs {
+		docs[i] = *fromSDKDocument(&sdkDocs[i])
+	}
+	return docs
+}
 
 // Handler handles document resources (dashboards, notebooks, etc.)
 // It delegates to the SDK handler and adds CLI-specific convenience methods.
@@ -63,7 +252,11 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 
 // Get retrieves a specific document by ID.
 func (h *Handler) Get(id string) (*Document, error) {
-	return h.sdk.Get(id)
+	d, err := h.sdk.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDocument(d), nil
 }
 
 // GetMetadata retrieves only the metadata for a document.
@@ -87,27 +280,47 @@ func (h *Handler) Delete(id string, version int) error {
 
 // Create creates a new document.
 func (h *Handler) Create(req CreateRequest) (*Document, error) {
-	return h.sdk.Create(req)
+	d, err := h.sdk.Create(req)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDocument(d), nil
 }
 
 // Update updates a document's content.
 func (h *Handler) Update(id string, version int, content []byte, contentType string) (*Document, error) {
-	return h.sdk.Update(id, version, content, contentType)
+	d, err := h.sdk.Update(id, version, content, contentType)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDocument(d), nil
 }
 
 // UpdateWithMetadata updates a document's content and optionally its metadata (name, description).
 func (h *Handler) UpdateWithMetadata(id string, version int, content []byte, contentType string, name string, description string) (*Document, error) {
-	return h.sdk.UpdateWithMetadata(id, version, content, contentType, name, description)
+	d, err := h.sdk.UpdateWithMetadata(id, version, content, contentType, name, description)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDocument(d), nil
 }
 
 // CreateDirectShare creates a direct share for a document.
 func (h *Handler) CreateDirectShare(req CreateDirectShareRequest) (*DirectShare, error) {
-	return h.sdk.CreateDirectShare(req)
+	d, err := h.sdk.CreateDirectShare(req)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDirectShare(d), nil
 }
 
 // ListDirectShares lists direct shares for a document.
 func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) {
-	return h.sdk.ListDirectShares(documentID)
+	l, err := h.sdk.ListDirectShares(documentID)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDirectShareList(l), nil
 }
 
 // DeleteDirectShare deletes a direct share.
@@ -127,12 +340,20 @@ func (h *Handler) RemoveDirectShareRecipients(shareID string, recipientIDs []str
 
 // CreateEnvironmentShare creates an environment-wide share for a document.
 func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*EnvironmentShare, error) {
-	return h.sdk.CreateEnvironmentShare(req)
+	s, err := h.sdk.CreateEnvironmentShare(req)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKEnvironmentShare(s), nil
 }
 
 // ListEnvironmentShares lists environment shares for a document (or all if documentID is empty).
 func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareList, error) {
-	return h.sdk.ListEnvironmentShares(documentID)
+	l, err := h.sdk.ListEnvironmentShares(documentID)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKEnvironmentShareList(l), nil
 }
 
 // DeleteEnvironmentShare deletes an environment share.
@@ -147,12 +368,21 @@ func (h *Handler) SetDocumentPublic(id string, version int) error {
 
 // ListSnapshots retrieves all snapshots for a document.
 func (h *Handler) ListSnapshots(documentID string) (*SnapshotList, error) {
-	return h.sdk.ListSnapshots(documentID)
+	l, err := h.sdk.ListSnapshots(documentID)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKSnapshotList(l), nil
 }
 
 // GetSnapshot retrieves metadata for a specific snapshot.
 func (h *Handler) GetSnapshot(documentID string, version int) (*Snapshot, error) {
-	return h.sdk.GetSnapshot(documentID, version)
+	s, err := h.sdk.GetSnapshot(documentID, version)
+	if err != nil {
+		return nil, err
+	}
+	snap := fromSDKSnapshot(s)
+	return &snap, nil
 }
 
 // RestoreSnapshot restores a document to a specific snapshot version.
@@ -167,7 +397,11 @@ func (h *Handler) DeleteSnapshot(documentID string, version int) error {
 
 // GetAtVersion retrieves a document's content at a specific snapshot version.
 func (h *Handler) GetAtVersion(id string, version int) (*Document, error) {
-	return h.sdk.GetAtVersion(id, version)
+	d, err := h.sdk.GetAtVersion(id, version)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDocument(d), nil
 }
 
 // EnsureEnvironmentShare idempotently ensures the document has an environment share at the given
@@ -187,7 +421,7 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 	}
 	if meta.IsPrivate {
 		if err := h.sdk.SetDocumentPublic(documentID, meta.Version); err != nil {
-			if !errors.Is(err, ErrVersionConflict) {
+			if !errors.Is(err, sdkdocument.ErrVersionConflict) {
 				return share, err
 			}
 			// Retry once: re-fetch metadata and try again.
@@ -212,9 +446,9 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 		return nil, err
 	}
 
-	share, toDelete := findOrCollectShares(existing.Shares, access)
+	share, toDelete := findOrCollectSDKShares(existing.Shares, access)
 	if share != nil {
-		return share, nil
+		return fromSDKEnvironmentShare(share), nil
 	}
 
 	// Delete non-matching shares and create a new one at the requested access level.
@@ -229,11 +463,11 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 		Access:     access,
 	})
 	if err == nil {
-		return created, nil
+		return fromSDKEnvironmentShare(created), nil
 	}
 
 	// Handle race condition: another process may have created the share
-	if !errors.Is(err, ErrShareConflict) {
+	if !errors.Is(err, sdkdocument.ErrShareConflict) {
 		return nil, err
 	}
 
@@ -242,9 +476,9 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 		return nil, fmt.Errorf("create returned conflict and re-list failed: %w", reErr)
 	}
 
-	share, toDelete = findOrCollectShares(reListed.Shares, access)
+	share, toDelete = findOrCollectSDKShares(reListed.Shares, access)
 	if share != nil {
-		return share, nil
+		return fromSDKEnvironmentShare(share), nil
 	}
 
 	for _, id := range toDelete {
@@ -252,16 +486,20 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 			return nil, fmt.Errorf("failed to replace racing environment share: %w", err)
 		}
 	}
-	return h.sdk.CreateEnvironmentShare(CreateEnvironmentShareRequest{
+	final, err := h.sdk.CreateEnvironmentShare(CreateEnvironmentShareRequest{
 		DocumentID: documentID,
 		Access:     access,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKEnvironmentShare(final), nil
 }
 
-// findOrCollectShares scans shares for an exact access match. Returns the match (if any)
+// findOrCollectSDKShares scans SDK shares for an exact access match. Returns the match (if any)
 // and a list of non-matching share IDs suitable for deletion.
-func findOrCollectShares(shares []EnvironmentShare, access string) (*EnvironmentShare, []string) {
-	var match *EnvironmentShare
+func findOrCollectSDKShares(shares []sdkdocument.EnvironmentShare, access string) (*sdkdocument.EnvironmentShare, []string) {
+	var match *sdkdocument.EnvironmentShare
 	var toDelete []string
 	for i := range shares {
 		s := shares[i]

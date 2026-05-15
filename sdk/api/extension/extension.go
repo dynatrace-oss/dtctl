@@ -25,8 +25,8 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // Extension represents an Extensions 2.0 extension
 type Extension struct {
-	ExtensionName string `json:"extensionName" table:"NAME"`
-	Version       string `json:"version,omitempty" table:"VERSION"`
+	ExtensionName string `json:"extensionName"`
+	Version       string `json:"version,omitempty"`
 }
 
 // ExtensionList represents a paginated list of extensions
@@ -38,9 +38,9 @@ type ExtensionList struct {
 
 // ExtensionVersion represents a specific version of an extension
 type ExtensionVersion struct {
-	Version       string `json:"version" table:"VERSION"`
-	ExtensionName string `json:"extensionName" table:"NAME"`
-	Active        bool   `json:"active,omitempty" table:"ACTIVE"`
+	Version       string `json:"version"`
+	ExtensionName string `json:"extensionName"`
+	Active        bool   `json:"active,omitempty"`
 }
 
 // ExtensionVersionList represents a list of extension versions
@@ -88,11 +88,11 @@ type ExtensionVariable struct {
 
 // MonitoringConfiguration represents an extension monitoring configuration instance
 type MonitoringConfiguration struct {
-	Type          string          `json:"type,omitempty" yaml:"type,omitempty" table:"-"`
-	ExtensionName string          `json:"extensionName,omitempty" table:"EXTENSION"`
-	ObjectID      string          `json:"objectId" table:"ID"`
-	Scope         string          `json:"scope,omitempty" table:"SCOPE"`
-	Value         json.RawMessage `json:"value,omitempty" table:"-"`
+	Type          string          `json:"type,omitempty" yaml:"type,omitempty"`
+	ExtensionName string          `json:"extensionName,omitempty"`
+	ObjectID      string          `json:"objectId"`
+	Scope         string          `json:"scope,omitempty"`
+	Value         json.RawMessage `json:"value,omitempty"`
 }
 
 // MarshalYAML implements yaml.Marshaler to properly serialize json.RawMessage Value
@@ -147,9 +147,9 @@ type ActiveGateEntry struct {
 
 // ActiveGateGroupItem represents one active gate group available for an extension version
 type ActiveGateGroupItem struct {
-	GroupName            string            `json:"groupName" table:"GROUP"`
-	AvailableActiveGates int               `json:"availableActiveGates" table:"AVAILABLE"`
-	ActiveGates          []ActiveGateEntry `json:"activeGates,omitempty" table:"-"`
+	GroupName            string            `json:"groupName"`
+	AvailableActiveGates int               `json:"availableActiveGates"`
+	ActiveGates          []ActiveGateEntry `json:"activeGates,omitempty"`
 }
 
 // ActiveGateGroupList represents the list of active gate groups for an extension version
@@ -173,7 +173,7 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 
 	for {
 		var result ExtensionList
-		req := h.client.HTTP().R().SetResult(&result)
+		req := h.client.HTTP().R()
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDefault,
@@ -190,6 +190,10 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 		}
 		if err := httpclient.CheckResponse(resp); err != nil {
 			return nil, fmt.Errorf("failed to list extensions: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list extensions: parse response: %w", err)
 		}
 
 		allExtensions = append(allExtensions, result.Items...)
@@ -230,7 +234,7 @@ func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
 
 	for {
 		var result ExtensionVersionList
-		req := h.client.HTTP().R().SetResult(&result)
+		req := h.client.HTTP().R()
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:        httpclient.PaginationDefault,
@@ -255,6 +259,10 @@ func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
 			return nil, fmt.Errorf("failed to get extension: %w", err)
 		}
 
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("get extension: parse response: %w", err)
+		}
+
 		allVersions = append(allVersions, result.Items...)
 		totalCount = result.TotalCount
 
@@ -272,9 +280,7 @@ func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
 
 // GetVersion gets details for a specific extension version
 func (h *Handler) GetVersion(extensionName, version string) (*ExtensionDetails, error) {
-	var result ExtensionDetails
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension version: %w", err)
@@ -291,15 +297,18 @@ func (h *Handler) GetVersion(extensionName, version string) (*ExtensionDetails, 
 		}
 		return nil, fmt.Errorf("failed to get extension version: %w", err)
 	}
+
+	var result ExtensionDetails
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get extension version: parse response: %w", err)
+	}
 	return &result, nil
 }
 
 // GetEnvironmentConfig gets the environment configuration for a specific extension version.
 // The version parameter is required by the Dynatrace Extensions 2.0 API.
 func (h *Handler) GetEnvironmentConfig(extensionName, version string) (*ExtensionEnvironmentConfig, error) {
-	var result ExtensionEnvironmentConfig
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environmentConfiguration", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
@@ -315,6 +324,11 @@ func (h *Handler) GetEnvironmentConfig(extensionName, version string) (*Extensio
 			}
 		}
 		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
+	}
+
+	var result ExtensionEnvironmentConfig
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get extension environment config: parse response: %w", err)
 	}
 	return &result, nil
 }
@@ -332,7 +346,7 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 
 	for {
 		var result MonitoringConfigurationList
-		req := h.client.HTTP().R().SetResult(&result)
+		req := h.client.HTTP().R()
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDefault,
@@ -358,6 +372,10 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 				}
 			}
 			return nil, fmt.Errorf("failed to list monitoring configurations: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list monitoring configurations: parse response: %w", err)
 		}
 
 		for i := range result.Items {
@@ -399,9 +417,7 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 
 // GetMonitoringConfiguration gets a specific monitoring configuration
 func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*MonitoringConfiguration, error) {
-	var result MonitoringConfiguration
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get monitoring configuration: %w", err)
@@ -418,6 +434,11 @@ func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*M
 		}
 		return nil, fmt.Errorf("failed to get monitoring configuration: %w", err)
 	}
+
+	var result MonitoringConfiguration
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get monitoring configuration: parse response: %w", err)
+	}
 	result.Type = "extension_monitoring_config"
 	result.ExtensionName = extensionName
 	return &result, nil
@@ -431,10 +452,8 @@ type MonitoringConfigurationCreate struct {
 
 // CreateMonitoringConfiguration creates a new monitoring configuration for an extension
 func (h *Handler) CreateMonitoringConfiguration(extensionName string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
-	var result MonitoringConfiguration
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
-		SetResult(&result).
 		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create monitoring configuration: %w", err)
@@ -451,15 +470,18 @@ func (h *Handler) CreateMonitoringConfiguration(extensionName string, body Monit
 		}
 		return nil, fmt.Errorf("failed to create monitoring configuration: %w", err)
 	}
+
+	var result MonitoringConfiguration
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("create monitoring configuration: parse response: %w", err)
+	}
 	return &result, nil
 }
 
 // UpdateMonitoringConfiguration updates an existing monitoring configuration for an extension
 func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
-	var result MonitoringConfiguration
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
-		SetResult(&result).
 		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to update monitoring configuration: %w", err)
@@ -475,6 +497,11 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 			}
 		}
 		return nil, fmt.Errorf("failed to update monitoring configuration: %w", err)
+	}
+
+	var result MonitoringConfiguration
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("update monitoring configuration: parse response: %w", err)
 	}
 	return &result, nil
 }
@@ -501,11 +528,9 @@ func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, er
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	var result ExtensionVersion
 	resp, err := h.client.HTTP().R().
 		SetHeader("Content-Type", writer.FormDataContentType()).
 		SetBody(body.Bytes()).
-		SetResult(&result).
 		Post("/platform/extensions/v2/extensions")
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload extension: %w", err)
@@ -524,6 +549,11 @@ func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, er
 		}
 		return nil, fmt.Errorf("failed to upload extension: %w", err)
 	}
+
+	var result ExtensionVersion
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("upload extension: parse response: %w", err)
+	}
 	return &result, nil
 }
 
@@ -532,8 +562,7 @@ func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, er
 // version is optional -- when provided it is sent as a query parameter to select a
 // specific release; when empty the API resolves the latest available version.
 func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersion, error) {
-	var result ExtensionVersion
-	req := h.client.HTTP().R().SetResult(&result)
+	req := h.client.HTTP().R()
 	if version != "" {
 		req.SetQueryParam("version", version)
 	}
@@ -558,6 +587,11 @@ func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersi
 			}
 		}
 		return nil, fmt.Errorf("failed to install Hub extension %q: %w", extensionName, err)
+	}
+
+	var result ExtensionVersion
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("install hub extension: parse response: %w", err)
 	}
 	return &result, nil
 }
@@ -609,9 +643,7 @@ func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string
 
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
 func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGateGroupList, error) {
-	var result ActiveGateGroupList
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/active-gate-groups", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active gate groups: %w", err)
@@ -627,6 +659,11 @@ func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGat
 			}
 		}
 		return nil, fmt.Errorf("failed to get active gate groups: %w", err)
+	}
+
+	var result ActiveGateGroupList
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get active gate groups: parse response: %w", err)
 	}
 	return &result, nil
 }

@@ -18,6 +18,12 @@ func NewFunctionHandler(c *httpclient.Client) *FunctionHandler {
 	return &FunctionHandler{client: c}
 }
 
+// App Engine non-standard HTTP status codes.
+const (
+	statusJSError     = 540
+	statusSyntaxError = 541
+)
+
 // FunctionInvokeRequest represents a function invocation request
 type FunctionInvokeRequest struct {
 	Method       string            // HTTP method (GET, POST, PUT, PATCH, DELETE)
@@ -44,7 +50,7 @@ type DeferredExecutionRequest struct {
 
 // DeferredExecutionResponse represents a deferred execution response
 type DeferredExecutionResponse struct {
-	ID string `json:"id" table:"ID"`
+	ID string `json:"id"`
 }
 
 // FunctionExecutorRequest represents an ad-hoc function execution request
@@ -61,8 +67,8 @@ type FunctionExecutorResponse struct {
 
 // SDKVersion represents an SDK version
 type SDKVersion struct {
-	Version string `json:"version" table:"VERSION"`
-	Default bool   `json:"default" table:"DEFAULT"`
+	Version string `json:"version"`
+	Default bool   `json:"default"`
 }
 
 // SDKVersionsResponse represents SDK versions response
@@ -110,9 +116,9 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 	// Handle non-standard status codes from App Engine before CheckResponse
 	if resp.IsError() {
 		switch resp.StatusCode() {
-		case 540:
+		case statusJSError:
 			return nil, fmt.Errorf("JavaScript error occurred: %s", resp.String())
-		case 541:
+		case statusSyntaxError:
 			return nil, fmt.Errorf("runtime error occurred: %s", resp.String())
 		}
 	}
@@ -186,9 +192,9 @@ func (h *FunctionHandler) ExecuteCode(sourceCode, payload string) (*FunctionExec
 	// Handle non-standard status codes from App Engine before CheckResponse
 	if resp.IsError() {
 		switch resp.StatusCode() {
-		case 540:
+		case statusJSError:
 			return nil, fmt.Errorf("JavaScript error occurred: %s", resp.String())
-		case 541:
+		case statusSyntaxError:
 			return nil, fmt.Errorf("runtime error occurred: %s", resp.String())
 		}
 	}

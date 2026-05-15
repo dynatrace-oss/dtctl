@@ -2,6 +2,7 @@
 package workflow
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -19,16 +20,16 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // Workflow represents a workflow resource.
 type Workflow struct {
-	ID          string                 `json:"id" table:"ID"`
-	Title       string                 `json:"title" table:"TITLE"`
-	Owner       string                 `json:"owner,omitempty" table:"-"`
-	OwnerType   string                 `json:"ownerType,omitempty" table:"-"`
-	Description string                 `json:"description,omitempty" table:"DESCRIPTION,wide"`
-	Private     bool                   `json:"isPrivate" table:"-"`
-	IsDeployed  bool                   `json:"isDeployed,omitempty" table:"DEPLOYED"`
-	Tasks       map[string]interface{} `json:"tasks,omitempty" table:"-"`
-	Trigger     map[string]interface{} `json:"trigger,omitempty" table:"-"`
-	Actor       string                 `json:"actor,omitempty" table:"-"`
+	ID          string                 `json:"id"`
+	Title       string                 `json:"title"`
+	Owner       string                 `json:"owner,omitempty"`
+	OwnerType   string                 `json:"ownerType,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Private     bool                   `json:"isPrivate"`
+	IsDeployed  bool                   `json:"isDeployed,omitempty"`
+	Tasks       map[string]interface{} `json:"tasks,omitempty"`
+	Trigger     map[string]interface{} `json:"trigger,omitempty"`
+	Actor       string                 `json:"actor,omitempty"`
 }
 
 // WorkflowList represents a list of workflows.
@@ -44,10 +45,7 @@ type WorkflowFilters struct {
 
 // List retrieves workflows with optional filters.
 func (h *Handler) List(filters WorkflowFilters) (*WorkflowList, error) {
-	var result WorkflowList
-
-	req := h.client.HTTP().R().
-		SetResult(&result)
+	req := h.client.HTTP().R()
 
 	if filters.Owner != "" {
 		req.SetQueryParam("owner", filters.Owner)
@@ -59,7 +57,12 @@ func (h *Handler) List(filters WorkflowFilters) (*WorkflowList, error) {
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list workflows: %w", err)
+	}
+
+	var result WorkflowList
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("list workflows: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -67,20 +70,37 @@ func (h *Handler) List(filters WorkflowFilters) (*WorkflowList, error) {
 
 // Get retrieves a specific workflow.
 func (h *Handler) Get(id string) (*Workflow, error) {
-	var result Workflow
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s", id))
 	if err != nil {
 		return nil, fmt.Errorf("get workflow: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get workflow: %w", err)
+	}
+
+	var result Workflow
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get workflow: parse response: %w", err)
 	}
 
 	return &result, nil
+}
+
+// GetRaw retrieves a workflow as raw JSON bytes.
+func (h *Handler) GetRaw(id string) ([]byte, error) {
+	resp, err := h.client.HTTP().R().
+		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s", id))
+	if err != nil {
+		return nil, fmt.Errorf("get workflow: %w", err)
+	}
+
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return nil, fmt.Errorf("get workflow: %w", err)
+	}
+
+	return resp.Body(), nil
 }
 
 // Delete deletes a workflow.
@@ -92,7 +112,7 @@ func (h *Handler) Delete(id string) error {
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return err
+		return fmt.Errorf("delete workflow: %w", err)
 	}
 
 	return nil
@@ -100,19 +120,21 @@ func (h *Handler) Delete(id string) error {
 
 // Update updates a workflow.
 func (h *Handler) Update(id string, data []byte) (*Workflow, error) {
-	var result Workflow
-
 	resp, err := h.client.HTTP().R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(data).
-		SetResult(&result).
 		Put(fmt.Sprintf("/platform/automation/v1/workflows/%s", id))
 	if err != nil {
 		return nil, fmt.Errorf("update workflow: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("update workflow: %w", err)
+	}
+
+	var result Workflow
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("update workflow: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -120,19 +142,21 @@ func (h *Handler) Update(id string, data []byte) (*Workflow, error) {
 
 // Create creates a new workflow.
 func (h *Handler) Create(data []byte) (*Workflow, error) {
-	var result Workflow
-
 	resp, err := h.client.HTTP().R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(data).
-		SetResult(&result).
 		Post("/platform/automation/v1/workflows")
 	if err != nil {
 		return nil, fmt.Errorf("create workflow: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create workflow: %w", err)
+	}
+
+	var result Workflow
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("create workflow: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -140,9 +164,9 @@ func (h *Handler) Create(data []byte) (*Workflow, error) {
 
 // HistoryRecord represents a workflow version history record.
 type HistoryRecord struct {
-	Version     int    `json:"version" table:"VERSION"`
-	User        string `json:"user" table:"USER"`
-	DateCreated string `json:"dateCreated" table:"CREATED"`
+	Version     int    `json:"version"`
+	User        string `json:"user"`
+	DateCreated string `json:"dateCreated"`
 }
 
 // HistoryList represents a paginated list of history records.
@@ -153,17 +177,19 @@ type HistoryList struct {
 
 // ListHistory retrieves version history for a workflow.
 func (h *Handler) ListHistory(workflowID string) (*HistoryList, error) {
-	var result HistoryList
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s/history", workflowID))
 	if err != nil {
 		return nil, fmt.Errorf("list workflow history: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list workflow history: %w", err)
+	}
+
+	var result HistoryList
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("list workflow history: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -171,17 +197,19 @@ func (h *Handler) ListHistory(workflowID string) (*HistoryList, error) {
 
 // GetHistoryRecord retrieves a specific version of a workflow.
 func (h *Handler) GetHistoryRecord(workflowID string, version int) (*Workflow, error) {
-	var result Workflow
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s/history/%d", workflowID, version))
 	if err != nil {
 		return nil, fmt.Errorf("get workflow history record: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get workflow history record: %w", err)
+	}
+
+	var result Workflow
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get workflow history record: parse response: %w", err)
 	}
 
 	return &result, nil
@@ -189,17 +217,19 @@ func (h *Handler) GetHistoryRecord(workflowID string, version int) (*Workflow, e
 
 // RestoreHistory restores a workflow to a specific version.
 func (h *Handler) RestoreHistory(workflowID string, version int) (*Workflow, error) {
-	var result Workflow
-
 	resp, err := h.client.HTTP().R().
-		SetResult(&result).
 		Post(fmt.Sprintf("/platform/automation/v1/workflows/%s/history/%d/restore", workflowID, version))
 	if err != nil {
 		return nil, fmt.Errorf("restore workflow: %w", err)
 	}
 
 	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("restore workflow: %w", err)
+	}
+
+	var result Workflow
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("restore workflow: parse response: %w", err)
 	}
 
 	return &result, nil
