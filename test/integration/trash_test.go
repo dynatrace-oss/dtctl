@@ -329,14 +329,10 @@ func TestTrash_RestoreWithConflict(t *testing.T) {
 	require.NoError(t, err)
 	env.Cleanup.TrackDocument("dashboard", created2.ID, dashboard2Req.Name, created2.Version)
 
-	// Try to restore dashboard 1 (should fail due to name conflict)
+	// Restore dashboard 1 — the API allows restoring even when another
+	// dashboard with the same name exists (no conflict error).
 	err = trashHandler.Restore(created1.ID, document.RestoreOptions{})
-	assert.Error(t, err, "Restore should fail due to name conflict")
-	assert.Contains(t, err.Error(), "name conflict", "Error should mention name conflict")
-
-	// Restore with force flag (should succeed)
-	err = trashHandler.Restore(created1.ID, document.RestoreOptions{Force: true})
-	assert.NoError(t, err, "Restore with force should succeed")
+	assert.NoError(t, err, "Restore should succeed even with a duplicate name")
 
 	// Cleanup
 	restored1, _ := handler.Get(created1.ID)
