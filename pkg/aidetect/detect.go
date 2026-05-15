@@ -1,17 +1,18 @@
 package aidetect
 
-import (
-	"os"
-	"strings"
-)
+import "github.com/dynatrace-oss/dtctl/sdk/agentmode"
 
-// AgentInfo represents detected AI agent information
-type AgentInfo struct {
-	Detected bool
-	Name     string
+// AgentInfo represents detected AI agent information.
+// Alias for agentmode.AgentInfo from the SDK.
+type AgentInfo = agentmode.AgentInfo
+
+// Detect checks environment variables to identify if running under an AI agent.
+// Delegates to agentmode.Detect from the SDK.
+func Detect() AgentInfo {
+	return agentmode.Detect()
 }
 
-// knownAgents maps environment variables to AI agent names
+// knownAgents is kept for test compatibility — mirrors the SDK's internal list.
 var knownAgents = map[string]string{
 	"CLAUDECODE":     "claude-code",
 	"CURSOR_AGENT":   "cursor",
@@ -26,25 +27,8 @@ var knownAgents = map[string]string{
 	"AI_AGENT":       "generic-ai",
 }
 
-// Detect checks environment variables to identify if running under an AI agent
-func Detect() AgentInfo {
-	for envVar, agentName := range knownAgents {
-		if val := os.Getenv(envVar); val != "" && val != "0" && strings.ToLower(val) != "false" {
-			return AgentInfo{
-				Detected: true,
-				Name:     agentName,
-			}
-		}
-	}
-	return AgentInfo{Detected: false}
-}
-
-// UserAgentSuffix returns a suffix to append to the User-Agent header
-// Returns empty string if no AI agent detected
+// UserAgentSuffix returns a suffix to append to the User-Agent header.
+// Delegates to agentmode.UserAgentSuffix from the SDK.
 func UserAgentSuffix() string {
-	info := Detect()
-	if !info.Detected {
-		return ""
-	}
-	return " (AI-Agent: " + info.Name + ")"
+	return agentmode.UserAgentSuffix()
 }

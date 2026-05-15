@@ -1,0 +1,65 @@
+name: SDK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sdk/**'
+
+jobs:
+  test:
+    name: SDK Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ['1.26.3']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Download SDK dependencies
+        working-directory: sdk
+        run: go mod download
+
+      - name: Verify SDK compiles
+        working-directory: sdk
+        shell: bash
+        run: go build ./...
+
+      - name: Run go vet
+        working-directory: sdk
+        shell: bash
+        run: go vet ./...
+
+      - name: Run SDK tests
+        working-directory: sdk
+        shell: bash
+        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+  checks:
+    name: SDK Dependency & Import Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.3'
+
+      - name: Check for forbidden dependencies
+        run: make sdk-check-deps
+
+      - name: Check for forbidden imports
+        run: make sdk-check-imports

@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	github.com/adrg/xdg v0.5.3
+	github.com/dynatrace-oss/dtctl/sdk v0.0.0-00010101000000-000000000000
 	github.com/go-resty/resty/v2 v2.11.0
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
@@ -65,3 +66,5 @@ require (
 	google.golang.org/grpc v1.80.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
+
+replace github.com/dynatrace-oss/dtctl/sdk => ./sdk

@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot
+.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -164,3 +164,34 @@ release:
 # Release snapshot (local testing)
 release-snapshot:
 	@goreleaser release --snapshot --clean
+
+# --- SDK targets ---
+
+# Build and test the SDK module
+test-sdk:
+	@echo "Running SDK tests..."
+	@cd sdk && go test -v -race ./...
+
+vet-sdk:
+	@cd sdk && go vet ./...
+
+lint-sdk:
+	@cd sdk && golangci-lint run ./...
+
+# Check that the SDK does not depend on forbidden heavy dependencies
+sdk-check-deps:
+	@echo "Checking SDK dependencies..."
+	@cd sdk && go list -m all | grep -E '(cobra|viper|logrus|opentelemetry|asciigraph|toon-go)' && \
+	  echo "FORBIDDEN dependency found in sdk/" && exit 1 || echo "sdk/ deps OK"
+
+# Check that the SDK does not import from the CLI module
+sdk-check-imports:
+	@echo "Checking SDK imports..."
+	@cd sdk && ! grep -rE '"github.com/dynatrace-oss/dtctl[^/]' --include='*.go' . || \
+	  (echo "FORBIDDEN: sdk/ imports from CLI module" && exit 1)
+	@cd sdk && ! grep -rE '"github.com/dynatrace-oss/dtctl/(cmd|pkg)' --include='*.go' . || \
+	  (echo "FORBIDDEN: sdk/ imports from CLI cmd/ or pkg/" && exit 1)
+	@echo "sdk/ imports OK"
+
+# Run all SDK checks
+sdk-check: test-sdk vet-sdk sdk-check-deps sdk-check-imports

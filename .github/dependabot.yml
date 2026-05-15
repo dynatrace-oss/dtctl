@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - deps
+      - cli
+  - package-ecosystem: gomod
+    directory: /sdk
+    schedule:
+      interval: weekly
+    labels:
+      - deps
+      - sdk

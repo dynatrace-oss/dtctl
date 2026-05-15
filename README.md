@@ -26,6 +26,12 @@ dtctl exec copilot nl2dql "error logs from last hour"
 
 ---
 
+## dt-cli-sdk
+
+This repo also hosts the **dt-cli-sdk** (`sdk/`), a shared Go library of Dynatrace CLI primitives (HTTP client, auth, agent mode, credential storage, URL validation). Other Dynatrace CLIs can import it via `go get github.com/dynatrace-oss/dtctl/sdk`. See [`sdk/README.md`](sdk/README.md) for details.
+
+---
+
 ## Install
 
 ```bash
