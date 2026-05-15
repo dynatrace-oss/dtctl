@@ -2,23 +2,22 @@ package settings
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	sdksettings "github.com/dynatrace-oss/dtctl/sdk/api/settings"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Handler handles settings resources
-type Handler struct {
-	client *client.Client
-}
+// Re-export SDK types that are identical (no table tags needed in CLI).
+type (
+	SettingsObjectCreate   = sdksettings.SettingsObjectCreate
+	SettingsObjectResponse = sdksettings.SettingsObjectResponse
+	CreateResponse         = sdksettings.CreateResponse
+	ModificationInfo       = sdksettings.ModificationInfo
+)
 
-// NewHandler creates a new settings handler
-func NewHandler(c *client.Client) *Handler {
-	return &Handler{client: c}
-}
-
-// Schema represents a settings schema
+// Schema represents a settings schema (CLI version with table tags).
 type Schema struct {
 	SchemaID    string         `json:"schemaId" table:"SCHEMA_ID"`
 	DisplayName string         `json:"displayName" table:"DISPLAY_NAME"`
@@ -30,13 +29,13 @@ type Schema struct {
 	Scopes      []string       `json:"scopes,omitempty" table:"-"`
 }
 
-// SchemaList represents a list of schemas
+// SchemaList represents a list of schemas.
 type SchemaList struct {
 	Items      []Schema `json:"items"`
 	TotalCount int      `json:"totalCount"`
 }
 
-// SettingsObject represents a settings object
+// SettingsObject represents a settings object (CLI version with display fields and table tags).
 type SettingsObject struct {
 	ObjectID         string            `json:"objectId" table:"OBJECT_ID,wide"`
 	SchemaID         string            `json:"schemaId" table:"SCHEMA_ID"`
@@ -72,383 +71,160 @@ func (s *SettingsObject) populateDisplayFields() {
 	}
 }
 
-// ModificationInfo contains modification timestamps
-type ModificationInfo struct {
-	CreatedBy        string `json:"createdBy,omitempty"`
-	CreatedTime      string `json:"createdTime,omitempty"`
-	LastModifiedBy   string `json:"lastModifiedBy,omitempty"`
-	LastModifiedTime string `json:"lastModifiedTime,omitempty"`
+// settingsObjectFromSDK converts an SDK SettingsObject to a CLI SettingsObject with display fields.
+func settingsObjectFromSDK(obj *sdksettings.SettingsObject) *SettingsObject {
+	result := &SettingsObject{
+		ObjectID:         obj.ObjectID,
+		SchemaID:         obj.SchemaID,
+		SchemaVersion:    obj.SchemaVersion,
+		Scope:            obj.Scope,
+		ExternalID:       obj.ExternalID,
+		Summary:          obj.Summary,
+		Value:            obj.Value,
+		ModificationInfo: obj.ModificationInfo,
+	}
+	result.populateDisplayFields()
+	return result
 }
 
-// SettingsObjectsList represents a list of settings objects
+// SettingsObjectsList represents a list of settings objects (CLI version using CLI SettingsObject).
 type SettingsObjectsList struct {
 	Items       []SettingsObject `json:"items"`
 	TotalCount  int              `json:"totalCount"`
 	NextPageKey string           `json:"nextPageKey,omitempty"`
 }
 
-// SettingsObjectCreate represents the request body for creating a settings object
-type SettingsObjectCreate struct {
-	SchemaID      string         `json:"schemaId"`
-	Scope         string         `json:"scope"`
-	Value         map[string]any `json:"value"`
-	SchemaVersion string         `json:"schemaVersion,omitempty"`
-	ExternalID    string         `json:"externalId,omitempty"`
+// Handler handles settings resources.
+// It delegates to the SDK handler and adds CLI-specific convenience methods.
+type Handler struct {
+	client *client.Client
+	sdk    *sdksettings.Handler
 }
 
-// SettingsObjectResponse represents the response from creating/updating a settings object
-type SettingsObjectResponse struct {
-	ObjectID string `json:"objectId"`
-	Code     int    `json:"code,omitempty"`
-	Error    *struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
+// NewHandler creates a new settings handler.
+func NewHandler(c *client.Client) *Handler {
+	return &Handler{
+		client: c,
+		sdk:    sdksettings.NewHandler(httpclient.Wrap(c.HTTP())),
+	}
 }
 
-// CreateResponse represents the response from batch create
-type CreateResponse struct {
-	Items []SettingsObjectResponse `json:"items"`
-}
-
-// ListSchemas lists all available settings schemas
+// ListSchemas lists all available settings schemas.
 func (h *Handler) ListSchemas() (*SchemaList, error) {
-	resp, err := h.client.HTTP().R().
-		Get("/platform/classic/environment-api/v2/settings/schemas")
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to list schemas: %w", err)
-	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list schemas: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	var result SchemaList
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse schemas response: %w", err)
-	}
-
-	return &result, nil
-}
-
-// GetSchema gets a specific schema definition
-func (h *Handler) GetSchema(schemaID string) (map[string]any, error) {
-	resp, err := h.client.HTTP().R().
-		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/schemas/%s", schemaID))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("schema %q not found", schemaID)
-		default:
-			return nil, fmt.Errorf("failed to get schema: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	var result map[string]any
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse schema response: %w", err)
-	}
-
-	return result, nil
-}
-
-// ListObjects lists settings objects for a schema with automatic pagination
-func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*SettingsObjectsList, error) {
-	var allItems []SettingsObject
-	var totalCount int
-	nextPageKey := ""
-
-	for {
-		req := h.client.HTTP().R()
-
-		client.PaginationParams{
-			Style:         client.PaginationSettingsAPI,
-			PageKeyParam:  "nextPageKey",
-			PageSizeParam: "pageSize",
-			NextPageKey:   nextPageKey,
-			PageSize:      chunkSize,
-			Filters:       map[string]string{"schemaIds": schemaID, "scopes": scope},
-		}.Apply(req)
-
-		// fields may only be sent on the first page; subsequent pages carry the spec in the nextPageKey.
-		// value is included so that -o json / -o yaml list output contains the full configuration payload.
-		if nextPageKey == "" {
-			req.SetQueryParam("fields", "objectId,scope,schemaId,schemaVersion,externalId,summary,value,modificationInfo")
-		}
-
-		resp, err := req.Get("/platform/classic/environment-api/v2/settings/objects")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list settings objects: %w", err)
-		}
-
-		if resp.IsError() {
-			switch resp.StatusCode() {
-			case 404:
-				return nil, fmt.Errorf("schema %q not found", schemaID)
-			default:
-				return nil, fmt.Errorf("failed to list settings objects: status %d: %s", resp.StatusCode(), resp.String())
-			}
-		}
-
-		var result SettingsObjectsList
-		if err := json.Unmarshal(resp.Body(), &result); err != nil {
-			return nil, fmt.Errorf("failed to parse settings objects response: %w", err)
-		}
-
-		// API bug workaround: The API returns empty schemaId field, so populate it from the query parameter
-		if schemaID != "" {
-			for i := range result.Items {
-				if result.Items[i].SchemaID == "" {
-					result.Items[i].SchemaID = schemaID
-				}
-			}
-		}
-
-		for i := range result.Items {
-			result.Items[i].populateDisplayFields()
-		}
-
-		allItems = append(allItems, result.Items...)
-		totalCount = result.TotalCount
-
-		// If chunking is disabled (chunkSize == 0), return first page only
-		if chunkSize == 0 {
-			return &result, nil
-		}
-
-		// Check if there are more pages
-		if result.NextPageKey == "" {
-			break
-		}
-		nextPageKey = result.NextPageKey
-	}
-
-	return &SettingsObjectsList{
-		Items:      allItems,
-		TotalCount: totalCount,
-	}, nil
-}
-
-// Get gets a specific settings object by objectId
-func (h *Handler) Get(objectID string) (*SettingsObject, error) {
-	resp, err := h.client.HTTP().R().
-		SetQueryParam("fields", "objectId,scope,schemaId,schemaVersion,externalId,summary,value,modificationInfo").
-		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get settings object: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("settings object %q not found", objectID)
-		case 403:
-			return nil, fmt.Errorf("access denied to settings object %q", objectID)
-		default:
-			return nil, fmt.Errorf("failed to get settings object: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	var result SettingsObject
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse settings object response: %w", err)
-	}
-
-	result.populateDisplayFields()
-
-	return &result, nil
-}
-
-// ValidateCreate validates a settings object without creating it
-func (h *Handler) ValidateCreate(req SettingsObjectCreate) error {
-	body := []SettingsObjectCreate{req}
-
-	resp, err := h.client.HTTP().R().
-		SetBody(body).
-		SetQueryParam("validateOnly", "true").
-		Post("/platform/classic/environment-api/v2/settings/objects")
-
-	if err != nil {
-		return fmt.Errorf("failed to validate settings object: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return fmt.Errorf("validation failed: %s", resp.String())
-		case 403:
-			return fmt.Errorf("access denied")
-		case 404:
-			return fmt.Errorf("schema %q not found", req.SchemaID)
-		default:
-			return fmt.Errorf("validation failed: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
-}
-
-// Create creates a new settings object
-func (h *Handler) Create(req SettingsObjectCreate) (*SettingsObjectResponse, error) {
-	body := []SettingsObjectCreate{req}
-
-	resp, err := h.client.HTTP().R().
-		SetBody(body).
-		Post("/platform/classic/environment-api/v2/settings/objects")
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create settings object: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return nil, fmt.Errorf("invalid settings object: %s", resp.String())
-		case 403:
-			return nil, fmt.Errorf("access denied to create settings object")
-		case 404:
-			return nil, fmt.Errorf("schema %q not found", req.SchemaID)
-		case 409:
-			return nil, fmt.Errorf("settings object already exists or conflicts with existing object")
-		default:
-			return nil, fmt.Errorf("failed to create settings object: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	var createResp []SettingsObjectResponse
-	if err := json.Unmarshal(resp.Body(), &createResp); err != nil {
-		return nil, fmt.Errorf("failed to parse create response: %w", err)
-	}
-
-	if len(createResp) == 0 {
-		return nil, fmt.Errorf("no items returned in create response")
-	}
-
-	result := &createResp[0]
-	if result.Error != nil {
-		return nil, fmt.Errorf("create failed: %s", result.Error.Message)
-	}
-
-	return result, nil
-}
-
-// ValidateUpdate validates a settings object update without applying it
-func (h *Handler) ValidateUpdate(objectID string, value map[string]any) error {
-	obj, err := h.Get(objectID)
-	if err != nil {
-		return err
-	}
-
-	body := map[string]any{"value": value}
-
-	resp, err := h.client.HTTP().R().
-		SetBody(body).
-		SetHeader("If-Match", obj.SchemaVersion).
-		SetQueryParam("validateOnly", "true").
-		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", obj.ObjectID))
-
-	if err != nil {
-		return fmt.Errorf("failed to validate settings object: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return fmt.Errorf("validation failed: %s", resp.String())
-		case 403:
-			return fmt.Errorf("access denied to update settings object %q", objectID)
-		case 404:
-			return fmt.Errorf("settings object %q not found", objectID)
-		case 409, 412:
-			return fmt.Errorf("settings object version conflict (object was modified)")
-		default:
-			return fmt.Errorf("validation failed: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
-}
-
-// Update updates an existing settings object
-func (h *Handler) Update(objectID string, value map[string]any) (*SettingsObject, error) {
-	obj, err := h.Get(objectID)
+	sdkResult, err := h.sdk.ListSchemas()
 	if err != nil {
 		return nil, err
 	}
 
-	body := map[string]any{"value": value}
-
-	resp, err := h.client.HTTP().R().
-		SetBody(body).
-		SetHeader("If-Match", obj.SchemaVersion).
-		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", obj.ObjectID))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to update settings object: %w", err)
+	// Convert SDK schemas to CLI schemas (with table tags).
+	items := make([]Schema, len(sdkResult.Items))
+	for i, s := range sdkResult.Items {
+		items[i] = Schema{
+			SchemaID:    s.SchemaID,
+			DisplayName: s.DisplayName,
+			Description: s.Description,
+			Version:     s.Version,
+			MultiObject: s.MultiObject,
+			Ordered:     s.Ordered,
+			Properties:  s.Properties,
+			Scopes:      s.Scopes,
+		}
 	}
 
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return nil, fmt.Errorf("invalid settings object: %s", resp.String())
-		case 403:
-			return nil, fmt.Errorf("access denied to update settings object %q", objectID)
-		case 404:
-			return nil, fmt.Errorf("settings object %q not found", objectID)
-		case 409, 412:
-			return nil, fmt.Errorf("settings object version conflict (object was modified)")
-		default:
-			return nil, fmt.Errorf("failed to update settings object: status %d: %s", resp.StatusCode(), resp.String())
+	return &SchemaList{
+		Items:      items,
+		TotalCount: sdkResult.TotalCount,
+	}, nil
+}
+
+// GetSchema gets a specific schema definition.
+func (h *Handler) GetSchema(schemaID string) (map[string]any, error) {
+	return h.sdk.GetSchema(schemaID)
+}
+
+// ListObjects lists settings objects for a schema with automatic pagination.
+func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*SettingsObjectsList, error) {
+	sdkResult, err := h.sdk.ListObjects(schemaID, scope, chunkSize)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]SettingsObject, len(sdkResult.Items))
+	for i := range sdkResult.Items {
+		obj := settingsObjectFromSDK(&sdkResult.Items[i])
+		// API bug workaround: The API returns empty schemaId field
+		if schemaID != "" && obj.SchemaID == "" {
+			obj.SchemaID = schemaID
 		}
+		items[i] = *obj
+	}
+
+	return &SettingsObjectsList{
+		Items:       items,
+		TotalCount:  sdkResult.TotalCount,
+		NextPageKey: sdkResult.NextPageKey,
+	}, nil
+}
+
+// Get gets a specific settings object by objectId.
+func (h *Handler) Get(objectID string) (*SettingsObject, error) {
+	sdkObj, err := h.sdk.Get(objectID)
+	if err != nil {
+		return nil, err
+	}
+	return settingsObjectFromSDK(sdkObj), nil
+}
+
+// ValidateCreate validates a settings object without creating it.
+func (h *Handler) ValidateCreate(req SettingsObjectCreate) error {
+	return h.sdk.ValidateCreate(req)
+}
+
+// Create creates a new settings object.
+func (h *Handler) Create(req SettingsObjectCreate) (*SettingsObjectResponse, error) {
+	return h.sdk.Create(req)
+}
+
+// ValidateUpdate validates a settings object update without applying it.
+// Auto-fetches the current schemaVersion for the If-Match header.
+func (h *Handler) ValidateUpdate(objectID string, value map[string]any) error {
+	obj, err := h.sdk.Get(objectID)
+	if err != nil {
+		return err
+	}
+	return h.sdk.ValidateUpdate(objectID, obj.SchemaVersion, value)
+}
+
+// Update updates an existing settings object.
+// Auto-fetches the current schemaVersion for the If-Match header, then re-fetches.
+func (h *Handler) Update(objectID string, value map[string]any) (*SettingsObject, error) {
+	obj, err := h.sdk.Get(objectID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.sdk.Update(obj.ObjectID, obj.SchemaVersion, value); err != nil {
+		return nil, err
 	}
 
 	return h.Get(obj.ObjectID)
 }
 
-// Delete deletes a settings object
+// Delete deletes a settings object.
+// Auto-fetches the current schemaVersion for the If-Match header.
 func (h *Handler) Delete(objectID string) error {
-	obj, err := h.Get(objectID)
+	obj, err := h.sdk.Get(objectID)
 	if err != nil {
 		return err
 	}
-
-	resp, err := h.client.HTTP().R().
-		SetHeader("If-Match", obj.SchemaVersion).
-		Delete(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", obj.ObjectID))
-
-	if err != nil {
-		return fmt.Errorf("failed to delete settings object: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 403:
-			return fmt.Errorf("access denied to delete settings object %q", objectID)
-		case 404:
-			return fmt.Errorf("settings object %q not found", objectID)
-		case 409, 412:
-			return fmt.Errorf("settings object version conflict (object was modified)")
-		default:
-			return fmt.Errorf("failed to delete settings object: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
+	return h.sdk.Delete(obj.ObjectID, obj.SchemaVersion)
 }
 
-// GetRaw gets a settings object as raw JSON bytes (for editing)
+// GetRaw gets a settings object as raw JSON bytes (for editing).
 func (h *Handler) GetRaw(objectID string) ([]byte, error) {
 	obj, err := h.Get(objectID)
 	if err != nil {
 		return nil, err
 	}
-
 	return json.MarshalIndent(obj.Value, "", "  ")
 }

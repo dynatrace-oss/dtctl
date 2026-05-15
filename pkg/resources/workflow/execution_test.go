@@ -28,7 +28,7 @@ func TestNewExecutionHandler(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	h := NewExecutionHandler(c)
-	if h == nil || h.client == nil {
+	if h == nil || h.sdk == nil {
 		t.Fatal("NewExecutionHandler returned nil")
 	}
 }

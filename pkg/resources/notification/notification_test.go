@@ -19,8 +19,8 @@ func TestNewHandler(t *testing.T) {
 	if h == nil {
 		t.Fatal("NewHandler() returned nil")
 	}
-	if h.client == nil {
-		t.Error("Handler.client is nil")
+	if h.sdk == nil {
+		t.Error("Handler.sdk is nil")
 	}
 }
 
@@ -97,14 +97,14 @@ func TestListEventNotifications(t *testing.T) {
 			statusCode:    500,
 			responseBody:  "internal server error",
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "API error (500)",
 		},
 		{
 			name:          "forbidden",
 			statusCode:    403,
 			responseBody:  "access denied",
 			expectError:   true,
-			errorContains: "status 403",
+			errorContains: "API error (403)",
 		},
 	}
 
@@ -196,7 +196,7 @@ func TestGetEventNotification(t *testing.T) {
 			statusCode:    500,
 			responseBody:  "internal error",
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "API error (500)",
 		},
 	}
 
@@ -271,7 +271,7 @@ func TestCreateEventNotification(t *testing.T) {
 			statusCode:    400,
 			responseBody:  "invalid configuration",
 			expectError:   true,
-			errorContains: "invalid notification configuration",
+			errorContains: "invalid configuration",
 		},
 		{
 			name:          "access denied",
@@ -353,7 +353,7 @@ func TestDeleteEventNotification(t *testing.T) {
 			statusCode:    500,
 			responseBody:  "internal error",
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "API error (500)",
 		},
 	}
 
@@ -450,7 +450,7 @@ func TestListResourceNotifications(t *testing.T) {
 			statusCode:    500,
 			responseBody:  "internal server error",
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "API error (500)",
 		},
 	}
 

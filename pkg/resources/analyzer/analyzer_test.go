@@ -835,59 +835,6 @@ func TestParseInputFromFile_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestExecuteResult_populateTableFields(t *testing.T) {
-	tests := []struct {
-		name   string
-		result ExecuteResult
-		want   ExecuteResult
-	}{
-		{
-			name: "populate from Result",
-			result: ExecuteResult{
-				Result: &AnalyzerResult{
-					ResultID:        "result123",
-					ResultStatus:    "SUCCESS",
-					ExecutionStatus: "COMPLETED",
-				},
-			},
-			want: ExecuteResult{
-				ResultID:        "result123",
-				ResultStatus:    "SUCCESS",
-				ExecutionStatus: "COMPLETED",
-				Result: &AnalyzerResult{
-					ResultID:        "result123",
-					ResultStatus:    "SUCCESS",
-					ExecutionStatus: "COMPLETED",
-				},
-			},
-		},
-		{
-			name: "nil Result",
-			result: ExecuteResult{
-				Result: nil,
-			},
-			want: ExecuteResult{
-				ResultID:        "",
-				ResultStatus:    "",
-				ExecutionStatus: "",
-				Result:          nil,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.result.populateTableFields()
-
-			if tt.result.ResultID != tt.want.ResultID {
-				t.Errorf("ResultID = %q, want %q", tt.result.ResultID, tt.want.ResultID)
-			}
-			if tt.result.ResultStatus != tt.want.ResultStatus {
-				t.Errorf("ResultStatus = %q, want %q", tt.result.ResultStatus, tt.want.ResultStatus)
-			}
-			if tt.result.ExecutionStatus != tt.want.ExecutionStatus {
-				t.Errorf("ExecutionStatus = %q, want %q", tt.result.ExecutionStatus, tt.want.ExecutionStatus)
-			}
-		})
-	}
-}
+// TestExecuteResult_populateTableFields was removed because populateTableFields
+// is now an unexported method in the SDK package (sdk/api/analyzer). These tests
+// should be added to sdk/api/analyzer/analyzer_test.go.

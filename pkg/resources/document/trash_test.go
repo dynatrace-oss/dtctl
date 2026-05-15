@@ -330,7 +330,7 @@ func TestTrashHandler_Restore(t *testing.T) {
 			opts:        RestoreOptions{},
 			statusCode:  404,
 			wantErr:     true,
-			errContains: "not found",
+			errContains: "Not Found",
 		},
 	}
 

@@ -24,8 +24,8 @@ func TestNewHandler(t *testing.T) {
 	if h == nil {
 		t.Fatal("NewHandler() returned nil")
 	}
-	if h.client == nil {
-		t.Error("Handler.client is nil")
+	if h.sdk == nil {
+		t.Error("Handler.sdk is nil")
 	}
 }
 
@@ -174,7 +174,7 @@ func TestList(t *testing.T) {
 				// Simulate API page-size limit (rejects > maxPageSize)
 				if ps := r.URL.Query().Get("page-size"); ps != "" {
 					pageSizeVal, _ := strconv.ParseInt(ps, 10, 64)
-					if pageSizeVal > maxPageSize {
+					if pageSizeVal > 100 {
 						w.WriteHeader(http.StatusBadRequest)
 						w.Write([]byte(`{"error":"page-size exceeds maximum"}`))
 						return

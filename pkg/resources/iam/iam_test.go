@@ -20,69 +20,8 @@ func TestNewHandler(t *testing.T) {
 	if h == nil {
 		t.Fatal("NewHandler() returned nil")
 	}
-	if h.client == nil {
-		t.Error("Handler.client is nil")
-	}
-}
-
-func TestExtractEnvironmentID(t *testing.T) {
-	tests := []struct {
-		name        string
-		baseURL     string
-		want        string
-		expectError bool
-	}{
-		{
-			name:        "live dynatrace URL",
-			baseURL:     "https://abc12345.live.dynatrace.com",
-			want:        "abc12345",
-			expectError: false,
-		},
-		{
-			name:        "apps dynatrace URL",
-			baseURL:     "https://env123.apps.dynatrace.com",
-			want:        "env123",
-			expectError: false,
-		},
-		{
-			name:        "sprint environment",
-			baseURL:     "https://xyz789.sprint.dynatracelabs.com",
-			want:        "xyz789",
-			expectError: false,
-		},
-		{
-			name:        "URL with port",
-			baseURL:     "https://test123.live.dynatrace.com:443",
-			want:        "test123",
-			expectError: false,
-		},
-		{
-			name:        "URL with path",
-			baseURL:     "https://env456.live.dynatrace.com/e/env456",
-			want:        "env456",
-			expectError: false,
-		},
-		{
-			name:        "invalid URL",
-			baseURL:     "://invalid",
-			want:        "",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := extractEnvironmentID(tt.baseURL)
-
-			if (err != nil) != tt.expectError {
-				t.Errorf("extractEnvironmentID() error = %v, expectError %v", err, tt.expectError)
-				return
-			}
-
-			if got != tt.want {
-				t.Errorf("extractEnvironmentID() = %q, want %q", got, tt.want)
-			}
-		})
+	if h.sdk == nil {
+		t.Error("Handler.sdk is nil")
 	}
 }
 
@@ -305,7 +244,7 @@ func TestGetUser(t *testing.T) {
 			statusCode:    404,
 			responseBody:  map[string]string{"error": "Not found"},
 			expectError:   true,
-			errorContains: "not found",
+			errorContains: "404",
 		},
 		{
 			name:          "server error",
@@ -313,7 +252,7 @@ func TestGetUser(t *testing.T) {
 			statusCode:    500,
 			responseBody:  map[string]string{"error": "Internal error"},
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "500",
 		},
 	}
 

@@ -48,8 +48,8 @@ func paginationGuard(t *testing.T, w http.ResponseWriter, r *http.Request) bool 
 func TestNewHandler(t *testing.T) {
 	c := newTestClient(t, "https://test.example.invalid")
 	h := NewHandler(c)
-	if h == nil || h.client == nil {
-		t.Fatal("NewHandler() returned nil or has nil client")
+	if h == nil || h.sdk == nil {
+		t.Fatal("NewHandler() returned nil or has nil sdk")
 	}
 }
 

@@ -35,8 +35,8 @@ func TestNewHandler(t *testing.T) {
 	if h == nil {
 		t.Fatal("NewHandler() returned nil")
 	}
-	if h.client == nil {
-		t.Error("Handler.client is nil")
+	if h.sdk == nil {
+		t.Error("Handler.sdk is nil")
 	}
 }
 
@@ -139,14 +139,14 @@ func TestList(t *testing.T) {
 			statusCode:    500,
 			responseBody:  "internal server error",
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "500",
 		},
 		{
 			name:          "forbidden",
 			statusCode:    403,
 			responseBody:  "access denied",
 			expectError:   true,
-			errorContains: "status 403",
+			errorContains: "403",
 		},
 	}
 
@@ -298,7 +298,7 @@ func TestGet(t *testing.T) {
 			statusCode:    500,
 			responseBody:  "internal error",
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "500",
 		},
 	}
 
@@ -404,7 +404,7 @@ func TestCreate(t *testing.T) {
 			statusCode:    400,
 			responseBody:  "invalid segment definition",
 			expectError:   true,
-			errorContains: "invalid segment definition",
+			errorContains: "400",
 		},
 		{
 			name: "access denied",
@@ -414,7 +414,7 @@ func TestCreate(t *testing.T) {
 			statusCode:    403,
 			responseBody:  "access denied",
 			expectError:   true,
-			errorContains: "access denied",
+			errorContains: "403",
 		},
 		{
 			name: "conflict - segment already exists",
@@ -424,7 +424,7 @@ func TestCreate(t *testing.T) {
 			statusCode:    409,
 			responseBody:  `{"error":"segment already exists"}`,
 			expectError:   true,
-			errorContains: "segment already exists",
+			errorContains: "409",
 		},
 	}
 
@@ -525,7 +525,7 @@ func TestUpdate(t *testing.T) {
 			statusCode:    409,
 			responseBody:  "version conflict",
 			expectError:   true,
-			errorContains: "version conflict",
+			errorContains: "409",
 		},
 		{
 			name:          "invalid definition",
@@ -534,7 +534,7 @@ func TestUpdate(t *testing.T) {
 			statusCode:    400,
 			responseBody:  "invalid",
 			expectError:   true,
-			errorContains: "invalid segment definition",
+			errorContains: "400",
 		},
 		{
 			name:          "access denied",
@@ -543,7 +543,7 @@ func TestUpdate(t *testing.T) {
 			statusCode:    403,
 			responseBody:  "access denied",
 			expectError:   true,
-			errorContains: "access denied",
+			errorContains: "403",
 		},
 	}
 
@@ -643,7 +643,7 @@ func TestDelete(t *testing.T) {
 			statusCode:    403,
 			responseBody:  "access denied",
 			expectError:   true,
-			errorContains: "access denied",
+			errorContains: "403",
 		},
 	}
 

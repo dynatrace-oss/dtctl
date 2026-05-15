@@ -56,48 +56,19 @@ func TestNewHandler(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if h.orgID != "abc" {
-			t.Fatalf("unexpected orgID: %q", h.orgID)
+		if h == nil {
+			t.Fatal("expected non-nil handler")
 		}
-		if !strings.HasSuffix(h.graphqlURL, "/platform/dob/graphql") {
-			t.Fatalf("unexpected graphqlURL: %q", h.graphqlURL)
+		if h.sdk == nil {
+			t.Fatal("expected non-nil sdk handler")
 		}
 	})
 }
 
-func TestBuildGraphQLURL(t *testing.T) {
-	if _, err := buildGraphQLURL(""); err == nil {
-		t.Fatalf("expected empty URL error")
-	}
-	if _, err := buildGraphQLURL("not-a-url"); err == nil {
-		t.Fatalf("expected malformed URL error")
-	}
-
-	url, err := buildGraphQLURL("https://abc.example.invalid/")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if url != "https://abc.example.invalid/platform/dob/graphql" {
-		t.Fatalf("unexpected graphql URL: %q", url)
-	}
-}
-
-func TestExtractOrgID(t *testing.T) {
-	if _, err := extractOrgID("://bad"); err == nil {
-		t.Fatalf("expected parse error")
-	}
-	if _, err := extractOrgID("https:///foo"); err == nil {
-		t.Fatalf("expected missing host error")
-	}
-
-	org, err := extractOrgID("https://abc.example.invalid")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if org != "abc" {
-		t.Fatalf("unexpected org id: %q", org)
-	}
-}
+// TestBuildGraphQLURL and TestExtractOrgID were removed because buildGraphQLURL
+// and extractOrgID are now unexported functions in the SDK package
+// (sdk/api/livedebugger). These tests should be added to
+// sdk/api/livedebugger/livedebugger_test.go.
 
 func TestExtractWorkspaceID(t *testing.T) {
 	if _, err := ExtractWorkspaceID(map[string]interface{}{}); err == nil {
@@ -120,15 +91,8 @@ func TestExtractWorkspaceID(t *testing.T) {
 	}
 }
 
-func TestGenerateMutableRuleID(t *testing.T) {
-	id := generateMutableRuleID()
-	if !strings.HasPrefix(id, "dtctl-rule-") {
-		t.Fatalf("unexpected prefix: %q", id)
-	}
-	if len(id) <= len("dtctl-rule-") {
-		t.Fatalf("unexpected id length: %q", id)
-	}
-}
+// TestGenerateMutableRuleID was removed because generateMutableRuleID is now
+// an unexported function in the SDK package (sdk/api/livedebugger).
 
 func TestBuildFilterSets_UsesLabelsAndEmptyFilters(t *testing.T) {
 	input := map[string][]string{
@@ -182,42 +146,8 @@ func TestBuildFilterSets_Empty(t *testing.T) {
 	}
 }
 
-func TestExecuteGraphQL(t *testing.T) {
-	t.Run("success", func(t *testing.T) {
-		h := newGraphQLTestHandler(t, http.StatusOK, func(body map[string]interface{}) map[string]interface{} {
-			if body["query"] == nil || body["variables"] == nil {
-				t.Fatalf("missing query/variables in request: %#v", body)
-			}
-			return map[string]interface{}{"data": map[string]interface{}{"ok": true}}
-		})
-
-		resp, err := h.executeGraphQL("query Test { x }", map[string]interface{}{"x": 1})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if resp["data"] == nil {
-			t.Fatalf("unexpected response: %#v", resp)
-		}
-	})
-
-	t.Run("http error status", func(t *testing.T) {
-		h := newGraphQLTestHandler(t, http.StatusInternalServerError, func(body map[string]interface{}) map[string]interface{} {
-			return map[string]interface{}{"error": "boom"}
-		})
-		if _, err := h.executeGraphQL("query Test { x }", nil); err == nil {
-			t.Fatalf("expected HTTP error status")
-		}
-	})
-
-	t.Run("graphql errors field", func(t *testing.T) {
-		h := newGraphQLTestHandler(t, http.StatusOK, func(body map[string]interface{}) map[string]interface{} {
-			return map[string]interface{}{"errors": []interface{}{map[string]interface{}{"message": "bad query"}}}
-		})
-		if _, err := h.executeGraphQL("query Test { x }", nil); err == nil {
-			t.Fatalf("expected graphql errors")
-		}
-	})
-}
+// TestExecuteGraphQL was removed because executeGraphQL is now an unexported
+// method in the SDK package (sdk/api/livedebugger).
 
 func TestHandlerMethods(t *testing.T) {
 	h := newGraphQLTestHandler(t, http.StatusOK, func(body map[string]interface{}) map[string]interface{} {

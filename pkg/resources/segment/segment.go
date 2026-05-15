@@ -7,24 +7,26 @@ import (
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	sdksegment "github.com/dynatrace-oss/dtctl/sdk/api/segment"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // ErrNotFound is returned when a segment is not found (HTTP 404).
-var ErrNotFound = errors.New("segment not found")
+var ErrNotFound = sdksegment.ErrNotFound
 
-const basePath = "/platform/storage/filter-segments/v1/filter-segments"
-
-// Handler handles Grail filter segment resources
+// Handler handles Grail filter segment resources.
+// It delegates HTTP calls to the SDK handler and wraps them with DQL↔AST conversion.
 type Handler struct {
-	client *client.Client
+	sdk *sdksegment.Handler
 }
 
-// NewHandler creates a new segment handler
+// NewHandler creates a new segment handler.
 func NewHandler(c *client.Client) *Handler {
-	return &Handler{client: c}
+	return &Handler{sdk: sdksegment.NewHandler(httpclient.Wrap(c.HTTP()))}
 }
 
 // FilterSegment is the read model for a Grail filter segment.
+// It extends the SDK type with VariablesDisplay for CLI table output.
 type FilterSegment struct {
 	UID               string     `json:"uid" table:"UID"`
 	Name              string     `json:"name" table:"NAME"`
@@ -40,16 +42,10 @@ type FilterSegment struct {
 }
 
 // Include represents a single include rule within a segment.
-type Include struct {
-	DataObject string `json:"dataObject"` // "logs", "spans", etc. Use "_all_data_object" for all.
-	Filter     string `json:"filter"`
-}
+type Include = sdksegment.Include
 
 // Variables holds the variable configuration for a segment.
-type Variables struct {
-	Type  string `json:"type"`  // Variable type, e.g. "query"
-	Value string `json:"value"` // Variable value, e.g. a DQL expression
-}
+type Variables = sdksegment.Variables
 
 // FilterSegmentList represents a list of filter segments.
 // The filter-segments API does not support pagination; all segments are
@@ -59,40 +55,44 @@ type FilterSegmentList struct {
 	TotalCount     int             `json:"totalCount,omitempty"`
 }
 
+// fromSDKSegment converts an SDK FilterSegment to the CLI FilterSegment.
+func fromSDKSegment(s *sdksegment.FilterSegment) FilterSegment {
+	return FilterSegment{
+		UID:               s.UID,
+		Name:              s.Name,
+		Description:       s.Description,
+		IsPublic:          s.IsPublic,
+		Owner:             s.Owner,
+		Version:           s.Version,
+		IsReadyMade:       s.IsReadyMade,
+		Includes:          s.Includes,
+		Variables:         s.Variables,
+		AllowedOperations: s.AllowedOperations,
+	}
+}
+
 // List lists all filter segments.
-// The filter-segments API returns all segments in one response (no pagination).
 // Variables are requested so the wide table view can show whether each segment
 // requires variable bindings.
 func (h *Handler) List() (*FilterSegmentList, error) {
-	resp, err := h.client.HTTP().R().
-		SetQueryParamsFromValues(map[string][]string{
-			"add-fields": {"VARIABLES"},
-		}).
-		Get(basePath)
+	sdkResult, err := h.sdk.List("VARIABLES")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list segments: %w", err)
+		return nil, err
 	}
 
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list segments: status %d: %s", resp.StatusCode(), resp.String())
+	result := &FilterSegmentList{
+		TotalCount: len(sdkResult.FilterSegments),
+	}
+	result.FilterSegments = make([]FilterSegment, len(sdkResult.FilterSegments))
+	for i, s := range sdkResult.FilterSegments {
+		seg := fromSDKSegment(&s)
+		// Convert AST filters to human-readable DQL for display
+		convertIncludesForDisplay(&seg)
+		seg.VariablesDisplay = variablesDisplay(seg.Variables)
+		result.FilterSegments[i] = seg
 	}
 
-	var result FilterSegmentList
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse segments response: %w", err)
-	}
-
-	// The API may not populate totalCount reliably; compute it from the actual list.
-	result.TotalCount = len(result.FilterSegments)
-
-	// Convert AST filters to human-readable DQL for display, and
-	// populate VariablesDisplay for wide table output.
-	for i := range result.FilterSegments {
-		convertIncludesForDisplay(&result.FilterSegments[i])
-		result.FilterSegments[i].VariablesDisplay = variablesDisplay(result.FilterSegments[i].Variables)
-	}
-
-	return &result, nil
+	return result, nil
 }
 
 // variablesDisplay returns a human-readable summary of a segment's variables.
@@ -105,34 +105,16 @@ func variablesDisplay(v *Variables) string {
 
 // Get gets a specific filter segment by UID.
 func (h *Handler) Get(uid string) (*FilterSegment, error) {
-	resp, err := h.client.HTTP().R().
-		SetQueryParamsFromValues(map[string][]string{
-			"add-fields": {"INCLUDES", "VARIABLES"},
-		}).
-		Get(fmt.Sprintf("%s/%s", basePath, uid))
-
+	sdkResult, err := h.sdk.Get(uid, "INCLUDES", "VARIABLES")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get segment: %w", err)
+		return nil, err
 	}
 
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("segment %q: %w", uid, ErrNotFound)
-		default:
-			return nil, fmt.Errorf("failed to get segment: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	var result FilterSegment
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse segment response: %w", err)
-	}
-
+	seg := fromSDKSegment(sdkResult)
 	// Convert AST filters to human-readable DQL for display
-	convertIncludesForDisplay(&result)
+	convertIncludesForDisplay(&seg)
 
-	return &result, nil
+	return &seg, nil
 }
 
 // Create creates a new filter segment from raw JSON/YAML bytes.
@@ -143,34 +125,13 @@ func (h *Handler) Create(data []byte) (*FilterSegment, error) {
 		return nil, fmt.Errorf("failed to convert filter expressions: %w", err)
 	}
 
-	resp, err := h.client.HTTP().R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(converted).
-		Post(basePath)
-
+	sdkResult, err := h.sdk.Create(converted)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create segment: %w", err)
+		return nil, err
 	}
 
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return nil, fmt.Errorf("invalid segment definition: %s", resp.String())
-		case 403:
-			return nil, fmt.Errorf("access denied to create segment")
-		case 409:
-			return nil, fmt.Errorf("segment already exists: %s", resp.String())
-		default:
-			return nil, fmt.Errorf("failed to create segment: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	var result FilterSegment
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse create response: %w", err)
-	}
-
-	return &result, nil
+	seg := fromSDKSegment(sdkResult)
+	return &seg, nil
 }
 
 // Update updates an existing filter segment.
@@ -182,55 +143,12 @@ func (h *Handler) Update(uid string, version int, data []byte) error {
 		return fmt.Errorf("failed to convert filter expressions: %w", err)
 	}
 
-	resp, err := h.client.HTTP().R().
-		SetHeader("Content-Type", "application/json").
-		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
-		SetBody(converted).
-		Patch(fmt.Sprintf("%s/%s", basePath, uid))
-
-	if err != nil {
-		return fmt.Errorf("failed to update segment: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return fmt.Errorf("invalid segment definition: %s", resp.String())
-		case 403:
-			return fmt.Errorf("access denied to update segment %q", uid)
-		case 404:
-			return fmt.Errorf("segment %q: %w", uid, ErrNotFound)
-		case 409:
-			return fmt.Errorf("segment version conflict (segment was modified)")
-		default:
-			return fmt.Errorf("failed to update segment: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
+	return h.sdk.Update(uid, version, converted)
 }
 
 // Delete deletes a filter segment by UID.
 func (h *Handler) Delete(uid string) error {
-	resp, err := h.client.HTTP().R().
-		Delete(fmt.Sprintf("%s/%s", basePath, uid))
-
-	if err != nil {
-		return fmt.Errorf("failed to delete segment: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 403:
-			return fmt.Errorf("access denied to delete segment %q", uid)
-		case 404:
-			return fmt.Errorf("segment %q: %w", uid, ErrNotFound)
-		default:
-			return fmt.Errorf("failed to delete segment: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
+	return h.sdk.Delete(uid)
 }
 
 // GetRaw gets a segment as pretty-printed JSON bytes (for edit command).
@@ -319,10 +237,8 @@ func convertIncludesForAPI(data []byte) ([]byte, error) {
 }
 
 // replaceJSONField replaces the value of a top-level JSON object field while
-// preserving the original field order and formatting. It scans the raw JSON
-// bytes for the field key, locates its value span, and splices in newValue.
+// preserving the original field order and formatting.
 func replaceJSONField(data []byte, field string, newValue json.RawMessage) ([]byte, error) {
-	// Build the key pattern to search for: "field":
 	keyPattern := []byte(`"` + field + `"`)
 
 	idx := bytes.Index(data, keyPattern)
@@ -330,7 +246,6 @@ func replaceJSONField(data []byte, field string, newValue json.RawMessage) ([]by
 		return nil, fmt.Errorf("field %q not found in JSON", field)
 	}
 
-	// Skip past the key and the colon
 	valueStart := idx + len(keyPattern)
 	for valueStart < len(data) && (data[valueStart] == ' ' || data[valueStart] == '\t' || data[valueStart] == '\n' || data[valueStart] == '\r' || data[valueStart] == ':') {
 		valueStart++
@@ -339,14 +254,11 @@ func replaceJSONField(data []byte, field string, newValue json.RawMessage) ([]by
 		return nil, fmt.Errorf("field %q: unexpected end of JSON after key", field)
 	}
 
-	// Find the end of the value by counting balanced brackets/braces and
-	// skipping strings. The value starts at data[valueStart].
 	valueEnd, err := findJSONValueEnd(data, valueStart)
 	if err != nil {
 		return nil, fmt.Errorf("field %q: %w", field, err)
 	}
 
-	// Splice: data[:valueStart] + newValue + data[valueEnd:]
 	var buf bytes.Buffer
 	buf.Grow(valueStart + len(newValue) + (len(data) - valueEnd))
 	buf.Write(data[:valueStart])
@@ -356,7 +268,7 @@ func replaceJSONField(data []byte, field string, newValue json.RawMessage) ([]by
 }
 
 // findJSONValueEnd returns the byte offset just past the JSON value starting
-// at data[start]. It handles objects, arrays, strings, and primitives.
+// at data[start].
 func findJSONValueEnd(data []byte, start int) (int, error) {
 	if start >= len(data) {
 		return 0, fmt.Errorf("unexpected end of JSON")
@@ -368,7 +280,6 @@ func findJSONValueEnd(data []byte, start int) (int, error) {
 	case '"':
 		return findJSONStringEnd(data, start)
 	default:
-		// Primitive (number, boolean, null) — ends at comma, }, ], or whitespace
 		i := start
 		for i < len(data) {
 			switch data[i] {
@@ -381,8 +292,6 @@ func findJSONValueEnd(data []byte, start int) (int, error) {
 	}
 }
 
-// findJSONBalancedEnd finds the closing bracket/brace that matches the opener
-// at data[start], correctly skipping nested structures and strings.
 func findJSONBalancedEnd(data []byte, start int) (int, error) {
 	open := data[start]
 	var close byte
@@ -416,13 +325,11 @@ func findJSONBalancedEnd(data []byte, start int) (int, error) {
 	return i, nil
 }
 
-// findJSONStringEnd returns the offset just past the closing quote of a JSON
-// string starting at data[start] (which must be '"').
 func findJSONStringEnd(data []byte, start int) (int, error) {
-	i := start + 1 // skip opening quote
+	i := start + 1
 	for i < len(data) {
 		if data[i] == '\\' {
-			i += 2 // skip escaped character
+			i += 2
 			continue
 		}
 		if data[i] == '"' {
@@ -434,9 +341,7 @@ func findJSONStringEnd(data []byte, start int) (int, error) {
 }
 
 // convertIncludesForDisplay converts include filters from AST to
-// human-readable DQL after receiving from the API. It modifies the
-// FilterSegment in place. If a filter is already plain DQL (doesn't
-// start with '{'), it is left unchanged.
+// human-readable DQL after receiving from the API.
 func convertIncludesForDisplay(seg *FilterSegment) {
 	for i := range seg.Includes {
 		dql, err := FilterFromAST(seg.Includes[i].Filter)
