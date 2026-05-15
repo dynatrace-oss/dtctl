@@ -1,6 +1,7 @@
 package bucket
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -54,8 +55,8 @@ type BucketUpdate struct {
 }
 
 // List lists all bucket definitions.
-func (h *Handler) List() (*BucketList, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) List(ctx context.Context) (*BucketList, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("add-fields", "records").
 		Get("/platform/storage/management/v1/bucket-definitions")
 	if err != nil {
@@ -72,8 +73,8 @@ func (h *Handler) List() (*BucketList, error) {
 }
 
 // Get gets a specific bucket by name.
-func (h *Handler) Get(bucketName string) (*Bucket, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Get(ctx context.Context, bucketName string) (*Bucket, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("add-fields", "records,estimatedUncompressedBytes").
 		Get(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", bucketName))
 	if err != nil {
@@ -90,8 +91,8 @@ func (h *Handler) Get(bucketName string) (*Bucket, error) {
 }
 
 // Create creates a new bucket.
-func (h *Handler) Create(req BucketCreate) (*Bucket, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Create(ctx context.Context, req BucketCreate) (*Bucket, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/storage/management/v1/bucket-definitions")
 	if err != nil {
@@ -109,8 +110,8 @@ func (h *Handler) Create(req BucketCreate) (*Bucket, error) {
 
 // Update updates an existing bucket.
 // The version parameter is required for optimistic locking.
-func (h *Handler) Update(bucketName string, version int, req BucketUpdate) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Update(ctx context.Context, bucketName string, version int, req BucketUpdate) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
 		Patch(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", bucketName))
@@ -124,8 +125,8 @@ func (h *Handler) Update(bucketName string, version int, req BucketUpdate) error
 }
 
 // Delete deletes a bucket by name.
-func (h *Handler) Delete(bucketName string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Delete(ctx context.Context, bucketName string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", bucketName))
 	if err != nil {
 		return fmt.Errorf("delete bucket: %w", err)
@@ -137,8 +138,8 @@ func (h *Handler) Delete(bucketName string) error {
 }
 
 // Truncate empties a bucket (removes all data).
-func (h *Handler) Truncate(bucketName string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Truncate(ctx context.Context, bucketName string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Post(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s:truncate", bucketName))
 	if err != nil {
 		return fmt.Errorf("truncate bucket: %w", err)
@@ -148,4 +149,3 @@ func (h *Handler) Truncate(bucketName string) error {
 	}
 	return nil
 }
-

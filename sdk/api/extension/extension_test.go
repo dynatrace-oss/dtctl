@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -48,7 +49,7 @@ func TestList(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List("", 0)
+	result, err := h.List(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestGet(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Get("com.dynatrace.extension.host")
+	result, err := h.Get(context.Background(), "com.dynatrace.extension.host")
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestGetVersion(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.GetVersion("com.dynatrace.extension.host", "1.0.0")
+	result, err := h.GetVersion(context.Background(), "com.dynatrace.extension.host", "1.0.0")
 	if err != nil {
 		t.Fatalf("GetVersion() error: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestDeleteMonitoringConfiguration(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.DeleteMonitoringConfiguration("com.dynatrace.extension.host", "config-1")
+	err := h.DeleteMonitoringConfiguration(context.Background(), "com.dynatrace.extension.host", "config-1")
 	if err != nil {
 		t.Fatalf("DeleteMonitoringConfiguration() error: %v", err)
 	}

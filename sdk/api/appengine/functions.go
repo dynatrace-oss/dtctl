@@ -1,6 +1,7 @@
 package appengine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -77,11 +78,11 @@ type SDKVersionsResponse struct {
 }
 
 // InvokeFunction invokes an app function
-func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionInvokeResponse, error) {
+func (h *FunctionHandler) InvokeFunction(ctx context.Context, req *FunctionInvokeRequest) (*FunctionInvokeResponse, error) {
 	url := fmt.Sprintf("/platform/app-engine/app-functions/v1/apps/%s/api/%s",
 		req.AppID, req.FunctionName)
 
-	httpReq := h.client.HTTP().R()
+	httpReq := h.client.HTTP().R().SetContext(ctx)
 
 	for key, value := range req.Headers {
 		httpReq.SetHeader(key, value)
@@ -154,8 +155,8 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 }
 
 // DeferExecution defers execution of a resumable function
-func (h *FunctionHandler) DeferExecution(req *DeferredExecutionRequest) (*DeferredExecutionResponse, error) {
-	resp, err := h.client.HTTP().R().
+func (h *FunctionHandler) DeferExecution(ctx context.Context, req *DeferredExecutionRequest) (*DeferredExecutionResponse, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/app-engine/app-functions/v1/deferred-execution")
 
@@ -175,13 +176,13 @@ func (h *FunctionHandler) DeferExecution(req *DeferredExecutionRequest) (*Deferr
 }
 
 // ExecuteCode executes ad-hoc JavaScript code using the function executor
-func (h *FunctionHandler) ExecuteCode(sourceCode, payload string) (*FunctionExecutorResponse, error) {
+func (h *FunctionHandler) ExecuteCode(ctx context.Context, sourceCode, payload string) (*FunctionExecutorResponse, error) {
 	req := FunctionExecutorRequest{
 		SourceCode: sourceCode,
 		Payload:    payload,
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/app-engine/function-executor/v1/executions")
 
@@ -212,8 +213,8 @@ func (h *FunctionHandler) ExecuteCode(sourceCode, payload string) (*FunctionExec
 }
 
 // GetSDKVersions lists available SDK versions
-func (h *FunctionHandler) GetSDKVersions() (*SDKVersionsResponse, error) {
-	resp, err := h.client.HTTP().R().
+func (h *FunctionHandler) GetSDKVersions(ctx context.Context) (*SDKVersionsResponse, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get("/platform/app-engine/function-executor/v1/sdk-versions")
 
 	if err != nil {

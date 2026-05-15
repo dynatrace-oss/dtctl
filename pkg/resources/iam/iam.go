@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"context"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkiam "github.com/dynatrace-oss/dtctl/sdk/api/iam"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -71,7 +72,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // ListUsers lists all users in the current environment with automatic pagination.
 func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int64) (*UserListResponse, error) {
-	sdkResult, err := h.sdk.ListUsers(partialString, uuids, chunkSize)
+	sdkResult, err := h.sdk.ListUsers(context.Background(), partialString, uuids, chunkSize)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int6
 
 // GetUser gets a specific user by UUID.
 func (h *Handler) GetUser(uuid string) (*User, error) {
-	sdkResult, err := h.sdk.GetUser(uuid)
+	sdkResult, err := h.sdk.GetUser(context.Background(), uuid)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func (h *Handler) GetUser(uuid string) (*User, error) {
 
 // ListGroups lists all groups in the current account with automatic pagination.
 func (h *Handler) ListGroups(partialGroupName string, uuids []string, chunkSize int64) (*GroupListResponse, error) {
-	sdkResult, err := h.sdk.ListGroups(partialGroupName, uuids, chunkSize)
+	sdkResult, err := h.sdk.ListGroups(context.Background(), partialGroupName, uuids, chunkSize)
 	if err != nil {
 		return nil, err
 	}

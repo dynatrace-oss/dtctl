@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"context"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -75,7 +76,7 @@ func fromSDKSegment(s *sdksegment.FilterSegment) FilterSegment {
 // Variables are requested so the wide table view can show whether each segment
 // requires variable bindings.
 func (h *Handler) List() (*FilterSegmentList, error) {
-	sdkResult, err := h.sdk.List("VARIABLES")
+	sdkResult, err := h.sdk.List(context.Background(), "VARIABLES")
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +106,7 @@ func variablesDisplay(v *Variables) string {
 
 // Get gets a specific filter segment by UID.
 func (h *Handler) Get(uid string) (*FilterSegment, error) {
-	sdkResult, err := h.sdk.Get(uid, "INCLUDES", "VARIABLES")
+	sdkResult, err := h.sdk.Get(context.Background(), uid, "INCLUDES", "VARIABLES")
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ func (h *Handler) Create(data []byte) (*FilterSegment, error) {
 		return nil, fmt.Errorf("failed to convert filter expressions: %w", err)
 	}
 
-	sdkResult, err := h.sdk.Create(converted)
+	sdkResult, err := h.sdk.Create(context.Background(), converted)
 	if err != nil {
 		return nil, err
 	}
@@ -143,12 +144,12 @@ func (h *Handler) Update(uid string, version int, data []byte) error {
 		return fmt.Errorf("failed to convert filter expressions: %w", err)
 	}
 
-	return h.sdk.Update(uid, version, converted)
+	return h.sdk.Update(context.Background(), uid, version, converted)
 }
 
 // Delete deletes a filter segment by UID.
 func (h *Handler) Delete(uid string) error {
-	return h.sdk.Delete(uid)
+	return h.sdk.Delete(context.Background(), uid)
 }
 
 // GetRaw gets a segment as pretty-printed JSON bytes (for edit command).

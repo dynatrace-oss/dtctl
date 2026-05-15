@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -87,8 +88,8 @@ type CreateResponse struct {
 }
 
 // ListSchemas lists all available settings schemas.
-func (h *Handler) ListSchemas() (*SchemaList, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) ListSchemas(ctx context.Context) (*SchemaList, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get("/platform/classic/environment-api/v2/settings/schemas")
 	if err != nil {
 		return nil, fmt.Errorf("list schemas: %w", err)
@@ -106,8 +107,8 @@ func (h *Handler) ListSchemas() (*SchemaList, error) {
 }
 
 // GetSchema gets a specific schema definition.
-func (h *Handler) GetSchema(schemaID string) (map[string]any, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetSchema(ctx context.Context, schemaID string) (map[string]any, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/schemas/%s", schemaID))
 	if err != nil {
 		return nil, fmt.Errorf("get schema %q: %w", schemaID, err)
@@ -125,13 +126,13 @@ func (h *Handler) GetSchema(schemaID string) (map[string]any, error) {
 }
 
 // ListObjects lists settings objects for a schema with automatic pagination.
-func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*SettingsObjectsList, error) {
+func (h *Handler) ListObjects(ctx context.Context, schemaID, scope string, chunkSize int64) (*SettingsObjectsList, error) {
 	var allItems []SettingsObject
 	var totalCount int
 	nextPageKey := ""
 
 	for {
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		params := httpclient.PaginationParams{
 			Style:         httpclient.PaginationSettingsAPI,
@@ -194,8 +195,8 @@ func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*Setting
 }
 
 // Get gets a specific settings object by objectId.
-func (h *Handler) Get(objectID string) (*SettingsObject, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Get(ctx context.Context, objectID string) (*SettingsObject, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("fields", "objectId,scope,schemaId,schemaVersion,externalId,summary,value,modificationInfo").
 		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
 	if err != nil {
@@ -214,10 +215,10 @@ func (h *Handler) Get(objectID string) (*SettingsObject, error) {
 }
 
 // ValidateCreate validates a settings object without creating it.
-func (h *Handler) ValidateCreate(req SettingsObjectCreate) error {
+func (h *Handler) ValidateCreate(ctx context.Context, req SettingsObjectCreate) error {
 	body := []SettingsObjectCreate{req}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		SetQueryParam("validateOnly", "true").
 		Post("/platform/classic/environment-api/v2/settings/objects")
@@ -232,10 +233,10 @@ func (h *Handler) ValidateCreate(req SettingsObjectCreate) error {
 }
 
 // Create creates a new settings object.
-func (h *Handler) Create(req SettingsObjectCreate) (*SettingsObjectResponse, error) {
+func (h *Handler) Create(ctx context.Context, req SettingsObjectCreate) (*SettingsObjectResponse, error) {
 	body := []SettingsObjectCreate{req}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		Post("/platform/classic/environment-api/v2/settings/objects")
 	if err != nil {
@@ -264,10 +265,10 @@ func (h *Handler) Create(req SettingsObjectCreate) (*SettingsObjectResponse, err
 
 // ValidateUpdate validates a settings object update without applying it.
 // The schemaVersion is used for the If-Match header (obtain it from Get).
-func (h *Handler) ValidateUpdate(objectID, schemaVersion string, value map[string]any) error {
+func (h *Handler) ValidateUpdate(ctx context.Context, objectID, schemaVersion string, value map[string]any) error {
 	body := map[string]any{"value": value}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		SetHeader("If-Match", schemaVersion).
 		SetQueryParam("validateOnly", "true").
@@ -284,10 +285,10 @@ func (h *Handler) ValidateUpdate(objectID, schemaVersion string, value map[strin
 
 // Update updates an existing settings object.
 // The schemaVersion is used for the If-Match header (obtain it from Get).
-func (h *Handler) Update(objectID, schemaVersion string, value map[string]any) error {
+func (h *Handler) Update(ctx context.Context, objectID, schemaVersion string, value map[string]any) error {
 	body := map[string]any{"value": value}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		SetHeader("If-Match", schemaVersion).
 		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
@@ -303,8 +304,8 @@ func (h *Handler) Update(objectID, schemaVersion string, value map[string]any) e
 
 // Delete deletes a settings object.
 // The schemaVersion is used for the If-Match header (obtain it from Get).
-func (h *Handler) Delete(objectID, schemaVersion string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Delete(ctx context.Context, objectID, schemaVersion string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("If-Match", schemaVersion).
 		Delete(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
 	if err != nil {

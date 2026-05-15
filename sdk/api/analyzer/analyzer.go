@@ -93,8 +93,8 @@ type ValidationResult struct {
 }
 
 // List retrieves all available analyzers
-func (h *Handler) List(filter string) (*AnalyzerList, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) List(ctx context.Context, filter string) (*AnalyzerList, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	if filter != "" {
 		req.SetQueryParam("filter", filter)
@@ -118,8 +118,8 @@ func (h *Handler) List(filter string) (*AnalyzerList, error) {
 }
 
 // Get retrieves a specific analyzer definition
-func (h *Handler) Get(name string) (*AnalyzerDefinition, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Get(ctx context.Context, name string) (*AnalyzerDefinition, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get analyzer: %w", err)
@@ -141,8 +141,8 @@ func (h *Handler) Get(name string) (*AnalyzerDefinition, error) {
 }
 
 // GetDocumentation retrieves the documentation for an analyzer
-func (h *Handler) GetDocumentation(name string) (string, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetDocumentation(ctx context.Context, name string) (string, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Accept", "text/markdown").
 		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/documentation", name))
 	if err != nil {
@@ -159,8 +159,8 @@ func (h *Handler) GetDocumentation(name string) (string, error) {
 }
 
 // GetInputSchema retrieves the JSON schema for analyzer input
-func (h *Handler) GetInputSchema(name string) (map[string]interface{}, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetInputSchema(ctx context.Context, name string) (map[string]interface{}, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/json-schema/input", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get input schema: %w", err)
@@ -177,8 +177,8 @@ func (h *Handler) GetInputSchema(name string) (map[string]interface{}, error) {
 }
 
 // GetResultSchema retrieves the JSON schema for analyzer result
-func (h *Handler) GetResultSchema(name string) (map[string]interface{}, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetResultSchema(ctx context.Context, name string) (map[string]interface{}, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/json-schema/result", name))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get result schema: %w", err)
@@ -195,8 +195,8 @@ func (h *Handler) GetResultSchema(name string) (map[string]interface{}, error) {
 }
 
 // Execute runs an analyzer with the given input
-func (h *Handler) Execute(name string, input map[string]interface{}, timeoutSeconds int) (*ExecuteResult, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) Execute(ctx context.Context, name string, input map[string]interface{}, timeoutSeconds int) (*ExecuteResult, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	if timeoutSeconds > 0 {
 		req.SetQueryParam("timeout-seconds", fmt.Sprintf("%d", timeoutSeconds))
@@ -231,7 +231,7 @@ const (
 // The context can be used to cancel a long-running poll (e.g. on SIGINT).
 func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[string]interface{}, maxWaitSeconds int) (*ExecuteResult, error) {
 	// Start execution with initial timeout
-	result, err := h.Execute(name, input, defaultInitialTimeout)
+	result, err := h.Execute(ctx, name, input, defaultInitialTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +260,7 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 		default:
 		}
 
-		pollResult, err := h.Poll(name, result.RequestToken, defaultPollTimeout)
+		pollResult, err := h.Poll(ctx, name, result.RequestToken, defaultPollTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -289,8 +289,8 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 }
 
 // Poll polls for the result of a started analyzer execution
-func (h *Handler) Poll(name string, requestToken string, timeoutSeconds int) (*ExecuteResult, error) {
-	req := h.client.HTTP().R().
+func (h *Handler) Poll(ctx context.Context, name string, requestToken string, timeoutSeconds int) (*ExecuteResult, error) {
+	req := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("request-token", requestToken)
 
 	if timeoutSeconds > 0 {
@@ -319,8 +319,8 @@ func (h *Handler) Poll(name string, requestToken string, timeoutSeconds int) (*E
 }
 
 // Cancel cancels a running analyzer execution
-func (h *Handler) Cancel(name string, requestToken string) (*ExecuteResult, error) {
-	req := h.client.HTTP().R().
+func (h *Handler) Cancel(ctx context.Context, name string, requestToken string) (*ExecuteResult, error) {
+	req := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("request-token", requestToken)
 
 	resp, err := req.
@@ -340,8 +340,8 @@ func (h *Handler) Cancel(name string, requestToken string) (*ExecuteResult, erro
 }
 
 // Validate validates the input for an analyzer execution
-func (h *Handler) Validate(name string, input map[string]interface{}) (*ValidationResult, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Validate(ctx context.Context, name string, input map[string]interface{}) (*ValidationResult, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(input).
 		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:validate", name))
 	if err != nil {

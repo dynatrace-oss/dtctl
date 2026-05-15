@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -50,13 +51,13 @@ type HubExtensionReleaseList struct {
 
 // ListExtensions lists all Hub catalog extensions with automatic pagination.
 // filter is a case-insensitive substring matched against id, name, and description.
-func (h *Handler) ListExtensions(filter string, chunkSize int64) (*HubExtensionList, error) {
+func (h *Handler) ListExtensions(ctx context.Context, filter string, chunkSize int64) (*HubExtensionList, error) {
 	var allItems []HubExtension
 	var totalCount int
 	nextPageKey := ""
 
 	for {
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		params := httpclient.PaginationParams{
 			Style:         httpclient.PaginationDefault,
@@ -110,8 +111,8 @@ func (h *Handler) ListExtensions(filter string, chunkSize int64) (*HubExtensionL
 }
 
 // GetExtension gets a specific Hub extension by ID.
-func (h *Handler) GetExtension(id string) (*HubExtension, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetExtension(ctx context.Context, id string) (*HubExtension, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/hub/v1/catalog/extensions/%s", url.PathEscape(id)))
 	if err != nil {
 		return nil, fmt.Errorf("get hub extension: %w", err)
@@ -129,13 +130,13 @@ func (h *Handler) GetExtension(id string) (*HubExtension, error) {
 }
 
 // ListExtensionReleases lists all releases for a Hub extension with automatic pagination.
-func (h *Handler) ListExtensionReleases(id string, chunkSize int64) (*HubExtensionReleaseList, error) {
+func (h *Handler) ListExtensionReleases(ctx context.Context, id string, chunkSize int64) (*HubExtensionReleaseList, error) {
 	var allItems []HubExtensionRelease
 	var totalCount int
 	nextPageKey := ""
 
 	for {
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		params := httpclient.PaginationParams{
 			Style:         httpclient.PaginationDefault,

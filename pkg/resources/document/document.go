@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -224,12 +225,31 @@ var (
 
 // ConvertToDocuments converts a list of DocumentMetadata to a list of Documents for table output.
 func ConvertToDocuments(list *DocumentList) []Document {
-	sdkDocs := sdkdocument.ConvertToDocuments(list)
-	docs := make([]Document, len(sdkDocs))
-	for i := range sdkDocs {
-		docs[i] = *fromSDKDocument(&sdkDocs[i])
+	docs := make([]Document, len(list.Documents))
+	for i, meta := range list.Documents {
+		docs[i] = documentMetadataToDocument(meta)
 	}
 	return docs
+}
+
+// documentMetadataToDocument converts a DocumentMetadata to a CLI Document.
+func documentMetadataToDocument(m sdkdocument.DocumentMetadata) Document {
+	return Document{
+		ID:                m.ID,
+		Name:              m.Name,
+		Type:              m.Type,
+		Description:       m.Description,
+		Version:           m.Version,
+		Owner:             m.Owner,
+		IsPrivate:         m.IsPrivate,
+		Created:           m.ModificationInfo.CreatedTime,
+		Modified:          m.ModificationInfo.LastModifiedTime,
+		OriginAppID:       m.OriginAppID,
+		OriginExtensionID: m.OriginExtensionID,
+		Labels:            m.Labels,
+		ShareInfo:         m.ShareInfo,
+		UserContext:       m.UserContext,
+	}
 }
 
 // Handler handles document resources (dashboards, notebooks, etc.)
@@ -247,12 +267,12 @@ func NewHandler(c *client.Client) *Handler {
 
 // List retrieves documents matching the provided filters with automatic pagination.
 func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
-	return h.sdk.List(filters)
+	return h.sdk.List(context.Background(), filters)
 }
 
 // Get retrieves a specific document by ID.
 func (h *Handler) Get(id string) (*Document, error) {
-	d, err := h.sdk.Get(id)
+	d, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -261,12 +281,12 @@ func (h *Handler) Get(id string) (*Document, error) {
 
 // GetMetadata retrieves only the metadata for a document.
 func (h *Handler) GetMetadata(id string) (*DocumentMetadata, error) {
-	return h.sdk.GetMetadata(id)
+	return h.sdk.GetMetadata(context.Background(), id)
 }
 
 // GetRaw retrieves a document's content as raw bytes.
 func (h *Handler) GetRaw(id string) ([]byte, error) {
-	doc, err := h.sdk.Get(id)
+	doc, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -275,12 +295,12 @@ func (h *Handler) GetRaw(id string) ([]byte, error) {
 
 // Delete deletes a document.
 func (h *Handler) Delete(id string, version int) error {
-	return h.sdk.Delete(id, version)
+	return h.sdk.Delete(context.Background(), id, version)
 }
 
 // Create creates a new document.
 func (h *Handler) Create(req CreateRequest) (*Document, error) {
-	d, err := h.sdk.Create(req)
+	d, err := h.sdk.Create(context.Background(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +309,7 @@ func (h *Handler) Create(req CreateRequest) (*Document, error) {
 
 // Update updates a document's content.
 func (h *Handler) Update(id string, version int, content []byte, contentType string) (*Document, error) {
-	d, err := h.sdk.Update(id, version, content, contentType)
+	d, err := h.sdk.Update(context.Background(), id, version, content, contentType)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +318,7 @@ func (h *Handler) Update(id string, version int, content []byte, contentType str
 
 // UpdateWithMetadata updates a document's content and optionally its metadata (name, description).
 func (h *Handler) UpdateWithMetadata(id string, version int, content []byte, contentType string, name string, description string) (*Document, error) {
-	d, err := h.sdk.UpdateWithMetadata(id, version, content, contentType, name, description)
+	d, err := h.sdk.UpdateWithMetadata(context.Background(), id, version, content, contentType, name, description)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +327,7 @@ func (h *Handler) UpdateWithMetadata(id string, version int, content []byte, con
 
 // CreateDirectShare creates a direct share for a document.
 func (h *Handler) CreateDirectShare(req CreateDirectShareRequest) (*DirectShare, error) {
-	d, err := h.sdk.CreateDirectShare(req)
+	d, err := h.sdk.CreateDirectShare(context.Background(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +336,7 @@ func (h *Handler) CreateDirectShare(req CreateDirectShareRequest) (*DirectShare,
 
 // ListDirectShares lists direct shares for a document.
 func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) {
-	l, err := h.sdk.ListDirectShares(documentID)
+	l, err := h.sdk.ListDirectShares(context.Background(), documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -325,22 +345,22 @@ func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) 
 
 // DeleteDirectShare deletes a direct share.
 func (h *Handler) DeleteDirectShare(shareID string) error {
-	return h.sdk.DeleteDirectShare(shareID)
+	return h.sdk.DeleteDirectShare(context.Background(), shareID)
 }
 
 // AddDirectShareRecipients adds recipients to a direct share.
 func (h *Handler) AddDirectShareRecipients(shareID string, recipients []SsoEntity) error {
-	return h.sdk.AddDirectShareRecipients(shareID, recipients)
+	return h.sdk.AddDirectShareRecipients(context.Background(), shareID, recipients)
 }
 
 // RemoveDirectShareRecipients removes recipients from a direct share.
 func (h *Handler) RemoveDirectShareRecipients(shareID string, recipientIDs []string) error {
-	return h.sdk.RemoveDirectShareRecipients(shareID, recipientIDs)
+	return h.sdk.RemoveDirectShareRecipients(context.Background(), shareID, recipientIDs)
 }
 
 // CreateEnvironmentShare creates an environment-wide share for a document.
 func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*EnvironmentShare, error) {
-	s, err := h.sdk.CreateEnvironmentShare(req)
+	s, err := h.sdk.CreateEnvironmentShare(context.Background(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +369,7 @@ func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*En
 
 // ListEnvironmentShares lists environment shares for a document (or all if documentID is empty).
 func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareList, error) {
-	l, err := h.sdk.ListEnvironmentShares(documentID)
+	l, err := h.sdk.ListEnvironmentShares(context.Background(), documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -358,17 +378,17 @@ func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareLis
 
 // DeleteEnvironmentShare deletes an environment share.
 func (h *Handler) DeleteEnvironmentShare(shareID string) error {
-	return h.sdk.DeleteEnvironmentShare(shareID)
+	return h.sdk.DeleteEnvironmentShare(context.Background(), shareID)
 }
 
 // SetDocumentPublic flips a document's isPrivate flag to false.
 func (h *Handler) SetDocumentPublic(id string, version int) error {
-	return h.sdk.SetDocumentPublic(id, version)
+	return h.sdk.SetDocumentPublic(context.Background(), id, version)
 }
 
 // ListSnapshots retrieves all snapshots for a document.
 func (h *Handler) ListSnapshots(documentID string) (*SnapshotList, error) {
-	l, err := h.sdk.ListSnapshots(documentID)
+	l, err := h.sdk.ListSnapshots(context.Background(), documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +397,7 @@ func (h *Handler) ListSnapshots(documentID string) (*SnapshotList, error) {
 
 // GetSnapshot retrieves metadata for a specific snapshot.
 func (h *Handler) GetSnapshot(documentID string, version int) (*Snapshot, error) {
-	s, err := h.sdk.GetSnapshot(documentID, version)
+	s, err := h.sdk.GetSnapshot(context.Background(), documentID, version)
 	if err != nil {
 		return nil, err
 	}
@@ -387,17 +407,17 @@ func (h *Handler) GetSnapshot(documentID string, version int) (*Snapshot, error)
 
 // RestoreSnapshot restores a document to a specific snapshot version.
 func (h *Handler) RestoreSnapshot(documentID string, version int) (*DocumentMetadata, error) {
-	return h.sdk.RestoreSnapshot(documentID, version)
+	return h.sdk.RestoreSnapshot(context.Background(), documentID, version)
 }
 
 // DeleteSnapshot deletes a specific snapshot.
 func (h *Handler) DeleteSnapshot(documentID string, version int) error {
-	return h.sdk.DeleteSnapshot(documentID, version)
+	return h.sdk.DeleteSnapshot(context.Background(), documentID, version)
 }
 
 // GetAtVersion retrieves a document's content at a specific snapshot version.
 func (h *Handler) GetAtVersion(id string, version int) (*Document, error) {
-	d, err := h.sdk.GetAtVersion(id, version)
+	d, err := h.sdk.GetAtVersion(context.Background(), id, version)
 	if err != nil {
 		return nil, err
 	}
@@ -415,22 +435,22 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 	}
 
 	// Flip the document to public. Fetch current version for optimistic locking.
-	meta, err := h.sdk.GetMetadata(documentID)
+	meta, err := h.sdk.GetMetadata(context.Background(), documentID)
 	if err != nil {
 		return share, fmt.Errorf("share created but could not read document metadata to flip isPrivate: %w", err)
 	}
 	if meta.IsPrivate {
-		if err := h.sdk.SetDocumentPublic(documentID, meta.Version); err != nil {
+		if err := h.sdk.SetDocumentPublic(context.Background(), documentID, meta.Version); err != nil {
 			if !errors.Is(err, sdkdocument.ErrVersionConflict) {
 				return share, err
 			}
 			// Retry once: re-fetch metadata and try again.
-			meta, err = h.sdk.GetMetadata(documentID)
+			meta, err = h.sdk.GetMetadata(context.Background(), documentID)
 			if err != nil {
 				return share, fmt.Errorf("share created but retry metadata fetch failed: %w", err)
 			}
 			if meta.IsPrivate {
-				if err := h.sdk.SetDocumentPublic(documentID, meta.Version); err != nil {
+				if err := h.sdk.SetDocumentPublic(context.Background(), documentID, meta.Version); err != nil {
 					return share, err
 				}
 			}
@@ -441,7 +461,7 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 
 // ensureShareAtAccess handles the share creation/replacement logic, including 409 race recovery.
 func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentShare, error) {
-	existing, err := h.sdk.ListEnvironmentShares(documentID)
+	existing, err := h.sdk.ListEnvironmentShares(context.Background(), documentID)
 	if err != nil {
 		return nil, err
 	}
@@ -453,12 +473,12 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 
 	// Delete non-matching shares and create a new one at the requested access level.
 	for _, id := range toDelete {
-		if err := h.sdk.DeleteEnvironmentShare(id); err != nil {
+		if err := h.sdk.DeleteEnvironmentShare(context.Background(), id); err != nil {
 			return nil, fmt.Errorf("failed to replace existing environment share: %w", err)
 		}
 	}
 
-	created, err := h.sdk.CreateEnvironmentShare(CreateEnvironmentShareRequest{
+	created, err := h.sdk.CreateEnvironmentShare(context.Background(), CreateEnvironmentShareRequest{
 		DocumentID: documentID,
 		Access:     access,
 	})
@@ -471,7 +491,7 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 		return nil, err
 	}
 
-	reListed, reErr := h.sdk.ListEnvironmentShares(documentID)
+	reListed, reErr := h.sdk.ListEnvironmentShares(context.Background(), documentID)
 	if reErr != nil {
 		return nil, fmt.Errorf("create returned conflict and re-list failed: %w", reErr)
 	}
@@ -482,11 +502,11 @@ func (h *Handler) ensureShareAtAccess(documentID, access string) (*EnvironmentSh
 	}
 
 	for _, id := range toDelete {
-		if err := h.sdk.DeleteEnvironmentShare(id); err != nil {
+		if err := h.sdk.DeleteEnvironmentShare(context.Background(), id); err != nil {
 			return nil, fmt.Errorf("failed to replace racing environment share: %w", err)
 		}
 	}
-	final, err := h.sdk.CreateEnvironmentShare(CreateEnvironmentShareRequest{
+	final, err := h.sdk.CreateEnvironmentShare(context.Background(), CreateEnvironmentShareRequest{
 		DocumentID: documentID,
 		Access:     access,
 	})

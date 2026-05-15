@@ -66,7 +66,7 @@ func TestList(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List("")
+	result, err := h.List(context.Background(), "")
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestGet(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Get("dt.test")
+	result, err := h.Get(context.Background(), "dt.test")
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestGet_NotFound(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Get("dt.missing")
+	_, err := h.Get(context.Background(), "dt.missing")
 	if err == nil {
 		t.Fatal("Get() expected error for 404")
 	}
@@ -126,7 +126,7 @@ func TestExecute(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Execute("dt.test", map[string]interface{}{"key": "val"}, 30)
+	result, err := h.Execute(context.Background(), "dt.test", map[string]interface{}{"key": "val"}, 30)
 	if err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestPoll_Expired(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Poll("dt.test", "expired-token", 10)
+	_, err := h.Poll(context.Background(), "dt.test", "expired-token", 10)
 	if err == nil {
 		t.Fatal("Poll() expected error for 410 Gone")
 	}

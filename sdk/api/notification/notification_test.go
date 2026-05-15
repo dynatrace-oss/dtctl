@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -40,7 +41,7 @@ func TestListEventNotifications(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ListEventNotifications("")
+	result, err := h.ListEventNotifications(context.Background(), "")
 	if err != nil {
 		t.Fatalf("ListEventNotifications() error: %v", err)
 	}
@@ -62,7 +63,7 @@ func TestGetEventNotification(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.GetEventNotification("en-1")
+	result, err := h.GetEventNotification(context.Background(), "en-1")
 	if err != nil {
 		t.Fatalf("GetEventNotification() error: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestCreateEventNotification(t *testing.T) {
 
 	h := NewHandler(newTestClient(t, mux))
 	data, _ := json.Marshal(map[string]any{"notificationType": "EMAIL", "enabled": true})
-	result, err := h.CreateEventNotification(data)
+	result, err := h.CreateEventNotification(context.Background(), data)
 	if err != nil {
 		t.Fatalf("CreateEventNotification() error: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestDeleteEventNotification(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.DeleteEventNotification("en-1")
+	err := h.DeleteEventNotification(context.Background(), "en-1")
 	if err != nil {
 		t.Fatalf("DeleteEventNotification() error: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestDeleteEventNotification_NotFound(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.DeleteEventNotification("en-missing")
+	err := h.DeleteEventNotification(context.Background(), "en-missing")
 	if err == nil {
 		t.Fatal("DeleteEventNotification() expected error for 404")
 	}

@@ -1,6 +1,7 @@
 package slo
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -166,7 +167,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // List lists all SLOs with automatic pagination
 func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
-	sdkResult, err := h.sdk.List(filter, chunkSize)
+	sdkResult, err := h.sdk.List(context.Background(), filter, chunkSize)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +176,7 @@ func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
 
 // Get gets a specific SLO by ID
 func (h *Handler) Get(id string) (*SLO, error) {
-	sdkResult, err := h.sdk.Get(id)
+	sdkResult, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +186,7 @@ func (h *Handler) Get(id string) (*SLO, error) {
 
 // Create creates a new SLO
 func (h *Handler) Create(data []byte) (*SLO, error) {
-	sdkResult, err := h.sdk.Create(data)
+	sdkResult, err := h.sdk.Create(context.Background(), data)
 	if err != nil {
 		return nil, err
 	}
@@ -195,17 +196,17 @@ func (h *Handler) Create(data []byte) (*SLO, error) {
 
 // Update updates an existing SLO
 func (h *Handler) Update(id string, version string, data []byte) error {
-	return h.sdk.Update(id, version, data)
+	return h.sdk.Update(context.Background(), id, version, data)
 }
 
 // Delete deletes an SLO
 func (h *Handler) Delete(id string, version string) error {
-	return h.sdk.Delete(id, version)
+	return h.sdk.Delete(context.Background(), id, version)
 }
 
 // ListTemplates lists all SLO templates
 func (h *Handler) ListTemplates(filter string) (*TemplateList, error) {
-	sdkResult, err := h.sdk.ListTemplates(filter)
+	sdkResult, err := h.sdk.ListTemplates(context.Background(), filter)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +215,7 @@ func (h *Handler) ListTemplates(filter string) (*TemplateList, error) {
 
 // GetTemplate gets a specific SLO template by ID
 func (h *Handler) GetTemplate(id string) (*Template, error) {
-	sdkResult, err := h.sdk.GetTemplate(id)
+	sdkResult, err := h.sdk.GetTemplate(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +225,7 @@ func (h *Handler) GetTemplate(id string) (*Template, error) {
 
 // Evaluate starts an SLO evaluation
 func (h *Handler) Evaluate(id string) (*EvaluationResponse, error) {
-	sdkResult, err := h.sdk.Evaluate(id)
+	sdkResult, err := h.sdk.Evaluate(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +234,7 @@ func (h *Handler) Evaluate(id string) (*EvaluationResponse, error) {
 
 // PollEvaluation polls for SLO evaluation results
 func (h *Handler) PollEvaluation(token string, timeoutMs int) (*EvaluationResponse, error) {
-	sdkResult, err := h.sdk.PollEvaluation(token, timeoutMs)
+	sdkResult, err := h.sdk.PollEvaluation(context.Background(), token, timeoutMs)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +243,7 @@ func (h *Handler) PollEvaluation(token string, timeoutMs int) (*EvaluationRespon
 
 // GetRaw gets an SLO as raw JSON bytes (for editing)
 func (h *Handler) GetRaw(id string) ([]byte, error) {
-	sloObj, err := h.sdk.Get(id)
+	sloObj, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}

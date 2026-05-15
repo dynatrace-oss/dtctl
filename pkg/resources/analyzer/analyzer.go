@@ -149,7 +149,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // List retrieves all available analyzers
 func (h *Handler) List(filter string) (*AnalyzerList, error) {
-	sdkResult, err := h.sdk.List(filter)
+	sdkResult, err := h.sdk.List(context.Background(), filter)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (h *Handler) List(filter string) (*AnalyzerList, error) {
 
 // Get retrieves a specific analyzer definition
 func (h *Handler) Get(name string) (*AnalyzerDefinition, error) {
-	sdkResult, err := h.sdk.Get(name)
+	sdkResult, err := h.sdk.Get(context.Background(), name)
 	if err != nil {
 		return nil, err
 	}
@@ -174,22 +174,22 @@ func (h *Handler) Get(name string) (*AnalyzerDefinition, error) {
 
 // GetDocumentation retrieves the documentation for an analyzer
 func (h *Handler) GetDocumentation(name string) (string, error) {
-	return h.sdk.GetDocumentation(name)
+	return h.sdk.GetDocumentation(context.Background(), name)
 }
 
 // GetInputSchema retrieves the JSON schema for analyzer input
 func (h *Handler) GetInputSchema(name string) (map[string]interface{}, error) {
-	return h.sdk.GetInputSchema(name)
+	return h.sdk.GetInputSchema(context.Background(), name)
 }
 
 // GetResultSchema retrieves the JSON schema for analyzer result
 func (h *Handler) GetResultSchema(name string) (map[string]interface{}, error) {
-	return h.sdk.GetResultSchema(name)
+	return h.sdk.GetResultSchema(context.Background(), name)
 }
 
 // Execute runs an analyzer with the given input
 func (h *Handler) Execute(name string, input map[string]interface{}, timeoutSeconds int) (*ExecuteResult, error) {
-	sdkResult, err := h.sdk.Execute(name, input, timeoutSeconds)
+	sdkResult, err := h.sdk.Execute(context.Background(), name, input, timeoutSeconds)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 
 // Poll polls for the result of a started analyzer execution
 func (h *Handler) Poll(name string, requestToken string, timeoutSeconds int) (*ExecuteResult, error) {
-	sdkResult, err := h.sdk.Poll(name, requestToken, timeoutSeconds)
+	sdkResult, err := h.sdk.Poll(context.Background(), name, requestToken, timeoutSeconds)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +217,7 @@ func (h *Handler) Poll(name string, requestToken string, timeoutSeconds int) (*E
 
 // Cancel cancels a running analyzer execution
 func (h *Handler) Cancel(name string, requestToken string) (*ExecuteResult, error) {
-	sdkResult, err := h.sdk.Cancel(name, requestToken)
+	sdkResult, err := h.sdk.Cancel(context.Background(), name, requestToken)
 	if err != nil {
 		return nil, err
 	}
@@ -226,5 +226,5 @@ func (h *Handler) Cancel(name string, requestToken string) (*ExecuteResult, erro
 
 // Validate validates the input for an analyzer execution
 func (h *Handler) Validate(name string, input map[string]interface{}) (*ValidationResult, error) {
-	return h.sdk.Validate(name, input)
+	return h.sdk.Validate(context.Background(), name, input)
 }

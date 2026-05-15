@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -82,8 +83,8 @@ type StreamChunkData struct {
 }
 
 // ListSkills retrieves all available CoPilot skills
-func (h *Handler) ListSkills() (*SkillList, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) ListSkills(ctx context.Context) (*SkillList, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get("/platform/davis/copilot/v1/skills")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skills: %w", err)
@@ -107,14 +108,14 @@ func (h *Handler) ListSkills() (*SkillList, error) {
 }
 
 // Chat sends a message to CoPilot and returns the response
-func (h *Handler) Chat(text string, state *ConversationState, ctx []ConversationContext) (*ConversationResponse, error) {
+func (h *Handler) Chat(ctx context.Context, text string, state *ConversationState, convCtx []ConversationContext) (*ConversationResponse, error) {
 	req := ConversationRequest{
 		Text:    text,
 		State:   state,
-		Context: ctx,
+		Context: convCtx,
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Accept", "application/json").
 		SetBody(req).
 		Post("/platform/davis/copilot/v1/skills/conversations:message")
@@ -133,11 +134,11 @@ func (h *Handler) Chat(text string, state *ConversationState, ctx []Conversation
 }
 
 // ChatStream sends a message to CoPilot and streams the response
-func (h *Handler) ChatStream(text string, state *ConversationState, ctx []ConversationContext, callback func(chunk StreamChunk) error) (*ConversationResponse, error) {
+func (h *Handler) ChatStream(ctx context.Context, text string, state *ConversationState, convCtx []ConversationContext, callback func(chunk StreamChunk) error) (*ConversationResponse, error) {
 	req := ConversationRequest{
 		Text:    text,
 		State:   state,
-		Context: ctx,
+		Context: convCtx,
 	}
 
 	reqBody, err := json.Marshal(req)
@@ -145,7 +146,7 @@ func (h *Handler) ChatStream(text string, state *ConversationState, ctx []Conver
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Accept", "application/x-ndjson").
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Accept-Encoding", "identity").
@@ -225,23 +226,23 @@ type ChatOptions struct {
 }
 
 // ChatWithOptions sends a message with options
-func (h *Handler) ChatWithOptions(text string, opts ChatOptions, streamCallback func(chunk StreamChunk) error) (*ConversationResponse, error) {
-	var ctx []ConversationContext
+func (h *Handler) ChatWithOptions(ctx context.Context, text string, opts ChatOptions, streamCallback func(chunk StreamChunk) error) (*ConversationResponse, error) {
+	var convCtx []ConversationContext
 	if opts.DocumentRetrieval != "" {
-		ctx = append(ctx, ConversationContext{Type: "document-retrieval", Value: opts.DocumentRetrieval})
+		convCtx = append(convCtx, ConversationContext{Type: "document-retrieval", Value: opts.DocumentRetrieval})
 	}
 	if opts.Supplementary != "" {
-		ctx = append(ctx, ConversationContext{Type: "supplementary", Value: opts.Supplementary})
+		convCtx = append(convCtx, ConversationContext{Type: "supplementary", Value: opts.Supplementary})
 	}
 	if opts.Instruction != "" {
-		ctx = append(ctx, ConversationContext{Type: "instruction", Value: opts.Instruction})
+		convCtx = append(convCtx, ConversationContext{Type: "instruction", Value: opts.Instruction})
 	}
 
 	if opts.Stream {
-		return h.ChatStream(text, opts.State, ctx, streamCallback)
+		return h.ChatStream(ctx, text, opts.State, convCtx, streamCallback)
 	}
 
-	return h.Chat(text, opts.State, ctx)
+	return h.Chat(ctx, text, opts.State, convCtx)
 }
 
 // Nl2DqlRequest represents a request to convert natural language to DQL
@@ -257,9 +258,9 @@ type Nl2DqlResponse struct {
 }
 
 // Nl2Dql converts natural language to a DQL query
-func (h *Handler) Nl2Dql(text string) (*Nl2DqlResponse, error) {
+func (h *Handler) Nl2Dql(ctx context.Context, text string) (*Nl2DqlResponse, error) {
 	req := Nl2DqlRequest{Text: text}
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/davis/copilot/v1/skills/nl2dql:generate")
 	if err != nil {
@@ -290,9 +291,9 @@ type Dql2NlResponse struct {
 }
 
 // Dql2Nl explains a DQL query in natural language
-func (h *Handler) Dql2Nl(dql string) (*Dql2NlResponse, error) {
+func (h *Handler) Dql2Nl(ctx context.Context, dql string) (*Dql2NlResponse, error) {
 	req := Dql2NlRequest{DQL: dql}
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/davis/copilot/v1/skills/dql2nl:explain")
 	if err != nil {
@@ -346,13 +347,13 @@ type DocumentSearchResult struct {
 }
 
 // DocumentSearch searches for relevant documents
-func (h *Handler) DocumentSearch(texts []string, collections []string, exclude []string) (*DocumentSearchResult, error) {
+func (h *Handler) DocumentSearch(ctx context.Context, texts []string, collections []string, exclude []string) (*DocumentSearchResult, error) {
 	req := DocumentSearchRequest{
 		Texts:       texts,
 		Collections: collections,
 		Exclude:     exclude,
 	}
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/davis/copilot/v1/skills/document-search:execute")
 	if err != nil {

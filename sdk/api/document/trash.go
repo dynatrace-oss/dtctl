@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -96,7 +97,7 @@ func NewTrashHandler(c *httpclient.Client) *TrashHandler {
 }
 
 // List retrieves trashed documents matching the provided filters
-func (h *TrashHandler) List(opts TrashListOptions) ([]TrashDocumentListEntry, error) {
+func (h *TrashHandler) List(ctx context.Context, opts TrashListOptions) ([]TrashDocumentListEntry, error) {
 	var allDocuments []TrashDocumentListEntry
 	nextPageKey := ""
 
@@ -123,7 +124,7 @@ func (h *TrashHandler) List(opts TrashListOptions) ([]TrashDocumentListEntry, er
 
 	for {
 		var result TrashList
-		req := h.client.HTTP().R().SetResult(&result)
+		req := h.client.HTTP().R().SetContext(ctx).SetResult(&result)
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDocumentAPI,
@@ -168,10 +169,10 @@ func (h *TrashHandler) List(opts TrashListOptions) ([]TrashDocumentListEntry, er
 }
 
 // Get retrieves a specific trashed document by ID
-func (h *TrashHandler) Get(id string) (*TrashedDocument, error) {
+func (h *TrashHandler) Get(ctx context.Context, id string) (*TrashedDocument, error) {
 	var doc TrashedDocument
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetResult(&doc).
 		Get(fmt.Sprintf("/platform/document/v1/trash/documents/%s", id))
 
@@ -191,8 +192,8 @@ func (h *TrashHandler) Get(id string) (*TrashedDocument, error) {
 }
 
 // Restore restores a document from trash
-func (h *TrashHandler) Restore(id string, opts RestoreOptions) error {
-	req := h.client.HTTP().R()
+func (h *TrashHandler) Restore(ctx context.Context, id string, opts RestoreOptions) error {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	// Note: The API doesn't support newName or force options in the spec
 	// These are left here for potential future support
@@ -223,8 +224,8 @@ func (h *TrashHandler) Restore(id string, opts RestoreOptions) error {
 }
 
 // Delete permanently deletes a document from trash
-func (h *TrashHandler) Delete(id string) error {
-	resp, err := h.client.HTTP().R().
+func (h *TrashHandler) Delete(ctx context.Context, id string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/document/v1/trash/documents/%s", id))
 
 	if err != nil {

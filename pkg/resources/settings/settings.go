@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -109,7 +110,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // ListSchemas lists all available settings schemas.
 func (h *Handler) ListSchemas() (*SchemaList, error) {
-	sdkResult, err := h.sdk.ListSchemas()
+	sdkResult, err := h.sdk.ListSchemas(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -137,12 +138,12 @@ func (h *Handler) ListSchemas() (*SchemaList, error) {
 
 // GetSchema gets a specific schema definition.
 func (h *Handler) GetSchema(schemaID string) (map[string]any, error) {
-	return h.sdk.GetSchema(schemaID)
+	return h.sdk.GetSchema(context.Background(), schemaID)
 }
 
 // ListObjects lists settings objects for a schema with automatic pagination.
 func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*SettingsObjectsList, error) {
-	sdkResult, err := h.sdk.ListObjects(schemaID, scope, chunkSize)
+	sdkResult, err := h.sdk.ListObjects(context.Background(), schemaID, scope, chunkSize)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +167,7 @@ func (h *Handler) ListObjects(schemaID, scope string, chunkSize int64) (*Setting
 
 // Get gets a specific settings object by objectId.
 func (h *Handler) Get(objectID string) (*SettingsObject, error) {
-	sdkObj, err := h.sdk.Get(objectID)
+	sdkObj, err := h.sdk.Get(context.Background(), objectID)
 	if err != nil {
 		return nil, err
 	}
@@ -175,33 +176,33 @@ func (h *Handler) Get(objectID string) (*SettingsObject, error) {
 
 // ValidateCreate validates a settings object without creating it.
 func (h *Handler) ValidateCreate(req SettingsObjectCreate) error {
-	return h.sdk.ValidateCreate(req)
+	return h.sdk.ValidateCreate(context.Background(), req)
 }
 
 // Create creates a new settings object.
 func (h *Handler) Create(req SettingsObjectCreate) (*SettingsObjectResponse, error) {
-	return h.sdk.Create(req)
+	return h.sdk.Create(context.Background(), req)
 }
 
 // ValidateUpdate validates a settings object update without applying it.
 // Auto-fetches the current schemaVersion for the If-Match header.
 func (h *Handler) ValidateUpdate(objectID string, value map[string]any) error {
-	obj, err := h.sdk.Get(objectID)
+	obj, err := h.sdk.Get(context.Background(), objectID)
 	if err != nil {
 		return err
 	}
-	return h.sdk.ValidateUpdate(objectID, obj.SchemaVersion, value)
+	return h.sdk.ValidateUpdate(context.Background(), objectID, obj.SchemaVersion, value)
 }
 
 // Update updates an existing settings object.
 // Auto-fetches the current schemaVersion for the If-Match header, then re-fetches.
 func (h *Handler) Update(objectID string, value map[string]any) (*SettingsObject, error) {
-	obj, err := h.sdk.Get(objectID)
+	obj, err := h.sdk.Get(context.Background(), objectID)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := h.sdk.Update(obj.ObjectID, obj.SchemaVersion, value); err != nil {
+	if err := h.sdk.Update(context.Background(), obj.ObjectID, obj.SchemaVersion, value); err != nil {
 		return nil, err
 	}
 
@@ -211,11 +212,11 @@ func (h *Handler) Update(objectID string, value map[string]any) (*SettingsObject
 // Delete deletes a settings object.
 // Auto-fetches the current schemaVersion for the If-Match header.
 func (h *Handler) Delete(objectID string) error {
-	obj, err := h.sdk.Get(objectID)
+	obj, err := h.sdk.Get(context.Background(), objectID)
 	if err != nil {
 		return err
 	}
-	return h.sdk.Delete(obj.ObjectID, obj.SchemaVersion)
+	return h.sdk.Delete(context.Background(), obj.ObjectID, obj.SchemaVersion)
 }
 
 // GetRaw gets a settings object as raw JSON bytes (for editing).

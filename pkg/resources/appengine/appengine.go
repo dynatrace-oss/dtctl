@@ -1,6 +1,7 @@
 package appengine
 
 import (
+	"context"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkae "github.com/dynatrace-oss/dtctl/sdk/api/appengine"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -86,7 +87,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // ListApps lists all installed apps
 func (h *Handler) ListApps() (*AppList, error) {
-	sdkResult, err := h.sdk.ListApps()
+	sdkResult, err := h.sdk.ListApps(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +100,7 @@ func (h *Handler) ListApps() (*AppList, error) {
 
 // GetApp gets a specific app by ID
 func (h *Handler) GetApp(appID string) (*App, error) {
-	sdkResult, err := h.sdk.GetApp(appID)
+	sdkResult, err := h.sdk.GetApp(context.Background(), appID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,12 +110,12 @@ func (h *Handler) GetApp(appID string) (*App, error) {
 
 // DeleteApp uninstalls an app
 func (h *Handler) DeleteApp(appID string) error {
-	return h.sdk.DeleteApp(appID)
+	return h.sdk.DeleteApp(context.Background(), appID)
 }
 
 // ListFunctions lists all functions across apps (or filtered by app ID)
 func (h *Handler) ListFunctions(appIDFilter string) ([]AppFunction, error) {
-	sdkResult, err := h.sdk.ListFunctions(appIDFilter)
+	sdkResult, err := h.sdk.ListFunctions(context.Background(), appIDFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +128,7 @@ func (h *Handler) ListFunctions(appIDFilter string) ([]AppFunction, error) {
 
 // GetFunction gets details about a specific function
 func (h *Handler) GetFunction(fullName string) (*AppFunction, error) {
-	sdkResult, err := h.sdk.GetFunction(fullName)
+	sdkResult, err := h.sdk.GetFunction(context.Background(), fullName)
 	if err != nil {
 		return nil, err
 	}

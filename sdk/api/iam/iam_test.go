@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -39,7 +40,7 @@ func TestListUsers(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ListUsers("", nil, 0)
+	result, err := h.ListUsers(context.Background(), "", nil, 0)
 	if err != nil {
 		t.Fatalf("ListUsers() error: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestGetUser(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.GetUser("u-1")
+	result, err := h.GetUser(context.Background(), "u-1")
 	if err != nil {
 		t.Fatalf("GetUser() error: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestListGroups(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ListGroups("", nil, 0)
+	result, err := h.ListGroups(context.Background(), "", nil, 0)
 	if err != nil {
 		t.Fatalf("ListGroups() error: %v", err)
 	}

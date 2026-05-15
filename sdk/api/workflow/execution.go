@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -44,8 +45,8 @@ func NewExecutionHandler(c *httpclient.Client) *ExecutionHandler {
 }
 
 // List retrieves all executions with optional workflow filter.
-func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
-	req := h.client.HTTP().R()
+func (h *ExecutionHandler) List(ctx context.Context, workflowID string) (*ExecutionList, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	if workflowID != "" {
 		req.SetQueryParam("workflow", workflowID)
@@ -69,8 +70,8 @@ func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
 }
 
 // Get retrieves a specific execution.
-func (h *ExecutionHandler) Get(id string) (*Execution, error) {
-	resp, err := h.client.HTTP().R().
+func (h *ExecutionHandler) Get(ctx context.Context, id string) (*Execution, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/executions/%s", id))
 	if err != nil {
 		return nil, fmt.Errorf("get execution: %w", err)
@@ -89,8 +90,8 @@ func (h *ExecutionHandler) Get(id string) (*Execution, error) {
 }
 
 // Cancel cancels an active execution.
-func (h *ExecutionHandler) Cancel(id string) error {
-	resp, err := h.client.HTTP().R().
+func (h *ExecutionHandler) Cancel(ctx context.Context, id string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Post(fmt.Sprintf("/platform/automation/v1/executions/%s/cancel", id))
 	if err != nil {
 		return fmt.Errorf("cancel execution: %w", err)
@@ -120,8 +121,8 @@ type TaskExecution struct {
 type TaskExecutionMap map[string]TaskExecution
 
 // ListTasks retrieves all task executions for a workflow execution.
-func (h *ExecutionHandler) ListTasks(executionID string) ([]TaskExecution, error) {
-	resp, err := h.client.HTTP().R().
+func (h *ExecutionHandler) ListTasks(ctx context.Context, executionID string) ([]TaskExecution, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/tasks", executionID))
 	if err != nil {
 		return nil, fmt.Errorf("list task executions: %w", err)
@@ -146,8 +147,8 @@ func (h *ExecutionHandler) ListTasks(executionID string) ([]TaskExecution, error
 }
 
 // GetTaskLog retrieves the log output of a specific task execution.
-func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, error) {
-	resp, err := h.client.HTTP().R().
+func (h *ExecutionHandler) GetTaskLog(ctx context.Context, executionID, taskName string) (string, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/tasks/%s/log", executionID, taskName))
 	if err != nil {
 		return "", fmt.Errorf("get task log: %w", err)
@@ -162,8 +163,8 @@ func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, err
 }
 
 // GetTaskResult retrieves the structured return value of a specific task execution.
-func (h *ExecutionHandler) GetTaskResult(executionID, taskName string) (any, error) {
-	resp, err := h.client.HTTP().R().
+func (h *ExecutionHandler) GetTaskResult(ctx context.Context, executionID, taskName string) (any, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/tasks/%s/result", executionID, taskName))
 	if err != nil {
 		return nil, fmt.Errorf("get task result: %w", err)
@@ -182,8 +183,8 @@ func (h *ExecutionHandler) GetTaskResult(executionID, taskName string) (any, err
 }
 
 // GetExecutionLog retrieves the combined log output of all tasks in an execution.
-func (h *ExecutionHandler) GetExecutionLog(executionID string) (string, error) {
-	resp, err := h.client.HTTP().R().
+func (h *ExecutionHandler) GetExecutionLog(ctx context.Context, executionID string) (string, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/log", executionID))
 	if err != nil {
 		return "", fmt.Errorf("get execution log: %w", err)

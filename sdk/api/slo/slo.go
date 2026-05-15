@@ -1,6 +1,7 @@
 package slo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -87,14 +88,14 @@ type EvaluationResponse struct {
 }
 
 // List lists all SLOs with automatic pagination
-func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
+func (h *Handler) List(ctx context.Context, filter string, chunkSize int64) (*SLOList, error) {
 	var allSLOs []SLO
 	var totalCount int
 	nextPageKey := ""
 
 	for {
 		var result SLOList
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		params := httpclient.PaginationParams{
 			Style:         httpclient.PaginationDefault,
@@ -141,8 +142,8 @@ func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
 }
 
 // Get gets a specific SLO by ID
-func (h *Handler) Get(id string) (*SLO, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Get(ctx context.Context, id string) (*SLO, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/slo/v1/slos/%s", id))
 
 	if err != nil {
@@ -162,8 +163,8 @@ func (h *Handler) Get(id string) (*SLO, error) {
 }
 
 // Create creates a new SLO
-func (h *Handler) Create(data []byte) (*SLO, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Create(ctx context.Context, data []byte) (*SLO, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(data).
 		SetHeader("Content-Type", "application/json").
 		Post("/platform/slo/v1/slos")
@@ -185,8 +186,8 @@ func (h *Handler) Create(data []byte) (*SLO, error) {
 }
 
 // Update updates an existing SLO
-func (h *Handler) Update(id string, version string, data []byte) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Update(ctx context.Context, id string, version string, data []byte) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(data).
 		SetHeader("Content-Type", "application/json").
 		SetQueryParam("optimistic-locking-version", version).
@@ -204,8 +205,8 @@ func (h *Handler) Update(id string, version string, data []byte) error {
 }
 
 // Delete deletes an SLO
-func (h *Handler) Delete(id string, version string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Delete(ctx context.Context, id string, version string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("optimistic-locking-version", version).
 		Delete(fmt.Sprintf("/platform/slo/v1/slos/%s", id))
 
@@ -221,8 +222,8 @@ func (h *Handler) Delete(id string, version string) error {
 }
 
 // ListTemplates lists all SLO templates
-func (h *Handler) ListTemplates(filter string) (*TemplateList, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) ListTemplates(ctx context.Context, filter string) (*TemplateList, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	if filter != "" {
 		req.SetQueryParam("filter", filter)
@@ -247,8 +248,8 @@ func (h *Handler) ListTemplates(filter string) (*TemplateList, error) {
 }
 
 // GetTemplate gets a specific SLO template by ID
-func (h *Handler) GetTemplate(id string) (*Template, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetTemplate(ctx context.Context, id string) (*Template, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/slo/v1/objective-templates/%s", id))
 
 	if err != nil {
@@ -268,12 +269,12 @@ func (h *Handler) GetTemplate(id string) (*Template, error) {
 }
 
 // Evaluate starts an SLO evaluation
-func (h *Handler) Evaluate(id string) (*EvaluationResponse, error) {
+func (h *Handler) Evaluate(ctx context.Context, id string) (*EvaluationResponse, error) {
 	body := map[string]interface{}{
 		"id": id,
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		SetHeader("Content-Type", "application/json").
 		Post("/platform/slo/v1/slos/evaluation:start")
@@ -295,8 +296,8 @@ func (h *Handler) Evaluate(id string) (*EvaluationResponse, error) {
 }
 
 // PollEvaluation polls for SLO evaluation results
-func (h *Handler) PollEvaluation(token string, timeoutMs int) (*EvaluationResponse, error) {
-	req := h.client.HTTP().R().
+func (h *Handler) PollEvaluation(ctx context.Context, token string, timeoutMs int) (*EvaluationResponse, error) {
+	req := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("evaluation-token", token)
 
 	if timeoutMs > 0 {
@@ -320,4 +321,3 @@ func (h *Handler) PollEvaluation(token string, timeoutMs int) (*EvaluationRespon
 
 	return &result, nil
 }
-

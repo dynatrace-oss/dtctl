@@ -1,6 +1,7 @@
 package livedebugger
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -44,7 +45,7 @@ func NewHandlerWithOrgID(c *httpclient.Client, environmentURL, orgID string) (*H
 	return &Handler{client: c, graphqlURL: graphqlURL, orgID: orgID}, nil
 }
 
-func (h *Handler) GetOrCreateWorkspace(projectPath string) (map[string]interface{}, string, error) {
+func (h *Handler) GetOrCreateWorkspace(ctx context.Context, projectPath string) (map[string]interface{}, string, error) {
 	query := `query GetOrCreateWorkspaceV2($orgId: ID!, $workspaceInput: WorkspaceGetOrCreateInput) {
   org(id: $orgId) {
     id
@@ -79,7 +80,7 @@ func (h *Handler) GetOrCreateWorkspace(projectPath string) (map[string]interface
 		},
 	}
 
-	resp, err := h.executeGraphQL(query, variables)
+	resp, err := h.executeGraphQL(ctx, query, variables)
 	if err != nil {
 		return nil, "", err
 	}
@@ -92,7 +93,7 @@ func (h *Handler) GetOrCreateWorkspace(projectPath string) (map[string]interface
 	return resp, workspaceID, nil
 }
 
-func (h *Handler) UpdateWorkspaceFilters(workspaceID string, filterSets []map[string]interface{}) (map[string]interface{}, error) {
+func (h *Handler) UpdateWorkspaceFilters(ctx context.Context, workspaceID string, filterSets []map[string]interface{}) (map[string]interface{}, error) {
 	mutation := `mutation UpdateWorkspaceV2($orgId: ID!, $workspaceId: ID!, $data: WorkspaceInputV2!) {
   org(orgId: $orgId) {
     updateWorkspaceV2(id: $workspaceId, data: $data) {
@@ -126,10 +127,10 @@ func (h *Handler) UpdateWorkspaceFilters(workspaceID string, filterSets []map[st
 		},
 	}
 
-	return h.executeGraphQL(mutation, variables)
+	return h.executeGraphQL(ctx, mutation, variables)
 }
 
-func (h *Handler) CreateBreakpoint(workspaceID, fileName string, lineNumber int) (map[string]interface{}, error) {
+func (h *Handler) CreateBreakpoint(ctx context.Context, workspaceID, fileName string, lineNumber int) (map[string]interface{}, error) {
 	mutation := `mutation CreateRule($orgId: ID!, $workspaceId: ID!, $ruleData: CreateRuleV2Input!) {
   org(orgId: $orgId) {
     workspace(id: $workspaceId) {
@@ -174,10 +175,10 @@ func (h *Handler) CreateBreakpoint(workspaceID, fileName string, lineNumber int)
 		},
 	}
 
-	return h.executeGraphQL(mutation, variables)
+	return h.executeGraphQL(ctx, mutation, variables)
 }
 
-func (h *Handler) GetWorkspaceRules(workspaceID string) (map[string]interface{}, error) {
+func (h *Handler) GetWorkspaceRules(ctx context.Context, workspaceID string) (map[string]interface{}, error) {
 	query := `query GetWorkspaceRules($orgId: ID!, $workspaceId: ID!) {
 	org(id: $orgId) {
 		id
@@ -235,10 +236,10 @@ func (h *Handler) GetWorkspaceRules(workspaceID string) (map[string]interface{},
 		"workspaceId": workspaceID,
 	}
 
-	return h.executeGraphQL(query, variables)
+	return h.executeGraphQL(ctx, query, variables)
 }
 
-func (h *Handler) DeleteBreakpoint(workspaceID, ruleID string) (map[string]interface{}, error) {
+func (h *Handler) DeleteBreakpoint(ctx context.Context, workspaceID, ruleID string) (map[string]interface{}, error) {
 	mutation := `mutation DeleteRule($orgId: ID!, $workspaceId: ID!, $ruleId: ID!) {
   org(orgId: $orgId) {
     workspace(id: $workspaceId) {
@@ -253,10 +254,10 @@ func (h *Handler) DeleteBreakpoint(workspaceID, ruleID string) (map[string]inter
 		"ruleId":      ruleID,
 	}
 
-	return h.executeGraphQL(mutation, variables)
+	return h.executeGraphQL(ctx, mutation, variables)
 }
 
-func (h *Handler) GetRuleStatusBreakdown(ruleID string) (map[string]interface{}, error) {
+func (h *Handler) GetRuleStatusBreakdown(ctx context.Context, ruleID string) (map[string]interface{}, error) {
 	query := `query GetRuleStatusBreakdown($orgId: ID!, $ruleId: ID!) {
 	org(id: $orgId) {
 		id
@@ -322,10 +323,10 @@ func (h *Handler) GetRuleStatusBreakdown(ruleID string) (map[string]interface{},
 		"ruleId": ruleID,
 	}
 
-	return h.executeGraphQL(query, variables)
+	return h.executeGraphQL(ctx, query, variables)
 }
 
-func (h *Handler) EditBreakpoint(workspaceID string, ruleSettings map[string]interface{}) (map[string]interface{}, error) {
+func (h *Handler) EditBreakpoint(ctx context.Context, workspaceID string, ruleSettings map[string]interface{}) (map[string]interface{}, error) {
 	mutation := `mutation EditRuleV2($orgId: ID!, $workspaceId: ID!, $ruleSettings: EditRuleV2Input!) {
 	org(orgId: $orgId) {
 		workspace(id: $workspaceId) {
@@ -372,10 +373,10 @@ func (h *Handler) EditBreakpoint(workspaceID string, ruleSettings map[string]int
 		"ruleSettings": ruleSettings,
 	}
 
-	return h.executeGraphQL(mutation, variables)
+	return h.executeGraphQL(ctx, mutation, variables)
 }
 
-func (h *Handler) EnableOrDisableBreakpoints(workspaceID string, ruleIDs []string, isDisabled bool) (map[string]interface{}, error) {
+func (h *Handler) EnableOrDisableBreakpoints(ctx context.Context, workspaceID string, ruleIDs []string, isDisabled bool) (map[string]interface{}, error) {
 	mutation := `mutation EnableOrDisableRules($orgId: ID!, $workspaceId: ID!, $rulesIds: [String]!, $isDisabled: Boolean!) {
 	org(orgId: $orgId) {
 		workspace(id: $workspaceId) {
@@ -395,10 +396,10 @@ func (h *Handler) EnableOrDisableBreakpoints(workspaceID string, ruleIDs []strin
 		"isDisabled":  isDisabled,
 	}
 
-	return h.executeGraphQL(mutation, variables)
+	return h.executeGraphQL(ctx, mutation, variables)
 }
 
-func (h *Handler) DeleteAllBreakpoints(workspaceID string) (map[string]interface{}, error) {
+func (h *Handler) DeleteAllBreakpoints(ctx context.Context, workspaceID string) (map[string]interface{}, error) {
 	mutation := `mutation DeleteAllRulesFromWorkspace($orgId: ID!, $workspaceId: ID!, $data: DeleteWorkspaceRulesInput!) {
   org(orgId: $orgId) {
     workspace(id: $workspaceId) {
@@ -415,7 +416,7 @@ func (h *Handler) DeleteAllBreakpoints(workspaceID string) (map[string]interface
 		},
 	}
 
-	return h.executeGraphQL(mutation, variables)
+	return h.executeGraphQL(ctx, mutation, variables)
 }
 
 func BuildFilterSets(filters map[string][]string) []map[string]interface{} {
@@ -439,13 +440,13 @@ func BuildFilterSets(filters map[string][]string) []map[string]interface{} {
 	}
 }
 
-func (h *Handler) executeGraphQL(query string, variables map[string]interface{}) (map[string]interface{}, error) {
+func (h *Handler) executeGraphQL(ctx context.Context, query string, variables map[string]interface{}) (map[string]interface{}, error) {
 	requestBody := map[string]interface{}{
 		"query":     query,
 		"variables": variables,
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetHeader("dt-external-source", "dtctl").
 		SetBody(requestBody).

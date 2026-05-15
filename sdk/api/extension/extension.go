@@ -2,6 +2,7 @@ package extension
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -161,7 +162,7 @@ type ActiveGateGroupList struct {
 const maxPageSize = 100
 
 // List lists all extensions with automatic pagination
-func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
+func (h *Handler) List(ctx context.Context, name string, chunkSize int64) (*ExtensionList, error) {
 	var allExtensions []Extension
 	var totalCount int
 	nextPageKey := ""
@@ -173,7 +174,7 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 
 	for {
 		var result ExtensionList
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDefault,
@@ -227,14 +228,14 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 }
 
 // Get gets a specific extension by name (returns all versions)
-func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
+func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVersionList, error) {
 	var allVersions []ExtensionVersion
 	var totalCount int
 	nextPageKey := ""
 
 	for {
 		var result ExtensionVersionList
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:        httpclient.PaginationDefault,
@@ -279,8 +280,8 @@ func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
 }
 
 // GetVersion gets details for a specific extension version
-func (h *Handler) GetVersion(extensionName, version string) (*ExtensionDetails, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetVersion(ctx context.Context, extensionName, version string) (*ExtensionDetails, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension version: %w", err)
@@ -307,8 +308,8 @@ func (h *Handler) GetVersion(extensionName, version string) (*ExtensionDetails, 
 
 // GetEnvironmentConfig gets the environment configuration for a specific extension version.
 // The version parameter is required by the Dynatrace Extensions 2.0 API.
-func (h *Handler) GetEnvironmentConfig(extensionName, version string) (*ExtensionEnvironmentConfig, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetEnvironmentConfig(ctx context.Context, extensionName, version string) (*ExtensionEnvironmentConfig, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environmentConfiguration", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
@@ -338,7 +339,7 @@ func (h *Handler) GetEnvironmentConfig(extensionName, version string) (*Extensio
 // "version" key inside each configuration's value JSON. Configurations whose
 // value cannot be parsed or that lack a "version" key are excluded from the
 // filtered result.
-func (h *Handler) ListMonitoringConfigurations(extensionName, version string, chunkSize int64) (*MonitoringConfigurationList, error) {
+func (h *Handler) ListMonitoringConfigurations(ctx context.Context, extensionName, version string, chunkSize int64) (*MonitoringConfigurationList, error) {
 	var allItems []MonitoringConfiguration
 	var totalCount int
 	nextPageKey := ""
@@ -350,7 +351,7 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 
 	for {
 		var result MonitoringConfigurationList
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDefault,
@@ -420,8 +421,8 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 }
 
 // GetMonitoringConfiguration gets a specific monitoring configuration
-func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*MonitoringConfiguration, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetMonitoringConfiguration(ctx context.Context, extensionName, configID string) (*MonitoringConfiguration, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get monitoring configuration: %w", err)
@@ -455,8 +456,8 @@ type MonitoringConfigurationCreate struct {
 }
 
 // CreateMonitoringConfiguration creates a new monitoring configuration for an extension
-func (h *Handler) CreateMonitoringConfiguration(extensionName string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) CreateMonitoringConfiguration(ctx context.Context, extensionName string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
 	if err != nil {
@@ -483,8 +484,8 @@ func (h *Handler) CreateMonitoringConfiguration(extensionName string, body Monit
 }
 
 // UpdateMonitoringConfiguration updates an existing monitoring configuration for an extension
-func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) UpdateMonitoringConfiguration(ctx context.Context, extensionName, configID string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
 	if err != nil {
@@ -513,7 +514,7 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 // Upload uploads a custom extension zip file to the Dynatrace environment.
 // The zipData should contain the raw bytes of the extension zip package.
 // The optional fileName is used as the multipart filename; if empty, "extension.zip" is used.
-func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, error) {
+func (h *Handler) Upload(ctx context.Context, fileName string, zipData []byte) (*ExtensionVersion, error) {
 	if fileName == "" {
 		fileName = "extension.zip"
 	}
@@ -532,7 +533,7 @@ func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, er
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", writer.FormDataContentType()).
 		SetBody(body.Bytes()).
 		Post("/platform/extensions/v2/extensions")
@@ -565,8 +566,8 @@ func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, er
 // Extensions 2.0 API. extensionName is the hub extension catalog ID (path parameter).
 // version is optional -- when provided it is sent as a query parameter to select a
 // specific release; when empty the API resolves the latest available version.
-func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersion, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) InstallFromHub(ctx context.Context, extensionName, version string) (*ExtensionVersion, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 	if version != "" {
 		req.SetQueryParam("version", version)
 	}
@@ -601,8 +602,8 @@ func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersi
 }
 
 // DeleteMonitoringConfiguration deletes a monitoring configuration for an extension
-func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) DeleteMonitoringConfiguration(ctx context.Context, extensionName, configID string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
 	if err != nil {
 		return fmt.Errorf("failed to delete monitoring configuration: %w", err)
@@ -624,8 +625,8 @@ func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) 
 
 // GetMonitoringConfigurationSchema retrieves the monitoring configuration schema for a specific
 // extension version. The schema is an arbitrary JSON Schema document returned verbatim.
-func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string) (json.RawMessage, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetMonitoringConfigurationSchema(ctx context.Context, extensionName, version string) (json.RawMessage, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/schema", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get monitoring configuration schema: %w", err)
@@ -646,8 +647,8 @@ func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string
 }
 
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
-func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGateGroupList, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetActiveGateGroups(ctx context.Context, extensionName, version string) (*ActiveGateGroupList, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/active-gate-groups", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active gate groups: %w", err)

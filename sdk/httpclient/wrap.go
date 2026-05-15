@@ -9,6 +9,9 @@ import "github.com/go-resty/resty/v2"
 // The caller is responsible for configuring auth, retries, timeouts, etc. on
 // the resty client before passing it in.
 func Wrap(rc *resty.Client) *Client {
+	if rc == nil {
+		panic("httpclient.Wrap: resty client must not be nil")
+	}
 	return &Client{
 		http:    rc,
 		baseURL: rc.BaseURL,

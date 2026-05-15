@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -102,7 +103,7 @@ func NewExecutionHandler(c *client.Client) *ExecutionHandler {
 
 // List retrieves all executions with optional workflow filter
 func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
-	sdkResult, err := h.sdk.List(workflowID)
+	sdkResult, err := h.sdk.List(context.Background(), workflowID)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +116,7 @@ func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
 
 // Get retrieves a specific execution
 func (h *ExecutionHandler) Get(id string) (*Execution, error) {
-	sdkResult, err := h.sdk.Get(id)
+	sdkResult, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -125,12 +126,12 @@ func (h *ExecutionHandler) Get(id string) (*Execution, error) {
 
 // Cancel cancels an active execution
 func (h *ExecutionHandler) Cancel(id string) error {
-	return h.sdk.Cancel(id)
+	return h.sdk.Cancel(context.Background(), id)
 }
 
 // ListTasks retrieves all task executions for a workflow execution
 func (h *ExecutionHandler) ListTasks(executionID string) ([]TaskExecution, error) {
-	sdkResult, err := h.sdk.ListTasks(executionID)
+	sdkResult, err := h.sdk.ListTasks(context.Background(), executionID)
 	if err != nil {
 		return nil, err
 	}
@@ -143,17 +144,17 @@ func (h *ExecutionHandler) ListTasks(executionID string) ([]TaskExecution, error
 
 // GetTaskLog retrieves the log output of a specific task execution
 func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, error) {
-	return h.sdk.GetTaskLog(executionID, taskName)
+	return h.sdk.GetTaskLog(context.Background(), executionID, taskName)
 }
 
 // GetTaskResult retrieves the structured return value of a specific task execution
 func (h *ExecutionHandler) GetTaskResult(executionID, taskName string) (any, error) {
-	return h.sdk.GetTaskResult(executionID, taskName)
+	return h.sdk.GetTaskResult(context.Background(), executionID, taskName)
 }
 
 // GetExecutionLog retrieves the combined log output of all tasks in an execution
 func (h *ExecutionHandler) GetExecutionLog(executionID string) (string, error) {
-	return h.sdk.GetExecutionLog(executionID)
+	return h.sdk.GetExecutionLog(context.Background(), executionID)
 }
 
 // GetFullExecutionLog retrieves logs for all tasks in an execution, formatted with headers
@@ -183,7 +184,7 @@ func (h *ExecutionHandler) GetFullExecutionLog(executionID string) (string, erro
 		builder.WriteString(fmt.Sprintf("=== Task: %s [%s] ===\n", task.Name, task.State))
 
 		// Get task log
-		log, err := h.sdk.GetTaskLog(executionID, task.Name)
+		log, err := h.sdk.GetTaskLog(context.Background(), executionID, task.Name)
 		if err != nil {
 			builder.WriteString(fmt.Sprintf("(failed to fetch log: %v)\n", err))
 			continue
@@ -208,7 +209,7 @@ func (h *ExecutionHandler) GetCompleteExecutionLog(executionID string) (string, 
 	var builder strings.Builder
 
 	// Get workflow execution log first
-	execLog, err := h.sdk.GetExecutionLog(executionID)
+	execLog, err := h.sdk.GetExecutionLog(context.Background(), executionID)
 	if err != nil {
 		return "", err
 	}

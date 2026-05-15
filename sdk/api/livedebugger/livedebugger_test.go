@@ -1,6 +1,7 @@
 package livedebugger
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -148,7 +149,7 @@ func TestExecuteGraphQL(t *testing.T) {
 		}
 
 		h := &Handler{client: c, graphqlURL: server.URL + "/platform/dob/graphql", orgID: "test-org"}
-		resp, err := h.executeGraphQL("{ hello }", map[string]interface{}{})
+		resp, err := h.executeGraphQL(context.Background(), "{ hello }", map[string]interface{}{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -172,7 +173,7 @@ func TestExecuteGraphQL(t *testing.T) {
 		}
 
 		h := &Handler{client: c, graphqlURL: server.URL + "/platform/dob/graphql", orgID: "test-org"}
-		_, err = h.executeGraphQL("{ bad }", map[string]interface{}{})
+		_, err = h.executeGraphQL(context.Background(), "{ bad }", map[string]interface{}{})
 		if err == nil {
 			t.Fatal("expected error for graphql errors response")
 		}
@@ -194,7 +195,7 @@ func TestExecuteGraphQL(t *testing.T) {
 		}
 
 		h := &Handler{client: c, graphqlURL: server.URL + "/platform/dob/graphql", orgID: "test-org"}
-		_, err = h.executeGraphQL("{ x }", map[string]interface{}{})
+		_, err = h.executeGraphQL(context.Background(), "{ x }", map[string]interface{}{})
 		if err == nil {
 			t.Fatal("expected error for HTTP 500")
 		}

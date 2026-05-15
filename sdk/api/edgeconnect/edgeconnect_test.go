@@ -1,6 +1,7 @@
 package edgeconnect
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -40,7 +41,7 @@ func TestList(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List()
+	result, err := h.List(context.Background())
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -62,7 +63,7 @@ func TestGet(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Get("ec-1")
+	result, err := h.Get(context.Background(), "ec-1")
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestGet_NotFound(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Get("ec-missing")
+	_, err := h.Get(context.Background(), "ec-missing")
 	if err == nil {
 		t.Fatal("Get() expected error for 404")
 	}
@@ -99,7 +100,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Create(EdgeConnect{Name: "new-edge"})
+	result, err := h.Create(context.Background(), EdgeConnect{Name: "new-edge"})
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.Delete("ec-1")
+	err := h.Delete(context.Background(), "ec-1")
 	if err != nil {
 		t.Fatalf("Delete() error: %v", err)
 	}

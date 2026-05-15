@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -87,7 +88,7 @@ func NewTrashHandler(c *client.Client) *TrashHandler {
 
 // List retrieves trashed documents matching the provided filters.
 func (h *TrashHandler) List(opts TrashListOptions) ([]TrashDocumentListEntry, error) {
-	sdkEntries, err := h.sdk.List(opts)
+	sdkEntries, err := h.sdk.List(context.Background(), opts)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +101,7 @@ func (h *TrashHandler) List(opts TrashListOptions) ([]TrashDocumentListEntry, er
 
 // Get retrieves a specific trashed document by ID.
 func (h *TrashHandler) Get(id string) (*TrashedDocument, error) {
-	d, err := h.sdk.Get(id)
+	d, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -109,10 +110,10 @@ func (h *TrashHandler) Get(id string) (*TrashedDocument, error) {
 
 // Restore restores a document from trash.
 func (h *TrashHandler) Restore(id string, opts RestoreOptions) error {
-	return h.sdk.Restore(id, opts)
+	return h.sdk.Restore(context.Background(), id, opts)
 }
 
 // Delete permanently deletes a document from trash.
 func (h *TrashHandler) Delete(id string) error {
-	return h.sdk.Delete(id)
+	return h.sdk.Delete(context.Background(), id)
 }

@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,7 +42,7 @@ func TestList(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List()
+	result, err := h.List(context.Background())
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestGet(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Get("uid-1")
+	result, err := h.Get(context.Background(), "uid-1")
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestGet_NotFound(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Get("missing")
+	_, err := h.Get(context.Background(), "missing")
 	if err == nil {
 		t.Fatal("Get() expected error for 404")
 	}
@@ -110,7 +111,7 @@ func TestCreate(t *testing.T) {
 
 	h := NewHandler(newTestClient(t, mux))
 	data := []byte(`{"name":"New Segment","isPublic":true}`)
-	result, err := h.Create(data)
+	result, err := h.Create(context.Background(), data)
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.Delete("uid-1")
+	err := h.Delete(context.Background(), "uid-1")
 	if err != nil {
 		t.Fatalf("Delete() error: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestCreate_ServerError(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Create([]byte(`{}`))
+	_, err := h.Create(context.Background(), []byte(`{}`))
 	if err == nil {
 		t.Fatal("Create() expected error for 500")
 	}

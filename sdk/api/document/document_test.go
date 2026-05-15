@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,7 +42,7 @@ func TestList(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List(DocumentFilters{})
+	result, err := h.List(context.Background(), DocumentFilters{})
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestList_Paginated(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List(DocumentFilters{ChunkSize: 2})
+	result, err := h.List(context.Background(), DocumentFilters{ChunkSize: 2})
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -124,7 +125,7 @@ func TestGetMetadata(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.GetMetadata("doc-123")
+	result, err := h.GetMetadata(context.Background(), "doc-123")
 	if err != nil {
 		t.Fatalf("GetMetadata() error: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.Delete("doc-123", 5)
+	err := h.Delete(context.Background(), "doc-123", 5)
 	if err != nil {
 		t.Fatalf("Delete() error: %v", err)
 	}
@@ -174,7 +175,7 @@ func TestCreateEnvironmentShare(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.CreateEnvironmentShare(CreateEnvironmentShareRequest{
+	result, err := h.CreateEnvironmentShare(context.Background(), CreateEnvironmentShareRequest{
 		DocumentID: "doc-123",
 		Access:     "read",
 	})
@@ -194,7 +195,7 @@ func TestCreateEnvironmentShare_Conflict(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.CreateEnvironmentShare(CreateEnvironmentShareRequest{
+	_, err := h.CreateEnvironmentShare(context.Background(), CreateEnvironmentShareRequest{
 		DocumentID: "doc-123",
 		Access:     "read",
 	})
@@ -224,7 +225,7 @@ func TestListEnvironmentShares(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ListEnvironmentShares("doc-123")
+	result, err := h.ListEnvironmentShares(context.Background(), "doc-123")
 	if err != nil {
 		t.Fatalf("ListEnvironmentShares() error: %v", err)
 	}
@@ -244,7 +245,7 @@ func TestDeleteEnvironmentShare(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.DeleteEnvironmentShare("share-1")
+	err := h.DeleteEnvironmentShare(context.Background(), "share-1")
 	if err != nil {
 		t.Fatalf("DeleteEnvironmentShare() error: %v", err)
 	}

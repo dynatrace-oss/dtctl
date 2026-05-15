@@ -35,8 +35,12 @@ func CheckResponse(resp *resty.Response) error {
 			msg = envelope.Message
 		}
 	} else {
-		// If we can't parse JSON, include raw body as details.
+		// If we can't parse JSON, include raw body as details (truncated to 1KB).
 		if body := resp.String(); body != "" {
+			const maxDetails = 1024
+			if len(body) > maxDetails {
+				body = body[:maxDetails] + "... (truncated)"
+			}
 			details = body
 		}
 	}

@@ -2,6 +2,7 @@
 package workflow
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -44,8 +45,8 @@ type WorkflowFilters struct {
 }
 
 // List retrieves workflows with optional filters.
-func (h *Handler) List(filters WorkflowFilters) (*WorkflowList, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) List(ctx context.Context, filters WorkflowFilters) (*WorkflowList, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	if filters.Owner != "" {
 		req.SetQueryParam("owner", filters.Owner)
@@ -69,8 +70,8 @@ func (h *Handler) List(filters WorkflowFilters) (*WorkflowList, error) {
 }
 
 // Get retrieves a specific workflow.
-func (h *Handler) Get(id string) (*Workflow, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Get(ctx context.Context, id string) (*Workflow, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s", id))
 	if err != nil {
 		return nil, fmt.Errorf("get workflow: %w", err)
@@ -89,8 +90,8 @@ func (h *Handler) Get(id string) (*Workflow, error) {
 }
 
 // GetRaw retrieves a workflow as raw JSON bytes.
-func (h *Handler) GetRaw(id string) ([]byte, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetRaw(ctx context.Context, id string) ([]byte, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s", id))
 	if err != nil {
 		return nil, fmt.Errorf("get workflow: %w", err)
@@ -104,8 +105,8 @@ func (h *Handler) GetRaw(id string) ([]byte, error) {
 }
 
 // Delete deletes a workflow.
-func (h *Handler) Delete(id string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Delete(ctx context.Context, id string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/automation/v1/workflows/%s", id))
 	if err != nil {
 		return fmt.Errorf("delete workflow: %w", err)
@@ -119,8 +120,8 @@ func (h *Handler) Delete(id string) error {
 }
 
 // Update updates a workflow.
-func (h *Handler) Update(id string, data []byte) (*Workflow, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Update(ctx context.Context, id string, data []byte) (*Workflow, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetBody(data).
 		Put(fmt.Sprintf("/platform/automation/v1/workflows/%s", id))
@@ -141,8 +142,8 @@ func (h *Handler) Update(id string, data []byte) (*Workflow, error) {
 }
 
 // Create creates a new workflow.
-func (h *Handler) Create(data []byte) (*Workflow, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Create(ctx context.Context, data []byte) (*Workflow, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetBody(data).
 		Post("/platform/automation/v1/workflows")
@@ -176,8 +177,8 @@ type HistoryList struct {
 }
 
 // ListHistory retrieves version history for a workflow.
-func (h *Handler) ListHistory(workflowID string) (*HistoryList, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) ListHistory(ctx context.Context, workflowID string) (*HistoryList, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s/history", workflowID))
 	if err != nil {
 		return nil, fmt.Errorf("list workflow history: %w", err)
@@ -196,8 +197,8 @@ func (h *Handler) ListHistory(workflowID string) (*HistoryList, error) {
 }
 
 // GetHistoryRecord retrieves a specific version of a workflow.
-func (h *Handler) GetHistoryRecord(workflowID string, version int) (*Workflow, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetHistoryRecord(ctx context.Context, workflowID string, version int) (*Workflow, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/automation/v1/workflows/%s/history/%d", workflowID, version))
 	if err != nil {
 		return nil, fmt.Errorf("get workflow history record: %w", err)
@@ -216,8 +217,8 @@ func (h *Handler) GetHistoryRecord(workflowID string, version int) (*Workflow, e
 }
 
 // RestoreHistory restores a workflow to a specific version.
-func (h *Handler) RestoreHistory(workflowID string, version int) (*Workflow, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) RestoreHistory(ctx context.Context, workflowID string, version int) (*Workflow, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Post(fmt.Sprintf("/platform/automation/v1/workflows/%s/history/%d/restore", workflowID, version))
 	if err != nil {
 		return nil, fmt.Errorf("restore workflow: %w", err)

@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -201,7 +202,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // List lists all extensions with automatic pagination
 func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
-	l, err := h.sdk.List(name, chunkSize)
+	l, err := h.sdk.List(context.Background(), name, chunkSize)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +211,7 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 
 // Get gets a specific extension by name (returns all versions)
 func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
-	l, err := h.sdk.Get(extensionName)
+	l, err := h.sdk.Get(context.Background(), extensionName)
 	if err != nil {
 		return nil, err
 	}
@@ -219,17 +220,17 @@ func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
 
 // GetVersion gets details for a specific extension version
 func (h *Handler) GetVersion(extensionName, version string) (*ExtensionDetails, error) {
-	return h.sdk.GetVersion(extensionName, version)
+	return h.sdk.GetVersion(context.Background(), extensionName, version)
 }
 
 // GetEnvironmentConfig gets the environment configuration for a specific extension version.
 func (h *Handler) GetEnvironmentConfig(extensionName, version string) (*ExtensionEnvironmentConfig, error) {
-	return h.sdk.GetEnvironmentConfig(extensionName, version)
+	return h.sdk.GetEnvironmentConfig(context.Background(), extensionName, version)
 }
 
 // ListMonitoringConfigurations lists monitoring configurations for an extension
 func (h *Handler) ListMonitoringConfigurations(extensionName, version string, chunkSize int64) (*MonitoringConfigurationList, error) {
-	l, err := h.sdk.ListMonitoringConfigurations(extensionName, version, chunkSize)
+	l, err := h.sdk.ListMonitoringConfigurations(context.Background(), extensionName, version, chunkSize)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +239,7 @@ func (h *Handler) ListMonitoringConfigurations(extensionName, version string, ch
 
 // GetMonitoringConfiguration gets a specific monitoring configuration
 func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*MonitoringConfiguration, error) {
-	m, err := h.sdk.GetMonitoringConfiguration(extensionName, configID)
+	m, err := h.sdk.GetMonitoringConfiguration(context.Background(), extensionName, configID)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +248,7 @@ func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*M
 
 // CreateMonitoringConfiguration creates a new monitoring configuration for an extension
 func (h *Handler) CreateMonitoringConfiguration(extensionName string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
-	m, err := h.sdk.CreateMonitoringConfiguration(extensionName, body)
+	m, err := h.sdk.CreateMonitoringConfiguration(context.Background(), extensionName, body)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +257,7 @@ func (h *Handler) CreateMonitoringConfiguration(extensionName string, body Monit
 
 // UpdateMonitoringConfiguration updates an existing monitoring configuration for an extension
 func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
-	m, err := h.sdk.UpdateMonitoringConfiguration(extensionName, configID, body)
+	m, err := h.sdk.UpdateMonitoringConfiguration(context.Background(), extensionName, configID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +266,7 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 
 // Upload uploads a custom extension zip file to the Dynatrace environment.
 func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, error) {
-	v, err := h.sdk.Upload(fileName, zipData)
+	v, err := h.sdk.Upload(context.Background(), fileName, zipData)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +275,7 @@ func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, er
 
 // InstallFromHub installs a Dynatrace Hub extension into the environment.
 func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersion, error) {
-	v, err := h.sdk.InstallFromHub(extensionName, version)
+	v, err := h.sdk.InstallFromHub(context.Background(), extensionName, version)
 	if err != nil {
 		return nil, err
 	}
@@ -283,18 +284,18 @@ func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersi
 
 // DeleteMonitoringConfiguration deletes a monitoring configuration for an extension
 func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) error {
-	return h.sdk.DeleteMonitoringConfiguration(extensionName, configID)
+	return h.sdk.DeleteMonitoringConfiguration(context.Background(), extensionName, configID)
 }
 
 // GetMonitoringConfigurationSchema retrieves the monitoring configuration schema for a specific
 // extension version.
 func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string) (json.RawMessage, error) {
-	return h.sdk.GetMonitoringConfigurationSchema(extensionName, version)
+	return h.sdk.GetMonitoringConfigurationSchema(context.Background(), extensionName, version)
 }
 
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
 func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGateGroupList, error) {
-	l, err := h.sdk.GetActiveGateGroups(extensionName, version)
+	l, err := h.sdk.GetActiveGateGroups(context.Background(), extensionName, version)
 	if err != nil {
 		return nil, err
 	}

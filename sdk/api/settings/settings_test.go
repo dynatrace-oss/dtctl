@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -40,7 +41,7 @@ func TestListSchemas(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ListSchemas()
+	result, err := h.ListSchemas(context.Background())
 	if err != nil {
 		t.Fatalf("ListSchemas() error: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestListObjects_Paginated(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ListObjects("builtin:alerting.profile", "environment", 10)
+	result, err := h.ListObjects(context.Background(), "builtin:alerting.profile", "environment", 10)
 	if err != nil {
 		t.Fatalf("ListObjects() error: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestGet(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Get("obj-123")
+	result, err := h.Get(context.Background(), "obj-123")
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
 	}
@@ -154,7 +155,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Create(SettingsObjectCreate{
+	result, err := h.Create(context.Background(), SettingsObjectCreate{
 		SchemaID: "builtin:alerting.profile",
 		Scope:    "environment",
 		Value:    map[string]any{"name": "New Profile"},
@@ -181,7 +182,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.Delete("obj-123", "1.0.0")
+	err := h.Delete(context.Background(), "obj-123", "1.0.0")
 	if err != nil {
 		t.Fatalf("Delete() error: %v", err)
 	}

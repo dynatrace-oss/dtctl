@@ -1,6 +1,7 @@
 package appengine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -57,8 +58,8 @@ type AppList struct {
 }
 
 // ListApps lists all installed apps
-func (h *Handler) ListApps() (*AppList, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) ListApps(ctx context.Context) (*AppList, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("add-fields", "isBuiltin,manifest,resourceStatus.subResourceTypes").
 		Get("/platform/app-engine/registry/v1/apps")
 
@@ -78,8 +79,8 @@ func (h *Handler) ListApps() (*AppList, error) {
 }
 
 // GetApp gets a specific app by ID
-func (h *Handler) GetApp(appID string) (*App, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetApp(ctx context.Context, appID string) (*App, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("add-fields", "isBuiltin,manifest,resourceStatus.subResourceTypes").
 		Get(fmt.Sprintf("/platform/app-engine/registry/v1/apps/%s", appID))
 
@@ -99,8 +100,8 @@ func (h *Handler) GetApp(appID string) (*App, error) {
 }
 
 // DeleteApp uninstalls an app
-func (h *Handler) DeleteApp(appID string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) DeleteApp(ctx context.Context, appID string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/app-engine/registry/v1/apps/%s", appID))
 
 	if err != nil {
@@ -126,8 +127,8 @@ type AppFunction struct {
 }
 
 // ListFunctions lists all functions across apps (or filtered by app ID)
-func (h *Handler) ListFunctions(appIDFilter string) ([]AppFunction, error) {
-	appList, err := h.ListApps()
+func (h *Handler) ListFunctions(ctx context.Context, appIDFilter string) ([]AppFunction, error) {
+	appList, err := h.ListApps(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -197,13 +198,13 @@ func (h *Handler) ListFunctions(appIDFilter string) ([]AppFunction, error) {
 }
 
 // GetFunction gets details about a specific function
-func (h *Handler) GetFunction(fullName string) (*AppFunction, error) {
+func (h *Handler) GetFunction(ctx context.Context, fullName string) (*AppFunction, error) {
 	appID, functionName := parseFullFunctionName(fullName)
 	if appID == "" || functionName == "" {
 		return nil, fmt.Errorf("invalid function name format, expected 'app-id/function-name', got %q", fullName)
 	}
 
-	app, err := h.GetApp(appID)
+	app, err := h.GetApp(ctx, appID)
 	if err != nil {
 		return nil, err
 	}

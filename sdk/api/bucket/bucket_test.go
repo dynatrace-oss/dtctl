@@ -1,6 +1,7 @@
 package bucket
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -39,7 +40,7 @@ func TestList(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List()
+	result, err := h.List(context.Background())
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestGet(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Get("default_logs")
+	result, err := h.Get(context.Background(), "default_logs")
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestGet_NotFound(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Get("missing")
+	_, err := h.Get(context.Background(), "missing")
 	if err == nil {
 		t.Fatal("Get() expected error for 404")
 	}
@@ -106,7 +107,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Create(BucketCreate{BucketName: "my_bucket", Table: "logs", DisplayName: "My Bucket", RetentionDays: 30})
+	result, err := h.Create(context.Background(), BucketCreate{BucketName: "my_bucket", Table: "logs", DisplayName: "My Bucket", RetentionDays: 30})
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.Delete("my_bucket")
+	err := h.Delete(context.Background(), "my_bucket")
 	if err != nil {
 		t.Fatalf("Delete() error: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestDelete_ServerError(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.Delete("my_bucket")
+	err := h.Delete(context.Background(), "my_bucket")
 	if err == nil {
 		t.Fatal("Delete() expected error for 500")
 	}

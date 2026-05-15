@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -49,8 +50,8 @@ type ResourceNotificationList struct {
 }
 
 // ListEventNotifications lists event notifications.
-func (h *Handler) ListEventNotifications(notificationType string) (*EventNotificationList, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) ListEventNotifications(ctx context.Context, notificationType string) (*EventNotificationList, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	if notificationType != "" {
 		req.SetQueryParam("notificationType", notificationType)
@@ -73,8 +74,8 @@ func (h *Handler) ListEventNotifications(notificationType string) (*EventNotific
 }
 
 // GetEventNotification gets a specific event notification by ID.
-func (h *Handler) GetEventNotification(id string) (*EventNotification, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetEventNotification(ctx context.Context, id string) (*EventNotification, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/notification/v2/event-notifications/%s", id))
 	if err != nil {
 		return nil, fmt.Errorf("get event notification: %w", err)
@@ -92,8 +93,8 @@ func (h *Handler) GetEventNotification(id string) (*EventNotification, error) {
 }
 
 // CreateEventNotification creates a new event notification.
-func (h *Handler) CreateEventNotification(data []byte) (*EventNotification, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) CreateEventNotification(ctx context.Context, data []byte) (*EventNotification, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(data).
 		SetHeader("Content-Type", "application/json").
 		Post("/platform/notification/v2/event-notifications")
@@ -113,8 +114,8 @@ func (h *Handler) CreateEventNotification(data []byte) (*EventNotification, erro
 }
 
 // DeleteEventNotification deletes an event notification.
-func (h *Handler) DeleteEventNotification(id string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) DeleteEventNotification(ctx context.Context, id string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/notification/v2/event-notifications/%s", id))
 	if err != nil {
 		return fmt.Errorf("delete event notification: %w", err)
@@ -127,8 +128,8 @@ func (h *Handler) DeleteEventNotification(id string) error {
 }
 
 // ListResourceNotifications lists resource notifications.
-func (h *Handler) ListResourceNotifications(notificationType, resourceID string) (*ResourceNotificationList, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) ListResourceNotifications(ctx context.Context, notificationType, resourceID string) (*ResourceNotificationList, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	if notificationType != "" {
 		req.SetQueryParam("notificationType", notificationType)
@@ -154,8 +155,8 @@ func (h *Handler) ListResourceNotifications(notificationType, resourceID string)
 }
 
 // GetResourceNotification gets a specific resource notification by ID.
-func (h *Handler) GetResourceNotification(id string) (*ResourceNotification, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetResourceNotification(ctx context.Context, id string) (*ResourceNotification, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/notification/v2/resource-notifications/%s", id))
 	if err != nil {
 		return nil, fmt.Errorf("get resource notification: %w", err)
@@ -173,8 +174,8 @@ func (h *Handler) GetResourceNotification(id string) (*ResourceNotification, err
 }
 
 // DeleteResourceNotification deletes a resource notification.
-func (h *Handler) DeleteResourceNotification(id string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) DeleteResourceNotification(ctx context.Context, id string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/notification/v2/resource-notifications/%s", id))
 	if err != nil {
 		return fmt.Errorf("delete resource notification: %w", err)

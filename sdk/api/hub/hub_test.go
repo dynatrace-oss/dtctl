@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -48,7 +49,7 @@ func TestListExtensions(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ListExtensions("", 0)
+	result, err := h.ListExtensions(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("ListExtensions() error: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestGetExtension(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.GetExtension("com.dynatrace.extension.host")
+	result, err := h.GetExtension(context.Background(), "com.dynatrace.extension.host")
 	if err != nil {
 		t.Fatalf("GetExtension() error: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestGetExtension_NotFound(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.GetExtension("nonexistent")
+	_, err := h.GetExtension(context.Background(), "nonexistent")
 	if err == nil {
 		t.Fatal("GetExtension() expected error for 404")
 	}

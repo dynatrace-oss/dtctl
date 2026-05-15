@@ -1,6 +1,7 @@
 package edgeconnect
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -51,8 +52,8 @@ type EdgeConnectList struct {
 }
 
 // List lists all EdgeConnect configurations.
-func (h *Handler) List() (*EdgeConnectList, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) List(ctx context.Context) (*EdgeConnectList, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("add-fields", "modificationInfo,metadata").
 		Get("/platform/app-engine/edge-connect/v1/edge-connects")
 	if err != nil {
@@ -71,8 +72,8 @@ func (h *Handler) List() (*EdgeConnectList, error) {
 }
 
 // Get gets a specific EdgeConnect by ID.
-func (h *Handler) Get(edgeConnectID string) (*EdgeConnect, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Get(ctx context.Context, edgeConnectID string) (*EdgeConnect, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", edgeConnectID))
 	if err != nil {
 		return nil, fmt.Errorf("get edge connect: %w", err)
@@ -90,8 +91,8 @@ func (h *Handler) Get(edgeConnectID string) (*EdgeConnect, error) {
 }
 
 // Create creates a new EdgeConnect.
-func (h *Handler) Create(req EdgeConnect) (*EdgeConnect, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Create(ctx context.Context, req EdgeConnect) (*EdgeConnect, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/app-engine/edge-connect/v1/edge-connects")
 	if err != nil {
@@ -110,8 +111,8 @@ func (h *Handler) Create(req EdgeConnect) (*EdgeConnect, error) {
 }
 
 // Update updates an existing EdgeConnect.
-func (h *Handler) Update(edgeConnectID string, req EdgeConnect) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Update(ctx context.Context, edgeConnectID string, req EdgeConnect) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Put(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", edgeConnectID))
 	if err != nil {
@@ -125,8 +126,8 @@ func (h *Handler) Update(edgeConnectID string, req EdgeConnect) error {
 }
 
 // Delete deletes an EdgeConnect.
-func (h *Handler) Delete(edgeConnectID string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Delete(ctx context.Context, edgeConnectID string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", edgeConnectID))
 	if err != nil {
 		return fmt.Errorf("delete edge connect: %w", err)

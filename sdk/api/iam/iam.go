@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -54,7 +55,7 @@ func extractEnvironmentID(baseURL string) (string, error) {
 }
 
 // ListUsers lists all users in the current environment with automatic pagination.
-func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int64) (*UserListResponse, error) {
+func (h *Handler) ListUsers(ctx context.Context, partialString string, uuids []string, chunkSize int64) (*UserListResponse, error) {
 	envID, err := extractEnvironmentID(h.client.BaseURL())
 	if err != nil {
 		return nil, err
@@ -65,7 +66,7 @@ func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int6
 	nextPageKey := ""
 
 	for {
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		uuidFilter := ""
 		if len(uuids) > 0 {
@@ -116,13 +117,13 @@ func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int6
 }
 
 // GetUser gets a specific user by UUID.
-func (h *Handler) GetUser(uuid string) (*User, error) {
+func (h *Handler) GetUser(ctx context.Context, uuid string) (*User, error) {
 	envID, err := extractEnvironmentID(h.client.BaseURL())
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/users/%s", envID, uuid))
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
@@ -140,7 +141,7 @@ func (h *Handler) GetUser(uuid string) (*User, error) {
 }
 
 // ListGroups lists all groups in the current environment with automatic pagination.
-func (h *Handler) ListGroups(partialGroupName string, uuids []string, chunkSize int64) (*GroupListResponse, error) {
+func (h *Handler) ListGroups(ctx context.Context, partialGroupName string, uuids []string, chunkSize int64) (*GroupListResponse, error) {
 	envID, err := extractEnvironmentID(h.client.BaseURL())
 	if err != nil {
 		return nil, err
@@ -151,7 +152,7 @@ func (h *Handler) ListGroups(partialGroupName string, uuids []string, chunkSize 
 	nextPageKey := ""
 
 	for {
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		uuidFilter := ""
 		if len(uuids) > 0 {

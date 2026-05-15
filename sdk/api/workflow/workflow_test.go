@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -40,7 +41,7 @@ func TestList(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List(WorkflowFilters{})
+	result, err := h.List(context.Background(), WorkflowFilters{})
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestGet(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Get("wf-1")
+	result, err := h.Get(context.Background(), "wf-1")
 	if err != nil {
 		t.Fatalf("Get() error: %v", err)
 	}
@@ -85,7 +86,7 @@ func TestGet_NotFound(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Get("missing")
+	_, err := h.Get(context.Background(), "missing")
 	if err == nil {
 		t.Fatal("Get() expected error for 404")
 	}
@@ -105,7 +106,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Create([]byte(`{"title":"New Workflow"}`))
+	result, err := h.Create(context.Background(), []byte(`{"title":"New Workflow"}`))
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestDelete(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	err := h.Delete("wf-1")
+	err := h.Delete(context.Background(), "wf-1")
 	if err != nil {
 		t.Fatalf("Delete() error: %v", err)
 	}
@@ -139,7 +140,7 @@ func TestGet_ServerError(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Get("wf-1")
+	_, err := h.Get(context.Background(), "wf-1")
 	if err == nil {
 		t.Fatal("Get() expected error for 500")
 	}

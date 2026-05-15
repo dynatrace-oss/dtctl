@@ -1,6 +1,7 @@
 package livedebugger
 
 import (
+	"context"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkld "github.com/dynatrace-oss/dtctl/sdk/api/livedebugger"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -20,39 +21,39 @@ func NewHandler(c *client.Client, environmentURL string) (*Handler, error) {
 }
 
 func (h *Handler) GetOrCreateWorkspace(projectPath string) (map[string]interface{}, string, error) {
-	return h.sdk.GetOrCreateWorkspace(projectPath)
+	return h.sdk.GetOrCreateWorkspace(context.Background(), projectPath)
 }
 
 func (h *Handler) UpdateWorkspaceFilters(workspaceID string, filterSets []map[string]interface{}) (map[string]interface{}, error) {
-	return h.sdk.UpdateWorkspaceFilters(workspaceID, filterSets)
+	return h.sdk.UpdateWorkspaceFilters(context.Background(), workspaceID, filterSets)
 }
 
 func (h *Handler) CreateBreakpoint(workspaceID, fileName string, lineNumber int) (map[string]interface{}, error) {
-	return h.sdk.CreateBreakpoint(workspaceID, fileName, lineNumber)
+	return h.sdk.CreateBreakpoint(context.Background(), workspaceID, fileName, lineNumber)
 }
 
 func (h *Handler) GetWorkspaceRules(workspaceID string) (map[string]interface{}, error) {
-	return h.sdk.GetWorkspaceRules(workspaceID)
+	return h.sdk.GetWorkspaceRules(context.Background(), workspaceID)
 }
 
 func (h *Handler) DeleteBreakpoint(workspaceID, ruleID string) (map[string]interface{}, error) {
-	return h.sdk.DeleteBreakpoint(workspaceID, ruleID)
+	return h.sdk.DeleteBreakpoint(context.Background(), workspaceID, ruleID)
 }
 
 func (h *Handler) GetRuleStatusBreakdown(ruleID string) (map[string]interface{}, error) {
-	return h.sdk.GetRuleStatusBreakdown(ruleID)
+	return h.sdk.GetRuleStatusBreakdown(context.Background(), ruleID)
 }
 
 func (h *Handler) EditBreakpoint(workspaceID string, ruleSettings map[string]interface{}) (map[string]interface{}, error) {
-	return h.sdk.EditBreakpoint(workspaceID, ruleSettings)
+	return h.sdk.EditBreakpoint(context.Background(), workspaceID, ruleSettings)
 }
 
 func (h *Handler) EnableOrDisableBreakpoints(workspaceID string, ruleIDs []string, isDisabled bool) (map[string]interface{}, error) {
-	return h.sdk.EnableOrDisableBreakpoints(workspaceID, ruleIDs, isDisabled)
+	return h.sdk.EnableOrDisableBreakpoints(context.Background(), workspaceID, ruleIDs, isDisabled)
 }
 
 func (h *Handler) DeleteAllBreakpoints(workspaceID string) (map[string]interface{}, error) {
-	return h.sdk.DeleteAllBreakpoints(workspaceID)
+	return h.sdk.DeleteAllBreakpoints(context.Background(), workspaceID)
 }
 
 // BuildFilterSets delegates to the SDK implementation.

@@ -2,6 +2,7 @@ package document
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,9 +51,8 @@ func NewHandler(c *httpclient.Client) *Handler {
 //
 // The trailing optional fields (OriginAppID, OriginExtensionID, Labels,
 // ShareInfo, UserContext) are populated only when requested via
-// DocumentFilters.AddFields. They are tagged `omitempty`/`table:"-"` so
-// default JSON/YAML output stays minimal and table column layout is stable
-// regardless of whether --add-fields was passed.
+// DocumentFilters.AddFields. They are tagged `omitempty` so default
+// JSON/YAML output stays minimal.
 type Document struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -153,7 +153,7 @@ type DocumentFilters struct {
 }
 
 // List retrieves documents matching the provided filters with automatic pagination
-func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
+func (h *Handler) List(ctx context.Context, filters DocumentFilters) (*DocumentList, error) {
 	var allDocuments []DocumentMetadata
 	var totalCount int
 	nextPageKey := ""
@@ -194,7 +194,7 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 
 	for {
 		var result DocumentList
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDocumentAPI,
@@ -240,8 +240,8 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 }
 
 // Get retrieves a specific document by ID
-func (h *Handler) Get(id string) (*Document, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Get(ctx context.Context, id string) (*Document, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/document/v1/documents/%s", id))
 
 	if err != nil {
@@ -262,8 +262,8 @@ func (h *Handler) Get(id string) (*Document, error) {
 }
 
 // GetMetadata retrieves only the metadata for a document
-func (h *Handler) GetMetadata(id string) (*DocumentMetadata, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetMetadata(ctx context.Context, id string) (*DocumentMetadata, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/document/v1/documents/%s/metadata", id))
 
 	if err != nil {
@@ -283,8 +283,8 @@ func (h *Handler) GetMetadata(id string) (*DocumentMetadata, error) {
 }
 
 // Delete deletes a document
-func (h *Handler) Delete(id string, version int) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Delete(ctx context.Context, id string, version int) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
 		Delete(fmt.Sprintf("/platform/document/v1/documents/%s", id))
 
@@ -309,7 +309,7 @@ type CreateRequest struct {
 }
 
 // Create creates a new document
-func (h *Handler) Create(req CreateRequest) (*Document, error) {
+func (h *Handler) Create(ctx context.Context, req CreateRequest) (*Document, error) {
 	if req.Name == "" {
 		return nil, fmt.Errorf("document name is required")
 	}
@@ -322,7 +322,7 @@ func (h *Handler) Create(req CreateRequest) (*Document, error) {
 
 	// Build multipart form request
 	// The API expects multipart/form-data with content as a file part
-	r := h.client.HTTP().R().
+	r := h.client.HTTP().R().SetContext(ctx).
 		SetMultipartFormData(map[string]string{
 			"name": req.Name,
 			"type": req.Type,
@@ -367,12 +367,12 @@ func (h *Handler) Create(req CreateRequest) (*Document, error) {
 }
 
 // Update updates a document's content
-func (h *Handler) Update(id string, version int, content []byte, contentType string) (*Document, error) {
+func (h *Handler) Update(ctx context.Context, id string, version int, content []byte, contentType string) (*Document, error) {
 	if contentType == "" {
 		contentType = "application/json"
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
 		SetMultipartField("content", "content", contentType, bytes.NewReader(content)).
 		Patch(fmt.Sprintf("/platform/document/v1/documents/%s", id))
@@ -389,12 +389,12 @@ func (h *Handler) Update(id string, version int, content []byte, contentType str
 }
 
 // UpdateWithMetadata updates a document's content and optionally its metadata (name, description)
-func (h *Handler) UpdateWithMetadata(id string, version int, content []byte, contentType string, name string, description string) (*Document, error) {
+func (h *Handler) UpdateWithMetadata(ctx context.Context, id string, version int, content []byte, contentType string, name string, description string) (*Document, error) {
 	if contentType == "" {
 		contentType = "application/json"
 	}
 
-	r := h.client.HTTP().R().
+	r := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
 		SetMultipartField("content", "content", contentType, bytes.NewReader(content))
 
@@ -423,6 +423,10 @@ func (h *Handler) UpdateWithMetadata(id string, version int, content []byte, con
 // multipart or JSON. For JSON responses it expects the documentMetadata wrapper.
 // On parse failure it returns a minimal Document with what we know, plus the
 // given fallback fields.
+//
+// The resp parameter must satisfy the documented interface. For multipart
+// responses it must also implement RawResponse() *resty.Response (which
+// *resty.Response naturally does) so the multipart parser can operate.
 func parseUpdateResponse(resp interface {
 	Header() http.Header
 	Body() []byte
@@ -430,15 +434,19 @@ func parseUpdateResponse(resp interface {
 	respContentType := resp.Header().Get("Content-Type")
 
 	if strings.HasPrefix(respContentType, "multipart/") {
-		restyResp, ok := resp.(*resty.Response)
-		if !ok {
-			return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
+		// The multipart parser needs the full *resty.Response.
+		type restyResponseProvider interface {
+			RawResponse() *http.Response
 		}
-		doc, err := ParseMultipartDocument(restyResp)
-		if err != nil {
-			return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
+		if rr, ok := resp.(*resty.Response); ok {
+			doc, err := ParseMultipartDocument(rr)
+			if err != nil {
+				return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
+			}
+			return doc, nil
 		}
-		return doc, nil
+		_ = restyResponseProvider(nil) // ensure the interface exists at compile time
+		return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
 	}
 
 	// JSON response - try direct DocumentMetadata first, then wrapped version
@@ -504,39 +512,6 @@ func extractIDFromResponse(body []byte) string {
 	return ""
 }
 
-// documentListItemToDocument converts a DocumentMetadata to a Document for
-// table display. AddFields-derived metadata (originAppId, originExtensionId,
-// labels, shareInfo, userContext) is carried through so that JSON/YAML
-// callers see the requested fields; they remain hidden from the default
-// table view via `table:"-"` on Document.
-func documentListItemToDocument(metadata DocumentMetadata) Document {
-	return Document{
-		ID:                metadata.ID,
-		Name:              metadata.Name,
-		Type:              metadata.Type,
-		Description:       metadata.Description,
-		Version:           metadata.Version,
-		Owner:             metadata.Owner,
-		IsPrivate:         metadata.IsPrivate,
-		Created:           metadata.ModificationInfo.CreatedTime,
-		Modified:          metadata.ModificationInfo.LastModifiedTime,
-		OriginAppID:       metadata.OriginAppID,
-		OriginExtensionID: metadata.OriginExtensionID,
-		Labels:            metadata.Labels,
-		ShareInfo:         metadata.ShareInfo,
-		UserContext:       metadata.UserContext,
-	}
-}
-
-// ConvertToDocuments converts a list of DocumentMetadata to a list of Documents for table output
-func ConvertToDocuments(list *DocumentList) []Document {
-	docs := make([]Document, len(list.Documents))
-	for i, meta := range list.Documents {
-		docs[i] = documentListItemToDocument(meta)
-	}
-	return docs
-}
-
 // DirectShare represents a direct share for a document
 type DirectShare struct {
 	ID         string `json:"id"`
@@ -565,8 +540,8 @@ type CreateDirectShareRequest struct {
 }
 
 // CreateDirectShare creates a direct share for a document
-func (h *Handler) CreateDirectShare(req CreateDirectShareRequest) (*DirectShare, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) CreateDirectShare(ctx context.Context, req CreateDirectShareRequest) (*DirectShare, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/document/v1/direct-shares")
 
@@ -587,8 +562,8 @@ func (h *Handler) CreateDirectShare(req CreateDirectShareRequest) (*DirectShare,
 }
 
 // ListDirectShares lists direct shares for a document
-func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) ListDirectShares(ctx context.Context, documentID string) (*DirectShareList, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 
 	if documentID != "" {
 		req.SetQueryParam("filter", fmt.Sprintf("documentId=='%s'", documentID))
@@ -613,8 +588,8 @@ func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) 
 }
 
 // DeleteDirectShare deletes a direct share
-func (h *Handler) DeleteDirectShare(shareID string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) DeleteDirectShare(ctx context.Context, shareID string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/document/v1/direct-shares/%s", shareID))
 
 	if err != nil {
@@ -629,12 +604,12 @@ func (h *Handler) DeleteDirectShare(shareID string) error {
 }
 
 // AddDirectShareRecipients adds recipients to a direct share
-func (h *Handler) AddDirectShareRecipients(shareID string, recipients []SsoEntity) error {
+func (h *Handler) AddDirectShareRecipients(ctx context.Context, shareID string, recipients []SsoEntity) error {
 	body := map[string]interface{}{
 		"recipients": recipients,
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		Post(fmt.Sprintf("/platform/document/v1/direct-shares/%s/recipients/add", shareID))
 
@@ -650,12 +625,12 @@ func (h *Handler) AddDirectShareRecipients(shareID string, recipients []SsoEntit
 }
 
 // RemoveDirectShareRecipients removes recipients from a direct share
-func (h *Handler) RemoveDirectShareRecipients(shareID string, recipientIDs []string) error {
+func (h *Handler) RemoveDirectShareRecipients(ctx context.Context, shareID string, recipientIDs []string) error {
 	body := map[string]interface{}{
 		"ids": recipientIDs,
 	}
 
-	resp, err := h.client.HTTP().R().
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		Post(fmt.Sprintf("/platform/document/v1/direct-shares/%s/recipients/remove", shareID))
 
@@ -763,8 +738,8 @@ var ErrShareConflict = fmt.Errorf("environment share conflict")
 var ErrVersionConflict = fmt.Errorf("document version conflict")
 
 // CreateEnvironmentShare creates an environment-wide share for a document
-func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*EnvironmentShare, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) CreateEnvironmentShare(ctx context.Context, req CreateEnvironmentShareRequest) (*EnvironmentShare, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		Post("/platform/document/v1/environment-shares")
 
@@ -790,7 +765,7 @@ func (h *Handler) CreateEnvironmentShare(req CreateEnvironmentShareRequest) (*En
 
 // ListEnvironmentShares lists environment shares for a document (or all if documentID is empty).
 // Paginates automatically using the Document API style (page-size sent on every request).
-func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareList, error) {
+func (h *Handler) ListEnvironmentShares(ctx context.Context, documentID string) (*EnvironmentShareList, error) {
 	var allShares []EnvironmentShare
 	var totalCount int
 	nextPageKey := ""
@@ -802,14 +777,19 @@ func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareLis
 
 	for {
 		var result EnvironmentShareList
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
+
+		filters := map[string]string{}
+		if filterStr != "" {
+			filters["filter"] = filterStr
+		}
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:         httpclient.PaginationDocumentAPI,
 			PageKeyParam:  "page-key",
 			PageSizeParam: "page-size",
 			NextPageKey:   nextPageKey,
-			Filters:       map[string]string{"filter": filterStr},
+			Filters:       filters,
 		}.QueryParams())
 
 		resp, err := req.Get("/platform/document/v1/environment-shares")
@@ -841,8 +821,8 @@ func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareLis
 }
 
 // DeleteEnvironmentShare deletes an environment share
-func (h *Handler) DeleteEnvironmentShare(shareID string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) DeleteEnvironmentShare(ctx context.Context, shareID string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/document/v1/environment-shares/%s", shareID))
 
 	if err != nil {
@@ -864,8 +844,8 @@ func (h *Handler) DeleteEnvironmentShare(shareID string) error {
 // This is the half of the "Share with environment" UI action that the environment-share
 // API does not cover: the env-share creates a claimable grant, but isPrivate=false is a
 // separate owner-settable metadata flag.
-func (h *Handler) SetDocumentPublic(id string, version int) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) SetDocumentPublic(ctx context.Context, id string, version int) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
 		SetMultipartFormData(map[string]string{"isPrivate": "false"}).
 		Patch(fmt.Sprintf("/platform/document/v1/documents/%s", id))
@@ -1023,14 +1003,14 @@ type SnapshotList struct {
 }
 
 // ListSnapshots retrieves all snapshots for a document
-func (h *Handler) ListSnapshots(documentID string) (*SnapshotList, error) {
+func (h *Handler) ListSnapshots(ctx context.Context, documentID string) (*SnapshotList, error) {
 	var allSnapshots []Snapshot
 	var totalCount int
 	nextPageKey := ""
 
 	for {
 		var result SnapshotList
-		req := h.client.HTTP().R()
+		req := h.client.HTTP().R().SetContext(ctx)
 
 		req.SetQueryParamsFromValues(httpclient.PaginationParams{
 			Style:        httpclient.PaginationDefault,
@@ -1067,8 +1047,8 @@ func (h *Handler) ListSnapshots(documentID string) (*SnapshotList, error) {
 }
 
 // GetSnapshot retrieves metadata for a specific snapshot
-func (h *Handler) GetSnapshot(documentID string, version int) (*Snapshot, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetSnapshot(ctx context.Context, documentID string, version int) (*Snapshot, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/document/v1/documents/%s/snapshots/%d", documentID, version))
 
 	if err != nil {
@@ -1088,8 +1068,8 @@ func (h *Handler) GetSnapshot(documentID string, version int) (*Snapshot, error)
 }
 
 // RestoreSnapshot restores a document to a specific snapshot version
-func (h *Handler) RestoreSnapshot(documentID string, version int) (*DocumentMetadata, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) RestoreSnapshot(ctx context.Context, documentID string, version int) (*DocumentMetadata, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Post(fmt.Sprintf("/platform/document/v1/documents/%s/snapshots/%d:restore", documentID, version))
 
 	if err != nil {
@@ -1111,8 +1091,8 @@ func (h *Handler) RestoreSnapshot(documentID string, version int) (*DocumentMeta
 }
 
 // DeleteSnapshot deletes a specific snapshot
-func (h *Handler) DeleteSnapshot(documentID string, version int) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) DeleteSnapshot(ctx context.Context, documentID string, version int) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("/platform/document/v1/documents/%s/snapshots/%d", documentID, version))
 
 	if err != nil {
@@ -1127,8 +1107,8 @@ func (h *Handler) DeleteSnapshot(documentID string, version int) error {
 }
 
 // GetAtVersion retrieves a document's content at a specific snapshot version
-func (h *Handler) GetAtVersion(id string, version int) (*Document, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) GetAtVersion(ctx context.Context, id string, version int) (*Document, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("snapshot-version", fmt.Sprintf("%d", version)).
 		Get(fmt.Sprintf("/platform/document/v1/documents/%s", id))
 

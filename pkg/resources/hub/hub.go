@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkhub "github.com/dynatrace-oss/dtctl/sdk/api/hub"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -70,7 +71,7 @@ func NewHandler(c *client.Client) *Handler {
 // ListExtensions lists all Hub catalog extensions with automatic pagination.
 // filter is a case-insensitive substring matched against id, name, and description.
 func (h *Handler) ListExtensions(filter string, chunkSize int64) (*HubExtensionList, error) {
-	sdkResult, err := h.sdk.ListExtensions(filter, chunkSize)
+	sdkResult, err := h.sdk.ListExtensions(context.Background(), filter, chunkSize)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +84,7 @@ func (h *Handler) ListExtensions(filter string, chunkSize int64) (*HubExtensionL
 
 // GetExtension gets a specific Hub extension by ID.
 func (h *Handler) GetExtension(id string) (*HubExtension, error) {
-	sdkResult, err := h.sdk.GetExtension(id)
+	sdkResult, err := h.sdk.GetExtension(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +94,7 @@ func (h *Handler) GetExtension(id string) (*HubExtension, error) {
 
 // ListExtensionReleases lists all releases for a Hub extension.
 func (h *Handler) ListExtensionReleases(id string, chunkSize int64) (*HubExtensionReleaseList, error) {
-	sdkResult, err := h.sdk.ListExtensionReleases(id, chunkSize)
+	sdkResult, err := h.sdk.ListExtensionReleases(context.Background(), id, chunkSize)
 	if err != nil {
 		return nil, err
 	}

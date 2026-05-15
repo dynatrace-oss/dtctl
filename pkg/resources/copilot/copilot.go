@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"context"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkcop "github.com/dynatrace-oss/dtctl/sdk/api/copilot"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -137,7 +138,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // ListSkills retrieves all available CoPilot skills
 func (h *Handler) ListSkills() (*SkillList, error) {
-	sdkResult, err := h.sdk.ListSkills()
+	sdkResult, err := h.sdk.ListSkills(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +147,7 @@ func (h *Handler) ListSkills() (*SkillList, error) {
 
 // Chat sends a message to CoPilot and returns the response
 func (h *Handler) Chat(text string, state *ConversationState, ctx []ConversationContext) (*ConversationResponse, error) {
-	sdkResult, err := h.sdk.Chat(text, state, ctx)
+	sdkResult, err := h.sdk.Chat(context.Background(), text, state, ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +156,7 @@ func (h *Handler) Chat(text string, state *ConversationState, ctx []Conversation
 
 // ChatStream sends a message to CoPilot and streams the response
 func (h *Handler) ChatStream(text string, state *ConversationState, ctx []ConversationContext, callback func(chunk StreamChunk) error) (*ConversationResponse, error) {
-	sdkResult, err := h.sdk.ChatStream(text, state, ctx, callback)
+	sdkResult, err := h.sdk.ChatStream(context.Background(), text, state, ctx, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +165,7 @@ func (h *Handler) ChatStream(text string, state *ConversationState, ctx []Conver
 
 // ChatWithOptions sends a message with options
 func (h *Handler) ChatWithOptions(text string, opts ChatOptions, streamCallback func(chunk StreamChunk) error) (*ConversationResponse, error) {
-	sdkResult, err := h.sdk.ChatWithOptions(text, opts, streamCallback)
+	sdkResult, err := h.sdk.ChatWithOptions(context.Background(), text, opts, streamCallback)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +174,7 @@ func (h *Handler) ChatWithOptions(text string, opts ChatOptions, streamCallback 
 
 // Nl2Dql converts natural language to a DQL query
 func (h *Handler) Nl2Dql(text string) (*Nl2DqlResponse, error) {
-	sdkResult, err := h.sdk.Nl2Dql(text)
+	sdkResult, err := h.sdk.Nl2Dql(context.Background(), text)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +183,7 @@ func (h *Handler) Nl2Dql(text string) (*Nl2DqlResponse, error) {
 
 // Dql2Nl explains a DQL query in natural language
 func (h *Handler) Dql2Nl(dql string) (*Dql2NlResponse, error) {
-	sdkResult, err := h.sdk.Dql2Nl(dql)
+	sdkResult, err := h.sdk.Dql2Nl(context.Background(), dql)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +192,7 @@ func (h *Handler) Dql2Nl(dql string) (*Dql2NlResponse, error) {
 
 // DocumentSearch searches for relevant documents
 func (h *Handler) DocumentSearch(texts []string, collections []string, exclude []string) (*DocumentSearchResult, error) {
-	sdkResult, err := h.sdk.DocumentSearch(texts, collections, exclude)
+	sdkResult, err := h.sdk.DocumentSearch(context.Background(), texts, collections, exclude)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package appengine
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -84,12 +85,12 @@ func NewFunctionHandler(c *client.Client) *FunctionHandler {
 
 // InvokeFunction invokes an app function
 func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionInvokeResponse, error) {
-	return h.sdk.InvokeFunction(req)
+	return h.sdk.InvokeFunction(context.Background(), req)
 }
 
 // DeferExecution defers execution of a resumable function
 func (h *FunctionHandler) DeferExecution(req *DeferredExecutionRequest) (*DeferredExecutionResponse, error) {
-	sdkResult, err := h.sdk.DeferExecution(req)
+	sdkResult, err := h.sdk.DeferExecution(context.Background(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -98,12 +99,12 @@ func (h *FunctionHandler) DeferExecution(req *DeferredExecutionRequest) (*Deferr
 
 // ExecuteCode executes ad-hoc JavaScript code using the function executor
 func (h *FunctionHandler) ExecuteCode(sourceCode, payload string) (*FunctionExecutorResponse, error) {
-	return h.sdk.ExecuteCode(sourceCode, payload)
+	return h.sdk.ExecuteCode(context.Background(), sourceCode, payload)
 }
 
 // GetSDKVersions lists available SDK versions
 func (h *FunctionHandler) GetSDKVersions() (*SDKVersionsResponse, error) {
-	sdkResult, err := h.sdk.GetSDKVersions()
+	sdkResult, err := h.sdk.GetSDKVersions(context.Background())
 	if err != nil {
 		return nil, err
 	}

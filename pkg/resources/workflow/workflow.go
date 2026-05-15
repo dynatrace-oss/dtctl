@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkworkflow "github.com/dynatrace-oss/dtctl/sdk/api/workflow"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -82,7 +83,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // List retrieves workflows with optional filters
 func (h *Handler) List(filters WorkflowFilters) (*WorkflowList, error) {
-	sdkResult, err := h.sdk.List(filters)
+	sdkResult, err := h.sdk.List(context.Background(), filters)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +96,7 @@ func (h *Handler) List(filters WorkflowFilters) (*WorkflowList, error) {
 
 // Get retrieves a specific workflow
 func (h *Handler) Get(id string) (*Workflow, error) {
-	sdkResult, err := h.sdk.Get(id)
+	sdkResult, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -105,17 +106,17 @@ func (h *Handler) Get(id string) (*Workflow, error) {
 
 // Delete deletes a workflow
 func (h *Handler) Delete(id string) error {
-	return h.sdk.Delete(id)
+	return h.sdk.Delete(context.Background(), id)
 }
 
 // GetRaw retrieves a workflow as raw JSON (for editing)
 func (h *Handler) GetRaw(id string) ([]byte, error) {
-	return h.sdk.GetRaw(id)
+	return h.sdk.GetRaw(context.Background(), id)
 }
 
 // Update updates a workflow
 func (h *Handler) Update(id string, data []byte) (*Workflow, error) {
-	sdkResult, err := h.sdk.Update(id, data)
+	sdkResult, err := h.sdk.Update(context.Background(), id, data)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ func (h *Handler) Update(id string, data []byte) (*Workflow, error) {
 
 // Create creates a new workflow
 func (h *Handler) Create(data []byte) (*Workflow, error) {
-	sdkResult, err := h.sdk.Create(data)
+	sdkResult, err := h.sdk.Create(context.Background(), data)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func (h *Handler) Create(data []byte) (*Workflow, error) {
 
 // ListHistory retrieves version history for a workflow
 func (h *Handler) ListHistory(workflowID string) (*HistoryList, error) {
-	sdkResult, err := h.sdk.ListHistory(workflowID)
+	sdkResult, err := h.sdk.ListHistory(context.Background(), workflowID)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +149,7 @@ func (h *Handler) ListHistory(workflowID string) (*HistoryList, error) {
 
 // GetHistoryRecord retrieves a specific version of a workflow
 func (h *Handler) GetHistoryRecord(workflowID string, version int) (*Workflow, error) {
-	sdkResult, err := h.sdk.GetHistoryRecord(workflowID, version)
+	sdkResult, err := h.sdk.GetHistoryRecord(context.Background(), workflowID, version)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +159,7 @@ func (h *Handler) GetHistoryRecord(workflowID string, version int) (*Workflow, e
 
 // RestoreHistory restores a workflow to a specific version
 func (h *Handler) RestoreHistory(workflowID string, version int) (*Workflow, error) {
-	sdkResult, err := h.sdk.RestoreHistory(workflowID, version)
+	sdkResult, err := h.sdk.RestoreHistory(context.Background(), workflowID, version)
 	if err != nil {
 		return nil, err
 	}

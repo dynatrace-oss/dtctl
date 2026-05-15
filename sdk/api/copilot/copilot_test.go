@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -34,7 +35,7 @@ func TestListSkills(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ListSkills()
+	result, err := h.ListSkills(context.Background())
 	if err != nil {
 		t.Fatalf("ListSkills() error: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestChat(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Chat("hello", nil, nil)
+	result, err := h.Chat(context.Background(), "hello", nil, nil)
 	if err != nil {
 		t.Fatalf("Chat() error: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestNl2Dql(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Nl2Dql("show me error logs")
+	result, err := h.Nl2Dql(context.Background(), "show me error logs")
 	if err != nil {
 		t.Fatalf("Nl2Dql() error: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestChat_Error(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Chat("hello", nil, nil)
+	_, err := h.Chat(context.Background(), "hello", nil, nil)
 	if err == nil {
 		t.Fatal("Chat() expected error for 500")
 	}

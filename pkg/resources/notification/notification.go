@@ -1,6 +1,7 @@
 package notification
 
 import (
+	"context"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdknotification "github.com/dynatrace-oss/dtctl/sdk/api/notification"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -75,7 +76,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // ListEventNotifications lists event notifications.
 func (h *Handler) ListEventNotifications(notificationType string) (*EventNotificationList, error) {
-	sdkResult, err := h.sdk.ListEventNotifications(notificationType)
+	sdkResult, err := h.sdk.ListEventNotifications(context.Background(), notificationType)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func (h *Handler) ListEventNotifications(notificationType string) (*EventNotific
 
 // GetEventNotification gets a specific event notification by ID.
 func (h *Handler) GetEventNotification(id string) (*EventNotification, error) {
-	sdkResult, err := h.sdk.GetEventNotification(id)
+	sdkResult, err := h.sdk.GetEventNotification(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +99,7 @@ func (h *Handler) GetEventNotification(id string) (*EventNotification, error) {
 
 // CreateEventNotification creates a new event notification.
 func (h *Handler) CreateEventNotification(data []byte) (*EventNotification, error) {
-	sdkResult, err := h.sdk.CreateEventNotification(data)
+	sdkResult, err := h.sdk.CreateEventNotification(context.Background(), data)
 	if err != nil {
 		return nil, err
 	}
@@ -108,12 +109,12 @@ func (h *Handler) CreateEventNotification(data []byte) (*EventNotification, erro
 
 // DeleteEventNotification deletes an event notification.
 func (h *Handler) DeleteEventNotification(id string) error {
-	return h.sdk.DeleteEventNotification(id)
+	return h.sdk.DeleteEventNotification(context.Background(), id)
 }
 
 // ListResourceNotifications lists resource notifications.
 func (h *Handler) ListResourceNotifications(notificationType, resourceID string) (*ResourceNotificationList, error) {
-	sdkResult, err := h.sdk.ListResourceNotifications(notificationType, resourceID)
+	sdkResult, err := h.sdk.ListResourceNotifications(context.Background(), notificationType, resourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func (h *Handler) ListResourceNotifications(notificationType, resourceID string)
 
 // GetResourceNotification gets a specific resource notification by ID.
 func (h *Handler) GetResourceNotification(id string) (*ResourceNotification, error) {
-	sdkResult, err := h.sdk.GetResourceNotification(id)
+	sdkResult, err := h.sdk.GetResourceNotification(context.Background(), id)
 	if err != nil {
 		return nil, err
 	}
@@ -136,5 +137,5 @@ func (h *Handler) GetResourceNotification(id string) (*ResourceNotification, err
 
 // DeleteResourceNotification deletes a resource notification.
 func (h *Handler) DeleteResourceNotification(id string) error {
-	return h.sdk.DeleteResourceNotification(id)
+	return h.sdk.DeleteResourceNotification(context.Background(), id)
 }

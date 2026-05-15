@@ -1,6 +1,7 @@
 package edgeconnect
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -85,7 +86,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // List lists all EdgeConnect configurations.
 func (h *Handler) List() (*EdgeConnectList, error) {
-	l, err := h.sdk.List()
+	l, err := h.sdk.List(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +95,7 @@ func (h *Handler) List() (*EdgeConnectList, error) {
 
 // Get gets a specific EdgeConnect by ID.
 func (h *Handler) Get(edgeConnectID string) (*EdgeConnect, error) {
-	e, err := h.sdk.Get(edgeConnectID)
+	e, err := h.sdk.Get(context.Background(), edgeConnectID)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +104,7 @@ func (h *Handler) Get(edgeConnectID string) (*EdgeConnect, error) {
 
 // Create creates a new EdgeConnect.
 func (h *Handler) Create(req EdgeConnectCreate) (*EdgeConnect, error) {
-	e, err := h.sdk.Create(sdkedgeconnect.EdgeConnect{
+	e, err := h.sdk.Create(context.Background(), sdkedgeconnect.EdgeConnect{
 		Name:          req.Name,
 		HostPatterns:  req.HostPatterns,
 		OAuthClientID: req.OAuthClientID,
@@ -116,7 +117,7 @@ func (h *Handler) Create(req EdgeConnectCreate) (*EdgeConnect, error) {
 
 // Update updates an existing EdgeConnect.
 func (h *Handler) Update(edgeConnectID string, req EdgeConnect) error {
-	return h.sdk.Update(edgeConnectID, sdkedgeconnect.EdgeConnect{
+	return h.sdk.Update(context.Background(), edgeConnectID, sdkedgeconnect.EdgeConnect{
 		ID:                         req.ID,
 		Name:                       req.Name,
 		HostPatterns:               req.HostPatterns,
@@ -130,7 +131,7 @@ func (h *Handler) Update(edgeConnectID string, req EdgeConnect) error {
 }
 
 // Delete deletes an EdgeConnect.
-func (h *Handler) Delete(edgeConnectID string) error { return h.sdk.Delete(edgeConnectID) }
+func (h *Handler) Delete(edgeConnectID string) error { return h.sdk.Delete(context.Background(), edgeConnectID) }
 
 // GetRaw gets an EdgeConnect as raw JSON bytes (for editing).
 func (h *Handler) GetRaw(edgeConnectID string) ([]byte, error) {

@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,8 +58,8 @@ type FilterSegmentList struct {
 
 // List lists all filter segments.
 // Use addFields to request optional fields (e.g., "VARIABLES", "INCLUDES").
-func (h *Handler) List(addFields ...string) (*FilterSegmentList, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) List(ctx context.Context, addFields ...string) (*FilterSegmentList, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 	if len(addFields) > 0 {
 		req.SetQueryParamsFromValues(map[string][]string{
 			"add-fields": addFields,
@@ -82,8 +83,8 @@ func (h *Handler) List(addFields ...string) (*FilterSegmentList, error) {
 
 // Get gets a specific filter segment by UID.
 // Use addFields to request optional fields (e.g., "INCLUDES", "VARIABLES").
-func (h *Handler) Get(uid string, addFields ...string) (*FilterSegment, error) {
-	req := h.client.HTTP().R()
+func (h *Handler) Get(ctx context.Context, uid string, addFields ...string) (*FilterSegment, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
 	if len(addFields) > 0 {
 		req.SetQueryParamsFromValues(map[string][]string{
 			"add-fields": addFields,
@@ -111,8 +112,8 @@ func (h *Handler) Get(uid string, addFields ...string) (*FilterSegment, error) {
 // Create creates a new filter segment.
 // The data should be JSON with the segment definition in the format the API expects
 // (filter fields as JSON AST strings).
-func (h *Handler) Create(data []byte) (*FilterSegment, error) {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Create(ctx context.Context, data []byte) (*FilterSegment, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetBody(data).
 		Post(basePath)
@@ -134,8 +135,8 @@ func (h *Handler) Create(data []byte) (*FilterSegment, error) {
 // Update updates an existing filter segment.
 // The version parameter is required for optimistic locking.
 // The data should be JSON in the format the API expects.
-func (h *Handler) Update(uid string, version int, data []byte) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Update(ctx context.Context, uid string, version int, data []byte) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
 		SetBody(data).
@@ -154,8 +155,8 @@ func (h *Handler) Update(uid string, version int, data []byte) error {
 }
 
 // Delete deletes a filter segment by UID.
-func (h *Handler) Delete(uid string) error {
-	resp, err := h.client.HTTP().R().
+func (h *Handler) Delete(ctx context.Context, uid string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Delete(fmt.Sprintf("%s/%s", basePath, uid))
 	if err != nil {
 		return fmt.Errorf("delete segment: %w", err)

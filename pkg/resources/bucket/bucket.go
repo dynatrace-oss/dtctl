@@ -1,6 +1,7 @@
 package bucket
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -66,7 +67,7 @@ func NewHandler(c *client.Client) *Handler {
 
 // List lists all bucket definitions.
 func (h *Handler) List() (*BucketList, error) {
-	sdkResult, err := h.sdk.List()
+	sdkResult, err := h.sdk.List(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,7 @@ func (h *Handler) List() (*BucketList, error) {
 
 // Get gets a specific bucket by name.
 func (h *Handler) Get(bucketName string) (*Bucket, error) {
-	sdkResult, err := h.sdk.Get(bucketName)
+	sdkResult, err := h.sdk.Get(context.Background(), bucketName)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func (h *Handler) Get(bucketName string) (*Bucket, error) {
 
 // Create creates a new bucket.
 func (h *Handler) Create(req BucketCreate) (*Bucket, error) {
-	sdkResult, err := h.sdk.Create(req)
+	sdkResult, err := h.sdk.Create(context.Background(), req)
 	if err != nil {
 		return nil, err
 	}
@@ -99,22 +100,22 @@ func (h *Handler) Create(req BucketCreate) (*Bucket, error) {
 
 // Update updates an existing bucket.
 func (h *Handler) Update(bucketName string, version int, req BucketUpdate) error {
-	return h.sdk.Update(bucketName, version, req)
+	return h.sdk.Update(context.Background(), bucketName, version, req)
 }
 
 // Delete deletes a bucket.
 func (h *Handler) Delete(bucketName string) error {
-	return h.sdk.Delete(bucketName)
+	return h.sdk.Delete(context.Background(), bucketName)
 }
 
 // Truncate empties a bucket (removes all data).
 func (h *Handler) Truncate(bucketName string) error {
-	return h.sdk.Truncate(bucketName)
+	return h.sdk.Truncate(context.Background(), bucketName)
 }
 
 // GetRaw gets a bucket as raw JSON bytes (for editing).
 func (h *Handler) GetRaw(bucketName string) ([]byte, error) {
-	bucket, err := h.sdk.Get(bucketName)
+	bucket, err := h.sdk.Get(context.Background(), bucketName)
 	if err != nil {
 		return nil, err
 	}
