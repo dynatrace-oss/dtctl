@@ -117,9 +117,9 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 	if resp.IsError() {
 		switch resp.StatusCode() {
 		case statusJSError:
-			return nil, fmt.Errorf("JavaScript error occurred: %s", resp.String())
+			return nil, httpclient.NewAPIError(statusJSError, "JavaScript error occurred", resp.String())
 		case statusSyntaxError:
-			return nil, fmt.Errorf("runtime error occurred: %s", resp.String())
+			return nil, httpclient.NewAPIError(statusSyntaxError, "runtime error occurred", resp.String())
 		}
 	}
 
@@ -193,9 +193,9 @@ func (h *FunctionHandler) ExecuteCode(sourceCode, payload string) (*FunctionExec
 	if resp.IsError() {
 		switch resp.StatusCode() {
 		case statusJSError:
-			return nil, fmt.Errorf("JavaScript error occurred: %s", resp.String())
+			return nil, httpclient.NewAPIError(statusJSError, "JavaScript error occurred", resp.String())
 		case statusSyntaxError:
-			return nil, fmt.Errorf("runtime error occurred: %s", resp.String())
+			return nil, httpclient.NewAPIError(statusSyntaxError, "runtime error occurred", resp.String())
 		}
 	}
 

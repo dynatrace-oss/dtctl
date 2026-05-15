@@ -21,7 +21,7 @@ func ExtractSubdomain(environmentURL string) (string, error) {
 	}
 
 	parts := strings.Split(hostname, ".")
-	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+	if strings.TrimSpace(parts[0]) == "" {
 		return "", fmt.Errorf("failed to extract subdomain from host %q", hostname)
 	}
 

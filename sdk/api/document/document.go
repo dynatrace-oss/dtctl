@@ -178,7 +178,10 @@ func (h *Handler) List(filters DocumentFilters) (*DocumentList, error) {
 		}
 	}
 
-	queryFilters := map[string]string{"filter": filterStr}
+	queryFilters := map[string]string{}
+	if filterStr != "" {
+		queryFilters["filter"] = filterStr
+	}
 	if filters.Sort != "" {
 		queryFilters["sort"] = filters.Sort
 	}
@@ -427,7 +430,11 @@ func parseUpdateResponse(resp interface {
 	respContentType := resp.Header().Get("Content-Type")
 
 	if strings.HasPrefix(respContentType, "multipart/") {
-		doc, err := ParseMultipartDocument(resp.(*resty.Response))
+		restyResp, ok := resp.(*resty.Response)
+		if !ok {
+			return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
+		}
+		doc, err := ParseMultipartDocument(restyResp)
 		if err != nil {
 			return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
 		}
