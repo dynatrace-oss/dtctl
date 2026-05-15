@@ -1,0 +1,16 @@
+{
+  "objectId": "aws-conn-a1b2c3d4",
+  "value": {
+    "name": "production-aws",
+    "type": "awsRoleBasedAuthentication",
+    "awsRoleBasedAuthentication": {
+      "roleArn": "arn:aws:iam::123456789012:role/DynatraceMonitoringRole",
+      "consumers": [
+        "SVC:com.dynatrace.da"
+      ]
+    }
+  },
+  "name": "production-aws",
+  "type": "awsRoleBasedAuthentication",
+  "roleArn": "arn:aws:iam::123456789012:role/DynatraceMonitoringRole"
+}

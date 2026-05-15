@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **AWS provider support** — full feature parity with the Azure and GCP providers (`get`, `describe`, `create`, `update`, `delete`, `enable`, `apply`) for `aws connection` (Settings 2.0 schema `builtin:hyperscaler-authentication.connections.aws`, role-based authentication only) and `aws monitoring` (extension `com.dynatrace.extension.da-aws`); `dtctl create aws connection` prints a copy-paste IAM trust policy and AWS CLI snippet using the new connection's `objectId` as `sts:ExternalId` and the correct Dynatrace AWS account ID (`314146291599` for production / `476114158034` otherwise, auto-selected from the tenant URL); `dtctl get aws monitoring-regions` and `dtctl get aws monitoring-feature-sets` expose the schema enums for discovery; example manifests in `examples/aws_connection.yaml` and `examples/aws_monitoring_config.yaml`
+
 ## [0.26.0] - 2026-04-28
 
 ### Added

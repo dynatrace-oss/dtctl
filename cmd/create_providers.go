@@ -18,7 +18,4 @@ func init() {
 	createCmd.AddCommand(createAWSProviderCmd)
 	createCmd.AddCommand(createGCPProviderCmd)
 	attachPreviewNotice(createGCPProviderCmd, "GCP")
-
-	createAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
-	createAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
 }

@@ -84,7 +84,7 @@ Token-based authentication and multi-environment configuration are covered in th
 | Hub Extensions | get, describe, list releases, filter by keyword |
 | App Functions & Intents | get, describe, execute, find, open (deep linking) |
 | Davis AI | analyzers, CoPilot chat, NL-to-DQL, document search |
-| Cloud Integrations | Azure & GCP connections and monitoring (get, describe, create, delete, apply, update) |
+| Cloud Integrations | AWS, Azure & GCP connections and monitoring (get, describe, create, delete, apply, update, enable) |
 | EdgeConnect | get, describe, create, delete |
 | Notifications | get, describe, delete, watch |
 | Users & Groups | get, describe |

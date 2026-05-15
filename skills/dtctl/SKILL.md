@@ -50,6 +50,10 @@ dtctl uses a uniform pattern for all resource types. Discover schema from actual
 |----------|---------|
 | analyzer | analyzers |
 | app | apps |
+| aws connection | - |
+| aws monitoring | - |
+| azure connection | - |
+| azure monitoring | - |
 | bucket | bkt |
 | copilot-skill | copilot-skills |
 | dashboard | dash |
@@ -57,6 +61,8 @@ dtctl uses a uniform pattern for all resource types. Discover schema from actual
 | extension | ext, extensions |
 | extension-config | extcfg, extension-configs |
 | function | fn, func |
+| gcp connection | - |
+| gcp monitoring | - |
 | group | groups |
 | intent | intents |
 | lookup | lookups, lkup |

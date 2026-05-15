@@ -1,0 +1,40 @@
+objectid: awsmon-a1b2c3d4
+scope: integration-aws
+value:
+  enabled: true
+  description: Production AWS monitoring
+  version: 1.0.0
+  activationcontext: DATA_ACQUISITION
+  aws:
+    deploymentregion: us-east-1
+    credentials:
+      - description: Main role
+        enabled: true
+        connectionid: aws-conn-a1b2c3d4
+        accountid: "123456789012"
+    regionfiltering: []
+    tagfiltering: []
+    tagenrichment: []
+    dtlabelsenrichment: {}
+    smartscapeconfiguration:
+      enabled: true
+    metricsconfiguration:
+      enabled: true
+      regions:
+        - us-east-1
+        - eu-central-1
+    cloudwatchlogsconfiguration:
+      enabled: false
+      regions: []
+    namespaces: []
+    configurationmode: QUICK_START
+    deploymentmode: AUTOMATED
+    deploymentscope: SINGLE_ACCOUNT
+    manualdeploymentstatus: ""
+    automateddeploymentstatus: ""
+  featuresets:
+    - EC2_essential
+    - RDS_essential
+description: Production AWS monitoring
+enabled: true
+version: 1.0.0

@@ -1,0 +1,19 @@
+schemaId: builtin:hyperscaler-authentication.connections.aws
+scope: environment
+value:
+  # Connection name (free-form label)
+  name: my-aws-connection
+
+  # Currently the only supported type is awsRoleBasedAuthentication.
+  type: awsRoleBasedAuthentication
+
+  awsRoleBasedAuthentication:
+    # AWS IAM role ARN. May be left empty at creation time and patched later
+    # via 'dtctl update aws connection --name <name> --roleArn <arn>'.
+    # Pattern: arn:aws:iam::<account-id|aws>:role/<role-name>
+    roleArn: "arn:aws:iam::123456789012:role/DynatraceMonitoringRole"
+
+    # Default consumer for the data acquisition extension. Do not change unless
+    # you know what you are doing.
+    consumers:
+      - SVC:com.dynatrace.da

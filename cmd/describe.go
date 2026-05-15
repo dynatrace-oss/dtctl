@@ -331,8 +331,6 @@ func init() {
 	attachPreviewNotice(describeGCPProviderCmd, "GCP")
 	describeAzureProviderCmd.AddCommand(describeAzureConnectionCmd)
 	describeAzureProviderCmd.AddCommand(describeAzureMonitoringConfigCmd)
-	describeAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
-	describeAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
 	rootCmd.AddCommand(describeCmd)
 	describeCmd.AddCommand(describeWorkflowCmd)
 	describeCmd.AddCommand(describeBreakpointCmd)

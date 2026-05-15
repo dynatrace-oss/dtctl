@@ -1,0 +1,18 @@
+objectid: aws-conn-a1b2c3d4
+schemaid: ""
+schemaversion: ""
+scope: ""
+author: ""
+created: 0
+modified: 0
+summary: ""
+value:
+  name: production-aws
+  type: awsRoleBasedAuthentication
+  awsrolebasedauthentication:
+    rolearn: arn:aws:iam::123456789012:role/DynatraceMonitoringRole
+    consumers:
+      - SVC:com.dynatrace.da
+name: production-aws
+type: awsRoleBasedAuthentication
+rolearn: arn:aws:iam::123456789012:role/DynatraceMonitoringRole

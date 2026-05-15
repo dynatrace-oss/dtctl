@@ -1,0 +1,10 @@
+name: production-aws
+objectId: aws-conn-a1b2c3d4
+roleArn: "arn:aws:iam::123456789012:role/DynatraceMonitoringRole"
+type: awsRoleBasedAuthentication
+value:
+  awsRoleBasedAuthentication:
+    consumers[#1]: "SVC:com.dynatrace.da"
+    roleArn: "arn:aws:iam::123456789012:role/DynatraceMonitoringRole"
+  name: production-aws
+  type: awsRoleBasedAuthentication

@@ -1,0 +1,267 @@
+# objectid: <EXISTING_CONFIG_ID_IF_UPDATING>
+scope: integration-aws
+value:
+  enabled: false
+  description: my-aws-monitoring-config
+  # The version must match a version of com.dynatrace.extension.da-aws available
+  # in the tenant. Use 'dtctl get extension com.dynatrace.extension.da-aws' to
+  # list available versions.
+  version: 1.0.0
+  activationContext: DATA_ACQUISITION
+  aws:
+    # The "deployment region" is the AWS region used by the extension to host
+    # its workload (typically the same as the first monitored region).
+    deploymentRegion: us-east-1
+
+    deploymentScope: SINGLE_ACCOUNT
+    deploymentMode: AUTOMATED
+    configurationMode: QUICK_START
+
+    credentials:
+      - enabled: false
+        description: Connection-Description
+        # The AWS connection objectId (from 'dtctl get aws connections')
+        connectionId: <PASTE_CONNECTION_ID_HERE>
+        # 12-digit AWS account ID (extracted from the role ARN)
+        accountId: "123456789012"
+
+    # Comma-separated AWS namespaces to restrict ingestion (empty = all
+    # namespaces controlled by the selected feature sets).
+    # Custom metrics can be added here for CloudWatch namespaces not covered by
+    # built-in feature sets. Each entry defines a namespace and one or more
+    # metrics to ingest.
+    namespaces: []
+    # namespaces:
+    #   - namespace: AWS/GroundStation        # CloudWatch namespace
+    #     autoDiscoveryEnabled: false
+    #     metrics:
+    #       - name: AzimuthAngle              # CloudWatch metric name
+    #         unit: Count                     # Unit (Count, Bytes, Seconds, Percent, etc.)
+    #         dimensions:                     # CloudWatch dimensions to collect
+    #           - SatelliteId
+    #         aggregations:                   # Statistics to retrieve
+    #           - Sum
+    #           - SampleCount
+    #         type: CUSTOM_AWS                # CUSTOM_AWS = standard CW metric
+    #   - namespace: DynatraceSFM             # custom/non-standard namespace
+    #     autoDiscoveryEnabled: false
+    #     metrics:
+    #       - name: IngestHealth
+    #         unit: Count
+    #         dimensions:
+    #           - tenantUuid
+    #         aggregations:
+    #           - SampleCount
+    #           - Sum
+    #           - Maximum
+    #           - Minimum
+    #         type: CUSTOM                    # CUSTOM = non-standard namespace
+
+    smartscapeConfiguration:
+      enabled: true
+
+    metricsConfiguration:
+      enabled: true
+      regions:
+        - us-east-1
+        - eu-central-1
+
+    cloudWatchLogsConfiguration:
+      enabled: false
+      regions: []
+
+    regionFiltering:
+      - us-east-1
+      - eu-central-1
+
+    # Tag filtering allows you to include/exclude resources based on tags.
+    tagFiltering:
+      - key: environment
+        value: production
+        condition: INCLUDE
+      - key: owner
+        value: temp-team
+        condition: EXCLUDE
+
+    # Tag enrichment promotes selected AWS tag keys onto Dynatrace entities so
+    # that the tag values become queryable as entity properties. Uncomment and
+    # adjust the keys below to opt in.
+    tagEnrichment: []
+    # tagEnrichment:
+    #   - owner
+    #   - cost-center
+    #   - environment
+
+    # Dynatrace label enrichment maps Dynatrace labels to literal values or AWS
+    # tag keys. These labels appear on ingested entities and metrics.
+    # dtLabelsEnrichment:
+    #   dt.security_context:
+    #     literal: my-app                    # literal: fixed string value
+    #   dt.cost.costcenter:
+    #     tagKey: cost-center                # tagKey: value copied from AWS tag
+    #   dt.cost.product:
+    #     tagKey: product
+
+  # ---------------------------------------------------------------------------
+  # Feature sets — enable / disable groups of CloudWatch metrics per AWS
+  # service. Each AWS namespace defined in the extension typically exposes:
+  #   *_essential       — production-grade default metric set
+  #   *_autodiscovery   — entity discovery metrics (lightweight)
+  # Use 'dtctl get aws monitoring-feature-sets' to list the live values from
+  # the extension version you target. The list below mirrors the static
+  # catalogue shipped with com.dynatrace.extension.da-aws v1.0.0; uncomment
+  # the ones you need.
+  # ---------------------------------------------------------------------------
+  featureSets:
+    - EC2_essential
+    - RDS_essential
+    - S3_essential
+    - Lambda_essential
+    - DynamoDB_essential
+    # --- All available feature sets (uncomment as needed) --------------------
+    # - AWS_MWAA_autodiscovery
+    # - AmazonMQ_autodiscovery
+    # - AmazonMQ_essential
+    # - Amazon_MWAA_autodiscovery
+    # - ApiGateway_autodiscovery
+    # - ApiGateway_essential
+    # - AppRunner_autodiscovery
+    # - AppRunner_essential
+    # - AppStream_autodiscovery
+    # - AppStream_essential
+    # - AppSync_autodiscovery
+    # - AppSync_essential
+    # - ApplicationELB_autodiscovery
+    # - ApplicationELB_essential
+    # - Athena_autodiscovery
+    # - Athena_essential
+    # - AutoScaling_autodiscovery
+    # - AutoScaling_essential
+    # - Backup_autodiscovery
+    # - Backup_essential
+    # - Bedrock_AgentAlias_autodiscovery
+    # - Bedrock_AgentAlias_essential
+    # - Bedrock_Guardrail_essential
+    # - Bedrock_Guardrails_autodiscovery
+    # - Cassandra_autodiscovery
+    # - Cassandra_essential
+    # - CertificateManager_autodiscovery
+    # - CertificateManager_essential
+    # - CloudFront_autodiscovery
+    # - CloudFront_essential
+    # - CloudHSM_autodiscovery
+    # - CloudHSM_essential
+    # - CloudTrail_autodiscovery
+    # - CloudTrail_essential
+    # - CodeBuild_autodiscovery
+    # - CodeBuild_essential
+    # - Cognito_autodiscovery
+    # - Cognito_essential
+    # - Connect_autodiscovery
+    # - Connect_essential
+    # - ContainerInsights_autodiscovery
+    # - ContainerInsights_essential
+    # - DAX_autodiscovery
+    # - DAX_essential
+    # - DMS_autodiscovery
+    # - DMS_essential
+    # - DataSync_autodiscovery
+    # - DataSync_essential
+    # - DirectConnect_autodiscovery
+    # - DirectConnect_essential
+    # - DocDB_autodiscovery
+    # - DocDB_essential
+    # - DynamoDB_autodiscovery
+    # - EBS_autodiscovery
+    # - EBS_essential
+    # - EC2_autodiscovery
+    # - ECR_autodiscovery
+    # - ECR_essential
+    # - ECS_ContainerInsights_autodiscovery
+    # - ECS_ContainerInsights_essential
+    # - ECS_ManagedScaling_autodiscovery
+    # - ECS_autodiscovery
+    # - ECS_essential
+    # - EFS_autodiscovery
+    # - EFS_essential
+    # - EKS_autodiscovery
+    # - EKS_essential
+    # - ELB_autodiscovery
+    # - ELB_essential
+    # - EMR_EC2_autodiscovery
+    # - EMR_EC2_essential
+    # - EMR_Serverless_autodiscovery
+    # - EMR_Serverless_essential
+    # - ElastiCache_autodiscovery
+    # - ElastiCache_essential
+    # - ElasticBeanstalk_autodiscovery
+    # - ElasticBeanstalk_essential
+    # - Events_autodiscovery
+    # - Events_essential
+    # - FSx_autodiscovery
+    # - FSx_essential
+    # - Firehose_autodiscovery
+    # - Firehose_essential
+    # - GatewayELB_autodiscovery
+    # - GlobalAccelerator_autodiscovery
+    # - GlobalAccelerator_essential
+    # - Glue_autodiscovery
+    # - Glue_essential
+    # - IPAM_essential
+    # - KMS_essential
+    # - Kafka_Connect_autodiscovery
+    # - Kafka_Connect_essential
+    # - Kafka_autodiscovery
+    # - Kafka_essential
+    # - KinesisAnalytics_ApacheFlink_autodiscovery
+    # - KinesisAnalytics_ApacheFlink_essential
+    # - KinesisDataStreams_autodiscovery
+    # - KinesisDataStreams_essential
+    # - Lambda_autodiscovery
+    # - Logs_autodiscovery
+    # - Logs_essential
+    # - MWAA_autodiscovery
+    # - NATGateway_essential
+    # - NatGateway_autodiscovery
+    # - Neptune_autodiscovery
+    # - Neptune_essential
+    # - NetworkELB_autodiscovery
+    # - NetworkELB_essential
+    # - NetworkFirewall_autodiscovery
+    # - NetworkFirewall_essential
+    # - OpenSearch_Domain_autodiscovery
+    # - OpenSearch_Domain_essential
+    # - OpenSearch_Serverless_autodiscovery
+    # - OpenSearch_Serverless_essential
+    # - PrivateCA_autodiscovery
+    # - PrivateCA_essential
+    # - PrivateLinkEndpoints_autodiscovery
+    # - PrivateLinkEndpoints_essential
+    # - PrivateLinkServices_autodiscovery
+    # - PrivateLinkServices_essential
+    # - RDS_autodiscovery
+    # - Redshift_autodiscovery
+    # - Redshift_essential
+    # - Route53_autodiscovery
+    # - Route53_essential
+    # - S3_autodiscovery
+    # - SNS_Topic_autodiscovery
+    # - SNS_essential
+    # - SQS_autodiscovery
+    # - SQS_essential
+    # - SageMakerEndpoint_autodiscovery
+    # - SageMakerEndpoint_essential
+    # - SageMakerInferenceComponent_autodiscovery
+    # - SageMakerPipeline_autodiscovery
+    # - SageMaker_autodiscovery
+    # - SageMaker_essential
+    # - StepFunctions_autodiscovery
+    # - StepFunctions_essential
+    # - StorageGateway_autodiscovery
+    # - StorageGateway_essential
+    # - TransitGateway_autodiscovery
+    # - TransitGateway_essential
+    # - VPN_SiteToSiteVPNConnection_autodiscovery
+    # - VPN_SiteToSiteVPNConnection_essential
+    # - WAFV2_essential
+    # - WAFv2_autodiscovery

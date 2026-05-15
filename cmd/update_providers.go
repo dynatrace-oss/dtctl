@@ -18,7 +18,4 @@ func init() {
 	updateCmd.AddCommand(updateAWSProviderCmd)
 	updateCmd.AddCommand(updateGCPProviderCmd)
 	attachPreviewNotice(updateGCPProviderCmd, "GCP")
-
-	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "connection"))
-	updateAWSProviderCmd.AddCommand(newNotImplementedProviderResourceCommand("aws", "monitoring"))
 }

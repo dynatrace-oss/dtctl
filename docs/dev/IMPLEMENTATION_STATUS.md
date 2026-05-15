@@ -86,8 +86,8 @@ This document tracks the current implementation status of dtctl. For future plan
 |----------|-----|----------|--------|--------|-------|
 | azure connection | ✅ | ✅ | ✅ | ✅ | ✅ |
 | azure monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ enable |
-| aws connection | - | - | - | - | - |
-| aws monitoring | - | - | - | - | - |
+| aws connection | ✅ | ✅ | ✅ | ✅ | ✅ |
+| aws monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ enable |
 | gcp connection (Preview) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | gcp monitoring (Preview) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ enable |
 
@@ -220,18 +220,28 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Schema helpers: `dtctl get azure monitoring-locations`, `dtctl get azure monitoring-feature-sets`
 
 ### AWS Connection Features
-- [ ] List connections
-- [ ] Filter connections
-- [ ] Get by name or ID
-- [ ] Describe connection
-- [ ] Create/update/delete/apply connection
+- [x] List connections: `dtctl get aws connections`
+- [ ] Filter connection list with dedicated flags
+- [x] Get by name or object ID: `dtctl get aws connections <name-or-id>`
+- [x] Describe connection: `dtctl describe aws connection <id>`
+- [x] Create connection (role-based): `dtctl create aws connection --name <name> [--roleArn <arn>]`
+- [x] Post-create hint with IAM trust policy + AWS CLI snippet (using `objectId` as `sts:ExternalId`, Principal account auto-selected per Dynatrace tenant URL)
+- [x] Update connection: `dtctl update aws connection --name <name> --roleArn <arn>`
+- [x] Delete by name or ID: `dtctl delete aws connection <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f aws_connection.yaml`
 
 ### AWS Monitoring Configuration Features
-- [ ] List monitoring configs
-- [ ] Filter monitoring configs
-- [ ] Get by name or ID
-- [ ] Describe monitoring config
-- [ ] Create/update/delete/apply monitoring config
+- [x] List configs: `dtctl get aws monitoring`
+- [ ] Filter config list with dedicated flags
+- [x] Get by description or ID: `dtctl get aws monitoring <description-or-id>`
+- [x] Describe config: `dtctl describe aws monitoring <id-or-name>`
+- [x] Runtime status in describe (Smartscape, metrics, recent events)
+- [x] Create config (created as disabled): `dtctl create aws monitoring --name <name> --credentials <connection-name-or-id> --regions <csv>`
+- [x] Enable config (optionally patch roleArn + enable): `dtctl enable aws monitoring --name <name> [--roleArn <arn>]`
+- [x] Update config: `dtctl update aws monitoring --name <name> [--regions ...] [--featureSets ...]`
+- [x] Delete by name or ID: `dtctl delete aws monitoring <name-or-id>`
+- [x] Apply from manifest (idempotent): `dtctl apply -f aws_monitoring_config.yaml`
+- [x] Schema helpers: `dtctl get aws monitoring-regions`, `dtctl get aws monitoring-feature-sets`
 
 ### GCP Connection Features (Preview)
 - [x] List connections: `dtctl get gcp connections`

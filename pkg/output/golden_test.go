@@ -12,6 +12,8 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
@@ -1269,6 +1271,59 @@ func describeGCPMonitoringConfigFixture() gcpmonitoringconfig.GCPMonitoringConfi
 	}
 }
 
+func describeAWSConnectionFixture() awsconnection.AWSConnection {
+	return awsconnection.AWSConnection{
+		ObjectID: "aws-conn-a1b2c3d4",
+		Value: awsconnection.Value{
+			Name: "production-aws",
+			Type: awsconnection.TypeRoleBased,
+			AwsRoleBasedAuthentication: &awsconnection.AwsRoleBasedAuthenticationConfig{
+				RoleArn:   "arn:aws:iam::123456789012:role/DynatraceMonitoringRole",
+				Consumers: []string{awsconnection.DefaultConsumer},
+			},
+		},
+		Name:    "production-aws",
+		Type:    awsconnection.TypeRoleBased,
+		RoleArn: "arn:aws:iam::123456789012:role/DynatraceMonitoringRole",
+	}
+}
+
+func describeAWSMonitoringConfigFixture() awsmonitoringconfig.AWSMonitoringConfig {
+	return awsmonitoringconfig.AWSMonitoringConfig{
+		ObjectID:    "awsmon-a1b2c3d4",
+		Scope:       awsmonitoringconfig.DefaultScope,
+		Description: "Production AWS monitoring",
+		Enabled:     true,
+		Version:     "1.0.0",
+		Value: awsmonitoringconfig.Value{
+			Enabled:           true,
+			Description:       "Production AWS monitoring",
+			Version:           "1.0.0",
+			ActivationContext: awsmonitoringconfig.DefaultActivationContext,
+			FeatureSets:       []string{"EC2_essential", "RDS_essential"},
+			Aws: awsmonitoringconfig.AWSConfig{
+				DeploymentRegion:  "us-east-1",
+				DeploymentScope:   "SINGLE_ACCOUNT",
+				DeploymentMode:    "AUTOMATED",
+				ConfigurationMode: "QUICK_START",
+				TagFiltering:      []awsmonitoringconfig.TagFilter{},
+				TagEnrichment:     []string{},
+				Namespaces:        []awsmonitoringconfig.CustomNamespace{},
+				Credentials: []awsmonitoringconfig.Credential{
+					{
+						Description:  "Main role",
+						Enabled:      true,
+						ConnectionID: "aws-conn-a1b2c3d4",
+						AccountID:    "123456789012",
+					},
+				},
+				SmartscapeConfiguration: awsmonitoringconfig.FlagConfig{Enabled: true},
+				MetricsConfiguration:    awsmonitoringconfig.RegionalFlagConfig{Enabled: true, Regions: []string{"us-east-1", "eu-central-1"}},
+			},
+		},
+	}
+}
+
 func describeExecutionFixture() workflow.Execution {
 	endedAt := fixedTime.Add(45 * time.Second)
 	triggerStr := "schedule"
@@ -1537,6 +1592,48 @@ func TestGolden_DescribeGCPMonitoring(t *testing.T) {
 				t.Fatalf("Print failed: %v", err)
 			}
 			assertGolden(t, "describe/gcp-monitoring-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeAWSConnection(t *testing.T) {
+	ac := describeAWSConnectionFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(ac); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/aws-connection-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeAWSMonitoring(t *testing.T) {
+	am := describeAWSMonitoringConfigFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(am); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/aws-monitoring-"+name, buf.String())
 		})
 	}
 }

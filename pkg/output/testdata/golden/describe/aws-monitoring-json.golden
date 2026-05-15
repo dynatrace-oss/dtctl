@@ -1,0 +1,49 @@
+{
+  "objectId": "awsmon-a1b2c3d4",
+  "scope": "integration-aws",
+  "value": {
+    "enabled": true,
+    "description": "Production AWS monitoring",
+    "version": "1.0.0",
+    "activationContext": "DATA_ACQUISITION",
+    "aws": {
+      "deploymentRegion": "us-east-1",
+      "credentials": [
+        {
+          "description": "Main role",
+          "enabled": true,
+          "connectionId": "aws-conn-a1b2c3d4",
+          "accountId": "123456789012"
+        }
+      ],
+      "regionFiltering": null,
+      "tagFiltering": [],
+      "tagEnrichment": [],
+      "smartscapeConfiguration": {
+        "enabled": true
+      },
+      "metricsConfiguration": {
+        "enabled": true,
+        "regions": [
+          "us-east-1",
+          "eu-central-1"
+        ]
+      },
+      "cloudWatchLogsConfiguration": {
+        "enabled": false,
+        "regions": null
+      },
+      "namespaces": [],
+      "configurationMode": "QUICK_START",
+      "deploymentMode": "AUTOMATED",
+      "deploymentScope": "SINGLE_ACCOUNT"
+    },
+    "featureSets": [
+      "EC2_essential",
+      "RDS_essential"
+    ]
+  },
+  "description": "Production AWS monitoring",
+  "enabled": true,
+  "version": "1.0.0"
+}
