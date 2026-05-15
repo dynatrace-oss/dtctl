@@ -1,6 +1,10 @@
 package analyzer
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkana "github.com/dynatrace-oss/dtctl/sdk/api/analyzer"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -19,8 +23,21 @@ type (
 	ValidationResult   = sdkana.ValidationResult
 )
 
-// ParseInputFromFile reads and parses analyzer input from a file
-var ParseInputFromFile = sdkana.ParseInputFromFile
+// ParseInputFromFile reads and parses analyzer input from a file.
+// This is a CLI-layer helper and intentionally not part of the SDK.
+func ParseInputFromFile(filename string) (map[string]interface{}, error) {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var input map[string]interface{}
+	if err := json.Unmarshal(content, &input); err != nil {
+		return nil, fmt.Errorf("failed to parse input file: %w", err)
+	}
+
+	return input, nil
+}
 
 // Handler handles Davis analyzer resources.
 type Handler struct {

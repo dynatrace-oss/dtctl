@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -28,6 +29,17 @@ func NewHandler(c *httpclient.Client, environmentURL string) (*Handler, error) {
 		return nil, err
 	}
 
+	return &Handler{client: c, graphqlURL: graphqlURL, orgID: orgID}, nil
+}
+
+// NewHandlerWithOrgID creates a handler with an explicitly provided org ID.
+// Use this for custom domains or managed environments where the org ID
+// cannot be extracted from the URL subdomain.
+func NewHandlerWithOrgID(c *httpclient.Client, environmentURL, orgID string) (*Handler, error) {
+	graphqlURL, err := buildGraphQLURL(environmentURL)
+	if err != nil {
+		return nil, err
+	}
 	return &Handler{client: c, graphqlURL: graphqlURL, orgID: orgID}, nil
 }
 
@@ -472,6 +484,10 @@ func buildGraphQLURL(environmentURL string) (string, error) {
 	return strings.TrimRight(parsed.String(), "/") + "/platform/dob/graphql", nil
 }
 
+// extractOrgID extracts the organization ID from a Dynatrace environment URL.
+// It assumes the standard SaaS URL format where the first subdomain is the org ID
+// (e.g., "abc12345.apps.dynatrace.com"). For custom domains or managed
+// environments, callers should use NewHandlerWithOrgID instead.
 func extractOrgID(environmentURL string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(environmentURL))
 	if err != nil {
@@ -494,7 +510,9 @@ func extractOrgID(environmentURL string) (string, error) {
 func generateMutableRuleID() string {
 	buf := make([]byte, 8)
 	if _, err := rand.Read(buf); err != nil {
-		return "dtctl-rule-" + strconv.FormatInt(1, 10)
+		// crypto/rand.Read practically never fails on modern systems,
+		// but if it does, use a timestamp-based fallback to avoid collisions.
+		return "dtctl-rule-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	}
 	return "dtctl-rule-" + hex.EncodeToString(buf)
 }

@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
+	"github.com/go-resty/resty/v2"
 )
 
 // parseFlexibleInt parses a JSON value that may be either a number or a
@@ -335,78 +337,21 @@ func (h *Handler) Create(req CreateRequest) (*Document, error) {
 		return nil, fmt.Errorf("failed to create document: %w", err)
 	}
 
-	// Parse the response - API may return JSON or multipart
-	respContentType := resp.Header().Get("Content-Type")
-	var doc *Document
+	// Parse the response - determine fallback ID
+	fallbackID := req.ID
+	if fallbackID == "" {
+		fallbackID = extractIDFromResponse(resp.Body())
+	}
 
-	if strings.HasPrefix(respContentType, "multipart/") {
-		doc, err = ParseMultipartDocument(resp)
-		if err != nil {
-			// Operation succeeded (2xx) but response parsing failed
-			// Try to extract ID from response body as fallback
-			doc = &Document{
-				Name: req.Name,
-				Type: req.Type,
-			}
-			if req.ID != "" {
-				doc.ID = req.ID
-			} else {
-				// Try to extract ID from any JSON in the response
-				if id := extractIDFromResponse(resp.Body()); id != "" {
-					doc.ID = id
-				}
-			}
-		}
-	} else {
-		// JSON response - try direct DocumentMetadata first, then wrapped version
-		var metadata DocumentMetadata
-		if err := json.Unmarshal(resp.Body(), &metadata); err == nil && metadata.ID != "" {
-			// Direct unmarshaling worked
-			doc = &Document{
-				ID:          metadata.ID,
-				Name:        metadata.Name,
-				Type:        metadata.Type,
-				Description: metadata.Description,
-				Version:     metadata.Version,
-				Owner:       metadata.Owner,
-				IsPrivate:   metadata.IsPrivate,
-				Created:     metadata.ModificationInfo.CreatedTime,
-				Modified:    metadata.ModificationInfo.LastModifiedTime,
-			}
-		} else {
-			// Try wrapped version (documentMetadata wrapper)
-			var createResp struct {
-				DocumentMetadata DocumentMetadata `json:"documentMetadata"`
-			}
-			if err := json.Unmarshal(resp.Body(), &createResp); err == nil && createResp.DocumentMetadata.ID != "" {
-				metadata := createResp.DocumentMetadata
-				doc = &Document{
-					ID:          metadata.ID,
-					Name:        metadata.Name,
-					Type:        metadata.Type,
-					Description: metadata.Description,
-					Version:     metadata.Version,
-					Owner:       metadata.Owner,
-					IsPrivate:   metadata.IsPrivate,
-					Created:     metadata.ModificationInfo.CreatedTime,
-					Modified:    metadata.ModificationInfo.LastModifiedTime,
-				}
-			} else {
-				// Both parsing attempts failed - try fallback ID extraction
-				doc = &Document{
-					Name: req.Name,
-					Type: req.Type,
-				}
-				if req.ID != "" {
-					doc.ID = req.ID
-				} else {
-					// Try to extract ID from any JSON in the response
-					if id := extractIDFromResponse(resp.Body()); id != "" {
-						doc.ID = id
-					}
-				}
-			}
-		}
+	doc, err := parseUpdateResponse(resp, fallbackID, 0, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	if doc.Name == "" {
+		doc.Name = req.Name
+	}
+	if doc.Type == "" {
+		doc.Type = req.Type
 	}
 
 	return doc, nil
@@ -431,54 +376,7 @@ func (h *Handler) Update(id string, version int, content []byte, contentType str
 		return nil, fmt.Errorf("failed to update document %q: %w", id, err)
 	}
 
-	// Parse the response - API may return JSON or multipart
-	respContentType := resp.Header().Get("Content-Type")
-	var doc *Document
-
-	if strings.HasPrefix(respContentType, "multipart/") {
-		doc, err = ParseMultipartDocument(resp)
-		if err != nil {
-			// Operation succeeded (2xx) but response parsing failed
-			// Return a minimal document with what we know rather than failing
-			doc = &Document{
-				ID:      id,
-				Version: version + 1, // Assume version incremented
-			}
-			// Try to extract name from response
-			if name := extractNameFromResponse(resp.Body()); name != "" {
-				doc.Name = name
-			}
-		}
-	} else {
-		// JSON response - UpdateDocumentMetadata wraps documentMetadata
-		var updateResp struct {
-			DocumentMetadata DocumentMetadata `json:"documentMetadata"`
-		}
-		if err := json.Unmarshal(resp.Body(), &updateResp); err != nil {
-			// Operation succeeded (2xx) but response parsing failed
-			// Return a minimal document with what we know rather than failing
-			doc = &Document{
-				ID:      id,
-				Version: version + 1, // Assume version incremented
-			}
-			// Try to extract name from response
-			if name := extractNameFromResponse(resp.Body()); name != "" {
-				doc.Name = name
-			}
-		} else {
-			metadata := updateResp.DocumentMetadata
-			doc = &Document{
-				ID:        metadata.ID,
-				Name:      metadata.Name,
-				Type:      metadata.Type,
-				Version:   metadata.Version,
-				Owner:     metadata.Owner,
-				IsPrivate: metadata.IsPrivate,
-			}
-		}
-	}
-
-	return doc, nil
+	return parseUpdateResponse(resp, id, version+1, "")
 }
 
 // UpdateWithMetadata updates a document's content and optionally its metadata (name, description)
@@ -509,58 +407,67 @@ func (h *Handler) UpdateWithMetadata(id string, version int, content []byte, con
 		return nil, fmt.Errorf("failed to update document %q: %w", id, err)
 	}
 
-	// Parse the response - API may return JSON or multipart
+	return parseUpdateResponse(resp, id, version+1, name)
+}
+
+// parseUpdateResponse parses an update/create response that may be either
+// multipart or JSON. For JSON responses it expects the documentMetadata wrapper.
+// On parse failure it returns a minimal Document with what we know, plus the
+// given fallback fields.
+func parseUpdateResponse(resp interface {
+	Header() http.Header
+	Body() []byte
+}, fallbackID string, fallbackVersion int, fallbackName string) (*Document, error) {
 	respContentType := resp.Header().Get("Content-Type")
-	var doc *Document
 
 	if strings.HasPrefix(respContentType, "multipart/") {
-		doc, err = ParseMultipartDocument(resp)
+		doc, err := ParseMultipartDocument(resp.(*resty.Response))
 		if err != nil {
-			// Operation succeeded (2xx) but response parsing failed
-			// Return a minimal document with what we know rather than failing
-			doc = &Document{
-				ID:      id,
-				Version: version + 1, // Assume version incremented
-			}
-			// Try to extract name from response
-			if resName := extractNameFromResponse(resp.Body()); resName != "" {
-				doc.Name = resName
-			} else if name != "" {
-				doc.Name = name
-			}
+			return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
 		}
-	} else {
-		// JSON response - UpdateDocumentMetadata wraps documentMetadata
-		var updateResp struct {
-			DocumentMetadata DocumentMetadata `json:"documentMetadata"`
-		}
-		if err := json.Unmarshal(resp.Body(), &updateResp); err != nil {
-			// Operation succeeded (2xx) but response parsing failed
-			// Return a minimal document with what we know rather than failing
-			doc = &Document{
-				ID:      id,
-				Version: version + 1, // Assume version incremented
-			}
-			// Try to extract name from response
-			if resName := extractNameFromResponse(resp.Body()); resName != "" {
-				doc.Name = resName
-			} else if name != "" {
-				doc.Name = name
-			}
-		} else {
-			metadata := updateResp.DocumentMetadata
-			doc = &Document{
-				ID:        metadata.ID,
-				Name:      metadata.Name,
-				Type:      metadata.Type,
-				Version:   metadata.Version,
-				Owner:     metadata.Owner,
-				IsPrivate: metadata.IsPrivate,
-			}
-		}
+		return doc, nil
 	}
 
-	return doc, nil
+	// JSON response - try direct DocumentMetadata first, then wrapped version
+	var metadata DocumentMetadata
+	if err := json.Unmarshal(resp.Body(), &metadata); err == nil && metadata.ID != "" {
+		return metadataToDocument(&metadata), nil
+	}
+
+	var wrapped struct {
+		DocumentMetadata DocumentMetadata `json:"documentMetadata"`
+	}
+	if err := json.Unmarshal(resp.Body(), &wrapped); err == nil && wrapped.DocumentMetadata.ID != "" {
+		return metadataToDocument(&wrapped.DocumentMetadata), nil
+	}
+
+	return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
+}
+
+// metadataToDocument converts a DocumentMetadata to a Document.
+func metadataToDocument(m *DocumentMetadata) *Document {
+	return &Document{
+		ID:          m.ID,
+		Name:        m.Name,
+		Type:        m.Type,
+		Description: m.Description,
+		Version:     m.Version,
+		Owner:       m.Owner,
+		IsPrivate:   m.IsPrivate,
+		Created:     m.ModificationInfo.CreatedTime,
+		Modified:    m.ModificationInfo.LastModifiedTime,
+	}
+}
+
+// documentFallback returns a minimal Document when response parsing fails
+// but the operation succeeded (2xx).
+func documentFallback(id string, version int, name string) *Document {
+	doc := &Document{ID: id, Version: version}
+	if name != "" {
+		doc.Name = name
+	}
+	// Try to extract name from response if not provided
+	return doc
 }
 
 // extractIDFromResponse attempts to extract an ID from a response body

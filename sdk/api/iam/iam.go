@@ -67,7 +67,7 @@ func extractEnvironmentID(baseURL string) (string, error) {
 
 // ListUsers lists all users in the current environment with automatic pagination.
 func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int64) (*UserListResponse, error) {
-	envID, err := extractEnvironmentID(h.client.HTTP().BaseURL)
+	envID, err := extractEnvironmentID(h.client.BaseURL())
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int6
 
 // GetUser gets a specific user by UUID.
 func (h *Handler) GetUser(uuid string) (*User, error) {
-	envID, err := extractEnvironmentID(h.client.HTTP().BaseURL)
+	envID, err := extractEnvironmentID(h.client.BaseURL())
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (h *Handler) GetUser(uuid string) (*User, error) {
 
 // ListGroups lists all groups in the current environment with automatic pagination.
 func (h *Handler) ListGroups(partialGroupName string, uuids []string, chunkSize int64) (*GroupListResponse, error) {
-	envID, err := extractEnvironmentID(h.client.HTTP().BaseURL)
+	envID, err := extractEnvironmentID(h.client.BaseURL())
 	if err != nil {
 		return nil, err
 	}

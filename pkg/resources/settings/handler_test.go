@@ -30,7 +30,7 @@ func TestNewHandler(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	h := NewHandler(c)
-	if h == nil || h.client == nil {
+	if h == nil || h.sdk == nil {
 		t.Fatal("NewHandler returned nil")
 	}
 }

@@ -3,10 +3,9 @@ package appengine
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
+	"github.com/go-resty/resty/v2"
 )
 
 // FunctionHandler handles App Engine function operations
@@ -86,12 +85,7 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 		httpReq.SetBody(req.Payload)
 	}
 
-	var resp interface {
-		IsError() bool
-		StatusCode() int
-		String() string
-		Body() []byte
-	}
+	var resp *resty.Response
 	var err error
 
 	switch req.Method {
@@ -113,19 +107,18 @@ func (h *FunctionHandler) InvokeFunction(req *FunctionInvokeRequest) (*FunctionI
 		return nil, fmt.Errorf("invoke function: %w", err)
 	}
 
+	// Handle non-standard status codes from App Engine before CheckResponse
 	if resp.IsError() {
 		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("app %q or function %q not found", req.AppID, req.FunctionName)
-		case 409:
-			return nil, fmt.Errorf("app backend is being deployed and not ready yet")
 		case 540:
 			return nil, fmt.Errorf("JavaScript error occurred: %s", resp.String())
 		case 541:
 			return nil, fmt.Errorf("runtime error occurred: %s", resp.String())
-		default:
-			return nil, fmt.Errorf("function invocation failed: status %d: %s", resp.StatusCode(), resp.String())
 		}
+	}
+
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return nil, err
 	}
 
 	var jsonBody interface{}
@@ -190,15 +183,18 @@ func (h *FunctionHandler) ExecuteCode(sourceCode, payload string) (*FunctionExec
 		return nil, fmt.Errorf("execute code: %w", err)
 	}
 
+	// Handle non-standard status codes from App Engine before CheckResponse
 	if resp.IsError() {
 		switch resp.StatusCode() {
 		case 540:
 			return nil, fmt.Errorf("JavaScript error occurred: %s", resp.String())
 		case 541:
 			return nil, fmt.Errorf("runtime error occurred: %s", resp.String())
-		default:
-			return nil, fmt.Errorf("code execution failed: status %d: %s", resp.StatusCode(), resp.String())
 		}
+	}
+
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return nil, err
 	}
 
 	var result FunctionExecutorResponse
@@ -227,28 +223,4 @@ func (h *FunctionHandler) GetSDKVersions() (*SDKVersionsResponse, error) {
 	}
 
 	return &result, nil
-}
-
-// ReadFileOrStdin reads content from a file or stdin
-func ReadFileOrStdin(filename string) (string, error) {
-	var reader io.Reader
-	if filename == "-" {
-		reader = os.Stdin
-	} else {
-		f, err := os.Open(filename)
-		if err != nil {
-			return "", fmt.Errorf("failed to open file: %w", err)
-		}
-		defer func() {
-			_ = f.Close()
-		}()
-		reader = f
-	}
-
-	content, err := io.ReadAll(reader)
-	if err != nil {
-		return "", fmt.Errorf("failed to read content: %w", err)
-	}
-
-	return string(content), nil
 }

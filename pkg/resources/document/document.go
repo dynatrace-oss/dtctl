@@ -41,21 +41,18 @@ var (
 var (
 	ConvertToDocuments     = sdkdocument.ConvertToDocuments
 	ParseMultipartDocument = sdkdocument.ParseMultipartDocument
-	CreateUpdateRequest    = sdkdocument.CreateUpdateRequest
 )
 
 // Handler handles document resources (dashboards, notebooks, etc.)
 // It delegates to the SDK handler and adds CLI-specific convenience methods.
 type Handler struct {
-	client *client.Client
-	sdk    *sdkdocument.Handler
+	sdk *sdkdocument.Handler
 }
 
 // NewHandler creates a new document handler.
 func NewHandler(c *client.Client) *Handler {
 	return &Handler{
-		client: c,
-		sdk:    sdkdocument.NewHandler(httpclient.Wrap(c.HTTP())),
+		sdk: sdkdocument.NewHandler(httpclient.Wrap(c.HTTP())),
 	}
 }
 

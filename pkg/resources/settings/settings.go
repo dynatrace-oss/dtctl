@@ -97,15 +97,13 @@ type SettingsObjectsList struct {
 // Handler handles settings resources.
 // It delegates to the SDK handler and adds CLI-specific convenience methods.
 type Handler struct {
-	client *client.Client
-	sdk    *sdksettings.Handler
+	sdk *sdksettings.Handler
 }
 
 // NewHandler creates a new settings handler.
 func NewHandler(c *client.Client) *Handler {
 	return &Handler{
-		client: c,
-		sdk:    sdksettings.NewHandler(httpclient.Wrap(c.HTTP())),
+		sdk: sdksettings.NewHandler(httpclient.Wrap(c.HTTP())),
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -236,10 +235,17 @@ func (r *ExecuteResult) populateTableFields() {
 	}
 }
 
+// Default polling parameters for ExecuteAndWait.
+const (
+	defaultInitialTimeout = 30 // seconds for the initial execute call
+	defaultPollTimeout    = 10 // seconds for each poll call
+	defaultPollInterval   = 2 * time.Second
+)
+
 // ExecuteAndWait runs an analyzer and waits for completion
 func (h *Handler) ExecuteAndWait(name string, input map[string]interface{}, maxWaitSeconds int) (*ExecuteResult, error) {
 	// Start execution with initial timeout
-	result, err := h.Execute(name, input, 30)
+	result, err := h.Execute(name, input, defaultInitialTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +268,7 @@ func (h *Handler) ExecuteAndWait(name string, input map[string]interface{}, maxW
 			return nil, fmt.Errorf("analyzer execution timed out after %d seconds", maxWaitSeconds)
 		}
 
-		pollResult, err := h.Poll(name, result.RequestToken, 10)
+		pollResult, err := h.Poll(name, result.RequestToken, defaultPollTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -275,7 +281,7 @@ func (h *Handler) ExecuteAndWait(name string, input map[string]interface{}, maxW
 			return pollResult, fmt.Errorf("analyzer execution was aborted")
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(defaultPollInterval)
 	}
 }
 
@@ -341,24 +347,4 @@ func (h *Handler) Validate(name string, input map[string]interface{}) (*Validati
 		return nil, fmt.Errorf("failed to validate analyzer input: %w", err)
 	}
 	return &result, nil
-}
-
-// ParseInputFromFile reads and parses analyzer input from a file
-func ParseInputFromFile(filename string) (map[string]interface{}, error) {
-	content, err := readFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var input map[string]interface{}
-	if err := json.Unmarshal(content, &input); err != nil {
-		return nil, fmt.Errorf("failed to parse input file: %w", err)
-	}
-
-	return input, nil
-}
-
-// readFile reads content from a file
-func readFile(filename string) ([]byte, error) {
-	return os.ReadFile(filename)
 }

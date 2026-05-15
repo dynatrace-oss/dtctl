@@ -1,8 +1,8 @@
 package workflow
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -151,20 +151,7 @@ func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, err
 	}
 
 	// The API returns a JSON-encoded string, so we need to unquote it.
-	// Use resp.Body() to avoid potential truncation of large logs.
-	body := string(resp.Body())
-	if len(body) >= 2 && body[0] == '"' && body[len(body)-1] == '"' {
-		// Remove surrounding quotes and unescape
-		unquoted := body[1 : len(body)-1]
-		// Handle common escape sequences
-		unquoted = strings.ReplaceAll(unquoted, "\\n", "\n")
-		unquoted = strings.ReplaceAll(unquoted, "\\t", "\t")
-		unquoted = strings.ReplaceAll(unquoted, "\\\"", "\"")
-		unquoted = strings.ReplaceAll(unquoted, "\\\\", "\\")
-		return unquoted, nil
-	}
-
-	return body, nil
+	return unquoteJSONString(resp.Body())
 }
 
 // GetTaskResult retrieves the structured return value of a specific task execution.
@@ -198,18 +185,16 @@ func (h *ExecutionHandler) GetExecutionLog(executionID string) (string, error) {
 	}
 
 	// The API returns a JSON-encoded string, so we need to unquote it.
-	// Use resp.Body() to avoid potential truncation of large logs.
-	body := string(resp.Body())
-	if len(body) >= 2 && body[0] == '"' && body[len(body)-1] == '"' {
-		// Remove surrounding quotes and unescape
-		unquoted := body[1 : len(body)-1]
-		// Handle common escape sequences
-		unquoted = strings.ReplaceAll(unquoted, "\\n", "\n")
-		unquoted = strings.ReplaceAll(unquoted, "\\t", "\t")
-		unquoted = strings.ReplaceAll(unquoted, "\\\"", "\"")
-		unquoted = strings.ReplaceAll(unquoted, "\\\\", "\\")
-		return unquoted, nil
-	}
+	return unquoteJSONString(resp.Body())
+}
 
-	return body, nil
+// unquoteJSONString attempts to JSON-unmarshal a byte slice as a quoted string.
+// If the input is a valid JSON string, the unquoted value is returned.
+// Otherwise the raw bytes are returned as-is.
+func unquoteJSONString(data []byte) (string, error) {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		return s, nil
+	}
+	return string(data), nil
 }
