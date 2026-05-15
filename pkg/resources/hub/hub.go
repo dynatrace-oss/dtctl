@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkhub "github.com/dynatrace-oss/dtctl/sdk/api/hub"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"

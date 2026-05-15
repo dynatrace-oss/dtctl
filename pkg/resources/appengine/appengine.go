@@ -2,6 +2,7 @@ package appengine
 
 import (
 	"context"
+
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkae "github.com/dynatrace-oss/dtctl/sdk/api/appengine"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -53,7 +54,7 @@ func fromSDKApp(s *sdkae.App) App {
 		Description:      s.Description,
 		IsBuiltin:        s.IsBuiltin,
 		ResourceStatus:   s.ResourceStatus,
-		SignatureInfo:     s.SignatureInfo,
+		SignatureInfo:    s.SignatureInfo,
 		Manifest:         s.Manifest,
 		ModificationInfo: s.ModificationInfo,
 	}

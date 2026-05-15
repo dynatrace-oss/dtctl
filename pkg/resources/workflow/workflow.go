@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkworkflow "github.com/dynatrace-oss/dtctl/sdk/api/workflow"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"

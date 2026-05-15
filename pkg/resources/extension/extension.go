@@ -146,8 +146,8 @@ func fromSDKMonitoringConfigurationList(l *sdkext.MonitoringConfigurationList) *
 
 // ActiveGateGroupItem is the CLI read model for an active gate group.
 type ActiveGateGroupItem struct {
-	GroupName            string                  `json:"groupName" table:"GROUP"`
-	AvailableActiveGates int                     `json:"availableActiveGates" table:"AVAILABLE"`
+	GroupName            string                   `json:"groupName" table:"GROUP"`
+	AvailableActiveGates int                      `json:"availableActiveGates" table:"AVAILABLE"`
 	ActiveGates          []sdkext.ActiveGateEntry `json:"activeGates,omitempty" table:"-"`
 }
 

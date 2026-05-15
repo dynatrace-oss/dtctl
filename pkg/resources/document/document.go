@@ -26,9 +26,9 @@ type Document struct {
 	Modified    time.Time `json:"-" table:"MODIFIED,wide"`
 	Content     []byte    `json:"-" table:"-"`
 
-	OriginAppID       string                `json:"originAppId,omitempty" yaml:"originAppId,omitempty" table:"-"`
-	OriginExtensionID string                `json:"originExtensionId,omitempty" yaml:"originExtensionId,omitempty" table:"-"`
-	Labels            []string              `json:"labels,omitempty" yaml:"labels,omitempty" table:"-"`
+	OriginAppID       string                   `json:"originAppId,omitempty" yaml:"originAppId,omitempty" table:"-"`
+	OriginExtensionID string                   `json:"originExtensionId,omitempty" yaml:"originExtensionId,omitempty" table:"-"`
+	Labels            []string                 `json:"labels,omitempty" yaml:"labels,omitempty" table:"-"`
 	ShareInfo         *sdkdocument.ShareInfo   `json:"shareInfo,omitempty" yaml:"shareInfo,omitempty" table:"-"`
 	UserContext       *sdkdocument.UserContext `json:"userContext,omitempty" yaml:"userContext,omitempty" table:"-"`
 }
@@ -147,12 +147,12 @@ func fromSDKEnvironmentShareList(l *sdkdocument.EnvironmentShareList) *Environme
 
 // Snapshot is the CLI read model for a document snapshot.
 type Snapshot struct {
-	SnapshotVersion  int                        `json:"snapshotVersion" table:"VERSION"`
-	DocumentVersion  int                        `json:"documentVersion" table:"DOC_VERSION,wide"`
-	Description      string                     `json:"description,omitempty" table:"DESCRIPTION"`
+	SnapshotVersion  int                         `json:"snapshotVersion" table:"VERSION"`
+	DocumentVersion  int                         `json:"documentVersion" table:"DOC_VERSION,wide"`
+	Description      string                      `json:"description,omitempty" table:"DESCRIPTION"`
 	ModificationInfo sdkdocument.SnapshotModInfo `json:"modificationInfo" table:"-"`
-	CreatedBy        string                     `json:"-" table:"CREATED_BY"`
-	CreatedTime      time.Time                  `json:"-" table:"CREATED"`
+	CreatedBy        string                      `json:"-" table:"CREATED_BY"`
+	CreatedTime      time.Time                   `json:"-" table:"CREATED"`
 }
 
 // UnmarshalJSON delegates to the SDK Snapshot unmarshaler to handle flexible int/string versions.

@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdknotification "github.com/dynatrace-oss/dtctl/sdk/api/notification"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"

@@ -131,7 +131,9 @@ func (h *Handler) Update(edgeConnectID string, req EdgeConnect) error {
 }
 
 // Delete deletes an EdgeConnect.
-func (h *Handler) Delete(edgeConnectID string) error { return h.sdk.Delete(context.Background(), edgeConnectID) }
+func (h *Handler) Delete(edgeConnectID string) error {
+	return h.sdk.Delete(context.Background(), edgeConnectID)
+}
 
 // GetRaw gets an EdgeConnect as raw JSON bytes (for editing).
 func (h *Handler) GetRaw(edgeConnectID string) ([]byte, error) {

@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"context"
+
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkcop "github.com/dynatrace-oss/dtctl/sdk/api/copilot"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -9,18 +10,18 @@ import (
 
 // Re-export SDK types that don't need table tags as aliases.
 type (
-	SkillsResponse         = sdkcop.SkillsResponse
-	ConversationRequest    = sdkcop.ConversationRequest
-	ConversationState      = sdkcop.ConversationState
-	ConversationMessage    = sdkcop.ConversationMessage
-	ConversationContext    = sdkcop.ConversationContext
-	StreamChunk            = sdkcop.StreamChunk
-	StreamChunkData        = sdkcop.StreamChunkData
-	ChatOptions            = sdkcop.ChatOptions
-	Nl2DqlRequest          = sdkcop.Nl2DqlRequest
-	Dql2NlRequest          = sdkcop.Dql2NlRequest
-	DocumentSearchRequest  = sdkcop.DocumentSearchRequest
-	DocumentMetadata       = sdkcop.DocumentMetadata
+	SkillsResponse        = sdkcop.SkillsResponse
+	ConversationRequest   = sdkcop.ConversationRequest
+	ConversationState     = sdkcop.ConversationState
+	ConversationMessage   = sdkcop.ConversationMessage
+	ConversationContext   = sdkcop.ConversationContext
+	StreamChunk           = sdkcop.StreamChunk
+	StreamChunkData       = sdkcop.StreamChunkData
+	ChatOptions           = sdkcop.ChatOptions
+	Nl2DqlRequest         = sdkcop.Nl2DqlRequest
+	Dql2NlRequest         = sdkcop.Dql2NlRequest
+	DocumentSearchRequest = sdkcop.DocumentSearchRequest
+	DocumentMetadata      = sdkcop.DocumentMetadata
 )
 
 // Skill represents an available CoPilot skill with CLI display fields.
