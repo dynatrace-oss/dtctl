@@ -18,11 +18,11 @@ import (
 
 // Client is an HTTP client for Dynatrace APIs.
 type Client struct {
-	http             *resty.Client
-	baseURL          string
-	token            string
-	logger           Logger
-	retryConfigured  bool
+	http            *resty.Client
+	baseURL         string
+	token           string
+	logger          Logger
+	retryConfigured bool
 }
 
 // Option configures a Client.

@@ -73,7 +73,8 @@ func TestListObjects_Paginated(t *testing.T) {
 
 		nextPageKey := r.URL.Query().Get("nextPageKey")
 		var resp SettingsObjectsList
-		if nextPageKey == "" {
+		switch nextPageKey {
+		case "":
 			// First page
 			resp = SettingsObjectsList{
 				Items: []SettingsObject{
@@ -82,7 +83,7 @@ func TestListObjects_Paginated(t *testing.T) {
 				TotalCount:  2,
 				NextPageKey: "page2token",
 			}
-		} else if nextPageKey == "page2token" {
+		case "page2token":
 			// Second page — only nextPageKey, no other params
 			resp = SettingsObjectsList{
 				Items: []SettingsObject{
@@ -90,7 +91,7 @@ func TestListObjects_Paginated(t *testing.T) {
 				},
 				TotalCount: 2,
 			}
-		} else {
+		default:
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, `{"error":{"message":"unknown page key"}}`)
 			return

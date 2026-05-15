@@ -63,7 +63,8 @@ func TestList_Paginated(t *testing.T) {
 
 		// Document API: page-size IS allowed with page-key
 		var resp DocumentList
-		if pageKey == "" {
+		switch pageKey {
+		case "":
 			// First page
 			if ps := r.URL.Query().Get("page-size"); ps != "2" {
 				t.Errorf("first page: page-size = %q, want %q", ps, "2")
@@ -76,7 +77,7 @@ func TestList_Paginated(t *testing.T) {
 				TotalCount:  3,
 				NextPageKey: "page2token",
 			}
-		} else if pageKey == "page2token" {
+		case "page2token":
 			// Second page — page-size should still be present (Document API style)
 			if ps := r.URL.Query().Get("page-size"); ps != "2" {
 				t.Errorf("second page: page-size = %q, want %q (Document API sends page-size on every request)", ps, "2")
@@ -87,7 +88,7 @@ func TestList_Paginated(t *testing.T) {
 				},
 				TotalCount: 3,
 			}
-		} else {
+		default:
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, `{"error":{"message":"unknown page key"}}`)
 			return
