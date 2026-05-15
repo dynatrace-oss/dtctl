@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +34,12 @@ func parseFlexibleInt(raw json.RawMessage) (int, error) {
 		return 0, fmt.Errorf("version field is neither a number nor a string: %s", string(raw))
 	}
 	return strconv.Atoi(s)
+}
+
+// escapeFilterValue escapes single quotes in filter values to prevent
+// filter expression injection.
+func escapeFilterValue(s string) string {
+	return strings.ReplaceAll(s, "'", "\\'")
 }
 
 // Handler handles document resources (dashboards, notebooks, etc.)
@@ -165,13 +170,13 @@ func (h *Handler) List(ctx context.Context, filters DocumentFilters) (*DocumentL
 	} else {
 		var conditions []string
 		if filters.Type != "" {
-			conditions = append(conditions, fmt.Sprintf("type=='%s'", filters.Type))
+			conditions = append(conditions, fmt.Sprintf("type=='%s'", escapeFilterValue(filters.Type)))
 		}
 		if filters.Name != "" {
-			conditions = append(conditions, fmt.Sprintf("name contains '%s'", filters.Name))
+			conditions = append(conditions, fmt.Sprintf("name contains '%s'", escapeFilterValue(filters.Name)))
 		}
 		if filters.Owner != "" {
-			conditions = append(conditions, fmt.Sprintf("owner=='%s'", filters.Owner))
+			conditions = append(conditions, fmt.Sprintf("owner=='%s'", escapeFilterValue(filters.Owner)))
 		}
 		if len(conditions) > 0 {
 			filterStr = strings.Join(conditions, " and ")
@@ -423,30 +428,15 @@ func (h *Handler) UpdateWithMetadata(ctx context.Context, id string, version int
 // multipart or JSON. For JSON responses it expects the documentMetadata wrapper.
 // On parse failure it returns a minimal Document with what we know, plus the
 // given fallback fields.
-//
-// The resp parameter must satisfy the documented interface. For multipart
-// responses it must also implement RawResponse() *resty.Response (which
-// *resty.Response naturally does) so the multipart parser can operate.
-func parseUpdateResponse(resp interface {
-	Header() http.Header
-	Body() []byte
-}, fallbackID string, fallbackVersion int, fallbackName string) (*Document, error) {
+func parseUpdateResponse(resp *resty.Response, fallbackID string, fallbackVersion int, fallbackName string) (*Document, error) {
 	respContentType := resp.Header().Get("Content-Type")
 
 	if strings.HasPrefix(respContentType, "multipart/") {
-		// The multipart parser needs the full *resty.Response.
-		type restyResponseProvider interface {
-			RawResponse() *http.Response
+		doc, err := ParseMultipartDocument(resp)
+		if err != nil {
+			return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
 		}
-		if rr, ok := resp.(*resty.Response); ok {
-			doc, err := ParseMultipartDocument(rr)
-			if err != nil {
-				return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
-			}
-			return doc, nil
-		}
-		_ = restyResponseProvider(nil) // ensure the interface exists at compile time
-		return documentFallback(fallbackID, fallbackVersion, fallbackName), nil
+		return doc, nil
 	}
 
 	// JSON response - try direct DocumentMetadata first, then wrapped version
@@ -566,7 +556,7 @@ func (h *Handler) ListDirectShares(ctx context.Context, documentID string) (*Dir
 	req := h.client.HTTP().R().SetContext(ctx)
 
 	if documentID != "" {
-		req.SetQueryParam("filter", fmt.Sprintf("documentId=='%s'", documentID))
+		req.SetQueryParam("filter", fmt.Sprintf("documentId=='%s'", escapeFilterValue(documentID)))
 	}
 
 	resp, err := req.Get("/platform/document/v1/direct-shares")

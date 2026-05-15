@@ -65,10 +65,12 @@ func WithUserAgent(ua string) Option {
 	}
 }
 
-// WithLogger sets the logger for debug output.
+// WithLogger sets the logger for debug output. A nil logger is ignored.
 func WithLogger(l Logger) Option {
 	return func(c *Client) {
-		c.logger = l
+		if l != nil {
+			c.logger = l
+		}
 	}
 }
 
@@ -222,7 +224,7 @@ func (c *Client) EnableVerboseLogging(level int, w io.Writer) {
 	c.http.OnAfterResponse(func(_ *resty.Client, resp *resty.Response) error {
 		var sb strings.Builder
 		sb.WriteString("===> RESPONSE <===\n")
-		sb.WriteString(fmt.Sprintf("STATUS: %d %s\n", resp.StatusCode(), resp.Status()))
+		sb.WriteString(fmt.Sprintf("STATUS: %s\n", resp.Status()))
 		sb.WriteString(fmt.Sprintf("TIME: %s\n", resp.Time()))
 		if level >= 2 {
 			sb.WriteString("HEADERS:\n")

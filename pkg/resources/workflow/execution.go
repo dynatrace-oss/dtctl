@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -239,25 +240,16 @@ func (h *ExecutionHandler) GetCompleteExecutionLog(executionID string) (string, 
 
 // sortTasksByStartTime sorts tasks by their start time (nil times go last)
 func sortTasksByStartTime(tasks []TaskExecution) {
-	for i := 0; i < len(tasks)-1; i++ {
-		for j := i + 1; j < len(tasks); j++ {
-			// Both nil - keep order
-			if tasks[i].StartedAt == nil && tasks[j].StartedAt == nil {
-				continue
-			}
-			// i is nil, j is not - swap (nil goes last)
-			if tasks[i].StartedAt == nil {
-				tasks[i], tasks[j] = tasks[j], tasks[i]
-				continue
-			}
-			// j is nil - keep order (nil goes last)
-			if tasks[j].StartedAt == nil {
-				continue
-			}
-			// Both have times - sort ascending
-			if tasks[i].StartedAt.After(*tasks[j].StartedAt) {
-				tasks[i], tasks[j] = tasks[j], tasks[i]
-			}
+	slices.SortFunc(tasks, func(a, b TaskExecution) int {
+		if a.StartedAt == nil && b.StartedAt == nil {
+			return 0
 		}
-	}
+		if a.StartedAt == nil {
+			return 1
+		}
+		if b.StartedAt == nil {
+			return -1
+		}
+		return a.StartedAt.Compare(*b.StartedAt)
+	})
 }
