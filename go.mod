@@ -5,8 +5,8 @@ go 1.26.3
 require (
 	github.com/adrg/xdg v0.5.3
 	github.com/dynatrace-oss/dtctl/sdk v0.0.0-00010101000000-000000000000
-	github.com/go-resty/resty/v2 v2.11.0
-	github.com/godbus/dbus/v5 v5.1.0
+	github.com/go-resty/resty/v2 v2.17.2
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/guptarohit/asciigraph v0.7.3
 	github.com/olekukonko/tablewriter v1.1.4
@@ -17,7 +17,7 @@ require (
 	github.com/spf13/viper v1.18.0
 	github.com/stretchr/testify v1.11.1
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
-	github.com/zalando/go-keyring v0.2.6
+	github.com/zalando/go-keyring v0.2.8
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
@@ -30,12 +30,11 @@ require (
 )
 
 require (
-	al.essio.dev/pkg/shellescape v1.5.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/displaywidth v0.10.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
-	github.com/danieljoos/wincred v1.2.2 // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
