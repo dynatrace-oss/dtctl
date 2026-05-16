@@ -443,6 +443,10 @@ func TestExecuteAndPoll_OnUnauthorizedRetry(t *testing.T) {
 			w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
 			return
 		}
+		// Second poll: verify the refreshed token was applied to the client
+		if got := r.Header.Get("Authorization"); got != "Bearer new-token" {
+			t.Errorf("retry poll Authorization = %q, want %q", got, "Bearer new-token")
+		}
 		// Second poll: succeed
 		resp := Response{
 			State:  "SUCCEEDED",

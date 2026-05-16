@@ -96,20 +96,20 @@ type Metadata struct {
 
 // GrailMetadata represents Grail-specific query execution metadata.
 type GrailMetadata struct {
-	Query                     string              `json:"query,omitempty"`
-	CanonicalQuery            string              `json:"canonicalQuery,omitempty"`
-	QueryID                   string              `json:"queryId,omitempty"`
-	DQLVersion                string              `json:"dqlVersion,omitempty"`
-	Timezone                  string              `json:"timezone,omitempty"`
-	Locale                    string              `json:"locale,omitempty"`
-	ExecutionTimeMilliseconds int64               `json:"executionTimeMilliseconds,omitempty"`
-	ScannedRecords            int64               `json:"scannedRecords,omitempty"`
-	ScannedBytes              int64               `json:"scannedBytes,omitempty"`
-	ScannedDataPoints         int64               `json:"scannedDataPoints,omitempty"`
-	Sampled                   bool                `json:"sampled,omitempty"`
-	Notifications             []Notification      `json:"notifications,omitempty"`
-	AnalysisTimeframe         *AnalysisTimeframe  `json:"analysisTimeframe,omitempty"`
-	Contributions             *Contributions      `json:"contributions,omitempty"`
+	Query                     string             `json:"query,omitempty"`
+	CanonicalQuery            string             `json:"canonicalQuery,omitempty"`
+	QueryID                   string             `json:"queryId,omitempty"`
+	DQLVersion                string             `json:"dqlVersion,omitempty"`
+	Timezone                  string             `json:"timezone,omitempty"`
+	Locale                    string             `json:"locale,omitempty"`
+	ExecutionTimeMilliseconds int64              `json:"executionTimeMilliseconds,omitempty"`
+	ScannedRecords            int64              `json:"scannedRecords,omitempty"`
+	ScannedBytes              int64              `json:"scannedBytes,omitempty"`
+	ScannedDataPoints         int64              `json:"scannedDataPoints,omitempty"`
+	Sampled                   bool               `json:"sampled,omitempty"`
+	Notifications             []Notification     `json:"notifications,omitempty"`
+	AnalysisTimeframe         *AnalysisTimeframe `json:"analysisTimeframe,omitempty"`
+	Contributions             *Contributions     `json:"contributions,omitempty"`
 }
 
 // Contributions represents the bucket contributions for a query.
@@ -150,9 +150,9 @@ type VerifyRequest struct {
 
 // VerifyResponse represents a DQL query verification response.
 type VerifyResponse struct {
-	Valid          bool                    `json:"valid"`
-	CanonicalQuery string                  `json:"canonicalQuery,omitempty"`
-	Notifications  []VerifyNotification    `json:"notifications,omitempty"`
+	Valid          bool                 `json:"valid"`
+	CanonicalQuery string               `json:"canonicalQuery,omitempty"`
+	Notifications  []VerifyNotification `json:"notifications,omitempty"`
 }
 
 // VerifyNotification represents a notification from query verification.
@@ -222,7 +222,7 @@ func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, e
 		return nil, parseError(resp.StatusCode(), resp.Body())
 	}
 
-	return &result, nil
+	return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode())
 }
 
 // Poll polls for the results of an asynchronous query. The server holds the
@@ -346,8 +346,12 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 			// On 401, try the onUnauthorized callback once per consecutive failure.
 			var apiErr *httpclient.APIError
 			if errors.As(pollErr, &apiErr) && apiErr.StatusCode == 401 && onUnauthorized != nil && !tokenJustRefreshed {
-				if _, refreshErr := onUnauthorized(); refreshErr != nil {
+				newToken, refreshErr := onUnauthorized()
+				if refreshErr != nil {
 					return nil, fmt.Errorf("poll returned 401 and token refresh failed: %w", refreshErr)
+				}
+				if newToken != "" {
+					h.client.SetToken(newToken)
 				}
 				tokenJustRefreshed = true
 				continue
