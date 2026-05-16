@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,17 +13,42 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/version"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
+)
+
+// Re-export SDK types so existing callers continue to compile.
+type (
+	FilterSegmentRef      = sdkquery.FilterSegmentRef
+	FilterSegmentVariable = sdkquery.FilterSegmentVariable
+	DQLQueryRequest       = sdkquery.ExecuteRequest
+	DQLQueryResponse      = sdkquery.Response
+	DQLResult             = sdkquery.Result
+	DQLMetadata           = sdkquery.Metadata
+	GrailMetadata         = sdkquery.GrailMetadata
+	Contributions         = sdkquery.Contributions
+	BucketContribution    = sdkquery.BucketContribution
+	QueryNotification     = sdkquery.Notification
+	AnalysisTimeframe     = sdkquery.AnalysisTimeframe
+	DQLVerifyRequest      = sdkquery.VerifyRequest
+	DQLVerifyResponse     = sdkquery.VerifyResponse
+	MetadataNotification  = sdkquery.VerifyNotification
+	SyntaxPosition        = sdkquery.SyntaxPosition
+	Position              = sdkquery.Position
+	QueryError            = sdkquery.QueryError
 )
 
 // DQLExecutor handles DQL query execution
 type DQLExecutor struct {
 	client         *client.Client
+	sdk            *sdkquery.Handler
 	tokenRefresher func() (string, error)
 }
 
 // NewDQLExecutor creates a new DQL executor
 func NewDQLExecutor(c *client.Client) *DQLExecutor {
-	return &DQLExecutor{client: c}
+	sdk := sdkquery.NewHandler(httpclient.Wrap(c.HTTP()))
+	return &DQLExecutor{client: c, sdk: sdk}
 }
 
 // WithTokenRefresher sets an optional callback that is invoked when a poll request
@@ -51,10 +77,12 @@ func dtClientContextHeader(callerContext string) string {
 	return string(b)
 }
 
-// pollRequestTimeoutMs is the server-side hold time per poll HTTP round trip in milliseconds.
-// The server will return after this duration even if the query is still running, allowing
-// the client to loop and re-poll. Must stay in sync with the execute request timeout.
-const pollRequestTimeoutMs = 5000
+// sdkHandler returns the SDK handler with the dt-client-context header set.
+func (e *DQLExecutor) sdkHandler(clientContext string) *sdkquery.Handler {
+	return e.sdk.WithHeaders(map[string]string{
+		"dt-client-context": dtClientContextHeader(clientContext),
+	})
+}
 
 // DecodeMode controls snapshot payload decoding behavior.
 type DecodeMode int
@@ -67,18 +95,6 @@ const (
 	// DecodeFull decodes but preserves the full variant tree with type annotations.
 	DecodeFull
 )
-
-// FilterSegmentRef identifies a segment and optional variable bindings for query execution.
-type FilterSegmentRef struct {
-	ID        string                  `json:"id"`
-	Variables []FilterSegmentVariable `json:"variables,omitempty"`
-}
-
-// FilterSegmentVariable defines a variable binding for a filter segment.
-type FilterSegmentVariable struct {
-	Name   string   `json:"name"`
-	Values []string `json:"values"`
-}
 
 // DQLExecuteOptions configures DQL query execution
 type DQLExecuteOptions struct {
@@ -129,126 +145,58 @@ type DQLVerifyOptions struct {
 	ClientContext          string // Optional caller-supplied semantic string for the dt-client-context header
 }
 
-// DQLQueryRequest represents a DQL query request
-type DQLQueryRequest struct {
-	Query                        string             `json:"query"`
-	RequestTimeoutMilliseconds   int64              `json:"requestTimeoutMilliseconds,omitempty"`
-	MaxResultRecords             int64              `json:"maxResultRecords,omitempty"`
-	MaxResultBytes               int64              `json:"maxResultBytes,omitempty"`
-	DefaultScanLimitGbytes       float64            `json:"defaultScanLimitGbytes,omitempty"`
-	DefaultSamplingRatio         float64            `json:"defaultSamplingRatio,omitempty"`
-	FetchTimeoutSeconds          int32              `json:"fetchTimeoutSeconds,omitempty"`
-	EnablePreview                bool               `json:"enablePreview,omitempty"`
-	EnforceQueryConsumptionLimit bool               `json:"enforceQueryConsumptionLimit,omitempty"`
-	IncludeTypes                 *bool              `json:"includeTypes,omitempty"`         // Pointer to distinguish between unset and false
-	IncludeContributions         *bool              `json:"includeContributions,omitempty"` // Pointer to distinguish between unset and false
-	DefaultTimeframeStart        string             `json:"defaultTimeframeStart,omitempty"`
-	DefaultTimeframeEnd          string             `json:"defaultTimeframeEnd,omitempty"`
-	Locale                       string             `json:"locale,omitempty"`
-	Timezone                     string             `json:"timezone,omitempty"`
-	FilterSegments               []FilterSegmentRef `json:"filterSegments,omitempty"`
-}
+// buildExecuteRequest converts CLI options to an SDK ExecuteRequest.
+func buildExecuteRequest(query string, opts DQLExecuteOptions) sdkquery.ExecuteRequest {
+	req := sdkquery.ExecuteRequest{
+		Query: query,
+	}
 
-// DQLQueryResponse represents a DQL query response
-type DQLQueryResponse struct {
-	State        string                   `json:"state"`
-	RequestToken string                   `json:"requestToken,omitempty"`
-	Result       *DQLResult               `json:"result,omitempty"`
-	Records      []map[string]interface{} `json:"records,omitempty"` // For backward compatibility
-	Progress     int                      `json:"progress,omitempty"`
-	Metadata     *DQLMetadata             `json:"metadata,omitempty"`
-}
+	if opts.MaxResultRecords > 0 {
+		req.MaxResultRecords = opts.MaxResultRecords
+	}
+	if opts.MaxResultBytes > 0 {
+		req.MaxResultBytes = opts.MaxResultBytes
+	}
+	if opts.DefaultScanLimitGbytes > 0 {
+		req.DefaultScanLimitGbytes = opts.DefaultScanLimitGbytes
+	}
+	if opts.DefaultSamplingRatio > 0 {
+		req.DefaultSamplingRatio = opts.DefaultSamplingRatio
+	}
+	if opts.FetchTimeoutSeconds > 0 {
+		req.FetchTimeoutSeconds = opts.FetchTimeoutSeconds
+	}
+	if opts.EnablePreview {
+		req.EnablePreview = true
+	}
+	if opts.EnforceQueryConsumptionLimit {
+		req.EnforceQueryConsumptionLimit = true
+	}
+	if opts.IncludeTypes {
+		includeTypes := true
+		req.IncludeTypes = &includeTypes
+	}
+	if opts.IncludeContributions {
+		includeContributions := true
+		req.IncludeContributions = &includeContributions
+	}
+	if opts.DefaultTimeframeStart != "" {
+		req.DefaultTimeframeStart = opts.DefaultTimeframeStart
+	}
+	if opts.DefaultTimeframeEnd != "" {
+		req.DefaultTimeframeEnd = opts.DefaultTimeframeEnd
+	}
+	if opts.Locale != "" {
+		req.Locale = opts.Locale
+	}
+	if opts.Timezone != "" {
+		req.Timezone = opts.Timezone
+	}
+	if len(opts.Segments) > 0 {
+		req.FilterSegments = opts.Segments
+	}
 
-// DQLResult represents the result section of a DQL response
-type DQLResult struct {
-	Records  []map[string]interface{} `json:"records"`
-	Metadata *DQLMetadata             `json:"metadata,omitempty"` // Metadata can appear here too
-}
-
-// DQLMetadata represents the metadata section of a DQL response
-type DQLMetadata struct {
-	Grail *GrailMetadata `json:"grail,omitempty"`
-}
-
-// GrailMetadata represents Grail-specific metadata
-type GrailMetadata struct {
-	Query                     string              `json:"query,omitempty"`
-	CanonicalQuery            string              `json:"canonicalQuery,omitempty"`
-	QueryID                   string              `json:"queryId,omitempty"`
-	DQLVersion                string              `json:"dqlVersion,omitempty"`
-	Timezone                  string              `json:"timezone,omitempty"`
-	Locale                    string              `json:"locale,omitempty"`
-	ExecutionTimeMilliseconds int64               `json:"executionTimeMilliseconds,omitempty"`
-	ScannedRecords            int64               `json:"scannedRecords,omitempty"`
-	ScannedBytes              int64               `json:"scannedBytes,omitempty"`
-	ScannedDataPoints         int64               `json:"scannedDataPoints,omitempty"`
-	Sampled                   bool                `json:"sampled,omitempty"`
-	Notifications             []QueryNotification `json:"notifications,omitempty"`
-	AnalysisTimeframe         *AnalysisTimeframe  `json:"analysisTimeframe,omitempty"`
-	Contributions             *Contributions      `json:"contributions,omitempty"`
-}
-
-// Contributions represents the bucket contributions for a query
-type Contributions struct {
-	Buckets []BucketContribution `json:"buckets,omitempty"`
-}
-
-// BucketContribution represents a single bucket's contribution to query results
-type BucketContribution struct {
-	Name                string  `json:"name"`
-	Table               string  `json:"table"`
-	ScannedBytes        int64   `json:"scannedBytes"`
-	MatchedRecordsRatio float64 `json:"matchedRecordsRatio"`
-}
-
-// QueryNotification represents a notification/warning from query execution
-type QueryNotification struct {
-	Severity         string   `json:"severity,omitempty"`         // INFO, WARNING, ERROR
-	NotificationType string   `json:"notificationType,omitempty"` // e.g., SCAN_LIMIT_GBYTES
-	Message          string   `json:"message,omitempty"`
-	MessageFormat    string   `json:"messageFormat,omitempty"`
-	Arguments        []string `json:"arguments,omitempty"`
-}
-
-// AnalysisTimeframe represents the timeframe analyzed by the query
-type AnalysisTimeframe struct {
-	Start string `json:"start,omitempty"`
-	End   string `json:"end,omitempty"`
-}
-
-// DQLVerifyRequest represents a DQL query verification request
-type DQLVerifyRequest struct {
-	Query                  string `json:"query"`
-	GenerateCanonicalQuery bool   `json:"generateCanonicalQuery,omitempty"`
-	Timezone               string `json:"timezone,omitempty"`
-	Locale                 string `json:"locale,omitempty"`
-}
-
-// DQLVerifyResponse represents a DQL query verification response
-type DQLVerifyResponse struct {
-	Valid          bool                   `json:"valid"`
-	CanonicalQuery string                 `json:"canonicalQuery,omitempty"`
-	Notifications  []MetadataNotification `json:"notifications,omitempty"`
-}
-
-// MetadataNotification represents a notification from query verification or execution
-type MetadataNotification struct {
-	Severity         string          `json:"severity"`
-	NotificationType string          `json:"notificationType"`
-	Message          string          `json:"message"`
-	SyntaxPosition   *SyntaxPosition `json:"syntaxPosition,omitempty"`
-}
-
-// SyntaxPosition represents the position of a syntax issue in a query
-type SyntaxPosition struct {
-	Start *Position `json:"start,omitempty"`
-	End   *Position `json:"end,omitempty"`
-}
-
-// Position represents a line and column position in text
-type Position struct {
-	Line   int `json:"line"`
-	Column int `json:"column"`
+	return req
 }
 
 // Execute executes a DQL query
@@ -287,155 +235,50 @@ func (e *DQLExecutor) ExecuteQueryWithOptions(query string, opts DQLExecuteOptio
 // If ctx is cancelled while the query is polling, a best-effort cancel request is sent
 // to the Grail backend before returning.
 func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string, opts DQLExecuteOptions) (*DQLQueryResponse, error) {
-	req := DQLQueryRequest{
-		Query:                      query,
-		RequestTimeoutMilliseconds: pollRequestTimeoutMs,
-	}
+	req := buildExecuteRequest(query, opts)
+	handler := e.sdkHandler(opts.ClientContext)
 
-	// Set query limit parameters in request body if specified
-	if opts.MaxResultRecords > 0 {
-		req.MaxResultRecords = opts.MaxResultRecords
-	}
-	if opts.MaxResultBytes > 0 {
-		req.MaxResultBytes = opts.MaxResultBytes
-	}
-	if opts.DefaultScanLimitGbytes > 0 {
-		req.DefaultScanLimitGbytes = opts.DefaultScanLimitGbytes
-	}
-
-	// Set query execution parameters
-	if opts.DefaultSamplingRatio > 0 {
-		req.DefaultSamplingRatio = opts.DefaultSamplingRatio
-	}
-	if opts.FetchTimeoutSeconds > 0 {
-		req.FetchTimeoutSeconds = opts.FetchTimeoutSeconds
-	}
-	if opts.EnablePreview {
-		req.EnablePreview = true
-	}
-	if opts.EnforceQueryConsumptionLimit {
-		req.EnforceQueryConsumptionLimit = true
-	}
-	if opts.IncludeTypes {
-		includeTypes := true
-		req.IncludeTypes = &includeTypes
-	}
-	if opts.IncludeContributions {
-		includeContributions := true
-		req.IncludeContributions = &includeContributions
-	}
-
-	// Set timeframe parameters
-	if opts.DefaultTimeframeStart != "" {
-		req.DefaultTimeframeStart = opts.DefaultTimeframeStart
-	}
-	if opts.DefaultTimeframeEnd != "" {
-		req.DefaultTimeframeEnd = opts.DefaultTimeframeEnd
-	}
-
-	// Set localization parameters
-	if opts.Locale != "" {
-		req.Locale = opts.Locale
-	}
-	if opts.Timezone != "" {
-		req.Timezone = opts.Timezone
-	}
-
-	// Set filter segments
-	if len(opts.Segments) > 0 {
-		req.FilterSegments = opts.Segments
-	}
-
-	var result DQLQueryResponse
-
-	// The initial execute request uses an independent context (not the caller's)
-	// so that it always completes and returns the requestToken. Without the token
-	// we cannot cancel the query on the backend.
-	execCtx, execCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer execCancel()
-
-	// Note: Client-level retries won't trigger for 202 responses (success status)
-	httpReq := e.client.HTTP().R().
-		SetContext(execCtx).
-		SetHeader("Content-Type", "application/json").
-		SetHeader("dt-client-context", dtClientContextHeader(opts.ClientContext)).
-		SetBody(req).
-		SetResult(&result)
-
-	resp, err := httpReq.Post("/platform/storage/query/v1/query:execute")
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute query: %w", err)
-	}
-
-	// If the caller's context was cancelled while the initial request was in-flight
-	// (e.g. SIGINT), cancel the backend query now that we have the token.
-	if ctx.Err() != nil {
-		if result.RequestToken != "" {
-			e.cancelQuery(result.RequestToken, dtClientContextHeader(opts.ClientContext))
-		} else {
-			fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
-		}
-		return nil, nil
-	}
-
-	// Handle both 200 (completed) and 202 (accepted/running) responses
-	if resp.StatusCode() == 202 || (resp.StatusCode() == 200 && result.State == "RUNNING") {
-		if result.RequestToken == "" {
-			return nil, fmt.Errorf("query is running but no request token provided")
-		}
-		// Poll for results using the caller's context (cancellable by signal).
-		pollCtx, pollCancel := context.WithTimeout(ctx, 5*time.Minute)
-		defer pollCancel()
-
-		pollResult, pollErr := e.pollForResultsWithContext(pollCtx, result.RequestToken, opts)
-		if pollErr != nil {
-			// If the caller's context was cancelled (e.g. SIGINT), send a best-effort
-			// cancel to the backend. The internal poll deadline (pollCtx) is treated
-			// as a normal error so the caller sees the timeout.
-			if ctx.Err() != nil {
-				e.cancelQuery(result.RequestToken, dtClientContextHeader(opts.ClientContext))
-				return nil, nil
+	// Build the token refresher callback for the SDK. The SDK's ExecuteAndPoll will
+	// call this on 401; we refresh the token and update the underlying HTTP client.
+	var onUnauthorized func() (string, error)
+	if e.tokenRefresher != nil {
+		onUnauthorized = func() (string, error) {
+			newToken, err := e.tokenRefresher()
+			if err != nil {
+				return "", err
 			}
-			return nil, pollErr
-		}
-		result = pollResult
-	} else if resp.IsError() {
-		return nil, enhanceQueryError(resp.StatusCode(), resp.Body())
-	}
-
-	return &result, nil
-}
-
-// dqlErrorResponse represents the structured error response from the DQL query API.
-type dqlErrorResponse struct {
-	Error struct {
-		Message string `json:"message"`
-		Details struct {
-			ErrorType    string   `json:"errorType"`
-			ErrorMessage string   `json:"errorMessage"`
-			Arguments    []string `json:"arguments"`
-		} `json:"details"`
-	} `json:"error"`
-}
-
-// enhanceQueryError parses the API error response and produces helpful messages
-// for known error types, falling back to the raw response for unknown errors.
-func enhanceQueryError(statusCode int, body []byte) error {
-	var apiErr dqlErrorResponse
-	if err := json.Unmarshal(body, &apiErr); err == nil {
-		if apiErr.Error.Details.ErrorType == "FILTER_SEGMENT_REQUIRES_VARIABLE" {
-			return formatSegmentVariableError(apiErr)
+			e.client.SetToken(newToken)
+			return newToken, nil
 		}
 	}
-	return fmt.Errorf("query failed with status %d: %s", statusCode, string(body))
+
+	result, err := handler.ExecuteAndPoll(ctx, req, onUnauthorized)
+	if err != nil {
+		// If context was cancelled, print cancellation message
+		if ctx.Err() != nil {
+			fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
+			return nil, nil
+		}
+		// Enhance known error types with CLI-specific hints
+		var qErr *QueryError
+		if ok := isQueryError(err, &qErr); ok && qErr.ErrorType == "FILTER_SEGMENT_REQUIRES_VARIABLE" {
+			return nil, formatSegmentVariableError(qErr)
+		}
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// isQueryError extracts a *QueryError from the error chain.
+func isQueryError(err error, target **QueryError) bool {
+	return errors.As(err, target)
 }
 
 // formatSegmentVariableError produces a helpful error message when a segment
 // requires variable bindings, including ready-to-use -S inline and --segments-file examples.
-func formatSegmentVariableError(apiErr dqlErrorResponse) error {
-	args := apiErr.Error.Details.Arguments
-	// Arguments: ["`<segmentID>`", "`<dataObject>`", "$<variableName>"]
+func formatSegmentVariableError(qErr *QueryError) error {
+	args := qErr.Arguments
 	segmentID := "unknown"
 	variableName := "unknown"
 	if len(args) >= 1 {
@@ -460,56 +303,20 @@ func formatSegmentVariableError(apiErr dqlErrorResponse) error {
 
 // VerifyQuery verifies a DQL query without executing it
 func (e *DQLExecutor) VerifyQuery(query string, opts DQLVerifyOptions) (*DQLVerifyResponse, error) {
-	req := DQLVerifyRequest{
+	req := sdkquery.VerifyRequest{
 		Query:                  query,
 		GenerateCanonicalQuery: opts.GenerateCanonicalQuery,
+		Timezone:               opts.Timezone,
+		Locale:                 opts.Locale,
 	}
 
-	// Set localization parameters
-	if opts.Timezone != "" {
-		req.Timezone = opts.Timezone
-	}
-	if opts.Locale != "" {
-		req.Locale = opts.Locale
-	}
-
-	var result DQLVerifyResponse
+	handler := e.sdkHandler(opts.ClientContext)
 
 	// Create context with 30-second timeout (verify is fast)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	httpReq := e.client.HTTP().R().
-		SetContext(ctx).
-		SetHeader("Content-Type", "application/json").
-		SetHeader("dt-client-context", dtClientContextHeader(opts.ClientContext)).
-		SetBody(req).
-		SetResult(&result)
-
-	resp, err := httpReq.Post("/platform/storage/query/v1/query:verify")
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to verify query: %w", err)
-	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("query verification failed with status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return &result, nil
-}
-
-// GetNotifications returns notifications from the response (checking both top-level and result metadata)
-func (r *DQLQueryResponse) GetNotifications() []QueryNotification {
-	// Check top-level metadata first
-	if r.Metadata != nil && r.Metadata.Grail != nil && len(r.Metadata.Grail.Notifications) > 0 {
-		return r.Metadata.Grail.Notifications
-	}
-	// Check result-level metadata
-	if r.Result != nil && r.Result.Metadata != nil && r.Result.Metadata.Grail != nil {
-		return r.Result.Metadata.Grail.Notifications
-	}
-	return nil
+	return handler.Verify(ctx, req)
 }
 
 // getHintForNotification returns a CLI hint for a given notification type or message
@@ -523,12 +330,10 @@ func getHintForNotification(notificationType, message string) string {
 		"QUERY_CONSUMPTION_LIMIT": "Use --enforce-query-consumption-limit=false to disable consumption limits",
 	}
 
-	// Check by notification type first
 	if hint, ok := hints[notificationType]; ok {
 		return hint
 	}
 
-	// Fallback: pattern match on message content for common cases
 	if len(message) > 0 {
 		msgLower := strings.ToLower(message)
 		if strings.Contains(msgLower, "result has been limited") || strings.Contains(msgLower, "limited to") {
@@ -549,16 +354,13 @@ func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 		if severity == "" {
 			severity = "INFO"
 		}
-		// Print warnings and errors prominently to stderr
 		if severity == "WARNING" || severity == "WARN" {
 			output.PrintWarning("%s", n.Message)
-			// Print hint if available
 			if hint := getHintForNotification(n.NotificationType, n.Message); hint != "" {
 				output.PrintHint("%s", hint)
 			}
 		} else if severity == "ERROR" {
 			output.PrintHumanError("%s", n.Message)
-			// Print hint for errors too
 			if hint := getHintForNotification(n.NotificationType, n.Message); hint != "" {
 				output.PrintHint("%s", hint)
 			}
@@ -574,17 +376,13 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 	}
 
 	// Extract records from result
-	records := result.Records
-	if result.Result != nil && len(result.Result.Records) > 0 {
-		records = result.Result.Records
-	}
+	records := result.GetRecords()
 
 	// Apply snapshot decoding if requested
 	if opts.Decode != DecodeNone && len(records) > 0 {
 		simplify := opts.Decode == DecodeSimplified
 		records = output.DecodeSnapshotRecords(records, simplify)
 
-		// For tabular formats, replace parsed_snapshot with a summary string
 		switch opts.OutputFormat {
 		case "", "table", "wide", "csv":
 			records = output.SummarizeSnapshotForTable(records)
@@ -597,7 +395,6 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		meta = extractQueryMetadata(result)
 	}
 
-	// Create printer with options
 	printer := output.NewPrinterWithOpts(output.PrinterOptions{
 		Format:     opts.OutputFormat,
 		Width:      opts.Width,
@@ -611,18 +408,14 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		if opts.OutputFormat == "table" {
 			err = e.printTable(records)
 		} else {
-			// Wide format: for DQL map results, printMaps() ignores the wide flag,
-			// so output is identical to table format.
 			if len(records) == 0 {
-				return nil // empty result set — nothing to print
-			} else {
-				err = printer.PrintList(records)
+				return nil
 			}
+			err = printer.PrintList(records)
 		}
 		if err != nil {
 			return err
 		}
-		// Print metadata footer after the table (to stderr so it doesn't break structured output)
 		if meta != nil {
 			fmt.Fprint(os.Stderr, output.FormatMetadataFooter(meta, opts.MetadataFields))
 		}
@@ -632,14 +425,12 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		if len(records) == 0 {
 			return nil
 		}
-		// Print metadata as comment header before CSV data (to stderr)
 		if meta != nil {
 			fmt.Fprint(os.Stderr, output.FormatMetadataCSVComments(meta, opts.MetadataFields))
 		}
 		return printer.PrintList(records)
 
 	case "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
-		// Chart formats do not support metadata display
 		if meta != nil {
 			output.PrintWarning("--metadata is not supported with chart output formats")
 		}
@@ -649,9 +440,6 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		return printer.Print(result)
 
 	default:
-		// JSON, YAML, and other formats: include metadata as a sibling key.
-		// MetadataToMap preserves zero values for explicitly selected fields
-		// (unlike omitempty on the struct which would suppress them).
 		out := make(map[string]interface{})
 		if len(records) > 0 {
 			out["records"] = records
@@ -670,19 +458,11 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 
 // extractQueryMetadata converts DQL response metadata to the output-layer QueryMetadata type.
 func extractQueryMetadata(result *DQLQueryResponse) *output.QueryMetadata {
-	// Find metadata from either result.Result.Metadata or result.Metadata
-	var dqlMeta *DQLMetadata
-	if result.Result != nil && result.Result.Metadata != nil {
-		dqlMeta = result.Result.Metadata
-	} else if result.Metadata != nil {
-		dqlMeta = result.Metadata
-	}
-
-	if dqlMeta == nil || dqlMeta.Grail == nil {
+	g := result.GetMetadata()
+	if g == nil {
 		return nil
 	}
 
-	g := dqlMeta.Grail
 	meta := &output.QueryMetadata{
 		ExecutionTimeMilliseconds: g.ExecutionTimeMilliseconds,
 		ScannedRecords:            g.ScannedRecords,
@@ -720,120 +500,18 @@ func extractQueryMetadata(result *DQLQueryResponse) *output.QueryMetadata {
 	return meta
 }
 
-// pollForResults polls the query:poll endpoint until the query completes
-//
-//nolint:unused // Reserved for future polling features
-func (e *DQLExecutor) pollForResults(requestToken string) (DQLQueryResponse, error) {
-	return e.pollForResultsWithOptions(requestToken, DQLExecuteOptions{})
-}
-
-// pollForResultsWithOptions polls the query:poll endpoint until the query completes with options
-//
-//nolint:unused // Reserved for future polling features
-func (e *DQLExecutor) pollForResultsWithOptions(requestToken string, opts DQLExecuteOptions) (DQLQueryResponse, error) {
-	return e.pollForResultsWithContext(context.Background(), requestToken, opts)
-}
-
-// pollForResultsWithContext polls the query:poll endpoint until the query completes.
-// It returns immediately if ctx is cancelled; the caller is responsible for calling
-// CancelQuery if backend cancellation is desired.
-func (e *DQLExecutor) pollForResultsWithContext(ctx context.Context, requestToken string, opts DQLExecuteOptions) (DQLQueryResponse, error) {
-	var result DQLQueryResponse
-	// tokenJustRefreshed prevents an infinite refresh loop: if we get a 401 immediately
-	// after a successful token refresh the credentials are fundamentally broken, so we abort.
-	tokenJustRefreshed := false
-
-	for {
-		// Check for cancellation before each poll attempt
-		select {
-		case <-ctx.Done():
-			return result, ctx.Err()
-		default:
-		}
-
-		result = DQLQueryResponse{}
-		httpReq := e.client.HTTP().R().
-			SetContext(ctx).
-			SetHeader("dt-client-context", dtClientContextHeader(opts.ClientContext)).
-			SetQueryParam("request-token", requestToken).
-			SetQueryParam("request-timeout-milliseconds", fmt.Sprintf("%d", pollRequestTimeoutMs)).
-			SetResult(&result)
-
-		resp, err := httpReq.Get("/platform/storage/query/v1/query:poll")
-
-		if err != nil {
-			// If the error is due to context cancellation, return that directly
-			if ctx.Err() != nil {
-				return result, ctx.Err()
-			}
-			return result, fmt.Errorf("failed to poll query: %w", err)
-		}
-
-		// On 401 (e.g. "jwt expired") try to refresh the OAuth token once per
-		// consecutive failure. A successful poll in between resets the guard so that a
-		// second expiry later in the same long-running query can also be recovered.
-		if resp.StatusCode() == 401 && e.tokenRefresher != nil && !tokenJustRefreshed {
-			newToken, refreshErr := e.tokenRefresher()
-			if refreshErr != nil {
-				return result, fmt.Errorf("poll request returned 401 and token refresh failed: %w", refreshErr)
-			}
-			e.client.SetToken(newToken)
-			tokenJustRefreshed = true
-			continue
-		}
-
-		if resp.IsError() {
-			return result, fmt.Errorf("poll failed with status %d: %s", resp.StatusCode(), resp.String())
-		}
-
-		tokenJustRefreshed = false // reset after any successful response
-
-		if result.State == "SUCCEEDED" || result.State == "FAILED" {
-			break
-		}
-
-		// If still running, the long poll should have waited, but just in case
-		if result.State != "RUNNING" {
-			break
-		}
-	}
-
-	if result.State == "FAILED" {
-		return result, fmt.Errorf("query execution failed")
-	}
-
-	return result, nil
-}
-
 // CancelQuery sends a best-effort cancellation request for a running query.
-// It uses a fresh context so the HTTP call can complete even if the parent context is cancelled.
 // Errors are written to stderr but not returned — cancellation is best-effort.
 func (e *DQLExecutor) CancelQuery(requestToken string) {
-	e.cancelQuery(requestToken, dtClientContextHeader(""))
-}
-
-// cancelQuery is the internal implementation of CancelQuery that accepts a pre-built
-// dt-client-context header value so the full caller context can be threaded through
-// from ExecuteQueryWithContext.
-func (e *DQLExecutor) cancelQuery(requestToken, clientContextHeader string) {
 	if requestToken == "" {
 		return
 	}
+	handler := e.sdkHandler("")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	resp, err := e.client.HTTP().R().
-		SetContext(ctx).
-		SetHeader("dt-client-context", clientContextHeader).
-		SetQueryParam("request-token", requestToken).
-		Post("/platform/storage/query/v1/query:cancel")
-
-	if err != nil {
+	if err := handler.Cancel(ctx, requestToken); err != nil {
 		fmt.Fprintf(os.Stderr, "\nFailed to cancel query: %v\n", err)
-		return
-	}
-	if resp.IsError() {
-		fmt.Fprintf(os.Stderr, "\nFailed to cancel query (status %d)\n", resp.StatusCode())
 		return
 	}
 	fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
@@ -852,10 +530,9 @@ func (e *DQLExecutor) ExecuteFromFile(filename string, outputFormat string) erro
 // printTable prints query results as a table
 func (e *DQLExecutor) printTable(records []map[string]interface{}) error {
 	if len(records) == 0 {
-		return nil // empty result set — nothing to print
+		return nil
 	}
 
-	// Convert to JSON for consistent table printing
 	data, err := json.Marshal(records)
 	if err != nil {
 		return err

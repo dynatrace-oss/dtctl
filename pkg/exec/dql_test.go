@@ -1151,17 +1151,17 @@ func TestVerifyQuery_ServerError(t *testing.T) {
 		{
 			name:           "bad request",
 			statusCode:     http.StatusBadRequest,
-			expectedErrMsg: "query verification failed with status 400",
+			expectedErrMsg: "query verification failed",
 		},
 		{
 			name:           "internal server error",
 			statusCode:     http.StatusInternalServerError,
-			expectedErrMsg: "query verification failed with status 500",
+			expectedErrMsg: "query verification failed",
 		},
 		{
 			name:           "service unavailable",
 			statusCode:     http.StatusServiceUnavailable,
-			expectedErrMsg: "query verification failed with status 503",
+			expectedErrMsg: "query verification failed",
 		},
 	}
 
@@ -1697,85 +1697,6 @@ func TestDQLExecutor_PrintNotifications_Empty(t *testing.T) {
 	executor := NewDQLExecutor(c)
 	executor.PrintNotifications(nil)                   // nil — should be no-op
 	executor.PrintNotifications([]QueryNotification{}) // empty — should be no-op
-}
-
-func TestEnhanceQueryError(t *testing.T) {
-	tests := []struct {
-		name         string
-		statusCode   int
-		body         string
-		wantContains []string
-	}{
-		{
-			name:       "segment variable error with all arguments",
-			statusCode: 400,
-			body: `{
-				"error": {
-					"message": "filter segment requires variable",
-					"details": {
-						"errorType": "FILTER_SEGMENT_REQUIRES_VARIABLE",
-						"errorMessage": "segment requires variable binding",
-						"arguments": ["` + "`abc123`" + `", "` + "`logs`" + `", "$host"]
-					}
-				}
-			}`,
-			wantContains: []string{
-				"segment abc123 requires variable",
-				`-S "abc123?host=`,
-				"--segments-file",
-				"name: host",
-			},
-		},
-		{
-			name:       "segment variable error with minimal arguments",
-			statusCode: 400,
-			body: `{
-				"error": {
-					"message": "filter segment requires variable",
-					"details": {
-						"errorType": "FILTER_SEGMENT_REQUIRES_VARIABLE",
-						"errorMessage": "segment requires variable binding",
-						"arguments": ["` + "`seg-id`" + `"]
-					}
-				}
-			}`,
-			wantContains: []string{
-				"segment seg-id requires variable",
-				`-S "seg-id?`,
-			},
-		},
-		{
-			name:       "plain text error falls through",
-			statusCode: 400,
-			body:       "Bad Request",
-			wantContains: []string{
-				"query failed with status 400",
-				"Bad Request",
-			},
-		},
-		{
-			name:       "json error without known errorType falls through",
-			statusCode: 500,
-			body:       `{"error": {"message": "internal error"}}`,
-			wantContains: []string{
-				"query failed with status 500",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := enhanceQueryError(tt.statusCode, []byte(tt.body))
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			for _, want := range tt.wantContains {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("error %q should contain %q", err.Error(), want)
-				}
-			}
-		})
-	}
 }
 
 // TestDQLExecutor_PollTokenRefresh verifies that a 401 during polling triggers a token refresh and retries.
