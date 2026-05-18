@@ -1,24 +1,35 @@
 {
   "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
   "title": "Deploy to Production",
+  "isDeployed": true,
+  "description": "Deploys latest build to prod environment",
+  "actor": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
   "owner": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
   "ownerType": "USER",
-  "description": "Deploys latest build to prod environment",
   "isPrivate": false,
-  "isDeployed": true,
-  "tasks": {
-    "deploy": {
-      "action": "dynatrace.automations:run-javascript",
-      "input": {
-        "script": "// deploy logic"
-      }
-    }
-  },
+  "schemaVersion": 4,
   "trigger": {
     "schedule": {
       "trigger": {
         "cron": "0 9 * * 1-5",
         "type": "cron"
+      }
+    }
+  },
+  "result": "{{ result('deploy') }}",
+  "type": "STANDARD",
+  "input": {
+    "environment": {
+      "type": "string"
+    }
+  },
+  "hourlyExecutionLimit": 1000,
+  "guide": "# Deploy to Production\n\nRun this workflow after validating the release candidate.",
+  "tasks": {
+    "deploy": {
+      "action": "dynatrace.automations:run-javascript",
+      "input": {
+        "script": "// deploy logic"
       }
     }
   }

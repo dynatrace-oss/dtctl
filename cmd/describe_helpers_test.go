@@ -61,6 +61,7 @@ func TestStringFromRecord(t *testing.T) {
 		"name":   "server-01",
 		"count":  42.0,
 		"active": true,
+		"empty":  nil,
 	}
 	cases := []struct {
 		key  string
@@ -68,6 +69,7 @@ func TestStringFromRecord(t *testing.T) {
 	}{
 		{"name", "server-01"},
 		{"missing", ""},
+		{"empty", ""},
 		{"count", "42"},    // non-string → fmt.Sprintf("%v", ...)
 		{"active", "true"}, // non-string → fmt.Sprintf("%v", ...)
 	}
@@ -76,5 +78,11 @@ func TestStringFromRecord(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("stringFromRecord(record, %q) = %q, want %q", tc.key, got, tc.want)
 		}
+	}
+}
+
+func TestStringFromRecordNilRecord(t *testing.T) {
+	if got := stringFromRecord(nil, "name"); got != "" {
+		t.Fatalf("stringFromRecord(nil, %q) = %q, want empty", "name", got)
 	}
 }

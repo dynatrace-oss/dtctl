@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -144,7 +145,7 @@ func TestApply_WorkflowCreate_NoID(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"id":    "wf-new-123",
+				"id":    "11111111-1111-4111-8111-111111111111",
 				"title": "My Workflow",
 			})
 		},
@@ -172,20 +173,22 @@ func TestApply_WorkflowCreate_NoID(t *testing.T) {
 // --- Apply: workflow update (has id, exists) ---
 
 func TestApply_WorkflowUpdate_Exists(t *testing.T) {
+	const workflowID = "22222222-2222-4222-8222-222222222222"
+
 	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
-		"/platform/automation/v1/workflows/wf-existing": func(w http.ResponseWriter, r *http.Request) {
+		"/platform/automation/v1/workflows/22222222-2222-4222-8222-222222222222": func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodGet:
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
-					"id":    "wf-existing",
+					"id":    workflowID,
 					"title": "Old Title",
 					"owner": "user-xyz",
 				})
 			case http.MethodPut:
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
-					"id":    "wf-existing",
+					"id":    workflowID,
 					"title": "New Title",
 				})
 			}
@@ -197,7 +200,7 @@ func TestApply_WorkflowUpdate_Exists(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	wfJSON := `{"id":"wf-existing","title":"New Title","tasks":{},"trigger":{}}`
+	wfJSON := `{"id":"22222222-2222-4222-8222-222222222222","title":"New Title","tasks":{},"trigger":{}}`
 	results, err := a.Apply([]byte(wfJSON), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
@@ -211,17 +214,128 @@ func TestApply_WorkflowUpdate_Exists(t *testing.T) {
 	}
 }
 
+func TestApply_WorkflowUpdate_BackwardsCompatibility_OldGetYAMLForwardsOnlyAvailableFields(t *testing.T) {
+	const workflowID = "33333333-3333-4333-8333-333333333333"
+
+	var putBody map[string]interface{}
+
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/automation/v1/workflows/33333333-3333-4333-8333-333333333333": func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    workflowID,
+					"title": "Old Title",
+					"owner": "user-xyz",
+				})
+			case http.MethodPut:
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatalf("ReadAll(r.Body): %v", err)
+				}
+				if err := json.Unmarshal(body, &putBody); err != nil {
+					t.Fatalf("json.Unmarshal(body): %v\nbody was:\n%s", err, body)
+				}
+
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"id":    workflowID,
+					"title": "Deploy to Production",
+				})
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	// workflow without newly added attributes
+	oldGetYAML := `id: 33333333-3333-4333-8333-333333333333
+title: Deploy to Production
+owner: user-xyz
+ownerType: USER
+description: Deploys latest build to prod environment
+isPrivate: false
+isDeployed: true
+tasks:
+  deploy:
+    action: dynatrace.automations:run-javascript
+    input:
+      script: // deploy logic
+trigger:
+  schedule:
+    trigger:
+      cron: 0 9 * * 1-5
+      type: cron
+`
+
+	results, err := a.Apply([]byte(oldGetYAML), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	base := results[0].(*WorkflowApplyResult).ApplyResultBase
+	if base.Action != ActionUpdated {
+		t.Errorf("expected action 'updated', got %q", base.Action)
+	}
+
+	expectedPutBody := map[string]interface{}{
+		"id":          workflowID,
+		"title":       "Deploy to Production",
+		"owner":       "user-xyz",
+		"ownerType":   "USER",
+		"description": "Deploys latest build to prod environment",
+		"isPrivate":   false,
+		"isDeployed":  true,
+		"tasks": map[string]interface{}{
+			"deploy": map[string]interface{}{
+				"action": "dynatrace.automations:run-javascript",
+				"input": map[string]interface{}{
+					"script": "// deploy logic",
+				},
+			},
+		},
+		"trigger": map[string]interface{}{
+			"schedule": map[string]interface{}{
+				"trigger": map[string]interface{}{
+					"cron": "0 9 * * 1-5",
+					"type": "cron",
+				},
+			},
+		},
+	}
+
+	if !reflect.DeepEqual(putBody, expectedPutBody) {
+		t.Errorf("PUT body mismatch\n got: %#v\nwant: %#v", putBody, expectedPutBody)
+	}
+
+	for _, field := range []string{"schemaVersion", "type", "result", "input", "hourlyExecutionLimit", "guide"} {
+		if _, exists := putBody[field]; exists {
+			t.Errorf("PUT body should not synthesize %q from old get payload", field)
+		}
+	}
+}
+
 // --- Apply: workflow with id but not found → create ---
 
 func TestApply_WorkflowCreate_IDNotFound(t *testing.T) {
+	const workflowID = "44444444-4444-4444-8444-444444444444"
+
 	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
-		"/platform/automation/v1/workflows/wf-missing": func(w http.ResponseWriter, r *http.Request) {
+		"/platform/automation/v1/workflows/44444444-4444-4444-8444-444444444444": func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 		},
 		"/platform/automation/v1/workflows": func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"id":    "wf-missing",
+				"id":    workflowID,
 				"title": "New Workflow",
 			})
 		},
@@ -232,7 +346,7 @@ func TestApply_WorkflowCreate_IDNotFound(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	wfJSON := `{"id":"wf-missing","title":"New Workflow","tasks":{},"trigger":{}}`
+	wfJSON := `{"id":"44444444-4444-4444-8444-444444444444","title":"New Workflow","tasks":{},"trigger":{}}`
 	results, err := a.Apply([]byte(wfJSON), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)

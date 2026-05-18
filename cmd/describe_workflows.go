@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -41,70 +45,11 @@ Examples:
 
 		// For table output, show detailed human-readable information
 		if outputFormat == "table" {
-			const w = 13
-			output.DescribeKV("ID:", w, "%s", wf.ID)
-			output.DescribeKV("Title:", w, "%s", wf.Title)
-			if wf.Description != "" {
-				output.DescribeKV("Description:", w, "%s", wf.Description)
-			}
-			output.DescribeKV("Owner:", w, "%s (%s)", wf.Owner, wf.OwnerType)
-			output.DescribeKV("Private:", w, "%v", wf.Private)
-			output.DescribeKV("Deployed:", w, "%v", wf.IsDeployed)
-
-			// Print trigger info
-			if wf.Trigger != nil {
-				fmt.Println()
-				output.DescribeSection("Trigger:")
-				printTriggerInfo(wf.Trigger)
-			}
-
-			// Print tasks
-			if len(wf.Tasks) > 0 {
-				fmt.Println()
-				output.DescribeSection("Tasks:")
-				for name, task := range wf.Tasks {
-					taskMap, ok := task.(map[string]interface{})
-					if ok {
-						action := ""
-						if a, exists := taskMap["action"]; exists {
-							action = fmt.Sprintf("%v", a)
-						}
-						fmt.Printf("  - %s", name)
-						if action != "" {
-							fmt.Printf(" (%s)", action)
-						}
-						fmt.Println()
-					} else {
-						fmt.Printf("  - %s\n", name)
-					}
-				}
-			}
-
-			// Get recent executions
 			execList, err := execHandler.List(workflowID)
-			if err == nil && execList.Count > 0 {
-				fmt.Println()
-				output.DescribeSection("Recent Executions:")
-
-				// Show up to 5 recent executions
-				limit := 5
-				if execList.Count < limit {
-					limit = execList.Count
-				}
-
-				for i := 0; i < limit; i++ {
-					exec := execList.Results[i]
-					fmt.Printf("  - %s  %-10s  %s  %s\n",
-						exec.ID[:8]+"...",
-						exec.State,
-						exec.StartedAt.Format("2006-01-02 15:04"),
-						formatDuration(exec.Runtime))
-				}
-
-				if execList.Count > limit {
-					fmt.Printf("  ... and %d more\n", execList.Count-limit)
-				}
+			if err != nil {
+				execList = nil
 			}
+			printWorkflowDescribeTable(os.Stdout, wf, execList)
 
 			return nil
 		}
@@ -113,6 +58,132 @@ Examples:
 		enrichAgent(printer, "describe", "workflow")
 		return printer.Print(wf)
 	},
+}
+
+func printWorkflowDescribeTable(w io.Writer, wf *workflow.Workflow, execList *workflow.ExecutionList) {
+	const kw = 13
+	output.FprintDescribeKV(w, "ID:", kw, "%s", wf.ID)
+	output.FprintDescribeKV(w, "Title:", kw, "%s", wf.Title)
+	if wf.Description != "" {
+		output.FprintDescribeKV(w, "Description:", kw, "%s", wf.Description)
+	}
+	output.FprintDescribeKV(w, "Owner:", kw, "%s (%s)", wf.Owner, wf.OwnerType)
+	output.FprintDescribeKV(w, "Private:", kw, "%v", wf.Private)
+	output.FprintDescribeKV(w, "Deployed:", kw, "%v", wf.IsDeployed)
+	output.FprintDescribeKV(w, "Type:", kw, "%s", wf.Type)
+
+	if summary := triggerSummary(wf.Trigger); summary != "" {
+		output.FprintDescribeKV(w, "Trigger:", kw, "%s", summary)
+	}
+
+	printWorkflowDefinitionFields(w, kw, wf)
+
+	if len(wf.Tasks) > 0 {
+		fmt.Fprintln(w)
+		output.FprintDescribeSection(w, "Tasks:")
+		for name, task := range wf.Tasks {
+			taskMap, ok := task.(map[string]interface{})
+			if ok {
+				action := ""
+				if a, exists := taskMap["action"]; exists {
+					action = fmt.Sprintf("%v", a)
+				}
+				fmt.Fprintf(w, "  - %s", name)
+				if action != "" {
+					fmt.Fprintf(w, " (%s)", action)
+				}
+				fmt.Fprintln(w)
+			} else {
+				fmt.Fprintf(w, "  - %s\n", name)
+			}
+		}
+	}
+
+	if execList == nil || execList.Count == 0 {
+		return
+	}
+
+	fmt.Fprintln(w)
+	output.FprintDescribeSection(w, "Recent Executions:")
+
+	limit := 5
+	if execList.Count < limit {
+		limit = execList.Count
+	}
+
+	for i := 0; i < limit; i++ {
+		exec := execList.Results[i]
+		fmt.Fprintf(w, "  - %s  %-10s  %s  %s\n",
+			exec.ID[:8]+"...",
+			exec.State,
+			exec.StartedAt.Format("2006-01-02 15:04"),
+			formatDuration(exec.Runtime))
+	}
+
+	if execList.Count > limit {
+		fmt.Fprintf(w, "  ... and %d more\n", execList.Count-limit)
+	}
+}
+
+func printWorkflowDefinitionFields(w io.Writer, width int, wf *workflow.Workflow) {
+	if wf.Result != nil && *wf.Result != "" {
+		fmt.Fprintln(w)
+		output.FprintDescribeKV(w, "Result:", width, "%s", *wf.Result)
+	}
+
+	if len(wf.Input) == 0 {
+		return
+	}
+
+	inputJSON, err := json.MarshalIndent(wf.Input, "  ", "  ")
+	if err != nil {
+		return
+	}
+
+	fmt.Fprintln(w)
+	output.FprintDescribeSection(w, "Input:")
+	fmt.Fprintf(w, "  %s\n", string(inputJSON))
+}
+
+func triggerSummary(trigger map[string]interface{}) string {
+	if _, ok := trigger["schedule"]; ok {
+		return formatTriggerSummary("schedule", nestedTriggerString(trigger, "schedule", "trigger", "type"))
+	}
+	if _, ok := trigger["eventTrigger"]; ok {
+		return formatTriggerSummary("eventTrigger", nestedTriggerString(trigger, "eventTrigger", "triggerConfiguration", "type"))
+	}
+	return ""
+}
+
+func formatTriggerSummary(familyKey, subtype string) string {
+	family := strings.TrimSuffix(familyKey, "Trigger")
+	if family == "" {
+		return ""
+	}
+	family = strings.ToUpper(family[:1]) + family[1:]
+	if subtype == "" {
+		return family
+	}
+	return fmt.Sprintf("%s (%s)", family, subtype)
+}
+
+func nestedTriggerString(root map[string]interface{}, path ...string) string {
+	current := any(root)
+	for _, part := range path {
+		currentMap, ok := current.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		current, ok = currentMap[part]
+		if !ok || current == nil {
+			return ""
+		}
+	}
+	value, ok := current.(string)
+	if !ok {
+		return ""
+	}
+	return value
 }
 
 // describeWorkflowExecutionCmd shows detailed info about a workflow execution

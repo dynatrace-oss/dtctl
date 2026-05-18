@@ -13,16 +13,22 @@ type WorkflowFilters = sdkworkflow.WorkflowFilters
 
 // Workflow represents a workflow resource (CLI version with table tags).
 type Workflow struct {
-	ID          string                 `json:"id" table:"ID"`
-	Title       string                 `json:"title" table:"TITLE"`
-	Owner       string                 `json:"owner,omitempty" table:"-"`
-	OwnerType   string                 `json:"ownerType,omitempty" table:"-"`
-	Description string                 `json:"description,omitempty" table:"DESCRIPTION,wide"`
-	Private     bool                   `json:"isPrivate" table:"-"`
-	IsDeployed  bool                   `json:"isDeployed,omitempty" table:"DEPLOYED"`
-	Tasks       map[string]interface{} `json:"tasks,omitempty" table:"-"`
-	Trigger     map[string]interface{} `json:"trigger,omitempty" table:"-"`
-	Actor       string                 `json:"actor,omitempty" table:"-"`
+	ID                   string                 `json:"id" yaml:"id" table:"ID"`
+	Title                string                 `json:"title" yaml:"title" table:"TITLE"`
+	IsDeployed           bool                   `json:"isDeployed" yaml:"isDeployed" table:"DEPLOYED"`
+	Description          string                 `json:"description,omitempty" yaml:"description,omitempty" table:"DESCRIPTION,wide"`
+	Actor                string                 `json:"actor,omitempty" yaml:"actor,omitempty" table:"-"`
+	Owner                string                 `json:"owner,omitempty" yaml:"owner,omitempty" table:"-"`
+	OwnerType            string                 `json:"ownerType,omitempty" yaml:"ownerType,omitempty" table:"-"`
+	Private              bool                   `json:"isPrivate" yaml:"isPrivate" table:"-"`
+	SchemaVersion        int                    `json:"schemaVersion,omitempty" yaml:"schemaVersion,omitempty" table:"-"`
+	Trigger              map[string]interface{} `json:"trigger,omitempty" yaml:"trigger,omitempty" table:"-"`
+	Result               *string                `json:"result,omitempty" yaml:"result,omitempty" table:"-"`
+	Type                 string                 `json:"type,omitempty" yaml:"type,omitempty" table:"TYPE"`
+	Input                map[string]interface{} `json:"input,omitempty" yaml:"input,omitempty" table:"-"`
+	HourlyExecutionLimit *int                   `json:"hourlyExecutionLimit,omitempty" yaml:"hourlyExecutionLimit,omitempty" table:"-"`
+	Guide                *string                `json:"guide,omitempty" yaml:"guide,omitempty" table:"-"`
+	Tasks                map[string]interface{} `json:"tasks" yaml:"tasks" table:"-"`
 }
 
 // WorkflowList represents a list of workflows.
@@ -47,16 +53,22 @@ type HistoryList struct {
 // fromSDKWorkflow converts an SDK Workflow to a CLI Workflow.
 func fromSDKWorkflow(s *sdkworkflow.Workflow) Workflow {
 	return Workflow{
-		ID:          s.ID,
-		Title:       s.Title,
-		Owner:       s.Owner,
-		OwnerType:   s.OwnerType,
-		Description: s.Description,
-		Private:     s.Private,
-		IsDeployed:  s.IsDeployed,
-		Tasks:       s.Tasks,
-		Trigger:     s.Trigger,
-		Actor:       s.Actor,
+		ID:                   s.ID,
+		Title:                s.Title,
+		IsDeployed:           s.IsDeployed,
+		Description:          s.Description,
+		Actor:                s.Actor,
+		Owner:                s.Owner,
+		OwnerType:            s.OwnerType,
+		Private:              s.Private,
+		SchemaVersion:        s.SchemaVersion,
+		Trigger:              s.Trigger,
+		Result:               s.Result,
+		Type:                 s.Type,
+		Input:                s.Input,
+		HourlyExecutionLimit: s.HourlyExecutionLimit,
+		Guide:                s.Guide,
+		Tasks:                s.Tasks,
 	}
 }
 

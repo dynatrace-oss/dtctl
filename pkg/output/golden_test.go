@@ -77,42 +77,53 @@ var fixedTime = time.Date(2025, 3, 15, 10, 30, 0, 0, time.UTC)
 func workflowFixtures() []workflow.Workflow {
 	return []workflow.Workflow{
 		{
-			ID:          "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
-			Title:       "Deploy to Production",
-			Owner:       "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
-			OwnerType:   "USER",
-			Description: "Deploys latest build to prod environment",
-			Private:     false,
-			IsDeployed:  true,
+			ID:            "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+			Title:         "Deploy to Production",
+			IsDeployed:    true,
+			Description:   "Deploys latest build to prod environment",
+			Actor:         "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+			Owner:         "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+			OwnerType:     "USER",
+			Private:       false,
+			SchemaVersion: 4,
+			Trigger: map[string]interface{}{
+				"schedule": map[string]interface{}{
+					"trigger": map[string]interface{}{"type": "cron", "cron": "0 9 * * 1-5"},
+				},
+			},
+			Result:               stringPtr("{{ result('deploy') }}"),
+			Type:                 "STANDARD",
+			Input:                map[string]interface{}{"environment": map[string]interface{}{"type": "string"}},
+			HourlyExecutionLimit: intPtr(1000),
+			Guide:                stringPtr("# Deploy to Production\n\nRun this workflow after validating the release candidate."),
 			Tasks: map[string]interface{}{
 				"deploy": map[string]interface{}{
 					"action": "dynatrace.automations:run-javascript",
 					"input":  map[string]interface{}{"script": "// deploy logic"},
 				},
 			},
-			Trigger: map[string]interface{}{
-				"schedule": map[string]interface{}{
-					"trigger": map[string]interface{}{"type": "cron", "cron": "0 9 * * 1-5"},
-				},
-			},
 		},
 		{
 			ID:          "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
 			Title:       "Daily Cleanup",
+			IsDeployed:  true,
+			Description: "Removes stale resources older than 30 days",
+			Type:        "STANDARD",
 			Owner:       "00000000-0000-0000-0000-000000000000",
 			OwnerType:   "USER",
-			Description: "Removes stale resources older than 30 days",
 			Private:     false,
-			IsDeployed:  true,
+			Tasks:       map[string]interface{}{},
 		},
 		{
 			ID:          "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
 			Title:       "Incident Response",
+			IsDeployed:  false,
+			Description: "",
+			Type:        "STANDARD",
 			Owner:       "8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
 			OwnerType:   "USER",
-			Description: "",
 			Private:     true,
-			IsDeployed:  false,
+			Tasks:       map[string]interface{}{},
 		},
 	}
 }
@@ -150,6 +161,8 @@ func sloFixtures() []slo.SLO {
 
 func float64Ptr(v float64) *float64 { return &v }
 func int64Ptr(v int64) *int64       { return &v }
+func intPtr(v int) *int             { return &v }
+func stringPtr(v string) *string    { return &v }
 
 func bucketFixtures() []bucket.Bucket {
 	return []bucket.Bucket{

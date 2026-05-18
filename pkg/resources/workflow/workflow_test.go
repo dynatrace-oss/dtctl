@@ -9,6 +9,10 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
 
+func stringPtr(v string) *string { return &v }
+
+func intPtr(v int) *int { return &v }
+
 func TestHandler_List(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -116,10 +120,21 @@ func TestHandler_Get(t *testing.T) {
 			id:         "wf-123",
 			statusCode: http.StatusOK,
 			response: Workflow{
-				ID:          "wf-123",
-				Title:       "Test Workflow",
-				Owner:       "user-123",
-				Description: "A test workflow",
+				ID:                   "wf-123",
+				Title:                "Test Workflow",
+				IsDeployed:           true,
+				Description:          "A test workflow",
+				Actor:                "user-123",
+				Owner:                "user-123",
+				OwnerType:            "USER",
+				Private:              false,
+				SchemaVersion:        4,
+				Trigger:              map[string]interface{}{"manual": true},
+				Result:               stringPtr("{{ result('task1') }}"),
+				Type:                 "STANDARD",
+				Input:                map[string]interface{}{"env": "prod"},
+				HourlyExecutionLimit: intPtr(1000),
+				Guide:                stringPtr("# Workflow Guide\n\nUse this workflow for testing."),
 			},
 			wantErr: false,
 		},
@@ -170,8 +185,97 @@ func TestHandler_Get(t *testing.T) {
 				if wf.Title != tt.response.Title {
 					t.Errorf("Get() Title = %v, want %v", wf.Title, tt.response.Title)
 				}
+				if wf.IsDeployed != tt.response.IsDeployed {
+					t.Errorf("Get() IsDeployed = %v, want %v", wf.IsDeployed, tt.response.IsDeployed)
+				}
+				if wf.Description != tt.response.Description {
+					t.Errorf("Get() Description = %v, want %v", wf.Description, tt.response.Description)
+				}
+				if wf.Actor != tt.response.Actor {
+					t.Errorf("Get() Actor = %v, want %v", wf.Actor, tt.response.Actor)
+				}
+				if wf.OwnerType != tt.response.OwnerType {
+					t.Errorf("Get() OwnerType = %v, want %v", wf.OwnerType, tt.response.OwnerType)
+				}
+				if wf.Private != tt.response.Private {
+					t.Errorf("Get() Private = %v, want %v", wf.Private, tt.response.Private)
+				}
+				if wf.SchemaVersion != tt.response.SchemaVersion {
+					t.Errorf("Get() SchemaVersion = %v, want %v", wf.SchemaVersion, tt.response.SchemaVersion)
+				}
+				if got := wf.Trigger["manual"]; got != tt.response.Trigger["manual"] {
+					t.Errorf("Get() Trigger[manual] = %v, want %v", got, tt.response.Trigger["manual"])
+				}
+				if wf.Type != tt.response.Type {
+					t.Errorf("Get() Type = %v, want %v", wf.Type, tt.response.Type)
+				}
+				if got := wf.Input["env"]; got != tt.response.Input["env"] {
+					t.Errorf("Get() Input[env] = %v, want %v", got, tt.response.Input["env"])
+				}
+				if wf.Result == nil || tt.response.Result == nil || *wf.Result != *tt.response.Result {
+					t.Errorf("Get() Result = %v, want %v", wf.Result, tt.response.Result)
+				}
+				if wf.HourlyExecutionLimit == nil || tt.response.HourlyExecutionLimit == nil || *wf.HourlyExecutionLimit != *tt.response.HourlyExecutionLimit {
+					t.Errorf("Get() HourlyExecutionLimit = %v, want %v", wf.HourlyExecutionLimit, tt.response.HourlyExecutionLimit)
+				}
+				if wf.Guide == nil || tt.response.Guide == nil || *wf.Guide != *tt.response.Guide {
+					t.Errorf("Get() Guide = %v, want %v", wf.Guide, tt.response.Guide)
+				}
 			}
 		})
+	}
+}
+
+func TestWorkflowJSONRoundTripPreservesDefinitionFields(t *testing.T) {
+	wf := Workflow{
+		ID:                   "wf-123",
+		Title:                "Test Workflow",
+		IsDeployed:           true,
+		Description:          "A test workflow",
+		Actor:                "user-123",
+		Owner:                "user-123",
+		OwnerType:            "USER",
+		Private:              false,
+		SchemaVersion:        4,
+		Trigger:              map[string]interface{}{"manual": true},
+		Result:               stringPtr("{{ result('task1') }}"),
+		Type:                 "STANDARD",
+		Input:                map[string]interface{}{"env": map[string]interface{}{"type": "string"}},
+		HourlyExecutionLimit: intPtr(1000),
+		Guide:                stringPtr("# Workflow Guide\n\nUse this workflow for testing."),
+	}
+
+	data, err := json.Marshal(wf)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var roundTrip Workflow
+	if err := json.Unmarshal(data, &roundTrip); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if roundTrip.SchemaVersion != wf.SchemaVersion {
+		t.Errorf("SchemaVersion = %d, want %d", roundTrip.SchemaVersion, wf.SchemaVersion)
+	}
+	if roundTrip.Type != wf.Type {
+		t.Errorf("Type = %q, want %q", roundTrip.Type, wf.Type)
+	}
+	inputField, ok := roundTrip.Input["env"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Input[env] type = %T, want map[string]interface{}", roundTrip.Input["env"])
+	}
+	if inputField["type"] != "string" {
+		t.Errorf("Input[env][type] = %#v, want %q", inputField["type"], "string")
+	}
+	if roundTrip.Result == nil || *roundTrip.Result != *wf.Result {
+		t.Errorf("Result = %v, want %v", roundTrip.Result, wf.Result)
+	}
+	if roundTrip.HourlyExecutionLimit == nil || *roundTrip.HourlyExecutionLimit != *wf.HourlyExecutionLimit {
+		t.Errorf("HourlyExecutionLimit = %v, want %v", roundTrip.HourlyExecutionLimit, wf.HourlyExecutionLimit)
+	}
+	if roundTrip.Guide == nil || *roundTrip.Guide != *wf.Guide {
+		t.Errorf("Guide = %v, want %v", roundTrip.Guide, wf.Guide)
 	}
 }
 

@@ -21,16 +21,22 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // Workflow represents a workflow resource.
 type Workflow struct {
-	ID          string                 `json:"id"`
-	Title       string                 `json:"title"`
-	Owner       string                 `json:"owner,omitempty"`
-	OwnerType   string                 `json:"ownerType,omitempty"`
-	Description string                 `json:"description,omitempty"`
-	Private     bool                   `json:"isPrivate"`
-	IsDeployed  bool                   `json:"isDeployed,omitempty"`
-	Tasks       map[string]interface{} `json:"tasks,omitempty"`
-	Trigger     map[string]interface{} `json:"trigger,omitempty"`
-	Actor       string                 `json:"actor,omitempty"`
+	ID                   string                 `json:"id"`
+	Title                string                 `json:"title"`
+	IsDeployed           bool                   `json:"isDeployed"`
+	Description          string                 `json:"description,omitempty"`
+	Actor                string                 `json:"actor,omitempty"`
+	Owner                string                 `json:"owner,omitempty"`
+	OwnerType            string                 `json:"ownerType,omitempty"`
+	Private              bool                   `json:"isPrivate"`
+	SchemaVersion        int                    `json:"schemaVersion,omitempty"`
+	Trigger              map[string]interface{} `json:"trigger,omitempty"`
+	Result               *string                `json:"result,omitempty"`
+	Type                 string                 `json:"type,omitempty"`
+	Input                map[string]interface{} `json:"input,omitempty"`
+	HourlyExecutionLimit *int                   `json:"hourlyExecutionLimit,omitempty"`
+	Guide                *string                `json:"guide,omitempty"`
+	Tasks                map[string]interface{} `json:"tasks"`
 }
 
 // WorkflowList represents a list of workflows.

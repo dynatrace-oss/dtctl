@@ -100,30 +100,6 @@ func formatBytes(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-// printTriggerInfo prints trigger configuration
-func printTriggerInfo(trigger map[string]interface{}) {
-	if triggerType, ok := trigger["type"].(string); ok {
-		fmt.Printf("  Type: %s\n", triggerType)
-	}
-
-	if schedule, ok := trigger["schedule"].(map[string]interface{}); ok {
-		if rule, exists := schedule["rule"]; exists {
-			fmt.Printf("  Schedule: %v\n", rule)
-		}
-		if tz, exists := schedule["timezone"]; exists {
-			fmt.Printf("  Timezone: %v\n", tz)
-		}
-	}
-
-	if eventTrigger, ok := trigger["eventTrigger"].(map[string]interface{}); ok {
-		if triggerConfig, exists := eventTrigger["triggerConfiguration"].(map[string]interface{}); exists {
-			if eventType, exists := triggerConfig["type"]; exists {
-				fmt.Printf("  Event Type: %v\n", eventType)
-			}
-		}
-	}
-}
-
 // describeAzureConnectionCmd shows details of an Azure connection (credential)
 var describeAzureConnectionCmd = &cobra.Command{
 	Use:     "connection <id>",
