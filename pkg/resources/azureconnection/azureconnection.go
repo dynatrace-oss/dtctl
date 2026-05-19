@@ -80,8 +80,9 @@ func (v Value) String() string {
 }
 
 type ListResponse struct {
-	Items      []AzureConnection `json:"items"`
-	TotalCount int               `json:"totalCount"`
+	Items       []AzureConnection `json:"items"`
+	TotalCount  int               `json:"totalCount"`
+	NextPageKey string            `json:"nextPageKey,omitempty"`
 }
 
 func (h *Handler) Get(id string) (*AzureConnection, error) {
@@ -104,28 +105,38 @@ func (h *Handler) Get(id string) (*AzureConnection, error) {
 
 func (h *Handler) List() ([]AzureConnection, error) {
 	var allItems []AzureConnection
+	nextPageKey := ""
 
-	// Settings API usually supports pagination, but for simplicity we start with basic fetch used in scripts
-	// However, we should filter by schemaId
-	req := h.client.HTTP().R().SetQueryParam("schemaIds", SchemaID)
+	for {
+		var result ListResponse
+		req := h.client.HTTP().R().SetResult(&result)
 
-	var result ListResponse
-	req.SetResult(&result)
+		client.PaginationParams{
+			Style:        client.PaginationSettingsAPI,
+			PageKeyParam: "nextPageKey",
+			NextPageKey:  nextPageKey,
+			Filters:      map[string]string{"schemaIds": SchemaID},
+		}.Apply(req)
 
-	resp, err := req.Get(SettingsAPI)
-	if err != nil {
-		return nil, err
+		resp, err := req.Get(SettingsAPI)
+		if err != nil {
+			return nil, err
+		}
+		if resp.IsError() {
+			return nil, fmt.Errorf("failed to list azure_connections: %s", resp.String())
+		}
+
+		for i := range result.Items {
+			result.Items[i].Name = result.Items[i].Value.Name
+			result.Items[i].Type = result.Items[i].Value.Type
+		}
+		allItems = append(allItems, result.Items...)
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
 	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list azure_connections: %s", resp.String())
-	}
-
-	for i := range result.Items {
-		result.Items[i].Name = result.Items[i].Value.Name
-		result.Items[i].Type = result.Items[i].Value.Type
-	}
-	allItems = append(allItems, result.Items...)
-
 	return allItems, nil
 }
 

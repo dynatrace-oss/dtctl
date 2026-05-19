@@ -108,7 +108,8 @@ type Credential struct {
 }
 
 type ListResponse struct {
-	Items []GCPMonitoringConfig `json:"items"`
+	Items       []GCPMonitoringConfig `json:"items"`
+	NextPageKey string                `json:"nextPageKey,omitempty"`
 }
 
 func (h *Handler) GetLatestVersion() (string, error) {
@@ -256,22 +257,40 @@ func (h *Handler) Get(id string) (*GCPMonitoringConfig, error) {
 }
 
 func (h *Handler) List() ([]GCPMonitoringConfig, error) {
-	var result ListResponse
-	resp, err := h.client.HTTP().R().SetResult(&result).Get(BaseAPI)
-	if err != nil {
-		return nil, err
-	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list gcp_monitoring_configs: %s", resp.String())
-	}
+	var allItems []GCPMonitoringConfig
+	nextPageKey := ""
 
-	for i := range result.Items {
-		result.Items[i].Description = result.Items[i].Value.Description
-		result.Items[i].Enabled = result.Items[i].Value.Enabled
-		result.Items[i].Version = result.Items[i].Value.Version
-	}
+	for {
+		var result ListResponse
+		req := h.client.HTTP().R().SetResult(&result)
 
-	return result.Items, nil
+		client.PaginationParams{
+			Style:        client.PaginationDefault,
+			PageKeyParam: "next-page-key",
+			NextPageKey:  nextPageKey,
+		}.Apply(req)
+
+		resp, err := req.Get(BaseAPI)
+		if err != nil {
+			return nil, err
+		}
+		if resp.IsError() {
+			return nil, fmt.Errorf("failed to list gcp_monitoring_configs: %s", resp.String())
+		}
+
+		for i := range result.Items {
+			result.Items[i].Description = result.Items[i].Value.Description
+			result.Items[i].Enabled = result.Items[i].Value.Enabled
+			result.Items[i].Version = result.Items[i].Value.Version
+		}
+		allItems = append(allItems, result.Items...)
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
+	}
+	return allItems, nil
 }
 
 func (h *Handler) FindByName(name string) (*GCPMonitoringConfig, error) {

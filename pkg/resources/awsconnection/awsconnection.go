@@ -107,8 +107,9 @@ type AwsRoleBasedAuthenticationConfig struct {
 }
 
 type ListResponse struct {
-	Items      []AWSConnection `json:"items"`
-	TotalCount int             `json:"totalCount"`
+	Items       []AWSConnection `json:"items"`
+	TotalCount  int             `json:"totalCount"`
+	NextPageKey string          `json:"nextPageKey,omitempty"`
 }
 
 type AWSConnectionCreate struct {
@@ -137,22 +138,39 @@ func flattenConnection(item *AWSConnection) {
 }
 
 func (h *Handler) listBySchema(schemaID string) ([]AWSConnection, error) {
-	req := h.client.HTTP().R().SetQueryParam("schemaIds", schemaID)
-	var result ListResponse
-	req.SetResult(&result)
+	var allItems []AWSConnection
+	nextPageKey := ""
 
-	resp, err := req.Get(SettingsAPI)
-	if err != nil {
-		return nil, err
-	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list aws_connections for schema %q: %s", schemaID, resp.String())
-	}
+	for {
+		var result ListResponse
+		req := h.client.HTTP().R().SetResult(&result)
 
-	for i := range result.Items {
-		flattenConnection(&result.Items[i])
+		client.PaginationParams{
+			Style:        client.PaginationSettingsAPI,
+			PageKeyParam: "nextPageKey",
+			NextPageKey:  nextPageKey,
+			Filters:      map[string]string{"schemaIds": schemaID},
+		}.Apply(req)
+
+		resp, err := req.Get(SettingsAPI)
+		if err != nil {
+			return nil, err
+		}
+		if resp.IsError() {
+			return nil, fmt.Errorf("failed to list aws_connections for schema %q: %s", schemaID, resp.String())
+		}
+
+		for i := range result.Items {
+			flattenConnection(&result.Items[i])
+		}
+		allItems = append(allItems, result.Items...)
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
 	}
-	return result.Items, nil
+	return allItems, nil
 }
 
 func (h *Handler) Get(id string) (*AWSConnection, error) {
@@ -261,15 +279,17 @@ func (h *Handler) Update(objectID string, value Value) (*AWSConnection, error) {
 		}
 	}
 
-	obj, err := h.Get(objectID)
-	if err != nil {
+	// Verify object exists (and resolve any not-found errors) before PUT.
+	if _, err := h.Get(objectID); err != nil {
 		return nil, err
 	}
 
+	// Settings 2.0 does not use HTTP If-Match/ETag for optimistic locking;
+	// schemaVersion is the schema's semver (e.g. "1.0.27"), not an object ETag.
+	// Concurrency is enforced server-side and surfaces as 409/412 if it occurs.
 	body := map[string]interface{}{"value": value}
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
-		SetHeader("If-Match", obj.SchemaVersion).
 		Put(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to update aws_connection: %w", err)

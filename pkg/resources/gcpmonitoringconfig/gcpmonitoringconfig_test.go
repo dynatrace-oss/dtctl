@@ -134,3 +134,32 @@ func TestCreateUpdateDeleteAndErrors(t *testing.T) {
 		t.Fatalf("unexpected delete error: %v", err)
 	}
 }
+
+// TestListPaginationStitchesPages verifies the Extensions 2.0 pagination loop.
+func TestListPaginationStitchesPages(t *testing.T) {
+	pages := []ListResponse{
+		{Items: []GCPMonitoringConfig{{ObjectID: "1", Value: Value{Description: "a", Enabled: true, Version: "1.0.0"}}}, NextPageKey: "k2"},
+		{Items: []GCPMonitoringConfig{{ObjectID: "2", Value: Value{Description: "b", Enabled: false, Version: "1.0.0"}}}, NextPageKey: "k3"},
+		{Items: []GCPMonitoringConfig{{ObjectID: "3", Value: Value{Description: "c", Enabled: true, Version: "1.0.0"}}}},
+	}
+	calls := 0
+	h, server := newMonitoringHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("next-page-key") != "" && r.URL.Query().Get("page-size") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"code":400,"message":"Constraints violated."}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(pages[calls])
+		calls++
+	})
+	defer server.Close()
+
+	items, err := h.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if calls != 3 || len(items) != 3 {
+		t.Fatalf("got %d calls / %d items, want 3/3", calls, len(items))
+	}
+}

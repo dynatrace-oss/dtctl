@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 
@@ -16,9 +15,8 @@ import (
 )
 
 var (
-	createAWSConnectionName            string
-	createAWSConnectionRoleArn         string
-	createAWSConnectionDynatraceAcctID string
+	createAWSConnectionName    string
+	createAWSConnectionRoleArn string
 
 	createAWSMonitoringConfigName        string
 	createAWSMonitoringConfigCredentials string
@@ -70,11 +68,7 @@ Examples:
 		}
 
 		output.PrintSuccess("AWS connection created: %s", created.ObjectID)
-		dtAccountID := createAWSConnectionDynatraceAcctID
-		if dtAccountID == "" {
-			dtAccountID = awsconnection.DynatraceAWSAccountID(c.BaseURL())
-		}
-		printAWSConnectionInstructions(dtAccountID, created.ObjectID, createAWSConnectionName)
+		printAWSConnectionInstructions(c.BaseURL(), created.ObjectID, createAWSConnectionName)
 		return nil
 	},
 }
@@ -170,54 +164,40 @@ Examples:
 	},
 }
 
-// printAWSConnectionInstructions prints copy-paste IAM role creation snippets
-// referencing the new connection's objectId as sts:ExternalId. The objectId is
-// the value Dynatrace will pass when assuming the role.
-func printAWSConnectionInstructions(dynatraceAccountID, objectID, connectionName string) {
-	trustPolicy := fmt.Sprintf(`{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": { "AWS": "arn:aws:iam::%s:root" },
-      "Action": "sts:AssumeRole",
-      "Condition": { "StringEquals": { "sts:ExternalId": "%s" } }
-    }
-  ]
-}
-`, dynatraceAccountID, objectID)
+// printAWSConnectionInstructions prints a copy-paste 'aws cloudformation deploy'
+// one-liner that creates the Dynatrace monitoring IAM role with the least-
+// privilege managed policies maintained by Dynatrace. The upstream template
+// itself handles trust policy (Principal + sts:ExternalId via parameters) so
+// dtctl does not need to generate trust-policy.json.
+func printAWSConnectionInstructions(tenantURL, objectID, connectionName string) {
+	const templateURL = "https://dynatrace-data-acquisition.s3.amazonaws.com/aws/deployment/cfn/latest/da-aws-nested-monitoring-role.yaml"
+	stackName := "dynatrace-monitoring-" + sanitizeRoleName(connectionName)
 
-	const trustPolicyFile = "trust-policy.json"
-	if err := os.WriteFile(trustPolicyFile, []byte(trustPolicy), 0o644); err != nil {
-		output.PrintWarning("Could not write %s: %v", trustPolicyFile, err)
-		fmt.Println("\nTrust policy (save manually as trust-policy.json):")
-		fmt.Print(trustPolicy)
-	} else {
-		output.PrintSuccess("Wrote %s", trustPolicyFile)
-	}
-
-	fmt.Println("\nCreate the IAM role and attach the Dynatrace monitoring policy:")
-	roleName := sanitizeRoleName(connectionName)
+	fmt.Println()
+	fmt.Println("Create the Dynatrace monitoring IAM role with the least-privilege policy")
+	fmt.Println("maintained by Dynatrace. Run in AWS CloudShell (aws CLI + curl pre-installed):")
+	fmt.Println()
 	if runtime.GOOS == "windows" {
-		fmt.Printf("   $ROLE_NAME = \"DynatraceMonitoringRole-%s\"\n", roleName)
-		fmt.Println("   aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document file://trust-policy.json")
-		fmt.Println("   aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess")
-		fmt.Println()
-		fmt.Println("Then capture the role ARN and patch the Dynatrace connection:")
-		fmt.Println("   $ROLE_ARN = aws iam get-role --role-name $ROLE_NAME --query Role.Arn -o text")
+		fmt.Printf("   $STACK = \"%s\"\n", stackName)
+		fmt.Printf("   curl.exe -fsSLo da-role.yaml %s\n", templateURL)
+		fmt.Printf("   aws cloudformation deploy `\n     --stack-name $STACK `\n     --template-file da-role.yaml `\n     --parameter-overrides pDynatraceUrl=%s pRoleExternalId=%s `\n     --capabilities CAPABILITY_NAMED_IAM\n",
+			tenantURL, objectID)
+		fmt.Println("   $ROLE_ARN = aws cloudformation describe-stacks --stack-name $STACK `")
+		fmt.Println("     --query \"Stacks[0].Outputs[?OutputKey=='DynatraceMonitoringRoleArn'].OutputValue\" --output text")
 		fmt.Printf("   dtctl update aws connection --name %q --roleArn $ROLE_ARN\n", connectionName)
 	} else {
-		fmt.Printf("   ROLE_NAME=\"DynatraceMonitoringRole-%s\"\n", roleName)
-		fmt.Println("   aws iam create-role --role-name \"$ROLE_NAME\" --assume-role-policy-document file://trust-policy.json")
-		fmt.Println("   aws iam attach-role-policy --role-name \"$ROLE_NAME\" --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess")
-		fmt.Println()
-		fmt.Println("Then capture the role ARN and patch the Dynatrace connection:")
-		fmt.Println("   ROLE_ARN=$(aws iam get-role --role-name \"$ROLE_NAME\" --query Role.Arn --output text)")
+		fmt.Printf("   STACK=%q\n", stackName)
+		fmt.Printf("   curl -fsSLo da-role.yaml %s\n", templateURL)
+		fmt.Printf("   aws cloudformation deploy \\\n     --stack-name \"$STACK\" \\\n     --template-file da-role.yaml \\\n     --parameter-overrides pDynatraceUrl=%s pRoleExternalId=%s \\\n     --capabilities CAPABILITY_NAMED_IAM\n",
+			tenantURL, objectID)
+		fmt.Println("   ROLE_ARN=$(aws cloudformation describe-stacks --stack-name \"$STACK\" \\")
+		fmt.Println("     --query \"Stacks[0].Outputs[?OutputKey=='DynatraceMonitoringRoleArn'].OutputValue\" --output text)")
 		fmt.Printf("   dtctl update aws connection --name %q --roleArn \"$ROLE_ARN\"\n", connectionName)
 	}
 	fmt.Println()
-	fmt.Println("Note: ReadOnlyAccess is shown as a starting point; for production use the dedicated")
-	fmt.Println("Dynatrace AWS monitoring policy from https://docs.dynatrace.com/.")
+	fmt.Println("The template is Dynatrace's source of truth for the required AWS read/describe")
+	fmt.Println("actions; refresh later by re-running the same command (CloudFormation does an")
+	fmt.Println("in-place update after curl re-downloads the latest template).")
 }
 
 // sanitizeRoleName produces a string usable inside an IAM role name.
@@ -248,7 +228,6 @@ func init() {
 
 	createAWSConnectionCmd.Flags().StringVar(&createAWSConnectionName, "name", "", "AWS connection name (required)")
 	createAWSConnectionCmd.Flags().StringVar(&createAWSConnectionRoleArn, "roleArn", "", "AWS IAM role ARN (optional; can be patched later)")
-	createAWSConnectionCmd.Flags().StringVar(&createAWSConnectionDynatraceAcctID, "dynatrace-account-id", "", "Override the Dynatrace AWS account ID used as the trust policy Principal")
 
 	createAWSMonitoringConfigCmd.Flags().StringVar(&createAWSMonitoringConfigName, "name", "", "Monitoring config name/description (required)")
 	createAWSMonitoringConfigCmd.Flags().StringVar(&createAWSMonitoringConfigCredentials, "credentials", "", "AWS connection name or ID (required)")

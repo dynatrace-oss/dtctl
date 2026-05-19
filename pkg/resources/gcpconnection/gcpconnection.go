@@ -54,8 +54,9 @@ type ServiceAccountImpersonation struct {
 }
 
 type ListResponse struct {
-	Items      []GCPConnection `json:"items"`
-	TotalCount int             `json:"totalCount"`
+	Items       []GCPConnection `json:"items"`
+	TotalCount  int             `json:"totalCount"`
+	NextPageKey string          `json:"nextPageKey,omitempty"`
 }
 
 type GCPConnectionCreate struct {
@@ -88,23 +89,39 @@ func flattenConnection(item *GCPConnection) {
 }
 
 func (h *Handler) listBySchema(schemaID string) ([]GCPConnection, error) {
-	req := h.client.HTTP().R().SetQueryParam("schemaIds", schemaID)
-	var result ListResponse
-	req.SetResult(&result)
+	var allItems []GCPConnection
+	nextPageKey := ""
 
-	resp, err := req.Get(SettingsAPI)
-	if err != nil {
-		return nil, err
-	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list gcp_connections for schema %q: %s", schemaID, resp.String())
-	}
+	for {
+		var result ListResponse
+		req := h.client.HTTP().R().SetResult(&result)
 
-	for i := range result.Items {
-		flattenConnection(&result.Items[i])
-	}
+		client.PaginationParams{
+			Style:        client.PaginationSettingsAPI,
+			PageKeyParam: "nextPageKey",
+			NextPageKey:  nextPageKey,
+			Filters:      map[string]string{"schemaIds": schemaID},
+		}.Apply(req)
 
-	return result.Items, nil
+		resp, err := req.Get(SettingsAPI)
+		if err != nil {
+			return nil, err
+		}
+		if resp.IsError() {
+			return nil, fmt.Errorf("failed to list gcp_connections for schema %q: %s", schemaID, resp.String())
+		}
+
+		for i := range result.Items {
+			flattenConnection(&result.Items[i])
+		}
+		allItems = append(allItems, result.Items...)
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
+	}
+	return allItems, nil
 }
 
 func (h *Handler) Get(id string) (*GCPConnection, error) {

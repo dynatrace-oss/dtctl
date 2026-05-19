@@ -154,7 +154,8 @@ type CustomMetric struct {
 }
 
 type ListResponse struct {
-	Items []AWSMonitoringConfig `json:"items"`
+	Items       []AWSMonitoringConfig `json:"items"`
+	NextPageKey string                `json:"nextPageKey,omitempty"`
 }
 
 // GetLatestVersion returns the highest semver version of the extension. Returns
@@ -308,18 +309,37 @@ func (h *Handler) Get(id string) (*AWSMonitoringConfig, error) {
 }
 
 func (h *Handler) List() ([]AWSMonitoringConfig, error) {
-	var result ListResponse
-	resp, err := h.client.HTTP().R().SetResult(&result).Get(BaseAPI)
-	if err != nil {
-		return nil, err
+	var allItems []AWSMonitoringConfig
+	nextPageKey := ""
+
+	for {
+		var result ListResponse
+		req := h.client.HTTP().R().SetResult(&result)
+
+		client.PaginationParams{
+			Style:        client.PaginationDefault,
+			PageKeyParam: "next-page-key",
+			NextPageKey:  nextPageKey,
+		}.Apply(req)
+
+		resp, err := req.Get(BaseAPI)
+		if err != nil {
+			return nil, err
+		}
+		if resp.IsError() {
+			return nil, fmt.Errorf("failed to list aws_monitoring_configs: %s", resp.String())
+		}
+		for i := range result.Items {
+			flatten(&result.Items[i])
+		}
+		allItems = append(allItems, result.Items...)
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
 	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list aws_monitoring_configs: %s", resp.String())
-	}
-	for i := range result.Items {
-		flatten(&result.Items[i])
-	}
-	return result.Items, nil
+	return allItems, nil
 }
 
 func flatten(c *AWSMonitoringConfig) {

@@ -105,7 +105,8 @@ type Credential struct {
 }
 
 type ListResponse struct {
-	Items []AzureMonitoringConfig `json:"items"`
+	Items       []AzureMonitoringConfig `json:"items"`
+	NextPageKey string                  `json:"nextPageKey,omitempty"`
 }
 
 func (h *Handler) GetLatestVersion() (string, error) {
@@ -257,24 +258,40 @@ func (h *Handler) Get(id string) (*AzureMonitoringConfig, error) {
 }
 
 func (h *Handler) List() ([]AzureMonitoringConfig, error) {
-	var result ListResponse
-	req := h.client.HTTP().R().SetResult(&result)
+	var allItems []AzureMonitoringConfig
+	nextPageKey := ""
 
-	resp, err := req.Get(BaseAPI)
-	if err != nil {
-		return nil, err
-	}
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list azure_monitoring_configs: %s", resp.String())
-	}
+	for {
+		var result ListResponse
+		req := h.client.HTTP().R().SetResult(&result)
 
-	for i := range result.Items {
-		result.Items[i].Description = result.Items[i].Value.Description
-		result.Items[i].Enabled = result.Items[i].Value.Enabled
-		result.Items[i].Version = result.Items[i].Value.Version
-	}
+		client.PaginationParams{
+			Style:        client.PaginationDefault,
+			PageKeyParam: "next-page-key",
+			NextPageKey:  nextPageKey,
+		}.Apply(req)
 
-	return result.Items, nil
+		resp, err := req.Get(BaseAPI)
+		if err != nil {
+			return nil, err
+		}
+		if resp.IsError() {
+			return nil, fmt.Errorf("failed to list azure_monitoring_configs: %s", resp.String())
+		}
+
+		for i := range result.Items {
+			result.Items[i].Description = result.Items[i].Value.Description
+			result.Items[i].Enabled = result.Items[i].Value.Enabled
+			result.Items[i].Version = result.Items[i].Value.Version
+		}
+		allItems = append(allItems, result.Items...)
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
+	}
+	return allItems, nil
 }
 
 // FindByName finds an Azure monitoring config by description (name)

@@ -300,3 +300,41 @@ func TestHandlerUpdateSuccessAndStatuses(t *testing.T) {
 		}
 	})
 }
+
+// TestListPaginationStitchesPages verifies the Settings 2.0 pagination loop.
+func TestListPaginationStitchesPages(t *testing.T) {
+	pages := []ListResponse{
+		{Items: []AzureConnection{{ObjectID: "a", Value: Value{Name: "a", Type: "clientSecret"}}}, NextPageKey: "k2"},
+		{Items: []AzureConnection{{ObjectID: "b", Value: Value{Name: "b", Type: "clientSecret"}}}, NextPageKey: "k3"},
+		{Items: []AzureConnection{{ObjectID: "c", Value: Value{Name: "c", Type: "clientSecret"}}}},
+	}
+	calls := 0
+	h, server := newHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("nextPageKey") != "" {
+			for _, p := range []string{"pageSize", "schemaIds", "scopes"} {
+				if r.URL.Query().Get(p) != "" {
+					w.WriteHeader(http.StatusBadRequest)
+					fmt.Fprintf(w, `{"error":{"code":400,"message":"%s must not be combined with nextPageKey"}}`, p)
+					return
+				}
+			}
+		} else if r.URL.Query().Get("schemaIds") != SchemaID {
+			t.Errorf("expected schemaIds=%q on first page, got %q", SchemaID, r.URL.Query().Get("schemaIds"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(pages[calls])
+		calls++
+	})
+	defer server.Close()
+
+	items, err := h.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("expected 3 page requests, got %d", calls)
+	}
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(items))
+	}
+}

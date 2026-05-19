@@ -13,7 +13,16 @@ value:
     # Pattern: arn:aws:iam::<account-id|aws>:role/<role-name>
     roleArn: "arn:aws:iam::123456789012:role/DynatraceMonitoringRole"
 
-    # Default consumer for the data acquisition extension. Do not change unless
-    # you know what you are doing.
+    # Consumer — which Dynatrace integration is allowed to use this connection.
+    #
+    # IMPORTANT: the schema enforces maxObjects=1 — exactly ONE consumer per
+    # connection. To wire the same AWS role into multiple consumers, create
+    # one connection per consumer (they can share the same roleArn).
+    #
+    # Allowed values for awsRoleBasedAuthentication (from the live schema enum
+    # ConsumersOfAwsRoleBasedAuthentication) — uncomment exactly one:
     consumers:
-      - SVC:com.dynatrace.da
+      - SVC:com.dynatrace.da             # Data Acquisition extension (default)
+      # - SVC:com.dynatrace.bo           # Business Observability
+      # - SVC:com.dynatrace.openpipeline # OpenPipeline
+      # - SVC:com.dynatrace.grail        # Grail
