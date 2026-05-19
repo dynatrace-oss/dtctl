@@ -96,8 +96,8 @@ type AWSConnection struct {
 }
 
 type Value struct {
-	Name                       string                          `json:"name"`
-	Type                       string                          `json:"type"`
+	Name                       string                            `json:"name"`
+	Type                       string                            `json:"type"`
 	AwsRoleBasedAuthentication *AwsRoleBasedAuthenticationConfig `json:"awsRoleBasedAuthentication,omitempty"`
 }
 

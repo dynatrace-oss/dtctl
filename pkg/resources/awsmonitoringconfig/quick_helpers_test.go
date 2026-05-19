@@ -4,12 +4,12 @@ import "testing"
 
 func TestAccountIDFromRoleArn(t *testing.T) {
 	cases := map[string]string{
-		"":                                                         "",
-		"arn:aws:iam::123456789012:role/MyRole":                    "123456789012",
-		"arn:aws:iam::123456789012:role/path/to/SomeRole":          "123456789012",
-		"arn:aws:iam::aws:role/AWSServiceRole":                     "aws",
-		"not-an-arn":                                               "",
-		"arn:aws:s3:::bucket":                                      "",
+		"":                                      "",
+		"arn:aws:iam::123456789012:role/MyRole": "123456789012",
+		"arn:aws:iam::123456789012:role/path/to/SomeRole": "123456789012",
+		"arn:aws:iam::aws:role/AWSServiceRole":            "aws",
+		"not-an-arn":                                      "",
+		"arn:aws:s3:::bucket":                             "",
 	}
 	for arn, want := range cases {
 		got := AccountIDFromRoleArn(arn)
