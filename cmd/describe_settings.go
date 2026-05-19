@@ -12,25 +12,18 @@ import (
 
 // describeSettingsCmd shows detailed info about a settings object
 var describeSettingsCmd = &cobra.Command{
-	Use:     "settings <object-id-or-uid>",
+	Use:     "settings <object-id>",
 	Aliases: []string{"setting", "set"},
 	Short:   "Show details of a settings object",
 	Long: `Show detailed information about a settings object including its value, scope, and metadata.
 
-You can specify either:
-  - ObjectID: The full base64-encoded object identifier
-  - UID: A human-readable UUID (requires --schema-id and/or --scope for disambiguation)
-
 Examples:
-  # Describe a settings object by ObjectID
+  # Describe a settings object by objectId
   dtctl describe settings vu9U3hXa3q0AAAABABlidWlsdGluOnJ1bS5mcm9...
-
-  # Describe a settings object by UID
-  dtctl describe settings b396f4-ec8f-3e02-bcef-0328b86a63cc --schema-id builtin:rum.frontend.name
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		idOrUID := args[0]
+		objectID := args[0]
 
 		_, c, printer, err := Setup()
 		if err != nil {
@@ -39,12 +32,7 @@ Examples:
 
 		handler := settings.NewHandler(c)
 
-		// Get optional context flags for UID resolution
-		schemaID, _ := cmd.Flags().GetString("schema-id")
-		scope, _ := cmd.Flags().GetString("scope")
-
-		// Get settings object
-		obj, err := handler.GetWithContext(idOrUID, schemaID, scope)
+		obj, err := handler.Get(objectID)
 		if err != nil {
 			return err
 		}
@@ -53,9 +41,6 @@ Examples:
 		if outputFormat == "table" {
 			const w = 14
 			output.DescribeKV("Object ID:", w, "%s", obj.ObjectID)
-			if obj.UID != "" {
-				output.DescribeKV("UID:", w, "%s", obj.UID)
-			}
 			output.DescribeKV("Schema ID:", w, "%s", obj.SchemaID)
 			if obj.SchemaVersion != "" {
 				output.DescribeKV("Version:", w, "%s", obj.SchemaVersion)
@@ -186,10 +171,4 @@ Examples:
 		enrichAgent(printer, "describe", "settings-schema")
 		return printer.Print(schema)
 	},
-}
-
-func init() {
-	// Add flags for settings command
-	describeSettingsCmd.Flags().String("schema-id", "", "Schema ID to use for UID resolution")
-	describeSettingsCmd.Flags().String("scope", "", "Scope to use for UID resolution")
 }

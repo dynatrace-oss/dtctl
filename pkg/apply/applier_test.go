@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/dynatrace-oss/dtctl/pkg/config"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
@@ -902,6 +905,111 @@ func TestApplierOwnershipDeterminationRegression(t *testing.T) {
 		err := a.checkSafety(safety.OperationUpdate, ownership)
 		if err != nil {
 			t.Errorf("BUG: readwrite-mine should allow updating own resources: %v", err)
+		}
+	})
+}
+
+// TestAnomalyDetectorRoundTrip is the regression test for issue #216.
+//
+// It verifies that the JSON and YAML output of `dtctl get anomaly-detector` is
+// directly consumable by `dtctl apply -f` — i.e., that detection identifies the
+// resource type correctly. Before the fix, the AnomalyDetector struct serialized
+// a hybrid shape (top-level display fields plus a nested `value` payload) that
+// neither matched the raw Settings format nor the flattened authoring format,
+// causing apply to fail with "could not detect resource type from file content".
+//
+// This test guards against regressions of that class: if anyone reverts the
+// custom MarshalJSON/MarshalYAML or reintroduces display fields into the wire
+// shape, this test fails immediately.
+func TestAnomalyDetectorRoundTrip(t *testing.T) {
+	// Build a fixture with the same shape the Settings API returns.
+	// Mirror the public anomalydetector.AnomalyDetector exactly as `Get` would
+	// populate it: derived display fields populated alongside the raw Value.
+	ad := anomalydetector.AnomalyDetector{
+		ObjectID:      "vu9U3hXa3q0AAAA",
+		Title:         "Test Detector",
+		Enabled:       true,
+		AnalyzerShort: "static (>90)",
+		EventType:     "PERFORMANCE_EVENT",
+		Source:        "dtctl",
+		Description:   "Round-trip test fixture",
+		SchemaVersion: "1.0.42",
+		Value: map[string]any{
+			"title":       "Test Detector",
+			"enabled":     true,
+			"description": "Round-trip test fixture",
+			"source":      "dtctl",
+			"analyzer": map[string]any{
+				"name": "dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer",
+				"input": []any{
+					map[string]any{"key": "alertCondition", "value": "ABOVE"},
+					map[string]any{"key": "threshold", "value": "90"},
+				},
+			},
+			"eventTemplate": map[string]any{
+				"properties": []any{
+					map[string]any{"key": "event.type", "value": "PERFORMANCE_EVENT"},
+					map[string]any{"key": "event.name", "value": "High CPU"},
+				},
+			},
+		},
+	}
+
+	t.Run("JSON output is detected as anomaly detector", func(t *testing.T) {
+		data, err := json.Marshal(ad)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+
+		// Sanity: the wire shape must include schemaId at the top level.
+		var probe map[string]any
+		if err := json.Unmarshal(data, &probe); err != nil {
+			t.Fatalf("unmarshal probe: %v", err)
+		}
+		if probe["schemaId"] != anomalydetector.SchemaID {
+			t.Errorf("JSON output missing schemaId at top level (got %q); display fields may be leaking into wire format", probe["schemaId"])
+		}
+		if _, hasAnalyzerLeak := probe["analyzer"]; hasAnalyzerLeak {
+			t.Error("JSON output should not contain top-level 'analyzer' (display field leak)")
+		}
+		if _, hasEventTypeLeak := probe["eventType"]; hasEventTypeLeak {
+			t.Error("JSON output should not contain top-level 'eventType' (display field leak)")
+		}
+
+		rt, isArray, err := detectResourceType(data)
+		if err != nil {
+			t.Fatalf("detectResourceType: %v\noutput was:\n%s", err, data)
+		}
+		if isArray {
+			t.Error("expected single object, got array")
+		}
+		if rt != ResourceAnomalyDetector {
+			t.Errorf("ResourceType = %v, want %v", rt, ResourceAnomalyDetector)
+		}
+	})
+
+	t.Run("YAML output is detected as anomaly detector", func(t *testing.T) {
+		yamlData, err := yaml.Marshal(ad)
+		if err != nil {
+			t.Fatalf("yaml.Marshal: %v", err)
+		}
+
+		// Apply accepts YAML by converting to JSON first; emulate that path.
+		var doc map[string]any
+		if err := yaml.Unmarshal(yamlData, &doc); err != nil {
+			t.Fatalf("yaml.Unmarshal: %v\noutput was:\n%s", err, yamlData)
+		}
+		jsonData, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+
+		rt, _, err := detectResourceType(jsonData)
+		if err != nil {
+			t.Fatalf("detectResourceType after YAML round-trip: %v\nyaml was:\n%s", err, yamlData)
+		}
+		if rt != ResourceAnomalyDetector {
+			t.Errorf("ResourceType = %v, want %v", rt, ResourceAnomalyDetector)
 		}
 	})
 }

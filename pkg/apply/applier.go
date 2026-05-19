@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 
@@ -41,8 +42,11 @@ type Applier struct {
 	baseURL       string
 	safetyChecker *safety.Checker
 	currentUserID string
-	preApplyHook  string // hook command (empty = no hook)
-	sourceFile    string // original filename for hook context
+	preApplyHook  string    // hook command (empty = no hook)
+	postApplyHook string    // post-apply hook command (empty = no hook)
+	sourceFile    string    // original filename for hook context
+	hookStdout    io.Writer // where hook stdout is forwarded (nil = os.Stdout)
+	hookStderr    io.Writer // where hook stderr is forwarded (nil = os.Stderr)
 }
 
 // NewApplier creates a new applier
@@ -62,10 +66,21 @@ func (a *Applier) WithSafetyChecker(checker *safety.Checker) *Applier {
 }
 
 // WithPreApplyHook sets the pre-apply hook command.
-// The command is run via sh -c with the resource type and source file as
-// positional parameters ($1 and $2), and the processed JSON on stdin.
+// The command is parsed with POSIX-style shell quoting and executed
+// directly (no `sh -c`); the resource type and source file are appended as
+// the final two arguments. The processed JSON is piped on stdin.
 func (a *Applier) WithPreApplyHook(command string) *Applier {
 	a.preApplyHook = command
+	return a
+}
+
+// WithPostApplyHook sets the post-apply hook command.
+// Invocation is identical to the pre-apply hook (direct exec, resource type
+// and source file appended as args). Stdin is the apply result JSON. The
+// hook runs after a successful apply; a non-zero exit is treated as a
+// warning (the resource is already persisted), not an error.
+func (a *Applier) WithPostApplyHook(command string) *Applier {
+	a.postApplyHook = command
 	return a
 }
 
@@ -74,6 +89,33 @@ func (a *Applier) WithPreApplyHook(command string) *Applier {
 func (a *Applier) WithSourceFile(filename string) *Applier {
 	a.sourceFile = filename
 	return a
+}
+
+// WithHookOutputs overrides where hook stdout and stderr are forwarded.
+// Pass nil to keep the default (os.Stdout / os.Stderr).
+//
+// In agent mode, callers should route both to os.Stderr so that hook output
+// does not corrupt the JSON envelope written to os.Stdout by the printer.
+func (a *Applier) WithHookOutputs(stdout, stderr io.Writer) *Applier {
+	a.hookStdout = stdout
+	a.hookStderr = stderr
+	return a
+}
+
+// hookStdoutWriter returns the configured writer for hook stdout (defaults to os.Stdout).
+func (a *Applier) hookStdoutWriter() io.Writer {
+	if a.hookStdout == nil {
+		return os.Stdout
+	}
+	return a.hookStdout
+}
+
+// hookStderrWriter returns the configured writer for hook stderr (defaults to os.Stderr).
+func (a *Applier) hookStderrWriter() io.Writer {
+	if a.hookStderr == nil {
+		return os.Stderr
+	}
+	return a.hookStderr
 }
 
 // checkSafety performs a safety check if a checker is configured
@@ -172,10 +214,17 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 		if err != nil {
 			return nil, err
 		}
+		if result.Stdout != "" {
+			fmt.Fprint(a.hookStdoutWriter(), result.Stdout)
+		}
+		if result.Stderr != "" {
+			fmt.Fprint(a.hookStderrWriter(), result.Stderr)
+		}
 		if result.ExitCode != 0 {
 			return nil, &HookRejectedError{
 				Command:  a.preApplyHook,
 				ExitCode: result.ExitCode,
+				Stdout:   result.Stdout,
 				Stderr:   result.Stderr,
 			}
 		}
@@ -189,7 +238,65 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 		return []ApplyResult{result}, nil
 	}
 
-	return a.applySingle(resourceType, jsonData, opts)
+	results, err := a.applySingle(resourceType, jsonData, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Run post-apply hook (if configured and not skipped).
+	// Any hook failure is surfaced as a warning on stderr — the resource
+	// is already persisted, so it does not flip the overall exit status.
+	a.runPostApplyHook(resourceType, results, opts)
+
+	return results, nil
+}
+
+// runPostApplyHook runs the post-apply hook for a successful (or partially
+// successful) apply, once per Apply() call. Hook stdout is forwarded to the
+// configured stdout writer (os.Stdout by default; redirect via
+// WithHookOutputs in agent mode); hook stderr goes to the stderr writer.
+// A non-zero exit is reported as a warning but does not fail the apply.
+//
+// If results is empty, the hook is skipped: there is nothing for it to act on.
+func (a *Applier) runPostApplyHook(resourceType ResourceType, results []ApplyResult, opts ApplyOptions) {
+	if opts.NoHooks || a.postApplyHook == "" || opts.DryRun {
+		return
+	}
+	if len(results) == 0 {
+		return
+	}
+
+	// Marshal the apply result(s) as JSON for the hook's stdin. Always use
+	// an array shape so the hook can iterate uniformly even for single
+	// resources.
+	stdinJSON, err := json.Marshal(results)
+	if err != nil {
+		fmt.Fprintf(a.hookStderrWriter(), "Warning: failed to marshal apply result for post-apply hook: %v\n", err)
+		return
+	}
+
+	result, err := hook.RunPostApply(
+		context.Background(),
+		a.postApplyHook,
+		string(resourceType),
+		a.sourceFile,
+		stdinJSON,
+	)
+	if err != nil {
+		fmt.Fprintf(a.hookStderrWriter(), "Warning: post-apply hook failed to execute: %v\n", err)
+		return
+	}
+
+	// Post-apply output is always shown to the user, success or failure.
+	if result.Stdout != "" {
+		fmt.Fprint(a.hookStdoutWriter(), result.Stdout)
+	}
+	if result.Stderr != "" {
+		fmt.Fprint(a.hookStderrWriter(), result.Stderr)
+	}
+	if result.ExitCode != 0 {
+		fmt.Fprintf(a.hookStderrWriter(), "Warning: post-apply hook exited with code %d (resource was applied successfully)\n", result.ExitCode)
+	}
 }
 
 // applySingle applies a single resource object and returns the result.
@@ -266,10 +373,17 @@ func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOp
 		if err != nil {
 			return nil, err
 		}
+		if result.Stdout != "" {
+			fmt.Fprint(a.hookStdoutWriter(), result.Stdout)
+		}
+		if result.Stderr != "" {
+			fmt.Fprint(a.hookStderrWriter(), result.Stderr)
+		}
 		if result.ExitCode != 0 {
 			return nil, &HookRejectedError{
 				Command:  a.preApplyHook,
 				ExitCode: result.ExitCode,
+				Stdout:   result.Stdout,
 				Stderr:   result.Stderr,
 			}
 		}
@@ -296,6 +410,13 @@ func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOp
 		}
 		results = append(results, itemResults...)
 	}
+
+	// Run post-apply hook for the resources that were actually persisted —
+	// even if some items in the batch failed. Skipping it on partial failure
+	// would leave notification/cleanup hooks unfired for resources the API
+	// already accepted, which is the worst outcome for the user. The hook
+	// is a no-op when results is empty (see runPostApplyHook).
+	a.runPostApplyHook(resourceType, results, opts)
 
 	if len(errors) > 0 {
 		return results, &ListApplyError{

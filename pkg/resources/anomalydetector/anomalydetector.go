@@ -28,22 +28,69 @@ func NewHandler(c *client.Client) *Handler {
 }
 
 // AnomalyDetector represents a custom anomaly detector (builtin:davis.anomaly-detectors).
+//
+// The struct mixes table-display fields (Title, Enabled, AnalyzerShort, EventType,
+// Source, Description — derived from Value) with the raw Settings payload (Value).
+// Display fields are tagged with json:"-" so JSON/YAML output emits the raw Settings
+// envelope ({schemaId, scope, value, objectId, schemaVersion}) — the same shape
+// `apply` understands. This makes `dtctl get anomaly-detector -o json|yaml` round-
+// trippable through `dtctl apply -f`, matching dashboard/notebook/SLO behavior.
+//
+// Custom MarshalJSON / MarshalYAML methods enforce the wire shape; struct field
+// order and table tags are preserved for the table renderer.
 type AnomalyDetector struct {
-	ObjectID string `json:"objectId" table:"OBJECT ID,wide"`
+	ObjectID string `json:"-" table:"OBJECT ID,wide"`
 
-	// Flattened fields for table display
-	Title         string `json:"title" table:"TITLE"`
-	Enabled       bool   `json:"enabled" table:"ENABLED"`
-	AnalyzerShort string `json:"analyzer" table:"ANALYZER"`
-	EventType     string `json:"eventType" table:"EVENT TYPE"`
-	Source        string `json:"source,omitempty" table:"SOURCE"`
-	Description   string `json:"description,omitempty" table:"DESCRIPTION,wide"`
+	// Flattened fields for table display only — excluded from JSON/YAML
+	// serialization (see MarshalJSON / MarshalYAML).
+	Title         string `json:"-" table:"TITLE"`
+	Enabled       bool   `json:"-" table:"ENABLED"`
+	AnalyzerShort string `json:"-" table:"ANALYZER"`
+	EventType     string `json:"-" table:"EVENT TYPE"`
+	Source        string `json:"-" table:"SOURCE"`
+	Description   string `json:"-" table:"DESCRIPTION,wide"`
 
-	// Full value for JSON/YAML output and describe
-	Value map[string]any `json:"value" table:"-"`
+	// Full value for describe and round-trippable JSON/YAML output.
+	Value map[string]any `json:"-" table:"-"`
 
 	// Raw settings metadata (not shown in table)
-	SchemaVersion string `json:"schemaVersion,omitempty" table:"-"`
+	SchemaVersion string `json:"-" table:"-"`
+}
+
+// rawSettingsEnvelope is the wire shape emitted by MarshalJSON / MarshalYAML.
+// It matches the Settings API GET-by-id response and is accepted as-is by
+// `dtctl apply -f` via the schemaId detection branch in pkg/apply/applier.go.
+type rawSettingsEnvelope struct {
+	SchemaID      string         `json:"schemaId" yaml:"schemaId"`
+	SchemaVersion string         `json:"schemaVersion,omitempty" yaml:"schemaVersion,omitempty"`
+	Scope         string         `json:"scope" yaml:"scope"`
+	ObjectID      string         `json:"objectId,omitempty" yaml:"objectId,omitempty"`
+	Value         map[string]any `json:"value" yaml:"value"`
+}
+
+// envelope builds the round-trippable wire shape from the receiver.
+func (a AnomalyDetector) envelope() rawSettingsEnvelope {
+	return rawSettingsEnvelope{
+		SchemaID:      SchemaID,
+		SchemaVersion: a.SchemaVersion,
+		Scope:         Scope,
+		ObjectID:      a.ObjectID,
+		Value:         a.Value,
+	}
+}
+
+// MarshalJSON emits the raw Settings envelope so `dtctl get -o json` output is
+// directly consumable by `dtctl apply -f`. Display-only fields (AnalyzerShort,
+// EventType, ...) are derived from Value and are intentionally omitted to avoid
+// producing a hybrid shape that neither matches the Settings API nor the
+// flattened authoring format.
+func (a AnomalyDetector) MarshalJSON() ([]byte, error) {
+	return json.Marshal(a.envelope())
+}
+
+// MarshalYAML mirrors MarshalJSON for `-o yaml` output.
+func (a AnomalyDetector) MarshalYAML() (interface{}, error) {
+	return a.envelope(), nil
 }
 
 // ListOptions configures listing behavior.

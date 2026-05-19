@@ -28,12 +28,18 @@ var enableGCPMonitoringCmd = &cobra.Command{
 	Use:     "monitoring [id]",
 	Aliases: []string{"monitoring-config"},
 	Short:   "Enable GCP monitoring configuration",
-	Long: `Enable a GCP monitoring configuration by optionally updating the linked connection
+	Long: `Enable a GCP monitoring configuration by updating the linked connection
 credentials and then enabling the monitoring config in a single step.
 
-If --serviceAccountId is provided, the linked GCP connection will be updated
-with the specified service account before enabling the monitoring config.
-If the connection credentials are already set, --serviceAccountId can be omitted.
+If --serviceAccountId is provided, dtctl will:
+  1. Update the linked GCP connection with the specified service account
+  2. Populate the serviceAccount field in the monitoring credential
+  3. Enable the monitoring config and all credentials
+
+If the linked connection already has a service account configured, --serviceAccountId
+can be omitted; in that case the connection update step is skipped and only the
+monitoring config is enabled. Passing --serviceAccountId always overwrites the
+service account on the linked connection.
 
 Examples:
   dtctl enable gcp monitoring --name "my-gcp-monitoring" --serviceAccountId "sa@project.iam.gserviceaccount.com"
@@ -90,7 +96,7 @@ Examples:
 			configName = existing.ObjectID
 		}
 
-		// Step 1: Update connection credentials if --serviceAccountId provided
+		// Step 1: Update linked GCP connection with service account if --serviceAccountId provided
 		if enableGCPMonitoringServiceAccountID != "" {
 			if len(existing.Value.GoogleCloud.Credentials) == 0 {
 				return fmt.Errorf("monitoring config %q has no credentials configured", configName)
@@ -108,21 +114,24 @@ Examples:
 				return fmt.Errorf("failed to get linked connection %q: %w", connectionID, err)
 			}
 
-			value := conn.Value
-			if value.Type == "" {
-				value.Type = "serviceAccountImpersonation"
+			connValue := conn.Value
+			if connValue.Type == "" {
+				connValue.Type = "serviceAccountImpersonation"
 			}
-			if value.ServiceAccountImpersonation == nil {
-				value.ServiceAccountImpersonation = &gcpconnection.ServiceAccountImpersonation{
+			if connValue.ServiceAccountImpersonation == nil {
+				connValue.ServiceAccountImpersonation = &gcpconnection.ServiceAccountImpersonation{
 					Consumers: []string{"SVC:com.dynatrace.da"},
 				}
 			}
-			if len(value.ServiceAccountImpersonation.Consumers) == 0 {
-				value.ServiceAccountImpersonation.Consumers = []string{"SVC:com.dynatrace.da"}
+			if len(connValue.ServiceAccountImpersonation.Consumers) == 0 {
+				connValue.ServiceAccountImpersonation.Consumers = []string{"SVC:com.dynatrace.da"}
 			}
-			value.ServiceAccountImpersonation.ServiceAccountID = enableGCPMonitoringServiceAccountID
+			if prev := connValue.ServiceAccountImpersonation.ServiceAccountID; prev != "" && prev != enableGCPMonitoringServiceAccountID {
+				output.PrintWarning("Overwriting service account on connection %q (was %q)", connectionID, prev)
+			}
+			connValue.ServiceAccountImpersonation.ServiceAccountID = enableGCPMonitoringServiceAccountID
 
-			_, err = connectionHandler.Update(conn.ObjectID, value)
+			_, err = connectionHandler.Update(conn.ObjectID, connValue)
 			if err != nil {
 				if strings.Contains(err.Error(), "GCP authentication failed") {
 					return fmt.Errorf("%w\nIAM Policy update can take a couple of minutes before it becomes active, please retry in a moment", err)
@@ -138,6 +147,10 @@ Examples:
 		value.Enabled = true
 		for i := range value.GoogleCloud.Credentials {
 			value.GoogleCloud.Credentials[i].Enabled = true
+		}
+		// Populate serviceAccount on the first credential — the one whose connection was updated above
+		if enableGCPMonitoringServiceAccountID != "" && len(value.GoogleCloud.Credentials) > 0 {
+			value.GoogleCloud.Credentials[0].ServiceAccount = enableGCPMonitoringServiceAccountID
 		}
 
 		payload := gcpmonitoringconfig.GCPMonitoringConfig{Scope: existing.Scope, Value: value}

@@ -169,11 +169,18 @@ resources in sync with their file definitions.
 			applier = applier.WithSafetyChecker(checker)
 		}
 
-		// Configure pre-apply hook
+		// Configure pre-apply and post-apply hooks
 		if !noHooks {
 			if hookCmd := cfg.GetPreApplyHook(); hookCmd != "" {
 				applier = applier.WithPreApplyHook(hookCmd).WithSourceFile(file)
 			}
+			if hookCmd := cfg.GetPostApplyHook(); hookCmd != "" {
+				applier = applier.WithPostApplyHook(hookCmd).WithSourceFile(file)
+			}
+			// Hook output (stdout and stderr) always goes to stderr so that
+			// stdout carries only the structured result — JSON, YAML, or table
+			// — regardless of output mode, and regardless of hook success or failure.
+			applier = applier.WithHookOutputs(os.Stderr, os.Stderr)
 		}
 
 		// Apply the resource
@@ -255,7 +262,7 @@ func init() {
 	applyCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	applyCmd.Flags().Bool("dry-run", false, "preview changes without applying")
 	applyCmd.Flags().Bool("show-diff", false, "show diff of changes when updating existing resources")
-	applyCmd.Flags().Bool("no-hooks", false, "skip pre-apply hooks")
+	applyCmd.Flags().Bool("no-hooks", false, "skip pre-apply and post-apply hooks")
 	applyCmd.Flags().String("id", "", "override or inject resource ID (use with --write-id to stamp ID into file)")
 	applyCmd.Flags().Bool("write-id", false, "write the created resource ID back into the source file for idempotent future applies")
 	applyCmd.Flags().String("share-environment", "", "share the applied notebook/dashboard with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")

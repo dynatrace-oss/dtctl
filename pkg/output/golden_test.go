@@ -12,8 +12,6 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
-	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
-	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
@@ -241,7 +239,6 @@ func settingsFixtures() []settings.SettingsObject {
 				"eventTypeFilter": []any{},
 			},
 			ObjectIDShort: "vu9U3hXa3q0AAAABAB...",
-			UID:           "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
 			ScopeType:     "tenant",
 			ScopeID:       "tenant",
 		},
@@ -257,7 +254,6 @@ func settingsFixtures() []settings.SettingsObject {
 				"recipients": "oncall-team@example.invalid",
 			},
 			ObjectIDShort: "vu9U3hXa3q0AAAABAB...",
-			UID:           "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
 			ScopeType:     "tenant",
 			ScopeID:       "tenant",
 		},
@@ -272,7 +268,6 @@ func settingsFixtures() []settings.SettingsObject {
 				"rules": []any{},
 			},
 			ObjectIDShort: "vu9U3hXa3q0AAAABAB...",
-			UID:           "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
 			ScopeType:     "tenant",
 			ScopeID:       "tenant",
 		},
@@ -725,6 +720,66 @@ func TestGolden_GetDocumentsGeneric(t *testing.T) {
 	}
 }
 
+// documentsWithAddFieldsFixtures models the output of
+// `dtctl get dashboards --add-fields originExtensionId,labels,shareInfo,userContext`
+// after ConvertToDocuments has carried the requested fields through.
+// Used to lock in two guarantees: (1) JSON/YAML payloads include the
+// requested fields, and (2) default table/wide output is unchanged because
+// the optional fields are tagged `table:"-"`.
+func documentsWithAddFieldsFixtures() []document.Document {
+	return []document.Document{
+		{
+			ID:                "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+			Name:              "Production Overview",
+			Type:              "dashboard",
+			Owner:             "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+			IsPrivate:         false,
+			Created:           fixedTime,
+			Description:       "Main production monitoring dashboard",
+			Version:           3,
+			Modified:          fixedTime.Add(2 * time.Hour),
+			OriginExtensionID: "com.dynatrace.example.extension",
+			Labels:            []string{"prod", "team-a"},
+			ShareInfo:         &document.ShareInfo{IsShared: true, IsSharedWithCurrentUser: true},
+			UserContext:       &document.UserContext{LastAccessedTime: fixedTime.Add(time.Hour)},
+		},
+		{
+			ID:        "c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e6f",
+			Name:      "Runbook: Incident Response",
+			Type:      "notebook",
+			Owner:     "8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
+			IsPrivate: true,
+			Created:   fixedTime.Add(-24 * time.Hour),
+			Version:   1,
+			Modified:  fixedTime.Add(-12 * time.Hour),
+			// Second row deliberately leaves AddFields empty to verify
+			// `omitempty` keeps individual rows lean.
+		},
+	}
+}
+
+func TestGolden_GetDocumentsAddFields(t *testing.T) {
+	docs := documentsWithAddFieldsFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(docs); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/documents-addfields-"+name, buf.String())
+		})
+	}
+}
+
 func TestGolden_GetSettings(t *testing.T) {
 	objs := settingsFixtures()
 
@@ -1109,7 +1164,6 @@ func describeSettingsFixture() settings.SettingsObject {
 			"eventTypeFilter": []any{},
 		},
 		ObjectIDShort: "vu9U3hXa3q0AAAABAB...",
-		UID:           "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
 		ScopeType:     "tenant",
 		ScopeID:       "tenant",
 	}
@@ -1267,59 +1321,6 @@ func describeGCPMonitoringConfigFixture() gcpmonitoringconfig.GCPMonitoringConfi
 				},
 			},
 			FeatureSets: []string{"default"},
-		},
-	}
-}
-
-func describeAWSConnectionFixture() awsconnection.AWSConnection {
-	return awsconnection.AWSConnection{
-		ObjectID: "aws-conn-a1b2c3d4",
-		Value: awsconnection.Value{
-			Name: "production-aws",
-			Type: awsconnection.TypeRoleBased,
-			AwsRoleBasedAuthentication: &awsconnection.AwsRoleBasedAuthenticationConfig{
-				RoleArn:   "arn:aws:iam::123456789012:role/DynatraceMonitoringRole",
-				Consumers: []string{awsconnection.DefaultConsumer},
-			},
-		},
-		Name:    "production-aws",
-		Type:    awsconnection.TypeRoleBased,
-		RoleArn: "arn:aws:iam::123456789012:role/DynatraceMonitoringRole",
-	}
-}
-
-func describeAWSMonitoringConfigFixture() awsmonitoringconfig.AWSMonitoringConfig {
-	return awsmonitoringconfig.AWSMonitoringConfig{
-		ObjectID:    "awsmon-a1b2c3d4",
-		Scope:       awsmonitoringconfig.DefaultScope,
-		Description: "Production AWS monitoring",
-		Enabled:     true,
-		Version:     "1.0.0",
-		Value: awsmonitoringconfig.Value{
-			Enabled:           true,
-			Description:       "Production AWS monitoring",
-			Version:           "1.0.0",
-			ActivationContext: awsmonitoringconfig.DefaultActivationContext,
-			FeatureSets:       []string{"EC2_essential", "RDS_essential"},
-			Aws: awsmonitoringconfig.AWSConfig{
-				DeploymentRegion:  "us-east-1",
-				DeploymentScope:   "SINGLE_ACCOUNT",
-				DeploymentMode:    "AUTOMATED",
-				ConfigurationMode: "QUICK_START",
-				TagFiltering:      []awsmonitoringconfig.TagFilter{},
-				TagEnrichment:     []string{},
-				Namespaces:        []awsmonitoringconfig.CustomNamespace{},
-				Credentials: []awsmonitoringconfig.Credential{
-					{
-						Description:  "Main role",
-						Enabled:      true,
-						ConnectionID: "aws-conn-a1b2c3d4",
-						AccountID:    "123456789012",
-					},
-				},
-				SmartscapeConfiguration: awsmonitoringconfig.FlagConfig{Enabled: true},
-				MetricsConfiguration:    awsmonitoringconfig.RegionalFlagConfig{Enabled: true, Regions: []string{"us-east-1", "eu-central-1"}},
-			},
 		},
 	}
 }
@@ -1592,48 +1593,6 @@ func TestGolden_DescribeGCPMonitoring(t *testing.T) {
 				t.Fatalf("Print failed: %v", err)
 			}
 			assertGolden(t, "describe/gcp-monitoring-"+name, buf.String())
-		})
-	}
-}
-
-func TestGolden_DescribeAWSConnection(t *testing.T) {
-	ac := describeAWSConnectionFixture()
-
-	formats := map[string]string{
-		"json": "json",
-		"yaml": "yaml",
-		"toon": "toon",
-	}
-
-	for name, format := range formats {
-		t.Run(name, func(t *testing.T) {
-			var buf bytes.Buffer
-			printer := NewPrinterWithWriter(format, &buf)
-			if err := printer.Print(ac); err != nil {
-				t.Fatalf("Print failed: %v", err)
-			}
-			assertGolden(t, "describe/aws-connection-"+name, buf.String())
-		})
-	}
-}
-
-func TestGolden_DescribeAWSMonitoring(t *testing.T) {
-	am := describeAWSMonitoringConfigFixture()
-
-	formats := map[string]string{
-		"json": "json",
-		"yaml": "yaml",
-		"toon": "toon",
-	}
-
-	for name, format := range formats {
-		t.Run(name, func(t *testing.T) {
-			var buf bytes.Buffer
-			printer := NewPrinterWithWriter(format, &buf)
-			if err := printer.Print(am); err != nil {
-				t.Fatalf("Print failed: %v", err)
-			}
-			assertGolden(t, "describe/aws-monitoring-"+name, buf.String())
 		})
 	}
 }

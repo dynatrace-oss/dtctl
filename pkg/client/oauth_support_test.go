@@ -2,10 +2,23 @@ package client
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
+
+func TestErrOAuthSessionRevoked_IsRecognised(t *testing.T) {
+	wrapped := fmt.Errorf("token %q: %w; re-authenticate", "my-token", auth.ErrOAuthSessionRevoked)
+	if !errors.Is(wrapped, auth.ErrOAuthSessionRevoked) {
+		t.Fatal("errors.Is should match wrapped ErrOAuthSessionRevoked")
+	}
+	// And it should NOT match isOAuthTokenNotFoundError (the message no longer says "not found").
+	if isOAuthTokenNotFoundError(wrapped) {
+		t.Error("isOAuthTokenNotFoundError should not match a session-revoked error")
+	}
+}
 
 func TestIsOAuthTokenNotFoundError(t *testing.T) {
 	tests := []struct {

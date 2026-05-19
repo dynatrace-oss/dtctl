@@ -1,12 +1,9 @@
 [
   {
+    "schemaId": "builtin:davis.anomaly-detectors",
+    "schemaVersion": "1.0.15",
+    "scope": "environment",
     "objectId": "vu9U3hXa3q0AAAABACdidWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAA",
-    "title": "Aurora cluster CPU utilization",
-    "enabled": true,
-    "analyzer": "static (\u003e90)",
-    "eventType": "PERFORMANCE_EVENT",
-    "source": "Clouds",
-    "description": "Monitors Aurora cluster CPU utilization to detect performance bottlenecks",
     "value": {
       "analyzer": {
         "input": [
@@ -57,16 +54,13 @@
       },
       "source": "Clouds",
       "title": "Aurora cluster CPU utilization"
-    },
-    "schemaVersion": "1.0.15"
+    }
   },
   {
+    "schemaId": "builtin:davis.anomaly-detectors",
+    "schemaVersion": "1.0.15",
+    "scope": "environment",
     "objectId": "xw0V4iYb4r1BBBBBAC1idWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAB",
-    "title": "VPC endpoint packet drops",
-    "enabled": true,
-    "analyzer": "auto-adaptive",
-    "eventType": "AVAILABILITY_EVENT",
-    "source": "Clouds",
     "value": {
       "analyzer": {
         "input": [],
@@ -87,17 +81,13 @@
       },
       "source": "Clouds",
       "title": "VPC endpoint packet drops"
-    },
-    "schemaVersion": "1.0.15"
+    }
   },
   {
+    "schemaId": "builtin:davis.anomaly-detectors",
+    "schemaVersion": "1.0.15",
+    "scope": "environment",
     "objectId": "yz1W5jZc5s2CCCCCAD2idWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAC",
-    "title": "EC2 instance CPU utilization",
-    "enabled": false,
-    "analyzer": "static (\u003e85)",
-    "eventType": "PERFORMANCE_EVENT",
-    "source": "dtctl",
-    "description": "Disabled detector for EC2 CPU monitoring",
     "value": {
       "analyzer": {
         "input": [
@@ -128,7 +118,6 @@
       },
       "source": "dtctl",
       "title": "EC2 instance CPU utilization"
-    },
-    "schemaVersion": "1.0.15"
+    }
   }
 ]

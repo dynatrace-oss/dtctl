@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -30,26 +32,53 @@ type execWorkflowTaskResult struct {
 	Result any    `json:"result,omitempty"`
 }
 
+type singleUseStringValue struct {
+	value *string
+	set   bool
+}
+
+func (v *singleUseStringValue) Set(value string) error {
+	if v.set {
+		return fmt.Errorf("flag can only be provided once")
+	}
+	v.set = true
+	*v.value = value
+	return nil
+}
+
+func (v *singleUseStringValue) String() string {
+	if v.value == nil {
+		return ""
+	}
+	return *v.value
+}
+
+func (v *singleUseStringValue) Type() string {
+	return "string"
+}
+
 // execWorkflowCmd executes a workflow
 var execWorkflowCmd = &cobra.Command{
 	Use:     "workflow <workflow-id>",
 	Aliases: []string{"wf"},
 	Short:   "Execute a workflow",
-	Long:    `Execute an automation workflow.`,
-	Example: `  # Execute workflow
-  dtctl exec workflow my-workflow-id
-
-  # Execute with parameters
-  dtctl exec workflow my-workflow-id --params severity=high --params env=prod
-
-  # Execute and wait for completion
-  dtctl exec workflow my-workflow-id --wait
-
-  # Execute with custom timeout
-  dtctl exec workflow my-workflow-id --wait --timeout 10m
-
-  # Execute, wait, and print each task's return value when done
-  dtctl exec workflow my-workflow-id --wait --show-results`,
+	Long:    "Execute an automation workflow. Workflow input must be provided as a JSON object via --input.",
+	Example: strings.Join([]string{
+		"  # Execute workflow",
+		"  dtctl exec workflow my-workflow-id",
+		"",
+		"  # Execute with workflow input",
+		"  dtctl exec workflow my-workflow-id --input '{\"foo\":\"bar\", \"baz\":3}'",
+		"",
+		"  # Execute and wait for completion",
+		"  dtctl exec workflow my-workflow-id --wait",
+		"",
+		"  # Execute with custom timeout",
+		"  dtctl exec workflow my-workflow-id --wait --timeout 10m",
+		"",
+		"  # Execute, wait, and print each task's return value when done",
+		"  dtctl exec workflow my-workflow-id --wait --show-results",
+	}, "\n"),
 	Args: cobra.ExactArgs(1),
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		showResults, _ := cmd.Flags().GetBool("show-results")
@@ -57,7 +86,9 @@ var execWorkflowCmd = &cobra.Command{
 		if showResults && !wait {
 			return fmt.Errorf("--show-results requires --wait")
 		}
-		return nil
+
+		_, err := buildWorkflowExecutionRequest(cmd)
+		return err
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workflowID := args[0]
@@ -69,13 +100,12 @@ var execWorkflowCmd = &cobra.Command{
 
 		executor := exec.NewWorkflowExecutor(c)
 
-		paramStrings, _ := cmd.Flags().GetStringSlice("params")
-		params, err := exec.ParseParams(paramStrings)
+		request, err := buildWorkflowExecutionRequest(cmd)
 		if err != nil {
 			return err
 		}
 
-		result, err := executor.Execute(workflowID, params)
+		result, err := executor.Execute(workflowID, request)
 		if err != nil {
 			return err
 		}
@@ -241,10 +271,74 @@ func formatExecutionDuration(seconds int) string {
 	return fmt.Sprintf("%dh%dm", h, m)
 }
 
+func buildWorkflowExecutionRequest(cmd *cobra.Command) (exec.WorkflowExecutionRequest, error) {
+	inputJSONValue, _ := cmd.Flags().GetString("input")
+	inputJSONValues := []string{}
+	if cmd.Flags().Lookup("input").Changed {
+		inputJSONValues = append(inputJSONValues, inputJSONValue)
+	}
+	paramStrings, _ := cmd.Flags().GetStringSlice("params")
+
+	return buildWorkflowExecutionRequestFromValues(inputJSONValues, paramStrings)
+}
+
+func buildWorkflowExecutionRequestFromValues(inputJSONValues []string, paramStrings []string) (exec.WorkflowExecutionRequest, error) {
+	request := exec.WorkflowExecutionRequest{}
+
+	if len(inputJSONValues) > 1 {
+		return request, fmt.Errorf("--input may only be provided once")
+	}
+	if len(inputJSONValues) == 1 {
+		input, err := parseWorkflowInputJSON(inputJSONValues[0])
+		if err != nil {
+			return request, err
+		}
+		request.Input = input
+	}
+
+	params, err := exec.ParseParams(paramStrings)
+	if err != nil {
+		return request, err
+	}
+	if len(params) > 0 {
+		request.Params = make(map[string]any, len(params))
+		for key, value := range params {
+			request.Params[key] = value
+		}
+	}
+
+	return request, nil
+}
+
+func parseWorkflowInputJSON(raw string) (map[string]any, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("--input must not be empty")
+	}
+
+	var parsed any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, fmt.Errorf("invalid value for --input: %w", err)
+	}
+
+	input, ok := parsed.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("--input must be a JSON object")
+	}
+
+	return input, nil
+}
+
+func registerWorkflowExecFlags(cmd *cobra.Command) {
+	var inputJSON string
+	cmd.Flags().Var(&singleUseStringValue{value: &inputJSON}, "input", "workflow input as a JSON object")
+	cmd.Flags().StringSlice("params", []string{}, "workflow parameters (key=value)")
+	cmd.Flags().Bool("wait", false, "wait for workflow execution to complete")
+	cmd.Flags().Duration("timeout", 30*time.Minute, "timeout when waiting for completion")
+	cmd.Flags().Bool("show-results", false, "print the result of each task after execution completes (requires --wait)")
+	_ = cmd.Flags().MarkDeprecated("params", "It targets legacy execution metadata. Workflow input must be provided as a JSON object via --input.")
+	_ = cmd.Flags().MarkHidden("params")
+}
+
 func init() {
-	// Workflow flags
-	execWorkflowCmd.Flags().StringSlice("params", []string{}, "workflow parameters (key=value)")
-	execWorkflowCmd.Flags().Bool("wait", false, "wait for workflow execution to complete")
-	execWorkflowCmd.Flags().Duration("timeout", 30*time.Minute, "timeout when waiting for completion")
-	execWorkflowCmd.Flags().Bool("show-results", false, "print the result of each task after execution completes (requires --wait)")
+	registerWorkflowExecFlags(execWorkflowCmd)
 }

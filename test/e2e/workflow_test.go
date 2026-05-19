@@ -20,6 +20,7 @@ func TestWorkflowLifecycle(t *testing.T) {
 
 	handler := workflow.NewHandler(env.Client)
 	execHandler := exec.NewWorkflowExecutor(env.Client)
+	executionHandler := workflow.NewExecutionHandler(env.Client)
 
 	tests := []struct {
 		name    string
@@ -121,10 +122,10 @@ func TestWorkflowLifecycle(t *testing.T) {
 
 			// Step 7: Execute workflow
 			t.Log("Step 7: Executing workflow...")
-			params := map[string]string{
-				"testParam": "testValue",
-			}
-			execution, err := execHandler.Execute(created.ID, params)
+			input := integration.WorkflowExecutionInput()
+			execution, err := execHandler.Execute(created.ID, exec.WorkflowExecutionRequest{
+				Input: input,
+			})
 			if err != nil {
 				t.Fatalf("Failed to execute workflow: %v", err)
 			}
@@ -152,6 +153,24 @@ func TestWorkflowLifecycle(t *testing.T) {
 				if finalStatus.State == "ERROR" && finalStatus.StateInfo != nil {
 					t.Logf("  Execution error info: %s", *finalStatus.StateInfo)
 				}
+			}
+
+			// Step 8b: Fetch the execution and verify persisted workflow input.
+			t.Log("Step 8b: Verifying execution input...")
+			executionDetails, err := executionHandler.Get(execution.ID)
+			if err != nil {
+				t.Fatalf("Failed to get execution details: %v", err)
+			}
+			gotInput, err := json.Marshal(executionDetails.Input)
+			if err != nil {
+				t.Fatalf("Failed to marshal execution input: %v", err)
+			}
+			wantInput, err := json.Marshal(input)
+			if err != nil {
+				t.Fatalf("Failed to marshal expected input: %v", err)
+			}
+			if string(gotInput) != string(wantInput) {
+				t.Fatalf("execution input mismatch: got %s want %s", gotInput, wantInput)
 			}
 
 			// Step 9: Restore to previous version

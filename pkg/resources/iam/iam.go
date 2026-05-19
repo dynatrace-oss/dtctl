@@ -1,24 +1,14 @@
 package iam
 
 import (
-	"fmt"
-	"net/url"
-	"strings"
+	"context"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	sdkiam "github.com/dynatrace-oss/dtctl/sdk/api/iam"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Handler handles IAM resources
-type Handler struct {
-	client *client.Client
-}
-
-// NewHandler creates a new IAM handler
-func NewHandler(c *client.Client) *Handler {
-	return &Handler{client: c}
-}
-
-// User represents a Dynatrace user
+// User represents a Dynatrace user (CLI version with table tags).
 type User struct {
 	UID         string `json:"uid" table:"UID"`
 	Email       string `json:"email" table:"EMAIL"`
@@ -27,189 +17,98 @@ type User struct {
 	Description string `json:"description,omitempty" table:"DESCRIPTION,wide"`
 }
 
-// UserListResponse represents a list of users
+// UserListResponse represents a list of users.
 type UserListResponse struct {
 	Results     []User `json:"results"`
 	NextPageKey string `json:"nextPageKey,omitempty"`
 	TotalCount  int64  `json:"totalCount"`
 }
 
-// Group represents a Dynatrace group
+// Group represents a Dynatrace group (CLI version with table tags).
 type Group struct {
 	UUID      string `json:"uuid" table:"UUID"`
 	GroupName string `json:"groupName" table:"NAME"`
 	Type      string `json:"type" table:"TYPE"`
 }
 
-// GroupListResponse represents a list of groups
+// GroupListResponse represents a list of groups.
 type GroupListResponse struct {
 	Results     []Group `json:"results"`
 	NextPageKey string  `json:"nextPageKey,omitempty"`
 	TotalCount  int64   `json:"totalCount"`
 }
 
-// extractEnvironmentID extracts the environment ID from the base URL
-func extractEnvironmentID(baseURL string) (string, error) {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse base URL: %w", err)
+// fromSDKUser converts an SDK User to a CLI User.
+func fromSDKUser(s *sdkiam.User) User {
+	return User{
+		UID:         s.UID,
+		Email:       s.Email,
+		Name:        s.Name,
+		Surname:     s.Surname,
+		Description: s.Description,
 	}
-
-	// Extract the subdomain as the environment ID
-	// E.g., abc12345.live.dynatrace.com -> abc12345
-	// Or abc12345.apps.dynatrace.com -> abc12345
-	hostname := u.Hostname()
-	parts := strings.Split(hostname, ".")
-	if len(parts) == 0 {
-		return "", fmt.Errorf("invalid hostname format: %s", hostname)
-	}
-
-	return parts[0], nil
 }
 
-// ListUsers lists all users in the current environment with automatic pagination
+// fromSDKGroup converts an SDK Group to a CLI Group.
+func fromSDKGroup(s *sdkiam.Group) Group {
+	return Group{
+		UUID:      s.UUID,
+		GroupName: s.GroupName,
+		Type:      s.Type,
+	}
+}
+
+// Handler handles IAM resources.
+// It delegates to the SDK handler.
+type Handler struct {
+	sdk *sdkiam.Handler
+}
+
+// NewHandler creates a new IAM handler.
+func NewHandler(c *client.Client) *Handler {
+	return &Handler{
+		sdk: sdkiam.NewHandler(httpclient.Wrap(c.HTTP())),
+	}
+}
+
+// ListUsers lists all users in the current environment with automatic pagination.
 func (h *Handler) ListUsers(partialString string, uuids []string, chunkSize int64) (*UserListResponse, error) {
-	envID, err := extractEnvironmentID(h.client.HTTP().BaseURL)
+	sdkResult, err := h.sdk.ListUsers(context.Background(), partialString, uuids, chunkSize)
 	if err != nil {
 		return nil, err
 	}
-
-	var allUsers []User
-	var totalCount int64
-	nextPageKey := ""
-
-	for {
-		var result UserListResponse
-		req := h.client.HTTP().R().SetResult(&result)
-
-		uuidFilter := ""
-		if len(uuids) > 0 {
-			uuidFilter = strings.Join(uuids, ",")
-		}
-		client.PaginationParams{
-			Style:         client.PaginationDefault,
-			PageKeyParam:  "page-key",
-			PageSizeParam: "page-size",
-			NextPageKey:   nextPageKey,
-			PageSize:      chunkSize,
-			Filters:       map[string]string{"partialString": partialString, "uuid": uuidFilter},
-		}.Apply(req)
-
-		resp, err := req.Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/users", envID))
-		if err != nil {
-			return nil, fmt.Errorf("failed to list users: %w", err)
-		}
-
-		if resp.IsError() {
-			return nil, fmt.Errorf("failed to list users: status %d: %s", resp.StatusCode(), resp.String())
-		}
-
-		allUsers = append(allUsers, result.Results...)
-		totalCount = result.TotalCount
-
-		// If chunking is disabled (chunkSize == 0), return first page only
-		if chunkSize == 0 {
-			return &result, nil
-		}
-
-		// Check if there are more pages
-		if result.NextPageKey == "" {
-			break
-		}
-		nextPageKey = result.NextPageKey
+	users := make([]User, len(sdkResult.Results))
+	for i := range sdkResult.Results {
+		users[i] = fromSDKUser(&sdkResult.Results[i])
 	}
-
 	return &UserListResponse{
-		Results:    allUsers,
-		TotalCount: totalCount,
+		Results:    users,
+		TotalCount: sdkResult.TotalCount,
 	}, nil
 }
 
-// GetUser gets a specific user by UUID
+// GetUser gets a specific user by UUID.
 func (h *Handler) GetUser(uuid string) (*User, error) {
-	envID, err := extractEnvironmentID(h.client.HTTP().BaseURL)
+	sdkResult, err := h.sdk.GetUser(context.Background(), uuid)
 	if err != nil {
 		return nil, err
 	}
-
-	var result User
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/users/%s", envID, uuid))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("user %q not found", uuid)
-		default:
-			return nil, fmt.Errorf("failed to get user: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	u := fromSDKUser(sdkResult)
+	return &u, nil
 }
 
-// ListGroups lists all groups in the current account with automatic pagination
+// ListGroups lists all groups in the current account with automatic pagination.
 func (h *Handler) ListGroups(partialGroupName string, uuids []string, chunkSize int64) (*GroupListResponse, error) {
-	envID, err := extractEnvironmentID(h.client.HTTP().BaseURL)
+	sdkResult, err := h.sdk.ListGroups(context.Background(), partialGroupName, uuids, chunkSize)
 	if err != nil {
 		return nil, err
 	}
-
-	var allGroups []Group
-	var totalCount int64
-	nextPageKey := ""
-
-	for {
-		var result GroupListResponse
-		req := h.client.HTTP().R().SetResult(&result)
-
-		uuidFilter := ""
-		if len(uuids) > 0 {
-			uuidFilter = strings.Join(uuids, ",")
-		}
-		client.PaginationParams{
-			Style:         client.PaginationDefault,
-			PageKeyParam:  "page-key",
-			PageSizeParam: "page-size",
-			NextPageKey:   nextPageKey,
-			PageSize:      chunkSize,
-			Filters:       map[string]string{"partialGroupName": partialGroupName, "uuid": uuidFilter},
-		}.Apply(req)
-
-		// Note: Groups are at the account level, but we use environment for now
-		// This might need adjustment based on the actual API requirements
-		resp, err := req.Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/groups", envID))
-		if err != nil {
-			return nil, fmt.Errorf("failed to list groups: %w", err)
-		}
-
-		if resp.IsError() {
-			return nil, fmt.Errorf("failed to list groups: status %d: %s", resp.StatusCode(), resp.String())
-		}
-
-		allGroups = append(allGroups, result.Results...)
-		totalCount = result.TotalCount
-
-		// If chunking is disabled (chunkSize == 0), return first page only
-		if chunkSize == 0 {
-			return &result, nil
-		}
-
-		// Check if there are more pages
-		if result.NextPageKey == "" {
-			break
-		}
-		nextPageKey = result.NextPageKey
+	groups := make([]Group, len(sdkResult.Results))
+	for i := range sdkResult.Results {
+		groups[i] = fromSDKGroup(&sdkResult.Results[i])
 	}
-
 	return &GroupListResponse{
-		Results:    allGroups,
-		TotalCount: totalCount,
+		Results:    groups,
+		TotalCount: sdkResult.TotalCount,
 	}, nil
 }

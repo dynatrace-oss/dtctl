@@ -359,6 +359,18 @@ func resolveLoginContext(cfg *config.Config, contextName, environment, tokenName
 	return contextName, environment, tokenName, nil
 }
 
+// finalizeLoginConfig updates cfg after a successful OAuth login: sets the
+// context, activates it, and prunes placeholder contexts whose names are in
+// placeholderNames (computed from the raw config file before env-var expansion,
+// to avoid permanently deleting contexts backed by unset env vars).
+func finalizeLoginConfig(cfg *config.Config, contextName, environment, tokenName string, safetyLevel config.SafetyLevel, placeholderNames map[string]bool) {
+	cfg.SetContextWithOptions(contextName, environment, tokenName, &config.ContextOptions{
+		SafetyLevel: safetyLevel,
+	})
+	cfg.CurrentContext = contextName
+	cfg.PruneEmptyEnvironments(contextName, placeholderNames)
+}
+
 // authLoginCmd initiates browser-based OAuth login
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
@@ -494,7 +506,7 @@ instead (dtctl config set-credentials).`,
 							"Or use token-based authentication instead:",
 							fmt.Sprintf("  dtctl config set-context %s --environment %q --token-ref my-token", contextName, environment),
 							"  dtctl config set-credentials my-token --token <YOUR_PLATFORM_TOKEN>",
-							"Create a platform token at: Identity & Access Management > Access Tokens > Generate new token > Platform token",
+							"Create a platform token at: https://myaccount.dynatrace.com/platformTokens (Account Management > My platform tokens > Platform token)",
 							"For required token scopes, see: dtctl help token-scopes (or docs/TOKEN_SCOPES.md)",
 							"On Linux, ensure a Secret Service provider is running (e.g. gnome-keyring-daemon --start --components=secrets)",
 							fmt.Sprintf("Unset %s if it was set unintentionally", config.EnvDisableKeyring),
@@ -561,11 +573,19 @@ instead (dtctl config set-credentials).`,
 
 		output.PrintSuccess("Tokens stored in %s as '%s'", config.OAuthStorageBackend(), tokenName)
 
-		// Create or update context with safety level
-		cfg.SetContextWithOptions(contextName, environment, tokenName, &config.ContextOptions{
-			SafetyLevel: safetyLevel,
-		})
-		cfg.CurrentContext = contextName
+		// Identify placeholder contexts from the raw (unexpanded) config.
+		// A context is a placeholder if its environment expands to the empty string
+		// (either literally empty or an unset env-var reference like ${DT_ENVIRONMENT_URL}).
+		placeholderNames := make(map[string]bool)
+		if rawCfg, err := loadRawConfig(); err == nil {
+			for _, nc := range rawCfg.Contexts {
+				if os.ExpandEnv(nc.Context.Environment) == "" {
+					placeholderNames[nc.Name] = true
+				}
+			}
+		}
+
+		finalizeLoginConfig(cfg, contextName, environment, tokenName, safetyLevel, placeholderNames)
 
 		// Save config (respects local .dtctl.yaml if present)
 		if err := saveConfig(cfg); err != nil {

@@ -1,0 +1,203 @@
+package livedebugger
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
+)
+
+func TestBuildGraphQLURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "standard SaaS URL",
+			input: "https://abc12345.apps.dynatrace.com",
+			want:  "https://abc12345.apps.dynatrace.com/platform/dob/graphql",
+		},
+		{
+			name:  "trailing slash stripped",
+			input: "https://abc12345.apps.dynatrace.com/",
+			want:  "https://abc12345.apps.dynatrace.com/platform/dob/graphql",
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "no scheme",
+			input:   "abc12345.apps.dynatrace.com",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildGraphQLURL(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractOrgID(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "standard SaaS URL",
+			input: "https://abc12345.apps.dynatrace.com",
+			want:  "abc12345",
+		},
+		{
+			name:  "with path",
+			input: "https://myorg.apps.dynatrace.com/some/path",
+			want:  "myorg",
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "no host",
+			input:   "https://",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := extractOrgID(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenerateMutableRuleID(t *testing.T) {
+	id := generateMutableRuleID()
+	if !strings.HasPrefix(id, "dtctl-rule-") {
+		t.Fatalf("expected prefix 'dtctl-rule-', got %q", id)
+	}
+	// Should be "dtctl-rule-" + 16 hex chars (8 bytes)
+	if len(id) != len("dtctl-rule-")+16 {
+		t.Fatalf("unexpected length: %q (len=%d)", id, len(id))
+	}
+
+	// Two calls should produce different IDs
+	id2 := generateMutableRuleID()
+	if id == id2 {
+		t.Fatalf("expected unique IDs, got same: %q", id)
+	}
+}
+
+func TestExecuteGraphQL(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer r.Body.Close()
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode request body failed: %v", err)
+			}
+			if body["query"] == nil {
+				t.Fatal("expected query in body")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": map[string]interface{}{"hello": "world"},
+			})
+		}))
+		defer server.Close()
+
+		c, err := httpclient.New(server.URL, httpclient.WithToken("dt0c01.test"))
+		if err != nil {
+			t.Fatalf("httpclient.New failed: %v", err)
+		}
+
+		h := &Handler{client: c, graphqlURL: server.URL + "/platform/dob/graphql", orgID: "test-org"}
+		resp, err := h.executeGraphQL(context.Background(), "{ hello }", map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp["data"] == nil {
+			t.Fatal("expected data in response")
+		}
+	})
+
+	t.Run("graphql errors", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"errors": []interface{}{map[string]interface{}{"message": "bad query"}},
+			})
+		}))
+		defer server.Close()
+
+		c, err := httpclient.New(server.URL, httpclient.WithToken("dt0c01.test"))
+		if err != nil {
+			t.Fatalf("httpclient.New failed: %v", err)
+		}
+
+		h := &Handler{client: c, graphqlURL: server.URL + "/platform/dob/graphql", orgID: "test-org"}
+		_, err = h.executeGraphQL(context.Background(), "{ bad }", map[string]interface{}{})
+		if err == nil {
+			t.Fatal("expected error for graphql errors response")
+		}
+		if !strings.Contains(err.Error(), "graphql returned errors") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("http error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"error":"internal"}`))
+		}))
+		defer server.Close()
+
+		c, err := httpclient.New(server.URL, httpclient.WithToken("dt0c01.test"), httpclient.WithRetry(0, time.Millisecond, time.Millisecond))
+		if err != nil {
+			t.Fatalf("httpclient.New failed: %v", err)
+		}
+
+		h := &Handler{client: c, graphqlURL: server.URL + "/platform/dob/graphql", orgID: "test-org"}
+		_, err = h.executeGraphQL(context.Background(), "{ x }", map[string]interface{}{})
+		if err == nil {
+			t.Fatal("expected error for HTTP 500")
+		}
+	})
+}

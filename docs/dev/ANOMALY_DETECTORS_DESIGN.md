@@ -226,6 +226,24 @@ Detection: if the input has a `schemaId` field equal to `builtin:davis.anomaly-d
 
 The `edit` command returns the flattened YAML format. On save, the handler reconstructs the API format.
 
+#### JSON / YAML output of `get` (round-trippable through `apply`)
+
+`dtctl get anomaly-detector <id> -o json` and `-o yaml` emit the **raw Settings envelope** so the output is directly consumable by `dtctl apply -f`:
+
+```json
+{
+  "schemaId": "builtin:davis.anomaly-detectors",
+  "scope": "environment",
+  "objectId": "vu9U3hXa3q0AAAA",
+  "schemaVersion": "1.0.42",
+  "value": { "title": "...", "analyzer": {...}, "eventTemplate": {...}, ... }
+}
+```
+
+This matches dashboard/notebook/SLO behavior: `get -o json | apply -f` round-trips cleanly. The `AnomalyDetector` Go struct keeps derived display fields (`Title`, `Enabled`, `AnalyzerShort`, `EventType`) for the table renderer, but those fields are tagged `json:"-"` and excluded from the wire format via custom `MarshalJSON`/`MarshalYAML` methods. Including them at the top level (alongside `value`) would produce a hybrid shape that neither matches the Settings API nor the flattened authoring format — the bug fixed by [#216](https://github.com/dynatrace-oss/dtctl/issues/216).
+
+For human authoring, prefer the flattened YAML format above. The raw envelope is the export/round-trip format.
+
 ### Recent Problems Cross-Reference
 
 The `describe` and `--agent` mode include recent problems triggered by a detector. Implementation:

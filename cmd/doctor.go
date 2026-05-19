@@ -257,19 +257,30 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 
 	userInfo, authErr := c.CurrentUser()
 	if authErr != nil {
-		// Try fallback to user ID extraction from JWT
-		userID, jwtErr := c.CurrentUserID()
-		if jwtErr != nil {
+		// /platform/metadata/v1/user requires the 'app-engine:apps:run' scope.
+		// Platform tokens that lack it return 403, and unlike OAuth/JWT tokens
+		// they can't be JWT-decoded as a fallback (they aren't JWTs). Surface
+		// this as a known limitation, not a failure. For OAuth/JWT tokens we
+		// fall back to decoding the user ID directly out of the token;
+		// CurrentUserID would re-issue the same metadata call we already
+		// failed, so go straight to the JWT path.
+		if client.IsPlatformToken(token) {
 			results = append(results, checkResult{
 				Name:   "Authentication",
-				Status: "fail",
-				Detail: fmt.Sprintf("API call failed: %s", authErr.Error()),
+				Status: "warn",
+				Detail: "platform token: user identity unavailable via metadata API (token likely lacks 'app-engine:apps:run' scope; platform tokens are not JWTs, so no fallback)",
 			})
-		} else {
+		} else if userID, jwtErr := client.ExtractUserIDFromToken(token); jwtErr == nil {
 			results = append(results, checkResult{
 				Name:   "Authentication",
 				Status: "warn",
 				Detail: fmt.Sprintf("metadata API unavailable, but token is valid (user: %s)", userID),
+			})
+		} else {
+			results = append(results, checkResult{
+				Name:   "Authentication",
+				Status: "fail",
+				Detail: fmt.Sprintf("API call failed: %s", authErr.Error()),
 			})
 		}
 	} else {

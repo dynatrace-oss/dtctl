@@ -19,8 +19,8 @@ fieldsAdd len = stringLength(content)
 
 **Entity fields:**
 ```dql
-fetch dt.entity.service
-| fields id, entity.name
+smartscapeNodes SERVICE
+| fields id, name
 ```
 
 **Format timestamp:**
@@ -35,10 +35,11 @@ fetch logs, from:now()-1h           -- Log records
 fetch events                        -- System events
 fetch bizevents                     -- Business events
 fetch spans                         -- Trace spans
-fetch dt.entity.service             -- Entities (service, host, etc.)
 fetch security.events               -- Security/vulnerability events
 smartscapeEdges "*"                 -- Entity relationships (calls, runs_on, etc.)
-smartscapeNodes SERVICE             -- Entity graph nodes
+smartscapeNodes HOST                -- Preferred: query hosts (dt.entity.host is legacy)
+smartscapeNodes SERVICE             -- Preferred: query services (dt.entity.service is legacy)
+smartscapeNodes PROCESS             -- Preferred: query processes (dt.entity.process_group_instance is legacy)
 timeseries avg(dt.host.cpu.usage)   -- Metrics (NOT fetch metrics)
 ```
 
@@ -80,10 +81,19 @@ fetch logs, from:now()-4h
 ```
 
 ### Entity search
+Use `smartscapeNodes <TYPE>` — `dt.entity.*` is the legacy form.
 ```dql
-fetch dt.entity.service
-| filter contains(entity.name, "payment") or startsWith(entity.name, "api-")
-| fields id, entity.name
+smartscapeNodes SERVICE
+| filter contains(name, "payment") or startsWith(name, "api-")
+| fields id, name
+
+smartscapeNodes HOST
+| filter contains(name, "my-host")
+| fields id, name
+
+smartscapeNodes PROCESS
+| filter contains(name, "java")
+| fields id, name
 ```
 
 ### Array expansion (after expand, use brackets)
@@ -142,6 +152,18 @@ fetch security.events
 smartscapeEdges "*"
 | filter type == "calls"
 | fields source_id, target_id, type
+| limit 100
+```
+
+### Finding data related to Smartscape entities
+dt.smartscape.k8s_cluster
+dt.smartscape.host
+dt.smartscape.container
+dt.smartscape.process
+```dql
+fetch logs
+| filter dt.smartscape.host == toSmartscapeId("HOST-110D7F5A3B1BA062")
+| fields content, dt.smartscape.host
 | limit 100
 ```
 

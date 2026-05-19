@@ -187,11 +187,13 @@ Examples:
 		timezone, _ := cmd.Flags().GetString("timezone")
 		locale, _ := cmd.Flags().GetString("locale")
 		failOnWarn, _ := cmd.Flags().GetBool("fail-on-warn")
+		clientContext, _ := cmd.Flags().GetString("client-context")
 
 		opts := exec.DQLVerifyOptions{
 			GenerateCanonicalQuery: canonical,
 			Timezone:               timezone,
 			Locale:                 locale,
+			ClientContext:          clientContext,
 		}
 
 		// Call VerifyQuery and handle response
@@ -431,4 +433,6 @@ func init() {
 	verifyQueryCmd.Flags().String("timezone", "", "timezone for query verification (IANA, CET, +01:00, etc.)")
 	verifyQueryCmd.Flags().String("locale", "", "locale for query verification (en, en_US, de_AT, etc.)")
 	verifyQueryCmd.Flags().Bool("fail-on-warn", false, "exit with non-zero status on warnings (useful for CI/CD)")
+	verifyQueryCmd.Flags().String("client-context", "", `optional caller context included in the dt-client-context request header
+useful for AI agents or scripts to declare their intent (e.g. "root-cause-analysis")`)
 }

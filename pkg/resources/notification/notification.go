@@ -1,39 +1,31 @@
 package notification
 
 import (
-	"fmt"
+	"context"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	sdknotification "github.com/dynatrace-oss/dtctl/sdk/api/notification"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Handler handles notification resources
-type Handler struct {
-	client *client.Client
-}
-
-// NewHandler creates a new notification handler
-func NewHandler(c *client.Client) *Handler {
-	return &Handler{client: c}
-}
-
-// EventNotification represents an event notification
+// EventNotification represents an event notification (CLI version with table tags).
 type EventNotification struct {
-	ID               string                 `json:"id" table:"ID"`
-	NotificationType string                 `json:"notificationType" table:"TYPE"`
-	Enabled          bool                   `json:"enabled" table:"ENABLED"`
-	AppID            string                 `json:"appId,omitempty" table:"APP_ID,wide"`
-	Owner            string                 `json:"owner,omitempty" table:"OWNER,wide"`
-	TriggerConfig    map[string]interface{} `json:"triggerConfig,omitempty" table:"-"`
-	ActionConfig     map[string]interface{} `json:"actionConfig,omitempty" table:"-"`
+	ID               string         `json:"id" table:"ID"`
+	NotificationType string         `json:"notificationType" table:"TYPE"`
+	Enabled          bool           `json:"enabled" table:"ENABLED"`
+	AppID            string         `json:"appId,omitempty" table:"APP_ID,wide"`
+	Owner            string         `json:"owner,omitempty" table:"OWNER,wide"`
+	TriggerConfig    map[string]any `json:"triggerConfig,omitempty" table:"-"`
+	ActionConfig     map[string]any `json:"actionConfig,omitempty" table:"-"`
 }
 
-// EventNotificationList represents a list of event notifications
+// EventNotificationList represents a list of event notifications.
 type EventNotificationList struct {
 	Results []EventNotification `json:"results"`
 	Count   int                 `json:"count"`
 }
 
-// ResourceNotification represents a resource notification
+// ResourceNotification represents a resource notification (CLI version with table tags).
 type ResourceNotification struct {
 	ID               string `json:"id" table:"ID"`
 	NotificationType string `json:"notificationType" table:"TYPE"`
@@ -41,175 +33,110 @@ type ResourceNotification struct {
 	AppID            string `json:"appId,omitempty" table:"APP_ID,wide"`
 }
 
-// ResourceNotificationList represents a list of resource notifications
+// ResourceNotificationList represents a list of resource notifications.
 type ResourceNotificationList struct {
 	Results []ResourceNotification `json:"results"`
 	Count   int                    `json:"count"`
 }
 
-// ListEventNotifications lists event notifications
+// fromSDKEventNotification converts an SDK EventNotification to CLI.
+func fromSDKEventNotification(s *sdknotification.EventNotification) EventNotification {
+	return EventNotification{
+		ID:               s.ID,
+		NotificationType: s.NotificationType,
+		Enabled:          s.Enabled,
+		AppID:            s.AppID,
+		Owner:            s.Owner,
+		TriggerConfig:    s.TriggerConfig,
+		ActionConfig:     s.ActionConfig,
+	}
+}
+
+// fromSDKResourceNotification converts an SDK ResourceNotification to CLI.
+func fromSDKResourceNotification(s *sdknotification.ResourceNotification) ResourceNotification {
+	return ResourceNotification{
+		ID:               s.ID,
+		NotificationType: s.NotificationType,
+		ResourceID:       s.ResourceID,
+		AppID:            s.AppID,
+	}
+}
+
+// Handler handles notification resources.
+// It delegates to the SDK handler.
+type Handler struct {
+	sdk *sdknotification.Handler
+}
+
+// NewHandler creates a new notification handler.
+func NewHandler(c *client.Client) *Handler {
+	return &Handler{
+		sdk: sdknotification.NewHandler(httpclient.Wrap(c.HTTP())),
+	}
+}
+
+// ListEventNotifications lists event notifications.
 func (h *Handler) ListEventNotifications(notificationType string) (*EventNotificationList, error) {
-	var result EventNotificationList
-
-	req := h.client.HTTP().R().SetResult(&result)
-
-	if notificationType != "" {
-		req.SetQueryParam("notificationType", notificationType)
-	}
-
-	resp, err := req.Get("/platform/notification/v2/event-notifications")
-
+	sdkResult, err := h.sdk.ListEventNotifications(context.Background(), notificationType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list event notifications: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list event notifications: status %d: %s", resp.StatusCode(), resp.String())
+	results := make([]EventNotification, len(sdkResult.Results))
+	for i := range sdkResult.Results {
+		results[i] = fromSDKEventNotification(&sdkResult.Results[i])
 	}
-
-	return &result, nil
+	return &EventNotificationList{Results: results, Count: sdkResult.Count}, nil
 }
 
-// GetEventNotification gets a specific event notification by ID
+// GetEventNotification gets a specific event notification by ID.
 func (h *Handler) GetEventNotification(id string) (*EventNotification, error) {
-	var result EventNotification
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/notification/v2/event-notifications/%s", id))
-
+	sdkResult, err := h.sdk.GetEventNotification(context.Background(), id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get event notification: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("event notification %q not found", id)
-		default:
-			return nil, fmt.Errorf("failed to get event notification: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	n := fromSDKEventNotification(sdkResult)
+	return &n, nil
 }
 
-// CreateEventNotification creates a new event notification
+// CreateEventNotification creates a new event notification.
 func (h *Handler) CreateEventNotification(data []byte) (*EventNotification, error) {
-	var result EventNotification
-
-	resp, err := h.client.HTTP().R().
-		SetBody(data).
-		SetResult(&result).
-		SetHeader("Content-Type", "application/json").
-		Post("/platform/notification/v2/event-notifications")
-
+	sdkResult, err := h.sdk.CreateEventNotification(context.Background(), data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create event notification: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return nil, fmt.Errorf("invalid notification configuration: %s", resp.String())
-		case 403:
-			return nil, fmt.Errorf("access denied to create notification")
-		default:
-			return nil, fmt.Errorf("failed to create event notification: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	n := fromSDKEventNotification(sdkResult)
+	return &n, nil
 }
 
-// DeleteEventNotification deletes an event notification
+// DeleteEventNotification deletes an event notification.
 func (h *Handler) DeleteEventNotification(id string) error {
-	resp, err := h.client.HTTP().R().
-		Delete(fmt.Sprintf("/platform/notification/v2/event-notifications/%s", id))
-
-	if err != nil {
-		return fmt.Errorf("failed to delete event notification: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return fmt.Errorf("event notification %q not found", id)
-		default:
-			return fmt.Errorf("failed to delete event notification: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
+	return h.sdk.DeleteEventNotification(context.Background(), id)
 }
 
-// ListResourceNotifications lists resource notifications
+// ListResourceNotifications lists resource notifications.
 func (h *Handler) ListResourceNotifications(notificationType, resourceID string) (*ResourceNotificationList, error) {
-	var result ResourceNotificationList
-
-	req := h.client.HTTP().R().SetResult(&result)
-
-	if notificationType != "" {
-		req.SetQueryParam("notificationType", notificationType)
-	}
-	if resourceID != "" {
-		req.SetQueryParam("resourceId", resourceID)
-	}
-
-	resp, err := req.Get("/platform/notification/v2/resource-notifications")
-
+	sdkResult, err := h.sdk.ListResourceNotifications(context.Background(), notificationType, resourceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list resource notifications: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list resource notifications: status %d: %s", resp.StatusCode(), resp.String())
+	results := make([]ResourceNotification, len(sdkResult.Results))
+	for i := range sdkResult.Results {
+		results[i] = fromSDKResourceNotification(&sdkResult.Results[i])
 	}
-
-	return &result, nil
+	return &ResourceNotificationList{Results: results, Count: sdkResult.Count}, nil
 }
 
-// GetResourceNotification gets a specific resource notification by ID
+// GetResourceNotification gets a specific resource notification by ID.
 func (h *Handler) GetResourceNotification(id string) (*ResourceNotification, error) {
-	var result ResourceNotification
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/notification/v2/resource-notifications/%s", id))
-
+	sdkResult, err := h.sdk.GetResourceNotification(context.Background(), id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get resource notification: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("resource notification %q not found", id)
-		default:
-			return nil, fmt.Errorf("failed to get resource notification: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	n := fromSDKResourceNotification(sdkResult)
+	return &n, nil
 }
 
-// DeleteResourceNotification deletes a resource notification
+// DeleteResourceNotification deletes a resource notification.
 func (h *Handler) DeleteResourceNotification(id string) error {
-	resp, err := h.client.HTTP().R().
-		Delete(fmt.Sprintf("/platform/notification/v2/resource-notifications/%s", id))
-
-	if err != nil {
-		return fmt.Errorf("failed to delete resource notification: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return fmt.Errorf("resource notification %q not found", id)
-		default:
-			return fmt.Errorf("failed to delete resource notification: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
+	return h.sdk.DeleteResourceNotification(context.Background(), id)
 }

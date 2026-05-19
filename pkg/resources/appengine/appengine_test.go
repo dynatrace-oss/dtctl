@@ -138,40 +138,6 @@ func TestHandler_GetApp(t *testing.T) {
 	}
 }
 
-func TestParseFullFunctionName(t *testing.T) {
-	tests := []struct {
-		name             string
-		input            string
-		wantAppID        string
-		wantFunctionName string
-	}{
-		{
-			name:             "valid format",
-			input:            "dynatrace.automations/execute-dql-query",
-			wantAppID:        "dynatrace.automations",
-			wantFunctionName: "execute-dql-query",
-		},
-		{
-			name:             "no slash",
-			input:            "invalid",
-			wantAppID:        "",
-			wantFunctionName: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotAppID, gotFunctionName := parseFullFunctionName(tt.input)
-			if gotAppID != tt.wantAppID {
-				t.Errorf("parseFullFunctionName() appID = %q, want %q", gotAppID, tt.wantAppID)
-			}
-			if gotFunctionName != tt.wantFunctionName {
-				t.Errorf("parseFullFunctionName() functionName = %q, want %q", gotFunctionName, tt.wantFunctionName)
-			}
-		})
-	}
-}
-
 func TestContains(t *testing.T) {
 	tests := []struct {
 		name  string

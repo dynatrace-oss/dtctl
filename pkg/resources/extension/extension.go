@@ -1,91 +1,85 @@
 package extension
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
-	"mime/multipart"
-	"net/http"
-	"net/url"
-	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	sdkext "github.com/dynatrace-oss/dtctl/sdk/api/extension"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Handler handles Extensions 2.0 resources
-type Handler struct {
-	client *client.Client
-}
-
-// NewHandler creates a new Extension handler
-func NewHandler(c *client.Client) *Handler {
-	return &Handler{client: c}
-}
-
-// Extension represents an Extensions 2.0 extension
+// Extension is the CLI read model for an extension.
 type Extension struct {
 	ExtensionName string `json:"extensionName" table:"NAME"`
 	Version       string `json:"version,omitempty" table:"VERSION"`
 }
 
-// ExtensionList represents a paginated list of extensions
+// fromSDKExtension converts an SDK Extension to the CLI Extension.
+func fromSDKExtension(e *sdkext.Extension) Extension {
+	return Extension{
+		ExtensionName: e.ExtensionName,
+		Version:       e.Version,
+	}
+}
+
+// ExtensionList represents a paginated list of extensions.
 type ExtensionList struct {
 	Items       []Extension `json:"items"`
 	TotalCount  int         `json:"totalCount"`
 	NextPageKey string      `json:"nextPageKey,omitempty"`
 }
 
-// ExtensionVersion represents a specific version of an extension
+// fromSDKExtensionList converts an SDK ExtensionList to the CLI ExtensionList.
+func fromSDKExtensionList(l *sdkext.ExtensionList) *ExtensionList {
+	items := make([]Extension, len(l.Items))
+	for i := range l.Items {
+		items[i] = fromSDKExtension(&l.Items[i])
+	}
+	return &ExtensionList{
+		Items:       items,
+		TotalCount:  l.TotalCount,
+		NextPageKey: l.NextPageKey,
+	}
+}
+
+// ExtensionVersion is the CLI read model for a specific version of an extension.
 type ExtensionVersion struct {
 	Version       string `json:"version" table:"VERSION"`
 	ExtensionName string `json:"extensionName" table:"NAME"`
 	Active        bool   `json:"active,omitempty" table:"ACTIVE"`
 }
 
-// ExtensionVersionList represents a list of extension versions
+// fromSDKExtensionVersion converts an SDK ExtensionVersion to the CLI ExtensionVersion.
+func fromSDKExtensionVersion(v *sdkext.ExtensionVersion) *ExtensionVersion {
+	return &ExtensionVersion{
+		Version:       v.Version,
+		ExtensionName: v.ExtensionName,
+		Active:        v.Active,
+	}
+}
+
+// ExtensionVersionList represents a list of extension versions.
 type ExtensionVersionList struct {
 	Items       []ExtensionVersion `json:"items"`
 	TotalCount  int                `json:"totalCount"`
 	NextPageKey string             `json:"nextPageKey,omitempty"`
 }
 
-// ExtensionDetails represents detailed information about an extension version
-type ExtensionDetails struct {
-	ExtensionName       string                      `json:"extensionName"`
-	Version             string                      `json:"version"`
-	Author              ExtensionAuthor             `json:"author,omitempty"`
-	DataSources         []string                    `json:"dataSources,omitempty"`
-	FeatureSets         []string                    `json:"featureSets,omitempty"`
-	FeatureSetDetails   map[string]FeatureSetDetail `json:"featureSetDetails,omitempty"`
-	FileHash            string                      `json:"fileHash,omitempty"`
-	MinDynatraceVersion string                      `json:"minDynatraceVersion,omitempty"`
-	MinEECVersion       string                      `json:"minEECVersion,omitempty"`
-	Variables           []ExtensionVariable         `json:"vars,omitempty"`
+// fromSDKExtensionVersionList converts an SDK ExtensionVersionList to the CLI ExtensionVersionList.
+func fromSDKExtensionVersionList(l *sdkext.ExtensionVersionList) *ExtensionVersionList {
+	items := make([]ExtensionVersion, len(l.Items))
+	for i := range l.Items {
+		items[i] = *fromSDKExtensionVersion(&l.Items[i])
+	}
+	return &ExtensionVersionList{
+		Items:       items,
+		TotalCount:  l.TotalCount,
+		NextPageKey: l.NextPageKey,
+	}
 }
 
-// ExtensionAuthor represents the author of an extension
-type ExtensionAuthor struct {
-	Name string `json:"name"`
-}
-
-// FeatureSetDetail represents a feature set of an extension
-type FeatureSetDetail struct {
-	Metrics []FeatureSetMetric `json:"metrics,omitempty"`
-}
-
-// FeatureSetMetric represents a metric within a feature set
-type FeatureSetMetric struct {
-	Key string `json:"key"`
-}
-
-// ExtensionVariable represents a variable defined in an extension
-type ExtensionVariable struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	DisplayName string `json:"displayName,omitempty"`
-}
-
-// MonitoringConfiguration represents an extension monitoring configuration instance
+// MonitoringConfiguration is the CLI read model for a monitoring configuration.
 type MonitoringConfiguration struct {
 	Type          string          `json:"type,omitempty" yaml:"type,omitempty" table:"-"`
 	ExtensionName string          `json:"extensionName,omitempty" table:"EXTENSION"`
@@ -94,13 +88,23 @@ type MonitoringConfiguration struct {
 	Value         json.RawMessage `json:"value,omitempty" table:"-"`
 }
 
+// fromSDKMonitoringConfiguration converts an SDK MonitoringConfiguration to the CLI type.
+func fromSDKMonitoringConfiguration(m *sdkext.MonitoringConfiguration) *MonitoringConfiguration {
+	return &MonitoringConfiguration{
+		Type:          m.Type,
+		ExtensionName: m.ExtensionName,
+		ObjectID:      m.ObjectID,
+		Scope:         m.Scope,
+		Value:         m.Value,
+	}
+}
+
 // MarshalYAML implements yaml.Marshaler to properly serialize json.RawMessage Value
 // as a structured object instead of a byte array.
 func (m MonitoringConfiguration) MarshalYAML() (interface{}, error) {
 	var parsedValue interface{}
 	if len(m.Value) > 0 {
 		if err := json.Unmarshal(m.Value, &parsedValue); err != nil {
-			// If we can't parse the JSON, fall back to string representation
 			parsedValue = string(m.Value)
 		}
 	}
@@ -120,527 +124,180 @@ func (m MonitoringConfiguration) MarshalYAML() (interface{}, error) {
 	}, nil
 }
 
-// MonitoringConfigurationList represents a list of monitoring configuration instances
+// MonitoringConfigurationList represents a list of monitoring configuration instances.
 type MonitoringConfigurationList struct {
 	Items       []MonitoringConfiguration `json:"items"`
 	TotalCount  int                       `json:"totalCount"`
 	NextPageKey string                    `json:"nextPageKey,omitempty"`
 }
 
-// ExtensionEnvironmentConfig represents the environment-wide configuration for an extension
-type ExtensionEnvironmentConfig struct {
-	Version string `json:"version"`
+// fromSDKMonitoringConfigurationList converts an SDK MonitoringConfigurationList to the CLI type.
+func fromSDKMonitoringConfigurationList(l *sdkext.MonitoringConfigurationList) *MonitoringConfigurationList {
+	items := make([]MonitoringConfiguration, len(l.Items))
+	for i := range l.Items {
+		items[i] = *fromSDKMonitoringConfiguration(&l.Items[i])
+	}
+	return &MonitoringConfigurationList{
+		Items:       items,
+		TotalCount:  l.TotalCount,
+		NextPageKey: l.NextPageKey,
+	}
 }
 
-// ExtensionStatus represents the monitoring status of a specific extension version
-type ExtensionStatus struct {
-	Status    string `json:"status"`
-	Timestamp string `json:"timestamp,omitempty"`
-}
-
-// ActiveGateEntry represents a single ActiveGate instance within an active gate group
-type ActiveGateEntry struct {
-	ID     int64           `json:"id"`
-	Errors json.RawMessage `json:"errors,omitempty"`
-}
-
-// ActiveGateGroupItem represents one active gate group available for an extension version
+// ActiveGateGroupItem is the CLI read model for an active gate group.
 type ActiveGateGroupItem struct {
-	GroupName            string            `json:"groupName" table:"GROUP"`
-	AvailableActiveGates int               `json:"availableActiveGates" table:"AVAILABLE"`
-	ActiveGates          []ActiveGateEntry `json:"activeGates,omitempty" table:"-"`
+	GroupName            string                   `json:"groupName" table:"GROUP"`
+	AvailableActiveGates int                      `json:"availableActiveGates" table:"AVAILABLE"`
+	ActiveGates          []sdkext.ActiveGateEntry `json:"activeGates,omitempty" table:"-"`
 }
 
-// ActiveGateGroupList represents the list of active gate groups for an extension version
+// fromSDKActiveGateGroupItem converts an SDK ActiveGateGroupItem to the CLI type.
+func fromSDKActiveGateGroupItem(g *sdkext.ActiveGateGroupItem) ActiveGateGroupItem {
+	return ActiveGateGroupItem{
+		GroupName:            g.GroupName,
+		AvailableActiveGates: g.AvailableActiveGates,
+		ActiveGates:          g.ActiveGates,
+	}
+}
+
+// ActiveGateGroupList represents the list of active gate groups for an extension version.
 type ActiveGateGroupList struct {
 	Items []ActiveGateGroupItem `json:"items"`
 }
 
-// maxPageSize is the maximum page size accepted by the Extensions 2.0 API.
-const maxPageSize = 100
+// fromSDKActiveGateGroupList converts an SDK ActiveGateGroupList to the CLI type.
+func fromSDKActiveGateGroupList(l *sdkext.ActiveGateGroupList) *ActiveGateGroupList {
+	items := make([]ActiveGateGroupItem, len(l.Items))
+	for i := range l.Items {
+		items[i] = fromSDKActiveGateGroupItem(&l.Items[i])
+	}
+	return &ActiveGateGroupList{Items: items}
+}
+
+// Re-export SDK types that don't have table tags.
+type (
+	ExtensionDetails              = sdkext.ExtensionDetails
+	ExtensionAuthor               = sdkext.ExtensionAuthor
+	FeatureSetDetail              = sdkext.FeatureSetDetail
+	FeatureSetMetric              = sdkext.FeatureSetMetric
+	ExtensionVariable             = sdkext.ExtensionVariable
+	MonitoringConfigurationCreate = sdkext.MonitoringConfigurationCreate
+	ExtensionEnvironmentConfig    = sdkext.ExtensionEnvironmentConfig
+	ExtensionStatus               = sdkext.ExtensionStatus
+	ActiveGateEntry               = sdkext.ActiveGateEntry
+)
+
+// Handler handles Extensions 2.0 resources.
+// It delegates to the SDK handler.
+type Handler struct {
+	sdk *sdkext.Handler
+}
+
+// NewHandler creates a new Extension handler
+func NewHandler(c *client.Client) *Handler {
+	return &Handler{
+		sdk: sdkext.NewHandler(httpclient.Wrap(c.HTTP())),
+	}
+}
 
 // List lists all extensions with automatic pagination
 func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
-	var allExtensions []Extension
-	var totalCount int
-	nextPageKey := ""
-
-	// Cap page size to API maximum
-	if chunkSize > maxPageSize {
-		chunkSize = maxPageSize
+	l, err := h.sdk.List(context.Background(), name, chunkSize)
+	if err != nil {
+		return nil, err
 	}
-
-	for {
-		var result ExtensionList
-		req := h.client.HTTP().R().SetResult(&result)
-
-		client.PaginationParams{
-			Style:         client.PaginationDefault,
-			PageKeyParam:  "next-page-key",
-			PageSizeParam: "page-size",
-			NextPageKey:   nextPageKey,
-			PageSize:      chunkSize,
-			Filters:       map[string]string{"name": name},
-		}.Apply(req)
-
-		resp, err := req.Get("/platform/extensions/v2/extensions")
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to list extensions: %w", err)
-		}
-
-		if resp.IsError() {
-			return nil, fmt.Errorf("failed to list extensions: status %d: %s", resp.StatusCode(), resp.Request.URL)
-		}
-
-		allExtensions = append(allExtensions, result.Items...)
-		totalCount = result.TotalCount
-
-		if chunkSize == 0 || result.NextPageKey == "" {
-			break
-		}
-
-		nextPageKey = result.NextPageKey
-	}
-
-	// Client-side filtering: the API accepts the name parameter but ignores it,
-	// so we filter locally using a case-insensitive substring match.
-	if name != "" {
-		nameLower := strings.ToLower(name)
-		filtered := allExtensions[:0]
-		for _, ext := range allExtensions {
-			if strings.Contains(strings.ToLower(ext.ExtensionName), nameLower) {
-				filtered = append(filtered, ext)
-			}
-		}
-		allExtensions = filtered
-		totalCount = len(filtered)
-	}
-
-	return &ExtensionList{
-		Items:      allExtensions,
-		TotalCount: totalCount,
-	}, nil
+	return fromSDKExtensionList(l), nil
 }
 
 // Get gets a specific extension by name (returns all versions)
 func (h *Handler) Get(extensionName string) (*ExtensionVersionList, error) {
-	var allVersions []ExtensionVersion
-	var totalCount int
-	nextPageKey := ""
-
-	for {
-		var result ExtensionVersionList
-		req := h.client.HTTP().R().SetResult(&result)
-
-		client.PaginationParams{
-			Style:        client.PaginationDefault,
-			PageKeyParam: "next-page-key",
-			NextPageKey:  nextPageKey,
-		}.Apply(req)
-
-		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get extension: %w", err)
-		}
-
-		if resp.IsError() {
-			switch resp.StatusCode() {
-			case 404:
-				return nil, fmt.Errorf("extension %q not found", extensionName)
-			case 403:
-				return nil, fmt.Errorf("access denied to extension %q", extensionName)
-			default:
-				return nil, fmt.Errorf("failed to get extension: status %d: %s", resp.StatusCode(), resp.String())
-			}
-		}
-
-		allVersions = append(allVersions, result.Items...)
-		totalCount = result.TotalCount
-
-		if result.NextPageKey == "" {
-			break
-		}
-		nextPageKey = result.NextPageKey
+	l, err := h.sdk.Get(context.Background(), extensionName)
+	if err != nil {
+		return nil, err
 	}
-
-	return &ExtensionVersionList{
-		Items:      allVersions,
-		TotalCount: totalCount,
-	}, nil
+	return fromSDKExtensionVersionList(l), nil
 }
 
 // GetVersion gets details for a specific extension version
 func (h *Handler) GetVersion(extensionName, version string) (*ExtensionDetails, error) {
-	var result ExtensionDetails
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get extension version: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
-		case 403:
-			return nil, fmt.Errorf("access denied to extension %q", extensionName)
-		default:
-			return nil, fmt.Errorf("failed to get extension version: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return h.sdk.GetVersion(context.Background(), extensionName, version)
 }
 
 // GetEnvironmentConfig gets the environment configuration for a specific extension version.
-// The version parameter is required by the Dynatrace Extensions 2.0 API.
 func (h *Handler) GetEnvironmentConfig(extensionName, version string) (*ExtensionEnvironmentConfig, error) {
-	var result ExtensionEnvironmentConfig
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environmentConfiguration", url.PathEscape(extensionName), url.PathEscape(version)))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("extension %q version %q has no environment configuration", extensionName, version)
-		case 403:
-			return nil, fmt.Errorf("access denied to extension %q", extensionName)
-		default:
-			return nil, fmt.Errorf("failed to get extension environment config: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return h.sdk.GetEnvironmentConfig(context.Background(), extensionName, version)
 }
 
 // ListMonitoringConfigurations lists monitoring configurations for an extension
 func (h *Handler) ListMonitoringConfigurations(extensionName, version string, chunkSize int64) (*MonitoringConfigurationList, error) {
-	var allItems []MonitoringConfiguration
-	var totalCount int
-	nextPageKey := ""
-
-	// Cap page size to API maximum
-	if chunkSize > maxPageSize {
-		chunkSize = maxPageSize
+	l, err := h.sdk.ListMonitoringConfigurations(context.Background(), extensionName, version, chunkSize)
+	if err != nil {
+		return nil, err
 	}
-
-	for {
-		var result MonitoringConfigurationList
-		req := h.client.HTTP().R().SetResult(&result)
-
-		client.PaginationParams{
-			Style:         client.PaginationDefault,
-			PageKeyParam:  "next-page-key",
-			PageSizeParam: "page-size",
-			NextPageKey:   nextPageKey,
-			PageSize:      chunkSize,
-			Filters:       map[string]string{"version": version},
-		}.Apply(req)
-
-		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to list monitoring configurations: %w", err)
-		}
-
-		if resp.IsError() {
-			switch resp.StatusCode() {
-			case 404:
-				return nil, fmt.Errorf("extension %q not found", extensionName)
-			case 403:
-				return nil, fmt.Errorf("access denied to extension %q", extensionName)
-			default:
-				return nil, fmt.Errorf("failed to list monitoring configurations: status %d: %s", resp.StatusCode(), resp.String())
-			}
-		}
-
-		for i := range result.Items {
-			result.Items[i].Type = "extension_monitoring_config"
-			result.Items[i].ExtensionName = extensionName
-		}
-		allItems = append(allItems, result.Items...)
-		totalCount = result.TotalCount
-
-		if chunkSize == 0 || result.NextPageKey == "" {
-			break
-		}
-		nextPageKey = result.NextPageKey
-	}
-
-	// Client-side filtering: the API accepts the version parameter but ignores it,
-	// so we filter locally by extracting the version from the config value JSON.
-	if version != "" {
-		filtered := allItems[:0]
-		for _, item := range allItems {
-			if len(item.Value) > 0 {
-				var val map[string]interface{}
-				if err := json.Unmarshal(item.Value, &val); err == nil {
-					if v, ok := val["version"].(string); ok && v == version {
-						filtered = append(filtered, item)
-					}
-				}
-			}
-		}
-		allItems = filtered
-		totalCount = len(filtered)
-	}
-
-	return &MonitoringConfigurationList{
-		Items:      allItems,
-		TotalCount: totalCount,
-	}, nil
+	return fromSDKMonitoringConfigurationList(l), nil
 }
 
 // GetMonitoringConfiguration gets a specific monitoring configuration
 func (h *Handler) GetMonitoringConfiguration(extensionName, configID string) (*MonitoringConfiguration, error) {
-	var result MonitoringConfiguration
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
-
+	m, err := h.sdk.GetMonitoringConfiguration(context.Background(), extensionName, configID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get monitoring configuration: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("monitoring configuration %q not found for extension %q", configID, extensionName)
-		case 403:
-			return nil, fmt.Errorf("access denied to extension %q", extensionName)
-		default:
-			return nil, fmt.Errorf("failed to get monitoring configuration: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	result.Type = "extension_monitoring_config"
-	result.ExtensionName = extensionName
-	return &result, nil
-}
-
-// MonitoringConfigurationCreate represents the body for creating/updating a monitoring configuration
-type MonitoringConfigurationCreate struct {
-	Scope string         `json:"scope,omitempty"`
-	Value map[string]any `json:"value"`
+	return fromSDKMonitoringConfiguration(m), nil
 }
 
 // CreateMonitoringConfiguration creates a new monitoring configuration for an extension
 func (h *Handler) CreateMonitoringConfiguration(extensionName string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
-	var result MonitoringConfiguration
-
-	resp, err := h.client.HTTP().R().
-		SetBody(body).
-		SetResult(&result).
-		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
-
+	m, err := h.sdk.CreateMonitoringConfiguration(context.Background(), extensionName, body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create monitoring configuration: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("extension %q not found", extensionName)
-		case 403:
-			return nil, fmt.Errorf("access denied to extension %q", extensionName)
-		default:
-			return nil, fmt.Errorf("failed to create monitoring configuration: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return fromSDKMonitoringConfiguration(m), nil
 }
 
 // UpdateMonitoringConfiguration updates an existing monitoring configuration for an extension
 func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
-	var result MonitoringConfiguration
-
-	resp, err := h.client.HTTP().R().
-		SetBody(body).
-		SetResult(&result).
-		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
+	m, err := h.sdk.UpdateMonitoringConfiguration(context.Background(), extensionName, configID, body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update monitoring configuration: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("monitoring configuration %q not found for extension %q", configID, extensionName)
-		case 403:
-			return nil, fmt.Errorf("access denied to extension %q", extensionName)
-		default:
-			return nil, fmt.Errorf("failed to update monitoring configuration: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return fromSDKMonitoringConfiguration(m), nil
 }
 
 // Upload uploads a custom extension zip file to the Dynatrace environment.
-// The zipData should contain the raw bytes of the extension zip package.
-// The optional fileName is used as the multipart filename; if empty, "extension.zip" is used.
 func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, error) {
-	if fileName == "" {
-		fileName = "extension.zip"
-	}
-
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-
-	part, err := writer.CreateFormFile("file", fileName)
+	v, err := h.sdk.Upload(context.Background(), fileName, zipData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create multipart field: %w", err)
+		return nil, err
 	}
-	if _, err := part.Write(zipData); err != nil {
-		return nil, fmt.Errorf("failed to write extension data: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
-	}
-
-	var result ExtensionVersion
-
-	resp, err := h.client.HTTP().R().
-		SetHeader("Content-Type", writer.FormDataContentType()).
-		SetBody(body.Bytes()).
-		SetResult(&result).
-		Post("/platform/extensions/v2/extensions")
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to upload extension: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case http.StatusBadRequest:
-			return nil, fmt.Errorf("invalid extension package: status %d: %s", resp.StatusCode(), resp.String())
-		case http.StatusForbidden:
-			return nil, fmt.Errorf("access denied: insufficient permissions to upload extensions")
-		case http.StatusConflict:
-			return nil, fmt.Errorf("extension version already exists: %s", resp.String())
-		default:
-			return nil, fmt.Errorf("failed to upload extension: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return fromSDKExtensionVersion(v), nil
 }
 
-// InstallFromHub installs a Dynatrace Hub extension into the environment using the
-// Extensions 2.0 API. extensionName is the hub extension catalog ID (path parameter).
-// version is optional — when provided it is sent as a query parameter to select a
-// specific release; when empty the API resolves the latest available version.
+// InstallFromHub installs a Dynatrace Hub extension into the environment.
 func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersion, error) {
-	var result ExtensionVersion
-
-	req := h.client.HTTP().R().SetResult(&result)
-	if version != "" {
-		req.SetQueryParam("version", version)
-	}
-
-	resp, err := req.Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
+	v, err := h.sdk.InstallFromHub(context.Background(), extensionName, version)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install Hub extension %q: %w", extensionName, err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case http.StatusNotFound:
-			return nil, fmt.Errorf("hub extension %q not found", extensionName)
-		case http.StatusForbidden:
-			return nil, fmt.Errorf("access denied: insufficient permissions to install extensions")
-		case http.StatusConflict:
-			if version == "" {
-				return nil, fmt.Errorf("hub extension %q (latest version) is already installed", extensionName)
-			}
-			return nil, fmt.Errorf("hub extension %q version %q is already installed", extensionName, version)
-		default:
-			return nil, fmt.Errorf("failed to install Hub extension %q: status %d: %s", extensionName, resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return fromSDKExtensionVersion(v), nil
 }
 
 // DeleteMonitoringConfiguration deletes a monitoring configuration for an extension
 func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) error {
-	resp, err := h.client.HTTP().R().
-		Delete(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
-
-	if err != nil {
-		return fmt.Errorf("failed to delete monitoring configuration: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return fmt.Errorf("monitoring configuration %q not found for extension %q", configID, extensionName)
-		case 403:
-			return fmt.Errorf("access denied to extension %q", extensionName)
-		default:
-			return fmt.Errorf("failed to delete monitoring configuration: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
+	return h.sdk.DeleteMonitoringConfiguration(context.Background(), extensionName, configID)
 }
 
 // GetMonitoringConfigurationSchema retrieves the monitoring configuration schema for a specific
-// extension version. The schema is an arbitrary JSON Schema document returned verbatim.
+// extension version.
 func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string) (json.RawMessage, error) {
-	resp, err := h.client.HTTP().R().
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/schema", url.PathEscape(extensionName), url.PathEscape(version)))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get monitoring configuration schema: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case http.StatusNotFound:
-			return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
-		case http.StatusForbidden:
-			return nil, fmt.Errorf("access denied to extension %q", extensionName)
-		default:
-			return nil, fmt.Errorf("failed to get monitoring configuration schema: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return json.RawMessage(resp.Body()), nil
+	return h.sdk.GetMonitoringConfigurationSchema(context.Background(), extensionName, version)
 }
 
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
 func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGateGroupList, error) {
-	var result ActiveGateGroupList
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/active-gate-groups", url.PathEscape(extensionName), url.PathEscape(version)))
-
+	l, err := h.sdk.GetActiveGateGroups(context.Background(), extensionName, version)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get active gate groups: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case http.StatusNotFound:
-			return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
-		case http.StatusForbidden:
-			return nil, fmt.Errorf("access denied to extension %q", extensionName)
-		default:
-			return nil, fmt.Errorf("failed to get active gate groups: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return fromSDKActiveGateGroupList(l), nil
 }

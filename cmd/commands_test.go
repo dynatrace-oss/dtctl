@@ -252,11 +252,17 @@ func TestCommandsCmd_PatternsAndAntipatterns(t *testing.T) {
 // --- Cross-reference tests ---
 
 // TestMutatingVerbsMatchSafetyCheckerUsage scans cmd/ source files for
-// NewSafetyChecker calls and verifies that every verb which uses safety
-// checks is listed in commands.MutatingVerbs. This catches drift between
-// the catalog and the actual command implementations.
+// safety-check call sites (both NewSafetyChecker and SetupWithSafety) and
+// verifies that every verb which uses safety checks is listed in
+// commands.MutatingVerbs. This catches drift between the catalog and the
+// actual command implementations.
+//
+// Both call patterns must be detected: SetupWithSafety is the dominant
+// helper today (defined in cmd/root.go), but some files still call
+// NewSafetyChecker directly. Missing either would silently misclassify
+// mutating verbs as read-only in the JSON catalog (see issue #203).
 func TestMutatingVerbsMatchSafetyCheckerUsage(t *testing.T) {
-	// Find all .go files in cmd/ that contain NewSafetyChecker
+	// Find all .go files in cmd/ that contain a safety-check call site
 	cmdDir := "."
 	entries, err := os.ReadDir(cmdDir)
 	require.NoError(t, err)
@@ -274,7 +280,11 @@ func TestMutatingVerbsMatchSafetyCheckerUsage(t *testing.T) {
 		data, err := os.ReadFile(filepath.Join(cmdDir, entry.Name()))
 		require.NoError(t, err)
 
-		if !strings.Contains(string(data), "NewSafetyChecker") {
+		content := string(data)
+		// Detect both safety-check patterns:
+		//   - NewSafetyChecker(...): direct construction
+		//   - SetupWithSafety(...): root.go helper that builds a checker internally
+		if !strings.Contains(content, "NewSafetyChecker") && !strings.Contains(content, "SetupWithSafety(") {
 			continue
 		}
 
@@ -282,12 +292,13 @@ func TestMutatingVerbsMatchSafetyCheckerUsage(t *testing.T) {
 		name := strings.TrimSuffix(entry.Name(), ".go")
 		verb := strings.SplitN(name, "_", 2)[0]
 
-		// Special cases: root.go defines NewSafetyChecker, not a verb
+		// Special cases: root.go defines both NewSafetyChecker and SetupWithSafety,
+		// not a verb itself.
 		if verb == "root" || verb == "safety" {
 			continue
 		}
 
-		// "get" files that call NewSafetyChecker are delete handlers
+		// "get" files that call safety-check helpers are delete handlers
 		// (e.g., get_workflows.go has deleteWorkflowCmd) — these use
 		// the "delete" parent command's safety check, not "get".
 		if verb == "get" {
@@ -302,7 +313,7 @@ func TestMutatingVerbsMatchSafetyCheckerUsage(t *testing.T) {
 	for verb := range verbsWithSafetyChecks {
 		_, ok := commands.MutatingVerbs[verb]
 		require.True(t, ok,
-			"verb %q has NewSafetyChecker calls but is missing from commands.MutatingVerbs", verb)
+			"verb %q uses safety checks (NewSafetyChecker or SetupWithSafety) but is missing from commands.MutatingVerbs", verb)
 	}
 
 	// Every verb in MutatingVerbs should exist in the real command tree

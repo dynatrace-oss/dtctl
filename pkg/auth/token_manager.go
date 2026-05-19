@@ -3,12 +3,18 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
+
+// ErrOAuthSessionRevoked indicates the cached OAuth refresh token has been
+// invalidated server-side (HTTP 400 invalid_grant). Callers should evict the
+// cache and fall back to a non-OAuth credential where available.
+var ErrOAuthSessionRevoked = errors.New("OAuth session revoked")
 
 const (
 	// OAuthTokenPrefix is prepended to OAuth token names in keyring
@@ -81,6 +87,10 @@ func (tm *TokenManager) GetToken(tokenName string) (string, error) {
 	if stored.AccessToken == "" && stored.RefreshToken != "" && stored.ExpiresAt.IsZero() {
 		refreshed, err := tm.RefreshToken(tokenName)
 		if err != nil {
+			if isInvalidGrantError(err) {
+				_ = tm.DeleteToken(tokenName)
+				return "", fmt.Errorf("token %q: %w; re-authenticate with `dtctl auth login` or re-run `dtctl config set-credentials`", tokenName, ErrOAuthSessionRevoked)
+			}
 			return "", fmt.Errorf("failed to refresh token from compact storage: %w", err)
 		}
 		return refreshed.AccessToken, nil
@@ -90,7 +100,11 @@ func (tm *TokenManager) GetToken(tokenName string) (string, error) {
 	if tm.needsRefresh(&stored.TokenSet) {
 		refreshed, err := tm.RefreshToken(tokenName)
 		if err != nil {
-			// If refresh fails, try to use existing token if not expired
+			if isInvalidGrantError(err) {
+				_ = tm.DeleteToken(tokenName)
+				return "", fmt.Errorf("token %q: %w; re-authenticate with `dtctl auth login` or re-run `dtctl config set-credentials`", tokenName, ErrOAuthSessionRevoked)
+			}
+			// Transient failure (network, 5xx): use existing token if not yet expired
 			if time.Now().Before(stored.ExpiresAt) {
 				return stored.AccessToken, nil
 			}
@@ -100,6 +114,14 @@ func (tm *TokenManager) GetToken(tokenName string) (string, error) {
 	}
 
 	return stored.AccessToken, nil
+}
+
+// isInvalidGrantError reports whether err is an OAuth2 invalid_grant error,
+// meaning the refresh token has been revoked or expired server-side.
+// This string only appears in 400 responses from the OAuth token endpoint —
+// never in network errors or 5xx responses — so it is a safe, specific match.
+func isInvalidGrantError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "invalid_grant")
 }
 
 // RefreshToken refreshes an OAuth token

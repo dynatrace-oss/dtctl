@@ -338,6 +338,72 @@ func TestDoctorURLValidation(t *testing.T) {
 	}
 }
 
+// TestDoctorPlatformToken403 verifies that when the platform metadata API
+// returns 403 because a platform token (dt0s16.*) cannot be granted
+// iam:users:read, the doctor authentication check is reported as "warn"
+// (with an explanation) rather than "fail". Regression test for
+// https://github.com/dynatrace-oss/dtctl/issues/190
+func TestDoctorPlatformToken403(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodHead:
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/platform/metadata/v1/user":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":{"code":403,"message":"forbidden"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config")
+
+	originalCfgFile := cfgFile
+	defer func() { cfgFile = originalCfgFile }()
+	cfgFile = configPath
+
+	cfg := config.NewConfig()
+	cfg.SetContext("test", server.URL, "platform-token")
+	if err := cfg.SetToken("platform-token", "dt0s16.PLATFORM.test-token-value"); err != nil {
+		t.Fatalf("failed to set token: %v", err)
+	}
+	cfg.CurrentContext = "test"
+	if err := cfg.SaveTo(configPath); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+
+	results := runDoctorChecks()
+
+	found := false
+	for _, r := range results {
+		if r.Name == "Authentication" {
+			found = true
+			if r.Status != "warn" {
+				t.Errorf("expected authentication status 'warn' for platform token + 403, got %q: %s", r.Status, r.Detail)
+			}
+			if !strings.Contains(r.Detail, "platform token") {
+				t.Errorf("expected detail to mention 'platform token', got %q", r.Detail)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected 'Authentication' check in results")
+		for _, r := range results {
+			t.Logf("  %s: %s: %s", r.Name, r.Status, r.Detail)
+		}
+	}
+
+	// The overall command should not return an error: warn-only checks must
+	// not be promoted to a failure.
+	for _, r := range results {
+		if r.Status == "fail" {
+			t.Errorf("unexpected fail check for platform token + 403: %s: %s", r.Name, r.Detail)
+		}
+	}
+}
+
 // TestDoctorFileTokenStorage verifies that when keyring is unavailable but
 // DTCTL_TOKEN_STORAGE=file is set, the doctor check reports "ok" for
 // token storage instead of "warn".

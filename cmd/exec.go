@@ -22,8 +22,8 @@ Available operations:
 	Example: `  # Execute a workflow and wait for completion
   dtctl exec workflow <workflow-id>
 
-  # Execute a workflow with input parameters
-  dtctl exec workflow <workflow-id> --set key=value
+  # Execute a workflow with JSON input
+  dtctl exec workflow <workflow-id> --input '{"foo":"bar", "baz":3}'
 
   # Invoke a serverless function
   dtctl exec function <app-id>/<function-name>

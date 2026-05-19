@@ -426,7 +426,7 @@ func TestExecSLO_ErrorCases(t *testing.T) {
 			responseBody:  map[string]string{"error": "Not found"},
 			statusCode:    404,
 			expectError:   true,
-			errorContains: "not found",
+			errorContains: "Not found",
 		},
 		{
 			name: "empty evaluation results array",

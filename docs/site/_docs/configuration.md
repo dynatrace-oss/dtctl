@@ -34,10 +34,10 @@ dtctl config set-credentials my-token \
 
 ### Creating a Platform Token
 
-1. In Dynatrace, navigate to **Identity & Access Management > Access Tokens**
-2. Select **Generate new token** and choose **Platform token**
+1. Go to [https://myaccount.dynatrace.com/platformTokens](https://myaccount.dynatrace.com/platformTokens) (Account Management > **My platform tokens**)
+2. Select **Platform token** and fill in name, expiration, account, and environments
 3. Add the required scopes for your use case
-4. Copy the token immediately -- it's only shown once
+4. Select **Generate** and copy the token immediately -- it's only shown once
 
 See the [Dynatrace Platform Tokens documentation](https://docs.dynatrace.com/docs/manage/identity-access-management/access-tokens-and-oauth-clients/platform-tokens) for detailed instructions.
 
@@ -148,9 +148,14 @@ dtctl config describe-context prod
 
 Safety levels are client-side only. For actual security, configure your API tokens with minimum required scopes.
 
-## Pre-Apply Hooks
+## Apply Hooks
 
-Pre-apply hooks run an external command to validate resources before `dtctl apply` sends them to the API. The hook receives the **processed JSON on stdin** (after YAML-to-JSON conversion and template rendering) and the **resource type** (`$1`) and **source filename** (`$2`) as positional parameters. A non-zero exit code aborts the apply.
+Apply hooks run external commands around `dtctl apply`:
+
+- **Pre-apply** (`pre-apply`): runs **before** the resource is sent to the API. Receives the processed JSON on stdin and can reject the apply (non-zero exit aborts).
+- **Post-apply** (`post-apply`): runs **after** a successful apply. Receives the apply result as JSON on stdin. Useful for cleanup, notifications, or writing metadata to disk. A non-zero exit is reported as a warning — the resource is already persisted.
+
+Both hooks are invoked the same way: the command string is tokenized using POSIX-style shell quoting (so `"path with spaces"` and `'quoted args'` are honoured) and executed directly — there is **no shell interpretation** of the command line itself. The resource type and source file are appended as the final two positional arguments.
 
 ### Configuration
 
@@ -160,7 +165,8 @@ Hooks are configured globally in `preferences` or per-context:
 # ~/.config/dtctl/config
 preferences:
   hooks:
-    pre-apply: "node validate.js"
+    pre-apply:  "node /opt/dtctl-hooks/validate.js"
+    post-apply: "bash /opt/dtctl-hooks/notify.sh"
 
 contexts:
   - name: production
@@ -174,30 +180,41 @@ contexts:
       environment: https://dev.apps.dynatrace.com
       token-ref: dev-token
       hooks:
-        pre-apply: "none"  # explicitly disable the global hook
+        pre-apply:  "none"  # explicitly disable the global hook
+        post-apply: "none"
 ```
 
 Per-context hooks take precedence over global hooks. The special value `"none"` disables the global hook for a specific context.
 
 ### Hook Contract
 
-| Aspect | Behavior |
-|--------|----------|
-| **Invocation** | `sh -c '<command>' -- <resource-type> <source-file>` |
-| **$1** | Resource type (e.g., `dashboard`, `workflow`, `slo`) |
-| **$2** | Source filename from `-f` (informational -- read content from stdin) |
-| **Stdin** | Processed JSON (after YAML-to-JSON + template rendering) |
-| **Exit 0** | Proceed with apply |
-| **Exit non-zero** | Abort apply, show stderr to user |
-| **Timeout** | 30 seconds |
+| Aspect | Pre-apply | Post-apply |
+|--------|-----------|------------|
+| **Invocation** | direct exec of the tokenized command, with `<resource-type>` and `<source-file>` appended as args | same |
+| **$1** | Resource type (e.g., `dashboard`, `workflow`, `slo`) | same |
+| **$2** | Source filename from `-f` | same |
+| **Stdin** | Processed resource JSON (YAML→JSON + template rendering applied) | Apply result JSON (array of per-resource result objects: `action`, `resourceType`, `id`, `name`, etc.) |
+| **Stdout** | Always forwarded to the user's stdout | Forwarded to the user's stdout |
+| **Stderr** | Always forwarded to the user's stderr | Always forwarded to the user's stderr |
+| **Exit 0** | Proceed with apply | Reported as success |
+| **Exit non-zero** | Abort apply, show stdout+stderr | Warning only — apply already succeeded; stdout+stderr are shown and a warning line is printed |
+| **Timeout** | 30 seconds | 30 seconds |
+| **Dry-run** | Pre-apply runs (validates before the preview) | Post-apply is skipped |
+| **Array apply (partial failure)** | Runs once on the full array | Runs once on the resources that *were* persisted, even when later items in the batch fail |
 
-### Writing a Hook
+Because the command is tokenized but then executed directly (no `sh -c`), pipes, redirections, glob expansion, and environment-variable expansion in the command string itself are **not** supported — put any shell logic inside the script the hook invokes.
 
-A hook is any command that reads JSON from stdin and exits 0 (allow) or non-zero (reject):
+> **Agent mode (`--agent` / `-A`).** When dtctl writes its JSON envelope to stdout, both pre-apply and post-apply hook output is redirected to stderr automatically so the envelope on stdout stays clean for machine consumers. Use stderr for any human-readable hook diagnostics.
+>
+> **Shell positional parameters in config values.** The config loader expands `$VAR` / `${VAR}` against the process environment but preserves shell positional parameters (`$1`, `$2`, `$@`, …) verbatim. You can write `pre-apply: "bash validate.sh \"$1\" \"$2\""` and have those tokens reach the hook unchanged.
+
+### Writing Hooks
+
+**Pre-apply** — reject dashboards without a title:
 
 ```bash
 #!/bin/bash
-# validate.sh -- require dashboards to have a title
+# validate.sh
 resource_type="$1"
 
 if [ "$resource_type" = "dashboard" ]; then
@@ -209,12 +226,27 @@ if [ "$resource_type" = "dashboard" ]; then
 fi
 ```
 
+**Post-apply** — delete the source file after a successful dashboard deploy, forcing the user to re-download before the next edit:
+
+```bash
+#!/bin/bash
+# cleanup.sh
+resource_type="$1"
+source_file="$2"
+
+if [ "$resource_type" = "dashboard" ] && [ -f "$source_file" ]; then
+  rm -- "$source_file"
+  id=$(cat | jq -r '.[0].id')
+  echo "Deployed dashboard $id. Local file removed; re-download with 'dtctl get dashboard $id' before the next edit."
+fi
+```
+
 ### Usage
 
 ```bash
-dtctl apply -f dashboard.yaml            # hook runs automatically
-dtctl apply -f dashboard.yaml --no-hooks # skip hook
-dtctl apply -f dashboard.yaml --dry-run  # hook still runs (validates before preview)
+dtctl apply -f dashboard.yaml            # pre- and post-apply both run
+dtctl apply -f dashboard.yaml --no-hooks # skip both hooks
+dtctl apply -f dashboard.yaml --dry-run  # pre-apply runs, post-apply is skipped
 dtctl apply -f dashboard.yaml -v         # verbose: logs hook command and duration
 ```
 

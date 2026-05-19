@@ -1,14 +1,21 @@
 package workflow
 
 import (
+	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	sdkworkflow "github.com/dynatrace-oss/dtctl/sdk/api/workflow"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Execution represents a workflow execution
+// Re-export SDK types that have no table tags.
+type TaskExecutionMap = sdkworkflow.TaskExecutionMap
+
+// Execution represents a workflow execution (CLI version with table tags).
 type Execution struct {
 	ID          string     `json:"id" table:"ID"`
 	Workflow    string     `json:"workflow" table:"WORKFLOW"`
@@ -27,80 +34,13 @@ type Execution struct {
 	Result      any        `json:"result,omitempty" table:"-"`
 }
 
-// ExecutionList represents a list of executions
+// ExecutionList represents a list of executions.
 type ExecutionList struct {
 	Count   int         `json:"count"`
 	Results []Execution `json:"results"`
 }
 
-// ExecutionHandler handles execution resources
-type ExecutionHandler struct {
-	client *client.Client
-}
-
-// NewExecutionHandler creates a new execution handler
-func NewExecutionHandler(c *client.Client) *ExecutionHandler {
-	return &ExecutionHandler{client: c}
-}
-
-// List retrieves all executions with optional workflow filter
-func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
-	var result ExecutionList
-
-	req := h.client.HTTP().R().SetResult(&result)
-
-	if workflowID != "" {
-		req.SetQueryParam("workflow", workflowID)
-	}
-
-	resp, err := req.Get("/platform/automation/v1/executions")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list executions: %w", err)
-	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list executions: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return &result, nil
-}
-
-// Get retrieves a specific execution
-func (h *ExecutionHandler) Get(id string) (*Execution, error) {
-	var result Execution
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/automation/v1/executions/%s", id))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get execution: %w", err)
-	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to get execution: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return &result, nil
-}
-
-// Cancel cancels an active execution
-func (h *ExecutionHandler) Cancel(id string) error {
-	resp, err := h.client.HTTP().R().
-		Post(fmt.Sprintf("/platform/automation/v1/executions/%s/cancel", id))
-
-	if err != nil {
-		return fmt.Errorf("failed to cancel execution: %w", err)
-	}
-
-	if resp.IsError() {
-		return fmt.Errorf("failed to cancel execution: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return nil
-}
-
-// TaskExecution represents a task execution within a workflow execution
+// TaskExecution represents a task execution within a workflow execution (CLI version with table tags).
 type TaskExecution struct {
 	ID        string     `json:"id" table:"ID"`
 	Name      string     `json:"name" table:"NAME"`
@@ -113,111 +53,109 @@ type TaskExecution struct {
 	Result    any        `json:"result,omitempty" table:"-"`
 }
 
-// TaskExecutionMap is a map of task name to task execution
-type TaskExecutionMap map[string]TaskExecution
+// fromSDKExecution converts an SDK Execution to a CLI Execution.
+func fromSDKExecution(s *sdkworkflow.Execution) Execution {
+	return Execution{
+		ID:          s.ID,
+		Workflow:    s.Workflow,
+		Title:       s.Title,
+		State:       s.State,
+		StateInfo:   s.StateInfo,
+		StartedAt:   s.StartedAt,
+		EndedAt:     s.EndedAt,
+		Runtime:     s.Runtime,
+		Trigger:     s.Trigger,
+		TriggerType: s.TriggerType,
+		User:        s.User,
+		Actor:       s.Actor,
+		Input:       s.Input,
+		Params:      s.Params,
+		Result:      s.Result,
+	}
+}
+
+// fromSDKTaskExecution converts an SDK TaskExecution to a CLI TaskExecution.
+func fromSDKTaskExecution(s *sdkworkflow.TaskExecution) TaskExecution {
+	return TaskExecution{
+		ID:        s.ID,
+		Name:      s.Name,
+		State:     s.State,
+		StartedAt: s.StartedAt,
+		EndedAt:   s.EndedAt,
+		Runtime:   s.Runtime,
+		StateInfo: s.StateInfo,
+		Input:     s.Input,
+		Result:    s.Result,
+	}
+}
+
+// ExecutionHandler handles execution resources.
+// It delegates to the SDK handler and adds CLI-specific convenience methods.
+type ExecutionHandler struct {
+	sdk *sdkworkflow.ExecutionHandler
+}
+
+// NewExecutionHandler creates a new execution handler
+func NewExecutionHandler(c *client.Client) *ExecutionHandler {
+	return &ExecutionHandler{
+		sdk: sdkworkflow.NewExecutionHandler(httpclient.Wrap(c.HTTP())),
+	}
+}
+
+// List retrieves all executions with optional workflow filter
+func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
+	sdkResult, err := h.sdk.List(context.Background(), workflowID)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Execution, len(sdkResult.Results))
+	for i := range sdkResult.Results {
+		results[i] = fromSDKExecution(&sdkResult.Results[i])
+	}
+	return &ExecutionList{Count: sdkResult.Count, Results: results}, nil
+}
+
+// Get retrieves a specific execution
+func (h *ExecutionHandler) Get(id string) (*Execution, error) {
+	sdkResult, err := h.sdk.Get(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	e := fromSDKExecution(sdkResult)
+	return &e, nil
+}
+
+// Cancel cancels an active execution
+func (h *ExecutionHandler) Cancel(id string) error {
+	return h.sdk.Cancel(context.Background(), id)
+}
 
 // ListTasks retrieves all task executions for a workflow execution
 func (h *ExecutionHandler) ListTasks(executionID string) ([]TaskExecution, error) {
-	var result TaskExecutionMap
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/tasks", executionID))
-
+	sdkResult, err := h.sdk.ListTasks(context.Background(), executionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list task executions: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list task executions: status %d: %s", resp.StatusCode(), resp.String())
+	tasks := make([]TaskExecution, len(sdkResult))
+	for i := range sdkResult {
+		tasks[i] = fromSDKTaskExecution(&sdkResult[i])
 	}
-
-	// Convert map to slice
-	tasks := make([]TaskExecution, 0, len(result))
-	for _, task := range result {
-		tasks = append(tasks, task)
-	}
-
 	return tasks, nil
 }
 
 // GetTaskLog retrieves the log output of a specific task execution
 func (h *ExecutionHandler) GetTaskLog(executionID, taskName string) (string, error) {
-	resp, err := h.client.HTTP().R().
-		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/tasks/%s/log", executionID, taskName))
-
-	if err != nil {
-		return "", fmt.Errorf("failed to get task log: %w", err)
-	}
-
-	if resp.IsError() {
-		return "", fmt.Errorf("failed to get task log: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	// The API returns a JSON-encoded string, so we need to unquote it
-	// Use resp.Body() to avoid potential truncation of large logs
-	body := string(resp.Body())
-	if len(body) >= 2 && body[0] == '"' && body[len(body)-1] == '"' {
-		// Remove surrounding quotes and unescape
-		unquoted := body[1 : len(body)-1]
-		// Handle common escape sequences
-		unquoted = strings.ReplaceAll(unquoted, "\\n", "\n")
-		unquoted = strings.ReplaceAll(unquoted, "\\t", "\t")
-		unquoted = strings.ReplaceAll(unquoted, "\\\"", "\"")
-		unquoted = strings.ReplaceAll(unquoted, "\\\\", "\\")
-		return unquoted, nil
-	}
-
-	return body, nil
+	return h.sdk.GetTaskLog(context.Background(), executionID, taskName)
 }
 
 // GetTaskResult retrieves the structured return value of a specific task execution
 func (h *ExecutionHandler) GetTaskResult(executionID, taskName string) (any, error) {
-	var result any
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/tasks/%s/result", executionID, taskName))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get task result: %w", err)
-	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to get task result: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return result, nil
+	return h.sdk.GetTaskResult(context.Background(), executionID, taskName)
 }
 
 // GetExecutionLog retrieves the combined log output of all tasks in an execution
 func (h *ExecutionHandler) GetExecutionLog(executionID string) (string, error) {
-	resp, err := h.client.HTTP().R().
-		Get(fmt.Sprintf("/platform/automation/v1/executions/%s/log", executionID))
-
-	if err != nil {
-		return "", fmt.Errorf("failed to get execution log: %w", err)
-	}
-
-	if resp.IsError() {
-		return "", fmt.Errorf("failed to get execution log: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	// The API returns a JSON-encoded string, so we need to unquote it
-	// Use resp.Body() to avoid potential truncation of large logs
-	body := string(resp.Body())
-	if len(body) >= 2 && body[0] == '"' && body[len(body)-1] == '"' {
-		// Remove surrounding quotes and unescape
-		unquoted := body[1 : len(body)-1]
-		// Handle common escape sequences
-		unquoted = strings.ReplaceAll(unquoted, "\\n", "\n")
-		unquoted = strings.ReplaceAll(unquoted, "\\t", "\t")
-		unquoted = strings.ReplaceAll(unquoted, "\\\"", "\"")
-		unquoted = strings.ReplaceAll(unquoted, "\\\\", "\\")
-		return unquoted, nil
-	}
-
-	return body, nil
+	return h.sdk.GetExecutionLog(context.Background(), executionID)
 }
 
 // GetFullExecutionLog retrieves logs for all tasks in an execution, formatted with headers
@@ -247,7 +185,7 @@ func (h *ExecutionHandler) GetFullExecutionLog(executionID string) (string, erro
 		builder.WriteString(fmt.Sprintf("=== Task: %s [%s] ===\n", task.Name, task.State))
 
 		// Get task log
-		log, err := h.GetTaskLog(executionID, task.Name)
+		log, err := h.sdk.GetTaskLog(context.Background(), executionID, task.Name)
 		if err != nil {
 			builder.WriteString(fmt.Sprintf("(failed to fetch log: %v)\n", err))
 			continue
@@ -272,7 +210,7 @@ func (h *ExecutionHandler) GetCompleteExecutionLog(executionID string) (string, 
 	var builder strings.Builder
 
 	// Get workflow execution log first
-	execLog, err := h.GetExecutionLog(executionID)
+	execLog, err := h.sdk.GetExecutionLog(context.Background(), executionID)
 	if err != nil {
 		return "", err
 	}
@@ -302,25 +240,16 @@ func (h *ExecutionHandler) GetCompleteExecutionLog(executionID string) (string, 
 
 // sortTasksByStartTime sorts tasks by their start time (nil times go last)
 func sortTasksByStartTime(tasks []TaskExecution) {
-	for i := 0; i < len(tasks)-1; i++ {
-		for j := i + 1; j < len(tasks); j++ {
-			// Both nil - keep order
-			if tasks[i].StartedAt == nil && tasks[j].StartedAt == nil {
-				continue
-			}
-			// i is nil, j is not - swap (nil goes last)
-			if tasks[i].StartedAt == nil {
-				tasks[i], tasks[j] = tasks[j], tasks[i]
-				continue
-			}
-			// j is nil - keep order (nil goes last)
-			if tasks[j].StartedAt == nil {
-				continue
-			}
-			// Both have times - sort ascending
-			if tasks[i].StartedAt.After(*tasks[j].StartedAt) {
-				tasks[i], tasks[j] = tasks[j], tasks[i]
-			}
+	slices.SortFunc(tasks, func(a, b TaskExecution) int {
+		if a.StartedAt == nil && b.StartedAt == nil {
+			return 0
 		}
-	}
+		if a.StartedAt == nil {
+			return 1
+		}
+		if b.StartedAt == nil {
+			return -1
+		}
+		return a.StartedAt.Compare(*b.StartedAt)
+	})
 }

@@ -49,3 +49,7 @@ completions/
 
 # Snapshot data
 snapshot.json
+
+# Nix / direnv local caches
+result
+result-*

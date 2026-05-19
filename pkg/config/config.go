@@ -80,7 +80,8 @@ func (s SafetyLevel) String() string {
 
 // Hooks holds hook commands for lifecycle events
 type Hooks struct {
-	PreApply string `yaml:"pre-apply,omitempty"`
+	PreApply  string `yaml:"pre-apply,omitempty"`
+	PostApply string `yaml:"post-apply,omitempty"`
 }
 
 // Context holds the connection information for a Dynatrace environment
@@ -177,6 +178,25 @@ func Load() (*Config, error) {
 
 // LoadFrom loads the configuration from a specific path
 func LoadFrom(path string) (*Config, error) {
+	return loadFrom(path, true)
+}
+
+// LoadFromWithoutExpansion loads the configuration from a specific path without
+// expanding environment variables. Use this to inspect raw template values.
+func LoadFromWithoutExpansion(path string) (*Config, error) {
+	return loadFrom(path, false)
+}
+
+// LoadWithoutExpansion loads the configuration without expanding environment variables,
+// using the same search order as Load (local config, then global config).
+func LoadWithoutExpansion() (*Config, error) {
+	if local := FindLocalConfig(); local != "" {
+		return LoadFromWithoutExpansion(local)
+	}
+	return LoadFromWithoutExpansion(DefaultConfigPath())
+}
+
+func loadFrom(path string, expandEnv bool) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -185,15 +205,156 @@ func LoadFrom(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Expand environment variables in the config file
-	expandedData := []byte(os.ExpandEnv(string(data)))
+	if expandEnv {
+		// Expand environment variables in the config file.
+		//
+		// We deliberately do NOT use os.ExpandEnv: it expands every $-prefixed
+		// token, including shell positional parameters like $1/$2/$@ that can
+		// legitimately appear in opaque config values such as hook commands.
+		// expandEnvPreservingShellParams leaves those alone and substitutes only
+		// real environment variable names.
+		data = []byte(expandEnvPreservingShellParams(string(data)))
+	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(expandedData, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
 	return &cfg, nil
+}
+
+// expandEnvPreservingShellParams expands $VAR and ${VAR} references using
+// the process environment, but leaves shell positional parameters and
+// special parameters intact (e.g. $1, ${10}, $@, $*, $#, $?, $!, $$, $0).
+// This lets users embed those tokens in opaque config values such as hook
+// commands without having them silently rewritten to the empty string at
+// config load.
+//
+// Lookups for ordinary names that are not set in the environment fall back
+// to "" (matching os.ExpandEnv); use "${VAR}" in the config when an
+// unexpanded literal is desired (and `VAR` is in scope to be unset).
+//
+// We implement the scan ourselves rather than calling os.Expand so the
+// brace form (`${10}`) is preserved exactly for shell positionals — the
+// stdlib helper passes the bare name to the mapper, losing the braces.
+func expandEnvPreservingShellParams(s string) string {
+	var b strings.Builder
+	i := 0
+	for i < len(s) {
+		c := s[i]
+		if c != '$' || i+1 >= len(s) {
+			b.WriteByte(c)
+			i++
+			continue
+		}
+
+		// Brace form: ${...}
+		if s[i+1] == '{' {
+			end := strings.IndexByte(s[i+2:], '}')
+			if end < 0 {
+				// No closing brace — treat as literal.
+				b.WriteByte(c)
+				i++
+				continue
+			}
+			name := s[i+2 : i+2+end]
+			if isShellPositionalOrSpecial(name) {
+				b.WriteString(s[i : i+2+end+1]) // preserve `${name}` verbatim
+			} else {
+				b.WriteString(os.Getenv(name))
+			}
+			i += 2 + end + 1
+			continue
+		}
+
+		// Bare form: $NAME or $1 or $@ etc.
+		nameLen := bareEnvNameLen(s[i+1:])
+		if nameLen == 0 {
+			// `$` followed by something that is not a valid name char and
+			// not a special parameter — write `$` literally.
+			b.WriteByte(c)
+			i++
+			continue
+		}
+		name := s[i+1 : i+1+nameLen]
+		if isShellPositionalOrSpecial(name) {
+			b.WriteString(s[i : i+1+nameLen]) // preserve `$name` verbatim
+		} else {
+			b.WriteString(os.Getenv(name))
+		}
+		i += 1 + nameLen
+	}
+	return b.String()
+}
+
+// bareEnvNameLen returns how many bytes at the start of s form a bare
+// (unbraced) shell variable reference, not counting the leading `$` (which
+// must already be stripped by the caller). Returns 0 if s does not start
+// with a valid name character or single-char special parameter.
+//
+// Matches POSIX bare-form references: `$NAME` (alpha/underscore-led name),
+// `$1` (positional digit, single-char only without braces), `$@`, `$*`,
+// `$#`, `$?`, `$!`, `$$`, `$-`.
+func bareEnvNameLen(s string) int {
+	if len(s) == 0 {
+		return 0
+	}
+	c := s[0]
+	// Single-digit positional ($0..$9 — multi-digit needs braces in POSIX).
+	if c >= '0' && c <= '9' {
+		return 1
+	}
+	// Single-char special parameters.
+	switch c {
+	case '@', '*', '#', '?', '!', '$', '-':
+		return 1
+	}
+	// Identifier: [A-Za-z_][A-Za-z0-9_]*
+	if !isNameStart(c) {
+		return 0
+	}
+	n := 1
+	for n < len(s) && isNameCont(s[n]) {
+		n++
+	}
+	return n
+}
+
+func isNameStart(c byte) bool {
+	return c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+}
+
+func isNameCont(c byte) bool {
+	return isNameStart(c) || (c >= '0' && c <= '9')
+}
+
+// isShellPositionalOrSpecial reports whether name refers to a shell
+// positional parameter ($0, $1, ${10}, ...) or special parameter
+// ($@, $*, $#, $?, $!, $$, $-) and should therefore be preserved verbatim
+// rather than expanded against the process environment.
+func isShellPositionalOrSpecial(name string) bool {
+	if name == "" {
+		return false
+	}
+	// Purely numeric → positional parameter.
+	allDigits := true
+	for i := 0; i < len(name); i++ {
+		if name[i] < '0' || name[i] > '9' {
+			allDigits = false
+			break
+		}
+	}
+	if allDigits {
+		return true
+	}
+	if len(name) == 1 {
+		switch name[0] {
+		case '@', '*', '#', '?', '!', '$', '-':
+			return true
+		}
+	}
+	return false
 }
 
 // Save saves the configuration to the default path
@@ -436,6 +597,21 @@ func (c *Config) GetPreApplyHook() string {
 	return c.Preferences.Hooks.PreApply
 }
 
+// GetPostApplyHook returns the effective post-apply hook command.
+// Per-context hooks take precedence over global (preferences) hooks.
+// The special value "none" explicitly disables the global hook for a context.
+func (c *Config) GetPostApplyHook() string {
+	if ctx, err := c.CurrentContextObj(); err == nil {
+		if ctx.Hooks.PostApply != "" {
+			if ctx.Hooks.PostApply == "none" {
+				return ""
+			}
+			return ctx.Hooks.PostApply
+		}
+	}
+	return c.Preferences.Hooks.PostApply
+}
+
 // DeleteContext removes a context by name.
 // Returns an error if the context is not found.
 func (c *Config) DeleteContext(name string) error {
@@ -448,18 +624,61 @@ func (c *Config) DeleteContext(name string) error {
 	return fmt.Errorf("context %q not found", name)
 }
 
+// PruneEmptyEnvironments removes contexts whose names are in placeholderNames,
+// except the named keepContext. Pass the context names from the raw (unexpanded)
+// config file to avoid pruning contexts backed by currently-unset env vars.
+func (c *Config) PruneEmptyEnvironments(keepContext string, placeholderNames map[string]bool) {
+	kept := c.Contexts[:0]
+	for _, nc := range c.Contexts {
+		if placeholderNames[nc.Name] && nc.Name != keepContext {
+			continue
+		}
+		kept = append(kept, nc)
+	}
+	c.Contexts = kept
+}
+
 // SetToken creates or updates a token.
 // If keyring is available, the token is stored securely in the OS keyring
 // and only a reference is kept in the config file.
+// Any cached OAuth tokens for this credential name are invalidated so that
+// a rotated platform token does not keep using a stale refresh token.
 func (c *Config) SetToken(name, token string) error {
-	// Try to store in keyring first
-	if IsKeyringAvailable() {
-		ts := NewTokenStore()
-		if err := ts.SetToken(name, token); err != nil {
+	return c.setTokenWithKeyring(name, token, nil, nil)
+}
+
+// setTokenWithKeyring is the testable core of SetToken; accepts an explicit
+// keyringBackend and OAuthFileStore so tests avoid the OS keyring.
+func (c *Config) setTokenWithKeyring(name, token string, kr keyringBackend, fileStore *OAuthFileStore) error {
+	if kr == nil {
+		kr = newOSKeyring()
+	}
+	if fileStore == nil {
+		fileStore = NewOAuthFileStore()
+	}
+
+	keyringAvailable := kr.Available()
+	if keyringAvailable {
+		if err := kr.Set(name, token); err != nil {
 			return fmt.Errorf("failed to store token in keyring: %w", err)
 		}
 		// Store empty token in config (reference only)
 		token = ""
+	}
+
+	// Invalidate cached OAuth tokens for all known environments.
+	// When a platform token is rotated, the old OAuth refresh token
+	// is no longer valid and must not be reused.
+	// Both keyring and file-based caches are cleared, because GetToken
+	// checks both backends.
+	// Deletion is best-effort: a failure here means the user will get
+	// an invalid_grant error on the next request and must re-authenticate,
+	// which is acceptable.
+	for _, key := range c.oauthKeyringNames(name) {
+		if keyringAvailable {
+			_ = kr.Delete(key)
+		}
+		_ = fileStore.DeleteToken(key)
 	}
 
 	// Update or add token entry in config

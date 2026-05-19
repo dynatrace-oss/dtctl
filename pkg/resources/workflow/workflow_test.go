@@ -543,14 +543,14 @@ func TestHandler_ListHistory(t *testing.T) {
 			workflowID: "wf-nonexistent",
 			statusCode: http.StatusNotFound,
 			wantErr:    true,
-			errMsg:     "workflow \"wf-nonexistent\" not found",
+			errMsg:     "list workflow history: API error (404): 404 Not Found",
 		},
 		{
 			name:       "access denied (403)",
 			workflowID: "wf-forbidden",
 			statusCode: http.StatusForbidden,
 			wantErr:    true,
-			errMsg:     "access denied to workflow \"wf-forbidden\"",
+			errMsg:     "list workflow history: API error (403): 403 Forbidden",
 		},
 		{
 			name:       "server error (500)",
@@ -633,7 +633,7 @@ func TestHandler_GetHistoryRecord(t *testing.T) {
 			version:    1,
 			statusCode: http.StatusNotFound,
 			wantErr:    true,
-			errMsg:     "workflow \"wf-nonexistent\" or version 1 not found",
+			errMsg:     "get workflow history record: API error (404): 404 Not Found",
 		},
 		{
 			name:       "access denied (403)",
@@ -641,7 +641,7 @@ func TestHandler_GetHistoryRecord(t *testing.T) {
 			version:    1,
 			statusCode: http.StatusForbidden,
 			wantErr:    true,
-			errMsg:     "access denied to workflow \"wf-forbidden\"",
+			errMsg:     "get workflow history record: API error (403): 403 Forbidden",
 		},
 		{
 			name:       "server error (500)",
@@ -728,7 +728,7 @@ func TestHandler_RestoreHistory(t *testing.T) {
 			version:    1,
 			statusCode: http.StatusNotFound,
 			wantErr:    true,
-			errMsg:     "workflow \"wf-nonexistent\" or version 1 not found",
+			errMsg:     "restore workflow: API error (404): 404 Not Found",
 		},
 		{
 			name:       "access denied (403)",
@@ -736,7 +736,7 @@ func TestHandler_RestoreHistory(t *testing.T) {
 			version:    1,
 			statusCode: http.StatusForbidden,
 			wantErr:    true,
-			errMsg:     "access denied to restore workflow \"wf-forbidden\"",
+			errMsg:     "restore workflow: API error (403): 403 Forbidden",
 		},
 		{
 			name:       "server error (500)",

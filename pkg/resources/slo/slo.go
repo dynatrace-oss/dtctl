@@ -1,23 +1,21 @@
 package slo
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	sdkslo "github.com/dynatrace-oss/dtctl/sdk/api/slo"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// Handler handles SLO resources
-type Handler struct {
-	client *client.Client
-}
+// Re-export SDK types that don't need table tags as aliases.
+type (
+	Criteria         = sdkslo.Criteria
+	TemplateVariable = sdkslo.TemplateVariable
+)
 
-// NewHandler creates a new SLO handler
-func NewHandler(c *client.Client) *Handler {
-	return &Handler{client: c}
-}
-
-// SLO represents a service-level objective
+// SLO represents a service-level objective with CLI display fields.
 type SLO struct {
 	ID          string                 `json:"id" table:"ID"`
 	Name        string                 `json:"name" table:"NAME"`
@@ -29,22 +27,14 @@ type SLO struct {
 	ExternalID  string                 `json:"externalId,omitempty" table:"-"`
 }
 
-// Criteria represents SLO criteria
-type Criteria struct {
-	TimeframeFrom string   `json:"timeframeFrom"`
-	TimeframeTo   string   `json:"timeframeTo,omitempty"`
-	Target        float64  `json:"target"`
-	Warning       *float64 `json:"warning,omitempty"`
-}
-
-// SLOList represents a list of SLOs
+// SLOList represents a list of SLOs.
 type SLOList struct {
 	SLOs        []SLO  `json:"slos"`
 	TotalCount  int    `json:"totalCount"`
 	NextPageKey string `json:"nextPageKey,omitempty"`
 }
 
-// Template represents an SLO objective template
+// Template represents an SLO objective template with CLI display fields.
 type Template struct {
 	ID              string             `json:"id" table:"ID"`
 	Name            string             `json:"name" table:"NAME"`
@@ -56,20 +46,14 @@ type Template struct {
 	Version         string             `json:"version,omitempty" table:"-"`
 }
 
-// TemplateVariable represents a variable in an SLO template
-type TemplateVariable struct {
-	Name  string `json:"name"`
-	Scope string `json:"scope"`
-}
-
-// TemplateList represents a list of templates
+// TemplateList represents a list of templates.
 type TemplateList struct {
 	Items       []Template `json:"items"`
 	TotalCount  int        `json:"totalCount"`
 	NextPageKey string     `json:"nextPageKey,omitempty"`
 }
 
-// EvaluationResult represents an SLO evaluation result
+// EvaluationResult represents an SLO evaluation result with CLI display fields.
 type EvaluationResult struct {
 	Criteria    string   `json:"criteria" table:"CRITERIA"`
 	Status      string   `json:"status" table:"STATUS"`
@@ -78,7 +62,7 @@ type EvaluationResult struct {
 	Message     string   `json:"message,omitempty" table:"MESSAGE,wide"`
 }
 
-// EvaluationResponse represents the response from SLO evaluation
+// EvaluationResponse represents the response from SLO evaluation.
 type EvaluationResponse struct {
 	Definition        *SLO               `json:"definition,omitempty"`
 	EvaluationResults []EvaluationResult `json:"evaluationResults,omitempty"`
@@ -86,295 +70,182 @@ type EvaluationResponse struct {
 	TTLSeconds        int64              `json:"ttlSeconds,omitempty"`
 }
 
+// fromSDKSLO converts an SDK SLO to the CLI SLO.
+func fromSDKSLO(s *sdkslo.SLO) SLO {
+	return SLO{
+		ID:          s.ID,
+		Name:        s.Name,
+		Description: s.Description,
+		Version:     s.Version,
+		Criteria:    s.Criteria,
+		Tags:        s.Tags,
+		CustomSli:   s.CustomSli,
+		ExternalID:  s.ExternalID,
+	}
+}
+
+// fromSDKSLOList converts an SDK SLOList to the CLI SLOList.
+func fromSDKSLOList(s *sdkslo.SLOList) *SLOList {
+	result := &SLOList{
+		TotalCount:  s.TotalCount,
+		NextPageKey: s.NextPageKey,
+	}
+	result.SLOs = make([]SLO, len(s.SLOs))
+	for i, slo := range s.SLOs {
+		result.SLOs[i] = fromSDKSLO(&slo)
+	}
+	return result
+}
+
+// fromSDKTemplate converts an SDK Template to the CLI Template.
+func fromSDKTemplate(s *sdkslo.Template) Template {
+	return Template{
+		ID:              s.ID,
+		Name:            s.Name,
+		Description:     s.Description,
+		BuiltIn:         s.BuiltIn,
+		ApplicableScope: s.ApplicableScope,
+		Indicator:       s.Indicator,
+		Variables:       s.Variables,
+		Version:         s.Version,
+	}
+}
+
+// fromSDKTemplateList converts an SDK TemplateList to the CLI TemplateList.
+func fromSDKTemplateList(s *sdkslo.TemplateList) *TemplateList {
+	result := &TemplateList{
+		TotalCount:  s.TotalCount,
+		NextPageKey: s.NextPageKey,
+	}
+	result.Items = make([]Template, len(s.Items))
+	for i, t := range s.Items {
+		result.Items[i] = fromSDKTemplate(&t)
+	}
+	return result
+}
+
+// fromSDKEvaluationResult converts an SDK EvaluationResult to the CLI type.
+func fromSDKEvaluationResult(s *sdkslo.EvaluationResult) EvaluationResult {
+	return EvaluationResult{
+		Criteria:    s.Criteria,
+		Status:      s.Status,
+		Value:       s.Value,
+		ErrorBudget: s.ErrorBudget,
+		Message:     s.Message,
+	}
+}
+
+// fromSDKEvaluationResponse converts an SDK EvaluationResponse to the CLI type.
+func fromSDKEvaluationResponse(s *sdkslo.EvaluationResponse) *EvaluationResponse {
+	r := &EvaluationResponse{
+		EvaluationToken: s.EvaluationToken,
+		TTLSeconds:      s.TTLSeconds,
+	}
+	if s.Definition != nil {
+		def := fromSDKSLO(s.Definition)
+		r.Definition = &def
+	}
+	r.EvaluationResults = make([]EvaluationResult, len(s.EvaluationResults))
+	for i, er := range s.EvaluationResults {
+		r.EvaluationResults[i] = fromSDKEvaluationResult(&er)
+	}
+	return r
+}
+
+// Handler handles SLO resources.
+// It delegates to the SDK handler and adds CLI-specific convenience methods.
+type Handler struct {
+	sdk *sdkslo.Handler
+}
+
+// NewHandler creates a new SLO handler
+func NewHandler(c *client.Client) *Handler {
+	return &Handler{
+		sdk: sdkslo.NewHandler(httpclient.Wrap(c.HTTP())),
+	}
+}
+
 // List lists all SLOs with automatic pagination
 func (h *Handler) List(filter string, chunkSize int64) (*SLOList, error) {
-	var allSLOs []SLO
-	var totalCount int
-	nextPageKey := ""
-
-	for {
-		var result SLOList
-		req := h.client.HTTP().R().SetResult(&result)
-
-		client.PaginationParams{
-			Style:         client.PaginationDefault,
-			PageKeyParam:  "page-key",
-			PageSizeParam: "page-size",
-			NextPageKey:   nextPageKey,
-			PageSize:      chunkSize,
-			Filters:       map[string]string{"filter": filter},
-		}.Apply(req)
-
-		resp, err := req.Get("/platform/slo/v1/slos")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list SLOs: %w", err)
-		}
-
-		if resp.IsError() {
-			return nil, fmt.Errorf("failed to list SLOs: status %d: %s", resp.StatusCode(), resp.String())
-		}
-
-		allSLOs = append(allSLOs, result.SLOs...)
-		totalCount = result.TotalCount
-
-		// If chunking is disabled (chunkSize == 0), return first page only
-		if chunkSize == 0 {
-			return &result, nil
-		}
-
-		// Check if there are more pages
-		if result.NextPageKey == "" {
-			break
-		}
-		nextPageKey = result.NextPageKey
+	sdkResult, err := h.sdk.List(context.Background(), filter, chunkSize)
+	if err != nil {
+		return nil, err
 	}
-
-	return &SLOList{
-		SLOs:       allSLOs,
-		TotalCount: totalCount,
-	}, nil
+	return fromSDKSLOList(sdkResult), nil
 }
 
 // Get gets a specific SLO by ID
 func (h *Handler) Get(id string) (*SLO, error) {
-	var result SLO
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/slo/v1/slos/%s", id))
-
+	sdkResult, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get SLO: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("SLO %q not found", id)
-		case 403:
-			return nil, fmt.Errorf("access denied to SLO %q", id)
-		default:
-			return nil, fmt.Errorf("failed to get SLO: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	s := fromSDKSLO(sdkResult)
+	return &s, nil
 }
 
 // Create creates a new SLO
 func (h *Handler) Create(data []byte) (*SLO, error) {
-	var result SLO
-
-	resp, err := h.client.HTTP().R().
-		SetBody(data).
-		SetResult(&result).
-		SetHeader("Content-Type", "application/json").
-		Post("/platform/slo/v1/slos")
-
+	sdkResult, err := h.sdk.Create(context.Background(), data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create SLO: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return nil, fmt.Errorf("invalid SLO configuration: %s", resp.String())
-		case 403:
-			return nil, fmt.Errorf("access denied to create SLO")
-		default:
-			return nil, fmt.Errorf("failed to create SLO: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	s := fromSDKSLO(sdkResult)
+	return &s, nil
 }
 
 // Update updates an existing SLO
 func (h *Handler) Update(id string, version string, data []byte) error {
-	resp, err := h.client.HTTP().R().
-		SetBody(data).
-		SetHeader("Content-Type", "application/json").
-		SetQueryParam("optimistic-locking-version", version).
-		Put(fmt.Sprintf("/platform/slo/v1/slos/%s", id))
-
-	if err != nil {
-		return fmt.Errorf("failed to update SLO: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 400:
-			return fmt.Errorf("invalid SLO configuration: %s", resp.String())
-		case 403:
-			return fmt.Errorf("access denied to update SLO %q", id)
-		case 404:
-			return fmt.Errorf("SLO %q not found", id)
-		case 409:
-			return fmt.Errorf("SLO version conflict (object was modified)")
-		default:
-			return fmt.Errorf("failed to update SLO: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
+	return h.sdk.Update(context.Background(), id, version, data)
 }
 
 // Delete deletes an SLO
 func (h *Handler) Delete(id string, version string) error {
-	resp, err := h.client.HTTP().R().
-		SetQueryParam("optimistic-locking-version", version).
-		Delete(fmt.Sprintf("/platform/slo/v1/slos/%s", id))
-
-	if err != nil {
-		return fmt.Errorf("failed to delete SLO: %w", err)
-	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 403:
-			return fmt.Errorf("access denied to delete SLO %q", id)
-		case 404:
-			return fmt.Errorf("SLO %q not found", id)
-		case 409:
-			return fmt.Errorf("SLO version conflict (object was modified)")
-		default:
-			return fmt.Errorf("failed to delete SLO: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return nil
+	return h.sdk.Delete(context.Background(), id, version)
 }
 
 // ListTemplates lists all SLO templates
 func (h *Handler) ListTemplates(filter string) (*TemplateList, error) {
-	var result TemplateList
-
-	req := h.client.HTTP().R().SetResult(&result)
-
-	if filter != "" {
-		req.SetQueryParam("filter", filter)
-	}
-
-	resp, err := req.Get("/platform/slo/v1/objective-templates")
-
+	sdkResult, err := h.sdk.ListTemplates(context.Background(), filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list SLO templates: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		return nil, fmt.Errorf("failed to list SLO templates: status %d: %s", resp.StatusCode(), resp.String())
-	}
-
-	return &result, nil
+	return fromSDKTemplateList(sdkResult), nil
 }
 
 // GetTemplate gets a specific SLO template by ID
 func (h *Handler) GetTemplate(id string) (*Template, error) {
-	var result Template
-
-	resp, err := h.client.HTTP().R().
-		SetResult(&result).
-		Get(fmt.Sprintf("/platform/slo/v1/objective-templates/%s", id))
-
+	sdkResult, err := h.sdk.GetTemplate(context.Background(), id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get SLO template: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("SLO template %q not found", id)
-		default:
-			return nil, fmt.Errorf("failed to get SLO template: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	t := fromSDKTemplate(sdkResult)
+	return &t, nil
 }
 
 // Evaluate starts an SLO evaluation
 func (h *Handler) Evaluate(id string) (*EvaluationResponse, error) {
-	body := map[string]interface{}{
-		"id": id,
-	}
-
-	var result EvaluationResponse
-
-	resp, err := h.client.HTTP().R().
-		SetBody(body).
-		SetResult(&result).
-		SetHeader("Content-Type", "application/json").
-		Post("/platform/slo/v1/slos/evaluation:start")
-
+	sdkResult, err := h.sdk.Evaluate(context.Background(), id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate SLO: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("SLO %q not found", id)
-		default:
-			return nil, fmt.Errorf("failed to evaluate SLO: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return fromSDKEvaluationResponse(sdkResult), nil
 }
 
 // PollEvaluation polls for SLO evaluation results
 func (h *Handler) PollEvaluation(token string, timeoutMs int) (*EvaluationResponse, error) {
-	var result EvaluationResponse
-
-	req := h.client.HTTP().R().
-		SetResult(&result).
-		SetQueryParam("evaluation-token", token)
-
-	if timeoutMs > 0 {
-		req.SetQueryParam("request-timeout-milliseconds", fmt.Sprintf("%d", timeoutMs))
-	}
-
-	resp, err := req.Get("/platform/slo/v1/slos/evaluation:poll")
-
+	sdkResult, err := h.sdk.PollEvaluation(context.Background(), token, timeoutMs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to poll SLO evaluation: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 410:
-			return nil, fmt.Errorf("evaluation token expired or invalid")
-		default:
-			return nil, fmt.Errorf("failed to poll SLO evaluation: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	return &result, nil
+	return fromSDKEvaluationResponse(sdkResult), nil
 }
 
 // GetRaw gets an SLO as raw JSON bytes (for editing)
 func (h *Handler) GetRaw(id string) ([]byte, error) {
-	resp, err := h.client.HTTP().R().
-		Get(fmt.Sprintf("/platform/slo/v1/slos/%s", id))
-
+	sloObj, err := h.sdk.Get(context.Background(), id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get SLO: %w", err)
+		return nil, err
 	}
-
-	if resp.IsError() {
-		switch resp.StatusCode() {
-		case 404:
-			return nil, fmt.Errorf("SLO %q not found", id)
-		default:
-			return nil, fmt.Errorf("failed to get SLO: status %d: %s", resp.StatusCode(), resp.String())
-		}
-	}
-
-	// Pretty print the JSON
-	var data interface{}
-	if err := json.Unmarshal(resp.Body(), &data); err != nil {
-		return resp.Body(), nil
-	}
-
-	return json.MarshalIndent(data, "", "  ")
+	return json.MarshalIndent(sloObj, "", "  ")
 }

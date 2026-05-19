@@ -1,10 +1,7 @@
-- objectid: vu9U3hXa3q0AAAABACdidWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAA
-  title: Aurora cluster CPU utilization
-  enabled: true
-  analyzershort: static (>90)
-  eventtype: PERFORMANCE_EVENT
-  source: Clouds
-  description: Monitors Aurora cluster CPU utilization to detect performance bottlenecks
+- schemaId: builtin:davis.anomaly-detectors
+  schemaVersion: 1.0.15
+  scope: environment
+  objectId: vu9U3hXa3q0AAAABACdidWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAA
   value:
     analyzer:
       input:
@@ -33,14 +30,10 @@
           value: CPU utilization is high
     source: Clouds
     title: Aurora cluster CPU utilization
-  schemaversion: 1.0.15
-- objectid: xw0V4iYb4r1BBBBBAC1idWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAB
-  title: VPC endpoint packet drops
-  enabled: true
-  analyzershort: auto-adaptive
-  eventtype: AVAILABILITY_EVENT
-  source: Clouds
-  description: ""
+- schemaId: builtin:davis.anomaly-detectors
+  schemaVersion: 1.0.15
+  scope: environment
+  objectId: xw0V4iYb4r1BBBBBAC1idWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAB
   value:
     analyzer:
       input: []
@@ -54,14 +47,10 @@
           value: VPC packet drops detected
     source: Clouds
     title: VPC endpoint packet drops
-  schemaversion: 1.0.15
-- objectid: yz1W5jZc5s2CCCCCAD2idWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAC
-  title: EC2 instance CPU utilization
-  enabled: false
-  analyzershort: static (>85)
-  eventtype: PERFORMANCE_EVENT
-  source: dtctl
-  description: Disabled detector for EC2 CPU monitoring
+- schemaId: builtin:davis.anomaly-detectors
+  schemaVersion: 1.0.15
+  scope: environment
+  objectId: yz1W5jZc5s2CCCCCAD2idWlsdGluOmRhdmlzLmFub21hbHktZGV0ZWN0b3JzAC
   value:
     analyzer:
       input:
@@ -80,4 +69,3 @@
           value: EC2 high CPU utilization
     source: dtctl
     title: EC2 instance CPU utilization
-  schemaversion: 1.0.15

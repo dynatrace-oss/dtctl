@@ -1,6 +1,12 @@
 package auth
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,5 +255,200 @@ func TestMediumCompactStoredTokenForKeyring(t *testing.T) {
 
 	if mediumCompactStoredTokenForKeyring(nil) != nil {
 		t.Error("expected nil input to return nil")
+	}
+}
+
+func TestIsInvalidGrantError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "invalid_grant", err: fmt.Errorf("token refresh failed: 400 Bad Request - {\"error\":\"invalid_grant\"}"), want: true},
+		{name: "wrapped invalid_grant", err: fmt.Errorf("failed to refresh token: %w", fmt.Errorf("token refresh failed: 400 Bad Request - {\"error\":\"invalid_grant\",\"error_description\":\"UNSUCCESSFUL_OAUTH_REFRESH_TOKEN_VALIDATION_FAILED\"}")), want: true},
+		{name: "network error", err: fmt.Errorf("token refresh request failed: dial tcp: connection refused"), want: false},
+		{name: "server error", err: fmt.Errorf("token refresh failed: 500 Internal Server Error"), want: false},
+		{name: "expired access token", err: fmt.Errorf("token expired and refresh failed"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isInvalidGrantError(tt.err); got != tt.want {
+				t.Errorf("isInvalidGrantError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// invalidGrantHTTPDo returns a fake httpDo that always responds with 400 invalid_grant.
+func invalidGrantHTTPDo(_ *http.Request) (*http.Response, error) {
+	body := `{"error":"invalid_grant","error_description":"UNSUCCESSFUL_OAUTH_REFRESH_TOKEN_VALIDATION_FAILED"}`
+	return &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Status:     "400 Bad Request",
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}, nil
+}
+
+// newTMWithFakeKeyring builds a TokenManager whose storage is backed by an
+// in-memory map, so tests never touch the OS keyring. The returned map can be
+// inspected and mutated directly by test code.
+func newTMWithFakeKeyring(t *testing.T) (*TokenManager, map[string]string) {
+	t.Helper()
+	store := make(map[string]string)
+
+	oauthCfg := OAuthConfigForEnvironment(EnvironmentProd, config.DefaultSafetyLevel)
+	tm, err := NewTokenManager(oauthCfg)
+	if err != nil {
+		t.Fatalf("NewTokenManager() error: %v", err)
+	}
+
+	tm.deps.keyringAvailable = func() bool { return true }
+	tm.deps.getToken = func(_ *config.TokenStore, name string) (string, error) {
+		v, ok := store[name]
+		if !ok {
+			return "", fmt.Errorf("token %q not found in keyring", name)
+		}
+		return v, nil
+	}
+	tm.deps.setToken = func(_ *config.TokenStore, name, val string) error {
+		store[name] = val
+		return nil
+	}
+	tm.deps.deleteToken = func(_ *config.TokenStore, name string) error {
+		delete(store, name)
+		return nil
+	}
+	tm.deps.fileStoreAvailable = func() bool { return false }
+
+	return tm, store
+}
+
+func TestTokenManager_GetToken_InvalidGrant_CompactFormat(t *testing.T) {
+	t.Parallel()
+	tm, store := newTMWithFakeKeyring(t)
+	tm.flow.httpDo = invalidGrantHTTPDo
+
+	// Seed compact format: only refresh token, no access token, no expiry.
+	key := tm.getKeyringName("my-token")
+	compact, _ := json.Marshal(&StoredToken{
+		Name:     "my-token",
+		TokenSet: TokenSet{RefreshToken: "stale-refresh"},
+	})
+	store[key] = string(compact)
+
+	_, err := tm.GetToken("my-token")
+
+	// Error must wrap ErrOAuthSessionRevoked so the caller falls back to the platform token.
+	if err == nil {
+		t.Fatal("GetToken() returned nil, want error")
+	}
+	if !errors.Is(err, ErrOAuthSessionRevoked) {
+		t.Errorf("error %q should wrap ErrOAuthSessionRevoked", err.Error())
+	}
+
+	// Stale cache entry must be gone.
+	if _, ok := store[key]; ok {
+		t.Error("stale OAuth cache entry still present after invalid_grant")
+	}
+}
+
+func TestTokenManager_GetToken_InvalidGrant_ExpiredToken(t *testing.T) {
+	t.Parallel()
+	tm, store := newTMWithFakeKeyring(t)
+	tm.flow.httpDo = invalidGrantHTTPDo
+
+	key := tm.getKeyringName("my-token")
+	expired, _ := json.Marshal(&StoredToken{
+		Name: "my-token",
+		TokenSet: TokenSet{
+			AccessToken:  "expired-access",
+			RefreshToken: "stale-refresh",
+			ExpiresAt:    time.Now().Add(-1 * time.Hour), // expired
+		},
+	})
+	store[key] = string(expired)
+
+	_, err := tm.GetToken("my-token")
+
+	if err == nil {
+		t.Fatal("GetToken() returned nil, want error")
+	}
+	if !errors.Is(err, ErrOAuthSessionRevoked) {
+		t.Errorf("error %q should wrap ErrOAuthSessionRevoked", err.Error())
+	}
+	if _, ok := store[key]; ok {
+		t.Error("stale OAuth cache entry still present after invalid_grant")
+	}
+}
+
+func TestTokenManager_GetToken_InvalidGrant_TokenNearExpiry(t *testing.T) {
+	// Access token within the refresh buffer but not yet expired — refresh is
+	// attempted, fails with invalid_grant; cache is evicted so the next call
+	// can fall back to the platform token rather than hitting the same error.
+	t.Parallel()
+	tm, store := newTMWithFakeKeyring(t)
+	tm.flow.httpDo = invalidGrantHTTPDo
+
+	key := tm.getKeyringName("my-token")
+	nearExpiry, _ := json.Marshal(&StoredToken{
+		Name: "my-token",
+		TokenSet: TokenSet{
+			AccessToken:  "almost-expired-access",
+			RefreshToken: "stale-refresh",
+			ExpiresAt:    time.Now().Add(1 * time.Minute), // within 5-min buffer
+		},
+	})
+	store[key] = string(nearExpiry)
+
+	_, err := tm.GetToken("my-token")
+
+	if err == nil {
+		t.Fatal("GetToken() returned nil, want error")
+	}
+	if !errors.Is(err, ErrOAuthSessionRevoked) {
+		t.Errorf("error %q should wrap ErrOAuthSessionRevoked", err.Error())
+	}
+	if _, ok := store[key]; ok {
+		t.Error("stale OAuth cache entry still present after invalid_grant")
+	}
+}
+
+func TestTokenManager_GetToken_TransientError_DoesNotEvict(t *testing.T) {
+	// A network/5xx failure must NOT evict the cache — the token may still be
+	// usable if the access token hasn't expired yet.
+	t.Parallel()
+	tm, store := newTMWithFakeKeyring(t)
+	tm.flow.httpDo = func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Status:     "500 Internal Server Error",
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+		}, nil
+	}
+
+	key := tm.getKeyringName("my-token")
+	stillValid, _ := json.Marshal(&StoredToken{
+		Name: "my-token",
+		TokenSet: TokenSet{
+			AccessToken:  "still-valid-access",
+			RefreshToken: "refresh",
+			ExpiresAt:    time.Now().Add(1 * time.Minute), // within buffer but not expired
+		},
+	})
+	store[key] = string(stillValid)
+
+	got, err := tm.GetToken("my-token")
+
+	// Should return the still-valid access token, not an error.
+	if err != nil {
+		t.Fatalf("GetToken() error = %v, want nil (should use cached access token)", err)
+	}
+	if got != "still-valid-access" {
+		t.Errorf("GetToken() = %q, want %q", got, "still-valid-access")
+	}
+	// Cache entry must NOT have been evicted.
+	if _, ok := store[key]; !ok {
+		t.Error("cache entry was incorrectly evicted on transient error")
 	}
 }

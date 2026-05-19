@@ -89,7 +89,7 @@ Examples:
 
 		var result *analyzer.ExecuteResult
 		if wait {
-			result, err = handler.ExecuteAndWait(analyzerName, input, timeout)
+			result, err = handler.ExecuteAndWait(cmd.Context(), analyzerName, input, timeout)
 		} else {
 			result, err = handler.Execute(analyzerName, input, 30)
 		}

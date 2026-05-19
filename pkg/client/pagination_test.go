@@ -162,21 +162,21 @@ func TestPaginationParams_SettingsAPI_SubsequentPage(t *testing.T) {
 		PageSizeParam: "pageSize",
 		NextPageKey:   "settings-page-2",
 		PageSize:      500,
-		Filters:       map[string]string{"schemaIds": "builtin:alerting.profile", "scopes": "environment"},
+		Filters: map[string]string{
+			"schemaIds": "builtin:alerting.profile",
+			"scopes":    "environment",
+			"fields":    "objectId,scope,value",
+		},
 	})
 
 	if params["nextPageKey"] != "settings-page-2" {
 		t.Errorf("expected nextPageKey=settings-page-2, got %q", params["nextPageKey"])
 	}
 	// Settings API: NOTHING else may be sent with nextPageKey
-	if _, ok := params["pageSize"]; ok {
-		t.Error("Settings API must NOT send pageSize with nextPageKey")
-	}
-	if _, ok := params["schemaIds"]; ok {
-		t.Error("Settings API must NOT send schemaIds with nextPageKey")
-	}
-	if _, ok := params["scopes"]; ok {
-		t.Error("Settings API must NOT send scopes with nextPageKey")
+	for _, forbidden := range []string{"pageSize", "schemaIds", "scopes", "fields"} {
+		if _, ok := params[forbidden]; ok {
+			t.Errorf("Settings API must NOT send %q with nextPageKey", forbidden)
+		}
 	}
 }
 

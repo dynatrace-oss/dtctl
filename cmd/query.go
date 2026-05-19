@@ -332,6 +332,8 @@ Examples:
 			return fmt.Errorf("--segment-var requires at least one --segment or --segments-file")
 		}
 
+		clientContext, _ := cmd.Flags().GetString("client-context")
+
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
 			Decode:                       decodeMode,
@@ -353,6 +355,7 @@ Examples:
 			Timezone:                     timezone,
 			MetadataFields:               metadataFields,
 			Segments:                     segments,
+			ClientContext:                clientContext,
 		}
 
 		// Handle live mode
@@ -735,6 +738,10 @@ takes precedence over --segments-file variables`)
 	_ = queryCmd.RegisterFlagCompletionFunc("segments-file", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{"yaml", "yml"}, cobra.ShellCompDirectiveFilterFileExt
 	})
+
+	// Client context flag
+	queryCmd.Flags().String("client-context", "", `optional caller context included in the dt-client-context request header
+useful for AI agents or scripts to declare their intent (e.g. "root-cause-analysis", "anomaly-investigation")`)
 }
 
 // metadataFieldCompletion provides shell completion for --metadata flag values.

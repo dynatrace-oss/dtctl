@@ -1151,17 +1151,17 @@ func TestVerifyQuery_ServerError(t *testing.T) {
 		{
 			name:           "bad request",
 			statusCode:     http.StatusBadRequest,
-			expectedErrMsg: "query verification failed with status 400",
+			expectedErrMsg: "query verification failed",
 		},
 		{
 			name:           "internal server error",
 			statusCode:     http.StatusInternalServerError,
-			expectedErrMsg: "query verification failed with status 500",
+			expectedErrMsg: "query verification failed",
 		},
 		{
 			name:           "service unavailable",
 			statusCode:     http.StatusServiceUnavailable,
-			expectedErrMsg: "query verification failed with status 503",
+			expectedErrMsg: "query verification failed",
 		},
 	}
 
@@ -1699,85 +1699,6 @@ func TestDQLExecutor_PrintNotifications_Empty(t *testing.T) {
 	executor.PrintNotifications([]QueryNotification{}) // empty — should be no-op
 }
 
-func TestEnhanceQueryError(t *testing.T) {
-	tests := []struct {
-		name         string
-		statusCode   int
-		body         string
-		wantContains []string
-	}{
-		{
-			name:       "segment variable error with all arguments",
-			statusCode: 400,
-			body: `{
-				"error": {
-					"message": "filter segment requires variable",
-					"details": {
-						"errorType": "FILTER_SEGMENT_REQUIRES_VARIABLE",
-						"errorMessage": "segment requires variable binding",
-						"arguments": ["` + "`abc123`" + `", "` + "`logs`" + `", "$host"]
-					}
-				}
-			}`,
-			wantContains: []string{
-				"segment abc123 requires variable",
-				`-S "abc123?host=`,
-				"--segments-file",
-				"name: host",
-			},
-		},
-		{
-			name:       "segment variable error with minimal arguments",
-			statusCode: 400,
-			body: `{
-				"error": {
-					"message": "filter segment requires variable",
-					"details": {
-						"errorType": "FILTER_SEGMENT_REQUIRES_VARIABLE",
-						"errorMessage": "segment requires variable binding",
-						"arguments": ["` + "`seg-id`" + `"]
-					}
-				}
-			}`,
-			wantContains: []string{
-				"segment seg-id requires variable",
-				`-S "seg-id?`,
-			},
-		},
-		{
-			name:       "plain text error falls through",
-			statusCode: 400,
-			body:       "Bad Request",
-			wantContains: []string{
-				"query failed with status 400",
-				"Bad Request",
-			},
-		},
-		{
-			name:       "json error without known errorType falls through",
-			statusCode: 500,
-			body:       `{"error": {"message": "internal error"}}`,
-			wantContains: []string{
-				"query failed with status 500",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := enhanceQueryError(tt.statusCode, []byte(tt.body))
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			for _, want := range tt.wantContains {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("error %q should contain %q", err.Error(), want)
-				}
-			}
-		})
-	}
-}
-
 // TestDQLExecutor_PollTokenRefresh verifies that a 401 during polling triggers a token refresh and retries.
 func TestDQLExecutor_PollTokenRefresh(t *testing.T) {
 	pollCallCount := 0
@@ -2206,5 +2127,341 @@ func TestDQLExecutor_ExecuteQueryWithOptions_StillWorks(t *testing.T) {
 	}
 	if result.State != "SUCCEEDED" {
 		t.Errorf("expected SUCCEEDED, got %s", result.State)
+	}
+}
+
+// parseDTClientContext unmarshals the dt-client-context header value into a map.
+func parseDTClientContext(t *testing.T, raw string) map[string]string {
+	t.Helper()
+	if raw == "" {
+		t.Fatal("dt-client-context header is empty")
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatalf("dt-client-context is not valid JSON: %v — value: %s", err, raw)
+	}
+	return m
+}
+
+// clearAIAgentEnvVars overrides every env var that aidetect checks to "0" so that
+// agent detection is disabled for the duration of the test. This is necessary because
+// the test process may itself be running inside an AI agent (e.g. Claude Code sets
+// CLAUDECODE=1), which would otherwise bleed into tests that expect no agent field.
+func clearAIAgentEnvVars(t *testing.T) {
+	t.Helper()
+	for _, env := range []string{
+		"CLAUDECODE", "CURSOR_AGENT", "GITHUB_COPILOT", "CODEIUM_AGENT",
+		"TABNINE_AGENT", "AMAZON_Q", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW", "AI_AGENT",
+	} {
+		t.Setenv(env, "0")
+	}
+}
+
+func TestDTClientContextHeader_DefaultFields(t *testing.T) {
+	clearAIAgentEnvVars(t)
+
+	h := dtClientContextHeader("")
+	m := parseDTClientContext(t, h)
+
+	if m["app"] != "dtctl" {
+		t.Errorf("app = %q, want %q", m["app"], "dtctl")
+	}
+	if m["version"] == "" {
+		t.Error("version field must not be empty")
+	}
+	if _, hasCtx := m["context"]; hasCtx {
+		t.Error("context field should be omitted when callerContext is empty")
+	}
+	if _, hasAgent := m["agent"]; hasAgent {
+		t.Error("agent field should be omitted when no AI agent env var is set")
+	}
+}
+
+func TestDTClientContextHeader_WithCallerContext(t *testing.T) {
+	clearAIAgentEnvVars(t)
+
+	h := dtClientContextHeader("root-cause-analysis")
+	m := parseDTClientContext(t, h)
+
+	if m["context"] != "root-cause-analysis" {
+		t.Errorf("context = %q, want %q", m["context"], "root-cause-analysis")
+	}
+	if m["app"] != "dtctl" {
+		t.Errorf("app = %q, want %q", m["app"], "dtctl")
+	}
+}
+
+func TestDTClientContextHeader_WithAIAgent(t *testing.T) {
+	clearAIAgentEnvVars(t)
+	t.Setenv("AI_AGENT", "1") // triggers "generic-ai" in aidetect
+
+	h := dtClientContextHeader("")
+	m := parseDTClientContext(t, h)
+
+	if m["agent"] != "generic-ai" {
+		t.Errorf("agent = %q, want %q", m["agent"], "generic-ai")
+	}
+	if _, hasCtx := m["context"]; hasCtx {
+		t.Error("context field should be omitted when callerContext is empty")
+	}
+}
+
+func TestDTClientContextHeader_WithAIAgentAndContext(t *testing.T) {
+	clearAIAgentEnvVars(t)
+	t.Setenv("AI_AGENT", "1")
+
+	h := dtClientContextHeader("anomaly-investigation")
+	m := parseDTClientContext(t, h)
+
+	if m["app"] != "dtctl" {
+		t.Errorf("app = %q, want %q", m["app"], "dtctl")
+	}
+	if m["agent"] != "generic-ai" {
+		t.Errorf("agent = %q, want %q", m["agent"], "generic-ai")
+	}
+	if m["context"] != "anomaly-investigation" {
+		t.Errorf("context = %q, want %q", m["context"], "anomaly-investigation")
+	}
+}
+
+func TestDQLExecutor_ClientContextHeader_OnExecuteAndPoll(t *testing.T) {
+	tests := []struct {
+		name          string
+		clientContext string
+		wantContext   string // empty means key must be absent
+		setAIAgentEnv bool
+		wantAgent     string
+	}{
+		{
+			name:          "no context no agent",
+			clientContext: "",
+			wantContext:   "",
+			wantAgent:     "",
+		},
+		{
+			name:          "with caller context",
+			clientContext: "root-cause-analysis",
+			wantContext:   "root-cause-analysis",
+			wantAgent:     "",
+		},
+		{
+			name:          "with AI agent auto-detected",
+			clientContext: "",
+			setAIAgentEnv: true,
+			wantAgent:     "generic-ai",
+		},
+		{
+			name:          "with both caller context and AI agent",
+			clientContext: "incident-response",
+			setAIAgentEnv: true,
+			wantContext:   "incident-response",
+			wantAgent:     "generic-ai",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearAIAgentEnvVars(t) // prevent CLAUDECODE (or similar) from leaking in from the test runner
+			if tt.setAIAgentEnv {
+				t.Setenv("AI_AGENT", "1")
+			}
+
+			var executeHeader, pollHeader string
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/platform/storage/query/v1/query:execute":
+					executeHeader = r.Header.Get("dt-client-context")
+					// Return 202 to force a poll cycle
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(DQLQueryResponse{
+						State:        "RUNNING",
+						RequestToken: "tok-abc",
+					})
+				case "/platform/storage/query/v1/query:poll":
+					pollHeader = r.Header.Get("dt-client-context")
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.NewEncoder(w).Encode(DQLQueryResponse{
+						State:  "SUCCEEDED",
+						Result: &DQLResult{Records: []map[string]interface{}{{"k": "v"}}},
+					})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.NewForTesting(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			executor := NewDQLExecutor(c)
+			_, err = executor.ExecuteQueryWithContext(context.Background(), "fetch logs", DQLExecuteOptions{
+				ClientContext: tt.clientContext,
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			for label, raw := range map[string]string{"execute": executeHeader, "poll": pollHeader} {
+				m := parseDTClientContext(t, raw)
+				if m["app"] != "dtctl" {
+					t.Errorf("[%s] app = %q, want %q", label, m["app"], "dtctl")
+				}
+				if m["version"] == "" {
+					t.Errorf("[%s] version must not be empty", label)
+				}
+				if tt.wantContext != "" && m["context"] != tt.wantContext {
+					t.Errorf("[%s] context = %q, want %q", label, m["context"], tt.wantContext)
+				}
+				if tt.wantContext == "" {
+					if _, hasCtx := m["context"]; hasCtx {
+						t.Errorf("[%s] context field should be absent when ClientContext is empty", label)
+					}
+				}
+				if tt.wantAgent != "" && m["agent"] != tt.wantAgent {
+					t.Errorf("[%s] agent = %q, want %q", label, m["agent"], tt.wantAgent)
+				}
+				if tt.wantAgent == "" {
+					if _, hasAgent := m["agent"]; hasAgent {
+						t.Errorf("[%s] agent field should be absent when no AI agent env var is set", label)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDQLExecutor_ClientContextHeader_OnVerify(t *testing.T) {
+	clearAIAgentEnvVars(t)
+	var receivedHeader string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeader = r.Header.Get("dt-client-context")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(DQLVerifyResponse{Valid: true})
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	_, err = executor.VerifyQuery("fetch logs", DQLVerifyOptions{
+		ClientContext: "syntax-check",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m := parseDTClientContext(t, receivedHeader)
+	if m["app"] != "dtctl" {
+		t.Errorf("app = %q, want %q", m["app"], "dtctl")
+	}
+	if m["context"] != "syntax-check" {
+		t.Errorf("context = %q, want %q", m["context"], "syntax-check")
+	}
+}
+
+func TestDQLExecutor_ClientContextHeader_OnPublicCancel(t *testing.T) {
+	clearAIAgentEnvVars(t)
+	var receivedHeader string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeader = r.Header.Get("dt-client-context")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewDQLExecutor(c)
+	executor.CancelQuery("tok-xyz")
+
+	m := parseDTClientContext(t, receivedHeader)
+	if m["app"] != "dtctl" {
+		t.Errorf("app = %q, want %q", m["app"], "dtctl")
+	}
+	if _, hasCtx := m["context"]; hasCtx {
+		t.Error("public CancelQuery should omit context field (no caller context available)")
+	}
+}
+
+func TestDQLExecutor_ClientContextHeader_OnInternalCancel(t *testing.T) {
+	// When a context is cancelled while poll is in-flight, the internal cancel path
+	// should carry the full ClientContext from the opts.
+	clearAIAgentEnvVars(t)
+
+	var cancelHeader string
+	cancelCalled := make(chan struct{}, 1)
+	// unblockPoll lets the test release the poll handler after cancellation so the
+	// httptest server can close without blocking.
+	unblockPoll := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/platform/storage/query/v1/query:execute":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(DQLQueryResponse{
+				State:        "RUNNING",
+				RequestToken: "tok-cancel-test",
+			})
+		case "/platform/storage/query/v1/query:cancel":
+			cancelHeader = r.Header.Get("dt-client-context")
+			cancelCalled <- struct{}{}
+			w.WriteHeader(http.StatusOK)
+		case "/platform/storage/query/v1/query:poll":
+			// Hold the poll response until the test unblocks it, simulating a long-running query.
+			<-unblockPoll
+			w.WriteHeader(http.StatusServiceUnavailable) // any non-success is fine; the context is cancelled
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	executor := NewDQLExecutor(c)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := executor.ExecuteQueryWithContext(ctx, "fetch logs", DQLExecuteOptions{
+			ClientContext: "incident-response",
+		})
+		done <- err
+	}()
+
+	// Cancel once poll is in-flight, then unblock the poll handler.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	close(unblockPoll)
+
+	select {
+	case <-cancelCalled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for query:cancel to be called")
+	}
+	<-done
+
+	m := parseDTClientContext(t, cancelHeader)
+	if m["app"] != "dtctl" {
+		t.Errorf("app = %q, want %q", m["app"], "dtctl")
+	}
+	if m["context"] != "incident-response" {
+		t.Errorf("context = %q, want %q", m["context"], "incident-response")
 	}
 }

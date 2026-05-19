@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
@@ -28,7 +31,7 @@ func TestNewHandler(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	h := NewHandler(c)
-	if h == nil || h.client == nil {
+	if h == nil || h.sdk == nil {
 		t.Fatal("NewHandler returned nil")
 	}
 }
@@ -76,6 +79,111 @@ func TestList_WithFilters(t *testing.T) {
 	_, err := h.List(DocumentFilters{Type: "dashboard"})
 	if err != nil {
 		t.Fatalf("List() with filter error = %v", err)
+	}
+}
+
+func TestList_RawFilterPassthrough(t *testing.T) {
+	rawFilter := "originAppId exists and type in ('dashboard','notebook')"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("filter") != rawFilter {
+			t.Errorf("expected filter %q sent verbatim, got %q", rawFilter, r.URL.Query().Get("filter"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentList{TotalCount: 0})
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	// Type/Name/Owner are ignored when Filter is set
+	_, err := h.List(DocumentFilters{
+		Filter: rawFilter,
+		Type:   "dashboard",
+		Name:   "ignored",
+		Owner:  "alice",
+	})
+	if err != nil {
+		t.Fatalf("List() with raw filter error = %v", err)
+	}
+}
+
+func TestList_SortAddFieldsAdminAccess(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("sort") != "name,-modificationInfo.lastModifiedTime" {
+			t.Errorf("expected sort param, got %q", r.URL.Query().Get("sort"))
+		}
+		if r.URL.Query().Get("add-fields") != "originExtensionId,labels,shareInfo.isShared" {
+			t.Errorf("expected add-fields joined comma-separated, got %q", r.URL.Query().Get("add-fields"))
+		}
+		if r.URL.Query().Get("admin-access") != "true" {
+			t.Errorf("expected admin-access=true, got %q", r.URL.Query().Get("admin-access"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentList{TotalCount: 0})
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	_, err := h.List(DocumentFilters{
+		Sort:        "name,-modificationInfo.lastModifiedTime",
+		AddFields:   []string{"originExtensionId", "labels", "shareInfo.isShared"},
+		AdminAccess: true,
+	})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+}
+
+func TestList_OmitsUnsetExtraQueryParams(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/documents", func(w http.ResponseWriter, r *http.Request) {
+		for _, p := range []string{"sort", "add-fields", "admin-access"} {
+			if r.URL.Query().Has(p) {
+				t.Errorf("expected %q not sent when unset, got %q", p, r.URL.Query().Get(p))
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DocumentList{TotalCount: 0})
+	})
+	h, cleanup := newDocTestHandler(t, mux)
+	defer cleanup()
+
+	if _, err := h.List(DocumentFilters{Type: "dashboard"}); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+}
+
+func TestDocumentMetadata_AddFieldsRoundTrip(t *testing.T) {
+	body := []byte(`{
+		"id": "doc-1",
+		"name": "test",
+		"type": "dashboard",
+		"version": 1,
+		"originAppId": "cloud-monitoring",
+		"originExtensionId": "ext-id",
+		"labels": ["a","b"],
+		"shareInfo": {"isShared": true, "isSharedWithCurrentUser": false},
+		"userContext": {"lastAccessedTime": "2026-04-29T10:00:00Z"}
+	}`)
+	var m DocumentMetadata
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if m.OriginAppID != "cloud-monitoring" {
+		t.Errorf("expected OriginAppID %q, got %q", "cloud-monitoring", m.OriginAppID)
+	}
+	if m.OriginExtensionID != "ext-id" {
+		t.Errorf("expected OriginExtensionID %q, got %q", "ext-id", m.OriginExtensionID)
+	}
+	if len(m.Labels) != 2 || m.Labels[0] != "a" || m.Labels[1] != "b" {
+		t.Errorf("expected Labels [a b], got %v", m.Labels)
+	}
+	if m.ShareInfo == nil || !m.ShareInfo.IsShared {
+		t.Errorf("expected ShareInfo.IsShared=true, got %+v", m.ShareInfo)
+	}
+	if m.UserContext == nil || m.UserContext.LastAccessedTime.IsZero() {
+		t.Errorf("expected UserContext.LastAccessedTime set, got %+v", m.UserContext)
 	}
 }
 
@@ -777,5 +885,148 @@ func TestConvertToDocuments(t *testing.T) {
 	}
 	if docs[0].ID != "d1" || docs[1].ID != "d2" {
 		t.Errorf("unexpected documents: %v", docs)
+	}
+}
+
+// TestConvertToDocuments_PreservesAddFields verifies that fields populated
+// via DocumentFilters.AddFields (originAppId, originExtensionId, labels,
+// shareInfo, userContext) survive the DocumentMetadata -> Document
+// conversion. Without this, --add-fields output is silently stripped before
+// the printer ever sees it.
+func TestConvertToDocuments_PreservesAddFields(t *testing.T) {
+	share := &ShareInfo{IsShared: true, IsSharedWithCurrentUser: true}
+	userCtx := &UserContext{}
+	list := &DocumentList{
+		Documents: []DocumentMetadata{
+			{
+				ID:                "d1",
+				Name:              "Dashboard with extras",
+				Type:              "dashboard",
+				Version:           1,
+				OriginAppID:       "dynatrace.app",
+				OriginExtensionID: "ext-123",
+				Labels:            []string{"prod", "team-a"},
+				ShareInfo:         share,
+				UserContext:       userCtx,
+			},
+		},
+	}
+
+	docs := ConvertToDocuments(list)
+	if len(docs) != 1 {
+		t.Fatalf("expected 1 doc, got %d", len(docs))
+	}
+	d := docs[0]
+	if d.OriginAppID != "dynatrace.app" {
+		t.Errorf("OriginAppID not preserved: got %q", d.OriginAppID)
+	}
+	if d.OriginExtensionID != "ext-123" {
+		t.Errorf("OriginExtensionID not preserved: got %q", d.OriginExtensionID)
+	}
+	if len(d.Labels) != 2 || d.Labels[0] != "prod" || d.Labels[1] != "team-a" {
+		t.Errorf("Labels not preserved: got %v", d.Labels)
+	}
+	if d.ShareInfo == nil || !d.ShareInfo.IsShared || !d.ShareInfo.IsSharedWithCurrentUser {
+		t.Errorf("ShareInfo not preserved: got %+v", d.ShareInfo)
+	}
+	if d.UserContext != userCtx {
+		t.Errorf("UserContext pointer not preserved")
+	}
+}
+
+// TestDocument_JSONMarshal_OmitsEmptyAddFields ensures the new optional
+// fields are absent from JSON output when not populated, so default
+// `dtctl get dashboards -o json` payload shape is unchanged.
+func TestDocument_JSONMarshal_OmitsEmptyAddFields(t *testing.T) {
+	d := Document{ID: "d1", Name: "Plain", Type: "dashboard", Version: 1}
+	b, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{"originAppId", "originExtensionId", "labels", "shareInfo", "userContext"} {
+		if strings.Contains(out, key) {
+			t.Errorf("expected %q absent from JSON without --add-fields, got: %s", key, out)
+		}
+	}
+}
+
+// TestDocument_JSONMarshal_IncludesPopulatedAddFields ensures the new
+// optional fields ARE present in JSON output when populated, which is the
+// observable behavior of `dtctl get dashboards --add-fields ... -o json`.
+func TestDocument_JSONMarshal_IncludesPopulatedAddFields(t *testing.T) {
+	d := Document{
+		ID:                "d1",
+		Name:              "With extras",
+		Type:              "dashboard",
+		Version:           1,
+		OriginExtensionID: "ext-123",
+		Labels:            []string{"prod"},
+		ShareInfo:         &ShareInfo{IsShared: true},
+	}
+	b, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{`"originExtensionId":"ext-123"`, `"labels":["prod"]`, `"shareInfo":{"isShared":true}`} {
+		if !strings.Contains(out, key) {
+			t.Errorf("expected JSON to contain %s; got: %s", key, out)
+		}
+	}
+}
+
+// TestDocument_YAMLMarshal_OmitsEmptyAddFields ensures the custom MarshalYAML
+// keeps default `-o yaml` payloads minimal when --add-fields is not used.
+func TestDocument_YAMLMarshal_OmitsEmptyAddFields(t *testing.T) {
+	d := Document{ID: "d1", Name: "Plain", Type: "dashboard", Version: 1}
+	b, err := yaml.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{"originAppId", "originExtensionId", "labels", "shareInfo", "userContext"} {
+		if strings.Contains(out, key) {
+			t.Errorf("expected %q absent from YAML without --add-fields, got: %s", key, out)
+		}
+	}
+}
+
+// TestDocument_YAMLMarshal_IncludesPopulatedAddFields locks in the YAML half
+// of the --add-fields fix: the custom MarshalYAML had been built around an
+// explicit map and silently dropped the new optional fields, even when
+// populated. Without this assertion, --add-fields would regress to broken
+// YAML output while JSON kept working.
+func TestDocument_YAMLMarshal_IncludesPopulatedAddFields(t *testing.T) {
+	d := Document{
+		ID:                "d1",
+		Name:              "With extras",
+		Type:              "dashboard",
+		Version:           1,
+		OriginAppID:       "dynatrace.app",
+		OriginExtensionID: "ext-123",
+		Labels:            []string{"prod", "team-a"},
+		ShareInfo:         &ShareInfo{IsShared: true, IsSharedWithCurrentUser: true},
+		UserContext:       &UserContext{},
+	}
+	b, err := yaml.Marshal(d)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out := string(b)
+	for _, key := range []string{
+		"originAppId: dynatrace.app",
+		"originExtensionId: ext-123",
+		"labels:",
+		"- prod",
+		"- team-a",
+		"shareInfo:",
+		"isShared: true",
+		"isSharedWithCurrentUser: true",
+		"userContext:",
+	} {
+		if !strings.Contains(out, key) {
+			t.Errorf("expected YAML to contain %q; got:\n%s", key, out)
+		}
 	}
 }

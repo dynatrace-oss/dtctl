@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,6 +10,31 @@ import (
 
 	"github.com/adrg/xdg"
 )
+
+// mockKeyring is an in-memory keyringBackend for tests that need no OS keyring.
+type mockKeyring struct{ data map[string]string }
+
+func newMockKeyring() *mockKeyring           { return &mockKeyring{data: make(map[string]string)} }
+func (m *mockKeyring) Available() bool       { return true }
+func (m *mockKeyring) Set(n, v string) error { m.data[n] = v; return nil }
+func (m *mockKeyring) Delete(n string) error { delete(m.data, n); return nil }
+func (m *mockKeyring) Get(n string) (string, error) {
+	v, ok := m.data[n]
+	if !ok {
+		return "", fmt.Errorf("token %q not found in keyring", n)
+	}
+	return v, nil
+}
+
+// unavailableKeyring simulates an environment without OS keyring (headless/WSL).
+type unavailableKeyring struct{}
+
+func (u *unavailableKeyring) Available() bool { return false }
+func (u *unavailableKeyring) Get(string) (string, error) {
+	return "", fmt.Errorf("keyring unavailable")
+}
+func (u *unavailableKeyring) Set(string, string) error { return fmt.Errorf("keyring unavailable") }
+func (u *unavailableKeyring) Delete(string) error      { return fmt.Errorf("keyring unavailable") }
 
 func TestNewConfig(t *testing.T) {
 	cfg := NewConfig()
@@ -1098,6 +1124,131 @@ func TestConfig_SetToken_UpdateExisting(t *testing.T) {
 	}
 }
 
+func TestConfig_SetToken_InvalidatesOAuthCache(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	// Seed cached OAuth tokens for three environments.
+	kr.data["oauth:prod:rotated-token"] = `{"access_token":"old-access","refresh_token":"stale-refresh"}`
+	kr.data["oauth:dev:rotated-token"] = `{"access_token":"old-dev","refresh_token":"stale-dev"}`
+	kr.data["oauth:hard:rotated-token"] = `{"access_token":"old-hard","refresh_token":"stale-hard"}`
+
+	cfg := NewConfig()
+	if err := cfg.setTokenWithKeyring("rotated-token", "brand-new-platform-token", kr, nil); err != nil {
+		t.Fatalf("setTokenWithKeyring() error = %v", err)
+	}
+
+	// All cached OAuth entries must be gone.
+	for _, key := range []string{"oauth:prod:rotated-token", "oauth:dev:rotated-token", "oauth:hard:rotated-token"} {
+		if _, ok := kr.data[key]; ok {
+			t.Errorf("OAuth cache entry %q still exists after setTokenWithKeyring", key)
+		}
+	}
+
+	// The new platform token must be stored.
+	if got := kr.data["rotated-token"]; got != "brand-new-platform-token" {
+		t.Errorf("platform token = %q, want %q", got, "brand-new-platform-token")
+	}
+
+	// Config entry should be empty (reference only, value lives in keyring).
+	if len(cfg.Tokens) != 1 || cfg.Tokens[0].Token != "" {
+		t.Errorf("config token should be empty reference, got %+v", cfg.Tokens)
+	}
+}
+
+func TestConfig_SetToken_InvalidatesOAuthCache_DynamicEnv(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	// Seed a cached OAuth token for the "prod" environment.
+	kr.data["oauth:prod:dyn-token"] = `{"refresh_token":"stale"}`
+
+	cfg := NewConfig()
+	// Add a context whose URL maps to "prod" so oauthKeyringNames discovers it dynamically.
+	cfg.Contexts = []NamedContext{
+		{Name: "my-env", Context: Context{
+			Environment: "https://abc12345.apps.dynatrace.com",
+			TokenRef:    "dyn-token",
+		}},
+	}
+
+	if err := cfg.setTokenWithKeyring("dyn-token", "new-value", kr, nil); err != nil {
+		t.Fatalf("setTokenWithKeyring() error = %v", err)
+	}
+
+	if _, ok := kr.data["oauth:prod:dyn-token"]; ok {
+		t.Error("dynamically-discovered OAuth cache entry still exists after setTokenWithKeyring")
+	}
+}
+
+func TestConfig_SetToken_InvalidatesOAuthFileCache(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	fileStore := NewOAuthFileStoreWithDir(dir)
+
+	// Seed file-based OAuth cache entries.
+	for _, key := range []string{"oauth:prod:file-tok", "oauth:dev:file-tok", "oauth:hard:file-tok"} {
+		if err := fileStore.SetToken(key, `{"refresh_token":"stale"}`); err != nil {
+			t.Fatalf("seed file store %s: %v", key, err)
+		}
+	}
+
+	// Use a mock keyring that reports unavailable so the file-store path is
+	// the only cache backend (simulates headless/WSL).
+	kr := &unavailableKeyring{}
+
+	cfg := NewConfig()
+	if err := cfg.setTokenWithKeyring("file-tok", "new-platform-token", kr, fileStore); err != nil {
+		t.Fatalf("setTokenWithKeyring() error = %v", err)
+	}
+
+	// All file-based OAuth entries must be gone.
+	for _, key := range []string{"oauth:prod:file-tok", "oauth:dev:file-tok", "oauth:hard:file-tok"} {
+		if tok, err := fileStore.GetToken(key); err == nil {
+			t.Errorf("file OAuth cache entry %q still exists: %s", key, tok)
+		}
+	}
+
+	// Token should be stored in config (keyring unavailable).
+	if len(cfg.Tokens) != 1 || cfg.Tokens[0].Token != "new-platform-token" {
+		t.Errorf("config token = %+v, want token in config (keyring unavailable)", cfg.Tokens)
+	}
+}
+
+func TestConfig_SetToken_InvalidatesBothKeyringAndFileCache(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	kr.data["oauth:prod:both-tok"] = `{"refresh_token":"kr-stale"}`
+
+	dir := t.TempDir()
+	fileStore := NewOAuthFileStoreWithDir(dir)
+	if err := fileStore.SetToken("oauth:prod:both-tok", `{"refresh_token":"file-stale"}`); err != nil {
+		t.Fatalf("seed file store: %v", err)
+	}
+
+	cfg := NewConfig()
+	if err := cfg.setTokenWithKeyring("both-tok", "fresh-token", kr, fileStore); err != nil {
+		t.Fatalf("setTokenWithKeyring() error = %v", err)
+	}
+
+	// Keyring OAuth cache must be cleared.
+	if _, ok := kr.data["oauth:prod:both-tok"]; ok {
+		t.Error("keyring OAuth cache entry still exists")
+	}
+
+	// File OAuth cache must be cleared.
+	if tok, err := fileStore.GetToken("oauth:prod:both-tok"); err == nil {
+		t.Errorf("file OAuth cache entry still exists: %s", tok)
+	}
+
+	// Platform token stored in keyring.
+	if got := kr.data["both-tok"]; got != "fresh-token" {
+		t.Errorf("keyring platform token = %q, want %q", got, "fresh-token")
+	}
+}
+
 func TestLoadFrom_EnvironmentVariableExpansion(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -1537,4 +1688,233 @@ func TestHooks_YAMLRoundTrip_EmptyHooks(t *testing.T) {
 	if got != "" {
 		t.Errorf("GetPreApplyHook() = %q, want empty (no hooks configured)", got)
 	}
+}
+
+func TestGetPostApplyHook_ContextOverridesGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PostApply: "global-post"},
+		},
+		CurrentContext: "prod",
+		Contexts: []NamedContext{{
+			Name: "prod",
+			Context: Context{
+				Environment: "https://prod.example.invalid",
+				TokenRef:    "prod-token",
+				Hooks:       Hooks{PostApply: "prod-post"},
+			},
+		}},
+	}
+	if got := cfg.GetPostApplyHook(); got != "prod-post" {
+		t.Errorf("GetPostApplyHook() = %q, want %q", got, "prod-post")
+	}
+}
+
+func TestGetPostApplyHook_FallsBackToGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PostApply: "global-post"},
+		},
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+			},
+		}},
+	}
+	if got := cfg.GetPostApplyHook(); got != "global-post" {
+		t.Errorf("GetPostApplyHook() = %q, want %q", got, "global-post")
+	}
+}
+
+func TestGetPostApplyHook_NoneDisablesGlobal(t *testing.T) {
+	cfg := &Config{
+		Preferences: Preferences{
+			Hooks: Hooks{PostApply: "global-post"},
+		},
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+				Hooks:       Hooks{PostApply: "none"},
+			},
+		}},
+	}
+	if got := cfg.GetPostApplyHook(); got != "" {
+		t.Errorf("GetPostApplyHook() = %q, want empty (none should disable)", got)
+	}
+}
+
+func TestGetPostApplyHook_NoHookConfigured(t *testing.T) {
+	cfg := &Config{
+		CurrentContext: "dev",
+		Contexts: []NamedContext{{
+			Name: "dev",
+			Context: Context{
+				Environment: "https://dev.example.invalid",
+				TokenRef:    "dev-token",
+			},
+		}},
+	}
+	if got := cfg.GetPostApplyHook(); got != "" {
+		t.Errorf("GetPostApplyHook() = %q, want empty", got)
+	}
+}
+
+func TestExpandEnvPreservingShellParams(t *testing.T) {
+	t.Setenv("DTCTL_TEST_FOO", "expanded-foo")
+	t.Setenv("DTCTL_TEST_BAR", "expanded-bar")
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "real env var ${VAR} is expanded",
+			in:   "${DTCTL_TEST_FOO}/x",
+			want: "expanded-foo/x",
+		},
+		{
+			name: "real env var bare $VAR is expanded",
+			in:   "$DTCTL_TEST_FOO/x",
+			want: "expanded-foo/x",
+		},
+		{
+			name: "shell positional $1 is preserved verbatim",
+			in:   `bash validate.sh "$1" "$2"`,
+			want: `bash validate.sh "$1" "$2"`,
+		},
+		{
+			name: "two-digit positional ${10} is preserved",
+			in:   `echo "${10}"`,
+			want: `echo "${10}"`,
+		},
+		{
+			name: "shell special $@ is preserved",
+			in:   `forward "$@"`,
+			want: `forward "$@"`,
+		},
+		{
+			name: "shell special $? $$ $! are preserved",
+			in:   `echo $? $$ $!`,
+			want: `echo $? $$ $!`,
+		},
+		{
+			name: "unset env var falls back to empty (matches os.ExpandEnv)",
+			in:   "prefix-${DTCTL_TEST_DEFINITELY_UNSET_XYZ}-suffix",
+			want: "prefix--suffix",
+		},
+		{
+			name: "mixed real env + positional in same string",
+			in:   `${DTCTL_TEST_FOO}/run.sh "$1" --bar="${DTCTL_TEST_BAR}"`,
+			want: `expanded-foo/run.sh "$1" --bar="expanded-bar"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := expandEnvPreservingShellParams(tt.in); got != tt.want {
+				t.Errorf("expandEnvPreservingShellParams(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfig_PruneEmptyEnvironments(t *testing.T) {
+	tests := []struct {
+		name        string
+		contexts    []NamedContext
+		keepContext string
+		wantNames   []string
+	}{
+		{
+			name: "removes context with empty environment",
+			contexts: []NamedContext{
+				{Name: "placeholder", Context: Context{Environment: ""}},
+				{Name: "real", Context: Context{Environment: "https://abc12345.apps.dynatrace.com/"}},
+			},
+			keepContext: "real",
+			wantNames:   []string{"real"},
+		},
+		{
+			name: "keeps all contexts with real environments",
+			contexts: []NamedContext{
+				{Name: "prod", Context: Context{Environment: "https://prod.apps.dynatrace.com/"}},
+				{Name: "dev", Context: Context{Environment: "https://dev.apps.dynatracelabs.com/"}},
+			},
+			keepContext: "prod",
+			wantNames:   []string{"prod", "dev"},
+		},
+		{
+			name: "removes multiple placeholder contexts",
+			contexts: []NamedContext{
+				{Name: "my-environment", Context: Context{Environment: ""}},
+				{Name: "another-placeholder", Context: Context{Environment: ""}},
+				{Name: "real", Context: Context{Environment: "https://abc12345.apps.dynatrace.com/"}},
+			},
+			keepContext: "real",
+			wantNames:   []string{"real"},
+		},
+		{
+			name: "keepContext is never removed even with empty environment",
+			contexts: []NamedContext{
+				{Name: "new-ctx", Context: Context{Environment: ""}},
+				{Name: "other", Context: Context{Environment: ""}},
+			},
+			keepContext: "new-ctx",
+			wantNames:   []string{"new-ctx"},
+		},
+		{
+			name:        "empty config is a no-op",
+			contexts:    []NamedContext{},
+			keepContext: "anything",
+			wantNames:   []string{},
+		},
+		{
+			name: "single non-empty keepContext is preserved",
+			contexts: []NamedContext{
+				{Name: "prod", Context: Context{Environment: "https://abc12345.apps.dynatrace.com/"}},
+			},
+			keepContext: "prod",
+			wantNames:   []string{"prod"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig()
+			cfg.Contexts = tt.contexts
+
+			placeholderNames := make(map[string]bool)
+			for _, nc := range tt.contexts {
+				if nc.Context.Environment == "" {
+					placeholderNames[nc.Name] = true
+				}
+			}
+			cfg.PruneEmptyEnvironments(tt.keepContext, placeholderNames)
+
+			if len(cfg.Contexts) != len(tt.wantNames) {
+				t.Fatalf("after prune: got %d contexts, want %d; names: %v",
+					len(cfg.Contexts), len(tt.wantNames), contextNames(cfg.Contexts))
+			}
+			for i, want := range tt.wantNames {
+				if cfg.Contexts[i].Name != want {
+					t.Errorf("contexts[%d].Name = %q, want %q", i, cfg.Contexts[i].Name, want)
+				}
+			}
+		})
+	}
+}
+
+func contextNames(contexts []NamedContext) []string {
+	names := make([]string, len(contexts))
+	for i, nc := range contexts {
+		names[i] = nc.Name
+	}
+	return names
 }

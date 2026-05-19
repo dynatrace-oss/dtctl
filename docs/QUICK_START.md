@@ -78,11 +78,11 @@ dtctl config view
 **Creating a Platform Token:**
 
 To create a platform token in Dynatrace:
-1. Navigate to **Identity & Access Management > Access Tokens**
-2. Select **Generate new token** and choose **Platform token**
-3. Give it a descriptive name (e.g., "dtctl-token")
+1. Go to [https://myaccount.dynatrace.com/platformTokens](https://myaccount.dynatrace.com/platformTokens) (Account Management > **My platform tokens**)
+2. Select **Platform token** and give it a descriptive name (e.g., "dtctl-token")
+3. Choose expiration, account, and environments
 4. Add the required scopes based on what you'll manage (see [Token Scopes](TOKEN_SCOPES.md))
-5. Copy the token immediately - it's only shown once!
+5. Select **Generate** and copy the token immediately - it's only shown once!
 
 For detailed instructions, see [Dynatrace Platform Tokens documentation](https://docs.dynatrace.com/docs/manage/identity-access-management/access-tokens-and-oauth-clients/platform-tokens).
 
@@ -655,6 +655,19 @@ dtctl get notebooks --mine
 
 # Combine filters
 dtctl get dashboards --mine --name "production"
+
+# Sort results (prefix field with '-' for descending)
+dtctl get dashboards --sort "name,-modificationInfo.lastModifiedTime"
+
+# Request fields the API omits by default
+dtctl get dashboards --add-fields "originExtensionId,labels,shareInfo.isShared"
+
+# List as effective owner (requires document:documents:admin)
+dtctl get dashboards --admin-access
+
+# Raw Document API filter — sent verbatim, overrides --name/--mine
+dtctl get dashboards --filter "originAppId exists"
+dtctl get documents --filter "type in ('dashboard','notebook') and name contains 'report'"
 
 # Get a specific document by ID
 dtctl get dashboard dash-123

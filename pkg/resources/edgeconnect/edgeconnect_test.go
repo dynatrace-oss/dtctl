@@ -20,8 +20,8 @@ func TestNewHandler(t *testing.T) {
 	if h == nil {
 		t.Fatal("NewHandler() returned nil")
 	}
-	if h.client == nil {
-		t.Error("Handler.client is nil")
+	if h.sdk == nil {
+		t.Error("Handler.sdk is nil")
 	}
 }
 
@@ -86,14 +86,14 @@ func TestList(t *testing.T) {
 			statusCode:    500,
 			responseBody:  "internal server error",
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "API error (500)",
 		},
 		{
 			name:          "forbidden",
 			statusCode:    403,
 			responseBody:  "access denied",
 			expectError:   true,
-			errorContains: "status 403",
+			errorContains: "API error (403)",
 		},
 	}
 
@@ -184,7 +184,7 @@ func TestGet(t *testing.T) {
 			statusCode:    500,
 			responseBody:  "internal error",
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "API error (500)",
 		},
 	}
 
@@ -267,7 +267,7 @@ func TestCreate(t *testing.T) {
 			statusCode:    400,
 			responseBody:  "invalid configuration",
 			expectError:   true,
-			errorContains: "invalid EdgeConnect configuration",
+			errorContains: "invalid configuration",
 		},
 		{
 			name: "access denied",
@@ -365,7 +365,7 @@ func TestUpdate(t *testing.T) {
 			statusCode:    400,
 			responseBody:  "invalid",
 			expectError:   true,
-			errorContains: "invalid EdgeConnect configuration",
+			errorContains: "API error (400)",
 		},
 	}
 

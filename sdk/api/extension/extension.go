@@ -1,0 +1,674 @@
+package extension
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
+)
+
+// Handler handles Extensions 2.0 resources
+type Handler struct {
+	client *httpclient.Client
+}
+
+// NewHandler creates a new Extension handler
+func NewHandler(c *httpclient.Client) *Handler {
+	return &Handler{client: c}
+}
+
+// Extension represents an Extensions 2.0 extension
+type Extension struct {
+	ExtensionName string `json:"extensionName"`
+	Version       string `json:"version,omitempty"`
+}
+
+// ExtensionList represents a paginated list of extensions
+type ExtensionList struct {
+	Items       []Extension `json:"items"`
+	TotalCount  int         `json:"totalCount"`
+	NextPageKey string      `json:"nextPageKey,omitempty"`
+}
+
+// ExtensionVersion represents a specific version of an extension
+type ExtensionVersion struct {
+	Version       string `json:"version"`
+	ExtensionName string `json:"extensionName"`
+	Active        bool   `json:"active,omitempty"`
+}
+
+// ExtensionVersionList represents a list of extension versions
+type ExtensionVersionList struct {
+	Items       []ExtensionVersion `json:"items"`
+	TotalCount  int                `json:"totalCount"`
+	NextPageKey string             `json:"nextPageKey,omitempty"`
+}
+
+// ExtensionDetails represents detailed information about an extension version
+type ExtensionDetails struct {
+	ExtensionName       string                      `json:"extensionName"`
+	Version             string                      `json:"version"`
+	Author              ExtensionAuthor             `json:"author,omitempty"`
+	DataSources         []string                    `json:"dataSources,omitempty"`
+	FeatureSets         []string                    `json:"featureSets,omitempty"`
+	FeatureSetDetails   map[string]FeatureSetDetail `json:"featureSetDetails,omitempty"`
+	FileHash            string                      `json:"fileHash,omitempty"`
+	MinDynatraceVersion string                      `json:"minDynatraceVersion,omitempty"`
+	MinEECVersion       string                      `json:"minEECVersion,omitempty"`
+	Variables           []ExtensionVariable         `json:"vars,omitempty"`
+}
+
+// ExtensionAuthor represents the author of an extension
+type ExtensionAuthor struct {
+	Name string `json:"name"`
+}
+
+// FeatureSetDetail represents a feature set of an extension
+type FeatureSetDetail struct {
+	Metrics []FeatureSetMetric `json:"metrics,omitempty"`
+}
+
+// FeatureSetMetric represents a metric within a feature set
+type FeatureSetMetric struct {
+	Key string `json:"key"`
+}
+
+// ExtensionVariable represents a variable defined in an extension
+type ExtensionVariable struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	DisplayName string `json:"displayName,omitempty"`
+}
+
+// MonitoringConfiguration represents an extension monitoring configuration instance
+type MonitoringConfiguration struct {
+	Type          string          `json:"type,omitempty" yaml:"type,omitempty"`
+	ExtensionName string          `json:"extensionName,omitempty"`
+	ObjectID      string          `json:"objectId"`
+	Scope         string          `json:"scope,omitempty"`
+	Value         json.RawMessage `json:"value,omitempty"`
+}
+
+// MarshalYAML implements yaml.Marshaler to properly serialize json.RawMessage Value
+// as a structured object instead of a byte array.
+func (m MonitoringConfiguration) MarshalYAML() (interface{}, error) {
+	var parsedValue interface{}
+	if len(m.Value) > 0 {
+		if err := json.Unmarshal(m.Value, &parsedValue); err != nil {
+			// If we can't parse the JSON, fall back to string representation
+			parsedValue = string(m.Value)
+		}
+	}
+
+	return struct {
+		Type          string      `yaml:"type,omitempty"`
+		ExtensionName string      `yaml:"extensionName,omitempty"`
+		ObjectID      string      `yaml:"objectId"`
+		Scope         string      `yaml:"scope,omitempty"`
+		Value         interface{} `yaml:"value,omitempty"`
+	}{
+		Type:          m.Type,
+		ExtensionName: m.ExtensionName,
+		ObjectID:      m.ObjectID,
+		Scope:         m.Scope,
+		Value:         parsedValue,
+	}, nil
+}
+
+// MonitoringConfigurationList represents a list of monitoring configuration instances
+type MonitoringConfigurationList struct {
+	Items       []MonitoringConfiguration `json:"items"`
+	TotalCount  int                       `json:"totalCount"`
+	NextPageKey string                    `json:"nextPageKey,omitempty"`
+}
+
+// ExtensionEnvironmentConfig represents the environment-wide configuration for an extension
+type ExtensionEnvironmentConfig struct {
+	Version string `json:"version"`
+}
+
+// ExtensionStatus represents the monitoring status of a specific extension version
+type ExtensionStatus struct {
+	Status    string `json:"status"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+// ActiveGateEntry represents a single ActiveGate instance within an active gate group
+type ActiveGateEntry struct {
+	ID     int64           `json:"id"`
+	Errors json.RawMessage `json:"errors,omitempty"`
+}
+
+// ActiveGateGroupItem represents one active gate group available for an extension version
+type ActiveGateGroupItem struct {
+	GroupName            string            `json:"groupName"`
+	AvailableActiveGates int               `json:"availableActiveGates"`
+	ActiveGates          []ActiveGateEntry `json:"activeGates,omitempty"`
+}
+
+// ActiveGateGroupList represents the list of active gate groups for an extension version
+type ActiveGateGroupList struct {
+	Items []ActiveGateGroupItem `json:"items"`
+}
+
+// maxPageSize is the maximum page size accepted by the Extensions 2.0 API.
+const maxPageSize = 100
+
+// List lists all extensions with automatic pagination
+func (h *Handler) List(ctx context.Context, name string, chunkSize int64) (*ExtensionList, error) {
+	var allExtensions []Extension
+	var totalCount int
+	nextPageKey := ""
+
+	// Cap page size to API maximum
+	if chunkSize > maxPageSize {
+		chunkSize = maxPageSize
+	}
+
+	for {
+		var result ExtensionList
+		req := h.client.HTTP().R().SetContext(ctx)
+
+		req.SetQueryParamsFromValues(httpclient.PaginationParams{
+			Style:         httpclient.PaginationDefault,
+			PageKeyParam:  "next-page-key",
+			PageSizeParam: "page-size",
+			NextPageKey:   nextPageKey,
+			PageSize:      chunkSize,
+			Filters:       map[string]string{"name": name},
+		}.QueryParams())
+
+		resp, err := req.Get("/platform/extensions/v2/extensions")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list extensions: %w", err)
+		}
+		if err := httpclient.CheckResponse(resp); err != nil {
+			return nil, fmt.Errorf("failed to list extensions: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list extensions: parse response: %w", err)
+		}
+
+		allExtensions = append(allExtensions, result.Items...)
+		totalCount = result.TotalCount
+
+		if chunkSize == 0 || result.NextPageKey == "" {
+			break
+		}
+
+		nextPageKey = result.NextPageKey
+	}
+
+	// Client-side filtering: the API accepts the name parameter but ignores it,
+	// so we filter locally using a case-insensitive substring match.
+	if name != "" {
+		nameLower := strings.ToLower(name)
+		filtered := allExtensions[:0]
+		for _, ext := range allExtensions {
+			if strings.Contains(strings.ToLower(ext.ExtensionName), nameLower) {
+				filtered = append(filtered, ext)
+			}
+		}
+		allExtensions = filtered
+		totalCount = len(filtered)
+	}
+
+	return &ExtensionList{
+		Items:      allExtensions,
+		TotalCount: totalCount,
+	}, nil
+}
+
+// Get gets a specific extension by name (returns all versions)
+func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVersionList, error) {
+	var allVersions []ExtensionVersion
+	var totalCount int
+	nextPageKey := ""
+
+	for {
+		var result ExtensionVersionList
+		req := h.client.HTTP().R().SetContext(ctx)
+
+		req.SetQueryParamsFromValues(httpclient.PaginationParams{
+			Style:        httpclient.PaginationDefault,
+			PageKeyParam: "next-page-key",
+			NextPageKey:  nextPageKey,
+		}.QueryParams())
+
+		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get extension: %w", err)
+		}
+		if err := httpclient.CheckResponse(resp); err != nil {
+			var apiErr *httpclient.APIError
+			if errors.As(err, &apiErr) {
+				switch apiErr.StatusCode {
+				case 404:
+					return nil, fmt.Errorf("extension %q not found", extensionName)
+				case 403:
+					return nil, fmt.Errorf("access denied to extension %q", extensionName)
+				}
+			}
+			return nil, fmt.Errorf("failed to get extension: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("get extension: parse response: %w", err)
+		}
+
+		allVersions = append(allVersions, result.Items...)
+		totalCount = result.TotalCount
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
+	}
+
+	return &ExtensionVersionList{
+		Items:      allVersions,
+		TotalCount: totalCount,
+	}, nil
+}
+
+// GetVersion gets details for a specific extension version
+func (h *Handler) GetVersion(ctx context.Context, extensionName, version string) (*ExtensionDetails, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get extension version: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case 404:
+				return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+			case 403:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to get extension version: %w", err)
+	}
+
+	var result ExtensionDetails
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get extension version: parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// GetEnvironmentConfig gets the environment configuration for a specific extension version.
+// The version parameter is required by the Dynatrace Extensions 2.0 API.
+func (h *Handler) GetEnvironmentConfig(ctx context.Context, extensionName, version string) (*ExtensionEnvironmentConfig, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environmentConfiguration", url.PathEscape(extensionName), url.PathEscape(version)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case 404:
+				return nil, fmt.Errorf("extension %q version %q has no environment configuration", extensionName, version)
+			case 403:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
+	}
+
+	var result ExtensionEnvironmentConfig
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get extension environment config: parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// ListMonitoringConfigurations lists monitoring configurations for an extension.
+// If version is non-empty, results are filtered client-side by matching the
+// "version" key inside each configuration's value JSON. Configurations whose
+// value cannot be parsed or that lack a "version" key are excluded from the
+// filtered result.
+func (h *Handler) ListMonitoringConfigurations(ctx context.Context, extensionName, version string, chunkSize int64) (*MonitoringConfigurationList, error) {
+	var allItems []MonitoringConfiguration
+	var totalCount int
+	nextPageKey := ""
+
+	// Cap page size to API maximum
+	if chunkSize > maxPageSize {
+		chunkSize = maxPageSize
+	}
+
+	for {
+		var result MonitoringConfigurationList
+		req := h.client.HTTP().R().SetContext(ctx)
+
+		req.SetQueryParamsFromValues(httpclient.PaginationParams{
+			Style:         httpclient.PaginationDefault,
+			PageKeyParam:  "next-page-key",
+			PageSizeParam: "page-size",
+			NextPageKey:   nextPageKey,
+			PageSize:      chunkSize,
+			Filters:       map[string]string{"version": version},
+		}.QueryParams())
+
+		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list monitoring configurations: %w", err)
+		}
+		if err := httpclient.CheckResponse(resp); err != nil {
+			var apiErr *httpclient.APIError
+			if errors.As(err, &apiErr) {
+				switch apiErr.StatusCode {
+				case 404:
+					return nil, fmt.Errorf("extension %q not found", extensionName)
+				case 403:
+					return nil, fmt.Errorf("access denied to extension %q", extensionName)
+				}
+			}
+			return nil, fmt.Errorf("failed to list monitoring configurations: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list monitoring configurations: parse response: %w", err)
+		}
+
+		for i := range result.Items {
+			result.Items[i].Type = "extension_monitoring_config"
+			result.Items[i].ExtensionName = extensionName
+		}
+		allItems = append(allItems, result.Items...)
+		totalCount = result.TotalCount
+
+		if chunkSize == 0 || result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
+	}
+
+	// Client-side filtering: the API accepts the version parameter but ignores it,
+	// so we filter locally by extracting the version from the config value JSON.
+	if version != "" {
+		filtered := allItems[:0]
+		for _, item := range allItems {
+			if len(item.Value) > 0 {
+				var val map[string]interface{}
+				if err := json.Unmarshal(item.Value, &val); err == nil {
+					if v, ok := val["version"].(string); ok && v == version {
+						filtered = append(filtered, item)
+					}
+				}
+			}
+		}
+		allItems = filtered
+		totalCount = len(filtered)
+	}
+
+	return &MonitoringConfigurationList{
+		Items:      allItems,
+		TotalCount: totalCount,
+	}, nil
+}
+
+// GetMonitoringConfiguration gets a specific monitoring configuration
+func (h *Handler) GetMonitoringConfiguration(ctx context.Context, extensionName, configID string) (*MonitoringConfiguration, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get monitoring configuration: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case 404:
+				return nil, fmt.Errorf("monitoring configuration %q not found for extension %q", configID, extensionName)
+			case 403:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to get monitoring configuration: %w", err)
+	}
+
+	var result MonitoringConfiguration
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get monitoring configuration: parse response: %w", err)
+	}
+	result.Type = "extension_monitoring_config"
+	result.ExtensionName = extensionName
+	return &result, nil
+}
+
+// MonitoringConfigurationCreate represents the body for creating/updating a monitoring configuration
+type MonitoringConfigurationCreate struct {
+	Scope string         `json:"scope,omitempty"`
+	Value map[string]any `json:"value"`
+}
+
+// CreateMonitoringConfiguration creates a new monitoring configuration for an extension
+func (h *Handler) CreateMonitoringConfiguration(ctx context.Context, extensionName string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetBody(body).
+		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create monitoring configuration: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case 404:
+				return nil, fmt.Errorf("extension %q not found", extensionName)
+			case 403:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to create monitoring configuration: %w", err)
+	}
+
+	var result MonitoringConfiguration
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("create monitoring configuration: parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// UpdateMonitoringConfiguration updates an existing monitoring configuration for an extension
+func (h *Handler) UpdateMonitoringConfiguration(ctx context.Context, extensionName, configID string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetBody(body).
+		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to update monitoring configuration: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case 404:
+				return nil, fmt.Errorf("monitoring configuration %q not found for extension %q", configID, extensionName)
+			case 403:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to update monitoring configuration: %w", err)
+	}
+
+	var result MonitoringConfiguration
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("update monitoring configuration: parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// Upload uploads a custom extension zip file to the Dynatrace environment.
+// The zipData should contain the raw bytes of the extension zip package.
+// The optional fileName is used as the multipart filename; if empty, "extension.zip" is used.
+func (h *Handler) Upload(ctx context.Context, fileName string, zipData []byte) (*ExtensionVersion, error) {
+	if fileName == "" {
+		fileName = "extension.zip"
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart field: %w", err)
+	}
+	if _, err := part.Write(zipData); err != nil {
+		return nil, fmt.Errorf("failed to write extension data: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetHeader("Content-Type", writer.FormDataContentType()).
+		SetBody(body.Bytes()).
+		Post("/platform/extensions/v2/extensions")
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload extension: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusBadRequest:
+				return nil, fmt.Errorf("invalid extension package: %w", err)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied: insufficient permissions to upload extensions")
+			case http.StatusConflict:
+				return nil, fmt.Errorf("extension version already exists: %w", err)
+			}
+		}
+		return nil, fmt.Errorf("failed to upload extension: %w", err)
+	}
+
+	var result ExtensionVersion
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("upload extension: parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// InstallFromHub installs a Dynatrace Hub extension into the environment using the
+// Extensions 2.0 API. extensionName is the hub extension catalog ID (path parameter).
+// version is optional -- when provided it is sent as a query parameter to select a
+// specific release; when empty the API resolves the latest available version.
+func (h *Handler) InstallFromHub(ctx context.Context, extensionName, version string) (*ExtensionVersion, error) {
+	req := h.client.HTTP().R().SetContext(ctx)
+	if version != "" {
+		req.SetQueryParam("version", version)
+	}
+
+	resp, err := req.Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to install Hub extension %q: %w", extensionName, err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, fmt.Errorf("hub extension %q not found", extensionName)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied: insufficient permissions to install extensions")
+			case http.StatusConflict:
+				if version == "" {
+					return nil, fmt.Errorf("hub extension %q (latest version) is already installed", extensionName)
+				}
+				return nil, fmt.Errorf("hub extension %q version %q is already installed", extensionName, version)
+			}
+		}
+		return nil, fmt.Errorf("failed to install Hub extension %q: %w", extensionName, err)
+	}
+
+	var result ExtensionVersion
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("install hub extension: parse response: %w", err)
+	}
+	return &result, nil
+}
+
+// DeleteMonitoringConfiguration deletes a monitoring configuration for an extension
+func (h *Handler) DeleteMonitoringConfiguration(ctx context.Context, extensionName, configID string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Delete(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
+	if err != nil {
+		return fmt.Errorf("failed to delete monitoring configuration: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case 404:
+				return fmt.Errorf("monitoring configuration %q not found for extension %q", configID, extensionName)
+			case 403:
+				return fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return fmt.Errorf("failed to delete monitoring configuration: %w", err)
+	}
+	return nil
+}
+
+// GetMonitoringConfigurationSchema retrieves the monitoring configuration schema for a specific
+// extension version. The schema is an arbitrary JSON Schema document returned verbatim.
+func (h *Handler) GetMonitoringConfigurationSchema(ctx context.Context, extensionName, version string) (json.RawMessage, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/schema", url.PathEscape(extensionName), url.PathEscape(version)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get monitoring configuration schema: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to get monitoring configuration schema: %w", err)
+	}
+	return json.RawMessage(resp.Body()), nil
+}
+
+// GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
+func (h *Handler) GetActiveGateGroups(ctx context.Context, extensionName, version string) (*ActiveGateGroupList, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/active-gate-groups", url.PathEscape(extensionName), url.PathEscape(version)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active gate groups: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to get active gate groups: %w", err)
+	}
+
+	var result ActiveGateGroupList
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get active gate groups: parse response: %w", err)
+	}
+	return &result, nil
+}

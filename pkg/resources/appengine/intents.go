@@ -297,6 +297,16 @@ func matchIntentToData(intent Intent, data map[string]interface{}) IntentMatch {
 	}
 }
 
+// contains checks if a string slice contains a given item
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
 // parseFullIntentName parses a full intent name (app-id/intent-id)
 func parseFullIntentName(fullName string) (appID, intentID string) {
 	parts := strings.SplitN(fullName, "/", 2)

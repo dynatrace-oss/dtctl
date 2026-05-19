@@ -1,2 +1,5 @@
 # Every pull request requires review approval from discostu105
 * @discostu105
+
+# SDK changes require additional review from the SDK steward
+/sdk/ @discostu105

@@ -20,8 +20,8 @@ func TestNewHandler(t *testing.T) {
 	if h == nil {
 		t.Fatal("NewHandler() returned nil")
 	}
-	if h.client == nil {
-		t.Error("Handler.client is nil")
+	if h.sdk == nil {
+		t.Error("Handler.sdk is nil")
 	}
 }
 
@@ -250,7 +250,7 @@ func TestGet(t *testing.T) {
 			statusCode:    404,
 			responseBody:  map[string]string{"error": "Not found"},
 			expectError:   true,
-			errorContains: "not found",
+			errorContains: "Not found",
 		},
 		{
 			name:          "access denied",
@@ -258,7 +258,7 @@ func TestGet(t *testing.T) {
 			statusCode:    403,
 			responseBody:  map[string]string{"error": "Forbidden"},
 			expectError:   true,
-			errorContains: "access denied",
+			errorContains: "API error (403)",
 		},
 		{
 			name:          "server error",
@@ -266,7 +266,7 @@ func TestGet(t *testing.T) {
 			statusCode:    500,
 			responseBody:  map[string]string{"error": "Internal error"},
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "API error (500)",
 		},
 	}
 
@@ -347,7 +347,7 @@ func TestCreate(t *testing.T) {
 			statusCode:    400,
 			responseBody:  map[string]string{"error": "Invalid configuration"},
 			expectError:   true,
-			errorContains: "invalid SLO configuration",
+			errorContains: "API error (400)",
 		},
 		{
 			name: "access denied",
@@ -357,7 +357,7 @@ func TestCreate(t *testing.T) {
 			statusCode:    403,
 			responseBody:  map[string]string{"error": "Forbidden"},
 			expectError:   true,
-			errorContains: "access denied",
+			errorContains: "API error (403)",
 		},
 	}
 
@@ -428,7 +428,7 @@ func TestUpdate(t *testing.T) {
 			version:       "1",
 			statusCode:    400,
 			expectError:   true,
-			errorContains: "invalid SLO configuration",
+			errorContains: "API error (400)",
 		},
 		{
 			name:          "access denied",
@@ -436,7 +436,7 @@ func TestUpdate(t *testing.T) {
 			version:       "1",
 			statusCode:    403,
 			expectError:   true,
-			errorContains: "access denied",
+			errorContains: "API error (403)",
 		},
 		{
 			name:          "not found",
@@ -444,7 +444,7 @@ func TestUpdate(t *testing.T) {
 			version:       "1",
 			statusCode:    404,
 			expectError:   true,
-			errorContains: "not found",
+			errorContains: "API error (404)",
 		},
 		{
 			name:          "version conflict",
@@ -452,7 +452,7 @@ func TestUpdate(t *testing.T) {
 			version:       "1",
 			statusCode:    409,
 			expectError:   true,
-			errorContains: "version conflict",
+			errorContains: "API error (409)",
 		},
 	}
 
@@ -524,7 +524,7 @@ func TestDelete(t *testing.T) {
 			version:       "1",
 			statusCode:    403,
 			expectError:   true,
-			errorContains: "access denied",
+			errorContains: "API error (403)",
 		},
 		{
 			name:          "not found",
@@ -532,7 +532,7 @@ func TestDelete(t *testing.T) {
 			version:       "1",
 			statusCode:    404,
 			expectError:   true,
-			errorContains: "not found",
+			errorContains: "API error (404)",
 		},
 		{
 			name:          "version conflict",
@@ -540,7 +540,7 @@ func TestDelete(t *testing.T) {
 			version:       "1",
 			statusCode:    409,
 			expectError:   true,
-			errorContains: "version conflict",
+			errorContains: "API error (409)",
 		},
 	}
 
@@ -643,7 +643,7 @@ func TestListTemplates(t *testing.T) {
 			statusCode:    500,
 			responseBody:  map[string]string{"error": "Internal error"},
 			expectError:   true,
-			errorContains: "status 500",
+			errorContains: "API error (500)",
 		},
 	}
 
@@ -723,7 +723,7 @@ func TestGetTemplate(t *testing.T) {
 			statusCode:    404,
 			responseBody:  map[string]string{"error": "Not found"},
 			expectError:   true,
-			errorContains: "not found",
+			errorContains: "Not found",
 		},
 	}
 
@@ -797,7 +797,7 @@ func TestEvaluate(t *testing.T) {
 			statusCode:    404,
 			responseBody:  map[string]string{"error": "Not found"},
 			expectError:   true,
-			errorContains: "not found",
+			errorContains: "Not found",
 		},
 	}
 
@@ -954,7 +954,7 @@ func TestGetRaw(t *testing.T) {
 			statusCode:    404,
 			responseBody:  `{"error":"Not found"}`,
 			expectError:   true,
-			errorContains: "not found",
+			errorContains: "Not found",
 		},
 	}
 

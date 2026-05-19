@@ -22,6 +22,19 @@ dtctl get dashboards --mine
 
 # Wide output with owner, tile count, and last modified date
 dtctl get dashboards -o wide
+
+# Sort by name ascending, last-modified descending
+dtctl get dashboards --sort "name,-modificationInfo.lastModifiedTime"
+
+# Request fields the API omits by default
+dtctl get dashboards --add-fields "originExtensionId,labels,shareInfo.isShared"
+
+# List all documents as effective owner (requires document:documents:admin)
+dtctl get dashboards --admin-access
+
+# Raw Document API filter expression — sent verbatim, overrides --name/--mine
+dtctl get dashboards --filter "originAppId exists"
+dtctl get documents --filter "type in ('dashboard','notebook') and name contains 'report'"
 ```
 
 ## Describing a Dashboard

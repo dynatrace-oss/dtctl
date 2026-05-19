@@ -3,8 +3,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,9 +17,10 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 
-	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/version"
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
+	sdkauth "github.com/dynatrace-oss/dtctl/sdk/auth"
 )
 
 // Client is the base HTTP client for dtctl
@@ -81,7 +80,7 @@ func New(baseURL, token string) (*Client, error) {
 
 	// Build user agent with AI detection
 	userAgent := fmt.Sprintf("dtctl/%s", version.Version)
-	if aiSuffix := aidetect.UserAgentSuffix(); aiSuffix != "" {
+	if aiSuffix := agentmode.UserAgentSuffix(); aiSuffix != "" {
 		userAgent += aiSuffix
 	}
 
@@ -306,38 +305,31 @@ func (c *Client) CurrentUserID() (string, error) {
 		return userInfo.UserID, nil
 	}
 
+	// Platform tokens are not JWTs, so the JWT fallback below would parse
+	// garbage and fail with a confusing decode error (see issue #210). Surface
+	// an actionable message instead.
+	if IsPlatformToken(c.token) {
+		if err == nil {
+			err = fmt.Errorf("metadata API returned no user ID")
+		}
+		return "", fmt.Errorf("cannot determine current user ID for a platform token: %w "+
+			"(ensure the token has the 'app-engine:apps:run' scope so /platform/metadata/v1/user can return the user identity)", err)
+	}
+
 	// Fallback to JWT decoding
 	return ExtractUserIDFromToken(c.token)
 }
 
+// platformTokenPrefix identifies Dynatrace platform tokens — opaque bearer
+// tokens (not JWTs). The /platform/metadata/v1/user endpoint requires the
+// 'app-engine:apps:run' scope; platform tokens that lack it get a 403, and
+// the token itself cannot be JWT-decoded as a user-ID fallback.
+// IsPlatformToken reports whether token is a Dynatrace platform token.
+func IsPlatformToken(token string) bool {
+	return sdkauth.IsPlatformToken(token)
+}
+
 // ExtractUserIDFromToken extracts the user ID (sub claim) from a JWT token.
 func ExtractUserIDFromToken(token string) (string, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return "", fmt.Errorf("invalid JWT token format")
-	}
-
-	payload := parts[1]
-	// Add padding if needed for base64 decoding
-	if pad := len(payload) % 4; pad > 0 {
-		payload += strings.Repeat("=", 4-pad)
-	}
-
-	decoded, err := base64.URLEncoding.DecodeString(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode JWT payload: %w", err)
-	}
-
-	var claims struct {
-		Sub string `json:"sub"`
-	}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return "", fmt.Errorf("failed to parse JWT claims: %w", err)
-	}
-
-	if claims.Sub == "" {
-		return "", fmt.Errorf("JWT token does not contain a 'sub' claim")
-	}
-
-	return claims.Sub, nil
+	return sdkauth.ExtractJWTSubject(token)
 }

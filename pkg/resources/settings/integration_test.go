@@ -5,9 +5,7 @@ import (
 	"testing"
 )
 
-// TestSettingsObjectDecodingIntegration tests that SettingsObject automatically decodes objectID
-func TestSettingsObjectDecodingIntegration(t *testing.T) {
-	// Simulate API response with real objectID
+func TestSettingsObject_PopulateDisplayFields_EntityScope(t *testing.T) {
 	apiResponse := `{
 		"objectId": "vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQALQVBQTElDQVRJT04AEDVDOUI5QkIxQjQ1NDY4NTUAJGU0YzY3NDJmLTQ3ZjktM2IxNC04MzQ4LTU5Y2JlMzJmNzk4ML7vVN4V2t6t",
 		"schemaId": "builtin:rum.web.name",
@@ -16,84 +14,75 @@ func TestSettingsObjectDecodingIntegration(t *testing.T) {
 	}`
 
 	var obj SettingsObject
-	err := json.Unmarshal([]byte(apiResponse), &obj)
-	if err != nil {
-		t.Fatalf("Failed to unmarshal: %v", err)
+	if err := json.Unmarshal([]byte(apiResponse), &obj); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
 	}
+	obj.populateDisplayFields()
 
-	// Before decoding, UID, ScopeType, and ScopeID should be empty
-	if obj.UID != "" {
-		t.Errorf("UID should be empty before decoding, got: %s", obj.UID)
+	if obj.ScopeType != "APPLICATION" {
+		t.Errorf("ScopeType = %q, want APPLICATION", obj.ScopeType)
 	}
-
-	// Decode the objectID
-	obj.decodeObjectID()
-
-	// After decoding, UID, ScopeType, and ScopeID should be populated
-	expectedUID := "e4c6742f-47f9-3b14-8348-59cbe32f7980"
-	if obj.UID != expectedUID {
-		t.Errorf("UID = %q, want %q", obj.UID, expectedUID)
+	if obj.ScopeID != "5C9B9BB1B4546855" {
+		t.Errorf("ScopeID = %q, want 5C9B9BB1B4546855", obj.ScopeID)
 	}
-
-	expectedScopeType := "APPLICATION"
-	if obj.ScopeType != expectedScopeType {
-		t.Errorf("ScopeType = %q, want %q", obj.ScopeType, expectedScopeType)
-	}
-
-	expectedScopeID := "5C9B9BB1B4546855"
-	if obj.ScopeID != expectedScopeID {
-		t.Errorf("ScopeID = %q, want %q", obj.ScopeID, expectedScopeID)
-	}
-
-	// Original fields should be preserved
-	if obj.ObjectID == "" {
-		t.Error("ObjectID should not be empty")
-	}
-	if obj.SchemaID != "builtin:rum.web.name" {
-		t.Errorf("SchemaID = %q, want %q", obj.SchemaID, "builtin:rum.web.name")
+	if obj.ObjectIDShort == "" {
+		t.Error("ObjectIDShort should not be empty")
 	}
 }
 
-// TestSettingsObjectDecodingWithInvalidID tests graceful handling of invalid objectIDs
-func TestSettingsObjectDecodingWithInvalidID(t *testing.T) {
-	tests := []struct {
-		name     string
-		objectID string
-	}{
-		{
-			name:     "invalid base64",
-			objectID: "not-valid-base64!!!",
-		},
-		{
-			name:     "too short",
-			objectID: "YWJj", // "abc" in base64
-		},
-		{
-			name:     "empty",
-			objectID: "",
-		},
+func TestSettingsObject_PopulateDisplayFields_ComplexScopeID(t *testing.T) {
+	// Scope IDs can themselves contain hyphens; only split on the first one
+	obj := SettingsObject{
+		ObjectID: "someobjectid",
+		Scope:    "AZURE_MICROSOFT_RESOURCES_SUBSCRIPTIONS-azure.subscription:3557ab0e-6667-4ed9-b0af-df5ce7248b5c",
+	}
+	obj.populateDisplayFields()
+
+	if obj.ScopeType != "AZURE_MICROSOFT_RESOURCES_SUBSCRIPTIONS" {
+		t.Errorf("ScopeType = %q, want AZURE_MICROSOFT_RESOURCES_SUBSCRIPTIONS", obj.ScopeType)
+	}
+	if obj.ScopeID != "azure.subscription:3557ab0e-6667-4ed9-b0af-df5ce7248b5c" {
+		t.Errorf("ScopeID = %q, want azure.subscription:3557ab0e-6667-4ed9-b0af-df5ce7248b5c", obj.ScopeID)
+	}
+}
+
+func TestSettingsObject_PopulateDisplayFields_SingletonScope(t *testing.T) {
+	// Singleton scopes like "environment" or "tenant" have no entity ID
+	for _, scope := range []string{"environment", "tenant"} {
+		obj := SettingsObject{ObjectID: "x", Scope: scope}
+		obj.populateDisplayFields()
+
+		if obj.ScopeType != scope {
+			t.Errorf("scope %q: ScopeType = %q, want %q", scope, obj.ScopeType, scope)
+		}
+		if obj.ScopeID != "" {
+			t.Errorf("scope %q: ScopeID = %q, want empty", scope, obj.ScopeID)
+		}
+	}
+}
+
+func TestSettingsObject_PopulateDisplayFields_EmptyScope(t *testing.T) {
+	obj := SettingsObject{ObjectID: "someobjectid", Scope: ""}
+	obj.populateDisplayFields()
+
+	if obj.ScopeType != "" {
+		t.Errorf("ScopeType = %q, want empty for empty scope", obj.ScopeType)
+	}
+	if obj.ScopeID != "" {
+		t.Errorf("ScopeID = %q, want empty for empty scope", obj.ScopeID)
+	}
+}
+
+func TestSettingsObject_PopulateDisplayFields_ObjectIDShortTruncation(t *testing.T) {
+	long := SettingsObject{ObjectID: "vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ"}
+	long.populateDisplayFields()
+	if long.ObjectIDShort != "vu9U3hXa3q0AAAABABRi..." {
+		t.Errorf("ObjectIDShort = %q, want truncated form", long.ObjectIDShort)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			obj := SettingsObject{
-				ObjectID: tt.objectID,
-				SchemaID: "builtin:test",
-			}
-
-			// Should not panic
-			obj.decodeObjectID()
-
-			// UID, ScopeType, and ScopeID should remain empty for invalid IDs
-			if obj.UID != "" {
-				t.Errorf("UID should be empty for invalid objectID, got: %s", obj.UID)
-			}
-			if obj.ScopeType != "" {
-				t.Errorf("ScopeType should be empty for invalid objectID, got: %s", obj.ScopeType)
-			}
-			if obj.ScopeID != "" {
-				t.Errorf("ScopeID should be empty for invalid objectID, got: %s", obj.ScopeID)
-			}
-		})
+	short := SettingsObject{ObjectID: "abc"}
+	short.populateDisplayFields()
+	if short.ObjectIDShort != "abc" {
+		t.Errorf("ObjectIDShort = %q, want abc", short.ObjectIDShort)
 	}
 }
