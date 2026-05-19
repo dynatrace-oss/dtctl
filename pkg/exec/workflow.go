@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -21,8 +22,9 @@ func NewWorkflowExecutor(c *client.Client) *WorkflowExecutor {
 
 // WorkflowExecutionRequest represents a workflow execution request
 type WorkflowExecutionRequest struct {
-	Input  map[string]any         `json:"input,omitempty"`
-	Params map[string]interface{} `json:"params,omitempty"`
+	Input   map[string]any         `json:"input,omitempty"`
+	Params  map[string]interface{} `json:"params,omitempty"`
+	Monitor bool                   `json:"-"`
 }
 
 // WorkflowExecutionResponse represents a workflow execution response
@@ -32,14 +34,26 @@ type WorkflowExecutionResponse struct {
 	State    string `json:"state"`
 }
 
+type apiErrorEnvelope struct {
+	Error struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 // Execute executes a workflow
 func (e *WorkflowExecutor) Execute(workflowID string, req WorkflowExecutionRequest) (*WorkflowExecutionResponse, error) {
 	var result WorkflowExecutionResponse
 
-	resp, err := e.client.HTTP().R().
+	httpReq := e.client.HTTP().R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(req).
-		SetResult(&result).
+		SetResult(&result)
+
+	if req.Monitor {
+		httpReq.SetQueryParam("monitor", "true")
+	}
+
+	resp, err := httpReq.
 		Post(fmt.Sprintf("/platform/automation/v1/workflows/%s/run", workflowID))
 
 	if err != nil {
@@ -47,7 +61,7 @@ func (e *WorkflowExecutor) Execute(workflowID string, req WorkflowExecutionReque
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("workflow execution failed with status %d: %s", resp.StatusCode(), resp.String())
+		return nil, formatWorkflowAPIError("workflow execution failed", resp.StatusCode(), resp.String())
 	}
 
 	return &result, nil
@@ -103,10 +117,19 @@ func (e *WorkflowExecutor) GetStatus(executionID string) (*ExecutionStatus, erro
 	}
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("failed to get execution status: status %d: %s", resp.StatusCode(), resp.String())
+		return nil, formatWorkflowAPIError("failed to get execution status", resp.StatusCode(), resp.String())
 	}
 
 	return &result, nil
+}
+
+func formatWorkflowAPIError(prefix string, statusCode int, body string) error {
+	var envelope apiErrorEnvelope
+	if err := json.Unmarshal([]byte(body), &envelope); err == nil && envelope.Error.Message != "" {
+		return fmt.Errorf("%s: status %d: %s", prefix, statusCode, envelope.Error.Message)
+	}
+
+	return fmt.Errorf("%s: status %d: %s", prefix, statusCode, body)
 }
 
 // WaitOptions configures the wait behavior

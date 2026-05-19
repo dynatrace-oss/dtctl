@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -124,5 +125,100 @@ func TestWorkflowExecutor_Execute_SendsWorkflowInputRequest(t *testing.T) {
 	}
 	if result.ID != "exec-456" {
 		t.Fatalf("expected execution id exec-456, got %s", result.ID)
+	}
+}
+
+func TestWorkflowExecutor_Execute_SendsMonitorQueryParamWhenRequested(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("monitor"); got != "true" {
+			t.Fatalf("expected monitor=true query param, got %q", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"exec-monitor","workflow":"wf-123","state":"RUNNING"}`))
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewWorkflowExecutor(c)
+	_, err = executor.Execute("wf-123", WorkflowExecutionRequest{Monitor: true})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestWorkflowExecutor_Execute_UsesAPIErrorMessageForRateLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":429,"message":"Too many requests. Please wait for 17 seconds before making another request."}}`))
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewWorkflowExecutor(c)
+	_, err = executor.Execute("wf-123", WorkflowExecutionRequest{})
+	if err == nil {
+		t.Fatal("Execute() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "Too many requests. Please wait for 17 seconds before making another request.") {
+		t.Fatalf("Execute() error = %q, want server error message", err.Error())
+	}
+}
+
+func TestWorkflowExecutor_GetStatus_UsesAPIErrorMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":429,"message":"Too many requests. Please wait for 9 seconds before making another request."}}`))
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewWorkflowExecutor(c)
+	_, err = executor.GetStatus("exec-123")
+	if err == nil {
+		t.Fatal("GetStatus() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "Too many requests. Please wait for 9 seconds before making another request.") {
+		t.Fatalf("GetStatus() error = %q, want server error message", err.Error())
+	}
+}
+
+func TestWorkflowExecutor_Execute_FallsBackToRawErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("upstream gateway timeout"))
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	executor := NewWorkflowExecutor(c)
+	_, err = executor.Execute("wf-123", WorkflowExecutionRequest{})
+	if err == nil {
+		t.Fatal("Execute() expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "status 502: upstream gateway timeout") {
+		t.Fatalf("Execute() error = %q, want raw response body fallback", err.Error())
 	}
 }

@@ -39,6 +39,9 @@ func TestExecWorkflowRunE_SendsWorkflowInputRequest(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("unexpected method: %s", r.Method)
 			}
+			if got := r.URL.Query().Get("monitor"); got != "" {
+				t.Fatalf("expected monitor query param to be omitted without --wait, got %q", got)
+			}
 
 			requestBody := decodeWorkflowRunRequestBody(t, r.Body)
 			input, ok := requestBody["input"].(map[string]any)
@@ -79,6 +82,47 @@ func TestExecWorkflowRunE_SendsWorkflowInputRequest(t *testing.T) {
 	}
 	if ms.RequestCount != 1 {
 		t.Fatalf("expected 1 request, got %d", ms.RequestCount)
+	}
+}
+
+func TestExecWorkflowRunE_SetsMonitorQueryParamWhenWaiting(t *testing.T) {
+	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{
+		"/platform/automation/v1/workflows/wf-123/run": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Fatalf("unexpected method: %s", r.Method)
+			}
+			if got := r.URL.Query().Get("monitor"); got != "true" {
+				t.Fatalf("expected monitor=true query param when waiting, got %q", got)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"exec-123","workflow":"wf-123","state":"RUNNING"}`))
+		},
+		"/platform/automation/v1/executions/exec-123": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"exec-123","workflow":"wf-123","state":"SUCCESS","runtime":0}`))
+		},
+	})
+	defer ms.Close()
+
+	configPath, cleanup := testutil.SetupTestConfig(t, ms.URL)
+	defer cleanup()
+
+	origCfgFile := cfgFile
+	defer func() {
+		cfgFile = origCfgFile
+	}()
+	cfgFile = configPath
+
+	cmd := newExecWorkflowRunCmdForTest()
+	_ = cmd.Flags().Set("wait", "true")
+
+	err := cmd.RunE(cmd, []string{"wf-123"})
+	if err != nil {
+		t.Fatalf("RunE() error = %v", err)
+	}
+	if ms.RequestCount != 2 {
+		t.Fatalf("expected 2 requests (run + poll), got %d", ms.RequestCount)
 	}
 }
 

@@ -104,6 +104,10 @@ var execWorkflowCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		wait, _ := cmd.Flags().GetBool("wait")
+		// Simple workflow execution details are only available from the API for monitored
+		// runs. The --wait path polls that API surface, so it must opt into monitor=true.
+		request.Monitor = wait
 
 		result, err := executor.Execute(workflowID, request)
 		if err != nil {
@@ -123,7 +127,6 @@ var execWorkflowCmd = &cobra.Command{
 		fmt.Printf("State: %s\n", result.State)
 
 		// Handle --wait flag
-		wait, _ := cmd.Flags().GetBool("wait")
 		if wait {
 			fmt.Printf("\nWaiting for execution to complete...\n")
 
