@@ -44,10 +44,8 @@ func TestListPaginationStitchesPages(t *testing.T) {
 					return
 				}
 			}
-		} else {
-			if r.URL.Query().Get("schemaIds") != SchemaID {
-				t.Errorf("expected schemaIds=%q on first page, got %q", SchemaID, r.URL.Query().Get("schemaIds"))
-			}
+		} else if r.URL.Query().Get("schemaIds") != SchemaID {
+			t.Errorf("expected schemaIds=%q on first page, got %q", SchemaID, r.URL.Query().Get("schemaIds"))
 		}
 
 		w.Header().Set("Content-Type", "application/json")
