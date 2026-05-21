@@ -3,7 +3,87 @@ layout: docs
 title: Cloud Integrations
 ---
 
-dtctl supports configuring cloud monitoring integrations for **Azure** and **GCP**. Each integration follows a connection-then-configuration pattern: first establish a connection with credentials, then create a monitoring configuration that defines what to monitor.
+dtctl supports configuring cloud monitoring integrations for **AWS**, **Azure**, and **GCP**. Each integration follows a connection-then-configuration pattern: first establish a connection with credentials, then create a monitoring configuration that defines what to monitor.
+
+## AWS Monitoring
+
+AWS monitoring uses role-based authentication. The connection's `objectId` is used as `sts:ExternalId` in the IAM role's trust policy, which is provisioned via a Dynatrace-maintained CloudFormation template.
+
+### Step 1: Create an AWS Connection
+
+```bash
+# Create the connection first — the role ARN is patched in later
+dtctl create aws connection --name "my-aws-connection"
+```
+
+The command prints a copy-paste `aws cloudformation deploy` snippet that creates the IAM role using the connection's `objectId` as `sts:ExternalId`.
+
+### Step 2: Create the IAM Role (AWS CloudShell)
+
+Run the printed snippet in AWS CloudShell. It downloads Dynatrace's least-privilege role template and deploys a CloudFormation stack:
+
+```bash
+STACK="dynatrace-monitoring-my-aws-connection"
+curl -fsSLo da-role.yaml https://dynatrace-data-acquisition.s3.amazonaws.com/aws/deployment/cfn/latest/da-aws-nested-monitoring-role.yaml
+aws cloudformation deploy \
+  --stack-name "$STACK" \
+  --template-file da-role.yaml \
+  --parameter-overrides pDynatraceUrl=<your-tenant-url> pRoleExternalId=<connection-object-id> \
+  --capabilities CAPABILITY_NAMED_IAM
+
+ROLE_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Outputs[?OutputKey=='DynatraceMonitoringRoleArn'].OutputValue" --output text)
+```
+
+### Step 3: Patch the Role ARN into the Connection
+
+```bash
+dtctl update aws connection --name "my-aws-connection" --roleArn "$ROLE_ARN"
+```
+
+### Step 4: Create a Monitoring Configuration
+
+`--regions` is required; `--featureSets` is optional and defaults to the extension's default set.
+
+```bash
+dtctl create aws monitoring --name "my-aws-monitoring" \
+  --credentials "my-aws-connection" \
+  --regions us-east-1,eu-central-1
+```
+
+> **Note:** Monitoring configurations are created in a **disabled** state. Use `dtctl enable aws monitoring` to activate them.
+
+### Step 5: Discover Regions and Feature Sets
+
+```bash
+dtctl get aws monitoring-regions
+dtctl get aws monitoring-feature-sets
+```
+
+### Step 6: Enable the Monitoring Configuration
+
+```bash
+dtctl enable aws monitoring --name "my-aws-monitoring"
+
+# Or patch the role ARN and enable in one step:
+dtctl enable aws monitoring --name "my-aws-monitoring" \
+  --roleArn arn:aws:iam::123456789012:role/DynatraceMonitoringRole
+```
+
+### Step 7: Update and Delete
+
+```bash
+# Update monitoring scope
+dtctl update aws monitoring --name "my-aws-monitoring" \
+  --regions us-east-1,eu-central-1,ap-southeast-2 \
+  --featureSets EC2_essential,RDS_essential
+
+# Delete a monitoring config
+dtctl delete aws monitoring my-aws-monitoring
+
+# Delete the connection
+dtctl delete aws connection my-aws-connection
+```
 
 ## Azure Monitoring
 

@@ -25,11 +25,12 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 14. [Live Debugger](#live-debugger)
 15. [Extensions 2.0](#extensions-20)
 16. [Output Formats](#output-formats)
-17. [Azure Monitoring](#azure-monitoring)
-18. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
-19. [AI Agent Skills](#ai-agent-skills)
-20. [Tips & Tricks](#tips--tricks)
-21. [Troubleshooting](#troubleshooting)
+17. [AWS Monitoring](#aws-monitoring)
+18. [Azure Monitoring](#azure-monitoring)
+19. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
+20. [AI Agent Skills](#ai-agent-skills)
+21. [Tips & Tricks](#tips--tricks)
+22. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -2778,6 +2779,121 @@ For Davis AI features:
 - **CoPilot** (all features): `davis-copilot:conversations:execute`
 
 See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for complete scope lists by safety level.
+
+---
+
+## AWS Monitoring
+
+This is the recommended onboarding flow for AWS with role-based authentication. The AWS connection is created first (without a role ARN), the trust policy uses the connection's `objectId` as `sts:ExternalId`, and the IAM role is created via a Dynatrace-maintained CloudFormation template.
+
+> **Note:** The monitoring config is created in a **disabled** state. Run `dtctl enable aws monitoring` once the IAM role exists to activate it.
+
+### 1) Create AWS connection in Dynatrace
+
+```bash
+dtctl create aws connection --name "my-aws-connection"
+```
+
+The command prints a copy-paste `aws cloudformation deploy` snippet that:
+- Downloads the Dynatrace-maintained least-privilege role template.
+- Creates the IAM role using the connection's `objectId` as `sts:ExternalId` and your tenant URL as `pDynatraceUrl`.
+- Outputs the role ARN, ready to be patched back into the connection.
+
+### 2) Create the IAM role in AWS (CloudShell)
+
+Run the printed snippet in AWS CloudShell (or any environment with the `aws` CLI configured). Example shape:
+
+```bash
+STACK="dynatrace-monitoring-my-aws-connection"
+curl -fsSLo da-role.yaml https://dynatrace-data-acquisition.s3.amazonaws.com/aws/deployment/cfn/latest/da-aws-nested-monitoring-role.yaml
+aws cloudformation deploy \
+  --stack-name "$STACK" \
+  --template-file da-role.yaml \
+  --parameter-overrides pDynatraceUrl=https://abc12345.apps.dynatrace.com pRoleExternalId=<connection-object-id> \
+  --capabilities CAPABILITY_NAMED_IAM
+
+ROLE_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Outputs[?OutputKey=='DynatraceMonitoringRoleArn'].OutputValue" --output text)
+```
+
+Re-running the same command later updates the role in place — `curl` re-downloads the latest template and CloudFormation does an in-place update.
+
+### 3) Patch the role ARN into the AWS connection
+
+```bash
+dtctl update aws connection --name "my-aws-connection" --roleArn "$ROLE_ARN"
+```
+
+### 4) Create AWS monitoring config (created as disabled)
+
+`--regions` is required (comma-separated AWS regions); `--featureSets` is optional and defaults to the extension's default set.
+
+```bash
+dtctl create aws monitoring --name "my-aws-monitoring" \
+  --credentials "my-aws-connection" \
+  --regions us-east-1,eu-central-1
+```
+
+### 5) Enable AWS monitoring config
+
+The role ARN was already set in step 3, so no credential flags are needed here:
+
+```bash
+dtctl enable aws monitoring --name "my-aws-monitoring"
+```
+
+If you need to patch the role ARN at the same time:
+
+```bash
+dtctl enable aws monitoring --name "my-aws-monitoring" \
+  --roleArn arn:aws:iam::123456789012:role/DynatraceMonitoringRole
+```
+
+Verify the config is now enabled:
+
+```bash
+dtctl get aws monitoring my-aws-monitoring
+dtctl describe aws monitoring my-aws-monitoring
+```
+
+### 6) Discover available regions and feature sets
+
+```bash
+dtctl get aws monitoring-regions
+dtctl get aws monitoring-feature-sets
+```
+
+### 7) Update AWS monitoring config (examples)
+
+Change region filtering:
+
+```bash
+dtctl update aws monitoring --name "my-aws-monitoring" \
+  --regions us-east-1,eu-central-1,ap-southeast-2
+```
+
+Change feature sets to a focused subset:
+
+```bash
+dtctl update aws monitoring --name "my-aws-monitoring" \
+  --featureSets EC2_essential,RDS_essential
+```
+
+Create AWS monitoring config with explicit feature sets and regions in one shot:
+
+```bash
+dtctl create aws monitoring --name "my-aws-monitoring-explicit" \
+  --credentials "my-aws-connection" \
+  --regions us-east-1,eu-central-1 \
+  --featureSets EC2_essential,RDS_essential
+```
+
+### 8) Delete by name or ID
+
+```bash
+dtctl delete aws monitoring my-aws-monitoring
+dtctl delete aws connection my-aws-connection
+```
 
 ---
 
