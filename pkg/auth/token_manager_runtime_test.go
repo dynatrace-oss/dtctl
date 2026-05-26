@@ -162,20 +162,28 @@ func TestTokenManagerGetTokenAndRefreshPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("medium compact storage skips immediate refresh when not expired", func(t *testing.T) {
+	t.Run("medium compact storage triggers refresh even when not expired", func(t *testing.T) {
 		// Medium-compact: no access token but ExpiresAt is set (not zero).
-		// Should NOT trigger an unconditional refresh — falls through to needsRefresh().
+		// Before CR-5/SEC-1 was fixed, this case fell through to needsRefresh()
+		// which returned false (token not near expiry), so GetToken returned "" with
+		// nil error — a silent empty-bearer-token bug.
+		//
+		// After the fix, AccessToken == "" always triggers a refresh, regardless of
+		// ExpiresAt. This test now asserts that the refresh IS attempted.
 		tm.deps.getToken = func(ts *config.TokenStore, name string) (string, error) {
 			return storedJSON(t, StoredToken{Name: name, TokenSet: TokenSet{RefreshToken: "r1", ExpiresAt: time.Now().Add(2 * time.Hour)}}), nil
 		}
 		refreshCalled := false
 		tm.flow.httpDo = func(req *http.Request) (*http.Response, error) {
 			refreshCalled = true
-			return nil, errors.New("should not be called")
+			return nil, errors.New("simulated network error")
 		}
-		tm.GetToken("abc") //nolint:errcheck — return value not asserted; we only care about side effects
-		if refreshCalled {
-			t.Fatalf("medium-compact token with future ExpiresAt should not trigger immediate refresh")
+		_, err := tm.GetToken("abc")
+		if !refreshCalled {
+			t.Fatalf("medium-compact token (AccessToken empty) must trigger a refresh regardless of ExpiresAt")
+		}
+		if err == nil {
+			t.Fatalf("expected an error from the simulated refresh failure, got nil")
 		}
 	})
 }

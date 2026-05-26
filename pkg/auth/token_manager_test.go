@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -414,6 +417,199 @@ func TestTokenManager_GetToken_InvalidGrant_TokenNearExpiry(t *testing.T) {
 	}
 }
 
+// TestTokenManager_GetToken_ConcurrentCompact verifies the core fix: when N
+// goroutines simultaneously call GetToken on a compact token (refresh_token
+// only, no access_token, no expiry), the OAuth token endpoint is contacted
+// exactly once. All other goroutines should reuse the access_token written by
+// the winner.
+//
+// This test exercises the cross-process advisory lock indirectly — within a
+// single process goroutines share address space, so Go's sync primitives are
+// also involved, but the re-read-after-lock logic in GetToken is exercised by
+// the in-process race as well. The cross-process lock is separately validated
+// by the flock semantics on the operating system.
+//
+// A unique token name is used so that the underlying lock file path is
+// distinct from any other concurrent test run on the same machine.
+func TestTokenManager_GetToken_ConcurrentCompact(t *testing.T) {
+	t.Parallel()
+
+	const goroutines = 10
+
+	// Unique token name prevents lock file collisions with concurrent test runs
+	// (e.g. go test -count=2 or parallel CI jobs on the same host).
+	tokenName := "concurrent-test-token-" + t.Name()
+
+	// Count how many times the fake OAuth endpoint is reached.
+	var refreshCalls atomic.Int32
+
+	// Shared in-memory keyring protected by a mutex so concurrent setToken /
+	// getToken calls are safe without data races.
+	var storeMu sync.Mutex
+	store := make(map[string]string)
+
+	// Build one TokenManager per goroutine — each gets its own struct but they
+	// share the same underlying store map, simulating separate processes that
+	// all talk to the same OS keychain.
+	newTM := func() *TokenManager {
+		oauthCfg := OAuthConfigForEnvironment(EnvironmentProd, config.DefaultSafetyLevel)
+		tm, err := NewTokenManager(oauthCfg)
+		if err != nil {
+			// Cannot use t.Fatalf here: calling t.Fatalf from a goroutine other
+			// than the test goroutine calls runtime.Goexit on the spawned goroutine,
+			// not on the test goroutine, so the test would not be marked as failed.
+			// Return nil and let the caller handle it via the error channel.
+			return nil
+		}
+		tm.deps.keyringAvailable = func() bool { return true }
+		tm.deps.getToken = func(_ *config.TokenStore, name string) (string, error) {
+			storeMu.Lock()
+			defer storeMu.Unlock()
+			v, ok := store[name]
+			if !ok {
+				return "", fmt.Errorf("token %q not found", name)
+			}
+			return v, nil
+		}
+		tm.deps.setToken = func(_ *config.TokenStore, name, val string) error {
+			storeMu.Lock()
+			defer storeMu.Unlock()
+			store[name] = val
+			return nil
+		}
+		tm.deps.deleteToken = func(_ *config.TokenStore, name string) error {
+			storeMu.Lock()
+			defer storeMu.Unlock()
+			delete(store, name)
+			return nil
+		}
+		tm.deps.fileStoreAvailable = func() bool { return false }
+
+		// Fake OAuth endpoint: increment the counter and return a fresh token.
+		// Includes a small sleep to increase the chance of concurrent callers
+		// overlapping inside the "needs refresh" window.
+		tm.flow.httpDo = func(_ *http.Request) (*http.Response, error) {
+			refreshCalls.Add(1)
+			time.Sleep(10 * time.Millisecond)
+			body := `{
+				"access_token":  "new-access-token",
+				"refresh_token": "new-refresh-token",
+				"token_type":    "Bearer",
+				"expires_in":    3600,
+				"scope":         "openid"
+			}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       io.NopCloser(strings.NewReader(body)),
+			}, nil
+		}
+
+		return tm
+	}
+
+	// Seed a compact token into the shared store using the first manager's
+	// key derivation (all managers share the same environment so keys match).
+	seed := newTM()
+	if seed == nil {
+		t.Fatal("failed to create seed TokenManager")
+	}
+	key := seed.getKeyringName(tokenName)
+	compact, _ := json.Marshal(&StoredToken{
+		Name:     tokenName,
+		TokenSet: TokenSet{RefreshToken: "original-refresh"},
+	})
+	store[key] = string(compact)
+
+	// Launch N goroutines, each with its own TokenManager, all calling GetToken
+	// at the same time. Errors are collected via a buffered channel to avoid
+	// calling t.Fatalf from a non-test goroutine (which would only Goexit the
+	// spawned goroutine, not mark the test as failed).
+	type result struct {
+		token string
+		err   error
+	}
+	results := make(chan result, goroutines)
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tm := newTM()
+			if tm == nil {
+				results <- result{err: fmt.Errorf("NewTokenManager returned nil")}
+				return
+			}
+			tok, err := tm.GetToken(tokenName)
+			results <- result{token: tok, err: err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	for r := range results {
+		if r.err != nil {
+			t.Errorf("GetToken() error = %v", r.err)
+			continue
+		}
+		if r.token != "new-access-token" {
+			t.Errorf("GetToken() = %q, want %q", r.token, "new-access-token")
+		}
+	}
+
+	// The OAuth endpoint must have been called exactly once. If it was called
+	// more than once the lock (or the re-read-after-lock) is not working.
+	if n := refreshCalls.Load(); n != 1 {
+		t.Errorf("OAuth refresh endpoint called %d times, want exactly 1", n)
+	}
+}
+
+func TestTokenManager_GetToken_MediumCompact_ReturnsToken(t *testing.T) {
+	// Regression test for CR-5/SEC-1: when the keyring holds a medium-compact
+	// token (AccessToken stripped, ExpiresAt preserved), GetToken must still
+	// call RefreshToken and return a real access token — not silently return "".
+	//
+	// Before the fix, the ExpiresAt.IsZero() guard on the compact branch meant
+	// medium-compact tokens bypassed the refresh path and returned "" with nil error.
+	t.Parallel()
+	tm, store := newTMWithFakeKeyring(t)
+	tm.flow.httpDo = func(_ *http.Request) (*http.Response, error) {
+		body := `{
+			"access_token":  "refreshed-access",
+			"refresh_token": "new-refresh",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+			"scope":         "openid"
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	}
+
+	key := tm.getKeyringName("my-token")
+	// Medium-compact: no access token, but ExpiresAt is set (not zero).
+	mediumCompact, _ := json.Marshal(&StoredToken{
+		Name: "my-token",
+		TokenSet: TokenSet{
+			RefreshToken: "medium-refresh",
+			ExpiresAt:    time.Now().Add(1 * time.Hour), // non-zero: would fool old code
+		},
+	})
+	store[key] = string(mediumCompact)
+
+	got, err := tm.GetToken("my-token")
+
+	if err != nil {
+		t.Fatalf("GetToken() error = %v, want nil", err)
+	}
+	if got != "refreshed-access" {
+		t.Errorf("GetToken() = %q, want %q (medium-compact must trigger refresh)", got, "refreshed-access")
+	}
+}
+
 func TestTokenManager_GetToken_TransientError_DoesNotEvict(t *testing.T) {
 	// A network/5xx failure must NOT evict the cache — the token may still be
 	// usable if the access token hasn't expired yet.
@@ -450,5 +646,78 @@ func TestTokenManager_GetToken_TransientError_DoesNotEvict(t *testing.T) {
 	// Cache entry must NOT have been evicted.
 	if _, ok := store[key]; !ok {
 		t.Error("cache entry was incorrectly evicted on transient error")
+	}
+}
+
+func TestTokenManager_GetToken_LockFailure_FallsThrough(t *testing.T) {
+	// The refresh lock is best-effort: when acquireRefreshLock returns an
+	// error (e.g. /tmp is read-only, filesystem is full, signal interrupts
+	// the open) GetToken must log a warning and still proceed with the
+	// refresh rather than aborting. This protects single-process callers
+	// from being broken by a filesystem-level lock failure.
+	//
+	// Cannot run in parallel: we swap the package-level acquireRefreshLock.
+
+	originalLock := acquireRefreshLock
+	t.Cleanup(func() { acquireRefreshLock = originalLock })
+
+	var lockCalls int
+	acquireRefreshLock = func(_, _ string) (func(), error) {
+		lockCalls++
+		return func() {}, errors.New("simulated lock failure")
+	}
+
+	// Redirect stderr so the warning does not pollute test output, and so we
+	// can assert the operator-visible message is present.
+	stderrR, stderrW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	originalStderr := os.Stderr
+	os.Stderr = stderrW
+	t.Cleanup(func() { os.Stderr = originalStderr })
+
+	tm, store := newTMWithFakeKeyring(t)
+	tm.flow.httpDo = func(_ *http.Request) (*http.Response, error) {
+		body := `{
+			"access_token":  "refreshed-access",
+			"refresh_token": "new-refresh",
+			"token_type":    "Bearer",
+			"expires_in":    3600,
+			"scope":         "openid"
+		}`
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	}
+
+	key := tm.getKeyringName("my-token")
+	compact, _ := json.Marshal(&StoredToken{
+		Name:     "my-token",
+		TokenSet: TokenSet{RefreshToken: "stale-refresh"},
+	})
+	store[key] = string(compact)
+
+	got, err := tm.GetToken("my-token")
+
+	// Close the write end so the read does not block, then restore stderr
+	// before any t.Errorf so failure messages are visible to the operator.
+	_ = stderrW.Close()
+	stderrBytes, _ := io.ReadAll(stderrR)
+	os.Stderr = originalStderr
+
+	if err != nil {
+		t.Fatalf("GetToken() error = %v, want nil (lock failure must not abort)", err)
+	}
+	if got != "refreshed-access" {
+		t.Errorf("GetToken() = %q, want %q (refresh must still happen)", got, "refreshed-access")
+	}
+	if lockCalls != 1 {
+		t.Errorf("acquireRefreshLock call count = %d, want 1", lockCalls)
+	}
+	if !strings.Contains(string(stderrBytes), "could not acquire token refresh lock") {
+		t.Errorf("stderr = %q, want to contain warning about lock acquisition", string(stderrBytes))
 	}
 }

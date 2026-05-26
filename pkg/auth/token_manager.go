@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -75,7 +76,15 @@ type StoredToken struct {
 	Name string `json:"name"`
 }
 
-// GetToken retrieves and optionally refreshes a token
+// GetToken retrieves and optionally refreshes a token.
+//
+// When multiple processes run in parallel (e.g. concurrent dtctl invocations)
+// they may all see a compact token (no access_token) or an about-to-expire
+// token and all attempt to refresh simultaneously. Because OAuth uses refresh
+// token rotation, only the first refresh succeeds; the others receive
+// "invalid_grant". To prevent this, we acquire a cross-process advisory lock
+// before any refresh and re-read the token after acquiring it, so that the
+// 2nd+ processes reuse the access_token the first one wrote.
 func (tm *TokenManager) GetToken(tokenName string) (string, error) {
 	// Load stored token
 	stored, err := tm.loadToken(tokenName)
@@ -83,8 +92,51 @@ func (tm *TokenManager) GetToken(tokenName string) (string, error) {
 		return "", err
 	}
 
-	// If only refresh token is stored (minimal compact keyring format, no expiry), refresh immediately
-	if stored.AccessToken == "" && stored.RefreshToken != "" && stored.ExpiresAt.IsZero() {
+	// Fast path: access_token present and not near expiry — no lock needed.
+	if stored.AccessToken != "" && !tm.needsRefresh(&stored.TokenSet) {
+		return stored.AccessToken, nil
+	}
+
+	// Slow path: need to refresh. Acquire a cross-process lock so that only
+	// one parallel invocation actually calls the OAuth endpoint.
+	unlock, lockErr := acquireRefreshLock(string(tm.environment), tokenName)
+	if lockErr != nil {
+		// Lock is best-effort. Log a warning so the operator knows why they may
+		// still see occasional invalid_grant errors under high parallelism, but
+		// do not abort — the single-process case is unaffected.
+		fmt.Fprintf(os.Stderr, "dtctl: warning: could not acquire token refresh lock: %v\n", lockErr)
+	} else {
+		defer unlock()
+
+		// Re-read after acquiring the lock: another process may have already
+		// refreshed and saved a new token while we were waiting.
+		reread, rereadErr := tm.loadToken(tokenName)
+		switch {
+		case rereadErr == nil && reread.AccessToken != "" && !tm.needsRefresh(&reread.TokenSet):
+			// Another process already refreshed — reuse its access token.
+			return reread.AccessToken, nil
+		case rereadErr == nil:
+			// Use the freshest data (may carry an updated refresh_token from
+			// rotation). If reread failed we keep the pre-lock `stored` rather
+			// than risking a nil-dereference; the compact-refresh path below
+			// will surface any underlying storage error.
+			stored = reread
+		}
+	}
+
+	// Refresh if the access token is absent or near expiry.
+	//
+	// The access token may be absent for two reasons:
+	//   1. Minimal-compact keyring format: only refresh_token is stored, ExpiresAt
+	//      is zero. This is the most common case on macOS where the full token JSON
+	//      exceeds the keychain 4096-char limit.
+	//   2. Medium-compact keyring format: access_token and id_token are stripped but
+	//      ExpiresAt is preserved. The re-read-after-lock path above can land here
+	//      when the lock winner saved a medium-compact token: ExpiresAt would be in
+	//      the future (so needsRefresh returns false) but AccessToken is still "".
+	//      Checking AccessToken == "" directly avoids silently returning an empty
+	//      bearer token to the caller.
+	if stored.AccessToken == "" && stored.RefreshToken != "" {
 		refreshed, err := tm.RefreshToken(tokenName)
 		if err != nil {
 			if isInvalidGrantError(err) {
@@ -96,7 +148,7 @@ func (tm *TokenManager) GetToken(tokenName string) (string, error) {
 		return refreshed.AccessToken, nil
 	}
 
-	// Check if token needs refresh
+	// Access token is present — refresh proactively if it is near expiry.
 	if tm.needsRefresh(&stored.TokenSet) {
 		refreshed, err := tm.RefreshToken(tokenName)
 		if err != nil {
@@ -124,7 +176,15 @@ func isInvalidGrantError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "invalid_grant")
 }
 
-// RefreshToken refreshes an OAuth token
+// RefreshToken refreshes an OAuth token by exchanging the stored refresh token
+// for a new token set and persisting the result.
+//
+// WARNING: RefreshToken bypasses the cross-process refresh lock. Callers that
+// may run concurrently (e.g. multiple parallel dtctl invocations) should use
+// GetToken instead, which holds the lock around the refresh call so that only
+// one process contacts the OAuth endpoint at a time. Calling RefreshToken
+// directly from concurrent goroutines or processes risks "invalid_grant" errors
+// caused by OAuth refresh-token rotation invalidating the token after first use.
 func (tm *TokenManager) RefreshToken(tokenName string) (*TokenSet, error) {
 	// Load current token
 	stored, err := tm.loadToken(tokenName)
