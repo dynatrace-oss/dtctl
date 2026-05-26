@@ -392,8 +392,14 @@ func TestSettingsListObjectsInvalidSchema(t *testing.T) {
 		t.Fatal("Expected error for non-existent schema, got nil")
 	}
 
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("Expected 'not found' error, got: %v", err)
+	// Accept either the legacy "not found" wording or the current
+	// "does not exist" wording — both ride on top of an HTTP 404 from the
+	// Settings API, and the exact phrasing has drifted over time.
+	msg := err.Error()
+	if !strings.Contains(msg, "404") &&
+		!strings.Contains(msg, "not found") &&
+		!strings.Contains(msg, "does not exist") {
+		t.Errorf("Expected 404 / 'not found' / 'does not exist' error, got: %v", err)
 	}
 
 	t.Logf("✓ Got expected error: %v", err)
