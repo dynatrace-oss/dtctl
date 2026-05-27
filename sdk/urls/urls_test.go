@@ -23,6 +23,20 @@ func TestCheck(t *testing.T) {
 			wantProblems: 0,
 		},
 		{
+			name:          "missing scheme - apps domain",
+			url:           "abc12345.apps.dynatrace.com",
+			wantProblems:  1,
+			wantMessage:   "missing the https:// scheme",
+			wantSuggested: "https://abc12345.apps.dynatrace.com",
+		},
+		{
+			name:          "missing scheme - dev domain",
+			url:           "abc12345.dev.apps.dynatracelabs.com",
+			wantProblems:  1,
+			wantMessage:   "missing the https:// scheme",
+			wantSuggested: "https://abc12345.dev.apps.dynatracelabs.com",
+		},
+		{
 			name:          "live domain",
 			url:           "https://abc12345.live.dynatrace.com",
 			wantProblems:  1,
