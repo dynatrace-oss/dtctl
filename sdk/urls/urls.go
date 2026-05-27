@@ -26,6 +26,16 @@ func Check(environmentURL string) []Problem {
 
 	lower := strings.ToLower(environmentURL)
 
+	// Missing scheme: URL without https:// causes Go's HTTP client to return
+	// "unsupported protocol scheme" at runtime. Detect early and suggest the fix.
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		problems = append(problems, Problem{
+			Message:      "environment URL is missing the https:// scheme",
+			SuggestedURL: "https://" + environmentURL,
+		})
+		return problems
+	}
+
 	// SaaS production: <tenant>.live.dynatrace.com instead of <tenant>.apps.dynatrace.com
 	if strings.Contains(lower, ".live.dynatrace.com") {
 		suggested := fixDomain(environmentURL, ".live.dynatrace.com", ".apps.dynatrace.com")
