@@ -148,7 +148,7 @@ func TestCtxSetCmd(t *testing.T) {
 			t.Fatalf("ctx set staging failed: %v", err)
 		}
 
-		// Verify context was created
+		// Verify context was created and is now current
 		cfg, err := config.LoadFrom(configPath)
 		if err != nil {
 			t.Fatalf("failed to load config: %v", err)
@@ -165,9 +165,36 @@ func TestCtxSetCmd(t *testing.T) {
 		if cfg.Contexts[0].Context.SafetyLevel != config.SafetyLevelReadOnly {
 			t.Errorf("expected safety level 'readonly', got %q", cfg.Contexts[0].Context.SafetyLevel)
 		}
-		// First context should be set as current
 		if cfg.CurrentContext != "staging" {
 			t.Errorf("expected current context 'staging', got %q", cfg.CurrentContext)
+		}
+	})
+
+	t.Run("update existing context activates it", func(t *testing.T) {
+		// Create two contexts with staging as current
+		initCfg := config.NewConfig()
+		initCfg.SetContext("staging", "https://staging.example.com", "staging-token")
+		initCfg.SetContext("prod", "https://prod.example.com", "prod-token")
+		initCfg.CurrentContext = "staging"
+		if err := initCfg.SaveTo(configPath); err != nil {
+			t.Fatalf("failed to save initial config: %v", err)
+		}
+
+		// Update prod (not the current context) — this should switch to it
+		_ = ctxSetCmd.Flags().Set("environment", "https://prod.example.com")
+		defer func() { _ = ctxSetCmd.Flags().Set("environment", "") }()
+
+		err := ctxSetCmd.RunE(ctxSetCmd, []string{"prod"})
+		if err != nil {
+			t.Fatalf("ctx set prod failed: %v", err)
+		}
+
+		cfg, err := config.LoadFrom(configPath)
+		if err != nil {
+			t.Fatalf("failed to load config: %v", err)
+		}
+		if cfg.CurrentContext != "prod" {
+			t.Errorf("expected current context 'prod' after update, got %q", cfg.CurrentContext)
 		}
 	})
 

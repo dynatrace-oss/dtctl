@@ -101,7 +101,7 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 		results = append(results, checkResult{
 			Name:   "Current context",
 			Status: "fail",
-			Detail: "no current context set (use 'dtctl ctx set <name>' or 'dtctl config set-context')",
+			Detail: "no current context set (use 'dtctl ctx <name>' to switch, or 'dtctl ctx set <name> --environment <url>' to create one)",
 		})
 		return results
 	}
