@@ -1550,7 +1550,7 @@ dtctl ctx prod               # Switch to 'prod' context
 dtctl ctx current            # Show current context name
 dtctl ctx describe           # Describe current context
 dtctl ctx describe prod      # Describe specific context
-dtctl ctx set                # Create or update a context (interactive)
+dtctl ctx set <name> --environment <url>  # Create or update a context (also activates it)
 dtctl ctx delete old-env     # Delete a context
 dtctl ctx rm old-env         # Alias for delete
 ```

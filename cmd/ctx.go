@@ -35,7 +35,7 @@ Examples:
   # Describe a context
   dtctl ctx describe production
 
-  # Create or update a context
+  # Create or update a context (also switches to it)
   dtctl ctx set staging --environment https://staging.example.com
 
   # Delete a context
@@ -105,11 +105,14 @@ var ctxDescribeCmd = &cobra.Command{
 	},
 }
 
-// ctxSetCmd creates or updates a context
+// ctxSetCmd creates or updates a context and activates it
 var ctxSetCmd = &cobra.Command{
 	Use:   "set <context-name>",
-	Short: "Create or update a context",
+	Short: "Create or update a context and set it as current",
 	Long: `Create or update a context with connection and safety settings.
+
+The context is always set as the current context after being created or updated.
+To switch to an existing context without changing its settings, use: dtctl ctx <name>
 
 Safety Levels (from safest to most permissive):
   readonly                  - No modifications allowed
@@ -311,15 +314,20 @@ func setContext(name, environment, tokenRef, safetyLevel, description string) er
 
 	cfg.SetContextWithOptions(name, environment, tokenRef, opts)
 
-	if len(cfg.Contexts) == 1 || cfg.CurrentContext == "" {
-		cfg.CurrentContext = name
-	}
+	// Always activate the context that was just created or updated.
+	// "ctx set" is the canonical way to configure a context, so the natural
+	// expectation is that the named context becomes current afterward.
+	cfg.CurrentContext = name
 
 	if err := saveConfig(cfg); err != nil {
 		return err
 	}
 
-	output.PrintSuccess("Context %q set", name)
+	if isUpdate {
+		output.PrintSuccess("Context %q updated and set as current", name)
+	} else {
+		output.PrintSuccess("Context %q created and set as current", name)
+	}
 	return nil
 }
 
