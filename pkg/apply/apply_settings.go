@@ -17,10 +17,16 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 
 	handler := settings.NewHandler(a.client)
 
-	// Extract fields - handle both camelCase (API format) and lowercase (YAML keys)
+	// Extract fields - handle both camelCase (API format) and lowercase (YAML keys).
+	// Also accept "id" as a final fallback so that the --id CLI flag (which injects
+	// doc["id"] via injectID) works for settings objects the same way it does for
+	// other resource types. See https://github.com/dynatrace-oss/dtctl/issues/255
 	objectID, _ := setting["objectId"].(string)
 	if objectID == "" {
 		objectID, _ = setting["objectid"].(string)
+	}
+	if objectID == "" {
+		objectID, _ = setting["id"].(string)
 	}
 
 	schemaID, _ := setting["schemaId"].(string)

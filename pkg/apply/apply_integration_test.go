@@ -2304,3 +2304,60 @@ func TestApply_SettingsArray_YAML_RoundTrip(t *testing.T) {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
 }
+
+// TestApply_Settings_OverrideID_TriggersUpdate is a regression test for
+// https://github.com/dynatrace-oss/dtctl/issues/255
+//
+// When --id <objectId> is provided for a settings object that has no
+// objectId/objectid field, apply must issue a PUT (UPDATE) rather than a
+// POST (CREATE).
+func TestApply_Settings_OverrideID_TriggersUpdate(t *testing.T) {
+	putCalled := false
+	// handler.Update internally does: GET (schemaVersion) → PUT → GET (re-fetch).
+	// applySettings itself also does a GET first to confirm existence.
+	// All three GET and the PUT land on the same path.
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/classic/environment-api/v2/settings/objects/urn:settings:obj-255": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.Method {
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"objectId":      "urn:settings:obj-255",
+					"schemaId":      "builtin:alerting.profile",
+					"schemaVersion": "1",
+					"scope":         "environment",
+					"value":         map[string]interface{}{"name": "Updated"},
+					"summary":       "Updated",
+				})
+			case http.MethodPut:
+				putCalled = true
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				t.Errorf("unexpected method %s on settings object path", r.Method)
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	// File has no objectId — the caller provides it via --id (OverrideID).
+	settingsJSON := `{"schemaId":"builtin:alerting.profile","scope":"environment","value":{"name":"Updated"}}`
+	results, err := a.Apply([]byte(settingsJSON), ApplyOptions{OverrideID: "urn:settings:obj-255"})
+	if err != nil {
+		t.Fatalf("Apply() with --id for settings error = %v", err)
+	}
+	if !putCalled {
+		t.Error("expected a PUT request, but none was made (bug #255: --id flag ignored for settings)")
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	base := results[0].(*SettingsApplyResult).ApplyResultBase
+	if base.Action != ActionUpdated {
+		t.Errorf("expected action 'updated', got %q", base.Action)
+	}
+}
