@@ -2361,3 +2361,83 @@ func TestApply_Settings_OverrideID_TriggersUpdate(t *testing.T) {
 		t.Errorf("expected action 'updated', got %q", base.Action)
 	}
 }
+
+// TestApply_Settings_DryRun_WithObjectID_ReportsUpdated is a regression test for
+// https://github.com/dynatrace-oss/dtctl/issues/256
+//
+// When a settings YAML file contains objectid: (or objectId:), --dry-run must
+// report "updated", not "created". Actual apply already does the right thing;
+// dry-run was using doc["id"] which is never set for settings objects.
+func TestApply_Settings_DryRun_WithObjectID_ReportsUpdated(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	tests := []struct {
+		name         string
+		settingsJSON string
+	}{
+		{
+			name:         "lowercase objectid",
+			settingsJSON: `{"objectid":"urn:settings:obj-256","schemaId":"builtin:alerting.profile","scope":"environment","value":{"name":"Test"}}`,
+		},
+		{
+			name:         "camelCase objectId",
+			settingsJSON: `{"objectId":"urn:settings:obj-256","schemaId":"builtin:alerting.profile","scope":"environment","value":{"name":"Test"}}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			results, err := a.Apply([]byte(tc.settingsJSON), ApplyOptions{DryRun: true})
+			if err != nil {
+				t.Fatalf("Apply() dry-run error = %v", err)
+			}
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			dr, ok := results[0].(*DryRunResult)
+			if !ok {
+				t.Fatalf("expected *DryRunResult, got %T", results[0])
+			}
+			if dr.Action != ActionUpdated {
+				t.Errorf("dry-run with %s: expected action 'updated', got %q (bug #256)", tc.name, dr.Action)
+			}
+			if dr.ID != "urn:settings:obj-256" {
+				t.Errorf("dry-run with %s: expected ID 'urn:settings:obj-256', got %q", tc.name, dr.ID)
+			}
+		})
+	}
+}
+
+// TestApply_Settings_DryRun_WithoutObjectID_ReportsCreated verifies that dry-run
+// still reports "created" when no objectId is present (the happy path is unaffected).
+func TestApply_Settings_DryRun_WithoutObjectID_ReportsCreated(t *testing.T) {
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	settingsJSON := `{"schemaId":"builtin:alerting.profile","scope":"environment","value":{"name":"New"}}`
+	results, err := a.Apply([]byte(settingsJSON), ApplyOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("Apply() dry-run error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	dr, ok := results[0].(*DryRunResult)
+	if !ok {
+		t.Fatalf("expected *DryRunResult, got %T", results[0])
+	}
+	if dr.Action != ActionCreated {
+		t.Errorf("expected action 'created' without objectId, got %q", dr.Action)
+	}
+}
