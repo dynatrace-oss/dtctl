@@ -646,6 +646,17 @@ func (a *Applier) dryRun(resourceType ResourceType, data []byte) (ApplyResult, e
 		name, _ = doc["title"].(string)
 	}
 
+	// Settings objects never carry an "id" field — they use "objectId" (camelCase)
+	// or "objectid" (lowercase). Check those fields so that dry-run agrees with
+	// actual apply for settings resources.
+	// See https://github.com/dynatrace-oss/dtctl/issues/256
+	if id == "" && resourceType == ResourceSettings {
+		id, _ = doc["objectId"].(string)
+		if id == "" {
+			id, _ = doc["objectid"].(string)
+		}
+	}
+
 	action := ActionCreated // assume create unless we can prove otherwise
 	if id != "" {
 		action = ActionUpdated // has ID, likely an update (best guess without API call)
