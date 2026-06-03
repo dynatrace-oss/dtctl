@@ -50,7 +50,7 @@ func TestExecutionList_Success(t *testing.T) {
 	h, cleanup := newExecTestHandler(t, mux)
 	defer cleanup()
 
-	result, err := h.List("")
+	result, err := h.List(ExecutionFilters{}, 0)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -71,7 +71,7 @@ func TestExecutionList_WithWorkflowFilter(t *testing.T) {
 	h, cleanup := newExecTestHandler(t, mux)
 	defer cleanup()
 
-	_, err := h.List("wf-abc")
+	_, err := h.List(ExecutionFilters{WorkflowID: "wf-abc"}, 0)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -85,7 +85,7 @@ func TestExecutionList_ServerError(t *testing.T) {
 	h, cleanup := newExecTestHandler(t, mux)
 	defer cleanup()
 
-	_, err := h.List("")
+	_, err := h.List(ExecutionFilters{}, 0)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

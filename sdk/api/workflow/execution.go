@@ -44,12 +44,53 @@ func NewExecutionHandler(c *httpclient.Client) *ExecutionHandler {
 	return &ExecutionHandler{client: c}
 }
 
-// List retrieves all executions with optional workflow filter.
-func (h *ExecutionHandler) List(ctx context.Context, workflowID string) (*ExecutionList, error) {
+// maxExecutionLimit caps how many executions can be requested in one call.
+// Executions can number in the thousands; unlike workflows (where --chunk-size
+// drives a full-scan loop), here we intentionally fetch only a window of
+// recent results. A hard cap prevents accidental backend overload.
+const maxExecutionLimit = 1000
+
+// ExecutionFilters contains filter options for listing executions.
+type ExecutionFilters struct {
+	WorkflowID string
+	// State filters by execution state: RUNNING, SUCCESS, ERROR, CANCELLED, UNKNOWN.
+	// NOTE: state=ERROR also returns CANCELLED results (server-side implementation detail).
+	State        string
+	TriggerType  string // Manual, Schedule, Event, Workflow
+	StartedSince string // RFC3339 lower bound for startedAt
+	StartedUntil string // RFC3339 upper bound for startedAt
+}
+
+// List retrieves executions with optional filters.
+// limit is a result cap, not a page size — there is no pagination loop.
+// Use --limit (not --chunk-size) because executions are time-series data:
+// callers want a recent window, not an exhaustive scan.
+func (h *ExecutionHandler) List(ctx context.Context, filters ExecutionFilters, limit int64) (*ExecutionList, error) {
+	if limit > maxExecutionLimit {
+		limit = maxExecutionLimit
+	}
+
 	req := h.client.HTTP().R().SetContext(ctx)
 
-	if workflowID != "" {
-		req.SetQueryParam("workflow", workflowID)
+	if filters.WorkflowID != "" {
+		req.SetQueryParam("workflow", filters.WorkflowID)
+	}
+	if filters.State != "" {
+		req.SetQueryParam("state", filters.State)
+	}
+	if filters.TriggerType != "" {
+		req.SetQueryParam("triggerType", filters.TriggerType)
+	}
+	if filters.StartedSince != "" {
+		req.SetQueryParam("startedAt__gte", filters.StartedSince)
+	}
+	if filters.StartedUntil != "" {
+		req.SetQueryParam("startedAt__lte", filters.StartedUntil)
+	}
+	// limit == 0 omits the param, so the server applies its default page size
+	// (100) — NOT unlimited. This differs from workflow List, where 0 = unlimited.
+	if limit > 0 {
+		req.SetQueryParam("limit", fmt.Sprintf("%d", limit))
 	}
 
 	resp, err := req.Get("/platform/automation/v1/executions")

@@ -45,7 +45,7 @@ Examples:
 
 		// For table output, show detailed human-readable information
 		if outputFormat == "table" {
-			execList, err := execHandler.List(workflowID)
+			execList, err := execHandler.List(workflow.ExecutionFilters{WorkflowID: workflowID}, 10)
 			if err != nil {
 				execList = nil
 			}

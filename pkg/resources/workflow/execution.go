@@ -102,9 +102,12 @@ func NewExecutionHandler(c *client.Client) *ExecutionHandler {
 	}
 }
 
-// List retrieves all executions with optional workflow filter
-func (h *ExecutionHandler) List(workflowID string) (*ExecutionList, error) {
-	sdkResult, err := h.sdk.List(context.Background(), workflowID)
+// Re-export SDK type so callers don't need to import the SDK directly.
+type ExecutionFilters = sdkworkflow.ExecutionFilters
+
+// List retrieves executions with optional filters.
+func (h *ExecutionHandler) List(filters ExecutionFilters, limit int64) (*ExecutionList, error) {
+	sdkResult, err := h.sdk.List(context.Background(), filters, limit)
 	if err != nil {
 		return nil, err
 	}
