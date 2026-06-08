@@ -17,6 +17,7 @@ var (
 	updateAzureConnectionName          string
 	updateAzureConnectionDirectoryID   string
 	updateAzureConnectionApplicationID string
+	updateAzureConnectionClientSecret  string
 
 	updateAzureMonitoringConfigName              string
 	updateAzureMonitoringConfigLocationFiltering string
@@ -40,8 +41,8 @@ Examples:
   dtctl update azure connection <id> --directoryId "XYZ" --applicationId "ZUZ"`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if updateAzureConnectionDirectoryID == "" && updateAzureConnectionApplicationID == "" {
-			return fmt.Errorf("at least one of --directoryId or --applicationId is required")
+		if updateAzureConnectionDirectoryID == "" && updateAzureConnectionApplicationID == "" && updateAzureConnectionClientSecret == "" {
+			return fmt.Errorf("at least one of --directoryId, --applicationId, or --clientSecret is required")
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationUpdate)
@@ -88,6 +89,9 @@ Examples:
 			}
 			if updateAzureConnectionApplicationID != "" {
 				value.ClientSecret.ApplicationID = updateAzureConnectionApplicationID
+			}
+			if updateAzureConnectionClientSecret != "" {
+				value.ClientSecret.ClientSecret = updateAzureConnectionClientSecret
 			}
 		default:
 			return fmt.Errorf("unsupported azure connection type %q", value.Type)
@@ -191,6 +195,7 @@ func init() {
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "applicationId", "", "Application ID to set")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "applicationID", "", "Alias for --applicationId")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "aplicationID", "", "Compatibility alias for typo --aplicationID")
+	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionClientSecret, "clientSecret", "", "Client secret value (clientSecret type only); prefer passing via env var to keep out of shell history")
 
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")

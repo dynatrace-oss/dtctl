@@ -16,8 +16,11 @@ import (
 )
 
 var (
-	createAzureConnectionName string
-	createAzureConnectionType string
+	createAzureConnectionName          string
+	createAzureConnectionType          string
+	createAzureConnectionDirectoryID   string
+	createAzureConnectionApplicationID string
+	createAzureConnectionClientSecret  string
 
 	createAzureMonitoringConfigName              string
 	createAzureMonitoringConfigCredentials       string
@@ -39,7 +42,7 @@ var createAzureConnectionCmd = &cobra.Command{
 
 Examples:
   dtctl create azure connection --name "siwek" --type "federatedIdentityCredential"
-  dtctl create azure connection --name "siwek" --type "clientSecret"`,
+  dtctl create azure connection --name "siwek" --type "clientSecret" --directoryId "$TENANT_ID" --applicationId "$CLIENT_ID" --clientSecret "$CLIENT_SECRET"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if createAzureConnectionName == "" || createAzureConnectionType == "" {
 			missing := make([]string, 0, 2)
@@ -54,6 +57,11 @@ Examples:
 				"required flag(s) %s not set\nAvailable --type values: federatedIdentityCredential, clientSecret\nExample: dtctl create azure connection --name \"my-conn\" --type federatedIdentityCredential",
 				strings.Join(missing, ", "),
 			)
+		}
+
+		if createAzureConnectionType == "federatedIdentityCredential" &&
+			(createAzureConnectionDirectoryID != "" || createAzureConnectionApplicationID != "" || createAzureConnectionClientSecret != "") {
+			return fmt.Errorf("--directoryId, --applicationId, and --clientSecret are only supported for --type clientSecret\nFor federatedIdentityCredential, run 'dtctl update azure connection' after setting up federation in Azure")
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationCreate)
@@ -72,7 +80,12 @@ Examples:
 		case "federatedIdentityCredential":
 			value.FederatedIdentityCredential = &azureconnection.FederatedIdentityCredential{Consumers: []string{"SVC:com.dynatrace.da"}}
 		case "clientSecret":
-			value.ClientSecret = &azureconnection.ClientSecretCredential{Consumers: []string{"SVC:com.dynatrace.da"}}
+			value.ClientSecret = &azureconnection.ClientSecretCredential{
+				DirectoryID:   createAzureConnectionDirectoryID,
+				ApplicationID: createAzureConnectionApplicationID,
+				ClientSecret:  createAzureConnectionClientSecret,
+				Consumers:     []string{"SVC:com.dynatrace.da"},
+			}
 		default:
 			return fmt.Errorf("unsupported --type %q (supported: federatedIdentityCredential, clientSecret)", createAzureConnectionType)
 		}
@@ -229,6 +242,9 @@ func init() {
 
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionName, "name", "", "Azure connection name (required)")
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionType, "type", "", "Azure connection type: federatedIdentityCredential or clientSecret (required)")
+	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionDirectoryID, "directoryId", "", "Directory (tenant) ID — clientSecret type only")
+	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionApplicationID, "applicationId", "", "Application (client) ID — clientSecret type only")
+	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionClientSecret, "clientSecret", "", "Client secret value — clientSecret type only; prefer passing via env var to keep out of shell history")
 	_ = createAzureConnectionCmd.RegisterFlagCompletionFunc("type", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{
 			"federatedIdentityCredential\tUse workload identity federation (recommended)",

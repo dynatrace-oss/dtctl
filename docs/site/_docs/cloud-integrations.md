@@ -87,80 +87,173 @@ dtctl delete aws connection my-aws-connection
 
 ## Azure Monitoring
 
-### Step 1: Create an Azure Connection
+dtctl supports two authentication types for Azure connections:
+
+- **`federatedIdentityCredential`** (recommended) — uses workload identity federation; no long-lived secrets to manage
+- **`clientSecret`** — uses a service principal with a client secret (password)
+
+### Step 1: Choose a Subscription and Name
+
+Pick the Azure subscription you want to monitor. The connection name is derived from it so multiple connections stay easy to tell apart:
 
 ```bash
-# Create a new Azure connection using federated identity credentials
+az account list --output table
+
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+SUBSCRIPTION_NAME=$(az account show --query name -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+
+# Connection and service principal will share this name
+CONNECTION_NAME="dtctl-$SUBSCRIPTION_NAME"
+```
+
+### Option A: Federated Identity Credential (Recommended)
+
+#### Step 2: Create the Service Principal and Assign Reader Role
+
+```bash
+CLIENT_ID=$(az ad sp create-for-rbac \
+  --name "$CONNECTION_NAME" \
+  --query appId -o tsv)
+
+az role assignment create \
+  --assignee "$CLIENT_ID" \
+  --role Reader \
+  --scope "/subscriptions/$SUBSCRIPTION_ID"
+```
+
+Repeat `az role assignment create` for each additional subscription.
+
+#### Step 3: Create the Dynatrace Connection
+
+The connection must be created first — its ID becomes the federated credential subject in the next step.
+
+```bash
 dtctl create azure connection \
-  --name "my-azure-connection" \
+  --name "$CONNECTION_NAME" \
   --type federatedIdentityCredential
 ```
 
-### Step 2: Create a Service Principal
+#### Step 4: Configure Federated Credential in Entra ID
 
-Use the Azure CLI to create the service principal that Dynatrace will use:
+Get the issuer and subject values generated for your connection:
 
 ```bash
-# Create a service principal in Azure AD
-az ad sp create-for-rbac --name "dynatrace-monitoring"
+dtctl describe azure connection --name "$CONNECTION_NAME"
 ```
 
-Note the `appId` and `tenant` from the output — you will need them in Step 5.
+In the Azure portal (Entra ID > App registrations > `$CONNECTION_NAME` > Certificates & secrets > Federated credentials), add a new credential using those values.
 
-### Step 3: Assign Reader Role
-
-Grant the service principal read access to the subscriptions you want to monitor:
+#### Step 5: Finalize the Connection
 
 ```bash
-az role assignment create \
-  --assignee <appId> \
-  --role Reader \
-  --scope /subscriptions/<subscription-id>
-```
-
-### Step 4: Create Federated Credential in Entra ID
-
-In the Azure portal (Entra ID > App registrations > your app > Certificates & secrets > Federated credentials), create a new federated credential using the issuer and subject values provided by `dtctl describe azure connection`.
-
-### Step 5: Finalize the Connection
-
-```bash
-# Update the connection with your Azure directory and application IDs
 dtctl update azure connection \
-  --name "my-azure-connection" \
-  --directoryId <tenant-id> \
-  --applicationId <app-id>
+  --name "$CONNECTION_NAME" \
+  --directoryId "$TENANT_ID" \
+  --applicationId "$CLIENT_ID"
 ```
+
+### Option B: Client Secret
+
+#### Step 2: Create the Service Principal and Assign Reader Role
+
+`az ad sp create-for-rbac` prints the client secret **once** — capture it immediately:
+
+```bash
+SP_OUTPUT=$(az ad sp create-for-rbac --name "$CONNECTION_NAME" -o json)
+CLIENT_ID=$(echo "$SP_OUTPUT" | jq -r .appId)
+CLIENT_SECRET=$(echo "$SP_OUTPUT" | jq -r .password)
+
+az role assignment create \
+  --assignee "$CLIENT_ID" \
+  --role Reader \
+  --scope "/subscriptions/$SUBSCRIPTION_ID"
+```
+
+Repeat `az role assignment create` for each additional subscription.
+
+#### Step 3: Create the Dynatrace Connection
+
+All credentials are available now — create the connection in one command:
+
+```bash
+dtctl create azure connection \
+  --name "$CONNECTION_NAME" \
+  --type clientSecret \
+  --directoryId "$TENANT_ID" \
+  --applicationId "$CLIENT_ID" \
+  --clientSecret "$CLIENT_SECRET"
+```
+
+> **Security tip:** `$CLIENT_SECRET` is a shell variable captured in [Step 2](#step-2-create-the-service-principal-and-assign-reader-role-1) — it never touches bash history or disk.
 
 ### Step 6: Create a Monitoring Configuration
 
 ```bash
-# Create a monitoring config linked to the connection (created in disabled state)
 dtctl create azure monitoring-config \
-  --connection "my-azure-connection"
+  --name "$CONNECTION_NAME" \
+  --credentials "$CONNECTION_NAME"
+```
+
+Optionally scope the monitoring to specific Azure regions or feature sets at creation time:
+
+```bash
+dtctl create azure monitoring-config \
+  --name "$CONNECTION_NAME" \
+  --credentials "$CONNECTION_NAME" \
+  --locationFiltering westeurope,northeurope \
+  --featureSets microsoft_compute.virtualmachines_essential,microsoft_storage.storageaccounts_essential
 ```
 
 > **Note:** Monitoring configurations are created in a **disabled** state. Use `dtctl enable azure monitoring` in the next step to activate them.
 
-### Step 7: Update Location Filtering and Feature Sets
+### Step 7: Enable the Monitoring Configuration
 
 ```bash
-# Update monitoring to filter by Azure region or configure feature sets
-dtctl update azure monitoring-config <config-id> \
-  --locations westeurope,northeurope \
-  --feature-sets compute,storage
-```
+dtctl enable azure monitoring --name "$CONNECTION_NAME"
 
-### Step 8: Enable the Monitoring Configuration
-
-```bash
-# Enable the monitoring config (optionally updating connection credentials at the same time)
-dtctl enable azure monitoring --name "my-azure-monitoring"
-
-# Or update directory/application IDs and enable in one step:
-dtctl enable azure monitoring --name "my-azure-monitoring" \
+# Option A only — if you need to update credentials and enable in one step:
+dtctl enable azure monitoring --name "$CONNECTION_NAME" \
   --directoryId "$TENANT_ID" \
   --applicationId "$CLIENT_ID"
+```
+
+## Azure Monitoring — Lifecycle Operations
+
+### Update Location Filtering and Feature Sets
+
+```bash
+dtctl update azure monitoring-config "$CONNECTION_NAME" \
+  --locationFiltering westeurope,northeurope \
+  --featureSets microsoft_compute.virtualmachines_essential,microsoft_storage.storageaccounts_essential
+```
+
+### Rotate an Expired Client Secret (clientSecret type)
+
+Use `--append` to add a new secret without immediately invalidating the old one — this gives you time to update dtctl before the old secret expires:
+
+```bash
+# Add a new secret alongside the existing one (old secret stays valid)
+NEW_SECRET=$(az ad app credential reset \
+  --id "$CLIENT_ID" \
+  --append \
+  --display-name "dtctl-$(date +%Y-%m-%d)" \
+  --query password -o tsv)
+
+# Update the connection with the new secret
+dtctl update azure connection \
+  --name "$CONNECTION_NAME" \
+  --clientSecret "$NEW_SECRET"
+
+# Once verified, remove the old secret from Azure portal or:
+# az ad app credential delete --id "$CLIENT_ID" --key-id <old-key-id>
+```
+
+### Delete
+
+```bash
+dtctl delete azure monitoring-config "$CONNECTION_NAME"
+dtctl delete azure connection --name "$CONNECTION_NAME"
 ```
 
 ## GCP Monitoring (Preview)
