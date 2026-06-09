@@ -57,6 +57,53 @@ func TestList(t *testing.T) {
 	}
 }
 
+func TestList_Pagination(t *testing.T) {
+	// Simulate an API that reports count=2 but serves 1 result per page (no "next" field).
+	callCount := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/automation/v1/workflows", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		callCount++
+		offset := r.URL.Query().Get("offset")
+		w.Header().Set("Content-Type", "application/json")
+		if offset == "" || offset == "0" {
+			// First page: count=2 but only 1 result — no "next" field in response.
+			resp := WorkflowList{
+				Count:   2,
+				Results: []Workflow{{ID: "wf-1", Title: "Deploy", Owner: "user-1"}},
+			}
+			json.NewEncoder(w).Encode(resp)
+		} else {
+			resp := WorkflowList{
+				Count:   2,
+				Results: []Workflow{{ID: "wf-2", Title: "Remediation", Owner: "user-2"}},
+			}
+			json.NewEncoder(w).Encode(resp)
+		}
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.List(context.Background(), WorkflowFilters{})
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+	if result.Count != 2 {
+		t.Errorf("Count = %d, want 2", result.Count)
+	}
+	if len(result.Results) != 2 {
+		t.Errorf("got %d workflows, want 2", len(result.Results))
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 HTTP calls, got %d", callCount)
+	}
+	if result.Results[0].ID != "wf-1" || result.Results[1].ID != "wf-2" {
+		t.Errorf("unexpected results order: %v", result.Results)
+	}
+}
+
 func TestList_WithOwnerFilter(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/automation/v1/workflows", func(w http.ResponseWriter, r *http.Request) {

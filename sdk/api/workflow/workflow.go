@@ -42,6 +42,7 @@ type Workflow struct {
 // WorkflowList represents a list of workflows.
 type WorkflowList struct {
 	Count   int        `json:"count"`
+	Next    *string    `json:"next"`
 	Results []Workflow `json:"results"`
 }
 
@@ -50,29 +51,48 @@ type WorkflowFilters struct {
 	Owner string // Filter by owner ID (user ID)
 }
 
-// List retrieves workflows with optional filters.
+// pageSize is the number of workflows requested per page.
+const pageSize = 100
+
+// List retrieves all workflows with optional filters, fetching all pages automatically.
 func (h *Handler) List(ctx context.Context, filters WorkflowFilters) (*WorkflowList, error) {
-	req := h.client.HTTP().R().SetContext(ctx)
+	var allWorkflows []Workflow
+	offset := 0
+	totalCount := 0
 
-	if filters.Owner != "" {
-		req.SetQueryParam("owner", filters.Owner)
+	for {
+		req := h.client.HTTP().R().SetContext(ctx).
+			SetQueryParam("limit", fmt.Sprintf("%d", pageSize)).
+			SetQueryParam("offset", fmt.Sprintf("%d", offset))
+
+		if filters.Owner != "" {
+			req.SetQueryParam("owner", filters.Owner)
+		}
+
+		resp, err := req.Get("/platform/automation/v1/workflows")
+		if err != nil {
+			return nil, fmt.Errorf("list workflows: %w", err)
+		}
+
+		if err := httpclient.CheckResponse(resp); err != nil {
+			return nil, fmt.Errorf("list workflows: %w", err)
+		}
+
+		var result WorkflowList
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list workflows: parse response: %w", err)
+		}
+
+		allWorkflows = append(allWorkflows, result.Results...)
+		totalCount = result.Count
+
+		if len(result.Results) == 0 || len(allWorkflows) >= totalCount {
+			break
+		}
+		offset += pageSize
 	}
 
-	resp, err := req.Get("/platform/automation/v1/workflows")
-	if err != nil {
-		return nil, fmt.Errorf("list workflows: %w", err)
-	}
-
-	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, fmt.Errorf("list workflows: %w", err)
-	}
-
-	var result WorkflowList
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("list workflows: parse response: %w", err)
-	}
-
-	return &result, nil
+	return &WorkflowList{Count: totalCount, Results: allWorkflows}, nil
 }
 
 // Get retrieves a specific workflow.
