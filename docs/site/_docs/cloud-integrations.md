@@ -253,7 +253,7 @@ dtctl update azure connection \
 
 ```bash
 dtctl delete azure monitoring-config "$CONNECTION_NAME"
-dtctl delete azure connection --name "$CONNECTION_NAME"
+dtctl delete azure connection "$CONNECTION_NAME"
 ```
 
 ## GCP Monitoring (Preview)
