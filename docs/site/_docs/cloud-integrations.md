@@ -139,7 +139,7 @@ dtctl create azure connection \
 Get the issuer and subject values generated for your connection:
 
 ```bash
-dtctl describe azure connection --name "$CONNECTION_NAME"
+dtctl describe azure connection "$(dtctl get azure connection "$CONNECTION_NAME" -o json | jq -r '.objectId')"
 ```
 
 In the Azure portal (Entra ID > App registrations > `$CONNECTION_NAME` > Certificates & secrets > Federated credentials), add a new credential using those values.
