@@ -88,6 +88,9 @@ Examples:
 			}
 		case "clientSecret":
 			if value.ClientSecret == nil {
+				if updateAzureConnectionDirectoryID == "" || updateAzureConnectionApplicationID == "" {
+					return fmt.Errorf("the API returned no clientSecret data for this connection; provide both --directoryId and --applicationId to initialize it")
+				}
 				value.ClientSecret = &azureconnection.ClientSecretCredential{Consumers: []string{"SVC:com.dynatrace.da"}}
 			} else if len(value.ClientSecret.Consumers) == 0 {
 				value.ClientSecret.Consumers = []string{"SVC:com.dynatrace.da"}
