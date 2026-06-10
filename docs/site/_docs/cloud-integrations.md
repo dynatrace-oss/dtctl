@@ -137,11 +137,7 @@ dtctl create azure connection \
 
 #### Step 4: Configure Federated Credential in Entra ID
 
-Get the issuer and subject values generated for your connection:
-
-```bash
-dtctl describe azure connection "$(dtctl get azure connection "$CONNECTION_NAME" -o json | jq -r '.objectId')"
-```
+`dtctl create azure connection` prints the **Issuer**, **Subject**, and **Audiences** values (and a ready-to-run `az` command) immediately after the connection is created — use those values to add the federated credential.
 
 In the Azure portal (Entra ID > App registrations > `$CONNECTION_NAME` > Certificates & secrets > Federated credentials), add a new credential using those values.
 
