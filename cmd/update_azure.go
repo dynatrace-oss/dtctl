@@ -45,6 +45,10 @@ Examples:
 			return fmt.Errorf("at least one of --directoryId, --applicationId, or --clientSecret is required")
 		}
 
+		if len(args) == 0 && updateAzureConnectionName == "" {
+			return fmt.Errorf("provide connection ID argument or --name")
+		}
+
 		_, c, err := SetupWithSafety(safety.OperationUpdate)
 		if err != nil {
 			return err
@@ -59,9 +63,6 @@ Examples:
 				return err
 			}
 		} else {
-			if updateAzureConnectionName == "" {
-				return fmt.Errorf("provide connection ID argument or --name")
-			}
 			existing, err = handler.FindByName(updateAzureConnectionName)
 			if err != nil {
 				return err
@@ -71,6 +72,9 @@ Examples:
 		value := existing.Value
 		switch value.Type {
 		case "federatedIdentityCredential":
+			if updateAzureConnectionClientSecret != "" {
+				return fmt.Errorf("--clientSecret is not applicable to connections of type federatedIdentityCredential")
+			}
 			if value.FederatedIdentityCredential == nil {
 				value.FederatedIdentityCredential = &azureconnection.FederatedIdentityCredential{}
 			}
@@ -92,6 +96,9 @@ Examples:
 			}
 			if updateAzureConnectionClientSecret != "" {
 				value.ClientSecret.ClientSecret = updateAzureConnectionClientSecret
+			} else {
+				// API may return a masked placeholder — don't PUT it back
+				value.ClientSecret.ClientSecret = ""
 			}
 		default:
 			return fmt.Errorf("unsupported azure connection type %q", value.Type)

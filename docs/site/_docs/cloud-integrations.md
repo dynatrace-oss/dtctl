@@ -103,8 +103,8 @@ SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 SUBSCRIPTION_NAME=$(az account show --query name -o tsv)
 TENANT_ID=$(az account show --query tenantId -o tsv)
 
-# Connection and service principal will share this name
-CONNECTION_NAME="dtctl-$SUBSCRIPTION_NAME"
+# Subscription names can contain spaces — normalise to dashes
+CONNECTION_NAME="dtctl-$(echo "$SUBSCRIPTION_NAME" | tr ' ' '-')"
 ```
 
 ### Option A: Federated Identity Credential (Recommended)
@@ -187,7 +187,7 @@ dtctl create azure connection \
 
 > **Security tip:** `$CLIENT_SECRET` is a shell variable captured in [Step 2](#step-2-create-the-service-principal-and-assign-reader-role-1) — it never touches bash history or disk.
 
-### Step 6: Create a Monitoring Configuration
+### Create a Monitoring Configuration
 
 ```bash
 dtctl create azure monitoring-config \
@@ -207,7 +207,7 @@ dtctl create azure monitoring-config \
 
 > **Note:** Monitoring configurations are created in a **disabled** state. Use `dtctl enable azure monitoring` in the next step to activate them.
 
-### Step 7: Enable the Monitoring Configuration
+### Enable the Monitoring Configuration
 
 ```bash
 dtctl enable azure monitoring --name "$CONNECTION_NAME"

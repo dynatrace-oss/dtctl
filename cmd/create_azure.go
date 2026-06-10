@@ -59,6 +59,13 @@ Examples:
 			)
 		}
 
+		switch createAzureConnectionType {
+		case "federatedIdentityCredential", "clientSecret":
+			// valid
+		default:
+			return fmt.Errorf("unsupported --type %q (supported: federatedIdentityCredential, clientSecret)", createAzureConnectionType)
+		}
+
 		if createAzureConnectionType == "federatedIdentityCredential" &&
 			(createAzureConnectionDirectoryID != "" || createAzureConnectionApplicationID != "" || createAzureConnectionClientSecret != "") {
 			return fmt.Errorf("--directoryId, --applicationId, and --clientSecret are only supported for --type clientSecret\nFor federatedIdentityCredential, run 'dtctl update azure connection' after setting up federation in Azure")
@@ -86,8 +93,6 @@ Examples:
 				ClientSecret:  createAzureConnectionClientSecret,
 				Consumers:     []string{"SVC:com.dynatrace.da"},
 			}
-		default:
-			return fmt.Errorf("unsupported --type %q (supported: federatedIdentityCredential, clientSecret)", createAzureConnectionType)
 		}
 
 		created, err := handler.Create(azureconnection.AzureConnectionCreate{Value: value})
