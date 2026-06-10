@@ -76,7 +76,9 @@ Examples:
 				return fmt.Errorf("--clientSecret is not applicable to connections of type federatedIdentityCredential")
 			}
 			if value.FederatedIdentityCredential == nil {
-				value.FederatedIdentityCredential = &azureconnection.FederatedIdentityCredential{}
+				value.FederatedIdentityCredential = &azureconnection.FederatedIdentityCredential{Consumers: []string{"SVC:com.dynatrace.da"}}
+			} else if len(value.FederatedIdentityCredential.Consumers) == 0 {
+				value.FederatedIdentityCredential.Consumers = []string{"SVC:com.dynatrace.da"}
 			}
 			if updateAzureConnectionDirectoryID != "" {
 				value.FederatedIdentityCredential.DirectoryID = updateAzureConnectionDirectoryID
@@ -86,7 +88,9 @@ Examples:
 			}
 		case "clientSecret":
 			if value.ClientSecret == nil {
-				value.ClientSecret = &azureconnection.ClientSecretCredential{}
+				value.ClientSecret = &azureconnection.ClientSecretCredential{Consumers: []string{"SVC:com.dynatrace.da"}}
+			} else if len(value.ClientSecret.Consumers) == 0 {
+				value.ClientSecret.Consumers = []string{"SVC:com.dynatrace.da"}
 			}
 			if updateAzureConnectionDirectoryID != "" {
 				value.ClientSecret.DirectoryID = updateAzureConnectionDirectoryID
