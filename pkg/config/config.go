@@ -20,6 +20,15 @@ type Config struct {
 	Tokens         []NamedToken      `yaml:"tokens"`
 	Preferences    Preferences       `yaml:"preferences"`
 	Aliases        map[string]string `yaml:"aliases,omitempty"`
+
+	// localPath is the path of the auto-discovered local .dtctl.yaml this
+	// config was loaded from, if any. Empty when loaded from the global config
+	// or from an explicit --config file. Unexported so it is never serialized.
+	localPath string
+	// strippedExecKeys is true when code-execution keys (aliases and/or
+	// apply hooks) were present in an auto-discovered local config and were
+	// ignored for security. See sanitizeLocal.
+	strippedExecKeys bool
 }
 
 // NamedContext holds a context with its name
@@ -165,16 +174,70 @@ func findLocalConfigFrom(startDir string) string {
 //  2. Global config (XDG_CONFIG_HOME/dtctl/config)
 //
 // If a local config is found, it is used exclusively (not merged with global).
+//
+// Security: an auto-discovered local .dtctl.yaml is treated as untrusted (the
+// classic "untrusted working directory / checked-out repo / shared dir"
+// scenario). Code-execution keys — shell aliases and apply hooks — are stripped
+// from it via sanitizeLocal so a malicious config planted in (or above) the
+// current directory cannot silently run commands. These keys are only honored
+// from the global config or an explicit --config file (loaded via LoadFrom),
+// which carry stronger ownership expectations.
 func Load() (*Config, error) {
 	// Check for local config first
 	localConfig := FindLocalConfig()
 	if localConfig != "" {
-		return LoadFrom(localConfig)
+		cfg, err := LoadFrom(localConfig)
+		if err != nil {
+			return nil, err
+		}
+		cfg.sanitizeLocal(localConfig)
+		return cfg, nil
 	}
 
 	// Fall back to global config
 	return LoadFrom(DefaultConfigPath())
 }
+
+// sanitizeLocal marks the config as loaded from an auto-discovered local
+// .dtctl.yaml and strips any code-execution keys that must not be honored from
+// an untrusted per-project config: top-level shell/command aliases, the global
+// (preferences) apply hooks, and per-context apply hooks. It records via
+// strippedExecKeys whether any such key was actually present, so callers can
+// surface a one-line warning naming the local config in effect.
+func (c *Config) sanitizeLocal(path string) {
+	c.localPath = path
+
+	stripped := false
+	if len(c.Aliases) > 0 {
+		c.Aliases = nil
+		stripped = true
+	}
+	if c.Preferences.Hooks.PreApply != "" || c.Preferences.Hooks.PostApply != "" {
+		c.Preferences.Hooks = Hooks{}
+		stripped = true
+	}
+	for i := range c.Contexts {
+		h := c.Contexts[i].Context.Hooks
+		if h.PreApply != "" || h.PostApply != "" {
+			c.Contexts[i].Context.Hooks = Hooks{}
+			stripped = true
+		}
+	}
+	c.strippedExecKeys = stripped
+}
+
+// IsLocal reports whether the config was loaded from an auto-discovered local
+// .dtctl.yaml (as opposed to the global config or an explicit --config file).
+func (c *Config) IsLocal() bool { return c.localPath != "" }
+
+// LocalConfigPath returns the path of the auto-discovered local .dtctl.yaml the
+// config was loaded from, or "" if it was not loaded from a local config.
+func (c *Config) LocalConfigPath() string { return c.localPath }
+
+// StrippedExecKeys reports whether code-execution keys (aliases, apply hooks)
+// were present in the auto-discovered local config and were ignored for
+// security. See sanitizeLocal.
+func (c *Config) StrippedExecKeys() bool { return c.strippedExecKeys }
 
 // LoadFrom loads the configuration from a specific path
 func LoadFrom(path string) (*Config, error) {
@@ -191,7 +254,15 @@ func LoadFromWithoutExpansion(path string) (*Config, error) {
 // using the same search order as Load (local config, then global config).
 func LoadWithoutExpansion() (*Config, error) {
 	if local := FindLocalConfig(); local != "" {
-		return LoadFromWithoutExpansion(local)
+		cfg, err := LoadFromWithoutExpansion(local)
+		if err != nil {
+			return nil, err
+		}
+		// Strip code-execution keys from an auto-discovered local config here
+		// too, so callers that inspect raw values never observe (or act on)
+		// aliases/hooks from an untrusted working directory. See Load.
+		cfg.sanitizeLocal(local)
+		return cfg, nil
 	}
 	return LoadFromWithoutExpansion(DefaultConfigPath())
 }

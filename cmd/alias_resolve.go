@@ -30,6 +30,20 @@ func resolveAlias(args []string, cfg *config.Config) ([]string, bool, error) {
 		return nil, false, nil
 	}
 
+	// Defense in depth: never let an alias shadow a real built-in command at
+	// resolution time. The built-in guard in SetAlias/ImportAliases only runs
+	// when an alias is created through dtctl; a hand-written config (e.g. a
+	// planted .dtctl.yaml) can still define an alias named after a built-in
+	// such as `get`, `apply`, or `version`. Refusing it here ensures the real
+	// command always wins regardless of where the alias came from. We warn and
+	// fall through to normal command dispatch rather than erroring out.
+	if isBuiltinCommand(name) {
+		fmt.Fprintf(os.Stderr,
+			"warning: ignoring alias %q because it shadows the built-in %q command\n",
+			name, name)
+		return nil, false, nil
+	}
+
 	// Shell alias: starts with !
 	if strings.HasPrefix(expansion, "!") {
 		shellCmd := expansion[1:]

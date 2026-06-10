@@ -81,6 +81,17 @@ func execute() int {
 	// resolution (the real command will produce the proper error later).
 	spanArgs := os.Args[1:]
 	if cfg, err := config.Load(); err == nil {
+		// Security: warn when an auto-discovered local .dtctl.yaml carried
+		// code-execution keys (aliases / apply hooks) that were ignored. This
+		// makes adoption of an untrusted per-project config visible instead of
+		// silent. See config.Load / sanitizeLocal.
+		if cfg.StrippedExecKeys() {
+			fmt.Fprintf(os.Stderr,
+				"warning: ignoring aliases and hooks from local config %q "+
+					"(code-execution keys are only honored from the global config)\n",
+				cfg.LocalConfigPath())
+		}
+
 		// os.Args[0] is the binary name; work with os.Args[1:]
 		expanded, isShell, err := resolveAlias(os.Args[1:], cfg)
 		if err != nil {

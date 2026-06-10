@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Auto-discovered local `.dtctl.yaml` no longer honors command aliases or apply hooks** — `dtctl` discovers a per-project `.dtctl.yaml` by walking up from the current working directory. Such a file is now treated as untrusted: command aliases and `pre-apply`/`post-apply` hooks defined in it are ignored (contexts, tokens, and other preferences are still honored), with a warning printed to stderr naming the config in effect. These keys can run external commands, so they are honored only from the global config (`~/.config/dtctl/config`) or a config passed explicitly with `--config`, which have stronger ownership expectations. As defense in depth, the built-in-command shadow guard — previously enforced only when an alias was created via `dtctl alias set`/`import` — is now also enforced at resolution time, so an alias written directly into any config file can never override a built-in such as `get`, `apply`, or `version`.
+
 ## [0.28.1] - 2026-05-29
 
 ### Fixed
