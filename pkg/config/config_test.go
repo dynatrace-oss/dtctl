@@ -813,12 +813,15 @@ contexts:
 	}
 }
 
-// TestLoad_LocalConfigStripsExecKeys verifies the AI-36 hardening: an
-// auto-discovered local .dtctl.yaml must never contribute code-execution keys
-// (shell aliases or apply hooks), and Load must flag that they were stripped.
-func TestLoad_LocalConfigStripsExecKeys(t *testing.T) {
+// TestLoad_LocalConfigIgnoresExecKeys verifies the AI-36 hardening: an
+// auto-discovered local .dtctl.yaml must never have its code-execution keys
+// (shell aliases or apply hooks) honored. The values stay in the struct so
+// edit/save commands round-trip the file, but the honoring points
+// (GetPreApplyHook/GetPostApplyHook, and resolveAlias which checks IsLocal)
+// must treat them as absent. Load flags that such keys are being ignored.
+func TestLoad_LocalConfigIgnoresExecKeys(t *testing.T) {
 	// NOT parallel: os.Chdir is process-global and races with other tests.
-	tmpDir, err := os.MkdirTemp("", "dtctl-strip-exec-*")
+	tmpDir, err := os.MkdirTemp("", "dtctl-ignore-exec-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -868,29 +871,30 @@ aliases:
 		t.Errorf("CurrentContext = %q, want local-ctx", cfg.CurrentContext)
 	}
 
-	// Code-execution keys must be stripped.
-	if len(cfg.Aliases) != 0 {
-		t.Errorf("Aliases = %v, want empty (stripped from local config)", cfg.Aliases)
-	}
-	if _, ok := cfg.GetAlias("version"); ok {
-		t.Error("GetAlias(version) returned an alias; local aliases must be stripped")
-	}
+	// Code-execution keys are NOT honored: the effective hooks resolve to
+	// empty because the config is local.
 	if cfg.GetPreApplyHook() != "" {
-		t.Errorf("GetPreApplyHook() = %q, want empty (stripped)", cfg.GetPreApplyHook())
+		t.Errorf("GetPreApplyHook() = %q, want empty (local hooks not honored)", cfg.GetPreApplyHook())
 	}
 	if cfg.GetPostApplyHook() != "" {
-		t.Errorf("GetPostApplyHook() = %q, want empty (stripped)", cfg.GetPostApplyHook())
+		t.Errorf("GetPostApplyHook() = %q, want empty (local hooks not honored)", cfg.GetPostApplyHook())
 	}
-	if cfg.Preferences.Hooks != (Hooks{}) {
-		t.Errorf("Preferences.Hooks = %+v, want zero", cfg.Preferences.Hooks)
+
+	// ...but the raw values remain in the struct so a load-modify-save by a
+	// config-management command does not silently destroy the user's file.
+	if len(cfg.Aliases) != 2 {
+		t.Errorf("Aliases = %v, want both retained for round-trip safety", cfg.Aliases)
+	}
+	if cfg.Preferences.Hooks.PreApply != "evil-global-pre" {
+		t.Errorf("Preferences.Hooks.PreApply = %q, want retained for round-trip", cfg.Preferences.Hooks.PreApply)
 	}
 
 	// Metadata for the caller-facing warning.
 	if !cfg.IsLocal() {
 		t.Error("IsLocal() = false, want true")
 	}
-	if !cfg.StrippedExecKeys() {
-		t.Error("StrippedExecKeys() = false, want true")
+	if !cfg.IgnoredExecKeys() {
+		t.Error("IgnoredExecKeys() = false, want true")
 	}
 	gotPath, _ := filepath.EvalSymlinks(cfg.LocalConfigPath())
 	wantPath, _ := filepath.EvalSymlinks(localConfigPath)
@@ -899,8 +903,78 @@ aliases:
 	}
 }
 
+// TestLoad_LocalConfigRoundTripPreservesExecKeys is the regression guard for
+// the data-loss bug: loading a local config (which ignores exec keys) and
+// saving it back — as `dtctl config set`, `alias set`, `migrate-tokens`, etc.
+// do — must NOT wipe the user's own aliases or hooks from their file.
+func TestLoad_LocalConfigRoundTripPreservesExecKeys(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global and races with other tests.
+	tmpDir, err := os.MkdirTemp("", "dtctl-roundtrip-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	localConfigPath := filepath.Join(tmpDir, LocalConfigName)
+	localContent := `apiVersion: v1
+kind: Config
+current-context: local-ctx
+contexts:
+  - name: local-ctx
+    context:
+      environment: https://local.dt.com
+      token-ref: local-token
+      hooks:
+        pre-apply: "echo ctx-hook"
+preferences:
+  hooks:
+    pre-apply: "echo global-hook"
+aliases:
+  wf: "get workflows"
+  prod: "get workflows --context prod"
+`
+	if err := os.WriteFile(localConfigPath, []byte(localContent), 0600); err != nil {
+		t.Fatalf("Failed to write local config: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	// Simulate an unrelated config-management write: load, mutate something
+	// else, save back to the same local file.
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	cfg.Preferences.Editor = "vim"
+	if err := cfg.SaveTo(localConfigPath); err != nil {
+		t.Fatalf("SaveTo() error = %v", err)
+	}
+
+	// Reload raw from disk and confirm nothing was destroyed.
+	raw, err := LoadFromWithoutExpansion(localConfigPath)
+	if err != nil {
+		t.Fatalf("LoadFromWithoutExpansion() error = %v", err)
+	}
+	if len(raw.Aliases) != 2 {
+		t.Errorf("aliases after round-trip = %v, want both preserved", raw.Aliases)
+	}
+	if raw.Preferences.Hooks.PreApply != "echo global-hook" {
+		t.Errorf("global pre-apply hook after round-trip = %q, want preserved", raw.Preferences.Hooks.PreApply)
+	}
+	if len(raw.Contexts) != 1 || raw.Contexts[0].Context.Hooks.PreApply != "echo ctx-hook" {
+		t.Errorf("context pre-apply hook after round-trip not preserved: %+v", raw.Contexts)
+	}
+}
+
 // TestLoad_LocalConfigNoExecKeys verifies that a clean local config (no aliases
-// or hooks) loads without being flagged as stripped.
+// or hooks) loads without being flagged as carrying ignored exec keys.
 func TestLoad_LocalConfigNoExecKeys(t *testing.T) {
 	// NOT parallel: os.Chdir is process-global and races with other tests.
 	tmpDir, err := os.MkdirTemp("", "dtctl-no-exec-*")
@@ -941,14 +1015,14 @@ contexts:
 	if !cfg.IsLocal() {
 		t.Error("IsLocal() = false, want true")
 	}
-	if cfg.StrippedExecKeys() {
-		t.Error("StrippedExecKeys() = true, want false (no exec keys present)")
+	if cfg.IgnoredExecKeys() {
+		t.Error("IgnoredExecKeys() = true, want false (no exec keys present)")
 	}
 }
 
 // TestLoadFrom_ExplicitConfigKeepsExecKeys verifies that an explicit config
-// path (e.g. --config) is trusted and retains aliases/hooks; only
-// auto-discovered local configs are sanitized.
+// path (e.g. --config) is trusted and honors aliases/hooks; only
+// auto-discovered local configs have their exec keys ignored.
 func TestLoadFrom_ExplicitConfigKeepsExecKeys(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
@@ -973,8 +1047,8 @@ preferences:
 	if cfg.IsLocal() {
 		t.Error("IsLocal() = true, want false for explicit config path")
 	}
-	if cfg.StrippedExecKeys() {
-		t.Error("StrippedExecKeys() = true, want false for explicit config path")
+	if cfg.IgnoredExecKeys() {
+		t.Error("IgnoredExecKeys() = true, want false for explicit config path")
 	}
 	if _, ok := cfg.GetAlias("wf"); !ok {
 		t.Error("GetAlias(wf) missing; explicit config must retain aliases")

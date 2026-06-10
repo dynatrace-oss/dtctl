@@ -203,8 +203,9 @@ Per-context hooks take precedence over global hooks. The special value `"none"` 
 > file. Hooks defined in an auto-discovered local `.dtctl.yaml` (whether in
 > `preferences` or a context) are **ignored**, since a local config from an
 > untrusted working directory must not be able to run commands. dtctl prints a
-> warning to stderr when it strips them. See
-> [Config Search Order](#config-search-order).
+> warning to stderr when it ignores them. (The hook values remain in the file
+> untouched — they are simply never executed — so editing the config elsewhere
+> never destroys them.) See [Config Search Order](#config-search-order).
 
 ### Hook Contract
 
