@@ -114,6 +114,7 @@ CONNECTION_NAME="dtctl-$(echo "$SUBSCRIPTION_NAME" | tr ' ' '-')"
 ```bash
 CLIENT_ID=$(az ad sp create-for-rbac \
   --name "$CONNECTION_NAME" \
+  --create-password false \
   --query appId -o tsv)
 
 az role assignment create \
