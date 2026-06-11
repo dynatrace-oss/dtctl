@@ -15,9 +15,20 @@ type GraphQLWorkspaceResponse struct {
 	} `json:"data"`
 }
 
+type FilterField struct {
+	Field  string   `json:"field"`
+	Values []string `json:"values"`
+}
+
+type FilterSet struct {
+	Labels  []FilterField `json:"labels"`
+	Filters []FilterField `json:"filters"`
+}
+
 type Workspace struct {
-	ID    string           `json:"id"`
-	Rules []BreakpointRule `json:"rules"`
+	ID         string           `json:"id"`
+	Rules      []BreakpointRule `json:"rules"`
+	FilterSets []FilterSet      `json:"filterSets"`
 }
 
 type BreakpointRule struct {
@@ -111,6 +122,29 @@ func ExtractRuleStatuses(resp map[string]interface{}) ([]RuleStatusNode, error) 
 		return nil, err
 	}
 	return decoded.Data.Org.RuleStatuses, nil
+}
+
+// WorkspaceHasFilters reports whether the getOrCreateUserWorkspaceV2 response
+// contains at least one filterSet with at least one label or filter with values.
+func WorkspaceHasFilters(resp map[string]interface{}) (bool, error) {
+	var decoded GraphQLWorkspaceResponse
+	if err := decodeGraphQLResponse(resp, &decoded); err != nil {
+		return false, err
+	}
+	ws := decoded.Data.Org.GetOrCreateWorkspace
+	for _, fs := range ws.FilterSets {
+		for _, lbl := range fs.Labels {
+			if len(lbl.Values) > 0 {
+				return true, nil
+			}
+		}
+		for _, f := range fs.Filters {
+			if len(f.Values) > 0 {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func ExtractDeletedRuleIDs(resp map[string]interface{}) ([]string, error) {

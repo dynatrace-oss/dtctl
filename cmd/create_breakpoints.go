@@ -68,6 +68,14 @@ Examples:
 			}
 		}
 
+		hasFilters, err := livedebugger.WorkspaceHasFilters(workspaceResp)
+		if err != nil {
+			return err
+		}
+		if !hasFilters {
+			return fmt.Errorf("no workspace filters configured; set filters first with:\n  dtctl update breakpoint --filters key:value\nthen retry creating the breakpoint")
+		}
+
 		createResp, err := handler.CreateBreakpoint(workspaceID, fileName, lineNumber)
 		if err != nil {
 			if verbose {
