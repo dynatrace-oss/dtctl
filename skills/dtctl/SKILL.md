@@ -36,6 +36,8 @@ Before writing, modifying, or executing any DQL that fetches Dynatrace data (for
 
 If there is any conflict between memory/assumptions and the reference, prefer the reference.
 
+**Cost-first rule for generated DQL:** consult [`dt-dql-essentials/references/optimization.md`](https://github.com/Dynatrace/dynatrace-for-ai/blob/main/skills/dt-dql-essentials/references/optimization.md) for authoritative DQL optimization guidance. For dtctl-specific affordances (scan-cost knobs, `dtctl verify query --cost-lint`, tile-level cost considerations), see the "Cost-Optimized DQL" section in `references/DQL-reference.md` and the "Cost Considerations for Tile DQL" section in `references/resources/dashboards.md`.
+
 ## Prerequisites
 
 If dtctl is not installed or not working, see [references/troubleshooting.md](references/troubleshooting.md) for installation and setup.
