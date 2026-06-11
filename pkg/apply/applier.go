@@ -489,11 +489,9 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 	}
 
 	// Heuristic detection based on field presence
-	// Workflows have "tasks" and "trigger" fields
+	// Workflows have a "tasks" field; "trigger" may be absent for manual triggers
 	if _, hasTasks := raw["tasks"]; hasTasks {
-		if _, hasTrigger := raw["trigger"]; hasTrigger {
-			return ResourceWorkflow, false, nil
-		}
+		return ResourceWorkflow, false, nil
 	}
 
 	// Documents have "metadata" or "content" at root level
