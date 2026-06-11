@@ -23,12 +23,13 @@ type Workflow struct {
 	Private              bool                   `json:"isPrivate" yaml:"isPrivate" table:"-"`
 	SchemaVersion        int                    `json:"schemaVersion,omitempty" yaml:"schemaVersion,omitempty" table:"-"`
 	Trigger              map[string]interface{} `json:"trigger,omitempty" yaml:"trigger,omitempty" table:"-"`
+	TriggerType          string                 `json:"triggerType,omitempty" yaml:"triggerType,omitempty" table:"TRIGGER"`
 	Result               *string                `json:"result,omitempty" yaml:"result,omitempty" table:"-"`
 	Type                 string                 `json:"type,omitempty" yaml:"type,omitempty" table:"TYPE"`
 	Input                map[string]interface{} `json:"input,omitempty" yaml:"input,omitempty" table:"-"`
 	HourlyExecutionLimit *int                   `json:"hourlyExecutionLimit,omitempty" yaml:"hourlyExecutionLimit,omitempty" table:"-"`
 	Guide                *string                `json:"guide,omitempty" yaml:"guide,omitempty" table:"-"`
-	Tasks                map[string]interface{} `json:"tasks" yaml:"tasks" table:"-"`
+	Tasks                map[string]interface{} `json:"tasks,omitempty" yaml:"tasks,omitempty" table:"-"`
 }
 
 // WorkflowList represents a list of workflows.
@@ -50,6 +51,21 @@ type HistoryList struct {
 	Results []HistoryRecord `json:"results"`
 }
 
+// triggerType derives a human-readable trigger type from the trigger map.
+// Matches the UI logic: schedule → "Schedule", eventTrigger → "Event", else "Manual".
+func triggerType(t map[string]interface{}) string {
+	if t == nil {
+		return "Manual"
+	}
+	if _, ok := t["schedule"]; ok {
+		return "Schedule"
+	}
+	if _, ok := t["eventTrigger"]; ok {
+		return "Event"
+	}
+	return "Manual"
+}
+
 // fromSDKWorkflow converts an SDK Workflow to a CLI Workflow.
 func fromSDKWorkflow(s *sdkworkflow.Workflow) Workflow {
 	return Workflow{
@@ -63,6 +79,7 @@ func fromSDKWorkflow(s *sdkworkflow.Workflow) Workflow {
 		Private:              s.Private,
 		SchemaVersion:        s.SchemaVersion,
 		Trigger:              s.Trigger,
+		TriggerType:          triggerType(s.Trigger),
 		Result:               s.Result,
 		Type:                 s.Type,
 		Input:                s.Input,
@@ -94,9 +111,19 @@ func NewHandler(c *client.Client) *Handler {
 	}
 }
 
-// List retrieves workflows with optional filters
-func (h *Handler) List(filters WorkflowFilters) (*WorkflowList, error) {
-	sdkResult, err := h.sdk.List(context.Background(), filters)
+// listFields is the field projection used for workflow listing: it omits heavy
+// fields (tasks, input, result, guide) not shown in list output. This is a CLI
+// display concern, so it lives here rather than in the SDK.
+const listFields = "id,title,isDeployed,description,type,owner,ownerType,actor,isPrivate,schemaVersion,hourlyExecutionLimit,trigger"
+
+// List retrieves workflows with optional filters.
+// chunkSize controls page size (0 = first page only); limit caps total results (0 = unlimited).
+func (h *Handler) List(filters WorkflowFilters, chunkSize, limit int64) (*WorkflowList, error) {
+	// Callers may pass a custom projection; default to the lean list set.
+	if filters.Fields == "" {
+		filters.Fields = listFields
+	}
+	sdkResult, err := h.sdk.List(context.Background(), filters, chunkSize, limit)
 	if err != nil {
 		return nil, err
 	}

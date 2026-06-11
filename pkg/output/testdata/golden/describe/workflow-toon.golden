@@ -23,4 +23,5 @@ trigger:
     trigger:
       cron: 0 9 * * 1-5
       type: cron
+triggerType: Schedule
 type: STANDARD

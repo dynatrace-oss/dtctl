@@ -2,8 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
@@ -14,6 +18,23 @@ import (
 
 // workflowFilter holds the workflow ID filter for executions
 var workflowFilter string
+
+// minWorkflowChunkSize is the smallest allowed --chunk-size for workflow listing.
+// Smaller pages multiply the request count for no benefit and risk hammering the API.
+const minWorkflowChunkSize = 20
+
+// validateWorkflowChunkSize rejects tiny page sizes that fan a full listing out
+// into excessive API requests. 0 (single page) and >= minWorkflowChunkSize are allowed.
+func validateWorkflowChunkSize(chunk int64) error {
+	if chunk > 0 && chunk < minWorkflowChunkSize {
+		return fmt.Errorf("--chunk-size must be 0 or at least %d (got %d)", minWorkflowChunkSize, chunk)
+	}
+	return nil
+}
+
+// triggerTypeCaser normalizes trigger-type filter values to the API's title-case form
+// (e.g. "schedule" -> "Schedule").
+var triggerTypeCaser = cases.Title(language.Und)
 
 // getWorkflowsCmd retrieves workflows
 var getWorkflowsCmd = &cobra.Command{
@@ -61,8 +82,24 @@ Examples:
 
 		// List workflows with filters
 		mineOnly, _ := cmd.Flags().GetBool("mine")
+		filterStr, _ := cmd.Flags().GetString("filter")
+		typeStr, _ := cmd.Flags().GetString("type")
+		triggerStr, _ := cmd.Flags().GetString("trigger")
+		limit, _ := cmd.Flags().GetInt64("limit")
 
-		filters := workflow.WorkflowFilters{}
+		chunk := GetChunkSize()
+		if err := validateWorkflowChunkSize(chunk); err != nil {
+			return err
+		}
+
+		filters := workflow.WorkflowFilters{
+			Search:      filterStr,
+			TriggerType: triggerTypeCaser.String(strings.ToLower(triggerStr)),
+		}
+
+		if typeStr != "" {
+			filters.Type = strings.ToUpper(typeStr)
+		}
 
 		// If --mine flag is set, get current user ID and filter by owner
 		if mineOnly {
@@ -77,7 +114,7 @@ Examples:
 		watchMode, _ := cmd.Flags().GetBool("watch")
 		if watchMode {
 			fetcher := func() (interface{}, error) {
-				list, err := handler.List(filters)
+				list, err := handler.List(filters, chunk, limit)
 				if err != nil {
 					return nil, err
 				}
@@ -86,7 +123,7 @@ Examples:
 			return executeWithWatch(cmd, fetcher, printer)
 		}
 
-		list, err := handler.List(filters)
+		list, err := handler.List(filters, chunk, limit)
 		if err != nil {
 			return err
 		}
@@ -97,10 +134,16 @@ Examples:
 				"Run 'dtctl describe workflow <id>' for details",
 				"Run 'dtctl exec workflow <id>' to trigger a workflow",
 			}
-			// If count from API exceeds returned results, more data exists
+			// If count from API exceeds returned results, more data exists. The
+			// remedy depends on what capped the result: an explicit --limit, or
+			// single-page mode (--chunk-size 0).
 			if list.Count > len(list.Results) {
 				ap.SetHasMore(true)
-				suggestions = append(suggestions, "More results available. Use '--chunk-size 0' to retrieve all, or filter with DQL")
+				if limit > 0 {
+					suggestions = append(suggestions, fmt.Sprintf("Showing %d of %d. Raise --limit (currently %d) or set it to 0 for unlimited.", len(list.Results), list.Count, limit))
+				} else {
+					suggestions = append(suggestions, fmt.Sprintf("Showing %d of %d. Increase --chunk-size to page through all results.", len(list.Results), list.Count))
+				}
 			}
 			ap.SetSuggestions(suggestions)
 		}
@@ -154,18 +197,46 @@ Examples:
 			return printer.Print(exec)
 		}
 
-		// List executions (optionally filtered by workflow)
-		list, err := handler.List(workflowFilter)
+		// List executions (optionally filtered)
+		limit, _ := cmd.Flags().GetInt64("limit")
+		stateStr, _ := cmd.Flags().GetString("state")
+		triggerStr, _ := cmd.Flags().GetString("trigger")
+		sinceStr, _ := cmd.Flags().GetString("started-since")
+		untilStr, _ := cmd.Flags().GetString("started-until")
+
+		since, err := parseExecTime(sinceStr, false)
+		if err != nil {
+			return fmt.Errorf("invalid --started-since: %w", err)
+		}
+		until, err := parseExecTime(untilStr, true)
+		if err != nil {
+			return fmt.Errorf("invalid --started-until: %w", err)
+		}
+
+		list, err := handler.List(workflow.ExecutionFilters{
+			WorkflowID:   workflowFilter,
+			State:        strings.ToUpper(stateStr),
+			TriggerType:  triggerTypeCaser.String(strings.ToLower(triggerStr)),
+			StartedSince: since,
+			StartedUntil: until,
+		}, limit)
 		if err != nil {
 			return err
 		}
 
 		if ap != nil {
 			ap.SetTotal(len(list.Results))
-			ap.SetSuggestions([]string{
+			suggestions := []string{
 				"Run 'dtctl get workflow-executions <id>' for execution details",
 				"Run 'dtctl logs workflow-execution <id>' to view execution logs",
-			})
+			}
+			// Executions are limit-windowed (not fully paginated); flag when the
+			// server total exceeds what was returned so agents don't assume completeness.
+			if list.Count > len(list.Results) {
+				ap.SetHasMore(true)
+				suggestions = append(suggestions, fmt.Sprintf("Showing %d of %d. Raise --limit (currently %d) or narrow the window with --started-since/--state.", len(list.Results), list.Count, limit))
+			}
+			ap.SetSuggestions(suggestions)
 		}
 
 		return printer.PrintList(list.Results)
@@ -266,7 +337,44 @@ func init() {
 	addWatchFlags(getWorkflowsCmd)
 
 	getWorkflowExecutionsCmd.Flags().StringVarP(&workflowFilter, "workflow", "w", "", "Filter executions by workflow ID")
+	getWorkflowExecutionsCmd.Flags().Int64("limit", 100, "Maximum number of executions to return (max 1000)")
+	getWorkflowExecutionsCmd.Flags().String("state", "", "Filter by state: RUNNING, SUCCESS, ERROR, CANCELLED, UNKNOWN")
+	getWorkflowExecutionsCmd.Flags().String("trigger", "", "Filter by trigger type: Manual, Schedule, Event, Workflow")
+	getWorkflowExecutionsCmd.Flags().String("started-since", "", "Show executions started at or after this time (YYYY-MM-DD or ISO 8601)")
+	getWorkflowExecutionsCmd.Flags().String("started-until", "", "Show executions started at or before this time (YYYY-MM-DD = end of day 23:59:59, or ISO 8601)")
 	getWorkflowsCmd.Flags().Bool("mine", false, "Show only workflows owned by current user")
+	getWorkflowsCmd.Flags().String("filter", "", "Search workflows by title")
+	getWorkflowsCmd.Flags().String("type", "", "Filter by workflow type: standard or simple")
+	getWorkflowsCmd.Flags().String("trigger", "", "Filter by trigger type: Manual, Schedule, Event")
+	getWorkflowsCmd.Flags().Int64("limit", 0, "Maximum number of workflows to return (0 = unlimited)")
 
 	deleteWorkflowCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+}
+
+// parseExecTime parses a date string as YYYY-MM-DD or ISO 8601 and returns RFC3339.
+// When endOfDay is true and input is date-only, the time is set to 23:59:59.
+func parseExecTime(s string, endOfDay bool) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	// Common ISO 8601 date-time forms (with/without seconds, with/without zone).
+	for _, layout := range []string{
+		time.RFC3339,             // 2006-01-02T15:04:05Z07:00
+		"2006-01-02T15:04Z07:00", // seconds omitted, with zone
+		"2006-01-02T15:04:05",    // no zone (treated as UTC)
+		"2006-01-02T15:04",       // no seconds, no zone
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC().Format(time.RFC3339), nil
+		}
+	}
+	// Fall back to date-only
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return "", fmt.Errorf("use YYYY-MM-DD or ISO 8601 (e.g. 2006-01-02T15:04:05Z)")
+	}
+	if endOfDay {
+		t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+	}
+	return t.UTC().Format(time.RFC3339), nil
 }

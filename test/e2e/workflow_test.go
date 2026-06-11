@@ -65,7 +65,7 @@ func TestWorkflowLifecycle(t *testing.T) {
 
 			// Step 3: List workflows (verify our workflow appears)
 			t.Log("Step 3: Listing workflows...")
-			list, err := handler.List(workflow.WorkflowFilters{})
+			list, err := handler.List(workflow.WorkflowFilters{}, 500, 0)
 			if err != nil {
 				t.Fatalf("Failed to list workflows: %v", err)
 			}

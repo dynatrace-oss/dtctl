@@ -45,7 +45,7 @@ func TestList(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.List(context.Background(), WorkflowFilters{})
+	result, err := h.List(context.Background(), WorkflowFilters{}, 0, 0)
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -68,9 +68,23 @@ func TestList_WithOwnerFilter(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.List(context.Background(), WorkflowFilters{Owner: "user-1"})
+	_, err := h.List(context.Background(), WorkflowFilters{Owner: "user-1"}, 0, 0)
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
+	}
+}
+
+func TestList_ServerError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/automation/v1/workflows", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `{"error":{"message":"internal error"}}`)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	_, err := h.List(context.Background(), WorkflowFilters{}, 0, 0)
+	if err == nil {
+		t.Fatal("List() expected error for 500")
 	}
 }
 
@@ -82,9 +96,117 @@ func TestList_ParseError(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.List(context.Background(), WorkflowFilters{})
+	_, err := h.List(context.Background(), WorkflowFilters{}, 0, 0)
 	if err == nil {
 		t.Fatal("List() expected parse error")
+	}
+}
+
+// newPagingMux returns a mock /workflows endpoint backed by `total` synthetic
+// workflows, honoring limit/offset like the real LimitOffsetPagination backend.
+// Unlike the real backend it has no default page size, so a request without a
+// limit returns all `total` rows in one response. It records every (limit,
+// offset) request pair into reqs.
+func newPagingMux(total int, reqs *[][2]string) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/automation/v1/workflows", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		*reqs = append(*reqs, [2]string{q.Get("limit"), q.Get("offset")})
+
+		offset := 0
+		if v := q.Get("offset"); v != "" {
+			fmt.Sscanf(v, "%d", &offset)
+		}
+		limit := total
+		if v := q.Get("limit"); v != "" {
+			fmt.Sscanf(v, "%d", &limit)
+		}
+
+		var results []Workflow
+		for i := offset; i < total && i < offset+limit; i++ {
+			results = append(results, Workflow{ID: fmt.Sprintf("wf-%d", i)})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(WorkflowList{Count: total, Results: results})
+	})
+	return mux
+}
+
+func TestList_Pagination(t *testing.T) {
+	tests := []struct {
+		name      string
+		total     int
+		chunkSize int64
+		limit     int64
+		wantLen   int
+		wantReqs  int // number of HTTP requests issued
+	}{
+		// Mock has no default page cap, so a no-limit single request returns all rows.
+		{name: "chunkSize 0: single request, server returns all", total: 25, chunkSize: 0, limit: 0, wantLen: 25, wantReqs: 1},
+		{name: "pages through all with chunkSize", total: 5, chunkSize: 2, limit: 0, wantLen: 5, wantReqs: 3},
+		{name: "chunkSize 0 with limit: requests exactly limit in one GET", total: 100, chunkSize: 0, limit: 10, wantLen: 10, wantReqs: 1},
+		{name: "limit caps and stops paging", total: 100, chunkSize: 2, limit: 5, wantLen: 5, wantReqs: 3},
+		{name: "limit larger than total", total: 3, chunkSize: 2, limit: 50, wantLen: 3, wantReqs: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var reqs [][2]string
+			h := NewHandler(newTestClient(t, newPagingMux(tt.total, &reqs)))
+
+			result, err := h.List(context.Background(), WorkflowFilters{}, tt.chunkSize, tt.limit)
+			if err != nil {
+				t.Fatalf("List() error: %v", err)
+			}
+			if len(result.Results) != tt.wantLen {
+				t.Errorf("got %d results, want %d", len(result.Results), tt.wantLen)
+			}
+			if len(reqs) != tt.wantReqs {
+				t.Errorf("issued %d requests, want %d (reqs=%v)", len(reqs), tt.wantReqs, reqs)
+			}
+		})
+	}
+}
+
+func TestList_TruncatesOverReturn(t *testing.T) {
+	// Server ignores the limit param and returns more than requested; the client
+	// must still cap the result slice at the requested limit.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/automation/v1/workflows", func(w http.ResponseWriter, r *http.Request) {
+		results := make([]Workflow, 10)
+		for i := range results {
+			results[i] = Workflow{ID: fmt.Sprintf("wf-%d", i)}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(WorkflowList{Count: 10, Results: results})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.List(context.Background(), WorkflowFilters{}, 0, 3)
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+	if len(result.Results) != 3 {
+		t.Errorf("got %d results, want 3 (truncated)", len(result.Results))
+	}
+}
+
+func TestList_LimitNarrowsLastPage(t *testing.T) {
+	// chunkSize 4, limit 5: first page requests limit=4, second page requests
+	// limit=1 (the remaining budget), not another full chunk.
+	var reqs [][2]string
+	h := NewHandler(newTestClient(t, newPagingMux(100, &reqs)))
+
+	result, err := h.List(context.Background(), WorkflowFilters{}, 4, 5)
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+	if len(result.Results) != 5 {
+		t.Fatalf("got %d results, want 5", len(result.Results))
+	}
+	want := [][2]string{{"4", ""}, {"1", "4"}}
+	if fmt.Sprint(reqs) != fmt.Sprint(want) {
+		t.Errorf("requests = %v, want %v", reqs, want)
 	}
 }
 

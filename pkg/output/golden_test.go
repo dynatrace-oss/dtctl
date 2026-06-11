@@ -74,6 +74,8 @@ func assertGolden(t *testing.T, name string, actual string) {
 
 var fixedTime = time.Date(2025, 3, 15, 10, 30, 0, 0, time.UTC)
 
+// workflowFixtures mirrors a real `get workflows` (list) response, which the SDK
+// restricts to listFields (no tasks/input/result/guide — see sdk/api/workflow).
 func workflowFixtures() []workflow.Workflow {
 	return []workflow.Workflow{
 		{
@@ -91,17 +93,9 @@ func workflowFixtures() []workflow.Workflow {
 					"trigger": map[string]interface{}{"type": "cron", "cron": "0 9 * * 1-5"},
 				},
 			},
-			Result:               stringPtr("{{ result('deploy') }}"),
+			TriggerType:          "Schedule",
 			Type:                 "STANDARD",
-			Input:                map[string]interface{}{"environment": map[string]interface{}{"type": "string"}},
 			HourlyExecutionLimit: intPtr(1000),
-			Guide:                stringPtr("# Deploy to Production\n\nRun this workflow after validating the release candidate."),
-			Tasks: map[string]interface{}{
-				"deploy": map[string]interface{}{
-					"action": "dynatrace.automations:run-javascript",
-					"input":  map[string]interface{}{"script": "// deploy logic"},
-				},
-			},
 		},
 		{
 			ID:          "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
@@ -109,10 +103,10 @@ func workflowFixtures() []workflow.Workflow {
 			IsDeployed:  true,
 			Description: "Removes stale resources older than 30 days",
 			Type:        "STANDARD",
+			TriggerType: "Manual",
 			Owner:       "00000000-0000-0000-0000-000000000000",
 			OwnerType:   "USER",
 			Private:     false,
-			Tasks:       map[string]interface{}{},
 		},
 		{
 			ID:          "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
@@ -120,12 +114,28 @@ func workflowFixtures() []workflow.Workflow {
 			IsDeployed:  false,
 			Description: "",
 			Type:        "STANDARD",
+			TriggerType: "Event",
 			Owner:       "8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
 			OwnerType:   "USER",
 			Private:     true,
-			Tasks:       map[string]interface{}{},
 		},
 	}
+}
+
+// describeWorkflowFixture is the full single-workflow response returned by Get
+// (used by `describe workflow`), including tasks/input/result/guide.
+func describeWorkflowFixture() workflow.Workflow {
+	wf := workflowFixtures()[0]
+	wf.Result = stringPtr("{{ result('deploy') }}")
+	wf.Input = map[string]interface{}{"environment": map[string]interface{}{"type": "string"}}
+	wf.Guide = stringPtr("# Deploy to Production\n\nRun this workflow after validating the release candidate.")
+	wf.Tasks = map[string]interface{}{
+		"deploy": map[string]interface{}{
+			"action": "dynatrace.automations:run-javascript",
+			"input":  map[string]interface{}{"script": "// deploy logic"},
+		},
+	}
+	return wf
 }
 
 func sloFixtures() []slo.SLO {
@@ -1064,7 +1074,7 @@ func TestGolden_GetTaskResult(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGolden_DescribeWorkflow(t *testing.T) {
-	wf := workflowFixtures()[0]
+	wf := describeWorkflowFixture()
 
 	formats := map[string]string{
 		"table": "table",
