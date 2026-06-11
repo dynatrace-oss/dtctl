@@ -336,6 +336,7 @@ Examples:
 
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
+			JQFilter:                     jqFilter,
 			Decode:                       decodeMode,
 			Width:                        width,
 			Height:                       height,
@@ -387,6 +388,9 @@ Examples:
 			}
 
 			printer := output.NewPrinterWithOpts(printerOpts)
+			if jqFilter != "" {
+				printer = output.NewJQPrinter(printer, jqFilter)
+			}
 			livePrinter := output.NewLivePrinterWithOpts(printer, interval, os.Stdout, printerOpts)
 
 			// Create data fetcher that re-executes the query

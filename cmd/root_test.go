@@ -38,6 +38,9 @@ func TestBuildSpanName(t *testing.T) {
 		{[]string{"-v", "get", "workflows"}, "dtctl get workflows"},
 		// Short flags that take values: -o json should skip "json".
 		{[]string{"-o", "json", "get", "workflows"}, "dtctl get workflows"},
+		// Long flags that take values: --jq should skip the filter expression.
+		{[]string{"--jq", ".name", "get", "workflows"}, "dtctl get workflows"},
+		{[]string{"--jq=.name", "get", "workflows"}, "dtctl get workflows"},
 		// Mixed short and long flags.
 		{[]string{"-v", "--context", "prod", "get", "workflows"}, "dtctl get workflows"},
 		// Extra positional args after verb+resource are not included.
@@ -1213,5 +1216,43 @@ func TestFlagsTakingValues_SyncGuard(t *testing.T) {
 		if !found {
 			t.Errorf("shortFlagsTakingValues contains %s but no PersistentFlag has that shorthand", short)
 		}
+	}
+}
+
+func TestValidateGlobalFlags_JQFormatConstraint(t *testing.T) {
+	origOutput := outputFormat
+	origJQ := jqFilter
+	defer func() {
+		outputFormat = origOutput
+		jqFilter = origJQ
+	}()
+
+	tests := []struct {
+		name        string
+		format      string
+		jq          string
+		expectError bool
+	}{
+		{name: "jq disabled allows table", format: "table", jq: "", expectError: false},
+		{name: "jq with json", format: "json", jq: ".records", expectError: false},
+		{name: "jq with yaml", format: "yaml", jq: ".records", expectError: false},
+		{name: "jq with yml", format: "yml", jq: ".records", expectError: false},
+		{name: "jq with table rejected", format: "table", jq: ".records", expectError: true},
+		{name: "jq with csv rejected", format: "csv", jq: ".records", expectError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outputFormat = tt.format
+			jqFilter = tt.jq
+
+			err := validateGlobalFlags()
+			if tt.expectError && err == nil {
+				t.Fatalf("expected error for format=%q jq=%q, got nil", tt.format, tt.jq)
+			}
+			if !tt.expectError && err != nil {
+				t.Fatalf("unexpected error for format=%q jq=%q: %v", tt.format, tt.jq, err)
+			}
+		})
 	}
 }

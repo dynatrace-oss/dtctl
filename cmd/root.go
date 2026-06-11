@@ -31,6 +31,7 @@ var (
 	cfgFile      string
 	contextName  string
 	outputFormat string
+	jqFilter     string
 	verbosity    int
 	debugMode    bool // --debug flag (alias for -vv)
 	dryRun       bool
@@ -57,10 +58,27 @@ var rootCmd = &cobra.Command{
 	Short:         "Dynatrace platform CLI",
 	SilenceErrors: true,
 	SilenceUsage:  true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		return validateGlobalFlags()
+	},
 	Long: `dtctl is a kubectl-inspired CLI tool for managing Dynatrace platform resources.
 
 It provides a consistent interface for interacting with workflows, documents,
 SLOs, queries, and other Dynatrace platform capabilities.`,
+}
+
+// validateGlobalFlags enforces cross-command constraints for root persistent flags.
+func validateGlobalFlags() error {
+	if jqFilter == "" {
+		return nil
+	}
+
+	switch outputFormat {
+	case "json", "yaml", "yml":
+		return nil
+	default:
+		return fmt.Errorf("--jq supports only json or yaml output; got %q (use -o json or -o yaml)", outputFormat)
+	}
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -558,6 +576,7 @@ func NewSafetyChecker(cfg *config.Config) (*safety.Checker, error) {
 
 // NewPrinter creates a new printer respecting agent and plain mode settings
 func NewPrinter() output.Printer {
+	var p output.Printer
 	if agentMode {
 		ctx := &output.ResponseContext{}
 		ap := output.NewAgentPrinter(os.Stdout, ctx)
@@ -568,9 +587,14 @@ func NewPrinter() output.Printer {
 		if outputFlag != nil && outputFlag.Changed {
 			ap.SetResultFormat(outputFormat)
 		}
-		return ap
+		p = ap
+	} else {
+		p = output.NewPrinterWithOptions(outputFormat, os.Stdout, plainMode)
 	}
-	return output.NewPrinterWithOptions(outputFormat, os.Stdout, plainMode)
+	if jqFilter != "" {
+		p = output.NewJQPrinter(p, jqFilter)
+	}
+	return p
 }
 
 // enrichAgent configures agent-mode metadata on the printer if agent mode is active.
@@ -645,6 +669,7 @@ var flagsTakingValues = map[string]bool{
 	"--config":     true,
 	"--context":    true,
 	"--output":     true,
+	"--jq":         true,
 	"--chunk-size": true,
 }
 
@@ -782,6 +807,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (searches .dtctl.yaml upward, then $XDG_CONFIG_HOME/dtctl/config)")
 	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "use a specific context")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "output format: json|yaml|csv|toon|table|wide")
+	rootCmd.PersistentFlags().StringVar(&jqFilter, "jq", "", "jq filter expression applied before rendering (works with all output formats)")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode (full HTTP request/response logging, equivalent to -vv)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")

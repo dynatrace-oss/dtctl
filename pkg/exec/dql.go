@@ -100,6 +100,7 @@ const (
 type DQLExecuteOptions struct {
 	// Output formatting options
 	OutputFormat string
+	JQFilter     string     // jq filter expression applied before rendering
 	Decode       DecodeMode // Snapshot payload decoding mode
 	Width        int        // Chart width (0 = default)
 	Height       int        // Chart height (0 = default)
@@ -401,12 +402,15 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		Height:     opts.Height,
 		Fullscreen: opts.Fullscreen,
 	})
+	if opts.JQFilter != "" {
+		printer = output.NewJQPrinter(printer, opts.JQFilter)
+	}
 
 	switch opts.OutputFormat {
 	case "table", "wide":
 		var err error
 		if opts.OutputFormat == "table" {
-			err = e.printTable(records)
+			err = printer.PrintList(records)
 		} else {
 			if len(records) == 0 {
 				return nil
