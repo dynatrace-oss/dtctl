@@ -31,6 +31,7 @@ var (
 	cfgFile      string
 	contextName  string
 	outputFormat string
+	jqFilter     string
 	verbosity    int
 	debugMode    bool // --debug flag (alias for -vv)
 	dryRun       bool
@@ -57,10 +58,23 @@ var rootCmd = &cobra.Command{
 	Short:         "Dynatrace platform CLI",
 	SilenceErrors: true,
 	SilenceUsage:  true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		return validateGlobalFlags()
+	},
 	Long: `dtctl is a kubectl-inspired CLI tool for managing Dynatrace platform resources.
 
 It provides a consistent interface for interacting with workflows, documents,
 SLOs, queries, and other Dynatrace platform capabilities.`,
+}
+
+// validateGlobalFlags enforces cross-command constraints for root persistent flags.
+func validateGlobalFlags() error {
+	if jqFilter == "" {
+		return nil
+	}
+
+	outputFormat = output.NormalizeJQOutputFormat(outputFormat)
+	return nil
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -572,6 +586,7 @@ func NewPrinter() output.Printer {
 	if agentMode {
 		ctx := &output.ResponseContext{}
 		ap := output.NewAgentPrinter(os.Stdout, ctx)
+		ap.SetJQFilter(jqFilter)
 		// If the user explicitly requested an output format via -o,
 		// use that format for the result field inside the agent envelope
 		// (e.g. -o toon for token-efficient encoding).
@@ -581,7 +596,14 @@ func NewPrinter() output.Printer {
 		}
 		return ap
 	}
-	return output.NewPrinterWithOptions(outputFormat, os.Stdout, plainMode)
+
+	return output.NewPrinterWithOpts(output.PrinterOptions{
+		Format:    outputFormat,
+		Writer:    os.Stdout,
+		PlainMode: plainMode,
+		JQFilter:  jqFilter,
+		AgentMode: agentMode,
+	})
 }
 
 // enrichAgent configures agent-mode metadata on the printer if agent mode is active.
@@ -656,6 +678,7 @@ var flagsTakingValues = map[string]bool{
 	"--config":     true,
 	"--context":    true,
 	"--output":     true,
+	"--jq":         true,
 	"--chunk-size": true,
 }
 
@@ -793,6 +816,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (searches .dtctl.yaml upward, then $XDG_CONFIG_HOME/dtctl/config)")
 	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "use a specific context")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "output format: json|yaml|csv|toon|table|wide")
+	rootCmd.PersistentFlags().StringVar(&jqFilter, "jq", "", "jq filter expression for structured output (json|yaml|toon); non-structured formats are auto-promoted to json")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode (full HTTP request/response logging, equivalent to -vv)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")

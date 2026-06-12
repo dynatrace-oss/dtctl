@@ -100,6 +100,8 @@ const (
 type DQLExecuteOptions struct {
 	// Output formatting options
 	OutputFormat string
+	JQFilter     string     // jq filter expression applied before rendering
+	AgentMode    bool       // Enable agent mode (e.g. for Dynatrace API)
 	Decode       DecodeMode // Snapshot payload decoding mode
 	Width        int        // Chart width (0 = default)
 	Height       int        // Chart height (0 = default)
@@ -370,6 +372,11 @@ func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 
 // printResults prints the query results with the given options
 func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOptions) error {
+	effectiveFormat := opts.OutputFormat
+	if opts.JQFilter != "" {
+		effectiveFormat = output.NormalizeJQOutputFormat(effectiveFormat)
+	}
+
 	// Print any notifications/warnings first
 	if notifications := result.GetNotifications(); len(notifications) > 0 {
 		e.PrintNotifications(notifications)
@@ -383,7 +390,7 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		simplify := opts.Decode == DecodeSimplified
 		records = output.DecodeSnapshotRecords(records, simplify)
 
-		switch opts.OutputFormat {
+		switch effectiveFormat {
 		case "", "table", "wide", "csv":
 			records = output.SummarizeSnapshotForTable(records)
 		}
@@ -396,17 +403,19 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 	}
 
 	printer := output.NewPrinterWithOpts(output.PrinterOptions{
-		Format:     opts.OutputFormat,
+		Format:     effectiveFormat,
+		JQFilter:   opts.JQFilter,
+		AgentMode:  opts.AgentMode,
 		Width:      opts.Width,
 		Height:     opts.Height,
 		Fullscreen: opts.Fullscreen,
 	})
 
-	switch opts.OutputFormat {
+	switch effectiveFormat {
 	case "table", "wide":
 		var err error
-		if opts.OutputFormat == "table" {
-			err = e.printTable(records)
+		if effectiveFormat == "table" {
+			err = printer.PrintList(records)
 		} else {
 			if len(records) == 0 {
 				return nil
@@ -525,24 +534,4 @@ func (e *DQLExecutor) ExecuteFromFile(filename string, outputFormat string) erro
 	}
 
 	return e.Execute(string(data), outputFormat)
-}
-
-// printTable prints query results as a table
-func (e *DQLExecutor) printTable(records []map[string]interface{}) error {
-	if len(records) == 0 {
-		return nil
-	}
-
-	data, err := json.Marshal(records)
-	if err != nil {
-		return err
-	}
-
-	var results []map[string]interface{}
-	if err := json.Unmarshal(data, &results); err != nil {
-		return err
-	}
-
-	printer := output.NewPrinter("table")
-	return printer.PrintList(results)
 }

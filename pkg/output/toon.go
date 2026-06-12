@@ -14,7 +14,8 @@ import (
 // round-trips through encoding/json to obtain a map[string]any representation
 // that preserves the json field names, then passes it to toon.Marshal.
 type ToonPrinter struct {
-	writer io.Writer
+	writer   io.Writer
+	jqFilter string
 }
 
 // Print prints a single object as TOON.
@@ -29,7 +30,12 @@ func (p *ToonPrinter) PrintList(obj interface{}) error {
 
 // marshal converts obj to a json-tag-aware representation and encodes it as TOON.
 func (p *ToonPrinter) marshal(obj interface{}) error {
-	generic, err := toGeneric(obj)
+	transformed, err := ApplyJQ(p.jqFilter, obj)
+	if err != nil {
+		return err
+	}
+
+	generic, err := toGeneric(transformed)
 	if err != nil {
 		return err
 	}

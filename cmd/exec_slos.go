@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 )
 
@@ -58,15 +57,14 @@ Examples:
 			fmt.Printf("SLO Evaluation Complete\n")
 
 			// Check output format
-			outputFmt, _ := cmd.Flags().GetString("output")
-			if outputFmt == "" || outputFmt == "table" {
+			if outputFormat == "" || outputFormat == "table" {
 				// Print in table format
-				printer := output.NewPrinter("table")
+				printer := NewPrinter()
 				return printer.PrintList(evalResult.EvaluationResults)
 			}
 
 			// Print in requested format (json/yaml)
-			printer := output.NewPrinter(outputFmt)
+			printer := NewPrinter()
 			return printer.Print(evalResult)
 		}
 
@@ -108,15 +106,14 @@ Examples:
 					fmt.Printf("\nSLO Evaluation Complete\n")
 
 					// Check output format
-					outputFmt, _ := cmd.Flags().GetString("output")
-					if outputFmt == "" || outputFmt == "table" {
+					if outputFormat == "" || outputFormat == "table" {
 						// Print in table format
-						printer := output.NewPrinter("table")
+						printer := NewPrinter()
 						return printer.PrintList(result.EvaluationResults)
 					}
 
 					// Print in requested format (json/yaml)
-					printer := output.NewPrinter(outputFmt)
+					printer := NewPrinter()
 					return printer.Print(result)
 				}
 

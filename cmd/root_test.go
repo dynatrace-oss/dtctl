@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +18,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 )
@@ -38,6 +42,9 @@ func TestBuildSpanName(t *testing.T) {
 		{[]string{"-v", "get", "workflows"}, "dtctl get workflows"},
 		// Short flags that take values: -o json should skip "json".
 		{[]string{"-o", "json", "get", "workflows"}, "dtctl get workflows"},
+		// Long flags that take values: --jq should skip the filter expression.
+		{[]string{"--jq", ".name", "get", "workflows"}, "dtctl get workflows"},
+		{[]string{"--jq=.name", "get", "workflows"}, "dtctl get workflows"},
 		// Mixed short and long flags.
 		{[]string{"-v", "--context", "prod", "get", "workflows"}, "dtctl get workflows"},
 		// Extra positional args after verb+resource are not included.
@@ -1213,5 +1220,168 @@ func TestFlagsTakingValues_SyncGuard(t *testing.T) {
 		if !found {
 			t.Errorf("shortFlagsTakingValues contains %s but no PersistentFlag has that shorthand", short)
 		}
+	}
+}
+
+func TestValidateGlobalFlags_JQFormatConstraint(t *testing.T) {
+	origOutput := outputFormat
+	origJQ := jqFilter
+	defer func() {
+		outputFormat = origOutput
+		jqFilter = origJQ
+	}()
+
+	tests := []struct {
+		name       string
+		format     string
+		jq         string
+		wantFormat string
+	}{
+		{name: "jq disabled keeps table", format: "table", jq: "", wantFormat: "table"},
+		{name: "jq with json", format: "json", jq: ".records", wantFormat: "json"},
+		{name: "jq with yaml", format: "yaml", jq: ".records", wantFormat: "yaml"},
+		{name: "jq with yml", format: "yml", jq: ".records", wantFormat: "yml"},
+		{name: "jq with toon", format: "toon", jq: ".records", wantFormat: "toon"},
+		{name: "jq with table promoted", format: "table", jq: ".records", wantFormat: "json"},
+		{name: "jq with csv promoted", format: "csv", jq: ".records", wantFormat: "json"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outputFormat = tt.format
+			jqFilter = tt.jq
+
+			err := validateGlobalFlags()
+			if err != nil {
+				t.Fatalf("unexpected error for format=%q jq=%q: %v", tt.format, tt.jq, err)
+			}
+			if outputFormat != tt.wantFormat {
+				t.Fatalf("outputFormat = %q, want %q", outputFormat, tt.wantFormat)
+			}
+		})
+	}
+}
+
+func TestAgentJQ_KeepContextAndFilterResult(t *testing.T) {
+	origOutput := outputFormat
+	origJQ := jqFilter
+	origAgent := agentMode
+	origPlain := plainMode
+	defer func() {
+		outputFormat = origOutput
+		jqFilter = origJQ
+		agentMode = origAgent
+		plainMode = origPlain
+	}()
+
+	outputFormat = "json"
+	jqFilter = ".name"
+	agentMode = true
+	plainMode = true
+
+	var buf bytes.Buffer
+	withCapturedStdout(t, &buf, func() {
+		printer := NewPrinter()
+		ap := enrichAgent(printer, "get", "workflow")
+		if ap == nil {
+			t.Fatal("expected AgentPrinter from NewPrinter in agent mode")
+		}
+		if err := printer.Print(map[string]interface{}{"name": "alpha", "id": 42}); err != nil {
+			t.Fatalf("print failed: %v", err)
+		}
+	})
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if ok, _ := resp["ok"].(bool); !ok {
+		t.Fatalf("expected ok=true response, got: %v", resp)
+	}
+	if result, _ := resp["result"].(string); result != "alpha" {
+		t.Fatalf("expected jq-filtered result 'alpha', got: %#v", resp["result"])
+	}
+	ctx, _ := resp["context"].(map[string]interface{})
+	if ctx == nil {
+		t.Fatalf("expected context in response, got: %v", resp)
+	}
+	if verb, _ := ctx["verb"].(string); verb != "get" {
+		t.Fatalf("expected context.verb=get, got %q", verb)
+	}
+	if resource, _ := ctx["resource"].(string); resource != "workflow" {
+		t.Fatalf("expected context.resource=workflow, got %q", resource)
+	}
+}
+
+func TestAgentJQ_BadFilterYieldsErrorEnvelope(t *testing.T) {
+	origOutput := outputFormat
+	origJQ := jqFilter
+	origAgent := agentMode
+	origPlain := plainMode
+	defer func() {
+		outputFormat = origOutput
+		jqFilter = origJQ
+		agentMode = origAgent
+		plainMode = origPlain
+	}()
+
+	outputFormat = "json"
+	jqFilter = ".["
+	agentMode = true
+	plainMode = true
+
+	var buf bytes.Buffer
+	withCapturedStdout(t, &buf, func() {
+		printer := NewPrinter()
+		err := printer.Print(map[string]interface{}{"name": "alpha"})
+		if err == nil {
+			t.Fatal("expected invalid --jq filter error")
+		}
+		detail := errorToDetail(err)
+		if printErr := output.PrintError(os.Stdout, detail); printErr != nil {
+			t.Fatalf("failed to print error envelope: %v", printErr)
+		}
+	})
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+
+	if ok, _ := resp["ok"].(bool); ok {
+		t.Fatalf("expected ok=false response, got: %v", resp)
+	}
+	errObj, _ := resp["error"].(map[string]interface{})
+	if errObj == nil {
+		t.Fatalf("expected error object in response, got: %v", resp)
+	}
+	if msg, _ := errObj["message"].(string); !strings.Contains(msg, "invalid --jq filter") {
+		t.Fatalf("expected jq error message, got: %q", msg)
+	}
+}
+
+func withCapturedStdout(t *testing.T, buf *bytes.Buffer, fn func()) {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("failed to create stdout pipe: %v", err)
+	}
+	os.Stdout = w
+
+	defer func() {
+		os.Stdout = oldStdout
+		_ = r.Close()
+	}()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close write pipe: %v", err)
+	}
+	if _, err := io.Copy(buf, r); err != nil {
+		t.Fatalf("failed to read captured stdout: %v", err)
 	}
 }
