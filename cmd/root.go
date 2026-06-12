@@ -590,7 +590,8 @@ func NewPrinter() output.Printer {
 		Format:    outputFormat,
 		Writer:    os.Stdout,
 		PlainMode: plainMode,
-		JQFilter:  jqFilter,
+		JQFilter:  "jqFilter",
+		AgentMode: agentMode,
 	})
 }
 

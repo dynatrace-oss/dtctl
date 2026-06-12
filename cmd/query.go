@@ -337,6 +337,7 @@ Examples:
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
 			JQFilter:                     jqFilter,
+			AgentMode:                    agentMode,
 			Decode:                       decodeMode,
 			Width:                        width,
 			Height:                       height,
@@ -386,6 +387,7 @@ Examples:
 				Width:      width,
 				Height:     height,
 				Fullscreen: fullscreen,
+				AgentMode:  agentMode,
 			}
 
 			printer := output.NewPrinterWithOpts(printerOpts)

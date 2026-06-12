@@ -101,6 +101,7 @@ type DQLExecuteOptions struct {
 	// Output formatting options
 	OutputFormat string
 	JQFilter     string     // jq filter expression applied before rendering
+	AgentMode    bool       // Enable agent mode (e.g. for Dynatrace API)
 	Decode       DecodeMode // Snapshot payload decoding mode
 	Width        int        // Chart width (0 = default)
 	Height       int        // Chart height (0 = default)
@@ -404,6 +405,7 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 	printer := output.NewPrinterWithOpts(output.PrinterOptions{
 		Format:     effectiveFormat,
 		JQFilter:   opts.JQFilter,
+		AgentMode:  opts.AgentMode,
 		Width:      opts.Width,
 		Height:     opts.Height,
 		Fullscreen: opts.Fullscreen,
