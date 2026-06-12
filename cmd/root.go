@@ -805,6 +805,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "use a specific context")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "output format: json|yaml|csv|toon|table|wide")
 	rootCmd.PersistentFlags().StringVar(&jqFilter, "jq", "", "jq filter expression for structured output (json|yaml|toon); non-structured formats are auto-promoted to json")
+	rootCmd.PersistentFlags().StringVar(&jqFilter, "jsonpath", "", "alias for --jq")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode (full HTTP request/response logging, equivalent to -vv)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
