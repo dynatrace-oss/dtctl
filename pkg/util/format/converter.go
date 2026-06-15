@@ -91,6 +91,30 @@ func JSONToYAML(jsonData []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// YAMLNodeFromJSON renders a value through its JSON representation so that
+// yaml.Marshal produces output structurally identical to json.Marshal.
+//
+// It is the canonical implementation for a type's MarshalYAML when the type
+// relies on JSON struct tags for its wire shape (json:"-" to hide display-only
+// fields, omitempty, camelCase keys) and/or embeds []byte or json.RawMessage
+// fields. Without it, yaml.v3 falls back to reflection: struct tags are ignored
+// (keys are lowercased, omitempty is not honored, json:"-" fields leak in) and
+// []byte/json.RawMessage fields are emitted as a sequence of raw byte values.
+//
+// json.Marshal never invokes MarshalYAML, so calling this from a MarshalYAML
+// method does not recurse.
+func YAMLNodeFromJSON(v any) (any, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var out any
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ValidateAndConvert validates input data and converts it to JSON
 // It auto-detects the format and converts YAML to JSON if needed
 func ValidateAndConvert(data []byte) ([]byte, error) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	sdkdocument "github.com/dynatrace-oss/dtctl/sdk/api/document"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -199,6 +200,14 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	}
 	*s = fromSDKSnapshot(&sdk)
 	return nil
+}
+
+// MarshalYAML renders the snapshot through its JSON shape so YAML output matches
+// JSON: the display-only CreatedBy/CreatedTime (json:"-", duplicates of
+// ModificationInfo) are excluded and keys keep their camelCase. Without it,
+// yaml.v3 reflection would lowercase keys and leak createdby/createdtime.
+func (s Snapshot) MarshalYAML() (any, error) {
+	return format.YAMLNodeFromJSON(s)
 }
 
 // fromSDKSnapshot converts an SDK Snapshot to the CLI Snapshot.

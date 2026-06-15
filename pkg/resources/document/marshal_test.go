@@ -13,7 +13,7 @@ import (
 
 // rawByteSeqRE matches the regression signature: a YAML/JSON sequence that is
 // really a []byte rendered element-by-element as integers (e.g. "- 123").
-var rawByteSeqRE = regexp.MustCompile(`(?m)^\s*-\s+\d+\s*$`)
+var rawByteSeqRE = regexp.MustCompile(`(?m)(?:^[ \t]*-[ \t]+\d+[ \t]*\n){8,}`)
 
 // dashboardContent is a small but realistic dashboard document body.
 const dashboardContent = `{"tiles":{"0":{"type":"data","title":"Hosts"}},"layouts":{"0":{"x":0,"y":0}}}`
@@ -114,6 +114,36 @@ func TestDocument_MarshalYAML_EmptyContent(t *testing.T) {
 	}
 	if strings.Contains(string(out), "content:") {
 		t.Errorf("expected no content key for empty content, got:\n%s", out)
+	}
+}
+
+// TestSnapshot_MarshalYAML_NoLeakedDisplayFields ensures the snapshot's
+// display-only CreatedBy/CreatedTime (json:"-", duplicates of ModificationInfo)
+// do not leak into YAML output and that keys keep their camelCase — matching
+// JSON output (used by `dtctl history ... -o yaml`).
+func TestSnapshot_MarshalYAML_NoLeakedDisplayFields(t *testing.T) {
+	s := Snapshot{
+		SnapshotVersion: 3,
+		DocumentVersion: 12,
+		Description:     "before edit",
+		CreatedBy:       "user-a@example.invalid",
+	}
+
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		t.Fatalf("yaml.Marshal() error = %v", err)
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal(out, &m); err != nil {
+		t.Fatalf("yaml round-trip error = %v", err)
+	}
+	for _, leaked := range []string{"createdby", "createdtime", "createdBy", "createdTime"} {
+		if _, ok := m[leaked]; ok {
+			t.Errorf("display-only field %q leaked into YAML: %v", leaked, m)
+		}
+	}
+	if _, ok := m["snapshotVersion"]; !ok {
+		t.Errorf("expected camelCase snapshotVersion key in YAML, got: %v", m)
 	}
 }
 
