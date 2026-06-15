@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`dtctl get dashboard <id> -o yaml` (and `-o json`) now render the document body again instead of a list of raw byte values** — the SDK extraction in 0.28.0 ([#239](https://github.com/dynatrace-oss/dtctl/pull/239)) split the document model into an SDK type and a CLI read-model type, but the CLI type only carried `UnmarshalJSON` — its `MarshalJSON`/`MarshalYAML` were not ported. Since `get dashboard`/`notebook`/`launchpad` print the CLI type, YAML output fell back to default struct marshaling and serialized the `Content []byte` field element-by-element as integers (`content:` → `- 123` → `- 34` …), while JSON output silently dropped `content` entirely (the field is tagged `json:"-"`); the previously-emitted `modificationInfo` timestamps were lost the same way. The CLI `Document` now delegates both marshalers to the SDK type, restoring structured `content` and `modificationInfo` in `json`/`yaml`/`toon` output (table/csv/wide were unaffected). Regression coverage added at three layers that the bug fell between: unit tests on the CLI type's marshalers, an integration test over the full `handler.Get` → render path, and a single-document golden fixture with a populated `Content` (the existing document golden fixtures all had empty content, which is why the gap went unnoticed); affects 0.28.0–0.30.0
+
 ## [0.30.0] - 2026-06-12
 
 ### Added

@@ -1,30 +1,28 @@
 - id: aaaaaaaa-1111-2222-3333-444444444444
+  isPrivate: false
+  modificationInfo:
+    createdTime: 2025-03-15T10:30:00Z
+    lastModifiedTime: 2025-03-15T11:30:00Z
   name: My Launchpad
-  type: launchpad
   owner: user-a@example.invalid
-  isprivate: false
-  created: 2025-03-15T10:30:00Z
-  description: ""
+  type: launchpad
   version: 1
-  modified: 2025-03-15T11:30:00Z
-  content: []
-- id: bbbbbbbb-2222-3333-4444-555555555555
+- description: Configuration for my custom app
+  id: bbbbbbbb-2222-3333-4444-555555555555
+  isPrivate: true
+  modificationInfo:
+    createdTime: 2025-03-13T10:30:00Z
+    lastModifiedTime: 2025-03-14T10:30:00Z
   name: App Config
-  type: my-app:config
   owner: user-b@example.invalid
-  isprivate: true
-  created: 2025-03-13T10:30:00Z
-  description: Configuration for my custom app
+  type: my-app:config
   version: 2
-  modified: 2025-03-14T10:30:00Z
-  content: []
 - id: cccccccc-3333-4444-5555-666666666666
+  isPrivate: false
+  modificationInfo:
+    createdTime: 2025-03-12T10:30:00Z
+    lastModifiedTime: 2025-03-15T08:30:00Z
   name: Production Overview
-  type: dashboard
   owner: user-c@example.invalid
-  isprivate: false
-  created: 2025-03-12T10:30:00Z
-  description: ""
+  type: dashboard
   version: 5
-  modified: 2025-03-15T08:30:00Z
-  content: []

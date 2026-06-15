@@ -683,6 +683,46 @@ func TestGolden_GetDocuments(t *testing.T) {
 	}
 }
 
+// dashboardWithContentFixture models a single dashboard as returned by
+// `get dashboard <id>` — with a populated Content body. This is the path the
+// content-as-raw-bytes regression broke; the list fixtures above never set
+// Content, so it must be guarded explicitly here.
+func dashboardWithContentFixture() document.Document {
+	return document.Document{
+		ID:        "c8e42bc8-a9bd-433f-85c7-343017c0836a",
+		Name:      "Smartscape Overview",
+		Type:      "dashboard",
+		Owner:     "user-a@example.invalid",
+		IsPrivate: false,
+		Created:   fixedTime,
+		Version:   784,
+		Modified:  fixedTime.Add(2 * time.Hour),
+		Content: []byte(`{"version":18,"tiles":{"0":{"type":"data",` +
+			`"title":"Host count","query":"fetch dt.entity.host | summarize count()"}},` +
+			`"layouts":{"0":{"x":0,"y":0,"w":12,"h":6}}}`),
+	}
+}
+
+func TestGolden_GetDashboardWithContent(t *testing.T) {
+	doc := dashboardWithContentFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(doc); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "get/dashboard-content-"+name, buf.String())
+		})
+	}
+}
+
 func genericDocumentFixtures() []document.Document {
 	return []document.Document{
 		{

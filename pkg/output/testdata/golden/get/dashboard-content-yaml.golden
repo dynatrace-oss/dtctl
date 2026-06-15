@@ -1,0 +1,22 @@
+content:
+  layouts:
+    "0":
+      h: 6
+      w: 12
+      x: 0
+      "y": 0
+  tiles:
+    "0":
+      query: fetch dt.entity.host | summarize count()
+      title: Host count
+      type: data
+  version: 18
+id: c8e42bc8-a9bd-433f-85c7-343017c0836a
+isPrivate: false
+modificationInfo:
+  createdTime: 2025-03-15T10:30:00Z
+  lastModifiedTime: 2025-03-15T12:30:00Z
+name: Smartscape Overview
+owner: user-a@example.invalid
+type: dashboard
+version: 784

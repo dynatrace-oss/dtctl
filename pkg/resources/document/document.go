@@ -43,9 +43,45 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON delegates to the SDK Document marshaler so that the document
+// Content (stored as raw []byte) is rendered as structured JSON rather than
+// being dropped (the field is tagged json:"-") or, for default marshaling,
+// emitted as a list of raw byte values.
+func (d Document) MarshalJSON() ([]byte, error) {
+	return json.Marshal(toSDKDocument(&d))
+}
+
+// MarshalYAML delegates to the SDK Document marshaler so that the document
+// Content is rendered as structured YAML rather than a list of raw byte values.
+func (d Document) MarshalYAML() (any, error) {
+	return toSDKDocument(&d).MarshalYAML()
+}
+
 // fromSDKDocument converts an SDK Document to the CLI Document.
 func fromSDKDocument(d *sdkdocument.Document) *Document {
 	return &Document{
+		ID:                d.ID,
+		Name:              d.Name,
+		Type:              d.Type,
+		Owner:             d.Owner,
+		IsPrivate:         d.IsPrivate,
+		Created:           d.Created,
+		Description:       d.Description,
+		Version:           d.Version,
+		Modified:          d.Modified,
+		Content:           d.Content,
+		OriginAppID:       d.OriginAppID,
+		OriginExtensionID: d.OriginExtensionID,
+		Labels:            d.Labels,
+		ShareInfo:         d.ShareInfo,
+		UserContext:       d.UserContext,
+	}
+}
+
+// toSDKDocument converts the CLI Document back to an SDK Document so the SDK's
+// custom (and tested) JSON/YAML marshalers can be reused for output rendering.
+func toSDKDocument(d *Document) *sdkdocument.Document {
+	return &sdkdocument.Document{
 		ID:                d.ID,
 		Name:              d.Name,
 		Type:              d.Type,

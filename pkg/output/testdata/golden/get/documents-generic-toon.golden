@@ -1,6 +1,11 @@
 [#3]:
   - id: aaaaaaaa-1111-2222-3333-444444444444
     isPrivate: false
+    modificationInfo:
+      createdBy: ""
+      createdTime: "2025-03-15T10:30:00Z"
+      lastModifiedBy: ""
+      lastModifiedTime: "2025-03-15T11:30:00Z"
     name: My Launchpad
     owner: user-a@example.invalid
     type: launchpad
@@ -8,12 +13,22 @@
   - description: Configuration for my custom app
     id: bbbbbbbb-2222-3333-4444-555555555555
     isPrivate: true
+    modificationInfo:
+      createdBy: ""
+      createdTime: "2025-03-13T10:30:00Z"
+      lastModifiedBy: ""
+      lastModifiedTime: "2025-03-14T10:30:00Z"
     name: App Config
     owner: user-b@example.invalid
     type: "my-app:config"
     version: 2
   - id: cccccccc-3333-4444-5555-666666666666
     isPrivate: false
+    modificationInfo:
+      createdBy: ""
+      createdTime: "2025-03-12T10:30:00Z"
+      lastModifiedBy: ""
+      lastModifiedTime: "2025-03-15T08:30:00Z"
     name: Production Overview
     owner: user-c@example.invalid
     type: dashboard
