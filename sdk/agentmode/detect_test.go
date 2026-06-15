@@ -61,3 +61,33 @@ func TestUserAgentSuffix_WithAgent(t *testing.T) {
 		t.Errorf("got %q", s)
 	}
 }
+
+// TestDetect_Kiro covers the env vars Kiro actually sets. Kiro does not set a
+// KIRO variable; it signals an active agent session via AGENT_CONTEXT_OUT (a
+// per-invocation FIFO path, exported only in interactive sessions) and
+// KIRO_SESSION_ID (set in both interactive and --no-interactive modes).
+func TestDetect_Kiro(t *testing.T) {
+	cases := []struct {
+		name   string
+		envVar string
+		value  string
+	}{
+		{"AGENT_CONTEXT_OUT (interactive ACP side-channel)", "AGENT_CONTEXT_OUT", "/tmp/agent-context-out-1234-tooluse_abc.fifo"},
+		{"KIRO_SESSION_ID (interactive and headless)", "KIRO_SESSION_ID", "2f6fabda-849b-4aeb-8eae-e2b5905106aa"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for envVar := range knownAgents {
+				os.Unsetenv(envVar)
+			}
+			t.Setenv(tc.envVar, tc.value)
+			info := Detect()
+			if !info.Detected {
+				t.Errorf("expected Kiro to be detected via %s", tc.envVar)
+			}
+			if info.Name != "kiro" {
+				t.Errorf("expected kiro, got %q", info.Name)
+			}
+		})
+	}
+}

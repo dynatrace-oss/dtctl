@@ -23,9 +23,19 @@ var knownAgents = map[string]string{
 	"AMAZON_Q":       "amazon-q",
 	"JUNIE":          "junie",
 	"KIRO":           "kiro",
-	"OPENCODE":       "opencode",
-	"OPENCLAW":       "openclaw",
-	"AI_AGENT":       "generic-ai",
+	// Kiro does not set a KIRO env var; the entry above is kept only as a
+	// manual override. Kiro signals an active agent session via
+	// AGENT_CONTEXT_OUT, a per-invocation FIFO path (Kiro's documented ACP
+	// side-channel, exported only in interactive sessions), and via
+	// KIRO_SESSION_ID, which is set in both interactive and --no-interactive
+	// modes (verified on kiro-cli 2.6.1). Detecting on AGENT_CONTEXT_OUT alone
+	// would miss headless/scripted Kiro, so key on both.
+	// https://kiro.dev/docs/cli/reference/built-in-tools/#side-channels-for-wrapper-scripts
+	"AGENT_CONTEXT_OUT": "kiro",
+	"KIRO_SESSION_ID":   "kiro",
+	"OPENCODE":          "opencode",
+	"OPENCLAW":          "openclaw",
+	"AI_AGENT":          "generic-ai",
 }
 
 // Detect checks environment variables to identify if running under an AI agent.
