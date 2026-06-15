@@ -21,14 +21,21 @@ dtctl config current-context
 # Show context details
 dtctl config describe-context $(dtctl config current-context) --plain
 
-# Show authenticated user
-dtctl auth whoami --plain
+# Show auth context: token type (OAuth vs API/platform) and safety level
+dtctl auth status --plain
 ```
 
 This displays:
 - Current context name and environment URL
 - Safety level (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)
-- Authenticated user identity (name, email, UUID)
+- Token type (OAuth vs API/platform token)
+
+> **Note:** Do not use `dtctl auth whoami` to verify a connection. It performs an
+> identity lookup against the platform metadata API and needs an OAuth/JWT token
+> with the `app-engine:apps:run` scope; with a plain API token or a read-scoped
+> platform token it returns a spurious 403 even though read access works fine.
+> Confirm connectivity with your first real query (`dtctl get ...` or
+> `dtctl query ...`), not with an identity probe.
 
 ## DQL Reference Usage
 
@@ -186,8 +193,8 @@ Prefer `get ... -o json --plain` first, then `describe`/`exec` with explicit IDs
 ### Authentication & Permissions
 
 ```bash
-# Check current user and permissions
-dtctl auth whoami --plain
+# Check auth context and permissions
+dtctl auth status --plain
 dtctl auth can-i create workflows
 dtctl auth can-i delete dashboards
 ```

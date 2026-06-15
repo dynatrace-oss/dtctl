@@ -29,8 +29,8 @@ dtctl config set-context "default" \
   --token-ref "my-token"
 dtctl config use-context "default"
 
-# Verify
-dtctl auth whoami --plain
+# Verify the context loaded (local; works with any token type)
+dtctl auth status --plain
 ```
 
 **Note:** Always use `--token "$TOKEN"` directly. Stdin piping does not work reliably and stores corrupted values in the keychain.
@@ -42,12 +42,17 @@ dtctl auth whoami --plain
 # Re-store credentials
 dtctl config set-credentials "my-token" --token "$TOKEN"
 
-# Verify identity
-dtctl auth whoami --plain
+# Check auth context (token type, not identity)
+dtctl auth status --plain
 
 # Check permissions
 dtctl auth can-i <verb> <resource>
 ```
+
+> **Note:** `dtctl auth whoami` is not a connectivity check. It hits the platform
+> metadata API and needs an OAuth/JWT token with `app-engine:apps:run`; a plain API
+> token or read-scoped platform token returns a spurious 403 here even though read
+> access works. Confirm connectivity with a real `dtctl get`/`dtctl query`.
 
 ### Wrong Tenant
 ```bash
