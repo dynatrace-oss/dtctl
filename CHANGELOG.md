@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-06-16
+
+### Fixed
+- **Kiro AI agent sessions are now detected, so agent mode auto-enables and the `User-Agent` carries the Kiro suffix** — `sdk/agentmode` keyed Kiro detection on a `KIRO` environment variable that Kiro does not actually set, so `Detect()` never identified a Kiro session and `UserAgentSuffix()` returned empty under `kiro-cli`; detection now keys on the env vars Kiro really sets (verified empirically on `kiro-cli` 2.6.1) — `KIRO_SESSION_ID` (set in both interactive and `--no-interactive` chat) and `AGENT_CONTEXT_OUT` (Kiro's documented ACP side-channel FIFO path); fixes [#283](https://github.com/dynatrace-oss/dtctl/pull/283)
+- **The dtctl skill no longer recommends `dtctl auth whoami` as a connectivity / setup-verification check** — `auth whoami` performs an identity lookup against the platform metadata API (`/platform/metadata/v1/user`) and requires an OAuth/JWT token carrying the `app-engine:apps:run` scope, so when the configured credential is a plain API token or a read-scoped platform token the call returns a spurious **403 Forbidden** that looks like a setup failure; the skill (`skills/dtctl/SKILL.md` context-inspection and Authentication & Permissions blocks, plus `references/troubleshooting.md`) now points to credential-agnostic checks instead; fixes [#284](https://github.com/dynatrace-oss/dtctl/pull/284)
+
+### Changed
+- **Dependency bumps** — `golang.org/x/term` 0.43.0 → 0.44.0 ([#278](https://github.com/dynatrace-oss/dtctl/pull/278)), `github.com/itchyny/gojq` 0.12.17 → 0.12.19 ([#280](https://github.com/dynatrace-oss/dtctl/pull/280))
+
 ## [0.30.1] - 2026-06-15
 
 ### Fixed
@@ -531,6 +540,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Updated Go version to 1.24.13 in security workflow
 
+[0.30.2]: https://github.com/dynatrace-oss/dtctl/compare/v0.30.1...v0.30.2
+[0.30.1]: https://github.com/dynatrace-oss/dtctl/compare/v0.30.0...v0.30.1
 [0.30.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/dynatrace-oss/dtctl/compare/v0.28.1...v0.29.0
 [0.28.1]: https://github.com/dynatrace-oss/dtctl/compare/v0.28.0...v0.28.1
