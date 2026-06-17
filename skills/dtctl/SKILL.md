@@ -222,8 +222,6 @@ dtctl wait query "fetch spans | filter test_id='test-123'" --for=count=1 --timeo
 dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --plain
 ```
 
-
-
 ## Dashboards
 
 For full examples and field-level gotchas, see [references/resources/dashboards.md](references/resources/dashboards.md).
@@ -278,7 +276,7 @@ For detailed visualizationSettings (singleValue, charts, tables, thresholds, uni
 **Name resolution ambiguity:**
 - If a name matches multiple resources, dtctl will fail
 - Solution: Use IDs instead of names
-- Find ID: `dtctl get <resource> -o json --plain | jq -r '.[] | "\(.id) | \(.name)"'`
+- Find ID: `dtctl get <resource> -o json --plain --jq '.[] | "\(.id) | \(.name)"'`
 
 **Permission denied:**
 - Check token scopes: https://github.com/dynatrace-oss/dtctl/blob/main/docs/TOKEN_SCOPES.md

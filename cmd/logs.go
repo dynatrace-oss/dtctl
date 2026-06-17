@@ -21,8 +21,8 @@ var tasksOnlyLogs bool
 // logsCmd represents the logs command
 var logsCmd = &cobra.Command{
 	Use:   "logs",
-	Short: "Print logs for resources",
-	Long:  `Print logs for various resources.`,
+	Short: "Print execution logs for workflow runs (NOT for querying log records — use 'dtctl query' for that)",
+	Long:  `Print execution logs for workflow runs. Use 'dtctl query' with DQL to query Dynatrace log records.`,
 }
 
 // logsWorkflowExecutionCmd prints logs for a workflow execution
