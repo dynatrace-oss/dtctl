@@ -15,8 +15,13 @@ type AgentInfo struct {
 
 // knownAgents maps environment variables to AI agent names.
 var knownAgents = map[string]string{
-	"CLAUDECODE":     "claude-code",
-	"CURSOR_AGENT":   "cursor",
+	"CLAUDECODE":   "claude-code",
+	"CURSOR_AGENT": "cursor",
+	// GitHub Copilot: the copilot CLI (and VS Code's bundled Copilot, which shares
+	// the @github/copilot SDK) sets COPILOT_CLI=1 — verified on copilot v1.0.63.
+	// The bare GITHUB_COPILOT is a legacy entry that no Copilot surface sets,
+	// kept as a harmless fallback.
+	"COPILOT_CLI":    "github-copilot",
 	"GITHUB_COPILOT": "github-copilot",
 	"CODEIUM_AGENT":  "codeium",
 	"TABNINE_AGENT":  "tabnine",

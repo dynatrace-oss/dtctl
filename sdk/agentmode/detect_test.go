@@ -91,3 +91,21 @@ func TestDetect_Kiro(t *testing.T) {
 		})
 	}
 }
+
+// TestDetect_CopilotCLI covers the GitHub Copilot CLI, which sets COPILOT_CLI=1
+// in every subprocess it spawns. The standalone `copilot` and VS Code's bundled
+// Copilot share the @github/copilot SDK that injects it (verified on copilot
+// v1.0.63); a bare GITHUB_COPILOT is not set by either.
+func TestDetect_CopilotCLI(t *testing.T) {
+	for envVar := range knownAgents {
+		os.Unsetenv(envVar)
+	}
+	t.Setenv("COPILOT_CLI", "1")
+	info := Detect()
+	if !info.Detected {
+		t.Error("expected GitHub Copilot to be detected via COPILOT_CLI")
+	}
+	if info.Name != "github-copilot" {
+		t.Errorf("expected github-copilot, got %q", info.Name)
+	}
+}
