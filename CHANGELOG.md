@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-06-18
+
+### Fixed
+- **OAuth token refresh no longer breaks on macOS when the refresh token is too large for the Keychain** — accounts with large-claims JWTs could produce a refresh token that exceeds the macOS Keychain item size limit (`errSecDataTooLarge`, exit status 161); dtctl's compact-storage fallback chain (strip access/ID tokens → strip everything but the refresh token) still failed all three attempts when the refresh token *itself* was oversized, so refresh aborted instead of degrading gracefully; `saveToken` now falls back to file storage when even the minimal compact form is rejected as too large (and removes the stale keyring entry), `loadToken` checks file storage when an available keyring reports the entry as "not found" (the state left by that fallback), and `DeleteToken` does best-effort file cleanup on logout so a file-stored token is not orphaned; closes [#290](https://github.com/dynatrace-oss/dtctl/issues/290), fixes [#291](https://github.com/dynatrace-oss/dtctl/pull/291)
+- **GitHub Copilot CLI sessions are now detected, so agent mode auto-enables and the `User-Agent` carries the Copilot suffix** — `sdk/agentmode` keyed Copilot detection on a `GITHUB_COPILOT` environment variable that the standalone Copilot CLI does not set, so `Detect()` never identified a Copilot session (empty `(AI-Agent: …)` suffix, no agent name on the DQL `dt-client-context` header); detection now keys on `COPILOT_CLI`, which the `@github/copilot` SDK exports into every spawned subprocess (verified empirically on `copilot` 1.0.63), covering both the standalone CLI and VS Code's bundled Copilot; the legacy `GITHUB_COPILOT` entry is retained as a harmless fallback; same shape as the Kiro detection fix ([#283](https://github.com/dynatrace-oss/dtctl/pull/283)); closes [#288](https://github.com/dynatrace-oss/dtctl/issues/288), fixes [#289](https://github.com/dynatrace-oss/dtctl/pull/289)
+
+### Changed
+- **Dependency bumps** — `golang.org/x/text` 0.37.0 → 0.38.0 ([#279](https://github.com/dynatrace-oss/dtctl/pull/279))
+
 ## [0.30.2] - 2026-06-16
 
 ### Fixed
