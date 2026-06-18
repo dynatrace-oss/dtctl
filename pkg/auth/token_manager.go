@@ -233,7 +233,10 @@ func (tm *TokenManager) DeleteToken(tokenName string) error {
 	keyringName := tm.getKeyringName(tokenName)
 
 	if tm.deps.keyringAvailable() {
-		return tm.deps.deleteToken(tm.tokenStore, keyringName)
+		err := tm.deps.deleteToken(tm.tokenStore, keyringName)
+		// Best-effort cleanup of any file-based fallback token.
+		_ = tm.deps.fileDeleteToken(keyringName)
+		return err
 	}
 
 	// Fall back to file-based storage
@@ -271,16 +274,27 @@ func (tm *TokenManager) loadToken(tokenName string) (*StoredToken, error) {
 	// Try to load from keyring
 	if tm.deps.keyringAvailable() {
 		data, err := tm.deps.getToken(tm.tokenStore, keyringName)
-		if err != nil {
+		if err == nil {
+			var stored StoredToken
+			if err := json.Unmarshal([]byte(data), &stored); err != nil {
+				return nil, fmt.Errorf("failed to parse stored token: %w", err)
+			}
+			return &stored, nil
+		}
+		// Non-"not found" errors are fatal (e.g. keyring locked or corrupted).
+		if !strings.Contains(err.Error(), "not found") {
 			return nil, fmt.Errorf("failed to load token from keyring: %w", err)
 		}
-
-		var stored StoredToken
-		if err := json.Unmarshal([]byte(data), &stored); err != nil {
-			return nil, fmt.Errorf("failed to parse stored token: %w", err)
+		// Token not in keyring — may have been saved to file as a size-limit fallback.
+		// Also try file store before returning an error.
+		if data, fileErr := tm.deps.fileGetToken(keyringName); fileErr == nil {
+			var stored StoredToken
+			if err := json.Unmarshal([]byte(data), &stored); err != nil {
+				return nil, fmt.Errorf("failed to parse stored token: %w", err)
+			}
+			return &stored, nil
 		}
-
-		return &stored, nil
+		return nil, fmt.Errorf("failed to load token from keyring: %w", err)
 	}
 
 	// Fall back to file-based storage
@@ -331,6 +345,15 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 				return fmt.Errorf("failed to save token to keyring: %w", err)
 			}
 			if compactErr := tm.deps.setToken(tm.tokenStore, keyringName, string(compactData)); compactErr != nil {
+				// Even the refresh token alone exceeds the keyring limit (e.g. macOS Keychain).
+				// Fall back to file storage as a last resort.
+				if isKeyringTooLargeErr(compactErr) {
+					if fileErr := tm.deps.fileSetToken(keyringName, string(data)); fileErr == nil {
+						// Remove any stale keyring entry so loadToken reads from file next time.
+						_ = tm.deps.deleteToken(tm.tokenStore, keyringName)
+						return nil
+					}
+				}
 				return fmt.Errorf("failed to save token to keyring: %w (compact fallback also failed: %v)", err, compactErr)
 			}
 			return nil
@@ -347,6 +370,17 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 	}
 
 	return fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", config.EnvTokenStorage)
+}
+
+// isKeyringTooLargeErr reports whether err is a keyring "data too large" error.
+// On macOS the go-keyring library surfaces errSecDataTooLarge (-25313) as
+// "data passed to Set was too big"; the security(1) CLI exits with code 161.
+func isKeyringTooLargeErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "too big") || strings.Contains(msg, "exit status 161")
 }
 
 // mediumCompactStoredTokenForKeyring drops the large access/ID token JWTs but
