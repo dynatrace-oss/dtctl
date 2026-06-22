@@ -12,7 +12,72 @@ import (
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 )
+
+// mappingsByName collapses the flattened column-type mappings into a name→type
+// map for order-independent assertions.
+func mappingsByName(m []output.ColumnTypeMapping) map[string]string {
+	out := make(map[string]string, len(m))
+	for _, c := range m {
+		out[c.Name] = c.Type
+	}
+	return out
+}
+
+func TestColumnTypeMappings(t *testing.T) {
+	t.Run("nil when no type info", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{Records: []map[string]interface{}{{"a": 1}}}}
+		if got := columnTypeMappings(r); got != nil {
+			t.Errorf("expected nil, got %#v", got)
+		}
+		if got := columnTypeMappings(&DQLQueryResponse{}); got != nil {
+			t.Errorf("expected nil for empty response, got %#v", got)
+		}
+	})
+
+	t.Run("flattens a single group", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 1}, Mappings: map[string]sdkquery.ColumnType{
+					"host":  {Type: "string"},
+					"count": {Type: "long"},
+				}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 2 || got["host"] != "string" || got["count"] != "long" {
+			t.Errorf("got %#v, want host=string count=long", got)
+		}
+	})
+
+	t.Run("first group wins on disagreement across groups", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 0}, Mappings: map[string]sdkquery.ColumnType{"v": {Type: "long"}}},
+				{IndexRange: []int{1, 1}, Mappings: map[string]sdkquery.ColumnType{"v": {Type: "string"}}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 1 || got["v"] != "long" {
+			t.Errorf("got %#v, want v=long (first group wins)", got)
+		}
+	})
+
+	t.Run("merges distinct columns across groups", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 0}, Mappings: map[string]sdkquery.ColumnType{"a": {Type: "long"}}},
+				{IndexRange: []int{1, 1}, Mappings: map[string]sdkquery.ColumnType{"b": {Type: "double"}}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 2 || got["a"] != "long" || got["b"] != "double" {
+			t.Errorf("got %#v, want a=long b=double", got)
+		}
+	})
+}
 
 func TestDQLExecutor_ExecuteQueryWithOptions_CustomHeaders(t *testing.T) {
 	tests := []struct {

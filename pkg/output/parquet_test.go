@@ -228,6 +228,30 @@ func TestParquetPrinter_LongCoercionFromNativeInts(t *testing.T) {
 	}
 }
 
+func TestNewPrinterWithOpts_ParquetUsesTypes(t *testing.T) {
+	// Guards the dispatch wiring: NewPrinterWithOpts must route "parquet" to the
+	// ParquetPrinter AND thread opts.Types through, so the schema is type-faithful
+	// (a "long" coerces to int64) rather than value-inferred.
+	var buf bytes.Buffer
+	printer := NewPrinterWithOpts(PrinterOptions{
+		Format: "parquet",
+		Writer: &buf,
+		Types:  []ColumnTypeMapping{{Name: "count", Type: "long"}},
+	})
+	if _, ok := printer.(*ParquetPrinter); !ok {
+		t.Fatalf("got %T, want *ParquetPrinter", printer)
+	}
+	// "long" arriving as a JSON string must land as int64 because the DQL type
+	// (not value-inference) drove the schema.
+	if err := printer.PrintList([]map[string]interface{}{{"count": "194414758"}}); err != nil {
+		t.Fatalf("PrintList: %v", err)
+	}
+	rows := readParquet(t, buf.Bytes())
+	if len(rows) != 1 || rows[0]["count"] != int64(194414758) {
+		t.Errorf("count = %#v, want int64(194414758) — Types not threaded through dispatch", rows[0]["count"])
+	}
+}
+
 func TestParquetPrinter_AllNullColumnIsString(t *testing.T) {
 	if got := inferKind("x", []map[string]interface{}{{"x": nil}, {}}); got != colString {
 		t.Errorf("all-null column inferred as %v, want colString", got)

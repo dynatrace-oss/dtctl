@@ -39,6 +39,14 @@ func isStderrTerminal() bool {
 	return term.IsTerminal(int(os.Stderr.Fd()))
 }
 
+// formatRequiresIncludeTypes reports whether the output format needs DQL column
+// type metadata to render correctly, so the query layer can request it even when
+// the user did not pass --include-types. Parquet derives its columnar schema from
+// these types (a "long" must become an INT64 column, not a value-inferred DOUBLE).
+func formatRequiresIncludeTypes(format string) bool {
+	return strings.EqualFold(strings.TrimSpace(format), "parquet")
+}
+
 func isSupportedQueryOutputFormat(format string) bool {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "", "table", "wide", "json", "yaml", "yml", "csv", "jsonl", "parquet", "toon", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
@@ -238,7 +246,7 @@ Examples:
 		// Parquet derives its column schema from DQL types, so request them even
 		// if the user did not pass --include-types. The type metadata is consumed
 		// to build the schema and is not added to the output rows.
-		if strings.EqualFold(strings.TrimSpace(outputFormat), "parquet") {
+		if formatRequiresIncludeTypes(outputFormat) {
 			includeTypes = true
 		}
 		includeContributions, _ := cmd.Flags().GetBool("include-contributions")
