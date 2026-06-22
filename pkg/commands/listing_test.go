@@ -81,6 +81,64 @@ func TestBuild_SchemaVersion(t *testing.T) {
 	require.Equal(t, "verb-noun", listing.CommandModel)
 }
 
+func TestBuild_RequiredScopes(t *testing.T) {
+	root := newTestRoot()
+	listing := Build(root)
+
+	// Access is derived per verb.
+	require.Equal(t, "read", listing.Verbs["get"].Access)
+	require.Equal(t, "delete", listing.Verbs["delete"].Access)
+	require.Equal(t, "run", listing.Verbs["exec"].Access)
+
+	// Per-(verb,resource) scopes are materialized in full mode.
+	getScopes := listing.Verbs["get"].RequiredScopesByResource
+	require.Equal(t, []string{"automation:workflows:read"}, getScopes["workflows"])
+	require.Equal(t, []string{"document:documents:read"}, getScopes["dashboards"])
+
+	// delete documents uses the distinct :delete scope; workflows fall back to write.
+	delScopes := listing.Verbs["delete"].RequiredScopesByResource
+	require.Equal(t, []string{"document:documents:delete"}, delScopes["dashboard"])
+	require.Equal(t, []string{"automation:workflows:write"}, delScopes["workflow"])
+
+	// exec uses run scopes.
+	require.Equal(t, []string{"automation:workflows:run"}, listing.Verbs["exec"].RequiredScopesByResource["workflow"])
+
+	// Top-level canonical table is populated for referenced resources.
+	require.Contains(t, listing.ResourceScopes, "workflow")
+	require.Equal(t, []string{"automation:workflows:read"}, listing.ResourceScopes["workflow"].Read)
+}
+
+func TestNewBrief_ScopesCompact(t *testing.T) {
+	root := newTestRoot()
+	listing := Build(root)
+	brief := NewBrief(listing)
+
+	// Brief keeps access + the canonical table, drops the materialized map.
+	require.Equal(t, "delete", brief.Verbs["delete"].Access)
+	require.Nil(t, brief.Verbs["delete"].RequiredScopesByResource)
+	require.NotEmpty(t, brief.ResourceScopes)
+	require.Contains(t, brief.ResourceScopes, "workflow")
+}
+
+func TestRequiredScopesUnionAndForResource(t *testing.T) {
+	root := newTestRoot()
+	listing := Build(root)
+
+	// Verb-filtered union: delete only yields delete-access scopes.
+	delOnly, _ := FilterByResource(listing, "delete")
+	require.ElementsMatch(t,
+		[]string{"document:documents:delete", "automation:workflows:write"},
+		RequiredScopesUnion(delOnly),
+	)
+
+	// Resource-narrowed union: workflows across all verbs in the test tree
+	// (get=read, describe=read, delete=write, exec=run).
+	require.ElementsMatch(t,
+		[]string{"automation:workflows:read", "automation:workflows:write", "automation:workflows:run"},
+		RequiredScopesForResource(listing, "wf"),
+	)
+}
+
 func TestBuild_GlobalFlags(t *testing.T) {
 	root := newTestRoot()
 	listing := Build(root)

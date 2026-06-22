@@ -215,11 +215,17 @@ The output describes dtctl's verb-noun command model:
 - **`schema_version`** — integer, incremented on breaking changes to the schema structure. Lets consumers detect incompatibilities without parsing the entire document.
 - **`mutating`** — boolean per verb. Derived from dtctl's safety system (`OperationCreate`, `OperationUpdate`, `OperationDelete`). Agents can use this to assess risk before running a command.
 - **`safety_operation`** — the safety operation type for mutating commands. Maps directly to dtctl's 4-tier safety levels (a command blocked at `readonly` will have `safety_operation` set; a read-only verb won't).
+- **`access`** — per verb, the access level (`read`/`write`/`delete`/`run`) derived from the verb and its safety operation. Combined with the top-level `resource_scopes` table, an agent can compute any command's required scopes.
+- **`required_scopes_by_resource`** — per verb, a map of resource name → the OAuth/IAM scopes that verb needs for that resource (full mode only). Lets an agent determine the scopes a command needs **before** running it, avoiding mid-task 403s.
+- **`required_scopes`** — per verb, a flat scope list for verbs whose scopes are not per-resource (`query`/`verify`/`wait`, which read Grail via DQL).
+- **`resource_scopes`** — top-level canonical `(resource → {read, write, delete, run})` table. Single source of truth: `pkg/auth.GetScopesForSafetyLevel` (what login requests) is composed from the same table, and a test enforces that every per-command scope is grantable by a safety level.
 - **`time_formats`** — in the JSON schema (not just in `howto`) so agents consuming the structured output have this without a second call.
+
+Since these scope fields were added, `schema_version` is `2`. See [TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for the human-facing scope reference.
 
 ### Brief mode
 
-`--brief` strips descriptions, examples, patterns, antipatterns, time_formats, and safety_operation. Reduces token count by ~60%:
+`--brief` strips descriptions, examples, patterns, antipatterns, time_formats, safety_operation, and the materialized `required_scopes_by_resource`. It keeps each verb's `access` and the compact top-level `resource_scopes` table, so scopes remain derivable as `resource_scopes[resource][verb.access]`. DQL `required_scopes` (not derivable from the table) are retained. Reduces token count by ~60%:
 
 ```json
 {
@@ -248,6 +254,17 @@ Note: `mutating` is preserved in brief mode — it's small, and agents always ne
 dtctl commands workflows    # Only verbs that apply to workflows
 dtctl commands wf           # Same, using alias
 dtctl commands get          # Only the 'get' verb (filter by verb name)
+```
+
+### Minimal scope union (`--required-scopes`)
+
+`dtctl commands [filter] --required-scopes` prints the sorted, de-duplicated scope union for a command set — the minimal token to provision for a pipeline. A **verb** filter unions that verb's scopes across its resources; a **resource** filter narrows to just that resource's scopes; no filter yields the union across all commands.
+
+```bash
+dtctl commands wf --required-scopes        # scopes for everything dtctl does to workflows
+dtctl commands get --required-scopes        # all read scopes
+dtctl commands delete --required-scopes -o json
+dtctl commands --required-scopes            # full union
 ```
 
 When a positional arg matches both a verb and a resource, verb takes priority (consistent with dtctl's command resolution).

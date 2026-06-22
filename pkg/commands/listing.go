@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/json"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,11 +14,15 @@ import (
 	toon "github.com/toon-format/toon-go"
 	"gopkg.in/yaml.v3"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/version"
 )
 
 // SchemaVersion is incremented on breaking changes to the listing structure.
-const SchemaVersion = 1
+// v2 adds per-verb `access`, per-(verb,resource) `required_scopes_by_resource`,
+// per-verb `required_scopes` (DQL verbs), and a top-level `resource_scopes`
+// canonical table.
+const SchemaVersion = 2
 
 // Listing is the top-level output of `dtctl commands`.
 type Listing struct {
@@ -29,20 +34,32 @@ type Listing struct {
 	GlobalFlags   map[string]*Flag  `json:"global_flags,omitempty" yaml:"global_flags,omitempty"`
 	Verbs         map[string]*Verb  `json:"verbs" yaml:"verbs"`
 	Aliases       map[string]string `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
-	TimeFormats   *TimeFormats      `json:"time_formats,omitempty" yaml:"time_formats,omitempty"`
-	Patterns      []string          `json:"patterns,omitempty" yaml:"patterns,omitempty"`
-	Antipatterns  []string          `json:"antipatterns,omitempty" yaml:"antipatterns,omitempty"`
+	// ResourceScopes is the canonical (resource, access) → scopes table. Agents
+	// can derive any command's required scopes from this table plus each verb's
+	// access, which is what --brief relies on.
+	ResourceScopes map[string]auth.AccessScopes `json:"resource_scopes,omitempty" yaml:"resource_scopes,omitempty"`
+	TimeFormats    *TimeFormats                 `json:"time_formats,omitempty" yaml:"time_formats,omitempty"`
+	Patterns       []string                     `json:"patterns,omitempty" yaml:"patterns,omitempty"`
+	Antipatterns   []string                     `json:"antipatterns,omitempty" yaml:"antipatterns,omitempty"`
 }
 
 // Verb represents a top-level verb (get, describe, apply, ...).
 type Verb struct {
-	Description  string           `json:"description,omitempty" yaml:"description,omitempty"`
-	Mutating     bool             `json:"mutating" yaml:"mutating"`
-	SafetyOp     string           `json:"safety_operation,omitempty" yaml:"safety_operation,omitempty"`
-	Resources    []string         `json:"resources,omitempty" yaml:"resources,omitempty"`
-	Flags        map[string]*Flag `json:"flags,omitempty" yaml:"flags,omitempty"`
-	RequiredArgs []string         `json:"required_args,omitempty" yaml:"required_args,omitempty"`
-	Subcommands  map[string]*Verb `json:"subcommands,omitempty" yaml:"subcommands,omitempty"`
+	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
+	Mutating    bool     `json:"mutating" yaml:"mutating"`
+	SafetyOp    string   `json:"safety_operation,omitempty" yaml:"safety_operation,omitempty"`
+	Access      string   `json:"access,omitempty" yaml:"access,omitempty"`
+	Resources   []string `json:"resources,omitempty" yaml:"resources,omitempty"`
+	// RequiredScopes is the scope list for verbs whose scopes are not
+	// per-resource (e.g. `query`/`verify`/`wait`, which read Grail via DQL).
+	RequiredScopes []string `json:"required_scopes,omitempty" yaml:"required_scopes,omitempty"`
+	// RequiredScopesByResource maps each resource the verb operates on to the
+	// scopes required for this verb's access level. Materialized in full mode so
+	// agents need zero client-side computation; omitted in --brief.
+	RequiredScopesByResource map[string][]string `json:"required_scopes_by_resource,omitempty" yaml:"required_scopes_by_resource,omitempty"`
+	Flags                    map[string]*Flag    `json:"flags,omitempty" yaml:"flags,omitempty"`
+	RequiredArgs             []string            `json:"required_args,omitempty" yaml:"required_args,omitempty"`
+	Subcommands              map[string]*Verb    `json:"subcommands,omitempty" yaml:"subcommands,omitempty"`
 }
 
 // Flag describes a CLI flag.
@@ -132,18 +149,20 @@ var defaultTimeFormats = &TimeFormats{
 
 // Build walks the Cobra command tree rooted at root and returns a Listing.
 func Build(root *cobra.Command) *Listing {
+	verbs := buildVerbs(root)
 	listing := &Listing{
-		SchemaVersion: SchemaVersion,
-		Tool:          "dtctl",
-		Version:       version.Version,
-		Description:   "kubectl-inspired CLI for the Dynatrace platform",
-		CommandModel:  "verb-noun",
-		GlobalFlags:   buildGlobalFlags(root),
-		Verbs:         buildVerbs(root),
-		Aliases:       ResourceAliases,
-		TimeFormats:   defaultTimeFormats,
-		Patterns:      defaultPatterns,
-		Antipatterns:  defaultAntipatterns,
+		SchemaVersion:  SchemaVersion,
+		Tool:           "dtctl",
+		Version:        version.Version,
+		Description:    "kubectl-inspired CLI for the Dynatrace platform",
+		CommandModel:   "verb-noun",
+		GlobalFlags:    buildGlobalFlags(root),
+		Verbs:          verbs,
+		Aliases:        ResourceAliases,
+		ResourceScopes: collectResourceScopes(verbs),
+		TimeFormats:    defaultTimeFormats,
+		Patterns:       defaultPatterns,
+		Antipatterns:   defaultAntipatterns,
 	}
 	return listing
 }
@@ -185,6 +204,9 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 			verb.SafetyOp = safetyOp
 		}
 
+		// Derive the access level (read/write/delete/run) from the verb.
+		verb.Access = string(auth.AccessForVerb(name, verb.SafetyOp))
+
 		// Extract resources (subcommands of the verb)
 		subs := cmd.Commands()
 		if len(subs) > 0 {
@@ -217,6 +239,10 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 					if safetyOp, ok := MutatingVerbs[name]; ok {
 						subVerb.Mutating = true
 						subVerb.SafetyOp = safetyOp
+					}
+					subVerb.Access = string(auth.AccessForVerb(name, subVerb.SafetyOp))
+					if scopes := auth.ScopesForResource(subName, auth.Access(subVerb.Access)); len(scopes) > 0 {
+						subVerb.RequiredScopes = append([]string(nil), scopes...)
 					}
 					nestedNames := make(map[string]*Verb)
 					for _, ns := range nestedSubs {
@@ -264,9 +290,68 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 			verb.RequiredArgs = args
 		}
 
+		populateVerbScopes(name, verb)
+
 		verbs[name] = verb
 	}
 	return verbs
+}
+
+// dqlScopeVerbs read Grail data via DQL; their scopes attach to the verb rather
+// than to a managed resource.
+var dqlScopeVerbs = map[string]bool{"query": true, "verify": true, "wait": true}
+
+// populateVerbScopes fills in a verb's required scopes from the canonical
+// auth.ResourceScopes table: per-resource for resource-bearing verbs, and a flat
+// DQL scope list for query-style verbs.
+func populateVerbScopes(name string, verb *Verb) {
+	if dqlScopeVerbs[name] {
+		verb.RequiredScopes = append([]string(nil), auth.QueryScopes...)
+	}
+
+	if len(verb.Resources) == 0 {
+		return
+	}
+	access := auth.Access(verb.Access)
+	byResource := make(map[string][]string)
+	for _, r := range verb.Resources {
+		if scopes := auth.ScopesForResource(r, access); len(scopes) > 0 {
+			byResource[r] = scopes
+		}
+	}
+	if len(byResource) > 0 {
+		verb.RequiredScopesByResource = byResource
+	}
+}
+
+// collectResourceScopes returns the subset of the canonical ResourceScopes table
+// covering the resources referenced by the given verbs (including subcommands).
+// Returns nil when no referenced resource has a scope mapping.
+func collectResourceScopes(verbs map[string]*Verb) map[string]auth.AccessScopes {
+	table := make(map[string]auth.AccessScopes)
+	add := func(resource string) {
+		for _, key := range []string{resource, singularize(resource)} {
+			if as, ok := auth.ResourceScopes[key]; ok {
+				table[key] = as
+				return
+			}
+		}
+	}
+	for _, verb := range verbs {
+		for _, r := range verb.Resources {
+			add(r)
+		}
+		for subName, sub := range verb.Subcommands {
+			add(subName)
+			for _, r := range sub.Resources {
+				add(r)
+			}
+		}
+	}
+	if len(table) == 0 {
+		return nil
+	}
+	return table
 }
 
 // collectLocalFlags extracts non-persistent, non-hidden flags from a command.
@@ -349,12 +434,19 @@ func NewBrief(l *Listing) *Listing {
 		CommandModel:  l.CommandModel,
 		Verbs:         make(map[string]*Verb, len(l.Verbs)),
 		Aliases:       l.Aliases,
+		// Keep the compact canonical table; agents derive a command's scopes
+		// from resource_scopes[resource][verb.access] without the materialized
+		// per-command map.
+		ResourceScopes: l.ResourceScopes,
 	}
 
 	for name, verb := range l.Verbs {
 		bv := &Verb{
 			Mutating:  verb.Mutating,
+			Access:    verb.Access,
 			Resources: verb.Resources,
+			// DQL scopes are not derivable from resource_scopes, so retain them.
+			RequiredScopes: verb.RequiredScopes,
 		}
 
 		// Simplify flags: just type, drop description/default
@@ -374,8 +466,10 @@ func NewBrief(l *Listing) *Listing {
 			bv.Subcommands = make(map[string]*Verb, len(verb.Subcommands))
 			for subName, sub := range verb.Subcommands {
 				bs := &Verb{
-					Mutating:  sub.Mutating,
-					Resources: sub.Resources,
+					Mutating:       sub.Mutating,
+					Access:         sub.Access,
+					Resources:      sub.Resources,
+					RequiredScopes: sub.RequiredScopes,
 				}
 				if sub.Flags != nil {
 					bs.Flags = make(map[string]*Flag, len(sub.Flags))
@@ -430,17 +524,18 @@ func FilterByResource(l *Listing, name string) (*Listing, bool) {
 	}
 
 	result := &Listing{
-		SchemaVersion: l.SchemaVersion,
-		Tool:          l.Tool,
-		Version:       l.Version,
-		Description:   l.Description,
-		CommandModel:  l.CommandModel,
-		GlobalFlags:   l.GlobalFlags,
-		Verbs:         filteredVerbs,
-		Aliases:       l.Aliases,
-		TimeFormats:   l.TimeFormats,
-		Patterns:      l.Patterns,
-		Antipatterns:  l.Antipatterns,
+		SchemaVersion:  l.SchemaVersion,
+		Tool:           l.Tool,
+		Version:        l.Version,
+		Description:    l.Description,
+		CommandModel:   l.CommandModel,
+		GlobalFlags:    l.GlobalFlags,
+		Verbs:          filteredVerbs,
+		Aliases:        l.Aliases,
+		ResourceScopes: collectResourceScopes(filteredVerbs),
+		TimeFormats:    l.TimeFormats,
+		Patterns:       l.Patterns,
+		Antipatterns:   l.Antipatterns,
 	}
 	return result, true
 }
@@ -483,6 +578,63 @@ func ResolveAlias(name string) string {
 		return target
 	}
 	return name
+}
+
+// RequiredScopesUnion returns the sorted, de-duplicated union of every scope
+// required by the verbs in the listing (per-resource scopes, DQL scopes, and
+// subcommand scopes). Combined with FilterByResource it yields the minimal
+// token scope set for a filtered command set, e.g. the scopes a CI pipeline
+// that only runs `get`/`apply` on workflows needs.
+func RequiredScopesUnion(l *Listing) []string {
+	seen := map[string]bool{}
+	add := func(scopes []string) {
+		for _, s := range scopes {
+			seen[s] = true
+		}
+	}
+	var walk func(v *Verb)
+	walk = func(v *Verb) {
+		add(v.RequiredScopes)
+		for _, scopes := range v.RequiredScopesByResource {
+			add(scopes)
+		}
+		for _, sub := range v.Subcommands {
+			walk(sub)
+		}
+	}
+	for _, v := range l.Verbs {
+		walk(v)
+	}
+
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// RequiredScopesForResource returns the sorted union of scopes needed to run
+// every verb in the listing against a single resource — the minimal token scope
+// set for a pipeline that only touches that resource. The resource name may be
+// an alias or plural; it is resolved against the canonical table.
+func RequiredScopesForResource(l *Listing, resource string) []string {
+	resolved := ResolveAlias(resource)
+	seen := map[string]bool{}
+	for _, verb := range l.Verbs {
+		if !containsResource(verb, resolved) && !containsResource(verb, resource) {
+			continue
+		}
+		for _, s := range auth.ScopesForResource(resolved, auth.Access(verb.Access)) {
+			seen[s] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for s := range seen {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // WriteTo writes the listing to w in the given format ("json", "yaml"/"yml", or "toon").

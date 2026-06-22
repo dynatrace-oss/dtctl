@@ -1,15 +1,21 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
 )
 
-var briefMode bool
+var (
+	briefMode          bool
+	requiredScopesMode bool
+)
 
 // commandsCmd outputs a machine-readable listing of all dtctl commands.
 var commandsCmd = &cobra.Command{
@@ -34,6 +40,10 @@ Examples:
 
   # Commands for a specific verb
   dtctl commands get
+
+  # Minimal token scope set for a filtered command set
+  dtctl commands wf --required-scopes
+  dtctl commands --required-scopes        # union across all commands
 
   # YAML output
   dtctl commands -o yaml
@@ -63,6 +73,26 @@ Examples:
 func runCommandsListing(cmd *cobra.Command, args []string) error {
 	listing := commands.Build(rootCmd)
 
+	// --required-scopes: emit the minimal scope union for the requested set.
+	if requiredScopesMode {
+		if len(args) > 0 {
+			// A verb filter unions that verb's scopes across its resources; a
+			// resource filter narrows to just that resource's scopes.
+			if _, isVerb := listing.Verbs[args[0]]; isVerb {
+				filtered, ok := commands.FilterByResource(listing, args[0])
+				if !ok {
+					return fmt.Errorf("no commands found for %q", args[0])
+				}
+				return writeRequiredScopes(commands.RequiredScopesUnion(filtered), outputFormat)
+			}
+			if _, ok := commands.FilterByResource(listing, args[0]); !ok {
+				return fmt.Errorf("no commands found for %q", args[0])
+			}
+			return writeRequiredScopes(commands.RequiredScopesForResource(listing, args[0]), outputFormat)
+		}
+		return writeRequiredScopes(commands.RequiredScopesUnion(listing), outputFormat)
+	}
+
 	// Apply resource/verb filter if a positional arg is provided
 	if len(args) > 0 {
 		filtered, ok := commands.FilterByResource(listing, args[0])
@@ -81,6 +111,28 @@ func runCommandsListing(cmd *cobra.Command, args []string) error {
 	return commands.WriteTo(os.Stdout, output, outputFormat)
 }
 
+// writeRequiredScopes prints a scope union in the requested output format.
+func writeRequiredScopes(scopes []string, format string) error {
+	switch format {
+	case "json":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string][]string{"required_scopes": scopes})
+	case "yaml", "yml":
+		enc := yaml.NewEncoder(os.Stdout)
+		enc.SetIndent(2)
+		if err := enc.Encode(map[string][]string{"required_scopes": scopes}); err != nil {
+			return err
+		}
+		return enc.Close()
+	default:
+		if len(scopes) > 0 {
+			fmt.Println(strings.Join(scopes, "\n"))
+		}
+		return nil
+	}
+}
+
 func runHowto(cmd *cobra.Command, args []string) error {
 	listing := commands.Build(rootCmd)
 	return commands.GenerateHowto(os.Stdout, listing)
@@ -88,6 +140,7 @@ func runHowto(cmd *cobra.Command, args []string) error {
 
 func init() {
 	commandsCmd.Flags().BoolVar(&briefMode, "brief", false, "minimal output (reduced token count for AI agents)")
+	commandsCmd.Flags().BoolVar(&requiredScopesMode, "required-scopes", false, "print the minimal token scope union for the (optionally filtered) command set")
 	commandsCmd.AddCommand(howtoCmd)
 	rootCmd.AddCommand(commandsCmd)
 }
