@@ -41,7 +41,7 @@ func isStderrTerminal() bool {
 
 func isSupportedQueryOutputFormat(format string) bool {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "", "table", "wide", "json", "yaml", "yml", "csv", "toon", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+	case "", "table", "wide", "json", "yaml", "yml", "csv", "jsonl", "parquet", "toon", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
 		return true
 	default:
 		return false
@@ -88,6 +88,10 @@ Examples:
   # Output as JSON or CSV
   dtctl query "fetch logs" -o json
   dtctl query "fetch logs" -o csv
+
+  # Output as JSON Lines (one JSON object per line) or Parquet for large exports
+  dtctl query "fetch logs" -o jsonl
+  dtctl query "fetch logs" --max-result-records 100000 -o parquet > logs.parquet
 
   # Download large datasets with custom limits
   dtctl query "fetch logs" --max-result-records 10000 -o csv > logs.csv
@@ -231,6 +235,12 @@ Examples:
 		enablePreview, _ := cmd.Flags().GetBool("enable-preview")
 		enforceQueryConsumptionLimit, _ := cmd.Flags().GetBool("enforce-query-consumption-limit")
 		includeTypes, _ := cmd.Flags().GetBool("include-types")
+		// Parquet derives its column schema from DQL types, so request them even
+		// if the user did not pass --include-types. The type metadata is consumed
+		// to build the schema and is not added to the output rows.
+		if strings.EqualFold(strings.TrimSpace(outputFormat), "parquet") {
+			includeTypes = true
+		}
 		includeContributions, _ := cmd.Flags().GetBool("include-contributions")
 
 		// Get timeframe options

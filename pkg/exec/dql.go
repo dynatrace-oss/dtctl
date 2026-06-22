@@ -409,6 +409,7 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		Width:      opts.Width,
 		Height:     opts.Height,
 		Fullscreen: opts.Fullscreen,
+		Types:      columnTypeMappings(result),
 	})
 
 	switch effectiveFormat {
@@ -439,6 +440,12 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		}
 		return printer.PrintList(records)
 
+	case "jsonl", "parquet":
+		if len(records) == 0 {
+			return nil
+		}
+		return printer.PrintList(records)
+
 	case "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
 		if meta != nil {
 			output.PrintWarning("--metadata is not supported with chart output formats")
@@ -463,6 +470,29 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		}
 		return printer.Print(result)
 	}
+}
+
+// columnTypeMappings flattens the DQL per-column type info from the response
+// (populated when includeTypes is set) into the output-layer representation used
+// by the Parquet printer to build a schema. Returns nil when no type info is
+// present. When multiple type groups disagree on a column, the first wins.
+func columnTypeMappings(result *DQLQueryResponse) []output.ColumnTypeMapping {
+	groups := result.GetTypes()
+	if len(groups) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var out []output.ColumnTypeMapping
+	for _, g := range groups {
+		for name, ct := range g.Mappings {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			out = append(out, output.ColumnTypeMapping{Name: name, Type: ct.Type})
+		}
+	}
+	return out
 }
 
 // extractQueryMetadata converts DQL response metadata to the output-layer QueryMetadata type.

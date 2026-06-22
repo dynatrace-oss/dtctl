@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`dtctl query` can now output JSON Lines and Parquet via `-o jsonl` / `-o parquet`** — two new first-class output formats aimed at large result exports. `-o jsonl` emits one compact JSON object per line (newline-delimited JSON), streamed record-by-record so the full serialised output is never held in memory and the result is read natively by common local tooling (`dtctl query "fetch logs" -o jsonl`). `-o parquet` writes a columnar Apache Parquet file via the pure-Go `parquet-go` library (no CGO, so the static-binary/cross-compile story is preserved); its schema is derived from the DQL column types (`--include-types` is auto-enabled for this format), falling back to value-inference for columns the API does not type, and JSON-encoding nested/variant columns as a `complex` string column so a column is never silently dropped (`dtctl query "fetch logs" --max-result-records 100000 -o parquet > logs.parquet`).
+
 ## [0.30.3] - 2026-06-18
 
 ### Fixed
