@@ -72,18 +72,21 @@ func (p *ParquetPrinter) Print(obj interface{}) error {
 }
 
 // PrintList writes a slice of records as a Parquet file.
+//
+// A Parquet file is always emitted, even for an empty result: a zero-byte file
+// is not valid Parquet and would be rejected by downstream tooling, so an empty
+// result yields a valid schema-bearing file with zero rows. (This differs from
+// the CSV/JSONL printers, where an empty file is itself valid output.)
 func (p *ParquetPrinter) PrintList(obj interface{}) error {
 	records, err := toRecordMaps(obj)
 	if err != nil {
 		return err
 	}
-	if len(records) == 0 {
-		// Nothing to write; emit no file body (consistent with the CSV printer).
-		return nil
-	}
 
-	// Stable column order: union of keys across all records, sorted.
-	columns := unionColumns(records)
+	// Stable column order: union of keys across all records, sorted. When there
+	// are no records, fall back to the DQL-declared columns so the empty file
+	// still carries a faithful schema.
+	columns := p.columnsFor(records)
 	kinds := p.resolveColumnKinds(columns, records)
 
 	// Build the parquet schema: one optional leaf per column.
@@ -108,10 +111,31 @@ func (p *ParquetPrinter) PrintList(obj interface{}) error {
 			row[name] = coerced
 		}
 		if err := w.Write(row); err != nil {
+			_ = w.Close() // release writer buffers; original error wins
 			return fmt.Errorf("writing parquet row: %w", err)
 		}
 	}
 	return w.Close()
+}
+
+// columnsFor returns the ordered column set for the schema: the sorted union of
+// record keys when there are records, otherwise the sorted set of DQL-declared
+// columns. The latter lets an empty result still produce a valid, schema-bearing
+// Parquet file. Returns nil only when there are neither records nor DQL types,
+// in which case a valid (column-less) Parquet file is still written.
+func (p *ParquetPrinter) columnsFor(records []map[string]interface{}) []string {
+	if len(records) > 0 {
+		return unionColumns(records)
+	}
+	if len(p.types) == 0 {
+		return nil
+	}
+	cols := make([]string, 0, len(p.types))
+	for _, t := range p.types {
+		cols = append(cols, t.Name)
+	}
+	sort.Strings(cols)
+	return cols
 }
 
 // resolveColumnKinds picks a physical column kind for every column, preferring
@@ -217,12 +241,30 @@ func coerceValue(raw interface{}, kind parquetColumnKind) (interface{}, bool) {
 
 	case colInt64:
 		switch n := raw.(type) {
-		case float64:
-			return int64(n), true
 		case int:
+			return int64(n), true
+		case int8:
+			return int64(n), true
+		case int16:
+			return int64(n), true
+		case int32:
 			return int64(n), true
 		case int64:
 			return n, true
+		case uint:
+			return int64(n), true
+		case uint8:
+			return int64(n), true
+		case uint16:
+			return int64(n), true
+		case uint32:
+			return int64(n), true
+		case uint64:
+			return int64(n), true
+		case float32:
+			return int64(n), true
+		case float64:
+			return int64(n), true
 		case string:
 			if i, err := strconv.ParseInt(n, 10, 64); err == nil {
 				return i, true
@@ -232,14 +274,30 @@ func coerceValue(raw interface{}, kind parquetColumnKind) (interface{}, bool) {
 
 	case colDouble:
 		switch n := raw.(type) {
-		case float64:
-			return n, true
-		case float32:
-			return float64(n), true
 		case int:
+			return float64(n), true
+		case int8:
+			return float64(n), true
+		case int16:
+			return float64(n), true
+		case int32:
 			return float64(n), true
 		case int64:
 			return float64(n), true
+		case uint:
+			return float64(n), true
+		case uint8:
+			return float64(n), true
+		case uint16:
+			return float64(n), true
+		case uint32:
+			return float64(n), true
+		case uint64:
+			return float64(n), true
+		case float32:
+			return float64(n), true
+		case float64:
+			return n, true
 		case string:
 			if f, err := strconv.ParseFloat(n, 64); err == nil {
 				return f, true

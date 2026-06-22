@@ -103,7 +103,7 @@ For `dtctl query`, two additional formats are tailored to large result exports:
 
 ```bash
 # JSON Lines: one compact JSON object per line (newline-delimited JSON).
-# Streamed record-by-record and read natively by most local data tooling.
+# Serialised one record at a time and read natively by most local data tooling.
 dtctl query 'fetch logs | limit 1000' -o jsonl > logs.jsonl
 
 # Parquet: a columnar binary file, ideal for downstream analytics tooling.
@@ -114,11 +114,13 @@ dtctl query 'fetch logs' --max-result-records 100000 -o parquet > logs.parquet
 Notes:
 
 - **`-o jsonl`** has no schema and appends one object per line, so it tolerates
-  rows with differing fields and keeps peak memory low.
+  rows with differing fields. Each record is encoded as it is written rather than
+  building the whole result into a single buffer.
 - **`-o parquet`** derives its column schema from the DQL column types (it
   requests type information automatically). Nested or variant columns that do
   not map cleanly to a columnar type are stored as a JSON-encoded string column
-  rather than being dropped.
+  rather than being dropped. An empty result still produces a valid,
+  schema-bearing Parquet file (never a zero-byte file).
 
 ## Plain Mode
 

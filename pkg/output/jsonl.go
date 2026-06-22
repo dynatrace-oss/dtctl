@@ -9,9 +9,13 @@ import (
 
 // JSONLPrinter prints output as JSON Lines (JSONL / newline-delimited JSON):
 // one compact JSON value per line. It is well suited to large query results —
-// each record is encoded and written as it is visited, so the whole serialised
-// output is never held in memory, and the result is read natively by common
+// each record is encoded and written as it is visited rather than marshalling
+// the whole slice into one buffer, and the result is read natively by common
 // local data tooling.
+//
+// Note: the input record slice is still fully materialised in memory by the
+// caller; only the serialised form is produced incrementally. End-to-end bounded
+// streaming (records never fully buffered) is a separate, later change.
 type JSONLPrinter struct {
 	writer io.Writer
 }

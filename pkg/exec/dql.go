@@ -440,10 +440,17 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		}
 		return printer.PrintList(records)
 
-	case "jsonl", "parquet":
+	case "jsonl":
+		// An empty JSONL file (zero lines) is valid output, so skip on no records.
 		if len(records) == 0 {
 			return nil
 		}
+		return printer.PrintList(records)
+
+	case "parquet":
+		// Always emit a Parquet file, even for an empty result: a zero-byte file
+		// is not valid Parquet. The printer writes a valid schema-bearing file
+		// with zero rows.
 		return printer.PrintList(records)
 
 	case "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":

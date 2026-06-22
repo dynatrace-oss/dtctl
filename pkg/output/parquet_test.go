@@ -149,13 +149,82 @@ func TestParquetPrinter_SparseRowsAndNulls(t *testing.T) {
 }
 
 func TestParquetPrinter_Empty(t *testing.T) {
+	// An empty result must still yield a valid, openable Parquet file (a
+	// zero-byte file is not valid Parquet), even with no DQL types to lean on.
 	var buf bytes.Buffer
 	p := &ParquetPrinter{writer: &buf}
 	if err := p.PrintList([]map[string]interface{}{}); err != nil {
 		t.Fatalf("PrintList: %v", err)
 	}
-	if buf.Len() != 0 {
-		t.Errorf("expected no output for empty slice, got %d bytes", buf.Len())
+	if buf.Len() == 0 {
+		t.Fatal("expected a valid (non-zero-byte) Parquet file for an empty result")
+	}
+	f, err := parquet.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("empty result did not produce a valid Parquet file: %v", err)
+	}
+	if got := f.NumRows(); got != 0 {
+		t.Errorf("NumRows = %d, want 0", got)
+	}
+}
+
+func TestParquetPrinter_EmptyWithTypesKeepsSchema(t *testing.T) {
+	// With DQL types but no rows, the empty file should still carry the schema.
+	var buf bytes.Buffer
+	p := &ParquetPrinter{
+		writer: &buf,
+		types: []ColumnTypeMapping{
+			{Name: "host", Type: "string"},
+			{Name: "count", Type: "long"},
+		},
+	}
+	if err := p.PrintList([]map[string]interface{}{}); err != nil {
+		t.Fatalf("PrintList: %v", err)
+	}
+	f, err := parquet.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("open parquet: %v", err)
+	}
+	if got := f.NumRows(); got != 0 {
+		t.Errorf("NumRows = %d, want 0", got)
+	}
+	got := map[string]bool{}
+	for _, path := range f.Schema().Columns() {
+		got[path[len(path)-1]] = true
+	}
+	for _, want := range []string{"host", "count"} {
+		if !got[want] {
+			t.Errorf("schema missing declared column %q (cols: %v)", want, got)
+		}
+	}
+}
+
+func TestParquetPrinter_LongCoercionFromNativeInts(t *testing.T) {
+	// A DQL "long" column whose cells arrive as assorted native integer widths
+	// must all coerce to int64 rather than being written as null.
+	var buf bytes.Buffer
+	p := &ParquetPrinter{
+		writer: &buf,
+		types:  []ColumnTypeMapping{{Name: "n", Type: "long"}},
+	}
+	records := []map[string]interface{}{
+		{"n": int32(7)},
+		{"n": uint16(8)},
+		{"n": int64(9)},
+		{"n": float64(10)},
+	}
+	if err := p.PrintList(records); err != nil {
+		t.Fatalf("PrintList: %v", err)
+	}
+	rows := readParquet(t, buf.Bytes())
+	want := []int64{7, 8, 9, 10}
+	if len(rows) != len(want) {
+		t.Fatalf("got %d rows, want %d", len(rows), len(want))
+	}
+	for i, w := range want {
+		if rows[i]["n"] != w {
+			t.Errorf("row %d n = %#v, want int64(%d)", i, rows[i]["n"], w)
+		}
 	}
 }
 
