@@ -33,12 +33,16 @@ type ResponseContext struct {
 // ErrorDetail is a structured error for machine consumption.
 // It lives in the Response envelope when ok=false.
 type ErrorDetail struct {
-	Code        string   `json:"code"`
-	Message     string   `json:"message"`
-	Operation   string   `json:"operation,omitempty"`
-	StatusCode  int      `json:"status_code,omitempty"`
-	RequestID   string   `json:"request_id,omitempty"`
-	Suggestions []string `json:"suggestions,omitempty"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	Operation  string `json:"operation,omitempty"`
+	StatusCode int    `json:"status_code,omitempty"`
+	RequestID  string `json:"request_id,omitempty"`
+	// Scope-check fields, populated for code == "insufficient_scope".
+	RequiredScopes []string `json:"required_scopes,omitempty"`
+	GrantedScopes  []string `json:"granted_scopes,omitempty"`
+	MissingScopes  []string `json:"missing_scopes,omitempty"`
+	Suggestions    []string `json:"suggestions,omitempty"`
 }
 
 // ClassifyHTTPError maps an HTTP status code to a machine-readable error code.

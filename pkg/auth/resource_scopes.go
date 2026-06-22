@@ -59,9 +59,9 @@ func (a AccessScopes) For(access Access) []string {
 // per-safety-level OAuth union cannot diverge.
 //
 // Scope strings mirror docs/TOKEN_SCOPES.md ("Quick Reference by Resource
-// Type"). Entries marked "best-effort" map resources whose exact scope is not
-// independently documented; they are intentionally conservative and may be
-// refined as the corresponding APIs gain dedicated scopes.
+// Type") and were verified against each resource's API endpoint (the path the
+// SDK/resource handler calls); inline comments cite the endpoint where the
+// mapping is non-obvious.
 var ResourceScopes = map[string]AccessScopes{
 	// Automation
 	"workflow":           {Read: []string{"automation:workflows:read"}, Write: []string{"automation:workflows:write"}, Run: []string{"automation:workflows:run"}},
@@ -98,15 +98,20 @@ var ResourceScopes = map[string]AccessScopes{
 	"app":         {Read: []string{"app-engine:apps:run"}, Write: []string{"app-engine:apps:install"}, Delete: []string{"app-engine:apps:delete"}},
 	"function":    {Read: []string{"app-engine:apps:run"}, Run: []string{"app-engine:functions:run"}},
 	"edgeconnect": {Read: []string{"app-engine:edge-connects:read"}, Write: []string{"app-engine:edge-connects:write"}, Delete: []string{"app-engine:edge-connects:delete"}},
-	"intent":      {Read: []string{"app-engine:apps:run"}}, // best-effort: intents are launched via App Engine
-	"sdk-version": {Read: []string{"app-engine:apps:run"}}, // best-effort: runtime SDK metadata
+	// intents are listed/launched via the App Engine app registry
+	// (/platform/app-engine/registry/v1/apps).
+	"intent": {Read: []string{"app-engine:apps:run"}},
+	// runtime SDK metadata from the function executor
+	// (/platform/app-engine/function-executor/v1/sdk-versions).
+	"sdk-version": {Read: []string{"app-engine:apps:run"}},
 
 	// Davis AI
-	"analyzer":      {Read: []string{"davis:analyzers:read"}, Run: []string{"davis:analyzers:execute"}},
-	"copilot":       {Run: []string{"davis-copilot:conversations:execute"}},
-	"copilot-skill": {Read: []string{"davis-copilot:conversations:execute"}}, // best-effort: lists CoPilot skills
+	"analyzer": {Read: []string{"davis:analyzers:read"}, Run: []string{"davis:analyzers:execute"}},
+	"copilot":  {Run: []string{"davis-copilot:conversations:execute"}},
+	// lists Davis CoPilot skills (/platform/davis/copilot/v1/skills)
+	"copilot-skill": {Read: []string{"davis-copilot:conversations:execute"}},
 
-	// Notifications
+	// Notifications (/platform/notification/v2/...)
 	"notification": {Read: []string{"notification:notifications:read"}, Write: []string{"notification:notifications:write"}},
 
 	// IAM (read-only surfaces in dtctl)
@@ -116,16 +121,25 @@ var ResourceScopes = map[string]AccessScopes{
 	// Live Debugger (single scope covers create/update/delete)
 	"breakpoint": {Read: []string{"dev-obs:breakpoints:set"}, Write: []string{"dev-obs:breakpoints:set"}, Delete: []string{"dev-obs:breakpoints:set"}},
 
-	// Hub catalog (read-only)
+	// Hub catalog (/platform/hub/v1/catalog/...). dtctl's login requests
+	// hub:catalog:read for this surface (docs/TOKEN_SCOPES.md also lists
+	// extensions:definitions:read; the Hub catalog endpoint is distinct from the
+	// Extensions API).
 	"hub-extension":         {Read: []string{"hub:catalog:read"}},
 	"hub-extension-release": {Read: []string{"hub:catalog:read"}},
 
-	// Davis anomaly detectors and cloud monitoring configs are persisted as
-	// Settings objects. best-effort.
+	// Davis anomaly detectors are Settings objects
+	// (schema builtin:davis.anomaly-detectors via the Settings API).
 	"anomaly-detector": {Read: []string{"settings:objects:read"}, Write: []string{"settings:objects:write"}},
-	"aws":              {Read: []string{"settings:objects:read"}, Write: []string{"settings:objects:write"}},
-	"azure":            {Read: []string{"settings:objects:read"}, Write: []string{"settings:objects:write"}},
-	"gcp":              {Read: []string{"settings:objects:read"}, Write: []string{"settings:objects:write"}},
+
+	// Cloud monitoring (enable/create aws|azure|gcp) touches two APIs: the
+	// hyperscaler-authentication *connection* (Settings API,
+	// builtin:hyperscaler-authentication.connections.*) and the *monitoring
+	// configuration* (Extensions monitoring-configurations API). Both scope
+	// families are required.
+	"aws":   {Read: []string{"settings:objects:read", "extensions:configurations:read"}, Write: []string{"settings:objects:write", "extensions:configurations:write"}},
+	"azure": {Read: []string{"settings:objects:read", "extensions:configurations:read"}, Write: []string{"settings:objects:write", "extensions:configurations:write"}},
+	"gcp":   {Read: []string{"settings:objects:read", "extensions:configurations:read"}, Write: []string{"settings:objects:write", "extensions:configurations:write"}},
 }
 
 // localResources are catalog subcommands that operate entirely on the local

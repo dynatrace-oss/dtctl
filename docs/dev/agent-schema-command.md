@@ -267,6 +267,19 @@ dtctl commands delete --required-scopes -o json
 dtctl commands --required-scopes            # full union
 ```
 
+### Preflight (`--check-scopes`)
+
+`--check-scopes` is a global flag on any command. It resolves the command's required scopes (from the same catalog data), compares them against the scopes granted in the active OAuth token, prints a verdict, and exits **without running the command**:
+
+```bash
+dtctl delete workflow my-wf --check-scopes          # human verdict, exit 5 if missing
+dtctl delete workflow my-wf --check-scopes -o json  # { "status": "insufficient_scope", "required_scopes": [...], "granted_scopes": [...], "missing_scopes": [...] }
+```
+
+- `status` is `ok`, `insufficient_scope`, or `unknown`. Opaque API/platform tokens (scopes not introspectable) report `unknown`.
+- Exit code is `5` (`ExitPermissionError`) when scopes are missing, `0` otherwise.
+- In **agent mode**, mutating commands are auto-preflighted: a missing scope is returned as an `insufficient_scope` error envelope (`{ "ok": false, "error": { "code": "insufficient_scope", "required_scopes": [...], "granted_scopes": [...], "missing_scopes": [...] } }`) before any API call, instead of a raw 403. The preflight makes no network call and degrades to "proceed" on any error.
+
 When a positional arg matches both a verb and a resource, verb takes priority (consistent with dtctl's command resolution).
 
 ### `dtctl commands howto`
