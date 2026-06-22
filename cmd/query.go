@@ -352,6 +352,12 @@ Examples:
 
 		clientContext, _ := cmd.Flags().GetString("client-context")
 
+		spillOpts, err := resolveSpillOptions(cmd, cfg)
+		if err != nil {
+			return err
+		}
+		spillTenantID, spillContextName := spillProvenance(cfg)
+
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
 			JQFilter:                     jqFilter,
@@ -376,6 +382,9 @@ Examples:
 			MetadataFields:               metadataFields,
 			Segments:                     segments,
 			ClientContext:                clientContext,
+			Spill:                        spillOpts,
+			TenantID:                     spillTenantID,
+			ContextName:                  spillContextName,
 		}
 
 		// Handle live mode
@@ -386,6 +395,9 @@ Examples:
 			}
 			if agentMode {
 				output.PrintWarning("--agent is ignored in live mode (live mode requires an interactive terminal)")
+			}
+			if spillOpts.Enabled() {
+				output.PrintWarning("--spill is ignored in live mode (live mode streams rows to the terminal)")
 			}
 			if includeContributions {
 				output.PrintWarning("--include-contributions is ignored in live mode (contribution data is not displayed during live updates)")
@@ -764,6 +776,28 @@ takes precedence over --segments-file variables`)
 	// Client context flag
 	queryCmd.Flags().String("client-context", "", `optional caller context included in the dt-client-context request header
 useful for AI agents or scripts to declare their intent (e.g. "root-cause-analysis", "anomaly-investigation")`)
+
+	// Result spill flags. A large result is written to a local file and a compact
+	// summary (column stats + sample rows + a file handle) is returned in its
+	// place, so the rows never flood an agent's context.
+	queryCmd.Flags().String("spill", "", `spill a large result to a local file and return a summary instead of the rows
+bare --spill = always; --spill=auto spills above --spill-threshold; --spill=never forces rows
+default: never for a bare command, auto in agent mode`)
+	queryCmd.Flags().Lookup("spill").NoOptDefVal = "always"
+	queryCmd.Flags().String("spill-to", "", "explicit spill destination file (implies --spill=always; format inferred from extension)")
+	queryCmd.Flags().String("spill-format", "", "spill file format when spilling to the default dir: json|csv")
+	queryCmd.Flags().String("spill-threshold", "", "serialised output size above which a result spills, e.g. 50KB (default 50KB)")
+
+	_ = queryCmd.RegisterFlagCompletionFunc("spill", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"auto\tspill above the threshold, inline below",
+			"always\talways spill",
+			"never\tnever spill (rows inline)",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = queryCmd.RegisterFlagCompletionFunc("spill-format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"json", "csv"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // metadataFieldCompletion provides shell completion for --metadata flag values.

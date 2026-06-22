@@ -12,10 +12,16 @@ import (
 // Success responses have OK=true with Result populated.
 // Error responses have OK=false with Error populated.
 type Response struct {
-	OK      bool             `json:"ok"`
-	Result  interface{}      `json:"result"`
-	Error   *ErrorDetail     `json:"error,omitempty"`
-	Context *ResponseContext `json:"context,omitempty"`
+	OK bool `json:"ok"`
+	// EnvelopeVersion is the contract version (D31). It is set on envelopes that
+	// participate in the versioned spill contract (result.kind ∈ result-file /
+	// summary-only) so a consumer can detect "this dtctl is newer than I was
+	// written for". Omitted (0) on legacy envelopes to keep existing output
+	// byte-for-byte unchanged.
+	EnvelopeVersion int              `json:"envelope_version,omitempty"`
+	Result          interface{}      `json:"result"`
+	Error           *ErrorDetail     `json:"error,omitempty"`
+	Context         *ResponseContext `json:"context,omitempty"`
 }
 
 // ResponseContext provides operational metadata alongside the result.
@@ -28,6 +34,14 @@ type ResponseContext struct {
 	Warnings    []string          `json:"warnings,omitempty"`
 	Duration    string            `json:"duration,omitempty"`
 	Links       map[string]string `json:"links,omitempty"`
+
+	// Spill decision provenance (D2/D24). Populated only on the spill path so
+	// both agents and humans can see *why* they got the shape they got.
+	// Decided is one of "inline", "spilled", "summary-only".
+	Decided          string `json:"decided,omitempty"`
+	ThresholdBytes   int64  `json:"threshold_bytes,omitempty"`
+	MeasuredBytes    int64  `json:"measured_bytes,omitempty"`
+	MeasuredEncoding string `json:"measured_encoding,omitempty"`
 }
 
 // ErrorDetail is a structured error for machine consumption.

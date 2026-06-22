@@ -137,6 +137,17 @@ type DQLExecuteOptions struct {
 	// ClientContext is an optional caller-supplied semantic string included as the "context"
 	// field in the dt-client-context request header (e.g. "root-cause-analysis").
 	ClientContext string
+
+	// Spill holds the fully-resolved result-spill settings. When Spill.Enabled()
+	// is false (mode never) the spill path is bypassed entirely and output is
+	// unchanged from today's behaviour.
+	Spill SpillOptions
+
+	// TenantID and ContextName are provenance recorded in the spill manifest and
+	// used to partition the spill directory by context (D9). They are not part of
+	// query execution and are only consulted on the spill path.
+	TenantID    string
+	ContextName string
 }
 
 // DQLVerifyOptions configures DQL query verification
@@ -220,7 +231,7 @@ func (e *DQLExecutor) ExecuteWithContext(ctx context.Context, query string, opts
 	if result == nil {
 		return nil // context was cancelled; message already printed to stderr
 	}
-	return e.printResults(result, opts)
+	return e.printResults(query, result, opts)
 }
 
 // ExecuteQuery executes a DQL query and returns the raw result
@@ -371,7 +382,7 @@ func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 }
 
 // printResults prints the query results with the given options
-func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOptions) error {
+func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts DQLExecuteOptions) error {
 	effectiveFormat := opts.OutputFormat
 	if opts.JQFilter != "" {
 		effectiveFormat = output.NormalizeJQOutputFormat(effectiveFormat)
@@ -393,6 +404,20 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		switch effectiveFormat {
 		case "", "table", "wide", "csv":
 			records = output.SummarizeSnapshotForTable(records)
+		}
+	}
+
+	// Spill path (D2/D3/D19-buffered): when spilling is enabled, a large result
+	// is written to disk and a compact summary is emitted in place of the rows.
+	// This is strictly additive — when it decides "inline" (or spilling is
+	// disabled) it falls through to the unchanged output path below. Note: a
+	// small/empty result under `auto` decides inline via the threshold, while
+	// `always`/`--spill-to` honours the "write the file" contract even for an
+	// empty result.
+	if opts.Spill.Enabled() {
+		handled, err := e.trySpill(query, result, records, effectiveFormat, opts)
+		if handled || err != nil {
+			return err
 		}
 	}
 
