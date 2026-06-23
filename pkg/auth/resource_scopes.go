@@ -132,6 +132,11 @@ var ResourceScopes = map[string]AccessScopes{
 	// (schema builtin:davis.anomaly-detectors via the Settings API).
 	"anomaly-detector": {Read: []string{"settings:objects:read"}, Write: []string{"settings:objects:write"}},
 
+	// OpenPipeline. The classic-pipelines translation endpoint
+	// (/platform/openpipeline/v1/classic-pipelines/translate) is a read-only
+	// call that returns the translated pipeline document.
+	"classic-pipelines-translation": {Read: []string{"openpipeline:configurations:read"}},
+
 	// Cloud monitoring (enable/create aws|azure|gcp) touches two APIs: the
 	// hyperscaler-authentication *connection* (Settings API,
 	// builtin:hyperscaler-authentication.connections.*) and the *monitoring
@@ -153,7 +158,7 @@ var localResources = map[string]bool{
 	"set-credentials": true, "migrate-tokens": true, "init": true,
 	"view": true, "current": true, "set": true,
 	// ctx aliases
-	"describe": true, "delete": true,
+	"describe": true, "delete": true, "token": true,
 	// auth (local token storage / introspection)
 	"login": true, "logout": true, "refresh": true, "status": true, "whoami": true,
 	// alias management
@@ -280,6 +285,7 @@ func (s *scopeSet) addReadTier(extended bool) {
 	s.addResource("edgeconnect", AccessRead)
 	s.addResource("notification", AccessRead)
 	s.add("hub:catalog:read")
+	s.addResource("classic-pipelines-translation", AccessRead)
 }
 
 // addMineWrites adds the write/run scopes granted from readwrite-mine upward:
@@ -340,6 +346,7 @@ func (s *scopeSet) addUnrestricted() {
 	s.addResource("edgeconnect", AccessRead)
 	s.addResource("notification", AccessRead)
 	s.add("hub:catalog:read")
+	s.addResource("classic-pipelines-translation", AccessRead)
 	// writes / destructive
 	s.addResource("dashboard", AccessWrite, AccessDelete)
 	s.add("document:environment-shares:write")

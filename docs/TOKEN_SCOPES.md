@@ -64,6 +64,7 @@ notification:notifications:read,
 davis:analyzers:read,
 app-engine:apps:run,
 app-engine:edge-connects:read,
+openpipeline:configurations:read,
 ```
 
 ### `readwrite-mine`
@@ -118,6 +119,7 @@ davis-copilot:conversations:execute,
 app-engine:apps:run,
 app-engine:functions:run,
 app-engine:edge-connects:read,
+openpipeline:configurations:read,
 email:emails:send
 ```
 
@@ -193,6 +195,7 @@ app-engine:apps:run,
 app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
+openpipeline:configurations:read,
 app-engine:edge-connects:write,
 email:emails:send
 ```
@@ -282,6 +285,7 @@ app-engine:apps:run,
 app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
+openpipeline:configurations:read,
 app-engine:edge-connects:write,
 app-engine:edge-connects:delete,
 email:emails:send
@@ -399,6 +403,12 @@ email:emails:send
 | Scope                         | Description                                            |
 | ----------------------------- | ------------------------------------------------------ |
 | `extensions:definitions:read` | Browse Hub catalog extensions and releases (read-only) |
+
+### OpenPipeline
+
+| Scope                              | Description                                              |
+| ---------------------------------- | ------------------------------------------------------- |
+| `openpipeline:configurations:read` | Translate a Classic pipeline into an OpenPipeline config |
 
 ### Davis AI
 

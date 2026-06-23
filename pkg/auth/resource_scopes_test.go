@@ -12,7 +12,7 @@ import (
 // preserving: login must request exactly the same scopes as before. Update this
 // table only with an intentional, reviewed change to login behavior.
 var baselineScopes = map[config.SafetyLevel][]string{
-	config.SafetyLevelReadOnly: { // 39 scopes
+	config.SafetyLevelReadOnly: { // 40 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
@@ -52,8 +52,9 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"app-engine:edge-connects:read",
 		"notification:notifications:read",
 		"hub:catalog:read",
+		"openpipeline:configurations:read",
 	},
-	config.SafetyLevelReadWriteMine: { // 52 scopes
+	config.SafetyLevelReadWriteMine: { // 53 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
@@ -87,6 +88,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"app-engine:edge-connects:read",
 		"notification:notifications:read",
 		"hub:catalog:read",
+		"openpipeline:configurations:read",
 		"document:documents:write",
 		"document:documents:delete",
 		"document:direct-shares:write",
@@ -107,7 +109,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"email:emails:send",
 		"dev-obs:breakpoints:set",
 	},
-	config.SafetyLevelReadWriteAll: { // 71 scopes
+	config.SafetyLevelReadWriteAll: { // 72 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
@@ -147,6 +149,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"app-engine:edge-connects:read",
 		"notification:notifications:read",
 		"hub:catalog:read",
+		"openpipeline:configurations:read",
 		"document:documents:write",
 		"document:documents:delete",
 		"document:direct-shares:write",
@@ -180,7 +183,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"app-engine:edge-connects:write",
 		"notification:notifications:write",
 	},
-	config.SafetyLevelDangerouslyUnrestricted: { // 79 scopes
+	config.SafetyLevelDangerouslyUnrestricted: { // 80 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
@@ -220,6 +223,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"app-engine:edge-connects:read",
 		"notification:notifications:read",
 		"hub:catalog:read",
+		"openpipeline:configurations:read",
 		"document:documents:write",
 		"document:documents:delete",
 		"document:environment-shares:write",
