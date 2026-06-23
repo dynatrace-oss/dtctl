@@ -336,6 +336,7 @@ func TestBuildSpillResponse_ManagedPartition(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", tmp) // Linux
 	t.Setenv("HOME", tmp)           // macOS uses $HOME/Library/Caches
+	t.Setenv("LocalAppData", tmp)   // Windows: os.UserCacheDir reads %LocalAppData%
 
 	e := &DQLExecutor{}
 	result, records := sampleResult(false)

@@ -75,6 +75,7 @@ func TestE2E_QuerySpillsLargeResultToFile(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", tmp) // Linux
 	t.Setenv("HOME", tmp)           // macOS uses $HOME/Library/Caches
+	t.Setenv("LocalAppData", tmp)   // Windows: os.UserCacheDir reads %LocalAppData%
 
 	e := mockGrail(t, manyRecords(50))
 
