@@ -2,6 +2,8 @@ package auth
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,4 +237,57 @@ func containsStr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestTokenManager_SaveToken_KeyringTooLarge simulates the macOS scenario where
+// even the minimal compact form (refresh token only) exceeds the Keychain limit.
+// saveToken should fall back to file storage and loadToken should find it there.
+func TestTokenManager_SaveToken_KeyringTooLarge(t *testing.T) {
+	dir := t.TempDir()
+	fileStore := config.NewOAuthFileStoreWithDir(dir)
+
+	oauthConfig := OAuthConfigForEnvironment(EnvironmentProd, config.DefaultSafetyLevel)
+	tm, err := NewTokenManager(oauthConfig)
+	if err != nil {
+		t.Fatalf("NewTokenManager() error: %v", err)
+	}
+
+	tm.deps.keyringAvailable = func() bool { return true }
+	tm.deps.getToken = func(_ *config.TokenStore, name string) (string, error) {
+		return "", fmt.Errorf("token %q not found in keyring", name)
+	}
+	// All keyring Set calls fail — simulates macOS "data passed to Set was too big".
+	tm.deps.setToken = func(_ *config.TokenStore, name, val string) error {
+		return fmt.Errorf("failed to store token in keyring: data passed to Set was too big")
+	}
+	tm.deps.deleteToken = func(_ *config.TokenStore, name string) error { return nil }
+	// fileStoreAvailable is false because keyring IS available (current system behaviour).
+	tm.deps.fileStoreAvailable = func() bool { return false }
+	tm.deps.fileGetToken = func(name string) (string, error) { return fileStore.GetToken(name) }
+	tm.deps.fileSetToken = func(name, token string) error { return fileStore.SetToken(name, token) }
+	tm.deps.fileDeleteToken = func(name string) error { return fileStore.DeleteToken(name) }
+
+	tokens := &TokenSet{
+		AccessToken:  "access-token",
+		RefreshToken: strings.Repeat("x", 3000), // large enough to exceed macOS Keychain
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		ExpiresAt:    time.Now().Add(1 * time.Hour),
+	}
+
+	if err := tm.SaveToken("large-token", tokens); err != nil {
+		t.Fatalf("SaveToken() should fall back to file storage, got error: %v", err)
+	}
+
+	// loadToken must find the token in file storage (keyring has nothing).
+	stored, err := tm.loadToken("large-token")
+	if err != nil {
+		t.Fatalf("loadToken() error: %v", err)
+	}
+	if stored.AccessToken != tokens.AccessToken {
+		t.Errorf("AccessToken = %q, want %q", stored.AccessToken, tokens.AccessToken)
+	}
+	if stored.RefreshToken != tokens.RefreshToken {
+		t.Errorf("RefreshToken = %q, want %q", stored.RefreshToken, tokens.RefreshToken)
+	}
 }

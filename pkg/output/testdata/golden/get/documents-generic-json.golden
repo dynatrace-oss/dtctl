@@ -5,7 +5,13 @@
     "type": "launchpad",
     "owner": "user-a@example.invalid",
     "isPrivate": false,
-    "version": 1
+    "version": 1,
+    "modificationInfo": {
+      "createdBy": "",
+      "createdTime": "2025-03-15T10:30:00Z",
+      "lastModifiedBy": "",
+      "lastModifiedTime": "2025-03-15T11:30:00Z"
+    }
   },
   {
     "id": "bbbbbbbb-2222-3333-4444-555555555555",
@@ -14,7 +20,13 @@
     "owner": "user-b@example.invalid",
     "isPrivate": true,
     "description": "Configuration for my custom app",
-    "version": 2
+    "version": 2,
+    "modificationInfo": {
+      "createdBy": "",
+      "createdTime": "2025-03-13T10:30:00Z",
+      "lastModifiedBy": "",
+      "lastModifiedTime": "2025-03-14T10:30:00Z"
+    }
   },
   {
     "id": "cccccccc-3333-4444-5555-666666666666",
@@ -22,6 +34,12 @@
     "type": "dashboard",
     "owner": "user-c@example.invalid",
     "isPrivate": false,
-    "version": 5
+    "version": 5,
+    "modificationInfo": {
+      "createdBy": "",
+      "createdTime": "2025-03-12T10:30:00Z",
+      "lastModifiedBy": "",
+      "lastModifiedTime": "2025-03-15T08:30:00Z"
+    }
   }
 ]

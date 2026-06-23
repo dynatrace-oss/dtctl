@@ -2,6 +2,7 @@ package format
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -409,3 +410,64 @@ func TestGetExtension(t *testing.T) {
 		})
 	}
 }
+
+func TestYAMLNodeFromJSON(t *testing.T) {
+	type inner struct {
+		Threshold int `json:"threshold"`
+	}
+	type sample struct {
+		Name    string          `json:"name"`
+		Skip    string          `json:"-"`               // display-only: must be excluded
+		Empty   string          `json:"empty,omitempty"` // must be omitted when empty
+		Display string          `json:"displayName"`     // camelCase must survive
+		Raw     json.RawMessage `json:"raw,omitempty"`   // []byte must become structured, not a byte list
+		Nested  inner           `json:"nested"`
+	}
+
+	v := sample{
+		Name:    "dt.x",
+		Skip:    "should-not-appear",
+		Display: "Pretty Name",
+		Raw:     json.RawMessage(`{"a":[1,2,3]}`),
+		Nested:  inner{Threshold: 5},
+	}
+
+	node, err := YAMLNodeFromJSON(v)
+	if err != nil {
+		t.Fatalf("YAMLNodeFromJSON() error = %v", err)
+	}
+
+	yamlBytes, err := yaml.Marshal(node)
+	if err != nil {
+		t.Fatalf("yaml.Marshal() error = %v", err)
+	}
+	got := string(yamlBytes)
+
+	if strings.Contains(got, "should-not-appear") || strings.Contains(got, "Skip") {
+		t.Errorf("json:\"-\" field leaked into YAML:\n%s", got)
+	}
+	if strings.Contains(got, "empty") {
+		t.Errorf("omitempty not honored in YAML:\n%s", got)
+	}
+	if !strings.Contains(got, "displayName") {
+		t.Errorf("expected camelCase key displayName, got:\n%s", got)
+	}
+	// Raw must be structured, never a raw byte sequence.
+	if rawByteSeqRE.MatchString(got) {
+		t.Errorf("json.RawMessage rendered as a byte sequence:\n%s", got)
+	}
+
+	// Structural parity with JSON.
+	jsonBytes, _ := json.Marshal(v)
+	reYAML, _ := YAMLToJSON(yamlBytes)
+	var a, b any
+	_ = json.Unmarshal(jsonBytes, &a)
+	_ = json.Unmarshal(reYAML, &b)
+	na, _ := json.Marshal(a)
+	nb, _ := json.Marshal(b)
+	if string(na) != string(nb) {
+		t.Errorf("YAML structure != JSON structure:\n JSON: %s\n YAML: %s", na, nb)
+	}
+}
+
+var rawByteSeqRE = regexp.MustCompile(`(?m)(?:^[ \t]*-[ \t]+\d+[ \t]*\n){8,}`)

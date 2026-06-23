@@ -1,0 +1,24 @@
+{
+  "name": "dt.statistics.GenericForecastAnalyzer",
+  "displayName": "Generic Forecast Analyzer",
+  "description": "Forecasts a numeric time series",
+  "type": "DAVIS",
+  "baseAnalyzer": "dt.statistics.BaseForecastAnalyzer",
+  "input": {
+    "fields": [
+      {
+        "name": "timeSeriesData",
+        "type": "timeseries",
+        "required": true
+      }
+    ]
+  },
+  "output": {
+    "fields": [
+      {
+        "name": "forecastValues",
+        "type": "timeseries"
+      }
+    ]
+  }
+}

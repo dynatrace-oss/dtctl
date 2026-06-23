@@ -1,0 +1,14 @@
+baseAnalyzer: dt.statistics.BaseForecastAnalyzer
+description: Forecasts a numeric time series
+displayName: Generic Forecast Analyzer
+input:
+  fields:
+    - name: timeSeriesData
+      required: true
+      type: timeseries
+name: dt.statistics.GenericForecastAnalyzer
+output:
+  fields:
+    - name: forecastValues
+      type: timeseries
+type: DAVIS

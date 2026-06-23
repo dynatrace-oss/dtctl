@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	sdkana "github.com/dynatrace-oss/dtctl/sdk/api/analyzer"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -31,6 +32,14 @@ type Analyzer struct {
 	BaseAnalyzer string            `json:"baseAnalyzer,omitempty" table:"-"`
 }
 
+// MarshalYAML renders the analyzer through its JSON shape so YAML output matches
+// JSON: the display-only CategoryName (json:"-") is excluded, keys keep their
+// camelCase, and omitempty is honored. Without it, yaml.v3 reflection would
+// lowercase keys and leak categoryname.
+func (a Analyzer) MarshalYAML() (any, error) {
+	return format.YAMLNodeFromJSON(a)
+}
+
 // AnalyzerList represents a list of analyzers.
 type AnalyzerList struct {
 	Analyzers  []Analyzer `json:"analyzers"`
@@ -52,6 +61,15 @@ type AnalyzerDefinition struct {
 	AnalyzerCall json.RawMessage   `json:"analyzerCall,omitempty" table:"-"`
 }
 
+// MarshalYAML renders the definition through its JSON shape so YAML output
+// matches JSON. This is essential here: Input/Output/AnalyzerCall are
+// json.RawMessage ([]byte), which yaml.v3 reflection would emit as a list of
+// raw byte values instead of the structured schema; it also drops the
+// display-only CategoryName and preserves camelCase keys.
+func (d AnalyzerDefinition) MarshalYAML() (any, error) {
+	return format.YAMLNodeFromJSON(d)
+}
+
 // ExecuteResult represents an analyzer execution result with CLI display fields.
 type ExecuteResult struct {
 	RequestToken string          `json:"requestToken,omitempty" table:"REQUEST TOKEN,wide"`
@@ -61,6 +79,13 @@ type ExecuteResult struct {
 	ResultID        string `json:"-" table:"RESULT ID"`
 	ResultStatus    string `json:"-" table:"STATUS"`
 	ExecutionStatus string `json:"-" table:"EXECUTION"`
+}
+
+// MarshalYAML renders the result through its JSON shape so YAML output matches
+// JSON: the flattened display-only fields (ResultID/ResultStatus/ExecutionStatus,
+// all json:"-") are excluded and keys keep their camelCase.
+func (r ExecuteResult) MarshalYAML() (any, error) {
+	return format.YAMLNodeFromJSON(r)
 }
 
 // populateTableFields copies Result fields to top-level for table display.

@@ -16,6 +16,7 @@
       }
     }
   },
+  "triggerType": "Schedule",
   "result": "{{ result('deploy') }}",
   "type": "STANDARD",
   "input": {

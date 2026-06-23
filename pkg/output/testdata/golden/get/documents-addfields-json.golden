@@ -18,6 +18,12 @@
     },
     "userContext": {
       "lastAccessedTime": "2025-03-15T11:30:00Z"
+    },
+    "modificationInfo": {
+      "createdBy": "",
+      "createdTime": "2025-03-15T10:30:00Z",
+      "lastModifiedBy": "",
+      "lastModifiedTime": "2025-03-15T12:30:00Z"
     }
   },
   {
@@ -26,6 +32,12 @@
     "type": "notebook",
     "owner": "8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
     "isPrivate": true,
-    "version": 1
+    "version": 1,
+    "modificationInfo": {
+      "createdBy": "",
+      "createdTime": "2025-03-14T10:30:00Z",
+      "lastModifiedBy": "",
+      "lastModifiedTime": "2025-03-14T22:30:00Z"
+    }
   }
 ]

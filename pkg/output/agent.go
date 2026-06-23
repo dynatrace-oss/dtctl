@@ -74,6 +74,7 @@ type AgentPrinter struct {
 	writer       io.Writer
 	ctx          *ResponseContext
 	resultFormat string // "json" (default) or "toon"
+	jqFilter     string
 }
 
 // NewAgentPrinter creates an AgentPrinter that writes envelope-wrapped JSON to writer.
@@ -103,7 +104,12 @@ func (p *AgentPrinter) SetResultFormat(format string) {
 
 // Print writes a single result wrapped in the agent envelope.
 func (p *AgentPrinter) Print(data interface{}) error {
-	result, err := p.encodeResult(data)
+	transformed, err := ApplyJQ(p.jqFilter, data)
+	if err != nil {
+		return err
+	}
+
+	result, err := p.encodeResult(transformed)
 	if err != nil {
 		return err
 	}
@@ -155,6 +161,11 @@ func (p *AgentPrinter) addWarning(msg string) {
 // If Total has been set via SetTotal, it is included in the context.
 func (p *AgentPrinter) PrintList(data interface{}) error {
 	return p.Print(data)
+}
+
+// SetJQFilter applies a jq transform to the result before envelope encoding.
+func (p *AgentPrinter) SetJQFilter(filter string) {
+	p.jqFilter = filter
 }
 
 // SetTotal sets the total item count in the response context.

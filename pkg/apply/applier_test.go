@@ -12,6 +12,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
@@ -733,12 +734,12 @@ func TestDetectResourceTypeEdgeCases(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name: "tasks without trigger is not workflow",
+			name: "tasks without trigger is a manual workflow",
 			input: `{
 				"tasks": [{"name": "test"}]
 			}`,
-			expected: ResourceUnknown,
-			wantErr:  true,
+			expected: ResourceWorkflow,
+			wantErr:  false,
 		},
 	}
 
@@ -1010,6 +1011,82 @@ func TestAnomalyDetectorRoundTrip(t *testing.T) {
 		}
 		if rt != ResourceAnomalyDetector {
 			t.Errorf("ResourceType = %v, want %v", rt, ResourceAnomalyDetector)
+		}
+	})
+}
+
+// TestWorkflowManualTriggerRoundTrip guards the workflow get→apply lifecycle for
+// workflows that have no event or schedule trigger (manual trigger). Such a
+// workflow serializes with no "trigger" field (Trigger is nil, omitempty), so
+// detection must rely on the "tasks" field alone. Before the fix, detection
+// required both "tasks" and "trigger", so `dtctl get workflow -o yaml|json`
+// output for a manual workflow could not be re-applied: it was reported as an
+// undetectable resource type. The bug affects both JSON and YAML output.
+func TestWorkflowManualTriggerRoundTrip(t *testing.T) {
+	// Mirror what `Get` produces for a manual-trigger workflow: no Trigger,
+	// TriggerType derived as "Manual".
+	wf := workflow.Workflow{
+		ID:          "abc12345-6789-0abc-def0-123456789abc",
+		Title:       "Manual Workflow",
+		IsDeployed:  true,
+		TriggerType: "Manual",
+		Tasks: map[string]interface{}{
+			"task1": map[string]interface{}{
+				"name":   "task1",
+				"action": "dynatrace.automations:run-javascript",
+			},
+		},
+	}
+
+	t.Run("JSON output is detected as workflow", func(t *testing.T) {
+		data, err := json.Marshal(wf)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+
+		// Sanity: the wire shape must NOT contain a trigger field.
+		var probe map[string]any
+		if err := json.Unmarshal(data, &probe); err != nil {
+			t.Fatalf("unmarshal probe: %v", err)
+		}
+		if _, hasTrigger := probe["trigger"]; hasTrigger {
+			t.Fatal("fixture invalid: manual workflow output should not contain a 'trigger' field")
+		}
+
+		rt, isArray, err := detectResourceType(data)
+		if err != nil {
+			t.Fatalf("detectResourceType: %v\noutput was:\n%s", err, data)
+		}
+		if isArray {
+			t.Error("expected single object, got array")
+		}
+		if rt != ResourceWorkflow {
+			t.Errorf("ResourceType = %v, want %v", rt, ResourceWorkflow)
+		}
+	})
+
+	t.Run("YAML output is detected as workflow", func(t *testing.T) {
+		yamlData, err := yaml.Marshal(wf)
+		if err != nil {
+			t.Fatalf("yaml.Marshal: %v", err)
+		}
+
+		// Apply accepts YAML by converting to JSON first; emulate that path.
+		var doc map[string]any
+		if err := yaml.Unmarshal(yamlData, &doc); err != nil {
+			t.Fatalf("yaml.Unmarshal: %v\noutput was:\n%s", err, yamlData)
+		}
+		jsonData, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatalf("json.Marshal: %v", err)
+		}
+
+		rt, _, err := detectResourceType(jsonData)
+		if err != nil {
+			t.Fatalf("detectResourceType after YAML round-trip: %v\nyaml was:\n%s", err, yamlData)
+		}
+		if rt != ResourceWorkflow {
+			t.Errorf("ResourceType = %v, want %v", rt, ResourceWorkflow)
 		}
 	})
 }

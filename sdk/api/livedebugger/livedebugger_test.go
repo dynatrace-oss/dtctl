@@ -201,3 +201,95 @@ func TestExecuteGraphQL(t *testing.T) {
 		}
 	})
 }
+
+func TestWorkspaceHasFilters(t *testing.T) {
+	workspaceResp := func(filterSets interface{}) map[string]interface{} {
+		ws := map[string]interface{}{"id": "ws-1"}
+		if filterSets != nil {
+			ws["filterSets"] = filterSets
+		}
+		return map[string]interface{}{
+			"data": map[string]interface{}{
+				"org": map[string]interface{}{
+					"getOrCreateUserWorkspaceV2": ws,
+				},
+			},
+		}
+	}
+
+	t.Run("no filterSets field", func(t *testing.T) {
+		got, err := WorkspaceHasFilters(workspaceResp(nil))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got {
+			t.Fatal("expected false when filterSets is absent")
+		}
+	})
+
+	t.Run("empty filterSets slice", func(t *testing.T) {
+		got, err := WorkspaceHasFilters(workspaceResp([]interface{}{}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got {
+			t.Fatal("expected false when filterSets is empty")
+		}
+	})
+
+	t.Run("filterSet with empty labels and filters", func(t *testing.T) {
+		got, err := WorkspaceHasFilters(workspaceResp([]interface{}{
+			map[string]interface{}{
+				"labels":  []interface{}{},
+				"filters": []interface{}{},
+			},
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got {
+			t.Fatal("expected false when all labels/filters are empty")
+		}
+	})
+
+	t.Run("filterSet with label values", func(t *testing.T) {
+		got, err := WorkspaceHasFilters(workspaceResp([]interface{}{
+			map[string]interface{}{
+				"labels": []interface{}{
+					map[string]interface{}{"field": "k8s.container.name", "values": []interface{}{"my-service"}},
+				},
+				"filters": []interface{}{},
+			},
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got {
+			t.Fatal("expected true when labels have values")
+		}
+	})
+
+	t.Run("filterSet with filter values", func(t *testing.T) {
+		got, err := WorkspaceHasFilters(workspaceResp([]interface{}{
+			map[string]interface{}{
+				"labels": []interface{}{},
+				"filters": []interface{}{
+					map[string]interface{}{"field": "dt.entity.host", "values": []interface{}{"HOST-123"}},
+				},
+			},
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got {
+			t.Fatal("expected true when filters have values")
+		}
+	})
+
+	t.Run("invalid response", func(t *testing.T) {
+		_, err := WorkspaceHasFilters(map[string]interface{}{"bad": "response"})
+		if err != nil {
+			t.Fatalf("unexpected error on empty response (missing workspace id is not checked here): %v", err)
+		}
+	})
+}

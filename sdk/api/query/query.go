@@ -91,7 +91,24 @@ type Response struct {
 // Result represents the result section of a DQL response.
 type Result struct {
 	Records  []map[string]interface{} `json:"records"`
+	Types    []ColumnTypes            `json:"types,omitempty"`
 	Metadata *Metadata                `json:"metadata,omitempty"`
+}
+
+// ColumnTypes describes the column types for a contiguous range of records,
+// as returned by the DQL API when includeTypes is requested. The API groups
+// records that share the same column type mappings under a single entry.
+type ColumnTypes struct {
+	// IndexRange is the [start, end] record index range (inclusive) that these
+	// mappings apply to.
+	IndexRange []int `json:"indexRange"`
+	// Mappings maps a column name to its DQL type descriptor.
+	Mappings map[string]ColumnType `json:"mappings"`
+}
+
+// ColumnType is the DQL type descriptor for a single column, e.g. {"type": "long"}.
+type ColumnType struct {
+	Type string `json:"type"`
 }
 
 // Metadata represents the metadata section of a DQL response.
@@ -411,6 +428,16 @@ func (r *Response) GetRecords() []map[string]interface{} {
 		return r.Result.Records
 	}
 	return r.Records
+}
+
+// GetTypes returns the per-column DQL type mappings from the result section,
+// as populated when the request set includeTypes. Returns nil when the API did
+// not include type information.
+func (r *Response) GetTypes() []ColumnTypes {
+	if r.Result != nil {
+		return r.Result.Types
+	}
+	return nil
 }
 
 // GetMetadata returns the Grail metadata from the response, checking both

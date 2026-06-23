@@ -100,6 +100,8 @@ const (
 type DQLExecuteOptions struct {
 	// Output formatting options
 	OutputFormat string
+	JQFilter     string     // jq filter expression applied before rendering
+	AgentMode    bool       // Enable agent mode (e.g. for Dynatrace API)
 	Decode       DecodeMode // Snapshot payload decoding mode
 	Width        int        // Chart width (0 = default)
 	Height       int        // Chart height (0 = default)
@@ -370,6 +372,11 @@ func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 
 // printResults prints the query results with the given options
 func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOptions) error {
+	effectiveFormat := opts.OutputFormat
+	if opts.JQFilter != "" {
+		effectiveFormat = output.NormalizeJQOutputFormat(effectiveFormat)
+	}
+
 	// Print any notifications/warnings first
 	if notifications := result.GetNotifications(); len(notifications) > 0 {
 		e.PrintNotifications(notifications)
@@ -383,7 +390,7 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		simplify := opts.Decode == DecodeSimplified
 		records = output.DecodeSnapshotRecords(records, simplify)
 
-		switch opts.OutputFormat {
+		switch effectiveFormat {
 		case "", "table", "wide", "csv":
 			records = output.SummarizeSnapshotForTable(records)
 		}
@@ -396,17 +403,20 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 	}
 
 	printer := output.NewPrinterWithOpts(output.PrinterOptions{
-		Format:     opts.OutputFormat,
+		Format:     effectiveFormat,
+		JQFilter:   opts.JQFilter,
+		AgentMode:  opts.AgentMode,
 		Width:      opts.Width,
 		Height:     opts.Height,
 		Fullscreen: opts.Fullscreen,
+		Types:      columnTypeMappings(result),
 	})
 
-	switch opts.OutputFormat {
+	switch effectiveFormat {
 	case "table", "wide":
 		var err error
-		if opts.OutputFormat == "table" {
-			err = e.printTable(records)
+		if effectiveFormat == "table" {
+			err = printer.PrintList(records)
 		} else {
 			if len(records) == 0 {
 				return nil
@@ -428,6 +438,19 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		if meta != nil {
 			fmt.Fprint(os.Stderr, output.FormatMetadataCSVComments(meta, opts.MetadataFields))
 		}
+		return printer.PrintList(records)
+
+	case "jsonl":
+		// An empty JSONL file (zero lines) is valid output, so skip on no records.
+		if len(records) == 0 {
+			return nil
+		}
+		return printer.PrintList(records)
+
+	case "parquet":
+		// Always emit a Parquet file, even for an empty result: a zero-byte file
+		// is not valid Parquet. The printer writes a valid schema-bearing file
+		// with zero rows.
 		return printer.PrintList(records)
 
 	case "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
@@ -454,6 +477,29 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		}
 		return printer.Print(result)
 	}
+}
+
+// columnTypeMappings flattens the DQL per-column type info from the response
+// (populated when includeTypes is set) into the output-layer representation used
+// by the Parquet printer to build a schema. Returns nil when no type info is
+// present. When multiple type groups disagree on a column, the first wins.
+func columnTypeMappings(result *DQLQueryResponse) []output.ColumnTypeMapping {
+	groups := result.GetTypes()
+	if len(groups) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var out []output.ColumnTypeMapping
+	for _, g := range groups {
+		for name, ct := range g.Mappings {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			out = append(out, output.ColumnTypeMapping{Name: name, Type: ct.Type})
+		}
+	}
+	return out
 }
 
 // extractQueryMetadata converts DQL response metadata to the output-layer QueryMetadata type.
@@ -525,24 +571,4 @@ func (e *DQLExecutor) ExecuteFromFile(filename string, outputFormat string) erro
 	}
 
 	return e.Execute(string(data), outputFormat)
-}
-
-// printTable prints query results as a table
-func (e *DQLExecutor) printTable(records []map[string]interface{}) error {
-	if len(records) == 0 {
-		return nil
-	}
-
-	data, err := json.Marshal(records)
-	if err != nil {
-		return err
-	}
-
-	var results []map[string]interface{}
-	if err := json.Unmarshal(data, &results); err != nil {
-		return err
-	}
-
-	printer := output.NewPrinter("table")
-	return printer.PrintList(results)
 }

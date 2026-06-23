@@ -13,6 +13,31 @@ func stringPtr(v string) *string { return &v }
 
 func intPtr(v int) *int { return &v }
 
+// TestHandler_List_DefaultFieldProjection verifies the CLI handler applies the
+// listFields projection (a display concern owned by this layer, not the SDK).
+func TestHandler_List_DefaultFieldProjection(t *testing.T) {
+	var gotFields string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotFields = r.URL.Query().Get("fields")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(WorkflowList{Count: 0, Results: []Workflow{}})
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("client.NewForTesting() error = %v", err)
+	}
+	c.HTTP().SetRetryCount(0)
+
+	if _, err := NewHandler(c).List(WorkflowFilters{}, 0, 0); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if gotFields != listFields {
+		t.Errorf("fields query param = %q, want %q", gotFields, listFields)
+	}
+}
+
 func TestHandler_List(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -88,7 +113,7 @@ func TestHandler_List(t *testing.T) {
 			c.HTTP().SetRetryCount(0)
 
 			handler := NewHandler(c)
-			list, err := handler.List(tt.filters)
+			list, err := handler.List(tt.filters, 0, 0)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("List() error = %v, wantErr %v", err, tt.wantErr)

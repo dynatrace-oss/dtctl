@@ -20,6 +20,17 @@ type Config struct {
 	Tokens         []NamedToken      `yaml:"tokens"`
 	Preferences    Preferences       `yaml:"preferences"`
 	Aliases        map[string]string `yaml:"aliases,omitempty"`
+
+	// localPath is the path of the auto-discovered local .dtctl.yaml this
+	// config was loaded from, if any. Empty when loaded from the global config
+	// or from an explicit --config file. Unexported so it is never serialized.
+	localPath string
+	// ignoredExecKeys is true when code-execution keys (aliases and/or apply
+	// hooks) are present in an auto-discovered local config. Such keys are
+	// loaded into the struct (so they round-trip safely through save/edit) but
+	// are never honored at runtime — alias resolution and hook execution check
+	// IsLocal() and skip them. See markLocal, GetPreApplyHook, resolveAlias.
+	ignoredExecKeys bool
 }
 
 // NamedContext holds a context with its name
@@ -165,16 +176,76 @@ func findLocalConfigFrom(startDir string) string {
 //  2. Global config (XDG_CONFIG_HOME/dtctl/config)
 //
 // If a local config is found, it is used exclusively (not merged with global).
+//
+// Security: an auto-discovered local .dtctl.yaml is treated as untrusted (the
+// classic "untrusted working directory / checked-out repo / shared dir"
+// scenario). Code-execution keys — shell aliases and apply hooks — defined in
+// such a config are never honored: alias resolution and hook execution check
+// IsLocal() and skip them. These keys are honored only from the global config
+// or an explicit --config file (loaded via LoadFrom), which carry stronger
+// ownership expectations. The keys are still loaded into the struct (and never
+// mutated here) so that config-management commands round-trip the file without
+// silently destroying a user's own aliases or hooks.
 func Load() (*Config, error) {
 	// Check for local config first
 	localConfig := FindLocalConfig()
 	if localConfig != "" {
-		return LoadFrom(localConfig)
+		cfg, err := LoadFrom(localConfig)
+		if err != nil {
+			return nil, err
+		}
+		cfg.markLocal(localConfig)
+		return cfg, nil
 	}
 
 	// Fall back to global config
 	return LoadFrom(DefaultConfigPath())
 }
+
+// markLocal records that the config was loaded from an auto-discovered local
+// .dtctl.yaml and notes whether it carries any code-execution keys (top-level
+// aliases, global apply hooks, or per-context apply hooks). It does NOT mutate
+// those keys: the values are needed for safe round-tripping by edit/save
+// commands, and they are ignored at the point of use (resolveAlias,
+// GetPreApplyHook/GetPostApplyHook) rather than being stripped at load. The
+// recorded flag lets callers surface a one-line warning naming the local config
+// in effect.
+func (c *Config) markLocal(path string) {
+	c.localPath = path
+	c.ignoredExecKeys = c.hasExecKeys()
+}
+
+// hasExecKeys reports whether the config defines any code-execution key:
+// a top-level alias, a global (preferences) apply hook, or a per-context hook.
+func (c *Config) hasExecKeys() bool {
+	if len(c.Aliases) > 0 {
+		return true
+	}
+	if c.Preferences.Hooks.PreApply != "" || c.Preferences.Hooks.PostApply != "" {
+		return true
+	}
+	for i := range c.Contexts {
+		h := c.Contexts[i].Context.Hooks
+		if h.PreApply != "" || h.PostApply != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// IsLocal reports whether the config was loaded from an auto-discovered local
+// .dtctl.yaml (as opposed to the global config or an explicit --config file).
+// Code-execution keys (aliases, apply hooks) are ignored when this is true.
+func (c *Config) IsLocal() bool { return c.localPath != "" }
+
+// LocalConfigPath returns the path of the auto-discovered local .dtctl.yaml the
+// config was loaded from, or "" if it was not loaded from a local config.
+func (c *Config) LocalConfigPath() string { return c.localPath }
+
+// IgnoredExecKeys reports whether code-execution keys (aliases, apply hooks)
+// are present in the auto-discovered local config and are therefore ignored at
+// runtime. See markLocal.
+func (c *Config) IgnoredExecKeys() bool { return c.ignoredExecKeys }
 
 // LoadFrom loads the configuration from a specific path
 func LoadFrom(path string) (*Config, error) {
@@ -191,7 +262,16 @@ func LoadFromWithoutExpansion(path string) (*Config, error) {
 // using the same search order as Load (local config, then global config).
 func LoadWithoutExpansion() (*Config, error) {
 	if local := FindLocalConfig(); local != "" {
-		return LoadFromWithoutExpansion(local)
+		cfg, err := LoadFromWithoutExpansion(local)
+		if err != nil {
+			return nil, err
+		}
+		// Tag the local config so callers ignore its code-execution keys at the
+		// point of use, without mutating the loaded values (this path also
+		// backs config-management commands that load-modify-save the file). See
+		// Load.
+		cfg.markLocal(local)
+		return cfg, nil
 	}
 	return LoadFromWithoutExpansion(DefaultConfigPath())
 }
@@ -584,6 +664,10 @@ func (c *Context) GetEffectiveSafetyLevel() SafetyLevel {
 // Per-context hooks take precedence over global (preferences) hooks.
 // The special value "none" explicitly disables the global hook for a context.
 func (c *Config) GetPreApplyHook() string {
+	// Hooks from an auto-discovered local config are untrusted and never run.
+	if c.IsLocal() {
+		return ""
+	}
 	// Per-context hook wins
 	if ctx, err := c.CurrentContextObj(); err == nil {
 		if ctx.Hooks.PreApply != "" {
@@ -601,6 +685,10 @@ func (c *Config) GetPreApplyHook() string {
 // Per-context hooks take precedence over global (preferences) hooks.
 // The special value "none" explicitly disables the global hook for a context.
 func (c *Config) GetPostApplyHook() string {
+	// Hooks from an auto-discovered local config are untrusted and never run.
+	if c.IsLocal() {
+		return ""
+	}
 	if ctx, err := c.CurrentContextObj(); err == nil {
 		if ctx.Hooks.PostApply != "" {
 			if ctx.Hooks.PostApply == "none" {

@@ -39,9 +39,17 @@ func isStderrTerminal() bool {
 	return term.IsTerminal(int(os.Stderr.Fd()))
 }
 
+// formatRequiresIncludeTypes reports whether the output format needs DQL column
+// type metadata to render correctly, so the query layer can request it even when
+// the user did not pass --include-types. Parquet derives its columnar schema from
+// these types (a "long" must become an INT64 column, not a value-inferred DOUBLE).
+func formatRequiresIncludeTypes(format string) bool {
+	return strings.EqualFold(strings.TrimSpace(format), "parquet")
+}
+
 func isSupportedQueryOutputFormat(format string) bool {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "", "table", "wide", "json", "yaml", "yml", "csv", "toon", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+	case "", "table", "wide", "json", "yaml", "yml", "csv", "jsonl", "parquet", "toon", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
 		return true
 	default:
 		return false
@@ -88,6 +96,10 @@ Examples:
   # Output as JSON or CSV
   dtctl query "fetch logs" -o json
   dtctl query "fetch logs" -o csv
+
+  # Output as JSON Lines (one JSON object per line) or Parquet for large exports
+  dtctl query "fetch logs" -o jsonl
+  dtctl query "fetch logs" --max-result-records 100000 -o parquet > logs.parquet
 
   # Download large datasets with custom limits
   dtctl query "fetch logs" --max-result-records 10000 -o csv > logs.csv
@@ -231,6 +243,12 @@ Examples:
 		enablePreview, _ := cmd.Flags().GetBool("enable-preview")
 		enforceQueryConsumptionLimit, _ := cmd.Flags().GetBool("enforce-query-consumption-limit")
 		includeTypes, _ := cmd.Flags().GetBool("include-types")
+		// Parquet derives its column schema from DQL types, so request them even
+		// if the user did not pass --include-types. The type metadata is consumed
+		// to build the schema and is not added to the output rows.
+		if formatRequiresIncludeTypes(outputFormat) {
+			includeTypes = true
+		}
 		includeContributions, _ := cmd.Flags().GetBool("include-contributions")
 
 		// Get timeframe options
@@ -336,6 +354,8 @@ Examples:
 
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
+			JQFilter:                     jqFilter,
+			AgentMode:                    agentMode,
 			Decode:                       decodeMode,
 			Width:                        width,
 			Height:                       height,
@@ -381,9 +401,11 @@ Examples:
 			// Create printer options for live mode (needed for resize support)
 			printerOpts := output.PrinterOptions{
 				Format:     outputFormat,
+				JQFilter:   jqFilter,
 				Width:      width,
 				Height:     height,
 				Fullscreen: fullscreen,
+				AgentMode:  agentMode,
 			}
 
 			printer := output.NewPrinterWithOpts(printerOpts)

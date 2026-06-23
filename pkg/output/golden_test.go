@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
@@ -74,6 +76,8 @@ func assertGolden(t *testing.T, name string, actual string) {
 
 var fixedTime = time.Date(2025, 3, 15, 10, 30, 0, 0, time.UTC)
 
+// workflowFixtures mirrors a real `get workflows` (list) response, which the SDK
+// restricts to listFields (no tasks/input/result/guide — see sdk/api/workflow).
 func workflowFixtures() []workflow.Workflow {
 	return []workflow.Workflow{
 		{
@@ -91,17 +95,9 @@ func workflowFixtures() []workflow.Workflow {
 					"trigger": map[string]interface{}{"type": "cron", "cron": "0 9 * * 1-5"},
 				},
 			},
-			Result:               stringPtr("{{ result('deploy') }}"),
+			TriggerType:          "Schedule",
 			Type:                 "STANDARD",
-			Input:                map[string]interface{}{"environment": map[string]interface{}{"type": "string"}},
 			HourlyExecutionLimit: intPtr(1000),
-			Guide:                stringPtr("# Deploy to Production\n\nRun this workflow after validating the release candidate."),
-			Tasks: map[string]interface{}{
-				"deploy": map[string]interface{}{
-					"action": "dynatrace.automations:run-javascript",
-					"input":  map[string]interface{}{"script": "// deploy logic"},
-				},
-			},
 		},
 		{
 			ID:          "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
@@ -109,10 +105,10 @@ func workflowFixtures() []workflow.Workflow {
 			IsDeployed:  true,
 			Description: "Removes stale resources older than 30 days",
 			Type:        "STANDARD",
+			TriggerType: "Manual",
 			Owner:       "00000000-0000-0000-0000-000000000000",
 			OwnerType:   "USER",
 			Private:     false,
-			Tasks:       map[string]interface{}{},
 		},
 		{
 			ID:          "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
@@ -120,12 +116,28 @@ func workflowFixtures() []workflow.Workflow {
 			IsDeployed:  false,
 			Description: "",
 			Type:        "STANDARD",
+			TriggerType: "Event",
 			Owner:       "8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e",
 			OwnerType:   "USER",
 			Private:     true,
-			Tasks:       map[string]interface{}{},
 		},
 	}
+}
+
+// describeWorkflowFixture is the full single-workflow response returned by Get
+// (used by `describe workflow`), including tasks/input/result/guide.
+func describeWorkflowFixture() workflow.Workflow {
+	wf := workflowFixtures()[0]
+	wf.Result = stringPtr("{{ result('deploy') }}")
+	wf.Input = map[string]interface{}{"environment": map[string]interface{}{"type": "string"}}
+	wf.Guide = stringPtr("# Deploy to Production\n\nRun this workflow after validating the release candidate.")
+	wf.Tasks = map[string]interface{}{
+		"deploy": map[string]interface{}{
+			"action": "dynatrace.automations:run-javascript",
+			"input":  map[string]interface{}{"script": "// deploy logic"},
+		},
+	}
+	return wf
 }
 
 func sloFixtures() []slo.SLO {
@@ -673,6 +685,120 @@ func TestGolden_GetDocuments(t *testing.T) {
 	}
 }
 
+// dashboardWithContentFixture models a single dashboard as returned by
+// `get dashboard <id>` — with a populated Content body. This is the path the
+// content-as-raw-bytes regression broke; the list fixtures above never set
+// Content, so it must be guarded explicitly here.
+func dashboardWithContentFixture() document.Document {
+	return document.Document{
+		ID:        "c8e42bc8-a9bd-433f-85c7-343017c0836a",
+		Name:      "Smartscape Overview",
+		Type:      "dashboard",
+		Owner:     "user-a@example.invalid",
+		IsPrivate: false,
+		Created:   fixedTime,
+		Version:   784,
+		Modified:  fixedTime.Add(2 * time.Hour),
+		Content: []byte(`{"version":18,"tiles":{"0":{"type":"data",` +
+			`"title":"Host count","query":"fetch dt.entity.host | summarize count()"}},` +
+			`"layouts":{"0":{"x":0,"y":0,"w":12,"h":6}}}`),
+	}
+}
+
+func TestGolden_GetDashboardWithContent(t *testing.T) {
+	doc := dashboardWithContentFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(doc); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "get/dashboard-content-"+name, buf.String())
+		})
+	}
+}
+
+// analyzerDefinitionFixture models a single analyzer as returned by
+// `get analyzer <name>`. Input/Output are json.RawMessage ([]byte): without a
+// MarshalYAML they render as a list of raw byte values in YAML, and the
+// display-only CategoryName (json:"-") would leak in with reflection casing.
+func analyzerDefinitionFixture() analyzer.AnalyzerDefinition {
+	return analyzer.AnalyzerDefinition{
+		Name:         "dt.statistics.GenericForecastAnalyzer",
+		DisplayName:  "Generic Forecast Analyzer",
+		Description:  "Forecasts a numeric time series",
+		Type:         "DAVIS",
+		CategoryName: "Forecast",
+		BaseAnalyzer: "dt.statistics.BaseForecastAnalyzer",
+		Input:        json.RawMessage(`{"fields":[{"name":"timeSeriesData","type":"timeseries","required":true}]}`),
+		Output:       json.RawMessage(`{"fields":[{"name":"forecastValues","type":"timeseries"}]}`),
+	}
+}
+
+func TestGolden_GetAnalyzerDefinition(t *testing.T) {
+	def := analyzerDefinitionFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(def); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "get/analyzer-definition-"+name, buf.String())
+		})
+	}
+}
+
+// snapshotFixture models a document snapshot as returned by `dtctl history`.
+// CreatedBy/CreatedTime are json:"-" display duplicates of ModificationInfo and
+// must not leak into json/yaml output.
+func snapshotFixture() document.Snapshot {
+	return document.Snapshot{
+		SnapshotVersion: 3,
+		DocumentVersion: 12,
+		Description:     "before bulk edit",
+		ModificationInfo: document.SnapshotModInfo{
+			CreatedBy:   "user-a@example.invalid",
+			CreatedTime: fixedTime,
+		},
+		CreatedBy:   "user-a@example.invalid",
+		CreatedTime: fixedTime,
+	}
+}
+
+func TestGolden_GetSnapshot(t *testing.T) {
+	snap := snapshotFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(snap); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "get/snapshot-"+name, buf.String())
+		})
+	}
+}
+
 func genericDocumentFixtures() []document.Document {
 	return []document.Document{
 		{
@@ -1064,7 +1190,7 @@ func TestGolden_GetTaskResult(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGolden_DescribeWorkflow(t *testing.T) {
-	wf := workflowFixtures()[0]
+	wf := describeWorkflowFixture()
 
 	formats := map[string]string{
 		"table": "table",
@@ -1680,12 +1806,16 @@ func TestGolden_DescribeAnomalyDetector(t *testing.T) {
 func TestGolden_QueryDQL(t *testing.T) {
 	records := dqlRecordsFixture()
 
+	// Parquet is intentionally excluded here: it is a binary format, so it is
+	// covered by the round-trip assertions in parquet_test.go rather than a
+	// golden byte file.
 	formats := map[string]string{
 		"table": "table",
 		"wide":  "wide",
 		"json":  "json",
 		"csv":   "csv",
 		"toon":  "toon",
+		"jsonl": "jsonl",
 	}
 
 	for name, format := range formats {

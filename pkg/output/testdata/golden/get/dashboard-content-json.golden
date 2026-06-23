@@ -1,0 +1,32 @@
+{
+  "id": "c8e42bc8-a9bd-433f-85c7-343017c0836a",
+  "name": "Smartscape Overview",
+  "type": "dashboard",
+  "owner": "user-a@example.invalid",
+  "isPrivate": false,
+  "version": 784,
+  "modificationInfo": {
+    "createdBy": "",
+    "createdTime": "2025-03-15T10:30:00Z",
+    "lastModifiedBy": "",
+    "lastModifiedTime": "2025-03-15T12:30:00Z"
+  },
+  "content": {
+    "version": 18,
+    "tiles": {
+      "0": {
+        "type": "data",
+        "title": "Host count",
+        "query": "fetch dt.entity.host | summarize count()"
+      }
+    },
+    "layouts": {
+      "0": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 6
+      }
+    }
+  }
+}

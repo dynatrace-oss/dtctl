@@ -2,6 +2,7 @@ package output
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 
@@ -19,9 +20,14 @@ type PrinterOptions struct {
 	Format     string
 	Writer     io.Writer
 	PlainMode  bool
+	AgentMode  bool
+	JQFilter   string
 	Width      int  // Chart width (0 = default)
 	Height     int  // Chart height (0 = default)
 	Fullscreen bool // Use terminal dimensions
+	// Types carries DQL column type info used by the Parquet printer to build a
+	// faithful schema. Ignored by other formats; nil falls back to inference.
+	Types []ColumnTypeMapping
 }
 
 // NewPrinter creates a new printer based on the format
@@ -66,15 +72,29 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 		width, height = GetFullscreenDimensions()
 	}
 
+	effectiveJQFilter := opts.JQFilter
+	if effectiveJQFilter != "" && opts.AgentMode {
+		// In agent mode we have to print the metadata as well
+		// The jq filter is transformed in a way that it returns the result as {"result": <filtered>, "metadata": .metadata}
+		effectiveJQFilter = fmt.Sprintf(
+			`. as $root | {result: ([$root | %s] | if length == 0 then null elif length == 1 then .[0] else . end), metadata: $root.metadata}`,
+			effectiveJQFilter,
+		)
+	}
+
 	switch format {
 	case "json":
-		return &JSONPrinter{writer: writer}
+		return &JSONPrinter{writer: writer, jqFilter: effectiveJQFilter}
 	case "yaml", "yml":
-		return &YAMLPrinter{writer: writer}
+		return &YAMLPrinter{writer: writer, jqFilter: effectiveJQFilter}
 	case "csv":
 		return &CSVPrinter{writer: writer}
+	case "jsonl":
+		return &JSONLPrinter{writer: writer}
+	case "parquet":
+		return &ParquetPrinter{writer: writer, types: opts.Types}
 	case "toon":
-		return &ToonPrinter{writer: writer}
+		return &ToonPrinter{writer: writer, jqFilter: effectiveJQFilter}
 	case "chart":
 		if width > 0 || height > 0 {
 			return NewChartPrinterWithSize(writer, width, height)
@@ -113,14 +133,20 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 
 // JSONPrinter prints output as JSON
 type JSONPrinter struct {
-	writer io.Writer
+	writer   io.Writer
+	jqFilter string
 }
 
 // Print prints a single object as JSON
 func (p *JSONPrinter) Print(obj interface{}) error {
+	transformed, err := ApplyJQ(p.jqFilter, obj)
+	if err != nil {
+		return err
+	}
+
 	encoder := json.NewEncoder(p.writer)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(obj)
+	return encoder.Encode(transformed)
 }
 
 // PrintList prints a list of objects as JSON
@@ -130,14 +156,20 @@ func (p *JSONPrinter) PrintList(obj interface{}) error {
 
 // YAMLPrinter prints output as YAML
 type YAMLPrinter struct {
-	writer io.Writer
+	writer   io.Writer
+	jqFilter string
 }
 
 // Print prints a single object as YAML
 func (p *YAMLPrinter) Print(obj interface{}) error {
+	transformed, err := ApplyJQ(p.jqFilter, obj)
+	if err != nil {
+		return err
+	}
+
 	encoder := yaml.NewEncoder(p.writer)
 	encoder.SetIndent(2)
-	return encoder.Encode(obj)
+	return encoder.Encode(transformed)
 }
 
 // PrintList prints a list of objects as YAML

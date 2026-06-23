@@ -47,32 +47,94 @@ type WorkflowList struct {
 
 // WorkflowFilters contains filter options for listing workflows.
 type WorkflowFilters struct {
-	Owner string // Filter by owner ID (user ID)
+	Owner       string // Filter by owner ID (user ID)
+	Search      string // Full-text search on title
+	Type        string // Workflow type: STANDARD or SIMPLE
+	TriggerType string // Trigger type: Manual, Schedule, Event, Workflow
+	Fields      string // Optional field projection (comma-separated); empty fetches full objects
 }
 
 // List retrieves workflows with optional filters.
-func (h *Handler) List(ctx context.Context, filters WorkflowFilters) (*WorkflowList, error) {
-	req := h.client.HTTP().R().SetContext(ctx)
+// chunkSize controls page size; 0 returns only the first page.
+// limit caps the total number of results; 0 means unlimited.
+func (h *Handler) List(ctx context.Context, filters WorkflowFilters, chunkSize, limit int64) (*WorkflowList, error) {
+	var all []Workflow
+	var totalCount int
+	offset := 0
 
-	if filters.Owner != "" {
-		req.SetQueryParam("owner", filters.Owner)
+	for {
+		// Per-request page size: chunkSize, narrowed to the remaining budget when a limit is set.
+		pageSize := chunkSize
+		if limit > 0 {
+			remaining := limit - int64(len(all))
+			if remaining <= 0 {
+				break
+			}
+			// chunkSize==0 (single-page mode) combined with a limit: use the limit
+			// as the page size so we fetch exactly N in one request, then break.
+			if pageSize == 0 || remaining < pageSize {
+				pageSize = remaining
+			}
+		}
+
+		req := h.client.HTTP().R().SetContext(ctx)
+
+		if filters.Fields != "" {
+			req.SetQueryParam("fields", filters.Fields)
+		}
+		if filters.Owner != "" {
+			req.SetQueryParam("owner", filters.Owner)
+		}
+		if filters.Search != "" {
+			req.SetQueryParam("search", filters.Search)
+		}
+		if filters.Type != "" {
+			req.SetQueryParam("type", filters.Type)
+		}
+		if filters.TriggerType != "" {
+			req.SetQueryParam("triggerType", filters.TriggerType)
+		}
+
+		if pageSize > 0 {
+			req.SetQueryParam("limit", fmt.Sprintf("%d", pageSize))
+			if offset > 0 {
+				req.SetQueryParam("offset", fmt.Sprintf("%d", offset))
+			}
+		}
+
+		resp, err := req.Get("/platform/automation/v1/workflows")
+		if err != nil {
+			return nil, fmt.Errorf("list workflows: %w", err)
+		}
+		if err := httpclient.CheckResponse(resp); err != nil {
+			return nil, fmt.Errorf("list workflows: %w", err)
+		}
+
+		var page WorkflowList
+		if err := json.Unmarshal(resp.Body(), &page); err != nil {
+			return nil, fmt.Errorf("list workflows: parse response: %w", err)
+		}
+
+		totalCount = page.Count
+		all = append(all, page.Results...)
+
+		if limit > 0 && int64(len(all)) >= limit {
+			break
+		}
+		// chunkSize == 0 means single-page mode (no pagination loop).
+		if chunkSize == 0 || len(all) >= totalCount || len(page.Results) == 0 {
+			break
+		}
+		offset += len(page.Results)
 	}
 
-	resp, err := req.Get("/platform/automation/v1/workflows")
-	if err != nil {
-		return nil, fmt.Errorf("list workflows: %w", err)
+	// Defensive: the loop already caps well-behaved servers, but a server that
+	// ignores the limit param could over-return — trim to the requested limit.
+	if limit > 0 && int64(len(all)) > limit {
+		all = all[:limit]
 	}
 
-	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, fmt.Errorf("list workflows: %w", err)
-	}
-
-	var result WorkflowList
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("list workflows: parse response: %w", err)
-	}
-
-	return &result, nil
+	return &WorkflowList{Count: totalCount, Results: all}, nil
 }
 
 // Get retrieves a specific workflow.

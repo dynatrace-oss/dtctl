@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/dynatrace-oss/dtctl/cmd/testutil"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 )
 
@@ -328,5 +331,45 @@ func TestTriggerSummaryNilTrigger(t *testing.T) {
 	var trigger map[string]interface{}
 	if got := triggerSummary(trigger); got != "" {
 		t.Fatalf("triggerSummary(nil) = %q, want empty", got)
+	}
+}
+
+func TestDescribeWorkflowCmd_TableOutputFetchesExecutions(t *testing.T) {
+	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{
+		"/platform/automation/v1/workflows/wf-describe-1": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": "wf-describe-1", "title": "Describe Me", "owner": "u1", "ownerType": "USER",
+				"type": "STANDARD", "isDeployed": true,
+			})
+		},
+		"/platform/automation/v1/executions": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"count": 0, "results": []any{}})
+		},
+	})
+	defer ms.Close()
+
+	configPath, cleanup := testutil.SetupTestConfig(t, ms.URL)
+	defer cleanup()
+
+	origCfgFile := cfgFile
+	origOutputFormat := outputFormat
+	origPlain := plainMode
+	defer func() {
+		cfgFile = origCfgFile
+		outputFormat = origOutputFormat
+		plainMode = origPlain
+	}()
+
+	cfgFile = configPath
+	outputFormat = "table"
+	plainMode = true
+
+	if err := describeWorkflowCmd.RunE(describeWorkflowCmd, []string{"wf-describe-1"}); err != nil {
+		t.Fatalf("RunE() error = %v", err)
+	}
+	if ms.RequestCount != 2 {
+		t.Errorf("expected 2 requests (get workflow + list executions), got %d", ms.RequestCount)
 	}
 }

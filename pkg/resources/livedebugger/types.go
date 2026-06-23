@@ -35,6 +35,7 @@ var (
 	ExtractWorkspaceID    = sdkld.ExtractWorkspaceID
 	ExtractDeletedRuleIDs = sdkld.ExtractDeletedRuleIDs
 	ExtractRuleStatuses   = sdkld.ExtractRuleStatuses
+	WorkspaceHasFilters   = sdkld.WorkspaceHasFilters
 )
 
 // ExtractWorkspaceRules extracts breakpoint rules from a GraphQL response,

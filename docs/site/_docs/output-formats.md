@@ -97,6 +97,33 @@ dtctl get workflows -o csv > workflows.csv
 dtctl query 'fetch logs | filter status == "ERROR" | limit 100' -o csv > errors.csv
 ```
 
+## JSON Lines and Parquet (large query exports)
+
+For `dtctl query`, two additional formats are tailored to large result exports:
+
+```bash
+# JSON Lines: one compact JSON object per line (newline-delimited JSON).
+# Serialised one record at a time and read natively by most local data tooling.
+dtctl query 'fetch logs | limit 1000' -o jsonl > logs.jsonl
+
+# Parquet: a columnar binary file, ideal for downstream analytics tooling.
+# Pair with a raised --max-result-records when exporting large populations.
+dtctl query 'fetch logs' --max-result-records 100000 -o parquet > logs.parquet
+```
+
+Notes:
+
+- **`-o jsonl`** has no schema and appends one object per line, so it tolerates
+  rows with differing fields. Each record is encoded as it is written rather than
+  building the whole result into a single buffer.
+- **`-o parquet`** derives its column schema from the DQL column types (it
+  requests type information automatically). Nested or variant columns that do
+  not map cleanly to a columnar type are stored as a JSON-encoded string column
+  rather than being dropped. An empty result still produces a valid Parquet
+  file (never a zero-byte file): it carries the DQL schema when types are known,
+  otherwise a single placeholder column so the file stays readable by mainstream
+  tooling (a column-less file is rejected by DuckDB, pyarrow, and pandas).
+
 ## Plain Mode
 
 The `--plain` flag disables colors, progress indicators, and interactive prompts. This is useful for piping output or running in non-interactive environments:

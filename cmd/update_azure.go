@@ -209,7 +209,7 @@ func init() {
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "applicationId", "", "Application ID to set")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "applicationID", "", "Alias for --applicationId")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "aplicationID", "", "Compatibility alias for typo --aplicationID")
-	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionClientSecret, "clientSecret", "", "Client secret value (clientSecret type only); prefer passing via env var to keep out of shell history")
+	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionClientSecret, "clientSecret", "", "Client secret value (clientSecret type only); prefer passing via env var to keep out of shell history (note: expanded value can still be visible in process arguments)")
 
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")

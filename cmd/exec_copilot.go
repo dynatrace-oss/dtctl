@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/copilot"
 )
 
@@ -150,14 +149,13 @@ Examples:
 		}
 
 		// Check output format
-		outputFmt, _ := cmd.Flags().GetString("output")
-		if outputFmt == "" || outputFmt == "table" {
+		if outputFormat == "" || outputFormat == "table" {
 			// Default: just print the DQL
 			fmt.Println(result.DQL)
 			return nil
 		}
 
-		printer := output.NewPrinter(outputFmt)
+		printer := NewPrinter()
 		return printer.Print(result)
 	},
 }
@@ -208,14 +206,13 @@ Examples:
 		}
 
 		// Check output format
-		outputFmt, _ := cmd.Flags().GetString("output")
-		if outputFmt == "" || outputFmt == "table" {
+		if outputFormat == "" || outputFormat == "table" {
 			// Default: print summary and explanation
 			fmt.Printf("Summary: %s\n\n%s\n", result.Summary, result.Explanation)
 			return nil
 		}
 
-		printer := output.NewPrinter(outputFmt)
+		printer := NewPrinter()
 		return printer.Print(result)
 	},
 }
@@ -266,13 +263,12 @@ Examples:
 		}
 
 		// Check output format
-		outputFmt, _ := cmd.Flags().GetString("output")
-		if outputFmt == "" || outputFmt == "table" {
-			printer := output.NewPrinter("table")
+		if outputFormat == "" || outputFormat == "table" {
+			printer := NewPrinter()
 			return printer.Print(result.Documents)
 		}
 
-		printer := output.NewPrinter(outputFmt)
+		printer := NewPrinter()
 		return printer.Print(result)
 	},
 }
