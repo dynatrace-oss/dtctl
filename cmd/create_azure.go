@@ -72,6 +72,10 @@ Examples:
 			return fmt.Errorf("--directoryId, --applicationId, and --clientSecret are only supported for --type clientSecret\nFor federatedIdentityCredential, run 'dtctl update azure connection' after setting up federation in Azure")
 		}
 
+		if createAzureConnectionType == "clientSecret" && createAzureConnectionIssuer != "" {
+			return fmt.Errorf("--issuer is only supported for --type federatedIdentityCredential (clientSecret connections do not use a token issuer)")
+		}
+
 		_, c, err := SetupWithSafety(safety.OperationCreate)
 		if err != nil {
 			return err
