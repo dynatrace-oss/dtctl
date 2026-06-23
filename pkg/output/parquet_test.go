@@ -2,7 +2,9 @@ package output
 
 import (
 	"bytes"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/parquet-go/parquet-go"
 )
@@ -255,5 +257,104 @@ func TestNewPrinterWithOpts_ParquetUsesTypes(t *testing.T) {
 func TestParquetPrinter_AllNullColumnIsString(t *testing.T) {
 	if got := inferKind("x", []map[string]interface{}{{"x": nil}, {}}); got != colString {
 		t.Errorf("all-null column inferred as %v, want colString", got)
+	}
+}
+
+func TestParquetPrinter_Timestamp(t *testing.T) {
+	// A DQL "timestamp" column is written as a native INT64 TIMESTAMP(NANOS)
+	// column (not an opaque string), so downstream tooling sees a real temporal
+	// type. RFC3339 strings, with and without sub-second precision, must parse.
+	var buf bytes.Buffer
+	p := &ParquetPrinter{
+		writer: &buf,
+		types:  []ColumnTypeMapping{{Name: "ts", Type: "timestamp"}},
+	}
+	records := []map[string]interface{}{
+		{"ts": "2025-03-15T10:30:00Z"},
+		{"ts": "2025-03-15T10:30:00.123456789Z"},
+		{"ts": "not-a-timestamp"}, // unparseable → null, not a failed export
+	}
+	if err := p.PrintList(records); err != nil {
+		t.Fatalf("PrintList: %v", err)
+	}
+
+	// The schema must declare a TIMESTAMP logical type on the column.
+	f, err := parquet.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("open parquet: %v", err)
+	}
+	col, ok := f.Schema().Lookup("ts")
+	if !ok || col.Node.Type().LogicalType() == nil || col.Node.Type().LogicalType().Timestamp == nil {
+		t.Fatalf("ts column is not a TIMESTAMP logical type: %+v", col)
+	}
+
+	rows := readParquet(t, buf.Bytes())
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows, want 3", len(rows))
+	}
+	want0 := time.Date(2025, 3, 15, 10, 30, 0, 0, time.UTC).UnixNano()
+	if rows[0]["ts"] != want0 {
+		t.Errorf("row0 ts = %#v, want int64(%d)", rows[0]["ts"], want0)
+	}
+	want1 := time.Date(2025, 3, 15, 10, 30, 0, 123456789, time.UTC).UnixNano()
+	if rows[1]["ts"] != want1 {
+		t.Errorf("row1 ts = %#v, want int64(%d)", rows[1]["ts"], want1)
+	}
+	if rows[2]["ts"] != nil {
+		t.Errorf("row2 ts = %#v, want nil (unparseable timestamp)", rows[2]["ts"])
+	}
+}
+
+func TestParquetPrinter_LongRejectsFractionalFloat(t *testing.T) {
+	// A "long" column must coerce integral floats to int64 but must NOT silently
+	// truncate a fractional value — that cell is written as null instead.
+	var buf bytes.Buffer
+	p := &ParquetPrinter{
+		writer: &buf,
+		types:  []ColumnTypeMapping{{Name: "n", Type: "long"}},
+	}
+	records := []map[string]interface{}{
+		{"n": float64(42)},  // integral → int64(42)
+		{"n": float64(7.5)}, // fractional → null (never truncated to 7)
+	}
+	if err := p.PrintList(records); err != nil {
+		t.Fatalf("PrintList: %v", err)
+	}
+	rows := readParquet(t, buf.Bytes())
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if rows[0]["n"] != int64(42) {
+		t.Errorf("row0 n = %#v, want int64(42)", rows[0]["n"])
+	}
+	if rows[1]["n"] != nil {
+		t.Errorf("row1 n = %#v, want nil (fractional float must not truncate)", rows[1]["n"])
+	}
+}
+
+func TestFloat64ToInt64(t *testing.T) {
+	tests := []struct {
+		name string
+		in   float64
+		want interface{}
+		ok   bool
+	}{
+		{"integral", 42, int64(42), true},
+		{"zero", 0, int64(0), true},
+		{"negative integral", -9, int64(-9), true},
+		{"fractional", 7.5, nil, false},
+		{"NaN", math.NaN(), nil, false},
+		{"+Inf", math.Inf(1), nil, false},
+		{"-Inf", math.Inf(-1), nil, false},
+		{"above int64 range", 9.3e18, nil, false},
+		{"min int64", math.MinInt64, int64(math.MinInt64), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := float64ToInt64(tt.in)
+			if ok != tt.ok || got != tt.want {
+				t.Errorf("float64ToInt64(%v) = (%#v, %v), want (%#v, %v)", tt.in, got, ok, tt.want, tt.ok)
+			}
+		})
 	}
 }

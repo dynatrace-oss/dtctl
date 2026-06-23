@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/parquet-go/parquet-go"
 )
@@ -33,7 +35,8 @@ import (
 //	long                      INT64
 //	double                    DOUBLE
 //	string                    STRING
-//	timestamp                 STRING              kept as the RFC3339 string as-is
+//	timestamp                 INT64 (TIMESTAMP)   nanosecond precision, UTC-adjusted;
+//	                                              unparseable values written as null
 //	duration / timeframe / ip STRING              rendered as their string form
 //	(anything else, nested    STRING (complex)    JSON-encoded — never crash, never
 //	 record/array, mixed)                         silently drop a column
@@ -63,8 +66,18 @@ const (
 	colInt64
 	colDouble
 	colBoolean
-	colComplex // JSON-encoded string column for nested/variant/unmappable types
+	colTimestamp // INT64 column with TIMESTAMP(NANOS) logical type
+	colComplex   // JSON-encoded string column for nested/variant/unmappable types
 )
+
+// parquetRowsPerRowGroup caps how many rows accumulate in the writer's in-memory
+// column buffers before a complete row group is flushed to the output. Without
+// a cap, parquet-go buffers every row until Close, so peak memory scales with
+// the whole result set; flushing in bounded groups keeps it roughly constant in
+// the row count (and produces multiple row groups, which readers can skip/scan
+// independently). This is a stopgap until the input itself is streamed — the
+// records slice is still held in memory by the caller.
+const parquetRowsPerRowGroup = 100_000
 
 // Print writes a single object as a one-row Parquet file.
 func (p *ParquetPrinter) Print(obj interface{}) error {
@@ -96,7 +109,7 @@ func (p *ParquetPrinter) PrintList(obj interface{}) error {
 	}
 	schema := parquet.NewSchema("dtctl", group)
 
-	w := parquet.NewWriter(p.writer, schema)
+	w := parquet.NewWriter(p.writer, schema, parquet.MaxRowsPerRowGroup(parquetRowsPerRowGroup))
 	for _, rec := range records {
 		row := make(map[string]interface{}, len(columns))
 		for _, name := range columns {
@@ -166,7 +179,9 @@ func kindForDQLType(dqlType string) parquetColumnKind {
 		return colInt64
 	case "double":
 		return colDouble
-	case "string", "timestamp", "duration", "timeframe", "ip":
+	case "timestamp":
+		return colTimestamp
+	case "string", "duration", "timeframe", "ip":
 		return colString
 	default:
 		// arrays, records, variant and any future/unknown type → JSON column.
@@ -209,6 +224,9 @@ func leafNodeFor(kind parquetColumnKind) parquet.Node {
 		return parquet.Leaf(parquet.DoubleType)
 	case colBoolean:
 		return parquet.Leaf(parquet.BooleanType)
+	case colTimestamp:
+		// Physically INT64; nanosecond precision keeps DQL's full resolution.
+		return parquet.Timestamp(parquet.Nanosecond)
 	default: // colString and colComplex are both physically STRING
 		return parquet.String()
 	}
@@ -239,6 +257,20 @@ func coerceValue(raw interface{}, kind parquetColumnKind) (interface{}, bool) {
 		}
 		return nil, false
 
+	case colTimestamp:
+		// DQL delivers timestamps as RFC3339 strings; parquet-go writes the
+		// time.Time into the INT64 TIMESTAMP column. A value we cannot parse is
+		// written as null rather than failing the whole export.
+		switch t := raw.(type) {
+		case time.Time:
+			return t, true
+		case string:
+			if ts, ok := parseDQLTimestamp(t); ok {
+				return ts, true
+			}
+		}
+		return nil, false
+
 	case colInt64:
 		switch n := raw.(type) {
 		case int:
@@ -262,9 +294,11 @@ func coerceValue(raw interface{}, kind parquetColumnKind) (interface{}, bool) {
 		case uint64:
 			return int64(n), true
 		case float32:
-			return int64(n), true
+			return float64ToInt64(float64(n))
 		case float64:
-			return int64(n), true
+			// JSON decodes integer longs to float64; coerce only when the value
+			// is genuinely integral and in range, never silently truncating.
+			return float64ToInt64(n)
 		case string:
 			if i, err := strconv.ParseInt(n, 10, 64); err == nil {
 				return i, true
@@ -308,6 +342,32 @@ func coerceValue(raw interface{}, kind parquetColumnKind) (interface{}, bool) {
 	return nil, false
 }
 
+// float64ToInt64 converts a JSON-decoded float into an int64 for a DQL "long"
+// column. It returns ok=false (→ null) for NaN/Inf, fractional values, or values
+// outside the int64 range, so a non-integral value is never silently truncated.
+func float64ToInt64(f float64) (interface{}, bool) {
+	if math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) {
+		return nil, false
+	}
+	// float64(math.MaxInt64) rounds up to 2^63, so use a strict upper bound;
+	// math.MinInt64 (-2^63) is exactly representable, so the lower bound is
+	// inclusive.
+	const maxInt64Plus1 = 9223372036854775808.0 // 2^63
+	if f < math.MinInt64 || f >= maxInt64Plus1 {
+		return nil, false
+	}
+	return int64(f), true
+}
+
+// parseDQLTimestamp parses a DQL timestamp string (RFC3339, with or without
+// sub-second precision) into a time.Time. RFC3339Nano accepts both forms.
+func parseDQLTimestamp(s string) (time.Time, bool) {
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
+
 // unionColumns returns the sorted union of keys across all records.
 func unionColumns(records []map[string]interface{}) []string {
 	set := make(map[string]struct{})
@@ -327,6 +387,14 @@ func unionColumns(records []map[string]interface{}) []string {
 // toRecordMaps normalises the printer input (a slice of records) into a slice of
 // string-keyed maps, reflecting over interface-wrapped maps like the CSV printer.
 func toRecordMaps(obj interface{}) ([]map[string]interface{}, error) {
+	// Fast path: the query layer already hands us []map[string]interface{}.
+	// Reflecting over and rebuilding every record (as the general path below
+	// does) would hold a second full copy of the result set in memory — costly
+	// for large exports — so reuse the slice directly. PrintList only reads it.
+	if m, ok := obj.([]map[string]interface{}); ok {
+		return m, nil
+	}
+
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
