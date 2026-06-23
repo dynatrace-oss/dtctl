@@ -12,8 +12,10 @@ import (
 // `inspect --stats` primitive.
 const (
 	// DefaultStatsTopK is how many top values are reported for low-cardinality
-	// string columns.
-	DefaultStatsTopK = 10
+	// string columns. Kept small (top-3) so a wide result's summary stays compact
+	// in an agent's context: the long tail of a distribution is rarely load-bearing
+	// for a next-step decision, and the full data is on disk for follow-up.
+	DefaultStatsTopK = 3
 	// DefaultStatsMaxDistinct bounds exact distinct tracking per column. Above
 	// this a column is flagged high-cardinality and exact distinct/top are
 	// dropped (the buffered Layer-1 path stays O(distinct) per column, which is
@@ -21,6 +23,19 @@ const (
 	DefaultStatsMaxDistinct = 1000
 	// DefaultSampleRows is how many leading rows are embedded in the manifest.
 	DefaultSampleRows = 3
+	// DefaultMaxSummaryColumns bounds how many per-column profiles are embedded in
+	// the in-context envelope (D14). A wide telemetry result can carry hundreds of
+	// columns, most of them sparse; emitting a full profile for every one defeats
+	// the point of the summary. Above this count the envelope keeps the profiles
+	// for the most-populated columns and lists the rest by name; the on-disk
+	// sidecar always carries the full set, so nothing is lost.
+	DefaultMaxSummaryColumns = 50
+	// maxTopValueRunes caps the rendered length of a single top-K value. A column
+	// of long strings (URLs, user agents, command lines, referers) can otherwise
+	// spend thousands of tokens listing near-unique giant values; the full value
+	// lives in the sample rows and the on-disk file, so the summary only needs
+	// enough of a prefix to identify it.
+	maxTopValueRunes = 64
 )
 
 // Column type discriminators reported in stats. Mirrors the lean set in D14;
@@ -330,13 +345,66 @@ func (a *columnAccumulator) topValues(topK int) []TopValue {
 		if tv[i].N != tv[j].N {
 			return tv[i].N > tv[j].N
 		}
-		// tie-break on value for determinism
+		// tie-break on value for determinism (on the full, untruncated value)
 		return less(tv[i].V, tv[j].V)
 	})
 	if len(tv) > topK {
 		tv = tv[:topK]
 	}
+	// Truncate the rendered values only after ranking, so ordering still reflects
+	// the true distinct values (two long values sharing a prefix stay distinct).
+	for i := range tv {
+		if s, ok := tv[i].V.(string); ok {
+			tv[i].V = truncateTopValue(s)
+		}
+	}
 	return tv
+}
+
+// truncateTopValue caps a top-K string value to maxTopValueRunes runes, appending
+// a "…(+N chars)" marker so the consumer can tell the value was clipped (and by
+// how much). It is rune-aware so it never splits a multi-byte character.
+func truncateTopValue(s string) string {
+	r := []rune(s)
+	if len(r) <= maxTopValueRunes {
+		return s
+	}
+	return string(r[:maxTopValueRunes]) + fmt.Sprintf("…(+%d chars)", len(r)-maxTopValueRunes)
+}
+
+// CapColumnsForEnvelope returns a size-bounded view of column stats for the
+// in-context envelope (C/D): when there are more than max columns it keeps the
+// profiles of the most-populated columns (fewest nulls first; ties broken by
+// name) and returns the names of the rest in `omitted`, so the agent still knows
+// the full schema exists without paying to profile every sparse column. The kept
+// columns are returned in the input's (alphabetical) order; omitted names are
+// sorted. The input slice — used for the on-disk sidecar — is never mutated.
+// max <= 0 or a column count within the cap returns the input unchanged.
+func CapColumnsForEnvelope(cols []ColumnStats, max int) (kept []ColumnStats, omitted []string) {
+	if max <= 0 || len(cols) <= max {
+		return cols, nil
+	}
+	ranked := make([]ColumnStats, len(cols))
+	copy(ranked, cols)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].Nulls != ranked[j].Nulls {
+			return ranked[i].Nulls < ranked[j].Nulls // fewer nulls = more populated
+		}
+		return ranked[i].Name < ranked[j].Name
+	})
+	keep := make(map[string]bool, max)
+	for _, c := range ranked[:max] {
+		keep[c.Name] = true
+	}
+	for _, c := range cols { // preserve input (alphabetical) order for the kept set
+		if keep[c.Name] {
+			kept = append(kept, c)
+		} else {
+			omitted = append(omitted, c.Name)
+		}
+	}
+	sort.Strings(omitted)
+	return kept, omitted
 }
 
 // maxExactInt is the largest magnitude at which a float64 represents every

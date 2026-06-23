@@ -3,6 +3,7 @@ package exec
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,6 +174,66 @@ func TestBuildSpillResponse_SpillAlways(t *testing.T) {
 	}
 	if len(resp.Context.Suggestions) == 0 {
 		t.Error("expected suggestions")
+	}
+}
+
+func TestBuildSpillResponse_WideResultCapsEnvelopeKeepsSidecarFull(t *testing.T) {
+	e := &DQLExecutor{}
+	// A wide result: more columns than the envelope cap. Every column is present
+	// in every row (equal null counts) so the kept set is the alphabetically
+	// first DefaultMaxSummaryColumns and the rest are omitted by name.
+	const ncols = output.DefaultMaxSummaryColumns + 12
+	rec := make(map[string]interface{}, ncols)
+	for i := 0; i < ncols; i++ {
+		rec[fmt.Sprintf("col%03d", i)] = fmt.Sprintf("v%d", i)
+	}
+	records := []map[string]interface{}{rec, rec, rec}
+	result := &DQLQueryResponse{Records: records}
+
+	dir := t.TempDir()
+	opts := DQLExecuteOptions{
+		ContextName: "prod",
+		Spill:       SpillOptions{Mode: SpillAlways, Threshold: 1 << 20, Dir: dir, Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !handled {
+		t.Fatalf("buildSpillResponse: handled=%v err=%v", handled, err)
+	}
+	m := resp.Result.(*output.ResultFileManifest)
+
+	// Envelope is capped, and the kept + omitted partition covers every column.
+	if len(m.Columns) != output.DefaultMaxSummaryColumns {
+		t.Errorf("envelope columns = %d, want %d (capped)", len(m.Columns), output.DefaultMaxSummaryColumns)
+	}
+	if len(m.ColumnsOmitted) != ncols-output.DefaultMaxSummaryColumns {
+		t.Errorf("columns_omitted = %d, want %d", len(m.ColumnsOmitted), ncols-output.DefaultMaxSummaryColumns)
+	}
+	if len(m.Columns)+len(m.ColumnsOmitted) != ncols {
+		t.Errorf("kept(%d) + omitted(%d) != total %d", len(m.Columns), len(m.ColumnsOmitted), ncols)
+	}
+
+	// The on-disk sidecar keeps the FULL per-column set (nothing dropped on disk).
+	scData, rerr := os.ReadFile(output.SidecarPathFor(m.Path))
+	if rerr != nil {
+		t.Fatalf("read sidecar: %v", rerr)
+	}
+	var sc output.SidecarManifest
+	if jerr := json.Unmarshal(scData, &sc); jerr != nil {
+		t.Fatalf("sidecar json invalid: %v", jerr)
+	}
+	if len(sc.Columns) != ncols {
+		t.Errorf("sidecar columns = %d, want full %d", len(sc.Columns), ncols)
+	}
+
+	// The omission is surfaced to the consumer as a suggestion.
+	var noted bool
+	for _, s := range resp.Context.Suggestions {
+		if strings.Contains(s, "columns_omitted") {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Error("expected a suggestion pointing at columns_omitted")
 	}
 }
 

@@ -3,6 +3,7 @@ package output
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -186,6 +187,79 @@ func TestComputeColumnStats_LargeIntNoOverflow(t *testing.T) {
 	if got, ok := n.Max.(float64); !ok || got != big {
 		t.Errorf("max = %v (%T), want float64 %v (no int64 overflow)", n.Max, n.Max, big)
 	}
+}
+
+func TestComputeColumnStats_TruncatesLongTopValues(t *testing.T) {
+	long := "https://example.invalid/" + string(make([]rune, 0)) // build a >64-rune value
+	for len([]rune(long)) <= maxTopValueRunes {
+		long += "abcdefghij"
+	}
+	records := []map[string]interface{}{
+		{"url": long}, {"url": long}, {"url": "short"},
+	}
+	cols := ComputeColumnStats(records, false, DefaultStatsTopK, DefaultStatsMaxDistinct)
+	url, _ := findCol(cols, "url")
+	if len(url.Top) == 0 {
+		t.Fatal("expected top values")
+	}
+	// The long value is most frequent (n=2) so it ranks first; it must be clipped.
+	top := url.Top[0].V.(string)
+	if r := []rune(top); len(r) > maxTopValueRunes+32 { // prefix + short marker
+		t.Errorf("top value not truncated: %d runes", len(r))
+	}
+	if !strings.Contains(top, "…(+") {
+		t.Errorf("truncated value missing length marker: %q", top)
+	}
+	// A value within the cap is left untouched.
+	short := url.Top[1].V.(string)
+	if short != "short" {
+		t.Errorf("short value altered: %q", short)
+	}
+}
+
+func TestCapColumnsForEnvelope(t *testing.T) {
+	// 5 columns, descending population (a has fewest nulls, e the most).
+	cols := []ColumnStats{
+		{Name: "a", Nulls: 0},
+		{Name: "b", Nulls: 1},
+		{Name: "c", Nulls: 2},
+		{Name: "d", Nulls: 3},
+		{Name: "e", Nulls: 4},
+	}
+
+	// Within the cap: returned unchanged, nothing omitted.
+	kept, omitted := CapColumnsForEnvelope(cols, 10)
+	if len(kept) != 5 || omitted != nil {
+		t.Errorf("within cap: kept=%d omitted=%v, want 5/nil", len(kept), omitted)
+	}
+
+	// Over the cap: keep the 2 most-populated (a, b), omit the rest by name.
+	kept, omitted = CapColumnsForEnvelope(cols, 2)
+	if len(kept) != 2 || kept[0].Name != "a" || kept[1].Name != "b" {
+		t.Errorf("kept = %v, want [a b] (most populated)", names(kept))
+	}
+	wantOmitted := []string{"c", "d", "e"}
+	if len(omitted) != 3 || omitted[0] != "c" || omitted[1] != "d" || omitted[2] != "e" {
+		t.Errorf("omitted = %v, want %v (sorted)", omitted, wantOmitted)
+	}
+
+	// The input slice (used for the full sidecar) must not be mutated/reordered.
+	if cols[0].Name != "a" || cols[4].Name != "e" {
+		t.Error("input slice was reordered")
+	}
+
+	// max <= 0 disables capping.
+	if k, o := CapColumnsForEnvelope(cols, 0); len(k) != 5 || o != nil {
+		t.Errorf("max=0 should not cap: kept=%d omitted=%v", len(k), o)
+	}
+}
+
+func names(cols []ColumnStats) []string {
+	out := make([]string, len(cols))
+	for i, c := range cols {
+		out[i] = c.Name
+	}
+	return out
 }
 
 func TestSampleRows(t *testing.T) {

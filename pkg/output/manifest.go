@@ -75,6 +75,13 @@ type ResultFileManifest struct {
 	Columns     []ColumnStats `json:"columns,omitempty"`
 	SampleStats *SampleStats  `json:"sample_stats,omitempty"`
 
+	// ColumnsOmitted lists, by name, the columns whose per-column profile was
+	// dropped from this envelope to keep it compact for a wide result (the
+	// least-populated columns; see CapColumnsForEnvelope). Full stats for every
+	// column — including these — are in the on-disk sidecar manifest. Empty when
+	// no columns were omitted.
+	ColumnsOmitted []string `json:"columns_omitted,omitempty"`
+
 	SampleRows []map[string]interface{} `json:"sample_rows,omitempty"`
 }
 

@@ -88,6 +88,11 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	cols := output.ComputeColumnStats(records, sampled, output.DefaultStatsTopK, output.DefaultStatsMaxDistinct)
 	sampleRows := output.SampleRows(records, output.DefaultSampleRows)
 
+	// The in-context envelope carries a size-bounded view of the columns (the
+	// most-populated ones, by null count); the on-disk sidecar written below
+	// keeps the full per-column set so nothing is lost for later inspection.
+	envCols, omittedCols := output.CapColumnsForEnvelope(cols, output.DefaultMaxSummaryColumns)
+
 	manifest := &output.ResultFileManifest{
 		Query:         query,
 		Format:        format,
@@ -98,7 +103,8 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		SamplingRatio: samplingRatio,
 		SampleRows:    sampleRows,
 	}
-	manifest.SetStats(cols, sampled)
+	manifest.SetStats(envCols, sampled)
+	manifest.ColumnsOmitted = omittedCols
 
 	decided := "spilled"
 	if !summaryOnly {
@@ -159,6 +165,11 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		decided = "summary-only"
 	}
 
+	suggestions := spillSuggestions(query, manifest.Kind)
+	if n := len(omittedCols); n > 0 {
+		suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted and full per-column stats are in the sidecar manifest next to the file", n))
+	}
+
 	total := len(records)
 	ctx := &output.ResponseContext{
 		Verb:             "query",
@@ -169,7 +180,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		MeasuredBytes:    measured,
 		MeasuredEncoding: encoding,
 		Warnings:         warnings,
-		Suggestions:      spillSuggestions(query, manifest.Kind),
+		Suggestions:      suggestions,
 	}
 
 	resp := output.Response{
