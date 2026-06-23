@@ -272,6 +272,40 @@ func TestSampleRows(t *testing.T) {
 	}
 }
 
+func TestSampleRows_ClipsLongStrings(t *testing.T) {
+	long := strings.Repeat("x", maxSampleValueRunes*3) // well over the cap
+	records := []map[string]interface{}{
+		{
+			"content": long,                                  // top-level long string
+			"short":   "ok",                                  // within cap, untouched
+			"nested":  map[string]interface{}{"stack": long}, // nested in a record
+			"arr":     []interface{}{long, "fine"},           // nested in an array
+		},
+	}
+	got := SampleRows(records, 1)[0]
+
+	content := got["content"].(string)
+	if r := []rune(content); len(r) > maxSampleValueRunes+32 {
+		t.Errorf("top-level string not clipped: %d runes", len(r))
+	}
+	if !strings.Contains(content, "…(+") {
+		t.Errorf("clipped value missing marker: %q", content[:40])
+	}
+	if got["short"] != "ok" {
+		t.Errorf("short string altered: %v", got["short"])
+	}
+	if s := got["nested"].(map[string]interface{})["stack"].(string); !strings.Contains(s, "…(+") {
+		t.Error("nested string not clipped")
+	}
+	if a := got["arr"].([]interface{}); !strings.Contains(a[0].(string), "…(+") || a[1] != "fine" {
+		t.Errorf("array strings handled wrong: %v", a)
+	}
+	// Original record must be untouched (the file writer needs the full value).
+	if records[0]["content"].(string) != long {
+		t.Error("original record was mutated")
+	}
+}
+
 func TestSampleRows_SanitizesNonFiniteFloats(t *testing.T) {
 	// A non-finite float anywhere in a sampled row (top-level, nested record, or
 	// array) must not survive into the envelope — encoding/json rejects NaN/Inf

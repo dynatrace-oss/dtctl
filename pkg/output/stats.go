@@ -33,9 +33,17 @@ const (
 	// maxTopValueRunes caps the rendered length of a single top-K value. A column
 	// of long strings (URLs, user agents, command lines, referers) can otherwise
 	// spend thousands of tokens listing near-unique giant values; the full value
-	// lives in the sample rows and the on-disk file, so the summary only needs
-	// enough of a prefix to identify it.
+	// lives in the on-disk file, so the summary only needs enough of a prefix to
+	// identify it.
 	maxTopValueRunes = 64
+	// maxSampleValueRunes caps the rendered length of a single string leaf in a
+	// sample row. Sample rows demonstrate the real shape of a record, so the cap
+	// is more generous than top-K's — but a free-text field (log content, an
+	// exception stacktrace, a serialised payload) can be tens of KB, which would
+	// otherwise dominate the envelope. The untruncated value is always in the
+	// on-disk file. Applied recursively, so a long string nested inside a complex
+	// value is clipped too.
+	maxSampleValueRunes = 256
 )
 
 // Column type discriminators reported in stats. Mirrors the lean set in D14;
@@ -361,15 +369,21 @@ func (a *columnAccumulator) topValues(topK int) []TopValue {
 	return tv
 }
 
-// truncateTopValue caps a top-K string value to maxTopValueRunes runes, appending
-// a "…(+N chars)" marker so the consumer can tell the value was clipped (and by
-// how much). It is rune-aware so it never splits a multi-byte character.
-func truncateTopValue(s string) string {
-	r := []rune(s)
-	if len(r) <= maxTopValueRunes {
+// truncateTopValue caps a top-K string value to maxTopValueRunes runes.
+func truncateTopValue(s string) string { return clipRunes(s, maxTopValueRunes) }
+
+// clipRunes caps s to max runes, appending a "…(+N chars)" marker so the consumer
+// can tell the value was clipped (and by how much). It is rune-aware so it never
+// splits a multi-byte character. max <= 0 disables clipping.
+func clipRunes(s string, max int) string {
+	if max <= 0 {
 		return s
 	}
-	return string(r[:maxTopValueRunes]) + fmt.Sprintf("…(+%d chars)", len(r)-maxTopValueRunes)
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + fmt.Sprintf("…(+%d chars)", len(r)-max)
 }
 
 // CapColumnsForEnvelope returns a size-bounded view of column stats for the
@@ -455,10 +469,8 @@ func parseTimestamp(s string) (time.Time, error) {
 }
 
 // SampleRows returns up to n leading records as the manifest's sample_rows,
-// sanitised so they can always be JSON-encoded into the envelope. A single
-// non-finite float (NaN/±Inf) in a sampled value would otherwise be rejected by
-// encoding/json and fail the whole envelope emit — the same hazard the column
-// stats already guard against (see observeNumber). The originals are never
+// prepared for embedding in the envelope: non-finite floats are dropped and long
+// string leaves are clipped (see prepareSampleValue). The originals are never
 // mutated (the file writer serialises the full untouched rows).
 func SampleRows(records []map[string]interface{}, n int) []map[string]interface{} {
 	if n <= 0 {
@@ -469,16 +481,25 @@ func SampleRows(records []map[string]interface{}, n int) []map[string]interface{
 	}
 	out := make([]map[string]interface{}, n)
 	for i := 0; i < n; i++ {
-		out[i], _ = sanitizeForJSON(records[i]).(map[string]interface{})
+		out[i], _ = prepareSampleValue(records[i]).(map[string]interface{})
 	}
 	return out
 }
 
-// sanitizeForJSON returns a copy of v with every non-finite float (NaN, +Inf,
-// -Inf) — which encoding/json refuses to marshal — replaced by nil, recursing
-// into nested records and arrays. Values with nothing to fix are returned as-is.
-func sanitizeForJSON(v interface{}) interface{} {
+// prepareSampleValue returns a copy of v made safe and compact for embedding in
+// the envelope, recursing into nested records and arrays:
+//   - every non-finite float (NaN, +Inf, -Inf) — which encoding/json refuses to
+//     marshal — is replaced by nil (the same hazard the column stats guard
+//     against, see observeNumber), so one bad value can't fail the whole emit;
+//   - every string leaf is clipped to maxSampleValueRunes, so a free-text field
+//     (log content, an exception stacktrace, a serialised payload) — at any
+//     nesting depth — can't blow up the envelope. The full value is on disk.
+//
+// Values with nothing to change are returned as-is.
+func prepareSampleValue(v interface{}) interface{} {
 	switch x := v.(type) {
+	case string:
+		return clipRunes(x, maxSampleValueRunes)
 	case float64:
 		if math.IsNaN(x) || math.IsInf(x, 0) {
 			return nil
@@ -492,13 +513,13 @@ func sanitizeForJSON(v interface{}) interface{} {
 	case map[string]interface{}:
 		out := make(map[string]interface{}, len(x))
 		for k, val := range x {
-			out[k] = sanitizeForJSON(val)
+			out[k] = prepareSampleValue(val)
 		}
 		return out
 	case []interface{}:
 		out := make([]interface{}, len(x))
 		for i, val := range x {
-			out[i] = sanitizeForJSON(val)
+			out[i] = prepareSampleValue(val)
 		}
 		return out
 	default:
