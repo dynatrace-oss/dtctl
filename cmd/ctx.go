@@ -67,10 +67,12 @@ Examples:
 	},
 }
 
-// ctxTokenCmd prints the resolved Authorization header value for the current (or named) context.
+// ctxTokenCmd prints the resolved token for the current (or named) context.
+// It prints the raw credential only — not a full Authorization header value
+// (no "Bearer "/"Api-Token " scheme prefix), so callers must add the scheme themselves.
 var ctxTokenCmd = &cobra.Command{
 	Use:   "token [context-name]",
-	Short: "Print the resolved Authorization header value for a context",
+	Short: "Print the resolved token for a context",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := LoadConfig()
