@@ -76,8 +76,8 @@ regardless of how big the result was. There are three kinds:
   "envelope_version": 1,
   "result": {
     "kind": "result-file",
-    "path": "~/Library/Caches/dtctl/results/prod/q-7f3a9c.json",
-    "format": "json",
+    "path": "~/Library/Caches/dtctl/results/prod/q-7f3a9c.jsonl",
+    "format": "jsonl",
     "rows": 84213,
     "columns": [ { "name": "status", "type": "long", "nulls": 0, "min": 500, "max": 599 } ],
     "sample_rows": [ /* first few rows */ ]

@@ -129,8 +129,8 @@ dtctl query "fetch logs" --spill=auto       # spill only above the threshold
 dtctl query "fetch logs" --spill=never      # force rows inline (the default for a bare command)
 
 # Choose the destination or format
-dtctl query "fetch logs" --spill-to ./out.json     # explicit file (implies --spill; format from extension)
-dtctl query "fetch logs" --spill --spill-format csv # json (default) or csv
+dtctl query "fetch logs" --spill-to ./out.jsonl    # explicit file (implies --spill; format from extension)
+dtctl query "fetch logs" --spill --spill-format parquet # jsonl (default), json, csv, or parquet
 dtctl query "fetch logs" --spill=auto --spill-threshold 100KB  # size that triggers a spill (default 50KB)
 ```
 

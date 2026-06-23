@@ -156,7 +156,7 @@ dtctl query "..." --live --interval 5s           # Live mode
 # Spill a large result to a file, return a summary (see dql-queries#spilling-large-results-to-a-file)
 dtctl query "..." --spill                         # always spill (bare flag)
 dtctl query "..." --spill=auto --spill-threshold 100KB  # spill only above the size
-dtctl query "..." --spill-to ./out.json           # explicit destination; --spill-format json|csv
+dtctl query "..." --spill-to ./out.jsonl          # explicit destination; --spill-format jsonl|json|csv|parquet
 
 # Filter segments
 dtctl query "..." --segment my-segment-uid       # By UID or name (repeatable)

@@ -118,7 +118,7 @@ type Context struct {
 type SpillConfig struct {
 	Mode      string `yaml:"mode,omitempty"`      // auto|always|never
 	Dir       string `yaml:"dir,omitempty"`       // base directory for spilled files
-	Format    string `yaml:"format,omitempty"`    // json|csv (ndjson/parquet once available)
+	Format    string `yaml:"format,omitempty"`    // jsonl|json|csv|parquet (default jsonl)
 	Threshold string `yaml:"threshold,omitempty"` // e.g. "50KB"
 	TTL       string `yaml:"ttl,omitempty"`       // e.g. "24h"
 }

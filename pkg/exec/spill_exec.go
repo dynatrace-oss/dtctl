@@ -234,7 +234,7 @@ func (e *DQLExecutor) resolveSpillTarget(canonical, tfStart, tfEnd string, opts 
 
 	format = opts.Spill.Format
 	if format == "" {
-		format = "json"
+		format = defaultSpillFormat
 	}
 	if verr := validateSpillFormat(format); verr != nil {
 		return "", "", "", false, false, nil, verr
@@ -267,39 +267,37 @@ func writeEnvelope(w io.Writer, resp output.Response) error {
 	return enc.Encode(resp)
 }
 
-// validateSpillFormat accepts the formats PR2 can currently spill to. NDJSON and
-// Parquet land with the dedicated output-format work; until then they are
-// rejected with a clear, non-crashing message rather than silently producing the
-// wrong file.
+// defaultSpillFormat is the spill format used when none is configured. JSON Lines
+// is the default (D26): schema-less, append-friendly, one record per line, and
+// read natively by common local tooling — it reuses the `-o jsonl` writer added
+// alongside Parquet in the output-formats change (PR1).
+const defaultSpillFormat = "jsonl"
+
+// validateSpillFormat accepts the formats dtctl can spill to, all backed by the
+// existing `-o` writers: JSON Lines (default), JSON, CSV, and Parquet.
 func validateSpillFormat(format string) error {
 	switch strings.ToLower(format) {
-	case "json", "csv":
+	case "jsonl", "json", "csv", "parquet":
 		return nil
-	case "ndjson", "jsonl", "parquet":
-		return fmt.Errorf("spill format %q is not yet available; use json or csv", format)
 	default:
-		return fmt.Errorf("unsupported spill format %q (use json or csv)", format)
+		return fmt.Errorf("unsupported spill format %q (use jsonl, json, csv, or parquet)", format)
 	}
 }
 
 // spillFormatForPath infers the spill format from a destination file extension,
-// falling back to the configured format (or json) for an extension-less path.
+// falling back to the configured format (or the default) for an extension-less path.
 func spillFormatForPath(path, fallback string) (string, error) {
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
 	switch ext {
-	case "json":
-		return "json", nil
-	case "csv":
-		return "csv", nil
-	case "ndjson", "jsonl", "parquet":
-		return "", fmt.Errorf("spill format %q (from --spill-to extension) is not yet available; use a .json or .csv destination", ext)
+	case "jsonl", "json", "csv", "parquet":
+		return ext, nil
 	case "":
 		if fallback == "" {
-			return "json", nil
+			return defaultSpillFormat, nil
 		}
 		return fallback, validateSpillFormat(fallback)
 	default:
-		return "", fmt.Errorf("unsupported --spill-to file extension %q (use .json or .csv)", ext)
+		return "", fmt.Errorf("unsupported --spill-to file extension %q (use .jsonl, .json, .csv, or .parquet)", ext)
 	}
 }
 
@@ -307,8 +305,12 @@ func extForFormat(format string) string {
 	switch strings.ToLower(format) {
 	case "csv":
 		return "csv"
-	default:
+	case "json":
 		return "json"
+	case "parquet":
+		return "parquet"
+	default:
+		return "jsonl"
 	}
 }
 

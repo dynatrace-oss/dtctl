@@ -453,10 +453,65 @@ func TestBuildSpillResponse_UnsupportedFormatErrors(t *testing.T) {
 	e := &DQLExecutor{}
 	result, records := sampleResult(false)
 	opts := DQLExecuteOptions{
-		Spill: SpillOptions{Mode: SpillAlways, Threshold: 0, Dir: t.TempDir(), Format: "parquet"},
+		Spill: SpillOptions{Mode: SpillAlways, Threshold: 0, Dir: t.TempDir(), Format: "avro"},
 	}
 	_, _, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
 	if err == nil {
-		t.Fatal("expected error for not-yet-available parquet format")
+		t.Fatal("expected error for an unsupported spill format")
+	}
+}
+
+func TestBuildSpillResponse_DefaultsToJSONL(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := sampleResult(false)
+	opts := DQLExecuteOptions{
+		// No Format set -> the default spill format (jsonl) is used.
+		Spill: SpillOptions{Mode: SpillAlways, Threshold: 0, Dir: t.TempDir()},
+	}
+	resp, spilled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !spilled {
+		t.Fatalf("spilled=%v err=%v", spilled, err)
+	}
+	m := resp.Result.(*output.ResultFileManifest)
+	if m.Format != "jsonl" {
+		t.Errorf("default format = %q, want jsonl", m.Format)
+	}
+	if filepath.Ext(m.Path) != ".jsonl" {
+		t.Errorf("default spill path %q should end in .jsonl", m.Path)
+	}
+	// The file is valid JSON Lines: one JSON object per non-empty line.
+	data, rerr := os.ReadFile(m.Path)
+	if rerr != nil {
+		t.Fatalf("read spill: %v", rerr)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("jsonl line count = %d, want 3\n%s", len(lines), data)
+	}
+	for _, ln := range lines {
+		var row map[string]interface{}
+		if jerr := json.Unmarshal([]byte(ln), &row); jerr != nil {
+			t.Errorf("line is not valid JSON: %q: %v", ln, jerr)
+		}
+	}
+}
+
+func TestBuildSpillResponse_ParquetExplicitPath(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := sampleResult(false)
+	dest := filepath.Join(t.TempDir(), "out.parquet")
+	opts := DQLExecuteOptions{
+		Spill: SpillOptions{Mode: SpillAlways, ToPath: dest, Threshold: 0},
+	}
+	resp, spilled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !spilled {
+		t.Fatalf("parquet spill should succeed now that the writer exists: spilled=%v err=%v", spilled, err)
+	}
+	m := resp.Result.(*output.ResultFileManifest)
+	if m.Format != "parquet" {
+		t.Errorf("format = %q, want parquet (from extension)", m.Format)
+	}
+	if fi, serr := os.Stat(dest); serr != nil || fi.Size() == 0 {
+		t.Errorf("parquet spill file missing or empty: err=%v", serr)
 	}
 }

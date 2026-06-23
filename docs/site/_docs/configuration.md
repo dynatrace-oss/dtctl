@@ -282,7 +282,7 @@ per-context under a `spill:` section:
 spill:
   mode: auto            # auto | always | never  (overrides the agent/non-agent default)
   dir: ~/.cache/dtctl/results   # base directory for spilled files
-  format: json          # json | csv
+  format: jsonl         # jsonl | json | csv | parquet
   threshold: 50KB       # serialised output size that triggers a spill
   ttl: 24h              # how long spilled files are kept before pruning
 ```

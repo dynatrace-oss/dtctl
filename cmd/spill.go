@@ -146,10 +146,14 @@ func isValidMode(mode string) bool {
 // for an unrecognised/missing extension.
 func spillFormatFromExt(path string) string {
 	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(path), ".")) {
+	case "jsonl":
+		return "jsonl"
 	case "json":
 		return "json"
 	case "csv":
 		return "csv"
+	case "parquet":
+		return "parquet"
 	default:
 		return ""
 	}

@@ -785,7 +785,7 @@ bare --spill = always; --spill=auto spills above --spill-threshold; --spill=neve
 default: never for a bare command, auto in agent mode`)
 	queryCmd.Flags().Lookup("spill").NoOptDefVal = "always"
 	queryCmd.Flags().String("spill-to", "", "explicit spill destination file (implies --spill=always; format inferred from extension)")
-	queryCmd.Flags().String("spill-format", "", "spill file format when spilling to the default dir: json|csv")
+	queryCmd.Flags().String("spill-format", "", "spill file format when spilling to the default dir: jsonl|json|csv|parquet (default jsonl)")
 	queryCmd.Flags().String("spill-threshold", "", "serialised output size above which a result spills, e.g. 50KB (default 50KB)")
 
 	_ = queryCmd.RegisterFlagCompletionFunc("spill", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
@@ -796,7 +796,7 @@ default: never for a bare command, auto in agent mode`)
 		}, cobra.ShellCompDirectiveNoFileComp
 	})
 	_ = queryCmd.RegisterFlagCompletionFunc("spill-format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{"json", "csv"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"jsonl", "json", "csv", "parquet"}, cobra.ShellCompDirectiveNoFileComp
 	})
 }
 
