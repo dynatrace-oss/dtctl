@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -285,6 +286,82 @@ func TestCtxDeleteCmd(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "not found") {
 			t.Errorf("expected error to contain 'not found', got %q", err.Error())
+		}
+	})
+}
+
+func TestCtxTokenCmd(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	xdg.Reload()
+	t.Cleanup(func() { xdg.Reload() })
+
+	// Build a config with two contexts and inline token values.
+	cfg := config.NewConfig()
+	cfg.SetContext("dev", "https://dev.example.com", "dev-token")
+	cfg.SetContext("prod", "https://prod.example.com", "prod-token")
+	cfg.CurrentContext = "dev"
+	if err := cfg.SetToken("dev-token", "dt0c01.DEV_TOKEN_VALUE"); err != nil {
+		t.Fatalf("SetToken dev-token: %v", err)
+	}
+	if err := cfg.SetToken("prod-token", "dt0c01.PROD_TOKEN_VALUE"); err != nil {
+		t.Fatalf("SetToken prod-token: %v", err)
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	originalCfgFile := cfgFile
+	defer func() { cfgFile = originalCfgFile }()
+	cfgFile = ""
+
+	captureStdout := func(t *testing.T, fn func()) string {
+		t.Helper()
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("os.Pipe: %v", err)
+		}
+		origStdout := os.Stdout
+		os.Stdout = w
+		fn()
+		_ = w.Close()
+		os.Stdout = origStdout
+		data, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatalf("ReadAll: %v", err)
+		}
+		return strings.TrimSpace(string(data))
+	}
+
+	t.Run("implicit current context prints dev token", func(t *testing.T) {
+		got := captureStdout(t, func() {
+			if err := ctxTokenCmd.RunE(ctxTokenCmd, []string{}); err != nil {
+				t.Fatalf("ctxTokenCmd: %v", err)
+			}
+		})
+		if got != "dt0c01.DEV_TOKEN_VALUE" {
+			t.Errorf("got %q, want %q", got, "dt0c01.DEV_TOKEN_VALUE")
+		}
+	})
+
+	t.Run("explicit context name prints that context's token", func(t *testing.T) {
+		got := captureStdout(t, func() {
+			if err := ctxTokenCmd.RunE(ctxTokenCmd, []string{"prod"}); err != nil {
+				t.Fatalf("ctxTokenCmd prod: %v", err)
+			}
+		})
+		if got != "dt0c01.PROD_TOKEN_VALUE" {
+			t.Errorf("got %q, want %q", got, "dt0c01.PROD_TOKEN_VALUE")
+		}
+	})
+
+	t.Run("non-existent context returns error", func(t *testing.T) {
+		err := ctxTokenCmd.RunE(ctxTokenCmd, []string{"nonexistent"})
+		if err == nil {
+			t.Fatal("expected error for non-existent context, got nil")
+		}
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("expected 'not found' in error, got %q", err.Error())
 		}
 	})
 }

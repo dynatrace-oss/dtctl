@@ -67,6 +67,33 @@ Examples:
 	},
 }
 
+// ctxTokenCmd prints the resolved Authorization header value for the current (or named) context.
+var ctxTokenCmd = &cobra.Command{
+	Use:   "token [context-name]",
+	Short: "Print the resolved Authorization header value for a context",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+		name := cfg.CurrentContext
+		if len(args) == 1 {
+			name = args[0]
+		}
+		nc, err := cfg.GetContext(name)
+		if err != nil {
+			return err
+		}
+		tok, err := cfg.GetToken(nc.Context.TokenRef)
+		if err != nil {
+			return err
+		}
+		fmt.Println(tok)
+		return nil
+	},
+}
+
 // ctxCurrentCmd shows the current context name
 var ctxCurrentCmd = &cobra.Command{
 	Use:   "current",
@@ -370,6 +397,7 @@ func deleteContext(name string) error {
 func init() {
 	rootCmd.AddCommand(ctxCmd)
 
+	ctxCmd.AddCommand(ctxTokenCmd)
 	ctxCmd.AddCommand(ctxCurrentCmd)
 	ctxCmd.AddCommand(ctxDescribeCmd)
 	ctxCmd.AddCommand(ctxSetCmd)
