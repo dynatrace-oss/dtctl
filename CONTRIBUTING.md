@@ -331,12 +331,13 @@ Fixes #456
 
 ## Releases
 
-Releases are fully automated with [release-please](https://github.com/googleapis/release-please) — **contributors never edit a changelog or bump a version**, and there is no `CHANGELOG.md` file (the GitHub Release is the changelog).
+Releases use [release-please](https://github.com/googleapis/release-please) — **contributors never edit a changelog or bump a version**, and there is no `CHANGELOG.md` file (the GitHub Release is the changelog). Releases are **triggered manually by maintainers**; ordinary merges to `main` do **not** publish anything.
 
-How it works:
+How it works (maintainers):
 
-- On every push to `main`, release-please opens/updates a **release PR** that bumps the version based on the [Conventional Commits](#commit-messages) merged since the last release.
-- Merging that release PR creates the git tag, the GitHub Release (with generated notes), and triggers GoReleaser to build and publish the binaries and Homebrew cask.
+- The release workflow runs only on manual dispatch (Actions → **Release** → **Run workflow**, or `gh workflow run release.yml`).
+- **First dispatch**: release-please opens/updates a **release PR** that bumps the version based on the [Conventional Commits](#commit-messages) since the last release.
+- Merge that release PR, then **dispatch again**: release-please creates the git tag and GitHub Release (with generated notes), and GoReleaser builds and publishes the binaries and Homebrew cask.
 
 Version impact of commit types (pre-1.0):
 

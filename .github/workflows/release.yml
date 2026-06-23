@@ -1,19 +1,25 @@
 name: Release
 
-# Releases are driven by release-please. On every push to main it maintains a
-# "release PR" that bumps the version (manifest + pkg/version/version.go) based on
-# the conventional commits since the last release. Merging that PR creates the
-# git tag and GitHub Release (with auto-generated notes), which then triggers the
-# GoReleaser job below to build, sign, and publish the artifacts.
+# Releases are driven by release-please but triggered MANUALLY — nothing happens
+# on ordinary merges to main. Run this workflow from the Actions tab ("Run
+# workflow") when you want to act on releases. Each run does ONE of two things,
+# depending on repo state:
 #
-# Note: release-please creates the tag with GITHUB_TOKEN, which does NOT trigger
-# `on: push: tags` workflows — that is why GoReleaser runs as a gated job in this
-# same workflow rather than in a separate tag-triggered one.
+#   1. If there are releasable commits since the last release and no release PR is
+#      merged yet → release-please opens/updates the release PR (version bump in
+#      the manifest + pkg/version/version.go, plus generated notes). Review it.
+#   2. After you merge that release PR → run this workflow AGAIN; release-please
+#      detects the merged release PR, creates the git tag and GitHub Release, and
+#      the gated GoReleaser job below builds, signs, and publishes the artifacts.
+#
+# So a full release is: dispatch → merge the release PR → dispatch again.
+#
+# Note: release-please creates the tag with GITHUB_TOKEN, which would not trigger
+# `on: push: tags` workflows anyway — that is why GoReleaser runs as a gated job
+# in this same workflow rather than in a separate tag-triggered one.
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions: {}
 
