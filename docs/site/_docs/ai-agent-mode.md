@@ -58,6 +58,49 @@ This makes it straightforward for AI agents to parse responses, handle errors, a
 
 Error codes are stable identifiers that agents can match on programmatically (e.g. `auth_required`, `not_found`, `forbidden`, `rate_limited`).
 
+### Query results: the `result.kind` discriminator
+
+In agent mode, `dtctl query` results are self-describing: the `result` payload
+carries a `kind` field so a consumer always branches on one discriminator,
+regardless of how big the result was. There are three kinds:
+
+| `result.kind` | When | Payload |
+|---|---|---|
+| `records` | small result, returned inline | the rows under `result.records` |
+| `result-file` | large result [spilled to a file](dql-queries#spilling-large-results-to-a-file) | a manifest: `path`, `format`, `rows`, `bytes`, column stats, `sample_rows` |
+| `summary-only` | large result but no writable filesystem | the same manifest **minus `path`** |
+
+```json
+{
+  "ok": true,
+  "envelope_version": 1,
+  "result": {
+    "kind": "result-file",
+    "path": "~/Library/Caches/dtctl/results/prod/q-7f3a9c.json",
+    "format": "json",
+    "rows": 84213,
+    "columns": [ { "name": "status", "type": "long", "nulls": 0, "min": 500, "max": 599 } ],
+    "sample_rows": [ /* first few rows */ ]
+  },
+  "context": {
+    "verb": "query", "resource": "logs", "total": 84213,
+    "decided": "spilled", "threshold_bytes": 51200, "measured_bytes": 16804000
+  }
+}
+```
+
+The envelope carries `envelope_version` for forward compatibility. **A consumer
+MUST treat an unrecognised `result.kind` as opaque** — don't parse `result`, fall
+back to the human-readable `context` (which always carries `decided`, `total`,
+`warnings`, and `suggestions`). When Grail sampled the result, the per-column
+stats move into a `sample_stats` block (each column tagged `basis: "sample"`) so
+sample-based figures can't be misread as population truth.
+
+> The inline `kind: "records"` envelope is emitted on the spill-aware path (agent
+> mode, JSON output). Explicit non-JSON output (`-o toon/csv/yaml`), `--jq`
+> transforms, and `--spill=never` keep the plain `{ "records": …, "metadata": … }`
+> shape.
+
 ## Auto-Detection
 
 dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on the presence of specific environment variables:

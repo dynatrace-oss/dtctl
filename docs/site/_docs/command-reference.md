@@ -153,6 +153,11 @@ dtctl query "..." --timezone "Europe/Paris"
 dtctl query "..." --metadata                    # Include execution metadata
 dtctl query "..." --live --interval 5s           # Live mode
 
+# Spill a large result to a file, return a summary (see dql-queries#spilling-large-results-to-a-file)
+dtctl query "..." --spill                         # always spill (bare flag)
+dtctl query "..." --spill=auto --spill-threshold 100KB  # spill only above the size
+dtctl query "..." --spill-to ./out.json           # explicit destination; --spill-format json|csv
+
 # Filter segments
 dtctl query "..." --segment my-segment-uid       # By UID or name (repeatable)
 dtctl query "..." -S seg-1 -S seg-2              # Short form, AND-combined
@@ -307,4 +312,6 @@ dtctl query "fetch logs" -o json | jq '.records[]'
 export DTCTL_OUTPUT=json           # Default output format
 export DTCTL_CONTEXT=production    # Default context
 export EDITOR=vim                  # Editor for edit commands
+export DTCTL_SPILL=never           # Result spill mode: auto|always|never
+export DTCTL_SPILL_DIR=/mnt/scratch # Base directory for spilled query results
 ```

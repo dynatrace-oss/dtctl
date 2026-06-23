@@ -113,6 +113,48 @@ dtctl query "fetch logs" --max-result-bytes 52428800
 dtctl query "fetch logs" --default-scan-limit-gbytes 500
 ```
 
+## Spilling Large Results to a File
+
+A large result is a context-window hazard for AI agents: tens of thousands of
+rows serialised into a model's context can cost millions of tokens. Instead of
+returning the rows, `dtctl query` can **spill** the full result to a local file
+and return a compact summary in its place — per-column stats (type, nulls,
+distinct/top-K, min/max, mean), a few sample rows, and the file path — so the
+data can be interrogated locally without re-running the Grail query.
+
+```bash
+# Tri-state control. Bare --spill = always spill.
+dtctl query "fetch logs" --spill            # always spill
+dtctl query "fetch logs" --spill=auto       # spill only above the threshold
+dtctl query "fetch logs" --spill=never      # force rows inline (the default for a bare command)
+
+# Choose the destination or format
+dtctl query "fetch logs" --spill-to ./out.json     # explicit file (implies --spill; format from extension)
+dtctl query "fetch logs" --spill --spill-format csv # json (default) or csv
+dtctl query "fetch logs" --spill=auto --spill-threshold 100KB  # size that triggers a spill (default 50KB)
+```
+
+- **Defaults:** `never` for a bare command (so the `… -o csv > out.csv` pipeline
+  path is untouched), `auto` in [agent mode](ai-agent-mode). With the default
+  record cap a typical result stays well under the threshold, so spill is
+  expected to engage mainly when the cap is raised for an export or
+  full-population scan (e.g. `--max-result-records 1000000`).
+- **Where files go:** the OS user cache dir (`~/.cache/dtctl/results` on Linux,
+  `~/Library/Caches/dtctl/results` on macOS, `%LocalAppData%\dtctl\results` on
+  Windows), partitioned by context, written atomically with `0700`/`0600`
+  permissions and pruned after a 24h TTL. On a read-only filesystem the command
+  degrades to a summary without a path rather than dumping rows.
+- **`--spill-to` vs `> file`:** shell redirection (`-o csv > out.csv`) writes the
+  raw bytes; `--spill-to` writes the file *and* returns the summary/manifest in
+  its place. Use redirection when you want the bytes, `--spill-to` when you want
+  the summary now and the bytes on disk for later. A user-chosen path opts out of
+  the managed cache's TTL pruning and per-context partitioning (surfaced as a
+  warning).
+
+Spill is configurable globally or per-context under a `spill:` config section and
+via the `DTCTL_SPILL` / `DTCTL_SPILL_DIR` environment variables — see
+[Configuration](configuration#result-spill).
+
 ## Filter Segments
 
 Apply [filter segments](segments) at query time to narrow results to specific data subsets. Segments are AND-combined when multiple are specified. See [Filter Segments](segments) for how to manage segments.

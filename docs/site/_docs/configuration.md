@@ -271,6 +271,34 @@ dtctl apply -f dashboard.yaml --dry-run  # pre-apply runs, post-apply is skipped
 dtctl apply -f dashboard.yaml -v         # verbose: logs hook command and duration
 ```
 
+## Result Spill
+
+`dtctl query` can [spill a large result to a local file](dql-queries#spilling-large-results-to-a-file)
+and return a compact summary instead of the rows. Defaults can be set globally or
+per-context under a `spill:` section:
+
+```yaml
+# ~/.config/dtctl/config  (global, or under a specific context)
+spill:
+  mode: auto            # auto | always | never  (overrides the agent/non-agent default)
+  dir: ~/.cache/dtctl/results   # base directory for spilled files
+  format: json          # json | csv
+  threshold: 50KB       # serialised output size that triggers a spill
+  ttl: 24h              # how long spilled files are kept before pruning
+```
+
+Environment overrides (handy for containers/CI):
+
+```bash
+export DTCTL_SPILL=never                 # auto | always | never — kill switch for disk writes
+export DTCTL_SPILL_DIR=/mnt/scratch      # write spills to a mounted volume
+```
+
+Precedence (highest wins): **flag → environment → context config → global config →
+built-in default**. A user-chosen `dir` (or `DTCTL_SPILL_DIR` / `--spill-to`) is
+written outside the managed cache and opts out of its TTL pruning and per-context
+partitioning — you own that file's lifetime.
+
 ## Command Aliases
 
 Create shortcuts for frequently used commands.
