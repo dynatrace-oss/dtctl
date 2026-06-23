@@ -482,7 +482,7 @@ func TestRunGetBreakpoints_AgentEnvelope(t *testing.T) {
 
 	output := out.String()
 
-	if !strings.Contains(output, "\"ok\": true") || !strings.Contains(output, "\"resource\": \"breakpoint\"") {
+	if !strings.Contains(output, "\"ok\":true") || !strings.Contains(output, "\"resource\":\"breakpoint\"") {
 		t.Fatalf("unexpected agent output: %q", output)
 	}
 }

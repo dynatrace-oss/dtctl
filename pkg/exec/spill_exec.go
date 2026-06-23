@@ -1,7 +1,6 @@
 package exec
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -27,7 +26,7 @@ func (e *DQLExecutor) trySpill(query string, result *DQLQueryResponse, records [
 	if !handled {
 		return false, nil
 	}
-	return true, writeEnvelope(os.Stdout, resp)
+	return true, output.EncodeEnvelope(os.Stdout, resp)
 }
 
 // buildSpillResponse makes the inline-vs-spill decision (D5/D19-buffered),
@@ -278,13 +277,6 @@ func (e *DQLExecutor) resolveSpillTarget(canonical, tfStart, tfEnd string, opts 
 	hash := output.SpillHash(canonical, tfStart, tfEnd, fmt.Sprintf("%v", opts.Segments), fmt.Sprintf("%g", opts.DefaultSamplingRatio))
 	targetPath = filepath.Join(dir, "q-"+hash+"."+extForFormat(format))
 	return format, targetPath, base, isManaged, false, warnings, nil
-}
-
-// writeEnvelope emits the agent envelope as indented JSON.
-func writeEnvelope(w io.Writer, resp output.Response) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(resp)
 }
 
 // defaultSpillFormat is the spill format used when none is configured. JSON Lines

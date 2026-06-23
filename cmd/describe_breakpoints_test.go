@@ -425,7 +425,7 @@ func TestRunDescribeBreakpoint_DirectIDSuccess(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "\"id\": \"123456789\"") {
+	if !strings.Contains(output, "\"id\":\"123456789\"") {
 		t.Fatalf("unexpected direct-id output: %q", output)
 	}
 }

@@ -289,7 +289,7 @@ func TestGetClassicPipelinesTranslationCmd_AgentMode(t *testing.T) {
 	// carries the partial-translation warning and an apply suggestion in its
 	// context (withWarning is surfaced here, not in the result payload).
 	for _, want := range []string{
-		`"ok": true`,
+		`"ok":true`,
 		`"pipe-2"`,
 		`"warnings"`,
 		"manual rewrite",

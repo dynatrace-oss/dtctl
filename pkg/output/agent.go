@@ -4,9 +4,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
 	toon "github.com/toon-format/toon-go"
+	"golang.org/x/term"
 )
+
+// EncodeEnvelope writes the agent Response to w as JSON. It pretty-prints (2-space
+// indent) only when w is an interactive terminal — a human running --agent by
+// hand — and emits compact JSON otherwise (piped to a tool or AI agent, redirected
+// to a file, or a test buffer). The compact form is what machine consumers get and
+// drops the ~⅓ of bytes that indentation would otherwise add; the envelope shape
+// is identical either way, only whitespace differs.
+func EncodeEnvelope(w io.Writer, resp Response) error {
+	enc := json.NewEncoder(w)
+	if isTerminalWriter(w) {
+		enc.SetIndent("", "  ")
+	}
+	return enc.Encode(resp)
+}
+
+// isTerminalWriter reports whether w is an interactive terminal. Only an *os.File
+// can be one; buffers, pipes, and redirected files are not — so machine and test
+// output is always compact and deterministic.
+func isTerminalWriter(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
+}
 
 // Response is the agent mode envelope that wraps all CLI output.
 // Success responses have OK=true with Result populated.
@@ -136,9 +160,7 @@ func (p *AgentPrinter) Print(data interface{}) error {
 		Result:  result,
 		Context: p.ctx,
 	}
-	enc := json.NewEncoder(p.writer)
-	enc.SetIndent("", "  ")
-	return enc.Encode(resp)
+	return EncodeEnvelope(p.writer, resp)
 }
 
 // encodeResult encodes data according to the configured result format.
@@ -235,7 +257,5 @@ func PrintError(writer io.Writer, detail *ErrorDetail) error {
 		OK:    false,
 		Error: detail,
 	}
-	enc := json.NewEncoder(writer)
-	enc.SetIndent("", "  ")
-	return enc.Encode(resp)
+	return EncodeEnvelope(writer, resp)
 }
