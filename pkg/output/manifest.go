@@ -38,6 +38,17 @@ type SampleStats struct {
 	Columns []ColumnStats `json:"columns"`
 }
 
+// InlineRecords is the result payload for the KindRecords envelope (D2): the
+// result was small enough to return inline, so the rows are carried directly,
+// still behind the same self-describing discriminator so an agent branches on
+// result.kind uniformly across inline and spilled results (D2/D31). Emitted only
+// in agent mode on the spill-aware path; the non-spill output path is unchanged.
+type InlineRecords struct {
+	Kind     string                   `json:"kind"`
+	Records  []map[string]interface{} `json:"records"`
+	Metadata interface{}              `json:"metadata,omitempty"`
+}
+
 // ResultFileManifest is the result payload for the KindResultFile /
 // KindSummaryOnly envelope shapes. It is the in-session contract; the on-disk
 // SidecarManifest (D34) carries the same provenance for cross-session use.

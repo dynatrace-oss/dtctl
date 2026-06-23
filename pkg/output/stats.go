@@ -87,14 +87,13 @@ type columnAccumulator struct {
 
 	// string handling: distinct counts (bounded by maxDistinct) and timestamp
 	// detection. A column of strings that all parse as RFC3339 is reported as a
-	// timestamp column.
+	// timestamp column. (Plain strings report distinct/top-K, not min/max — D14
+	// scopes min/max to numerics & timestamps — so no lexical min/max is kept.)
 	distinct      map[string]int
 	overflowed    bool // exceeded maxDistinct -> high cardinality
 	allTimestamps bool // strings only: true while every string parses as a timestamp
 	tsMin         time.Time
 	tsMax         time.Time
-	strMin        string
-	strMax        string
 	haveStr       bool
 }
 
@@ -136,13 +135,10 @@ func ComputeColumnStats(records []map[string]interface{}, sampled bool, topK, ma
 		for name, val := range rec {
 			ensure(name).observe(val, maxDistinct)
 		}
-		// A record missing a key counts as a null for that column. Only
-		// columns already discovered are back-filled; a column that only ever
-		// appears in later records still gets its nulls from records before it
-		// via this loop because we re-scan every record's key set, so instead
-		// account missing keys explicitly below.
 	}
-	// Back-fill nulls for records that lacked a column entirely.
+	// A record that lacks a column entirely counts as a null for that column.
+	// Back-fill those missing observations: a column seen in `count+nulls`
+	// records is implicitly null in the remaining `len(records)-(count+nulls)`.
 	for _, acc := range accs {
 		seen := acc.count + acc.nulls
 		if missing := len(records) - seen; missing > 0 {
@@ -232,18 +228,6 @@ func (a *columnAccumulator) observeString(s string, maxDistinct int) {
 		} else {
 			a.allTimestamps = false
 		}
-	}
-
-	// lexical min/max (used for plain strings)
-	if a.haveStr {
-		if s < a.strMin {
-			a.strMin = s
-		}
-		if s > a.strMax {
-			a.strMax = s
-		}
-	} else {
-		a.strMin, a.strMax = s, s
 	}
 	a.haveStr = true
 
@@ -402,7 +386,12 @@ func parseTimestamp(s string) (time.Time, error) {
 	return time.Time{}, lastErr
 }
 
-// SampleRows returns up to n leading records as the manifest's sample_rows.
+// SampleRows returns up to n leading records as the manifest's sample_rows,
+// sanitised so they can always be JSON-encoded into the envelope. A single
+// non-finite float (NaN/±Inf) in a sampled value would otherwise be rejected by
+// encoding/json and fail the whole envelope emit — the same hazard the column
+// stats already guard against (see observeNumber). The originals are never
+// mutated (the file writer serialises the full untouched rows).
 func SampleRows(records []map[string]interface{}, n int) []map[string]interface{} {
 	if n <= 0 {
 		n = DefaultSampleRows
@@ -410,5 +399,41 @@ func SampleRows(records []map[string]interface{}, n int) []map[string]interface{
 	if len(records) < n {
 		n = len(records)
 	}
-	return records[:n]
+	out := make([]map[string]interface{}, n)
+	for i := 0; i < n; i++ {
+		out[i], _ = sanitizeForJSON(records[i]).(map[string]interface{})
+	}
+	return out
+}
+
+// sanitizeForJSON returns a copy of v with every non-finite float (NaN, +Inf,
+// -Inf) — which encoding/json refuses to marshal — replaced by nil, recursing
+// into nested records and arrays. Values with nothing to fix are returned as-is.
+func sanitizeForJSON(v interface{}) interface{} {
+	switch x := v.(type) {
+	case float64:
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return nil
+		}
+		return x
+	case float32:
+		if f := float64(x); math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil
+		}
+		return x
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(x))
+		for k, val := range x {
+			out[k] = sanitizeForJSON(val)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(x))
+		for i, val := range x {
+			out[i] = sanitizeForJSON(val)
+		}
+		return out
+	default:
+		return v
+	}
 }

@@ -172,6 +172,73 @@ func TestBuildSpillResponse_SpillAlways(t *testing.T) {
 	}
 }
 
+func TestBuildSpillResponse_InlineRecordsEnvelopeInAgentMode(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := sampleResult(false)
+	opts := DQLExecuteOptions{
+		AgentMode: true,
+		Spill:     SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Fatal("agent-mode inline result should be handled (kind:records envelope), not a fall-through")
+	}
+	if resp.EnvelopeVersion != output.EnvelopeVersion || !resp.OK {
+		t.Errorf("envelope_version=%d ok=%v", resp.EnvelopeVersion, resp.OK)
+	}
+	ir, ok := resp.Result.(*output.InlineRecords)
+	if !ok {
+		t.Fatalf("result is %T, want *InlineRecords", resp.Result)
+	}
+	if ir.Kind != output.KindRecords {
+		t.Errorf("kind = %q, want records", ir.Kind)
+	}
+	if len(ir.Records) != 3 {
+		t.Errorf("records len = %d, want 3", len(ir.Records))
+	}
+	if resp.Context.Decided != "inline" {
+		t.Errorf("decided = %q, want inline", resp.Context.Decided)
+	}
+	// The whole point of D2/D31: a consumer can find result.kind in the inline case too.
+	js, _ := json.Marshal(resp)
+	if !strings.Contains(string(js), `"kind":"records"`) {
+		t.Errorf("inline envelope missing kind discriminator:\n%s", js)
+	}
+}
+
+func TestBuildSpillResponse_InlineFallThroughCases(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := sampleResult(false)
+	base := SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"}
+
+	cases := []struct {
+		name     string
+		opts     DQLExecuteOptions
+		encoding string
+	}{
+		// Not agent mode: a human inline result must stay a fall-through (table/CSV).
+		{"non-agent", DQLExecuteOptions{Spill: base}, "json"},
+		// Non-JSON display encoding: wrapping would discard the requested format.
+		{"toon-encoding", DQLExecuteOptions{AgentMode: true, Spill: base}, "toon"},
+		// --jq owns the output shape in agent mode.
+		{"jq-set", DQLExecuteOptions{AgentMode: true, JQFilter: ".[]", Spill: base}, "json"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, handled, err := e.buildSpillResponse("fetch logs", result, records, c.encoding, c.opts)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if handled {
+				t.Errorf("%s: expected fall-through (handled=false), got an envelope", c.name)
+			}
+		})
+	}
+}
+
 func TestBuildSpillResponse_ManagedPartition(t *testing.T) {
 	// Redirect the OS user cache dir into the test sandbox so the managed-cache
 	// path (D7) is exercised hermetically and partitioned by context (D9).

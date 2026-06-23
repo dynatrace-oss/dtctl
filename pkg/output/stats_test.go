@@ -197,3 +197,40 @@ func TestSampleRows(t *testing.T) {
 		t.Errorf("SampleRows(10) len = %d, want 4 (clamped)", len(got))
 	}
 }
+
+func TestSampleRows_SanitizesNonFiniteFloats(t *testing.T) {
+	// A non-finite float anywhere in a sampled row (top-level, nested record, or
+	// array) must not survive into the envelope — encoding/json rejects NaN/Inf
+	// and would fail the whole emit. The originals must be left untouched.
+	records := []map[string]interface{}{
+		{
+			"bad":    math.NaN(),
+			"posInf": math.Inf(1),
+			"ok":     float64(3.5),
+			"nested": map[string]interface{}{"x": math.Inf(-1)},
+			"arr":    []interface{}{float64(1), math.NaN()},
+		},
+	}
+	got := SampleRows(records, 1)
+	row := got[0]
+	if row["bad"] != nil || row["posInf"] != nil {
+		t.Errorf("non-finite top-level floats not sanitised: %v", row)
+	}
+	if row["ok"] != float64(3.5) {
+		t.Errorf("finite value altered: %v", row["ok"])
+	}
+	if n := row["nested"].(map[string]interface{}); n["x"] != nil {
+		t.Errorf("nested non-finite not sanitised: %v", n)
+	}
+	if a := row["arr"].([]interface{}); a[0] != float64(1) || a[1] != nil {
+		t.Errorf("array non-finite not sanitised: %v", a)
+	}
+	// The whole sanitised slice must now JSON-encode without error.
+	if _, err := json.Marshal(got); err != nil {
+		t.Fatalf("sanitised sample rows must marshal: %v", err)
+	}
+	// Original record is untouched (the file writer needs the raw rows).
+	if v, ok := records[0]["bad"].(float64); !ok || !math.IsNaN(v) {
+		t.Errorf("original record was mutated: %v", records[0]["bad"])
+	}
+}

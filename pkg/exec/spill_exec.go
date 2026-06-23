@@ -14,16 +14,17 @@ import (
 
 const userPathPrivacyWarning = "spill path is a user-chosen location and opts out of the managed privacy guarantees (no TTL pruning, no per-context partitioning, best-effort 0600 only); you own its lifetime"
 
-// trySpill runs the spill decision and, when it decides to spill, writes the
-// file + sidecar and emits the summary envelope. It returns handled=true when it
-// produced output (the caller returns immediately); handled=false means "inline"
-// and the caller continues with the unchanged output path.
+// trySpill runs the spill decision and emits the appropriate agent envelope.
+// It returns handled=true when it produced output (the caller returns
+// immediately); handled=false means the caller should continue with the
+// unchanged output path (a non-agent inline result, or a shape this path
+// deliberately leaves alone — see buildSpillResponse).
 func (e *DQLExecutor) trySpill(query string, result *DQLQueryResponse, records []map[string]interface{}, displayFormat string, opts DQLExecuteOptions) (bool, error) {
-	resp, spilled, err := e.buildSpillResponse(query, result, records, displayFormat, opts)
+	resp, handled, err := e.buildSpillResponse(query, result, records, displayFormat, opts)
 	if err != nil {
 		return true, err
 	}
-	if !spilled {
+	if !handled {
 		return false, nil
 	}
 	return true, writeEnvelope(os.Stdout, resp)
@@ -31,11 +32,13 @@ func (e *DQLExecutor) trySpill(query string, result *DQLQueryResponse, records [
 
 // buildSpillResponse makes the inline-vs-spill decision (D5/D19-buffered),
 // writes the spilled file + sidecar when applicable, and assembles the agent
-// envelope. spilled=false means the result should be emitted inline (the caller
-// falls through to today's output). It is separated from trySpill so it can be
-// unit-tested without capturing stdout: it returns the Response and leaves
-// emission to the caller, while its only side effect (writing to disk) is fully
-// controlled via opts.Spill (ToPath / Dir).
+// envelope. The handled return reports whether this path produced a Response to
+// emit: true for a spilled/summary-only result, and for an inline result in
+// agent mode (a self-describing kind:"records" envelope, D2/D31); false when the
+// caller should fall through to today's unchanged output path. It is separated
+// from trySpill so it can be unit-tested without capturing stdout: it returns
+// the Response and leaves emission to the caller, while its only side effect
+// (writing to disk) is fully controlled via opts.Spill (ToPath / Dir).
 func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, displayFormat string, opts DQLExecuteOptions) (output.Response, bool, error) {
 	// Measure serialised size against the chosen display encoding (D24).
 	measured, encoding := output.MeasureSerializedBytes(records, displayFormat)
@@ -43,12 +46,12 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	switch opts.Spill.Mode {
 	case SpillAuto:
 		if measured <= opts.Spill.Threshold {
-			return output.Response{}, false, nil // inline
+			return e.inlineRecordsResponse(query, result, records, measured, encoding, opts) // inline
 		}
 	case SpillAlways:
 		// always spill
 	default:
-		return output.Response{}, false, nil // never / unknown -> inline
+		return e.inlineRecordsResponse(query, result, records, measured, encoding, opts) // never / unknown -> inline
 	}
 
 	// Provenance from Grail metadata.
@@ -167,6 +170,50 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		Context:         ctx,
 	}
 	return resp, true, nil
+}
+
+// inlineRecordsResponse handles the inline (not-spilled) decision. In agent mode
+// it returns a self-describing kind:"records" envelope so a consumer branches on
+// result.kind uniformly across inline and spilled results (D2/D31); the rows are
+// carried directly. It deliberately leaves two shapes alone — falling through to
+// the caller's unchanged output path (handled=false) — so it never overrides an
+// explicit, non-JSON choice the caller already made:
+//   - a non-JSON display encoding (-o toon/csv/yaml/chart): the envelope is JSON;
+//     wrapping would silently discard the requested format.
+//   - a --jq transform: agent-mode jq already owns the output shape.
+//
+// Outside agent mode an inline result is always a fall-through (a human wants the
+// table/CSV, not an envelope).
+func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, measured int64, encoding string, opts DQLExecuteOptions) (output.Response, bool, error) {
+	if !opts.AgentMode || encoding != "json" || opts.JQFilter != "" {
+		return output.Response{}, false, nil
+	}
+
+	res := &output.InlineRecords{Kind: output.KindRecords, Records: records}
+	// Agent mode defaults --metadata to "all"; preserve that provenance under the
+	// result payload (it previously rode alongside the bare records map).
+	if len(opts.MetadataFields) > 0 {
+		if meta := extractQueryMetadata(result); meta != nil {
+			res.Metadata = output.MetadataToMap(meta, opts.MetadataFields)
+		}
+	}
+
+	total := len(records)
+	ctx := &output.ResponseContext{
+		Verb:             "query",
+		Resource:         resourceFromQuery(query),
+		Total:            &total,
+		Decided:          "inline",
+		ThresholdBytes:   opts.Spill.Threshold,
+		MeasuredBytes:    measured,
+		MeasuredEncoding: encoding,
+	}
+	return output.Response{
+		OK:              true,
+		EnvelopeVersion: output.EnvelopeVersion,
+		Result:          res,
+		Context:         ctx,
+	}, true, nil
 }
 
 // resolveSpillTarget decides the format, destination path, and base dir for a
