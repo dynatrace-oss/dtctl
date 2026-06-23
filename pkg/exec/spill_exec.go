@@ -103,7 +103,16 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	decided := "spilled"
 	if !summaryOnly {
 		written, werr := output.WriteSpillFile(targetPath, func(w io.Writer) error {
-			p := output.NewPrinterWithOpts(output.PrinterOptions{Format: format, Writer: w})
+			// Types is only consumed by the Parquet writer (to build a faithful
+			// columnar schema from the DQL column types); the json/jsonl/csv writers
+			// ignore it. It is nil unless --include-types was requested, which the
+			// command layer auto-enables for a Parquet spill — otherwise the Parquet
+			// writer falls back to value inference.
+			p := output.NewPrinterWithOpts(output.PrinterOptions{
+				Format: format,
+				Writer: w,
+				Types:  columnTypeMappings(result),
+			})
 			return p.PrintList(records)
 		})
 		if werr != nil {

@@ -164,3 +164,24 @@ func TestResolveSpillOptions_InvalidMode(t *testing.T) {
 		t.Error("expected error for invalid --spill value")
 	}
 }
+
+func TestSpillWritesParquet(t *testing.T) {
+	cases := []struct {
+		name string
+		opts exec.SpillOptions
+		want bool
+	}{
+		{"default jsonl", exec.SpillOptions{}, false},
+		{"format parquet", exec.SpillOptions{Format: "parquet"}, true},
+		{"format PARQUET cased", exec.SpillOptions{Format: "PARQUET"}, true},
+		{"format jsonl", exec.SpillOptions{Format: "jsonl"}, false},
+		{"to .parquet", exec.SpillOptions{ToPath: "/tmp/out.parquet"}, true},
+		{"to .jsonl beats parquet format", exec.SpillOptions{ToPath: "/tmp/out.jsonl", Format: "parquet"}, false},
+		{"extensionless to falls back to format", exec.SpillOptions{ToPath: "/tmp/out", Format: "parquet"}, true},
+	}
+	for _, c := range cases {
+		if got := spillWritesParquet(c.opts); got != c.want {
+			t.Errorf("%s: spillWritesParquet = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

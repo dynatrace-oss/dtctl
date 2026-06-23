@@ -142,6 +142,20 @@ func isValidMode(mode string) bool {
 	}
 }
 
+// spillWritesParquet reports whether the resolved spill will produce a Parquet
+// file. An explicit --spill-to extension wins; otherwise the configured format
+// (which falls back to the non-Parquet default when unset) decides. Used to
+// auto-request DQL type info so the Parquet schema is built from real types.
+func spillWritesParquet(opts exec.SpillOptions) bool {
+	if opts.ToPath != "" {
+		if ext := spillFormatFromExt(opts.ToPath); ext != "" {
+			return ext == "parquet"
+		}
+		// Extension-less --spill-to falls back to the configured format below.
+	}
+	return strings.EqualFold(opts.Format, "parquet")
+}
+
 // spillFormatFromExt maps a destination file extension to a spill format, or ""
 // for an unrecognised/missing extension.
 func spillFormatFromExt(path string) string {

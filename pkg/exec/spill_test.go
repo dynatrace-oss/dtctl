@@ -1,13 +1,17 @@
 package exec
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/parquet-go/parquet-go"
+
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 )
 
 func TestParseByteSize(t *testing.T) {
@@ -493,6 +497,49 @@ func TestBuildSpillResponse_DefaultsToJSONL(t *testing.T) {
 		if jerr := json.Unmarshal([]byte(ln), &row); jerr != nil {
 			t.Errorf("line is not valid JSON: %q: %v", ln, jerr)
 		}
+	}
+}
+
+func TestBuildSpillResponse_ParquetUsesDQLTypes(t *testing.T) {
+	e := &DQLExecutor{}
+	// "count" arrives as a JSON string but is typed `long` in DQL. With the DQL
+	// types threaded into the Parquet writer, the schema must make it an INT64
+	// column; without types it would be value-inferred as a string (BYTE_ARRAY).
+	records := []map[string]interface{}{
+		{"count": "194414758", "host": "web-01"},
+		{"count": "42", "host": "web-02"},
+	}
+	result := &DQLQueryResponse{Result: &DQLResult{
+		Records: records,
+		Types: []sdkquery.ColumnTypes{{
+			Mappings: map[string]sdkquery.ColumnType{
+				"count": {Type: "long"},
+				"host":  {Type: "string"},
+			},
+		}},
+	}}
+	dest := filepath.Join(t.TempDir(), "out.parquet")
+	opts := DQLExecuteOptions{Spill: SpillOptions{Mode: SpillAlways, ToPath: dest, Threshold: 0}}
+
+	_, spilled, err := e.buildSpillResponse("fetch logs | summarize count()", result, records, "json", opts)
+	if err != nil || !spilled {
+		t.Fatalf("spilled=%v err=%v", spilled, err)
+	}
+
+	data, rerr := os.ReadFile(dest)
+	if rerr != nil {
+		t.Fatalf("read parquet: %v", rerr)
+	}
+	f, ferr := parquet.OpenFile(bytes.NewReader(data), int64(len(data)))
+	if ferr != nil {
+		t.Fatalf("open parquet: %v", ferr)
+	}
+	col, ok := f.Schema().Lookup("count")
+	if !ok {
+		t.Fatal("count column missing from parquet schema")
+	}
+	if got := col.Node.Type().Kind(); got != parquet.Int64 {
+		t.Errorf("count physical type = %v, want Int64 — DQL `long` type was not applied to the spill", got)
 	}
 }
 

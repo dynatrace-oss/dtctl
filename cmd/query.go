@@ -357,6 +357,12 @@ Examples:
 			return err
 		}
 		spillTenantID, spillContextName := spillProvenance(cfg)
+		// A Parquet spill derives its columnar schema from DQL types, so request
+		// them even when the displayed output format does not — same reasoning as
+		// the -o parquet path above, applied to the spill destination.
+		if spillOpts.Enabled() && spillWritesParquet(spillOpts) {
+			includeTypes = true
+		}
 
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
