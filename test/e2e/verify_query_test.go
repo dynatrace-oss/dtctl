@@ -43,8 +43,12 @@ func TestQueryVerify_ValidQuery(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "fetch dt.entity.host query",
-			query:   "fetch dt.entity.host | fields entity.name | limit 10",
+			// Use a core Grail data object with a fields projection. Classic
+			// dt.entity.* / smartscapeNodes data objects are not available in
+			// Grail-only tenants (the API rejects them as UNKNOWN_DATA_OBJECT),
+			// so they cannot be used in a query that must verify as valid.
+			name:    "fetch spans with fields query",
+			query:   "fetch spans | fields timestamp, span.name | limit 10",
 			wantErr: false,
 		},
 	}
@@ -311,9 +315,11 @@ func TestQueryVerify_TemplateVariables(t *testing.T) {
 			expectValid:   true,
 		},
 		{
-			name:          "query with entity variable",
-			queryTemplate: "fetch dt.entity.{{.entityType}} | fields entity.name | limit 10",
-			renderedQuery: "fetch dt.entity.host | fields entity.name | limit 10",
+			// Templating the data object itself. Avoids dt.entity.* so the
+			// rendered query verifies as valid on Grail-only tenants too.
+			name:          "query with data object variable",
+			queryTemplate: "fetch {{.dataObject}} | fields timestamp | limit 10",
+			renderedQuery: "fetch spans | fields timestamp | limit 10",
 			expectValid:   true,
 		},
 	}
