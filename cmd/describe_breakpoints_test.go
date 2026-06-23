@@ -381,11 +381,17 @@ func TestRunDescribeBreakpoint_StructuredSuccess(t *testing.T) {
 
 func TestRunDescribeBreakpoint_DirectIDSuccess(t *testing.T) {
 	originalOutputFormat := outputFormat
+	originalAgentMode := agentMode
 	defer func() {
 		outputFormat = originalOutputFormat
+		agentMode = originalAgentMode
 	}()
 
 	outputFormat = "json"
+	// Pin non-agent mode so the assertion is deterministic regardless of ambient
+	// agent detection (otherwise the output shape — bare object vs envelope —
+	// depends on the environment the tests run in).
+	agentMode = false
 	deps := liveDebuggerDeps{}
 	deps.loadConfig = func() (*config.Config, error) {
 		cfg := config.NewConfig()
@@ -425,7 +431,7 @@ func TestRunDescribeBreakpoint_DirectIDSuccess(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "\"id\":\"123456789\"") {
+	if !strings.Contains(output, "\"id\": \"123456789\"") {
 		t.Fatalf("unexpected direct-id output: %q", output)
 	}
 }
