@@ -79,6 +79,15 @@ const (
 // records slice is still held in memory by the caller.
 const parquetRowsPerRowGroup = 100_000
 
+// parquetEmptyResultColumn is the name of the single placeholder column emitted
+// when a result has no columns to declare — an empty result for which the DQL
+// API returned neither records nor a `types` block (it returns `"types":[]`
+// alongside `"records":[]`, so there is no schema to recover). A column-less
+// Parquet file, while a structurally valid container, is rejected by mainstream
+// readers (DuckDB, pyarrow, pandas: "Need at least one non-root column in the
+// file"), so we emit one nullable placeholder column to keep the file portable.
+const parquetEmptyResultColumn = "_dtctl_empty"
+
 // Print writes a single object as a one-row Parquet file.
 func (p *ParquetPrinter) Print(obj interface{}) error {
 	return p.PrintList([]interface{}{obj})
@@ -88,8 +97,11 @@ func (p *ParquetPrinter) Print(obj interface{}) error {
 //
 // A Parquet file is always emitted, even for an empty result: a zero-byte file
 // is not valid Parquet and would be rejected by downstream tooling, so an empty
-// result yields a valid schema-bearing file with zero rows. (This differs from
-// the CSV/JSONL printers, where an empty file is itself valid output.)
+// result yields a valid file with zero rows. When the DQL types are known the
+// file carries that schema; when they are not (the API returns no types for an
+// empty result) it carries a single placeholder column so it stays readable by
+// mainstream tooling. (This differs from the CSV/JSONL printers, where an empty
+// file is itself valid output.)
 func (p *ParquetPrinter) PrintList(obj interface{}) error {
 	records, err := toRecordMaps(obj)
 	if err != nil {
@@ -100,6 +112,15 @@ func (p *ParquetPrinter) PrintList(obj interface{}) error {
 	// are no records, fall back to the DQL-declared columns so the empty file
 	// still carries a faithful schema.
 	columns := p.columnsFor(records)
+
+	// A column-less schema yields a file mainstream readers reject (see
+	// parquetEmptyResultColumn). This happens for an empty result the API did
+	// not type, and for the degenerate case where every record is an empty map.
+	// Emit a single nullable placeholder column so the file stays portable.
+	if len(columns) == 0 {
+		columns = []string{parquetEmptyResultColumn}
+	}
+
 	kinds := p.resolveColumnKinds(columns, records)
 
 	// Build the parquet schema: one optional leaf per column.
@@ -134,8 +155,8 @@ func (p *ParquetPrinter) PrintList(obj interface{}) error {
 // columnsFor returns the ordered column set for the schema: the sorted union of
 // record keys when there are records, otherwise the sorted set of DQL-declared
 // columns. The latter lets an empty result still produce a valid, schema-bearing
-// Parquet file. Returns nil only when there are neither records nor DQL types,
-// in which case a valid (column-less) Parquet file is still written.
+// Parquet file. Returns nil when there are neither records nor DQL types; the
+// caller substitutes a placeholder column so the file is never column-less.
 func (p *ParquetPrinter) columnsFor(records []map[string]interface{}) []string {
 	if len(records) > 0 {
 		return unionColumns(records)

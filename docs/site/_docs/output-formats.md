@@ -119,8 +119,10 @@ Notes:
 - **`-o parquet`** derives its column schema from the DQL column types (it
   requests type information automatically). Nested or variant columns that do
   not map cleanly to a columnar type are stored as a JSON-encoded string column
-  rather than being dropped. An empty result still produces a valid,
-  schema-bearing Parquet file (never a zero-byte file).
+  rather than being dropped. An empty result still produces a valid Parquet
+  file (never a zero-byte file): it carries the DQL schema when types are known,
+  otherwise a single placeholder column so the file stays readable by mainstream
+  tooling (a column-less file is rejected by DuckDB, pyarrow, and pandas).
 
 ## Plain Mode
 
