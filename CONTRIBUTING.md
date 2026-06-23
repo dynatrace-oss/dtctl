@@ -132,7 +132,7 @@ Your pull request must:
 - ✅ Include tests for new functionality
 - ✅ Update documentation if behavior changes
 - ✅ Follow the project's coding standards
-- ✅ Have clear commit messages
+- ✅ Use a [Conventional Commits](#commit-messages) PR title (it drives versioning and release notes — see [Releases](#releases))
 - ✅ Be up-to-date with the main branch
 
 ### Review Process
@@ -326,6 +326,28 @@ Fixes #456
 - Separate subject from body with blank line
 - Wrap body at 72 characters
 - Explain what and why, not how
+
+> **Why this matters:** Releases are automated. Your commit/PR type determines the version bump and the release notes (see [Releases](#releases)), so the prefix is not just convention — it's load-bearing.
+
+## Releases
+
+Releases are fully automated with [release-please](https://github.com/googleapis/release-please) — **contributors never edit a changelog or bump a version**, and there is no `CHANGELOG.md` file (the GitHub Release is the changelog).
+
+How it works:
+
+- On every push to `main`, release-please opens/updates a **release PR** that bumps the version based on the [Conventional Commits](#commit-messages) merged since the last release.
+- Merging that release PR creates the git tag, the GitHub Release (with generated notes), and triggers GoReleaser to build and publish the binaries and Homebrew cask.
+
+Version impact of commit types (pre-1.0):
+
+| Commit type | Effect |
+|-------------|--------|
+| `feat:` | minor bump (e.g. 0.30.3 → 0.31.0) |
+| `fix:` / `perf:` | patch bump (e.g. 0.30.3 → 0.30.4) |
+| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | minor bump pre-1.0 (major once 1.0) |
+| `docs:` / `test:` / `chore:` / `ci:` / `refactor:` | no release on their own |
+
+Because PRs are squash-merged, the **PR title must be a valid conventional commit**. To override the computed version, add a `Release-As: X.Y.Z` footer to a commit on `main`.
 
 ## Reporting Bugs
 

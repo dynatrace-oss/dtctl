@@ -452,7 +452,7 @@ Design document: [FILTER_AST_PLAN.md](FILTER_AST_PLAN.md)
 | 5 | Update API design doc (uncomment + expand) | `docs/dev/API_DESIGN.md` |
 | 6 | Update FUTURE_FEATURES.md (mark complete) | `docs/dev/FUTURE_FEATURES.md` |
 | 7 | Update README resource table | `README.md` |
-| 8 | Update CHANGELOG | `CHANGELOG.md` |
+| 8 | Use a `feat:` conventional commit (release-please handles the changelog) | commit/PR title |
 
 ---
 
@@ -489,4 +489,3 @@ Design document: [FILTER_AST_PLAN.md](FILTER_AST_PLAN.md)
 | `docs/dev/API_DESIGN.md` | Uncomment segment examples, add query examples |
 | `docs/dev/FUTURE_FEATURES.md` | Mark segment tasks as complete |
 | `README.md` | Add segments to resource table |
-| `CHANGELOG.md` | Document new feature |

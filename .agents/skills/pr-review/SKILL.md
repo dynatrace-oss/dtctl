@@ -128,7 +128,7 @@ make test-coverage
 Is the change properly documented for users and contributors?
 
 **Always required:**
-- **CHANGELOG.md**: Entry under `[Unreleased]` following Keep-a-Changelog format. Bold feature name with em dash and description.
+- **Conventional commit title**: The PR title (and squash-merge commit) must be a valid conventional commit (`feat: ...`, `fix: ...`, `feat!: ...` for breaking changes) — release-please derives the version bump and GitHub Release notes from it. There is no CHANGELOG.md to edit.
 
 **Required for new features:**
 - **README.md**: Updated if the feature is user-facing and significant (new resource type, new command category)
@@ -142,7 +142,7 @@ Is the change properly documented for users and contributors?
 - **Command reference** updated in `docs/site/_docs/command-reference.md`
 
 **Required for new AI agent support:**
-- `README.md`, `CHANGELOG.md`, `docs/QUICK_START.md`, `docs/dev/API_DESIGN.md`, `docs/dev/IMPLEMENTATION_STATUS.md` (all five)
+- `README.md`, `docs/QUICK_START.md`, `docs/dev/API_DESIGN.md`, `docs/dev/IMPLEMENTATION_STATUS.md` (all four)
 
 ### 6. GitHub Pages
 

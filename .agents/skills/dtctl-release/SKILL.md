@@ -1,243 +1,76 @@
 ---
 name: dtctl-release
-description: Ship a new dtctl release — bump version, write changelog entries, run tests, commit, tag, push, and write GitHub release notes. Use this skill whenever the user says "release", "ship it", "cut a release", "new version", "bump version", "publish", or asks about the dtctl release process. Also use when the user wants to update CHANGELOG.md for a release or write GitHub release notes.
+description: Explain and operate the dtctl release process, which is automated by release-please. Use this skill whenever the user says "release", "ship it", "cut a release", "new version", "bump version", "publish", or asks how dtctl releases work, why a release PR exists, or how to trigger/finish a release.
 ---
 
-# dtctl Release Process
+# dtctl Release Process (release-please)
 
-This skill walks through shipping a new dtctl release end-to-end. The process has six phases: analyze, version, changelog, test, commit/tag/push, and GitHub release notes.
+dtctl releases are **automated by [release-please](https://github.com/googleapis/release-please)**. There is no manual version bump, no `CHANGELOG.md` to edit, and no tag to push by hand. Releasing is just **merging the release PR**.
 
-## Prerequisites
+## How it works
 
-- You must be on the `main` branch with all feature branches merged
-- The working tree must be clean (`git status` shows no uncommitted changes)
-- If the user is on a feature branch, merge to main first (or ask them to)
+1. Every push to `main` runs `.github/workflows/release.yml`.
+2. The `release-please` job inspects the [Conventional Commits](https://www.conventionalcommits.org/) since the last release and maintains a **release PR** titled like `chore(main): release 0.31.0`. That PR:
+   - bumps `.release-please-manifest.json`,
+   - bumps the fallback version in `pkg/version/version.go` (via the `// x-release-please-version` annotation),
+   - and accumulates the pending release notes (in the PR body).
+3. **Merging the release PR** makes release-please create the git tag (`vX.Y.Z`) and the **GitHub Release** with generated notes.
+4. The same workflow then runs the gated `goreleaser` job (`release_created == true`), which builds cross-platform binaries, signs checksums with cosign, generates SBOMs with syft, attaches everything to the release (without overwriting the notes — `release.mode: keep-existing`), and pushes the updated Homebrew cask to `dynatrace-oss/homebrew-tap`.
 
-**Pre-flight check:**
+There is **no `CHANGELOG.md` file** in the repo by design — the GitHub Release is the canonical changelog (`skip-changelog: true` in `release-please-config.json`).
 
-```bash
-git branch --show-current   # Must be "main"
-git status                  # Must be clean
-git pull origin main        # Must be up to date with remote
-```
+## Version bumps are determined by commit type
 
-If any check fails, stop and resolve before continuing.
+| Commit prefix | Bump (pre-1.0) | Example |
+|---------------|----------------|---------|
+| `feat:` | MINOR | 0.30.3 → 0.31.0 |
+| `fix:` / `perf:` | PATCH | 0.30.3 → 0.30.4 |
+| `feat!:` / `fix!:` or `BREAKING CHANGE:` footer | MINOR (pre-1.0) | 0.30.3 → 0.31.0 |
+| `docs:` / `test:` / `chore:` / `ci:` / `refactor:` | no release on its own | — |
 
-## Phase 1: Analyze Changes Since Last Release
+So the way to "control the version" is to **write good conventional commits** (see CONTRIBUTING.md). PRs are squash-merged, so the **PR title** becomes the release-relevant commit.
 
-Identify what changed since the last release to determine the version bump and write good release notes.
+## To cut a release
 
-```bash
-# Find the latest release tag
-git tag --sort=-version:refname | head -5
-
-# List all commits since that tag
-git log <last-tag>..HEAD --oneline
-
-# Check the current Unreleased section in CHANGELOG.md
-```
-
-Read the commits carefully and group them into:
-- **Features** (new commands, new flags, new integrations)
-- **Bug fixes** (corrected behavior)
-- **Documentation** (new or updated docs)
-- **Security** (dependency updates, vulnerability fixes)
-- **Breaking changes** (removed flags, changed defaults)
-
-For each significant feature, explore the actual implementation files to understand what it does. Don't just rely on commit messages — read the code so you can write accurate, detailed release notes.
-
-## Phase 2: Determine Version Number
-
-dtctl follows [Semantic Versioning](https://semver.org/) (currently pre-1.0, so 0.MINOR.PATCH):
-
-| Change type | Bump | Example |
-|-------------|------|---------|
-| New features, new commands | MINOR | 0.23.0 -> 0.24.0 |
-| Bug fixes only, no new features | PATCH | 0.24.0 -> 0.24.1 |
-| Breaking changes (pre-1.0) | MINOR | 0.24.0 -> 0.25.0 |
-
-## Phase 3: Update Version and Changelog
-
-### 3a. Bump version in code
-
-Edit `pkg/version/version.go` — change the `Version` variable:
-
-```go
-var Version = "X.Y.Z"  // update this
-```
-
-This is the only place the version is hardcoded. GoReleaser injects it at build time via `-ldflags`, but the fallback value here should always match the latest release.
-
-### 3b. Update CHANGELOG.md
-
-The changelog follows [Keep a Changelog](https://keepachangelog.com/) format. Move items from `[Unreleased]` into a new version section:
-
-```markdown
-## [Unreleased]
-
-## [X.Y.Z] - YYYY-MM-DD
-
-### Added
-- **Feature name** — description with enough detail that users understand what it does and how to use it; include CLI examples where relevant
-
-### Fixed
-- **Bug summary** — what was broken and how it's fixed now
-
-### Changed
-- **Change summary** — what changed and why
-
-### Security
-- **Security fix** — what was vulnerable and what was upgraded
-
-### Documentation
-- **Doc name** — what was added or updated
-```
-
-Also add the comparison link at the bottom of the file:
-
-```markdown
-[X.Y.Z]: https://github.com/dynatrace-oss/dtctl/compare/vPREVIOUS...vX.Y.Z
-```
-
-If a comparison link for the previous version is missing (check!), add that too.
-
-### Writing style for changelog entries
-
-- Start each entry with a bold feature/fix name in `**double asterisks**`
-- Follow with an em dash `—` and a description
-- Be specific: mention command names, flag names, file paths, environment variables
-- For features, explain both what it does and how to use it
-- For fixes, explain what was broken and what the correct behavior is now
-- Use semicolons to chain related details in a single entry
-- Keep entries to 1-3 lines each
-
-## Phase 4: Run Tests
-
-Run the full test suite and build to catch any issues before releasing:
+Usually nothing to do but merge:
 
 ```bash
-# Run all tests
-go test ./...
+# Find the open release PR
+gh pr list --search "release" --state open
 
-# Build the binary
-make build
-
-# Verify the build works
-./bin/dtctl version
+# Review the version bump and notes it proposes, then merge it
+gh pr merge <number> --squash
 ```
 
-All tests must pass. If any fail, fix them before proceeding.
-
-## Phase 5: Commit, Tag, and Push
-
-### 5a. Commit the release
+After the merge, watch the release workflow finish both jobs:
 
 ```bash
-git add CHANGELOG.md pkg/version/version.go
-git commit -m "release vX.Y.Z: short summary of key features"
+gh run watch
+gh release view "$(gh release list --limit 1 --json tagName -q '.[0].tagName')"
 ```
 
-The commit message should follow the pattern: `release vX.Y.Z: feature1, feature2, feature3`
+That's it — the tag, GitHub Release, binaries, signatures, SBOMs, and Homebrew cask are all produced automatically.
 
-### 5b. Push and tag
+## Polishing release notes (optional)
+
+release-please generates notes grouped by commit type with PR links. They're good by default. If you want richer prose, edit the GitHub Release after it's published — GoReleaser uses `keep-existing`, so it won't clobber your edits:
 
 ```bash
-git push origin main
-git tag vX.Y.Z
-git push origin vX.Y.Z
+gh release edit vX.Y.Z --notes-file notes.md
 ```
 
-Pushing the tag triggers the GitHub Actions release workflow (`.github/workflows/release.yml`), which automatically:
-- Builds cross-platform binaries (linux/darwin/windows, amd64/arm64)
-- Signs checksums with cosign (keyless, via OIDC)
-- Generates SBOMs with syft
-- Creates a GitHub Release with auto-generated changelog
-- Pushes an updated Homebrew cask to `dynatrace-oss/homebrew-tap`
+## Troubleshooting
 
-### Homebrew
-
-No manual Homebrew update is needed. GoReleaser's `homebrew_casks` config in `.goreleaser.yaml` automatically pushes the updated cask to the tap repository using a GitHub App token. The `skip_upload: auto` setting prevents pre-release tags from being published.
-
-## Phase 6: Write GitHub Release Notes
-
-After the tag is pushed, update the GitHub release with polished release notes. The auto-generated changelog from GoReleaser is a raw commit list — replace it with proper release notes.
-
-```bash
-gh release edit vX.Y.Z --notes "$(cat <<'EOF'
-... release notes here ...
-EOF
-)"
-```
-
-### Release notes format
-
-Follow this exact structure (see previous releases for reference — `gh release view vPREVIOUS`):
-
-```markdown
-## What's New
-
-### Feature Name
-
-Paragraph explaining the feature with context on why it's useful.
-
-\`\`\`bash
-# Concrete usage example
-dtctl some-command --some-flag
-\`\`\`
-
-Additional detail about configuration, behavior, or edge cases. Keep it practical — show users exactly how to use the feature.
-
-### Another Feature
-
-...repeat for each major feature...
-
-## Bug Fixes
-
-- **Short fix title** — one-line explanation of what was broken and what's fixed.
-- **Another fix** — description.
-
-## Documentation
-
-- **Doc title** — what was added, with a link if applicable.
-
-## Install / Upgrade
-
-\`\`\`bash
-# Homebrew
-brew update && brew upgrade dtctl
-
-# Direct install
-curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | bash
-
-# Go install
-go install github.com/dynatrace-oss/dtctl@vX.Y.Z
-\`\`\`
-
-**Full Changelog**: https://github.com/dynatrace-oss/dtctl/compare/vPREVIOUS...vX.Y.Z
-```
-
-### Release notes writing style
-
-- Each major feature gets its own `### Heading` with a paragraph + code example
-- Code examples should be copy-pasteable and realistic
-- Bug fixes go in a single bulleted list under `## Bug Fixes`
-- Always end with the `## Install / Upgrade` block
-- Always end with the `**Full Changelog**` comparison link
-- Omit sections that don't apply (e.g., no `## Security` if there are no security fixes)
-- Study previous releases for tone and detail level: `gh release view v0.23.0`, `gh release view v0.22.0`
+- **No release PR appeared** — there are no releasable commits since the last release (only `docs`/`chore`/`test`/etc.), or a commit isn't a valid conventional commit. Check `gh run list --workflow=release.yml`.
+- **Wrong version bump** — caused by the commit types. To force a specific bump, use a `Release-As: x.y.z` footer in a commit on `main`.
+- **Release created but no binaries** — inspect the `goreleaser` job in the release workflow run; the `release-please` job must have output `release_created: true` for it to run.
+- **Homebrew didn't update** — check the `HOMEBREW_TAP_APP_ID` / `HOMEBREW_TAP_APP_PRIVATE_KEY` secrets and the GoReleaser step logs; `skip_upload: auto` intentionally skips pre-release tags.
 
 ## Checklist
 
-Use this to track progress:
-
-1. [ ] On `main` branch, clean working tree, up to date with remote
-2. [ ] Analyzed all commits since last release
-3. [ ] Determined version number (semver)
-4. [ ] Updated `pkg/version/version.go`
-5. [ ] Updated `CHANGELOG.md` (entries + comparison link)
-6. [ ] Tests pass (`go test ./...`)
-7. [ ] Build succeeds (`make build`)
-8. [ ] Committed release changes on `main`
-9. [ ] Pushed to `origin/main`
-10. [ ] Created and pushed tag `vX.Y.Z`
-11. [ ] GitHub release notes written via `gh release edit`
+1. [ ] All intended changes merged to `main` as conventional commits
+2. [ ] Open release PR reflects the expected version and notes
+3. [ ] Merge the release PR (squash)
+4. [ ] `release.yml` run is green for both `release-please` and `goreleaser` jobs
+5. [ ] GitHub Release shows binaries, checksums, signatures, and SBOMs
+6. [ ] (Optional) Polished the release notes via `gh release edit`

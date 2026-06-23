@@ -67,7 +67,9 @@ When adding a new AI agent to the skills system, update **all** of the following
 
 1. **Code**: `pkg/aidetect/detect.go` (env var), `pkg/skills/installer.go` (agent entry + format), `cmd/skills.go` (help text, `--for` flag)
 2. **Tests**: `pkg/aidetect/detect_test.go`, `pkg/skills/installer_test.go`, `cmd/skills_test.go`
-3. **Docs**: `README.md`, `CHANGELOG.md`, `docs/QUICK_START.md` (agent detection list), `docs/dev/API_DESIGN.md` (agent detection list), `docs/dev/IMPLEMENTATION_STATUS.md` (skills feature line)
+3. **Docs**: `README.md`, `docs/QUICK_START.md` (agent detection list), `docs/dev/API_DESIGN.md` (agent detection list), `docs/dev/IMPLEMENTATION_STATUS.md` (skills feature line)
+
+> Releases are automated by release-please from conventional commits — do not hand-edit a changelog. Just make sure the commit/PR title is a proper conventional commit (e.g. `feat: detect <agent> sessions`).
 
 ## Adding a Resource
 
