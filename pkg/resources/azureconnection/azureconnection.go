@@ -3,6 +3,7 @@ package azureconnection
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
@@ -11,6 +12,19 @@ const (
 	SchemaID    = "builtin:hyperscaler-authentication.connections.azure"
 	SettingsAPI = "/platform/classic/environment-api/v2/settings/objects"
 )
+
+// TokenIssuerForHost returns the Dynatrace token issuer URL for a given tenant host.
+// Used to construct Azure federated identity credential configuration.
+// For non-production environments not covered by auto-detection, pass an explicit
+// issuer via the YAML top-level "issuer" field or --issuer flag.
+func TokenIssuerForHost(host string) string {
+	switch {
+	case strings.Contains(host, "dev.apps.dynatracelabs.com"), strings.Contains(host, "dev.dynatracelabs.com"):
+		return "https://dev.token.dynatracelabs.com"
+	default:
+		return "https://token.dynatrace.com"
+	}
+}
 
 type Handler struct {
 	client *client.Client
