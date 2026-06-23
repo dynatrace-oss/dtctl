@@ -37,7 +37,9 @@ import (
 //	string                    STRING
 //	timestamp                 INT64 (TIMESTAMP)   nanosecond precision, UTC-adjusted;
 //	                                              unparseable values written as null
-//	duration / timeframe / ip STRING              rendered as their string form
+//	duration                  INT64               nanoseconds; math-ready, no CAST
+//	                                              needed; unparseable values → null
+//	timeframe / ip            STRING              rendered as their string form
 //	(anything else, nested    STRING (complex)    JSON-encoded — never crash, never
 //	 record/array, mixed)                         silently drop a column
 //
@@ -202,7 +204,14 @@ func kindForDQLType(dqlType string) parquetColumnKind {
 		return colDouble
 	case "timestamp":
 		return colTimestamp
-	case "string", "duration", "timeframe", "ip":
+	case "duration":
+		// DQL durations arrive as an integer count of nanoseconds (JSON-encoded
+		// as a string, e.g. "598600"). Writing them as INT64 keeps the value
+		// math-ready in local tooling — no CAST needed for sum/avg/quantile —
+		// rather than as an opaque string. A value that does not parse as an
+		// integer is written as null (coerceValue), never crashing the export.
+		return colInt64
+	case "string", "timeframe", "ip":
 		return colString
 	default:
 		// arrays, records, variant and any future/unknown type → JSON column.

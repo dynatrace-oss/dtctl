@@ -414,7 +414,14 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 	// small/empty result under `auto` decides inline via the threshold, while
 	// `always`/`--spill-to` honours the "write the file" contract even for an
 	// empty result.
-	if opts.Spill.Enabled() {
+	//
+	// Agent mode always enters this path even under --spill=never: the
+	// spill-aware emitter is what produces the structured envelope, and a
+	// `never` result decides inline via a self-describing kind:"records"
+	// envelope (D2/D31) rather than reverting to a human table. The path still
+	// falls through (handled=false) for an explicit non-JSON encoding or a --jq
+	// transform, so an agent that asked for `-o toon`/`--jq` keeps that shape.
+	if opts.Spill.Enabled() || opts.AgentMode {
 		handled, err := e.trySpill(query, result, records, effectiveFormat, opts)
 		if handled || err != nil {
 			return err

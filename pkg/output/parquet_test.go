@@ -72,12 +72,15 @@ func TestParquetPrinter_DQLTypes(t *testing.T) {
 			{Name: "ratio", Type: "double"},
 			{Name: "host", Type: "string"},
 			{Name: "ok", Type: "boolean"},
+			// "duration" arrives as an integer-nanosecond JSON string and must
+			// land as INT64 so it stays math-ready locally (no CAST needed).
+			{Name: "duration", Type: "duration"},
 		},
 	}
 	records := []map[string]interface{}{
 		// "long" arriving as a JSON string (DQL does this) must coerce to int64.
-		{"count": "194414758", "ratio": 0.5, "host": "web-01", "ok": true},
-		{"count": float64(42), "ratio": 1.5, "host": "web-02", "ok": false},
+		{"count": "194414758", "ratio": 0.5, "host": "web-01", "ok": true, "duration": "598600"},
+		{"count": float64(42), "ratio": 1.5, "host": "web-02", "ok": false, "duration": "4781900"},
 	}
 	if err := p.PrintList(records); err != nil {
 		t.Fatalf("PrintList: %v", err)
@@ -98,6 +101,25 @@ func TestParquetPrinter_DQLTypes(t *testing.T) {
 	}
 	if rows[1]["ratio"] != 1.5 {
 		t.Errorf("ratio = %#v, want 1.5", rows[1]["ratio"])
+	}
+	// duration is INT64 nanoseconds, coerced from the JSON string form.
+	if rows[0]["duration"] != int64(598600) {
+		t.Errorf("duration = %#v, want int64(598600)", rows[0]["duration"])
+	}
+	if rows[1]["duration"] != int64(4781900) {
+		t.Errorf("duration = %#v, want int64(4781900)", rows[1]["duration"])
+	}
+}
+
+func TestKindForDQLType_Duration(t *testing.T) {
+	// duration maps to INT64 (nanoseconds); timeframe/ip stay STRING.
+	if got := kindForDQLType("duration"); got != colInt64 {
+		t.Errorf("kindForDQLType(duration) = %v, want colInt64", got)
+	}
+	for _, dt := range []string{"timeframe", "ip", "string"} {
+		if got := kindForDQLType(dt); got != colString {
+			t.Errorf("kindForDQLType(%q) = %v, want colString", dt, got)
+		}
 	}
 }
 

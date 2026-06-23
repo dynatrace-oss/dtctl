@@ -213,6 +213,32 @@ func TestBuildSpillResponse_InlineRecordsEnvelopeInAgentMode(t *testing.T) {
 	}
 }
 
+func TestBuildSpillResponse_NeverModeInlinesInAgentMode(t *testing.T) {
+	// --spill=never forces rows inline regardless of size; in agent mode that
+	// still means a self-describing kind:"records" envelope, never a table. Use
+	// a Threshold of 0 to prove size is irrelevant under never (auto would spill).
+	e := &DQLExecutor{}
+	result, records := sampleResult(false)
+	opts := DQLExecuteOptions{
+		AgentMode: true,
+		Spill:     SpillOptions{Mode: SpillNever, Threshold: 0, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Fatal("never + agent mode should emit a kind:records envelope, not a fall-through")
+	}
+	ir, ok := resp.Result.(*output.InlineRecords)
+	if !ok || ir.Kind != output.KindRecords {
+		t.Fatalf("result = %T (kind unexpected), want *InlineRecords kind:records", resp.Result)
+	}
+	if resp.Context.Decided != "inline" {
+		t.Errorf("decided = %q, want inline", resp.Context.Decided)
+	}
+}
+
 func TestBuildSpillResponse_InlineFallThroughCases(t *testing.T) {
 	e := &DQLExecutor{}
 	result, records := sampleResult(false)

@@ -171,3 +171,44 @@ func TestE2E_QueryInlineRecordsEnvelope(t *testing.T) {
 		t.Errorf("records=%d decided=%q", len(env.Result.Records), env.Context.Decided)
 	}
 }
+
+// TestE2E_QueryNeverSpillStillEmitsEnvelopeInAgentMode is the regression guard
+// for the rough edge where --spill=never in agent mode bypassed the spill-aware
+// emitter entirely and reverted to a human table (printResults gated the path on
+// Spill.Enabled(), which is false for never). In agent mode a never result —
+// however large — must still come back as a structured kind:"records" envelope
+// with every row inline, never a table.
+func TestE2E_QueryNeverSpillStillEmitsEnvelopeInAgentMode(t *testing.T) {
+	// A result far above any sane threshold, to prove "never" forces inline
+	// regardless of size rather than silently degrading to a table.
+	e := mockGrail(t, manyRecords(50))
+
+	out := runAndCapture(t, func() error {
+		return e.ExecuteWithOptions("fetch logs", DQLExecuteOptions{
+			AgentMode: true,
+			// No explicit -o: this is the exact invocation that used to emit a
+			// table. OutputFormat is left at its zero value (the default path).
+			Spill: SpillOptions{Mode: SpillNever, Threshold: 200, Format: "json", TTL: 0},
+		})
+	})
+
+	var env struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Kind    string                   `json:"kind"`
+			Records []map[string]interface{} `json:"records"`
+		} `json:"result"`
+		Context struct {
+			Decided string `json:"decided"`
+		} `json:"context"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("--spill=never in agent mode did not emit a JSON envelope (regressed to a table?): %v\n%s", err, out)
+	}
+	if !env.OK || env.Result.Kind != "records" {
+		t.Fatalf("kind = %q, want records (ok=%v)\n%s", env.Result.Kind, env.OK, out)
+	}
+	if len(env.Result.Records) != 50 || env.Context.Decided != "inline" {
+		t.Errorf("records=%d decided=%q, want 50 rows inline", len(env.Result.Records), env.Context.Decided)
+	}
+}

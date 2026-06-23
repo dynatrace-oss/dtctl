@@ -96,10 +96,12 @@ back to the human-readable `context` (which always carries `decided`, `total`,
 stats move into a `sample_stats` block (each column tagged `basis: "sample"`) so
 sample-based figures can't be misread as population truth.
 
-> The inline `kind: "records"` envelope is emitted on the spill-aware path (agent
-> mode, JSON output). Explicit non-JSON output (`-o toon/csv/yaml`), `--jq`
-> transforms, and `--spill=never` keep the plain `{ "records": …, "metadata": … }`
-> shape.
+> The inline `kind: "records"` envelope is emitted on the spill-aware path
+> whenever agent mode emits JSON — including under `--spill=never`, which forces
+> every row inline regardless of size but still as a `kind: "records"` envelope
+> (never a human table). Explicit non-JSON output (`-o toon/csv/yaml`) and `--jq`
+> transforms keep their requested shape and fall through to the plain
+> `{ "records": …, "metadata": … }` output.
 
 ## Auto-Detection
 
