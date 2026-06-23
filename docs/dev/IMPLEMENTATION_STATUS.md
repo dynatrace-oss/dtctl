@@ -80,6 +80,7 @@ This document tracks the current implementation status of dtctl. For future plan
 | intent | ✅ | ✅ | - | - | - | - |
 | segment | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | anomaly-detector | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| classic-pipelines-translation | ✅ | - | - | - | - | - |
 
 #### Cloud Connections
 

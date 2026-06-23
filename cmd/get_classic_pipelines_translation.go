@@ -1,0 +1,136 @@
+package cmd
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/classicpipelinestranslate"
+)
+
+// getClassicPipelinesTranslationCmd translates a Classic pipeline into an
+// OpenPipeline configuration pipeline.
+var getClassicPipelinesTranslationCmd = &cobra.Command{
+	Use:   "classic-pipelines-translation <logs|bizevents>",
+	Short: "Translate a Classic pipeline into an OpenPipeline configuration pipeline",
+	Long: `Translate the tenant's Classic pipeline for a configuration scope into an
+OpenPipeline configuration pipeline (Settings shape).
+
+This is a read-only call that returns the translated pipeline verbatim. Every
+output format emits the pipeline document itself (so it is directly reviewable
+and applyable via the Settings API). The translation is deterministic where
+possible; when a processing rule's definition script could not be translated
+automatically it is reported via a warning on stderr (and in the agent envelope
+under -A), and that part needs a manual rewrite.
+
+The scope is a positional argument and must be one of: logs, bizevents.
+
+Note: the underlying API is public but early-adopter and may change.
+
+Examples:
+  # Translate the logs Classic pipeline (pretty-printed pipeline document)
+  dtctl get classic-pipelines-translation logs
+
+  # Translate bizevents and export the document as YAML for review/editing
+  dtctl get classic-pipelines-translation bizevents -o yaml > reference-pipeline.yaml
+
+  # Print the translated pipeline as JSON
+  dtctl get classic-pipelines-translation logs -o json
+
+  # Keep disabled rules in the translation
+  dtctl get classic-pipelines-translation logs --skip-disabled-rules=false`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		scope := args[0]
+		if !classicpipelinestranslate.IsValidConfiguration(scope) {
+			return fmt.Errorf(
+				"invalid configuration scope %q: must be one of %s",
+				scope, strings.Join(classicpipelinestranslate.ValidConfigurations, ", "),
+			)
+		}
+
+		includeSampleData, _ := cmd.Flags().GetBool("include-sample-data")
+		skipDisabledRules, _ := cmd.Flags().GetBool("skip-disabled-rules")
+		skipBuiltinProcessingRules, _ := cmd.Flags().GetBool("skip-builtin-processing-rules")
+
+		_, c, printer, err := Setup()
+		if err != nil {
+			return err
+		}
+
+		handler := classicpipelinestranslate.NewHandler(c)
+		result, err := handler.Translate(classicpipelinestranslate.TranslateOptions{
+			Configuration:              scope,
+			IncludeSampleData:          includeSampleData,
+			SkipDisabledRules:          skipDisabledRules,
+			SkipBuiltinProcessingRules: skipBuiltinProcessingRules,
+		})
+		if err != nil {
+			return err
+		}
+
+		ap := enrichAgent(printer, "get", "classic-pipelines-translation")
+
+		// Surface the partial-translation warning out-of-band so it never
+		// pollutes the deliverable on stdout: on stderr for humans, via the
+		// agent envelope for agents.
+		if result.WithWarning {
+			const warn = "some processing rules could not be translated automatically and need a manual rewrite (withWarning=true)"
+			if ap != nil {
+				ap.SetWarnings([]string{warn})
+			} else {
+				output.PrintWarning("%s", warn)
+			}
+		}
+
+		// A scope with no Classic pipeline configured yields a null document.
+		// Tell a human there is nothing to translate; structured output still
+		// emits null so piped/scripted callers see a consistent shape.
+		if result.Value == nil && ap == nil {
+			output.PrintInfo("No Classic pipeline is configured for scope %q; nothing to translate.", scope)
+		}
+
+		// The deliverable is the translated pipeline document (result.Value) in
+		// every mode — never the {value, withWarning} envelope — so the output
+		// is directly reviewable and applyable via the Settings API. withWarning
+		// is surfaced out-of-band above.
+		if ap != nil {
+			ap.SetSuggestions([]string{
+				"Review the translated pipeline, then apply it with 'dtctl create settings --schema builtin:openpipeline." + scope + ".pipelines -f <file>'",
+			})
+			return printer.Print(result.Value)
+		}
+
+		// In an explicitly requested structured format, defer to the printer
+		// (which also honors the requested format and --jq). Otherwise default
+		// to indented JSON of the document rather than an unhelpful table of an
+		// opaque map.
+		switch outputFormat {
+		case "json", "yaml", "yml", "toon":
+			return printer.Print(result.Value)
+		default:
+			return printValueAsJSON(result.Value)
+		}
+	},
+}
+
+// printValueAsJSON prints v as indented JSON to stdout, honoring the global
+// --jq filter. Used for the default (no -o) output, where the deliverable is
+// the translated pipeline document rather than a table.
+func printValueAsJSON(v any) error {
+	return output.NewPrinterWithOpts(output.PrinterOptions{
+		Format:    "json",
+		Writer:    os.Stdout,
+		PlainMode: plainMode,
+		JQFilter:  jqFilter,
+	}).Print(v)
+}
+
+func init() {
+	getClassicPipelinesTranslationCmd.Flags().Bool("include-sample-data", false, "Include processor sample data in the translation")
+	getClassicPipelinesTranslationCmd.Flags().Bool("skip-disabled-rules", true, "Skip disabled rules during translation")
+	getClassicPipelinesTranslationCmd.Flags().Bool("skip-builtin-processing-rules", false, "Skip built-in processing rules during translation")
+}
