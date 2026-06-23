@@ -1806,12 +1806,16 @@ func TestGolden_DescribeAnomalyDetector(t *testing.T) {
 func TestGolden_QueryDQL(t *testing.T) {
 	records := dqlRecordsFixture()
 
+	// Parquet is intentionally excluded here: it is a binary format, so it is
+	// covered by the round-trip assertions in parquet_test.go rather than a
+	// golden byte file.
 	formats := map[string]string{
 		"table": "table",
 		"wide":  "wide",
 		"json":  "json",
 		"csv":   "csv",
 		"toon":  "toon",
+		"jsonl": "jsonl",
 	}
 
 	for name, format := range formats {

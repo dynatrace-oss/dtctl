@@ -343,6 +343,49 @@ func TestResponse_GetRecords(t *testing.T) {
 	})
 }
 
+func TestResponse_GetTypes(t *testing.T) {
+	t.Run("from Result", func(t *testing.T) {
+		r := &Response{
+			Result: &Result{
+				Records: []map[string]interface{}{{"count()": "194414758"}},
+				Types: []ColumnTypes{
+					{IndexRange: []int{0, 0}, Mappings: map[string]ColumnType{"count()": {Type: "long"}}},
+				},
+			},
+		}
+		types := r.GetTypes()
+		if len(types) != 1 {
+			t.Fatalf("got %d type groups, want 1", len(types))
+		}
+		if got := types[0].Mappings["count()"].Type; got != "long" {
+			t.Errorf("got type %q, want long", got)
+		}
+	})
+
+	t.Run("nil when absent", func(t *testing.T) {
+		r := &Response{Records: []map[string]interface{}{{"a": 1}}}
+		if r.GetTypes() != nil {
+			t.Errorf("expected nil types, got %v", r.GetTypes())
+		}
+	})
+
+	t.Run("unmarshals from API JSON", func(t *testing.T) {
+		body := `{"state":"SUCCEEDED","result":{"records":[{"count()":"194414758"}],` +
+			`"types":[{"indexRange":[0,0],"mappings":{"count()":{"type":"long"}}}]}}`
+		var r Response
+		if err := json.Unmarshal([]byte(body), &r); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		types := r.GetTypes()
+		if len(types) != 1 || types[0].Mappings["count()"].Type != "long" {
+			t.Errorf("types not parsed correctly: %+v", types)
+		}
+		if len(types[0].IndexRange) != 2 || types[0].IndexRange[1] != 0 {
+			t.Errorf("indexRange not parsed correctly: %+v", types[0].IndexRange)
+		}
+	})
+}
+
 func TestResponse_GetNotifications(t *testing.T) {
 	t.Run("from top-level metadata", func(t *testing.T) {
 		r := &Response{
