@@ -23,6 +23,8 @@ func TestIsSupportedQueryOutputFormat(t *testing.T) {
 		{name: "bar alias", format: "bar", want: true},
 		{name: "braille alias", format: "br", want: true},
 		{name: "toon", format: "toon", want: true},
+		{name: "jsonl", format: "jsonl", want: true},
+		{name: "parquet", format: "parquet", want: true},
 		{name: "trimmed and mixed case", format: " Json ", want: true},
 		{name: "unsupported", format: "xml", want: false},
 	}
@@ -31,6 +33,30 @@ func TestIsSupportedQueryOutputFormat(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := isSupportedQueryOutputFormat(tt.format); got != tt.want {
 				t.Fatalf("isSupportedQueryOutputFormat(%q) = %v, want %v", tt.format, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatRequiresIncludeTypes(t *testing.T) {
+	// Parquet must auto-request DQL types so its schema is faithful (a "long"
+	// becomes INT64, not a value-inferred DOUBLE). Other formats must not.
+	tests := []struct {
+		format string
+		want   bool
+	}{
+		{"parquet", true},
+		{" Parquet ", true},
+		{"PARQUET", true},
+		{"jsonl", false},
+		{"json", false},
+		{"csv", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			if got := formatRequiresIncludeTypes(tt.format); got != tt.want {
+				t.Errorf("formatRequiresIncludeTypes(%q) = %v, want %v", tt.format, got, tt.want)
 			}
 		})
 	}
