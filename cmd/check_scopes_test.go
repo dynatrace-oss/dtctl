@@ -242,6 +242,48 @@ func TestScopePreflight_AgentIgnoresReadVerbs(t *testing.T) {
 	require.NoError(t, preErr)
 }
 
+func TestScopePreflight_CheckScopes_AgentWrapsOKInEnvelope(t *testing.T) {
+	// --check-scopes in agent mode must emit the standard {ok,result,context}
+	// envelope, not a bare verdict object.
+	withScopeState(t, true, true, "json", []string{"automation:workflows:write"}, true)
+	cmd, _, err := rootCmd.Find([]string{"delete", "workflow"})
+	require.NoError(t, err)
+
+	var skip bool
+	var preErr error
+	out := captureScopeStdout(t, func() { skip, preErr = scopePreflight(cmd, nil) })
+	require.True(t, skip)
+	require.NoError(t, preErr)
+
+	var resp struct {
+		OK     bool             `json:"ok"`
+		Result ScopeCheckResult `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &resp))
+	require.True(t, resp.OK)
+	require.Equal(t, scopeStatusOK, resp.Result.Status)
+	require.Equal(t, "delete", resp.Result.Verb)
+}
+
+func TestScopePreflight_CheckScopes_AgentMissingUsesErrorEnvelope(t *testing.T) {
+	// --check-scopes in agent mode with a missing scope must route through the
+	// ScopeError path: insufficient_scope error envelope + ExitPermissionError,
+	// identical to the auto-preflight contract.
+	withScopeState(t, true, true, "json", []string{"automation:workflows:read"}, true)
+	cmd, _, err := rootCmd.Find([]string{"delete", "workflow"})
+	require.NoError(t, err)
+
+	skip, preErr := scopePreflight(cmd, nil)
+	require.False(t, skip)
+	var scopeErr *ScopeError
+	require.ErrorAs(t, preErr, &scopeErr)
+	require.Equal(t, []string{"automation:workflows:write"}, scopeErr.Missing)
+
+	detail := errorToDetail(preErr)
+	require.Equal(t, "insufficient_scope", detail.Code)
+	require.Equal(t, client.ExitPermissionError, exitCodeForError(preErr))
+}
+
 func TestScopePreflight_DisabledIsNoOp(t *testing.T) {
 	withScopeState(t, false, false, "json", []string{"automation:workflows:read"}, true)
 	cmd, _, err := rootCmd.Find([]string{"delete", "workflow"})

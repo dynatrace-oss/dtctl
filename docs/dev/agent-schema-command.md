@@ -278,7 +278,8 @@ dtctl delete workflow my-wf --check-scopes -o json  # { "status": "insufficient_
 
 - `status` is `ok`, `insufficient_scope`, or `unknown`. Opaque API/platform tokens (scopes not introspectable) report `unknown`.
 - Exit code is `5` (`ExitPermissionError`) when scopes are missing, `0` otherwise.
-- In **agent mode**, mutating commands are auto-preflighted: a missing scope is returned as an `insufficient_scope` error envelope (`{ "ok": false, "error": { "code": "insufficient_scope", "required_scopes": [...], "granted_scopes": [...], "missing_scopes": [...] } }`) before any API call, instead of a raw 403. The preflight makes no network call and degrades to "proceed" on any error.
+- In **agent mode**, the verdict uses the standard envelope contract: an `ok`/`unknown` verdict is wrapped in an `{ "ok": true, "result": { "status": ..., ... }, "context": {...} }` envelope, and an `insufficient_scope` verdict is returned as the `{ "ok": false, "error": { "code": "insufficient_scope", "required_scopes": [...], "granted_scopes": [...], "missing_scopes": [...] } }` error envelope (exit 5) — never a bare object.
+- Also in **agent mode**, mutating commands are auto-preflighted *without* `--check-scopes`: a missing scope is returned as the same `insufficient_scope` error envelope before any API call, instead of a raw 403. The preflight makes no network call and degrades to "proceed" on any error.
 
 When a positional arg matches both a verb and a resource, verb takes priority (consistent with dtctl's command resolution).
 

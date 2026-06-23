@@ -12,6 +12,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
 // checkScopes is the --check-scopes persistent flag: resolve the command's
@@ -99,10 +100,28 @@ func scopePreflight(c *cobra.Command, _ []string) (skip bool, err error) {
 	}
 
 	verb, resource := verbResource(c)
-	required, hasReq := requiredScopesFor(verb, resource)
 
 	if checkScopes {
+		required, hasReq := requiredScopesFor(verb, resource)
 		result := computeScopeVerdict(verb, resource, required, hasReq)
+		// In agent mode the verdict must use the same envelope contract as every
+		// other command: an insufficient verdict reuses the ScopeError path (so it
+		// renders as an `insufficient_scope` error envelope with exit 5, identical
+		// to the auto-preflight), and ok/unknown verdicts are wrapped in an OK
+		// envelope rather than printed as a bare object.
+		if agentMode {
+			if result.Status == scopeStatusInsufficient {
+				return false, &ScopeError{
+					Verb:     verb,
+					Resource: resource,
+					Required: result.RequiredScopes,
+					Granted:  result.GrantedScopes,
+					Missing:  result.MissingScopes,
+				}
+			}
+			printScopeVerdictAgent(result)
+			return true, nil
+		}
 		printScopeVerdict(result)
 		if result.Status == scopeStatusInsufficient {
 			return true, &silentExitError{code: client.ExitPermissionError}
@@ -111,8 +130,14 @@ func scopePreflight(c *cobra.Command, _ []string) (skip bool, err error) {
 	}
 
 	// Agent-mode auto-preflight: only block mutating commands whose missing
-	// scopes we can prove from an introspectable (OAuth) token.
-	if _, mutating := commands.MutatingVerbs[verb]; !hasReq || !mutating {
+	// scopes we can prove from an introspectable (OAuth) token. The mutating
+	// check is first so non-mutating commands (the common path) never pay for
+	// resolving required scopes.
+	if _, mutating := commands.MutatingVerbs[verb]; !mutating {
+		return false, nil
+	}
+	required, hasReq := requiredScopesFor(verb, resource)
+	if !hasReq {
 		return false, nil
 	}
 	granted, known := grantedScopesFunc()
@@ -228,14 +253,29 @@ func computeScopeVerdict(verb, resource string, required []string, hasReq bool) 
 	return res
 }
 
-// printScopeVerdict writes the verdict in the active output format.
+// printScopeVerdictAgent writes an ok/unknown verdict wrapped in the agent
+// envelope, so `--check-scopes` in agent mode emits the same {ok,result,context}
+// shape as every other command. Insufficient verdicts go through the ScopeError
+// error-envelope path instead (see scopePreflight).
+func printScopeVerdictAgent(r ScopeCheckResult) {
+	resp := output.Response{
+		OK:      true,
+		Result:  r,
+		Context: &output.ResponseContext{Verb: r.Verb, Resource: r.Resource},
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(resp)
+}
+
+// printScopeVerdict writes the verdict in the active output format (non-agent).
 func printScopeVerdict(r ScopeCheckResult) {
-	switch {
-	case agentMode || outputFormat == "json":
+	switch outputFormat {
+	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(r)
-	case outputFormat == "yaml" || outputFormat == "yml":
+	case "yaml", "yml":
 		enc := yaml.NewEncoder(os.Stdout)
 		enc.SetIndent(2)
 		_ = enc.Encode(r)
