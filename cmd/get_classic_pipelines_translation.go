@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -20,10 +19,12 @@ var getClassicPipelinesTranslationCmd = &cobra.Command{
 	Long: `Translate the tenant's Classic pipeline for a configuration scope into an
 OpenPipeline configuration pipeline (Settings shape).
 
-This is a read-only call that returns the translated pipeline verbatim. The
-translation is deterministic where possible; processing rules whose definition
-script could not be translated automatically are reported via a warning, and
-need a manual rewrite.
+This is a read-only call that returns the translated pipeline verbatim. Every
+output format emits the pipeline document itself (so it is directly reviewable
+and applyable via the Settings API). The translation is deterministic where
+possible; when a processing rule's definition script could not be translated
+automatically it is reported via a warning on stderr (and in the agent envelope
+under -A), and that part needs a manual rewrite.
 
 The scope is a positional argument and must be one of: logs, bizevents.
 
@@ -36,7 +37,7 @@ Examples:
   # Translate bizevents and export the document as YAML for review/editing
   dtctl get classic-pipelines-translation bizevents -o yaml > reference-pipeline.yaml
 
-  # Full result including the withWarning flag
+  # Print the translated pipeline as JSON
   dtctl get classic-pipelines-translation logs -o json
 
   # Keep disabled rules in the translation
@@ -73,8 +74,9 @@ Examples:
 
 		ap := enrichAgent(printer, "get", "classic-pipelines-translation")
 
-		// Surface the partial-translation warning where it won't corrupt piped
-		// output: on stderr for humans, via the agent envelope for agents.
+		// Surface the partial-translation warning out-of-band so it never
+		// pollutes the deliverable on stdout: on stderr for humans, via the
+		// agent envelope for agents.
 		if result.WithWarning {
 			const warn = "some processing rules could not be translated automatically and need a manual rewrite (withWarning=true)"
 			if ap != nil {
@@ -84,30 +86,47 @@ Examples:
 			}
 		}
 
-		if ap != nil {
-			ap.SetSuggestions([]string{
-				"Review the translated pipeline, then apply it with 'dtctl create settings --schema builtin:openpipeline.* -f <file>'",
-			})
-			return printer.Print(result)
+		// A scope with no Classic pipeline configured yields a null document.
+		// Tell a human there is nothing to translate; structured output still
+		// emits null so piped/scripted callers see a consistent shape.
+		if result.Value == nil && ap == nil {
+			output.PrintInfo("No Classic pipeline is configured for scope %q; nothing to translate.", scope)
 		}
 
-		// In an explicitly requested structured format, print the full result
-		// ({value, withWarning}). Otherwise the translated pipeline is the
-		// deliverable, so print just the document as indented JSON.
+		// The deliverable is the translated pipeline document (result.Value) in
+		// every mode — never the {value, withWarning} envelope — so the output
+		// is directly reviewable and applyable via the Settings API. withWarning
+		// is surfaced out-of-band above.
+		if ap != nil {
+			ap.SetSuggestions([]string{
+				"Review the translated pipeline, then apply it with 'dtctl create settings --schema builtin:openpipeline." + scope + ".pipelines -f <file>'",
+			})
+			return printer.Print(result.Value)
+		}
+
+		// In an explicitly requested structured format, defer to the printer
+		// (which also honors the requested format and --jq). Otherwise default
+		// to indented JSON of the document rather than an unhelpful table of an
+		// opaque map.
 		switch outputFormat {
-		case "json", "yaml", "yml":
-			return printer.Print(result)
+		case "json", "yaml", "yml", "toon":
+			return printer.Print(result.Value)
 		default:
-			return printIndentedJSON(result.Value)
+			return printValueAsJSON(result.Value)
 		}
 	},
 }
 
-// printIndentedJSON writes v to stdout as indented JSON followed by a newline.
-func printIndentedJSON(v any) error {
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(v)
+// printValueAsJSON prints v as indented JSON to stdout, honoring the global
+// --jq filter. Used for the default (no -o) output, where the deliverable is
+// the translated pipeline document rather than a table.
+func printValueAsJSON(v any) error {
+	return output.NewPrinterWithOpts(output.PrinterOptions{
+		Format:    "json",
+		Writer:    os.Stdout,
+		PlainMode: plainMode,
+		JQFilter:  jqFilter,
+	}).Print(v)
 }
 
 func init() {

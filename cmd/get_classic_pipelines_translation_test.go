@@ -188,17 +188,18 @@ func TestGetClassicPipelinesTranslationCmd_DefaultPrintsValueOnly(t *testing.T) 
 	}
 }
 
-func TestGetClassicPipelinesTranslationCmd_JSONPrintsFullResult(t *testing.T) {
+func TestGetClassicPipelinesTranslationCmd_JSONPrintsValueOnly(t *testing.T) {
 	out := runWithOutput(t, "json",
 		`{"value":{"id":"pipe-1"},"withWarning":true}`,
 		[]string{"logs"})
 
-	// -o json returns the full {value, withWarning} result.
-	if !strings.Contains(out, `"withWarning": true`) {
-		t.Errorf("json output missing withWarning; got:\n%s", out)
-	}
+	// -o json emits the pipeline document (value) directly so it is applyable
+	// via the Settings API; withWarning is surfaced out-of-band, not in stdout.
 	if !strings.Contains(out, `"id": "pipe-1"`) {
 		t.Errorf("json output missing value; got:\n%s", out)
+	}
+	if strings.Contains(out, "withWarning") {
+		t.Errorf("json output should not include withWarning; got:\n%s", out)
 	}
 }
 
@@ -207,13 +208,47 @@ func TestGetClassicPipelinesTranslationCmd_YAMLRendersStructured(t *testing.T) {
 		`{"value":{"id":"pipe-1","processors":[{"type":"fieldsAdd"}]},"withWarning":false}`,
 		[]string{"bizevents"})
 
-	// -o yaml renders the document structurally (keys as YAML), not as an
-	// escaped JSON string.
-	if !strings.Contains(out, "value:") || !strings.Contains(out, "id: pipe-1") {
+	// -o yaml renders the document structurally (keys as YAML, not an escaped
+	// JSON string) and directly — no {value, withWarning} envelope wrapper — so
+	// the file is applyable as-is.
+	if !strings.Contains(out, "id: pipe-1") {
 		t.Errorf("yaml output not structured; got:\n%s", out)
 	}
-	if !strings.Contains(out, "withWarning: false") {
-		t.Errorf("yaml output missing withWarning; got:\n%s", out)
+	if strings.Contains(out, "value:") || strings.Contains(out, "withWarning") {
+		t.Errorf("yaml output should be the bare document, not the envelope; got:\n%s", out)
+	}
+}
+
+func TestGetClassicPipelinesTranslationCmd_TOONRendersStructured(t *testing.T) {
+	out := runWithOutput(t, "toon",
+		`{"value":{"id":"pipe-1","processors":[{"type":"fieldsAdd"}]},"withWarning":false}`,
+		[]string{"logs"})
+
+	// -o toon must be honored (rendered as TOON), not silently downgraded to
+	// JSON. TOON emits bare, unquoted keys (`id: pipe-1`); the JSON fallback
+	// would emit a quoted key (`"id": "pipe-1"`). Like the other formats it
+	// renders the bare document, not the {value, withWarning} envelope.
+	if !strings.Contains(out, "id: pipe-1") {
+		t.Errorf("toon output not rendered as TOON; got:\n%s", out)
+	}
+	if strings.Contains(out, `"id"`) {
+		t.Errorf("toon output looks like JSON (downgraded); got:\n%s", out)
+	}
+	if strings.Contains(out, "value:") || strings.Contains(out, "withWarning") {
+		t.Errorf("toon output should be the bare document, not the envelope; got:\n%s", out)
+	}
+}
+
+func TestGetClassicPipelinesTranslationCmd_NullValue(t *testing.T) {
+	// A scope with no Classic pipeline configured yields a null document; the
+	// command must succeed and emit a consistent null on stdout (the human note
+	// goes to stderr).
+	out := runWithOutput(t, "json",
+		`{"value":null,"withWarning":false}`,
+		[]string{"logs"})
+
+	if strings.TrimSpace(out) != "null" {
+		t.Errorf("null value output = %q, want %q", strings.TrimSpace(out), "null")
 	}
 }
 
@@ -244,7 +279,25 @@ func TestGetClassicPipelinesTranslationCmd_AgentMode(t *testing.T) {
 
 	testutil.ResetCommandFlags(getClassicPipelinesTranslationCmd)
 
-	if err := getClassicPipelinesTranslationCmd.RunE(getClassicPipelinesTranslationCmd, []string{"logs"}); err != nil {
-		t.Fatalf("RunE() error = %v", err)
+	out := captureStdout(t, func() {
+		if err := getClassicPipelinesTranslationCmd.RunE(getClassicPipelinesTranslationCmd, []string{"logs"}); err != nil {
+			t.Fatalf("RunE() error = %v", err)
+		}
+	})
+
+	// The agent envelope wraps the translated document under "result" and
+	// carries the partial-translation warning and an apply suggestion in its
+	// context (withWarning is surfaced here, not in the result payload).
+	for _, want := range []string{
+		`"ok": true`,
+		`"pipe-2"`,
+		`"warnings"`,
+		"manual rewrite",
+		`"suggestions"`,
+		"builtin:openpipeline.logs.pipelines",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("agent envelope missing %q; got:\n%s", want, out)
+		}
 	}
 }
