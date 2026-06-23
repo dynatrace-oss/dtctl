@@ -151,8 +151,11 @@ func TestParquetPrinter_SparseRowsAndNulls(t *testing.T) {
 }
 
 func TestParquetPrinter_Empty(t *testing.T) {
-	// An empty result must still yield a valid, openable Parquet file (a
-	// zero-byte file is not valid Parquet), even with no DQL types to lean on.
+	// An empty result with no DQL types to lean on must still yield a file that
+	// mainstream readers accept. A zero-byte file is not valid Parquet, but a
+	// column-less file (a structurally valid container) is ALSO rejected by
+	// DuckDB/pyarrow/pandas ("Need at least one non-root column in the file").
+	// So the file must carry at least one column — the placeholder.
 	var buf bytes.Buffer
 	p := &ParquetPrinter{writer: &buf}
 	if err := p.PrintList([]map[string]interface{}{}); err != nil {
@@ -167,6 +170,15 @@ func TestParquetPrinter_Empty(t *testing.T) {
 	}
 	if got := f.NumRows(); got != 0 {
 		t.Errorf("NumRows = %d, want 0", got)
+	}
+	// Guard against regressing to a column-less file (the bug this fixes): the
+	// schema must have exactly the placeholder column.
+	cols := f.Schema().Columns()
+	if len(cols) != 1 {
+		t.Fatalf("got %d columns, want 1 placeholder column: %v", len(cols), cols)
+	}
+	if got := cols[0][len(cols[0])-1]; got != parquetEmptyResultColumn {
+		t.Errorf("placeholder column = %q, want %q", got, parquetEmptyResultColumn)
 	}
 }
 
@@ -198,6 +210,10 @@ func TestParquetPrinter_EmptyWithTypesKeepsSchema(t *testing.T) {
 		if !got[want] {
 			t.Errorf("schema missing declared column %q (cols: %v)", want, got)
 		}
+	}
+	// With a real schema, the placeholder column must NOT be added.
+	if got[parquetEmptyResultColumn] {
+		t.Errorf("placeholder column leaked into a typed schema (cols: %v)", got)
 	}
 }
 
