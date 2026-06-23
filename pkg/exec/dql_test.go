@@ -1,18 +1,85 @@
 package exec
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 )
+
+// mappingsByName collapses the flattened column-type mappings into a name→type
+// map for order-independent assertions.
+func mappingsByName(m []output.ColumnTypeMapping) map[string]string {
+	out := make(map[string]string, len(m))
+	for _, c := range m {
+		out[c.Name] = c.Type
+	}
+	return out
+}
+
+func TestColumnTypeMappings(t *testing.T) {
+	t.Run("nil when no type info", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{Records: []map[string]interface{}{{"a": 1}}}}
+		if got := columnTypeMappings(r); got != nil {
+			t.Errorf("expected nil, got %#v", got)
+		}
+		if got := columnTypeMappings(&DQLQueryResponse{}); got != nil {
+			t.Errorf("expected nil for empty response, got %#v", got)
+		}
+	})
+
+	t.Run("flattens a single group", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 1}, Mappings: map[string]sdkquery.ColumnType{
+					"host":  {Type: "string"},
+					"count": {Type: "long"},
+				}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 2 || got["host"] != "string" || got["count"] != "long" {
+			t.Errorf("got %#v, want host=string count=long", got)
+		}
+	})
+
+	t.Run("first group wins on disagreement across groups", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 0}, Mappings: map[string]sdkquery.ColumnType{"v": {Type: "long"}}},
+				{IndexRange: []int{1, 1}, Mappings: map[string]sdkquery.ColumnType{"v": {Type: "string"}}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 1 || got["v"] != "long" {
+			t.Errorf("got %#v, want v=long (first group wins)", got)
+		}
+	})
+
+	t.Run("merges distinct columns across groups", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 0}, Mappings: map[string]sdkquery.ColumnType{"a": {Type: "long"}}},
+				{IndexRange: []int{1, 1}, Mappings: map[string]sdkquery.ColumnType{"b": {Type: "double"}}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 2 || got["a"] != "long" || got["b"] != "double" {
+			t.Errorf("got %#v, want a=long b=double", got)
+		}
+	})
+}
 
 func TestDQLExecutor_ExecuteQueryWithOptions_CustomHeaders(t *testing.T) {
 	tests := []struct {
@@ -2128,6 +2195,99 @@ func TestDQLExecutor_ExecuteQueryWithOptions_StillWorks(t *testing.T) {
 	if result.State != "SUCCEEDED" {
 		t.Errorf("expected SUCCEEDED, got %s", result.State)
 	}
+}
+
+// captureStdout redirects os.Stdout for the duration of fn and returns whatever
+// was written. printResults renders to os.Stdout, so this lets the integration
+// test observe the bytes that would reach a real terminal/redirect.
+func captureStdout(t *testing.T, fn func()) []byte {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	done := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- b
+	}()
+	fn()
+	_ = w.Close()
+	os.Stdout = old
+	return <-done
+}
+
+// TestDQLExecutor_OutputFormats_Integration drives the full jsonl/parquet path
+// end-to-end against a mock Grail server: request building (includeTypes) ->
+// SDK execute -> a response carrying a DQL `types` block -> columnTypeMappings
+// flatten -> printer dispatch -> rendered bytes on stdout. The isolated unit
+// tests each cover one link; this proves the links are wired together.
+func TestDQLExecutor_OutputFormats_Integration(t *testing.T) {
+	var gotReq DQLQueryRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/platform/storage/query/v1/query:execute" {
+			_ = json.NewDecoder(r.Body).Decode(&gotReq)
+		}
+		resp := DQLQueryResponse{
+			State: "SUCCEEDED",
+			Result: &DQLResult{
+				Records: []map[string]interface{}{
+					// "count" is a DQL long that the API delivers as a JSON string.
+					{"host": "web-01", "count": "194414758"},
+				},
+				Types: []sdkquery.ColumnTypes{
+					{IndexRange: []int{0, 0}, Mappings: map[string]sdkquery.ColumnType{
+						"host":  {Type: "string"},
+						"count": {Type: "long"},
+					}},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	executor := NewDQLExecutor(c)
+
+	t.Run("parquet requests types and emits a valid Parquet container", func(t *testing.T) {
+		gotReq = DQLQueryRequest{}
+		out := captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "fetch logs",
+				DQLExecuteOptions{OutputFormat: "parquet", IncludeTypes: true}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		if gotReq.IncludeTypes == nil || !*gotReq.IncludeTypes {
+			t.Errorf("expected includeTypes:true in request body for parquet, got %v", gotReq.IncludeTypes)
+		}
+		// A valid Parquet file is framed by the "PAR1" magic at both ends.
+		if !bytes.HasPrefix(out, []byte("PAR1")) || !bytes.HasSuffix(out, []byte("PAR1")) {
+			t.Errorf("output is not a valid Parquet container (PAR1 magic missing), %d bytes", len(out))
+		}
+	})
+
+	t.Run("jsonl emits one compact object per record", func(t *testing.T) {
+		out := captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "fetch logs",
+				DQLExecuteOptions{OutputFormat: "jsonl"}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		line := strings.TrimSpace(string(out))
+		if strings.Contains(line, "\n") {
+			t.Errorf("expected a single line for a single record, got: %q", line)
+		}
+		if !strings.Contains(line, `"host":"web-01"`) || !strings.Contains(line, `"count":"194414758"`) {
+			t.Errorf("unexpected jsonl line: %q", line)
+		}
+	})
 }
 
 // parseDTClientContext unmarshals the dt-client-context header value into a map.
