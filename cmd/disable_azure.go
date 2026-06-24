@@ -62,7 +62,7 @@ Examples:
 			if err != nil {
 				existing, err = monitoringHandler.Get(identifier)
 				if err != nil {
-					return fmt.Errorf("Azure monitoring config %q not found by name or ID", identifier)
+					return fmt.Errorf("azure monitoring config %q not found by name or ID", identifier)
 				}
 			}
 		} else {
