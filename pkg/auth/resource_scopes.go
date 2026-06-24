@@ -128,6 +128,10 @@ var ResourceScopes = map[string]AccessScopes{
 	"hub-extension":         {Read: []string{"hub:catalog:read"}},
 	"hub-extension-release": {Read: []string{"hub:catalog:read"}},
 
+	// Databases are discovered by querying Smartscape nodes via DQL
+	// (smartscapeNodes function). Read-only resource.
+	"database": {Read: []string{"storage:smartscape:read"}},
+
 	// Davis anomaly detectors are Settings objects
 	// (schema builtin:davis.anomaly-detectors via the Settings API).
 	"anomaly-detector": {Read: []string{"settings:objects:read"}, Write: []string{"settings:objects:write"}},

@@ -1,0 +1,34 @@
+[
+  {
+    "id": "DB_INSTANCE_POSTGRES-1A2B3C4D",
+    "name": "pg-prod",
+    "vendor": "PostgreSQL",
+    "type": "DB_INSTANCE_POSTGRES",
+    "host": "pg.example.invalid",
+    "port": "5432"
+  },
+  {
+    "id": "DB_INSTANCE_MYSQL-5E6F7A8B",
+    "name": "mysql-staging",
+    "vendor": "MySQL",
+    "type": "DB_INSTANCE_MYSQL",
+    "host": "mysql.example.invalid",
+    "port": "3306"
+  },
+  {
+    "id": "DB_INSTANCE_MSSQL-9C0D1E2F",
+    "name": "mssql-legacy",
+    "vendor": "MSSQL",
+    "type": "DB_INSTANCE_MSSQL",
+    "host": "mssql.example.invalid",
+    "port": "1433"
+  },
+  {
+    "id": "DB_INSTANCE_MARIADB-3A4B5C6D",
+    "name": "mariadb-analytics",
+    "vendor": "MariaDB",
+    "type": "DB_INSTANCE_MARIADB",
+    "host": "mariadb.example.invalid",
+    "port": "3306"
+  }
+]

@@ -14,6 +14,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/database"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
@@ -2562,6 +2563,67 @@ func TestGolden_DescribeExtensionSchemaNoFluff(t *testing.T) {
 				t.Fatalf("Print failed: %v", err)
 			}
 			assertGolden(t, "describe/extension-schema-no-fluff-"+name, buf.String())
+		})
+	}
+}
+
+func databaseFixtures() []database.Database {
+	return []database.Database{
+		{
+			ID:     "DB_INSTANCE_POSTGRES-1A2B3C4D",
+			Name:   "pg-prod",
+			Vendor: "PostgreSQL",
+			Type:   "DB_INSTANCE_POSTGRES",
+			Host:   "pg.example.invalid",
+			Port:   "5432",
+		},
+		{
+			ID:     "DB_INSTANCE_MYSQL-5E6F7A8B",
+			Name:   "mysql-staging",
+			Vendor: "MySQL",
+			Type:   "DB_INSTANCE_MYSQL",
+			Host:   "mysql.example.invalid",
+			Port:   "3306",
+		},
+		{
+			ID:     "DB_INSTANCE_MSSQL-9C0D1E2F",
+			Name:   "mssql-legacy",
+			Vendor: "MSSQL",
+			Type:   "DB_INSTANCE_MSSQL",
+			Host:   "mssql.example.invalid",
+			Port:   "1433",
+		},
+		{
+			ID:     "DB_INSTANCE_MARIADB-3A4B5C6D",
+			Name:   "mariadb-analytics",
+			Vendor: "MariaDB",
+			Type:   "DB_INSTANCE_MARIADB",
+			Host:   "mariadb.example.invalid",
+			Port:   "3306",
+		},
+	}
+}
+
+func TestGolden_GetDatabases(t *testing.T) {
+	dbs := databaseFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(dbs); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/databases-"+name, buf.String())
 		})
 	}
 }

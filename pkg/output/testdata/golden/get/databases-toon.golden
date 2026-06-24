@@ -1,0 +1,5 @@
+[#4]{host,id,name,port,type,vendor}:
+  pg.example.invalid,DB_INSTANCE_POSTGRES-1A2B3C4D,pg-prod,"5432",DB_INSTANCE_POSTGRES,PostgreSQL
+  mysql.example.invalid,DB_INSTANCE_MYSQL-5E6F7A8B,mysql-staging,"3306",DB_INSTANCE_MYSQL,MySQL
+  mssql.example.invalid,DB_INSTANCE_MSSQL-9C0D1E2F,mssql-legacy,"1433",DB_INSTANCE_MSSQL,MSSQL
+  mariadb.example.invalid,DB_INSTANCE_MARIADB-3A4B5C6D,mariadb-analytics,"3306",DB_INSTANCE_MARIADB,MariaDB

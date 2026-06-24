@@ -1,0 +1,5 @@
+ID                              NAME                VENDOR       
+DB_INSTANCE_POSTGRES-1A2B3C4D   pg-prod             PostgreSQL   
+DB_INSTANCE_MYSQL-5E6F7A8B      mysql-staging       MySQL        
+DB_INSTANCE_MSSQL-9C0D1E2F      mssql-legacy        MSSQL        
+DB_INSTANCE_MARIADB-3A4B5C6D    mariadb-analytics   MariaDB      
