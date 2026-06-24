@@ -76,6 +76,12 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	if err != nil {
 		return output.Response{}, true, err
 	}
+	// When resolveSpillTarget already degraded to summary-only, the cause is a
+	// read-only/unwritable location; a later write failure overrides this.
+	summaryReason := ""
+	if summaryOnly {
+		summaryReason = summaryReasonNoLocation
+	}
 
 	// A --jq transform is not applied to spilled rows (the file holds the full
 	// untransformed result so stats/sample stay columnar). Surface it loudly
@@ -129,6 +135,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 			// Managed write failed unexpectedly -> degrade to summary-only rather
 			// than dumping rows into context (D8: never dump on failure).
 			summaryOnly = true
+			summaryReason = summaryReasonWriteFailed
 			warnings = append(warnings, "spill write failed; returning overview only")
 		} else {
 			manifest.Kind = output.KindResultFile
@@ -164,9 +171,14 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		decided = "summary-only"
 	}
 
-	suggestions := spillSuggestions(query, manifest.Kind)
+	suggestions := spillSuggestions(query, manifest.Kind, summaryReason)
 	if n := len(omittedCols); n > 0 {
-		suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted and full per-column stats are in the sidecar manifest next to the file", n))
+		if manifest.Kind == output.KindResultFile {
+			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted and full per-column stats are in the sidecar manifest next to the file", n))
+		} else {
+			// Summary-only: nothing was written, so there is no sidecar to point at.
+			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted (the rows were not written to disk, so there is no sidecar manifest)", n))
+		}
 	}
 
 	total := len(records)
@@ -326,10 +338,21 @@ func extForFormat(format string) string {
 	}
 }
 
+// Summary-only degradation causes. They select the right next-step advice:
+// a read-only filesystem makes any --spill-to destination fail too, so we steer
+// to a self-bounding re-query; a one-off write failure can still succeed at a
+// different, explicitly chosen path.
+const (
+	summaryReasonNoLocation  = "no-writable-location"
+	summaryReasonWriteFailed = "write-failed"
+)
+
 // spillSuggestions builds the public, tool-agnostic follow-up hints (D27/D28).
 // It nudges toward DQL aggregation for non-aggregating queries and points at
-// generic local tooling — it never names a specific third-party project.
-func spillSuggestions(query, kind string) []string {
+// generic local tooling — it never names a specific third-party project. For a
+// summary-only result the rows are not on disk, so the advice is keyed on why
+// the spill degraded (summaryReason); it is ignored for the result-file kind.
+func spillSuggestions(query, kind, summaryReason string) []string {
 	var s []string
 	if kind == output.KindResultFile {
 		s = append(s, "# the full result is on disk at the path above; read it with your file tooling for row-level follow-up")
@@ -337,12 +360,33 @@ func spillSuggestions(query, kind string) []string {
 	if isNonAggregatingQuery(query) {
 		s = append(s, "# for aggregate questions, prefer pushing the work into DQL, e.g. add '| summarize count(), by:{<field>}' and re-query")
 	}
-	if kind == output.KindResultFile {
+	switch kind {
+	case output.KindResultFile:
 		s = append(s, "# for complex local analysis, process the spilled file with your preferred local analytics tooling")
-	} else {
-		s = append(s, "# no writable spill location was available — re-run with --spill-to <path> to write the rows to a file you choose")
+	case output.KindSummaryOnly:
+		s = append(s, summaryOnlyFollowups(summaryReason)...)
 	}
 	return s
+}
+
+// summaryOnlyFollowups returns the next-step hints for a summary-only result —
+// the rows could not be written to disk, so local file follow-up is impossible.
+// A read-only filesystem (no-location) makes --spill-to futile, so it steers to
+// a self-bounding re-query (--spill=never plus a column/row cap) that keeps the
+// inline result small; a transient write failure can still succeed at a
+// different, explicitly chosen destination.
+func summaryOnlyFollowups(reason string) []string {
+	if reason == summaryReasonWriteFailed {
+		return []string{
+			"# the spill file could not be written, so the rows are NOT on disk",
+			"# retry, or re-run with --spill-to <path> pointing at a writable location you choose",
+		}
+	}
+	// Default: no writable location anywhere (read-only filesystem).
+	return []string{
+		"# no writable location for a spill file (read-only filesystem), so the rows are NOT on disk and --spill-to would fail too",
+		"# to get the rows inline without flooding context, re-query with --spill=never and bound the result — add '| fields <columns you need>' and/or '| limit <N>', or pass --max-result-records <N>",
+	}
 }
 
 // isNonAggregatingQuery is a cheap heuristic: a query that does not summarise or

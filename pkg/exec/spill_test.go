@@ -426,6 +426,53 @@ func TestBuildSpillResponse_SummaryOnly(t *testing.T) {
 	if len(resp.Context.Warnings) == 0 {
 		t.Error("expected a no-writable-location warning")
 	}
+
+	// A read-only filesystem makes --spill-to futile, so the advice must steer to
+	// a self-bounding re-query (--spill=never plus a record/column cap), not to
+	// writing a file we just proved we cannot write.
+	joined := strings.Join(resp.Context.Suggestions, "\n")
+	if !strings.Contains(joined, "--spill=never") || !strings.Contains(joined, "--max-result-records") {
+		t.Errorf("expected --spill=never + --max-result-records advice for no-writable-location, got:\n%s", joined)
+	}
+	if strings.Contains(joined, "re-run with --spill-to <path> pointing at a writable location") {
+		t.Errorf("must not recommend --spill-to as the remedy on a read-only filesystem, got:\n%s", joined)
+	}
+}
+
+func TestSpillSuggestions(t *testing.T) {
+	q := "fetch logs" // non-aggregating: the DQL-aggregate nudge applies
+
+	t.Run("result-file points at the on-disk file", func(t *testing.T) {
+		s := strings.Join(spillSuggestions(q, output.KindResultFile, ""), "\n")
+		if !strings.Contains(s, "on disk at the path above") {
+			t.Errorf("missing file-read hint:\n%s", s)
+		}
+		if strings.Contains(s, "--spill=never") || strings.Contains(s, "--spill-to") {
+			t.Errorf("result-file must not suggest re-querying:\n%s", s)
+		}
+	})
+
+	t.Run("no writable location steers to a bounded re-query", func(t *testing.T) {
+		s := strings.Join(spillSuggestions(q, output.KindSummaryOnly, summaryReasonNoLocation), "\n")
+		for _, want := range []string{"read-only filesystem", "--spill=never", "--max-result-records"} {
+			if !strings.Contains(s, want) {
+				t.Errorf("missing %q in no-location advice:\n%s", want, s)
+			}
+		}
+		if strings.Contains(s, "pointing at a writable location") {
+			t.Errorf("must not recommend --spill-to on a read-only filesystem:\n%s", s)
+		}
+	})
+
+	t.Run("write failure can retry a different explicit path", func(t *testing.T) {
+		s := strings.Join(spillSuggestions(q, output.KindSummaryOnly, summaryReasonWriteFailed), "\n")
+		if !strings.Contains(s, "--spill-to") {
+			t.Errorf("write-failure should offer --spill-to as a remedy:\n%s", s)
+		}
+		if strings.Contains(s, "--spill=never") {
+			t.Errorf("write-failure should not steer to --spill=never:\n%s", s)
+		}
+	})
 }
 
 func TestBuildSpillResponse_SpillToExplicitPath(t *testing.T) {

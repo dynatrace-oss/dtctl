@@ -68,7 +68,13 @@ regardless of how big the result was. There are three kinds:
 |---|---|---|
 | `records` | small result, returned inline | the rows under `result.records` |
 | `result-file` | large result [spilled to a file](dql-queries#spilling-large-results-to-a-file) | a manifest: `path`, `format`, `rows`, `bytes`, column stats, `sample_rows` |
-| `summary-only` | large result but no writable filesystem | the same manifest **minus `path`** |
+| `summary-only` | large result but the rows could not be written to disk | the same manifest **minus `path`** |
+
+On a `summary-only` result the rows are not on disk, so `context.suggestions`
+carries the right next step for *why* the spill degraded: a read-only filesystem
+steers you to re-query with `--spill=never` and a bound (`| fields …` / `| limit N`,
+or `--max-result-records N`) so the inline result stays small, while a one-off
+write failure suggests retrying with an explicit `--spill-to <path>`.
 
 ```json
 {
