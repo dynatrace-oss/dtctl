@@ -5,340 +5,123 @@ description: Investigate incidents, debug performance issues, analyze logs, and 
 
 # Dynatrace Control with dtctl
 
-Operate `dtctl`, the kubectl-style CLI for Dynatrace. This skill teaches core dtctl command patterns and operations.
+Operate `dtctl`, the kubectl-style CLI for Dynatrace. Pattern: `dtctl <verb> <resource> [flags]`.
 
-## Recommended Initialization
+## Initialization
 
-At the start of a task, run these checks to establish context and permissions:
-
-```bash
-# Discover all available commands, flags, and resources
-dtctl commands --brief -o json
-
-# Show current context
-dtctl config current-context
-
-# Show context details
-dtctl config describe-context $(dtctl config current-context) --plain
-
-# Show auth context: token type (OAuth vs API/platform) and safety level
-dtctl auth status --plain
-```
-
-This displays:
-- Current context name and environment URL
-- Safety level (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)
-- Token type (OAuth vs API/platform token)
-
-> **Note:** Do not use `dtctl auth whoami` to verify a connection. It performs an
-> identity lookup against the platform metadata API and needs an OAuth/JWT token
-> with the `app-engine:apps:run` scope; with a plain API token or a read-scoped
-> platform token it returns a spurious 403 even though read access works fine.
-> Confirm connectivity with your first real query (`dtctl get ...` or
-> `dtctl query ...`), not with an identity probe.
-
-## DQL Reference Usage
-
-Before writing, modifying, or executing any DQL that fetches Dynatrace data (for example via `dtctl query`, `dtctl wait query`, or query files), you MUST consult `references/DQL-reference.md` and follow its documented syntax and templates.
-
-If there is any conflict between memory/assumptions and the reference, prefer the reference.
-
-## Prerequisites
-
-If dtctl is not installed or not working, see [references/troubleshooting.md](references/troubleshooting.md) for installation and setup.
-
-## Resources & Commands
-
-### Available Resources
-
-dtctl uses a uniform pattern for all resource types. Discover schema from actual output with `dtctl describe <resource> <id> -o json --plain`.
-
-| Resource | Aliases |
-|----------|---------|
-| analyzer | analyzers |
-| app | apps |
-| aws connection | - |
-| aws monitoring | - |
-| azure connection | - |
-| azure monitoring | - |
-| bucket | bkt |
-| copilot-skill | copilot-skills |
-| dashboard | dash |
-| edgeconnect | ec |
-| extension | ext, extensions |
-| extension-config | extcfg, extension-configs |
-| function | fn, func |
-| gcp connection | - |
-| gcp monitoring | - |
-| group | groups |
-| intent | intents |
-| lookup | lookups, lkup |
-| notebook | nb |
-| notification | notifications |
-| sdk-version | sdk-versions |
-| settings | setting |
-| settings-schema | schema |
-| slo | - |
-| slo-template | slo-templates |
-| trash | deleted |
-| user | users |
-| workflow | wf |
-| workflow-execution | wfe |
-
-Use IDs whenever possible instead of names to avoid ambiguity.
-
-### Command Verbs
-
-| Verb | Description | Example |
-|------|-------------|---------|
-| **get** | List resources | `dtctl get workflows --mine` |
-| **describe** | Show resource details | `dtctl describe workflow <id>` |
-| **edit** | Edit resource interactively | `dtctl edit dashboard <id>` |
-| **apply** | Create/update from file | `dtctl apply -f workflow.yaml --set env=prod` |
-| **delete** | Delete resource | `dtctl delete workflow <id>` |
-| **exec** | Execute workflow/function/analyzer/copilot | `dtctl exec workflow <id>` |
-| **query** | Run DQL query | `dtctl query "fetch logs \| limit 10"` |
-| **logs** | Print resource logs | `dtctl logs workflow-execution <id>` |
-| **wait** | Wait for conditions | `dtctl wait query "fetch logs" --for=any` |
-| **history** | Show document history | `dtctl history dashboard <id>` |
-| **restore** | Restore document version | `dtctl restore dashboard <id> --version 3` |
-| **share** | Share document | `dtctl share dashboard <id> --user email@example.com` |
-| **unshare** | Remove sharing | `dtctl unshare dashboard <id> --user email@example.com` |
-| **find** | Discover resources | `dtctl find intents --data trace.id=abc` |
-| **open** | Open in browser | `dtctl open intent <app/intent> --data key=value` |
-| **diff** | Compare resources | `dtctl diff -f workflow.yaml` |
-| **verify** | Validate without executing | `dtctl verify query 'fetch logs' --fail-on-warn` |
-| **commands** | List all commands (machine-readable) | `dtctl commands --brief -o json` |
-
-## Key Concepts for AI Agents
-
-### Output Modes
+Run once to establish context, permissions, and the command catalog:
 
 ```bash
-# Agent envelope mode (auto-detected in AI environments)
--A, --agent      # Structured JSON envelope with ok/result/error/context
---no-agent       # Opt out of auto-detected agent mode
-
-# Machine-readable formats (use these for AI agents)
--o toon          # TOON — token-efficient structured output (prefer for agents)
--o json          # JSON output
--o yaml          # YAML output
--o csv           # CSV output
--o chart         # ASCII chart (for time series)
--o sparkline     # ASCII sparkline (for time series)
--o barchart      # ASCII bar chart (for time series)
-
-# Human-readable formats
--o table         # Table format (default)
--o wide          # Wide table with more columns
-
-# Always use --plain flag for AI consumption (implied by --agent)
---plain          # Strips colors and prompts, best for parsing
-
-# Reduce tokens by filtering output (json|yaml|toon; other formats auto-promote to json)
---jq '.[].id'    # apply a jq expression to structured output
+dtctl commands --brief -o json          # all commands, flags, resources + aliases (capabilities)
+dtctl config current-context            # active context
+dtctl config describe-context $(dtctl config current-context) --plain  # env URL + safety level
+dtctl auth status --plain               # token type (OAuth vs API/platform) + safety level
 ```
 
-**For AI agents, prefer:** `dtctl <command> --agent` (auto-detected). Add `-o toon`
-to encode the envelope's `result` as TOON for fewer tokens, and `--jq` to keep only
-the fields you need.
+Safety levels: `readonly`, `readwrite-mine`, `readwrite-all`, `dangerously-unrestricted`.
 
-The `--agent` envelope provides structured metadata alongside results:
+Don't use `dtctl auth whoami` to test connectivity — it needs an OAuth token with `app-engine:apps:run` and returns a spurious 403 for plain API or read-scoped tokens even when reads work. Confirm with a real `get`/`query`.
 
-```json
-{
-  "ok": true,
-  "result": [ ... ],
-  "context": {
-    "verb": "get", "resource": "workflow",
-    "total": 5, "has_more": false,
-    "suggestions": ["Run 'dtctl describe workflow <id>' for details"]
-  }
-}
-```
+## DQL (required reading)
 
-For `dtctl query` the `result` is **self-describing** via a `result.kind` field —
-see [Large query results spill to a file](#large-query-results-spill-to-a-file).
-
-### Template Variables
-
-In YAML/DQL files, use Go template syntax:
-
-```yaml
-# workflow.yaml
-title: "{{.environment}} Deployment"
-owner: "{{.team}}"
-trigger:
-  schedule:
-    cron: "{{.schedule | default "0 0 * * *"}}"
-```
-
-```dql
-# query.dql
-fetch logs
-| filter host.name == "{{.host}}"
-| filter timestamp > now() - {{.timerange | default "1h"}}
-```
-
-Execute with: `dtctl apply -f file.yaml --set environment=prod --set team=platform`
-
-### Copilot, Functions, Analyzers
+Before writing, modifying, or running any DQL (`dtctl query`, `dtctl wait query`, query files), consult `references/DQL-reference.md` and follow it over any assumption or memory.
 
 ```bash
-# Copilot skills
-dtctl get copilot-skills -o json --plain
-
-# Functions
-dtctl get functions -o json --plain
-dtctl exec function <id-or-name> --payload '{"key":"value"}' --plain
-
-# Analyzers
-dtctl get analyzers -o json --plain
-dtctl exec analyzer <id-or-name> --input '{"timeframe":"now-2h"}' --plain
-```
-
-Prefer `get ... -o json --plain` first, then `describe`/`exec` with explicit IDs.
-
-### Authentication & Permissions
-
-```bash
-# Check auth context and permissions
-dtctl auth status --plain
-dtctl auth can-i create workflows
-dtctl auth can-i delete dashboards
-```
-
-Use `can-i` to verify permissions before attempting operations.
-
-## Quick Reference: DQL Queries
-
-**Required workflow for DQL data fetching:**
-1. First consult `references/DQL-reference.md`
-2. Build/validate the query using the documented patterns
-3. Execute with `dtctl query ... -o json --plain` (or `dtctl wait query ...` when waiting for results)
-
-```bash
-# Inline query
 dtctl query "fetch logs | filter status='ERROR' | limit 100" -o json --plain
-
-# Query from file with variables
-dtctl query -f query.dql --set host=h-123 --set timerange=2h -o json --plain
-
-# Wait for query results
+dtctl query -f query.dql --set host=h-123 --set timerange=2h -o json --plain   # Go-template vars
 dtctl wait query "fetch spans | filter test_id='test-123'" --for=count=1 --timeout 5m
-
-# Query with chart output
 dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --plain
 ```
 
-### Large query results spill to a file
+dtctl not installed/working? See [references/troubleshooting.md](references/troubleshooting.md).
 
-To protect your context window, `dtctl query` in agent mode defaults to
-`--spill=auto`: a large result is written to a local file and a compact summary
-is returned in its place instead of dumping tens of thousands of rows inline.
+## Resources & verbs
 
-In agent mode, branch on `result.kind` — never assume `result` is an array:
+Resources and aliases are discoverable via `dtctl commands` (run at init). They include: analyzer, app, aws/azure/gcp connection & monitoring, bucket, copilot-skill, dashboard, edgeconnect, extension, extension-config, function, group, intent, lookup, notebook, notification, sdk-version, settings, settings-schema, slo, slo-template, trash, user, workflow, workflow-execution. **Use IDs, not names** — names may be ambiguous and fail.
 
-| `result.kind` | Meaning | What to do |
-|---------------|---------|------------|
-| `records`     | small result, rows inline under `result.records` | use the rows directly |
-| `result-file` | spilled to disk — manifest with `path`, `format`, `rows`, `bytes`, per-column stats, `sample_rows` | read/filter the file locally; **do not re-run the query** |
-| `summary-only`| rows couldn't be written to disk — manifest minus `path` | use the stats/sample; for specific rows follow `context.suggestions` (cause-aware: re-query with `--spill=never` + a bound, or retry with `--spill-to <path>`) |
+| Verb | Example |
+|------|---------|
+| get / describe | `dtctl get workflows --mine` · `dtctl describe workflow <id>` |
+| apply / edit / delete | `dtctl apply -f wf.yaml --set env=prod` · `dtctl delete workflow <id>` |
+| exec | `dtctl exec function <id> --payload '{...}'` · `dtctl exec analyzer <id> --input '{...}'` (also workflow, copilot) |
+| query / wait | `dtctl query "fetch logs \| limit 10"` · `dtctl wait query ... --for=any` |
+| logs / history / restore | `dtctl logs workflow-execution <id>` · `dtctl restore dashboard <id> --version 3` |
+| share / unshare | `dtctl share dashboard <id> --user a@example.com` |
+| find / open | `dtctl find intents --data trace.id=abc` · `dtctl open intent <app/intent> --data k=v` |
+| diff / verify | `dtctl diff -f wf.yaml` · `dtctl verify query 'fetch logs' --fail-on-warn` |
 
-Treat an unrecognized `result.kind` as opaque and fall back to `context`
-(`decided`, `total`, `warnings`, `suggestions`).
+## Output for agents
+
+`--agent`/`-A` is auto-detected in AI environments (implies `--plain`; opt out with `--no-agent`). It wraps output in `{ok, result, context}` (errors: `{ok:false, error:{code,message}}`, where `context` carries `total`, `has_more`, `suggestions`).
 
 ```bash
-dtctl query "fetch logs | limit 1000000" --agent       # auto-spills if large
-dtctl query "fetch logs" --spill=never                  # force every row inline
-dtctl query "fetch logs" --spill-to ./out.jsonl         # spill to a chosen path (jsonl|json|csv|parquet)
+-o toon          # token-efficient structured output — prefer for agents
+-o json|yaml|csv # other machine formats
+-o chart|sparkline|barchart   # time series
+-o table|wide    # human-readable (table is the default)
+--jq '.[].id'    # filter structured output (json|yaml|toon; other formats auto-promote to json)
+```
+
+Prefer `--agent` plus `-o toon` and `--jq` to cut tokens.
+
+### Query results: branch on `result.kind`
+
+In agent mode `dtctl query` defaults to `--spill=auto`: large results spill to a local file and return a summary instead of dumping rows into context. Never assume `result` is an array — branch on `result.kind`:
+
+| `result.kind` | Meaning → action |
+|---|---|
+| `records` | rows inline under `result.records` → use directly |
+| `result-file` | spilled: manifest with `path`, `format`, `rows`, `bytes`, column stats, `sample_rows` → read/filter the file locally, **don't re-query** |
+| `summary-only` | rows couldn't be written — manifest minus `path` → use stats/sample, or follow the cause-aware `context.suggestions` (`--spill=never` + a bound, or `--spill-to <path>`) |
+
+Treat an unknown `kind` as opaque and fall back to `context` (`decided`, `total`, `warnings`, `suggestions`). Sampled results put stats in a `sample_stats` block (`basis: "sample"`) — not population truth. Interrogate spilled files with local tools (`jq`, DuckDB), not by re-running the query.
+
+```bash
+dtctl query "fetch logs | limit 1000000" --agent     # auto-spills if large
+dtctl query "fetch logs" --spill=never               # force every row inline
+dtctl query "fetch logs" --spill-to ./out.jsonl      # explicit path: jsonl|json|csv|parquet
 dtctl query "fetch logs" --spill=auto --spill-threshold 100KB
 ```
 
-Prefer interrogating the spilled file with local tools (`jq`, DuckDB) over
-re-querying Grail. Sampled results move their stats into a `sample_stats` block
-(each column tagged `basis: "sample"`) — don't read sample figures as population truth.
+## Apply & templates
 
+`dtctl apply` is idempotent: POST when new, PUT when the file has an `id`. YAML/DQL files support Go templates filled via `--set`:
 
+```yaml
+title: "{{.environment}} Deployment"
+cron: "{{.schedule | default "0 0 * * *"}}"
+```
+`dtctl apply -f file.yaml --set environment=prod --set schedule="0 6 * * *"`
 
 ## Dashboards
 
-For full examples and field-level gotchas, see [references/resources/dashboards.md](references/resources/dashboards.md).
-
-Create/update: `dtctl apply -f dashboard.yaml --plain`. Export for reference: `dtctl get dashboard <id> -o yaml --plain`.
-
-### YAML skeleton
+Create/update: `dtctl apply -f dashboard.yaml`. Export for reference: `dtctl get dashboard <id> -o yaml --plain`. Full schema + visualizationSettings: [references/resources/dashboards.md](references/resources/dashboards.md).
 
 ```yaml
 name: "Dashboard Name"
 type: dashboard
 content:
-  annotations: []
-  importedWithCode: false
   settings:
-    defaultTimeframe:
-      enabled: true
-      value: { from: now()-2h, to: now() }
+    defaultTimeframe: { enabled: true, value: { from: now()-2h, to: now() } }
   layouts:
-    "1":                    # string key, must match a tile key
-      x: 0                 # 24-column grid (full=24, half=12, third=8)
-      "y": 0               # MUST quote "y" to avoid YAML boolean parse
-      w: 12
-      h: 6
+    "1": { x: 0, "y": 0, w: 12, h: 6 }    # 24-col grid (full=24); quote "y" (YAML bool)
   tiles:
     "1":
-      title: "Tile Title"
-      type: data            # data | markdown
-      query: |
-        fetch logs | limit 10
-      visualization: lineChart
-      visualizationSettings:
-        autoSelectVisualization: false
+      title: "Tile"
+      type: data                          # data | markdown
+      query: "fetch logs | limit 10"
+      visualization: lineChart            # singleValue|lineChart|areaChart|barChart|pieChart|table|honeycomb|scatterplot
       davis: { enabled: false, davisVisualization: { isAvailable: true } }
 ```
 
-### Tile types & visualizations
+Gotchas: set `davis.enabled: false` on data tiles; `makeTimeseries` for log/span series, `timeseries` for metrics; `id` present → update, absent → create; the `version` warning on create is benign.
 
-- **`type: data`** — DQL tile with `query` + `visualization`: `singleValue`, `lineChart`, `areaChart`, `barChart`, `pieChart`, `table`, `honeycomb`, `scatterplot`
-- **`type: markdown`** — static text via `content` field (supports markdown)
+## Permissions & safety
 
-For detailed visualizationSettings (singleValue, charts, tables, thresholds, unit overrides), see [references/resources/dashboards.md](references/resources/dashboards.md).
+- Verify before mutating: `dtctl auth can-i <verb> <resource>`. Scopes: [TOKEN_SCOPES.md](https://github.com/dynatrace-oss/dtctl/blob/main/docs/TOKEN_SCOPES.md).
+- Destructive ops may be blocked by safety level — switch with `dtctl config use-context <name>`, or raise the level when creating the context.
+- Prefer `get`/`describe` first; `--mine` scopes to resources you own; `--plain` for all machine consumption.
 
-### Gotchas
-- Always set `davis.enabled: false` on data tiles.
-- Use `makeTimeseries` for log/span time series; `timeseries` for metrics.
-- `version` field warning on create is benign.
-- No `id` field → creates new; with `id` field → updates existing.
+## More
 
-## Common Issues
-
-**Name resolution ambiguity:**
-- If a name matches multiple resources, dtctl will fail
-- Solution: Use IDs instead of names
-- Find ID: `dtctl get <resource> -o json --plain | jq -r '.[] | "\(.id) | \(.name)"'`
-
-**Permission denied:**
-- Check token scopes: https://github.com/dynatrace-oss/dtctl/blob/main/docs/TOKEN_SCOPES.md
-- Verify permissions: `dtctl auth can-i <verb> <resource>`
-- Check safety level: `dtctl config describe-context $(dtctl config current-context) --plain`
-
-**Context/safety blocks:**
-- Destructive operations may be blocked by safety level
-- Switch context: `dtctl config use-context <name>`
-- Adjust safety level when creating context
-
-## Additional Resources
-
-- **Troubleshooting**: [references/troubleshooting.md](references/troubleshooting.md)
-- **Multi-tenant setup**: [references/config-management.md](references/config-management.md)
-- **DQL syntax and templates**: [references/DQL-reference.md](references/DQL-reference.md)
-- **Notebooks**: [references/resources/notebooks.md](references/resources/notebooks.md)
-- **Extensions**: [references/resources/extensions.md](references/resources/extensions.md)
-- **CLI help**: `dtctl --help`, `dtctl <command> --help`
-
-## Safety Reminders
-
-- Use `--plain` for machine/AI consumption
-- Confirm context + safety level before destructive ops; prefer `get/describe` first
-- Use `--mine` flag to filter resources you own
-- For multi-tenant work, see [references/config-management.md](references/config-management.md)
+[troubleshooting](references/troubleshooting.md) · [multi-tenant config](references/config-management.md) · [DQL](references/DQL-reference.md) · [notebooks](references/resources/notebooks.md) · [extensions](references/resources/extensions.md) · `dtctl --help`, `dtctl <command> --help`
