@@ -120,6 +120,7 @@ Use IDs whenever possible instead of names to avoid ambiguity.
 --no-agent       # Opt out of auto-detected agent mode
 
 # Machine-readable formats (use these for AI agents)
+-o toon          # TOON — token-efficient structured output (prefer for agents)
 -o json          # JSON output
 -o yaml          # YAML output
 -o csv           # CSV output
@@ -133,9 +134,14 @@ Use IDs whenever possible instead of names to avoid ambiguity.
 
 # Always use --plain flag for AI consumption (implied by --agent)
 --plain          # Strips colors and prompts, best for parsing
+
+# Reduce tokens by filtering output (json|yaml|toon; other formats auto-promote to json)
+--jq '.[].id'    # apply a jq expression to structured output
 ```
 
-**For AI agents, prefer:** `dtctl <command> --agent` (auto-detected) or `dtctl <command> -o json --plain`
+**For AI agents, prefer:** `dtctl <command> --agent` (auto-detected). Add `-o toon`
+to encode the envelope's `result` as TOON for fewer tokens, and `--jq` to keep only
+the fields you need.
 
 The `--agent` envelope provides structured metadata alongside results:
 
@@ -150,6 +156,9 @@ The `--agent` envelope provides structured metadata alongside results:
   }
 }
 ```
+
+For `dtctl query` the `result` is **self-describing** via a `result.kind` field —
+see [Large query results spill to a file](#large-query-results-spill-to-a-file).
 
 ### Template Variables
 
@@ -221,6 +230,34 @@ dtctl wait query "fetch spans | filter test_id='test-123'" --for=count=1 --timeo
 # Query with chart output
 dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --plain
 ```
+
+### Large query results spill to a file
+
+To protect your context window, `dtctl query` in agent mode defaults to
+`--spill=auto`: a large result is written to a local file and a compact summary
+is returned in its place instead of dumping tens of thousands of rows inline.
+
+In agent mode, branch on `result.kind` — never assume `result` is an array:
+
+| `result.kind` | Meaning | What to do |
+|---------------|---------|------------|
+| `records`     | small result, rows inline under `result.records` | use the rows directly |
+| `result-file` | spilled to disk — manifest with `path`, `format`, `rows`, `bytes`, per-column stats, `sample_rows` | read/filter the file locally; **do not re-run the query** |
+| `summary-only`| rows couldn't be written to disk — manifest minus `path` | use the stats/sample; for specific rows follow `context.suggestions` (cause-aware: re-query with `--spill=never` + a bound, or retry with `--spill-to <path>`) |
+
+Treat an unrecognized `result.kind` as opaque and fall back to `context`
+(`decided`, `total`, `warnings`, `suggestions`).
+
+```bash
+dtctl query "fetch logs | limit 1000000" --agent       # auto-spills if large
+dtctl query "fetch logs" --spill=never                  # force every row inline
+dtctl query "fetch logs" --spill-to ./out.jsonl         # spill to a chosen path (jsonl|json|csv|parquet)
+dtctl query "fetch logs" --spill=auto --spill-threshold 100KB
+```
+
+Prefer interrogating the spilled file with local tools (`jq`, DuckDB) over
+re-querying Grail. Sampled results move their stats into a `sample_stats` block
+(each column tagged `basis: "sample"`) — don't read sample figures as population truth.
 
 
 
