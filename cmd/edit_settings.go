@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -97,7 +98,8 @@ Examples:
 		}
 
 		// Open the editor
-		editorCmd := exec.Command(editor, tmpfile.Name())
+		parts := strings.Fields(editor)
+		editorCmd := exec.Command(parts[0], append(parts[1:], tmpfile.Name())...)
 		editorCmd.Stdin = os.Stdin
 		editorCmd.Stdout = os.Stdout
 		editorCmd.Stderr = os.Stderr
