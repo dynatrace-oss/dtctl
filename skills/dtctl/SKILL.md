@@ -37,7 +37,7 @@ dtctl not installed/working? See [references/troubleshooting.md](references/trou
 
 ## Resources & verbs
 
-Resources and aliases are discoverable via `dtctl commands` (run at init). They include: analyzer, app, aws/azure/gcp connection & monitoring, bucket, copilot-skill, dashboard, edgeconnect, extension, extension-config, function, group, intent, lookup, notebook, notification, sdk-version, settings, settings-schema, slo, slo-template, trash, user, workflow, workflow-execution. **Use IDs, not names** — names may be ambiguous and fail.
+Resources and aliases are discoverable via `dtctl commands` (run at init). They include: analyzer, anomaly-detector, app, aws/azure/gcp connection & monitoring, bucket, copilot-skill, dashboard, document, edgeconnect, extension, extension-config, function, group, intent, lookup, notebook, notification, sdk-version, segment, settings, settings-schema, slo, slo-template, trash, user, workflow, workflow-execution. **Use IDs, not names** — names may be ambiguous and fail.
 
 | Verb | Example |
 |------|---------|
@@ -57,6 +57,7 @@ Resources and aliases are discoverable via `dtctl commands` (run at init). They 
 ```bash
 -o toon          # token-efficient structured output — prefer for agents
 -o json|yaml|csv # other machine formats
+-o jsonl|parquet # streaming / columnar export for large results (pipe to a file, query with DuckDB)
 -o chart|sparkline|barchart   # time series
 -o table|wide    # human-readable (table is the default)
 --jq '.[].id'    # filter structured output (json|yaml|toon; other formats auto-promote to json)
