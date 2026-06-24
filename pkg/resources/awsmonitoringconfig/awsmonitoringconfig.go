@@ -3,6 +3,7 @@
 package awsmonitoringconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -293,6 +294,14 @@ func (h *Handler) fetchLatestSchema() (*ExtensionSchemaResponse, error) {
 		return nil, fmt.Errorf("failed to fetch extension schema: %s", resp.String())
 	}
 	return &schema, nil
+}
+
+func (h *Handler) GetRaw(id string) ([]byte, error) {
+	result, err := h.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(result, "", "  ")
 }
 
 func (h *Handler) Get(id string) (*AWSMonitoringConfig, error) {
