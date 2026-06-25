@@ -84,6 +84,13 @@ dtctl query "fetch logs" --spill-to ./out.jsonl      # explicit path: jsonl|json
 dtctl query "fetch logs" --spill=auto --spill-threshold 100KB
 ```
 
+## Log pattern analysis (token-frugal)
+
+For free-text log triage, don't dump raw `content` — extract the taxonomy server-side, then drill:
+1. `dtctl exec analyzer dt.statistics.clustering.LogPatternExtractor --input '{"logQuery":"<DQL>","numberOfExamples":2}'` → DPL templates + match counts. `logQuery` is a **plain DQL string** (not an object) yielding `timestamp`+`content`. Projects well with `--jq` to `{patternExpression, numberOfMatches}`.
+2. Lift a `patternExpression` verbatim into `parse content, "..."` (rename captures `f_1`→meaningful), then `summarize … by:{field}` to extract/count at row scale. Unmatched lines yield null captures.
+3. Need raw rows? Drill with `fetch … --agent` and let it spill (above), then interrogate the file locally.
+
 ## Apply & templates
 
 `dtctl apply` is idempotent: POST when new, PUT when the file has an `id`. YAML/DQL files support Go templates filled via `--set`:
