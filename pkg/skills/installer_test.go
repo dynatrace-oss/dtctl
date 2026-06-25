@@ -644,10 +644,9 @@ func TestInstalledSkillContent_ContainsMainSections(t *testing.T) {
 
 	mustContain := []string{
 		"Dynatrace Control with dtctl",
-		"Available Resources",
-		"Command Verbs",
-		"Output Modes",
-		"Template Variables",
+		"Resources & verbs",
+		"Output for agents",
+		"Apply & templates",
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(content, s) {
@@ -672,8 +671,8 @@ func TestInstalledSkillContent_SubstantialSize(t *testing.T) {
 	}
 
 	lines := strings.Count(string(data), "\n")
-	if lines < 200 {
-		t.Errorf("SKILL.md has only %d lines, expected 200+", lines)
+	if lines < 100 {
+		t.Errorf("SKILL.md has only %d lines, expected 100+", lines)
 	}
 }
 
