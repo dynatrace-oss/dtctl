@@ -7,10 +7,26 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
+// rowPreallocCap bounds the up-front slice capacity a row-access primitive
+// reserves. A pathological --head/--tail/--limit (e.g. 2_000_000_000) must grow
+// the buffer incrementally as rows are actually read, not allocate gigabytes for
+// a file that may hold only a handful of rows — otherwise the very large window
+// that IN8 re-spill exists to handle would OOM before the re-spill could run.
+const rowPreallocCap = 4096
+
+// prealloc caps an up-front capacity hint at rowPreallocCap; append grows the
+// slice the rest of the way only if the rows are really there.
+func prealloc(n int) int {
+	if n < rowPreallocCap {
+		return n
+	}
+	return rowPreallocCap
+}
+
 // readHead returns the first n records, projected to fields. It stops after n,
-// so memory and time are O(n) — it never reads the rest of the file.
+// so memory and time are O(min(n, rows)) — it never reads the rest of the file.
 func readHead(r Reader, n int, fields []string) ([]map[string]interface{}, error) {
-	out := make([]map[string]interface{}, 0, n)
+	out := make([]map[string]interface{}, 0, prealloc(n))
 	for len(out) < n {
 		rec, err := r.Next()
 		if err == io.EOF {
@@ -46,15 +62,17 @@ func readPage(r Reader, offset, limit int, fields []string) ([]map[string]interf
 }
 
 // readTail returns the last n records, projected to fields. It keeps an n-slot
-// ring buffer while streaming, so memory is O(n) regardless of file size. (Time
-// is O(file) for NDJSON/JSON — a reverse-read optimisation is possible but tail
-// is rare; Parquet could read trailing row groups — both are future
-// optimisations; correctness and bounded memory hold today.)
+// ring buffer while streaming, so memory is O(min(n, rows)) regardless of file
+// size — the ring is grown lazily (capped initial capacity) so a huge --tail on
+// a small file never allocates n slots up front, then overwrites oldest-first
+// once full. (Time is O(file) for NDJSON/JSON — a reverse-read optimisation is
+// possible but tail is rare; Parquet could read trailing row groups — both are
+// future optimisations; correctness and bounded memory hold today.)
 func readTail(r Reader, n int, fields []string) ([]map[string]interface{}, error) {
 	if n <= 0 {
 		return []map[string]interface{}{}, nil
 	}
-	ring := make([]map[string]interface{}, n)
+	ring := make([]map[string]interface{}, 0, prealloc(n))
 	count := 0
 	for {
 		rec, err := r.Next()
@@ -64,7 +82,12 @@ func readTail(r Reader, n int, fields []string) ([]map[string]interface{}, error
 		if err != nil {
 			return nil, wrapReadError(err)
 		}
-		ring[count%n] = project(rec, fields)
+		row := project(rec, fields)
+		if len(ring) < n {
+			ring = append(ring, row) // ring not yet full — grow it
+		} else {
+			ring[count%n] = row // full — overwrite the oldest slot
+		}
 		count++
 	}
 

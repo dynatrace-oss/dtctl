@@ -73,7 +73,7 @@ Token-based authentication and multi-environment configuration are covered in th
 | Workflows | get, describe, create, edit, delete, apply, execute, logs, history, restore, diff, watch |
 | Dashboards & Notebooks | get, describe, create, edit, delete, apply, share, history, restore, diff, watch |
 | Documents & Trash | get, describe, create, edit, delete, share, history, restore |
-| DQL Queries | execute, verify, template variables, live mode, filter segments, wait conditions |
+| DQL Queries | execute, verify, template variables, live mode, filter segments, wait conditions, spill large results to a file + local `inspect` (rows/schema/stats) |
 | SLOs | get, describe, create, edit, delete, apply, evaluate, watch |
 | Settings | get schemas, get/create/update/delete objects |
 | Buckets | get, describe, create, delete, apply, watch |

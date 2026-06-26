@@ -85,6 +85,32 @@ func TestRun_TailAndPageBoundaries(t *testing.T) {
 	}
 }
 
+// TestRun_HugeRowCountDoesNotPreallocate exercises the capped-preallocation path
+// (N far larger than rowPreallocCap) on a tiny file: head and tail must still
+// return exactly the rows present, growing the buffer lazily rather than
+// reserving N slots up front.
+func TestRun_HugeRowCountDoesNotPreallocate(t *testing.T) {
+	dir := t.TempDir()
+	path := writeSpill(t, dir, "jsonl", sampleRecords(), &output.SidecarManifest{Format: "jsonl", Rows: 4})
+	huge := rowPreallocCap * 1000 // well past the prealloc cap
+
+	head, err := Run(Request{Path: path, Primitive: PrimHead, N: huge})
+	if err != nil {
+		t.Fatalf("head(huge): %v", err)
+	}
+	if len(head.Records) != 4 || head.Records[0]["host"] != "web-01" {
+		t.Errorf("head(huge) = %d rows, want all 4 in order", len(head.Records))
+	}
+
+	tail, err := Run(Request{Path: path, Primitive: PrimTail, N: huge})
+	if err != nil {
+		t.Fatalf("tail(huge): %v", err)
+	}
+	if len(tail.Records) != 4 || tail.Records[3]["host"] != "web-03" {
+		t.Errorf("tail(huge) = %d rows, want all 4 in order", len(tail.Records))
+	}
+}
+
 // TestRun_EmptyFiles ensures an empty NDJSON and an empty (headerless) CSV both
 // read as a valid zero-row result rather than erroring.
 func TestRun_EmptyFiles(t *testing.T) {

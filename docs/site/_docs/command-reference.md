@@ -23,6 +23,7 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 | `apply` | Apply configuration from file (create or update) |
 | `logs` | Print logs for a resource |
 | `query` | Execute a DQL query |
+| `inspect` | Inspect a spilled query-result file locally (rows, schema, stats) without re-querying Grail |
 | `exec` | Execute a workflow, function, analyzer, or CoPilot skill |
 | `history` | Show version history (snapshots) of a document |
 | `restore` | Restore a document to a previous version |
@@ -168,6 +169,36 @@ dtctl query "..." --segments-file segments.yaml  # Segments with variables from 
 dtctl verify query "fetch logs | limit 10"
 dtctl verify query -f query.dql --canonical --fail-on-warn
 ```
+
+## Inspect Commands
+
+`dtctl inspect` reads a query-result file that `dtctl query` spilled to disk (see
+[Spilling Large Results](dql-queries#spilling-large-results-to-a-file)) — without
+re-querying Grail and without pulling the whole result back into context. Its
+primary capability is **row access**, which the spill summary never carried.
+Choose exactly one primitive per call; it is not a query engine (no filter, no
+SQL, no GROUP BY — push aggregates back into DQL).
+
+```bash
+# Row access
+dtctl inspect q-7f3a9c.jsonl --head 20            # first N rows
+dtctl inspect q-7f3a9c.jsonl --tail 10            # last N rows
+dtctl inspect q-7f3a9c.jsonl --page --offset 1000 --limit 50   # a paginated window (result order)
+dtctl inspect q-7f3a9c.jsonl --head 20 --fields timestamp,content  # column projection (composable)
+
+# Re-derive the summary for a file whose manifest is out of context
+dtctl inspect q-7f3a9c.jsonl --schema             # columns + types + null counts
+dtctl inspect q-7f3a9c.jsonl --stats              # per-column profile (or --stats=col,col)
+dtctl inspect q-7f3a9c.jsonl --sample 5           # N representative (leading) rows
+
+# Recover a lost file handle
+dtctl inspect --list                              # spilled files in the active context, with provenance
+```
+
+Reads jsonl, json, csv, and parquet. Honours the shared `--spill*` flags: an
+oversized inspect window re-spills to a new managed file instead of flooding
+output. It lists/reads only the active context's partition and refuses a file
+that belongs to a different context or tenant.
 
 ## Execution Commands
 
