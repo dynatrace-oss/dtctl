@@ -45,6 +45,7 @@ Resources and aliases are discoverable via `dtctl commands` (run at init). They 
 | apply / edit / delete | `dtctl apply -f wf.yaml --set env=prod` · `dtctl delete workflow <id>` |
 | exec | `dtctl exec function <id> --payload '{...}'` · `dtctl exec analyzer <id> --input '{...}'` (also workflow, copilot) |
 | query / wait | `dtctl query "fetch logs \| limit 10"` · `dtctl wait query ... --for=any` |
+| inspect | `dtctl inspect <file> --head 20` · `--tail`, `--page --offset N --limit M`, `--fields a,b`, `--schema`, `--stats`, `--sample N`, `--list` (row access over a spilled result file — no Grail re-query) |
 | logs / history / restore | `dtctl logs workflow-execution <id>` · `dtctl restore dashboard <id> --version 3` |
 | share / unshare | `dtctl share dashboard <id> --user a@example.com` |
 | find / open | `dtctl find intents --data trace.id=abc` · `dtctl open intent <app/intent> --data k=v` |
@@ -72,10 +73,10 @@ In agent mode `dtctl query` defaults to `--spill=auto`: large results spill to a
 | `result.kind` | Meaning → action |
 |---|---|
 | `records` | rows inline under `result.records` → use directly |
-| `result-file` | spilled: manifest with `path`, `format`, `rows`, `bytes`, column stats, `sample_rows` → read/filter the file locally, **don't re-query** |
+| `result-file` | spilled: manifest with `path`, `format`, `rows`, `bytes`, column stats, `sample_rows` → interrogate the file with `dtctl inspect <path>` (below), **don't re-query** |
 | `summary-only` | rows couldn't be written — manifest minus `path` → use stats/sample, or follow the cause-aware `context.suggestions` (`--spill=never` + a bound, or `--spill-to <path>`) |
 
-Treat an unknown `kind` as opaque and fall back to `context` (`decided`, `total`, `warnings`, `suggestions`). Sampled results put stats in a `sample_stats` block (`basis: "sample"`) — not population truth. Interrogate spilled files with local tools (`jq`, DuckDB), not by re-running the query.
+Treat an unknown `kind` as opaque and fall back to `context` (`decided`, `total`, `warnings`, `suggestions`). Sampled results put stats in a `sample_stats` block (`basis: "sample"`) — not population truth.
 
 ```bash
 dtctl query "fetch logs | limit 1000000" --agent     # auto-spills if large
@@ -84,12 +85,28 @@ dtctl query "fetch logs" --spill-to ./out.jsonl      # explicit path: jsonl|json
 dtctl query "fetch logs" --spill=auto --spill-threshold 100KB
 ```
 
+### Inspect a spilled file (no Grail re-query)
+
+`dtctl inspect <file>` reads the rows the summary left out — bounded, streaming, agent-context-friendly — so you never re-run the Grail scan. Pick exactly one primitive per call:
+
+```bash
+dtctl inspect <path> --head 20                          # first N rows (the manifest never carried rows)
+dtctl inspect <path> --tail 10                          # last N rows
+dtctl inspect <path> --page --offset 1000 --limit 50    # a window deep in the result (file order)
+dtctl inspect <path> --head 20 --fields timestamp,content  # project columns (composable)
+dtctl inspect <path> --schema                           # re-derive columns + types + null counts
+dtctl inspect <path> --stats                            # re-derive the per-column profile (or --stats=col,col)
+dtctl inspect --list                                    # lost the path? enumerate spilled files in this context
+```
+
+It is not a query engine — no filter/SQL/GROUP BY. For aggregates, push the work back into DQL (`… | summarize …`); for complex local analysis, hand the file to your preferred local analytics tooling. An oversized `inspect` window re-spills to a new file rather than flooding context, and refuses files from another context/tenant.
+
 ## Log pattern analysis (token-frugal)
 
 For free-text log triage, don't dump raw `content` — extract the taxonomy server-side, then drill:
 1. `dtctl exec analyzer dt.statistics.clustering.LogPatternExtractor --input '{"logQuery":"<DQL>","numberOfExamples":2}'` → DPL templates + match counts. `logQuery` is a **plain DQL string** (not an object) yielding `timestamp`+`content`. Projects well with `--jq` to `{patternExpression, numberOfMatches}`.
 2. Lift a `patternExpression` verbatim into `parse content, "..."` (rename captures `f_1`→meaningful), then `summarize … by:{field}` to extract/count at row scale. Unmatched lines yield null captures.
-3. Need raw rows? Drill with `fetch … --agent` and let it spill (above), then interrogate the file locally.
+3. Need raw rows? Drill with `fetch … --agent` and let it spill (above), then read them with `dtctl inspect <path> --head/--page` (above).
 
 ## Apply & templates
 

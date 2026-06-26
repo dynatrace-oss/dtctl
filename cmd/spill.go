@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,7 +19,12 @@ import (
 // (D15), and enforces the fixed flag-conflict rules (D25). It emits a warning
 // (not an error) for flags that are inert under --spill=never.
 func resolveSpillOptions(cmd *cobra.Command, cfg *config.Config) (exec.SpillOptions, error) {
-	base := cfg.EffectiveSpillConfig()
+	// A nil config (e.g. `dtctl inspect` on a local file with no usable context)
+	// resolves against the built-in defaults; flags and env vars still apply.
+	var base config.SpillConfig
+	if cfg != nil {
+		base = cfg.EffectiveSpillConfig()
+	}
 
 	spillChanged := cmd.Flags().Changed("spill")
 	spillVal, _ := cmd.Flags().GetString("spill")
@@ -116,10 +120,41 @@ func resolveSpillOptions(cmd *cobra.Command, cfg *config.Config) (exec.SpillOpti
 	return opts, nil
 }
 
+// addSpillFlags registers the shared --spill* flag namespace (D4) on a command.
+// Both `query` and `inspect` honour the same spill controls so an oversized
+// result — a Grail query result, or a wide/large `inspect` row window (IN8) —
+// collapses to a managed file + summary instead of flooding the agent context.
+func addSpillFlags(cmd *cobra.Command) {
+	cmd.Flags().String("spill", "", `spill a large result to a local file and return a summary instead of the rows
+bare --spill = always; --spill=auto spills above --spill-threshold; --spill=never forces rows
+(default: auto in agent mode, never otherwise)`)
+	cmd.Flags().Lookup("spill").NoOptDefVal = "always"
+	cmd.Flags().String("spill-to", "", "explicit spill destination file (implies --spill=always; format inferred from extension)")
+	cmd.Flags().String("spill-format", "", "spill file format when spilling to the default dir: jsonl|json|csv|parquet (default jsonl)")
+	cmd.Flags().String("spill-threshold", "", "serialised output size above which a result spills, e.g. 50KB (default 50KB)")
+
+	_ = cmd.RegisterFlagCompletionFunc("spill", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"auto\tspill above the threshold, inline below",
+			"always\talways spill",
+			"never\tnever spill (rows inline)",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = cmd.RegisterFlagCompletionFunc("spill-format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"jsonl", "json", "csv", "parquet"}, cobra.ShellCompDirectiveNoFileComp
+	})
+}
+
 // spillProvenance returns the tenant id (environment subdomain) and the active
 // context name for the spill manifest (D9). Both are best-effort: a missing or
 // unparseable environment simply yields an empty tenant id.
 func spillProvenance(cfg *config.Config) (tenantID, contextName string) {
+	// A nil config (local-only `inspect` with no usable config) carries no
+	// provenance — return zero values rather than nil-panicking, mirroring the
+	// nil tolerance of resolveSpillOptions.
+	if cfg == nil {
+		return "", ""
+	}
 	contextName = cfg.CurrentContext
 	if ctx, err := cfg.CurrentContextObj(); err == nil {
 		if sub, serr := httpclient.ExtractSubdomain(ctx.Environment); serr == nil {
@@ -157,18 +192,8 @@ func spillWritesParquet(opts exec.SpillOptions) bool {
 }
 
 // spillFormatFromExt maps a destination file extension to a spill format, or ""
-// for an unrecognised/missing extension.
+// for an unrecognised/missing extension. It delegates to the shared
+// output.FormatForExt so the supported-extension set lives in one place.
 func spillFormatFromExt(path string) string {
-	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(path), ".")) {
-	case "jsonl":
-		return "jsonl"
-	case "json":
-		return "json"
-	case "csv":
-		return "csv"
-	case "parquet":
-		return "parquet"
-	default:
-		return ""
-	}
+	return output.FormatForExt(path)
 }

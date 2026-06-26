@@ -217,6 +217,28 @@ func TestComputeColumnStats_TruncatesLongTopValues(t *testing.T) {
 	}
 }
 
+// TestStatsAccumulator_FinalizeIdempotent confirms that calling Finalize more
+// than once does not double-count the null back-fill (the back-fill mutates
+// accumulator state, so it must run only once).
+func TestStatsAccumulator_FinalizeIdempotent(t *testing.T) {
+	acc := NewStatsAccumulator(DefaultStatsTopK, DefaultStatsMaxDistinct)
+	// Row 1 has both columns; row 2 omits "b" → "b" is implicitly null once.
+	acc.Observe(map[string]interface{}{"a": "x", "b": "y"})
+	acc.Observe(map[string]interface{}{"a": "z"})
+
+	first := acc.Finalize(false)
+	second := acc.Finalize(false)
+
+	bFirst, _ := findCol(first, "b")
+	bSecond, _ := findCol(second, "b")
+	if bFirst.Nulls != 1 {
+		t.Fatalf("first Finalize: b nulls = %d, want 1", bFirst.Nulls)
+	}
+	if bSecond.Nulls != bFirst.Nulls {
+		t.Errorf("second Finalize: b nulls = %d, want %d (idempotent)", bSecond.Nulls, bFirst.Nulls)
+	}
+}
+
 func TestCapColumnsForEnvelope(t *testing.T) {
 	// 5 columns, descending population (a has fewest nulls, e the most).
 	cols := []ColumnStats{
