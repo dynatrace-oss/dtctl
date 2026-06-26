@@ -437,6 +437,12 @@ func NewBrief(l *Listing) *Listing {
 		CommandModel:  l.CommandModel,
 		Verbs:         make(map[string]*Verb, len(l.Verbs)),
 		Aliases:       l.Aliases,
+		// Retain patterns/antipatterns: they are the primary grounding agents
+		// rely on after bootstrapping with `dtctl commands --brief -o json`, and
+		// cost only a handful of tokens. Dropping them here would make the
+		// guidance invisible on the documented bootstrap path.
+		Patterns:     l.Patterns,
+		Antipatterns: l.Antipatterns,
 		// Keep the compact canonical table; agents derive a command's scopes
 		// from resource_scopes[resource][verb.access] without the materialized
 		// per-command map.

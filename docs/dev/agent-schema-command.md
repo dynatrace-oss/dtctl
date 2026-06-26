@@ -225,7 +225,7 @@ Since these scope fields were added, `schema_version` is `2`. See [TOKEN_SCOPES.
 
 ### Brief mode
 
-`--brief` strips descriptions, examples, patterns, antipatterns, time_formats, safety_operation, and the materialized `required_scopes_by_resource`. It keeps each verb's `access` and the compact top-level `resource_scopes` table, so scopes remain derivable as `resource_scopes[resource][verb.access]`. DQL `required_scopes` (not derivable from the table) are retained. Reduces token count by ~60%:
+`--brief` strips descriptions, examples, time_formats, safety_operation, and the materialized `required_scopes_by_resource`. It **retains** the top-level `patterns`/`antipatterns` arrays — these are the primary grounding agents rely on after bootstrapping with `dtctl commands --brief -o json`, and cost only a handful of tokens. It keeps each verb's `access` and the compact top-level `resource_scopes` table, so scopes remain derivable as `resource_scopes[resource][verb.access]`. DQL `required_scopes` (not derivable from the table) are retained. Reduces token count by ~60%:
 
 ```json
 {
@@ -363,7 +363,7 @@ All steps completed in PR #62.
 4. Annotate each verb with `mutating` (derived from whether the command handler calls `NewSafetyChecker`) and `safety_operation`
 5. Include `schema_version`, `time_formats`, `resource_aliases`
 6. Output as JSON or YAML to stdout
-7. `--brief` flag strips verbose fields (descriptions, patterns, antipatterns, time_formats, safety_operation) but preserves `mutating`
+7. `--brief` flag strips verbose fields (descriptions, time_formats, safety_operation) but preserves `mutating` and the `patterns`/`antipatterns` agent grounding
 8. Positional arg filters to a specific resource or verb
 
 ### Step 3: Build howto generator (0.5 day) -- Done

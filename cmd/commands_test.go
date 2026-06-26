@@ -490,14 +490,14 @@ func TestCommandsCmd_NewBriefDoesNotMutateOriginal(t *testing.T) {
 	require.Equal(t, origDesc, listing.Description)
 	require.Len(t, listing.GlobalFlags, origGlobalFlagCount)
 
-	// Brief should have stripped fields
+	// Brief should have stripped verbose fields
 	require.Empty(t, brief.Description)
 	require.Nil(t, brief.GlobalFlags)
 	require.Nil(t, brief.TimeFormats)
-	require.Nil(t, brief.Patterns)
-	require.Nil(t, brief.Antipatterns)
 
-	// But should preserve structure
+	// But should preserve structure and agent grounding (patterns/antipatterns)
+	require.Equal(t, listing.Patterns, brief.Patterns)
+	require.Equal(t, listing.Antipatterns, brief.Antipatterns)
 	require.Len(t, brief.Verbs, origVerbCount)
 	require.NotNil(t, brief.Aliases)
 }
