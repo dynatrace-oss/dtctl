@@ -125,21 +125,41 @@ func Run(req Request) (*Result, error) {
 }
 
 // checkContext enforces the cross-context/tenant refusal (D9/D32).
+//
+// Limitation: a file with no sidecar on a non-managed (user-chosen) path carries
+// no recorded identity, so it cannot be structurally attributed to a context or
+// tenant — inspecting such a file is allowed because there is nothing to compare
+// against. The structural managed-path partition and the sidecar provenance below
+// are what make the refusal enforceable for managed and self-spilled files.
 func checkContext(req Request, sidecar *output.SidecarManifest) error {
-	// Structural: a managed path embeds its context as a directory segment.
+	// 1. Structural: a managed path embeds its context as a directory segment, so
+	// a cross-context read is refused from the path alone — before opening the
+	// file — whenever the active context is known.
 	if seg, ok := output.ManagedContextFor(req.Path); ok && req.ActiveContext != "" {
 		if seg != output.SanitizeContextName(req.ActiveContext) {
 			return errWrongContext(req.Path, seg, req.ActiveContext)
 		}
 	}
-	// Cross-tenant guard for any path (covers user-chosen, non-partitioned paths)
-	// when both tenant ids are known and disagree.
-	if sidecar != nil && sidecar.TenantID != "" && req.ActiveTenant != "" && sidecar.TenantID != req.ActiveTenant {
-		fileCtx := sidecar.ContextName
-		if fileCtx == "" {
-			fileCtx = sidecar.TenantID
-		}
-		return errWrongContext(req.Path, fileCtx, req.ActiveContext)
+
+	// The remaining guards rely on sidecar provenance; without it there is nothing
+	// to attribute the file to.
+	if sidecar == nil {
+		return nil
+	}
+
+	// 2. Cross-tenant: the strongest cross-account signal. Refuse when both tenant
+	// ids are known and disagree, naming the tenant axis.
+	if sidecar.TenantID != "" && req.ActiveTenant != "" && sidecar.TenantID != req.ActiveTenant {
+		return errWrongTenant(req.Path, sidecar.TenantID, req.ActiveTenant)
+	}
+
+	// 3. Cross-context via provenance: covers a user-chosen-path file that records
+	// its origin context but no (or a blank) tenant id — refuse when it disagrees
+	// with the active context. This closes the gap where a non-managed file from
+	// another context with no tenant id would otherwise be read.
+	if sidecar.ContextName != "" && req.ActiveContext != "" &&
+		output.SanitizeContextName(sidecar.ContextName) != output.SanitizeContextName(req.ActiveContext) {
+		return errWrongContext(req.Path, sidecar.ContextName, req.ActiveContext)
 	}
 	return nil
 }
@@ -217,14 +237,28 @@ func runSummary(r Reader, req Request, sidecar *output.SidecarManifest, res *Res
 		m.Rows = acc.Rows() // authoritative: we scanned the whole file
 
 		if req.Primitive == PrimSchema {
-			m.Columns = schemaView(cols)
+			// Bound a wide schema to the same envelope cap the query summary uses,
+			// recording the trimmed columns in ColumnsOmitted — re-deriving a
+			// summary must not itself become a context blowup (the hazard inspect
+			// exists to prevent).
+			capped, omitted := output.CapColumnsForEnvelope(cols, output.DefaultMaxSummaryColumns)
+			m.Columns = schemaView(capped)
+			m.ColumnsOmitted = omitted
 		} else { // PrimStats
 			if len(req.StatsColumns) > 0 {
+				// An explicit column selection is the caller's chosen scope; honour
+				// it verbatim (no cap).
 				var ferr error
 				cols, ferr = selectColumns(cols, req.StatsColumns)
 				if ferr != nil {
 					return ferr
 				}
+			} else {
+				// Bare --stats over all columns is capped to the envelope limit, as
+				// the query spill summary is, with the rest named in ColumnsOmitted.
+				var omitted []string
+				cols, omitted = output.CapColumnsForEnvelope(cols, output.DefaultMaxSummaryColumns)
+				m.ColumnsOmitted = omitted
 			}
 			m.SetStats(cols, m.Sampled)
 			if sidecar == nil {
@@ -239,16 +273,23 @@ func runSummary(r Reader, req Request, sidecar *output.SidecarManifest, res *Res
 	return nil
 }
 
+// rowCount clamps a row count to a non-negative value. The command layer is
+// authoritative for defaulting an *unspecified* count to DefaultRowCount, so the
+// engine honours an explicit 0 ("zero rows") rather than reinterpreting it as the
+// default; only a negative (defensive) is clamped to 0.
 func rowCount(n int) int {
-	if n <= 0 {
-		return DefaultRowCount
+	if n < 0 {
+		return 0
 	}
 	return n
 }
 
+// pageLimit clamps a page limit the same way rowCount does: an explicit 0 yields
+// an empty window, a negative is clamped to 0, and defaulting an unspecified
+// limit is the command layer's responsibility.
 func pageLimit(l int) int {
-	if l <= 0 {
-		return DefaultRowCount
+	if l < 0 {
+		return 0
 	}
 	return l
 }

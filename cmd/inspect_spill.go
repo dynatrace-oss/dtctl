@@ -120,6 +120,13 @@ func maybeRespill(cmd *cobra.Command, cfg *config.Config, req inspect.Request, r
 	// Carry forward any engine warnings (e.g. sampling-unknown) onto the spill.
 	warnings = append(res.Warnings, warnings...)
 
+	// A --jq transform cannot be applied to a re-spilled result (the rows went to
+	// a file, not through the inline jq path), so warn rather than silently drop
+	// the filter — mirroring the query spill path's behaviour.
+	if jqFilter != "" {
+		warnings = append(warnings, "--jq was not applied to the re-spilled result; the file holds the full untransformed rows — apply your filter to the file locally")
+	}
+
 	suggestions := []string{}
 	if manifest.Kind == output.KindResultFile {
 		suggestions = append(suggestions,
@@ -220,16 +227,7 @@ func describeInspectCall(req inspect.Request) string {
 }
 
 func respillExt(format string) string {
-	switch strings.ToLower(format) {
-	case "csv":
-		return "csv"
-	case "json":
-		return "json"
-	case "parquet":
-		return "parquet"
-	default:
-		return "jsonl"
-	}
+	return output.ExtForFormat(format)
 }
 
 func respillFormatForPath(path, fallback string) string {

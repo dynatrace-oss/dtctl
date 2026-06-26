@@ -75,6 +75,26 @@ func errWrongContext(path, fileContext, activeContext string) *Error {
 	}
 }
 
+// errWrongTenant refuses a path whose recorded tenant differs from the active
+// tenant (D9/D32) — the strongest cross-account signal. It carries the same
+// envelope code as errWrongContext but names the tenant axis so the message
+// matches the mismatch that was actually detected.
+func errWrongTenant(path, fileTenant, activeTenant string) *Error {
+	msg := "spill file belongs to a different tenant"
+	if fileTenant != "" && activeTenant != "" {
+		msg += " (file tenant: " + fileTenant + ", active tenant: " + activeTenant + ")"
+	}
+	msg += ": " + path
+	return &Error{
+		Code:    output.ErrCodeSpillFileWrongContext,
+		Message: msg,
+		Suggestions: []string{
+			"switch to the file's tenant/context with 'dtctl ctx use <name>', or",
+			"re-run the original query in the active context to spill a fresh file",
+		},
+	}
+}
+
 // errUnknownField reports a --fields name absent from the file schema (IN9). The
 // suggestion lists the available columns so the caller can correct the call.
 func errUnknownField(field string, available []string) *Error {

@@ -333,16 +333,7 @@ func spillFormatForPath(path, fallback string) (string, error) {
 }
 
 func extForFormat(format string) string {
-	switch strings.ToLower(format) {
-	case "csv":
-		return "csv"
-	case "json":
-		return "json"
-	case "parquet":
-		return "parquet"
-	default:
-		return "jsonl"
-	}
+	return output.ExtForFormat(format)
 }
 
 // Summary-only degradation causes. They select the right next-step advice:

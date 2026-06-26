@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -150,6 +149,12 @@ bare --spill = always; --spill=auto spills above --spill-threshold; --spill=neve
 // context name for the spill manifest (D9). Both are best-effort: a missing or
 // unparseable environment simply yields an empty tenant id.
 func spillProvenance(cfg *config.Config) (tenantID, contextName string) {
+	// A nil config (local-only `inspect` with no usable config) carries no
+	// provenance — return zero values rather than nil-panicking, mirroring the
+	// nil tolerance of resolveSpillOptions.
+	if cfg == nil {
+		return "", ""
+	}
 	contextName = cfg.CurrentContext
 	if ctx, err := cfg.CurrentContextObj(); err == nil {
 		if sub, serr := httpclient.ExtractSubdomain(ctx.Environment); serr == nil {
@@ -187,18 +192,8 @@ func spillWritesParquet(opts exec.SpillOptions) bool {
 }
 
 // spillFormatFromExt maps a destination file extension to a spill format, or ""
-// for an unrecognised/missing extension.
+// for an unrecognised/missing extension. It delegates to the shared
+// output.FormatForExt so the supported-extension set lives in one place.
 func spillFormatFromExt(path string) string {
-	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(path), ".")) {
-	case "jsonl":
-		return "jsonl"
-	case "json":
-		return "json"
-	case "csv":
-		return "csv"
-	case "parquet":
-		return "parquet"
-	default:
-		return ""
-	}
+	return output.FormatForExt(path)
 }

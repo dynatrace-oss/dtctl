@@ -178,6 +178,42 @@ func SidecarPathFor(dataPath string) string {
 	return filepath.Join(dir, stem+".manifest.json")
 }
 
+// FormatForExt maps a spilled-file extension to its spill format, or "" for a
+// missing/unrecognised extension. It is the single source of truth for the
+// extension→format mapping shared by the query spill path, `inspect`'s readers,
+// and the re-spill path (so the supported-format set cannot drift between them).
+func FormatForExt(path string) string {
+	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(path), ".")) {
+	case "jsonl", "ndjson":
+		return "jsonl"
+	case "json":
+		return "json"
+	case "csv":
+		return "csv"
+	case "parquet":
+		return "parquet"
+	default:
+		return ""
+	}
+}
+
+// ExtForFormat maps a spill format to the file extension used on disk. It is the
+// inverse of FormatForExt and the single source of truth for the format→extension
+// mapping (shared by query and inspect re-spill); an unknown format defaults to
+// the jsonl extension to match the default spill format.
+func ExtForFormat(format string) string {
+	switch strings.ToLower(format) {
+	case "csv":
+		return "csv"
+	case "json":
+		return "json"
+	case "parquet":
+		return "parquet"
+	default:
+		return "jsonl"
+	}
+}
+
 // ReadSidecar reads and decodes the sidecar manifest next to a spilled data file
 // (D34). It returns (nil, nil) when no sidecar exists — an older spill or a
 // hand-copied bare file — so a caller can degrade gracefully (Layer 2 still does

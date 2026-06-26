@@ -1,6 +1,7 @@
 package inspect
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,14 +64,24 @@ func TestRun_TailAndPageBoundaries(t *testing.T) {
 		t.Errorf("page past end = %v, want empty", page.Records)
 	}
 
-	// tail N<=0 → empty (defensive; the CLI defaults this, but the engine must hold).
+	// tail N<=0 → empty. The engine honours an explicit count (the command layer
+	// owns defaulting an unspecified count), so a negative clamps to 0 rows rather
+	// than being reinterpreted as the default.
 	zero, err := Run(Request{Path: path, Primitive: PrimTail, N: -1})
 	if err != nil {
 		t.Fatalf("tail(-1): %v", err)
 	}
-	// rowCount() promotes a non-positive N to DefaultRowCount, so this returns all rows.
-	if len(zero.Records) != 4 {
-		t.Errorf("tail(-1) = %d rows, want 4 (defaulted)", len(zero.Records))
+	if len(zero.Records) != 0 {
+		t.Errorf("tail(-1) = %d rows, want 0 (negative clamps to empty)", len(zero.Records))
+	}
+
+	// tail 0 → explicit empty (no longer the default).
+	none, err := Run(Request{Path: path, Primitive: PrimTail, N: 0})
+	if err != nil {
+		t.Fatalf("tail(0): %v", err)
+	}
+	if len(none.Records) != 0 {
+		t.Errorf("tail(0) = %d rows, want 0 (explicit zero honoured)", len(none.Records))
 	}
 }
 
@@ -366,5 +377,90 @@ func TestRun_StatsMixedAndComplexColumns(t *testing.T) {
 	}
 	if byName["ts"].Type != "timestamp" {
 		t.Errorf("ts type = %q, want timestamp", byName["ts"].Type)
+	}
+}
+
+// TestRun_StatsCapsWideColumns confirms that re-deriving stats over a file with
+// more columns than the envelope cap returns at most DefaultMaxSummaryColumns
+// columns and names the rest in ColumnsOmitted — inspect must not become the
+// context blowup it exists to prevent.
+func TestRun_StatsCapsWideColumns(t *testing.T) {
+	dir := t.TempDir()
+	wide := map[string]interface{}{}
+	for i := 0; i < output.DefaultMaxSummaryColumns+15; i++ {
+		wide[fmt.Sprintf("c%03d", i)] = float64(i)
+	}
+	path := writeSpill(t, dir, "jsonl", []map[string]interface{}{wide}, &output.SidecarManifest{Format: "jsonl", Rows: 1})
+
+	stats, err := Run(Request{Path: path, Primitive: PrimStats})
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if len(stats.Summary.Columns) > output.DefaultMaxSummaryColumns {
+		t.Errorf("stats returned %d columns, want at most %d", len(stats.Summary.Columns), output.DefaultMaxSummaryColumns)
+	}
+	if len(stats.Summary.ColumnsOmitted) == 0 {
+		t.Errorf("expected omitted columns to be reported for a wide file")
+	}
+
+	// --schema is capped the same way.
+	schema, err := Run(Request{Path: path, Primitive: PrimSchema})
+	if err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	if len(schema.Summary.Columns) > output.DefaultMaxSummaryColumns {
+		t.Errorf("schema returned %d columns, want at most %d", len(schema.Summary.Columns), output.DefaultMaxSummaryColumns)
+	}
+
+	// An explicit column selection is NOT capped — the caller chose the scope.
+	sel, err := Run(Request{Path: path, Primitive: PrimStats, StatsColumns: []string{"c000", "c001"}})
+	if err != nil {
+		t.Fatalf("stats select: %v", err)
+	}
+	if len(sel.Summary.Columns) != 2 {
+		t.Errorf("explicit selection = %d columns, want 2 (uncapped)", len(sel.Summary.Columns))
+	}
+}
+
+// TestRun_CrossContextUserPathViaSidecar covers the provenance context guard: a
+// non-managed (user-chosen) path whose sidecar records a different context (and no
+// tenant id) is refused when an active context is set.
+func TestRun_CrossContextUserPathViaSidecar(t *testing.T) {
+	dir := t.TempDir() // user-chosen location, not the managed cache
+	path := writeSpill(t, dir, "jsonl", sampleRecords(), &output.SidecarManifest{
+		Format: "jsonl", ContextName: "ctx-a", // note: no TenantID
+	})
+
+	// Active context differs → refuse via the sidecar context provenance.
+	errCode(t, Request{Path: path, Primitive: PrimHead, ActiveContext: "ctx-b"},
+		output.ErrCodeSpillFileWrongContext)
+
+	// Same context → allowed.
+	res, err := Run(Request{Path: path, Primitive: PrimHead, N: 1, ActiveContext: "ctx-a"})
+	if err != nil {
+		t.Fatalf("same-context head: %v", err)
+	}
+	if len(res.Records) != 1 {
+		t.Errorf("rows = %d, want 1", len(res.Records))
+	}
+}
+
+// TestFormatTimestamp_OverflowGuard confirms a far-future millis timestamp that
+// would overflow int64 when scaled to nanoseconds surfaces the raw value rather
+// than a wrapped, garbage wall-clock string.
+func TestFormatTimestamp_OverflowGuard(t *testing.T) {
+	const millis = int64(1)
+	mult := int64(1_000_000) // ms → ns
+
+	// In range: converts to an RFC3339 string.
+	if got := formatTimestamp(millis, mult); got != "1970-01-01T00:00:00.001Z" {
+		t.Errorf("in-range = %v, want RFC3339 string", got)
+	}
+
+	// Overflow: value*mult exceeds int64 → raw value returned.
+	huge := int64(9_300_000_000_000) // ms past year 2262 once scaled
+	got := formatTimestamp(huge, mult)
+	if got != huge {
+		t.Errorf("overflow = %v (%T), want raw int64 %d", got, got, huge)
 	}
 }

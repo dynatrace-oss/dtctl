@@ -171,7 +171,14 @@ func buildInspectRequest(cmd *cobra.Command, path string) (inspect.Request, erro
 	case hasPage:
 		req.Primitive = inspect.PrimPage
 		req.Offset, _ = f.GetInt("offset")
-		req.Limit, _ = f.GetInt("limit")
+		// An unspecified --limit defaults to DefaultRowCount; an explicit value
+		// (including 0) is honoured by the engine. The command layer owns
+		// defaulting so `--limit 0` means an empty window, not the default.
+		if limitChanged {
+			req.Limit, _ = f.GetInt("limit")
+		} else {
+			req.Limit = inspect.DefaultRowCount
+		}
 	default:
 		// No primitive chosen. A bare --fields defaults to --head (row access is
 		// the point of the command); nothing at all is a usage error.
@@ -181,7 +188,10 @@ func buildInspectRequest(cmd *cobra.Command, path string) (inspect.Request, erro
 				"choose one of --head, --tail, --page, --schema, --stats, --sample, or pass --fields to project the first rows",
 			)
 		}
+		// Bare --fields is an unspecified head, so apply the default count here
+		// (the engine honours an explicit count, including 0, verbatim).
 		req.Primitive = inspect.PrimHead
+		req.N = inspect.DefaultRowCount
 	}
 	return req, nil
 }

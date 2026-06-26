@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -169,5 +170,40 @@ func TestMaybeRespill_SpillsAboveThreshold(t *testing.T) {
 	}
 	if resp.Context.Decided != "spilled" {
 		t.Errorf("decided = %q, want spilled", resp.Context.Decided)
+	}
+}
+
+// TestMaybeRespill_WarnsJQDropped confirms that a --jq filter set when a row
+// window re-spills produces a warning rather than being silently dropped (parity
+// with the query spill path).
+func TestMaybeRespill_WarnsJQDropped(t *testing.T) {
+	origAgent, origJQ := agentMode, jqFilter
+	defer func() { agentMode, jqFilter = origAgent, origJQ }()
+	agentMode = true
+	jqFilter = ".[].host"
+
+	dir := t.TempDir()
+	c := newInspectTestCmd(t, "--head", "100", "--spill=auto", "--spill-threshold", "10", "--spill-to", filepath.Join(dir, "out.jsonl"))
+
+	records := []map[string]interface{}{
+		{"host": "web-01", "status": float64(200)},
+		{"host": "web-02", "status": float64(500)},
+	}
+	res := &inspect.Result{Kind: output.KindRecords, Records: records, Format: "jsonl"}
+	resp, err := maybeRespill(c, &config.Config{}, inspect.Request{Path: "src.jsonl", Primitive: inspect.PrimHead, N: 100}, res)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected a re-spill response")
+	}
+	var found bool
+	for _, w := range resp.Context.Warnings {
+		if strings.Contains(w, "--jq was not applied") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a --jq-not-applied warning, got %v", resp.Context.Warnings)
 	}
 }

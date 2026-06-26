@@ -141,6 +141,7 @@ type StatsAccumulator struct {
 	rows        int
 	topK        int
 	maxDistinct int
+	finalized   bool
 }
 
 // NewStatsAccumulator creates an accumulator with the given knobs; non-positive
@@ -183,17 +184,23 @@ func (s *StatsAccumulator) ensure(name string) *columnAccumulator {
 }
 
 // Finalize produces the per-column profiles in deterministic (alphabetical)
-// order. When sampled is true every column carries basis:"sample" (D23). It may
-// be called once after the last Observe.
+// order. When sampled is true every column carries basis:"sample" (D23). It is
+// idempotent: the null back-fill mutates accumulator state, so it runs only once
+// even if Finalize is called more than once (a second call returns the same
+// profile rather than double-counting back-filled nulls).
 func (s *StatsAccumulator) Finalize(sampled bool) []ColumnStats {
 	// A record that lacks a column entirely counts as a null for that column.
 	// Back-fill those missing observations: a column seen in `count+nulls`
-	// records is implicitly null in the remaining `rows-(count+nulls)`.
-	for _, acc := range s.accs {
-		seen := acc.count + acc.nulls
-		if missing := s.rows - seen; missing > 0 {
-			acc.nulls += missing
+	// records is implicitly null in the remaining `rows-(count+nulls)`. Guarded
+	// so a repeated Finalize does not back-fill twice.
+	if !s.finalized {
+		for _, acc := range s.accs {
+			seen := acc.count + acc.nulls
+			if missing := s.rows - seen; missing > 0 {
+				acc.nulls += missing
+			}
 		}
+		s.finalized = true
 	}
 
 	order := make([]string, len(s.order))

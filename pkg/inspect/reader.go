@@ -2,10 +2,11 @@ package inspect
 
 import (
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
 // Reader streams records out of a spilled file one at a time, so a row-access
@@ -70,20 +71,11 @@ func openReader(path, format, query string) (Reader, error) {
 }
 
 // formatFromExtension infers a spill format from a file extension. It is the
-// fallback when there is no sidecar to declare the format authoritatively.
+// fallback when there is no sidecar to declare the format authoritatively. It
+// delegates to the shared output.FormatForExt so the extension→format mapping
+// lives in one place.
 func formatFromExtension(path string) string {
-	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(path), ".")) {
-	case "jsonl", "ndjson":
-		return "jsonl"
-	case "json":
-		return "json"
-	case "csv":
-		return "csv"
-	case "parquet":
-		return "parquet"
-	default:
-		return ""
-	}
+	return output.FormatForExt(path)
 }
 
 // project returns a copy of rec limited to fields, preserving the requested

@@ -65,6 +65,13 @@ func runInspectList(cmd *cobra.Command, args []string) error {
 	if managed {
 		// Mirror the write-side partitioning (D9): list only the active context's
 		// subdirectory, never the whole cache.
+		if contextName == "" {
+			// No active context could be determined (missing/unusable config), so
+			// SanitizeContextName falls back to the "default" partition — which is
+			// NOT where files spilled under a named context live. Warn so an empty
+			// listing isn't mistaken for "nothing has been spilled".
+			warnings = append(warnings, "the active context could not be determined (no usable config), so only the default partition is listed; spills made under a named context are not shown — set a context with 'dtctl ctx use <name>' and retry")
+		}
 		dir = filepath.Join(dir, output.SanitizeContextName(contextName))
 	} else {
 		warnings = append(warnings, "listing a user-chosen spill dir (DTCTL_SPILL_DIR / spill.dir): it is not context-partitioned, so entries may span contexts")

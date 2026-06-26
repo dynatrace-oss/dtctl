@@ -2,6 +2,7 @@ package inspect
 
 import (
 	"io"
+	"math"
 	"os"
 	"time"
 
@@ -135,26 +136,64 @@ func (r *parquetReader) rowToMap(row parquet.Row) map[string]interface{} {
 			continue
 		}
 		name := r.names[col]
-		if v.IsNull() {
-			m[name] = nil
+		conv := r.convertValue(col, v)
+		// A REPEATED leaf (array column) emits multiple values that all report the
+		// same column index; accumulate them into a slice rather than letting the
+		// last value silently overwrite the earlier ones. (dtctl's own writer emits
+		// only flat OPTIONAL leaves, so this is for files from other tooling.)
+		if existing, ok := m[name]; ok {
+			if slice, isSlice := existing.([]interface{}); isSlice {
+				m[name] = append(slice, conv)
+			} else {
+				m[name] = []interface{}{existing, conv}
+			}
 			continue
 		}
-		switch v.Kind() {
-		case parquet.Boolean:
-			m[name] = v.Boolean()
-		case parquet.Int64:
-			if mult, ok := r.tsMult[col]; ok {
-				m[name] = time.Unix(0, v.Int64()*mult).UTC().Format(time.RFC3339Nano)
-			} else {
-				m[name] = v.Int64()
-			}
-		case parquet.Double:
-			m[name] = v.Double()
-		default:
-			m[name] = v.String()
-		}
+		m[name] = conv
 	}
 	return m
+}
+
+// convertValue maps a single parquet leaf value to its Go representation,
+// round-tripping the physical types the readers can encounter (booleans, 32/64-bit
+// integers, 32/64-bit floats, and TIMESTAMP-logical INT64s back to RFC3339). Types
+// outside this set (byte arrays, INT96, fixed-len) fall back to their string form.
+func (r *parquetReader) convertValue(col int, v parquet.Value) interface{} {
+	if v.IsNull() {
+		return nil
+	}
+	switch v.Kind() {
+	case parquet.Boolean:
+		return v.Boolean()
+	case parquet.Int32:
+		return int64(v.Int32())
+	case parquet.Int64:
+		if mult, ok := r.tsMult[col]; ok {
+			return formatTimestamp(v.Int64(), mult)
+		}
+		return v.Int64()
+	case parquet.Float:
+		return float64(v.Float())
+	case parquet.Double:
+		return v.Double()
+	default:
+		return v.String()
+	}
+}
+
+// formatTimestamp converts a stored timestamp value to an RFC3339 string,
+// guarding against int64 overflow of value*mult for far-future millis/micros
+// columns: on overflow the raw value is returned rather than a wrapped, garbage
+// wall-clock time.
+func formatTimestamp(value, mult int64) interface{} {
+	ns := value
+	if mult != 1 {
+		if value > math.MaxInt64/mult || value < math.MinInt64/mult {
+			return value // out of representable range; surface the raw value
+		}
+		ns = value * mult
+	}
+	return time.Unix(0, ns).UTC().Format(time.RFC3339Nano)
 }
 
 func (r *parquetReader) Close() error {
