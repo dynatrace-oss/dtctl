@@ -8,7 +8,7 @@ require (
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
-	github.com/guptarohit/asciigraph v0.9.0
+	github.com/guptarohit/asciigraph v0.10.0
 	github.com/itchyny/gojq v0.12.19
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/parquet-go/parquet-go v0.30.1
