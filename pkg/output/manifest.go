@@ -18,6 +18,19 @@ const (
 	// KindSummaryOnly means the result was large but there was no writable
 	// filesystem; the manifest is returned without a path (stats + sample only).
 	KindSummaryOnly = "summary-only"
+	// KindFileSummary is emitted by Layer 2 `dtctl inspect` for the re-derived
+	// manifest primitives (--schema/--stats/--sample): the on-disk re-derivation
+	// of the schema/stats/sample shape from a spilled file (INSPECT IN5). It is a
+	// new kind, so a pre-inspect consumer treats it as opaque and falls back to
+	// context — non-breaking by construction (D31).
+	KindFileSummary = "file-summary"
+	// KindFileList is emitted by `dtctl inspect --list`: an enumeration of the
+	// spilled files visible in the active context's partition, each with its
+	// sidecar provenance. It lets an agent recover a file handle that has aged out
+	// of its context (the original spill envelope was trimmed/summarised) from disk
+	// rather than re-querying Grail. Another new kind, opaque to older consumers
+	// (D31).
+	KindFileList = "file-list"
 )
 
 // Stable spill-file error codes (D32). These are part of the versioned envelope

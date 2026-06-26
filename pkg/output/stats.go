@@ -129,52 +129,94 @@ func newColumnAccumulator(name string) *columnAccumulator {
 	}
 }
 
-// ComputeColumnStats computes the lean Layer-1 column profile over the buffered
-// records in a single pass (PR2 is buffered; the same accumulator shape is what
-// PR3 turns into online sketches). Columns are reported in deterministic
-// (alphabetical) order. When sampled is true every column carries
-// basis:"sample" per D23.
-func ComputeColumnStats(records []map[string]interface{}, sampled bool, topK, maxDistinct int) []ColumnStats {
+// StatsAccumulator folds records one at a time into per-column sketches and
+// finalises them to the lean Layer-1 column profile (D14/D20). Memory is
+// O(columns × distinct-bound), independent of the row count, so it profiles a
+// streamed file (Layer 2 `inspect --stats`) in a single bounded-memory pass as
+// well as the buffered query slice (via ComputeColumnStats). Reuse one
+// accumulator per file; it is not safe for concurrent use.
+type StatsAccumulator struct {
+	accs        map[string]*columnAccumulator
+	order       []string
+	rows        int
+	topK        int
+	maxDistinct int
+}
+
+// NewStatsAccumulator creates an accumulator with the given knobs; non-positive
+// values fall back to the package defaults (DefaultStatsTopK / DefaultStatsMaxDistinct).
+func NewStatsAccumulator(topK, maxDistinct int) *StatsAccumulator {
 	if topK <= 0 {
 		topK = DefaultStatsTopK
 	}
 	if maxDistinct <= 0 {
 		maxDistinct = DefaultStatsMaxDistinct
 	}
-
-	accs := make(map[string]*columnAccumulator)
-	var order []string
-	ensure := func(name string) *columnAccumulator {
-		acc, ok := accs[name]
-		if !ok {
-			acc = newColumnAccumulator(name)
-			accs[name] = acc
-			order = append(order, name)
-		}
-		return acc
+	return &StatsAccumulator{
+		accs:        make(map[string]*columnAccumulator),
+		topK:        topK,
+		maxDistinct: maxDistinct,
 	}
+}
 
-	for _, rec := range records {
-		for name, val := range rec {
-			ensure(name).observe(val, maxDistinct)
-		}
+// Observe folds a single record into the per-column sketches. A column absent
+// from a record is treated as null for that record (back-filled in Finalize
+// from the observed row count).
+func (s *StatsAccumulator) Observe(rec map[string]interface{}) {
+	s.rows++
+	for name, val := range rec {
+		s.ensure(name).observe(val, s.maxDistinct)
 	}
+}
+
+// Rows reports how many records have been observed.
+func (s *StatsAccumulator) Rows() int { return s.rows }
+
+func (s *StatsAccumulator) ensure(name string) *columnAccumulator {
+	acc, ok := s.accs[name]
+	if !ok {
+		acc = newColumnAccumulator(name)
+		s.accs[name] = acc
+		s.order = append(s.order, name)
+	}
+	return acc
+}
+
+// Finalize produces the per-column profiles in deterministic (alphabetical)
+// order. When sampled is true every column carries basis:"sample" (D23). It may
+// be called once after the last Observe.
+func (s *StatsAccumulator) Finalize(sampled bool) []ColumnStats {
 	// A record that lacks a column entirely counts as a null for that column.
 	// Back-fill those missing observations: a column seen in `count+nulls`
-	// records is implicitly null in the remaining `len(records)-(count+nulls)`.
-	for _, acc := range accs {
+	// records is implicitly null in the remaining `rows-(count+nulls)`.
+	for _, acc := range s.accs {
 		seen := acc.count + acc.nulls
-		if missing := len(records) - seen; missing > 0 {
+		if missing := s.rows - seen; missing > 0 {
 			acc.nulls += missing
 		}
 	}
 
+	order := make([]string, len(s.order))
+	copy(order, s.order)
 	sort.Strings(order)
 	out := make([]ColumnStats, 0, len(order))
 	for _, name := range order {
-		out = append(out, accs[name].finalize(sampled, topK))
+		out = append(out, s.accs[name].finalize(sampled, s.topK))
 	}
 	return out
+}
+
+// ComputeColumnStats computes the lean Layer-1 column profile over the buffered
+// records in a single pass (PR2 is buffered; the same accumulator powers the
+// streaming Layer 2 `inspect --stats` path). Columns are reported in
+// deterministic (alphabetical) order. When sampled is true every column carries
+// basis:"sample" per D23.
+func ComputeColumnStats(records []map[string]interface{}, sampled bool, topK, maxDistinct int) []ColumnStats {
+	acc := NewStatsAccumulator(topK, maxDistinct)
+	for _, rec := range records {
+		acc.Observe(rec)
+	}
+	return acc.Finalize(sampled)
 }
 
 func (a *columnAccumulator) observe(val interface{}, maxDistinct int) {
