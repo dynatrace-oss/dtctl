@@ -41,7 +41,7 @@ func openReader(path, format, query string) (Reader, error) {
 
 	switch strings.ToLower(format) {
 	case "jsonl", "ndjson":
-		return newNDJSONReader(f), nil
+		return newNDJSONReader(f, path, query), nil
 	case "json":
 		r, rerr := newJSONReader(f, path, query)
 		if rerr != nil {

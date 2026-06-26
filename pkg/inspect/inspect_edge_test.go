@@ -3,6 +3,7 @@ package inspect
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
@@ -299,6 +300,13 @@ func TestRun_NDJSONCorruptMidStream(t *testing.T) {
 		"{\"a\":1}\n{not valid json}\n", &output.SidecarManifest{Format: "jsonl"})
 	// N large enough to reach the bad line.
 	errCode(t, Request{Path: path, Primitive: PrimHead, N: 10}, output.ErrCodeSpillFileUnreadable)
+
+	// The error message names the offending file (the NDJSON reader wraps with its
+	// path, matching the json/csv/parquet readers).
+	_, err := Run(Request{Path: path, Primitive: PrimHead, N: 10})
+	if ie, ok := err.(*Error); !ok || !strings.Contains(ie.Message, path) {
+		t.Errorf("unreadable error %q should contain the path %q", err, path)
+	}
 }
 
 // TestRun_ParquetScalarKinds covers the boolean and double branches of the Parquet

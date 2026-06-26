@@ -13,12 +13,14 @@ import (
 // line — a log record with a large `content` field is common — is never
 // truncated by the scanner's token cap.
 type ndjsonReader struct {
-	c  io.Closer
-	br *bufio.Reader
+	c    io.Closer
+	br   *bufio.Reader
+	path string
+	q    string
 }
 
-func newNDJSONReader(rc io.ReadCloser) *ndjsonReader {
-	return &ndjsonReader{c: rc, br: bufio.NewReaderSize(rc, 64*1024)}
+func newNDJSONReader(rc io.ReadCloser, path, query string) *ndjsonReader {
+	return &ndjsonReader{c: rc, br: bufio.NewReaderSize(rc, 64*1024), path: path, q: query}
 }
 
 // Columns returns nil: NDJSON carries no schema header, so the column set is
@@ -33,7 +35,7 @@ func (r *ndjsonReader) Next() (map[string]interface{}, error) {
 			return nil, io.EOF
 		}
 		if err != nil && err != io.EOF {
-			return nil, err
+			return nil, errUnreadable(r.path, r.q, err)
 		}
 		trimmed := bytes.TrimSpace(line)
 		if len(trimmed) == 0 {
@@ -44,7 +46,7 @@ func (r *ndjsonReader) Next() (map[string]interface{}, error) {
 		}
 		var rec map[string]interface{}
 		if jerr := json.Unmarshal(trimmed, &rec); jerr != nil {
-			return nil, jerr
+			return nil, errUnreadable(r.path, r.q, jerr)
 		}
 		return rec, nil
 	}
