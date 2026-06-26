@@ -24,14 +24,16 @@ func resolveAlias(args []string, cfg *config.Config) ([]string, bool, error) {
 		return nil, false, nil
 	}
 
+	name := args[0]
+
 	// Aliases from an auto-discovered local .dtctl.yaml are untrusted and never
 	// honored — they can run arbitrary commands. The warning is emitted once in
 	// execute() via cfg.IgnoredExecKeys(); here we simply decline to expand.
-	if cfg.IsLocal() {
+	// Exception: built-in default aliases are hardcoded in the binary and safe
+	// regardless of where the config was loaded from.
+	if cfg.IsLocal() && !config.IsDefaultAlias(name) {
 		return nil, false, nil
 	}
-
-	name := args[0]
 	expansion, ok := cfg.GetAlias(name)
 	if !ok {
 		return nil, false, nil

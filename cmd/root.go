@@ -687,6 +687,7 @@ func LoadConfig() (*config.Config, error) {
 		cfg.CurrentContext = contextName
 	}
 
+	config.ApplyDefaultAliases(cfg)
 	return cfg, nil
 }
 

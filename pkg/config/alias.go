@@ -81,6 +81,33 @@ type AliasEntry struct {
 	Expansion string `table:"EXPANSION"`
 }
 
+// defaultAliases are opinionated starter aliases pre-populated for every user.
+// Applied at load time; never written to disk; never overwrite a user alias.
+var defaultAliases = map[string]string{
+	// List all OneAgent-monitored database instances via Smartscape DQL.
+	// Covers the four native DB node types; results sorted by name.
+	"databases": `query 'smartscapeNodes "DB_INSTANCE_POSTGRES" | fields id, name, vendor="PostgreSQL", host=db.connection_details.hostname, port=db.connection_details.port | append [smartscapeNodes "DB_INSTANCE_MYSQL" | fields id, name, vendor="MySQL", host=db.connection_details.hostname, port=db.connection_details.port] | append [smartscapeNodes "DB_INSTANCE_MSSQL" | fields id, name, vendor="MSSQL", host=db.connection_details.hostname, port=db.connection_details.port] | append [smartscapeNodes "DB_INSTANCE_MARIADB" | fields id, name, vendor="MariaDB", host=db.connection_details.hostname, port=db.connection_details.port] | sort name asc'`,
+}
+
+// IsDefaultAlias reports whether name is one of the built-in default aliases.
+func IsDefaultAlias(name string) bool {
+	_, ok := defaultAliases[name]
+	return ok
+}
+
+// ApplyDefaultAliases injects opinionated starter aliases into c without
+// overwriting any alias the user has already defined. It never writes to disk.
+func ApplyDefaultAliases(c *Config) {
+	if c.Aliases == nil {
+		c.Aliases = make(map[string]string)
+	}
+	for name, expansion := range defaultAliases {
+		if _, exists := c.Aliases[name]; !exists {
+			c.Aliases[name] = expansion
+		}
+	}
+}
+
 // AliasFile represents the YAML structure for import/export.
 type AliasFile struct {
 	Aliases map[string]string `yaml:"aliases"`
