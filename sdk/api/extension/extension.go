@@ -646,6 +646,31 @@ func (h *Handler) GetMonitoringConfigurationSchema(ctx context.Context, extensio
 	return json.RawMessage(resp.Body()), nil
 }
 
+// GetPackage downloads the extension package zip for a specific version and
+// returns the raw bytes. The bytes represent a zip archive that may contain an
+// inner extension.zip with the actual extension files.
+func (h *Handler) GetPackage(ctx context.Context, extensionName, version string) ([]byte, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetHeader("Accept", "application/octet-stream").
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/package", url.PathEscape(extensionName), url.PathEscape(version)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to download extension package: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to download extension package: %w", err)
+	}
+	return resp.Body(), nil
+}
+
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
 func (h *Handler) GetActiveGateGroups(ctx context.Context, extensionName, version string) (*ActiveGateGroupList, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).

@@ -301,3 +301,8 @@ func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGat
 	}
 	return fromSDKActiveGateGroupList(l), nil
 }
+
+// GetPackage downloads the raw zip bytes of the extension package for the given version.
+func (h *Handler) GetPackage(extensionName, version string) ([]byte, error) {
+	return h.sdk.GetPackage(context.Background(), extensionName, version)
+}
