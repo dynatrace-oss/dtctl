@@ -176,8 +176,8 @@ dtctl verify query -f query.dql --canonical --fail-on-warn
 [Spilling Large Results](dql-queries#spilling-large-results-to-a-file)) — without
 re-querying Grail and without pulling the whole result back into context. Its
 primary capability is **row access**, which the spill summary never carried.
-Choose exactly one primitive per call; it is not a query engine (no filter, no
-SQL, no GROUP BY — push aggregates back into DQL).
+Choose exactly one primitive per call; it is not a query engine (no SQL, no
+GROUP BY, no dtctl predicate language — push aggregates back into DQL).
 
 ```bash
 # Row access
@@ -185,6 +185,11 @@ dtctl inspect q-7f3a9c.jsonl --head 20            # first N rows
 dtctl inspect q-7f3a9c.jsonl --tail 10            # last N rows
 dtctl inspect q-7f3a9c.jsonl --page --offset 1000 --limit 50   # a paginated window (result order)
 dtctl inspect q-7f3a9c.jsonl --head 20 --fields timestamp,content  # column projection (composable)
+
+# Keep only the matching rows — a streaming jq filter over the WHOLE file
+dtctl inspect q-7f3a9c.jsonl --jq 'select(.status == 500)'         # every matching row
+dtctl inspect q-7f3a9c.jsonl --jq 'select(.status == 500)' --head 20  # first 20 matches (window bounds it)
+dtctl inspect q-7f3a9c.jsonl --jq '{host, timestamp}'             # reshape each row to an object
 
 # Re-derive the summary for a file whose manifest is out of context
 dtctl inspect q-7f3a9c.jsonl --schema             # columns + types + null counts
@@ -196,9 +201,18 @@ dtctl inspect --list                              # spilled files in the active 
 ```
 
 Reads jsonl, json, csv, and parquet. Honours the shared `--spill*` flags: an
-oversized inspect window re-spills to a new managed file instead of flooding
-output. It lists/reads only the active context's partition and refuses a file
-that belongs to a different context or tenant.
+oversized inspect window — or a `--jq` filter that matches a large number of rows —
+re-spills to a new managed file instead of flooding output. It lists/reads only
+the active context's partition and refuses a file that belongs to a different
+context or tenant.
+
+`--jq` on `inspect` is a **full-file** filter: unlike elsewhere in dtctl (where
+`--jq` post-processes the in-memory result), here it is run **per record** over
+the whole spilled file — like `jq` over an NDJSON file — and collects the objects
+it emits. It composes with a single row-access window (`--head`/`--tail`/`--page`,
+which bounds the matches) and with `--fields` (which projects them), but is
+mutually exclusive with `--schema`/`--stats`/`--sample`. The program must emit
+objects; for free-form scalar extraction run `jq` over the file yourself.
 
 ## Execution Commands
 

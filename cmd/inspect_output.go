@@ -22,10 +22,12 @@ func emitInspectResult(cmd *cobra.Command, cfg *config.Config, req inspect.Reque
 	return emitInspectRecords(cmd, cfg, req, res)
 }
 
-// emitInspectRecords renders a row-access result. In agent mode it first checks
-// whether the rows are themselves a context hazard and re-spills if so (IN8),
-// otherwise emits a self-describing kind:records envelope (or, when a --jq /
-// non-JSON encoding owns the shape, the standard agent printer).
+// emitInspectRecords renders a row-access or filtered (--jq) result. Both produce
+// the same kind:records shape: a --jq filter is applied per record IN THE ENGINE
+// (full-file streaming, PrimFilter), so by the time records reach here they are
+// already the filtered objects — the printer must NOT re-apply jq, and the output
+// format stays the caller's choice (filtered rows are ordinary records, not
+// arbitrary jq scalars). In agent mode an oversized result re-spills first (IN8).
 func emitInspectRecords(cmd *cobra.Command, cfg *config.Config, req inspect.Request, res *inspect.Result) error {
 	records := res.Records
 
@@ -38,13 +40,12 @@ func emitInspectRecords(cmd *cobra.Command, cfg *config.Config, req inspect.Requ
 			return output.EncodeEnvelope(os.Stdout, *spilled)
 		}
 
-		// --jq or a non-JSON result encoding owns the output shape; defer to the
-		// standard agent printer (mirrors `query`'s inline path).
-		if jqFilter != "" || output.NormalizeMeasureEncoding(outputFormat) != "json" {
+		// A non-JSON result encoding (-o csv/parquet/toon) owns the output shape;
+		// defer to the standard agent printer (mirrors `query`'s inline path).
+		if output.NormalizeMeasureEncoding(outputFormat) != "json" {
 			ctx := inspectContext(req, res, len(records))
 			ap := output.NewAgentPrinter(os.Stdout, ctx)
 			ap.SetResultFormat(outputFormat)
-			ap.SetJQFilter(jqFilter)
 			return ap.PrintList(records)
 		}
 
@@ -61,15 +62,13 @@ func emitInspectRecords(cmd *cobra.Command, cfg *config.Config, req inspect.Requ
 	// Human / scripted output: print the rows in the chosen format, warnings to
 	// stderr so they never corrupt a piped result.
 	printInspectWarnings(res.Warnings)
-	format := outputFormat
-	if jqFilter != "" {
-		format = output.NormalizeJQOutputFormat(format)
-	}
-	p := output.NewPrinterWithOpts(output.PrinterOptions{Format: format, Writer: os.Stdout, JQFilter: jqFilter})
+	p := output.NewPrinterWithOpts(output.PrinterOptions{Format: outputFormat, Writer: os.Stdout})
 	return p.PrintList(records)
 }
 
 // emitInspectSummary renders a re-derived file-summary (--schema/--stats/--sample).
+// These primitives never carry a --jq filter (it is rejected as mutually
+// exclusive at flag-validation time), so there is no per-record jq to apply here.
 func emitInspectSummary(req inspect.Request, res *inspect.Result) error {
 	total := 0
 	if res.Summary != nil {
@@ -78,12 +77,6 @@ func emitInspectSummary(req inspect.Request, res *inspect.Result) error {
 
 	if agentMode {
 		ctx := inspectContext(req, res, total)
-		if jqFilter != "" {
-			ap := output.NewAgentPrinter(os.Stdout, ctx)
-			ap.SetResultFormat(outputFormat)
-			ap.SetJQFilter(jqFilter)
-			return ap.Print(res.Summary)
-		}
 		resp := output.Response{
 			OK:              true,
 			EnvelopeVersion: output.EnvelopeVersion,
@@ -97,14 +90,11 @@ func emitInspectSummary(req inspect.Request, res *inspect.Result) error {
 	// pretty JSON; honour an explicit structured format otherwise.
 	printInspectWarnings(res.Warnings)
 	format := outputFormat
-	if jqFilter != "" {
-		format = output.NormalizeJQOutputFormat(format)
-	}
 	switch format {
 	case "", "table", "wide":
 		format = "json"
 	}
-	p := output.NewPrinterWithOpts(output.PrinterOptions{Format: format, Writer: os.Stdout, JQFilter: jqFilter})
+	p := output.NewPrinterWithOpts(output.PrinterOptions{Format: format, Writer: os.Stdout})
 	return p.Print(res.Summary)
 }
 

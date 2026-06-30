@@ -25,6 +25,16 @@ const (
 	PrimSchema Primitive = "schema" // columns + types + null counts
 	PrimStats  Primitive = "stats"  // per-column profile
 	PrimSample Primitive = "sample" // N representative (leading) rows
+
+	// PrimFilter streams every record in the file through a caller-supplied jq
+	// program and collects the objects it emits — full-file predicate filtering
+	// (the missing "give me only the matching rows" capability) without a bespoke
+	// query language (D16: jq is a general post-processor the caller opts into,
+	// not dtctl's own DQL alternative). It is selected by --jq; a row-access
+	// window (--head/--tail/--page) carried in the request bounds the output, and
+	// the whole-file no-window form is mandatory-guarded by the re-spill machinery
+	// because its output is otherwise unbounded.
+	PrimFilter Primitive = "filter"
 )
 
 // DefaultRowCount is the row cap applied to head/tail/sample (and a bare
@@ -48,6 +58,12 @@ type Request struct {
 	Fields []string
 	// StatsColumns restricts PrimStats to these columns. Empty means all.
 	StatsColumns []string
+
+	// Filter is a jq program run per record over the WHOLE file (PrimFilter). When
+	// non-empty it takes precedence over the row-access switch and turns the call
+	// into a streaming filter; Primitive then carries the optional bounding window
+	// (PrimHead/PrimTail/PrimPage) or PrimFilter for the unbounded whole-file form.
+	Filter string
 
 	// ActiveContext / ActiveTenant are the live dtctl context name and tenant id,
 	// used for the structural cross-context/tenant refusal (D9/D32).
@@ -114,13 +130,20 @@ func Run(req Request) (*Result, error) {
 
 	res := &Result{Format: format, Sidecar: sidecar}
 
+	// A --jq program turns the call into a full-file streaming filter regardless
+	// of the row-access window, which it carries in Primitive as a bound. Checked
+	// before the switch so the window flags select a bound, not a primitive.
+	if req.Filter != "" {
+		return res, runFilter(r, req, res)
+	}
+
 	switch req.Primitive {
 	case PrimHead, PrimTail, PrimPage:
 		return res, runRowAccess(r, req, sidecar, res)
 	case PrimSchema, PrimStats, PrimSample:
 		return res, runSummary(r, req, sidecar, res)
 	default:
-		return nil, errBadFlags("no primitive selected (choose one of --head, --tail, --page, --schema, --stats, --sample, or --fields)")
+		return nil, errBadFlags("no primitive selected (choose one of --head, --tail, --page, --schema, --stats, --sample, --jq, or --fields)")
 	}
 }
 

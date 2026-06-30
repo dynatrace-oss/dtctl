@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -120,11 +121,11 @@ func maybeRespill(cmd *cobra.Command, cfg *config.Config, req inspect.Request, r
 	// Carry forward any engine warnings (e.g. sampling-unknown) onto the spill.
 	warnings = append(res.Warnings, warnings...)
 
-	// A --jq transform cannot be applied to a re-spilled result (the rows went to
-	// a file, not through the inline jq path), so warn rather than silently drop
-	// the filter — mirroring the query spill path's behaviour.
-	if jqFilter != "" {
-		warnings = append(warnings, "--jq was not applied to the re-spilled result; the file holds the full untransformed rows — apply your filter to the file locally")
+	// Note when the re-spilled file is the OUTPUT of a --jq filter (the engine
+	// applied jq per record over the whole source file, IN-filter), so a reader
+	// knows the file already holds the filtered/transformed rows — not the source.
+	if req.Filter != "" {
+		warnings = append(warnings, "this file holds the rows matched by --jq, not the full source result")
 	}
 
 	suggestions := []string{}
@@ -212,6 +213,11 @@ func describeInspectCall(req inspect.Request) string {
 	var b strings.Builder
 	b.WriteString("inspect ")
 	b.WriteString(req.Path)
+	// A --jq filter (PrimFilter, or any primitive with req.Filter set) carries the
+	// window as a bound, not a primitive, so record both the filter and the bound.
+	if req.Filter != "" {
+		fmt.Fprintf(&b, " --jq %s", strconv.Quote(req.Filter))
+	}
 	switch req.Primitive {
 	case inspect.PrimHead:
 		fmt.Fprintf(&b, " --head %d", req.N)
