@@ -72,7 +72,9 @@ regardless of how big the result was. There are three kinds:
 
 On a `result-file` result the rows are on disk, so read them with
 [`dtctl inspect <path>`](command-reference#inspect-commands) — `--head`/`--tail`/
-`--page`/`--fields` for bounded row access, `--schema`/`--stats` to re-derive the
+`--page`/`--fields` for bounded row access, `--jq '<program>'` to keep only the
+matching rows (a streaming filter over the whole file; a large match set
+re-spills via the same `--spill*` guard), `--schema`/`--stats` to re-derive the
 profile, `--list` to recover a path that has aged out of context — instead of
 re-querying Grail. On a `summary-only` result the rows are not on disk, so
 `context.suggestions` carries the right next step for *why* the spill degraded: a

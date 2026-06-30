@@ -41,6 +41,19 @@ context (a stale spill, a file handed between sessions):
   --stats [col,col]        per-column profile (counts, null%, min/max, mean, top-K)
   --sample N               N representative (leading) rows
 
+For "give me only the matching rows", a --jq program runs as a streaming filter
+over the WHOLE file (per record, like jq over an NDJSON file) — not a dtctl
+predicate language, just jq as an opt-in post-processor:
+
+  --jq '<program>'         keep the objects the program emits, scanning every row
+
+The program is run on each record and only the objects it emits are collected,
+so 'select(.status == 500)' keeps matching rows and '{host, timestamp}' reshapes
+them. A row-access window bounds the result ('--jq … --head 20' = the first 20
+matches), and a bare '--jq …' over a large match set re-spills to a new file via
+the same --spill* guard as row access, so it never floods context. (The program
+must emit objects; for free-form scalar extraction, run jq on the file yourself.)
+
 And when the file handle itself is gone — the original spill envelope was
 trimmed or summarised out of context, but the file is still on disk — it can
 enumerate the spilled files in the active context and their provenance, so you
@@ -48,10 +61,11 @@ can recover a handle instead of re-querying Grail:
 
   --list                   list spilled files in the active context (query, rows, age)
 
-Choose exactly one primitive per call. 'inspect' is not a query engine: there is
-no filter, no SQL, no GROUP BY. For aggregate questions, push the work back into
-DQL and re-query ('… | summarize …'); for complex local analysis, hand the file
-to your preferred local analytics tooling.`,
+Choose exactly one primitive per call (--jq may add a bounding window and
+--fields). 'inspect' is not a query engine: there is no SQL, no GROUP BY, and no
+dtctl predicate language. For aggregate questions, push the work back into DQL
+and re-query ('… | summarize …'); for complex local analysis, hand the file to
+your preferred local analytics tooling.`,
 	Example: `  # First 20 rows of a spilled result
   dtctl inspect ~/.cache/dtctl/results/prod/q-7f3a9c.jsonl --head 20
 
@@ -60,6 +74,12 @@ to your preferred local analytics tooling.`,
 
   # The tail of the result
   dtctl inspect q-7f3a9c.jsonl --tail 10
+
+  # Keep only the matching rows (full-file streaming jq filter)
+  dtctl inspect q-7f3a9c.jsonl --jq 'select(.status == 500)'
+
+  # The first 20 matches, projected to two columns
+  dtctl inspect q-7f3a9c.jsonl --jq 'select(.status == 500)' --head 20 --fields host,timestamp
 
   # Re-derive the per-column profile for an out-of-context file
   dtctl inspect q-7f3a9c.jsonl --stats
@@ -136,6 +156,18 @@ func buildInspectRequest(cmd *cobra.Command, path string) (inspect.Request, erro
 	offsetChanged := f.Changed("offset")
 	limitChanged := f.Changed("limit")
 
+	// A --jq program turns the call into a full-file streaming filter (PrimFilter):
+	// every record is run through jq and the emitted objects are collected,
+	// re-spill-guarded. The row-access window (--head/--tail/--page) then *bounds*
+	// that output rather than selecting a primitive of its own, so it is handled
+	// here before the one-primitive-per-call check below (which counts windows as
+	// primitives). It deliberately does not introduce a dtctl predicate language —
+	// jq is a general post-processor the caller opts into (D16).
+	if jqFilter != "" {
+		return buildInspectFilterRequest(path, fields, hasSchema, hasStats, hasSample,
+			hasHead, hasTail, hasPage, offsetChanged, limitChanged, cmd)
+	}
+
 	if len(selected) > 1 {
 		return inspect.Request{}, inspect.BadFlags(
 			fmt.Sprintf("choose exactly one primitive, not %d (%s)", len(selected), strings.Join(dashify(selected), ", ")),
@@ -192,6 +224,70 @@ func buildInspectRequest(cmd *cobra.Command, path string) (inspect.Request, erro
 		// (the engine honours an explicit count, including 0, verbatim).
 		req.Primitive = inspect.PrimHead
 		req.N = inspect.DefaultRowCount
+	}
+	return req, nil
+}
+
+// buildInspectFilterRequest builds a full-file streaming-filter request (--jq,
+// PrimFilter). --jq selects rows; an optional row-access window bounds the
+// output. It is mutually exclusive with the re-derivation primitives
+// (--schema/--stats/--sample): those summarise the whole file, and "filter then
+// summarise" is a two-step that belongs in DQL or a re-spill, not a single
+// inspect call.
+func buildInspectFilterRequest(
+	path string, fields []string,
+	hasSchema, hasStats, hasSample, hasHead, hasTail, hasPage bool,
+	offsetChanged, limitChanged bool,
+	cmd *cobra.Command,
+) (inspect.Request, error) {
+	f := cmd.Flags()
+
+	if hasSchema || hasStats || hasSample {
+		return inspect.Request{}, inspect.BadFlags(
+			"--jq filters rows and cannot be combined with --schema/--stats/--sample",
+			"filter first, then summarise the result — push the aggregate into DQL ('… | summarize …'), or re-spill the filtered rows and run --stats on that file",
+		)
+	}
+
+	windows := 0
+	for _, on := range []bool{hasHead, hasTail, hasPage} {
+		if on {
+			windows++
+		}
+	}
+	if windows > 1 {
+		return inspect.Request{}, inspect.BadFlags(
+			"--jq accepts at most one bounding window (--head, --tail, or --page)",
+			"e.g. dtctl inspect "+path+" --jq 'select(.status == 500)' --head 20",
+		)
+	}
+	if (offsetChanged || limitChanged) && !hasPage {
+		return inspect.Request{}, inspect.BadFlags(
+			"--offset/--limit require --page",
+			"e.g. dtctl inspect "+path+" --jq 'select(.status == 500)' --page --offset 1000 --limit 50",
+		)
+	}
+
+	req := inspect.Request{Path: path, Fields: fields, Filter: jqFilter}
+	switch {
+	case hasHead:
+		req.Primitive = inspect.PrimHead
+		req.N, _ = f.GetInt("head")
+	case hasTail:
+		req.Primitive = inspect.PrimTail
+		req.N, _ = f.GetInt("tail")
+	case hasPage:
+		req.Primitive = inspect.PrimPage
+		req.Offset, _ = f.GetInt("offset")
+		if limitChanged {
+			req.Limit, _ = f.GetInt("limit")
+		} else {
+			req.Limit = inspect.DefaultRowCount
+		}
+	default:
+		// No window: the whole-file form. Its output is unbounded, so the re-spill
+		// guard (maybeRespill / IN8) is what keeps it context-safe.
+		req.Primitive = inspect.PrimFilter
 	}
 	return req, nil
 }
