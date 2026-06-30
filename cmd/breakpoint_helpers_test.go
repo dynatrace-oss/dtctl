@@ -151,6 +151,61 @@ func TestParseFilters(t *testing.T) {
 	}
 }
 
+func TestBuildWorkspaceFilterSets(t *testing.T) {
+	t.Run("valid single filter", func(t *testing.T) {
+		sets, err := buildWorkspaceFilterSets("k8s.namespace.name:prod")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(sets) != 1 {
+			t.Fatalf("expected 1 filter set, got %d", len(sets))
+		}
+
+		filtersField, ok := sets[0]["filters"].([]interface{})
+		if !ok || len(filtersField) != 0 {
+			t.Fatalf("expected empty filters slice, got %#v", sets[0]["filters"])
+		}
+
+		labels, ok := sets[0]["labels"].([]map[string]interface{})
+		if !ok || len(labels) != 1 {
+			t.Fatalf("expected 1 label, got %#v", sets[0]["labels"])
+		}
+		if labels[0]["field"] != "k8s.namespace.name" {
+			t.Fatalf("unexpected field: %#v", labels[0]["field"])
+		}
+		values, ok := labels[0]["values"].([]string)
+		if !ok || len(values) != 1 || values[0] != "prod" {
+			t.Fatalf("unexpected values: %#v", labels[0]["values"])
+		}
+	})
+
+	t.Run("multiple filters yield one set with multiple labels", func(t *testing.T) {
+		sets, err := buildWorkspaceFilterSets("k8s.namespace.name:prod,dt.entity.host:HOST-1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(sets) != 1 {
+			t.Fatalf("expected 1 filter set, got %d", len(sets))
+		}
+		labels, ok := sets[0]["labels"].([]map[string]interface{})
+		if !ok || len(labels) != 2 {
+			t.Fatalf("expected 2 labels, got %#v", sets[0]["labels"])
+		}
+	})
+
+	t.Run("invalid format returns error", func(t *testing.T) {
+		if _, err := buildWorkspaceFilterSets("no-separator"); err == nil {
+			t.Fatalf("expected error for invalid filter format")
+		}
+	})
+
+	t.Run("empty input returns error", func(t *testing.T) {
+		if _, err := buildWorkspaceFilterSets(""); err == nil {
+			t.Fatalf("expected error for empty filter input")
+		}
+	})
+}
+
 func TestParseBreakpoint(t *testing.T) {
 	tests := []struct {
 		name     string

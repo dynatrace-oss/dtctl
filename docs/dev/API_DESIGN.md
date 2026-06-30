@@ -1868,10 +1868,11 @@ This flag is composable with any output format (`-o json`, `-o yaml`, `-o table`
 Live Debugger follows the standard verb-noun grammar and avoids introducing a separate command tree:
 
 ```bash
-dtctl update breakpoint --filters key:value[,key:value...]     # configure workspace filters
+dtctl create breakpoint File.java:line --filters key:value     # set workspace filters + create a breakpoint in one step
 dtctl create breakpoint File.java:line                         # create breakpoint
+dtctl update breakpoint --filters key:value[,key:value...]     # configure workspace filters
 dtctl get breakpoints                                          # list breakpoints
-dtctl describe <breakpoint-id|filename:line>                   # describe breakpoint rollout/status
+dtctl describe breakpoint <breakpoint-id|filename:line>                   # describe breakpoint rollout/status
 dtctl update breakpoint <id|filename:line> --condition "..."   # update condition
 dtctl update breakpoint <id|filename:line> --enabled true|false # enable/disable
 dtctl delete breakpoint <id|filename:line|--all>               # delete breakpoints
@@ -1882,6 +1883,7 @@ dtctl delete breakpoint <id|filename:line|--all>               # delete breakpoi
 Design notes:
 - `dtctl describe` keeps existing resource-subcommand behavior; breakpoint describe is only routed for breakpoint-like identifiers.
 - Mutating operations (`update` filter update, `create`, `update`, `delete`) must run safety checks, including in dry-run mode.
+- `--filters` is optional on `create`. Filters are workspace-scoped and sticky: once set (via `update breakpoint --filters` or `create breakpoint ... --filters`), they persist for subsequent breakpoints until changed. When `--filters` is supplied on `create`, the workspace filters are updated first, then the breakpoint is created; otherwise `create` requires that workspace filters were already configured.
 
 ## Examples
 

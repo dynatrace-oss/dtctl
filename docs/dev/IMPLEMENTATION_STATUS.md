@@ -287,7 +287,7 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### Live Debugger Features (Experimental)
 - [x] Configure workspace filters: `dtctl update breakpoint --filters key:value[,key:value...]` (also supports `key=value`)
-- [x] Create breakpoint: `dtctl create breakpoint File.java:line`
+- [x] Create breakpoint: `dtctl create breakpoint File.java:line` (optional `--filters key:value[,...]` sets workspace filters in the same step)
 - [x] List breakpoints: `dtctl get breakpoints`
 - [x] Describe breakpoint status by ID or location: `dtctl describe <id|filename:line>`
 - [x] Update breakpoint condition/enabled state: `dtctl update breakpoint <id|filename:line> --condition ... --enabled ...`

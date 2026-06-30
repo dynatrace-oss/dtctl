@@ -62,10 +62,24 @@ Create a breakpoint by file and line number:
 dtctl create breakpoint OrderController.java:306
 ```
 
+A breakpoint can only be created in a workspace that already has filters
+configured. Either configure them first (see step 1), or set them in the same
+step with `--filters`:
+
+```bash
+dtctl create breakpoint OrderController.java:306 --filters k8s.namespace.name:prod
+```
+
+Filters are workspace-scoped and persist, so once set you can create additional
+breakpoints (in other files) without repeating `--filters`.
+
 ### Rules
 
 - the expected format is `File.java:line`
 - the line number must be a positive integer
+- `--filters` is optional and accepts comma-separated `key:value` (or `key=value`) pairs
+- when `--filters` is provided, the workspace filters are updated before the breakpoint is created
+- when `--filters` is omitted, the workspace must already have filters configured
 - `--dry-run` is supported
 
 Example:

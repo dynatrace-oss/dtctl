@@ -115,12 +115,12 @@ Examples:
 				}
 			}
 
-			parsedFilters, err := parseFilters(filters)
+			filterSets, err := buildWorkspaceFilterSets(filters)
 			if err != nil {
 				return err
 			}
 
-			updateResp, err := handler.UpdateWorkspaceFilters(workspaceID, livedebugger.BuildFilterSets(parsedFilters))
+			updateResp, err := handler.UpdateWorkspaceFilters(workspaceID, filterSets)
 			if err != nil {
 				if verbose {
 					_ = printGraphQLResponse("updateWorkspaceV2", updateResp)

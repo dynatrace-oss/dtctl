@@ -3160,7 +3160,10 @@ dtctl update breakpoint --filters k8s.namespace.name=prod,dt.entity.host=HOST-12
 ### Breakpoint lifecycle
 
 ```bash
-# Create
+# Create and set workspace filters in one step
+dtctl create breakpoint OrderController.java:306 --filters k8s.namespace.name:prod
+
+# Create (workspace must already have filters)
 dtctl create breakpoint OrderController.java:306
 
 # List

@@ -232,6 +232,19 @@ func parseFilters(input string) (map[string][]string, error) {
 	return filters, nil
 }
 
+// buildWorkspaceFilterSets parses a raw "key:value,key:value" filter string and
+// converts it into the GraphQL filter-set payload expected by
+// UpdateWorkspaceFilters. It is pure: no network calls and no side effects, so
+// callers (create and update) reuse it and run the network update at their own
+// call site.
+func buildWorkspaceFilterSets(raw string) ([]map[string]interface{}, error) {
+	parsed, err := parseFilters(raw)
+	if err != nil {
+		return nil, err
+	}
+	return livedebugger.BuildFilterSets(parsed), nil
+}
+
 func parseBreakpoint(input string) (string, int, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
