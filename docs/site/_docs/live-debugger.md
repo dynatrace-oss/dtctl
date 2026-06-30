@@ -23,10 +23,12 @@ dtctl auth login
 
 ## Configure Workspace Filters
 
-Workspace filters let you scope which monitored processes are eligible for breakpoints. This is important in large environments to avoid unnecessary overhead.
+Workspace filters scope which monitored processes are eligible for breakpoints, which is important in large environments to avoid unnecessary overhead. Filters are workspace-scoped and sticky: once set, they apply to every breakpoint you create until you change them.
+
+You can set filters in the same step as creating a breakpoint (see [Create a Breakpoint](#create-a-breakpoint)), so a separate filter command is not required. Use the standalone command when you want to set or change filters without creating a breakpoint:
 
 ```bash
-# Set a workspace filter to target a specific Kubernetes namespace
+# Set workspace filters (e.g. target a specific Kubernetes namespace)
 dtctl update breakpoint --filters k8s.namespace.name:prod
 ```
 
@@ -35,8 +37,11 @@ dtctl update breakpoint --filters k8s.namespace.name:prod
 ### Create a Breakpoint
 
 ```bash
-# Create a breakpoint at a specific source location
-dtctl create breakpoint --file com/example/MyService.java --line 42
+# Create a breakpoint at a specific source location (file:line)
+dtctl create breakpoint com/example/MyService.java:42
+
+# Set workspace filters and create the breakpoint in one step
+dtctl create breakpoint com/example/MyService.java:42 --filters k8s.namespace.name:prod
 ```
 
 ### List Breakpoints
@@ -69,8 +74,8 @@ dtctl update breakpoint bp-abc123 --enabled=false
 # Delete a single breakpoint by ID
 dtctl delete breakpoint bp-abc123
 
-# Delete all breakpoints at a specific source location
-dtctl delete breakpoint --file com/example/MyService.java --line 42
+# Delete all breakpoints at a specific source location (file:line)
+dtctl delete breakpoint com/example/MyService.java:42
 
 # Delete all breakpoints in the workspace
 dtctl delete breakpoint --all
@@ -92,7 +97,7 @@ By default, `--decode-snapshots` produces a simplified view that shows variable 
 ```bash
 # Full decoding with complete object graphs
 dtctl query "fetch application.snapshots | limit 5" \
-  --decode-snapshots --full
+  --decode-snapshots=full
 ```
 
 ## Safety and Dry-Run
@@ -101,7 +106,7 @@ Live Debugger commands that modify state (create, update, delete) support safety
 
 ```bash
 # Preview what would be created without actually creating it
-dtctl create breakpoint --file com/example/MyService.java --line 42 --dry-run
+dtctl create breakpoint com/example/MyService.java:42 --dry-run
 
 # Safety checks prevent accidental modifications in read-only contexts
 ```
@@ -112,22 +117,19 @@ dtctl create breakpoint --file com/example/MyService.java --line 42 --dry-run
 # 1. Log in with OAuth
 dtctl auth login
 
-# 2. Set workspace filters to target production
-dtctl update breakpoint --filters k8s.namespace.name:prod
+# 2. Create a breakpoint on a suspect line, setting workspace filters in the same step
+dtctl create breakpoint com/example/PaymentService.java:87 --filters k8s.namespace.name:prod
 
-# 3. Create a breakpoint on a suspect line
-dtctl create breakpoint --file com/example/PaymentService.java --line 87
-
-# 4. List breakpoints to confirm
+# 3. List breakpoints to confirm
 dtctl get breakpoints
 
-# 5. Wait for the breakpoint to be hit, then query snapshots
+# 4. Wait for the breakpoint to be hit, then query snapshots
 dtctl query "fetch application.snapshots \
   | filter source.file == 'com/example/PaymentService.java' \
   | limit 5" --decode-snapshots
 
-# 6. Inspect the decoded variables to diagnose the issue
+# 5. Inspect the decoded variables to diagnose the issue
 
-# 7. Clean up — delete the breakpoint
-dtctl delete breakpoint --file com/example/PaymentService.java --line 87
+# 6. Clean up — delete the breakpoint
+dtctl delete breakpoint com/example/PaymentService.java:87
 ```
