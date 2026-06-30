@@ -117,6 +117,9 @@ Examples:
 		}
 
 		parts := strings.Fields(editor)
+		if len(parts) == 0 {
+			return fmt.Errorf("no editor configured")
+		}
 		editorCmd := exec.Command(parts[0], append(parts[1:], tmpfile.Name())...)
 		editorCmd.Stdin = os.Stdin
 		editorCmd.Stdout = os.Stdout
@@ -149,7 +152,17 @@ Examples:
 			return nil
 		}
 
-		updated, err := handler.Update(existing.ObjectID, jsonData)
+		var editedValue azuremonitoringconfig.Value
+		if err := json.Unmarshal(jsonData, &editedValue); err != nil {
+			return fmt.Errorf("failed to parse edited config: %w", err)
+		}
+		payload := azuremonitoringconfig.AzureMonitoringConfig{Scope: existing.Scope, Value: editedValue}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal payload: %w", err)
+		}
+
+		updated, err := handler.Update(existing.ObjectID, payloadBytes)
 		if err != nil {
 			return err
 		}

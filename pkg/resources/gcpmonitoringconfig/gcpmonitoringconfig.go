@@ -245,7 +245,7 @@ func (h *Handler) GetRaw(id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.MarshalIndent(result, "", "  ")
+	return json.MarshalIndent(result.Value, "", "  ")
 }
 
 func (h *Handler) Get(id string) (*GCPMonitoringConfig, error) {
