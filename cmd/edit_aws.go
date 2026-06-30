@@ -11,90 +11,81 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
-	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
-	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 )
 
-// editWorkflowCmd edits a workflow
-var editWorkflowCmd = &cobra.Command{
-	Use:     "workflow <workflow-id-or-name>",
-	Aliases: []string{"workflows", "wf"},
-	Short:   "Edit a workflow",
-	Long: `Edit a workflow by opening it in your default editor.
+var editAWSMonitoringName string
 
-The workflow will be fetched, opened in your editor (defined by EDITOR env var,
+var editAWSProviderCmd = &cobra.Command{
+	Use:   "aws",
+	Short: "Edit AWS resources",
+	RunE:  requireSubcommand,
+}
+
+var editAWSMonitoringCmd = &cobra.Command{
+	Use:     "monitoring [id]",
+	Aliases: []string{"monitoring-config"},
+	Short:   "Edit an AWS monitoring configuration",
+	Long: `Edit an AWS monitoring configuration by opening it in your default editor.
+
+The configuration will be fetched, opened in your editor (defined by EDITOR env var,
 defaults to vim), and updated when you save and close the editor.
 
 By default, resources are edited in YAML format for better readability.
 Use --format=json to edit in JSON format.
 
 Examples:
-  # Edit a workflow in YAML (default)
-  dtctl edit workflow <workflow-id>
-  dtctl edit workflow "My Workflow"
-
-  # Edit a workflow in JSON
-  dtctl edit workflow <workflow-id> --format=json
-`,
-	Args: cobra.ExactArgs(1),
+  dtctl edit aws monitoring <id>
+  dtctl edit aws monitoring --name "my-aws-monitoring"
+  dtctl edit aws monitoring --name "my-aws-monitoring" --format=json`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		identifier := args[0]
+		if len(args) == 0 && editAWSMonitoringName == "" {
+			return fmt.Errorf("provide monitoring config ID argument or --name")
+		}
 
-		cfg, c, err := SetupClient()
+		cfg, c, err := SetupWithSafety(safety.OperationUpdate)
 		if err != nil {
 			return err
 		}
 
-		// Resolve name to ID
-		res := resolver.NewResolver(c)
-		workflowID, err := res.ResolveID(resolver.TypeWorkflow, identifier)
+		handler := awsmonitoringconfig.NewHandler(c)
+
+		var existing *awsmonitoringconfig.AWSMonitoringConfig
+		if len(args) > 0 {
+			identifier := args[0]
+			existing, err = handler.FindByName(identifier)
+			if err != nil {
+				existing, err = handler.Get(identifier)
+				if err != nil {
+					return fmt.Errorf("AWS monitoring config %q not found by name or ID", identifier)
+				}
+			}
+		} else {
+			existing, err = handler.FindByName(editAWSMonitoringName)
+			if err != nil {
+				return err
+			}
+		}
+
+		data, err := handler.GetRaw(existing.ObjectID)
 		if err != nil {
 			return err
 		}
 
-		handler := workflow.NewHandler(c)
-
-		// Get workflow to check ownership
-		wf, err := handler.Get(workflowID)
-		if err != nil {
-			return err
-		}
-
-		// Determine ownership for safety check
-		currentUserID, _ := c.CurrentUserID() // Ignore error - will be empty string
-		ownership := safety.DetermineOwnership(wf.Owner, currentUserID)
-
-		// Safety check with actual ownership
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
-			return err
-		}
-
-		// Get the workflow as raw JSON
-		data, err := handler.GetRaw(workflowID)
-		if err != nil {
-			return err
-		}
-
-		// Get format preference
 		editFormat, _ := cmd.Flags().GetString("format")
 		var editData []byte
 		var fileExt string
 
 		if editFormat == "yaml" {
-			// Convert JSON to YAML for editing
 			editData, err = format.JSONToYAML(data)
 			if err != nil {
 				return fmt.Errorf("failed to convert to YAML: %w", err)
 			}
 			fileExt = "*.yaml"
 		} else {
-			// Pretty print JSON for editing
 			editData, err = format.PrettyJSON(data)
 			if err != nil {
 				return fmt.Errorf("failed to format JSON: %w", err)
@@ -102,8 +93,7 @@ Examples:
 			fileExt = "*.json"
 		}
 
-		// Create a temp file with appropriate extension
-		tmpfile, err := os.CreateTemp("", "dtctl-workflow-"+fileExt)
+		tmpfile, err := os.CreateTemp("", "dtctl-aws-monitoring-"+fileExt)
 		if err != nil {
 			return fmt.Errorf("failed to create temp file: %w", err)
 		}
@@ -118,7 +108,6 @@ Examples:
 			return fmt.Errorf("failed to close temp file: %w", err)
 		}
 
-		// Get the editor
 		editor := os.Getenv("EDITOR")
 		if editor == "" {
 			editor = cfg.Preferences.Editor
@@ -127,8 +116,10 @@ Examples:
 			editor = "vim"
 		}
 
-		// Open the editor
 		parts := strings.Fields(editor)
+		if len(parts) == 0 {
+			return fmt.Errorf("no editor configured")
+		}
 		editorCmd := exec.Command(parts[0], append(parts[1:], tmpfile.Name())...)
 		editorCmd.Stdin = os.Stdin
 		editorCmd.Stdout = os.Stdout
@@ -138,19 +129,16 @@ Examples:
 			return fmt.Errorf("editor failed: %w", err)
 		}
 
-		// Read the edited file
 		editedData, err := os.ReadFile(tmpfile.Name())
 		if err != nil {
 			return fmt.Errorf("failed to read edited file: %w", err)
 		}
 
-		// Convert edited data to JSON (auto-detect format)
 		jsonData, err := format.ValidateAndConvert(editedData)
 		if err != nil {
 			return fmt.Errorf("invalid format: %w", err)
 		}
 
-		// Check if anything changed
 		var originalCompact, editedCompact bytes.Buffer
 		if err := json.Compact(&originalCompact, data); err != nil {
 			return fmt.Errorf("failed to compact original JSON: %w", err)
@@ -164,17 +152,31 @@ Examples:
 			return nil
 		}
 
-		// Update the workflow
-		result, err := handler.Update(workflowID, jsonData)
+		var editedValue awsmonitoringconfig.Value
+		if err := json.Unmarshal(jsonData, &editedValue); err != nil {
+			return fmt.Errorf("failed to parse edited config: %w", err)
+		}
+		payload := awsmonitoringconfig.AWSMonitoringConfig{Scope: existing.Scope, Value: editedValue}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal payload: %w", err)
+		}
+
+		updated, err := handler.Update(existing.ObjectID, payloadBytes)
 		if err != nil {
 			return err
 		}
 
-		output.PrintSuccess("Workflow %q updated", result.Title)
+		configName := updated.Value.Description
+		if configName == "" {
+			configName = updated.ObjectID
+		}
+		output.PrintSuccess("AWS monitoring config %q updated", configName)
 		return nil
 	},
 }
 
 func init() {
-	editWorkflowCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
+	editAWSMonitoringCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
+	editAWSMonitoringCmd.Flags().StringVar(&editAWSMonitoringName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 }

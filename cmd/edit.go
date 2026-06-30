@@ -19,7 +19,8 @@ Blocked by safety level if the current context is set to 'readonly'.
 
 Supported resources:
   workflows (wf)          dashboards (dash, db)     notebooks (nb)
-  settings`,
+  settings                aws monitoring             azure monitoring
+  gcp monitoring`,
 	Example: `  # Edit a workflow in your default editor
   dtctl edit workflow my-workflow
 
@@ -27,7 +28,13 @@ Supported resources:
   dtctl edit dashboard "My Dashboard"
 
   # Edit a settings object by ID
-  dtctl edit setting <object-id>`,
+  dtctl edit setting <object-id>
+
+  # Edit an AWS monitoring configuration
+  dtctl edit aws monitoring --name "my-aws-monitoring"
+
+  # Edit an Azure monitoring configuration by ID
+  dtctl edit azure monitoring <id>`,
 	RunE: requireSubcommand,
 }
 
@@ -41,4 +48,14 @@ func init() {
 	editCmd.AddCommand(editSettingCmd)
 	editCmd.AddCommand(editSegmentCmd)
 	editCmd.AddCommand(editAnomalyDetectorCmd)
+
+	editCmd.AddCommand(editAWSProviderCmd)
+	editAWSProviderCmd.AddCommand(editAWSMonitoringCmd)
+
+	editCmd.AddCommand(editAzureProviderCmd)
+	editAzureProviderCmd.AddCommand(editAzureMonitoringCmd)
+
+	editCmd.AddCommand(editGCPProviderCmd)
+	editGCPProviderCmd.AddCommand(editGCPMonitoringCmd)
+	attachPreviewNotice(editGCPProviderCmd, "GCP")
 }
