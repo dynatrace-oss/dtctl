@@ -650,6 +650,7 @@ func TestInstalledSkillContent_ContainsMainSections(t *testing.T) {
 		"Output for agents",
 		"Apply & templates",
 		"Permissions & safety",
+		"Initialization",
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(content, s) {
