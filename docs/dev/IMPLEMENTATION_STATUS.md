@@ -171,7 +171,9 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### Davis AI Features
 - [x] List analyzers: `dtctl get analyzers`
+- [x] Describe analyzer (with input/result schemas): `dtctl describe analyzer <name>`
 - [x] Execute analyzer: `dtctl exec analyzer <name> -f input.json`
+- [x] Validate analyzer input: `dtctl verify analyzer <name> -f input.json`
 - [x] Chat with CoPilot: `dtctl exec copilot "question"` (streaming)
 - [x] NL to DQL: `dtctl exec copilot nl2dql "show error logs"`
 - [x] Document search: `dtctl exec copilot document-search "query"`

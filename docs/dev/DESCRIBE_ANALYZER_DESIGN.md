@@ -1,6 +1,7 @@
 # Spec: `dtctl describe analyzer` + `dtctl verify analyzer` — Analyzer Details & Input Validation
 
-**Status**: Approved (design review passed; Option A chosen)
+**Status**: Implemented (Option A). `exec analyzer --validate` retained as-is
+(Open Question 1 resolved: keep the existing flag; no deprecation).
 **Priority**: P2
 **Effort**: Small (≈1–1.5 days for both commands)
 **Impact**: Closes the "how do I run this analyzer?" gap between `get analyzer` and

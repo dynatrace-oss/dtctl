@@ -1,0 +1,25 @@
+name: dt.statistics.GenericForecastAnalyzer
+displayname: Generic Forecast Analyzer
+description: Forecasts a numeric time series
+category: Forecast
+type: DAVIS
+labels:
+  - forecast
+  - timeseries
+inputschema:
+  properties:
+    forecastHorizon:
+      description: points to forecast
+      type: integer
+    timeSeriesData:
+      description: DQL timeseries query
+      type: string
+  required:
+    - timeSeriesData
+  type: object
+resultschema:
+  properties:
+    forecastValues:
+      description: forecasted points
+      type: array
+  type: object
