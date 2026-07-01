@@ -62,16 +62,19 @@ Examples:
 			}
 		}
 
-		cfg, c, err := SetupWithSafety(safety.OperationCreate)
-		if err != nil {
-			return err
-		}
-
+		// Dry-run preview must not be blocked by the safety check (a readonly
+		// context should still show the preview), so it runs before
+		// SetupWithSafety. Matches create_workflows.go / create_buckets.go.
 		if dryRun {
 			if filtersChanged {
 				return printBreakpointMessage("create", fmt.Sprintf("Dry run: would set workspace filters (%s) and create breakpoint at %s:%d", strings.TrimSpace(filters), fileName, lineNumber))
 			}
 			return printBreakpointMessage("create", fmt.Sprintf("Dry run: would create breakpoint at %s:%d", fileName, lineNumber))
+		}
+
+		cfg, c, err := SetupWithSafety(safety.OperationCreate)
+		if err != nil {
+			return err
 		}
 
 		verbose := isDebugVerbose()
