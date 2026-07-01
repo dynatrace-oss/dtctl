@@ -1,0 +1,29 @@
+name: com.example.test-extension
+version: 1.2.3
+author: Example Corp
+minDynatraceVersion: 1.300.0
+minEECVersion: 1.299.0
+fileHash: abc123def456
+dataSources:
+  - sqlPostgres
+featureSets:
+  advanced: []
+  default:
+    - key: ext.uptime
+      metadata:
+        displayname: Instance uptime
+        description: Time since instance started
+        unit: Second
+variables:
+  - name: endpoint
+    type: text
+    displayname: Endpoint
+activeVersion: 1.2.3
+availableVersions:
+  - 1.0.0
+  - 1.2.3
+monitoringConfigurations:
+  - objectId: obj-a1b2c3d4
+    scope: host:HOST-001
+    enabled: true
+    description: Production monitoring

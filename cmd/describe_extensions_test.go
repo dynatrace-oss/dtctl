@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"testing"
 
+	"github.com/dynatrace-oss/dtctl/cmd/testutil"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 )
 
@@ -122,6 +125,76 @@ func TestStripSchemaFluff_NoFluffKeys(t *testing.T) {
 	after, _ := json.Marshal(result)
 	if string(before) != string(after) {
 		t.Errorf("expected no change when no fluff keys present\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+// describeExtensionFixture returns a synthetic extensionDescription for golden tests.
+// withMetrics controls whether FeatureSets is a plain []string (false) or a
+// map[string][]extension.FeatureSetMetric with full metadata (true).
+func describeExtensionFixture(withMetrics bool) *extensionDescription {
+	enabled := true
+	base := &extensionDescription{
+		Name:                "com.example.test-extension",
+		Version:             "1.2.3",
+		Author:              "Example Corp",
+		MinDynatraceVersion: "1.300.0",
+		MinEECVersion:       "1.299.0",
+		FileHash:            "abc123def456",
+		DataSources:         []string{"sqlPostgres"},
+		Variables: []extension.ExtensionVariable{
+			{Name: "endpoint", Type: "text", DisplayName: "Endpoint"},
+		},
+		ActiveVersion:     "1.2.3",
+		AvailableVersions: []string{"1.0.0", "1.2.3"},
+		MonitoringConfigs: []monitoringConfigSummary{
+			{
+				ObjectID:    "obj-a1b2c3d4",
+				Scope:       "host:HOST-001",
+				Enabled:     &enabled,
+				Description: "Production monitoring",
+			},
+		},
+	}
+	if withMetrics {
+		base.FeatureSets = map[string][]extension.FeatureSetMetric{
+			"default": {
+				{
+					Key: "ext.uptime",
+					Metadata: extension.FeatureSetMetricMetadata{
+						DisplayName: "Instance uptime",
+						Description: "Time since instance started",
+						Unit:        "Second",
+					},
+				},
+			},
+			"advanced": {},
+		}
+	} else {
+		base.FeatureSets = []string{"default", "advanced"}
+	}
+	return base
+}
+
+func TestGolden_DescribeExtension(t *testing.T) {
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+	cases := map[string]bool{
+		"no-metrics":   false,
+		"with-metrics": true,
+	}
+	for caseName, withMetrics := range cases {
+		for fmtName, format := range formats {
+			t.Run(caseName+"-"+fmtName, func(t *testing.T) {
+				var buf bytes.Buffer
+				printer := output.NewPrinterWithWriter(format, &buf)
+				if err := printer.Print(describeExtensionFixture(withMetrics)); err != nil {
+					t.Fatalf("Print failed: %v", err)
+				}
+				testutil.AssertGolden(t, "describe/extension-description-"+caseName+"-"+fmtName, buf.String())
+			})
+		}
 	}
 }
 
