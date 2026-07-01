@@ -130,7 +130,7 @@ func printValueAsJSON(v any) error {
 }
 
 func init() {
-	getClassicPipelinesTranslationCmd.Flags().Bool("include-sample-data", false, "Include processor sample data in the translation")
-	getClassicPipelinesTranslationCmd.Flags().Bool("skip-disabled-rules", true, "Skip disabled rules during translation")
-	getClassicPipelinesTranslationCmd.Flags().Bool("skip-builtin-processing-rules", false, "Skip built-in processing rules during translation")
+	getClassicPipelinesTranslationCmd.Flags().Bool("include-sample-data", true, "Include processor sample data in the translation")
+	getClassicPipelinesTranslationCmd.Flags().Bool("skip-disabled-rules", false, "Skip disabled rules during translation")
+	getClassicPipelinesTranslationCmd.Flags().Bool("skip-builtin-processing-rules", true, "Skip built-in processing rules during translation")
 }

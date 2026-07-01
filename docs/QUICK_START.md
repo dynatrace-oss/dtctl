@@ -2015,8 +2015,8 @@ dtctl get classic-pipelines-translation bizevents -o yaml > reference-pipeline.y
 # Print the translated pipeline as JSON
 dtctl get classic-pipelines-translation logs -o json
 
-# Keep disabled rules in the translation (overrides the server default)
-dtctl get classic-pipelines-translation logs --skip-disabled-rules=false
+# Skip disabled rules in the translation (overrides the server default)
+dtctl get classic-pipelines-translation logs --skip-disabled-rules=true
 ```
 
 The scope is a positional argument and must be `logs` or `bizevents`. Every output format emits the translated pipeline document directly (no `{value, withWarning}` wrapper), so the exported file is applyable as-is. The translation is deterministic where possible; when a processing rule's definition script could not be translated automatically (`withWarning=true`), a warning is printed to stderr (and carried in the agent envelope under `-A`) and that part needs a manual rewrite. Apply the reviewed result with `dtctl create settings --schema builtin:openpipeline.<scope>.pipelines -f <file>`.
