@@ -1,9 +1,10 @@
-# Spec: `dtctl describe analyzer` — Human- and Agent-Readable Analyzer Details
+# Spec: `dtctl describe analyzer` + `dtctl verify analyzer` — Analyzer Details & Input Validation
 
-**Status**: Proposed
+**Status**: Approved (design review passed; Option A chosen)
 **Priority**: P2
-**Effort**: Small (≈1 day)
-**Impact**: Closes the "how do I run this analyzer?" gap between `get analyzer` and `exec analyzer`
+**Effort**: Small (≈1–1.5 days for both commands)
+**Impact**: Closes the "how do I run this analyzer?" gap between `get analyzer` and
+`exec analyzer`, and gives analyzer input its own CI/CD-friendly validation command
 
 ---
 
@@ -76,11 +77,11 @@ resolved input/result schemas. Pros: smallest surface area, no convention break.
 Cons: overloads `get` with a mode flag; no natural home for the docs/exec framing;
 `get` is meant to return the resource as-is, and schemas are a different resource.
 
-**Recommendation: Option A**, because the value is precisely the *bundling* —
-metadata + required inputs + an actionable `exec` hint in one call — and because
-agents are first-class consumers here, the structured (non-table) output must
-carry the schema. This spec is written for Option A. If reviewers prefer to keep
-`describe` strictly conventional, fall back to Option B.
+**Decision: Option A** (confirmed in design review). The value is precisely the
+*bundling* — metadata + required inputs + an actionable `exec` hint in one call —
+and because agents are first-class consumers here, the structured (non-table)
+output must carry the schema. The rest of this spec is written for Option A;
+Option B is retained only as historical context for the convention-break rationale.
 
 ---
 
@@ -214,9 +215,76 @@ The full schema is always available via `-o json`.
 
 ---
 
+## Companion command: `dtctl verify analyzer`
+
+`describe analyzer` tells you *what* an analyzer accepts. The natural next step
+is checking whether a concrete input is *valid* — before spending an execution on
+a 400. The analyzer REST API exposes exactly this via
+`POST /analyzers/{name}:validate`, already wrapped as `handler.Validate` and
+returning `ValidationResult { valid bool, details map }`.
+
+Today this is only reachable through `dtctl exec analyzer <name> -f input.json
+--validate`. That works, but it lives under the *mutating* `exec` verb and lacks
+the CI/CD exit-code contract. dtctl already has a dedicated, read-only home for
+"check without running": the `verify` verb (`verify query`). Analyzer input
+validation belongs there.
+
+### Command
+
+```
+dtctl verify analyzer <name> -f input.json      # validate input from file
+dtctl verify analyzer <name> --input '{...}'    # inline JSON
+dtctl verify analyzer <name> --query "<dql>"    # DQL shorthand (timeSeriesData)
+dtctl verify analyzer <name> -o json            # structured ValidationResult
+```
+
+Alias `az`, `ExactArgs(1)` for the analyzer name. Input is supplied exactly like
+`exec analyzer` (`-f`/`--input`/`--query`), so the two commands share input
+parsing (`analyzer.ParseInputFromFile`, the `--query` → `timeSeriesData`
+shorthand). Registered as a subcommand of the existing `verifyCmd`.
+
+### Exit codes
+
+Matches the `verify query` contract (so CI/CD scripts treat both uniformly):
+
+```
+0 - Input is valid
+1 - Input is invalid (validation errors)
+2 - Authentication/permission error
+3 - Network/server error
+```
+
+### Output
+
+Human (default):
+
+```
+$ dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f input.json
+✓ Input is valid for dt.statistics.GenericForecastAnalyzer
+
+$ dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f bad.json
+✗ Input is invalid for dt.statistics.GenericForecastAnalyzer
+  - timeSeriesData: required field is missing
+```
+
+Structured (`-o json`, and the agent envelope) prints the `ValidationResult` as-is
+(`{ "valid": false, "details": { ... } }`), wrapped in the standard envelope in
+agent mode. Because `verify` is read-only, no safety check is required.
+
+### Relationship to `exec analyzer --validate`
+
+`verify analyzer` becomes the canonical validation entry point. The existing
+`exec analyzer --validate` flag can stay as a thin alias for backward
+compatibility, or be deprecated in favour of `verify analyzer` — **decision
+deferred to the implementer** (see Open Questions). No API or handler change is
+needed either way; both call the same `handler.Validate`.
+
+---
+
 ## Implementation Plan
 
-No SDK work — all three endpoints already exist in the handler.
+No SDK work — all four endpoints (`Get`, `GetInputSchema`, `GetResultSchema`,
+`Validate`, plus `GetDocumentation` for `--doc`) already exist in the handler.
 
 ### Step 1: `cmd/describe_analyzers.go` (≈0.5 day)
 
@@ -236,17 +304,32 @@ No SDK work — all three endpoints already exist in the handler.
    turns a `map[string]interface{}` JSON Schema into ordered `(name, type,
    required, description)` rows, with the composite/`$ref` fallback.
 
-### Step 3: Tests (≈0.25 day)
+### Step 3: `cmd/verify_analyzer.go` (≈0.25 day)
 
-1. Golden tests for table + JSON output (`pkg/output/testdata/golden/describe/`),
+1. Add `verifyAnalyzerCmd` (`Use: "analyzer <name>"`, alias `az`, `ExactArgs(1)`)
+   under `verifyCmd`.
+2. Reuse `exec analyzer`'s input assembly (`-f`/`--input`/`--query`) — factor the
+   shared parsing into a small helper so both commands stay in sync.
+3. Call `handler.Validate`, map `ValidationResult.Valid` to exit code 0/1 and
+   auth/network errors to 2/3, matching `verify query`.
+4. Human output: ✓/✗ line plus per-detail messages; `-o json` prints the raw
+   `ValidationResult`; enrich the agent envelope.
+
+### Step 4: Tests (≈0.25–0.5 day)
+
+1. Golden tests for `describe` table + JSON output (`pkg/output/testdata/golden/describe/`),
    using a real `AnalyzerDefinition` struct plus representative schemas.
 2. Unit test for the flattener: required vs optional, a composite property
    fallback, and an empty/missing `properties` schema.
-3. Test that schema-call failure degrades gracefully (command still succeeds).
+3. Test that schema-call failure degrades gracefully (`describe` still succeeds).
+4. `verify analyzer` tests: valid input → exit 0, invalid → exit 1, mock
+   auth/network errors → exit 2/3 (mirror `verify_query_test.go`).
 
 ---
 
 ## Acceptance Criteria
+
+### `describe analyzer`
 
 - [ ] `dtctl describe analyzer <name>` prints metadata + required/optional inputs +
       outputs in table mode.
@@ -258,18 +341,25 @@ No SDK work — all three endpoints already exist in the handler.
 - [ ] Composite (`oneOf`/`$ref`) properties render a legible fallback, not garbage.
 - [ ] Golden tests cover table and JSON output and prevent format regressions.
 
+### `verify analyzer`
+
+- [ ] `dtctl verify analyzer <name> -f input.json` validates and exits 0 (valid) /
+      1 (invalid), matching the `verify query` exit-code contract (2 auth, 3 network).
+- [ ] Accepts `-f` / `--input` / `--query`, sharing input parsing with `exec analyzer`.
+- [ ] `-o json` emits the raw `ValidationResult`; agent mode wraps it in the envelope.
+- [ ] No safety check (read-only verb).
+
 ---
 
 ## Open Questions
 
-1. **Convention break** — are reviewers comfortable with `describe analyzer`
-   returning more than `get analyzer` in JSON mode (Option A), or should this ship
-   as `get analyzer --schema` (Option B) to preserve the describe convention?
+1. **`exec analyzer --validate` fate** — keep it as a thin alias for
+   `verify analyzer`, or deprecate it? (Handler is shared; purely a UX/compat call.)
 2. **Real schema shape** — fetch a real input schema (e.g.
    `dt.statistics.clustering.LogPatternExtractor`) against the `fxz` test tenant
    and confirm the flattener assumptions before locking the table layout.
-3. **Dead code** — if neither option ships, `GetInputSchema`/`GetResultSchema`/
-   `GetDocumentation` should arguably be deleted as unused.
+3. **Docs/status updates** — on ship, add both commands to `docs/dev/IMPLEMENTATION_STATUS.md`
+   and the `describe`/`verify` resource lists in the `commands` catalog.
 
 ---
 
@@ -279,5 +369,8 @@ No SDK work — all three endpoints already exist in the handler.
 - Analyzer handler (endpoints already implemented): `pkg/resources/analyzer/analyzer.go`,
   `sdk/api/analyzer/analyzer.go`
 - Get/exec analyzer commands: `cmd/get_analyzers.go`, `cmd/exec_analyzers.go`
+  (note `--validate` already calls `handler.Validate`)
+- Verify verb + exit-code contract: `cmd/verify.go`, `cmd/verify_query.go`,
+  `cmd/verify_query_test.go`
 - Agent envelope + enrichment: `pkg/output/agent.go`, `enrichAgent` in `cmd/root.go`
 - Describe output helpers: `pkg/output/messages.go` (`DescribeKV`, `DescribeSection`)
