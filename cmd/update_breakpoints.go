@@ -60,8 +60,8 @@ Examples:
 		}
 
 		if filtersChanged {
-			if strings.TrimSpace(filters) == "" {
-				return fmt.Errorf("--filters is required")
+			if err := requireFiltersValue(filters); err != nil {
+				return err
 			}
 			if conditionChanged || enabledChanged {
 				return fmt.Errorf("--filters cannot be combined with --condition or --enabled")

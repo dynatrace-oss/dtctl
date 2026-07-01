@@ -236,6 +236,26 @@ func TestFormatFilters(t *testing.T) {
 	})
 }
 
+func TestRequireFiltersValue(t *testing.T) {
+	t.Run("non-empty value passes", func(t *testing.T) {
+		if err := requireFiltersValue("ns:prod"); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+
+	t.Run("empty and whitespace-only values are rejected", func(t *testing.T) {
+		for _, in := range []string{"", "   ", "\t"} {
+			err := requireFiltersValue(in)
+			if err == nil {
+				t.Fatalf("expected error for %q, got nil", in)
+			}
+			if !strings.Contains(err.Error(), "provided without a value") {
+				t.Fatalf("unexpected error message for %q: %v", in, err)
+			}
+		}
+	})
+}
+
 func TestParseBreakpoint(t *testing.T) {
 	tests := []struct {
 		name     string

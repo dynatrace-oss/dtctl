@@ -54,8 +54,8 @@ Examples:
 		var filterSets []map[string]interface{}
 		var filterSummary string
 		if filtersChanged {
-			if strings.TrimSpace(filters) == "" {
-				return fmt.Errorf("--filters provided without a value")
+			if err := requireFiltersValue(filters); err != nil {
+				return err
 			}
 			parsed, err := parseFilters(filters)
 			if err != nil {

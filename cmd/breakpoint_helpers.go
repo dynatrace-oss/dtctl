@@ -265,6 +265,17 @@ func formatFilters(parsed map[string][]string) string {
 	return strings.Join(pairs, ",")
 }
 
+// requireFiltersValue validates that a --filters flag which was provided also
+// carries a value. It is shared by create and update breakpoint so the
+// "empty --filters" error is identical (and greppable) in both commands. An
+// empty value means the flag was set but blank, e.g. --filters "".
+func requireFiltersValue(filters string) error {
+	if strings.TrimSpace(filters) == "" {
+		return fmt.Errorf("--filters provided without a value")
+	}
+	return nil
+}
+
 func parseBreakpoint(input string) (string, int, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
