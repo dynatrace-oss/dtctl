@@ -78,7 +78,7 @@ type FeatureSetDetail struct {
 
 // FeatureSetMetric represents a metric within a feature set
 type FeatureSetMetric struct {
-	Key      string                  `json:"key"`
+	Key      string                   `json:"key"`
 	Metadata FeatureSetMetricMetadata `json:"metadata,omitempty"`
 }
 
