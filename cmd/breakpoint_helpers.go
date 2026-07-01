@@ -245,6 +245,26 @@ func buildWorkspaceFilterSets(raw string) ([]map[string]interface{}, error) {
 	return livedebugger.BuildFilterSets(parsed), nil
 }
 
+// formatFilters renders parsed filters as a canonical, deterministic
+// "key:value,key:value" string. Keys are sorted (values are already sorted by
+// parseFilters), so dry-run previews show exactly what will be sent rather than
+// the raw, possibly unnormalized, user input (e.g. "ns : prod" -> "ns:prod").
+func formatFilters(parsed map[string][]string) string {
+	keys := make([]string, 0, len(parsed))
+	for key := range parsed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	pairs := make([]string, 0)
+	for _, key := range keys {
+		for _, value := range parsed[key] {
+			pairs = append(pairs, key+":"+value)
+		}
+	}
+	return strings.Join(pairs, ",")
+}
+
 func parseBreakpoint(input string) (string, int, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {

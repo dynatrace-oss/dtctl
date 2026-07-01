@@ -52,14 +52,17 @@ Examples:
 		// format errors surface immediately. Filters are optional for create:
 		// only validate when the flag was actually provided.
 		var filterSets []map[string]interface{}
+		var filterSummary string
 		if filtersChanged {
 			if strings.TrimSpace(filters) == "" {
 				return fmt.Errorf("--filters provided without a value")
 			}
-			filterSets, err = buildWorkspaceFilterSets(filters)
+			parsed, err := parseFilters(filters)
 			if err != nil {
 				return err
 			}
+			filterSets = livedebugger.BuildFilterSets(parsed)
+			filterSummary = formatFilters(parsed)
 		}
 
 		// Dry-run preview must not be blocked by the safety check (a readonly
@@ -67,7 +70,7 @@ Examples:
 		// SetupWithSafety. Matches create_workflows.go / create_buckets.go.
 		if dryRun {
 			if filtersChanged {
-				return printBreakpointMessage("create", fmt.Sprintf("Dry run: would set workspace filters (%s) and create breakpoint at %s:%d", strings.TrimSpace(filters), fileName, lineNumber))
+				return printBreakpointMessage("create", fmt.Sprintf("Dry run: would set workspace filters (%s) and create breakpoint at %s:%d", filterSummary, fileName, lineNumber))
 			}
 			return printBreakpointMessage("create", fmt.Sprintf("Dry run: would create breakpoint at %s:%d", fileName, lineNumber))
 		}

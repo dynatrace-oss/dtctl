@@ -206,6 +206,36 @@ func TestBuildWorkspaceFilterSets(t *testing.T) {
 	})
 }
 
+func TestFormatFilters(t *testing.T) {
+	t.Run("sorted deterministic output", func(t *testing.T) {
+		parsed := map[string][]string{
+			"ns":   {"prod", "staging"},
+			"host": {"HOST-1"},
+		}
+		got := formatFilters(parsed)
+		want := "host:HOST-1,ns:prod,ns:staging"
+		if got != want {
+			t.Fatalf("unexpected formatted filters: got %q want %q", got, want)
+		}
+	})
+
+	t.Run("normalizes raw input spacing", func(t *testing.T) {
+		parsed, err := parseFilters("ns : prod")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := formatFilters(parsed); got != "ns:prod" {
+			t.Fatalf("expected normalized 'ns:prod', got %q", got)
+		}
+	})
+
+	t.Run("empty map yields empty string", func(t *testing.T) {
+		if got := formatFilters(map[string][]string{}); got != "" {
+			t.Fatalf("expected empty string, got %q", got)
+		}
+	})
+}
+
 func TestParseBreakpoint(t *testing.T) {
 	tests := []struct {
 		name     string
