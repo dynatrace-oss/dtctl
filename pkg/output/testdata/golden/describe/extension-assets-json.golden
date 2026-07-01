@@ -1,0 +1,33 @@
+{
+  "alert_templates": [
+    {
+      "file": "alerts/cpu-saturation.json",
+      "name": "CPU Saturation",
+      "eventType": "RESOURCE_CONTENTION",
+      "enabled": true
+    },
+    {
+      "file": "alerts/memory-usage.json",
+      "name": "Memory Usage",
+      "eventType": "RESOURCE_CONTENTION",
+      "enabled": false
+    }
+  ],
+  "smartscape": {
+    "nodes": [
+      {
+        "nodeType": "custom:my_service",
+        "nodeIdFieldName": "dt.entity.my_service",
+        "description": "My Service node",
+        "pipeline": "openpipeline/metrics.json"
+      }
+    ],
+    "edges": [
+      {
+        "sourceType": "custom:my_service",
+        "edgeType": "runs_on",
+        "targetType": "HOST"
+      }
+    ]
+  }
+}
