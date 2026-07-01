@@ -268,9 +268,12 @@ $ dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f bad.json
   - timeSeriesData: required field is missing
 ```
 
-Structured (`-o json`, and the agent envelope) prints the `ValidationResult` as-is
-(`{ "valid": false, "details": { ... } }`), wrapped in the standard envelope in
-agent mode. Because `verify` is read-only, no safety check is required.
+Structured (`-o json`/`yaml`/`toon`) prints the `ValidationResult` as-is
+(`{ "valid": false, "details": { ... } }`). This mirrors `verify query`: the
+`verify` family signals its verdict through the **exit code** plus structured
+`-o` output rather than the `{ok,result,context}` agent envelope, so agents
+should call `verify analyzer ... -o json` and read the exit code. Because
+`verify` is read-only, no safety check is required.
 
 ### Relationship to `exec analyzer --validate`
 
@@ -313,8 +316,8 @@ No SDK work — all four endpoints (`Get`, `GetInputSchema`, `GetResultSchema`,
    shared parsing into a small helper so both commands stay in sync.
 3. Call `handler.Validate`, map `ValidationResult.Valid` to exit code 0/1 and
    auth/network errors to 2/3, matching `verify query`.
-4. Human output: ✓/✗ line plus per-detail messages; `-o json` prints the raw
-   `ValidationResult`; enrich the agent envelope.
+4. Human output: ✓/✗ line plus per-detail messages; `-o json`/`yaml`/`toon`
+   prints the raw `ValidationResult` (mirrors `verify query`; no agent envelope).
 
 ### Step 4: Tests (≈0.25–0.5 day)
 
@@ -347,7 +350,8 @@ No SDK work — all four endpoints (`Get`, `GetInputSchema`, `GetResultSchema`,
 - [ ] `dtctl verify analyzer <name> -f input.json` validates and exits 0 (valid) /
       1 (invalid), matching the `verify query` exit-code contract (2 auth, 3 network).
 - [ ] Accepts `-f` / `--input` / `--query`, sharing input parsing with `exec analyzer`.
-- [ ] `-o json` emits the raw `ValidationResult`; agent mode wraps it in the envelope.
+- [ ] `-o json` emits the raw `ValidationResult` (mirrors `verify query`; the
+      verify family uses exit code + structured output, not the agent envelope).
 - [ ] No safety check (read-only verb).
 
 ---

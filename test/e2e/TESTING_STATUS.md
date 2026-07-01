@@ -188,10 +188,21 @@ Integration tests run against a real Dynatrace environment to validate end-to-en
   - Create with raw Settings API format
   - Verify raw response structure
 
+### Davis Analyzer Tests (read-only)
+- **TestAnalyzerReadLifecycle** - Read paths behind `describe`/`verify` ✅
+  - List analyzers
+  - Get analyzer definition
+  - Input schema resolves and flattens to typed fields (`describe analyzer`)
+  - Result schema resolves
+  - Documentation resolves (`describe analyzer --doc`)
+  - Validate accepts a well-formed input (`verify analyzer`)
+  - Validate rejects empty input (`verify analyzer`)
+  - Subtests skip (not fail) when the reference analyzer is absent on a tenant
+
 ## Test Statistics
 
-- **Total Tests**: 34
-- **Passing**: 31 (91%)
+- **Total Tests**: 35
+- **Passing**: 32 (91%)
 - **Skipped**: 3 (9%)
 - **Failing**: 0 (0%)
 

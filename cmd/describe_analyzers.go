@@ -77,7 +77,7 @@ Examples:
 			desc.Category = def.Category.DisplayName
 		}
 
-		if outputFormat == "table" {
+		if useAnalyzerDescribeTextView() {
 			printAnalyzerDescribe(desc)
 			return nil
 		}
@@ -92,6 +92,17 @@ Examples:
 		}
 		return printer.Print(desc)
 	},
+}
+
+// useAnalyzerDescribeTextView reports whether to render the human-readable text
+// view. Agent mode always takes the structured envelope path — note that agent
+// mode leaves outputFormat at its "table" default, so a bare format check would
+// wrongly emit human text into an agent session.
+func useAnalyzerDescribeTextView() bool {
+	if agentMode {
+		return false
+	}
+	return outputFormat == "" || outputFormat == "table"
 }
 
 // printAnalyzerDescribe renders the human-readable table view.
