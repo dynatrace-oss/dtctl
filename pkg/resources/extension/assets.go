@@ -212,9 +212,9 @@ func parseAlertTemplates(zr *zip.Reader, result *AssetResult, full bool) error {
 
 // pipelineProcessor is the relevant subset of a smartscapeNodeExtraction processor.
 type pipelineProcessor struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	ID             string `json:"id"`
+	Type           string `json:"type"`
+	Description    string `json:"description"`
 	SmartscapeNode struct {
 		NodeType        string `json:"nodeType"`
 		NodeIDFieldName string `json:"nodeIdFieldName"`
