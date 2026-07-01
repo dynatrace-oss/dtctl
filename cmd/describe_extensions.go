@@ -143,6 +143,9 @@ Examples:
 
 		// -o zip: download the extension package and write raw bytes to stdout
 		if outputFormat == "zip" {
+			if GetAgentMode() {
+				return fmt.Errorf("-o zip is incompatible with agent mode (-A): raw binary cannot be wrapped in a JSON envelope")
+			}
 			data, err := handler.Download(extensionName, targetVersion)
 			if err != nil {
 				return err

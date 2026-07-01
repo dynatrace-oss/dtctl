@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -186,6 +185,8 @@ func parseAlertTemplates(zr *zip.Reader, result *AssetResult, full bool) error {
 		return err
 	}
 
+	result.AlertTemplates = []AlertAsset{} // non-nil even when manifest has no alerts
+
 	fileByName := make(map[string]*zip.File, len(zr.File))
 	for _, f := range zr.File {
 		fileByName[f.Name] = f
@@ -246,8 +247,7 @@ func parseSmartscape(zr *zip.Reader, result *AssetResult, full bool) error {
 	for _, pipeline := range manifest.Openpipeline.Pipelines {
 		f, ok := zipLookup(fileByName, pipeline.PipelinePath)
 		if !ok {
-			slog.Warn("pipeline file listed in extension.yaml not found in package, skipping", "path", pipeline.PipelinePath)
-			continue
+			continue // pipeline file missing from package — skip silently
 		}
 
 		var doc struct {

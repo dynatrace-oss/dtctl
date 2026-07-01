@@ -622,6 +622,10 @@ func (h *Handler) Download(ctx context.Context, extensionName, version string) (
 		}
 		return nil, fmt.Errorf("failed to download extension: %w", err)
 	}
+	ct := resp.Header().Get("Content-Type")
+	if ct != "" && !strings.HasPrefix(ct, "application/zip") && !strings.HasPrefix(ct, "application/octet-stream") {
+		return nil, fmt.Errorf("unexpected Content-Type %q from extension download (expected zip/octet-stream)", ct)
+	}
 	return resp.Body(), nil
 }
 
