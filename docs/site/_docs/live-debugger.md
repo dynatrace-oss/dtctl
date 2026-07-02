@@ -23,7 +23,7 @@ dtctl auth login
 
 ## Configure Workspace Filters
 
-Workspace filters scope which monitored processes are eligible for breakpoints, which is important in large environments to avoid unnecessary overhead. Filters are workspace-scoped and sticky: once set, they apply to every breakpoint you create until you change them.
+Workspace filters scope which monitored processes are eligible for breakpoints, which is important in large environments to avoid unnecessary overhead. Filters are workspace-scoped: a single filter set applies to **every** breakpoint in the workspace. Because of this, changing the filters re-scopes not only breakpoints you create afterwards but **all existing breakpoints** in the workspace as well.
 
 You can set filters in the same step as creating a breakpoint (see [Create a Breakpoint](#create-a-breakpoint)), so a separate filter command is not required. Use the standalone command when you want to set or change filters without creating a breakpoint:
 
@@ -31,6 +31,20 @@ You can set filters in the same step as creating a breakpoint (see [Create a Bre
 # Set workspace filters (e.g. target a specific Kubernetes namespace)
 dtctl update breakpoint --filters k8s.namespace.name:prod
 ```
+
+Because changing filters re-scopes existing breakpoints, `dtctl` counts the active breakpoints that would be affected and asks you to confirm before applying the change:
+
+```text
+This will change the workspace filters for 3 active breakpoints. Continue? [y/N]:
+```
+
+Pass `--yes` (`-y`) to skip the prompt, e.g. in scripts:
+
+```bash
+dtctl update breakpoint --filters k8s.namespace.name:prod --yes
+```
+
+> **Note:** Breakpoints that have auto-disabled (for example after reaching their hit limit) are not counted. In non-interactive contexts (`--plain` or auto-detected agent mode) the change proceeds without prompting.
 
 ## Breakpoint Lifecycle
 
@@ -43,6 +57,8 @@ dtctl create breakpoint com/example/MyService.java:42
 # Set workspace filters and create the breakpoint in one step
 dtctl create breakpoint com/example/MyService.java:42 --filters k8s.namespace.name:prod
 ```
+
+When `--filters` changes the workspace filters, it also re-scopes existing breakpoints (see [Configure Workspace Filters](#configure-workspace-filters)), so you are prompted to confirm unless you pass `--yes`.
 
 ### List Breakpoints
 

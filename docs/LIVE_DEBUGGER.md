@@ -47,11 +47,26 @@ dtctl update breakpoints --filters k8s.namespace.name:prod,dt.entity.host:HOST-1
 dtctl update breakpoint --filters k8s.namespace.name=prod,dt.entity.host=HOST-123
 ```
 
+Filters are workspace-scoped: a single filter set applies to **every** breakpoint
+in the workspace. Changing the filters therefore re-scopes all existing
+breakpoints, not just ones you create afterwards. Because of this, `dtctl` counts
+the active breakpoints that would be affected and prompts for confirmation before
+applying the change. Pass `--yes` (`-y`) to skip the prompt, for example in
+scripts:
+
+```bash
+dtctl update breakpoint --filters k8s.namespace.name:prod --yes
+```
+
 ### Notes
 
 - `--filters` is required for `dtctl update breakpoint`
 - filter values are mapped to the Live Debugger workspace filter set payload
 - repeated keys are supported
+- changing filters re-scopes all existing breakpoints, so you are prompted to
+  confirm unless you pass `--yes` (`-y`); auto-disabled breakpoints (for example
+  after reaching their hit limit) are not counted, and non-interactive contexts
+  (`--plain` or agent mode) skip the prompt
 - in verbose/debug mode, raw GraphQL responses are printed for troubleshooting
 
 ## 2. Create a breakpoint
@@ -71,7 +86,9 @@ dtctl create breakpoint OrderController.java:306 --filters k8s.namespace.name:pr
 ```
 
 Filters are workspace-scoped and persist, so once set you can create additional
-breakpoints (in other files) without repeating `--filters`.
+breakpoints (in other files) without repeating `--filters`. Because filters are
+shared across the workspace, passing `--filters` here also re-scopes any existing
+breakpoints, so `dtctl` prompts for confirmation unless you pass `--yes` (`-y`).
 
 ### Rules
 
@@ -79,6 +96,7 @@ breakpoints (in other files) without repeating `--filters`.
 - the line number must be a positive integer
 - `--filters` is optional and accepts comma-separated `key:value` (or `key=value`) pairs
 - when `--filters` is provided, the workspace filters are updated before the breakpoint is created
+- when `--filters` changes the workspace filters, existing breakpoints are re-scoped too, so you are prompted to confirm unless you pass `--yes` (`-y`)
 - when `--filters` is omitted, the workspace must already have filters configured
 - `--dry-run` is supported
 
@@ -241,6 +259,7 @@ Live Debugger mutating commands follow `dtctl` safety conventions:
 - edit operations use update safety checks
 - delete operations use delete safety checks
 - destructive delete operations support confirmation bypass with `-y`
+- filter changes prompt for confirmation because they re-scope existing breakpoints; bypass with `-y`/`--yes`
 - supported mutating commands provide `--dry-run`
 
 ## Example workflow

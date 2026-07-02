@@ -3157,6 +3157,12 @@ dtctl update breakpoints --filters k8s.namespace.name:prod,dt.entity.host:HOST-1
 dtctl update breakpoint --filters k8s.namespace.name=prod,dt.entity.host=HOST-123
 ```
 
+Filters are workspace-scoped, so changing them re-scopes **all** existing breakpoints, not just new ones. `dtctl` prompts for confirmation before applying the change; pass `--yes` (`-y`) to skip it (for example in scripts):
+
+```bash
+dtctl update breakpoint --filters k8s.namespace.name:prod --yes
+```
+
 ### Breakpoint lifecycle
 
 ```bash

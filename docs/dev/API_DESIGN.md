@@ -1883,7 +1883,7 @@ dtctl delete breakpoint <id|filename:line|--all>               # delete breakpoi
 Design notes:
 - `dtctl describe` keeps existing resource-subcommand behavior; breakpoint describe is only routed for breakpoint-like identifiers.
 - Mutating operations (`update` filter update, `create`, `update`, `delete`) must run safety checks, including in dry-run mode.
-- `--filters` is optional on `create`. Filters are workspace-scoped and sticky: once set (via `update breakpoint --filters` or `create breakpoint ... --filters`), they persist for subsequent breakpoints until changed. When `--filters` is supplied on `create`, the workspace filters are updated first, then the breakpoint is created; otherwise `create` requires that workspace filters were already configured.
+- `--filters` is optional on `create`. Filters are workspace-scoped and sticky: once set (via `update breakpoint --filters` or `create breakpoint ... --filters`), they persist for subsequent breakpoints until changed. Because a single filter set applies to the whole workspace, changing the filters re-scopes all existing breakpoints (not just new ones); `create`/`update` count the active breakpoints affected and prompt for confirmation before applying the change, bypassable with `--yes` (`-y`) and skipped in non-interactive contexts (`--plain`/agent mode). When `--filters` is supplied on `create`, the workspace filters are updated first, then the breakpoint is created; otherwise `create` requires that workspace filters were already configured.
 
 ## Examples
 
