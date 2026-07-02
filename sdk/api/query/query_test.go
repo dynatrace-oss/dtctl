@@ -434,6 +434,58 @@ func TestResponse_GetMetadata(t *testing.T) {
 	}
 }
 
+func TestResponse_GetMetrics(t *testing.T) {
+	t.Run("from top-level metadata", func(t *testing.T) {
+		r := &Response{
+			Metadata: &Metadata{
+				Metrics: []MetricInfo{{MetricKey: "dt.host.cpu.usage", FieldName: "avg(dt.host.cpu.usage)", Aggregation: "avg"}},
+			},
+		}
+		metrics := r.GetMetrics()
+		if len(metrics) != 1 || metrics[0].MetricKey != "dt.host.cpu.usage" {
+			t.Errorf("got %+v, want one metric for dt.host.cpu.usage", metrics)
+		}
+	})
+
+	t.Run("from result metadata", func(t *testing.T) {
+		r := &Response{
+			Result: &Result{
+				Metadata: &Metadata{
+					Metrics: []MetricInfo{{MetricKey: "dt.host.mem.usage", FieldName: "sum(dt.host.mem.usage)", Aggregation: "sum"}},
+				},
+			},
+		}
+		metrics := r.GetMetrics()
+		if len(metrics) != 1 || metrics[0].MetricKey != "dt.host.mem.usage" {
+			t.Errorf("got %+v, want one metric for dt.host.mem.usage", metrics)
+		}
+	})
+
+	t.Run("metrics without grail", func(t *testing.T) {
+		// The DQL API may return metadata.metrics independently of metadata.grail
+		// (they are unrelated siblings of Metadata) — GetMetrics must not depend
+		// on Grail being present.
+		r := &Response{
+			Metadata: &Metadata{
+				Metrics: []MetricInfo{{MetricKey: "dt.host.cpu.usage"}},
+			},
+		}
+		if r.GetMetadata() != nil {
+			t.Fatal("expected nil Grail metadata for this fixture")
+		}
+		if len(r.GetMetrics()) != 1 {
+			t.Errorf("expected metrics to be returned even when Grail metadata is absent, got %+v", r.GetMetrics())
+		}
+	})
+
+	t.Run("no metrics", func(t *testing.T) {
+		r := &Response{Metadata: &Metadata{}}
+		if metrics := r.GetMetrics(); metrics != nil {
+			t.Errorf("expected nil metrics, got %+v", metrics)
+		}
+	})
+}
+
 // helpers to avoid importing errors in test
 func errorAsAPIError(err error, target **httpclient.APIError) bool {
 	for err != nil {

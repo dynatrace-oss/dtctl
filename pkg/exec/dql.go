@@ -536,56 +536,61 @@ func columnTypeMappings(result *DQLQueryResponse) []output.ColumnTypeMapping {
 }
 
 // extractQueryMetadata converts DQL response metadata to the output-layer QueryMetadata type.
+// Grail metadata (execution stats, query text, ...) and Metrics (timeseries metric descriptors)
+// are independent siblings of the response's metadata section, so either one being present is
+// enough to produce a non-nil result — gating on Grail alone would silently drop Metrics for
+// responses that populate metadata.metrics without metadata.grail.
 func extractQueryMetadata(result *DQLQueryResponse) *output.QueryMetadata {
 	g := result.GetMetadata()
-	if g == nil {
+	metrics := result.GetMetrics()
+	if g == nil && len(metrics) == 0 {
 		return nil
 	}
 
-	meta := &output.QueryMetadata{
-		ExecutionTimeMilliseconds: g.ExecutionTimeMilliseconds,
-		ScannedRecords:            g.ScannedRecords,
-		ScannedBytes:              g.ScannedBytes,
-		ScannedDataPoints:         g.ScannedDataPoints,
-		Sampled:                   g.Sampled,
-		QueryID:                   g.QueryID,
-		DQLVersion:                g.DQLVersion,
-		Query:                     g.Query,
-		CanonicalQuery:            g.CanonicalQuery,
-		Timezone:                  g.Timezone,
-		Locale:                    g.Locale,
-	}
+	meta := &output.QueryMetadata{}
 
-	if g.AnalysisTimeframe != nil {
-		meta.AnalysisTimeframe = &output.MetadataTimeframe{
-			Start: g.AnalysisTimeframe.Start,
-			End:   g.AnalysisTimeframe.End,
+	if g != nil {
+		meta.ExecutionTimeMilliseconds = g.ExecutionTimeMilliseconds
+		meta.ScannedRecords = g.ScannedRecords
+		meta.ScannedBytes = g.ScannedBytes
+		meta.ScannedDataPoints = g.ScannedDataPoints
+		meta.Sampled = g.Sampled
+		meta.QueryID = g.QueryID
+		meta.DQLVersion = g.DQLVersion
+		meta.Query = g.Query
+		meta.CanonicalQuery = g.CanonicalQuery
+		meta.Timezone = g.Timezone
+		meta.Locale = g.Locale
+
+		if g.AnalysisTimeframe != nil {
+			meta.AnalysisTimeframe = &output.MetadataTimeframe{
+				Start: g.AnalysisTimeframe.Start,
+				End:   g.AnalysisTimeframe.End,
+			}
+		}
+
+		if g.Contributions != nil && len(g.Contributions.Buckets) > 0 {
+			contribs := &output.MetadataContribs{}
+			for _, b := range g.Contributions.Buckets {
+				contribs.Buckets = append(contribs.Buckets, output.MetadataBucket{
+					Name:                b.Name,
+					Table:               b.Table,
+					ScannedBytes:        b.ScannedBytes,
+					MatchedRecordsRatio: b.MatchedRecordsRatio,
+				})
+			}
+			meta.Contributions = contribs
 		}
 	}
 
-	if g.Contributions != nil && len(g.Contributions.Buckets) > 0 {
-		contribs := &output.MetadataContribs{}
-		for _, b := range g.Contributions.Buckets {
-			contribs.Buckets = append(contribs.Buckets, output.MetadataBucket{
-				Name:                b.Name,
-				Table:               b.Table,
-				ScannedBytes:        b.ScannedBytes,
-				MatchedRecordsRatio: b.MatchedRecordsRatio,
-			})
-		}
-		meta.Contributions = contribs
-	}
-
-	if metrics := result.GetMetrics(); len(metrics) > 0 {
-		for _, m := range metrics {
-			meta.Metrics = append(meta.Metrics, output.MetricInfo{
-				MetricKey:   m.MetricKey,
-				FieldName:   m.FieldName,
-				Aggregation: m.Aggregation,
-				DisplayName: m.DisplayName,
-				Unit:        m.Unit,
-			})
-		}
+	for _, m := range metrics {
+		meta.Metrics = append(meta.Metrics, output.MetricInfo{
+			MetricKey:   m.MetricKey,
+			FieldName:   m.FieldName,
+			Aggregation: m.Aggregation,
+			DisplayName: m.DisplayName,
+			Unit:        m.Unit,
+		})
 	}
 
 	return meta
