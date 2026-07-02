@@ -9,6 +9,9 @@ metadata:
   dqlVersion: V1_0
   executionTimeMilliseconds: 47
   locale: und
+  metrics[#2]{aggregation,displayName,fieldName,metric.key,unit}:
+    avg,Process CPU Utilization,avg(process.cpu.utilization),process.cpu.utilization,Percent
+    sum,Process Memory Usage,sum(process.memory.usage),process.memory.usage,Byte
   query: "fetch logs | limit 3 | fields timestamp, host.name, status, content"
   queryId: 27c4daf9-2619-4ba1-b1ad-9e276c75a351
   scannedBytes: 2982690

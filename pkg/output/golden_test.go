@@ -1910,6 +1910,10 @@ func metadataFixture() *QueryMetadata {
 				},
 			},
 		},
+		Metrics: []MetricInfo{
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent", DisplayName: "Process CPU Utilization"},
+			{MetricKey: "process.memory.usage", FieldName: "sum(process.memory.usage)", Aggregation: "sum", Unit: "Byte", DisplayName: "Process Memory Usage"},
+		},
 	}
 }
 
