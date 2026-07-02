@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/livedebugger"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
@@ -20,6 +21,10 @@ A breakpoint can only be created in a workspace that has filters configured.
 Set filters in the same step with --filters, or beforehand with
 'dtctl update breakpoint --filters key:value'. Filters are workspace-scoped and
 persist, so once set you can create more breakpoints without repeating them.
+
+Because filters are workspace-scoped, changing them with --filters also re-scopes
+every existing breakpoint in the workspace. When active breakpoints would be
+affected you are asked to confirm; pass --yes (-y) to skip the prompt.
 
 Note: Live Debugger support is experimental. The underlying APIs and query
 behavior may change in future releases.
@@ -47,6 +52,7 @@ Examples:
 
 		filters, _ := cmd.Flags().GetString("filters")
 		filtersChanged := cmd.Flags().Changed("filters")
+		skipConfirm, _ := cmd.Flags().GetBool("yes")
 
 		// Validate --filters up front, before any config or network call, so
 		// format errors surface immediately. Filters are optional for create:
@@ -70,7 +76,7 @@ Examples:
 		// SetupWithSafety. Matches create_workflows.go / create_buckets.go.
 		if dryRun {
 			if filtersChanged {
-				return printBreakpointMessage("create", fmt.Sprintf("Dry run: would set workspace filters (%s) and create breakpoint at %s:%d", filterSummary, fileName, lineNumber))
+				return printBreakpointMessage("create", fmt.Sprintf("Dry run: would set workspace filters (%s) and create breakpoint at %s:%d (note: changing filters also re-scopes existing breakpoints in the workspace)", filterSummary, fileName, lineNumber))
 			}
 			return printBreakpointMessage("create", fmt.Sprintf("Dry run: would create breakpoint at %s:%d", fileName, lineNumber))
 		}
@@ -106,6 +112,21 @@ Examples:
 		}
 
 		if filtersChanged {
+			// Changing workspace filters re-scopes every existing active
+			// breakpoint in the workspace, not just the one being created.
+			// Confirm first, unless --yes or a non-interactive (--plain/agent)
+			// context. The extra read is only paid when we might prompt.
+			if !skipConfirm && !plainMode {
+				count, err := countActiveWorkspaceBreakpoints(handler, workspaceID)
+				if err != nil {
+					return err
+				}
+				if count > 0 && !prompt.Confirm(filterChangeConfirmMessage(count, true)) {
+					fmt.Println("Cancelled")
+					return nil
+				}
+			}
+
 			updateResp, err := handler.UpdateWorkspaceFilters(workspaceID, filterSets)
 			if err != nil {
 				if verbose {
@@ -147,4 +168,5 @@ Examples:
 
 func init() {
 	createBreakpointCmd.Flags().String("filters", "", "workspace filters to set before creating the breakpoint (comma-separated key:value pairs)")
+	createBreakpointCmd.Flags().BoolP("yes", "y", false, "skip the confirmation prompt when changing workspace filters affects existing breakpoints")
 }

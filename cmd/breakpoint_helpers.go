@@ -276,6 +276,49 @@ func requireFiltersValue(filters string) error {
 	return nil
 }
 
+// countActiveWorkspaceBreakpoints returns how many enabled breakpoints currently
+// exist in the workspace. Disabled rules are excluded on purpose: a breakpoint
+// that reached its hit limit is auto-disabled by the runtime, so it should not
+// inflate the confirmation count shown before workspace filters are changed.
+func countActiveWorkspaceBreakpoints(handler *livedebugger.Handler, workspaceID string) (int, error) {
+	resp, err := handler.GetWorkspaceRules(workspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return countActiveRules(resp)
+}
+
+// countActiveRules counts the enabled (non-disabled) breakpoint rules in a
+// GetWorkspaceRules GraphQL response. Split out from the network call so the
+// active-only counting logic can be unit tested without a live handler.
+func countActiveRules(resp map[string]interface{}) (int, error) {
+	rules, err := livedebugger.ExtractWorkspaceRules(resp)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for i := range rules {
+		if !rules[i].IsDisabled {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// filterChangeConfirmMessage builds the prompt shown before changing workspace
+// filters, which re-scopes every existing active breakpoint in the workspace.
+// creating indicates the same operation also creates a new breakpoint.
+func filterChangeConfirmMessage(count int, creating bool) string {
+	noun := "breakpoints"
+	if count == 1 {
+		noun = "breakpoint"
+	}
+	if creating {
+		return fmt.Sprintf("In addition to creating this breakpoint, this will change the workspace filters for %d active %s. Continue?", count, noun)
+	}
+	return fmt.Sprintf("This will change the workspace filters for %d active %s. Continue?", count, noun)
+}
+
 func parseBreakpoint(input string) (string, int, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {

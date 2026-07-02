@@ -256,6 +256,104 @@ func TestRequireFiltersValue(t *testing.T) {
 	})
 }
 
+func TestCountActiveRules(t *testing.T) {
+	makeResp := func(rules []interface{}) map[string]interface{} {
+		return map[string]interface{}{
+			"data": map[string]interface{}{
+				"org": map[string]interface{}{
+					"workspace": map[string]interface{}{
+						"rules": rules,
+					},
+				},
+			},
+		}
+	}
+	rule := func(id string, disabled bool) map[string]interface{} {
+		return map[string]interface{}{"id": id, "is_disabled": disabled}
+	}
+
+	t.Run("counts only active (non-disabled) rules", func(t *testing.T) {
+		resp := makeResp([]interface{}{
+			rule("bp-1", false),
+			rule("bp-2", true), // hit-limit-reached, auto-disabled
+			rule("bp-3", false),
+		})
+		got, err := countActiveRules(resp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != 2 {
+			t.Fatalf("expected 2 active rules, got %d", got)
+		}
+	})
+
+	t.Run("all disabled yields zero", func(t *testing.T) {
+		resp := makeResp([]interface{}{rule("bp-1", true), rule("bp-2", true)})
+		got, err := countActiveRules(resp)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != 0 {
+			t.Fatalf("expected 0 active rules, got %d", got)
+		}
+	})
+
+	t.Run("empty rules list yields zero", func(t *testing.T) {
+		got, err := countActiveRules(makeResp([]interface{}{}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != 0 {
+			t.Fatalf("expected 0 active rules, got %d", got)
+		}
+	})
+
+	t.Run("malformed response returns error", func(t *testing.T) {
+		if _, err := countActiveRules(map[string]interface{}{}); err == nil {
+			t.Fatal("expected error for malformed response, got nil")
+		}
+	})
+}
+
+func TestFilterChangeConfirmMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		count    int
+		creating bool
+		want     string
+	}{
+		{
+			name:  "update singular",
+			count: 1,
+			want:  "This will change the workspace filters for 1 active breakpoint. Continue?",
+		},
+		{
+			name:  "update plural",
+			count: 3,
+			want:  "This will change the workspace filters for 3 active breakpoints. Continue?",
+		},
+		{
+			name:     "create singular",
+			count:    1,
+			creating: true,
+			want:     "In addition to creating this breakpoint, this will change the workspace filters for 1 active breakpoint. Continue?",
+		},
+		{
+			name:     "create plural",
+			count:    5,
+			creating: true,
+			want:     "In addition to creating this breakpoint, this will change the workspace filters for 5 active breakpoints. Continue?",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := filterChangeConfirmMessage(tt.count, tt.creating); got != tt.want {
+				t.Fatalf("unexpected message:\n got: %q\nwant: %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseBreakpoint(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -37,6 +37,19 @@ func TestUpdateBreakpointCommandRegistration(t *testing.T) {
 	}
 }
 
+func TestUpdateBreakpointYesFlagRegistered(t *testing.T) {
+	flag := updateBreakpointCmd.Flags().Lookup("yes")
+	if flag == nil {
+		t.Fatalf("expected --yes flag to be registered on update breakpoint")
+	}
+	if flag.Shorthand != "y" {
+		t.Fatalf("expected --yes shorthand 'y', got %q", flag.Shorthand)
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("expected --yes default 'false', got %q", flag.DefValue)
+	}
+}
+
 func TestUpdateBreakpointFilters_NoIdentifier_NoPanic(t *testing.T) {
 	viper.Reset()
 

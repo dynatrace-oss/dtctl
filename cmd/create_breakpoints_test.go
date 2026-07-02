@@ -29,6 +29,19 @@ func TestCreateBreakpointFiltersFlagRegistered(t *testing.T) {
 	}
 }
 
+func TestCreateBreakpointYesFlagRegistered(t *testing.T) {
+	flag := createBreakpointCmd.Flags().Lookup("yes")
+	if flag == nil {
+		t.Fatalf("expected --yes flag to be registered on create breakpoint")
+	}
+	if flag.Shorthand != "y" {
+		t.Fatalf("expected --yes shorthand 'y', got %q", flag.Shorthand)
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("expected --yes default 'false', got %q", flag.DefValue)
+	}
+}
+
 // TestCreateBreakpointFiltersValidation exercises the early --filters validation
 // that runs before any config or network call, so no client/config setup is
 // required. The flag state is saved and restored to avoid leaking into other tests.
