@@ -762,6 +762,55 @@ func TestGolden_GetAnalyzerDefinition(t *testing.T) {
 	}
 }
 
+// analyzerDescriptionFixture models the enriched view returned by
+// `describe analyzer <name>`, bundling resolved input/result JSON Schemas. Only
+// structured formats flow through the printer (table uses custom rendering in
+// cmd), so this covers the json/yaml serialization.
+func analyzerDescriptionFixture() analyzer.AnalyzerDescription {
+	return analyzer.AnalyzerDescription{
+		Name:        "dt.statistics.GenericForecastAnalyzer",
+		DisplayName: "Generic Forecast Analyzer",
+		Description: "Forecasts a numeric time series",
+		Category:    "Forecast",
+		Type:        "DAVIS",
+		Labels:      []string{"forecast", "timeseries"},
+		InputSchema: map[string]interface{}{
+			"type":     "object",
+			"required": []interface{}{"timeSeriesData"},
+			"properties": map[string]interface{}{
+				"timeSeriesData":  map[string]interface{}{"type": "string", "description": "DQL timeseries query"},
+				"forecastHorizon": map[string]interface{}{"type": "integer", "description": "points to forecast"},
+			},
+		},
+		ResultSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"forecastValues": map[string]interface{}{"type": "array", "description": "forecasted points"},
+			},
+		},
+	}
+}
+
+func TestGolden_DescribeAnalyzer(t *testing.T) {
+	desc := analyzerDescriptionFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(desc); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/analyzer-"+name, buf.String())
+		})
+	}
+}
+
 // snapshotFixture models a document snapshot as returned by `dtctl history`.
 // CreatedBy/CreatedTime are json:"-" display duplicates of ModificationInfo and
 // must not leak into json/yaml output.

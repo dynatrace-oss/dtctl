@@ -47,29 +47,10 @@ Examples:
 
 		handler := analyzer.NewHandler(c)
 
-		// Build input from flags
-		var input map[string]interface{}
-
-		inputFile, _ := cmd.Flags().GetString("file")
-		inputJSON, _ := cmd.Flags().GetString("input")
-		query, _ := cmd.Flags().GetString("query")
-
-		if inputFile != "" {
-			input, err = analyzer.ParseInputFromFile(inputFile)
-			if err != nil {
-				return err
-			}
-		} else if inputJSON != "" {
-			if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
-				return fmt.Errorf("failed to parse input JSON: %w", err)
-			}
-		} else if query != "" {
-			// Shorthand for timeseries query
-			input = map[string]interface{}{
-				"timeSeriesData": query,
-			}
-		} else {
-			return fmt.Errorf("input is required: use --file, --input, or --query")
+		// Build input from flags (shared with "verify analyzer")
+		input, err := buildAnalyzerInput(cmd)
+		if err != nil {
+			return err
 		}
 
 		// Handle validate-only mode
@@ -108,11 +89,42 @@ Examples:
 	},
 }
 
+// addAnalyzerInputFlags registers the input-source flags shared by
+// "exec analyzer" and "verify analyzer".
+func addAnalyzerInputFlags(cmd *cobra.Command) {
+	cmd.Flags().StringP("file", "f", "", "read input from JSON file")
+	cmd.Flags().String("input", "", "inline JSON input")
+	cmd.Flags().String("query", "", "DQL query shorthand (for timeseries analyzers)")
+}
+
+// buildAnalyzerInput assembles an analyzer input map from the --file, --input,
+// or --query flags. It is shared by "exec analyzer" and "verify analyzer" so the
+// two commands accept identical input. Exactly one source must be provided.
+func buildAnalyzerInput(cmd *cobra.Command) (map[string]interface{}, error) {
+	inputFile, _ := cmd.Flags().GetString("file")
+	inputJSON, _ := cmd.Flags().GetString("input")
+	query, _ := cmd.Flags().GetString("query")
+
+	switch {
+	case inputFile != "":
+		return analyzer.ParseInputFromFile(inputFile)
+	case inputJSON != "":
+		var input map[string]interface{}
+		if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+			return nil, fmt.Errorf("failed to parse input JSON: %w", err)
+		}
+		return input, nil
+	case query != "":
+		// Shorthand for timeseries analyzers.
+		return map[string]interface{}{"timeSeriesData": query}, nil
+	default:
+		return nil, fmt.Errorf("input is required: use --file, --input, or --query")
+	}
+}
+
 func init() {
 	// Analyzer flags
-	execAnalyzerCmd.Flags().StringP("file", "f", "", "read input from JSON file")
-	execAnalyzerCmd.Flags().String("input", "", "inline JSON input")
-	execAnalyzerCmd.Flags().String("query", "", "DQL query shorthand (for timeseries analyzers)")
+	addAnalyzerInputFlags(execAnalyzerCmd)
 	execAnalyzerCmd.Flags().Bool("validate", false, "validate input without executing")
 	execAnalyzerCmd.Flags().Bool("wait", true, "wait for analyzer execution to complete")
 	execAnalyzerCmd.Flags().Int("timeout", 300, "timeout in seconds when waiting for completion")

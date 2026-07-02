@@ -1,8 +1,25 @@
 package cmd
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 )
+
+// isSupportedVerifyOutputFormat reports whether the given output format is
+// accepted by the verify subcommands. The verify family emits either a
+// human-readable verdict (empty/table) or a structured ValidationResult
+// (json/yaml/yml/toon); any other format (csv, wide, charts, …) is rejected so
+// the caller gets a clear error instead of a silent fallback. Shared by
+// "verify query" and "verify analyzer" so both reject the same set.
+func isSupportedVerifyOutputFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "", "table", "json", "yaml", "yml", "toon":
+		return true
+	default:
+		return false
+	}
+}
 
 // verifyCmd represents the verify command
 var verifyCmd = &cobra.Command{

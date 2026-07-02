@@ -13,18 +13,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
 
-// isSupportedVerifyQueryOutputFormat reports whether the given format string
-// is valid for the "verify query" command. Only structured serialisation
-// formats make sense here (the human-readable default is handled via "").
-func isSupportedVerifyQueryOutputFormat(format string) bool {
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "", "table", "json", "yaml", "yml", "toon":
-		return true
-	default:
-		return false
-	}
-}
-
 // verifyQueryCmd represents the verify query subcommand
 var verifyQueryCmd = &cobra.Command{
 	Use:     "query [dql-string]",
@@ -122,7 +110,7 @@ Examples:
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFmt, _ := cmd.Flags().GetString("output")
-		if !isSupportedVerifyQueryOutputFormat(outputFmt) {
+		if !isSupportedVerifyOutputFormat(outputFmt) {
 			return fmt.Errorf("unsupported output format %q for verify query (supported: json, yaml, toon)", outputFmt)
 		}
 

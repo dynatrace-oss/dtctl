@@ -2624,6 +2624,23 @@ dtctl get analyzer dt.statistics.GenericForecastAnalyzer
 dtctl get analyzer dt.statistics.GenericForecastAnalyzer -o json
 ```
 
+#### Describe an Analyzer (input/result schemas)
+
+`describe` resolves the analyzer's JSON Schemas and shows which inputs are
+required vs. optional — so you know what to pass to `exec analyzer`. Unlike
+`get`, the schemas are included in JSON/YAML output too.
+
+```bash
+# Show metadata plus required/optional input fields and the result shape
+dtctl describe analyzer dt.statistics.GenericForecastAnalyzer
+
+# Include the full markdown documentation
+dtctl describe analyzer dt.statistics.GenericForecastAnalyzer --doc
+
+# Structured output includes inputSchema and resultSchema
+dtctl describe analyzer dt.statistics.GenericForecastAnalyzer -o json
+```
+
 #### Execute Analyzers
 
 Run analyzers to perform statistical analysis:
@@ -2640,13 +2657,32 @@ dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
 # Execute from input file
 dtctl exec analyzer dt.statistics.GenericForecastAnalyzer -f forecast-input.json
 
-# Validate input without executing
-dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
-  -f forecast-input.json --validate
-
 # Output result as JSON
 dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
   --query "timeseries avg(dt.host.cpu.usage)" -o json
+```
+
+#### Validate Input Without Executing
+
+`verify analyzer` checks an input against the analyzer's validate endpoint
+without running it. It shares the input flags with `exec analyzer` and follows
+the standard `verify` exit-code contract (0 valid, 1 invalid, 2 auth, 3 network),
+so it drops straight into CI/CD pipelines. (`exec analyzer --validate` remains
+available and calls the same endpoint.)
+
+```bash
+# Validate input from a file
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f forecast-input.json
+
+# Validate a DQL query shorthand
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer \
+  --query "timeseries avg(dt.host.cpu.usage)"
+
+# Structured verdict for scripts
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f forecast-input.json -o json
+
+# CI/CD: fail the build on invalid input
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f forecast-input.json || exit 1
 ```
 
 **Example analyzer input file** (`forecast-input.json`):
