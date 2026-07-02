@@ -129,6 +129,9 @@ func TestFormatMetadataFooter(t *testing.T) {
 				},
 			},
 		},
+		Metrics: []MetricInfo{
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg"},
+		},
 	}
 
 	// Disable color for predictable test output
@@ -154,6 +157,8 @@ func TestFormatMetadataFooter(t *testing.T) {
 		"Sampled:            no",
 		"custom_sen_low_logs_platform_service_shared (logs)",
 		"scanned: 2.8 MB, matched: 100.0%",
+		"Metrics:",
+		"avg(process.cpu.utilization) → process.cpu.utilization [avg]",
 	}
 
 	for _, exp := range expectations {
@@ -212,6 +217,9 @@ func TestFormatMetadataCSVComments(t *testing.T) {
 				},
 			},
 		},
+		Metrics: []MetricInfo{
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg"},
+		},
 	}
 
 	result := FormatMetadataCSVComments(meta, nil)
@@ -238,6 +246,7 @@ func TestFormatMetadataCSVComments(t *testing.T) {
 		"# analysis_start: 2026-03-09T10:16:39.973805659Z",
 		"# analysis_end: 2026-03-09T12:16:39.973805659Z",
 		"# contribution: custom_sen_low_logs_platform_service_shared (logs, 2982690 bytes, 100.0% matched)",
+		"# metric: avg(process.cpu.utilization), process.cpu.utilization, avg",
 	}
 
 	for _, exp := range expectations {
@@ -867,11 +876,11 @@ func TestYAMLPrinter_MetadataToMap(t *testing.T) {
 }
 
 // TestValidMetadataFieldNames_Sorted verifies that ValidMetadataFieldNames
-// returns all 13 fields in sorted order.
+// returns all 14 fields in sorted order.
 func TestValidMetadataFieldNames_Sorted(t *testing.T) {
 	names := ValidMetadataFieldNames()
-	if len(names) != 13 {
-		t.Fatalf("expected 13 valid field names, got %d: %v", len(names), names)
+	if len(names) != 14 {
+		t.Fatalf("expected 14 valid field names, got %d: %v", len(names), names)
 	}
 	// Verify sorted
 	for i := 1; i < len(names); i++ {
@@ -894,6 +903,7 @@ func TestValidMetadataFieldNames_Sorted(t *testing.T) {
 		"locale":                    true,
 		"analysisTimeframe":         true,
 		"contributions":             true,
+		"metrics":                   true,
 	}
 	for _, n := range names {
 		if !expected[n] {
@@ -903,5 +913,122 @@ func TestValidMetadataFieldNames_Sorted(t *testing.T) {
 	}
 	for missing := range expected {
 		t.Errorf("missing field name: %q", missing)
+	}
+}
+
+func TestFormatMetadataFooter_Metrics(t *testing.T) {
+	meta := &QueryMetadata{
+		Metrics: []MetricInfo{
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent", DisplayName: "Process CPU Utilization"},
+			{MetricKey: "process.cpu.utilization", FieldName: "sum(process.cpu.utilization)", Aggregation: "sum"},
+		},
+	}
+
+	ResetColorCache()
+	SetPlainMode(true)
+	defer ResetColorCache()
+
+	result := FormatMetadataFooter(meta, nil)
+
+	// With unit and display name
+	if !strings.Contains(result, "avg(process.cpu.utilization) → process.cpu.utilization [avg, Percent]") {
+		t.Errorf("expected metric line with unit, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Process CPU Utilization") {
+		t.Errorf("expected display name, got:\n%s", result)
+	}
+	// Without unit
+	if !strings.Contains(result, "sum(process.cpu.utilization) → process.cpu.utilization [sum]") {
+		t.Errorf("expected metric line without unit, got:\n%s", result)
+	}
+}
+
+func TestFormatMetadataFooter_Metrics_FilteredField(t *testing.T) {
+	meta := &QueryMetadata{
+		ExecutionTimeMilliseconds: 47,
+		QueryID:                   "test-id",
+		Metrics: []MetricInfo{
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent"},
+		},
+	}
+
+	ResetColorCache()
+	SetPlainMode(true)
+	defer ResetColorCache()
+
+	result := FormatMetadataFooter(meta, []string{"metrics"})
+
+	if !strings.Contains(result, "Metrics:") {
+		t.Error("expected 'Metrics:' heading")
+	}
+	if !strings.Contains(result, "avg(process.cpu.utilization) → process.cpu.utilization [avg, Percent]") {
+		t.Errorf("expected metric line, got:\n%s", result)
+	}
+	// Other fields must be absent
+	if strings.Contains(result, "Execution time:") {
+		t.Error("'Execution time' should not appear when filtered to metrics only")
+	}
+	if strings.Contains(result, "Query ID:") {
+		t.Error("'Query ID' should not appear when filtered to metrics only")
+	}
+}
+
+func TestFormatMetadataCSVComments_Metrics(t *testing.T) {
+	meta := &QueryMetadata{
+		Metrics: []MetricInfo{
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent"},
+			{MetricKey: "process.cpu.utilization", FieldName: "sum(process.cpu.utilization)", Aggregation: "sum"},
+		},
+	}
+
+	result := FormatMetadataCSVComments(meta, nil)
+
+	if !strings.Contains(result, "# metric: avg(process.cpu.utilization), process.cpu.utilization, avg, Percent") {
+		t.Errorf("expected metric line with unit, got:\n%s", result)
+	}
+	if !strings.Contains(result, "# metric: sum(process.cpu.utilization), process.cpu.utilization, sum") {
+		t.Errorf("expected metric line without unit, got:\n%s", result)
+	}
+	// Must not have a trailing comma when unit is absent
+	if strings.Contains(result, "sum,\n") {
+		t.Errorf("metric line without unit should not have trailing comma, got:\n%s", result)
+	}
+}
+
+func TestMetadataToMap_Metrics(t *testing.T) {
+	meta := &QueryMetadata{
+		QueryID: "test-id",
+		Metrics: []MetricInfo{
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent"},
+		},
+	}
+
+	// When "metrics" is selected, the slice must appear in the map
+	result := MetadataToMap(meta, []string{"metrics"})
+	m, ok := result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map, got %T", result)
+	}
+	if len(m) != 1 {
+		t.Fatalf("expected 1 key, got %d: %v", len(m), m)
+	}
+	metrics, ok := m["metrics"].([]MetricInfo)
+	if !ok {
+		t.Fatalf("expected []MetricInfo, got %T", m["metrics"])
+	}
+	if len(metrics) != 1 || metrics[0].Unit != "Percent" {
+		t.Errorf("unexpected metrics value: %+v", metrics)
+	}
+
+	// When nil Metrics and "metrics" is selected, map must contain metrics:null
+	emptyMeta := &QueryMetadata{}
+	result2 := MetadataToMap(emptyMeta, []string{"metrics"})
+	m2, ok := result2.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map, got %T", result2)
+	}
+	jsonOut, _ := json.Marshal(m2)
+	if !strings.Contains(string(jsonOut), `"metrics":null`) {
+		t.Errorf("expected metrics:null for empty slice, got: %s", jsonOut)
 	}
 }

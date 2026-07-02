@@ -22,7 +22,23 @@
           "matchedRecordsRatio": 1
         }
       ]
-    }
+    },
+    "metrics": [
+      {
+        "metric.key": "process.cpu.utilization",
+        "fieldName": "avg(process.cpu.utilization)",
+        "aggregation": "avg",
+        "displayName": "Process CPU Utilization",
+        "unit": "Percent"
+      },
+      {
+        "metric.key": "process.memory.usage",
+        "fieldName": "sum(process.memory.usage)",
+        "aggregation": "sum",
+        "displayName": "Process Memory Usage",
+        "unit": "Byte"
+      }
+    ]
   },
   "records": [
     {

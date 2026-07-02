@@ -746,7 +746,7 @@ func init() {
 bare --metadata or -M shows all fields; --metadata=field1,field2 selects specific fields
 available: executionTimeMilliseconds,scannedRecords,scannedBytes,scannedDataPoints,
 sampled,queryId,dqlVersion,query,canonicalQuery,timezone,locale,
-analysisTimeframe,contributions`)
+analysisTimeframe,contributions,metrics`)
 	queryCmd.Flags().Lookup("metadata").NoOptDefVal = "all"
 
 	// Snapshot decode flag

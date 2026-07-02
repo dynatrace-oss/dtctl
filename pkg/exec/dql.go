@@ -30,6 +30,7 @@ type (
 	BucketContribution    = sdkquery.BucketContribution
 	QueryNotification     = sdkquery.Notification
 	AnalysisTimeframe     = sdkquery.AnalysisTimeframe
+	MetricInfo            = sdkquery.MetricInfo
 	DQLVerifyRequest      = sdkquery.VerifyRequest
 	DQLVerifyResponse     = sdkquery.VerifyResponse
 	MetadataNotification  = sdkquery.VerifyNotification
@@ -573,6 +574,18 @@ func extractQueryMetadata(result *DQLQueryResponse) *output.QueryMetadata {
 			})
 		}
 		meta.Contributions = contribs
+	}
+
+	if metrics := result.GetMetrics(); len(metrics) > 0 {
+		for _, m := range metrics {
+			meta.Metrics = append(meta.Metrics, output.MetricInfo{
+				MetricKey:   m.MetricKey,
+				FieldName:   m.FieldName,
+				Aggregation: m.Aggregation,
+				DisplayName: m.DisplayName,
+				Unit:        m.Unit,
+			})
+		}
 	}
 
 	return meta
