@@ -40,8 +40,8 @@ Examples:
   # Print the translated pipeline as JSON
   dtctl get classic-pipelines-translation logs -o json
 
-  # Keep disabled rules in the translation
-  dtctl get classic-pipelines-translation logs --skip-disabled-rules=false`,
+  # Skip disabled rules in the translation (overrides the server default)
+  dtctl get classic-pipelines-translation logs --skip-disabled-rules=true`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		scope := args[0]
