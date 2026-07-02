@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -16,7 +17,7 @@ type AlertAsset struct {
 	Name      string          `json:"name" table:"NAME"`
 	EventType string          `json:"eventType" table:"EVENT_TYPE"`
 	Enabled   *bool           `json:"enabled" table:"ENABLED"`
-	Content   json.RawMessage `json:"content,omitempty" table:"-"`
+	Content   json.RawMessage `json:"content,omitempty" yaml:"content,omitempty" table:"-"`
 }
 
 // SmartscapeNode is the display model for a node type extracted from an extension's pipelines.
@@ -25,7 +26,7 @@ type SmartscapeNode struct {
 	NodeIDFieldName string          `json:"nodeIdFieldName" table:"ID_FIELD"`
 	Description     string          `json:"description,omitempty" table:"DESCRIPTION"`
 	Pipeline        string          `json:"pipeline" table:"PIPELINE"`
-	Content         json.RawMessage `json:"content,omitempty" table:"-"`
+	Content         json.RawMessage `json:"content,omitempty" yaml:"content,omitempty" table:"-"`
 }
 
 // SmartscapeEdge is the display model for a static edge defined in an extension's pipelines.
@@ -41,8 +42,8 @@ type SmartscapeAssetResult struct {
 	Edges []SmartscapeEdge `json:"edges,omitempty"`
 }
 
-// assetTypeDirectories is kept for validation; both types now use extension.yaml as their source.
-var assetTypeDirectories = map[string]struct{}{
+// validAssetTypes is used for type validation; both types use extension.yaml as their source.
+var validAssetTypes = map[string]struct{}{
 	"alert_templates": {},
 	"smartscape":      {},
 }
@@ -93,7 +94,7 @@ type AssetResult struct {
 // complete file content.
 func ParseAssets(zipData []byte, types []string, full bool) (*AssetResult, error) {
 	for _, t := range types {
-		if _, ok := assetTypeDirectories[strings.ToLower(t)]; !ok {
+		if _, ok := validAssetTypes[strings.ToLower(t)]; !ok {
 			return nil, fmt.Errorf("unknown asset type %q — supported: %s", t, supportedAssetTypeNames)
 		}
 	}
@@ -103,16 +104,26 @@ func ParseAssets(zipData []byte, types []string, full bool) (*AssetResult, error
 		return nil, err
 	}
 
+	manifest, err := readManifest(inner)
+	if err != nil {
+		return nil, err
+	}
+
+	fileByName := make(map[string]*zip.File, len(inner.File))
+	for _, f := range inner.File {
+		fileByName[f.Name] = f
+	}
+
 	result := &AssetResult{}
 
 	for _, t := range types {
 		switch strings.ToLower(t) {
 		case "alert_templates":
-			if err := parseAlertTemplates(inner, result, full); err != nil {
+			if err := parseAlertTemplates(manifest, fileByName, result, full); err != nil {
 				return nil, err
 			}
 		case "smartscape":
-			if err := parseSmartscape(inner, result, full); err != nil {
+			if err := parseSmartscape(manifest, fileByName, result, full); err != nil {
 				return nil, err
 			}
 		}
@@ -152,15 +163,21 @@ func extractInnerZip(data []byte) (*zip.Reader, error) {
 
 // zipLookup returns the zip entry for path, trying exact match then suffix match.
 // Suffix matching handles cases where paths inside extension.yaml include a
-// directory prefix that differs from the zip entry name.
+// directory prefix that differs from the zip entry name. Names are sorted before
+// suffix-scanning to ensure deterministic results when multiple entries share a suffix.
 func zipLookup(fileByName map[string]*zip.File, path string) (*zip.File, bool) {
 	if f, ok := fileByName[path]; ok {
 		return f, true
 	}
 	suffix := "/" + path
-	for name, f := range fileByName {
+	names := make([]string, 0, len(fileByName))
+	for name := range fileByName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		if strings.HasSuffix(name, suffix) {
-			return f, true
+			return fileByName[name], true
 		}
 	}
 	return nil, false
@@ -179,18 +196,8 @@ func readRawJSON(f *zip.File) (json.RawMessage, error) {
 	return raw, nil
 }
 
-func parseAlertTemplates(zr *zip.Reader, result *AssetResult, full bool) error {
-	manifest, err := readManifest(zr)
-	if err != nil {
-		return err
-	}
-
+func parseAlertTemplates(manifest *extensionManifest, fileByName map[string]*zip.File, result *AssetResult, full bool) error {
 	result.AlertTemplates = []AlertAsset{} // non-nil even when manifest has no alerts
-
-	fileByName := make(map[string]*zip.File, len(zr.File))
-	for _, f := range zr.File {
-		fileByName[f.Name] = f
-	}
 
 	for _, entry := range manifest.Alerts {
 		f, ok := zipLookup(fileByName, entry.Path)
@@ -203,6 +210,7 @@ func parseAlertTemplates(zr *zip.Reader, result *AssetResult, full bool) error {
 		}
 		asset := AlertAsset{File: entry.Path}
 		_ = json.Unmarshal(raw, &asset)
+		asset.Content = nil // clear any "content" key the JSON may have contained
 		if full {
 			asset.Content = raw
 		}
@@ -226,20 +234,9 @@ type pipelineProcessor struct {
 			TargetIDFieldName string `json:"targetIdFieldName"`
 		} `json:"staticEdgesToExtract"`
 	} `json:"smartscapeNode"`
-	RawContent json.RawMessage `json:"-"`
 }
 
-func parseSmartscape(zr *zip.Reader, result *AssetResult, full bool) error {
-	manifest, err := readManifest(zr)
-	if err != nil {
-		return err
-	}
-
-	fileByName := make(map[string]*zip.File, len(zr.File))
-	for _, f := range zr.File {
-		fileByName[f.Name] = f
-	}
-
+func parseSmartscape(manifest *extensionManifest, fileByName map[string]*zip.File, result *AssetResult, full bool) error {
 	sc := &SmartscapeAssetResult{}
 	seenNodes := map[string]bool{}
 	seenEdges := map[string]bool{}
@@ -271,7 +268,6 @@ func parseSmartscape(zr *zip.Reader, result *AssetResult, full bool) error {
 			if proc.Type != "smartscapeNode" || !proc.SmartscapeNode.ExtractNode {
 				continue
 			}
-			proc.RawContent = procRaw
 
 			nodeType := proc.SmartscapeNode.NodeType
 			if !seenNodes[nodeType] {

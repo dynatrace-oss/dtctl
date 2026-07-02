@@ -217,3 +217,66 @@ func TestParseAssets_FlatZip(t *testing.T) {
 		t.Errorf("expected 1 alert template in flat zip, got %d", len(result.AlertTemplates))
 	}
 }
+
+func TestParseAssets_ContentLeakWhenJSONHasContentKey(t *testing.T) {
+	// Alert JSON contains a "content" key — without the nil-reset fix, this leaks
+	// into the output even when full=false.
+	zipData := buildNestedZip(t, map[string]interface{}{
+		"extension.yaml": "alerts:\n  - path: alerts/a.json\n",
+		"alerts/a.json":  map[string]interface{}{"name": "A", "eventType": "CUSTOM_ALERT", "content": map[string]interface{}{"key": "value"}},
+	})
+	result, err := ParseAssets(zipData, []string{"alert_templates"}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.AlertTemplates) != 1 {
+		t.Fatalf("expected 1 alert template, got %d", len(result.AlertTemplates))
+	}
+	if result.AlertTemplates[0].Content != nil {
+		t.Errorf("Content should be nil with full=false even when JSON has a 'content' key, got: %s", result.AlertTemplates[0].Content)
+	}
+}
+
+func TestZipLookup_SuffixMatchIsDeterministic(t *testing.T) {
+	// Two entries share the same suffix — zipLookup must always return the lexicographically
+	// first match (due to sort), not a random one.
+	fileByName := map[string]*zip.File{}
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, name := range []string{"a/alerts/x.json", "b/alerts/x.json"} {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		if _, err := f.Write([]byte(`{}`)); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	for _, f := range zr.File {
+		fileByName[f.Name] = f
+	}
+
+	// Run many times to detect any non-determinism.
+	var got string
+	for i := 0; i < 50; i++ {
+		f, ok := zipLookup(fileByName, "alerts/x.json")
+		if !ok {
+			t.Fatal("zipLookup returned not-found")
+		}
+		if got == "" {
+			got = f.Name
+		} else if f.Name != got {
+			t.Errorf("non-deterministic result: got %q then %q", got, f.Name)
+		}
+	}
+	if got != "a/alerts/x.json" {
+		t.Errorf("expected lexicographically first match a/alerts/x.json, got %q", got)
+	}
+}

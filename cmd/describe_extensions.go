@@ -84,6 +84,9 @@ Examples:
 		if fullAssets && assetsFlag == "" {
 			return fmt.Errorf("--full requires --assets")
 		}
+		if assetsFlag != "" && outputFormat == "zip" {
+			return fmt.Errorf("--assets and -o zip are mutually exclusive")
+		}
 
 		_, c, printer, err := Setup()
 		if err != nil {
