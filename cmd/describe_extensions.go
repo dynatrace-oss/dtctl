@@ -11,7 +11,9 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 )
 
-// extensionDescription is a rich struct for JSON/YAML output of describe extension
+// extensionDescription is a rich struct for JSON/YAML output of describe extension.
+// FeatureSets is []string (names only) by default; map[string][]string (names → metric keys)
+// when --feature-set-metrics is set.
 type extensionDescription struct {
 	Name                string                        `json:"name" yaml:"name"`
 	Version             string                        `json:"version" yaml:"version"`
@@ -20,7 +22,7 @@ type extensionDescription struct {
 	MinEECVersion       string                        `json:"minEECVersion,omitempty" yaml:"minEECVersion,omitempty"`
 	FileHash            string                        `json:"fileHash,omitempty" yaml:"fileHash,omitempty"`
 	DataSources         []string                      `json:"dataSources,omitempty" yaml:"dataSources,omitempty"`
-	FeatureSets         map[string][]string           `json:"featureSets,omitempty" yaml:"featureSets,omitempty"`
+	FeatureSets         interface{}                   `json:"featureSets,omitempty" yaml:"featureSets,omitempty"`
 	Variables           []extension.ExtensionVariable `json:"variables,omitempty" yaml:"variables,omitempty"`
 	ActiveVersion       string                        `json:"activeVersion,omitempty" yaml:"activeVersion,omitempty"`
 	AvailableVersions   []string                      `json:"availableVersions,omitempty" yaml:"availableVersions,omitempty"`
@@ -62,6 +64,7 @@ Examples:
 		monConfigSchema, _ := cmd.Flags().GetBool("monitoring-configuration-schema")
 		activeGateGroups, _ := cmd.Flags().GetBool("active-gate-groups")
 		noFluff, _ := cmd.Flags().GetBool("no-fluff")
+		featureSetMetrics, _ := cmd.Flags().GetBool("feature-set-metrics")
 
 		if monConfigSchema && activeGateGroups {
 			return fmt.Errorf("--monitoring-configuration-schema and --active-gate-groups are mutually exclusive")
@@ -223,9 +226,18 @@ Examples:
 				output.DescribeSection("Feature Sets:")
 				for _, fs := range details.FeatureSets {
 					fmt.Printf("  - %s\n", fs)
-					if detail, ok := details.FeatureSetDetails[fs]; ok && len(detail.Metrics) > 0 {
-						for _, m := range detail.Metrics {
-							fmt.Printf("      %s\n", m.Key)
+					if featureSetMetrics {
+						if detail, ok := details.FeatureSetDetails[fs]; ok {
+							for _, m := range detail.Metrics {
+								switch {
+								case m.Metadata != nil && m.Metadata.DisplayName != "" && m.Metadata.Unit != "":
+									fmt.Printf("      %s - %s (%s)\n", m.Key, m.Metadata.DisplayName, m.Metadata.Unit)
+								case m.Metadata != nil && m.Metadata.DisplayName != "":
+									fmt.Printf("      %s - %s\n", m.Key, m.Metadata.DisplayName)
+								default:
+									fmt.Printf("      %s\n", m.Key)
+								}
+							}
 						}
 					}
 				}
@@ -275,18 +287,6 @@ Examples:
 			return nil
 		}
 
-		// For other formats (JSON, YAML, etc.), use the printer
-		featureSets := make(map[string][]string)
-		for _, fs := range details.FeatureSets {
-			var metrics []string
-			if detail, ok := details.FeatureSetDetails[fs]; ok {
-				for _, m := range detail.Metrics {
-					metrics = append(metrics, m.Key)
-				}
-			}
-			featureSets[fs] = metrics
-		}
-
 		var availableVersions []string
 		for _, v := range versions.Items {
 			availableVersions = append(availableVersions, v.Version)
@@ -300,7 +300,7 @@ Examples:
 			MinEECVersion:       details.MinEECVersion,
 			FileHash:            details.FileHash,
 			DataSources:         details.DataSources,
-			FeatureSets:         featureSets,
+			FeatureSets:         buildFeatureSetsOutput(details, featureSetMetrics),
 			Variables:           details.Variables,
 			ActiveVersion:       activeVersion,
 			AvailableVersions:   availableVersions,
@@ -312,9 +312,37 @@ Examples:
 	},
 }
 
+// buildFeatureSetsOutput shapes the featureSets field for JSON/YAML output.
+//
+// Without --feature-set-metrics it returns a plain []string of feature-set names;
+// with the flag it returns a map of name → metric objects (key + metadata).
+//
+// It returns an untyped nil when the extension has no feature sets so that the
+// `omitempty` tag actually drops the field: a non-nil empty slice or map boxed
+// into an interface{} is NOT considered empty by encoding/json and would
+// otherwise serialize as "featureSets": null / {} instead of being omitted.
+func buildFeatureSetsOutput(details *extension.ExtensionDetails, withMetrics bool) interface{} {
+	if len(details.FeatureSets) == 0 {
+		return nil
+	}
+	if !withMetrics {
+		return details.FeatureSets
+	}
+	fsMap := make(map[string][]extension.FeatureSetMetric, len(details.FeatureSets))
+	for _, fs := range details.FeatureSets {
+		metrics := details.FeatureSetDetails[fs].Metrics
+		if metrics == nil {
+			metrics = []extension.FeatureSetMetric{}
+		}
+		fsMap[fs] = metrics
+	}
+	return fsMap
+}
+
 func init() {
 	describeExtensionCmd.Flags().String("version", "", "Show details for a specific extension version")
 	describeExtensionCmd.Flags().Bool("monitoring-configuration-schema", false, "Output only the monitoring configuration schema for this extension version")
 	describeExtensionCmd.Flags().Bool("active-gate-groups", false, "List active gate groups available for this extension version")
 	describeExtensionCmd.Flags().Bool("no-fluff", false, "Strip documentation, customMessage, and displayName fields from schema output (use with --monitoring-configuration-schema)")
+	describeExtensionCmd.Flags().Bool("feature-set-metrics", false, "Show metrics available in each feature set")
 }
