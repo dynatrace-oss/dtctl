@@ -160,7 +160,7 @@ func describeExtensionFixture(withMetrics bool) *extensionDescription {
 			"default": {
 				{
 					Key: "ext.uptime",
-					Metadata: extension.FeatureSetMetricMetadata{
+					Metadata: &extension.FeatureSetMetricMetadata{
 						DisplayName: "Instance uptime",
 						Description: "Time since instance started",
 						Unit:        "Second",

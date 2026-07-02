@@ -78,8 +78,11 @@ type FeatureSetDetail struct {
 
 // FeatureSetMetric represents a metric within a feature set
 type FeatureSetMetric struct {
-	Key      string                   `json:"key"`
-	Metadata FeatureSetMetricMetadata `json:"metadata,omitempty"`
+	Key string `json:"key"`
+	// Metadata is a pointer so that omitempty actually drops the field for metrics
+	// that carry no metadata. encoding/json does NOT treat a zero-valued struct as
+	// empty, so a value type here would always serialize as "metadata": {}.
+	Metadata *FeatureSetMetricMetadata `json:"metadata,omitempty"`
 }
 
 // FeatureSetMetricMetadata holds display information for a feature set metric

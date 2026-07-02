@@ -229,9 +229,12 @@ Examples:
 					if featureSetMetrics {
 						if detail, ok := details.FeatureSetDetails[fs]; ok {
 							for _, m := range detail.Metrics {
-								if m.Metadata.DisplayName != "" {
+								switch {
+								case m.Metadata != nil && m.Metadata.DisplayName != "" && m.Metadata.Unit != "":
 									fmt.Printf("      %s - %s (%s)\n", m.Key, m.Metadata.DisplayName, m.Metadata.Unit)
-								} else {
+								case m.Metadata != nil && m.Metadata.DisplayName != "":
+									fmt.Printf("      %s - %s\n", m.Key, m.Metadata.DisplayName)
+								default:
 									fmt.Printf("      %s\n", m.Key)
 								}
 							}
@@ -284,22 +287,6 @@ Examples:
 			return nil
 		}
 
-		// For other formats (JSON, YAML, etc.), use the printer.
-		// Without --feature-set-metrics: featureSets is a plain list of names.
-		// With --feature-set-metrics: featureSets is a map of name → full metric objects (key + metadata).
-		var featureSets interface{} = details.FeatureSets
-		if featureSetMetrics {
-			fsMap := make(map[string][]extension.FeatureSetMetric)
-			for _, fs := range details.FeatureSets {
-				metrics := details.FeatureSetDetails[fs].Metrics
-				if metrics == nil {
-					metrics = []extension.FeatureSetMetric{}
-				}
-				fsMap[fs] = metrics
-			}
-			featureSets = fsMap
-		}
-
 		var availableVersions []string
 		for _, v := range versions.Items {
 			availableVersions = append(availableVersions, v.Version)
@@ -313,7 +300,7 @@ Examples:
 			MinEECVersion:       details.MinEECVersion,
 			FileHash:            details.FileHash,
 			DataSources:         details.DataSources,
-			FeatureSets:         featureSets,
+			FeatureSets:         buildFeatureSetsOutput(details, featureSetMetrics),
 			Variables:           details.Variables,
 			ActiveVersion:       activeVersion,
 			AvailableVersions:   availableVersions,
@@ -323,6 +310,33 @@ Examples:
 		enrichAgent(printer, "describe", "extension")
 		return printer.Print(desc)
 	},
+}
+
+// buildFeatureSetsOutput shapes the featureSets field for JSON/YAML output.
+//
+// Without --feature-set-metrics it returns a plain []string of feature-set names;
+// with the flag it returns a map of name → metric objects (key + metadata).
+//
+// It returns an untyped nil when the extension has no feature sets so that the
+// `omitempty` tag actually drops the field: a non-nil empty slice or map boxed
+// into an interface{} is NOT considered empty by encoding/json and would
+// otherwise serialize as "featureSets": null / {} instead of being omitted.
+func buildFeatureSetsOutput(details *extension.ExtensionDetails, withMetrics bool) interface{} {
+	if len(details.FeatureSets) == 0 {
+		return nil
+	}
+	if !withMetrics {
+		return details.FeatureSets
+	}
+	fsMap := make(map[string][]extension.FeatureSetMetric, len(details.FeatureSets))
+	for _, fs := range details.FeatureSets {
+		metrics := details.FeatureSetDetails[fs].Metrics
+		if metrics == nil {
+			metrics = []extension.FeatureSetMetric{}
+		}
+		fsMap[fs] = metrics
+	}
+	return fsMap
 }
 
 func init() {
