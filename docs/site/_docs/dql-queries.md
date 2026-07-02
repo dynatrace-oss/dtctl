@@ -155,6 +155,31 @@ Spill is configurable globally or per-context under a `spill:` config section an
 via the `DTCTL_SPILL` / `DTCTL_SPILL_DIR` environment variables — see
 [Configuration](configuration#result-spill).
 
+### Inspecting a Spilled File
+
+Once a result has spilled, `dtctl inspect` interrogates the file locally — the
+expensive Grail scan already happened, so every inspect call reads only what it
+needs and emits only the answer, without re-querying. Its primary capability is
+**row access** (the summary only carried per-column stats and a few sample rows):
+
+```bash
+dtctl inspect ./out.jsonl --head 20                       # first 20 rows
+dtctl inspect ./out.jsonl --page --offset 1000 --limit 50 # a window deep in the result
+dtctl inspect ./out.jsonl --tail 10 --fields timestamp,content  # last rows, projected
+dtctl inspect ./out.jsonl --jq 'select(.status == 500)'   # keep only matching rows (streaming, whole-file)
+dtctl inspect ./out.jsonl --schema                        # re-derive columns + types + null counts
+dtctl inspect ./out.jsonl --stats                         # re-derive the per-column profile
+dtctl inspect --list                                      # lost the path? list spilled files in this context
+```
+
+`--jq` here is a **full-file** filter run per record (like `jq` over NDJSON), so
+it returns "only the matching rows" without re-querying Grail — a large match set
+re-spills via the same `--spill*` guard. `inspect` is not a query engine, though —
+for aggregate questions push the work back into DQL (`… | summarize …`) and
+re-query. See the
+[Inspect Commands](command-reference#inspect-commands) reference for the full flag
+set.
+
 ## Filter Segments
 
 Apply [filter segments](segments) at query time to narrow results to specific data subsets. Segments are AND-combined when multiple are specified. See [Filter Segments](segments) for how to manage segments.

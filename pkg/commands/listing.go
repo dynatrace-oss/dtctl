@@ -131,6 +131,8 @@ var defaultPatterns = []string{
 	"Use '--agent' for JSON output with operational metadata",
 	"Use 'dtctl wait' in CI/CD to poll for conditions",
 	"Always specify '--context' in automation scripts",
+	"Query Smartscape topology nodes with: dtctl query 'smartscapeNodes \"<TYPE>\" | limit 50'",
+	"Discover all Smartscape node types in the tenant with: dtctl query 'smartscapeNodes \"*\" | dedup type | fields type'",
 }
 
 // antipatterns are common mistakes agents should avoid.
@@ -139,6 +141,7 @@ var defaultAntipatterns = []string{
 	"Don't parse table output — use '-o json' or '--agent'",
 	"Don't hardcode resource IDs — use 'dtctl get' to discover them",
 	"Don't skip 'dtctl diff' before 'dtctl apply' in production contexts",
+	"Don't guess Smartscape node type IDs — run 'smartscapeNodes \"*\" | dedup type | fields type' first to enumerate valid types",
 }
 
 var defaultTimeFormats = &TimeFormats{
@@ -434,6 +437,12 @@ func NewBrief(l *Listing) *Listing {
 		CommandModel:  l.CommandModel,
 		Verbs:         make(map[string]*Verb, len(l.Verbs)),
 		Aliases:       l.Aliases,
+		// Retain patterns/antipatterns: they are the primary grounding agents
+		// rely on after bootstrapping with `dtctl commands --brief -o json`, and
+		// cost only a handful of tokens. Dropping them here would make the
+		// guidance invisible on the documented bootstrap path.
+		Patterns:     l.Patterns,
+		Antipatterns: l.Antipatterns,
 		// Keep the compact canonical table; agents derive a command's scopes
 		// from resource_scopes[resource][verb.access] without the materialized
 		// per-command map.

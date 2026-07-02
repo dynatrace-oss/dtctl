@@ -172,6 +172,13 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	}
 
 	suggestions := spillSuggestions(query, manifest.Kind, summaryReason)
+	// Now that `dtctl inspect` ships (Layer 2), point at concrete, bounded
+	// row-access follow-ups on the spilled file — the calls an agent cannot
+	// satisfy from the summary it just received (INSPECT IN4/D30).
+	if manifest.Kind == output.KindResultFile && manifest.Path != "" {
+		suggestions = append(suggestions,
+			"# for bounded row access without re-querying Grail: dtctl inspect "+manifest.Path+" --head 20 (also --tail, --page --offset N --limit M, --fields a,b)")
+	}
 	if n := len(omittedCols); n > 0 {
 		if manifest.Kind == output.KindResultFile {
 			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted and full per-column stats are in the sidecar manifest next to the file", n))
@@ -326,16 +333,7 @@ func spillFormatForPath(path, fallback string) (string, error) {
 }
 
 func extForFormat(format string) string {
-	switch strings.ToLower(format) {
-	case "csv":
-		return "csv"
-	case "json":
-		return "json"
-	case "parquet":
-		return "parquet"
-	default:
-		return "jsonl"
-	}
+	return output.ExtForFormat(format)
 }
 
 // Summary-only degradation causes. They select the right next-step advice:

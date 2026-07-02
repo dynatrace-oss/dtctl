@@ -21,6 +21,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	"github.com/dynatrace-oss/dtctl/pkg/inspect"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
@@ -387,6 +388,17 @@ func errorToDetail(err error) *output.ErrorDetail {
 			}
 		}
 		return detail
+	}
+
+	// inspect.Error — `dtctl inspect` carries a stable envelope code (spill_file_*,
+	// inspect_bad_flags, inspect_unknown_field) plus actionable suggestions.
+	var inspectErr *inspect.Error
+	if errors.As(err, &inspectErr) {
+		return &output.ErrorDetail{
+			Code:        inspectErr.Code,
+			Message:     inspectErr.Message,
+			Suggestions: inspectErr.Suggestions,
+		}
 	}
 
 	// Fallback — generic error with no structured context

@@ -41,6 +41,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `exec` - Execute workflows, analyzers, copilot, functions, SLOs
 - [x] `logs` - View execution logs
 - [x] `query` - Execute DQL queries
+- [x] `inspect` - Local row access / schema / stats over a spilled query-result file (no Grail re-query); `--jq` filters the whole file per record (re-spill-guarded); `--list` enumerates spilled files in the active context to recover a lost handle
 - [x] `wait` - Wait for conditions on resources (polling with exponential backoff)
 - [x] `history` - Show version history (snapshots)
 - [x] `restore` - Restore to previous version
@@ -140,6 +141,10 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Customizable chart dimensions: `--width`, `--height`, `--fullscreen`
 - [x] Custom record/byte/scan limits
 - [x] Query metadata output: `--metadata` / `-M` with field selection
+- [x] Spill large results to a local file with a summary envelope: `--spill[=auto|always|never]`, `--spill-to`, `--spill-format`, `--spill-threshold`
+- [x] Local inspection of a spilled file (no Grail re-query): `dtctl inspect <file> --head/--tail/--page/--fields/--schema/--stats/--sample`
+- [x] Full-file predicate filtering via a streaming `--jq` program (per record over the whole file, re-spill-guarded): `dtctl inspect <file> --jq 'select(.status == 500)'`
+- [x] Recover a lost file handle by listing spilled files in the active context: `dtctl inspect --list`
 
 ### SLO Features
 - [x] List SLOs: `dtctl get slos`

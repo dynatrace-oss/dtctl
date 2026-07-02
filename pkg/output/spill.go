@@ -178,6 +178,109 @@ func SidecarPathFor(dataPath string) string {
 	return filepath.Join(dir, stem+".manifest.json")
 }
 
+// FormatForExt maps a spilled-file extension to its spill format, or "" for a
+// missing/unrecognised extension. It is the single source of truth for the
+// extension→format mapping shared by the query spill path, `inspect`'s readers,
+// and the re-spill path (so the supported-format set cannot drift between them).
+func FormatForExt(path string) string {
+	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(path), ".")) {
+	case "jsonl", "ndjson":
+		return "jsonl"
+	case "json":
+		return "json"
+	case "csv":
+		return "csv"
+	case "parquet":
+		return "parquet"
+	default:
+		return ""
+	}
+}
+
+// ExtForFormat maps a spill format to the file extension used on disk. It is the
+// inverse of FormatForExt and the single source of truth for the format→extension
+// mapping (shared by query and inspect re-spill); an unknown format defaults to
+// the jsonl extension to match the default spill format.
+func ExtForFormat(format string) string {
+	switch strings.ToLower(format) {
+	case "csv":
+		return "csv"
+	case "json":
+		return "json"
+	case "parquet":
+		return "parquet"
+	default:
+		return "jsonl"
+	}
+}
+
+// ReadSidecar reads and decodes the sidecar manifest next to a spilled data file
+// (D34). It returns (nil, nil) when no sidecar exists — an older spill or a
+// hand-copied bare file — so a caller can degrade gracefully (Layer 2 still does
+// row access and schema re-derivation without it, only losing provenance). A
+// present-but-corrupt sidecar returns an error.
+func ReadSidecar(dataPath string) (*SidecarManifest, error) {
+	data, err := os.ReadFile(SidecarPathFor(dataPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var sc SidecarManifest
+	if err := json.Unmarshal(data, &sc); err != nil {
+		return nil, fmt.Errorf("corrupt sidecar manifest: %w", err)
+	}
+	return &sc, nil
+}
+
+// ManagedContextFor reports whether path lies inside a managed spill cache tree
+// (D7) and, if so, the context-partition segment it sits under (D9). It does not
+// touch the filesystem or require the location to be writable — it is a pure
+// path comparison used by Layer 2 to refuse cross-context reads structurally,
+// before opening the file. ok is false for user-chosen paths (--spill-to /
+// DTCTL_SPILL_DIR), which opt out of partitioning (D25) and so carry no
+// structural context guarantee.
+func ManagedContextFor(path string) (contextName string, ok bool) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	for _, base := range managedBaseCandidates() {
+		baseAbs, err := filepath.Abs(base)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(baseAbs, abs)
+		if err != nil {
+			continue
+		}
+		// rel must descend into the tree: <context>/q-<hash>.<ext> ⇒ two segments,
+		// the first being the context partition. A rel that escapes the base
+		// (starts with "..") or is shallow is not a managed path.
+		if strings.HasPrefix(rel, "..") {
+			continue
+		}
+		parts := strings.Split(rel, string(filepath.Separator))
+		if len(parts) >= 2 && parts[0] != "" && parts[0] != ".." {
+			return parts[0], true
+		}
+	}
+	return "", false
+}
+
+// managedBaseCandidates returns the managed spill base dirs (D7) that
+// ManagedContextFor compares against, in resolution order. Unlike SpillBaseDir
+// it neither probes nor creates anything — it only needs the candidate roots.
+func managedBaseCandidates() []string {
+	var bases []string
+	if cache, err := os.UserCacheDir(); err == nil {
+		bases = append(bases, filepath.Join(cache, "dtctl", spillSubdir))
+	}
+	bases = append(bases, filepath.Join(os.TempDir(), "dtctl", spillSubdir))
+	return bases
+}
+
 // PruneOldSpills opportunistically deletes spilled files (and stray .tmp files,
 // D22) older than ttl, throttled to ~hourly via a marker so we never stat-storm
 // (D11). Errors are swallowed: pruning is best-effort and must never fail a
