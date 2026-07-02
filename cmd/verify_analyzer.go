@@ -46,6 +46,14 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
+		// Reject unsupported output formats up front (same set as "verify
+		// query"), so callers get a clear error rather than a silent fallback
+		// to the human verdict.
+		outputFmt, _ := cmd.Flags().GetString("output")
+		if !isSupportedVerifyOutputFormat(outputFmt) {
+			return fmt.Errorf("unsupported output format %q for verify analyzer (supported: json, yaml, toon)", outputFmt)
+		}
+
 		input, err := buildAnalyzerInput(cmd)
 		if err != nil {
 			return err
@@ -61,16 +69,13 @@ Examples:
 		result, err := handler.Validate(name, input)
 		exitCode := getAnalyzerValidateExitCode(result, err)
 
-		// Network/auth/API error: emit and exit with the mapped code.
+		// Network/auth/API error: emit and exit with the mapped code
+		// (getAnalyzerValidateExitCode always returns non-zero when err != nil).
 		if err != nil {
-			if exitCode != 0 {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(exitCode)
-			}
-			return err
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(exitCode)
 		}
 
-		outputFmt, _ := cmd.Flags().GetString("output")
 		switch outputFmt {
 		case "json", "yaml", "yml", "toon":
 			printer := output.NewPrinter(outputFmt)

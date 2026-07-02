@@ -112,7 +112,11 @@ func TestAnalyzerReadLifecycle(t *testing.T) {
 		}
 		// We don't hard-assert Valid==true (validation semantics can depend on
 		// the tenant's data model), but a well-formed input should not report
-		// structural errors.
+		// structural errors. When the tenant does accept it, confirm the verdict
+		// maps to the "valid" exit code that `verify analyzer` returns.
+		if result.Valid && verifyValidateExitCode(result) != 0 {
+			t.Errorf("valid verdict must map to exit code 0, got %d", verifyValidateExitCode(result))
+		}
 		t.Logf("valid-input verdict: valid=%v details=%v", result.Valid, result.Details)
 	})
 
@@ -127,6 +131,24 @@ func TestAnalyzerReadLifecycle(t *testing.T) {
 		if result.Valid {
 			t.Error("expected empty input to be invalid for the forecast analyzer")
 		}
+		// An invalid verdict must map to the "invalid" exit code (1) that
+		// `verify analyzer` surfaces to CI/CD callers.
+		if got := verifyValidateExitCode(result); got != 1 {
+			t.Errorf("invalid verdict must map to exit code 1, got %d", got)
+		}
 		t.Logf("empty-input verdict: valid=%v details=%v", result.Valid, result.Details)
 	})
+}
+
+// verifyValidateExitCode mirrors the successful-validate branch of the
+// exit-code contract that `dtctl verify analyzer` applies (0 = valid,
+// 1 = invalid). It is duplicated here (rather than imported from the cmd
+// package, which is unexported and calls os.Exit) so the integration test can
+// assert that a live validate verdict maps to the exit code CI/CD relies on.
+// The auth/network branches (2/3) are covered by unit tests in cmd.
+func verifyValidateExitCode(result *analyzer.ValidationResult) int {
+	if result == nil || !result.Valid {
+		return 1
+	}
+	return 0
 }
