@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -54,6 +55,15 @@ Examples:
 
   # List active gate groups available for a specific version
   dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 --active-gate-groups
+
+  # Download the extension zip package
+  dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 -o zip > host-monitoring.zip
+
+  # Show alert templates bundled in an extension
+  dtctl describe extension com.dynatrace.extension.postgres --version 3.0.12 --assets=alert_templates
+
+  # Show multiple asset types
+  dtctl describe extension com.dynatrace.extension.postgres --version 3.0.12 --assets=alert_templates,smartscape
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -62,12 +72,20 @@ Examples:
 		monConfigSchema, _ := cmd.Flags().GetBool("monitoring-configuration-schema")
 		activeGateGroups, _ := cmd.Flags().GetBool("active-gate-groups")
 		noFluff, _ := cmd.Flags().GetBool("no-fluff")
+		assetsFlag, _ := cmd.Flags().GetString("assets")
+		fullAssets, _ := cmd.Flags().GetBool("full")
 
 		if monConfigSchema && activeGateGroups {
 			return fmt.Errorf("--monitoring-configuration-schema and --active-gate-groups are mutually exclusive")
 		}
 		if noFluff && !monConfigSchema {
 			return fmt.Errorf("--no-fluff only applies to --monitoring-configuration-schema")
+		}
+		if fullAssets && assetsFlag == "" {
+			return fmt.Errorf("--full requires --assets")
+		}
+		if assetsFlag != "" && outputFormat == "zip" {
+			return fmt.Errorf("--assets and -o zip are mutually exclusive")
 		}
 
 		_, c, printer, err := Setup()
@@ -105,6 +123,38 @@ Examples:
 
 		if targetVersion == "" {
 			return fmt.Errorf("no versions found for extension %q", extensionName)
+		}
+
+		// --assets: download zip and display specific asset types
+		if assetsFlag != "" {
+			assetTypes := splitCSVList(assetsFlag)
+			data, err := handler.Download(extensionName, targetVersion)
+			if err != nil {
+				return err
+			}
+			result, err := extension.ParseAssets(data, assetTypes, fullAssets)
+			if err != nil {
+				return err
+			}
+			if outputFormat == "" || outputFormat == "table" {
+				printAssetsTable(result, fullAssets)
+				return nil
+			}
+			enrichAgent(printer, "describe", "extension")
+			return printer.Print(result)
+		}
+
+		// -o zip: download the extension package and write raw bytes to stdout
+		if outputFormat == "zip" {
+			if GetAgentMode() {
+				return fmt.Errorf("-o zip is incompatible with agent mode (-A): raw binary cannot be wrapped in a JSON envelope")
+			}
+			data, err := handler.Download(extensionName, targetVersion)
+			if err != nil {
+				return err
+			}
+			_, err = os.Stdout.Write(data)
+			return err
 		}
 
 		// --monitoring-configuration-schema: output only the JSON Schema for monitoring configs
@@ -312,9 +362,71 @@ Examples:
 	},
 }
 
+// printAssetsTable renders an AssetResult to stdout in human-readable table format.
+func printAssetsTable(result *extension.AssetResult, full bool) {
+	if result.AlertTemplates != nil {
+		output.DescribeSection(fmt.Sprintf("Alert Templates (%d):", len(result.AlertTemplates)))
+		if len(result.AlertTemplates) == 0 {
+			fmt.Println("  (none)")
+		} else if !full {
+			fmt.Printf("  %-50s  %-20s  %s\n", "NAME", "EVENT_TYPE", "ENABLED")
+		}
+		for _, a := range result.AlertTemplates {
+			if full {
+				printAssetContent(a.File, a.Content)
+			} else {
+				enabled := "-"
+				if a.Enabled != nil {
+					enabled = fmt.Sprintf("enabled=%v", *a.Enabled)
+				}
+				fmt.Printf("  %-50s  %-20s  %s\n", a.Name, a.EventType, enabled)
+			}
+		}
+	}
+
+	if result.Smartscape != nil {
+		output.DescribeSection(fmt.Sprintf("Smartscape Nodes (%d):", len(result.Smartscape.Nodes)))
+		if len(result.Smartscape.Nodes) == 0 {
+			fmt.Println("  (none)")
+		} else if !full {
+			fmt.Printf("  %-35s  %-45s  %s\n", "NODE_TYPE", "ID_FIELD", "DESCRIPTION")
+		}
+		for _, n := range result.Smartscape.Nodes {
+			if full {
+				printAssetContent(n.NodeType, n.Content)
+			} else {
+				fmt.Printf("  %-35s  %-45s  %s\n", n.NodeType, n.NodeIDFieldName, n.Description)
+			}
+		}
+
+		fmt.Println()
+		output.DescribeSection(fmt.Sprintf("Smartscape Edges (%d):", len(result.Smartscape.Edges)))
+		if len(result.Smartscape.Edges) == 0 {
+			fmt.Println("  (none)")
+		} else {
+			fmt.Printf("  %-35s  %-15s  %s\n", "FROM", "EDGE_TYPE", "TO")
+		}
+		for _, e := range result.Smartscape.Edges {
+			fmt.Printf("  %-35s  %-15s  %s\n", e.SourceType, e.EdgeType, e.TargetType)
+		}
+	}
+}
+
+// printAssetContent prints indented JSON content for a named asset (used with --full).
+func printAssetContent(label string, raw json.RawMessage) {
+	indented, err := json.MarshalIndent(raw, "  ", "  ")
+	if err != nil {
+		fmt.Printf("  %s\n  (could not format content)\n", label)
+		return
+	}
+	fmt.Printf("  %s\n  %s\n", label, indented)
+}
+
 func init() {
 	describeExtensionCmd.Flags().String("version", "", "Show details for a specific extension version")
 	describeExtensionCmd.Flags().Bool("monitoring-configuration-schema", false, "Output only the monitoring configuration schema for this extension version")
 	describeExtensionCmd.Flags().Bool("active-gate-groups", false, "List active gate groups available for this extension version")
 	describeExtensionCmd.Flags().Bool("no-fluff", false, "Strip documentation, customMessage, and displayName fields from schema output (use with --monitoring-configuration-schema)")
+	describeExtensionCmd.Flags().String("assets", "", "Comma-separated asset types to show from the extension package. Supported: alert_templates, smartscape")
+	describeExtensionCmd.Flags().Bool("full", false, "Show complete file content for each asset (use with --assets)")
 }
