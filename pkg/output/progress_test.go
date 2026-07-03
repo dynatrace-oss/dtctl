@@ -219,6 +219,12 @@ func TestHumanizeMetric(t *testing.T) {
 		4200:       "4.2K",
 		2085739:    "2.1M",
 		5983657731: "6.0B",
+		// Boundary roll-up: values that would render as "1000.0<unit>" must roll
+		// up to the next unit instead.
+		999_949:     "999.9K",
+		999_950:     "1.0M",
+		999_949_999: "999.9M",
+		999_950_000: "1.0B",
 	}
 	for in, want := range tests {
 		if got := humanizeMetric(in); got != want {
@@ -234,10 +240,47 @@ func TestFormatElapsed(t *testing.T) {
 		59 * time.Second:        "59.0s",
 		63 * time.Second:        "1m03s",
 		125 * time.Second:       "2m05s",
+		// Boundary: a value that rounds to 60.0s must roll over to the minute
+		// form rather than print "60.0s".
+		59940 * time.Millisecond: "59.9s",
+		59950 * time.Millisecond: "1m00s",
+		59970 * time.Millisecond: "1m00s",
 	}
 	for in, want := range tests {
 		if got := formatElapsed(in); got != want {
 			t.Errorf("formatElapsed(%v) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestProgressReporter_ClampsToTerminalWidth(t *testing.T) {
+	// A narrow terminal must not receive a line wider than its width, or it
+	// wraps to a second physical row that a bare "\r" cannot erase.
+	t.Setenv("NO_COLOR", "1") // keep output ANSI-free so width == byte length
+	ResetColorCache()
+	t.Cleanup(ResetColorCache)
+
+	var buf bytes.Buffer
+	r := &ProgressReporter{w: &buf, animate: true, manualTick: true, start: time.Now(), termWidth: 20}
+	r.Update(ProgressState{Progress: 45, ScannedBytes: 13_359_294_822_752, ScannedRecords: 4_647_571_690})
+
+	got := strings.TrimPrefix(buf.String(), "\r")
+	if w := visibleWidth(got); w > 20 {
+		t.Errorf("line visible width = %d, want <= 20 (line=%q)", w, got)
+	}
+}
+
+func TestTruncateVisible(t *testing.T) {
+	if got := truncateVisible("hello world", 5); got != "hello" {
+		t.Errorf("truncateVisible plain = %q, want %q", got, "hello")
+	}
+	if got := truncateVisible("hi", 5); got != "hi" {
+		t.Errorf("truncateVisible shorter-than-max should be unchanged, got %q", got)
+	}
+	// ANSI escapes are passed through uncounted; only visible columns are capped.
+	colored := Cyan + "abcdef" + Reset
+	got := truncateVisible(colored, 3)
+	if visibleWidth(got) != 3 {
+		t.Errorf("truncateVisible colored visible width = %d, want 3 (got %q)", visibleWidth(got), got)
 	}
 }

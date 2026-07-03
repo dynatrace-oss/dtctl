@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // progressBarWidth is the number of cells in the rendered bar.
@@ -61,6 +63,10 @@ type ProgressReporter struct {
 	// manualTick disables the background animator so tests can drive frames
 	// synchronously via Update; production always leaves it false.
 	manualTick bool
+	// termWidth overrides the detected terminal width (tests only); 0 => detect
+	// from the writer, and detection failing (non-*os.File writer) means no
+	// truncation.
+	termWidth int
 
 	mu        sync.Mutex
 	latest    ProgressState
@@ -158,9 +164,16 @@ func (p *ProgressReporter) renderLocked() {
 	if s.ScannedBytes > 0 {
 		verb = "scanning"
 	}
-	spin := colorize(Cyan, string(progressSpinner[p.spinIdx%len(progressSpinner)]))
-	pct := colorize(Bold, fmt.Sprintf("%3d%%", s.Progress))
-	line := fmt.Sprintf("%s %s %s %s%s", spin, verb, pct, renderBar(s.Progress), colorize(Dim, statsSuffix(s, p.start)))
+	spin := Colorize(Cyan, string(progressSpinner[p.spinIdx%len(progressSpinner)]))
+	pct := Colorize(Bold, fmt.Sprintf("%3d%%", s.Progress))
+	line := fmt.Sprintf("%s %s %s %s%s", spin, verb, pct, renderBar(s.Progress), Colorize(Dim, statsSuffix(s, p.start)))
+
+	// Clamp to the terminal width so a narrow terminal never wraps the line onto
+	// a second physical row (which a bare "\r" on the next frame cannot reach to
+	// erase, leaving stale rows behind). Truncation counts visible columns only.
+	if width := p.terminalWidth(); width > 0 {
+		line = truncateVisible(line, width)
+	}
 
 	// Return the cursor to column 0, write the new line, then pad with spaces to
 	// erase any tail left by a previously longer line. Padding is measured in
@@ -215,8 +228,8 @@ func (p *ProgressReporter) Complete(final ProgressState) {
 	if !shown {
 		return
 	}
-	check := colorize(Bold+Green, "✓")
-	fmt.Fprintf(p.w, "%s %s\n", check, colorize(Dim, summaryText(final, p.start)))
+	check := Colorize(Bold+Green, "✓")
+	fmt.Fprintf(p.w, "%s %s\n", check, Colorize(Dim, summaryText(final, p.start)))
 }
 
 // stopAnimator halts the background loop exactly once, waiting for the goroutine
@@ -284,16 +297,16 @@ func renderBar(progress int) string {
 	switch {
 	case partial != "":
 		if full > 0 {
-			b.WriteString(colorize(Cyan, strings.Repeat("█", full)))
+			b.WriteString(Colorize(Cyan, strings.Repeat("█", full)))
 		}
-		b.WriteString(colorize(BrightCyan, partial))
+		b.WriteString(Colorize(BrightCyan, partial))
 	case full > 0:
 		if full > 1 {
-			b.WriteString(colorize(Cyan, strings.Repeat("█", full-1)))
+			b.WriteString(Colorize(Cyan, strings.Repeat("█", full-1)))
 		}
-		b.WriteString(colorize(BrightCyan, "█"))
+		b.WriteString(Colorize(BrightCyan, "█"))
 	}
-	b.WriteString(colorize(Dim, strings.Repeat("░", empty)))
+	b.WriteString(Colorize(Dim, strings.Repeat("░", empty)))
 	b.WriteString("▏")
 	return b.String()
 }
@@ -335,17 +348,13 @@ func statsSuffix(s ProgressState, start time.Time) string {
 	return "  " + strings.Join(parts, " · ")
 }
 
-// colorize wraps text in a color code only when color is enabled.
-func colorize(code, text string) string {
-	if !ColorEnabled() {
-		return text
-	}
-	return code + text + Reset
-}
-
 // formatElapsed renders a duration compactly: "8.2s" under a minute, "1m03s"
 // above.
 func formatElapsed(d time.Duration) string {
+	// Round to the display resolution (tenths of a second) first so a value
+	// just under a minute (e.g. 59.97s) rolls over to "1m00s" instead of
+	// rounding to a nonsensical "60.0s".
+	d = d.Round(100 * time.Millisecond)
 	if d < time.Minute {
 		return fmt.Sprintf("%.1fs", d.Seconds())
 	}
@@ -355,18 +364,79 @@ func formatElapsed(d time.Duration) string {
 }
 
 // humanizeMetric formats a large count with a decimal SI-style suffix, e.g.
-// 5983657731 -> "6.0B", 2085739 -> "2.1M", 4200 -> "4.2K".
+// 5983657731 -> "6.0B", 2085739 -> "2.1M", 4200 -> "4.2K". Each threshold sits
+// just below its SI boundary so a value that would render as "1000.0<unit>"
+// (e.g. 999,950,000 -> "1000.0M") rolls up to the next unit ("1.0B") instead.
 func humanizeMetric(n int64) string {
+	f := float64(n)
 	switch {
-	case n >= 1_000_000_000:
-		return fmt.Sprintf("%.1fB", float64(n)/1_000_000_000)
-	case n >= 1_000_000:
-		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
-	case n >= 1_000:
-		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+	case f >= 999_950_000:
+		return fmt.Sprintf("%.1fB", f/1_000_000_000)
+	case f >= 999_950:
+		return fmt.Sprintf("%.1fM", f/1_000_000)
+	case f >= 1_000:
+		return fmt.Sprintf("%.1fK", f/1_000)
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+// terminalWidth returns the writer's terminal width in columns, or 0 when it is
+// unknown (not an *os.File, or GetSize failed) — in which case the caller skips
+// truncation. A test override (termWidth) takes precedence.
+func (p *ProgressReporter) terminalWidth() int {
+	if p.termWidth > 0 {
+		return p.termWidth
+	}
+	f, ok := p.w.(*os.File)
+	if !ok {
+		return 0
+	}
+	w, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0
+	}
+	return w
+}
+
+// truncateVisible returns s limited to at most max visible columns, passing ANSI
+// SGR escape sequences through uncounted so color codes are preserved. A reset is
+// appended when color is enabled so a cut inside a colored run does not bleed.
+func truncateVisible(s string, max int) string {
+	if max < 0 {
+		max = 0
+	}
+	if visibleWidth(s) <= max {
+		return s
+	}
+	var b strings.Builder
+	w, inEsc := 0, false
+	for _, r := range s {
+		switch {
+		case inEsc:
+			b.WriteRune(r)
+			if r == 'm' {
+				inEsc = false
+			}
+		case r == '\x1b':
+			inEsc = true
+			b.WriteRune(r)
+		default:
+			if w >= max {
+				// Visible budget spent; drop the rest (trailing glyphs/escapes).
+				if ColorEnabled() {
+					b.WriteString(Reset)
+				}
+				return b.String()
+			}
+			b.WriteRune(r)
+			w++
+		}
+	}
+	if ColorEnabled() {
+		b.WriteString(Reset)
+	}
+	return b.String()
 }
 
 // visibleWidth returns the number of visible columns in s, skipping ANSI SGR

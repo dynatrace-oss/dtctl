@@ -392,7 +392,10 @@ Examples:
 			Spill:                        spillOpts,
 			TenantID:                     spillTenantID,
 			ContextName:                  spillContextName,
-			NoProgress:                   noProgress,
+			// The progress bar is a user-facing affordance of the `query`
+			// command only; opt in here (subject to --no-progress) so internal
+			// query callers stay silent by default.
+			ShowProgress: !noProgress,
 		}
 
 		// Handle live mode
@@ -419,8 +422,8 @@ Examples:
 			}
 
 			// Live mode owns the terminal via its own printer; a per-fetch
-			// progress bar would fight it, so suppress it.
-			opts.NoProgress = true
+			// progress bar would fight it, so keep it off.
+			opts.ShowProgress = false
 
 			// Create printer options for live mode (needed for resize support)
 			printerOpts := output.PrinterOptions{

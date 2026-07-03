@@ -129,11 +129,13 @@ type DQLExecuteOptions struct {
 	Locale   string // Query locale (e.g., "en_US")
 	Timezone string // Query timezone (e.g., "UTC", "Europe/Paris")
 
-	// NoProgress disables the live progress bar drawn on stderr while an
-	// asynchronous query is polled. By default (false) the bar is shown for
-	// interactive terminals only; it never affects stdout, so structured/piped
-	// output is unchanged regardless.
-	NoProgress bool
+	// ShowProgress opts in to the live progress bar drawn on stderr while an
+	// asynchronous query is polled. It is off by default so internal/library
+	// query callers (e.g. describe sub-queries, lookup metadata fetches) stay
+	// silent; only the user-facing `query` command sets it. Even when set, the
+	// bar is drawn only for interactive terminals and never affects stdout, so
+	// structured/piped output is unchanged regardless.
+	ShowProgress bool
 
 	// Metadata options
 	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, specific names = filtered
@@ -292,9 +294,13 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 	// interactive TTY, so piped/agent/structured output is untouched. Stop()
 	// erases the line on error and cancellation; Complete() replaces it with a
 	// summary on success.
-	reporter := output.NewProgressReporter(!opts.NoProgress, opts.AgentMode)
+	reporter := output.NewProgressReporter(opts.ShowProgress, opts.AgentMode)
 	defer reporter.Stop()
 
+	// Remember the last live scan totals so the completion summary can fall back
+	// to them if the terminal result metadata omits scannedBytes/Records. The
+	// closure runs synchronously in this goroutine, so these need no locking.
+	var lastScannedBytes, lastScannedRecords int64
 	result, err := handler.ExecuteAndPollWithOptions(ctx, req, sdkquery.ExecuteAndPollOptions{
 		OnUnauthorized: onUnauthorized,
 		OnUpdate: func(u sdkquery.PollUpdate) {
@@ -305,6 +311,12 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 			}
 			if u.Preview != nil {
 				state.PreviewRows = len(u.Preview.Records)
+			}
+			if u.ScannedBytes > 0 {
+				lastScannedBytes = u.ScannedBytes
+			}
+			if u.ScannedRecords > 0 {
+				lastScannedRecords = u.ScannedRecords
 			}
 			reporter.Update(state)
 		},
@@ -334,12 +346,17 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 	}
 
 	// On success, replace the bar with a completion summary carrying the final
-	// scan totals from the result metadata (the terminal poll does not fire an
-	// OnUpdate, so the reporter's live state stops one poll short).
-	final := output.ProgressState{Progress: 100}
+	// scan totals. Prefer the result metadata (authoritative), but fall back to
+	// the last live totals when the terminal envelope omits them, so a large scan
+	// the user watched climb is never reported as "done in Xs" with no volume.
+	final := output.ProgressState{Progress: 100, ScannedBytes: lastScannedBytes, ScannedRecords: lastScannedRecords}
 	if m := result.GetMetadata(); m != nil {
-		final.ScannedBytes = m.ScannedBytes
-		final.ScannedRecords = m.ScannedRecords
+		if m.ScannedBytes > 0 {
+			final.ScannedBytes = m.ScannedBytes
+		}
+		if m.ScannedRecords > 0 {
+			final.ScannedRecords = m.ScannedRecords
+		}
 	}
 	reporter.Complete(final)
 
