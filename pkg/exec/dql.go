@@ -378,7 +378,7 @@ func classifyNotification(notificationType, message string) string {
 func getHintForNotification(notificationType, message string) string {
 	switch classifyNotification(notificationType, message) {
 	case notifScanLimit:
-		return "Result is PARTIAL (scan stopped early). Prefer reducing data scanned — narrow the timeframe, add filters, sample logs/spans with --default-sampling-ratio, or aggregate in DQL. Raising --default-scan-limit-gbytes <value> works but costs more."
+		return "Result is PARTIAL (scan stopped early). Reduce data scanned — narrow the timeframe, restrict to specific buckets (bucket:{...}; use --include-contributions to find the heavy ones), filter early with == (not contains()), or sample logs/spans with --default-sampling-ratio. Raising --default-scan-limit-gbytes <value> works but costs more."
 	case notifResultLimit:
 		return "Result was truncated. Aggregate in DQL (| summarize ...) to shrink it, or raise --max-result-records / --max-result-bytes <value>."
 	case notifTimeout:
@@ -400,11 +400,12 @@ func agentAdviceForNotification(notificationType, message string) []string {
 	case notifScanLimit:
 		return []string{
 			"# the scan limit was reached — this result is PARTIAL (the scan stopped early), not the full dataset",
-			"# prefer reducing the data scanned over raising the limit (raising it increases cost and duration):",
-			"#   - narrow the timeframe, e.g. from:now()-1h instead of a wide range",
-			"#   - add filters early to cut scanned data, e.g. | filter <field> == \"...\"",
+			"# reduce the DATA SCANNED (aggregation alone does not help — it still scans everything). Raising the limit works but costs more and is slower:",
+			"#   - narrow the timeframe, e.g. from:now()-1h instead of a wide range (usually the biggest lever)",
+			"#   - restrict to the relevant bucket(s): fetch logs, bucket:{\"<bucket>\"}",
+			"#   - find which bucket dominates the scan: dtctl query --include-contributions --metadata=contributions -o json '<query>' and read matchedRecordsRatio per bucket",
+			"#   - filter early and prefer equality, e.g. | filter <field> == \"...\" (== scans far less than contains()/matchesPhrase())",
 			"#   - for logs/spans, sample with --default-sampling-ratio <N> (e.g. 1000) for approximate counts at a fraction of the scan",
-			"#   - aggregate in DQL (| summarize ..., by:{...}) instead of fetching raw rows",
 			"# only if you truly need the full scan: --default-scan-limit-gbytes <value> (higher cost & duration; -1 = unlimited)",
 		}
 	case notifResultLimit:

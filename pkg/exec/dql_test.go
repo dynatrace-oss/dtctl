@@ -638,7 +638,7 @@ func TestAgentAdviceForNotification_ScanLimit(t *testing.T) {
 	if !strings.Contains(joined, "PARTIAL") {
 		t.Errorf("scan-limit advice should flag the result as PARTIAL:\n%s", joined)
 	}
-	for _, want := range []string{"timeframe", "filter", "--default-sampling-ratio", "summarize"} {
+	for _, want := range []string{"timeframe", "bucket", "contributions", "--default-sampling-ratio"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("scan-limit advice missing %q:\n%s", want, joined)
 		}
