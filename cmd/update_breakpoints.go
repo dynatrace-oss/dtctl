@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/livedebugger"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
@@ -25,6 +26,10 @@ var updateBreakpointCmd = &cobra.Command{
 	Short:   "Update Live Debugger breakpoints and workspace filters (experimental)",
 	Long: `Update Live Debugger breakpoints by mutable rule ID or source location,
 or update workspace filters for the current project.
+
+Filters are workspace-scoped, so updating them with --filters also re-scopes
+every existing breakpoint in the workspace. When active breakpoints would be
+affected you are asked to confirm; pass --yes (-y) to skip the prompt.
 
 Note: Live Debugger support is experimental. The underlying APIs and query
 behavior may change in future releases.
@@ -48,6 +53,7 @@ Examples:
 		verbose := isDebugVerbose()
 		filters, _ := cmd.Flags().GetString("filters")
 		filtersChanged := cmd.Flags().Changed("filters")
+		skipConfirm, _ := cmd.Flags().GetBool("yes")
 		trailingArgs := []string{}
 		if len(args) > 1 {
 			trailingArgs = args[1:]
@@ -60,8 +66,8 @@ Examples:
 		}
 
 		if filtersChanged {
-			if strings.TrimSpace(filters) == "" {
-				return fmt.Errorf("--filters is required")
+			if err := requireFiltersValue(filters); err != nil {
+				return err
 			}
 			if conditionChanged || enabledChanged {
 				return fmt.Errorf("--filters cannot be combined with --condition or --enabled")
@@ -89,7 +95,11 @@ Examples:
 			}
 
 			if dryRun {
-				return printBreakpointMessage("update", fmt.Sprintf("Dry run: would update Live Debugger workspace filters (%s)", strings.TrimSpace(filters)))
+				parsed, err := parseFilters(filters)
+				if err != nil {
+					return err
+				}
+				return printBreakpointMessage("update", fmt.Sprintf("Dry run: would update Live Debugger workspace filters (%s) (note: this also re-scopes existing breakpoints in the workspace)", formatFilters(parsed)))
 			}
 
 			c, err := NewClientFromConfig(cfg)
@@ -115,12 +125,26 @@ Examples:
 				}
 			}
 
-			parsedFilters, err := parseFilters(filters)
+			filterSets, err := buildWorkspaceFilterSets(filters)
 			if err != nil {
 				return err
 			}
 
-			updateResp, err := handler.UpdateWorkspaceFilters(workspaceID, livedebugger.BuildFilterSets(parsedFilters))
+			// Changing workspace filters re-scopes every existing active
+			// breakpoint in the workspace. Confirm first, unless --yes or a
+			// non-interactive (--plain/agent) context. The extra read is only
+			// paid when we might prompt.
+			if !skipConfirm && !plainMode {
+				count, err := countActiveWorkspaceBreakpoints(handler, workspaceID)
+				if err != nil {
+					return err
+				}
+				if count > 0 && !prompt.Confirm(filterChangeConfirmMessage(count, false)) {
+					return printBreakpointMessage("update", "Cancelled")
+				}
+			}
+
+			updateResp, err := handler.UpdateWorkspaceFilters(workspaceID, filterSets)
 			if err != nil {
 				if verbose {
 					_ = printGraphQLResponse("updateWorkspaceV2", updateResp)
@@ -539,5 +563,6 @@ func init() {
 	updateBreakpointCmd.Flags().String("condition", "", "Condition expression for the breakpoint")
 	updateBreakpointCmd.Flags().String("enabled", "", "Enable or disable the breakpoint")
 	updateBreakpointCmd.Flags().String("filters", "", "workspace filters to apply (comma-separated key:value pairs)")
+	updateBreakpointCmd.Flags().BoolP("yes", "y", false, "skip the confirmation prompt when changing workspace filters affects existing breakpoints")
 	updateBreakpointCmd.Flags().Lookup("enabled").NoOptDefVal = "true"
 }
