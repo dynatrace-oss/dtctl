@@ -182,6 +182,10 @@ Examples:
 			DefaultTimeframeEnd:    defaultTimeframeEnd,
 			Locale:                 locale,
 			Timezone:               timezone,
+			// The waiter drives its own per-attempt progress output on stderr; a
+			// per-query progress bar (plus a completion summary per attempt) would
+			// fight it, so suppress it — same reasoning as --live in query.go.
+			NoProgress: true,
 		}
 
 		// Create wait config

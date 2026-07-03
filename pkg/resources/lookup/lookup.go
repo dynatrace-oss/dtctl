@@ -95,7 +95,8 @@ func (h *Handler) List() ([]Lookup, error) {
 	query := `fetch dt.system.files | filter startsWith(name, "/lookups/")`
 
 	executor := exec.NewDQLExecutor(h.client)
-	result, err := executor.ExecuteQuery(query)
+	// Internal metadata fetch, not a user-facing query: keep the progress bar off.
+	result, err := executor.ExecuteQueryWithOptions(query, exec.DQLExecuteOptions{NoProgress: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list lookup tables: %w", err)
 	}
@@ -159,7 +160,7 @@ func (h *Handler) Get(path string) (*Lookup, error) {
 
 	// First, get metadata from dt.system.files
 	metadataQuery := fmt.Sprintf(`fetch dt.system.files | filter name == "%s"`, path)
-	metadataResult, err := executor.ExecuteQuery(metadataQuery)
+	metadataResult, err := executor.ExecuteQueryWithOptions(metadataQuery, exec.DQLExecuteOptions{NoProgress: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get lookup table metadata %q: %w", path, err)
 	}

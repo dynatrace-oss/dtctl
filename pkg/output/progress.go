@@ -253,6 +253,9 @@ func renderBar(progress int) string {
 	if full > progressBarWidth {
 		full = progressBarWidth
 	}
+	if full < 0 {
+		full = 0
+	}
 	partial := ""
 	if full < progressBarWidth {
 		if e := int((exact - float64(full)) * 8); e > 0 {
