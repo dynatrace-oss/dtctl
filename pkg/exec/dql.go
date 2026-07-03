@@ -333,32 +333,122 @@ func (e *DQLExecutor) VerifyQuery(query string, opts DQLVerifyOptions) (*DQLVeri
 	return handler.Verify(ctx, req)
 }
 
-// getHintForNotification returns a CLI hint for a given notification type or message
-func getHintForNotification(notificationType, message string) string {
-	hints := map[string]string{
-		"SCAN_LIMIT_GBYTES":       "Use --default-scan-limit-gbytes <value> to increase the limit (e.g., dtctl q '<query>' --default-scan-limit-gbytes 2000)",
-		"RESULT_LIMIT_RECORDS":    "Use --max-result-records <value> to increase the record limit",
-		"RESULT_LIMIT_BYTES":      "Use --max-result-bytes <value> to increase the result size limit",
-		"FETCH_TIMEOUT":           "Use --fetch-timeout-seconds <value> to increase the fetch timeout",
-		"SAMPLING_APPLIED":        "Use --default-sampling-ratio <value> to adjust sampling (1.0 = no sampling)",
-		"QUERY_CONSUMPTION_LIMIT": "Use --enforce-query-consumption-limit=false to disable consumption limits",
+// Notification categories. A query notification is mapped to one of these so a
+// single set of advice serves both the human stderr hint and the agent-envelope
+// suggestions. The empty string means "no specific advice".
+const (
+	notifScanLimit   = "scan_limit"
+	notifResultLimit = "result_limit"
+	notifTimeout     = "timeout"
+	notifSampling    = "sampling"
+	notifConsumption = "consumption"
+)
+
+// classifyNotification maps a query notification (by type, falling back to a
+// message pattern) to one of the notif* categories. The message fallback exists
+// because not every deployment tags notifications with a stable type.
+func classifyNotification(notificationType, message string) string {
+	switch notificationType {
+	case "SCAN_LIMIT_GBYTES":
+		return notifScanLimit
+	case "RESULT_LIMIT_RECORDS", "RESULT_LIMIT_BYTES":
+		return notifResultLimit
+	case "FETCH_TIMEOUT":
+		return notifTimeout
+	case "SAMPLING_APPLIED":
+		return notifSampling
+	case "QUERY_CONSUMPTION_LIMIT":
+		return notifConsumption
 	}
 
-	if hint, ok := hints[notificationType]; ok {
-		return hint
+	msg := strings.ToLower(message)
+	switch {
+	case strings.Contains(msg, "scan") && strings.Contains(msg, "gigabyte"):
+		return notifScanLimit
+	case strings.Contains(msg, "result has been limited") || strings.Contains(msg, "limited to"):
+		return notifResultLimit
 	}
-
-	if len(message) > 0 {
-		msgLower := strings.ToLower(message)
-		if strings.Contains(msgLower, "result has been limited") || strings.Contains(msgLower, "limited to") {
-			return "Use --max-result-records <value> to increase the record limit (e.g., dtctl q '<query>' --max-result-records 5000)"
-		}
-		if strings.Contains(msgLower, "scan") && strings.Contains(msgLower, "gigabyte") {
-			return "Use --default-scan-limit-gbytes <value> to increase the limit (e.g., dtctl q '<query>' --default-scan-limit-gbytes 2000)"
-		}
-	}
-
 	return ""
+}
+
+// getHintForNotification returns a concise CLI hint (a single line, for stderr)
+// for a given notification type or message. For a truncating notification it
+// leads with data-reduction advice — raising the limit is the expensive last
+// resort, not the first suggestion.
+func getHintForNotification(notificationType, message string) string {
+	switch classifyNotification(notificationType, message) {
+	case notifScanLimit:
+		return "Result is PARTIAL (scan stopped early). Reduce data scanned — narrow the timeframe, restrict to specific buckets (bucket:{...}; use --include-contributions to find the heavy ones), filter early with == (not contains()), or sample logs/spans (add samplingRatio:1000 to the fetch, or pass --default-sampling-ratio). Raising --default-scan-limit-gbytes <value> works but costs more."
+	case notifResultLimit:
+		return "Result was truncated. Aggregate in DQL (| summarize ...) to shrink it, or raise --max-result-records / --max-result-bytes <value>."
+	case notifTimeout:
+		return "Fetch timed out (result may be incomplete). Narrow the timeframe or add filters, or raise --fetch-timeout-seconds <value>."
+	case notifSampling:
+		return "Results are sampled/extrapolated (approximate). For exact values remove samplingRatio from the fetch, or pass --default-sampling-ratio 1 (higher scan cost)."
+	case notifConsumption:
+		return "Query hit a consumption limit. Reduce the data scanned, or pass --enforce-query-consumption-limit=false to bypass."
+	}
+	return ""
+}
+
+// agentAdviceForNotification returns agent-envelope suggestion lines (the "# ..."
+// style used across the spill envelope) for a notification. Unlike the one-line
+// human hint, it spells out the concrete alternatives an agent can act on and
+// leads with the fact that the result may be incomplete.
+func agentAdviceForNotification(notificationType, message string) []string {
+	switch classifyNotification(notificationType, message) {
+	case notifScanLimit:
+		return []string{
+			"# the scan limit was reached — this result is PARTIAL (the scan stopped early), not the full dataset",
+			"# reduce the DATA SCANNED (aggregation alone does not help — it still scans everything). Raising the limit works but costs more and is slower:",
+			"#   - narrow the timeframe, e.g. from:now()-1h instead of a wide range (usually the biggest lever)",
+			"#   - restrict to the relevant bucket(s): fetch logs, bucket:{\"<bucket>\"}",
+			"#   - find which bucket dominates the scan: dtctl query --include-contributions --metadata=contributions -o json '<query>' and read matchedRecordsRatio per bucket",
+			"#   - filter early and prefer equality, e.g. | filter <field> == \"...\" (== scans far less than contains()/matchesPhrase())",
+			"#   - for logs/spans, sample so only a fraction is scanned: add samplingRatio to the fetch, e.g. fetch logs, samplingRatio:1000 (DQL-native, portable) — or pass dtctl's --default-sampling-ratio 1000; extrapolate counts with sum(dt.system.sampling_ratio)",
+			"# only if you truly need the full scan: --default-scan-limit-gbytes <value> (higher cost & duration; -1 = unlimited)",
+		}
+	case notifResultLimit:
+		return []string{
+			"# the result was truncated to the record/byte limit — rows are missing",
+			"# aggregate in DQL (| summarize ...) to shrink the result, or raise the cap with --max-result-records <N> / --max-result-bytes <N>",
+		}
+	case notifTimeout:
+		return []string{
+			"# the fetch timed out — this result may be incomplete",
+			"# narrow the timeframe or add filters to speed the query, or raise --fetch-timeout-seconds <N>",
+		}
+	case notifSampling:
+		return []string{
+			"# results are sampled/extrapolated (approximate, not exact); for exact values remove samplingRatio from the fetch (or pass --default-sampling-ratio 1) — higher scan cost",
+		}
+	case notifConsumption:
+		return []string{
+			"# the query hit a consumption limit and was stopped — this result may be incomplete",
+			"# reduce the data scanned (narrower timeframe/filters), or pass --enforce-query-consumption-limit=false to bypass",
+		}
+	}
+	return nil
+}
+
+// notificationAdvice converts query notifications into agent-envelope warnings
+// and suggestions. Unlike PrintNotifications (which writes to stderr for a
+// human), this surfaces the same information inside the JSON envelope on stdout,
+// so an agent parsing the result on stdout learns the result may be PARTIAL and
+// what to do next — otherwise a truncated scan looks like a complete answer.
+func notificationAdvice(notifications []QueryNotification) (warnings, suggestions []string) {
+	for _, n := range notifications {
+		switch strings.ToUpper(n.Severity) {
+		case "WARNING", "WARN", "ERROR":
+		default:
+			continue
+		}
+		if n.Message != "" {
+			warnings = append(warnings, n.Message)
+		}
+		suggestions = append(suggestions, agentAdviceForNotification(n.NotificationType, n.Message)...)
+	}
+	return warnings, suggestions
 }
 
 // PrintNotifications prints query notifications/warnings to stderr

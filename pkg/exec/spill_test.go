@@ -274,6 +274,69 @@ func TestBuildSpillResponse_InlineRecordsEnvelopeInAgentMode(t *testing.T) {
 	}
 }
 
+// resultWithNotification returns a small result carrying a query notification,
+// so the envelope-building paths can be exercised against truncation warnings.
+func resultWithNotification(n QueryNotification) (*DQLQueryResponse, []map[string]interface{}) {
+	resp, records := sampleResult(false)
+	resp.Metadata.Grail.Notifications = []QueryNotification{n}
+	return resp, records
+}
+
+func TestBuildSpillResponse_InlineSurfacesScanLimitNotification(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithNotification(QueryNotification{
+		Severity:         "WARNING",
+		NotificationType: "SCAN_LIMIT_GBYTES",
+		Message:          "Your execution was stopped after 500 gigabytes of data were scanned.",
+	})
+	opts := DQLExecuteOptions{
+		AgentMode: true,
+		Spill:     SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !handled {
+		t.Fatalf("buildSpillResponse: handled=%v err=%v", handled, err)
+	}
+	if resp.Context.Decided != "inline" {
+		t.Fatalf("decided = %q, want inline", resp.Context.Decided)
+	}
+	if len(resp.Context.Warnings) != 1 || !strings.Contains(resp.Context.Warnings[0], "500 gigabytes") {
+		t.Errorf("expected scan-limit warning in envelope, got %v", resp.Context.Warnings)
+	}
+	if !strings.Contains(strings.Join(resp.Context.Suggestions, "\n"), "PARTIAL") {
+		t.Errorf("expected PARTIAL scan-limit advice in envelope, got %v", resp.Context.Suggestions)
+	}
+}
+
+func TestBuildSpillResponse_SpilledSurfacesScanLimitNotificationFirst(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithNotification(QueryNotification{
+		Severity:         "WARNING",
+		NotificationType: "SCAN_LIMIT_GBYTES",
+		Message:          "Your execution was stopped after 500 gigabytes of data were scanned.",
+	})
+	opts := DQLExecuteOptions{
+		AgentMode: true,
+		Spill:     SpillOptions{Mode: SpillAlways, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, spilled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !spilled {
+		t.Fatalf("buildSpillResponse: spilled=%v err=%v", spilled, err)
+	}
+	if len(resp.Context.Warnings) == 0 || !strings.Contains(strings.Join(resp.Context.Warnings, "\n"), "500 gigabytes") {
+		t.Errorf("expected scan-limit warning in spilled envelope, got %v", resp.Context.Warnings)
+	}
+	// Notification advice must lead the suggestions — a PARTIAL result matters
+	// more than the spill/inspect follow-ups.
+	if len(resp.Context.Suggestions) == 0 || !strings.Contains(resp.Context.Suggestions[0], "scan limit was reached") {
+		t.Errorf("scan-limit advice should lead the suggestions, got %v", resp.Context.Suggestions)
+	}
+	// The spill follow-ups (inspect hint) must still be present after it.
+	if !strings.Contains(strings.Join(resp.Context.Suggestions, "\n"), "dtctl inspect") {
+		t.Errorf("expected spill inspect follow-up to remain, got %v", resp.Context.Suggestions)
+	}
+}
+
 func TestBuildSpillResponse_NeverModeInlinesInAgentMode(t *testing.T) {
 	// --spill=never forces rows inline regardless of size; in agent mode that
 	// still means a self-describing kind:"records" envelope, never a table. Use
