@@ -209,8 +209,24 @@ func buildExecuteRequest(query string, opts DQLExecuteOptions) sdkquery.ExecuteR
 	if len(opts.Segments) > 0 {
 		req.FilterSegments = opts.Segments
 	}
+	// Request metric-catalogue enrichment (displayName/description/unit on
+	// metadata.metrics[]) only when the caller actually wants metrics metadata.
+	if wantsMetricsMetadata(opts.MetadataFields) {
+		req.EnrichMetricMetadata = true
+	}
 
 	return req
+}
+
+// wantsMetricsMetadata reports whether the requested metadata fields include
+// metric metadata — either explicitly ("metrics") or via the "all" selector.
+func wantsMetricsMetadata(fields []string) bool {
+	for _, f := range fields {
+		if f == "all" || f == "metrics" {
+			return true
+		}
+	}
+	return false
 }
 
 // Execute executes a DQL query
@@ -679,6 +695,7 @@ func extractQueryMetadata(result *DQLQueryResponse) *output.QueryMetadata {
 			FieldName:   m.FieldName,
 			Aggregation: m.Aggregation,
 			DisplayName: m.DisplayName,
+			Description: m.Description,
 			Unit:        m.Unit,
 		})
 	}

@@ -919,7 +919,7 @@ func TestValidMetadataFieldNames_Sorted(t *testing.T) {
 func TestFormatMetadataFooter_Metrics(t *testing.T) {
 	meta := &QueryMetadata{
 		Metrics: []MetricInfo{
-			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent", DisplayName: "Process CPU Utilization"},
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent", DisplayName: "Process CPU Utilization", Description: "Percentage of CPU time consumed by the process"},
 			{MetricKey: "process.cpu.utilization", FieldName: "sum(process.cpu.utilization)", Aggregation: "sum"},
 		},
 	}
@@ -936,6 +936,9 @@ func TestFormatMetadataFooter_Metrics(t *testing.T) {
 	}
 	if !strings.Contains(result, "Process CPU Utilization") {
 		t.Errorf("expected display name, got:\n%s", result)
+	}
+	if !strings.Contains(result, "Percentage of CPU time consumed by the process") {
+		t.Errorf("expected description, got:\n%s", result)
 	}
 	// Without unit
 	if !strings.Contains(result, "sum(process.cpu.utilization) → process.cpu.utilization [sum]") {
@@ -999,7 +1002,7 @@ func TestMetadataToMap_Metrics(t *testing.T) {
 	meta := &QueryMetadata{
 		QueryID: "test-id",
 		Metrics: []MetricInfo{
-			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent"},
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent", Description: "Percentage of CPU time consumed by the process"},
 		},
 	}
 
@@ -1018,6 +1021,9 @@ func TestMetadataToMap_Metrics(t *testing.T) {
 	}
 	if len(metrics) != 1 || metrics[0].Unit != "Percent" {
 		t.Errorf("unexpected metrics value: %+v", metrics)
+	}
+	if metrics[0].Description != "Percentage of CPU time consumed by the process" {
+		t.Errorf("expected description to be preserved, got: %q", metrics[0].Description)
 	}
 
 	// When nil Metrics and "metrics" is selected, map must contain metrics:null

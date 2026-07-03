@@ -65,6 +65,65 @@ func TestExecute_Synchronous(t *testing.T) {
 	}
 }
 
+func TestExecuteAndPoll_EnrichMetricMetadata(t *testing.T) {
+	var execEnrich, pollEnrich string
+	var polled atomic.Bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		execEnrich = r.URL.Query().Get("enrich")
+		resp := Response{State: "RUNNING", RequestToken: "tok-enrich"}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		pollEnrich = r.URL.Query().Get("enrich")
+		polled.Store(true)
+		resp := Response{
+			State: "SUCCEEDED",
+			Result: &Result{
+				Metadata: &Metadata{Metrics: []MetricInfo{{MetricKey: "dt.host.cpu.user", Unit: "%"}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	_, err := h.ExecuteAndPoll(context.Background(), ExecuteRequest{Query: "timeseries avg(dt.host.cpu.user)", EnrichMetricMetadata: true}, nil)
+	if err != nil {
+		t.Fatalf("ExecuteAndPoll() error: %v", err)
+	}
+	if !polled.Load() {
+		t.Fatal("expected poll to be invoked")
+	}
+	if execEnrich != "metric-metadata" {
+		t.Errorf("execute enrich = %q, want metric-metadata", execEnrich)
+	}
+	if pollEnrich != "metric-metadata" {
+		t.Errorf("poll enrich = %q, want metric-metadata", pollEnrich)
+	}
+}
+
+func TestExecute_NoEnrichByDefault(t *testing.T) {
+	var execEnrich string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		execEnrich = r.URL.Query().Get("enrich")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{State: "SUCCEEDED", Result: &Result{}})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	if _, err := h.Execute(context.Background(), ExecuteRequest{Query: "fetch logs | limit 1"}); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if execEnrich != "" {
+		t.Errorf("enrich param = %q, want empty when EnrichMetricMetadata is false", execEnrich)
+	}
+}
+
 func TestExecute_AsyncWithPoll(t *testing.T) {
 	var pollCount atomic.Int32
 
@@ -129,7 +188,7 @@ func TestPoll_Success(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Poll(context.Background(), "tok-abc", 5000)
+	result, err := h.Poll(context.Background(), "tok-abc", 5000, false)
 	if err != nil {
 		t.Fatalf("Poll() error: %v", err)
 	}
@@ -146,7 +205,7 @@ func TestPoll_ErrorReturnsAPIError(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Poll(context.Background(), "tok-abc", 5000)
+	_, err := h.Poll(context.Background(), "tok-abc", 5000, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -431,6 +490,54 @@ func TestResponse_GetMetadata(t *testing.T) {
 	}
 	if m.QueryID != "q-123" {
 		t.Errorf("QueryID = %q, want q-123", m.QueryID)
+	}
+}
+
+func TestMetricInfo_UnmarshalFromAPI(t *testing.T) {
+	// Mirrors the metadata.metrics[] shape the DQL API returns for timeseries
+	// queries. All descriptor fields must survive unmarshalling.
+	const raw = `{
+		"records": [],
+		"metadata": {
+			"metrics": [
+				{
+					"metric.key": "dt.host.cpu.user",
+					"displayName": "CPU user",
+					"description": "Average CPU time when CPU was running in user mode",
+					"unit": "%",
+					"fieldName": "sum(dt.host.cpu.user)",
+					"aggregation": "sum"
+				}
+			]
+		}
+	}`
+
+	var r Response
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	metrics := r.GetMetrics()
+	if len(metrics) != 1 {
+		t.Fatalf("expected 1 metric, got %d", len(metrics))
+	}
+	m := metrics[0]
+	if m.MetricKey != "dt.host.cpu.user" {
+		t.Errorf("MetricKey = %q, want dt.host.cpu.user", m.MetricKey)
+	}
+	if m.DisplayName != "CPU user" {
+		t.Errorf("DisplayName = %q, want CPU user", m.DisplayName)
+	}
+	if m.Description != "Average CPU time when CPU was running in user mode" {
+		t.Errorf("Description = %q, want the API description", m.Description)
+	}
+	if m.Unit != "%" {
+		t.Errorf("Unit = %q, want %%", m.Unit)
+	}
+	if m.FieldName != "sum(dt.host.cpu.user)" {
+		t.Errorf("FieldName = %q, want sum(dt.host.cpu.user)", m.FieldName)
+	}
+	if m.Aggregation != "sum" {
+		t.Errorf("Aggregation = %q, want sum", m.Aggregation)
 	}
 }
 
@@ -765,7 +872,7 @@ func TestWithHeaders_PropagatedToAllEndpoints(t *testing.T) {
 	h := NewHandler(newTestClient(t, mux)).WithHeaders(map[string]string{"x-custom": "test-value"})
 
 	h.Execute(context.Background(), ExecuteRequest{Query: "q"})
-	h.Poll(context.Background(), "tok", 1000)
+	h.Poll(context.Background(), "tok", 1000, false)
 	h.Cancel(context.Background(), "tok")
 	h.Verify(context.Background(), VerifyRequest{Query: "q"})
 
