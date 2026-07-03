@@ -600,6 +600,74 @@ func TestGetHintForNotification(t *testing.T) {
 	}
 }
 
+func TestClassifyNotification(t *testing.T) {
+	tests := []struct {
+		name             string
+		notificationType string
+		message          string
+		want             string
+	}{
+		{"scan by type", "SCAN_LIMIT_GBYTES", "", notifScanLimit},
+		{"result records by type", "RESULT_LIMIT_RECORDS", "", notifResultLimit},
+		{"result bytes by type", "RESULT_LIMIT_BYTES", "", notifResultLimit},
+		{"timeout by type", "FETCH_TIMEOUT", "", notifTimeout},
+		{"sampling by type", "SAMPLING_APPLIED", "", notifSampling},
+		{"consumption by type", "QUERY_CONSUMPTION_LIMIT", "", notifConsumption},
+		{"scan by message", "", "stopped after 500 gigabytes were scanned", notifScanLimit},
+		{"result by message", "", "Your result has been limited to 1000.", notifResultLimit},
+		{"unknown", "SOMETHING_ELSE", "all good", ""},
+		{"empty", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyNotification(tt.notificationType, tt.message); got != tt.want {
+				t.Errorf("classifyNotification(%q, %q) = %q, want %q", tt.notificationType, tt.message, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentAdviceForNotification_ScanLimit(t *testing.T) {
+	got := agentAdviceForNotification("SCAN_LIMIT_GBYTES", "")
+	if len(got) == 0 {
+		t.Fatal("expected scan-limit advice, got none")
+	}
+	joined := strings.Join(got, "\n")
+	// The result must be flagged as PARTIAL and reduction advice must come
+	// before the (expensive) raise-the-limit escape hatch.
+	if !strings.Contains(joined, "PARTIAL") {
+		t.Errorf("scan-limit advice should flag the result as PARTIAL:\n%s", joined)
+	}
+	for _, want := range []string{"timeframe", "filter", "--default-sampling-ratio", "summarize"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("scan-limit advice missing %q:\n%s", want, joined)
+		}
+	}
+	reduceIdx := strings.Index(joined, "--default-sampling-ratio")
+	raiseIdx := strings.Index(joined, "--default-scan-limit-gbytes")
+	if raiseIdx < 0 || reduceIdx < 0 || reduceIdx > raiseIdx {
+		t.Errorf("reduction advice should precede the raise-the-limit hint:\n%s", joined)
+	}
+}
+
+func TestNotificationAdvice(t *testing.T) {
+	notifications := []QueryNotification{
+		{Severity: "WARNING", NotificationType: "SCAN_LIMIT_GBYTES", Message: "stopped after 500 gigabytes"},
+		{Severity: "INFO", NotificationType: "RESULT_LIMIT_RECORDS", Message: "informational, ignore me"},
+	}
+	warnings, suggestions := notificationAdvice(notifications)
+	if len(warnings) != 1 || warnings[0] != "stopped after 500 gigabytes" {
+		t.Errorf("expected only the WARNING message surfaced, got %v", warnings)
+	}
+	if len(suggestions) == 0 || !strings.Contains(strings.Join(suggestions, "\n"), "PARTIAL") {
+		t.Errorf("expected scan-limit suggestions, got %v", suggestions)
+	}
+	// The INFO notification must not contribute advice.
+	if strings.Contains(strings.Join(suggestions, "\n"), "record/byte limit") {
+		t.Errorf("INFO-severity notification should be ignored, got %v", suggestions)
+	}
+}
+
 func TestNewDQLExecutor(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

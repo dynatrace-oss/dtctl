@@ -188,6 +188,14 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		}
 	}
 
+	// Surface query notifications (scan-limit truncation, result caps, timeouts,
+	// sampling) into the envelope. Their advice leads the suggestions because a
+	// PARTIAL result is more consequential to an agent than the spill/inspect
+	// follow-ups — an agent parsing stdout must learn the result is incomplete.
+	notifWarnings, notifSuggestions := notificationAdvice(result.GetNotifications())
+	warnings = append(warnings, notifWarnings...)
+	suggestions = append(notifSuggestions, suggestions...)
+
 	total := len(records)
 	ctx := &output.ResponseContext{
 		Verb:             "query",
@@ -236,6 +244,11 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		}
 	}
 
+	// Even an inline (small) result can be PARTIAL — a scan-limit stop can leave
+	// few rows. Surface the same notification advice so the agent isn't misled
+	// into treating a truncated scan as the complete answer.
+	notifWarnings, notifSuggestions := notificationAdvice(result.GetNotifications())
+
 	total := len(records)
 	ctx := &output.ResponseContext{
 		Verb:             "query",
@@ -245,6 +258,8 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		ThresholdBytes:   opts.Spill.Threshold,
 		MeasuredBytes:    measured,
 		MeasuredEncoding: encoding,
+		Warnings:         notifWarnings,
+		Suggestions:      notifSuggestions,
 	}
 	return output.Response{
 		OK:              true,
