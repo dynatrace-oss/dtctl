@@ -72,7 +72,7 @@ func TestCommandsCmd_AllVerbsPresent(t *testing.T) {
 	expectedVerbs := []string{
 		"get", "describe", "apply", "create", "edit", "delete",
 		"exec", "diff", "query", "wait", "doctor", "history",
-		"restore", "share", "unshare", "logs", "ctx", "skills",
+		"restore", "share", "unshare", "logs", "ctx", "skills", "download",
 	}
 
 	for _, verb := range expectedVerbs {
@@ -106,7 +106,7 @@ func TestCommandsCmd_MutatingVerbsCorrect(t *testing.T) {
 
 	readOnlyVerbs := []string{
 		"get", "describe", "diff", "query", "wait", "doctor",
-		"history", "logs", "ctx", "find", "verify", "open",
+		"history", "logs", "ctx", "find", "verify", "open", "download",
 		"skills",
 	}
 
@@ -593,7 +593,7 @@ func TestAllCommandsHaveHelpText(t *testing.T) {
 func TestParentVerbsHaveExamples(t *testing.T) {
 	parentVerbs := []string{
 		"get", "delete", "create", "edit", "exec",
-		"describe", "find", "update", "open", "doctor",
+		"describe", "find", "update", "open", "doctor", "download",
 		"skills",
 	}
 

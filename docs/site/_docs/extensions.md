@@ -51,11 +51,11 @@ dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --acti
 
 ## Inspecting Bundled Assets
 
-Download the raw extension zip or inspect alert templates and smartscape topology definitions bundled inside the package:
+Use `download extension` for the raw package, or inspect alert templates and smartscape topology definitions bundled inside the package:
 
 ```bash
 # Download the extension zip package (pipe to a file)
-dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 -o zip > postgres.zip
+dtctl download extension com.dynatrace.extension.postgres --version 2.9.3 > postgres.zip
 
 # Show alert templates bundled in the extension
 dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --assets=alert_templates

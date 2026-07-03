@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -56,9 +55,6 @@ Examples:
   # List active gate groups available for a specific version
   dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 --active-gate-groups
 
-  # Download the extension zip package
-  dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 -o zip > host-monitoring.zip
-
   # Show alert templates bundled in an extension
   dtctl describe extension com.dynatrace.extension.postgres --version 3.0.12 --assets=alert_templates
 
@@ -84,8 +80,8 @@ Examples:
 		if fullAssets && assetsFlag == "" {
 			return fmt.Errorf("--full requires --assets")
 		}
-		if assetsFlag != "" && outputFormat == "zip" {
-			return fmt.Errorf("--assets and -o zip are mutually exclusive")
+		if outputFormat == "zip" {
+			return fmt.Errorf("-o zip is not supported on describe extension; use 'dtctl download extension <extension-name> --version <version>'")
 		}
 
 		_, c, printer, err := Setup()
@@ -142,19 +138,6 @@ Examples:
 			}
 			enrichAgent(printer, "describe", "extension")
 			return printer.Print(result)
-		}
-
-		// -o zip: download the extension package and write raw bytes to stdout
-		if outputFormat == "zip" {
-			if GetAgentMode() {
-				return fmt.Errorf("-o zip is incompatible with agent mode (-A): raw binary cannot be wrapped in a JSON envelope")
-			}
-			data, err := handler.Download(extensionName, targetVersion)
-			if err != nil {
-				return err
-			}
-			_, err = os.Stdout.Write(data)
-			return err
 		}
 
 		// --monitoring-configuration-schema: output only the JSON Schema for monitoring configs
