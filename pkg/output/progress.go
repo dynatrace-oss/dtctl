@@ -9,15 +9,6 @@ import (
 	"time"
 )
 
-// ProgressMode controls whether a live progress indicator is drawn while a
-// long-running query is polled. It mirrors the auto|always|never convention
-// used elsewhere in the CLI.
-const (
-	ProgressAuto   = "auto"
-	ProgressAlways = "always"
-	ProgressNever  = "never"
-)
-
 // progressBarWidth is the number of cells in the rendered bar.
 const progressBarWidth = 20
 
@@ -49,24 +40,22 @@ type ProgressState struct {
 }
 
 // ProgressReporter renders an in-place progress line to stderr while a query
-// runs. When it is not enabled (non-TTY stderr, --plain, agent mode, or
-// mode=never) every method is a no-op, so callers can wire it unconditionally
-// without disturbing piped or structured output. Color is emitted only when
-// ColorEnabled() is true, so NO_COLOR still yields a plain (monochrome) bar.
+// runs. It is drawn only for an interactive terminal; when disabled (non-TTY
+// stderr, --plain, agent mode, or the user opted out) every method is a no-op,
+// so callers can wire it unconditionally without disturbing piped or structured
+// output. Color is emitted only when ColorEnabled() is true, so NO_COLOR still
+// yields a plain (monochrome) bar.
 //
-// In animated mode a background goroutine redraws the line on a fixed interval
-// (so the spinner and elapsed timer stay smooth between the far slower query
-// polls), while Update — called from the poll loop — only refreshes the shared
-// state. The mutex guards that state and serializes writes between the two.
+// A background goroutine redraws the line on a fixed interval (so the spinner
+// and elapsed timer stay smooth between the far slower query polls), while
+// Update — called from the poll loop — only refreshes the shared state. The
+// mutex guards that state and serializes writes between the two.
 type ProgressReporter struct {
 	w io.Writer
-	// animate is true when stderr is an interactive TTY: the line is redrawn in
-	// place with a carriage return and cleared on Stop.
+	// animate is true when the reporter is enabled and stderr is an interactive
+	// TTY: the line is redrawn in place with a carriage return and cleared on Stop.
 	animate bool
-	// logLines is true for mode=always on a non-TTY: progress is written as
-	// plain, ANSI-free lines (one per update) so it survives in CI logs.
-	logLines bool
-	start    time.Time
+	start   time.Time
 	// tickInterval overrides the redraw cadence (tests only); 0 => default.
 	tickInterval time.Duration
 	// manualTick disables the background animator so tests can drive frames
@@ -85,36 +74,21 @@ type ProgressReporter struct {
 	wg        sync.WaitGroup
 }
 
-// NewProgressReporter returns a reporter for the given mode. It draws an
-// animated line when stderr is a TTY and output is not --plain; agent mode is
-// always silent. mode=always forces output even on a non-TTY, degrading to
-// plain per-line logging.
-func NewProgressReporter(mode string, agentMode bool) *ProgressReporter {
-	return newProgressReporter(mode, agentMode, os.Stderr)
+// NewProgressReporter returns a reporter. When enabled is false (the user opted
+// out), or in agent mode, or under --plain, or when stderr is not an
+// interactive terminal, the reporter is a silent no-op. NO_COLOR is respected
+// for color only — the bar is still drawn, just without color.
+func NewProgressReporter(enabled, agentMode bool) *ProgressReporter {
+	return newProgressReporter(enabled, agentMode, os.Stderr)
 }
 
 // newProgressReporter is the testable core of NewProgressReporter with an
 // injectable writer.
-func newProgressReporter(mode string, agentMode bool, w io.Writer) *ProgressReporter {
+func newProgressReporter(enabled, agentMode bool, w io.Writer) *ProgressReporter {
 	r := &ProgressReporter{w: w, start: time.Now()}
-	if agentMode || mode == ProgressNever {
-		return r
-	}
-
-	// Progress is a stderr affordance, so gate on stderr being a TTY (not
-	// stdout) and on --plain — but not on NO_COLOR, which only suppresses color,
-	// not the bar itself.
-	tty := isTerminalWriter(w) && !plainModeEnabled
-	switch mode {
-	case ProgressAlways:
-		if tty {
-			r.animate = true
-		} else {
-			r.logLines = true
-		}
-	case ProgressAuto:
-		r.animate = tty
-	}
+	// Progress is a stderr affordance: gate on stderr being a TTY (not stdout)
+	// and on --plain/agent mode — but not on NO_COLOR, which only drops color.
+	r.animate = enabled && !agentMode && !plainModeEnabled && isTerminalWriter(w)
 	return r
 }
 
@@ -133,10 +107,6 @@ func (p *ProgressReporter) Update(s ProgressState) {
 		s.Progress = 100
 	}
 
-	if p.logLines {
-		fmt.Fprintf(p.w, "querying... %d%%%s\n", s.Progress, plainStats(s))
-		return
-	}
 	if !p.animate {
 		return
 	}
@@ -346,20 +316,6 @@ func statsSuffix(s ProgressState, start time.Time) string {
 	}
 	parts = append(parts, formatElapsed(time.Since(start)))
 	return "  " + strings.Join(parts, " · ")
-}
-
-// plainStats renders the ANSI-free stats segment for the CI log-lines path.
-func plainStats(s ProgressState) string {
-	switch {
-	case s.ScannedBytes > 0:
-		if s.ScannedRecords > 0 {
-			return fmt.Sprintf(" (%s scanned, %s records)", formatBytes(s.ScannedBytes), humanizeMetric(s.ScannedRecords))
-		}
-		return fmt.Sprintf(" (%s scanned)", formatBytes(s.ScannedBytes))
-	case s.PreviewRows > 0:
-		return fmt.Sprintf(" (preview: %s rows)", humanizeCount(s.PreviewRows))
-	}
-	return ""
 }
 
 // colorize wraps text in a color code only when color is enabled.

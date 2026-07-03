@@ -129,11 +129,11 @@ type DQLExecuteOptions struct {
 	Locale   string // Query locale (e.g., "en_US")
 	Timezone string // Query timezone (e.g., "UTC", "Europe/Paris")
 
-	// ProgressMode controls the live progress indicator drawn on stderr while an
-	// asynchronous query is polled: "auto" (default; on for interactive TTYs),
-	// "always", or "never". It never affects stdout, so structured/piped output
-	// is unchanged. Empty is treated as "auto".
-	ProgressMode string
+	// NoProgress disables the live progress bar drawn on stderr while an
+	// asynchronous query is polled. By default (false) the bar is shown for
+	// interactive terminals only; it never affects stdout, so structured/piped
+	// output is unchanged regardless.
+	NoProgress bool
 
 	// Metadata options
 	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, specific names = filtered
@@ -289,13 +289,10 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 	}
 
 	// Live progress on stderr. The reporter is a no-op unless stderr is an
-	// interactive TTY (or --progress=always), so piped/agent/structured output
-	// is untouched. Stop() erases the line on success, error, and cancellation.
-	progressMode := opts.ProgressMode
-	if progressMode == "" {
-		progressMode = output.ProgressAuto
-	}
-	reporter := output.NewProgressReporter(progressMode, opts.AgentMode)
+	// interactive TTY, so piped/agent/structured output is untouched. Stop()
+	// erases the line on error and cancellation; Complete() replaces it with a
+	// summary on success.
+	reporter := output.NewProgressReporter(!opts.NoProgress, opts.AgentMode)
 	defer reporter.Stop()
 
 	result, err := handler.ExecuteAndPollWithOptions(ctx, req, sdkquery.ExecuteAndPollOptions{

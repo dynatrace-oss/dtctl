@@ -9,31 +9,24 @@ import (
 )
 
 func TestNewProgressReporter_Gating(t *testing.T) {
-	// A bytes.Buffer is never a TTY, so animate must stay false. mode=always on
-	// a non-TTY degrades to plain per-line logging; every other combination is
-	// fully silent.
+	// A bytes.Buffer is never a TTY, so animate must stay false in every case.
+	// (The TTY-enabled path is exercised by constructing the struct directly in
+	// the animation tests below.)
 	tests := []struct {
-		name         string
-		mode         string
-		agent        bool
-		wantAnimate  bool
-		wantLogLines bool
+		name    string
+		enabled bool
+		agent   bool
 	}{
-		{"auto non-tty", ProgressAuto, false, false, false},
-		{"always non-tty", ProgressAlways, false, false, true},
-		{"never non-tty", ProgressNever, false, false, false},
-		{"always agent mode", ProgressAlways, true, false, false},
-		{"auto agent mode", ProgressAuto, true, false, false},
-		{"never agent mode", ProgressNever, true, false, false},
+		{"enabled non-tty", true, false},
+		{"disabled non-tty", false, false},
+		{"enabled agent mode", true, true},
+		{"disabled agent mode", false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := newProgressReporter(tt.mode, tt.agent, &bytes.Buffer{})
-			if r.animate != tt.wantAnimate {
-				t.Errorf("animate = %v, want %v", r.animate, tt.wantAnimate)
-			}
-			if r.logLines != tt.wantLogLines {
-				t.Errorf("logLines = %v, want %v", r.logLines, tt.wantLogLines)
+			r := newProgressReporter(tt.enabled, tt.agent, &bytes.Buffer{})
+			if r.animate {
+				t.Errorf("animate = true on a non-TTY writer, want false")
 			}
 		})
 	}
@@ -41,32 +34,11 @@ func TestNewProgressReporter_Gating(t *testing.T) {
 
 func TestProgressReporter_DisabledIsSilent(t *testing.T) {
 	var buf bytes.Buffer
-	r := newProgressReporter(ProgressAuto, false, &buf) // non-TTY auto => disabled
+	r := newProgressReporter(true, false, &buf) // enabled, but non-TTY => disabled
 	r.Update(ProgressState{Progress: 50, PreviewRows: 100})
 	r.Stop()
 	if buf.Len() != 0 {
 		t.Errorf("disabled reporter wrote %q, want nothing", buf.String())
-	}
-}
-
-func TestProgressReporter_LogLines(t *testing.T) {
-	var buf bytes.Buffer
-	r := newProgressReporter(ProgressAlways, false, &buf) // non-TTY always => logLines
-	r.Update(ProgressState{Progress: 20})
-	r.Update(ProgressState{Progress: 80, PreviewRows: 1234})
-	r.Update(ProgressState{Progress: 95, ScannedBytes: 13_359_294_822_752, ScannedRecords: 4_647_571_690})
-	r.Stop() // no-op for logLines
-
-	got := buf.String()
-	want := "querying... 20%\n" +
-		"querying... 80% (preview: 1,234 rows)\n" +
-		"querying... 95% (12.2 TB scanned, 4.6B records)\n"
-	if got != want {
-		t.Errorf("logLines output = %q, want %q", got, want)
-	}
-	// Plain log path must never emit ANSI escape sequences or carriage returns.
-	if strings.ContainsAny(got, "\r\x1b") {
-		t.Errorf("logLines output contains control chars: %q", got)
 	}
 }
 

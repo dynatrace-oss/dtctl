@@ -335,25 +335,24 @@ When the query finishes, the bar is replaced with a one-line summary:
 ✓ scanned 17.3 TB · 6.0B records in 42.1s
 ```
 
+The bar is shown by default for interactive terminals. Turn it off with
+`--no-progress`:
+
 ```bash
-# auto (default): show the bar only when stderr is an interactive terminal
+# default: progress bar shown when stderr is an interactive terminal
 dtctl query "fetch logs, from:-24h | summarize count()"
 
-# force it on (e.g. to emit plain per-line progress into a CI log)
-dtctl query "fetch logs | summarize count()" --progress=always
-
-# turn it off
-dtctl query "fetch logs | summarize count()" --progress=never
+# disable it
+dtctl query "fetch logs | summarize count()" --no-progress
 ```
 
 Notes:
 
 - The bar is drawn on **stderr only**, so it never corrupts piped or redirected
   results (`-o json > file`, `| jq`, etc.).
-- It is automatically suppressed for non-interactive output, under `--plain`,
-  and in [agent mode](ai-agent-mode). `NO_COLOR` keeps the bar but drops color.
-- `--progress=always` on a non-TTY (e.g. CI) prints plain, ANSI-free progress
-  lines instead of an animated bar.
+- It is automatically suppressed for non-interactive output (non-TTY stderr),
+  under `--plain`, and in [agent mode](ai-agent-mode). `NO_COLOR` keeps the bar
+  but drops color.
 - Fast queries that complete before the first poll show nothing.
 
 ### Caller Context
@@ -385,7 +384,7 @@ dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --fullscreen  # use ful
 | `--enable-preview` | Return preview results if available within the timeout |
 | `--fetch-timeout-seconds` | Time limit for fetching data (seconds) |
 | `--enforce-query-consumption-limit` | Enforce the tenant query consumption limit |
-| `--progress` | Live progress bar on stderr for long queries (`auto`/`always`/`never`) |
+| `--no-progress` | Disable the live progress bar shown on stderr for long queries |
 | `--max-result-records` | Maximum number of result records |
 | `--max-result-bytes` | Maximum result payload size in bytes |
 | `--default-scan-limit-gbytes` | Cap on how much data Grail scans (GB) |
