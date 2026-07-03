@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func buildZip(t *testing.T, files map[string]interface{}) []byte {
@@ -130,6 +132,34 @@ func TestParseAssets_Smartscape(t *testing.T) {
 	}
 }
 
+// TestParseAssets_SmartscapeIgnoresProcessorTypeLabel ensures node extraction keys off the
+// presence of a smartscapeNode block with extractNode:true, not the processor's `type` label,
+// so real extensions still yield nodes even if the label differs from our expectation.
+func TestParseAssets_SmartscapeIgnoresProcessorTypeLabel(t *testing.T) {
+	pipeline := `{"smartscapeNodeExtraction": {"processors": [
+		{"id": "n", "type": "someOtherTypeLabel", "description": "Create NODE_Z",
+		 "smartscapeNode": {"nodeType": "NODE_Z", "nodeIdFieldName": "dt.node_z", "extractNode": true,
+		   "staticEdgesToExtract": [{"edgeType": "runs_on", "targetType": "HOST"}]}}
+	]}}`
+	zipData := buildNestedZip(t, map[string]interface{}{
+		"extension.yaml":      "openpipeline:\n  pipelines:\n    - pipelinePath: openpipeline/p.json\n      displayName: Test\n",
+		"openpipeline/p.json": pipeline,
+	})
+	result, err := ParseAssets(zipData, []string{"smartscape"}, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Smartscape == nil || len(result.Smartscape.Nodes) != 1 {
+		t.Fatalf("expected 1 node despite non-standard type label, got %+v", result.Smartscape)
+	}
+	if result.Smartscape.Nodes[0].NodeType != "NODE_Z" {
+		t.Errorf("unexpected node type: %s", result.Smartscape.Nodes[0].NodeType)
+	}
+	if len(result.Smartscape.Edges) != 1 {
+		t.Errorf("expected 1 edge, got %d", len(result.Smartscape.Edges))
+	}
+}
+
 func TestParseAssets_BothTypes(t *testing.T) {
 	pipeline := `{"smartscapeNodeExtraction": {"processors": [
 		{"id": "n", "type": "smartscapeNode", "description": "Create NODE_X",
@@ -185,8 +215,38 @@ func TestParseAssets_FullPopulatesContent(t *testing.T) {
 		t.Error("expected Content to be populated with --full")
 	}
 	// Content should contain the full JSON including fields not in the summary struct.
-	if !strings.Contains(string(result.AlertTemplates[0].Content), `"threshold"`) {
-		t.Errorf("Content missing extra fields: %s", result.AlertTemplates[0].Content)
+	content, ok := result.AlertTemplates[0].Content.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Content to decode to a JSON object, got %T", result.AlertTemplates[0].Content)
+	}
+	if _, ok := content["threshold"]; !ok {
+		t.Errorf("Content missing extra field 'threshold': %+v", content)
+	}
+}
+
+// TestParseAssets_FullContentYAMLIsReadable guards against Content being serialized
+// as a raw byte list under YAML (the failure mode when Content was a json.RawMessage).
+func TestParseAssets_FullContentYAMLIsReadable(t *testing.T) {
+	zipData := buildNestedZip(t, map[string]interface{}{
+		"extension.yaml": "alerts:\n  - path: alerts/a.json\n",
+		"alerts/a.json":  map[string]interface{}{"name": "A", "eventType": "CUSTOM_ALERT", "threshold": 42},
+	})
+	result, err := ParseAssets(zipData, []string{"alert_templates"}, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out, err := yaml.Marshal(result)
+	if err != nil {
+		t.Fatalf("yaml marshal failed: %v", err)
+	}
+	rendered := string(out)
+	// The content must render as a keyed mapping, not a base64 blob or a list of byte ints.
+	if !strings.Contains(rendered, "threshold: 42") {
+		t.Errorf("expected readable YAML content with 'threshold: 42', got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "- 123") || strings.Contains(rendered, "!!binary") {
+		t.Errorf("content serialized as raw bytes instead of a mapping:\n%s", rendered)
 	}
 }
 

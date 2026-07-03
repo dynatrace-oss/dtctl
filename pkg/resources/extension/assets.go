@@ -17,7 +17,10 @@ type AlertAsset struct {
 	Name      string          `json:"name" table:"NAME"`
 	EventType string          `json:"eventType" table:"EVENT_TYPE"`
 	Enabled   *bool           `json:"enabled" table:"ENABLED"`
-	Content   json.RawMessage `json:"content,omitempty" yaml:"content,omitempty" table:"-"`
+	// Content is the decoded asset JSON (populated only with --full). It is stored as
+	// a decoded value rather than json.RawMessage so it renders correctly under both
+	// JSON and YAML output — yaml.v3 serializes a raw []byte as a list of byte integers.
+	Content interface{} `json:"content,omitempty" yaml:"content,omitempty" table:"-"`
 }
 
 // SmartscapeNode is the display model for a node type extracted from an extension's pipelines.
@@ -26,7 +29,9 @@ type SmartscapeNode struct {
 	NodeIDFieldName string          `json:"nodeIdFieldName" table:"ID_FIELD"`
 	Description     string          `json:"description,omitempty" table:"DESCRIPTION"`
 	Pipeline        string          `json:"pipeline" table:"PIPELINE"`
-	Content         json.RawMessage `json:"content,omitempty" yaml:"content,omitempty" table:"-"`
+	// Content is the decoded processor JSON (populated only with --full). See AlertAsset.Content
+	// for why this is a decoded value rather than json.RawMessage.
+	Content interface{} `json:"content,omitempty" yaml:"content,omitempty" table:"-"`
 }
 
 // SmartscapeEdge is the display model for a static edge defined in an extension's pipelines.
@@ -196,6 +201,16 @@ func readRawJSON(f *zip.File) (json.RawMessage, error) {
 	return raw, nil
 }
 
+// decodeJSONValue decodes raw JSON into a generic value (map/slice/scalar) suitable
+// for re-serialization to either JSON or YAML.
+func decodeJSONValue(raw json.RawMessage) (interface{}, error) {
+	var v interface{}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
 func parseAlertTemplates(manifest *extensionManifest, fileByName map[string]*zip.File, result *AssetResult, full bool) error {
 	result.AlertTemplates = []AlertAsset{} // non-nil even when manifest has no alerts
 
@@ -212,7 +227,11 @@ func parseAlertTemplates(manifest *extensionManifest, fileByName map[string]*zip
 		_ = json.Unmarshal(raw, &asset)
 		asset.Content = nil // clear any "content" key the JSON may have contained
 		if full {
-			asset.Content = raw
+			content, err := decodeJSONValue(raw)
+			if err != nil {
+				return fmt.Errorf("decode %s: %w", entry.Path, err)
+			}
+			asset.Content = content
 		}
 		result.AlertTemplates = append(result.AlertTemplates, asset)
 	}
@@ -265,7 +284,10 @@ func parseSmartscape(manifest *extensionManifest, fileByName map[string]*zip.Fil
 			if err := json.Unmarshal(procRaw, &proc); err != nil {
 				continue
 			}
-			if proc.Type != "smartscapeNode" || !proc.SmartscapeNode.ExtractNode {
+			// A node extractor is identified by the presence of a smartscapeNode block
+			// with extractNode:true and a node type — not by the processor's `type`
+			// label, which we don't gate on so extraction is robust to label changes.
+			if !proc.SmartscapeNode.ExtractNode || proc.SmartscapeNode.NodeType == "" {
 				continue
 			}
 
@@ -279,7 +301,11 @@ func parseSmartscape(manifest *extensionManifest, fileByName map[string]*zip.Fil
 					Pipeline:        pipeline.PipelinePath,
 				}
 				if full {
-					node.Content = procRaw
+					content, err := decodeJSONValue(procRaw)
+					if err != nil {
+						return fmt.Errorf("decode processor in %s: %w", pipeline.PipelinePath, err)
+					}
+					node.Content = content
 				}
 				sc.Nodes = append(sc.Nodes, node)
 			}

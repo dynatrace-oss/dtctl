@@ -396,8 +396,8 @@ func printAssetsTable(result *extension.AssetResult, full bool) {
 }
 
 // printAssetContent prints indented JSON content for a named asset (used with --full).
-func printAssetContent(label string, raw json.RawMessage) {
-	indented, err := json.MarshalIndent(raw, "  ", "  ")
+func printAssetContent(label string, content interface{}) {
+	indented, err := json.MarshalIndent(content, "  ", "  ")
 	if err != nil {
 		fmt.Printf("  %s\n  (could not format content)\n", label)
 		return
