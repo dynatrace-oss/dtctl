@@ -23,6 +23,7 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 | `apply` | Apply configuration from file (create or update) |
 | `logs` | Print logs for a resource |
 | `query` | Execute a DQL query |
+| `wait` | Poll a DQL query until a record-count condition is met (tests/CI) |
 | `inspect` | Inspect a spilled query-result file locally (rows, schema, stats) without re-querying Grail |
 | `exec` | Execute a workflow, function, analyzer, or CoPilot skill |
 | `history` | Show version history (snapshots) of a document |
@@ -100,9 +101,14 @@ dtctl config describe-context <name>
 dtctl config delete-context <name>
 dtctl config view
 
-# Quick context switching
+# Quick context switching (shortcuts without the "config" prefix)
 dtctl ctx                          # List contexts
 dtctl ctx <name>                   # Switch context
+dtctl ctx current                  # Show current context name
+dtctl ctx describe <name>          # Show details of a context
+dtctl ctx set <name> --environment <url> [--token-ref <ref>]  # Create/update a context and switch to it
+dtctl ctx delete <name>            # Delete a context
+dtctl ctx token [<name>]           # Print the resolved token for a context
 
 # Credentials
 dtctl config set-credentials <ref> --token <token>
@@ -124,11 +130,20 @@ dtctl auth login --context <name> --environment <url>
 dtctl auth logout
 dtctl auth refresh
 
+# Session status: token presence, expiry, refresh token, granted scopes
+dtctl auth status
+dtctl auth status -o json
+
 # User identity
 dtctl auth whoami
 dtctl auth whoami --id-only
 dtctl auth whoami -o json
 ```
+
+`auth status` reports the OAuth session state for the current context — whether an
+access token is stored, when it expires, whether a refresh token is present (so
+the CLI can auto-refresh), and the granted scopes. For platform (non-OAuth)
+tokens it reports the auth type and skips the OAuth-specific fields.
 
 ## Query Commands
 
@@ -213,6 +228,24 @@ it emits. It composes with a single row-access window (`--head`/`--tail`/`--page
 which bounds the matches) and with `--fields` (which projects them), but is
 mutually exclusive with `--schema`/`--stats`/`--sample`. The program must emit
 objects; for free-form scalar extraction run `jq` over the file yourself.
+
+## Wait Commands
+
+`dtctl wait query` polls a DQL query with exponential backoff until a record-count
+condition is met — built for tests and CI/CD that must wait for data to land. See
+[Waiting for Query Conditions](dql-queries#waiting-for-query-conditions) for the
+full condition list, polling controls, and exit codes.
+
+```bash
+# Wait for exactly one matching record (default timeout 5m)
+dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1
+
+# Wait for any error logs, with a custom timeout
+dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+
+# Conditions: count=N | count-gte=N | count-gt=N | count-lte=N | count-lt=N | any | none
+# Polling:    --timeout --max-attempts --initial-delay --min-interval --max-interval --backoff-multiplier
+```
 
 ## Execution Commands
 

@@ -81,6 +81,18 @@ dtctl ctx dev
 dtctl ctx
 ```
 
+The `ctx` command is a shorthand for the common `config` operations. With no
+argument it lists contexts; with a name it switches. It also has subcommands:
+
+```bash
+dtctl ctx current                 # Show the current context name
+dtctl ctx describe prod           # Show details of a context
+dtctl ctx set staging \           # Create or update a context and switch to it
+  --environment "https://staging.apps.dynatrace.com" --token-ref staging-token
+dtctl ctx delete old-env          # Delete a context
+dtctl ctx token prod              # Print the resolved token for a context (defaults to current)
+```
+
 ### One-Time Context Override
 
 Run a single command against a different context without switching:

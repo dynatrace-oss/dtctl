@@ -87,12 +87,12 @@ dtctl query "fetch application.snapshots | limit 10" --decode-snapshots
 
 ### Full vs Simplified Decoding
 
-By default, `--decode-snapshots` produces a simplified view that shows variable names and values in a human-readable format. For the full raw snapshot data (including nested objects and metadata), use:
+By default, `--decode-snapshots` (equivalent to `--decode-snapshots=simplified`) produces a simplified view that shows variable names and values in a human-readable format. For the full decoded tree (including nested objects and type annotations), use `--decode-snapshots=full`:
 
 ```bash
 # Full decoding with complete object graphs
 dtctl query "fetch application.snapshots | limit 5" \
-  --decode-snapshots --full
+  --decode-snapshots=full
 ```
 
 ## Safety and Dry-Run
