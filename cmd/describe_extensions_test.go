@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/cmd/testutil"
@@ -207,5 +208,16 @@ func TestFluffKeys_ContainsExpectedKeys(t *testing.T) {
 	}
 	if len(extension.FluffKeys) != len(expected) {
 		t.Errorf("expected FluffKeys to have exactly %d entries, got %d", len(expected), len(extension.FluffKeys))
+	}
+}
+
+func TestDescribeExtensionRejectsZipOutput(t *testing.T) {
+	rootCmd.SetArgs([]string{"describe", "extension", "com.dynatrace.extension.postgres", "-o", "zip"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected an error for -o zip on describe extension")
+	}
+	if !strings.Contains(err.Error(), "dtctl download extension") {
+		t.Fatalf("expected guidance to use download verb, got: %q", err.Error())
 	}
 }

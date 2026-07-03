@@ -294,6 +294,11 @@ func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string
 	return h.sdk.GetMonitoringConfigurationSchema(context.Background(), extensionName, version)
 }
 
+// Download downloads the extension zip package for a specific version.
+func (h *Handler) Download(extensionName, version string) ([]byte, error) {
+	return h.sdk.Download(context.Background(), extensionName, version)
+}
+
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
 func (h *Handler) GetActiveGateGroups(extensionName, version string) (*ActiveGateGroupList, error) {
 	l, err := h.sdk.GetActiveGateGroups(context.Background(), extensionName, version)

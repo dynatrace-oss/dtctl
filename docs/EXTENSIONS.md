@@ -49,6 +49,30 @@ dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --moni
 dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --active-gate-groups
 ```
 
+## Inspecting Bundled Assets
+
+Use `download extension` for the raw package, or inspect alert templates and smartscape topology definitions bundled inside the package:
+
+```bash
+# Download the extension zip package (pipe to a file)
+dtctl download extension com.dynatrace.extension.postgres --version 2.9.3 > postgres.zip
+
+# Show alert templates bundled in the extension
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --assets=alert_templates
+
+# Show smartscape topology definitions
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --assets=smartscape
+
+# Show multiple asset types at once
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --assets=alert_templates,smartscape
+
+# Show full JSON content for each asset (use with --assets)
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --assets=alert_templates,smartscape --full
+
+# Get assets as structured JSON for automation
+dtctl describe extension com.dynatrace.extension.postgres --version 2.9.3 --assets=smartscape -o json
+```
+
 ## Installing Extensions
 
 ### Upload a Custom Extension

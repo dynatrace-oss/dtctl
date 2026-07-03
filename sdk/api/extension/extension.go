@@ -613,6 +613,34 @@ func (h *Handler) InstallFromHub(ctx context.Context, extensionName, version str
 	return &result, nil
 }
 
+// Download downloads the extension zip package for a specific version.
+// The returned bytes are the raw zip file contents.
+func (h *Handler) Download(ctx context.Context, extensionName, version string) ([]byte, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetHeader("Accept", "application/octet-stream").
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to download extension: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to download extension: %w", err)
+	}
+	ct := resp.Header().Get("Content-Type")
+	if ct != "" && !strings.HasPrefix(ct, "application/zip") && !strings.HasPrefix(ct, "application/octet-stream") {
+		return nil, fmt.Errorf("unexpected Content-Type %q from extension download (expected zip/octet-stream)", ct)
+	}
+	return resp.Body(), nil
+}
+
 // DeleteMonitoringConfiguration deletes a monitoring configuration for an extension
 func (h *Handler) DeleteMonitoringConfiguration(ctx context.Context, extensionName, configID string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).

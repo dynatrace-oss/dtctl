@@ -1,0 +1,19 @@
+alerttemplates:
+  - file: alerts/cpu-saturation.json
+    name: CPU Saturation
+    eventtype: RESOURCE_CONTENTION
+    enabled: true
+  - file: alerts/memory-usage.json
+    name: Memory Usage
+    eventtype: RESOURCE_CONTENTION
+    enabled: false
+smartscape:
+  nodes:
+    - nodetype: custom:my_service
+      nodeidfieldname: dt.entity.my_service
+      description: My Service node
+      pipeline: openpipeline/metrics.json
+  edges:
+    - sourcetype: custom:my_service
+      edgetype: runs_on
+      targettype: HOST

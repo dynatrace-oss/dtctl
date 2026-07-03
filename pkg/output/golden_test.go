@@ -174,6 +174,7 @@ func sloFixtures() []slo.SLO {
 func float64Ptr(v float64) *float64 { return &v }
 func int64Ptr(v int64) *int64       { return &v }
 func intPtr(v int) *int             { return &v }
+func boolPtr(v bool) *bool          { return &v }
 func stringPtr(v string) *string    { return &v }
 
 func bucketFixtures() []bucket.Bucket {
@@ -2615,6 +2616,38 @@ func TestGolden_DescribeExtensionSchemaNoFluff(t *testing.T) {
 				t.Fatalf("Print failed: %v", err)
 			}
 			assertGolden(t, "describe/extension-schema-no-fluff-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeExtensionAssets(t *testing.T) {
+	result := &extension.AssetResult{
+		AlertTemplates: []extension.AlertAsset{
+			{File: "alerts/cpu-saturation.json", Name: "CPU Saturation", EventType: "RESOURCE_CONTENTION", Enabled: boolPtr(true)},
+			{File: "alerts/memory-usage.json", Name: "Memory Usage", EventType: "RESOURCE_CONTENTION", Enabled: boolPtr(false)},
+		},
+		Smartscape: &extension.SmartscapeAssetResult{
+			Nodes: []extension.SmartscapeNode{
+				{NodeType: "custom:my_service", NodeIDFieldName: "dt.entity.my_service", Description: "My Service node", Pipeline: "openpipeline/metrics.json"},
+			},
+			Edges: []extension.SmartscapeEdge{
+				{SourceType: "custom:my_service", EdgeType: "runs_on", TargetType: "HOST"},
+			},
+		},
+	}
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(result); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-assets-"+name, buf.String())
 		})
 	}
 }
