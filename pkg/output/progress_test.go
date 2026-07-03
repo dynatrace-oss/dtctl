@@ -174,6 +174,50 @@ func TestProgressReporter_SpinnerAdvancesBetweenUpdates(t *testing.T) {
 	r.Stop() // must not panic (idempotent)
 }
 
+func TestProgressReporter_CompletePrintsSummary(t *testing.T) {
+	var buf bytes.Buffer
+	// manualTick keeps the animator off; started must be forced so Complete
+	// treats this as a bar that was shown.
+	r := &ProgressReporter{w: &buf, animate: true, manualTick: true, start: time.Now().Add(-42100 * time.Millisecond)}
+	r.Update(ProgressState{Progress: 90, ScannedBytes: 1 << 40, ScannedRecords: 5_983_657_731})
+
+	r.Complete(ProgressState{Progress: 100, ScannedBytes: 19_051_610_460_057, ScannedRecords: 5_983_657_731})
+
+	got := buf.String()
+	if !strings.Contains(got, "✓") {
+		t.Errorf("summary should include a check mark: %q", got)
+	}
+	if !strings.Contains(got, "scanned 17.3 TB · 6.0B records in 42.1s") {
+		t.Errorf("summary body wrong: %q", got)
+	}
+	if !strings.HasSuffix(got, "\n") {
+		t.Errorf("summary should end with a newline: %q", got)
+	}
+}
+
+func TestProgressReporter_CompleteSilentWhenNoBar(t *testing.T) {
+	// A query too fast to have animated (never Update'd) must not print a
+	// summary — Complete just clears (a no-op here) and stays quiet.
+	var buf bytes.Buffer
+	r := &ProgressReporter{w: &buf, animate: true, manualTick: true, start: time.Now()}
+	r.Complete(ProgressState{Progress: 100, ScannedBytes: 1 << 40})
+	if buf.Len() != 0 {
+		t.Errorf("Complete without a prior bar should be silent, wrote %q", buf.String())
+	}
+}
+
+func TestProgressReporter_StopAfterCompleteIsNoop(t *testing.T) {
+	var buf bytes.Buffer
+	r := &ProgressReporter{w: &buf, animate: true, manualTick: true, start: time.Now()}
+	r.Update(ProgressState{Progress: 50})
+	r.Complete(ProgressState{Progress: 100})
+	n := buf.Len()
+	r.Stop() // must not clear or double-print after Complete already ran
+	if buf.Len() != n {
+		t.Errorf("Stop after Complete wrote extra bytes: %q", buf.String()[n:])
+	}
+}
+
 func TestRenderBar(t *testing.T) {
 	tests := []struct {
 		progress   int

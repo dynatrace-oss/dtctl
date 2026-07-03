@@ -312,11 +312,10 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 			reporter.Update(state)
 		},
 	})
-	// Halt the animator and clear the line before any further stderr output
-	// (cancellation notice, error hints). Stop is idempotent; the defer remains
-	// as a safety net for panics.
-	reporter.Stop()
 	if err != nil {
+		// Clear the bar before any further stderr output (cancellation notice,
+		// error hints). Stop is idempotent; the defer remains a safety net.
+		reporter.Stop()
 		// If context was cancelled, print cancellation message
 		if ctx.Err() != nil {
 			fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
@@ -329,6 +328,16 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 		}
 		return nil, err
 	}
+
+	// On success, replace the bar with a completion summary carrying the final
+	// scan totals from the result metadata (the terminal poll does not fire an
+	// OnUpdate, so the reporter's live state stops one poll short).
+	final := output.ProgressState{Progress: 100}
+	if m := result.GetMetadata(); m != nil {
+		final.ScannedBytes = m.ScannedBytes
+		final.ScannedRecords = m.ScannedRecords
+	}
+	reporter.Complete(final)
 
 	return result, nil
 }

@@ -73,15 +73,16 @@ type ProgressReporter struct {
 	// synchronously via Update; production always leaves it false.
 	manualTick bool
 
-	mu      sync.Mutex
-	latest  ProgressState
-	spinIdx int
-	lastVis int // visible width of the last animated line, for padding/clearing
-	started bool
-	stopped bool
-	ticker  *time.Ticker
-	done    chan struct{}
-	wg      sync.WaitGroup
+	mu        sync.Mutex
+	latest    ProgressState
+	spinIdx   int
+	lastVis   int  // visible width of the last animated line, for padding/clearing
+	shown     bool // at least one frame was drawn (gates the completion summary)
+	animating bool // the background ticker goroutine is running
+	stopped   bool
+	ticker    *time.Ticker
+	done      chan struct{}
+	wg        sync.WaitGroup
 }
 
 // NewProgressReporter returns a reporter for the given mode. It draws an
@@ -142,8 +143,8 @@ func (p *ProgressReporter) Update(s ProgressState) {
 
 	p.mu.Lock()
 	p.latest = s
-	if !p.started && !p.stopped && !p.manualTick {
-		p.started = true
+	if !p.animating && !p.stopped && !p.manualTick {
+		p.animating = true
 		p.startTickerLocked()
 	}
 	p.renderLocked()
@@ -197,33 +198,70 @@ func (p *ProgressReporter) renderLocked() {
 	}
 	fmt.Fprintf(p.w, "\r%s%s", line, pad)
 	p.lastVis = vis
+	p.shown = true
 }
 
 // Stop halts the background animator and erases the progress line so the real
-// result renders on a clean row. It is safe to call multiple times and when
+// result renders on a clean row. Use it on error or cancellation; use Complete
+// on success to leave a summary. It is safe to call multiple times and when
 // disabled.
 func (p *ProgressReporter) Stop() {
 	if p == nil || !p.animate {
 		return
 	}
-
-	p.mu.Lock()
-	if p.stopped {
-		p.mu.Unlock()
+	if _, first := p.stopAnimator(); !first {
 		return
 	}
+	p.clearLine()
+}
+
+// Complete halts the animator and, when a bar was actually shown, replaces it
+// with a one-line completion summary (a green check, the final scan totals, and
+// elapsed time). For a query too fast to have animated it just clears, adding
+// no noise. It is idempotent with Stop; whichever runs first wins.
+func (p *ProgressReporter) Complete(final ProgressState) {
+	if p == nil || !p.animate {
+		return
+	}
+	shown, first := p.stopAnimator()
+	if !first {
+		return
+	}
+	p.clearLine()
+	if !shown {
+		return
+	}
+	check := colorize(Bold+Green, "✓")
+	fmt.Fprintf(p.w, "%s %s\n", check, colorize(Dim, summaryText(final, p.start)))
+}
+
+// stopAnimator halts the background loop exactly once, waiting for the goroutine
+// to exit. It reports whether an animation had started and whether this was the
+// first stop (so callers don't double-clear or double-print). The wait happens
+// outside the lock to avoid deadlocking the goroutine.
+func (p *ProgressReporter) stopAnimator() (shown, firstStop bool) {
+	p.mu.Lock()
+	if p.stopped {
+		s := p.shown
+		p.mu.Unlock()
+		return s, false
+	}
 	p.stopped = true
-	started, done, ticker := p.started, p.done, p.ticker
+	shown = p.shown
+	animating := p.animating
+	done, ticker := p.done, p.ticker
 	p.mu.Unlock()
 
-	// Wait for the animator to exit before clearing so no stray frame lands
-	// after the clear. Done outside the lock to avoid deadlocking the goroutine.
-	if started {
+	if animating {
 		ticker.Stop()
 		close(done)
 		p.wg.Wait()
 	}
+	return shown, true
+}
 
+// clearLine erases the current animated line, if any.
+func (p *ProgressReporter) clearLine() {
 	p.mu.Lock()
 	if p.lastVis > 0 {
 		fmt.Fprintf(p.w, "\r%s\r", strings.Repeat(" ", p.lastVis))
@@ -250,9 +288,48 @@ func renderBar(progress int) string {
 	if partial != "" {
 		empty--
 	}
-	filled := colorize(BrightCyan, strings.Repeat("█", full)+partial)
-	rest := colorize(Dim, strings.Repeat("░", empty))
-	return "▕" + filled + rest + "▏"
+
+	var b strings.Builder
+	b.WriteString("▕")
+	// Render the moving frontier (the partial cell, or the last full cell when
+	// the bar lands exactly on a boundary) in bright cyan, with the body a
+	// calmer cyan — a subtle leading-edge glow rather than a flat block.
+	switch {
+	case partial != "":
+		if full > 0 {
+			b.WriteString(colorize(Cyan, strings.Repeat("█", full)))
+		}
+		b.WriteString(colorize(BrightCyan, partial))
+	case full > 0:
+		if full > 1 {
+			b.WriteString(colorize(Cyan, strings.Repeat("█", full-1)))
+		}
+		b.WriteString(colorize(BrightCyan, "█"))
+	}
+	b.WriteString(colorize(Dim, strings.Repeat("░", empty)))
+	b.WriteString("▏")
+	return b.String()
+}
+
+// summaryText renders the completion line body, e.g.
+// "scanned 17.3 TB · 6.0B records in 42.1s", or "done in 3.2s" for a query that
+// reported no scan totals.
+func summaryText(s ProgressState, start time.Time) string {
+	var b strings.Builder
+	if s.ScannedBytes > 0 {
+		b.WriteString("scanned ")
+		b.WriteString(formatBytes(s.ScannedBytes))
+		if s.ScannedRecords > 0 {
+			b.WriteString(" · ")
+			b.WriteString(humanizeMetric(s.ScannedRecords))
+			b.WriteString(" records")
+		}
+		b.WriteString(" in ")
+	} else {
+		b.WriteString("done in ")
+	}
+	b.WriteString(formatElapsed(time.Since(start)))
+	return b.String()
 }
 
 // statsSuffix renders the trailing stats segment for the animated line: scan
