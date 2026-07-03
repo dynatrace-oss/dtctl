@@ -13,10 +13,10 @@ import (
 
 // AlertAsset is the display model for an alert template bundled in an extension.
 type AlertAsset struct {
-	File      string          `json:"file" table:"FILE"`
-	Name      string          `json:"name" table:"NAME"`
-	EventType string          `json:"eventType" table:"EVENT_TYPE"`
-	Enabled   *bool           `json:"enabled" table:"ENABLED"`
+	File      string `json:"file" table:"FILE"`
+	Name      string `json:"name" table:"NAME"`
+	EventType string `json:"eventType" table:"EVENT_TYPE"`
+	Enabled   *bool  `json:"enabled" table:"ENABLED"`
 	// Content is the decoded asset JSON (populated only with --full). It is stored as
 	// a decoded value rather than json.RawMessage so it renders correctly under both
 	// JSON and YAML output — yaml.v3 serializes a raw []byte as a list of byte integers.
@@ -25,10 +25,10 @@ type AlertAsset struct {
 
 // SmartscapeNode is the display model for a node type extracted from an extension's pipelines.
 type SmartscapeNode struct {
-	NodeType        string          `json:"nodeType" table:"NODE_TYPE"`
-	NodeIDFieldName string          `json:"nodeIdFieldName" table:"ID_FIELD"`
-	Description     string          `json:"description,omitempty" table:"DESCRIPTION"`
-	Pipeline        string          `json:"pipeline" table:"PIPELINE"`
+	NodeType        string `json:"nodeType" table:"NODE_TYPE"`
+	NodeIDFieldName string `json:"nodeIdFieldName" table:"ID_FIELD"`
+	Description     string `json:"description,omitempty" table:"DESCRIPTION"`
+	Pipeline        string `json:"pipeline" table:"PIPELINE"`
 	// Content is the decoded processor JSON (populated only with --full). See AlertAsset.Content
 	// for why this is a decoded value rather than json.RawMessage.
 	Content interface{} `json:"content,omitempty" yaml:"content,omitempty" table:"-"`
