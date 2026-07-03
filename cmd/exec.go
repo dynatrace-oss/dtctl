@@ -18,7 +18,8 @@ Available operations:
   function (fn, func)     Invoke an app function or run ad-hoc JavaScript
   analyzer (az)           Run a Davis AI analyzer
   slo                     Evaluate a service-level objective
-  copilot (cp, chat)      Chat with Davis CoPilot interactively`,
+  copilot (cp, chat)      Chat with Davis CoPilot interactively
+  profile                 Run a code-level profiling analysis (hotspots, threads, memory)`,
 	Example: `  # Execute a workflow and wait for completion
   dtctl exec workflow <workflow-id>
 
@@ -45,4 +46,5 @@ func init() {
 	execCmd.AddCommand(execAnalyzerCmd)
 	execCmd.AddCommand(execCopilotCmd)
 	execCmd.AddCommand(execSLOCmd)
+	execCmd.AddCommand(execProfileCmd)
 }
