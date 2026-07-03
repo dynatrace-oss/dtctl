@@ -1107,3 +1107,105 @@ func TestExecuteAndPoll_NoRequestToken(t *testing.T) {
 		t.Errorf("error should mention missing token: %v", err)
 	}
 }
+
+// TestExecuteAndPollWithOptions_OnUpdate verifies that the OnUpdate callback is
+// invoked on the initial RUNNING response and on each subsequent RUNNING poll,
+// carrying the reported progress and (when previews are enabled) preview rows.
+func TestExecuteAndPollWithOptions_OnUpdate(t *testing.T) {
+	var pollCount atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		// Initial async response: RUNNING at 10%, no preview yet.
+		resp := Response{State: "RUNNING", RequestToken: "tok-upd", Progress: 10}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		n := pollCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if n == 1 {
+			// A RUNNING poll carrying a preview snapshot.
+			json.NewEncoder(w).Encode(Response{
+				State:        "RUNNING",
+				RequestToken: "tok-upd",
+				Progress:     60,
+				Result:       &Result{Records: []map[string]interface{}{{"a": 1}, {"a": 2}}},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(Response{
+			State:  "SUCCEEDED",
+			Result: &Result{Records: []map[string]interface{}{{"a": 1}, {"a": 2}, {"a": 3}}},
+		})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+
+	var updates []PollUpdate
+	result, err := h.ExecuteAndPollWithOptions(context.Background(),
+		ExecuteRequest{Query: "fetch logs", EnablePreview: true},
+		ExecuteAndPollOptions{OnUpdate: func(u PollUpdate) { updates = append(updates, u) }},
+	)
+	if err != nil {
+		t.Fatalf("ExecuteAndPollWithOptions() error: %v", err)
+	}
+	if result.State != "SUCCEEDED" {
+		t.Fatalf("State = %q, want SUCCEEDED", result.State)
+	}
+
+	// Expect: initial RUNNING (10%, no preview) + one RUNNING poll (60%, 2 rows).
+	// The terminal SUCCEEDED poll must NOT produce an update.
+	if len(updates) != 2 {
+		t.Fatalf("got %d updates, want 2: %+v", len(updates), updates)
+	}
+	if updates[0].Progress != 10 || updates[0].Preview != nil {
+		t.Errorf("first update = %+v, want progress 10 and no preview", updates[0])
+	}
+	if updates[1].Progress != 60 {
+		t.Errorf("second update progress = %d, want 60", updates[1].Progress)
+	}
+	if updates[1].Preview == nil || len(updates[1].Preview.Records) != 2 {
+		t.Errorf("second update should carry a 2-row preview, got %+v", updates[1].Preview)
+	}
+}
+
+// TestExecuteAndPollWithOptions_NoPreviewWhenDisabled verifies that previews are
+// never surfaced to OnUpdate when EnablePreview is false, even if the backend
+// happens to include a result on a RUNNING poll.
+func TestExecuteAndPollWithOptions_NoPreviewWhenDisabled(t *testing.T) {
+	var pollCount atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(Response{State: "RUNNING", RequestToken: "tok-np", Progress: 5})
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if pollCount.Add(1) == 1 {
+			json.NewEncoder(w).Encode(Response{
+				State: "RUNNING", RequestToken: "tok-np", Progress: 50,
+				Result: &Result{Records: []map[string]interface{}{{"a": 1}}},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(Response{State: "SUCCEEDED", Result: &Result{}})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	var updates []PollUpdate
+	_, err := h.ExecuteAndPollWithOptions(context.Background(),
+		ExecuteRequest{Query: "fetch logs"}, // EnablePreview false
+		ExecuteAndPollOptions{OnUpdate: func(u PollUpdate) { updates = append(updates, u) }},
+	)
+	if err != nil {
+		t.Fatalf("ExecuteAndPollWithOptions() error: %v", err)
+	}
+	for i, u := range updates {
+		if u.Preview != nil {
+			t.Errorf("update %d carried a preview despite EnablePreview=false: %+v", i, u.Preview)
+		}
+	}
+}

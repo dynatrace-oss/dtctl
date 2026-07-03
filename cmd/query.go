@@ -241,6 +241,7 @@ Examples:
 		defaultSamplingRatio, _ := cmd.Flags().GetFloat64("default-sampling-ratio")
 		fetchTimeoutSeconds, _ := cmd.Flags().GetInt32("fetch-timeout-seconds")
 		enablePreview, _ := cmd.Flags().GetBool("enable-preview")
+		noProgress, _ := cmd.Flags().GetBool("no-progress")
 		enforceQueryConsumptionLimit, _ := cmd.Flags().GetBool("enforce-query-consumption-limit")
 		includeTypes, _ := cmd.Flags().GetBool("include-types")
 		// Parquet derives its column schema from DQL types, so request them even
@@ -391,6 +392,10 @@ Examples:
 			Spill:                        spillOpts,
 			TenantID:                     spillTenantID,
 			ContextName:                  spillContextName,
+			// The progress bar is a user-facing affordance of the `query`
+			// command only; opt in here (subject to --no-progress) so internal
+			// query callers stay silent by default.
+			ShowProgress: !noProgress,
 		}
 
 		// Handle live mode
@@ -415,6 +420,10 @@ Examples:
 			if interval == 0 {
 				interval = output.DefaultLiveInterval
 			}
+
+			// Live mode owns the terminal via its own printer; a per-fetch
+			// progress bar would fight it, so keep it off.
+			opts.ShowProgress = false
 
 			// Create printer options for live mode (needed for resize support)
 			printerOpts := output.PrinterOptions{
@@ -729,6 +738,7 @@ func init() {
 	queryCmd.Flags().Float64("default-sampling-ratio", 0, "default sampling ratio (0 = use default, normalized to power of 10 <= 100000)")
 	queryCmd.Flags().Int32("fetch-timeout-seconds", 0, "time limit for fetching data in seconds (0 = use default)")
 	queryCmd.Flags().Bool("enable-preview", false, "request preview results if available within timeout")
+	queryCmd.Flags().Bool("no-progress", false, "disable the live progress bar shown on stderr for long queries")
 	queryCmd.Flags().Bool("enforce-query-consumption-limit", false, "enforce query consumption limit")
 	queryCmd.Flags().Bool("include-types", false, "include type information in query results")
 	queryCmd.Flags().Bool("include-contributions", false, "include bucket contribution information in query results")

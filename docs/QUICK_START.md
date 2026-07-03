@@ -1172,6 +1172,7 @@ dtctl query "fetch logs | filter status='ERROR'" \
 - `--enable-preview`: Request preview results if available within timeout
 - `--enforce-query-consumption-limit`: Enforce query consumption limit
 - `--include-types`: Include type information in query results
+- `--no-progress`: Disable the live progress bar shown on stderr for long queries (shown by default on interactive terminals)
 
 **Timeframe Parameters:**
 - `--default-timeframe-start`: Query timeframe start timestamp (ISO-8601/RFC3339, e.g., '2022-04-20T12:10:04.123Z')
