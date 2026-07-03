@@ -251,24 +251,116 @@ Both `--segment` and `--segments-file` can be combined. If the same segment ID a
 
 ## Additional Parameters
 
-Fine-tune query execution with these options:
+Fine-tune query execution with these options.
+
+### Timeframe, Timezone, and Locale
 
 ```bash
-# Specify a time frame
-dtctl query "fetch logs | limit 10" --timeframe "now()-2h"
+# Default timeframe applied when the query does not set its own (ISO-8601/RFC3339)
+dtctl query "fetch logs | limit 10" \
+  --default-timeframe-start "2024-01-01T00:00:00Z" \
+  --default-timeframe-end   "2024-01-02T00:00:00Z"
 
-# Set timezone and locale
+# Set timezone and locale (affect time bucketing and formatting)
 dtctl query "fetch logs | limit 10" --timezone "America/New_York" --locale "en_US"
+```
 
-# Enable sampling for faster results on large datasets
-dtctl query "fetch logs" --sampling-ratio 0.1
+`--default-timeframe-start` / `--default-timeframe-end` only fill in a timeframe
+when the query itself does not specify one (e.g. via a `from`/`to` in the query).
+There is no `--timeframe` flag — express relative ranges in DQL instead
+(e.g. `fetch logs, from:now()-2h`).
 
-# Fetch execution metadata alongside results
+### Sampling and Preview
+
+```bash
+# Enable sampling for faster results on large log/span datasets
+# (normalized to a power of 10, e.g. 1000 samples 1/1000 of matching records)
+dtctl query "fetch logs" --default-sampling-ratio 1000
+
+# Request preview (partial) results if they are available within the timeout
+dtctl query "fetch logs | limit 10" --enable-preview
+```
+
+There is no `--sampling-ratio` or `--preview` flag — use `--default-sampling-ratio`
+and `--enable-preview`.
+
+### Execution Limits
+
+```bash
+# Cap how long Grail spends fetching data
+dtctl query "fetch logs" --fetch-timeout-seconds 30
+
+# Enforce the tenant's query consumption limit (fail instead of over-consuming)
+dtctl query "fetch logs" --enforce-query-consumption-limit
+```
+
+See [Large Dataset Downloads](#large-dataset-downloads) for `--max-result-records`,
+`--max-result-bytes`, and `--default-scan-limit-gbytes`.
+
+### Metadata, Types, and Contributions
+
+```bash
+# Fetch execution metadata alongside results (bare flag = all fields)
 dtctl query "fetch logs | limit 10" --metadata
 
-# Preview mode (faster, approximate results)
-dtctl query "fetch logs | limit 10" --preview
+# Select specific metadata fields
+dtctl query "fetch logs | limit 10" --metadata=scannedRecords,scannedBytes,executionTimeMilliseconds
+
+# Include DQL column type information in the result
+dtctl query "fetch logs | limit 10" --include-types
+
+# Include Grail bucket contribution information
+dtctl query "fetch logs | limit 10" --include-contributions
 ```
+
+Available `--metadata` fields: `executionTimeMilliseconds`, `scannedRecords`,
+`scannedBytes`, `scannedDataPoints`, `sampled`, `queryId`, `dqlVersion`, `query`,
+`canonicalQuery`, `timezone`, `locale`, `analysisTimeframe`, `contributions`,
+`metrics`.
+
+### Caller Context
+
+```bash
+# Declare the caller's intent in the dt-client-context request header
+# (useful for AI agents / scripts to tag why a query ran)
+dtctl query "fetch logs | limit 10" --client-context "root-cause-analysis"
+```
+
+### Chart Rendering
+
+When rendering to a terminal chart (`-o chart`, `sparkline`, `barchart`,
+`braille`), control the drawing area:
+
+```bash
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --width 120 --height 20
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --fullscreen  # use full terminal size
+```
+
+### Full Parameter Reference
+
+| Flag | Purpose |
+|------|---------|
+| `--default-timeframe-start` / `--default-timeframe-end` | Default query timeframe (ISO-8601/RFC3339) used when the query omits one |
+| `--timezone` | Query timezone (e.g. `UTC`, `Europe/Paris`) |
+| `--locale` | Query locale (e.g. `en_US`, `de_DE`) |
+| `--default-sampling-ratio` | Sampling ratio for faster approximate results (normalized to a power of 10) |
+| `--enable-preview` | Return preview results if available within the timeout |
+| `--fetch-timeout-seconds` | Time limit for fetching data (seconds) |
+| `--enforce-query-consumption-limit` | Enforce the tenant query consumption limit |
+| `--max-result-records` | Maximum number of result records |
+| `--max-result-bytes` | Maximum result payload size in bytes |
+| `--default-scan-limit-gbytes` | Cap on how much data Grail scans (GB) |
+| `--metadata`, `-M` | Include execution metadata (bare = all, or `=field1,field2`) |
+| `--include-types` | Include DQL column type information |
+| `--include-contributions` | Include Grail bucket contribution information |
+| `--client-context` | Set the `dt-client-context` request header (caller intent) |
+| `--width` / `--height` / `--fullscreen` | Terminal chart dimensions (chart output formats) |
+| `--decode-snapshots` | Decode Live Debugger snapshot payloads (see [Live Debugger](live-debugger)) |
+| `--spill*` | Spill large results to a file (see [above](#spilling-large-results-to-a-file)) |
+| `-S` / `--segment`, `-V` / `--segment-var`, `--segments-file` | Apply filter segments (see [above](#filter-segments)) |
+| `--live` / `--interval` | Live mode with periodic refresh (see [below](#live-mode)) |
+| `--set` | Set a template variable (`key=value`) |
+| `-f` / `--file` | Read the query from a file (`-` for stdin) |
 
 ## Live Mode
 
@@ -281,6 +373,68 @@ dtctl query "fetch logs | filter loglevel == 'ERROR' | sort timestamp desc | lim
 ```
 
 Press `Ctrl+C` to stop live mode.
+
+## Waiting for Query Conditions
+
+`dtctl wait query` repeatedly runs a DQL query until a **condition on the record
+count** is met (or a timeout is reached), using exponential backoff between
+attempts. It is built for tests and CI/CD — waiting for instrumented data to land
+before making assertions.
+
+```bash
+# Wait until exactly one matching span arrives
+dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1
+
+# Wait for any error logs, up to 2 minutes
+dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+
+# Template variables and file-based queries work here too
+dtctl wait query -f query.dql --set test_id=my-test --for=count-gte=1
+
+# Tune the backoff (e.g. for CI)
+dtctl wait query "..." --for=any --min-interval 500ms --max-interval 15s --backoff-multiplier 2
+
+# Capture the result once the condition is met
+dtctl wait query "..." --for=count=1 -o json > result.json
+```
+
+### Conditions (`--for`, required)
+
+| Condition | Meets when |
+|-----------|-----------|
+| `count=N` | Exactly N records |
+| `count-gte=N` | At least N records (`>=`) |
+| `count-gt=N` | More than N records (`>`) |
+| `count-lte=N` | At most N records (`<=`) |
+| `count-lt=N` | Fewer than N records (`<`) |
+| `any` | Any records returned (count > 0) |
+| `none` | No records returned (count == 0) |
+
+### Polling Controls
+
+| Flag | Purpose |
+|------|---------|
+| `--timeout` | Maximum time to wait (default `5m`, `0` = unlimited) |
+| `--max-attempts` | Maximum number of attempts (`0` = unlimited) |
+| `--initial-delay` | Delay before the first attempt |
+| `--min-interval` / `--max-interval` | Backoff bounds (defaults `1s` / `10s`) |
+| `--backoff-multiplier` | Exponential backoff multiplier (must be `> 1.0`, default `2`) |
+| `-q, --quiet` | Suppress progress messages |
+
+`wait query` also accepts the standard query tuning flags (`--timezone`,
+`--locale`, `--default-timeframe-start/-end`, `--default-sampling-ratio`,
+`--max-result-records`, etc.).
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Condition met |
+| `1` | Timeout reached |
+| `2` | Max attempts exceeded |
+| `3` | Query execution error |
+| `4` | Invalid condition syntax |
+| `5` | Invalid arguments |
 
 ## Cancelling Queries
 
