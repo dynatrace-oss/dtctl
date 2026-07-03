@@ -36,18 +36,18 @@ func NewHandler(c *httpclient.Client) *Handler {
 // Configuration is the scope to translate (e.g. "logs" or "bizevents") and is
 // required. The three booleans mirror the endpoint's query parameters; they are
 // always sent explicitly so a caller can override the server-side defaults
-// (notably SkipDisabledRules, which the server defaults to true).
+// (notably SkipDisabledRules, which the server defaults to false).
 type TranslateOptions struct {
 	// Configuration is the classic pipeline scope to translate (required).
 	Configuration string
 	// IncludeSampleData includes processor sample data in the translation
-	// (API default: false).
+	// (API default: true).
 	IncludeSampleData bool
 	// SkipDisabledRules skips disabled rules during translation
-	// (API default: true).
+	// (API default: false).
 	SkipDisabledRules bool
 	// SkipBuiltinProcessingRules skips built-in processing rules during
-	// translation (API default: false).
+	// translation (API default: true).
 	SkipBuiltinProcessingRules bool
 }
 
@@ -71,8 +71,8 @@ func (h *Handler) Translate(ctx context.Context, opts TranslateOptions) (*Transl
 
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		// All four parameters are sent explicitly (rather than relying on
-		// server defaults) so that, for example, --skip-disabled-rules=false
-		// can override the server's true default.
+		// server defaults) so that, for example, --skip-disabled-rules=true
+		// can override the server's false default.
 		SetQueryParam("configuration", opts.Configuration).
 		SetQueryParam("includeSampleData", strconv.FormatBool(opts.IncludeSampleData)).
 		SetQueryParam("skipDisabledRules", strconv.FormatBool(opts.SkipDisabledRules)).

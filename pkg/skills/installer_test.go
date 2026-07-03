@@ -642,11 +642,14 @@ func TestInstalledSkillContent_ContainsMainSections(t *testing.T) {
 
 	content := string(data)
 
+	// Section headings of the (intentionally compacted) skill — see commit
+	// 6e0aa88 "compact the dtctl skill". Keep these in sync with SKILL.md.
 	mustContain := []string{
 		"Dynatrace Control with dtctl",
 		"Resources & verbs",
 		"Output for agents",
 		"Apply & templates",
+		"Permissions & safety",
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(content, s) {
@@ -670,6 +673,8 @@ func TestInstalledSkillContent_SubstantialSize(t *testing.T) {
 		t.Fatalf("ReadFile error: %v", err)
 	}
 
+	// The skill was intentionally compacted (commit 6e0aa88); this guards
+	// against a truncated/empty install, not a specific length.
 	lines := strings.Count(string(data), "\n")
 	if lines < 100 {
 		t.Errorf("SKILL.md has only %d lines, expected 100+", lines)

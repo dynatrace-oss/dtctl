@@ -1632,6 +1632,38 @@ func TestExtractQueryMetadata_NilMetadata_PrintPath(t *testing.T) {
 	}
 }
 
+// TestExtractQueryMetadata_MetricsWithoutGrail verifies that Metrics (timeseries
+// metric descriptors) are extracted even when Grail metadata is absent — the two
+// are independent siblings of the response's metadata section, and a response
+// with metadata.metrics but no metadata.grail must not have its metrics dropped.
+func TestExtractQueryMetadata_MetricsWithoutGrail(t *testing.T) {
+	resp := &DQLQueryResponse{
+		State:   "SUCCEEDED",
+		Records: []map[string]interface{}{{"timestamp": "2026-03-09T12:15:00Z"}},
+		Metadata: &DQLMetadata{
+			Grail: nil,
+			Metrics: []MetricInfo{
+				{MetricKey: "dt.host.cpu.usage", FieldName: "avg(dt.host.cpu.usage)", Aggregation: "avg"},
+			},
+		},
+	}
+
+	meta := extractQueryMetadata(resp)
+	if meta == nil {
+		t.Fatal("expected metadata for response with Metrics but no Grail, got nil")
+	}
+	if len(meta.Metrics) != 1 {
+		t.Fatalf("expected 1 metric, got %d", len(meta.Metrics))
+	}
+	if meta.Metrics[0].MetricKey != "dt.host.cpu.usage" {
+		t.Errorf("expected MetricKey=dt.host.cpu.usage, got %q", meta.Metrics[0].MetricKey)
+	}
+	// Grail-derived fields must remain zero-valued since Grail was absent.
+	if meta.QueryID != "" || meta.ExecutionTimeMilliseconds != 0 {
+		t.Errorf("expected zero-valued Grail fields, got QueryID=%q ExecutionTimeMilliseconds=%d", meta.QueryID, meta.ExecutionTimeMilliseconds)
+	}
+}
+
 func TestExtractQueryMetadata_ResultMetadataPrecedence(t *testing.T) {
 	// When both result.Metadata and top-level Metadata exist,
 	// result.Metadata should take precedence

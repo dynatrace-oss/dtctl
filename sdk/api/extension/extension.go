@@ -58,7 +58,7 @@ type ExtensionDetails struct {
 	Author              ExtensionAuthor             `json:"author,omitempty"`
 	DataSources         []string                    `json:"dataSources,omitempty"`
 	FeatureSets         []string                    `json:"featureSets,omitempty"`
-	FeatureSetDetails   map[string]FeatureSetDetail `json:"featureSetDetails,omitempty"`
+	FeatureSetDetails   map[string]FeatureSetDetail `json:"featureSetsDetails,omitempty"`
 	FileHash            string                      `json:"fileHash,omitempty"`
 	MinDynatraceVersion string                      `json:"minDynatraceVersion,omitempty"`
 	MinEECVersion       string                      `json:"minEECVersion,omitempty"`
@@ -72,12 +72,24 @@ type ExtensionAuthor struct {
 
 // FeatureSetDetail represents a feature set of an extension
 type FeatureSetDetail struct {
-	Metrics []FeatureSetMetric `json:"metrics,omitempty"`
+	IsRecommended bool               `json:"isRecommended,omitempty"`
+	Metrics       []FeatureSetMetric `json:"metrics,omitempty"`
 }
 
 // FeatureSetMetric represents a metric within a feature set
 type FeatureSetMetric struct {
 	Key string `json:"key"`
+	// Metadata is a pointer so that omitempty actually drops the field for metrics
+	// that carry no metadata. encoding/json does NOT treat a zero-valued struct as
+	// empty, so a value type here would always serialize as "metadata": {}.
+	Metadata *FeatureSetMetricMetadata `json:"metadata,omitempty"`
+}
+
+// FeatureSetMetricMetadata holds display information for a feature set metric
+type FeatureSetMetricMetadata struct {
+	DisplayName string `json:"displayName,omitempty"`
+	Description string `json:"description,omitempty"`
+	Unit        string `json:"unit,omitempty"`
 }
 
 // ExtensionVariable represents a variable defined in an extension

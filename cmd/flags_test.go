@@ -764,7 +764,7 @@ func TestMetadataFlagCompletion_Empty(t *testing.T) {
 		t.Error("expected ShellCompDirectiveNoSpace to be set")
 	}
 
-	// Should include "all" plus all 13 field names
+	// Should include "all" plus all valid field names
 	allFields := output.ValidMetadataFieldNames()
 	expectedCount := len(allFields) + 1 // +1 for "all"
 	if len(suggestions) != expectedCount {
@@ -816,9 +816,10 @@ func TestMetadataFlagCompletion_AfterComma(t *testing.T) {
 		}
 	}
 
-	// Should have 12 suggestions (all fields minus queryId)
-	if len(suggestions) != 12 {
-		t.Errorf("got %d suggestions, want 12", len(suggestions))
+	// Should have one suggestion per field minus the already-selected queryId
+	want := len(output.ValidMetadataFieldNames()) - 1
+	if len(suggestions) != want {
+		t.Errorf("got %d suggestions, want %d", len(suggestions), want)
 	}
 }
 
@@ -854,9 +855,10 @@ func TestMetadataFlagCompletion_MultipleSelected(t *testing.T) {
 		}
 	}
 
-	// 13 total fields - 2 selected = 11
-	if len(suggestions) != 11 {
-		t.Errorf("got %d suggestions, want 11", len(suggestions))
+	// All fields minus the 2 already-selected (queryId, sampled)
+	want := len(output.ValidMetadataFieldNames()) - 2
+	if len(suggestions) != want {
+		t.Errorf("got %d suggestions, want %d", len(suggestions), want)
 	}
 }
 

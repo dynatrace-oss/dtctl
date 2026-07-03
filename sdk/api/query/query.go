@@ -111,9 +111,22 @@ type ColumnType struct {
 	Type string `json:"type"`
 }
 
+// MetricInfo describes a single metric referenced in a timeseries query result.
+// It maps the DQL column name (FieldName) to the underlying metric descriptor.
+// DisplayName and Unit are present only when the API returns metric catalogue data;
+// they are absent for tenants or queries that do not populate them.
+type MetricInfo struct {
+	MetricKey   string `json:"metric.key,omitempty"`
+	FieldName   string `json:"fieldName,omitempty"`
+	Aggregation string `json:"aggregation,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+	Unit        string `json:"unit,omitempty"`
+}
+
 // Metadata represents the metadata section of a DQL response.
 type Metadata struct {
-	Grail *GrailMetadata `json:"grail,omitempty"`
+	Grail   *GrailMetadata `json:"grail,omitempty"`
+	Metrics []MetricInfo   `json:"metrics,omitempty"`
 }
 
 // GrailMetadata represents Grail-specific query execution metadata.
@@ -448,6 +461,19 @@ func (r *Response) GetMetadata() *GrailMetadata {
 	}
 	if r.Metadata != nil && r.Metadata.Grail != nil {
 		return r.Metadata.Grail
+	}
+	return nil
+}
+
+// GetMetrics returns the metrics array from the response, checking both
+// result-level and top-level metadata. Returns nil when no metrics are present
+// (e.g., for non-timeseries queries).
+func (r *Response) GetMetrics() []MetricInfo {
+	if r.Result != nil && r.Result.Metadata != nil && len(r.Result.Metadata.Metrics) > 0 {
+		return r.Result.Metadata.Metrics
+	}
+	if r.Metadata != nil && len(r.Metadata.Metrics) > 0 {
+		return r.Metadata.Metrics
 	}
 	return nil
 }

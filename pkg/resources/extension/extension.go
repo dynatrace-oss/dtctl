@@ -180,6 +180,7 @@ type (
 	ExtensionAuthor               = sdkext.ExtensionAuthor
 	FeatureSetDetail              = sdkext.FeatureSetDetail
 	FeatureSetMetric              = sdkext.FeatureSetMetric
+	FeatureSetMetricMetadata      = sdkext.FeatureSetMetricMetadata
 	ExtensionVariable             = sdkext.ExtensionVariable
 	MonitoringConfigurationCreate = sdkext.MonitoringConfigurationCreate
 	ExtensionEnvironmentConfig    = sdkext.ExtensionEnvironmentConfig
