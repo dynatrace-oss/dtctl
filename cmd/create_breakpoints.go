@@ -122,8 +122,7 @@ Examples:
 					return err
 				}
 				if count > 0 && !prompt.Confirm(filterChangeConfirmMessage(count, true)) {
-					fmt.Println("Cancelled")
-					return nil
+					return printBreakpointMessage("create", "Cancelled")
 				}
 			}
 

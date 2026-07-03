@@ -95,7 +95,11 @@ Examples:
 			}
 
 			if dryRun {
-				return printBreakpointMessage("update", fmt.Sprintf("Dry run: would update Live Debugger workspace filters (%s) (note: this also re-scopes existing breakpoints in the workspace)", strings.TrimSpace(filters)))
+				parsed, err := parseFilters(filters)
+				if err != nil {
+					return err
+				}
+				return printBreakpointMessage("update", fmt.Sprintf("Dry run: would update Live Debugger workspace filters (%s) (note: this also re-scopes existing breakpoints in the workspace)", formatFilters(parsed)))
 			}
 
 			c, err := NewClientFromConfig(cfg)
@@ -136,8 +140,7 @@ Examples:
 					return err
 				}
 				if count > 0 && !prompt.Confirm(filterChangeConfirmMessage(count, false)) {
-					fmt.Println("Cancelled")
-					return nil
+					return printBreakpointMessage("update", "Cancelled")
 				}
 			}
 
