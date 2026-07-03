@@ -262,6 +262,12 @@ dtctl exec analyzer <analyzer-id> --query "timeseries avg(dt.host.cpu.usage)"
 
 # App Functions
 dtctl exec function <app-id>/<function-name> --method POST --payload '{...}'
+dtctl exec function <app-id>/<function-name> --method POST --data payload.json   # payload from file (- = stdin)
+dtctl exec function <app-id>/<function-name> --defer                             # async / resumable
+
+# Ad-hoc JavaScript (no app deployment; --code or -f selects this mode)
+dtctl exec function --code 'export default async function () { return "hi" }'
+dtctl exec function -f script.js --payload '{"input":"data"}'                    # -f - reads code from stdin
 
 # Davis CoPilot
 dtctl exec copilot "What is DQL?" --stream
