@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/profile"
@@ -15,7 +17,7 @@ import (
 var execProfileCmd = &cobra.Command{
 	Use:   "profile",
 	Short: "Run a code-level profiling analysis on a Dynatrace entity",
-	Long: `Run a code-level profiling analysis via the dynatrace.profiling app function.
+	Long: `Run a code-level profiling analysis via the Dynatrace code-level analysis API.
 
 The analysis is asynchronous server-side; this command polls until it completes.
 
@@ -87,8 +89,6 @@ Examples:
 		allocType, _ := cmd.Flags().GetString("type")
 		method, _ := cmd.Flags().GetString("method")
 
-		appID, _ := cmd.Flags().GetString("app")
-
 		_, c, err := SetupClient()
 		if err != nil {
 			return err
@@ -96,7 +96,7 @@ Examples:
 
 		handler := profile.NewHandler(c)
 		stopSpinner := startSpinner(fmt.Sprintf("running %s analysis", kindShort))
-		result, err := handler.Run(cmd.Context(), appID, profile.Payload{
+		resp, err := handler.Run(cmd.Context(), profile.Payload{
 			Kind:            apiKind,
 			EntityID:        entityID,
 			From:            from,
@@ -116,6 +116,11 @@ Examples:
 			return err
 		}
 
+		// Marshal resp to a generic map so enrich/compact helpers see the
+		// expected envelope shape: {"status":..., "result":{...}, ...}
+		b, _ := json.Marshal(resp)
+		var result interface{}
+		_ = json.Unmarshal(b, &result)
 		full, _ := cmd.Flags().GetBool("full")
 		if !full {
 			result = compactResult(result)
@@ -126,9 +131,57 @@ Examples:
 		if outputFormat == "" {
 			outputFormat = "json"
 		}
+		if outputFormat == "stacktree" {
+			w, _, err := term.GetSize(int(os.Stdout.Fd()))
+			if err != nil || w <= 0 {
+				w = 120
+			}
+			depth, _ := cmd.Flags().GetInt("depth")
+			appOnly, _ := cmd.Flags().GetBool("app-only")
+			if s := profile.ToStackTree(apiKind, result, w, depth, appOnly); s != "" {
+				fmt.Print(s)
+				return nil
+			}
+			outputFormat = "json"
+		}
+		if outputFormat == "tree" {
+			w, _, err := term.GetSize(int(os.Stdout.Fd()))
+			if err != nil || w <= 0 {
+				w = 120
+			}
+			if s := profile.ToTree(apiKind, result, w); s != "" {
+				fmt.Print(s)
+				return nil
+			}
+			outputFormat = "json"
+		}
+		if outputFormat == "bars" {
+			w, _, err := term.GetSize(int(os.Stdout.Fd()))
+			if err != nil || w <= 0 {
+				w = 120
+			}
+			top, _ := cmd.Flags().GetInt("top")
+			if s := profile.ToBars(apiKind, result, w, top); s != "" {
+				fmt.Print(s)
+				return nil
+			}
+			outputFormat = "json"
+		}
+		if outputFormat == "flamegraph" {
+			w, _, err := term.GetSize(int(os.Stdout.Fd()))
+			if err != nil || w <= 0 {
+				w = 120
+			}
+			if fg := profile.ToFlamegraph(apiKind, result, w); fg != "" {
+				fmt.Print(fg)
+				return nil
+			}
+			outputFormat = "json"
+		}
 		if outputFormat == "table" {
 			if rows := profile.ToTableRows(apiKind, result); rows != nil {
-				return output.NewPrinter("table").PrintList(rows)
+				top, _ := cmd.Flags().GetInt("top")
+				return output.NewPrinter("table").PrintList(profile.LimitRows(rows, top))
 			}
 			outputFormat = "json"
 		}
@@ -148,7 +201,6 @@ func parseProfileTimestamp(s string) (int64, error) {
 }
 
 func init() {
-	execProfileCmd.Flags().String("app", profile.DefaultAppID, "app ID to invoke (override for dev/custom deployments)")
 	execProfileCmd.Flags().StringP("kind", "k", "", "analysis kind: hotspots, threads, memory, memory-details (required)")
 	execProfileCmd.Flags().StringP("entity", "e", "", "entity ID (SERVICE-xxx or PROCESS_GROUP-xxx) (required)")
 	execProfileCmd.Flags().String("last", "", "time window relative to now, e.g. 1h, 30m (max 2h)")
@@ -171,6 +223,9 @@ func init() {
 	execProfileCmd.Flags().String("method", "", "method to drill into (memory-details)")
 
 	execProfileCmd.Flags().Bool("full", false, "include raw timeseries dataPoints (stripped by default)")
+	execProfileCmd.Flags().Int("top", 0, "limit table output to top N rows by running samples (0 = all)")
+	execProfileCmd.Flags().Int("depth", 0, "limit stacktree output to N levels deep (0 = all)")
+	execProfileCmd.Flags().Bool("app-only", false, "stacktree: show only com.dynatrace.* frames")
 
 	_ = execProfileCmd.MarkFlagRequired("kind")
 	_ = execProfileCmd.MarkFlagRequired("entity")

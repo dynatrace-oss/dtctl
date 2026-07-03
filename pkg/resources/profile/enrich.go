@@ -47,6 +47,24 @@ func EnrichResult(kind string, raw interface{}) interface{} {
 	return top
 }
 
+// LimitRows truncates rows to n if n > 0.
+func LimitRows(rows interface{}, n int) interface{} {
+	if n <= 0 {
+		return rows
+	}
+	switch v := rows.(type) {
+	case []HotspotRow:
+		if n < len(v) {
+			return v[:n]
+		}
+	case []MemoryTypeRow:
+		if n < len(v) {
+			return v[:n]
+		}
+	}
+	return rows
+}
+
 // ToTableRows converts a profile result to a slice of table-renderable rows.
 // Returns nil if the kind/data isn't suited for table display.
 func ToTableRows(kind string, raw interface{}) interface{} {
