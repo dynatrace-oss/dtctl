@@ -77,6 +77,47 @@ h2 { font-size: 1.5rem !important; border-bottom: 1px solid var(--dt-border); pa
 h3 { font-size: 1.25rem !important; color: var(--dt-text) !important; }
 h4 { font-size: 1rem !important; }
 
+/* ── Section anchor links ──
+   Kramdown auto-generates an id on every heading. The small JS in the
+   default layout injects a clickable "#" link so each section can be
+   linked directly. scroll-margin-top keeps the target clear of the
+   sticky site header when navigating to an anchor. */
+
+h2, h3, h4, h5, h6 {
+  scroll-margin-top: 5rem;
+}
+
+.heading-anchor {
+  display: inline-block;
+  margin-left: 0.35em;
+  padding: 0 0.15em;
+  color: var(--dt-text-muted) !important;
+  font-weight: 400 !important;
+  text-decoration: none !important;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+h1:hover > .heading-anchor,
+h2:hover > .heading-anchor,
+h3:hover > .heading-anchor,
+h4:hover > .heading-anchor,
+h5:hover > .heading-anchor,
+h6:hover > .heading-anchor,
+.heading-anchor:focus {
+  opacity: 1;
+}
+
+.heading-anchor:hover {
+  color: var(--dt-green) !important;
+  text-decoration: none !important;
+}
+
+/* Keep the anchor visible on touch devices where :hover is unreliable */
+@media (hover: none) {
+  .heading-anchor { opacity: 0.5; }
+}
+
 p, ul, ol, dl, table, pre {
   margin: 0 0 1rem !important;
 }
