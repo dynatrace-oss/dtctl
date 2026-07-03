@@ -46,12 +46,14 @@ type QueryMetadata struct {
 
 // MetricInfo describes a single metric referenced in a timeseries query result.
 // It maps the DQL column name (FieldName) to the underlying metric descriptor.
-// DisplayName and Unit are present only when the API returns metric catalogue data.
+// DisplayName, Description, and Unit are present only when the API returns metric
+// catalogue data.
 type MetricInfo struct {
 	MetricKey   string `json:"metric.key,omitempty" yaml:"metric.key,omitempty"`
 	FieldName   string `json:"fieldName,omitempty" yaml:"fieldName,omitempty"`
 	Aggregation string `json:"aggregation,omitempty" yaml:"aggregation,omitempty"`
 	DisplayName string `json:"displayName,omitempty" yaml:"displayName,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	Unit        string `json:"unit,omitempty" yaml:"unit,omitempty"`
 }
 
@@ -306,6 +308,9 @@ func FormatMetadataFooter(m *QueryMetadata, fields []string) string {
 			b.WriteString(line)
 			if mi.DisplayName != "" {
 				b.WriteString(fmt.Sprintf("    %s\n", mi.DisplayName))
+			}
+			if mi.Description != "" {
+				b.WriteString(fmt.Sprintf("    %s\n", mi.Description))
 			}
 		}
 	}

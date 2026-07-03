@@ -76,7 +76,17 @@ type ExecuteRequest struct {
 	Locale                       string             `json:"locale,omitempty"`
 	Timezone                     string             `json:"timezone,omitempty"`
 	FilterSegments               []FilterSegmentRef `json:"filterSegments,omitempty"`
+
+	// EnrichMetricMetadata requests metric-catalogue enrichment of the response's
+	// metadata.metrics[] entries (displayName, description, unit). It is sent as the
+	// `enrich=metric-metadata` query-string parameter on both query:execute and
+	// query:poll — not in the request body — hence json:"-".
+	EnrichMetricMetadata bool `json:"-"`
 }
+
+// enrichMetricMetadataParam is the query-string value that asks the Grail query
+// API to enrich metadata.metrics[] with metric-catalogue fields.
+const enrichMetricMetadataParam = "metric-metadata"
 
 // Response represents a DQL query response from execute or poll.
 type Response struct {
@@ -113,13 +123,14 @@ type ColumnType struct {
 
 // MetricInfo describes a single metric referenced in a timeseries query result.
 // It maps the DQL column name (FieldName) to the underlying metric descriptor.
-// DisplayName and Unit are present only when the API returns metric catalogue data;
-// they are absent for tenants or queries that do not populate them.
+// DisplayName, Description, and Unit are present only when the API returns metric
+// catalogue data; they are absent for tenants or queries that do not populate them.
 type MetricInfo struct {
 	MetricKey   string `json:"metric.key,omitempty"`
 	FieldName   string `json:"fieldName,omitempty"`
 	Aggregation string `json:"aggregation,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
+	Description string `json:"description,omitempty"`
 	Unit        string `json:"unit,omitempty"`
 }
 
@@ -246,6 +257,9 @@ func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, e
 		SetHeader("Content-Type", "application/json").
 		SetBody(req).
 		SetResult(&result)
+	if req.EnrichMetricMetadata {
+		httpReq.SetQueryParam("enrich", enrichMetricMetadataParam)
+	}
 	h.applyHeaders(httpReq)
 
 	resp, err := httpReq.Post(basePath + ":execute")
@@ -266,14 +280,20 @@ func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, e
 }
 
 // Poll polls for the results of an asynchronous query. The server holds the
-// connection for up to timeoutMs milliseconds before returning.
-func (h *Handler) Poll(ctx context.Context, requestToken string, timeoutMs int64) (*Response, error) {
+// connection for up to timeoutMs milliseconds before returning. When enrich is
+// true, the poll requests metric-metadata enrichment so the final SUCCEEDED
+// response carries displayName/description/unit — it must match the enrichment
+// requested on the originating execute call.
+func (h *Handler) Poll(ctx context.Context, requestToken string, timeoutMs int64, enrich bool) (*Response, error) {
 	var result Response
 
 	httpReq := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("request-token", requestToken).
 		SetQueryParam("request-timeout-milliseconds", fmt.Sprintf("%d", timeoutMs)).
 		SetResult(&result)
+	if enrich {
+		httpReq.SetQueryParam("enrich", enrichMetricMetadataParam)
+	}
 	h.applyHeaders(httpReq)
 
 	resp, err := httpReq.Get(basePath + ":poll")
@@ -384,7 +404,7 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 		default:
 		}
 
-		pollResult, pollErr := h.Poll(pollCtx, result.RequestToken, pollRequestTimeoutMs)
+		pollResult, pollErr := h.Poll(pollCtx, result.RequestToken, pollRequestTimeoutMs, req.EnrichMetricMetadata)
 		if pollErr != nil {
 			// On 401, try the onUnauthorized callback once per consecutive failure.
 			var apiErr *httpclient.APIError

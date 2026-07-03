@@ -1636,6 +1636,28 @@ func TestExtractQueryMetadata_NilMetadata_PrintPath(t *testing.T) {
 // metric descriptors) are extracted even when Grail metadata is absent — the two
 // are independent siblings of the response's metadata section, and a response
 // with metadata.metrics but no metadata.grail must not have its metrics dropped.
+func TestBuildExecuteRequest_EnrichMetricMetadataGating(t *testing.T) {
+	cases := []struct {
+		name   string
+		fields []string
+		want   bool
+	}{
+		{"no metadata", nil, false},
+		{"unrelated field", []string{"scannedRecords"}, false},
+		{"metrics selected", []string{"metrics"}, true},
+		{"metrics among others", []string{"scannedRecords", "metrics"}, true},
+		{"all selector", []string{"all"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := buildExecuteRequest("timeseries avg(dt.host.cpu.user)", DQLExecuteOptions{MetadataFields: tc.fields})
+			if req.EnrichMetricMetadata != tc.want {
+				t.Errorf("EnrichMetricMetadata = %v, want %v", req.EnrichMetricMetadata, tc.want)
+			}
+		})
+	}
+}
+
 func TestExtractQueryMetadata_MetricsWithoutGrail(t *testing.T) {
 	resp := &DQLQueryResponse{
 		State:   "SUCCEEDED",
@@ -1643,7 +1665,7 @@ func TestExtractQueryMetadata_MetricsWithoutGrail(t *testing.T) {
 		Metadata: &DQLMetadata{
 			Grail: nil,
 			Metrics: []MetricInfo{
-				{MetricKey: "dt.host.cpu.usage", FieldName: "avg(dt.host.cpu.usage)", Aggregation: "avg"},
+				{MetricKey: "dt.host.cpu.usage", FieldName: "avg(dt.host.cpu.usage)", Aggregation: "avg", DisplayName: "CPU usage", Description: "Average CPU usage across all cores", Unit: "Percent"},
 			},
 		},
 	}
@@ -1657,6 +1679,16 @@ func TestExtractQueryMetadata_MetricsWithoutGrail(t *testing.T) {
 	}
 	if meta.Metrics[0].MetricKey != "dt.host.cpu.usage" {
 		t.Errorf("expected MetricKey=dt.host.cpu.usage, got %q", meta.Metrics[0].MetricKey)
+	}
+	// Descriptor fields (displayName/description/unit) must be carried through the conversion.
+	if meta.Metrics[0].DisplayName != "CPU usage" {
+		t.Errorf("expected DisplayName=CPU usage, got %q", meta.Metrics[0].DisplayName)
+	}
+	if meta.Metrics[0].Description != "Average CPU usage across all cores" {
+		t.Errorf("expected Description to be carried through, got %q", meta.Metrics[0].Description)
+	}
+	if meta.Metrics[0].Unit != "Percent" {
+		t.Errorf("expected Unit=Percent, got %q", meta.Metrics[0].Unit)
 	}
 	// Grail-derived fields must remain zero-valued since Grail was absent.
 	if meta.QueryID != "" || meta.ExecutionTimeMilliseconds != 0 {
