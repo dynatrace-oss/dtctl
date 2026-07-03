@@ -8,8 +8,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
-// ToStackTree renders the full call tree with resolved labels and per-node sample counts.
-// Unlike -o tree it applies no threshold filtering and shows all sample types.
 // appPrefix is the only package root shown when --app-only is set.
 const appPrefix = "com.dynatrace."
 
@@ -17,34 +15,26 @@ func isSystemFrame(label string) bool {
 	return !strings.HasPrefix(label, appPrefix)
 }
 
-// commonDotPrefix returns the longest shared dot-segment prefix across all labels.
-func commonDotPrefix(labels []string) string {
-	if len(labels) == 0 {
-		return ""
-	}
-	segs := strings.Split(labels[0], ".")
-	for _, l := range labels[1:] {
-		ls := strings.Split(l, ".")
-		i := 0
-		for i < len(segs) && i < len(ls) && segs[i] == ls[i] {
-			i++
+// abbreviateLabel shortens each lowercase package segment to its first character,
+// leaving class names (uppercase-initial) and the method suffix intact.
+// e.g. com.dynatrace.easytravel.business.webservice.JourneyService.findJourneys()
+//   →  c.d.e.b.w.JourneyService.findJourneys()
+func abbreviateLabel(label string) string {
+	segs := strings.Split(label, ".")
+	out := make([]string, 0, len(segs))
+	for _, s := range segs {
+		if len(s) > 0 && s[0] >= 'a' && s[0] <= 'z' {
+			out = append(out, string(s[0]))
+		} else {
+			out = append(out, s)
 		}
-		segs = segs[:i]
 	}
-	// Keep only package segments (drop the last segment if it looks like a Class).
-	// A segment is a package part if it's all lowercase.
-	end := len(segs)
-	for end > 0 && len(segs[end-1]) > 0 && segs[end-1][0] >= 'A' && segs[end-1][0] <= 'Z' {
-		end--
-	}
-	segs = segs[:end]
-	if len(segs) == 0 {
-		return ""
-	}
-	return strings.Join(segs, ".") + "."
+	return strings.Join(out, ".")
 }
 
-func ToStackTree(kind string, raw interface{}, width, maxDepth int, appOnly bool) string {
+// ToStackTree renders the full call tree with resolved labels and per-node sample counts.
+// Unlike -o tree it applies no threshold filtering and shows all sample types.
+func ToStackTree(kind string, raw interface{}, width, maxDepth int, appOnly, abbrev bool) string {
 	if kind != "methodHotspots" && kind != "threadAnalysis" {
 		return ""
 	}
@@ -102,13 +92,6 @@ func ToStackTree(kind string, raw interface{}, width, maxDepth int, appOnly bool
 		return ""
 	}
 
-	total := root.samples["RUNNING"]
-	if total == 0 {
-		for _, c := range root.children {
-			total += c.samples["RUNNING"]
-		}
-	}
-
 	var sortChildren func(n *stNode)
 	sortChildren = func(n *stNode) {
 		sort.Slice(n.children, func(i, j int) bool {
@@ -122,7 +105,6 @@ func ToStackTree(kind string, raw interface{}, width, maxDepth int, appOnly bool
 
 	colorOn := output.ColorEnabled()
 
-	// sample type display order with colors matching bars.go
 	type sampleDef struct{ key, short, color string }
 	sampleDefs := []sampleDef{
 		{"RUNNING", "R", "39"},
@@ -135,14 +117,12 @@ func ToStackTree(kind string, raw interface{}, width, maxDepth int, appOnly bool
 	formatSamples := func(s map[string]int) string {
 		var parts []string
 		for _, def := range sampleDefs {
-			v := s[def.key]
-			if v == 0 {
-				continue
-			}
-			if colorOn {
-				parts = append(parts, fmt.Sprintf("\033[38;5;%sm%s\033[0m:%d", def.color, def.short, v))
-			} else {
-				parts = append(parts, fmt.Sprintf("%s:%d", def.short, v))
+			if v := s[def.key]; v != 0 {
+				if colorOn {
+					parts = append(parts, fmt.Sprintf("\033[38;5;%sm%s\033[0m:%d", def.color, def.short, v))
+				} else {
+					parts = append(parts, fmt.Sprintf("%s:%d", def.short, v))
+				}
 			}
 		}
 		if len(parts) == 0 {
@@ -151,41 +131,15 @@ func ToStackTree(kind string, raw interface{}, width, maxDepth int, appOnly bool
 		return "  [" + strings.Join(parts, "  ") + "]"
 	}
 
-	// Collect visible labels to find the longest common package prefix to strip.
-	var visibleLabels []string
-	var collectLabels func(n *stNode)
-	collectLabels = func(n *stNode) {
-		if n.label != "" && n.id != rootID && !(appOnly && isSystemFrame(n.label)) {
-			visibleLabels = append(visibleLabels, n.label)
-		}
-		for _, c := range n.children {
-			collectLabels(c)
-		}
-	}
-	collectLabels(root)
-	stripPrefix := commonDotPrefix(visibleLabels)
-
 	var sb strings.Builder
-	if stripPrefix != "" {
-		if colorOn {
-			fmt.Fprintf(&sb, "\033[2m[%s]\033[0m\n", stripPrefix)
-		} else {
-			fmt.Fprintf(&sb, "[%s]\n", stripPrefix)
-		}
-	}
 
-	// dfs(n, prefix, connector):
-	//   prefix   — continuation lines already established by ancestors
-	//   connector — "├─ ", "└─ ", or "↳  " (always 3 visible chars wide)
-	//
-	// Single-child chains use "↳  " and do NOT grow the prefix, so indentation
-	// only increases at real forks.
 	var dfs func(n *stNode, prefix, connector string, depth int)
 	dfs = func(n *stNode, prefix, connector string, depth int) {
 		if maxDepth > 0 && depth > maxDepth {
 			return
 		}
-		// skip virtual root
+
+		// Virtual root: recurse directly into children.
 		if n.label == "" && n.id == rootID {
 			for i, c := range n.children {
 				conn := "├─ "
@@ -197,8 +151,8 @@ func ToStackTree(kind string, raw interface{}, width, maxDepth int, appOnly bool
 			return
 		}
 
+		// System frame passthrough (appOnly mode).
 		if appOnly && isSystemFrame(n.label) {
-			// transparent: pass children through without rendering this node
 			switch len(n.children) {
 			case 1:
 				dfs(n.children[0], prefix, connector, depth)
@@ -220,34 +174,30 @@ func ToStackTree(kind string, raw interface{}, width, maxDepth int, appOnly bool
 			return
 		}
 
-		label := strings.TrimPrefix(n.label, stripPrefix)
-		samples := formatSamples(n.samples)
-
-		fmt.Fprintf(&sb, "%s%s%s%s\n", prefix, connector, label, samples)
+		label := n.label
+		if abbrev {
+			label = abbreviateLabel(label)
+		}
+		fmt.Fprintf(&sb, "%s%s%s%s\n", prefix, connector, label, formatSamples(n.samples))
 
 		switch len(n.children) {
 		case 0:
-			// leaf
 		case 1:
-			// single child: no new indent, use ↳ — but still advance the
-			// prefix for the parent's branch line if this was a non-last fork arm.
 			var childPrefix string
 			switch connector {
 			case "├─ ":
 				childPrefix = prefix + "│  "
 			case "└─ ":
 				childPrefix = prefix + "   "
-			default: // "↳  " — already collapsed, prefix stays put
+			default: // "↳  "
 				childPrefix = prefix
 			}
 			dfs(n.children[0], childPrefix, "↳  ", depth+1)
 		default:
-			// real fork: indent under this node
 			var childBase string
-			switch connector {
-			case "├─ ":
+			if connector == "├─ " {
 				childBase = prefix + "│  "
-			default: // "└─ " or "↳  "
+			} else {
 				childBase = prefix + "   "
 			}
 			for i, c := range n.children {

@@ -138,7 +138,8 @@ Examples:
 			}
 			depth, _ := cmd.Flags().GetInt("depth")
 			appOnly, _ := cmd.Flags().GetBool("app-only")
-			if s := profile.ToStackTree(apiKind, result, w, depth, appOnly); s != "" {
+			abbrev, _ := cmd.Flags().GetBool("abbrev")
+			if s := profile.ToStackTree(apiKind, result, w, depth, appOnly, abbrev); s != "" {
 				fmt.Print(s)
 				return nil
 			}
@@ -226,6 +227,7 @@ func init() {
 	execProfileCmd.Flags().Int("top", 0, "limit table output to top N rows by running samples (0 = all)")
 	execProfileCmd.Flags().Int("depth", 0, "limit stacktree output to N levels deep (0 = all)")
 	execProfileCmd.Flags().Bool("app-only", false, "stacktree: show only com.dynatrace.* frames")
+	execProfileCmd.Flags().Bool("abbrev", false, "stacktree: abbreviate package segments to first letter (e.g. com.example → c.e)")
 
 	_ = execProfileCmd.MarkFlagRequired("kind")
 	_ = execProfileCmd.MarkFlagRequired("entity")
