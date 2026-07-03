@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,10 @@ const (
 
 // progressBarWidth is the number of cells in the rendered bar.
 const progressBarWidth = 20
+
+// defaultTickInterval is how often the animated line is redrawn so the spinner
+// and elapsed timer advance smoothly between (much slower) query polls.
+const defaultTickInterval = 100 * time.Millisecond
 
 // progressSpinner holds the braille spinner frames advanced on each update.
 var progressSpinner = []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
@@ -49,8 +54,10 @@ type ProgressState struct {
 // without disturbing piped or structured output. Color is emitted only when
 // ColorEnabled() is true, so NO_COLOR still yields a plain (monochrome) bar.
 //
-// A reporter is used from a single goroutine (the poll loop's OnUpdate callback
-// plus a deferred Stop), so it needs no synchronization.
+// In animated mode a background goroutine redraws the line on a fixed interval
+// (so the spinner and elapsed timer stay smooth between the far slower query
+// polls), while Update — called from the poll loop — only refreshes the shared
+// state. The mutex guards that state and serializes writes between the two.
 type ProgressReporter struct {
 	w io.Writer
 	// animate is true when stderr is an interactive TTY: the line is redrawn in
@@ -60,8 +67,21 @@ type ProgressReporter struct {
 	// plain, ANSI-free lines (one per update) so it survives in CI logs.
 	logLines bool
 	start    time.Time
-	spinIdx  int
-	lastVis  int // visible width of the last animated line, for padding/clearing
+	// tickInterval overrides the redraw cadence (tests only); 0 => default.
+	tickInterval time.Duration
+	// manualTick disables the background animator so tests can drive frames
+	// synchronously via Update; production always leaves it false.
+	manualTick bool
+
+	mu      sync.Mutex
+	latest  ProgressState
+	spinIdx int
+	lastVis int // visible width of the last animated line, for padding/clearing
+	started bool
+	stopped bool
+	ticker  *time.Ticker
+	done    chan struct{}
+	wg      sync.WaitGroup
 }
 
 // NewProgressReporter returns a reporter for the given mode. It draws an
@@ -97,35 +117,74 @@ func newProgressReporter(mode string, agentMode bool, w io.Writer) *ProgressRepo
 	return r
 }
 
-// Update redraws the progress line for the given state. It is a no-op when the
-// reporter is disabled.
+// Update refreshes the progress state. In animated mode it also starts the
+// background redraw loop on first call and repaints immediately so new poll
+// data (progress, scan totals) appears without waiting for the next tick. It is
+// a no-op when the reporter is disabled.
 func (p *ProgressReporter) Update(s ProgressState) {
 	if p == nil {
 		return
 	}
-	progress := s.Progress
-	if progress < 0 {
-		progress = 0
+	if s.Progress < 0 {
+		s.Progress = 0
 	}
-	if progress > 100 {
-		progress = 100
+	if s.Progress > 100 {
+		s.Progress = 100
 	}
 
 	if p.logLines {
-		fmt.Fprintf(p.w, "querying... %d%%%s\n", progress, plainStats(s))
+		fmt.Fprintf(p.w, "querying... %d%%%s\n", s.Progress, plainStats(s))
 		return
 	}
 	if !p.animate {
 		return
 	}
 
+	p.mu.Lock()
+	p.latest = s
+	if !p.started && !p.stopped && !p.manualTick {
+		p.started = true
+		p.startTickerLocked()
+	}
+	p.renderLocked()
+	p.mu.Unlock()
+}
+
+// startTickerLocked launches the background redraw goroutine. Caller holds mu.
+func (p *ProgressReporter) startTickerLocked() {
+	iv := p.tickInterval
+	if iv <= 0 {
+		iv = defaultTickInterval
+	}
+	p.ticker = time.NewTicker(iv)
+	p.done = make(chan struct{})
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		for {
+			select {
+			case <-p.done:
+				return
+			case <-p.ticker.C:
+				p.mu.Lock()
+				p.spinIdx++
+				p.renderLocked()
+				p.mu.Unlock()
+			}
+		}
+	}()
+}
+
+// renderLocked paints one frame from the current state. Caller holds mu.
+func (p *ProgressReporter) renderLocked() {
+	s := p.latest
 	verb := "querying"
 	if s.ScannedBytes > 0 {
 		verb = "scanning"
 	}
 	spin := colorize(Cyan, string(progressSpinner[p.spinIdx%len(progressSpinner)]))
-	pct := colorize(Bold, fmt.Sprintf("%3d%%", progress))
-	line := fmt.Sprintf("%s %s %s %s%s", spin, verb, pct, renderBar(progress), colorize(Dim, statsSuffix(s, p.start)))
+	pct := colorize(Bold, fmt.Sprintf("%3d%%", s.Progress))
+	line := fmt.Sprintf("%s %s %s %s%s", spin, verb, pct, renderBar(s.Progress), colorize(Dim, statsSuffix(s, p.start)))
 
 	// Return the cursor to column 0, write the new line, then pad with spaces to
 	// erase any tail left by a previously longer line. Padding is measured in
@@ -138,17 +197,39 @@ func (p *ProgressReporter) Update(s ProgressState) {
 	}
 	fmt.Fprintf(p.w, "\r%s%s", line, pad)
 	p.lastVis = vis
-	p.spinIdx++
 }
 
-// Stop erases the progress line (animated mode) so the real result renders on a
-// clean row. It is safe to call multiple times and when disabled.
+// Stop halts the background animator and erases the progress line so the real
+// result renders on a clean row. It is safe to call multiple times and when
+// disabled.
 func (p *ProgressReporter) Stop() {
-	if p == nil || !p.animate || p.lastVis == 0 {
+	if p == nil || !p.animate {
 		return
 	}
-	fmt.Fprintf(p.w, "\r%s\r", strings.Repeat(" ", p.lastVis))
-	p.lastVis = 0
+
+	p.mu.Lock()
+	if p.stopped {
+		p.mu.Unlock()
+		return
+	}
+	p.stopped = true
+	started, done, ticker := p.started, p.done, p.ticker
+	p.mu.Unlock()
+
+	// Wait for the animator to exit before clearing so no stray frame lands
+	// after the clear. Done outside the lock to avoid deadlocking the goroutine.
+	if started {
+		ticker.Stop()
+		close(done)
+		p.wg.Wait()
+	}
+
+	p.mu.Lock()
+	if p.lastVis > 0 {
+		fmt.Fprintf(p.w, "\r%s\r", strings.Repeat(" ", p.lastVis))
+		p.lastVis = 0
+	}
+	p.mu.Unlock()
 }
 
 // renderBar draws a fixed-width bar for a 0-100 percentage using block glyphs

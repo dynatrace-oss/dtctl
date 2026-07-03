@@ -312,6 +312,10 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 			reporter.Update(state)
 		},
 	})
+	// Halt the animator and clear the line before any further stderr output
+	// (cancellation notice, error hints). Stop is idempotent; the defer remains
+	// as a safety net for panics.
+	reporter.Stop()
 	if err != nil {
 		// If context was cancelled, print cancellation message
 		if ctx.Err() != nil {

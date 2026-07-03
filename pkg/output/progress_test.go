@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -71,8 +72,9 @@ func TestProgressReporter_LogLines(t *testing.T) {
 
 func TestProgressReporter_AnimateOverwritesAndClears(t *testing.T) {
 	var buf bytes.Buffer
-	// Force the animated path directly — a buffer is not a TTY.
-	r := &ProgressReporter{w: &buf, animate: true}
+	// Force the animated path directly — a buffer is not a TTY. manualTick keeps
+	// the background animator off so frames are driven synchronously by Update.
+	r := &ProgressReporter{w: &buf, animate: true, manualTick: true}
 
 	r.Update(ProgressState{Progress: 45, ScannedBytes: 13_359_294_822_752, ScannedRecords: 4_647_571_690})
 	r.Update(ProgressState{Progress: 90}) // shorter line must be fully padded over
@@ -106,7 +108,7 @@ func TestProgressReporter_AnimatePadsByVisibleWidth(t *testing.T) {
 	t.Cleanup(ResetColorCache)
 
 	var buf bytes.Buffer
-	r := &ProgressReporter{w: &buf, animate: true}
+	r := &ProgressReporter{w: &buf, animate: true, manualTick: true}
 	r.Update(ProgressState{Progress: 50, ScannedBytes: 1 << 40, ScannedRecords: 1_000_000})
 	if !ColorEnabled() {
 		t.Skip("color not enabled in this environment; visible-width path not exercised")
@@ -117,6 +119,59 @@ func TestProgressReporter_AnimatePadsByVisibleWidth(t *testing.T) {
 	if r.lastVis == 0 || r.lastVis >= len(buf.String()) {
 		t.Errorf("visible width %d should be >0 and less than byte length %d when colored", r.lastVis, len(buf.String()))
 	}
+}
+
+// syncBuf is a mutex-guarded buffer so the test can read output while the
+// background animator writes concurrently, without racing.
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func TestProgressReporter_SpinnerAdvancesBetweenUpdates(t *testing.T) {
+	// The animator must keep the spinner moving on its own timer, without any
+	// further Update calls, and stop cleanly.
+	ResetColorCache()
+	t.Setenv("NO_COLOR", "1") // keep output ANSI-free so we count raw spinner runes
+	t.Cleanup(ResetColorCache)
+
+	buf := &syncBuf{}
+	r := &ProgressReporter{w: buf, animate: true, start: time.Now(), tickInterval: 10 * time.Millisecond}
+
+	r.Update(ProgressState{Progress: 30}) // starts the animator; no further updates
+	time.Sleep(80 * time.Millisecond)     // ~8 ticks
+	r.Stop()
+
+	// Count how many distinct spinner frames appeared — proves it advanced
+	// without additional Update calls.
+	out := buf.String()
+	distinct := 0
+	for _, g := range progressSpinner {
+		if strings.ContainsRune(out, g) {
+			distinct++
+		}
+	}
+	if distinct < 3 {
+		t.Errorf("spinner advanced through only %d distinct frames, want >=3 (output=%q)", distinct, out)
+	}
+	// After Stop the line is cleared and the animator has exited; a subsequent
+	// Stop must be a safe no-op.
+	if !strings.HasSuffix(out, "\r") {
+		t.Errorf("output should end cleared with a trailing CR: %q", out)
+	}
+	r.Stop() // must not panic (idempotent)
 }
 
 func TestRenderBar(t *testing.T) {
