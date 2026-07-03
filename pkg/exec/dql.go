@@ -378,13 +378,13 @@ func classifyNotification(notificationType, message string) string {
 func getHintForNotification(notificationType, message string) string {
 	switch classifyNotification(notificationType, message) {
 	case notifScanLimit:
-		return "Result is PARTIAL (scan stopped early). Reduce data scanned — narrow the timeframe, restrict to specific buckets (bucket:{...}; use --include-contributions to find the heavy ones), filter early with == (not contains()), or sample logs/spans with --default-sampling-ratio. Raising --default-scan-limit-gbytes <value> works but costs more."
+		return "Result is PARTIAL (scan stopped early). Reduce data scanned — narrow the timeframe, restrict to specific buckets (bucket:{...}; use --include-contributions to find the heavy ones), filter early with == (not contains()), or sample logs/spans (add samplingRatio:1000 to the fetch, or pass --default-sampling-ratio). Raising --default-scan-limit-gbytes <value> works but costs more."
 	case notifResultLimit:
 		return "Result was truncated. Aggregate in DQL (| summarize ...) to shrink it, or raise --max-result-records / --max-result-bytes <value>."
 	case notifTimeout:
 		return "Fetch timed out (result may be incomplete). Narrow the timeframe or add filters, or raise --fetch-timeout-seconds <value>."
 	case notifSampling:
-		return "Results are sampled/extrapolated (approximate). Use --default-sampling-ratio 1 for exact values (higher scan cost)."
+		return "Results are sampled/extrapolated (approximate). For exact values remove samplingRatio from the fetch, or pass --default-sampling-ratio 1 (higher scan cost)."
 	case notifConsumption:
 		return "Query hit a consumption limit. Reduce the data scanned, or pass --enforce-query-consumption-limit=false to bypass."
 	}
@@ -405,7 +405,7 @@ func agentAdviceForNotification(notificationType, message string) []string {
 			"#   - restrict to the relevant bucket(s): fetch logs, bucket:{\"<bucket>\"}",
 			"#   - find which bucket dominates the scan: dtctl query --include-contributions --metadata=contributions -o json '<query>' and read matchedRecordsRatio per bucket",
 			"#   - filter early and prefer equality, e.g. | filter <field> == \"...\" (== scans far less than contains()/matchesPhrase())",
-			"#   - for logs/spans, sample with --default-sampling-ratio <N> (e.g. 1000) for approximate counts at a fraction of the scan",
+			"#   - for logs/spans, sample so only a fraction is scanned: add samplingRatio to the fetch, e.g. fetch logs, samplingRatio:1000 (DQL-native, portable) — or pass dtctl's --default-sampling-ratio 1000; extrapolate counts with sum(dt.system.sampling_ratio)",
 			"# only if you truly need the full scan: --default-scan-limit-gbytes <value> (higher cost & duration; -1 = unlimited)",
 		}
 	case notifResultLimit:
@@ -420,7 +420,7 @@ func agentAdviceForNotification(notificationType, message string) []string {
 		}
 	case notifSampling:
 		return []string{
-			"# results are sampled/extrapolated (approximate, not exact); re-run with --default-sampling-ratio 1 for exact values (higher scan cost)",
+			"# results are sampled/extrapolated (approximate, not exact); for exact values remove samplingRatio from the fetch (or pass --default-sampling-ratio 1) — higher scan cost",
 		}
 	case notifConsumption:
 		return []string{
