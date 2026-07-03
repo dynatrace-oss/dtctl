@@ -112,8 +112,13 @@ func (p *ProgressReporter) Update(s ProgressState) {
 	}
 
 	p.mu.Lock()
+	// A late Update after Stop/Complete must not repaint the cleared line.
+	if p.stopped {
+		p.mu.Unlock()
+		return
+	}
 	p.latest = s
-	if !p.animating && !p.stopped && !p.manualTick {
+	if !p.animating && !p.manualTick {
 		p.animating = true
 		p.startTickerLocked()
 	}

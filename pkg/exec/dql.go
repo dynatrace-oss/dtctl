@@ -313,9 +313,10 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 		// Clear the bar before any further stderr output (cancellation notice,
 		// error hints). Stop is idempotent; the defer remains a safety net.
 		reporter.Stop()
-		// If context was cancelled, print cancellation message
+		// If context was cancelled, print cancellation message. Stop() above has
+		// already cleared any progress line, so no leading newline is needed.
 		if ctx.Err() != nil {
-			fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
+			fmt.Fprintln(os.Stderr, "Query cancelled.")
 			return nil, nil
 		}
 		// Enhance known error types with CLI-specific hints
