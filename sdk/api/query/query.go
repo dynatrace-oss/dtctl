@@ -344,6 +344,31 @@ func (h *Handler) Verify(ctx context.Context, req VerifyRequest) (*VerifyRespons
 	return &result, nil
 }
 
+// PollUpdate carries the state of a still-running query. It is delivered to the
+// OnUpdate callback of ExecuteAndPollWithOptions on the initial RUNNING response
+// and after each subsequent poll, letting callers render progress.
+type PollUpdate struct {
+	// Progress is the query's completion percentage (0-100) as reported by the
+	// backend. It may stay at 0 until the backend has a meaningful estimate.
+	Progress int
+	// Preview is a partial result snapshot. It is non-nil only when the request
+	// set EnablePreview and this poll carried preview records. Each preview is
+	// whole (not a delta to prior previews), so callers replace, never append.
+	Preview *Result
+}
+
+// ExecuteAndPollOptions carries optional hooks for ExecuteAndPollWithOptions.
+type ExecuteAndPollOptions struct {
+	// OnUnauthorized is invoked when a poll receives HTTP 401, allowing callers
+	// to refresh an expired token. It must return the new bearer token. If nil,
+	// 401 errors are returned directly.
+	OnUnauthorized func() (string, error)
+	// OnUpdate, if set, is called with the current progress/preview whenever the
+	// query is still RUNNING — once for the initial response and once per poll.
+	// It is never called for a query that completes synchronously.
+	OnUpdate func(PollUpdate)
+}
+
 // ExecuteAndPoll executes a DQL query and, if it returns asynchronously, polls
 // until completion or context cancellation. If the context is cancelled during
 // polling, a best-effort cancel is sent to the backend.
@@ -352,6 +377,14 @@ func (h *Handler) Verify(ctx context.Context, req VerifyRequest) (*VerifyRespons
 // allowing callers to refresh an expired token. It must return the new bearer
 // token. If nil, 401 errors are returned directly.
 func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnauthorized func() (string, error)) (*Response, error) {
+	return h.ExecuteAndPollWithOptions(ctx, req, ExecuteAndPollOptions{OnUnauthorized: onUnauthorized})
+}
+
+// ExecuteAndPollWithOptions is ExecuteAndPoll with additional hooks (see
+// ExecuteAndPollOptions), notably an OnUpdate callback for surfacing progress
+// and preview results while the query is still running.
+func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequest, opts ExecuteAndPollOptions) (*Response, error) {
+	onUnauthorized := opts.OnUnauthorized
 	// Use an independent context for the initial execute so we always get the
 	// request token back even if the caller cancels mid-flight.
 	execCtx, execCancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -387,6 +420,9 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 	if result.RequestToken == "" {
 		return nil, fmt.Errorf("query is running but no request token provided")
 	}
+
+	// Surface the initial RUNNING state (progress may already be non-zero).
+	emitUpdate(opts.OnUpdate, req.EnablePreview, result)
 
 	// Poll loop.
 	pollCtx, pollCancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -435,6 +471,7 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 		case "FAILED":
 			return pollResult, fmt.Errorf("query execution failed")
 		case "RUNNING":
+			emitUpdate(opts.OnUpdate, req.EnablePreview, pollResult)
 			continue
 		default:
 			return pollResult, nil
@@ -499,6 +536,20 @@ func (r *Response) GetMetrics() []MetricInfo {
 }
 
 // --- Internal helpers ---
+
+// emitUpdate invokes the OnUpdate callback (when set) with the progress and any
+// preview carried by a RUNNING response. A preview is attached only when the
+// request enabled previews and the response actually carried records.
+func emitUpdate(onUpdate func(PollUpdate), enablePreview bool, resp *Response) {
+	if onUpdate == nil {
+		return
+	}
+	var preview *Result
+	if enablePreview && resp.Result != nil && len(resp.Result.Records) > 0 {
+		preview = resp.Result
+	}
+	onUpdate(PollUpdate{Progress: resp.Progress, Preview: preview})
+}
 
 func (h *Handler) applyHeaders(req *resty.Request) {
 	for k, v := range h.headers {
