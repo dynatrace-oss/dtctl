@@ -318,6 +318,44 @@ Available `--metadata` fields: `executionTimeMilliseconds`, `scannedRecords`,
 `canonicalQuery`, `timezone`, `locale`, `analysisTimeframe`, `contributions`,
 `metrics`.
 
+### Progress Indicator
+
+Long-running queries are executed asynchronously and polled until they finish.
+While polling, `dtctl` can draw a live progress bar on **stderr** showing the
+query's completion percentage, the volume of data scanned so far, the number of
+records scanned, and elapsed time:
+
+```
+⠹ scanning  57% ▕███████████▍░░░░░░░░▏  12.2 TB · 4.6B recs · 8.2s
+```
+
+When the query finishes, the bar is replaced with a one-line summary:
+
+```
+✓ scanned 17.3 TB · 6.0B records in 42.1s
+```
+
+```bash
+# auto (default): show the bar only when stderr is an interactive terminal
+dtctl query "fetch logs, from:-24h | summarize count()"
+
+# force it on (e.g. to emit plain per-line progress into a CI log)
+dtctl query "fetch logs | summarize count()" --progress=always
+
+# turn it off
+dtctl query "fetch logs | summarize count()" --progress=never
+```
+
+Notes:
+
+- The bar is drawn on **stderr only**, so it never corrupts piped or redirected
+  results (`-o json > file`, `| jq`, etc.).
+- It is automatically suppressed for non-interactive output, under `--plain`,
+  and in [agent mode](ai-agent-mode). `NO_COLOR` keeps the bar but drops color.
+- `--progress=always` on a non-TTY (e.g. CI) prints plain, ANSI-free progress
+  lines instead of an animated bar.
+- Fast queries that complete before the first poll show nothing.
+
 ### Caller Context
 
 ```bash
@@ -347,6 +385,7 @@ dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --fullscreen  # use ful
 | `--enable-preview` | Return preview results if available within the timeout |
 | `--fetch-timeout-seconds` | Time limit for fetching data (seconds) |
 | `--enforce-query-consumption-limit` | Enforce the tenant query consumption limit |
+| `--progress` | Live progress bar on stderr for long queries (`auto`/`always`/`never`) |
 | `--max-result-records` | Maximum number of result records |
 | `--max-result-bytes` | Maximum result payload size in bytes |
 | `--default-scan-limit-gbytes` | Cap on how much data Grail scans (GB) |

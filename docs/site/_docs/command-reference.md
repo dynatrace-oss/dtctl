@@ -167,6 +167,7 @@ dtctl query "..." --max-result-records 5000
 dtctl query "..." --default-timeframe-start "2024-01-01T00:00:00Z"
 dtctl query "..." --timezone "Europe/Paris"
 dtctl query "..." --metadata                    # Include execution metadata
+dtctl query "..." --progress=always              # Live progress bar on stderr (auto/always/never)
 dtctl query "..." --live --interval 5s           # Live mode
 
 # Spill a large result to a file, return a summary (see dql-queries#spilling-large-results-to-a-file)

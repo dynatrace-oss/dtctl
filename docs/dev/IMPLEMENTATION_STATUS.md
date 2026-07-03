@@ -140,6 +140,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Watch mode with incremental updates: `--watch`, `--interval`
 - [x] Customizable chart dimensions: `--width`, `--height`, `--fullscreen`
 - [x] Custom record/byte/scan limits
+- [x] Live progress bar on stderr for long queries (scan volume, records, elapsed): `--progress[=auto|always|never]`
 - [x] Query metadata output: `--metadata` / `-M` with field selection
 - [x] Spill large results to a local file with a summary envelope: `--spill[=auto|always|never]`, `--spill-to`, `--spill-format`, `--spill-threshold`
 - [x] Local inspection of a spilled file (no Grail re-query): `dtctl inspect <file> --head/--tail/--page/--fields/--schema/--stats/--sample`
