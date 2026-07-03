@@ -176,6 +176,15 @@ func (p *ProgressReporter) renderLocked() {
 	p.shown = true
 }
 
+// Drawing reports whether the reporter is actively drawing to the terminal
+// (enabled and stderr is a TTY). Callers use it to decide whether Stop() will
+// have cleared the line for them, or whether they must emit their own leading
+// newline to avoid gluing output to a partially printed line (e.g. a shell's
+// "^C" echo).
+func (p *ProgressReporter) Drawing() bool {
+	return p != nil && p.animate
+}
+
 // Stop halts the background animator and erases the progress line so the real
 // result renders on a clean row. Use it on error or cancellation; use Complete
 // on success to leave a summary. It is safe to call multiple times and when
@@ -320,7 +329,7 @@ func statsSuffix(s ProgressState, start time.Time) string {
 			parts = append(parts, humanizeMetric(s.ScannedRecords)+" recs")
 		}
 	} else if s.PreviewRows > 0 {
-		parts = append(parts, "preview: "+humanizeCount(s.PreviewRows)+" rows")
+		parts = append(parts, "preview: "+formatNumber(int64(s.PreviewRows))+" rows")
 	}
 	parts = append(parts, formatElapsed(time.Since(start)))
 	return "  " + strings.Join(parts, " · ")
@@ -358,30 +367,6 @@ func humanizeMetric(n int64) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
-}
-
-// humanizeCount formats a non-negative integer with thousands separators, e.g.
-// 1234567 -> "1,234,567".
-func humanizeCount(n int) string {
-	s := fmt.Sprintf("%d", n)
-	if len(s) <= 3 {
-		return s
-	}
-	var b strings.Builder
-	pre := len(s) % 3
-	if pre > 0 {
-		b.WriteString(s[:pre])
-		if len(s) > pre {
-			b.WriteByte(',')
-		}
-	}
-	for i := pre; i < len(s); i += 3 {
-		b.WriteString(s[i : i+3])
-		if i+3 < len(s) {
-			b.WriteByte(',')
-		}
-	}
-	return b.String()
 }
 
 // visibleWidth returns the number of visible columns in s, skipping ANSI SGR

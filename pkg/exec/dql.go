@@ -312,10 +312,16 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 	if err != nil {
 		// Clear the bar before any further stderr output (cancellation notice,
 		// error hints). Stop is idempotent; the defer remains a safety net.
+		drawing := reporter.Drawing()
 		reporter.Stop()
-		// If context was cancelled, print cancellation message. Stop() above has
-		// already cleared any progress line, so no leading newline is needed.
+		// If context was cancelled, print cancellation message. When the reporter
+		// was drawing, Stop() above already cleared the line, so no leading
+		// newline is needed. When it was not (--no-progress, --plain, non-TTY),
+		// emit one to separate the message from a shell's "^C" echo.
 		if ctx.Err() != nil {
+			if !drawing {
+				fmt.Fprintln(os.Stderr)
+			}
 			fmt.Fprintln(os.Stderr, "Query cancelled.")
 			return nil, nil
 		}

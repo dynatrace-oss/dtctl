@@ -241,21 +241,3 @@ func TestFormatElapsed(t *testing.T) {
 		}
 	}
 }
-
-func TestHumanizeCount(t *testing.T) {
-	tests := map[int]string{
-		0:       "0",
-		7:       "7",
-		42:      "42",
-		999:     "999",
-		1000:    "1,000",
-		1234:    "1,234",
-		12345:   "12,345",
-		1234567: "1,234,567",
-	}
-	for in, want := range tests {
-		if got := humanizeCount(in); got != want {
-			t.Errorf("humanizeCount(%d) = %q, want %q", in, got, want)
-		}
-	}
-}
