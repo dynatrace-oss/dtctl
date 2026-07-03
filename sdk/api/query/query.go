@@ -355,6 +355,12 @@ type PollUpdate struct {
 	// set EnablePreview and this poll carried preview records. Each preview is
 	// whole (not a delta to prior previews), so callers replace, never append.
 	Preview *Result
+	// ScannedBytes and ScannedRecords are the running scan totals reported by the
+	// backend for this poll. Grail populates and grows them on each poll of a
+	// mass-data query; they are 0 when the backend has not reported them (e.g. an
+	// early poll or a query type that does not scan Grail).
+	ScannedBytes   int64
+	ScannedRecords int64
 }
 
 // ExecuteAndPollOptions carries optional hooks for ExecuteAndPollWithOptions.
@@ -548,7 +554,12 @@ func emitUpdate(onUpdate func(PollUpdate), enablePreview bool, resp *Response) {
 	if enablePreview && resp.Result != nil && len(resp.Result.Records) > 0 {
 		preview = resp.Result
 	}
-	onUpdate(PollUpdate{Progress: resp.Progress, Preview: preview})
+	u := PollUpdate{Progress: resp.Progress, Preview: preview}
+	if m := resp.GetMetadata(); m != nil {
+		u.ScannedBytes = m.ScannedBytes
+		u.ScannedRecords = m.ScannedRecords
+	}
+	onUpdate(u)
 }
 
 func (h *Handler) applyHeaders(req *resty.Request) {

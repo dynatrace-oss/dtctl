@@ -301,11 +301,15 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 	result, err := handler.ExecuteAndPollWithOptions(ctx, req, sdkquery.ExecuteAndPollOptions{
 		OnUnauthorized: onUnauthorized,
 		OnUpdate: func(u sdkquery.PollUpdate) {
-			previewRows := 0
-			if u.Preview != nil {
-				previewRows = len(u.Preview.Records)
+			state := output.ProgressState{
+				Progress:       u.Progress,
+				ScannedBytes:   u.ScannedBytes,
+				ScannedRecords: u.ScannedRecords,
 			}
-			reporter.Update(u.Progress, previewRows)
+			if u.Preview != nil {
+				state.PreviewRows = len(u.Preview.Records)
+			}
+			reporter.Update(state)
 		},
 	})
 	if err != nil {
