@@ -1332,10 +1332,10 @@ func describeAppFixture() appengine.App {
 			SubResourceTypes: []string{"function", "action"},
 		},
 		ModificationInfo: &appengine.ModificationInfo{
-			CreatedBy:        "user-a@example.invalid",
-			CreatedTime:      "2025-01-10T08:00:00Z",
-			LastModifiedBy:   "user-b@example.invalid",
-			LastModifiedTime: "2025-03-15T10:30:00Z",
+			CreatedBy:      "user-a@example.invalid",
+			CreatedAt:      "2025-01-10T08:00:00Z",
+			LastModifiedBy: "user-b@example.invalid",
+			LastModifiedAt: "2025-03-15T10:30:00Z",
 		},
 	}
 }

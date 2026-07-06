@@ -1,10 +1,10 @@
 description: A custom monitoring application
 id: my.custom-app
 modificationInfo:
+  createdAt: "2025-01-10T08:00:00Z"
   createdBy: user-a@example.invalid
-  createdTime: "2025-01-10T08:00:00Z"
+  lastModifiedAt: "2025-03-15T10:30:00Z"
   lastModifiedBy: user-b@example.invalid
-  lastModifiedTime: "2025-03-15T10:30:00Z"
 name: Custom App
 resourceStatus:
   status: OK

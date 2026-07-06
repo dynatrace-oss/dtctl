@@ -13,6 +13,6 @@ signatureinfo: null
 manifest: {}
 modificationinfo:
   createdby: user-a@example.invalid
-  createdtime: "2025-01-10T08:00:00Z"
+  createdat: "2025-01-10T08:00:00Z"
   lastmodifiedby: user-b@example.invalid
-  lastmodifiedtime: "2025-03-15T10:30:00Z"
+  lastmodifiedat: "2025-03-15T10:30:00Z"
