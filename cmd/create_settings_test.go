@@ -8,6 +8,23 @@ import (
 	"github.com/dynatrace-oss/dtctl/cmd/testutil"
 )
 
+func TestCreateSettingsDryRunAndValidateOnlyMutuallyExclusive(t *testing.T) {
+	origDryRun := dryRun
+	defer func() { dryRun = origDryRun }()
+	dryRun = true
+
+	_ = createSettingsCmd.Flags().Set("validate-only", "true")
+	defer func() { _ = createSettingsCmd.Flags().Set("validate-only", "false") }()
+
+	err := createSettingsCmd.RunE(createSettingsCmd, nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if err.Error() != "--dry-run and --validate-only are mutually exclusive" {
+		t.Errorf("unexpected error: %q", err.Error())
+	}
+}
+
 func TestCreateSettingsValidateOnly_Success(t *testing.T) {
 	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{
 		"/platform/classic/environment-api/v2/settings/objects": func(w http.ResponseWriter, r *http.Request) {

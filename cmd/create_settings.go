@@ -41,6 +41,10 @@ Examples:
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 		validateOnly, _ := cmd.Flags().GetBool("validate-only")
 
+		if dryRun && validateOnly {
+			return fmt.Errorf("--dry-run and --validate-only are mutually exclusive")
+		}
+
 		if file == "" {
 			return fmt.Errorf("--file is required")
 		}
