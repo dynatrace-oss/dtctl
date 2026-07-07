@@ -611,6 +611,20 @@ func TestValidateDelete_ValidationFailed(t *testing.T) {
 	}
 }
 
+func TestValidateDelete_GetFails(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/classic/environment-api/v2/settings/objects/not-found-obj", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	h, cleanup := newTestHandler(t, mux)
+	defer cleanup()
+
+	err := h.ValidateDelete("not-found-obj")
+	if err == nil {
+		t.Fatal("expected error from Get, got nil")
+	}
+}
+
 // --- GetRaw ---
 
 func TestGetRaw_Success(t *testing.T) {
