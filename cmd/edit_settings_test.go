@@ -3,21 +3,51 @@ package cmd
 import (
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/cmd/testutil"
 )
 
-// makeEditorScript creates a temporary shell script that overwrites its first
-// argument with the given JSON content. Used to simulate an editor in tests.
+// makeEditorScript creates a temporary script that overwrites its first
+// argument with the given content. Uses a .bat file on Windows (invoked via
+// "cmd /c"), a .sh file everywhere else. The content is written to a
+// separate temp file to avoid shell-escaping issues.
 func makeEditorScript(t *testing.T, content string) string {
 	t.Helper()
+
+	// Write content to a source file; the script just copies it over.
+	src, err := os.CreateTemp("", "editor-src-*")
+	if err != nil {
+		t.Fatalf("failed to create content file: %v", err)
+	}
+	if _, err := src.WriteString(content); err != nil {
+		t.Fatalf("failed to write content: %v", err)
+	}
+	_ = src.Close()
+	srcPath := src.Name()
+	t.Cleanup(func() { os.Remove(srcPath) })
+
+	if runtime.GOOS == "windows" {
+		f, err := os.CreateTemp("", "editor-*.bat")
+		if err != nil {
+			t.Fatalf("failed to create editor script: %v", err)
+		}
+		_, _ = f.WriteString("@echo off\ncopy /Y \"" + srcPath + "\" \"%~1\"\n")
+		_ = f.Close()
+		batPath := f.Name()
+		t.Cleanup(func() { os.Remove(batPath) })
+		// edit_settings.go splits EDITOR on spaces; "cmd /c path" expands to
+		// exec.Command("cmd", "/c", batPath, tmpfile).
+		return "cmd /c " + batPath
+	}
+
 	f, err := os.CreateTemp("", "editor-*.sh")
 	if err != nil {
 		t.Fatalf("failed to create editor script: %v", err)
 	}
-	_, _ = f.WriteString("#!/bin/sh\nprintf '" + content + "' > \"$1\"\n")
+	_, _ = f.WriteString("#!/bin/sh\ncp '" + srcPath + "' \"$1\"\n")
 	_ = f.Close()
 	_ = os.Chmod(f.Name(), 0755)
 	t.Cleanup(func() { os.Remove(f.Name()) })
