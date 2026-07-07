@@ -24,6 +24,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/hub"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/platformtoken"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
@@ -2650,4 +2651,63 @@ func TestGolden_DescribeExtensionAssets(t *testing.T) {
 			assertGolden(t, "describe/extension-assets-"+name, buf.String())
 		})
 	}
+}
+
+func platformTokenFixtures() []platformtoken.PlatformToken {
+	return []platformtoken.PlatformToken{
+		{
+			Name:           "ci-pipeline",
+			TokenID:        "a1b2c3d4-e5f6-4a7b-8c9d-000000000001",
+			Status:         "ACTIVE",
+			ExpirationDate: "2026-10-01T00:00:00.000Z",
+			Scope:          "storage:events:read account-idm-read",
+		},
+		{
+			Name:           "dev-automation",
+			TokenID:        "b2c3d4e5-f6a7-4b8c-9d0e-000000000002",
+			Status:         "ACTIVE",
+			ExpirationDate: "2026-12-31T00:00:00.000Z",
+			Scope:          "account-idm-write",
+		},
+		{
+			Name:           "legacy-token",
+			TokenID:        "c3d4e5f6-a7b8-4c9d-0e1f-000000000003",
+			Status:         "REVOKED",
+			ExpirationDate: "2025-01-01T00:00:00.000Z",
+			Scope:          "storage:logs:read",
+		},
+	}
+}
+
+func TestGolden_GetPlatformTokens(t *testing.T) {
+	tokens := platformTokenFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(tokens); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/platform-tokens-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_GetPlatformTokens_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	printer := NewPrinterWithWriter("table", &buf)
+	if err := printer.PrintList([]platformtoken.PlatformToken{}); err != nil {
+		t.Fatalf("PrintList failed: %v", err)
+	}
+	assertGolden(t, "empty/platform-tokens", buf.String())
 }

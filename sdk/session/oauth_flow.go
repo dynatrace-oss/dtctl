@@ -151,6 +151,15 @@ func OAuthConfigFromEnvironmentURL(environmentURL string, safetyLevel SafetyLeve
 	return cfg
 }
 
+// AccountOAuthConfig returns an OAuth config for account-plane operations.
+// The resource is set to "urn:dtaccount:{uuid}" per Dynatrace account OAuth spec.
+func AccountOAuthConfig(env Environment, safetyLevel config.SafetyLevel, accountUUID string) *OAuthConfig {
+	cfg := OAuthConfigForEnvironment(env, safetyLevel)
+	cfg.Scopes = accountScopesForSafetyLevel(safetyLevel)
+	cfg.EnvironmentURL = "urn:dtaccount:" + accountUUID
+	return cfg
+}
+
 type TokenSet struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`

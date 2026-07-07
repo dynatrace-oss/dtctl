@@ -18,6 +18,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
@@ -28,6 +29,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/tracing"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 var (
@@ -956,6 +958,144 @@ func NewClientFromConfig(cfg *config.Config) (*client.Client, error) {
 		client.InjectTraceContext(c, tracingRootCtx)
 	}
 	return c, nil
+}
+
+// resolveAccountUUID resolves the account UUID using:
+// 1. DTCTL_ACCOUNT_UUID env var
+// 2. Context account-uuid config field
+// 3. Auto-discovery via access-info
+// Returns an error if none of the sources yields a UUID.
+func resolveAccountUUID(cfg *config.Config, envToken string) (string, error) {
+	if v := os.Getenv("DTCTL_ACCOUNT_UUID"); v != "" {
+		return v, nil
+	}
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		return "", err
+	}
+	if ctx.AccountUUID != "" {
+		return ctx.AccountUUID, nil
+	}
+	// Auto-discovery
+	env := auth.DetectEnvironment(ctx.Environment)
+	iamBase := client.IAMBaseURLForEnvironment(env)
+	uuid, _, err := client.DiscoverAccountUUID(iamBase, envToken, extractEnvironmentID(ctx.Environment))
+	if err != nil {
+		return "", fmt.Errorf("could not resolve account UUID (set DTCTL_ACCOUNT_UUID or account-uuid in context): %w", err)
+	}
+	return uuid, nil
+}
+
+// extractEnvironmentID extracts the environment ID from a Dynatrace environment URL.
+// e.g. "https://abc12345.apps.dynatrace.com" → "abc12345"
+func extractEnvironmentID(envURL string) string {
+	// strip scheme
+	s := strings.TrimPrefix(envURL, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	// take first segment
+	if i := strings.Index(s, "."); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// accountTokenKeyName returns the keyring token name for a given account UUID.
+func accountTokenKeyName(uuid string) string {
+	return "account-" + uuid
+}
+
+// resolveUUIDNoDiscovery returns the account UUID from flagValue > DTCTL_ACCOUNT_UUID > ctx.AccountUUID.
+// It never calls the API, so it is safe to call before a token is available.
+func resolveUUIDNoDiscovery(ctx *config.Context, flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if v := os.Getenv("DTCTL_ACCOUNT_UUID"); v != "" {
+		return v
+	}
+	return ctx.AccountUUID
+}
+
+// resolveAccountToken resolves the account token using:
+// 1. DTCTL_ACCOUNT_TOKEN env var
+// 2. Keyring (if accountUUID is known) — stored by `dtctl account login`
+// 3. Error with hint to run `dtctl account login`
+func resolveAccountToken(cfg *config.Config, accountUUID string) (string, error) {
+	if v := os.Getenv("DTCTL_ACCOUNT_TOKEN"); v != "" {
+		return v, nil
+	}
+	if accountUUID != "" {
+		if ctx, err := cfg.CurrentContextObj(); err == nil {
+			env := auth.DetectEnvironment(ctx.Environment)
+			oauthCfg := auth.AccountOAuthConfig(env, ctx.SafetyLevel, accountUUID)
+			if tm, err := auth.NewTokenManager(oauthCfg); err == nil {
+				if token, err := tm.GetToken(accountTokenKeyName(accountUUID)); err == nil && token != "" {
+					return token, nil
+				}
+			}
+		}
+	}
+	return "", fmt.Errorf("account token required: set DTCTL_ACCOUNT_TOKEN or run 'dtctl account login'")
+}
+
+// SetupAccount resolves account credentials and builds an account-plane httpclient.
+// Use for read-only account commands (no safety check).
+func SetupAccount() (*httpclient.Client, string, error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	return setupAccountClient(cfg)
+}
+
+// SetupAccountWithSafety resolves account credentials, runs a safety check,
+// and builds an account-plane httpclient. Use for mutating account commands.
+func SetupAccountWithSafety(op safety.Operation) (*httpclient.Client, string, error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	checker, err := NewSafetyChecker(cfg)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := checker.CheckError(op, safety.OwnershipUnknown); err != nil {
+		return nil, "", err
+	}
+	return setupAccountClient(cfg)
+}
+
+func setupAccountClient(cfg *config.Config) (*httpclient.Client, string, error) {
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Sniff UUID from env/config without a token — needed for keyring lookup.
+	partialUUID := resolveUUIDNoDiscovery(ctx, "")
+
+	accountToken, err := resolveAccountToken(cfg, partialUUID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	env := auth.DetectEnvironment(ctx.Environment)
+	accountUUID, err := resolveAccountUUID(cfg, accountToken)
+	if err != nil {
+		return nil, "", err
+	}
+
+	baseURL := client.AccountBaseURLForEnvironment(env)
+	c, err := httpclient.New(baseURL, httpclient.WithToken(accountToken))
+	if err != nil {
+		return nil, "", err
+	}
+	level := verbosity
+	if debugMode {
+		level = 2
+	}
+	c.EnableVerboseLogging(level, os.Stderr)
+	return c, accountUUID, nil
 }
 
 // flagsTakingValues is the set of persistent long flags that consume the next
