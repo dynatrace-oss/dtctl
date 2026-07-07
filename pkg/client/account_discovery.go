@@ -12,9 +12,9 @@ type AccessInfoResponse struct {
 }
 
 type AccessInfoAccount struct {
-	UUID              string                 `json:"uuid"`
-	Name              string                 `json:"name"`
-	AccountServiceURL string                 `json:"accountServiceUrl,omitempty"`
+	UUID              string                  `json:"uuid"`
+	Name              string                  `json:"name"`
+	AccountServiceURL string                  `json:"accountServiceUrl,omitempty"`
 	Environments      []AccessInfoEnvironment `json:"environments,omitempty"`
 }
 
