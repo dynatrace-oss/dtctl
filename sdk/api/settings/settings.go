@@ -302,6 +302,23 @@ func (h *Handler) Update(ctx context.Context, objectID, schemaVersion string, va
 	return nil
 }
 
+// ValidateDelete validates a settings object deletion without applying it.
+// The schemaVersion is used for the If-Match header (obtain it from Get).
+func (h *Handler) ValidateDelete(ctx context.Context, objectID, schemaVersion string) error {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetHeader("If-Match", schemaVersion).
+		SetQueryParam("validateOnly", "true").
+		Delete(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", objectID))
+	if err != nil {
+		return fmt.Errorf("validate settings object deletion %q: %w", objectID, err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return fmt.Errorf("validate settings object %q deletion: %w", objectID, err)
+	}
+
+	return nil
+}
+
 // Delete deletes a settings object.
 // The schemaVersion is used for the If-Match header (obtain it from Get).
 func (h *Handler) Delete(ctx context.Context, objectID, schemaVersion string) error {
