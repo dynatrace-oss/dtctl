@@ -2150,12 +2150,24 @@ dtctl update settings aaaaaaaa-bbbb-cccc-dddd-000000000001 \
 dtctl update settings aaaaaaaa-bbbb-cccc-dddd-000000000001 \
   -f pipeline.yaml \
   --dry-run
-
-# Validate against the API without saving
-dtctl edit setting aaaaaaaa-bbbb-cccc-dddd-000000000001 --validate-only
 ```
 
 **Note:** Updates use optimistic locking automatically - the current version is fetched before updating to prevent conflicts.
+
+### Edit Settings Objects
+
+Open a settings object in your editor and save changes interactively:
+
+```bash
+# Edit a settings object (opens in $EDITOR, defaults to vim)
+dtctl edit setting aaaaaaaa-bbbb-cccc-dddd-000000000001
+
+# Edit in JSON format
+dtctl edit setting aaaaaaaa-bbbb-cccc-dddd-000000000001 --format=json
+
+# Validate the edited value against the API without saving
+dtctl edit setting aaaaaaaa-bbbb-cccc-dddd-000000000001 --validate-only
+```
 
 ### Delete Settings Objects
 
