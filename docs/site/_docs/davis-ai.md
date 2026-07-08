@@ -23,6 +23,14 @@ dtctl get analyzers
 dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
   --query "timeseries avg(dt.host.cpu.usage)"
 
+# Use a preset shortcut instead of naming the analyzer explicitly
+dtctl analyze forecast \
+  --query "timeseries avg(dt.host.cpu.usage)"
+
+# Run the anomaly-detection preset
+dtctl analyze anomaly \
+  --query "timeseries avg(dt.host.cpu.usage)"
+
 # Execute an analyzer using input from a file
 dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
   --file analyzer-input.yaml
@@ -41,6 +49,8 @@ dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
 | `dt.statistics.GenericChangePointAnalyzer` | Detect significant changes in metric behavior |
 | `dt.statistics.GenericCorrelationAnalyzer` | Find correlations between metric time series |
 | `dt.statistics.GenericAnomalyDetectionAnalyzer` | Identify anomalous metric patterns |
+
+Preset shortcuts are available via `dtctl analyze forecast`, `dtctl analyze anomaly`, `dtctl analyze change-point`, and `dtctl analyze correlation`.
 
 ## Davis CoPilot
 

@@ -4,6 +4,19 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 
 > **Note**: This guide assumes dtctl is already installed. If you need to build or install dtctl, see [INSTALLATION.md](INSTALLATION.md) first.
 
+### Analytics Helpers
+
+dtctl now includes a few focused commands for analytics-oriented workflows:
+
+- [Analyze Davis AI analyzers](../cmd/analyze_analyzers.go): `dtctl analyze analyzer dt.statistics.GenericForecastAnalyzer --query "timeseries avg(dt.host.cpu.usage)"`
+- Preset analyzer shortcuts: `dtctl analyze forecast --query "timeseries avg(dt.host.cpu.usage)"` or `dtctl analyze anomaly --query "timeseries avg(dt.host.cpu.usage)"`
+- [Estimate bucket cost](../cmd/cost_estimate.go): `dtctl cost estimate`
+- Override the default pricing assumptions: `dtctl cost estimate --storage-price-per-gib-month 0.12 --record-price-per-million 0.20`
+- Or set environment variables: `DTCTL_COST_STORAGE_PRICE_PER_GIB_MONTH`, `DTCTL_COST_RECORD_PRICE_PER_MILLION`, `DTCTL_COST_BUCKET_BASE_MONTHLY`
+- [Export runtime metrics](../cmd/metrics_export.go): `dtctl metrics export`
+
+These commands complement the DQL and lookup-table examples below.
+
 ## Table of Contents
 
 1. [Configuration](#configuration)

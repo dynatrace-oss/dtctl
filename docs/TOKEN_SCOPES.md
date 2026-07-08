@@ -5,6 +5,8 @@ This document lists the Dynatrace platform token scopes required for each safety
 > **Note**: Safety levels are client-side only. The token scopes you configure in Dynatrace are what actually controls access. Configure your tokens with the minimum required scopes for your use case.
 >
 > **Ownership checks are also client-side**: The `readwrite-mine` safety level and `--mine` flag work by comparing the resource owner ID with your user ID locally. The Dynatrace API does not enforce ownership restrictions—if your token has write access, you can modify any resource that is shared with a user. The ownership check is a convenience feature to prevent accidental modifications to shared resources.
+>
+> The token type you create in Dynatrace should still be the least-privileged option that can hold the required scopes. dtctl validates scopes, not the token type itself.
 
 ## Quick Reference
 

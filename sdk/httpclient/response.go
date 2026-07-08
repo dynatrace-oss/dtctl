@@ -2,8 +2,11 @@ package httpclient
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/go-resty/resty/v2"
+
+	"github.com/dynatrace-oss/dtctl/pkg/metrics"
 )
 
 // CheckResponse inspects a resty response and returns a structured [*APIError]
@@ -45,5 +48,12 @@ func CheckResponse(resp *resty.Response) error {
 		}
 	}
 
-	return NewAPIError(resp.StatusCode(), msg, details)
+	statusCode := resp.StatusCode()
+	op := "http"
+	if resp.Request != nil && (resp.Request.Method != "" || resp.Request.URL != "") {
+		op = fmt.Sprintf("%s %s", resp.Request.Method, resp.Request.URL)
+	}
+	metrics.Default().RecordAPIError(op, statusCode, msg)
+
+	return NewAPIError(statusCode, msg, details)
 }

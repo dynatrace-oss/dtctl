@@ -21,6 +21,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	"github.com/dynatrace-oss/dtctl/pkg/metrics"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
@@ -139,6 +140,12 @@ func execute() int {
 	)
 	tracingRootCtx = tracingCtx
 	rootSpan := trace.SpanFromContext(tracingCtx)
+	commandStart := time.Now()
+	collector := metrics.Default()
+	var runErr error
+	defer func() {
+		collector.RecordCommand(spanName, time.Since(commandStart), runErr)
+	}()
 	defer func() {
 		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -150,6 +157,7 @@ func execute() int {
 	}
 
 	if err := rootCmd.Execute(); err != nil {
+		runErr = err
 		errStr := err.Error()
 
 		// Enhance unknown command errors with suggestions
