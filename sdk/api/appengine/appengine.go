@@ -46,10 +46,10 @@ type SignatureInfo struct {
 
 // ModificationInfo contains modification timestamps
 type ModificationInfo struct {
-	CreatedBy        string `json:"createdBy,omitempty"`
-	CreatedTime      string `json:"createdTime,omitempty"`
-	LastModifiedBy   string `json:"lastModifiedBy,omitempty"`
-	LastModifiedTime string `json:"lastModifiedTime,omitempty"`
+	CreatedBy      string `json:"createdBy,omitempty"`
+	CreatedAt      string `json:"createdAt,omitempty"`
+	LastModifiedBy string `json:"lastModifiedBy,omitempty"`
+	LastModifiedAt string `json:"lastModifiedAt,omitempty"`
 }
 
 // AppList represents a list of apps
