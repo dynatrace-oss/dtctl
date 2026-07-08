@@ -216,7 +216,7 @@ func (h *Handler) ValidateDelete(objectID string) error {
 	if err != nil {
 		return err
 	}
-	return h.sdk.ValidateDelete(context.Background(), obj.ObjectID, obj.SchemaVersion)
+	return h.sdk.ValidateDelete(context.Background(), objectID, obj.SchemaVersion)
 }
 
 // Delete deletes a settings object.

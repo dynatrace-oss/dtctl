@@ -37,8 +37,7 @@ func TestCreateSettingsValidateOnly_Success(t *testing.T) {
 	cfgFile = configPath
 	plainMode = true
 
-	// Note: avoid ResetCommandFlags here — it calls Set("[]") on the StringArray --set flag,
-	// which adds the literal string "[]" as a value and breaks template parsing.
+	testutil.ResetCommandFlags(createSettingsCmd)
 	_ = createSettingsCmd.Flags().Set("file", settingsFile)
 	_ = createSettingsCmd.Flags().Set("schema", "builtin:alerting.profile")
 	_ = createSettingsCmd.Flags().Set("scope", "environment")
@@ -72,7 +71,7 @@ func TestCreateSettingsValidateOnly_ValidationFailed(t *testing.T) {
 	cfgFile = configPath
 	plainMode = true
 
-	// Note: avoid ResetCommandFlags here — see TestCreateSettingsValidateOnly_Success.
+	testutil.ResetCommandFlags(createSettingsCmd)
 	_ = createSettingsCmd.Flags().Set("file", settingsFile)
 	_ = createSettingsCmd.Flags().Set("schema", "builtin:alerting.profile")
 	_ = createSettingsCmd.Flags().Set("scope", "environment")

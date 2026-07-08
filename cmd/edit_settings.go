@@ -39,6 +39,7 @@ Examples:
   dtctl edit setting vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ... --format=json
 
   # Validate the edited value against the API without saving
+  # (the editor still opens; changes are validated but not persisted)
   dtctl edit setting vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ... --validate-only
 `,
 	Args: cobra.ExactArgs(1),
