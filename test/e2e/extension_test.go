@@ -4,6 +4,8 @@
 package e2e
 
 import (
+	"archive/zip"
+	"bytes"
 	"strings"
 	"testing"
 
@@ -415,6 +417,133 @@ func TestMonitoringConfigurationDeleteNonExistent(t *testing.T) {
 		err := handler.DeleteMonitoringConfiguration(ext.ExtensionName, "nonexistent-config-id-12345")
 		if err == nil {
 			t.Error("Expected error when deleting non-existent monitoring config, got nil")
+		} else {
+			t.Logf("Got expected error: %v", err)
+		}
+	})
+}
+
+func TestExtensionDownload(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := extension.NewHandler(env.Client)
+	ext := findFirstExtension(t, handler)
+
+	versions, err := handler.Get(ext.ExtensionName)
+	if err != nil {
+		t.Fatalf("Failed to get extension versions: %v", err)
+	}
+	if len(versions.Items) == 0 {
+		t.Skip("No versions available")
+	}
+	version := versions.Items[0].Version
+
+	t.Run("download returns valid zip bytes", func(t *testing.T) {
+		data, err := handler.Download(ext.ExtensionName, version)
+		if err != nil {
+			t.Fatalf("Download failed: %v", err)
+		}
+		if len(data) == 0 {
+			t.Fatal("Download returned empty bytes")
+		}
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Fatalf("Downloaded bytes are not a valid zip: %v", err)
+		}
+		t.Logf("Extension %s v%s: downloaded %d bytes, %d zip entries", ext.ExtensionName, version, len(data), len(zr.File))
+	})
+
+	t.Run("download non-existent extension returns error", func(t *testing.T) {
+		_, err := handler.Download("com.example.nonexistent.extension.invalid", "1.0.0")
+		if err == nil {
+			t.Error("Expected error for non-existent extension, got nil")
+		} else {
+			t.Logf("Got expected error: %v", err)
+		}
+	})
+}
+
+func TestExtensionParseAssets(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := extension.NewHandler(env.Client)
+	ext := findFirstExtension(t, handler)
+
+	versions, err := handler.Get(ext.ExtensionName)
+	if err != nil {
+		t.Fatalf("Failed to get extension versions: %v", err)
+	}
+	if len(versions.Items) == 0 {
+		t.Skip("No versions available")
+	}
+	version := versions.Items[0].Version
+
+	data, err := handler.Download(ext.ExtensionName, version)
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	t.Run("parse alert_templates returns no content when full=false", func(t *testing.T) {
+		result, err := extension.ParseAssets(data, []string{"alert_templates"}, false)
+		if err != nil {
+			t.Fatalf("ParseAssets failed: %v", err)
+		}
+		t.Logf("Found %d alert template(s)", len(result.AlertTemplates))
+		for _, a := range result.AlertTemplates {
+			if a.Content != nil {
+				t.Errorf("alert %q has non-nil Content with full=false (content leak bug)", a.File)
+			}
+			t.Logf("  alert: %s / %s / enabled=%v", a.Name, a.EventType, a.Enabled)
+		}
+	})
+
+	t.Run("parse alert_templates returns content when full=true", func(t *testing.T) {
+		result, err := extension.ParseAssets(data, []string{"alert_templates"}, true)
+		if err != nil {
+			t.Fatalf("ParseAssets failed: %v", err)
+		}
+		for _, a := range result.AlertTemplates {
+			if a.Content == nil {
+				t.Errorf("alert %q has nil Content with full=true", a.File)
+			}
+		}
+	})
+
+	t.Run("parse smartscape returns result", func(t *testing.T) {
+		result, err := extension.ParseAssets(data, []string{"smartscape"}, false)
+		if err != nil {
+			t.Fatalf("ParseAssets failed: %v", err)
+		}
+		if result.Smartscape == nil {
+			t.Fatal("Expected non-nil Smartscape result")
+		}
+		t.Logf("Found %d node(s) and %d edge(s)", len(result.Smartscape.Nodes), len(result.Smartscape.Edges))
+		for _, n := range result.Smartscape.Nodes {
+			if n.Content != nil {
+				t.Errorf("node %q has non-nil Content with full=false", n.NodeType)
+			}
+		}
+	})
+
+	t.Run("parse both types in one call", func(t *testing.T) {
+		result, err := extension.ParseAssets(data, []string{"alert_templates", "smartscape"}, false)
+		if err != nil {
+			t.Fatalf("ParseAssets failed: %v", err)
+		}
+		if result.AlertTemplates == nil {
+			t.Error("Expected non-nil AlertTemplates")
+		}
+		if result.Smartscape == nil {
+			t.Error("Expected non-nil Smartscape")
+		}
+	})
+
+	t.Run("unknown asset type returns error", func(t *testing.T) {
+		_, err := extension.ParseAssets(data, []string{"dashboards"}, false)
+		if err == nil {
+			t.Error("Expected error for unknown asset type, got nil")
 		} else {
 			t.Logf("Got expected error: %v", err)
 		}

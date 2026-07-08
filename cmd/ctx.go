@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
@@ -64,6 +65,37 @@ Examples:
 
 		// One arg: switch to that context (same as config use-context)
 		return useContext(args[0])
+	},
+}
+
+// ctxTokenCmd prints the resolved token for the current (or named) context.
+// It prints the raw credential only — not a full Authorization header value
+// (no "Bearer "/"Api-Token " scheme prefix), so callers must add the scheme themselves.
+// OAuth tokens are auto-refreshed if expired, so the printed value matches what
+// dtctl itself sends.
+var ctxTokenCmd = &cobra.Command{
+	Use:   "token [context-name]",
+	Short: "Print the resolved token for a context",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := LoadConfig()
+		if err != nil {
+			return err
+		}
+		name := cfg.CurrentContext
+		if len(args) == 1 {
+			name = args[0]
+		}
+		nc, err := cfg.GetContext(name)
+		if err != nil {
+			return err
+		}
+		tok, err := client.GetTokenForContext(cfg, nc.Context.Environment, nc.Context.TokenRef)
+		if err != nil {
+			return err
+		}
+		fmt.Println(tok)
+		return nil
 	},
 }
 
@@ -370,6 +402,7 @@ func deleteContext(name string) error {
 func init() {
 	rootCmd.AddCommand(ctxCmd)
 
+	ctxCmd.AddCommand(ctxTokenCmd)
 	ctxCmd.AddCommand(ctxCurrentCmd)
 	ctxCmd.AddCommand(ctxDescribeCmd)
 	ctxCmd.AddCommand(ctxSetCmd)

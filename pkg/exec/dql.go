@@ -30,6 +30,7 @@ type (
 	BucketContribution    = sdkquery.BucketContribution
 	QueryNotification     = sdkquery.Notification
 	AnalysisTimeframe     = sdkquery.AnalysisTimeframe
+	MetricInfo            = sdkquery.MetricInfo
 	DQLVerifyRequest      = sdkquery.VerifyRequest
 	DQLVerifyResponse     = sdkquery.VerifyResponse
 	MetadataNotification  = sdkquery.VerifyNotification
@@ -128,6 +129,14 @@ type DQLExecuteOptions struct {
 	Locale   string // Query locale (e.g., "en_US")
 	Timezone string // Query timezone (e.g., "UTC", "Europe/Paris")
 
+	// ShowProgress opts in to the live progress bar drawn on stderr while an
+	// asynchronous query is polled. It is off by default so internal/library
+	// query callers (e.g. describe sub-queries, lookup metadata fetches) stay
+	// silent; only the user-facing `query` command sets it. Even when set, the
+	// bar is drawn only for interactive terminals and never affects stdout, so
+	// structured/piped output is unchanged regardless.
+	ShowProgress bool
+
 	// Metadata options
 	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, specific names = filtered
 
@@ -137,6 +146,17 @@ type DQLExecuteOptions struct {
 	// ClientContext is an optional caller-supplied semantic string included as the "context"
 	// field in the dt-client-context request header (e.g. "root-cause-analysis").
 	ClientContext string
+
+	// Spill holds the fully-resolved result-spill settings. When Spill.Enabled()
+	// is false (mode never) the spill path is bypassed entirely and output is
+	// unchanged from today's behaviour.
+	Spill SpillOptions
+
+	// TenantID and ContextName are provenance recorded in the spill manifest and
+	// used to partition the spill directory by context (D9). They are not part of
+	// query execution and are only consulted on the spill path.
+	TenantID    string
+	ContextName string
 }
 
 // DQLVerifyOptions configures DQL query verification
@@ -197,8 +217,24 @@ func buildExecuteRequest(query string, opts DQLExecuteOptions) sdkquery.ExecuteR
 	if len(opts.Segments) > 0 {
 		req.FilterSegments = opts.Segments
 	}
+	// Request metric-catalogue enrichment (displayName/description/unit on
+	// metadata.metrics[]) only when the caller actually wants metrics metadata.
+	if wantsMetricsMetadata(opts.MetadataFields) {
+		req.EnrichMetricMetadata = true
+	}
 
 	return req
+}
+
+// wantsMetricsMetadata reports whether the requested metadata fields include
+// metric metadata — either explicitly ("metrics") or via the "all" selector.
+func wantsMetricsMetadata(fields []string) bool {
+	for _, f := range fields {
+		if f == "all" || f == "metrics" {
+			return true
+		}
+	}
+	return false
 }
 
 // Execute executes a DQL query
@@ -220,7 +256,7 @@ func (e *DQLExecutor) ExecuteWithContext(ctx context.Context, query string, opts
 	if result == nil {
 		return nil // context was cancelled; message already printed to stderr
 	}
-	return e.printResults(result, opts)
+	return e.printResults(query, result, opts)
 }
 
 // ExecuteQuery executes a DQL query and returns the raw result
@@ -254,11 +290,51 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 		}
 	}
 
-	result, err := handler.ExecuteAndPoll(ctx, req, onUnauthorized)
+	// Live progress on stderr. The reporter is a no-op unless stderr is an
+	// interactive TTY, so piped/agent/structured output is untouched. Stop()
+	// erases the line on error and cancellation; Complete() replaces it with a
+	// summary on success.
+	reporter := output.NewProgressReporter(opts.ShowProgress, opts.AgentMode)
+	defer reporter.Stop()
+
+	// Remember the last live scan totals so the completion summary can fall back
+	// to them if the terminal result metadata omits scannedBytes/Records. The
+	// closure runs synchronously in this goroutine, so these need no locking.
+	var lastScannedBytes, lastScannedRecords int64
+	result, err := handler.ExecuteAndPollWithOptions(ctx, req, sdkquery.ExecuteAndPollOptions{
+		OnUnauthorized: onUnauthorized,
+		OnUpdate: func(u sdkquery.PollUpdate) {
+			state := output.ProgressState{
+				Progress:       u.Progress,
+				ScannedBytes:   u.ScannedBytes,
+				ScannedRecords: u.ScannedRecords,
+			}
+			if u.Preview != nil {
+				state.PreviewRows = len(u.Preview.Records)
+			}
+			if u.ScannedBytes > 0 {
+				lastScannedBytes = u.ScannedBytes
+			}
+			if u.ScannedRecords > 0 {
+				lastScannedRecords = u.ScannedRecords
+			}
+			reporter.Update(state)
+		},
+	})
 	if err != nil {
-		// If context was cancelled, print cancellation message
+		// Clear the bar before any further stderr output (cancellation notice,
+		// error hints). Stop is idempotent; the defer remains a safety net.
+		drawing := reporter.Drawing()
+		reporter.Stop()
+		// If context was cancelled, print cancellation message. When the reporter
+		// was drawing, Stop() above already cleared the line, so no leading
+		// newline is needed. When it was not (--no-progress, --plain, non-TTY),
+		// emit one to separate the message from a shell's "^C" echo.
 		if ctx.Err() != nil {
-			fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
+			if !drawing {
+				fmt.Fprintln(os.Stderr)
+			}
+			fmt.Fprintln(os.Stderr, "Query cancelled.")
 			return nil, nil
 		}
 		// Enhance known error types with CLI-specific hints
@@ -268,6 +344,21 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 		}
 		return nil, err
 	}
+
+	// On success, replace the bar with a completion summary carrying the final
+	// scan totals. Prefer the result metadata (authoritative), but fall back to
+	// the last live totals when the terminal envelope omits them, so a large scan
+	// the user watched climb is never reported as "done in Xs" with no volume.
+	final := output.ProgressState{Progress: 100, ScannedBytes: lastScannedBytes, ScannedRecords: lastScannedRecords}
+	if m := result.GetMetadata(); m != nil {
+		if m.ScannedBytes > 0 {
+			final.ScannedBytes = m.ScannedBytes
+		}
+		if m.ScannedRecords > 0 {
+			final.ScannedRecords = m.ScannedRecords
+		}
+	}
+	reporter.Complete(final)
 
 	return result, nil
 }
@@ -321,32 +412,122 @@ func (e *DQLExecutor) VerifyQuery(query string, opts DQLVerifyOptions) (*DQLVeri
 	return handler.Verify(ctx, req)
 }
 
-// getHintForNotification returns a CLI hint for a given notification type or message
-func getHintForNotification(notificationType, message string) string {
-	hints := map[string]string{
-		"SCAN_LIMIT_GBYTES":       "Use --default-scan-limit-gbytes <value> to increase the limit (e.g., dtctl q '<query>' --default-scan-limit-gbytes 2000)",
-		"RESULT_LIMIT_RECORDS":    "Use --max-result-records <value> to increase the record limit",
-		"RESULT_LIMIT_BYTES":      "Use --max-result-bytes <value> to increase the result size limit",
-		"FETCH_TIMEOUT":           "Use --fetch-timeout-seconds <value> to increase the fetch timeout",
-		"SAMPLING_APPLIED":        "Use --default-sampling-ratio <value> to adjust sampling (1.0 = no sampling)",
-		"QUERY_CONSUMPTION_LIMIT": "Use --enforce-query-consumption-limit=false to disable consumption limits",
+// Notification categories. A query notification is mapped to one of these so a
+// single set of advice serves both the human stderr hint and the agent-envelope
+// suggestions. The empty string means "no specific advice".
+const (
+	notifScanLimit   = "scan_limit"
+	notifResultLimit = "result_limit"
+	notifTimeout     = "timeout"
+	notifSampling    = "sampling"
+	notifConsumption = "consumption"
+)
+
+// classifyNotification maps a query notification (by type, falling back to a
+// message pattern) to one of the notif* categories. The message fallback exists
+// because not every deployment tags notifications with a stable type.
+func classifyNotification(notificationType, message string) string {
+	switch notificationType {
+	case "SCAN_LIMIT_GBYTES":
+		return notifScanLimit
+	case "RESULT_LIMIT_RECORDS", "RESULT_LIMIT_BYTES":
+		return notifResultLimit
+	case "FETCH_TIMEOUT":
+		return notifTimeout
+	case "SAMPLING_APPLIED":
+		return notifSampling
+	case "QUERY_CONSUMPTION_LIMIT":
+		return notifConsumption
 	}
 
-	if hint, ok := hints[notificationType]; ok {
-		return hint
+	msg := strings.ToLower(message)
+	switch {
+	case strings.Contains(msg, "scan") && strings.Contains(msg, "gigabyte"):
+		return notifScanLimit
+	case strings.Contains(msg, "result has been limited") || strings.Contains(msg, "limited to"):
+		return notifResultLimit
 	}
-
-	if len(message) > 0 {
-		msgLower := strings.ToLower(message)
-		if strings.Contains(msgLower, "result has been limited") || strings.Contains(msgLower, "limited to") {
-			return "Use --max-result-records <value> to increase the record limit (e.g., dtctl q '<query>' --max-result-records 5000)"
-		}
-		if strings.Contains(msgLower, "scan") && strings.Contains(msgLower, "gigabyte") {
-			return "Use --default-scan-limit-gbytes <value> to increase the limit (e.g., dtctl q '<query>' --default-scan-limit-gbytes 2000)"
-		}
-	}
-
 	return ""
+}
+
+// getHintForNotification returns a concise CLI hint (a single line, for stderr)
+// for a given notification type or message. For a truncating notification it
+// leads with data-reduction advice — raising the limit is the expensive last
+// resort, not the first suggestion.
+func getHintForNotification(notificationType, message string) string {
+	switch classifyNotification(notificationType, message) {
+	case notifScanLimit:
+		return "Result is PARTIAL (scan stopped early). Reduce data scanned — narrow the timeframe, restrict to specific buckets (bucket:{...}; use --include-contributions to find the heavy ones), filter early with == (not contains()), or sample logs/spans (add samplingRatio:1000 to the fetch, or pass --default-sampling-ratio). Raising --default-scan-limit-gbytes <value> works but costs more."
+	case notifResultLimit:
+		return "Result was truncated. Aggregate in DQL (| summarize ...) to shrink it, or raise --max-result-records / --max-result-bytes <value>."
+	case notifTimeout:
+		return "Fetch timed out (result may be incomplete). Narrow the timeframe or add filters, or raise --fetch-timeout-seconds <value>."
+	case notifSampling:
+		return "Results are sampled/extrapolated (approximate). For exact values remove samplingRatio from the fetch, or pass --default-sampling-ratio 1 (higher scan cost)."
+	case notifConsumption:
+		return "Query hit a consumption limit. Reduce the data scanned, or pass --enforce-query-consumption-limit=false to bypass."
+	}
+	return ""
+}
+
+// agentAdviceForNotification returns agent-envelope suggestion lines (the "# ..."
+// style used across the spill envelope) for a notification. Unlike the one-line
+// human hint, it spells out the concrete alternatives an agent can act on and
+// leads with the fact that the result may be incomplete.
+func agentAdviceForNotification(notificationType, message string) []string {
+	switch classifyNotification(notificationType, message) {
+	case notifScanLimit:
+		return []string{
+			"# the scan limit was reached — this result is PARTIAL (the scan stopped early), not the full dataset",
+			"# reduce the DATA SCANNED (aggregation alone does not help — it still scans everything). Raising the limit works but costs more and is slower:",
+			"#   - narrow the timeframe, e.g. from:now()-1h instead of a wide range (usually the biggest lever)",
+			"#   - restrict to the relevant bucket(s): fetch logs, bucket:{\"<bucket>\"}",
+			"#   - find which bucket dominates the scan: dtctl query --include-contributions --metadata=contributions -o json '<query>' and read matchedRecordsRatio per bucket",
+			"#   - filter early and prefer equality, e.g. | filter <field> == \"...\" (== scans far less than contains()/matchesPhrase())",
+			"#   - for logs/spans, sample so only a fraction is scanned: add samplingRatio to the fetch, e.g. fetch logs, samplingRatio:1000 (DQL-native, portable) — or pass dtctl's --default-sampling-ratio 1000; extrapolate counts with sum(dt.system.sampling_ratio)",
+			"# only if you truly need the full scan: --default-scan-limit-gbytes <value> (higher cost & duration; -1 = unlimited)",
+		}
+	case notifResultLimit:
+		return []string{
+			"# the result was truncated to the record/byte limit — rows are missing",
+			"# aggregate in DQL (| summarize ...) to shrink the result, or raise the cap with --max-result-records <N> / --max-result-bytes <N>",
+		}
+	case notifTimeout:
+		return []string{
+			"# the fetch timed out — this result may be incomplete",
+			"# narrow the timeframe or add filters to speed the query, or raise --fetch-timeout-seconds <N>",
+		}
+	case notifSampling:
+		return []string{
+			"# results are sampled/extrapolated (approximate, not exact); for exact values remove samplingRatio from the fetch (or pass --default-sampling-ratio 1) — higher scan cost",
+		}
+	case notifConsumption:
+		return []string{
+			"# the query hit a consumption limit and was stopped — this result may be incomplete",
+			"# reduce the data scanned (narrower timeframe/filters), or pass --enforce-query-consumption-limit=false to bypass",
+		}
+	}
+	return nil
+}
+
+// notificationAdvice converts query notifications into agent-envelope warnings
+// and suggestions. Unlike PrintNotifications (which writes to stderr for a
+// human), this surfaces the same information inside the JSON envelope on stdout,
+// so an agent parsing the result on stdout learns the result may be PARTIAL and
+// what to do next — otherwise a truncated scan looks like a complete answer.
+func notificationAdvice(notifications []QueryNotification) (warnings, suggestions []string) {
+	for _, n := range notifications {
+		switch strings.ToUpper(n.Severity) {
+		case "WARNING", "WARN", "ERROR":
+		default:
+			continue
+		}
+		if n.Message != "" {
+			warnings = append(warnings, n.Message)
+		}
+		suggestions = append(suggestions, agentAdviceForNotification(n.NotificationType, n.Message)...)
+	}
+	return warnings, suggestions
 }
 
 // PrintNotifications prints query notifications/warnings to stderr
@@ -371,7 +552,7 @@ func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 }
 
 // printResults prints the query results with the given options
-func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOptions) error {
+func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts DQLExecuteOptions) error {
 	effectiveFormat := opts.OutputFormat
 	if opts.JQFilter != "" {
 		effectiveFormat = output.NormalizeJQOutputFormat(effectiveFormat)
@@ -396,6 +577,27 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		}
 	}
 
+	// Spill path (D2/D3/D19-buffered): when spilling is enabled, a large result
+	// is written to disk and a compact summary is emitted in place of the rows.
+	// This is strictly additive — when it decides "inline" (or spilling is
+	// disabled) it falls through to the unchanged output path below. Note: a
+	// small/empty result under `auto` decides inline via the threshold, while
+	// `always`/`--spill-to` honours the "write the file" contract even for an
+	// empty result.
+	//
+	// Agent mode always enters this path even under --spill=never: the
+	// spill-aware emitter is what produces the structured envelope, and a
+	// `never` result decides inline via a self-describing kind:"records"
+	// envelope (D2/D31) rather than reverting to a human table. The path still
+	// falls through (handled=false) for an explicit non-JSON encoding or a --jq
+	// transform, so an agent that asked for `-o toon`/`--jq` keeps that shape.
+	if opts.Spill.Enabled() || opts.AgentMode {
+		handled, err := e.trySpill(query, result, records, effectiveFormat, opts)
+		if handled || err != nil {
+			return err
+		}
+	}
+
 	// Extract metadata if requested
 	var meta *output.QueryMetadata
 	if len(opts.MetadataFields) > 0 {
@@ -409,6 +611,7 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		Width:      opts.Width,
 		Height:     opts.Height,
 		Fullscreen: opts.Fullscreen,
+		Types:      columnTypeMappings(result),
 	})
 
 	switch effectiveFormat {
@@ -439,6 +642,19 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 		}
 		return printer.PrintList(records)
 
+	case "jsonl":
+		// An empty JSONL file (zero lines) is valid output, so skip on no records.
+		if len(records) == 0 {
+			return nil
+		}
+		return printer.PrintList(records)
+
+	case "parquet":
+		// Always emit a Parquet file, even for an empty result: a zero-byte file
+		// is not valid Parquet. The printer writes a valid schema-bearing file
+		// with zero rows.
+		return printer.PrintList(records)
+
 	case "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
 		if meta != nil {
 			output.PrintWarning("--metadata is not supported with chart output formats")
@@ -465,45 +681,86 @@ func (e *DQLExecutor) printResults(result *DQLQueryResponse, opts DQLExecuteOpti
 	}
 }
 
+// columnTypeMappings flattens the DQL per-column type info from the response
+// (populated when includeTypes is set) into the output-layer representation used
+// by the Parquet printer to build a schema. Returns nil when no type info is
+// present. When multiple type groups disagree on a column, the first wins.
+func columnTypeMappings(result *DQLQueryResponse) []output.ColumnTypeMapping {
+	groups := result.GetTypes()
+	if len(groups) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var out []output.ColumnTypeMapping
+	for _, g := range groups {
+		for name, ct := range g.Mappings {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			out = append(out, output.ColumnTypeMapping{Name: name, Type: ct.Type})
+		}
+	}
+	return out
+}
+
 // extractQueryMetadata converts DQL response metadata to the output-layer QueryMetadata type.
+// Grail metadata (execution stats, query text, ...) and Metrics (timeseries metric descriptors)
+// are independent siblings of the response's metadata section, so either one being present is
+// enough to produce a non-nil result — gating on Grail alone would silently drop Metrics for
+// responses that populate metadata.metrics without metadata.grail.
 func extractQueryMetadata(result *DQLQueryResponse) *output.QueryMetadata {
 	g := result.GetMetadata()
-	if g == nil {
+	metrics := result.GetMetrics()
+	if g == nil && len(metrics) == 0 {
 		return nil
 	}
 
-	meta := &output.QueryMetadata{
-		ExecutionTimeMilliseconds: g.ExecutionTimeMilliseconds,
-		ScannedRecords:            g.ScannedRecords,
-		ScannedBytes:              g.ScannedBytes,
-		ScannedDataPoints:         g.ScannedDataPoints,
-		Sampled:                   g.Sampled,
-		QueryID:                   g.QueryID,
-		DQLVersion:                g.DQLVersion,
-		Query:                     g.Query,
-		CanonicalQuery:            g.CanonicalQuery,
-		Timezone:                  g.Timezone,
-		Locale:                    g.Locale,
-	}
+	meta := &output.QueryMetadata{}
 
-	if g.AnalysisTimeframe != nil {
-		meta.AnalysisTimeframe = &output.MetadataTimeframe{
-			Start: g.AnalysisTimeframe.Start,
-			End:   g.AnalysisTimeframe.End,
+	if g != nil {
+		meta.ExecutionTimeMilliseconds = g.ExecutionTimeMilliseconds
+		meta.ScannedRecords = g.ScannedRecords
+		meta.ScannedBytes = g.ScannedBytes
+		meta.ScannedDataPoints = g.ScannedDataPoints
+		meta.Sampled = g.Sampled
+		meta.QueryID = g.QueryID
+		meta.DQLVersion = g.DQLVersion
+		meta.Query = g.Query
+		meta.CanonicalQuery = g.CanonicalQuery
+		meta.Timezone = g.Timezone
+		meta.Locale = g.Locale
+
+		if g.AnalysisTimeframe != nil {
+			meta.AnalysisTimeframe = &output.MetadataTimeframe{
+				Start: g.AnalysisTimeframe.Start,
+				End:   g.AnalysisTimeframe.End,
+			}
+		}
+
+		if g.Contributions != nil && len(g.Contributions.Buckets) > 0 {
+			contribs := &output.MetadataContribs{}
+			for _, b := range g.Contributions.Buckets {
+				contribs.Buckets = append(contribs.Buckets, output.MetadataBucket{
+					Name:                b.Name,
+					Table:               b.Table,
+					ScannedBytes:        b.ScannedBytes,
+					MatchedRecordsRatio: b.MatchedRecordsRatio,
+				})
+			}
+			meta.Contributions = contribs
 		}
 	}
 
-	if g.Contributions != nil && len(g.Contributions.Buckets) > 0 {
-		contribs := &output.MetadataContribs{}
-		for _, b := range g.Contributions.Buckets {
-			contribs.Buckets = append(contribs.Buckets, output.MetadataBucket{
-				Name:                b.Name,
-				Table:               b.Table,
-				ScannedBytes:        b.ScannedBytes,
-				MatchedRecordsRatio: b.MatchedRecordsRatio,
-			})
-		}
-		meta.Contributions = contribs
+	for _, m := range metrics {
+		meta.Metrics = append(meta.Metrics, output.MetricInfo{
+			MetricKey:   m.MetricKey,
+			FieldName:   m.FieldName,
+			Aggregation: m.Aggregation,
+			DisplayName: m.DisplayName,
+			Description: m.Description,
+			Unit:        m.Unit,
+		})
 	}
 
 	return meta

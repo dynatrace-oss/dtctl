@@ -21,6 +21,7 @@ var (
 	createAzureConnectionDirectoryID   string
 	createAzureConnectionApplicationID string
 	createAzureConnectionClientSecret  string
+	createAzureConnectionIssuer        string
 
 	createAzureMonitoringConfigName              string
 	createAzureMonitoringConfigCredentials       string
@@ -71,6 +72,10 @@ Examples:
 			return fmt.Errorf("--directoryId, --applicationId, and --clientSecret are only supported for --type clientSecret\nFor federatedIdentityCredential, run 'dtctl update azure connection' after setting up federation in Azure")
 		}
 
+		if createAzureConnectionType == "clientSecret" && createAzureConnectionIssuer != "" {
+			return fmt.Errorf("--issuer is only supported for --type federatedIdentityCredential (clientSecret connections do not use a token issuer)")
+		}
+
 		_, c, err := SetupWithSafety(safety.OperationCreate)
 		if err != nil {
 			return err
@@ -102,7 +107,7 @@ Examples:
 
 		output.PrintSuccess("Azure connection created: %s", created.ObjectID)
 		if createAzureConnectionType == "federatedIdentityCredential" {
-			printFederatedCreateInstructions(c.BaseURL(), created.ObjectID, createAzureConnectionName)
+			printFederatedCreateInstructions(c.BaseURL(), created.ObjectID, createAzureConnectionName, createAzureConnectionIssuer)
 		}
 		return nil
 	},
@@ -188,7 +193,7 @@ Examples:
 	},
 }
 
-func printFederatedCreateInstructions(baseURL, objectID, connectionName string) {
+func printFederatedCreateInstructions(baseURL, objectID, connectionName, issuerOverride string) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		output.PrintWarning("Could not parse base URL for instructions: %v", err)
@@ -196,9 +201,9 @@ func printFederatedCreateInstructions(baseURL, objectID, connectionName string) 
 	}
 	host := u.Host
 
-	issuer := "https://token.dynatrace.com"
-	if strings.Contains(host, "dev.apps.dynatracelabs.com") || strings.Contains(host, "dev.dynatracelabs.com") {
-		issuer = "https://dev.token.dynatracelabs.com"
+	issuer := issuerOverride
+	if issuer == "" {
+		issuer = azureconnection.TokenIssuerForHost(host)
 	}
 
 	fmt.Println("\nTo complete the configuration, additional setup is required in the Azure Portal (Federated Credentials).")
@@ -250,6 +255,7 @@ func init() {
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionDirectoryID, "directoryId", "", "Directory (tenant) ID — clientSecret type only")
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionApplicationID, "applicationId", "", "Application (client) ID — clientSecret type only")
 	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionClientSecret, "clientSecret", "", "Client secret value — clientSecret type only; prefer passing via env var to keep out of shell history (note: expanded value can still be visible in process arguments)")
+	createAzureConnectionCmd.Flags().StringVar(&createAzureConnectionIssuer, "issuer", "", "Token issuer URL for federatedIdentityCredential (default: auto-detected from tenant host)")
 	_ = createAzureConnectionCmd.RegisterFlagCompletionFunc("type", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{
 			"federatedIdentityCredential\tUse workload identity federation (recommended)",

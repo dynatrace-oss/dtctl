@@ -22,6 +22,7 @@ var allMetadataFields = map[string]bool{
 	"locale":                    true,
 	"analysisTimeframe":         true,
 	"contributions":             true,
+	"metrics":                   true,
 }
 
 // QueryMetadata holds DQL query execution metadata for output formatting.
@@ -40,6 +41,20 @@ type QueryMetadata struct {
 	Locale                    string             `json:"locale,omitempty" yaml:"locale,omitempty"`
 	AnalysisTimeframe         *MetadataTimeframe `json:"analysisTimeframe,omitempty" yaml:"analysisTimeframe,omitempty"`
 	Contributions             *MetadataContribs  `json:"contributions,omitempty" yaml:"contributions,omitempty"`
+	Metrics                   []MetricInfo       `json:"metrics,omitempty" yaml:"metrics,omitempty"`
+}
+
+// MetricInfo describes a single metric referenced in a timeseries query result.
+// It maps the DQL column name (FieldName) to the underlying metric descriptor.
+// DisplayName, Description, and Unit are present only when the API returns metric
+// catalogue data.
+type MetricInfo struct {
+	MetricKey   string `json:"metric.key,omitempty" yaml:"metric.key,omitempty"`
+	FieldName   string `json:"fieldName,omitempty" yaml:"fieldName,omitempty"`
+	Aggregation string `json:"aggregation,omitempty" yaml:"aggregation,omitempty"`
+	DisplayName string `json:"displayName,omitempty" yaml:"displayName,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Unit        string `json:"unit,omitempty" yaml:"unit,omitempty"`
 }
 
 // MetadataTimeframe represents the analysis timeframe for a query.
@@ -195,6 +210,9 @@ func MetadataToMap(meta *QueryMetadata, fields []string) interface{} {
 	if set["contributions"] {
 		m["contributions"] = meta.Contributions
 	}
+	if set["metrics"] {
+		m["metrics"] = meta.Metrics
+	}
 
 	return m
 }
@@ -278,6 +296,25 @@ func FormatMetadataFooter(m *QueryMetadata, fields []string) string {
 		}
 	}
 
+	// Metrics (timeseries queries only)
+	if hasField("metrics", fields) && len(m.Metrics) > 0 {
+		b.WriteString("Metrics:\n")
+		for _, mi := range m.Metrics {
+			line := fmt.Sprintf("  %s → %s [%s", mi.FieldName, mi.MetricKey, mi.Aggregation)
+			if mi.Unit != "" {
+				line += ", " + mi.Unit
+			}
+			line += "]\n"
+			b.WriteString(line)
+			if mi.DisplayName != "" {
+				b.WriteString(fmt.Sprintf("    %s\n", mi.DisplayName))
+			}
+			if mi.Description != "" {
+				b.WriteString(fmt.Sprintf("    %s\n", mi.Description))
+			}
+		}
+	}
+
 	return b.String()
 }
 
@@ -338,6 +375,16 @@ func FormatMetadataCSVComments(m *QueryMetadata, fields []string) string {
 		for _, bucket := range m.Contributions.Buckets {
 			b.WriteString(fmt.Sprintf("# contribution: %s (%s, %d bytes, %.1f%% matched)\n",
 				bucket.Name, bucket.Table, bucket.ScannedBytes, bucket.MatchedRecordsRatio*100))
+		}
+	}
+
+	if hasField("metrics", fields) && len(m.Metrics) > 0 {
+		for _, mi := range m.Metrics {
+			parts := []string{mi.FieldName, mi.MetricKey, mi.Aggregation}
+			if mi.Unit != "" {
+				parts = append(parts, mi.Unit)
+			}
+			b.WriteString(fmt.Sprintf("# metric: %s\n", strings.Join(parts, ", ")))
 		}
 	}
 

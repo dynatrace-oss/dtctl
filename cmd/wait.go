@@ -182,6 +182,9 @@ Examples:
 			DefaultTimeframeEnd:    defaultTimeframeEnd,
 			Locale:                 locale,
 			Timezone:               timezone,
+			// ShowProgress is left false: the waiter drives its own per-attempt
+			// progress output on stderr, and a per-query progress bar (plus a
+			// completion summary per attempt) would fight it.
 		}
 
 		// Create wait config

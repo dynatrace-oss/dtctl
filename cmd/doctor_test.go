@@ -89,6 +89,12 @@ func TestDoctorNoCurrentContext(t *testing.T) {
 }
 
 func TestDoctorValidConfigNoToken(t *testing.T) {
+	// Disable the OS keyring so the token lookup can't pick up a "dev-token"
+	// entry left in the shared keychain by a sibling test (macOS/Windows CI use
+	// a real keychain across the whole package run); otherwise the token check
+	// reports "ok" instead of the expected "fail".
+	t.Setenv("DTCTL_DISABLE_KEYRING", "1")
+
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config")
 

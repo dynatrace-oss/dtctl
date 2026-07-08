@@ -138,6 +138,52 @@ func TestHandler_GetApp(t *testing.T) {
 	}
 }
 
+func TestHandler_GetApp_ModificationInfo(t *testing.T) {
+	// Use a raw JSON body (not a marshaled App) so the test actually exercises
+	// the JSON tags on ModificationInfo — the registry returns createdAt/lastModifiedAt.
+	const body = `{
+		"id": "dynatrace.automations",
+		"name": "Workflows",
+		"version": "1.3253.0",
+		"modificationInfo": {
+			"createdBy": "system",
+			"createdAt": "2023-02-23T10:55:12.553Z",
+			"lastModifiedBy": "system",
+			"lastModifiedAt": "2026-07-03T09:11:53.765Z"
+		}
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	app, err := NewHandler(c).GetApp("dynatrace.automations")
+	if err != nil {
+		t.Fatalf("GetApp() error = %v", err)
+	}
+
+	if app.ModificationInfo == nil {
+		t.Fatal("GetApp() ModificationInfo = nil, want populated")
+	}
+	if got, want := app.ModificationInfo.CreatedAt, "2023-02-23T10:55:12.553Z"; got != want {
+		t.Errorf("CreatedAt = %q, want %q", got, want)
+	}
+	if got, want := app.ModificationInfo.LastModifiedAt, "2026-07-03T09:11:53.765Z"; got != want {
+		t.Errorf("LastModifiedAt = %q, want %q", got, want)
+	}
+	if got, want := app.ModificationInfo.LastModifiedBy, "system"; got != want {
+		t.Errorf("LastModifiedBy = %q, want %q", got, want)
+	}
+}
+
 func TestContains(t *testing.T) {
 	tests := []struct {
 		name  string

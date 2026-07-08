@@ -22,6 +22,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/metrics"
+	"github.com/dynatrace-oss/dtctl/pkg/inspect"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
@@ -90,6 +91,10 @@ func execute() int {
 	// Setup enhanced error handling after all subcommands are registered
 	setupErrorHandlers(rootCmd)
 
+	// Wrap runnable commands with the token-scope preflight (--check-scopes and
+	// agent-mode auto-preflight). Must run after all subcommands are registered.
+	installScopePreflight(rootCmd)
+
 	// --- Alias resolution (before Cobra parses args AND before tracing init) ---
 	// Resolving aliases first ensures the span name reflects the real command,
 	// not the pre-expansion alias. Load config quietly; if it fails, skip alias
@@ -157,6 +162,20 @@ func execute() int {
 	}
 
 	if err := rootCmd.Execute(); err != nil {
+		// silentExitError carries an exit code only (e.g. --check-scopes already
+		// printed its verdict); set the status and return without re-printing.
+		var silent *silentExitError
+		if errors.As(err, &silent) {
+			if silent.code == 0 {
+				rootSpan.SetStatus(codes.Ok, "")
+				runErr = nil
+			} else {
+				rootSpan.SetStatus(codes.Error, "insufficient scope")
+				runErr = err
+			}
+			return silent.code
+		}
+
 		runErr = err
 		errStr := err.Error()
 
@@ -312,6 +331,22 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// ScopeError — agent-mode preflight blocked a command missing token scopes
+	var scopeErr *ScopeError
+	if errors.As(err, &scopeErr) {
+		return &output.ErrorDetail{
+			Code:           "insufficient_scope",
+			Message:        scopeErr.Error(),
+			RequiredScopes: scopeErr.Required,
+			GrantedScopes:  scopeErr.Granted,
+			MissingScopes:  scopeErr.Missing,
+			Suggestions: []string{
+				"re-create your token with: " + strings.Join(scopeErr.Missing, ", "),
+				"see 'dtctl commands howto' for token scope guidance",
+			},
+		}
+	}
+
 	// safety.SafetyError — operation blocked by safety level
 	var safetyErr *safety.SafetyError
 	if errors.As(err, &safetyErr) {
@@ -363,6 +398,17 @@ func errorToDetail(err error) *output.ErrorDetail {
 			}
 		}
 		return detail
+	}
+
+	// inspect.Error — `dtctl inspect` carries a stable envelope code (spill_file_*,
+	// inspect_bad_flags, inspect_unknown_field) plus actionable suggestions.
+	var inspectErr *inspect.Error
+	if errors.As(err, &inspectErr) {
+		return &output.ErrorDetail{
+			Code:        inspectErr.Code,
+			Message:     inspectErr.Message,
+			Suggestions: inspectErr.Suggestions,
+		}
 	}
 
 	// Fallback — generic error with no structured context
@@ -465,6 +511,16 @@ func isURLRelatedError(err error) bool {
 // Uses typed exit codes from client.APIError and diagnostic.Error when available,
 // falling back to ExitUsageError for command/flag errors and ExitError for everything else.
 func exitCodeForError(err error) int {
+	var silent *silentExitError
+	if errors.As(err, &silent) {
+		return silent.code
+	}
+
+	var scopeErr *ScopeError
+	if errors.As(err, &scopeErr) {
+		return client.ExitPermissionError
+	}
+
 	var diagErr *diagnostic.Error
 	if errors.As(err, &diagErr) {
 		return diagErr.ExitCode()
@@ -831,6 +887,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().BoolVar(&plainMode, "plain", false, "plain output for machine processing (no colors, no interactive prompts)")
 	rootCmd.PersistentFlags().BoolVarP(&agentMode, "agent", "A", false, "agent output mode: wrap output in a structured JSON envelope with metadata")
 	rootCmd.PersistentFlags().BoolVar(&noAgent, "no-agent", false, "disable auto-detected agent mode")
+	rootCmd.PersistentFlags().BoolVar(&checkScopes, "check-scopes", false, "check the active token has the scopes this command requires, then exit without running it")
 	rootCmd.PersistentFlags().Int64Var(&chunkSize, "chunk-size", 500, "Paginate through all results in chunks of this size. 0 returns only the first page.")
 
 	// Bind flags to viper

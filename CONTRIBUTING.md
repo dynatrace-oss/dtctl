@@ -132,7 +132,7 @@ Your pull request must:
 - ✅ Include tests for new functionality
 - ✅ Update documentation if behavior changes
 - ✅ Follow the project's coding standards
-- ✅ Have clear commit messages
+- ✅ Use a [Conventional Commits](#commit-messages) PR title (it drives versioning and release notes — see [Releases](#releases))
 - ✅ Be up-to-date with the main branch
 
 ### Review Process
@@ -326,6 +326,29 @@ Fixes #456
 - Separate subject from body with blank line
 - Wrap body at 72 characters
 - Explain what and why, not how
+
+> **Why this matters:** Releases are automated. Your commit/PR type determines the version bump and the release notes (see [Releases](#releases)), so the prefix is not just convention — it's load-bearing.
+
+## Releases
+
+Releases use [release-please](https://github.com/googleapis/release-please) — **contributors never edit a changelog or bump a version**, and there is no `CHANGELOG.md` file (the GitHub Release is the changelog). Releases are **triggered manually by maintainers**; ordinary merges to `main` do **not** publish anything.
+
+How it works (maintainers):
+
+- The release workflow runs only on manual dispatch (Actions → **Release** → **Run workflow**, or `gh workflow run release.yml`).
+- **First dispatch**: release-please opens/updates a **release PR** that bumps the version based on the [Conventional Commits](#commit-messages) since the last release.
+- Merge that release PR, then **dispatch again**: release-please creates the git tag and GitHub Release (with generated notes), and GoReleaser builds and publishes the binaries and Homebrew cask.
+
+Version impact of commit types (pre-1.0):
+
+| Commit type | Effect |
+|-------------|--------|
+| `feat:` | minor bump (e.g. 0.30.3 → 0.31.0) |
+| `fix:` / `perf:` | patch bump (e.g. 0.30.3 → 0.30.4) |
+| `feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer | minor bump pre-1.0 (major once 1.0) |
+| `docs:` / `test:` / `chore:` / `ci:` / `refactor:` | no release on their own |
+
+Because PRs are squash-merged, the **PR title must be a valid conventional commit**. To override the computed version, add a `Release-As: X.Y.Z` footer to a commit on `main`.
 
 ## Reporting Bugs
 

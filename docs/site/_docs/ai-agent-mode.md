@@ -58,6 +58,64 @@ This makes it straightforward for AI agents to parse responses, handle errors, a
 
 Error codes are stable identifiers that agents can match on programmatically (e.g. `auth_required`, `not_found`, `forbidden`, `rate_limited`).
 
+### Query results: the `result.kind` discriminator
+
+In agent mode, `dtctl query` results are self-describing: the `result` payload
+carries a `kind` field so a consumer always branches on one discriminator,
+regardless of how big the result was. There are three kinds:
+
+| `result.kind` | When | Payload |
+|---|---|---|
+| `records` | small result, returned inline | the rows under `result.records` |
+| `result-file` | large result [spilled to a file](dql-queries#spilling-large-results-to-a-file) | a manifest: `path`, `format`, `rows`, `bytes`, column stats, `sample_rows` |
+| `summary-only` | large result but the rows could not be written to disk | the same manifest **minus `path`** |
+
+On a `result-file` result the rows are on disk, so read them with
+[`dtctl inspect <path>`](command-reference#inspect-commands) — `--head`/`--tail`/
+`--page`/`--fields` for bounded row access, `--jq '<program>'` to keep only the
+matching rows (a streaming filter over the whole file; a large match set
+re-spills via the same `--spill*` guard), `--schema`/`--stats` to re-derive the
+profile, `--list` to recover a path that has aged out of context — instead of
+re-querying Grail. On a `summary-only` result the rows are not on disk, so
+`context.suggestions` carries the right next step for *why* the spill degraded: a
+read-only filesystem steers you to re-query with `--spill=never` and a bound
+(`| fields …` / `| limit N`, or `--max-result-records N`) so the inline result
+stays small, while a one-off write failure suggests retrying with an explicit
+`--spill-to <path>`.
+
+```json
+{
+  "ok": true,
+  "envelope_version": 1,
+  "result": {
+    "kind": "result-file",
+    "path": "~/Library/Caches/dtctl/results/prod/q-7f3a9c.jsonl",
+    "format": "jsonl",
+    "rows": 84213,
+    "columns": [ { "name": "status", "type": "long", "nulls": 0, "min": 500, "max": 599 } ],
+    "sample_rows": [ /* first few rows */ ]
+  },
+  "context": {
+    "verb": "query", "resource": "logs", "total": 84213,
+    "decided": "spilled", "threshold_bytes": 51200, "measured_bytes": 16804000
+  }
+}
+```
+
+The envelope carries `envelope_version` for forward compatibility. **A consumer
+MUST treat an unrecognised `result.kind` as opaque** — don't parse `result`, fall
+back to the human-readable `context` (which always carries `decided`, `total`,
+`warnings`, and `suggestions`). When Grail sampled the result, the per-column
+stats move into a `sample_stats` block (each column tagged `basis: "sample"`) so
+sample-based figures can't be misread as population truth.
+
+> The inline `kind: "records"` envelope is emitted on the spill-aware path
+> whenever agent mode emits JSON — including under `--spill=never`, which forces
+> every row inline regardless of size but still as a `kind: "records"` envelope
+> (never a human table). Explicit non-JSON output (`-o toon/csv/yaml`) and `--jq`
+> transforms keep their requested shape and fall through to the plain
+> `{ "records": …, "metadata": … }` output.
+
 ## Auto-Detection
 
 dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on the presence of specific environment variables:

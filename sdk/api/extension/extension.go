@@ -58,7 +58,7 @@ type ExtensionDetails struct {
 	Author              ExtensionAuthor             `json:"author,omitempty"`
 	DataSources         []string                    `json:"dataSources,omitempty"`
 	FeatureSets         []string                    `json:"featureSets,omitempty"`
-	FeatureSetDetails   map[string]FeatureSetDetail `json:"featureSetDetails,omitempty"`
+	FeatureSetDetails   map[string]FeatureSetDetail `json:"featureSetsDetails,omitempty"`
 	FileHash            string                      `json:"fileHash,omitempty"`
 	MinDynatraceVersion string                      `json:"minDynatraceVersion,omitempty"`
 	MinEECVersion       string                      `json:"minEECVersion,omitempty"`
@@ -72,12 +72,24 @@ type ExtensionAuthor struct {
 
 // FeatureSetDetail represents a feature set of an extension
 type FeatureSetDetail struct {
-	Metrics []FeatureSetMetric `json:"metrics,omitempty"`
+	IsRecommended bool               `json:"isRecommended,omitempty"`
+	Metrics       []FeatureSetMetric `json:"metrics,omitempty"`
 }
 
 // FeatureSetMetric represents a metric within a feature set
 type FeatureSetMetric struct {
 	Key string `json:"key"`
+	// Metadata is a pointer so that omitempty actually drops the field for metrics
+	// that carry no metadata. encoding/json does NOT treat a zero-valued struct as
+	// empty, so a value type here would always serialize as "metadata": {}.
+	Metadata *FeatureSetMetricMetadata `json:"metadata,omitempty"`
+}
+
+// FeatureSetMetricMetadata holds display information for a feature set metric
+type FeatureSetMetricMetadata struct {
+	DisplayName string `json:"displayName,omitempty"`
+	Description string `json:"description,omitempty"`
+	Unit        string `json:"unit,omitempty"`
 }
 
 // ExtensionVariable represents a variable defined in an extension
@@ -599,6 +611,34 @@ func (h *Handler) InstallFromHub(ctx context.Context, extensionName, version str
 		return nil, fmt.Errorf("install hub extension: parse response: %w", err)
 	}
 	return &result, nil
+}
+
+// Download downloads the extension zip package for a specific version.
+// The returned bytes are the raw zip file contents.
+func (h *Handler) Download(ctx context.Context, extensionName, version string) ([]byte, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetHeader("Accept", "application/octet-stream").
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to download extension: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, fmt.Errorf("extension %q version %q not found", extensionName, version)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("failed to download extension: %w", err)
+	}
+	ct := resp.Header().Get("Content-Type")
+	if ct != "" && !strings.HasPrefix(ct, "application/zip") && !strings.HasPrefix(ct, "application/octet-stream") {
+		return nil, fmt.Errorf("unexpected Content-Type %q from extension download (expected zip/octet-stream)", ct)
+	}
+	return resp.Body(), nil
 }
 
 // DeleteMonitoringConfiguration deletes a monitoring configuration for an extension

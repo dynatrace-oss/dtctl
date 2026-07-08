@@ -316,7 +316,7 @@ func (e *testError) Error() string {
 	return e.msg
 }
 
-func TestIsSupportedVerifyQueryOutputFormat(t *testing.T) {
+func TestIsSupportedVerifyOutputFormat(t *testing.T) {
 	tests := []struct {
 		name   string
 		format string
@@ -338,9 +338,9 @@ func TestIsSupportedVerifyQueryOutputFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isSupportedVerifyQueryOutputFormat(tt.format)
+			got := isSupportedVerifyOutputFormat(tt.format)
 			if got != tt.want {
-				t.Errorf("isSupportedVerifyQueryOutputFormat(%q) = %v, want %v", tt.format, got, tt.want)
+				t.Errorf("isSupportedVerifyOutputFormat(%q) = %v, want %v", tt.format, got, tt.want)
 			}
 		})
 	}

@@ -1,18 +1,85 @@
 package exec
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 )
+
+// mappingsByName collapses the flattened column-type mappings into a name→type
+// map for order-independent assertions.
+func mappingsByName(m []output.ColumnTypeMapping) map[string]string {
+	out := make(map[string]string, len(m))
+	for _, c := range m {
+		out[c.Name] = c.Type
+	}
+	return out
+}
+
+func TestColumnTypeMappings(t *testing.T) {
+	t.Run("nil when no type info", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{Records: []map[string]interface{}{{"a": 1}}}}
+		if got := columnTypeMappings(r); got != nil {
+			t.Errorf("expected nil, got %#v", got)
+		}
+		if got := columnTypeMappings(&DQLQueryResponse{}); got != nil {
+			t.Errorf("expected nil for empty response, got %#v", got)
+		}
+	})
+
+	t.Run("flattens a single group", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 1}, Mappings: map[string]sdkquery.ColumnType{
+					"host":  {Type: "string"},
+					"count": {Type: "long"},
+				}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 2 || got["host"] != "string" || got["count"] != "long" {
+			t.Errorf("got %#v, want host=string count=long", got)
+		}
+	})
+
+	t.Run("first group wins on disagreement across groups", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 0}, Mappings: map[string]sdkquery.ColumnType{"v": {Type: "long"}}},
+				{IndexRange: []int{1, 1}, Mappings: map[string]sdkquery.ColumnType{"v": {Type: "string"}}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 1 || got["v"] != "long" {
+			t.Errorf("got %#v, want v=long (first group wins)", got)
+		}
+	})
+
+	t.Run("merges distinct columns across groups", func(t *testing.T) {
+		r := &DQLQueryResponse{Result: &DQLResult{
+			Types: []sdkquery.ColumnTypes{
+				{IndexRange: []int{0, 0}, Mappings: map[string]sdkquery.ColumnType{"a": {Type: "long"}}},
+				{IndexRange: []int{1, 1}, Mappings: map[string]sdkquery.ColumnType{"b": {Type: "double"}}},
+			},
+		}}
+		got := mappingsByName(columnTypeMappings(r))
+		if len(got) != 2 || got["a"] != "long" || got["b"] != "double" {
+			t.Errorf("got %#v, want a=long b=double", got)
+		}
+	})
+}
 
 func TestDQLExecutor_ExecuteQueryWithOptions_CustomHeaders(t *testing.T) {
 	tests := []struct {
@@ -530,6 +597,74 @@ func TestGetHintForNotification(t *testing.T) {
 				t.Errorf("expected no hint, got %q", hint)
 			}
 		})
+	}
+}
+
+func TestClassifyNotification(t *testing.T) {
+	tests := []struct {
+		name             string
+		notificationType string
+		message          string
+		want             string
+	}{
+		{"scan by type", "SCAN_LIMIT_GBYTES", "", notifScanLimit},
+		{"result records by type", "RESULT_LIMIT_RECORDS", "", notifResultLimit},
+		{"result bytes by type", "RESULT_LIMIT_BYTES", "", notifResultLimit},
+		{"timeout by type", "FETCH_TIMEOUT", "", notifTimeout},
+		{"sampling by type", "SAMPLING_APPLIED", "", notifSampling},
+		{"consumption by type", "QUERY_CONSUMPTION_LIMIT", "", notifConsumption},
+		{"scan by message", "", "stopped after 500 gigabytes were scanned", notifScanLimit},
+		{"result by message", "", "Your result has been limited to 1000.", notifResultLimit},
+		{"unknown", "SOMETHING_ELSE", "all good", ""},
+		{"empty", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyNotification(tt.notificationType, tt.message); got != tt.want {
+				t.Errorf("classifyNotification(%q, %q) = %q, want %q", tt.notificationType, tt.message, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentAdviceForNotification_ScanLimit(t *testing.T) {
+	got := agentAdviceForNotification("SCAN_LIMIT_GBYTES", "")
+	if len(got) == 0 {
+		t.Fatal("expected scan-limit advice, got none")
+	}
+	joined := strings.Join(got, "\n")
+	// The result must be flagged as PARTIAL and reduction advice must come
+	// before the (expensive) raise-the-limit escape hatch.
+	if !strings.Contains(joined, "PARTIAL") {
+		t.Errorf("scan-limit advice should flag the result as PARTIAL:\n%s", joined)
+	}
+	for _, want := range []string{"timeframe", "bucket", "contributions", "--default-sampling-ratio"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("scan-limit advice missing %q:\n%s", want, joined)
+		}
+	}
+	reduceIdx := strings.Index(joined, "--default-sampling-ratio")
+	raiseIdx := strings.Index(joined, "--default-scan-limit-gbytes")
+	if raiseIdx < 0 || reduceIdx < 0 || reduceIdx > raiseIdx {
+		t.Errorf("reduction advice should precede the raise-the-limit hint:\n%s", joined)
+	}
+}
+
+func TestNotificationAdvice(t *testing.T) {
+	notifications := []QueryNotification{
+		{Severity: "WARNING", NotificationType: "SCAN_LIMIT_GBYTES", Message: "stopped after 500 gigabytes"},
+		{Severity: "INFO", NotificationType: "RESULT_LIMIT_RECORDS", Message: "informational, ignore me"},
+	}
+	warnings, suggestions := notificationAdvice(notifications)
+	if len(warnings) != 1 || warnings[0] != "stopped after 500 gigabytes" {
+		t.Errorf("expected only the WARNING message surfaced, got %v", warnings)
+	}
+	if len(suggestions) == 0 || !strings.Contains(strings.Join(suggestions, "\n"), "PARTIAL") {
+		t.Errorf("expected scan-limit suggestions, got %v", suggestions)
+	}
+	// The INFO notification must not contribute advice.
+	if strings.Contains(strings.Join(suggestions, "\n"), "record/byte limit") {
+		t.Errorf("INFO-severity notification should be ignored, got %v", suggestions)
 	}
 }
 
@@ -1565,6 +1700,70 @@ func TestExtractQueryMetadata_NilMetadata_PrintPath(t *testing.T) {
 	}
 }
 
+// TestExtractQueryMetadata_MetricsWithoutGrail verifies that Metrics (timeseries
+// metric descriptors) are extracted even when Grail metadata is absent — the two
+// are independent siblings of the response's metadata section, and a response
+// with metadata.metrics but no metadata.grail must not have its metrics dropped.
+func TestBuildExecuteRequest_EnrichMetricMetadataGating(t *testing.T) {
+	cases := []struct {
+		name   string
+		fields []string
+		want   bool
+	}{
+		{"no metadata", nil, false},
+		{"unrelated field", []string{"scannedRecords"}, false},
+		{"metrics selected", []string{"metrics"}, true},
+		{"metrics among others", []string{"scannedRecords", "metrics"}, true},
+		{"all selector", []string{"all"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := buildExecuteRequest("timeseries avg(dt.host.cpu.user)", DQLExecuteOptions{MetadataFields: tc.fields})
+			if req.EnrichMetricMetadata != tc.want {
+				t.Errorf("EnrichMetricMetadata = %v, want %v", req.EnrichMetricMetadata, tc.want)
+			}
+		})
+	}
+}
+
+func TestExtractQueryMetadata_MetricsWithoutGrail(t *testing.T) {
+	resp := &DQLQueryResponse{
+		State:   "SUCCEEDED",
+		Records: []map[string]interface{}{{"timestamp": "2026-03-09T12:15:00Z"}},
+		Metadata: &DQLMetadata{
+			Grail: nil,
+			Metrics: []MetricInfo{
+				{MetricKey: "dt.host.cpu.usage", FieldName: "avg(dt.host.cpu.usage)", Aggregation: "avg", DisplayName: "CPU usage", Description: "Average CPU usage across all cores", Unit: "Percent"},
+			},
+		},
+	}
+
+	meta := extractQueryMetadata(resp)
+	if meta == nil {
+		t.Fatal("expected metadata for response with Metrics but no Grail, got nil")
+	}
+	if len(meta.Metrics) != 1 {
+		t.Fatalf("expected 1 metric, got %d", len(meta.Metrics))
+	}
+	if meta.Metrics[0].MetricKey != "dt.host.cpu.usage" {
+		t.Errorf("expected MetricKey=dt.host.cpu.usage, got %q", meta.Metrics[0].MetricKey)
+	}
+	// Descriptor fields (displayName/description/unit) must be carried through the conversion.
+	if meta.Metrics[0].DisplayName != "CPU usage" {
+		t.Errorf("expected DisplayName=CPU usage, got %q", meta.Metrics[0].DisplayName)
+	}
+	if meta.Metrics[0].Description != "Average CPU usage across all cores" {
+		t.Errorf("expected Description to be carried through, got %q", meta.Metrics[0].Description)
+	}
+	if meta.Metrics[0].Unit != "Percent" {
+		t.Errorf("expected Unit=Percent, got %q", meta.Metrics[0].Unit)
+	}
+	// Grail-derived fields must remain zero-valued since Grail was absent.
+	if meta.QueryID != "" || meta.ExecutionTimeMilliseconds != 0 {
+		t.Errorf("expected zero-valued Grail fields, got QueryID=%q ExecutionTimeMilliseconds=%d", meta.QueryID, meta.ExecutionTimeMilliseconds)
+	}
+}
+
 func TestExtractQueryMetadata_ResultMetadataPrecedence(t *testing.T) {
 	// When both result.Metadata and top-level Metadata exist,
 	// result.Metadata should take precedence
@@ -2128,6 +2327,99 @@ func TestDQLExecutor_ExecuteQueryWithOptions_StillWorks(t *testing.T) {
 	if result.State != "SUCCEEDED" {
 		t.Errorf("expected SUCCEEDED, got %s", result.State)
 	}
+}
+
+// captureStdout redirects os.Stdout for the duration of fn and returns whatever
+// was written. printResults renders to os.Stdout, so this lets the integration
+// test observe the bytes that would reach a real terminal/redirect.
+func captureStdout(t *testing.T, fn func()) []byte {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	done := make(chan []byte, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- b
+	}()
+	fn()
+	_ = w.Close()
+	os.Stdout = old
+	return <-done
+}
+
+// TestDQLExecutor_OutputFormats_Integration drives the full jsonl/parquet path
+// end-to-end against a mock Grail server: request building (includeTypes) ->
+// SDK execute -> a response carrying a DQL `types` block -> columnTypeMappings
+// flatten -> printer dispatch -> rendered bytes on stdout. The isolated unit
+// tests each cover one link; this proves the links are wired together.
+func TestDQLExecutor_OutputFormats_Integration(t *testing.T) {
+	var gotReq DQLQueryRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/platform/storage/query/v1/query:execute" {
+			_ = json.NewDecoder(r.Body).Decode(&gotReq)
+		}
+		resp := DQLQueryResponse{
+			State: "SUCCEEDED",
+			Result: &DQLResult{
+				Records: []map[string]interface{}{
+					// "count" is a DQL long that the API delivers as a JSON string.
+					{"host": "web-01", "count": "194414758"},
+				},
+				Types: []sdkquery.ColumnTypes{
+					{IndexRange: []int{0, 0}, Mappings: map[string]sdkquery.ColumnType{
+						"host":  {Type: "string"},
+						"count": {Type: "long"},
+					}},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	executor := NewDQLExecutor(c)
+
+	t.Run("parquet requests types and emits a valid Parquet container", func(t *testing.T) {
+		gotReq = DQLQueryRequest{}
+		out := captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "fetch logs",
+				DQLExecuteOptions{OutputFormat: "parquet", IncludeTypes: true}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		if gotReq.IncludeTypes == nil || !*gotReq.IncludeTypes {
+			t.Errorf("expected includeTypes:true in request body for parquet, got %v", gotReq.IncludeTypes)
+		}
+		// A valid Parquet file is framed by the "PAR1" magic at both ends.
+		if !bytes.HasPrefix(out, []byte("PAR1")) || !bytes.HasSuffix(out, []byte("PAR1")) {
+			t.Errorf("output is not a valid Parquet container (PAR1 magic missing), %d bytes", len(out))
+		}
+	})
+
+	t.Run("jsonl emits one compact object per record", func(t *testing.T) {
+		out := captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "fetch logs",
+				DQLExecuteOptions{OutputFormat: "jsonl"}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		line := strings.TrimSpace(string(out))
+		if strings.Contains(line, "\n") {
+			t.Errorf("expected a single line for a single record, got: %q", line)
+		}
+		if !strings.Contains(line, `"host":"web-01"`) || !strings.Contains(line, `"count":"194414758"`) {
+			t.Errorf("unexpected jsonl line: %q", line)
+		}
+	})
 }
 
 // parseDTClientContext unmarshals the dt-client-context header value into a map.

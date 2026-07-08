@@ -11,7 +11,9 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 )
 
-// extensionDescription is a rich struct for JSON/YAML output of describe extension
+// extensionDescription is a rich struct for JSON/YAML output of describe extension.
+// FeatureSets is []string (names only) by default; map[string][]string (names → metric keys)
+// when --feature-set-metrics is set.
 type extensionDescription struct {
 	Name                string                        `json:"name" yaml:"name"`
 	Version             string                        `json:"version" yaml:"version"`
@@ -20,7 +22,7 @@ type extensionDescription struct {
 	MinEECVersion       string                        `json:"minEECVersion,omitempty" yaml:"minEECVersion,omitempty"`
 	FileHash            string                        `json:"fileHash,omitempty" yaml:"fileHash,omitempty"`
 	DataSources         []string                      `json:"dataSources,omitempty" yaml:"dataSources,omitempty"`
-	FeatureSets         map[string][]string           `json:"featureSets,omitempty" yaml:"featureSets,omitempty"`
+	FeatureSets         interface{}                   `json:"featureSets,omitempty" yaml:"featureSets,omitempty"`
 	Variables           []extension.ExtensionVariable `json:"variables,omitempty" yaml:"variables,omitempty"`
 	ActiveVersion       string                        `json:"activeVersion,omitempty" yaml:"activeVersion,omitempty"`
 	AvailableVersions   []string                      `json:"availableVersions,omitempty" yaml:"availableVersions,omitempty"`
@@ -54,6 +56,12 @@ Examples:
 
   # List active gate groups available for a specific version
   dtctl describe extension com.dynatrace.extension.host-monitoring --version 1.2.3 --active-gate-groups
+
+  # Show alert templates bundled in an extension
+  dtctl describe extension com.dynatrace.extension.postgres --version 3.0.12 --assets=alert_templates
+
+  # Show multiple asset types
+  dtctl describe extension com.dynatrace.extension.postgres --version 3.0.12 --assets=alert_templates,smartscape
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -62,12 +70,21 @@ Examples:
 		monConfigSchema, _ := cmd.Flags().GetBool("monitoring-configuration-schema")
 		activeGateGroups, _ := cmd.Flags().GetBool("active-gate-groups")
 		noFluff, _ := cmd.Flags().GetBool("no-fluff")
+		assetsFlag, _ := cmd.Flags().GetString("assets")
+		fullAssets, _ := cmd.Flags().GetBool("full")
+		featureSetMetrics, _ := cmd.Flags().GetBool("feature-set-metrics")
 
 		if monConfigSchema && activeGateGroups {
 			return fmt.Errorf("--monitoring-configuration-schema and --active-gate-groups are mutually exclusive")
 		}
 		if noFluff && !monConfigSchema {
 			return fmt.Errorf("--no-fluff only applies to --monitoring-configuration-schema")
+		}
+		if fullAssets && assetsFlag == "" {
+			return fmt.Errorf("--full requires --assets")
+		}
+		if outputFormat == "zip" {
+			return fmt.Errorf("-o zip is not supported on describe extension; use 'dtctl download extension <extension-name> --version <version>'")
 		}
 
 		_, c, printer, err := Setup()
@@ -105,6 +122,25 @@ Examples:
 
 		if targetVersion == "" {
 			return fmt.Errorf("no versions found for extension %q", extensionName)
+		}
+
+		// --assets: download zip and display specific asset types
+		if assetsFlag != "" {
+			assetTypes := splitCSVList(assetsFlag)
+			data, err := handler.Download(extensionName, targetVersion)
+			if err != nil {
+				return err
+			}
+			result, err := extension.ParseAssets(data, assetTypes, fullAssets)
+			if err != nil {
+				return err
+			}
+			if outputFormat == "" || outputFormat == "table" {
+				printAssetsTable(result, fullAssets)
+				return nil
+			}
+			enrichAgent(printer, "describe", "extension")
+			return printer.Print(result)
 		}
 
 		// --monitoring-configuration-schema: output only the JSON Schema for monitoring configs
@@ -223,9 +259,18 @@ Examples:
 				output.DescribeSection("Feature Sets:")
 				for _, fs := range details.FeatureSets {
 					fmt.Printf("  - %s\n", fs)
-					if detail, ok := details.FeatureSetDetails[fs]; ok && len(detail.Metrics) > 0 {
-						for _, m := range detail.Metrics {
-							fmt.Printf("      %s\n", m.Key)
+					if featureSetMetrics {
+						if detail, ok := details.FeatureSetDetails[fs]; ok {
+							for _, m := range detail.Metrics {
+								switch {
+								case m.Metadata != nil && m.Metadata.DisplayName != "" && m.Metadata.Unit != "":
+									fmt.Printf("      %s - %s (%s)\n", m.Key, m.Metadata.DisplayName, m.Metadata.Unit)
+								case m.Metadata != nil && m.Metadata.DisplayName != "":
+									fmt.Printf("      %s - %s\n", m.Key, m.Metadata.DisplayName)
+								default:
+									fmt.Printf("      %s\n", m.Key)
+								}
+							}
 						}
 					}
 				}
@@ -275,18 +320,6 @@ Examples:
 			return nil
 		}
 
-		// For other formats (JSON, YAML, etc.), use the printer
-		featureSets := make(map[string][]string)
-		for _, fs := range details.FeatureSets {
-			var metrics []string
-			if detail, ok := details.FeatureSetDetails[fs]; ok {
-				for _, m := range detail.Metrics {
-					metrics = append(metrics, m.Key)
-				}
-			}
-			featureSets[fs] = metrics
-		}
-
 		var availableVersions []string
 		for _, v := range versions.Items {
 			availableVersions = append(availableVersions, v.Version)
@@ -300,7 +333,7 @@ Examples:
 			MinEECVersion:       details.MinEECVersion,
 			FileHash:            details.FileHash,
 			DataSources:         details.DataSources,
-			FeatureSets:         featureSets,
+			FeatureSets:         buildFeatureSetsOutput(details, featureSetMetrics),
 			Variables:           details.Variables,
 			ActiveVersion:       activeVersion,
 			AvailableVersions:   availableVersions,
@@ -312,9 +345,99 @@ Examples:
 	},
 }
 
+// printAssetsTable renders an AssetResult to stdout in human-readable table format.
+func printAssetsTable(result *extension.AssetResult, full bool) {
+	if result.AlertTemplates != nil {
+		output.DescribeSection(fmt.Sprintf("Alert Templates (%d):", len(result.AlertTemplates)))
+		if len(result.AlertTemplates) == 0 {
+			fmt.Println("  (none)")
+		} else if !full {
+			fmt.Printf("  %-50s  %-20s  %s\n", "NAME", "EVENT_TYPE", "ENABLED")
+		}
+		for _, a := range result.AlertTemplates {
+			if full {
+				printAssetContent(a.File, a.Content)
+			} else {
+				enabled := "-"
+				if a.Enabled != nil {
+					enabled = fmt.Sprintf("enabled=%v", *a.Enabled)
+				}
+				fmt.Printf("  %-50s  %-20s  %s\n", a.Name, a.EventType, enabled)
+			}
+		}
+	}
+
+	if result.Smartscape != nil {
+		output.DescribeSection(fmt.Sprintf("Smartscape Nodes (%d):", len(result.Smartscape.Nodes)))
+		if len(result.Smartscape.Nodes) == 0 {
+			fmt.Println("  (none)")
+		} else if !full {
+			fmt.Printf("  %-35s  %-45s  %s\n", "NODE_TYPE", "ID_FIELD", "DESCRIPTION")
+		}
+		for _, n := range result.Smartscape.Nodes {
+			if full {
+				printAssetContent(n.NodeType, n.Content)
+			} else {
+				fmt.Printf("  %-35s  %-45s  %s\n", n.NodeType, n.NodeIDFieldName, n.Description)
+			}
+		}
+
+		fmt.Println()
+		output.DescribeSection(fmt.Sprintf("Smartscape Edges (%d):", len(result.Smartscape.Edges)))
+		if len(result.Smartscape.Edges) == 0 {
+			fmt.Println("  (none)")
+		} else {
+			fmt.Printf("  %-35s  %-15s  %s\n", "FROM", "EDGE_TYPE", "TO")
+		}
+		for _, e := range result.Smartscape.Edges {
+			fmt.Printf("  %-35s  %-15s  %s\n", e.SourceType, e.EdgeType, e.TargetType)
+		}
+	}
+}
+
+// printAssetContent prints indented JSON content for a named asset (used with --full).
+func printAssetContent(label string, content interface{}) {
+	indented, err := json.MarshalIndent(content, "  ", "  ")
+	if err != nil {
+		fmt.Printf("  %s\n  (could not format content)\n", label)
+		return
+	}
+	fmt.Printf("  %s\n  %s\n", label, indented)
+}
+
+// buildFeatureSetsOutput shapes the featureSets field for JSON/YAML output.
+//
+// Without --feature-set-metrics it returns a plain []string of feature-set names;
+// with the flag it returns a map of name → metric objects (key + metadata).
+//
+// It returns an untyped nil when the extension has no feature sets so that the
+// `omitempty` tag actually drops the field: a non-nil empty slice or map boxed
+// into an interface{} is NOT considered empty by encoding/json and would
+// otherwise serialize as "featureSets": null / {} instead of being omitted.
+func buildFeatureSetsOutput(details *extension.ExtensionDetails, withMetrics bool) interface{} {
+	if len(details.FeatureSets) == 0 {
+		return nil
+	}
+	if !withMetrics {
+		return details.FeatureSets
+	}
+	fsMap := make(map[string][]extension.FeatureSetMetric, len(details.FeatureSets))
+	for _, fs := range details.FeatureSets {
+		metrics := details.FeatureSetDetails[fs].Metrics
+		if metrics == nil {
+			metrics = []extension.FeatureSetMetric{}
+		}
+		fsMap[fs] = metrics
+	}
+	return fsMap
+}
+
 func init() {
 	describeExtensionCmd.Flags().String("version", "", "Show details for a specific extension version")
 	describeExtensionCmd.Flags().Bool("monitoring-configuration-schema", false, "Output only the monitoring configuration schema for this extension version")
 	describeExtensionCmd.Flags().Bool("active-gate-groups", false, "List active gate groups available for this extension version")
 	describeExtensionCmd.Flags().Bool("no-fluff", false, "Strip documentation, customMessage, and displayName fields from schema output (use with --monitoring-configuration-schema)")
+	describeExtensionCmd.Flags().String("assets", "", "Comma-separated asset types to show from the extension package. Supported: alert_templates, smartscape")
+	describeExtensionCmd.Flags().Bool("full", false, "Show complete file content for each asset (use with --assets)")
+	describeExtensionCmd.Flags().Bool("feature-set-metrics", false, "Show metrics available in each feature set")
 }

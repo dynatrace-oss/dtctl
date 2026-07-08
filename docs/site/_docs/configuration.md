@@ -81,6 +81,18 @@ dtctl ctx dev
 dtctl ctx
 ```
 
+The `ctx` command is a shorthand for the common `config` operations. With no
+argument it lists contexts; with a name it switches. It also has subcommands:
+
+```bash
+dtctl ctx current                 # Show the current context name
+dtctl ctx describe prod           # Show details of a context
+dtctl ctx set staging \           # Create or update a context and switch to it
+  --environment "https://staging.apps.dynatrace.com" --token-ref staging-token
+dtctl ctx delete old-env          # Delete a context
+dtctl ctx token prod              # Print the resolved token for a context (defaults to current)
+```
+
 ### One-Time Context Override
 
 Run a single command against a different context without switching:
@@ -270,6 +282,34 @@ dtctl apply -f dashboard.yaml --no-hooks # skip both hooks
 dtctl apply -f dashboard.yaml --dry-run  # pre-apply runs, post-apply is skipped
 dtctl apply -f dashboard.yaml -v         # verbose: logs hook command and duration
 ```
+
+## Result Spill
+
+`dtctl query` can [spill a large result to a local file](dql-queries#spilling-large-results-to-a-file)
+and return a compact summary instead of the rows. Defaults can be set globally or
+per-context under a `spill:` section:
+
+```yaml
+# ~/.config/dtctl/config  (global, or under a specific context)
+spill:
+  mode: auto            # auto | always | never  (overrides the agent/non-agent default)
+  dir: ~/.cache/dtctl/results   # base directory for spilled files
+  format: jsonl         # jsonl | json | csv | parquet
+  threshold: 50KB       # serialised output size that triggers a spill
+  ttl: 24h              # how long spilled files are kept before pruning
+```
+
+Environment overrides (handy for containers/CI):
+
+```bash
+export DTCTL_SPILL=never                 # auto | always | never — kill switch for disk writes
+export DTCTL_SPILL_DIR=/mnt/scratch      # write spills to a mounted volume
+```
+
+Precedence (highest wins): **flag → environment → context config → global config →
+built-in default**. A user-chosen `dir` (or `DTCTL_SPILL_DIR` / `--spill-to`) is
+written outside the managed cache and opts out of its TTL pruning and per-context
+partitioning — you own that file's lifetime.
 
 ## Command Aliases
 

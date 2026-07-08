@@ -232,6 +232,93 @@ func parseFilters(input string) (map[string][]string, error) {
 	return filters, nil
 }
 
+// buildWorkspaceFilterSets parses a raw "key:value,key:value" filter string and
+// converts it into the GraphQL filter-set payload expected by
+// UpdateWorkspaceFilters. It is pure: no network calls and no side effects, so
+// callers (create and update) reuse it and run the network update at their own
+// call site.
+func buildWorkspaceFilterSets(raw string) ([]map[string]interface{}, error) {
+	parsed, err := parseFilters(raw)
+	if err != nil {
+		return nil, err
+	}
+	return livedebugger.BuildFilterSets(parsed), nil
+}
+
+// formatFilters renders parsed filters as a canonical, deterministic
+// "key:value,key:value" string. Keys are sorted (values are already sorted by
+// parseFilters), so dry-run previews show exactly what will be sent rather than
+// the raw, possibly unnormalized, user input (e.g. "ns : prod" -> "ns:prod").
+func formatFilters(parsed map[string][]string) string {
+	keys := make([]string, 0, len(parsed))
+	for key := range parsed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	pairs := make([]string, 0)
+	for _, key := range keys {
+		for _, value := range parsed[key] {
+			pairs = append(pairs, key+":"+value)
+		}
+	}
+	return strings.Join(pairs, ",")
+}
+
+// requireFiltersValue validates that a --filters flag which was provided also
+// carries a value. It is shared by create and update breakpoint so the
+// "empty --filters" error is identical (and greppable) in both commands. An
+// empty value means the flag was set but blank, e.g. --filters "".
+func requireFiltersValue(filters string) error {
+	if strings.TrimSpace(filters) == "" {
+		return fmt.Errorf("--filters provided without a value")
+	}
+	return nil
+}
+
+// countActiveWorkspaceBreakpoints returns how many enabled breakpoints currently
+// exist in the workspace. Disabled rules are excluded on purpose: a breakpoint
+// that reached its hit limit is auto-disabled by the runtime, so it should not
+// inflate the confirmation count shown before workspace filters are changed.
+func countActiveWorkspaceBreakpoints(handler *livedebugger.Handler, workspaceID string) (int, error) {
+	resp, err := handler.GetWorkspaceRules(workspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return countActiveRules(resp)
+}
+
+// countActiveRules counts the enabled (non-disabled) breakpoint rules in a
+// GetWorkspaceRules GraphQL response. Split out from the network call so the
+// active-only counting logic can be unit tested without a live handler.
+func countActiveRules(resp map[string]interface{}) (int, error) {
+	rules, err := livedebugger.ExtractWorkspaceRules(resp)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for i := range rules {
+		if !rules[i].IsDisabled {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// filterChangeConfirmMessage builds the prompt shown before changing workspace
+// filters, which re-scopes every existing active breakpoint in the workspace.
+// creating indicates the same operation also creates a new breakpoint.
+func filterChangeConfirmMessage(count int, creating bool) string {
+	noun := "breakpoints"
+	if count == 1 {
+		noun = "breakpoint"
+	}
+	if creating {
+		return fmt.Sprintf("In addition to creating this breakpoint, this will change the workspace filters for %d active %s. Continue?", count, noun)
+	}
+	return fmt.Sprintf("This will change the workspace filters for %d active %s. Continue?", count, noun)
+}
+
 func parseBreakpoint(input string) (string, int, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {

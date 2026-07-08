@@ -41,6 +41,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `exec` - Execute workflows, analyzers, copilot, functions, SLOs
 - [x] `logs` - View execution logs
 - [x] `query` - Execute DQL queries
+- [x] `inspect` - Local row access / schema / stats over a spilled query-result file (no Grail re-query); `--jq` filters the whole file per record (re-spill-guarded); `--list` enumerates spilled files in the active context to recover a lost handle
 - [x] `wait` - Wait for conditions on resources (polling with exponential backoff)
 - [x] `history` - Show version history (snapshots)
 - [x] `restore` - Restore to previous version
@@ -80,6 +81,7 @@ This document tracks the current implementation status of dtctl. For future plan
 | intent | ✅ | ✅ | - | - | - | - |
 | segment | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | anomaly-detector | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| classic-pipelines-translation | ✅ | - | - | - | - | - |
 
 #### Cloud Connections
 
@@ -138,7 +140,12 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Watch mode with incremental updates: `--watch`, `--interval`
 - [x] Customizable chart dimensions: `--width`, `--height`, `--fullscreen`
 - [x] Custom record/byte/scan limits
+- [x] Live progress bar on stderr for long queries (scan volume, records, elapsed), on by default, opt out with `--no-progress`
 - [x] Query metadata output: `--metadata` / `-M` with field selection
+- [x] Spill large results to a local file with a summary envelope: `--spill[=auto|always|never]`, `--spill-to`, `--spill-format`, `--spill-threshold`
+- [x] Local inspection of a spilled file (no Grail re-query): `dtctl inspect <file> --head/--tail/--page/--fields/--schema/--stats/--sample`
+- [x] Full-file predicate filtering via a streaming `--jq` program (per record over the whole file, re-spill-guarded): `dtctl inspect <file> --jq 'select(.status == 500)'`
+- [x] Recover a lost file handle by listing spilled files in the active context: `dtctl inspect --list`
 
 ### SLO Features
 - [x] List SLOs: `dtctl get slos`
@@ -170,7 +177,9 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### Davis AI Features
 - [x] List analyzers: `dtctl get analyzers`
+- [x] Describe analyzer (with input/result schemas): `dtctl describe analyzer <name>`
 - [x] Execute analyzer: `dtctl exec analyzer <name> -f input.json`
+- [x] Validate analyzer input: `dtctl verify analyzer <name> -f input.json`
 - [x] Chat with CoPilot: `dtctl exec copilot "question"` (streaming)
 - [x] NL to DQL: `dtctl exec copilot nl2dql "show error logs"`
 - [x] Document search: `dtctl exec copilot document-search "query"`
@@ -281,7 +290,7 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### Live Debugger Features (Experimental)
 - [x] Configure workspace filters: `dtctl update breakpoint --filters key:value[,key:value...]` (also supports `key=value`)
-- [x] Create breakpoint: `dtctl create breakpoint File.java:line`
+- [x] Create breakpoint: `dtctl create breakpoint File.java:line` (optional `--filters key:value[,...]` sets workspace filters in the same step)
 - [x] List breakpoints: `dtctl get breakpoints`
 - [x] Describe breakpoint status by ID or location: `dtctl describe <id|filename:line>`
 - [x] Update breakpoint condition/enabled state: `dtctl update breakpoint <id|filename:line> --condition ... --enabled ...`

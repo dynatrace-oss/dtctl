@@ -180,6 +180,7 @@ type (
 	ExtensionAuthor               = sdkext.ExtensionAuthor
 	FeatureSetDetail              = sdkext.FeatureSetDetail
 	FeatureSetMetric              = sdkext.FeatureSetMetric
+	FeatureSetMetricMetadata      = sdkext.FeatureSetMetricMetadata
 	ExtensionVariable             = sdkext.ExtensionVariable
 	MonitoringConfigurationCreate = sdkext.MonitoringConfigurationCreate
 	ExtensionEnvironmentConfig    = sdkext.ExtensionEnvironmentConfig
@@ -291,6 +292,11 @@ func (h *Handler) DeleteMonitoringConfiguration(extensionName, configID string) 
 // extension version.
 func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string) (json.RawMessage, error) {
 	return h.sdk.GetMonitoringConfigurationSchema(context.Background(), extensionName, version)
+}
+
+// Download downloads the extension zip package for a specific version.
+func (h *Handler) Download(extensionName, version string) ([]byte, error) {
+	return h.sdk.Download(context.Background(), extensionName, version)
 }
 
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.

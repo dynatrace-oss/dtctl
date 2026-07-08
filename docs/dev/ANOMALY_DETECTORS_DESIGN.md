@@ -335,7 +335,7 @@ Agent mode output wraps results in the standard envelope with context:
 
 1. Name resolver for interactive title matching
 2. Command catalog and alias registration
-3. Update IMPLEMENTATION_STATUS.md, CHANGELOG.md
+3. Update IMPLEMENTATION_STATUS.md (changelog is automated by release-please from conventional commits)
 
 ---
 

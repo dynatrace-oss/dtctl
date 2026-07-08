@@ -4,18 +4,48 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
 	toon "github.com/toon-format/toon-go"
+	"golang.org/x/term"
 )
+
+// EncodeEnvelope writes the agent Response to w as JSON. It pretty-prints (2-space
+// indent) only when w is an interactive terminal — a human running --agent by
+// hand — and emits compact JSON otherwise (piped to a tool or AI agent, redirected
+// to a file, or a test buffer). The compact form is what machine consumers get and
+// drops the ~⅓ of bytes that indentation would otherwise add; the envelope shape
+// is identical either way, only whitespace differs.
+func EncodeEnvelope(w io.Writer, resp Response) error {
+	enc := json.NewEncoder(w)
+	if isTerminalWriter(w) {
+		enc.SetIndent("", "  ")
+	}
+	return enc.Encode(resp)
+}
+
+// isTerminalWriter reports whether w is an interactive terminal. Only an *os.File
+// can be one; buffers, pipes, and redirected files are not — so machine and test
+// output is always compact and deterministic.
+func isTerminalWriter(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
+}
 
 // Response is the agent mode envelope that wraps all CLI output.
 // Success responses have OK=true with Result populated.
 // Error responses have OK=false with Error populated.
 type Response struct {
-	OK      bool             `json:"ok"`
-	Result  interface{}      `json:"result"`
-	Error   *ErrorDetail     `json:"error,omitempty"`
-	Context *ResponseContext `json:"context,omitempty"`
+	OK bool `json:"ok"`
+	// EnvelopeVersion is the contract version (D31). It is set on envelopes that
+	// participate in the versioned spill contract (result.kind ∈ result-file /
+	// summary-only) so a consumer can detect "this dtctl is newer than I was
+	// written for". Omitted (0) on legacy envelopes to keep existing output
+	// byte-for-byte unchanged.
+	EnvelopeVersion int              `json:"envelope_version,omitempty"`
+	Result          interface{}      `json:"result"`
+	Error           *ErrorDetail     `json:"error,omitempty"`
+	Context         *ResponseContext `json:"context,omitempty"`
 }
 
 // ResponseContext provides operational metadata alongside the result.
@@ -28,17 +58,29 @@ type ResponseContext struct {
 	Warnings    []string          `json:"warnings,omitempty"`
 	Duration    string            `json:"duration,omitempty"`
 	Links       map[string]string `json:"links,omitempty"`
+
+	// Spill decision provenance (D2/D24). Populated only on the spill path so
+	// both agents and humans can see *why* they got the shape they got.
+	// Decided is one of "inline", "spilled", "summary-only".
+	Decided          string `json:"decided,omitempty"`
+	ThresholdBytes   int64  `json:"threshold_bytes,omitempty"`
+	MeasuredBytes    int64  `json:"measured_bytes,omitempty"`
+	MeasuredEncoding string `json:"measured_encoding,omitempty"`
 }
 
 // ErrorDetail is a structured error for machine consumption.
 // It lives in the Response envelope when ok=false.
 type ErrorDetail struct {
-	Code        string   `json:"code"`
-	Message     string   `json:"message"`
-	Operation   string   `json:"operation,omitempty"`
-	StatusCode  int      `json:"status_code,omitempty"`
-	RequestID   string   `json:"request_id,omitempty"`
-	Suggestions []string `json:"suggestions,omitempty"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	Operation  string `json:"operation,omitempty"`
+	StatusCode int    `json:"status_code,omitempty"`
+	RequestID  string `json:"request_id,omitempty"`
+	// Scope-check fields, populated for code == "insufficient_scope".
+	RequiredScopes []string `json:"required_scopes,omitempty"`
+	GrantedScopes  []string `json:"granted_scopes,omitempty"`
+	MissingScopes  []string `json:"missing_scopes,omitempty"`
+	Suggestions    []string `json:"suggestions,omitempty"`
 }
 
 // ClassifyHTTPError maps an HTTP status code to a machine-readable error code.
@@ -118,9 +160,7 @@ func (p *AgentPrinter) Print(data interface{}) error {
 		Result:  result,
 		Context: p.ctx,
 	}
-	enc := json.NewEncoder(p.writer)
-	enc.SetIndent("", "  ")
-	return enc.Encode(resp)
+	return EncodeEnvelope(p.writer, resp)
 }
 
 // encodeResult encodes data according to the configured result format.
@@ -217,7 +257,5 @@ func PrintError(writer io.Writer, detail *ErrorDetail) error {
 		OK:    false,
 		Error: detail,
 	}
-	enc := json.NewEncoder(writer)
-	enc.SetIndent("", "  ")
-	return enc.Encode(resp)
+	return EncodeEnvelope(writer, resp)
 }

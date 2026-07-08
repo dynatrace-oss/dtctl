@@ -7,6 +7,7 @@ This document lists the Dynatrace platform token scopes required for each safety
 > **Ownership checks are also client-side**: The `readwrite-mine` safety level and `--mine` flag work by comparing the resource owner ID with your user ID locally. The Dynatrace API does not enforce ownership restrictions—if your token has write access, you can modify any resource that is shared with a user. The ownership check is a convenience feature to prevent accidental modifications to shared resources.
 >
 > The token type you create in Dynatrace should still be the least-privileged option that can hold the required scopes. dtctl validates scopes, not the token type itself.
+> **Machine-readable source of truth**: The per-level lists and the per-resource scopes below are derived from a single canonical table (`pkg/auth/resource_scopes.go`); `GetScopesForSafetyLevel` and the command catalog both read from it, so they cannot drift. `dtctl commands -o json` exposes that table as a top-level `resource_scopes` object plus per-command `required_scopes_by_resource`, and `dtctl commands [filter] --required-scopes` prints the minimal scope union for a command set. Prefer these over hand-copying this document when provisioning tokens programmatically.
 
 ## Quick Reference
 
@@ -64,6 +65,7 @@ notification:notifications:read,
 davis:analyzers:read,
 app-engine:apps:run,
 app-engine:edge-connects:read,
+openpipeline:configurations:read,
 ```
 
 ### `readwrite-mine`
@@ -118,6 +120,7 @@ davis-copilot:conversations:execute,
 app-engine:apps:run,
 app-engine:functions:run,
 app-engine:edge-connects:read,
+openpipeline:configurations:read,
 email:emails:send
 ```
 
@@ -193,6 +196,7 @@ app-engine:apps:run,
 app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
+openpipeline:configurations:read,
 app-engine:edge-connects:write,
 email:emails:send
 ```
@@ -282,6 +286,7 @@ app-engine:apps:run,
 app-engine:apps:delete,
 app-engine:functions:run,
 app-engine:edge-connects:read,
+openpipeline:configurations:read,
 app-engine:edge-connects:write,
 app-engine:edge-connects:delete,
 email:emails:send
@@ -399,6 +404,12 @@ email:emails:send
 | Scope                         | Description                                            |
 | ----------------------------- | ------------------------------------------------------ |
 | `extensions:definitions:read` | Browse Hub catalog extensions and releases (read-only) |
+
+### OpenPipeline
+
+| Scope                              | Description                                              |
+| ---------------------------------- | ------------------------------------------------------- |
+| `openpipeline:configurations:read` | Translate a Classic pipeline into an OpenPipeline config |
 
 ### Davis AI
 

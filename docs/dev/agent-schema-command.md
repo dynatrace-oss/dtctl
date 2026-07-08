@@ -215,11 +215,17 @@ The output describes dtctl's verb-noun command model:
 - **`schema_version`** — integer, incremented on breaking changes to the schema structure. Lets consumers detect incompatibilities without parsing the entire document.
 - **`mutating`** — boolean per verb. Derived from dtctl's safety system (`OperationCreate`, `OperationUpdate`, `OperationDelete`). Agents can use this to assess risk before running a command.
 - **`safety_operation`** — the safety operation type for mutating commands. Maps directly to dtctl's 4-tier safety levels (a command blocked at `readonly` will have `safety_operation` set; a read-only verb won't).
+- **`access`** — per verb, the access level (`read`/`write`/`delete`/`run`) derived from the verb and its safety operation. Combined with the top-level `resource_scopes` table, an agent can compute any command's required scopes.
+- **`required_scopes_by_resource`** — per verb, a map of resource name → the OAuth/IAM scopes that verb needs for that resource (full mode only). Lets an agent determine the scopes a command needs **before** running it, avoiding mid-task 403s.
+- **`required_scopes`** — per verb, a flat scope list for verbs whose scopes are not per-resource (`query`/`verify`/`wait`, which read Grail via DQL).
+- **`resource_scopes`** — top-level canonical `(resource → {read, write, delete, run})` table. Single source of truth: `pkg/auth.GetScopesForSafetyLevel` (what login requests) is composed from the same table, and a test enforces that every per-command scope is grantable by a safety level.
 - **`time_formats`** — in the JSON schema (not just in `howto`) so agents consuming the structured output have this without a second call.
+
+Since these scope fields were added, `schema_version` is `2`. See [TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for the human-facing scope reference.
 
 ### Brief mode
 
-`--brief` strips descriptions, examples, patterns, antipatterns, time_formats, and safety_operation. Reduces token count by ~60%:
+`--brief` strips descriptions, examples, time_formats, safety_operation, and the materialized `required_scopes_by_resource`. It **retains** the top-level `patterns`/`antipatterns` arrays — these are the primary grounding agents rely on after bootstrapping with `dtctl commands --brief -o json`, and cost only a handful of tokens. It keeps each verb's `access` and the compact top-level `resource_scopes` table, so scopes remain derivable as `resource_scopes[resource][verb.access]`. DQL `required_scopes` (not derivable from the table) are retained. Reduces token count by ~60%:
 
 ```json
 {
@@ -249,6 +255,31 @@ dtctl commands workflows    # Only verbs that apply to workflows
 dtctl commands wf           # Same, using alias
 dtctl commands get          # Only the 'get' verb (filter by verb name)
 ```
+
+### Minimal scope union (`--required-scopes`)
+
+`dtctl commands [filter] --required-scopes` prints the sorted, de-duplicated scope union for a command set — the minimal token to provision for a pipeline. A **verb** filter unions that verb's scopes across its resources; a **resource** filter narrows to just that resource's scopes; no filter yields the union across all commands.
+
+```bash
+dtctl commands wf --required-scopes        # scopes for everything dtctl does to workflows
+dtctl commands get --required-scopes        # all read scopes
+dtctl commands delete --required-scopes -o json
+dtctl commands --required-scopes            # full union
+```
+
+### Preflight (`--check-scopes`)
+
+`--check-scopes` is a global flag on any command. It resolves the command's required scopes (from the same catalog data), compares them against the scopes granted in the active OAuth token, prints a verdict, and exits **without running the command**:
+
+```bash
+dtctl delete workflow my-wf --check-scopes          # human verdict, exit 5 if missing
+dtctl delete workflow my-wf --check-scopes -o json  # { "status": "insufficient_scope", "required_scopes": [...], "granted_scopes": [...], "missing_scopes": [...] }
+```
+
+- `status` is `ok`, `insufficient_scope`, or `unknown`. Opaque API/platform tokens (scopes not introspectable) report `unknown`.
+- Exit code is `5` (`ExitPermissionError`) when scopes are missing, `0` otherwise.
+- In **agent mode**, the verdict uses the standard envelope contract: an `ok`/`unknown` verdict is wrapped in an `{ "ok": true, "result": { "status": ..., ... }, "context": {...} }` envelope, and an `insufficient_scope` verdict is returned as the `{ "ok": false, "error": { "code": "insufficient_scope", "required_scopes": [...], "granted_scopes": [...], "missing_scopes": [...] } }` error envelope (exit 5) — never a bare object.
+- Also in **agent mode**, mutating commands are auto-preflighted *without* `--check-scopes`: a missing scope is returned as the same `insufficient_scope` error envelope before any API call, instead of a raw 403. The preflight makes no network call and degrades to "proceed" on any error.
 
 When a positional arg matches both a verb and a resource, verb takes priority (consistent with dtctl's command resolution).
 
@@ -332,7 +363,7 @@ All steps completed in PR #62.
 4. Annotate each verb with `mutating` (derived from whether the command handler calls `NewSafetyChecker`) and `safety_operation`
 5. Include `schema_version`, `time_formats`, `resource_aliases`
 6. Output as JSON or YAML to stdout
-7. `--brief` flag strips verbose fields (descriptions, patterns, antipatterns, time_formats, safety_operation) but preserves `mutating`
+7. `--brief` flag strips verbose fields (descriptions, time_formats, safety_operation) but preserves `mutating` and the `patterns`/`antipatterns` agent grounding
 8. Positional arg filters to a specific resource or verb
 
 ### Step 3: Build howto generator (0.5 day) -- Done

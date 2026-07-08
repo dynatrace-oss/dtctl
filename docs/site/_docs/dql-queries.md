@@ -113,6 +113,73 @@ dtctl query "fetch logs" --max-result-bytes 52428800
 dtctl query "fetch logs" --default-scan-limit-gbytes 500
 ```
 
+## Spilling Large Results to a File
+
+A large result is a context-window hazard for AI agents: tens of thousands of
+rows serialised into a model's context can cost millions of tokens. Instead of
+returning the rows, `dtctl query` can **spill** the full result to a local file
+and return a compact summary in its place — per-column stats (type, nulls,
+distinct/top-K, min/max, mean), a few sample rows, and the file path — so the
+data can be interrogated locally without re-running the Grail query.
+
+```bash
+# Tri-state control. Bare --spill = always spill.
+dtctl query "fetch logs" --spill            # always spill
+dtctl query "fetch logs" --spill=auto       # spill only above the threshold
+dtctl query "fetch logs" --spill=never      # force rows inline (the default for a bare command)
+
+# Choose the destination or format
+dtctl query "fetch logs" --spill-to ./out.jsonl    # explicit file (implies --spill; format from extension)
+dtctl query "fetch logs" --spill --spill-format parquet # jsonl (default), json, csv, or parquet
+dtctl query "fetch logs" --spill=auto --spill-threshold 100KB  # size that triggers a spill (default 50KB)
+```
+
+- **Defaults:** `never` for a bare command (so the `… -o csv > out.csv` pipeline
+  path is untouched), `auto` in [agent mode](ai-agent-mode). With the default
+  record cap a typical result stays well under the threshold, so spill is
+  expected to engage mainly when the cap is raised for an export or
+  full-population scan (e.g. `--max-result-records 1000000`).
+- **Where files go:** the OS user cache dir (`~/.cache/dtctl/results` on Linux,
+  `~/Library/Caches/dtctl/results` on macOS, `%LocalAppData%\dtctl\results` on
+  Windows), partitioned by context, written atomically with `0700`/`0600`
+  permissions and pruned after a 24h TTL. On a read-only filesystem the command
+  degrades to a summary without a path rather than dumping rows.
+- **`--spill-to` vs `> file`:** shell redirection (`-o csv > out.csv`) writes the
+  raw bytes; `--spill-to` writes the file *and* returns the summary/manifest in
+  its place. Use redirection when you want the bytes, `--spill-to` when you want
+  the summary now and the bytes on disk for later. A user-chosen path opts out of
+  the managed cache's TTL pruning and per-context partitioning (surfaced as a
+  warning).
+
+Spill is configurable globally or per-context under a `spill:` config section and
+via the `DTCTL_SPILL` / `DTCTL_SPILL_DIR` environment variables — see
+[Configuration](configuration#result-spill).
+
+### Inspecting a Spilled File
+
+Once a result has spilled, `dtctl inspect` interrogates the file locally — the
+expensive Grail scan already happened, so every inspect call reads only what it
+needs and emits only the answer, without re-querying. Its primary capability is
+**row access** (the summary only carried per-column stats and a few sample rows):
+
+```bash
+dtctl inspect ./out.jsonl --head 20                       # first 20 rows
+dtctl inspect ./out.jsonl --page --offset 1000 --limit 50 # a window deep in the result
+dtctl inspect ./out.jsonl --tail 10 --fields timestamp,content  # last rows, projected
+dtctl inspect ./out.jsonl --jq 'select(.status == 500)'   # keep only matching rows (streaming, whole-file)
+dtctl inspect ./out.jsonl --schema                        # re-derive columns + types + null counts
+dtctl inspect ./out.jsonl --stats                         # re-derive the per-column profile
+dtctl inspect --list                                      # lost the path? list spilled files in this context
+```
+
+`--jq` here is a **full-file** filter run per record (like `jq` over NDJSON), so
+it returns "only the matching rows" without re-querying Grail — a large match set
+re-spills via the same `--spill*` guard. `inspect` is not a query engine, though —
+for aggregate questions push the work back into DQL (`… | summarize …`) and
+re-query. See the
+[Inspect Commands](command-reference#inspect-commands) reference for the full flag
+set.
+
 ## Filter Segments
 
 Apply [filter segments](segments) at query time to narrow results to specific data subsets. Segments are AND-combined when multiple are specified. See [Filter Segments](segments) for how to manage segments.
@@ -184,24 +251,154 @@ Both `--segment` and `--segments-file` can be combined. If the same segment ID a
 
 ## Additional Parameters
 
-Fine-tune query execution with these options:
+Fine-tune query execution with these options.
+
+### Timeframe, Timezone, and Locale
 
 ```bash
-# Specify a time frame
-dtctl query "fetch logs | limit 10" --timeframe "now()-2h"
+# Default timeframe applied when the query does not set its own (ISO-8601/RFC3339)
+dtctl query "fetch logs | limit 10" \
+  --default-timeframe-start "2024-01-01T00:00:00Z" \
+  --default-timeframe-end   "2024-01-02T00:00:00Z"
 
-# Set timezone and locale
+# Set timezone and locale (affect time bucketing and formatting)
 dtctl query "fetch logs | limit 10" --timezone "America/New_York" --locale "en_US"
+```
 
-# Enable sampling for faster results on large datasets
-dtctl query "fetch logs" --sampling-ratio 0.1
+`--default-timeframe-start` / `--default-timeframe-end` only fill in a timeframe
+when the query itself does not specify one (e.g. via a `from`/`to` in the query).
+There is no `--timeframe` flag — express relative ranges in DQL instead
+(e.g. `fetch logs, from:now()-2h`).
 
-# Fetch execution metadata alongside results
+### Sampling and Preview
+
+```bash
+# Enable sampling for faster results on large log/span datasets
+# (normalized to a power of 10, e.g. 1000 samples 1/1000 of matching records)
+dtctl query "fetch logs" --default-sampling-ratio 1000
+
+# Request preview (partial) results if they are available within the timeout
+dtctl query "fetch logs | limit 10" --enable-preview
+```
+
+There is no `--sampling-ratio` or `--preview` flag — use `--default-sampling-ratio`
+and `--enable-preview`.
+
+### Execution Limits
+
+```bash
+# Cap how long Grail spends fetching data
+dtctl query "fetch logs" --fetch-timeout-seconds 30
+
+# Enforce the tenant's query consumption limit (fail instead of over-consuming)
+dtctl query "fetch logs" --enforce-query-consumption-limit
+```
+
+See [Large Dataset Downloads](#large-dataset-downloads) for `--max-result-records`,
+`--max-result-bytes`, and `--default-scan-limit-gbytes`.
+
+### Metadata, Types, and Contributions
+
+```bash
+# Fetch execution metadata alongside results (bare flag = all fields)
 dtctl query "fetch logs | limit 10" --metadata
 
-# Preview mode (faster, approximate results)
-dtctl query "fetch logs | limit 10" --preview
+# Select specific metadata fields
+dtctl query "fetch logs | limit 10" --metadata=scannedRecords,scannedBytes,executionTimeMilliseconds
+
+# Include DQL column type information in the result
+dtctl query "fetch logs | limit 10" --include-types
+
+# Include Grail bucket contribution information
+dtctl query "fetch logs | limit 10" --include-contributions
 ```
+
+Available `--metadata` fields: `executionTimeMilliseconds`, `scannedRecords`,
+`scannedBytes`, `scannedDataPoints`, `sampled`, `queryId`, `dqlVersion`, `query`,
+`canonicalQuery`, `timezone`, `locale`, `analysisTimeframe`, `contributions`,
+`metrics`.
+
+### Progress Indicator
+
+Long-running queries are executed asynchronously and polled until they finish.
+While polling, `dtctl` can draw a live progress bar on **stderr** showing the
+query's completion percentage, the volume of data scanned so far, the number of
+records scanned, and elapsed time:
+
+```
+⠹ scanning  57% ▕███████████▍░░░░░░░░▏  12.2 TB · 4.6B recs · 8.2s
+```
+
+When the query finishes, the bar is replaced with a one-line summary:
+
+```
+✓ scanned 17.3 TB · 6.0B records in 42.1s
+```
+
+The bar is shown by default for interactive terminals. Turn it off with
+`--no-progress`:
+
+```bash
+# default: progress bar shown when stderr is an interactive terminal
+dtctl query "fetch logs, from:-24h | summarize count()"
+
+# disable it
+dtctl query "fetch logs | summarize count()" --no-progress
+```
+
+Notes:
+
+- The bar is drawn on **stderr only**, so it never corrupts piped or redirected
+  results (`-o json > file`, `| jq`, etc.).
+- It is automatically suppressed for non-interactive output (non-TTY stderr),
+  under `--plain`, and in [agent mode](ai-agent-mode). `NO_COLOR` keeps the bar
+  but drops color.
+- Fast queries that complete before the first poll show nothing.
+
+### Caller Context
+
+```bash
+# Declare the caller's intent in the dt-client-context request header
+# (useful for AI agents / scripts to tag why a query ran)
+dtctl query "fetch logs | limit 10" --client-context "root-cause-analysis"
+```
+
+### Chart Rendering
+
+When rendering to a terminal chart (`-o chart`, `sparkline`, `barchart`,
+`braille`), control the drawing area:
+
+```bash
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --width 120 --height 20
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --fullscreen  # use full terminal size
+```
+
+### Full Parameter Reference
+
+| Flag | Purpose |
+|------|---------|
+| `--default-timeframe-start` / `--default-timeframe-end` | Default query timeframe (ISO-8601/RFC3339) used when the query omits one |
+| `--timezone` | Query timezone (e.g. `UTC`, `Europe/Paris`) |
+| `--locale` | Query locale (e.g. `en_US`, `de_DE`) |
+| `--default-sampling-ratio` | Sampling ratio for faster approximate results (normalized to a power of 10) |
+| `--enable-preview` | Return preview results if available within the timeout |
+| `--fetch-timeout-seconds` | Time limit for fetching data (seconds) |
+| `--enforce-query-consumption-limit` | Enforce the tenant query consumption limit |
+| `--no-progress` | Disable the live progress bar shown on stderr for long queries |
+| `--max-result-records` | Maximum number of result records |
+| `--max-result-bytes` | Maximum result payload size in bytes |
+| `--default-scan-limit-gbytes` | Cap on how much data Grail scans (GB) |
+| `--metadata`, `-M` | Include execution metadata (bare = all, or `=field1,field2`) |
+| `--include-types` | Include DQL column type information |
+| `--include-contributions` | Include Grail bucket contribution information |
+| `--client-context` | Set the `dt-client-context` request header (caller intent) |
+| `--width` / `--height` / `--fullscreen` | Terminal chart dimensions (chart output formats) |
+| `--decode-snapshots` | Decode Live Debugger snapshot payloads (see [Live Debugger](live-debugger)) |
+| `--spill*` | Spill large results to a file (see [above](#spilling-large-results-to-a-file)) |
+| `-S` / `--segment`, `-V` / `--segment-var`, `--segments-file` | Apply filter segments (see [above](#filter-segments)) |
+| `--live` / `--interval` | Live mode with periodic refresh (see [below](#live-mode)) |
+| `--set` | Set a template variable (`key=value`) |
+| `-f` / `--file` | Read the query from a file (`-` for stdin) |
 
 ## Live Mode
 
@@ -214,6 +411,68 @@ dtctl query "fetch logs | filter loglevel == 'ERROR' | sort timestamp desc | lim
 ```
 
 Press `Ctrl+C` to stop live mode.
+
+## Waiting for Query Conditions
+
+`dtctl wait query` repeatedly runs a DQL query until a **condition on the record
+count** is met (or a timeout is reached), using exponential backoff between
+attempts. It is built for tests and CI/CD — waiting for instrumented data to land
+before making assertions.
+
+```bash
+# Wait until exactly one matching span arrives
+dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1
+
+# Wait for any error logs, up to 2 minutes
+dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+
+# Template variables and file-based queries work here too
+dtctl wait query -f query.dql --set test_id=my-test --for=count-gte=1
+
+# Tune the backoff (e.g. for CI)
+dtctl wait query "..." --for=any --min-interval 500ms --max-interval 15s --backoff-multiplier 2
+
+# Capture the result once the condition is met
+dtctl wait query "..." --for=count=1 -o json > result.json
+```
+
+### Conditions (`--for`, required)
+
+| Condition | Meets when |
+|-----------|-----------|
+| `count=N` | Exactly N records |
+| `count-gte=N` | At least N records (`>=`) |
+| `count-gt=N` | More than N records (`>`) |
+| `count-lte=N` | At most N records (`<=`) |
+| `count-lt=N` | Fewer than N records (`<`) |
+| `any` | Any records returned (count > 0) |
+| `none` | No records returned (count == 0) |
+
+### Polling Controls
+
+| Flag | Purpose |
+|------|---------|
+| `--timeout` | Maximum time to wait (default `5m`, `0` = unlimited) |
+| `--max-attempts` | Maximum number of attempts (`0` = unlimited) |
+| `--initial-delay` | Delay before the first attempt |
+| `--min-interval` / `--max-interval` | Backoff bounds (defaults `1s` / `10s`) |
+| `--backoff-multiplier` | Exponential backoff multiplier (must be `> 1.0`, default `2`) |
+| `-q, --quiet` | Suppress progress messages |
+
+`wait query` also accepts the standard query tuning flags (`--timezone`,
+`--locale`, `--default-timeframe-start/-end`, `--default-sampling-ratio`,
+`--max-result-records`, etc.).
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Condition met |
+| `1` | Timeout reached |
+| `2` | Max attempts exceeded |
+| `3` | Query execution error |
+| `4` | Invalid condition syntax |
+| `5` | Invalid arguments |
 
 ## Cancelling Queries
 

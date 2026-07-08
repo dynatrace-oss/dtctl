@@ -76,7 +76,17 @@ type ExecuteRequest struct {
 	Locale                       string             `json:"locale,omitempty"`
 	Timezone                     string             `json:"timezone,omitempty"`
 	FilterSegments               []FilterSegmentRef `json:"filterSegments,omitempty"`
+
+	// EnrichMetricMetadata requests metric-catalogue enrichment of the response's
+	// metadata.metrics[] entries (displayName, description, unit). It is sent as the
+	// `enrich=metric-metadata` query-string parameter on both query:execute and
+	// query:poll — not in the request body — hence json:"-".
+	EnrichMetricMetadata bool `json:"-"`
 }
+
+// enrichMetricMetadataParam is the query-string value that asks the Grail query
+// API to enrich metadata.metrics[] with metric-catalogue fields.
+const enrichMetricMetadataParam = "metric-metadata"
 
 // Response represents a DQL query response from execute or poll.
 type Response struct {
@@ -91,12 +101,43 @@ type Response struct {
 // Result represents the result section of a DQL response.
 type Result struct {
 	Records  []map[string]interface{} `json:"records"`
+	Types    []ColumnTypes            `json:"types,omitempty"`
 	Metadata *Metadata                `json:"metadata,omitempty"`
+}
+
+// ColumnTypes describes the column types for a contiguous range of records,
+// as returned by the DQL API when includeTypes is requested. The API groups
+// records that share the same column type mappings under a single entry.
+type ColumnTypes struct {
+	// IndexRange is the [start, end] record index range (inclusive) that these
+	// mappings apply to.
+	IndexRange []int `json:"indexRange"`
+	// Mappings maps a column name to its DQL type descriptor.
+	Mappings map[string]ColumnType `json:"mappings"`
+}
+
+// ColumnType is the DQL type descriptor for a single column, e.g. {"type": "long"}.
+type ColumnType struct {
+	Type string `json:"type"`
+}
+
+// MetricInfo describes a single metric referenced in a timeseries query result.
+// It maps the DQL column name (FieldName) to the underlying metric descriptor.
+// DisplayName, Description, and Unit are present only when the API returns metric
+// catalogue data; they are absent for tenants or queries that do not populate them.
+type MetricInfo struct {
+	MetricKey   string `json:"metric.key,omitempty"`
+	FieldName   string `json:"fieldName,omitempty"`
+	Aggregation string `json:"aggregation,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+	Description string `json:"description,omitempty"`
+	Unit        string `json:"unit,omitempty"`
 }
 
 // Metadata represents the metadata section of a DQL response.
 type Metadata struct {
-	Grail *GrailMetadata `json:"grail,omitempty"`
+	Grail   *GrailMetadata `json:"grail,omitempty"`
+	Metrics []MetricInfo   `json:"metrics,omitempty"`
 }
 
 // GrailMetadata represents Grail-specific query execution metadata.
@@ -216,6 +257,9 @@ func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, e
 		SetHeader("Content-Type", "application/json").
 		SetBody(req).
 		SetResult(&result)
+	if req.EnrichMetricMetadata {
+		httpReq.SetQueryParam("enrich", enrichMetricMetadataParam)
+	}
 	h.applyHeaders(httpReq)
 
 	resp, err := httpReq.Post(basePath + ":execute")
@@ -236,14 +280,20 @@ func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, e
 }
 
 // Poll polls for the results of an asynchronous query. The server holds the
-// connection for up to timeoutMs milliseconds before returning.
-func (h *Handler) Poll(ctx context.Context, requestToken string, timeoutMs int64) (*Response, error) {
+// connection for up to timeoutMs milliseconds before returning. When enrich is
+// true, the poll requests metric-metadata enrichment so the final SUCCEEDED
+// response carries displayName/description/unit — it must match the enrichment
+// requested on the originating execute call.
+func (h *Handler) Poll(ctx context.Context, requestToken string, timeoutMs int64, enrich bool) (*Response, error) {
 	var result Response
 
 	httpReq := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("request-token", requestToken).
 		SetQueryParam("request-timeout-milliseconds", fmt.Sprintf("%d", timeoutMs)).
 		SetResult(&result)
+	if enrich {
+		httpReq.SetQueryParam("enrich", enrichMetricMetadataParam)
+	}
 	h.applyHeaders(httpReq)
 
 	resp, err := httpReq.Get(basePath + ":poll")
@@ -294,6 +344,37 @@ func (h *Handler) Verify(ctx context.Context, req VerifyRequest) (*VerifyRespons
 	return &result, nil
 }
 
+// PollUpdate carries the state of a still-running query. It is delivered to the
+// OnUpdate callback of ExecuteAndPollWithOptions on the initial RUNNING response
+// and after each subsequent poll, letting callers render progress.
+type PollUpdate struct {
+	// Progress is the query's completion percentage (0-100) as reported by the
+	// backend. It may stay at 0 until the backend has a meaningful estimate.
+	Progress int
+	// Preview is a partial result snapshot. It is non-nil only when the request
+	// set EnablePreview and this poll carried preview records. Each preview is
+	// whole (not a delta to prior previews), so callers replace, never append.
+	Preview *Result
+	// ScannedBytes and ScannedRecords are the running scan totals reported by the
+	// backend for this poll. Grail populates and grows them on each poll of a
+	// mass-data query; they are 0 when the backend has not reported them (e.g. an
+	// early poll or a query type that does not scan Grail).
+	ScannedBytes   int64
+	ScannedRecords int64
+}
+
+// ExecuteAndPollOptions carries optional hooks for ExecuteAndPollWithOptions.
+type ExecuteAndPollOptions struct {
+	// OnUnauthorized is invoked when a poll receives HTTP 401, allowing callers
+	// to refresh an expired token. It must return the new bearer token. If nil,
+	// 401 errors are returned directly.
+	OnUnauthorized func() (string, error)
+	// OnUpdate, if set, is called with the current progress/preview whenever the
+	// query is still RUNNING — once for the initial response and once per poll.
+	// It is never called for a query that completes synchronously.
+	OnUpdate func(PollUpdate)
+}
+
 // ExecuteAndPoll executes a DQL query and, if it returns asynchronously, polls
 // until completion or context cancellation. If the context is cancelled during
 // polling, a best-effort cancel is sent to the backend.
@@ -302,6 +383,14 @@ func (h *Handler) Verify(ctx context.Context, req VerifyRequest) (*VerifyRespons
 // allowing callers to refresh an expired token. It must return the new bearer
 // token. If nil, 401 errors are returned directly.
 func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnauthorized func() (string, error)) (*Response, error) {
+	return h.ExecuteAndPollWithOptions(ctx, req, ExecuteAndPollOptions{OnUnauthorized: onUnauthorized})
+}
+
+// ExecuteAndPollWithOptions is ExecuteAndPoll with additional hooks (see
+// ExecuteAndPollOptions), notably an OnUpdate callback for surfacing progress
+// and preview results while the query is still running.
+func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequest, opts ExecuteAndPollOptions) (*Response, error) {
+	onUnauthorized := opts.OnUnauthorized
 	// Use an independent context for the initial execute so we always get the
 	// request token back even if the caller cancels mid-flight.
 	execCtx, execCancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -338,6 +427,9 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 		return nil, fmt.Errorf("query is running but no request token provided")
 	}
 
+	// Surface the initial RUNNING state (progress may already be non-zero).
+	emitUpdate(opts.OnUpdate, req.EnablePreview, result)
+
 	// Poll loop.
 	pollCtx, pollCancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer pollCancel()
@@ -354,7 +446,7 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 		default:
 		}
 
-		pollResult, pollErr := h.Poll(pollCtx, result.RequestToken, pollRequestTimeoutMs)
+		pollResult, pollErr := h.Poll(pollCtx, result.RequestToken, pollRequestTimeoutMs, req.EnrichMetricMetadata)
 		if pollErr != nil {
 			// On 401, try the onUnauthorized callback once per consecutive failure.
 			var apiErr *httpclient.APIError
@@ -385,6 +477,7 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 		case "FAILED":
 			return pollResult, fmt.Errorf("query execution failed")
 		case "RUNNING":
+			emitUpdate(opts.OnUpdate, req.EnablePreview, pollResult)
 			continue
 		default:
 			return pollResult, nil
@@ -413,6 +506,16 @@ func (r *Response) GetRecords() []map[string]interface{} {
 	return r.Records
 }
 
+// GetTypes returns the per-column DQL type mappings from the result section,
+// as populated when the request set includeTypes. Returns nil when the API did
+// not include type information.
+func (r *Response) GetTypes() []ColumnTypes {
+	if r.Result != nil {
+		return r.Result.Types
+	}
+	return nil
+}
+
 // GetMetadata returns the Grail metadata from the response, checking both
 // top-level and result-level metadata.
 func (r *Response) GetMetadata() *GrailMetadata {
@@ -425,7 +528,39 @@ func (r *Response) GetMetadata() *GrailMetadata {
 	return nil
 }
 
+// GetMetrics returns the metrics array from the response, checking both
+// result-level and top-level metadata. Returns nil when no metrics are present
+// (e.g., for non-timeseries queries).
+func (r *Response) GetMetrics() []MetricInfo {
+	if r.Result != nil && r.Result.Metadata != nil && len(r.Result.Metadata.Metrics) > 0 {
+		return r.Result.Metadata.Metrics
+	}
+	if r.Metadata != nil && len(r.Metadata.Metrics) > 0 {
+		return r.Metadata.Metrics
+	}
+	return nil
+}
+
 // --- Internal helpers ---
+
+// emitUpdate invokes the OnUpdate callback (when set) with the progress and any
+// preview carried by a RUNNING response. A preview is attached only when the
+// request enabled previews and the response actually carried records.
+func emitUpdate(onUpdate func(PollUpdate), enablePreview bool, resp *Response) {
+	if onUpdate == nil {
+		return
+	}
+	var preview *Result
+	if enablePreview && resp.Result != nil && len(resp.Result.Records) > 0 {
+		preview = resp.Result
+	}
+	u := PollUpdate{Progress: resp.Progress, Preview: preview}
+	if m := resp.GetMetadata(); m != nil {
+		u.ScannedBytes = m.ScannedBytes
+		u.ScannedRecords = m.ScannedRecords
+	}
+	onUpdate(u)
+}
 
 func (h *Handler) applyHeaders(req *resty.Request) {
 	for k, v := range h.headers {

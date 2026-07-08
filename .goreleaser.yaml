@@ -35,7 +35,6 @@ archives:
     files:
       - LICENSE*
       - README*
-      - CHANGELOG*
       - src: completions/*
         dst: completions
     format_overrides:
@@ -86,12 +85,14 @@ homebrew_casks:
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dtctl"]
           end
 
+# Release notes are written by release-please (GitHub Release body) and GoReleaser
+# runs with `release.mode: keep-existing` to preserve them, so GoReleaser does not
+# generate its own changelog.
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - '^docs:'
-      - '^test:'
-      - '^ci:'
-      - Merge pull request
-      - Merge branch
+  disable: true
+
+# release-please creates the GitHub Release (with notes) when the release PR is
+# merged; GoReleaser only attaches the build artifacts to that existing release
+# and must not overwrite its notes.
+release:
+  mode: keep-existing

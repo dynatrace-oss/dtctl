@@ -1185,6 +1185,7 @@ dtctl query "fetch logs | filter status='ERROR'" \
 - `--enable-preview`: Request preview results if available within timeout
 - `--enforce-query-consumption-limit`: Enforce query consumption limit
 - `--include-types`: Include type information in query results
+- `--no-progress`: Disable the live progress bar shown on stderr for long queries (shown by default on interactive terminals)
 
 **Timeframe Parameters:**
 - `--default-timeframe-start`: Query timeframe start timestamp (ISO-8601/RFC3339, e.g., '2022-04-20T12:10:04.123Z')
@@ -1195,7 +1196,7 @@ dtctl query "fetch logs | filter status='ERROR'" \
 - `--timezone`: Query timezone (e.g., 'UTC', 'Europe/Paris', 'America/New_York')
 
 **Metadata Parameters:**
-- `--metadata`, `-M`: Include query execution metadata in output. Use bare `--metadata` for all fields, or select specific fields with `--metadata=field1,field2`. Valid fields: `analysisTimeframe`, `canonicalQuery`, `contributions`, `dqlVersion`, `executionTimeMilliseconds`, `locale`, `query`, `queryId`, `sampled`, `scannedBytes`, `scannedDataPoints`, `scannedRecords`, `timezone`
+- `--metadata`, `-M`: Include query execution metadata in output. Use bare `--metadata` for all fields, or select specific fields with `--metadata=field1,field2`. Valid fields: `analysisTimeframe`, `canonicalQuery`, `contributions`, `dqlVersion`, `executionTimeMilliseconds`, `locale`, `metrics`, `query`, `queryId`, `sampled`, `scannedBytes`, `scannedDataPoints`, `scannedRecords`, `timezone`
 - `--include-contributions`: Include bucket contribution details in metadata (requires API support)
 
 **Note:** All parameters are sent in the DQL query request body and work with both immediate responses and long-running queries that require polling.
@@ -2014,6 +2015,28 @@ dtctl get settings <object-id> --schema builtin:openpipeline.logs.pipelines
 
 **Note:** See the [Settings API](#settings-api) section below for full details on managing OpenPipeline configurations.
 
+### Translate Classic Pipelines to OpenPipeline
+
+Migrating from Classic pipelines to OpenPipeline? `dtctl get classic-pipelines-translation` converts your tenant's Classic pipeline configuration for a scope into an OpenPipeline configuration pipeline (Settings shape). It is a read-only call that returns the translated pipeline verbatim — the reliable starting point you then review and apply via the Settings API.
+
+```bash
+# Translate the logs Classic pipeline (pretty-printed pipeline document)
+dtctl get classic-pipelines-translation logs
+
+# Translate business events and export as YAML for review/editing
+dtctl get classic-pipelines-translation bizevents -o yaml > reference-pipeline.yaml
+
+# Print the translated pipeline as JSON
+dtctl get classic-pipelines-translation logs -o json
+
+# Skip disabled rules in the translation (overrides the server default)
+dtctl get classic-pipelines-translation logs --skip-disabled-rules=true
+```
+
+The scope is a positional argument and must be `logs` or `bizevents`. Every output format emits the translated pipeline document directly (no `{value, withWarning}` wrapper), so the exported file is applyable as-is. The translation is deterministic where possible; when a processing rule's definition script could not be translated automatically (`withWarning=true`), a warning is printed to stderr (and carried in the agent envelope under `-A`) and that part needs a manual rewrite. Apply the reviewed result with `dtctl create settings --schema builtin:openpipeline.<scope>.pipelines -f <file>`.
+
+**Note:** The underlying API is public but early-adopter and may change.
+
 ---
 
 ## Settings API
@@ -2615,6 +2638,23 @@ dtctl get analyzer dt.statistics.GenericForecastAnalyzer
 dtctl get analyzer dt.statistics.GenericForecastAnalyzer -o json
 ```
 
+#### Describe an Analyzer (input/result schemas)
+
+`describe` resolves the analyzer's JSON Schemas and shows which inputs are
+required vs. optional — so you know what to pass to `exec analyzer`. Unlike
+`get`, the schemas are included in JSON/YAML output too.
+
+```bash
+# Show metadata plus required/optional input fields and the result shape
+dtctl describe analyzer dt.statistics.GenericForecastAnalyzer
+
+# Include the full markdown documentation
+dtctl describe analyzer dt.statistics.GenericForecastAnalyzer --doc
+
+# Structured output includes inputSchema and resultSchema
+dtctl describe analyzer dt.statistics.GenericForecastAnalyzer -o json
+```
+
 #### Execute Analyzers
 
 Run analyzers to perform statistical analysis:
@@ -2631,13 +2671,32 @@ dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
 # Execute from input file
 dtctl exec analyzer dt.statistics.GenericForecastAnalyzer -f forecast-input.json
 
-# Validate input without executing
-dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
-  -f forecast-input.json --validate
-
 # Output result as JSON
 dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
   --query "timeseries avg(dt.host.cpu.usage)" -o json
+```
+
+#### Validate Input Without Executing
+
+`verify analyzer` checks an input against the analyzer's validate endpoint
+without running it. It shares the input flags with `exec analyzer` and follows
+the standard `verify` exit-code contract (0 valid, 1 invalid, 2 auth, 3 network),
+so it drops straight into CI/CD pipelines. (`exec analyzer --validate` remains
+available and calls the same endpoint.)
+
+```bash
+# Validate input from a file
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f forecast-input.json
+
+# Validate a DQL query shorthand
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer \
+  --query "timeseries avg(dt.host.cpu.usage)"
+
+# Structured verdict for scripts
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f forecast-input.json -o json
+
+# CI/CD: fail the build on invalid input
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f forecast-input.json || exit 1
 ```
 
 **Example analyzer input file** (`forecast-input.json`):
@@ -3148,10 +3207,19 @@ dtctl update breakpoints --filters k8s.namespace.name:prod,dt.entity.host:HOST-1
 dtctl update breakpoint --filters k8s.namespace.name=prod,dt.entity.host=HOST-123
 ```
 
+Filters are workspace-scoped, so changing them re-scopes **all** existing breakpoints, not just new ones. `dtctl` prompts for confirmation before applying the change; pass `--yes` (`-y`) to skip it (for example in scripts):
+
+```bash
+dtctl update breakpoint --filters k8s.namespace.name:prod --yes
+```
+
 ### Breakpoint lifecycle
 
 ```bash
-# Create
+# Create and set workspace filters in one step
+dtctl create breakpoint OrderController.java:306 --filters k8s.namespace.name:prod
+
+# Create (workspace must already have filters)
 dtctl create breakpoint OrderController.java:306
 
 # List

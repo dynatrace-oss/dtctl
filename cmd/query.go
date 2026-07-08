@@ -39,9 +39,17 @@ func isStderrTerminal() bool {
 	return term.IsTerminal(int(os.Stderr.Fd()))
 }
 
+// formatRequiresIncludeTypes reports whether the output format needs DQL column
+// type metadata to render correctly, so the query layer can request it even when
+// the user did not pass --include-types. Parquet derives its columnar schema from
+// these types (a "long" must become an INT64 column, not a value-inferred DOUBLE).
+func formatRequiresIncludeTypes(format string) bool {
+	return strings.EqualFold(strings.TrimSpace(format), "parquet")
+}
+
 func isSupportedQueryOutputFormat(format string) bool {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "", "table", "wide", "json", "yaml", "yml", "csv", "toon", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+	case "", "table", "wide", "json", "yaml", "yml", "csv", "jsonl", "parquet", "toon", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
 		return true
 	default:
 		return false
@@ -88,6 +96,10 @@ Examples:
   # Output as JSON or CSV
   dtctl query "fetch logs" -o json
   dtctl query "fetch logs" -o csv
+
+  # Output as JSON Lines (one JSON object per line) or Parquet for large exports
+  dtctl query "fetch logs" -o jsonl
+  dtctl query "fetch logs" --max-result-records 100000 -o parquet > logs.parquet
 
   # Download large datasets with custom limits
   dtctl query "fetch logs" --max-result-records 10000 -o csv > logs.csv
@@ -229,8 +241,15 @@ Examples:
 		defaultSamplingRatio, _ := cmd.Flags().GetFloat64("default-sampling-ratio")
 		fetchTimeoutSeconds, _ := cmd.Flags().GetInt32("fetch-timeout-seconds")
 		enablePreview, _ := cmd.Flags().GetBool("enable-preview")
+		noProgress, _ := cmd.Flags().GetBool("no-progress")
 		enforceQueryConsumptionLimit, _ := cmd.Flags().GetBool("enforce-query-consumption-limit")
 		includeTypes, _ := cmd.Flags().GetBool("include-types")
+		// Parquet derives its column schema from DQL types, so request them even
+		// if the user did not pass --include-types. The type metadata is consumed
+		// to build the schema and is not added to the output rows.
+		if formatRequiresIncludeTypes(outputFormat) {
+			includeTypes = true
+		}
 		includeContributions, _ := cmd.Flags().GetBool("include-contributions")
 
 		// Get timeframe options
@@ -334,6 +353,18 @@ Examples:
 
 		clientContext, _ := cmd.Flags().GetString("client-context")
 
+		spillOpts, err := resolveSpillOptions(cmd, cfg)
+		if err != nil {
+			return err
+		}
+		spillTenantID, spillContextName := spillProvenance(cfg)
+		// A Parquet spill derives its columnar schema from DQL types, so request
+		// them even when the displayed output format does not — same reasoning as
+		// the -o parquet path above, applied to the spill destination.
+		if spillOpts.Enabled() && spillWritesParquet(spillOpts) {
+			includeTypes = true
+		}
+
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 outputFormat,
 			JQFilter:                     jqFilter,
@@ -358,6 +389,13 @@ Examples:
 			MetadataFields:               metadataFields,
 			Segments:                     segments,
 			ClientContext:                clientContext,
+			Spill:                        spillOpts,
+			TenantID:                     spillTenantID,
+			ContextName:                  spillContextName,
+			// The progress bar is a user-facing affordance of the `query`
+			// command only; opt in here (subject to --no-progress) so internal
+			// query callers stay silent by default.
+			ShowProgress: !noProgress,
 		}
 
 		// Handle live mode
@@ -369,6 +407,9 @@ Examples:
 			if agentMode {
 				output.PrintWarning("--agent is ignored in live mode (live mode requires an interactive terminal)")
 			}
+			if spillOpts.Enabled() {
+				output.PrintWarning("--spill is ignored in live mode (live mode streams rows to the terminal)")
+			}
 			if includeContributions {
 				output.PrintWarning("--include-contributions is ignored in live mode (contribution data is not displayed during live updates)")
 			}
@@ -379,6 +420,10 @@ Examples:
 			if interval == 0 {
 				interval = output.DefaultLiveInterval
 			}
+
+			// Live mode owns the terminal via its own printer; a per-fetch
+			// progress bar would fight it, so keep it off.
+			opts.ShowProgress = false
 
 			// Create printer options for live mode (needed for resize support)
 			printerOpts := output.PrinterOptions{
@@ -693,6 +738,7 @@ func init() {
 	queryCmd.Flags().Float64("default-sampling-ratio", 0, "default sampling ratio (0 = use default, normalized to power of 10 <= 100000)")
 	queryCmd.Flags().Int32("fetch-timeout-seconds", 0, "time limit for fetching data in seconds (0 = use default)")
 	queryCmd.Flags().Bool("enable-preview", false, "request preview results if available within timeout")
+	queryCmd.Flags().Bool("no-progress", false, "disable the live progress bar shown on stderr for long queries")
 	queryCmd.Flags().Bool("enforce-query-consumption-limit", false, "enforce query consumption limit")
 	queryCmd.Flags().Bool("include-types", false, "include type information in query results")
 	queryCmd.Flags().Bool("include-contributions", false, "include bucket contribution information in query results")
@@ -710,7 +756,7 @@ func init() {
 bare --metadata or -M shows all fields; --metadata=field1,field2 selects specific fields
 available: executionTimeMilliseconds,scannedRecords,scannedBytes,scannedDataPoints,
 sampled,queryId,dqlVersion,query,canonicalQuery,timezone,locale,
-analysisTimeframe,contributions`)
+analysisTimeframe,contributions,metrics`)
 	queryCmd.Flags().Lookup("metadata").NoOptDefVal = "all"
 
 	// Snapshot decode flag
@@ -746,6 +792,28 @@ takes precedence over --segments-file variables`)
 	// Client context flag
 	queryCmd.Flags().String("client-context", "", `optional caller context included in the dt-client-context request header
 useful for AI agents or scripts to declare their intent (e.g. "root-cause-analysis", "anomaly-investigation")`)
+
+	// Result spill flags. A large result is written to a local file and a compact
+	// summary (column stats + sample rows + a file handle) is returned in its
+	// place, so the rows never flood an agent's context.
+	queryCmd.Flags().String("spill", "", `spill a large result to a local file and return a summary instead of the rows
+bare --spill = always; --spill=auto spills above --spill-threshold; --spill=never forces rows
+default: never for a bare command, auto in agent mode`)
+	queryCmd.Flags().Lookup("spill").NoOptDefVal = "always"
+	queryCmd.Flags().String("spill-to", "", "explicit spill destination file (implies --spill=always; format inferred from extension)")
+	queryCmd.Flags().String("spill-format", "", "spill file format when spilling to the default dir: jsonl|json|csv|parquet (default jsonl)")
+	queryCmd.Flags().String("spill-threshold", "", "serialised output size above which a result spills, e.g. 50KB (default 50KB)")
+
+	_ = queryCmd.RegisterFlagCompletionFunc("spill", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"auto\tspill above the threshold, inline below",
+			"always\talways spill",
+			"never\tnever spill (rows inline)",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = queryCmd.RegisterFlagCompletionFunc("spill-format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{"jsonl", "json", "csv", "parquet"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // metadataFieldCompletion provides shell completion for --metadata flag values.

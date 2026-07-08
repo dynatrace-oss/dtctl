@@ -1,6 +1,7 @@
 package azuremonitoringconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -237,6 +238,14 @@ func (h *Handler) ListAvailableFeatureSets() ([]FeatureSet, error) {
 	})
 
 	return featureSets, nil
+}
+
+func (h *Handler) GetRaw(id string) ([]byte, error) {
+	result, err := h.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(result.Value, "", "  ")
 }
 
 func (h *Handler) Get(id string) (*AzureMonitoringConfig, error) {

@@ -20,6 +20,9 @@ type Config struct {
 	Tokens         []NamedToken      `yaml:"tokens"`
 	Preferences    Preferences       `yaml:"preferences"`
 	Aliases        map[string]string `yaml:"aliases,omitempty"`
+	// Spill holds the global result-spill settings (D15). Per-context overrides
+	// live on Context.Spill.
+	Spill SpillConfig `yaml:"spill,omitempty"`
 
 	// localPath is the path of the auto-discovered local .dtctl.yaml this
 	// config was loaded from, if any. Empty when loaded from the global config
@@ -102,6 +105,48 @@ type Context struct {
 	SafetyLevel SafetyLevel `yaml:"safety-level,omitempty" table:"SAFETY-LEVEL"`
 	Description string      `yaml:"description,omitempty" table:"DESCRIPTION,wide"`
 	Hooks       Hooks       `yaml:"hooks,omitempty"`
+	// Spill overrides the global spill settings for this context (D15). Nil
+	// fields inherit the global spill config.
+	Spill *SpillConfig `yaml:"spill,omitempty"`
+}
+
+// SpillConfig holds the result-spill settings (D15). Threshold and TTL are kept
+// as human-friendly strings in the file (e.g. "50KB", "24h") and parsed when
+// resolving the effective settings. All fields are optional; an unset field
+// inherits from the next layer in the precedence chain
+// (flag → env → context-config → global-config → built-in default).
+type SpillConfig struct {
+	Mode      string `yaml:"mode,omitempty"`      // auto|always|never
+	Dir       string `yaml:"dir,omitempty"`       // base directory for spilled files
+	Format    string `yaml:"format,omitempty"`    // jsonl|json|csv|parquet (default jsonl)
+	Threshold string `yaml:"threshold,omitempty"` // e.g. "50KB"
+	TTL       string `yaml:"ttl,omitempty"`       // e.g. "24h"
+}
+
+// EffectiveSpillConfig merges the global spill config with the current context's
+// override (context wins per field, D15). Env and flag layers are applied by the
+// caller on top of this base.
+func (c *Config) EffectiveSpillConfig() SpillConfig {
+	merged := c.Spill
+	if ctx, err := c.CurrentContextObj(); err == nil && ctx.Spill != nil {
+		ov := ctx.Spill
+		if ov.Mode != "" {
+			merged.Mode = ov.Mode
+		}
+		if ov.Dir != "" {
+			merged.Dir = ov.Dir
+		}
+		if ov.Format != "" {
+			merged.Format = ov.Format
+		}
+		if ov.Threshold != "" {
+			merged.Threshold = ov.Threshold
+		}
+		if ov.TTL != "" {
+			merged.TTL = ov.TTL
+		}
+	}
+	return merged
 }
 
 // NamedToken holds a token with its name

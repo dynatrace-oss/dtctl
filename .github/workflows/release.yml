@@ -1,22 +1,60 @@
 name: Release
 
-on:
-  push:
-    tags:
-      - 'v*'
+# Releases are driven by release-please but triggered MANUALLY — nothing happens
+# on ordinary merges to main. Run this workflow from the Actions tab ("Run
+# workflow") when you want to act on releases. Each run does ONE of two things,
+# depending on repo state:
+#
+#   1. If there are releasable commits since the last release and no release PR is
+#      merged yet → release-please opens/updates the release PR (version bump in
+#      the manifest + pkg/version/version.go, plus generated notes). Review it.
+#   2. After you merge that release PR → run this workflow AGAIN; release-please
+#      detects the merged release PR, creates the git tag and GitHub Release, and
+#      the gated GoReleaser job below builds, signs, and publishes the artifacts.
+#
+# So a full release is: dispatch → merge the release PR → dispatch again.
+#
+# Note: release-please creates the tag with GITHUB_TOKEN, which would not trigger
+# `on: push: tags` workflows anyway — that is why GoReleaser runs as a gated job
+# in this same workflow rather than in a separate tag-triggered one.
 
-permissions:
-  contents: write
-  id-token: write # Required for cosign keyless signing
+on:
+  workflow_dispatch:
+
+permissions: {}
 
 jobs:
-  release:
-    name: Release
+  release-please:
+    name: Release Please
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  goreleaser:
+    name: GoReleaser
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # Required for cosign keyless signing
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
           fetch-depth: 0
 
       - name: Set up Go

@@ -25,6 +25,9 @@ type PrinterOptions struct {
 	Width      int  // Chart width (0 = default)
 	Height     int  // Chart height (0 = default)
 	Fullscreen bool // Use terminal dimensions
+	// Types carries DQL column type info used by the Parquet printer to build a
+	// faithful schema. Ignored by other formats; nil falls back to inference.
+	Types []ColumnTypeMapping
 }
 
 // NewPrinter creates a new printer based on the format
@@ -86,6 +89,10 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 		return &YAMLPrinter{writer: writer, jqFilter: effectiveJQFilter}
 	case "csv":
 		return &CSVPrinter{writer: writer}
+	case "jsonl":
+		return &JSONLPrinter{writer: writer}
+	case "parquet":
+		return &ParquetPrinter{writer: writer, types: opts.Types}
 	case "toon":
 		return &ToonPrinter{writer: writer, jqFilter: effectiveJQFilter}
 	case "chart":

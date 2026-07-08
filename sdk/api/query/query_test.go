@@ -65,6 +65,65 @@ func TestExecute_Synchronous(t *testing.T) {
 	}
 }
 
+func TestExecuteAndPoll_EnrichMetricMetadata(t *testing.T) {
+	var execEnrich, pollEnrich string
+	var polled atomic.Bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		execEnrich = r.URL.Query().Get("enrich")
+		resp := Response{State: "RUNNING", RequestToken: "tok-enrich"}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		pollEnrich = r.URL.Query().Get("enrich")
+		polled.Store(true)
+		resp := Response{
+			State: "SUCCEEDED",
+			Result: &Result{
+				Metadata: &Metadata{Metrics: []MetricInfo{{MetricKey: "dt.host.cpu.user", Unit: "%"}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	_, err := h.ExecuteAndPoll(context.Background(), ExecuteRequest{Query: "timeseries avg(dt.host.cpu.user)", EnrichMetricMetadata: true}, nil)
+	if err != nil {
+		t.Fatalf("ExecuteAndPoll() error: %v", err)
+	}
+	if !polled.Load() {
+		t.Fatal("expected poll to be invoked")
+	}
+	if execEnrich != "metric-metadata" {
+		t.Errorf("execute enrich = %q, want metric-metadata", execEnrich)
+	}
+	if pollEnrich != "metric-metadata" {
+		t.Errorf("poll enrich = %q, want metric-metadata", pollEnrich)
+	}
+}
+
+func TestExecute_NoEnrichByDefault(t *testing.T) {
+	var execEnrich string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		execEnrich = r.URL.Query().Get("enrich")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(Response{State: "SUCCEEDED", Result: &Result{}})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	if _, err := h.Execute(context.Background(), ExecuteRequest{Query: "fetch logs | limit 1"}); err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if execEnrich != "" {
+		t.Errorf("enrich param = %q, want empty when EnrichMetricMetadata is false", execEnrich)
+	}
+}
+
 func TestExecute_AsyncWithPoll(t *testing.T) {
 	var pollCount atomic.Int32
 
@@ -129,7 +188,7 @@ func TestPoll_Success(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.Poll(context.Background(), "tok-abc", 5000)
+	result, err := h.Poll(context.Background(), "tok-abc", 5000, false)
 	if err != nil {
 		t.Fatalf("Poll() error: %v", err)
 	}
@@ -146,7 +205,7 @@ func TestPoll_ErrorReturnsAPIError(t *testing.T) {
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Poll(context.Background(), "tok-abc", 5000)
+	_, err := h.Poll(context.Background(), "tok-abc", 5000, false)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -343,6 +402,49 @@ func TestResponse_GetRecords(t *testing.T) {
 	})
 }
 
+func TestResponse_GetTypes(t *testing.T) {
+	t.Run("from Result", func(t *testing.T) {
+		r := &Response{
+			Result: &Result{
+				Records: []map[string]interface{}{{"count()": "194414758"}},
+				Types: []ColumnTypes{
+					{IndexRange: []int{0, 0}, Mappings: map[string]ColumnType{"count()": {Type: "long"}}},
+				},
+			},
+		}
+		types := r.GetTypes()
+		if len(types) != 1 {
+			t.Fatalf("got %d type groups, want 1", len(types))
+		}
+		if got := types[0].Mappings["count()"].Type; got != "long" {
+			t.Errorf("got type %q, want long", got)
+		}
+	})
+
+	t.Run("nil when absent", func(t *testing.T) {
+		r := &Response{Records: []map[string]interface{}{{"a": 1}}}
+		if r.GetTypes() != nil {
+			t.Errorf("expected nil types, got %v", r.GetTypes())
+		}
+	})
+
+	t.Run("unmarshals from API JSON", func(t *testing.T) {
+		body := `{"state":"SUCCEEDED","result":{"records":[{"count()":"194414758"}],` +
+			`"types":[{"indexRange":[0,0],"mappings":{"count()":{"type":"long"}}}]}}`
+		var r Response
+		if err := json.Unmarshal([]byte(body), &r); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		types := r.GetTypes()
+		if len(types) != 1 || types[0].Mappings["count()"].Type != "long" {
+			t.Errorf("types not parsed correctly: %+v", types)
+		}
+		if len(types[0].IndexRange) != 2 || types[0].IndexRange[1] != 0 {
+			t.Errorf("indexRange not parsed correctly: %+v", types[0].IndexRange)
+		}
+	})
+}
+
 func TestResponse_GetNotifications(t *testing.T) {
 	t.Run("from top-level metadata", func(t *testing.T) {
 		r := &Response{
@@ -389,6 +491,106 @@ func TestResponse_GetMetadata(t *testing.T) {
 	if m.QueryID != "q-123" {
 		t.Errorf("QueryID = %q, want q-123", m.QueryID)
 	}
+}
+
+func TestMetricInfo_UnmarshalFromAPI(t *testing.T) {
+	// Mirrors the metadata.metrics[] shape the DQL API returns for timeseries
+	// queries. All descriptor fields must survive unmarshalling.
+	const raw = `{
+		"records": [],
+		"metadata": {
+			"metrics": [
+				{
+					"metric.key": "dt.host.cpu.user",
+					"displayName": "CPU user",
+					"description": "Average CPU time when CPU was running in user mode",
+					"unit": "%",
+					"fieldName": "sum(dt.host.cpu.user)",
+					"aggregation": "sum"
+				}
+			]
+		}
+	}`
+
+	var r Response
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	metrics := r.GetMetrics()
+	if len(metrics) != 1 {
+		t.Fatalf("expected 1 metric, got %d", len(metrics))
+	}
+	m := metrics[0]
+	if m.MetricKey != "dt.host.cpu.user" {
+		t.Errorf("MetricKey = %q, want dt.host.cpu.user", m.MetricKey)
+	}
+	if m.DisplayName != "CPU user" {
+		t.Errorf("DisplayName = %q, want CPU user", m.DisplayName)
+	}
+	if m.Description != "Average CPU time when CPU was running in user mode" {
+		t.Errorf("Description = %q, want the API description", m.Description)
+	}
+	if m.Unit != "%" {
+		t.Errorf("Unit = %q, want %%", m.Unit)
+	}
+	if m.FieldName != "sum(dt.host.cpu.user)" {
+		t.Errorf("FieldName = %q, want sum(dt.host.cpu.user)", m.FieldName)
+	}
+	if m.Aggregation != "sum" {
+		t.Errorf("Aggregation = %q, want sum", m.Aggregation)
+	}
+}
+
+func TestResponse_GetMetrics(t *testing.T) {
+	t.Run("from top-level metadata", func(t *testing.T) {
+		r := &Response{
+			Metadata: &Metadata{
+				Metrics: []MetricInfo{{MetricKey: "dt.host.cpu.usage", FieldName: "avg(dt.host.cpu.usage)", Aggregation: "avg"}},
+			},
+		}
+		metrics := r.GetMetrics()
+		if len(metrics) != 1 || metrics[0].MetricKey != "dt.host.cpu.usage" {
+			t.Errorf("got %+v, want one metric for dt.host.cpu.usage", metrics)
+		}
+	})
+
+	t.Run("from result metadata", func(t *testing.T) {
+		r := &Response{
+			Result: &Result{
+				Metadata: &Metadata{
+					Metrics: []MetricInfo{{MetricKey: "dt.host.mem.usage", FieldName: "sum(dt.host.mem.usage)", Aggregation: "sum"}},
+				},
+			},
+		}
+		metrics := r.GetMetrics()
+		if len(metrics) != 1 || metrics[0].MetricKey != "dt.host.mem.usage" {
+			t.Errorf("got %+v, want one metric for dt.host.mem.usage", metrics)
+		}
+	})
+
+	t.Run("metrics without grail", func(t *testing.T) {
+		// The DQL API may return metadata.metrics independently of metadata.grail
+		// (they are unrelated siblings of Metadata) — GetMetrics must not depend
+		// on Grail being present.
+		r := &Response{
+			Metadata: &Metadata{
+				Metrics: []MetricInfo{{MetricKey: "dt.host.cpu.usage"}},
+			},
+		}
+		if r.GetMetadata() != nil {
+			t.Fatal("expected nil Grail metadata for this fixture")
+		}
+		if len(r.GetMetrics()) != 1 {
+			t.Errorf("expected metrics to be returned even when Grail metadata is absent, got %+v", r.GetMetrics())
+		}
+	})
+
+	t.Run("no metrics", func(t *testing.T) {
+		r := &Response{Metadata: &Metadata{}}
+		if metrics := r.GetMetrics(); metrics != nil {
+			t.Errorf("expected nil metrics, got %+v", metrics)
+		}
+	})
 }
 
 // helpers to avoid importing errors in test
@@ -670,7 +872,7 @@ func TestWithHeaders_PropagatedToAllEndpoints(t *testing.T) {
 	h := NewHandler(newTestClient(t, mux)).WithHeaders(map[string]string{"x-custom": "test-value"})
 
 	h.Execute(context.Background(), ExecuteRequest{Query: "q"})
-	h.Poll(context.Background(), "tok", 1000)
+	h.Poll(context.Background(), "tok", 1000, false)
 	h.Cancel(context.Background(), "tok")
 	h.Verify(context.Background(), VerifyRequest{Query: "q"})
 
@@ -903,5 +1105,107 @@ func TestExecuteAndPoll_NoRequestToken(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no request token") {
 		t.Errorf("error should mention missing token: %v", err)
+	}
+}
+
+// TestExecuteAndPollWithOptions_OnUpdate verifies that the OnUpdate callback is
+// invoked on the initial RUNNING response and on each subsequent RUNNING poll,
+// carrying the reported progress and (when previews are enabled) preview rows.
+func TestExecuteAndPollWithOptions_OnUpdate(t *testing.T) {
+	var pollCount atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		// Initial async response: RUNNING at 10%, no preview yet.
+		resp := Response{State: "RUNNING", RequestToken: "tok-upd", Progress: 10}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		n := pollCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if n == 1 {
+			// A RUNNING poll carrying a preview snapshot.
+			json.NewEncoder(w).Encode(Response{
+				State:        "RUNNING",
+				RequestToken: "tok-upd",
+				Progress:     60,
+				Result:       &Result{Records: []map[string]interface{}{{"a": 1}, {"a": 2}}},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(Response{
+			State:  "SUCCEEDED",
+			Result: &Result{Records: []map[string]interface{}{{"a": 1}, {"a": 2}, {"a": 3}}},
+		})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+
+	var updates []PollUpdate
+	result, err := h.ExecuteAndPollWithOptions(context.Background(),
+		ExecuteRequest{Query: "fetch logs", EnablePreview: true},
+		ExecuteAndPollOptions{OnUpdate: func(u PollUpdate) { updates = append(updates, u) }},
+	)
+	if err != nil {
+		t.Fatalf("ExecuteAndPollWithOptions() error: %v", err)
+	}
+	if result.State != "SUCCEEDED" {
+		t.Fatalf("State = %q, want SUCCEEDED", result.State)
+	}
+
+	// Expect: initial RUNNING (10%, no preview) + one RUNNING poll (60%, 2 rows).
+	// The terminal SUCCEEDED poll must NOT produce an update.
+	if len(updates) != 2 {
+		t.Fatalf("got %d updates, want 2: %+v", len(updates), updates)
+	}
+	if updates[0].Progress != 10 || updates[0].Preview != nil {
+		t.Errorf("first update = %+v, want progress 10 and no preview", updates[0])
+	}
+	if updates[1].Progress != 60 {
+		t.Errorf("second update progress = %d, want 60", updates[1].Progress)
+	}
+	if updates[1].Preview == nil || len(updates[1].Preview.Records) != 2 {
+		t.Errorf("second update should carry a 2-row preview, got %+v", updates[1].Preview)
+	}
+}
+
+// TestExecuteAndPollWithOptions_NoPreviewWhenDisabled verifies that previews are
+// never surfaced to OnUpdate when EnablePreview is false, even if the backend
+// happens to include a result on a RUNNING poll.
+func TestExecuteAndPollWithOptions_NoPreviewWhenDisabled(t *testing.T) {
+	var pollCount atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(Response{State: "RUNNING", RequestToken: "tok-np", Progress: 5})
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if pollCount.Add(1) == 1 {
+			json.NewEncoder(w).Encode(Response{
+				State: "RUNNING", RequestToken: "tok-np", Progress: 50,
+				Result: &Result{Records: []map[string]interface{}{{"a": 1}}},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(Response{State: "SUCCEEDED", Result: &Result{}})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	var updates []PollUpdate
+	_, err := h.ExecuteAndPollWithOptions(context.Background(),
+		ExecuteRequest{Query: "fetch logs"}, // EnablePreview false
+		ExecuteAndPollOptions{OnUpdate: func(u PollUpdate) { updates = append(updates, u) }},
+	)
+	if err != nil {
+		t.Fatalf("ExecuteAndPollWithOptions() error: %v", err)
+	}
+	for i, u := range updates {
+		if u.Preview != nil {
+			t.Errorf("update %d carried a preview despite EnablePreview=false: %+v", i, u.Preview)
+		}
 	}
 }

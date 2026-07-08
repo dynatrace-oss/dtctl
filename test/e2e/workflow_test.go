@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -212,31 +213,34 @@ func TestWorkflowCreateInvalid(t *testing.T) {
 	handler := workflow.NewHandler(env.Client)
 
 	tests := []struct {
-		name    string
-		data    []byte
-		wantErr bool
+		name            string
+		data            []byte
+		wantErrContains string
 	}{
 		{
-			name:    "invalid json",
-			data:    []byte(`{"invalid": json`),
-			wantErr: true,
+			name:            "invalid json",
+			data:            []byte(`{"invalid": json`),
+			wantErrContains: "400",
 		},
 		{
-			name:    "empty workflow",
-			data:    []byte(`{}`),
-			wantErr: true,
+			// API validates task position constraints and surfaces details.
+			// y must be >= 1; the error should carry the field path.
+			name:            "negative task y position",
+			data:            []byte(`{"title":"dtctl-test-invalid-position","tasks":{"t":{"action":"dynatrace.automations:run-javascript","position":{"x":0,"y":-1},"input":{"script":"export default async function(){return{}}"}}}}`),
+			wantErrContains: "position",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := handler.Create(tt.data)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Create() error = %v, wantErr %v", err, tt.wantErr)
+			if err == nil {
+				t.Fatalf("Create() expected error, got nil")
 			}
-			if err != nil {
-				t.Logf("✓ Got expected error: %v", err)
+			if !strings.Contains(err.Error(), tt.wantErrContains) {
+				t.Errorf("Create() error = %v, want containing %q", err, tt.wantErrContains)
 			}
+			t.Logf("✓ Got expected error: %v", err)
 		})
 	}
 }

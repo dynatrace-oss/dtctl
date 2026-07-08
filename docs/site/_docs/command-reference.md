@@ -23,6 +23,8 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 | `apply` | Apply configuration from file (create or update) |
 | `logs` | Print logs for a resource |
 | `query` | Execute a DQL query |
+| `wait` | Poll a DQL query until a record-count condition is met (tests/CI) |
+| `inspect` | Inspect a spilled query-result file locally (rows, schema, stats) without re-querying Grail |
 | `exec` | Execute a workflow, function, analyzer, or CoPilot skill |
 | `history` | Show version history (snapshots) of a document |
 | `restore` | Restore a document to a previous version |
@@ -99,9 +101,14 @@ dtctl config describe-context <name>
 dtctl config delete-context <name>
 dtctl config view
 
-# Quick context switching
+# Quick context switching (shortcuts without the "config" prefix)
 dtctl ctx                          # List contexts
 dtctl ctx <name>                   # Switch context
+dtctl ctx current                  # Show current context name
+dtctl ctx describe <name>          # Show details of a context
+dtctl ctx set <name> --environment <url> [--token-ref <ref>]  # Create/update a context and switch to it
+dtctl ctx delete <name>            # Delete a context
+dtctl ctx token [<name>]           # Print the resolved token for a context
 
 # Credentials
 dtctl config set-credentials <ref> --token <token>
@@ -123,11 +130,20 @@ dtctl auth login --context <name> --environment <url>
 dtctl auth logout
 dtctl auth refresh
 
+# Session status: token presence, expiry, refresh token, granted scopes
+dtctl auth status
+dtctl auth status -o json
+
 # User identity
 dtctl auth whoami
 dtctl auth whoami --id-only
 dtctl auth whoami -o json
 ```
+
+`auth status` reports the OAuth session state for the current context — whether an
+access token is stored, when it expires, whether a refresh token is present (so
+the CLI can auto-refresh), and the granted scopes. For platform (non-OAuth)
+tokens it reports the auth type and skips the OAuth-specific fields.
 
 ## Query Commands
 
@@ -151,7 +167,13 @@ dtctl query "..." --max-result-records 5000
 dtctl query "..." --default-timeframe-start "2024-01-01T00:00:00Z"
 dtctl query "..." --timezone "Europe/Paris"
 dtctl query "..." --metadata                    # Include execution metadata
+dtctl query "..." --no-progress                  # Disable the live progress bar (shown by default)
 dtctl query "..." --live --interval 5s           # Live mode
+
+# Spill a large result to a file, return a summary (see dql-queries#spilling-large-results-to-a-file)
+dtctl query "..." --spill                         # always spill (bare flag)
+dtctl query "..." --spill=auto --spill-threshold 100KB  # spill only above the size
+dtctl query "..." --spill-to ./out.jsonl          # explicit destination; --spill-format jsonl|json|csv|parquet
 
 # Filter segments
 dtctl query "..." --segment my-segment-uid       # By UID or name (repeatable)
@@ -162,6 +184,68 @@ dtctl query "..." --segments-file segments.yaml  # Segments with variables from 
 # Verify query syntax
 dtctl verify query "fetch logs | limit 10"
 dtctl verify query -f query.dql --canonical --fail-on-warn
+```
+
+## Inspect Commands
+
+`dtctl inspect` reads a query-result file that `dtctl query` spilled to disk (see
+[Spilling Large Results](dql-queries#spilling-large-results-to-a-file)) — without
+re-querying Grail and without pulling the whole result back into context. Its
+primary capability is **row access**, which the spill summary never carried.
+Choose exactly one primitive per call; it is not a query engine (no SQL, no
+GROUP BY, no dtctl predicate language — push aggregates back into DQL).
+
+```bash
+# Row access
+dtctl inspect q-7f3a9c.jsonl --head 20            # first N rows
+dtctl inspect q-7f3a9c.jsonl --tail 10            # last N rows
+dtctl inspect q-7f3a9c.jsonl --page --offset 1000 --limit 50   # a paginated window (result order)
+dtctl inspect q-7f3a9c.jsonl --head 20 --fields timestamp,content  # column projection (composable)
+
+# Keep only the matching rows — a streaming jq filter over the WHOLE file
+dtctl inspect q-7f3a9c.jsonl --jq 'select(.status == 500)'         # every matching row
+dtctl inspect q-7f3a9c.jsonl --jq 'select(.status == 500)' --head 20  # first 20 matches (window bounds it)
+dtctl inspect q-7f3a9c.jsonl --jq '{host, timestamp}'             # reshape each row to an object
+
+# Re-derive the summary for a file whose manifest is out of context
+dtctl inspect q-7f3a9c.jsonl --schema             # columns + types + null counts
+dtctl inspect q-7f3a9c.jsonl --stats              # per-column profile (or --stats=col,col)
+dtctl inspect q-7f3a9c.jsonl --sample 5           # N representative (leading) rows
+
+# Recover a lost file handle
+dtctl inspect --list                              # spilled files in the active context, with provenance
+```
+
+Reads jsonl, json, csv, and parquet. Honours the shared `--spill*` flags: an
+oversized inspect window — or a `--jq` filter that matches a large number of rows —
+re-spills to a new managed file instead of flooding output. It lists/reads only
+the active context's partition and refuses a file that belongs to a different
+context or tenant.
+
+`--jq` on `inspect` is a **full-file** filter: unlike elsewhere in dtctl (where
+`--jq` post-processes the in-memory result), here it is run **per record** over
+the whole spilled file — like `jq` over an NDJSON file — and collects the objects
+it emits. It composes with a single row-access window (`--head`/`--tail`/`--page`,
+which bounds the matches) and with `--fields` (which projects them), but is
+mutually exclusive with `--schema`/`--stats`/`--sample`. The program must emit
+objects; for free-form scalar extraction run `jq` over the file yourself.
+
+## Wait Commands
+
+`dtctl wait query` polls a DQL query with exponential backoff until a record-count
+condition is met — built for tests and CI/CD that must wait for data to land. See
+[Waiting for Query Conditions](dql-queries#waiting-for-query-conditions) for the
+full condition list, polling controls, and exit codes.
+
+```bash
+# Wait for exactly one matching record (default timeout 5m)
+dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1
+
+# Wait for any error logs, with a custom timeout
+dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+
+# Conditions: count=N | count-gte=N | count-gt=N | count-lte=N | count-lt=N | any | none
+# Polling:    --timeout --max-attempts --initial-delay --min-interval --max-interval --backoff-multiplier
 ```
 
 ## Execution Commands
@@ -179,6 +263,12 @@ dtctl exec analyzer <analyzer-id> --query "timeseries avg(dt.host.cpu.usage)"
 
 # App Functions
 dtctl exec function <app-id>/<function-name> --method POST --payload '{...}'
+dtctl exec function <app-id>/<function-name> --method POST --data payload.json   # payload from file (- = stdin)
+dtctl exec function <app-id>/<function-name> --defer                             # async / resumable
+
+# Ad-hoc JavaScript (no app deployment; --code or -f selects this mode)
+dtctl exec function --code 'export default async function () { return "hi" }'
+dtctl exec function -f script.js --payload '{"input":"data"}'                    # -f - reads code from stdin
 
 # Davis CoPilot
 dtctl exec copilot "What is DQL?" --stream
@@ -307,4 +397,6 @@ dtctl query "fetch logs" -o json | jq '.records[]'
 export DTCTL_OUTPUT=json           # Default output format
 export DTCTL_CONTEXT=production    # Default context
 export EDITOR=vim                  # Editor for edit commands
+export DTCTL_SPILL=never           # Result spill mode: auto|always|never
+export DTCTL_SPILL_DIR=/mnt/scratch # Base directory for spilled query results
 ```

@@ -19,3 +19,8 @@ Sampled:            no
 Contributions:
   default_logs (logs)
     scanned: 2.8 MB, matched: 100.0%
+Metrics:
+  avg(process.cpu.utilization) → process.cpu.utilization [avg, Percent]
+    Process CPU Utilization
+  sum(process.memory.usage) → process.memory.usage [sum, Byte]
+    Process Memory Usage

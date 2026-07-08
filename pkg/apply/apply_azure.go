@@ -77,6 +77,10 @@ func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 			}
 		}
 
+		// Read optional issuer override — lets callers specify a custom token issuer
+		// in the YAML without requiring auto-detection from the host name.
+		issuerOverride, _ := item["issuer"].(string)
+
 		if objectID == "" {
 			// Create
 			req := azureconnection.AzureConnectionCreate{
@@ -91,7 +95,7 @@ func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 
 			// Check for federated identity to print instructions
 			if value.Type == "federatedIdentityCredential" {
-				printFederatedInstructions(a.baseURL, res.ObjectID, &resultWarnings)
+				printFederatedInstructions(a.baseURL, res.ObjectID, issuerOverride, &resultWarnings)
 			}
 
 			results = append(results, &ConnectionApplyResult{
@@ -117,7 +121,7 @@ func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 					if value.Type == "federatedIdentityCredential" {
 						fedCred := value.FederatedIdentityCredential
 						if fedCred == nil || fedCred.ApplicationID == "" || fedCred.DirectoryID == "" {
-							printFederatedCompleteInstructions(a.baseURL, objectID, value.Name)
+							printFederatedCompleteInstructions(a.baseURL, objectID, value.Name, issuerOverride)
 							return nil, fmt.Errorf("azure connection requires additional configuration: %w", err)
 						}
 					}
@@ -126,7 +130,7 @@ func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 				// Check for Federated Identity error (AADSTS70025 or AADSTS700213)
 				if strings.Contains(errMsg, "AADSTS70025") || strings.Contains(errMsg, "AADSTS700213") {
 					if value.FederatedIdentityCredential != nil && value.FederatedIdentityCredential.ApplicationID != "" {
-						printFederatedErrorSnippet(a.baseURL, objectID, value.FederatedIdentityCredential.ApplicationID)
+						printFederatedErrorSnippet(a.baseURL, objectID, value.FederatedIdentityCredential.ApplicationID, issuerOverride)
 						return nil, fmt.Errorf("azure connection requires federation setup on Azure side: %w", err)
 					}
 				}
@@ -253,7 +257,7 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) (ApplyResult, error) {
 }
 
 // printFederatedInstructions prints configuration instructions for Federated Identity Credential to stderr
-func printFederatedInstructions(baseURL, objectID string, warnings *[]string) {
+func printFederatedInstructions(baseURL, objectID, issuerOverride string, warnings *[]string) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		// Should not happen if client is initialized correctly, but fail gracefully
@@ -262,11 +266,9 @@ func printFederatedInstructions(baseURL, objectID string, warnings *[]string) {
 	}
 	host := u.Host
 
-	// Determine issuer based on environment heuristic
-	// Default to SaaS production
-	issuer := "https://token.dynatrace.com"
-	if strings.Contains(host, "dev.apps.dynatracelabs.com") || strings.Contains(host, "dev.dynatracelabs.com") {
-		issuer = "https://dev.token.dynatracelabs.com"
+	issuer := issuerOverride
+	if issuer == "" {
+		issuer = azureconnection.TokenIssuerForHost(host)
 	}
 
 	fmt.Fprintf(os.Stderr, "\nFurther configuration required in Azure Portal (Federated Credentials):\n")
@@ -280,7 +282,7 @@ func printFederatedInstructions(baseURL, objectID string, warnings *[]string) {
 }
 
 // printFederatedCompleteInstructions prints full configuration instructions for Federated Identity Credential to stderr
-func printFederatedCompleteInstructions(baseURL, objectID, connectionName string) {
+func printFederatedCompleteInstructions(baseURL, objectID, connectionName, issuerOverride string) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		output.PrintWarning("Could not parse base URL for instructions: %v", err)
@@ -288,10 +290,9 @@ func printFederatedCompleteInstructions(baseURL, objectID, connectionName string
 	}
 	host := u.Host
 
-	// Determine issuer
-	issuer := "https://token.dynatrace.com"
-	if strings.Contains(host, "dev.apps.dynatracelabs.com") || strings.Contains(host, "dev.dynatracelabs.com") {
-		issuer = "https://dev.token.dynatracelabs.com"
+	issuer := issuerOverride
+	if issuer == "" {
+		issuer = azureconnection.TokenIssuerForHost(host)
 	}
 
 	fmt.Fprintf(os.Stderr, "\nTo complete the configuration, additional setup is required in the Azure Portal (Federated Credentials).\n")
@@ -310,17 +311,16 @@ func printFederatedCompleteInstructions(baseURL, objectID, connectionName string
 }
 
 // printFederatedErrorSnippet prints az cli snippet for AADSTS70025 error to stderr
-func printFederatedErrorSnippet(baseURL, objectID, clientID string) {
+func printFederatedErrorSnippet(baseURL, objectID, clientID, issuerOverride string) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return
 	}
 	host := u.Host
 
-	// Determine issuer
-	issuer := "https://token.dynatrace.com"
-	if strings.Contains(host, "dev.apps.dynatracelabs.com") || strings.Contains(host, "dev.dynatracelabs.com") {
-		issuer = "https://dev.token.dynatracelabs.com"
+	issuer := issuerOverride
+	if issuer == "" {
+		issuer = azureconnection.TokenIssuerForHost(host)
 	}
 
 	fmt.Fprintf(os.Stderr, "\nTo fix the Federated Identity error, run the following command:\n")

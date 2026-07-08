@@ -174,6 +174,7 @@ func sloFixtures() []slo.SLO {
 func float64Ptr(v float64) *float64 { return &v }
 func int64Ptr(v int64) *int64       { return &v }
 func intPtr(v int) *int             { return &v }
+func boolPtr(v bool) *bool          { return &v }
 func stringPtr(v string) *string    { return &v }
 
 func bucketFixtures() []bucket.Bucket {
@@ -762,6 +763,55 @@ func TestGolden_GetAnalyzerDefinition(t *testing.T) {
 	}
 }
 
+// analyzerDescriptionFixture models the enriched view returned by
+// `describe analyzer <name>`, bundling resolved input/result JSON Schemas. Only
+// structured formats flow through the printer (table uses custom rendering in
+// cmd), so this covers the json/yaml serialization.
+func analyzerDescriptionFixture() analyzer.AnalyzerDescription {
+	return analyzer.AnalyzerDescription{
+		Name:        "dt.statistics.GenericForecastAnalyzer",
+		DisplayName: "Generic Forecast Analyzer",
+		Description: "Forecasts a numeric time series",
+		Category:    "Forecast",
+		Type:        "DAVIS",
+		Labels:      []string{"forecast", "timeseries"},
+		InputSchema: map[string]interface{}{
+			"type":     "object",
+			"required": []interface{}{"timeSeriesData"},
+			"properties": map[string]interface{}{
+				"timeSeriesData":  map[string]interface{}{"type": "string", "description": "DQL timeseries query"},
+				"forecastHorizon": map[string]interface{}{"type": "integer", "description": "points to forecast"},
+			},
+		},
+		ResultSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"forecastValues": map[string]interface{}{"type": "array", "description": "forecasted points"},
+			},
+		},
+	}
+}
+
+func TestGolden_DescribeAnalyzer(t *testing.T) {
+	desc := analyzerDescriptionFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(desc); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/analyzer-"+name, buf.String())
+		})
+	}
+}
+
 // snapshotFixture models a document snapshot as returned by `dtctl history`.
 // CreatedBy/CreatedTime are json:"-" display duplicates of ModificationInfo and
 // must not leak into json/yaml output.
@@ -1282,10 +1332,10 @@ func describeAppFixture() appengine.App {
 			SubResourceTypes: []string{"function", "action"},
 		},
 		ModificationInfo: &appengine.ModificationInfo{
-			CreatedBy:        "user-a@example.invalid",
-			CreatedTime:      "2025-01-10T08:00:00Z",
-			LastModifiedBy:   "user-b@example.invalid",
-			LastModifiedTime: "2025-03-15T10:30:00Z",
+			CreatedBy:      "user-a@example.invalid",
+			CreatedAt:      "2025-01-10T08:00:00Z",
+			LastModifiedBy: "user-b@example.invalid",
+			LastModifiedAt: "2025-03-15T10:30:00Z",
 		},
 	}
 }
@@ -1806,12 +1856,16 @@ func TestGolden_DescribeAnomalyDetector(t *testing.T) {
 func TestGolden_QueryDQL(t *testing.T) {
 	records := dqlRecordsFixture()
 
+	// Parquet is intentionally excluded here: it is a binary format, so it is
+	// covered by the round-trip assertions in parquet_test.go rather than a
+	// golden byte file.
 	formats := map[string]string{
 		"table": "table",
 		"wide":  "wide",
 		"json":  "json",
 		"csv":   "csv",
 		"toon":  "toon",
+		"jsonl": "jsonl",
 	}
 
 	for name, format := range formats {
@@ -1856,6 +1910,10 @@ func metadataFixture() *QueryMetadata {
 					MatchedRecordsRatio: 1.0,
 				},
 			},
+		},
+		Metrics: []MetricInfo{
+			{MetricKey: "process.cpu.utilization", FieldName: "avg(process.cpu.utilization)", Aggregation: "avg", Unit: "Percent", DisplayName: "Process CPU Utilization"},
+			{MetricKey: "process.memory.usage", FieldName: "sum(process.memory.usage)", Aggregation: "sum", Unit: "Byte", DisplayName: "Process Memory Usage"},
 		},
 	}
 }
@@ -2558,6 +2616,38 @@ func TestGolden_DescribeExtensionSchemaNoFluff(t *testing.T) {
 				t.Fatalf("Print failed: %v", err)
 			}
 			assertGolden(t, "describe/extension-schema-no-fluff-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeExtensionAssets(t *testing.T) {
+	result := &extension.AssetResult{
+		AlertTemplates: []extension.AlertAsset{
+			{File: "alerts/cpu-saturation.json", Name: "CPU Saturation", EventType: "RESOURCE_CONTENTION", Enabled: boolPtr(true)},
+			{File: "alerts/memory-usage.json", Name: "Memory Usage", EventType: "RESOURCE_CONTENTION", Enabled: boolPtr(false)},
+		},
+		Smartscape: &extension.SmartscapeAssetResult{
+			Nodes: []extension.SmartscapeNode{
+				{NodeType: "custom:my_service", NodeIDFieldName: "dt.entity.my_service", Description: "My Service node", Pipeline: "openpipeline/metrics.json"},
+			},
+			Edges: []extension.SmartscapeEdge{
+				{SourceType: "custom:my_service", EdgeType: "runs_on", TargetType: "HOST"},
+			},
+		},
+	}
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+	}
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(result); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/extension-assets-"+name, buf.String())
 		})
 	}
 }

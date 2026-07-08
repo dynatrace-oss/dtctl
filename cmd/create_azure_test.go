@@ -58,6 +58,15 @@ func TestCreateAzureConnectionFlagValidation(t *testing.T) {
 			},
 			wantErr: "only supported for --type clientSecret",
 		},
+		{
+			name: "--issuer rejected for clientSecret",
+			args: []string{"create", "azure", "connection",
+				"--name", "my-conn",
+				"--type", "clientSecret",
+				"--issuer", "https://custom.token.example.com",
+			},
+			wantErr: "--issuer is only supported for --type federatedIdentityCredential",
+		},
 	}
 
 	for _, tt := range tests {
@@ -67,6 +76,7 @@ func TestCreateAzureConnectionFlagValidation(t *testing.T) {
 			createAzureConnectionDirectoryID = ""
 			createAzureConnectionApplicationID = ""
 			createAzureConnectionClientSecret = ""
+			createAzureConnectionIssuer = ""
 
 			rootCmd.SetArgs(tt.args)
 			err := rootCmd.Execute()

@@ -663,12 +663,15 @@ dtctl describe function <app-id>/<function-name> -o json  # JSON output
 # Execute functions
 dtctl exec function <app-id>/<function-name>     # Execute function (GET)
 dtctl exec function <app-id>/<function-name> --method POST --payload '{"key":"value"}'
-dtctl exec function <app-id>/<function-name> --method POST --data @payload.json
+dtctl exec function <app-id>/<function-name> --method POST --data payload.json  # payload from file (- for stdin)
 dtctl exec function <app-id>/<function-name> -o json  # JSON output
 
-# Deferred (async) execution for resumable functions (not implemented yet)
-# dtctl exec function <app-id>/<function-name> --defer
-# dtctl get deferred-executions                    # List deferred executions
+# Deferred (async) execution for resumable functions
+dtctl exec function <app-id>/<function-name> --defer
+
+# Ad-hoc JavaScript execution (no app deployment)
+dtctl exec function --code 'export default async function() { return "hello" }'
+dtctl exec function -f script.js --payload '{"input":"data"}'  # -f - reads code from stdin
 # dtctl describe deferred-execution <execution-id> # Execution details
 
 # Function Executor (ad-hoc code execution)
@@ -1868,10 +1871,11 @@ This flag is composable with any output format (`-o json`, `-o yaml`, `-o table`
 Live Debugger follows the standard verb-noun grammar and avoids introducing a separate command tree:
 
 ```bash
-dtctl update breakpoint --filters key:value[,key:value...]     # configure workspace filters
+dtctl create breakpoint File.java:line --filters key:value     # set workspace filters + create a breakpoint in one step
 dtctl create breakpoint File.java:line                         # create breakpoint
+dtctl update breakpoint --filters key:value[,key:value...]     # configure workspace filters
 dtctl get breakpoints                                          # list breakpoints
-dtctl describe <breakpoint-id|filename:line>                   # describe breakpoint rollout/status
+dtctl describe breakpoint <breakpoint-id|filename:line>                   # describe breakpoint rollout/status
 dtctl update breakpoint <id|filename:line> --condition "..."   # update condition
 dtctl update breakpoint <id|filename:line> --enabled true|false # enable/disable
 dtctl delete breakpoint <id|filename:line|--all>               # delete breakpoints
@@ -1882,6 +1886,7 @@ dtctl delete breakpoint <id|filename:line|--all>               # delete breakpoi
 Design notes:
 - `dtctl describe` keeps existing resource-subcommand behavior; breakpoint describe is only routed for breakpoint-like identifiers.
 - Mutating operations (`update` filter update, `create`, `update`, `delete`) must run safety checks, including in dry-run mode.
+- `--filters` is optional on `create`. Filters are workspace-scoped and sticky: once set (via `update breakpoint --filters` or `create breakpoint ... --filters`), they persist for subsequent breakpoints until changed. Because a single filter set applies to the whole workspace, changing the filters re-scopes all existing breakpoints (not just new ones); `create`/`update` count the active breakpoints affected and prompt for confirmation before applying the change, bypassable with `--yes` (`-y`) and skipped in non-interactive contexts (`--plain`/agent mode). When `--filters` is supplied on `create`, the workspace filters are updated first, then the breakpoint is created; otherwise `create` requires that workspace filters were already configured.
 
 ## Examples
 

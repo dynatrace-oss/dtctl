@@ -182,7 +182,7 @@ dtctl create azure connection \
   --clientSecret "$CLIENT_SECRET"
 ```
 
-> **Security tip:** `$CLIENT_SECRET` is a shell variable captured in Step 2 — it doesn’t touch bash history or disk, but the expanded value can still be visible in the `dtctl` process arguments while the command runs (avoid shared machines / process-argument logging).
+> **Security tip:** `$CLIENT_SECRET` is a shell variable captured in [Step 2](#step-2-create-the-service-principal-and-assign-reader-role-1) — it doesn’t touch bash history or disk, but the expanded value can still be visible in the `dtctl` process arguments while the command runs (avoid shared machines / process-argument logging).
 
 ### Create a Monitoring Configuration
 

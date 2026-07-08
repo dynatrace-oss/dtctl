@@ -11,8 +11,42 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
 )
+
+// TestEveryResourceHasScopeMapping fails the build when a new resource is added
+// to the command tree without either a canonical auth.ResourceScopes entry or
+// an explicit local-only classification. This keeps the scope catalog complete:
+// a new platform resource cannot ship with empty required_scopes by accident.
+func TestEveryResourceHasScopeMapping(t *testing.T) {
+	listing := commands.Build(rootCmd)
+
+	check := func(resource string) {
+		// "query" is a DQL pseudo-resource (verify/wait): its scopes are carried
+		// at the verb level (RequiredScopes), not in the resource table.
+		if resource == "query" {
+			return
+		}
+		if auth.HasResourceScopes(resource) || auth.IsLocalResource(resource) {
+			return
+		}
+		t.Errorf("resource %q has no auth.ResourceScopes entry and is not marked local; "+
+			"add it to ResourceScopes (or localResources) in pkg/auth/resource_scopes.go", resource)
+	}
+
+	for _, verb := range listing.Verbs {
+		for _, r := range verb.Resources {
+			check(r)
+		}
+		for subName, sub := range verb.Subcommands {
+			check(subName)
+			for _, r := range sub.Resources {
+				check(r)
+			}
+		}
+	}
+}
 
 func TestCommandsCmd_OutputsValidJSON(t *testing.T) {
 	listing := commands.Build(rootCmd)
@@ -38,7 +72,7 @@ func TestCommandsCmd_AllVerbsPresent(t *testing.T) {
 	expectedVerbs := []string{
 		"get", "describe", "apply", "create", "edit", "delete",
 		"exec", "diff", "query", "wait", "doctor", "history",
-		"restore", "share", "unshare", "logs", "ctx", "skills",
+		"restore", "share", "unshare", "logs", "ctx", "skills", "download",
 	}
 
 	for _, verb := range expectedVerbs {
@@ -72,7 +106,7 @@ func TestCommandsCmd_MutatingVerbsCorrect(t *testing.T) {
 
 	readOnlyVerbs := []string{
 		"get", "describe", "diff", "query", "wait", "doctor",
-		"history", "logs", "ctx", "find", "verify", "open",
+		"history", "logs", "ctx", "find", "verify", "open", "download",
 		"skills",
 	}
 
@@ -456,14 +490,14 @@ func TestCommandsCmd_NewBriefDoesNotMutateOriginal(t *testing.T) {
 	require.Equal(t, origDesc, listing.Description)
 	require.Len(t, listing.GlobalFlags, origGlobalFlagCount)
 
-	// Brief should have stripped fields
+	// Brief should have stripped verbose fields
 	require.Empty(t, brief.Description)
 	require.Nil(t, brief.GlobalFlags)
 	require.Nil(t, brief.TimeFormats)
-	require.Nil(t, brief.Patterns)
-	require.Nil(t, brief.Antipatterns)
 
-	// But should preserve structure
+	// But should preserve structure and agent grounding (patterns/antipatterns)
+	require.Equal(t, listing.Patterns, brief.Patterns)
+	require.Equal(t, listing.Antipatterns, brief.Antipatterns)
 	require.Len(t, brief.Verbs, origVerbCount)
 	require.NotNil(t, brief.Aliases)
 }
@@ -559,7 +593,7 @@ func TestAllCommandsHaveHelpText(t *testing.T) {
 func TestParentVerbsHaveExamples(t *testing.T) {
 	parentVerbs := []string{
 		"get", "delete", "create", "edit", "exec",
-		"describe", "find", "update", "open", "doctor",
+		"describe", "find", "update", "open", "doctor", "download",
 		"skills",
 	}
 
