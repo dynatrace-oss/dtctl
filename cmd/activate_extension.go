@@ -56,7 +56,7 @@ Examples:
 			return err
 		}
 
-		output.PrintSuccess("Extension activated (202 Accepted — bundled assets deploy asynchronously)")
+		output.PrintSuccess("Extension activated (bundled assets deploy asynchronously)")
 		output.PrintInfo("  Name:    %s", result.ExtensionName)
 		output.PrintInfo("  Version: %s", result.ExtensionVersion)
 		return nil

@@ -94,8 +94,9 @@ var MutatingVerbs = map[string]string{
 	"unshare": "OperationUpdate",
 	"update":  "OperationUpdate",
 	"exec":    "OperationCreate", // semantically mutating (runs workflows, functions)
-	"enable":  "OperationUpdate", // PUTs updated monitoring/credential config to the tenant
-	"disable": "OperationUpdate", // PUTs updated monitoring config with enabled=false
+	"enable":   "OperationUpdate", // PUTs updated monitoring/credential config to the tenant
+	"disable":  "OperationUpdate", // PUTs updated monitoring config with enabled=false
+	"activate": "OperationUpdate", // POSTs version activation for extensions and similar resources
 }
 
 // ResourceAliases are the standard resource aliases built into dtctl.

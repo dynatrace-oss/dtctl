@@ -1131,7 +1131,7 @@ func TestUpload(t *testing.T) {
 			}
 
 			handler := NewHandler(c)
-			result, _, err := handler.Upload(tt.fileName, tt.zipData)
+			result, err := handler.Upload(tt.fileName, tt.zipData)
 
 			if tt.expectError {
 				if err == nil {

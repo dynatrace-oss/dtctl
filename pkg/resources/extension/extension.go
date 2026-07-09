@@ -267,14 +267,12 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 }
 
 // Upload uploads a custom extension zip file to the Dynatrace environment.
-// It returns the parsed extension version (may have empty fields for non-standard
-// responses), the raw response body bytes, and any error.
-func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, []byte, error) {
-	v, raw, err := h.sdk.Upload(context.Background(), fileName, zipData)
+func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, error) {
+	v, err := h.sdk.Upload(context.Background(), fileName, zipData)
 	if err != nil {
-		return nil, raw, err
+		return nil, err
 	}
-	return fromSDKExtensionVersion(v), raw, nil
+	return fromSDKExtensionVersion(v), nil
 }
 
 // InstallFromHub installs a Dynatrace Hub extension into the environment.

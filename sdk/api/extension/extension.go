@@ -526,35 +526,35 @@ func (h *Handler) UpdateMonitoringConfiguration(ctx context.Context, extensionNa
 // The fileName parameter is retained for API compatibility but is not used in the request;
 // the bundle is sent as a raw application/octet-stream body as required by the DT Platform
 // Extensions v2 API (multipart/form-data results in HTTP 415 Unsupported Media Type).
-func (h *Handler) Upload(ctx context.Context, fileName string, zipData []byte) (*ExtensionVersion, []byte, error) {
+func (h *Handler) Upload(ctx context.Context, fileName string, zipData []byte) (*ExtensionVersion, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", "application/octet-stream").
 		SetBody(zipData).
 		Post("/platform/extensions/v2/extensions")
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to upload extension: %w", err)
+		return nil, fmt.Errorf("failed to upload extension: %w", err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
 		var apiErr *httpclient.APIError
 		if errors.As(err, &apiErr) {
 			switch apiErr.StatusCode {
 			case http.StatusBadRequest:
-				return nil, nil, fmt.Errorf("invalid extension package: %w", err)
+				return nil, fmt.Errorf("invalid extension package: %w", err)
 			case http.StatusForbidden:
-				return nil, nil, fmt.Errorf("access denied: insufficient permissions to upload extensions")
+				return nil, fmt.Errorf("access denied: insufficient permissions to upload extensions")
 			case http.StatusConflict:
-				return nil, nil, fmt.Errorf("extension version already exists: %w", err)
+				return nil, fmt.Errorf("extension version already exists: %w", err)
 			}
 		}
-		return nil, nil, fmt.Errorf("failed to upload extension: %w", err)
+		return nil, fmt.Errorf("failed to upload extension: %w", err)
 	}
 
 	rawBody := resp.Body()
 	var result ExtensionVersion
 	if err := json.Unmarshal(rawBody, &result); err != nil {
-		return nil, rawBody, fmt.Errorf("upload extension: parse response: %w", err)
+		return nil, fmt.Errorf("upload extension: parse response: %w (body: %.512s)", err, rawBody)
 	}
-	return &result, rawBody, nil
+	return &result, nil
 }
 
 // InstallFromHub installs a Dynatrace Hub extension into the environment using the
