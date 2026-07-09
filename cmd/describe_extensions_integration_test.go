@@ -24,9 +24,12 @@ func describeExtensionMux() *http.ServeMux {
 	// Extension with feature sets and metric metadata.
 	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.with-fs", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"items":      []map[string]any{{"version": "1.2.3", "extensionName": "com.example.with-fs", "active": true}},
+			"items":      []map[string]any{{"version": "1.2.3", "extensionName": "com.example.with-fs"}},
 			"totalCount": 1,
 		})
+	})
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.with-fs/environmentConfiguration", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.2.3"})
 	})
 	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.with-fs/1.2.3", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{
@@ -48,9 +51,12 @@ func describeExtensionMux() *http.ServeMux {
 	// Extension with no feature sets at all.
 	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.no-fs", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"items":      []map[string]any{{"version": "1.0.0", "extensionName": "com.example.no-fs", "active": true}},
+			"items":      []map[string]any{{"version": "1.0.0", "extensionName": "com.example.no-fs"}},
 			"totalCount": 1,
 		})
+	})
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.no-fs/environmentConfiguration", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.0.0"})
 	})
 	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.no-fs/1.0.0", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"extensionName": "com.example.no-fs", "version": "1.0.0"}`))
