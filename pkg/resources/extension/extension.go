@@ -3,6 +3,7 @@ package extension
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkext "github.com/dynatrace-oss/dtctl/sdk/api/extension"
@@ -13,6 +14,7 @@ import (
 type Extension struct {
 	ExtensionName string `json:"extensionName" table:"NAME"`
 	Version       string `json:"version,omitempty" table:"VERSION"`
+	ActiveVersion string `json:"activeVersion,omitempty" table:"ACTIVE VERSION"`
 }
 
 // fromSDKExtension converts an SDK Extension to the CLI Extension.
@@ -207,7 +209,25 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 	if err != nil {
 		return nil, err
 	}
-	return fromSDKExtensionList(l), nil
+	result := fromSDKExtensionList(l)
+
+	// Fetch the active version for each extension concurrently.
+	// Errors (e.g. 404 when no environment configuration exists) are silently
+	// ignored so that a missing or inaccessible config does not prevent the list.
+	var wg sync.WaitGroup
+	for i := range result.Items {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			activeVersion, err := h.sdk.GetActiveVersion(context.Background(), result.Items[idx].ExtensionName)
+			if err == nil && activeVersion != "" {
+				result.Items[idx].ActiveVersion = activeVersion
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return result, nil
 }
 
 // Get gets a specific extension by name (returns all versions)

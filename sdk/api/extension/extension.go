@@ -305,6 +305,13 @@ func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVers
 	}, nil
 }
 
+// GetActiveVersion returns the currently active version of an extension
+// by querying the environment configuration endpoint. Returns an empty string
+// if the extension has no active version (HTTP 404) or the request fails.
+func (h *Handler) GetActiveVersion(ctx context.Context, extensionName string) (string, error) {
+	return h.getActiveExtensionVersion(ctx, extensionName)
+}
+
 // getActiveExtensionVersion returns the currently active version of an extension
 // by querying the environment configuration endpoint. Returns an empty string if
 // the extension has no active version or if the request fails.
