@@ -228,12 +228,13 @@ func TestList(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	tests := []struct {
-		name          string
-		extensionName string
-		statusCode    int
-		response      ExtensionVersionList
-		expectError   bool
-		errorContains string
+		name              string
+		extensionName     string
+		statusCode        int
+		response          ExtensionVersionList
+		activeVersion     string
+		expectError       bool
+		errorContains     string
 	}{
 		{
 			name:          "successful get",
@@ -246,6 +247,7 @@ func TestGet(t *testing.T) {
 					{Version: "1.2.2", ExtensionName: "com.dynatrace.extension.host-monitoring"},
 				},
 			},
+			activeVersion: "1.2.3",
 		},
 		{
 			name:          "not found",
@@ -266,17 +268,27 @@ func TestGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName
-				if r.URL.Path != expectedPath {
-					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
-					w.WriteHeader(http.StatusNotFound)
-					return
-				}
+				versionListPath := "/platform/extensions/v2/extensions/" + tt.extensionName
+				envConfigPath := versionListPath + "/environmentConfiguration"
 
 				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(tt.statusCode)
-				if tt.statusCode == 200 {
-					json.NewEncoder(w).Encode(tt.response)
+
+				switch r.URL.Path {
+				case envConfigPath:
+					if tt.activeVersion != "" {
+						w.WriteHeader(http.StatusOK)
+						json.NewEncoder(w).Encode(map[string]string{"version": tt.activeVersion})
+					} else {
+						w.WriteHeader(http.StatusNotFound)
+					}
+				case versionListPath:
+					w.WriteHeader(tt.statusCode)
+					if tt.statusCode == 200 {
+						json.NewEncoder(w).Encode(tt.response)
+					}
+				default:
+					t.Errorf("unexpected path: %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
 				}
 			}))
 			defer server.Close()
@@ -305,6 +317,21 @@ func TestGet(t *testing.T) {
 
 			if len(result.Items) != len(tt.response.Items) {
 				t.Errorf("expected %d versions, got %d", len(tt.response.Items), len(result.Items))
+			}
+
+			if tt.activeVersion != "" {
+				found := false
+				for _, v := range result.Items {
+					if v.Version == tt.activeVersion && v.Active {
+						found = true
+					}
+					if v.Version != tt.activeVersion && v.Active {
+						t.Errorf("version %q should not be active", v.Version)
+					}
+				}
+				if !found {
+					t.Errorf("expected version %q to be marked active", tt.activeVersion)
+				}
 			}
 		})
 	}

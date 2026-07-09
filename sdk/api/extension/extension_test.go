@@ -70,13 +70,18 @@ func TestGet(t *testing.T) {
 		}
 		resp := ExtensionVersionList{
 			Items: []ExtensionVersion{
-				{Version: "1.0.0", ExtensionName: "com.dynatrace.extension.host", Active: true},
+				{Version: "1.0.0", ExtensionName: "com.dynatrace.extension.host"},
 				{Version: "0.9.0", ExtensionName: "com.dynatrace.extension.host"},
 			},
 			TotalCount: 2,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
+	})
+	// Environment configuration endpoint returns the active version.
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/environmentConfiguration", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"version":"1.0.0"}`)
 	})
 
 	h := NewHandler(newTestClient(t, mux))
@@ -89,6 +94,41 @@ func TestGet(t *testing.T) {
 	}
 	if !result.Items[0].Active {
 		t.Error("expected first version to be active")
+	}
+	if result.Items[1].Active {
+		t.Error("expected second version to not be active")
+	}
+}
+
+func TestGet_NoActiveVersion(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host", func(w http.ResponseWriter, r *http.Request) {
+		resp := ExtensionVersionList{
+			Items: []ExtensionVersion{
+				{Version: "1.0.0", ExtensionName: "com.dynatrace.extension.host"},
+			},
+			TotalCount: 1,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+	// Environment configuration returns 404 (no active version configured).
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/environmentConfiguration", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, `{"error":{"code":404,"message":"not found"}}`)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.Get(context.Background(), "com.dynatrace.extension.host")
+	if err != nil {
+		t.Fatalf("Get() error: %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Errorf("got %d versions, want 1", len(result.Items))
+	}
+	// No active version should be set when environment config returns 404.
+	if result.Items[0].Active {
+		t.Error("expected no active version when environment config is missing")
 	}
 }
 

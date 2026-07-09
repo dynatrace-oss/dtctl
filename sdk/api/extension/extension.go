@@ -285,10 +285,44 @@ func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVers
 		nextPageKey = result.NextPageKey
 	}
 
+	// Determine the active version from the environment configuration and mark it.
+	// The version list endpoint does not include the active flag; the environment
+	// configuration endpoint returns which version is currently active.
+	// Errors are silently ignored so that a missing or inaccessible environment
+	// configuration does not prevent the version list from being returned.
+	if envCfg, err := h.getActiveExtensionVersion(ctx, extensionName); err == nil && envCfg != "" {
+		for i := range allVersions {
+			if allVersions[i].Version == envCfg {
+				allVersions[i].Active = true
+				break
+			}
+		}
+	}
+
 	return &ExtensionVersionList{
 		Items:      allVersions,
 		TotalCount: totalCount,
 	}, nil
+}
+
+// getActiveExtensionVersion returns the currently active version of an extension
+// by querying the environment configuration endpoint. Returns an empty string if
+// the extension has no active version or if the request fails.
+func (h *Handler) getActiveExtensionVersion(ctx context.Context, extensionName string) (string, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environmentConfiguration", url.PathEscape(extensionName)))
+	if err != nil {
+		return "", err
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return "", err
+	}
+
+	var cfg ExtensionEnvironmentConfig
+	if err := json.Unmarshal(resp.Body(), &cfg); err != nil {
+		return "", err
+	}
+	return cfg.Version, nil
 }
 
 // GetVersion gets details for a specific extension version
