@@ -1111,8 +1111,8 @@ func TestUpload(t *testing.T) {
 					return
 				}
 				ct := r.Header.Get("Content-Type")
-				if !strings.HasPrefix(ct, "multipart/form-data") {
-					t.Errorf("expected multipart/form-data content type, got %s", ct)
+				if ct != "application/octet-stream" {
+					t.Errorf("expected application/octet-stream content type, got %s", ct)
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
