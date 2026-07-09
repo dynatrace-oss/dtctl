@@ -83,7 +83,7 @@ func runUploadExtension(file string) error {
 	}
 
 	handler := extension.NewHandler(c)
-	result, err := handler.Upload(filepath.Base(file), zipData)
+	result, _, err := handler.Upload(filepath.Base(file), zipData)
 	if err != nil {
 		return err
 	}

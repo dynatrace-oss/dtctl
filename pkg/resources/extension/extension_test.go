@@ -1111,8 +1111,8 @@ func TestUpload(t *testing.T) {
 					return
 				}
 				ct := r.Header.Get("Content-Type")
-				if !strings.HasPrefix(ct, "multipart/form-data") {
-					t.Errorf("expected multipart/form-data content type, got %s", ct)
+				if ct != "application/octet-stream" {
+					t.Errorf("expected application/octet-stream content type, got %s", ct)
 					w.WriteHeader(http.StatusBadRequest)
 					return
 				}
@@ -1131,7 +1131,7 @@ func TestUpload(t *testing.T) {
 			}
 
 			handler := NewHandler(c)
-			result, err := handler.Upload(tt.fileName, tt.zipData)
+			result, _, err := handler.Upload(tt.fileName, tt.zipData)
 
 			if tt.expectError {
 				if err == nil {
@@ -1484,6 +1484,111 @@ func TestGetActiveGateGroups(t *testing.T) {
 				if result.Items[0].AvailableActiveGates != tt.response.Items[0].AvailableActiveGates {
 					t.Errorf("expected AvailableActiveGates %d, got %d", tt.response.Items[0].AvailableActiveGates, result.Items[0].AvailableActiveGates)
 				}
+			}
+		})
+	}
+}
+
+func TestSetEnvironmentConfig(t *testing.T) {
+	tests := []struct {
+		name          string
+		extensionName string
+		version       string
+		statusCode    int
+		response      ActivationResponse
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:          "successful activation",
+			extensionName: "custom:my-extension",
+			version:       "1.0.2",
+			statusCode:    202,
+			response: ActivationResponse{
+				ExtensionName:    "custom:my-extension",
+				ExtensionVersion: "1.0.2",
+			},
+		},
+		{
+			name:          "extension not found",
+			extensionName: "custom:missing-extension",
+			version:       "1.0.0",
+			statusCode:    404,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:          "access denied",
+			extensionName: "custom:forbidden-extension",
+			version:       "1.0.0",
+			statusCode:    403,
+			expectError:   true,
+			errorContains: "access denied",
+		},
+		{
+			name:          "version already active",
+			extensionName: "custom:my-extension",
+			version:       "1.0.2",
+			statusCode:    409,
+			expectError:   true,
+			errorContains: "already active",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := "/platform/extensions/v2/extensions/" + url.PathEscape(tt.extensionName)
+				if r.URL.Path != expectedPath {
+					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("unexpected method: %s (expected POST)", r.Method)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				var body map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("failed to decode request body: %v", err)
+				}
+				if body["version"] != tt.version {
+					t.Errorf("unexpected version in body: %q (expected %q)", body["version"], tt.version)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				if tt.statusCode == 202 {
+					json.NewEncoder(w).Encode(tt.response)
+				}
+			}))
+			defer server.Close()
+
+			c, err := client.New(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+
+			handler := NewHandler(c)
+			result, err := handler.SetEnvironmentConfig(tt.extensionName, tt.version)
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got: %v", tt.errorContains, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.ExtensionName != tt.response.ExtensionName {
+				t.Errorf("expected ExtensionName %q, got %q", tt.response.ExtensionName, result.ExtensionName)
+			}
+			if result.ExtensionVersion != tt.response.ExtensionVersion {
+				t.Errorf("expected ExtensionVersion %q, got %q", tt.response.ExtensionVersion, result.ExtensionVersion)
 			}
 		})
 	}

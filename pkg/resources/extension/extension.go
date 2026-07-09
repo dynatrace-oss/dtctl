@@ -186,6 +186,7 @@ type (
 	ExtensionEnvironmentConfig    = sdkext.ExtensionEnvironmentConfig
 	ExtensionStatus               = sdkext.ExtensionStatus
 	ActiveGateEntry               = sdkext.ActiveGateEntry
+	ActivationResponse            = sdkext.ActivationResponse
 )
 
 // Handler handles Extensions 2.0 resources.
@@ -266,12 +267,14 @@ func (h *Handler) UpdateMonitoringConfiguration(extensionName, configID string, 
 }
 
 // Upload uploads a custom extension zip file to the Dynatrace environment.
-func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, error) {
-	v, err := h.sdk.Upload(context.Background(), fileName, zipData)
+// It returns the parsed extension version (may have empty fields for non-standard
+// responses), the raw response body bytes, and any error.
+func (h *Handler) Upload(fileName string, zipData []byte) (*ExtensionVersion, []byte, error) {
+	v, raw, err := h.sdk.Upload(context.Background(), fileName, zipData)
 	if err != nil {
-		return nil, err
+		return nil, raw, err
 	}
-	return fromSDKExtensionVersion(v), nil
+	return fromSDKExtensionVersion(v), raw, nil
 }
 
 // InstallFromHub installs a Dynatrace Hub extension into the environment.
@@ -297,6 +300,11 @@ func (h *Handler) GetMonitoringConfigurationSchema(extensionName, version string
 // Download downloads the extension zip package for a specific version.
 func (h *Handler) Download(extensionName, version string) ([]byte, error) {
 	return h.sdk.Download(context.Background(), extensionName, version)
+}
+
+// SetEnvironmentConfig activates a specific version of an extension environment-wide.
+func (h *Handler) SetEnvironmentConfig(extensionName, version string) (*ActivationResponse, error) {
+	return h.sdk.SetEnvironmentConfig(context.Background(), extensionName, version)
 }
 
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.

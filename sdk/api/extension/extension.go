@@ -1,12 +1,10 @@
 package extension
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -525,53 +523,38 @@ func (h *Handler) UpdateMonitoringConfiguration(ctx context.Context, extensionNa
 
 // Upload uploads a custom extension zip file to the Dynatrace environment.
 // The zipData should contain the raw bytes of the extension zip package.
-// The optional fileName is used as the multipart filename; if empty, "extension.zip" is used.
-func (h *Handler) Upload(ctx context.Context, fileName string, zipData []byte) (*ExtensionVersion, error) {
-	if fileName == "" {
-		fileName = "extension.zip"
-	}
-
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-
-	part, err := writer.CreateFormFile("file", fileName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create multipart field: %w", err)
-	}
-	if _, err := part.Write(zipData); err != nil {
-		return nil, fmt.Errorf("failed to write extension data: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
-	}
-
+// The fileName parameter is retained for API compatibility but is not used in the request;
+// the bundle is sent as a raw application/octet-stream body as required by the DT Platform
+// Extensions v2 API (multipart/form-data results in HTTP 415 Unsupported Media Type).
+func (h *Handler) Upload(ctx context.Context, fileName string, zipData []byte) (*ExtensionVersion, []byte, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		SetHeader("Content-Type", writer.FormDataContentType()).
-		SetBody(body.Bytes()).
+		SetHeader("Content-Type", "application/octet-stream").
+		SetBody(zipData).
 		Post("/platform/extensions/v2/extensions")
 	if err != nil {
-		return nil, fmt.Errorf("failed to upload extension: %w", err)
+		return nil, nil, fmt.Errorf("failed to upload extension: %w", err)
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
 		var apiErr *httpclient.APIError
 		if errors.As(err, &apiErr) {
 			switch apiErr.StatusCode {
 			case http.StatusBadRequest:
-				return nil, fmt.Errorf("invalid extension package: %w", err)
+				return nil, nil, fmt.Errorf("invalid extension package: %w", err)
 			case http.StatusForbidden:
-				return nil, fmt.Errorf("access denied: insufficient permissions to upload extensions")
+				return nil, nil, fmt.Errorf("access denied: insufficient permissions to upload extensions")
 			case http.StatusConflict:
-				return nil, fmt.Errorf("extension version already exists: %w", err)
+				return nil, nil, fmt.Errorf("extension version already exists: %w", err)
 			}
 		}
-		return nil, fmt.Errorf("failed to upload extension: %w", err)
+		return nil, nil, fmt.Errorf("failed to upload extension: %w", err)
 	}
 
+	rawBody := resp.Body()
 	var result ExtensionVersion
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("upload extension: parse response: %w", err)
+	if err := json.Unmarshal(rawBody, &result); err != nil {
+		return nil, rawBody, fmt.Errorf("upload extension: parse response: %w", err)
 	}
-	return &result, nil
+	return &result, rawBody, nil
 }
 
 // InstallFromHub installs a Dynatrace Hub extension into the environment using the
@@ -684,6 +667,50 @@ func (h *Handler) GetMonitoringConfigurationSchema(ctx context.Context, extensio
 		return nil, fmt.Errorf("failed to get monitoring configuration schema: %w", err)
 	}
 	return json.RawMessage(resp.Body()), nil
+}
+
+// ActivationResponse is the response body from activating an extension version.
+type ActivationResponse struct {
+	ExtensionName    string `json:"extensionName"`
+	ExtensionVersion string `json:"extensionVersion"`
+}
+
+// SetEnvironmentConfig activates a specific version of a custom extension.
+// The DT Platform Extensions v2 API activates a custom extension via
+// POST /platform/extensions/v2/extensions/{name} with body {"version":"x.y.z"}.
+// The server returns 202 Accepted while the bundled assets (e.g. OpenPipeline
+// configs) are deployed asynchronously.
+func (h *Handler) SetEnvironmentConfig(ctx context.Context, extensionName, version string) (*ActivationResponse, error) {
+	body := map[string]string{"version": version}
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to activate extension: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, fmt.Errorf("extension %q not found", extensionName)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			case http.StatusBadRequest:
+				return nil, fmt.Errorf("invalid request activating extension %q version %q: %w", extensionName, version, err)
+			case http.StatusConflict:
+				return nil, fmt.Errorf("extension %q version %q is already active", extensionName, version)
+			}
+		}
+		return nil, fmt.Errorf("failed to activate extension: %w", err)
+	}
+
+	var result ActivationResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("activate extension: parse response: %w", err)
+	}
+	return &result, nil
 }
 
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
