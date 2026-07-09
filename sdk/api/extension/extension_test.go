@@ -79,7 +79,7 @@ func TestGet(t *testing.T) {
 		json.NewEncoder(w).Encode(resp)
 	})
 	// Environment configuration endpoint returns the active version.
-	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/environmentConfiguration", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/environment-configuration", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"version":"1.0.0"}`)
 	})
@@ -113,7 +113,7 @@ func TestGet_NoActiveVersion(t *testing.T) {
 		json.NewEncoder(w).Encode(resp)
 	})
 	// Environment configuration returns 404 (no active version configured).
-	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/environmentConfiguration", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/environment-configuration", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, `{"error":{"code":404,"message":"not found"}}`)
 	})

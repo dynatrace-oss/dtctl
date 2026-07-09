@@ -160,7 +160,7 @@ func TestList(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Environment configuration requests return 404 (no active version) by default.
 				// This allows the concurrent active version fetch in List() to silently skip.
-				if strings.HasSuffix(r.URL.Path, "/environmentConfiguration") {
+				if strings.HasSuffix(r.URL.Path, "/environment-configuration") {
 					w.WriteHeader(http.StatusNotFound)
 					return
 				}
@@ -248,14 +248,14 @@ func TestList_ActiveVersionEnrichment(t *testing.T) {
 
 		// Handle environment configuration requests
 		for extName, activeVer := range activeVersions {
-			envCfgPath := "/platform/extensions/v2/extensions/" + url.PathEscape(extName) + "/environmentConfiguration"
+			envCfgPath := "/platform/extensions/v2/extensions/" + url.PathEscape(extName) + "/environment-configuration"
 			if r.URL.Path == envCfgPath {
 				json.NewEncoder(w).Encode(map[string]string{"version": activeVer})
 				return
 			}
 		}
 		// Unknown env config path: 404 (extension has no active version)
-		if strings.HasSuffix(r.URL.Path, "/environmentConfiguration") {
+		if strings.HasSuffix(r.URL.Path, "/environment-configuration") {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -304,13 +304,13 @@ func TestList_ActiveVersionEnrichment(t *testing.T) {
 
 func TestGet(t *testing.T) {
 	tests := []struct {
-		name              string
-		extensionName     string
-		statusCode        int
-		response          ExtensionVersionList
-		activeVersion     string
-		expectError       bool
-		errorContains     string
+		name          string
+		extensionName string
+		statusCode    int
+		response      ExtensionVersionList
+		activeVersion string
+		expectError   bool
+		errorContains string
 	}{
 		{
 			name:          "successful get",
@@ -345,7 +345,7 @@ func TestGet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				versionListPath := "/platform/extensions/v2/extensions/" + tt.extensionName
-				envConfigPath := versionListPath + "/environmentConfiguration"
+				envConfigPath := versionListPath + "/environment-configuration"
 
 				w.Header().Set("Content-Type", "application/json")
 
@@ -530,7 +530,7 @@ func TestGetEnvironmentConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/" + tt.version + "/environmentConfiguration"
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/" + tt.version + "/environment-configuration"
 				if r.URL.Path != expectedPath {
 					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
 					w.WriteHeader(http.StatusNotFound)

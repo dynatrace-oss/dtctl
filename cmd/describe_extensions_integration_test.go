@@ -28,7 +28,7 @@ func describeExtensionMux() *http.ServeMux {
 			"totalCount": 1,
 		})
 	})
-	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.with-fs/environmentConfiguration", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.with-fs/environment-configuration", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.2.3"})
 	})
 	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.with-fs/1.2.3", func(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,7 @@ func describeExtensionMux() *http.ServeMux {
 			"totalCount": 1,
 		})
 	})
-	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.no-fs/environmentConfiguration", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.no-fs/environment-configuration", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"version": "1.0.0"})
 	})
 	mux.HandleFunc("/platform/extensions/v2/extensions/com.example.no-fs/1.0.0", func(w http.ResponseWriter, r *http.Request) {

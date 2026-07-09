@@ -117,7 +117,7 @@ func TestListExtensionReleases(t *testing.T) {
 
 		// The releases endpoint returns items under the "releases" key.
 		resp := HubExtensionReleaseList{
-			Items:      []HubExtensionRelease{
+			Items: []HubExtensionRelease{
 				{Version: "2.0.0", ReleaseDate: "2024-01-01"},
 				{Version: "1.9.0", ReleaseDate: "2023-06-01"},
 			},

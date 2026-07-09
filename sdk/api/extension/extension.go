@@ -317,7 +317,7 @@ func (h *Handler) GetActiveVersion(ctx context.Context, extensionName string) (s
 // the extension has no active version or if the request fails.
 func (h *Handler) getActiveExtensionVersion(ctx context.Context, extensionName string) (string, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environmentConfiguration", url.PathEscape(extensionName)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environment-configuration", url.PathEscape(extensionName)))
 	if err != nil {
 		return "", err
 	}
@@ -363,7 +363,7 @@ func (h *Handler) GetVersion(ctx context.Context, extensionName, version string)
 // The version parameter is required by the Dynatrace Extensions 2.0 API.
 func (h *Handler) GetEnvironmentConfig(ctx context.Context, extensionName, version string) (*ExtensionEnvironmentConfig, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environmentConfiguration", url.PathEscape(extensionName), url.PathEscape(version)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environment-configuration", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
 	}
