@@ -107,6 +107,36 @@ func TestApplyProfile_GuardBlocksInvocation(t *testing.T) {
 	}
 }
 
+// TestApplyProfile_GuardWinsOverArgValidation verifies that masking a command
+// with an Args validator (or an unknown flag) still yields the ProfileError,
+// not Cobra's generic "accepts N arg(s)" / "unknown flag" error. Cobra validates
+// args and parses flags before RunE, so applyProfile must neutralize both on the
+// masked command for the guard to be the only observable outcome.
+func TestApplyProfile_GuardWinsOverArgValidation(t *testing.T) {
+	root := newTestTree()
+	// A masked command whose arg validator would otherwise fire before the guard.
+	del := &cobra.Command{Use: "delete", Args: cobra.ExactArgs(1), RunE: func(*cobra.Command, []string) error { return nil }}
+	root.AddCommand(del)
+
+	p := &config.Profile{Name: "query", Commands: []string{"query"}}
+	applyProfile(root, p)
+
+	// Wrong arg count *and* an unknown flag — both would pre-empt RunE if not
+	// neutralized. The profile block must still win.
+	root.SetArgs([]string{"delete", "--bogus"})
+	root.SilenceErrors = true
+	root.SilenceUsage = true
+
+	err := root.Execute()
+	var pe *ProfileError
+	if !errors.As(err, &pe) {
+		t.Fatalf("expected ProfileError to win over arg/flag validation, got %v", err)
+	}
+	if pe.Command != "delete" || pe.Profile != "query" {
+		t.Fatalf("unexpected ProfileError: %+v", pe)
+	}
+}
+
 func TestExtractContextOverride(t *testing.T) {
 	tests := []struct {
 		args []string
@@ -116,7 +146,8 @@ func TestExtractContextOverride(t *testing.T) {
 		{[]string{"--context", "prod", "query"}, "prod"},
 		{[]string{"--context=prod", "query"}, "prod"},
 		{[]string{"query", "--context", "staging"}, "staging"},
-		{[]string{"--context"}, ""}, // dangling flag, no value
+		{[]string{"--context"}, ""},                        // dangling flag, no value
+		{[]string{"query", "--", "--context", "prod"}, ""}, // after "--" it's positional
 	}
 	for _, tt := range tests {
 		if got := extractContextOverride(tt.args); got != tt.want {

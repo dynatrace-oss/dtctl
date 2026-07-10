@@ -366,13 +366,9 @@ func errorToDetail(err error) *output.ErrorDetail {
 	var profileErr *ProfileError
 	if errors.As(err, &profileErr) {
 		return &output.ErrorDetail{
-			Code: "profile_blocked",
-			Message: fmt.Sprintf("command %q is not available in profile %q",
-				profileErr.Command, profileErr.Profile),
-			Suggestions: []string{
-				"run 'dtctl commands' to see the available command set",
-				"unset " + config.ProfileEnvVar + " to use the full CLI",
-			},
+			Code:        "profile_blocked",
+			Message:     profileErr.Headline(),
+			Suggestions: profileErr.Suggestions(),
 		}
 	}
 
