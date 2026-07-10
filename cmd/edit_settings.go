@@ -10,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
@@ -35,12 +37,24 @@ Examples:
 
   # Edit a settings object in JSON
   dtctl edit setting vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ... --format=json
+
+  # Validate the edited value against the API without saving
+  # (the editor still opens; changes are validated but not persisted)
+  dtctl edit setting vu9U3hXa3q0AAAABABRidWlsdGluOnJ1bS53ZWIubmFtZQ... --validate-only
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identifier := args[0]
+		validateOnly, _ := cmd.Flags().GetBool("validate-only")
 
-		cfg, c, err := SetupWithSafety(safety.OperationUpdate)
+		var cfg *config.Config
+		var c *client.Client
+		var err error
+		if validateOnly {
+			cfg, c, err = SetupClient()
+		} else {
+			cfg, c, err = SetupWithSafety(safety.OperationUpdate)
+		}
 		if err != nil {
 			return err
 		}
@@ -140,6 +154,14 @@ Examples:
 			return fmt.Errorf("failed to parse edited JSON: %w", err)
 		}
 
+		if validateOnly {
+			if err := handler.ValidateUpdate(identifier, value); err != nil {
+				return fmt.Errorf("validation failed: %w", err)
+			}
+			output.PrintSuccess("Validation passed")
+			return nil
+		}
+
 		// Update the settings object
 		result, err := handler.Update(identifier, value)
 		if err != nil {
@@ -153,4 +175,5 @@ Examples:
 
 func init() {
 	editSettingCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
+	editSettingCmd.Flags().Bool("validate-only", false, "validate the edited value against the API without saving")
 }

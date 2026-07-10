@@ -2098,6 +2098,12 @@ dtctl create settings -f pipeline.yaml \
   --schema builtin:openpipeline.logs.pipelines \
   --scope environment \
   --dry-run
+
+# Validate against the API without creating
+dtctl create settings -f pipeline.yaml \
+  --schema builtin:openpipeline.logs.pipelines \
+  --scope environment \
+  --validate-only
 ```
 
 **Example pipeline file** (`log-pipeline.yaml`):
@@ -2148,6 +2154,21 @@ dtctl update settings aaaaaaaa-bbbb-cccc-dddd-000000000001 \
 
 **Note:** Updates use optimistic locking automatically - the current version is fetched before updating to prevent conflicts.
 
+### Edit Settings Objects
+
+Open a settings object in your editor and save changes interactively:
+
+```bash
+# Edit a settings object (opens in $EDITOR, defaults to vim)
+dtctl edit setting aaaaaaaa-bbbb-cccc-dddd-000000000001
+
+# Edit in JSON format
+dtctl edit setting aaaaaaaa-bbbb-cccc-dddd-000000000001 --format=json
+
+# Validate the edited value against the API without saving
+dtctl edit setting aaaaaaaa-bbbb-cccc-dddd-000000000001 --validate-only
+```
+
 ### Delete Settings Objects
 
 Remove settings objects:
@@ -2158,6 +2179,9 @@ dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001
 
 # Delete without confirmation
 dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001 -y
+
+# Validate deletion against the API without deleting
+dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001 --validate-only
 ```
 
 ### OpenPipeline Configuration Workflow
