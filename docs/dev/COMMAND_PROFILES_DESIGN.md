@@ -7,9 +7,10 @@
 ## Overview
 
 Command profiles let an operator restrict *which commands dtctl exposes* to a
-named subset. A profile shapes every discovery surface at once -- `--help`, the
-`dtctl commands` / `commands howto` catalog, and shell completion -- and hard-blocks
-invocation of any command outside the set.
+named subset. A profile is a **default-deny allowlist** of commands. It shapes
+every discovery surface at once -- `--help`, the `dtctl commands` / `commands howto`
+catalog, and shell completion -- and hard-blocks invocation of any command outside
+the set.
 
 The motivating use case is agentic products. dtctl is frequently embedded in AI
 agents where only a slice of the CLI is relevant: an investigation agent may need
@@ -31,21 +32,27 @@ many surfaces.
    one fails with a clear, signposted error.
 5. **Zero-flag activation** -- An embedding product can pin a profile via context
    or environment so agents inherit it without passing anything.
-6. **Compose with safety levels** -- Profiles govern the *surface* axis; safety
-   levels govern the *permission* axis. They stack cleanly and never reimplement
-   each other.
+6. **Stay orthogonal to safety levels** -- Profiles govern the *surface* axis; safety
+   levels govern the *permission* axis. The two are separate knobs, composed on a
+   context. Neither reimplements the other.
+7. **Default-deny** -- A profile lists what is *allowed*; everything else is masked.
+   Adding a new command to dtctl never silently widens an existing profile's surface.
 
 ## Non-Goals
 
 - **A security boundary.** Like [safety levels](context-safety-levels.md), profiles
   are a client-side convenience, not a security control. A determined caller can
-  set `--profile full` or edit config. For real restriction, scope the API token.
+  unset `DTCTL_PROFILE` or edit config. For real restriction, scope the API token.
 - **Per-flag filtering.** Profiles operate at command granularity, not flag
   granularity. Hiding individual flags of a visible command is out of scope.
 - **Dynamic/remote profiles.** Profiles are defined locally in config. No
   server-delivered profile definitions.
-- **Reimplementing read/write filtering.** A profile that wants "no writes"
-  delegates to a safety level (see below), it does not enumerate mutating commands.
+- **Read/write filtering.** A profile does not know or care whether a command
+  mutates. "No writes" is a *safety level*, set independently on the context. A
+  profile never enumerates mutating commands.
+- **Denylists.** There is no `exclude`. Restricting the surface is always expressed
+  as an allowlist (see [Design decisions](#design-decisions-why-so-small)).
+- **Profile inheritance.** No `extends`. Profiles are flat, standalone lists.
 
 ---
 
@@ -65,13 +72,18 @@ constraint of this document.
 | Effect on help/catalog | **None** -- a `readonly` context still lists `delete workflows`; it blocks at run time | Removes the command from help / `commands` / completion entirely |
 
 The two are **filters in series**: a profile decides what is on the menu, then the
-safety level polices what the chosen command is allowed to do. Composed, they
-express things like "this agent only sees `query`/`analyzers` **and** can never
-mutate."
+safety level polices what the chosen command is allowed to do. You compose them by
+setting *both* on the same context -- e.g. a `prod-agent` context bound to the
+`query` profile **and** the `readonly` safety level, which expresses "this agent
+only sees `query`/`analyzers` **and** can never mutate."
+
+Crucially, a profile has **no `safety-level` field**. It does not pin, default, or
+otherwise touch the permission axis. This keeps the two concepts fully independent
+and avoids the coupling that would otherwise blur them.
 
 ### The overlap trap and how we avoid it
 
-The only place these axes can collide is the read/write dimension. If a profile
+The only place these axes could collide is the read/write dimension. If a profile
 called `readonly` worked by *hiding every mutating command*, we would have two
 "readonly" knobs with different semantics -- the profile version being a weaker,
 non-ownership-aware reimplementation of the safety level. Users would then hit
@@ -84,10 +96,9 @@ confusing contradictions:
 
 **Rules that keep the axes clean:**
 
-1. **Profiles never reimplement read/write.** When a profile wants "no writes," it
-   *pins a safety level* (`safety-level: readonly`), keeping one source of truth
-   for the permission axis.
-2. **Profile preset names are topical, never permission words.** Ship `query`,
+1. **Profiles never encode read/write intent.** "No writes" is a safety level, set
+   separately on the context. A profile is only ever a topical command allowlist.
+2. **Profile names are topical, never permission words.** Ship `query`,
    `investigate`, `full` -- never a profile named `readonly`. The word `readonly`
    belongs to safety levels.
 3. **Error messages are distinct and self-explaining.** A profile block says the
@@ -105,60 +116,65 @@ One sentence carries the whole mental model:
 
 ### Defining profiles
 
-Profiles live in the config file under a top-level `profiles` map. Each profile is
-an include/exclude selector over the command tree, optionally pinning a safety
-level.
+Profiles live in the config file under a top-level `profiles` map. A profile is
+just a `description` and a flat `commands` allowlist over the command tree.
 
 ```yaml
 profiles:
-  query-only:
-    description: DQL + analysis for read-only investigation agents
-    include: [query, analyzers, "describe *"]
-    exclude: [auth, config, apply]
-    safety-level: readonly       # delegates the permission axis; does not duplicate it
+  query:
+    description: DQL + analysis for investigation agents
+    commands: [query, analyzers, describe]
 
   investigate:
-    extends: query-only          # inherit include/exclude/safety, then adjust
-    include-also: [get problems, get slo]
+    description: Read-only incident triage
+    commands: [query, analyzers, describe, get problems, get slo, get logs]
 ```
 
 Selection semantics:
 
-- **`include`** -- verbs (`query`), resources (`workflows`), full paths
-  (`get workflows`), or globs (`describe *`). Omitting `include` means "everything".
-- **`exclude`** -- same syntax; **exclude wins over include**.
-- **`extends`** -- inherit another profile's fields as the base.
-- **`safety-level`** -- optional; pins the safety level while the profile is active,
-  unless the context/flag specifies one explicitly (see precedence below).
+- **`commands`** -- a list of command-path *prefixes*: verbs (`query`), resources
+  (`get problems`), or full paths (`get workflows definition`). An entry matches a
+  command if it equals or is a prefix of that command's path, so listing a parent
+  (`describe`) includes its whole subtree. No globs -- prefix matching already
+  covers subtrees.
+- **Default-deny** -- any command not matched by `commands` (and not in the
+  always-available set below) is masked. There is no `exclude`.
+
+To restrict the surface, you list what the profile *allows*. There is deliberately
+no way to say "everything except X" -- see [Design decisions](#design-decisions-why-so-small).
 
 ### Always-available commands
 
-A small set of commands is implicitly included regardless of profile, because
-removing them would make dtctl unusable or unrecoverable:
+A small set of commands is always allowed, regardless of profile, because removing
+them would make dtctl unusable or leave an agent unable to bootstrap:
 
 - `commands`, `commands howto` -- agents must always be able to read the catalog.
 - `config` and context selection -- a product must be able to set/inspect context.
 - `version`, `completion`, `help`.
 
-A profile may still *explicitly* exclude these if it really wants to (e.g. an agent
-product that manages auth/config itself and wants `config` gone). The implicit
-inclusion only applies when a command is neither included nor excluded.
+These are merged into every profile's allowlist. (With default-deny this matters
+more than under a denylist: without it, a minimal profile would hide the very
+catalog an agent needs to discover its surface.)
 
 ### Selecting the active profile
 
 Precedence (highest wins):
 
 ```
-DTCTL_PROFILE env  >  context-bound profile  >  config current-profile  >  none (= full)
+DTCTL_PROFILE env  >  context-bound profile  >  none (= full)
 ```
 
 - **`DTCTL_PROFILE`** -- for products that wrap the binary in a controlled
   environment.
 - **Context binding** -- a `profile:` field on a context; shipped products pin it so
   agents inherit the right surface with zero flags. This is the recommended path
-  for embedding.
-- **`current-profile`** -- a global default in config, mirroring `current-context`.
+  for embedding. Compose with a `safety-level` on the same context when you also
+  want to constrain what those commands may do.
 - **None** -- the full command tree (today's behavior; fully backward compatible).
+
+There is no global `current-profile` default: a config-wide profile is a footgun
+(set once, forgotten, every invocation silently restricted). Activation is always
+either explicit per-environment (`DTCTL_PROFILE`) or scoped to a context.
 
 > A hidden `--profile` flag is intentionally **not** part of the documented surface.
 > It may exist as an internal escape hatch for debugging a locked-down context, but
@@ -167,25 +183,27 @@ DTCTL_PROFILE env  >  context-bound profile  >  config current-profile  >  none 
 
 ### Managing profiles
 
+There is no `dtctl profile` command group in v1. Profiles are pure configuration:
+you define them in the config file and bind them via `config set-context` or the
+environment. To inspect the *resolved* surface of the active profile, run the
+catalog command that agents already use:
+
 ```bash
-# List defined profiles (built-in + config), marking the active one
-dtctl profile list
-
-# Show the resolved command set for a profile
-dtctl profile show query-only
-
-# Set the global default
-dtctl profile use query-only
-
 # Bind a profile to a context
-dtctl config set-context prod-agent --profile=query-only
+dtctl config set-context prod-agent --profile=query
+
+# Inspect the resolved surface (already profile-aware)
+DTCTL_PROFILE=query dtctl commands
 ```
+
+`dtctl commands` reflects the active profile, so it *is* the "show" command -- no
+separate tooling needed.
 
 ### What a blocked invocation looks like
 
 ```
-$ DTCTL_PROFILE=query-only dtctl auth login
-Error: command "auth login" is not available in profile "query-only"
+$ DTCTL_PROFILE=query dtctl auth login
+Error: command "auth login" is not available in profile "query"
 
   This profile exposes a reduced command set. Run 'dtctl commands' to see
   what is available, or unset DTCTL_PROFILE to use the full CLI.
@@ -199,16 +217,18 @@ Error: context 'prod' (readonly) does not allow delete operations
 
 ### Built-in presets
 
-Shipped so products need not hand-author YAML. All names are **topical**; any
-"no writes" behavior is expressed by pinning a safety level, not by hiding verbs.
+Shipped so products need not hand-author YAML. All names are **topical**. If a
+preset should also forbid writes, that is done by pairing it with a `readonly`
+safety level on the context -- the preset itself never encodes permission.
 
-| Preset | Surface | Pinned safety |
-|--------|---------|---------------|
-| `full` | Everything (default; today's behavior) | none |
-| `query` | `query`, `analyzers`, `describe`, plus always-available | `readonly` |
-| `investigate` | `query` set + `get problems`/`get slo`/`get logs` | `readonly` |
+| Preset | Surface (plus always-available) |
+|--------|---------------------------------|
+| `full` | Everything (default; today's behavior) |
+| `query` | `query`, `analyzers`, `describe` |
+| `investigate` | `query` set + `get problems`, `get slo`, `get logs` |
 
-User-defined profiles may `extends:` a preset.
+User-defined profiles are standalone; there is no inheritance from presets. If you
+want a variant, copy the list -- profiles are short by design.
 
 ---
 
@@ -229,8 +249,8 @@ func execute() int {
 }
 ```
 
-`resolveProfile(cfg)` walks the precedence chain (env -> context -> current-profile
--> none) and returns the resolved, `extends`-flattened profile (or nil for `full`).
+`resolveProfile(cfg)` walks the precedence chain (env -> context -> none) and
+returns the named profile (or nil for `full`).
 
 ### The filter mechanism: `Hidden` + a `RunE` guard
 
@@ -256,7 +276,7 @@ func applyProfile(root *cobra.Command, p *Profile) {
 		return
 	}
 	walk(root, func(cmd *cobra.Command) {
-		if p.Allows(commandPath(cmd)) {
+		if p.Allows(commandPath(cmd)) {   // allowlist + always-available set
 			return
 		}
 		cmd.Hidden = true
@@ -265,11 +285,12 @@ func applyProfile(root *cobra.Command, p *Profile) {
 			cmd.Run = nil
 		}
 	})
-	if p.SafetyLevel != "" {
-		applyPinnedSafetyLevel(p.SafetyLevel)      // only if not overridden by ctx/flag
-	}
 }
 ```
+
+Note there is no safety handling here -- `applyProfile` touches only the surface.
+The safety level is resolved independently from the effective context, exactly as
+it is today.
 
 Because the guard wraps `RunE` rather than removing the command, cobra still parses
 the command and its args -- which lets us return a *specific* "not available in
@@ -280,12 +301,13 @@ rather than `RemoveCommand`.
 
 - Masking a **parent** (e.g. `create`) masks the whole subtree; the guard on the
   parent covers `create workflow`, `create azure ...`, etc.
-- A profile can **include a parent but exclude specific children** (`include: [get]`,
-  `exclude: [get buckets]`) -- the walk evaluates each node against the selector, so
-  a hidden child under a visible parent is fine (cobra already renders parents with
-  a partially hidden child set).
-- The **always-available** set is applied last so it cannot be masked by a broad
-  parent exclusion unless the profile names the command explicitly.
+- A profile can **allow a parent but only some children** by listing the specific
+  child paths (`commands: [get problems, get slo]` rather than `commands: [get]`).
+  The walk evaluates each node against the allowlist, so a masked child under a
+  visible parent is fine (cobra already renders parents with a partially hidden
+  child set).
+- The **always-available** set is merged into the allowlist, so those commands
+  survive regardless of how narrow the profile is.
 
 ### Config schema changes
 
@@ -294,17 +316,12 @@ rather than `RemoveCommand`.
 ```go
 type Config struct {
 	// ... existing fields ...
-	CurrentProfile string             `yaml:"current-profile,omitempty"`
-	Profiles       map[string]Profile `yaml:"profiles,omitempty"`
+	Profiles map[string]Profile `yaml:"profiles,omitempty"`
 }
 
 type Profile struct {
-	Description  string      `yaml:"description,omitempty"`
-	Extends      string      `yaml:"extends,omitempty"`
-	Include      []string    `yaml:"include,omitempty"`
-	IncludeAlso  []string    `yaml:"include-also,omitempty"` // additive over extends
-	Exclude      []string    `yaml:"exclude,omitempty"`
-	SafetyLevel  SafetyLevel `yaml:"safety-level,omitempty"`
+	Description string   `yaml:"description,omitempty"`
+	Commands    []string `yaml:"commands,omitempty"` // allowlist of path prefixes
 }
 
 // NamedContext gains a profile binding:
@@ -316,19 +333,17 @@ type Context struct {
 
 ### Selector matching
 
-A profile selector matches a command by its space-joined path (`get workflows`).
-Matching precedence for a given command path:
+`Allows` matches a command by its space-joined path (`get workflows`):
 
-1. If any `exclude` pattern matches -> **masked**.
-2. Else if `include` is empty -> **allowed** (everything).
-3. Else if any `include` pattern matches (verb prefix, resource, full path, or
-   glob) -> **allowed**.
-4. Else if the command is in the always-available set -> **allowed**.
-5. Else -> **masked**.
+1. If the path is in the always-available set -> **allowed**.
+2. Else if any `commands` entry equals or is a prefix of the path -> **allowed**.
+3. Else -> **masked**.
 
-Reusing the existing catalog vocabulary matters: `pkg/commands` already models
-verbs and resources (`FilterByResource`, `RequiredScopesForResource`), so selector
-matching can share that command-path model rather than inventing a new one.
+Prefix matching is segment-aware: `get` matches `get workflows` but a bare `get`
+entry does not accidentally match an unrelated `getterm`-style command. Reusing the
+existing catalog vocabulary matters: `pkg/commands` already models verbs and
+resources (`FilterByResource`, `RequiredScopesForResource`), so matching can share
+that command-path model rather than inventing a new one.
 
 ### Interaction with `dtctl commands` metadata
 
@@ -348,6 +363,34 @@ from the resolved profile, the safety level from the effective context.
 
 ---
 
+## Design decisions (why so small)
+
+This design was deliberately trimmed. The rationale for each cut:
+
+- **Allowlist, no denylist (`exclude`).** A denylist is default-*allow*: adding a
+  new command to dtctl would silently appear in every agent's surface -- the exact
+  "too many options" problem re-emerging. An allowlist is default-*deny*: new
+  commands stay masked until explicitly added. That is both simpler (no
+  include/exclude precedence ladder) and the correct posture for embedding.
+- **No `safety-level` on the profile.** Coupling the surface axis to the permission
+  axis reintroduces the very confusion the concepts section works to avoid, and
+  spawns a precedence question. Keeping them separate -- composed on the context --
+  makes "profiles are purely the surface axis" literally true.
+- **No `extends` / inheritance.** Inheritance brings cycle detection and flattening
+  for a config that is realistically a handful of short profiles. Repeating a list
+  is cheaper than the machinery.
+- **No global `current-profile`.** A config-wide default profile is a footgun. The
+  two real activation paths -- context binding and `DTCTL_PROFILE` -- cover the
+  cases without a silent global switch.
+- **No `dtctl profile` command group.** `dtctl commands` is already profile-aware,
+  so it serves as "show"; with no `current-profile` there is nothing for `use` to
+  set. Profiles stay pure config in v1.
+- **No globs.** Segment-aware prefix matching already includes subtrees (`describe`
+  covers `describe analyzers`), so a glob engine buys nothing.
+
+If real demand appears later (e.g. deep profile reuse), inheritance or a management
+command group can be added without breaking the schema above.
+
 ## Security & Safety Notes
 
 - **Client-side only.** Profiles are convenience/UX, not a security boundary --
@@ -356,41 +399,32 @@ from the resolved profile, the safety level from the effective context.
 - **Not a substitute for `--check-scopes`.** Profiles limit surface, not
   entitlements. A `query` profile with a broadly-scoped token can still run every
   query the token permits.
-- **`extends` cycles** must be detected at resolution time and rejected with a clear
-  config error.
-- **Unknown profile name** (env/context/current-profile references a profile that
-  does not exist) should fail fast with a clear error rather than silently falling
-  back to `full`, which would be a surprising surface expansion.
+- **Unknown profile name** (env or context references a profile that does not
+  exist) should fail fast with a clear error rather than silently falling back to
+  `full`, which would be a surprising surface expansion.
 
 ## Backward Compatibility
 
-- No `profiles` / `current-profile` / context `profile` -> resolves to `full` ->
-  identical to today. Fully backward compatible.
+- No `profiles` and no context `profile` -> resolves to `full` -> identical to
+  today. Fully backward compatible.
 - The change is purely additive to the config schema.
 
 ## Open Questions
 
-1. **Glob syntax.** Shell-style (`describe *`) vs. explicit prefix matching. Leaning
-   shell-style for familiarity; needs a decision on whether `*` crosses path
-   segments.
-2. **Should `profile show` render the tree or a flat path list?** Flat list is more
-   agent-friendly; tree is more human-friendly. Possibly both via `-o`.
-3. **Precedence of a profile-pinned `safety-level` vs. a context `safety-level`.**
-   Proposal: an explicit context/flag safety level always wins over a
-   profile-pinned one (the profile pin is a *default*, not an override). Needs
-   confirmation.
-4. **Telemetry.** Should the active profile be attached to the root OTel span (like
+1. **Telemetry.** Should the active profile be attached to the root OTel span (like
    command name is today) for usage analysis? Likely yes, low cost.
+2. **Should the always-available set be user-overridable?** Default is no (hardcoded)
+   for safety; revisit only if a product genuinely needs to hide `config`.
 
 ## Implementation Sketch (phased)
 
-1. **Config schema + resolution** -- `Profile` type, `resolveProfile`, `extends`
-   flattening, validation (unknown profile, cycles). Unit-tested in isolation.
+1. **Config schema + resolution** -- `Profile` type, `resolveProfile` (env ->
+   context -> none), validation (unknown profile name). Unit-tested in isolation.
 2. **`applyProfile` pass** -- the tree walk, `Hidden` + `RunE` guard, always-available
-   set. Verified against help, `commands`, and completion output.
+   merge, segment-aware prefix matching. Verified against help, `commands`, and
+   completion output.
 3. **Built-in presets** -- `full`/`query`/`investigate`, merged under user config.
-4. **`dtctl profile` command group** -- `list`/`show`/`use`, plus
-   `config set-context --profile`.
+4. **Context binding** -- `profile:` field on `Context` + `config set-context --profile`.
 5. **Catalog metadata + `--agent` envelope** -- surface `profile` + `safety_level`.
 6. **Docs** -- user-facing page under `docs/site/_docs/`, cross-linked with
    `context-safety-levels.md` and `ai-agent-mode.md`.
