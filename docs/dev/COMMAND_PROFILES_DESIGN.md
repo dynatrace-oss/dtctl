@@ -1,8 +1,15 @@
 # Command Profiles Design
 
-**Status:** Design Proposal
+**Status:** Implemented
 **Created:** 2026-07-10
 **Author:** dtctl team
+
+> **Implementation:** profile type, resolution, presets, and matching live in
+> `pkg/config/profile.go`; the tree-walk filter, `ProfileError`, and pre-dispatch
+> resolution live in `cmd/profile.go` (wired into `execute()` in `cmd/root.go`).
+> Context binding is in `cmd/ctx.go` / `cmd/config.go`; catalog metadata in
+> `pkg/commands/listing.go` + `cmd/commands.go`. User docs:
+> `docs/site/_docs/command-profiles.md`. Telemetry (open question 1) is deferred.
 
 ## Overview
 
@@ -122,13 +129,19 @@ just a `description` and a flat `commands` allowlist over the command tree.
 ```yaml
 profiles:
   query:
-    description: DQL + analysis for investigation agents
-    commands: [query, analyzers, describe]
+    description: DQL queries plus Davis analyzers for investigation agents
+    commands: [query, get analyzers, describe analyzer, exec analyzer, verify analyzer]
 
   investigate:
-    description: Read-only incident triage
-    commands: [query, analyzers, describe, get problems, get slo, get logs]
+    description: "Read-only incident triage: query, logs, and resource discovery"
+    commands: [query, logs, get, find, describe]
 ```
+
+> Note on analyzer commands: Davis analyzers are reached through several verbs
+> (`get analyzers`, `describe analyzer`, `exec analyzer`, `verify analyzer`)
+> rather than a single top-level `analyzers` verb, so the `query` preset lists
+> each. There is no `problems` resource today; incident triage uses `query`
+> against Grail plus `get`/`logs`.
 
 Selection semantics:
 
@@ -149,7 +162,7 @@ A small set of commands is always allowed, regardless of profile, because removi
 them would make dtctl unusable or leave an agent unable to bootstrap:
 
 - `commands`, `commands howto` -- agents must always be able to read the catalog.
-- `config` and context selection -- a product must be able to set/inspect context.
+- `config` and `ctx` -- a product must be able to set/inspect/switch context.
 - `version`, `completion`, `help`.
 
 These are merged into every profile's allowlist. (With default-deny this matters
@@ -224,8 +237,8 @@ safety level on the context -- the preset itself never encodes permission.
 | Preset | Surface (plus always-available) |
 |--------|---------------------------------|
 | `full` | Everything (default; today's behavior) |
-| `query` | `query`, `analyzers`, `describe` |
-| `investigate` | `query` set + `get problems`, `get slo`, `get logs` |
+| `query` | `query`, `get analyzers`, `describe analyzer`, `exec analyzer`, `verify analyzer` |
+| `investigate` | `query`, `logs`, `get`, `find`, `describe` |
 
 User-defined profiles are standalone; there is no inheritance from presets. If you
 want a variant, copy the list -- profiles are short by design.
@@ -302,7 +315,7 @@ rather than `RemoveCommand`.
 - Masking a **parent** (e.g. `create`) masks the whole subtree; the guard on the
   parent covers `create workflow`, `create azure ...`, etc.
 - A profile can **allow a parent but only some children** by listing the specific
-  child paths (`commands: [get problems, get slo]` rather than `commands: [get]`).
+  child paths (`commands: [get analyzers, get slos]` rather than `commands: [get]`).
   The walk evaluates each node against the allowlist, so a masked child under a
   visible parent is fine (cobra already renders parents with a partially hidden
   child set).

@@ -162,8 +162,9 @@ Examples:
 		tokenRef, _ := cmd.Flags().GetString("token-ref")
 		safetyLevel, _ := cmd.Flags().GetString("safety-level")
 		description, _ := cmd.Flags().GetString("description")
+		profile, _ := cmd.Flags().GetString("profile")
 
-		return setContext(args[0], environment, tokenRef, safetyLevel, description)
+		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile)
 	},
 }
 
@@ -210,6 +211,7 @@ func listContexts() error {
 			Name:        nc.Name,
 			Environment: nc.Context.Environment,
 			SafetyLevel: nc.Context.SafetyLevel.String(),
+			Profile:     nc.Context.Profile,
 			Description: nc.Context.Description,
 		})
 	}
@@ -289,6 +291,11 @@ func describeContext(name string) error {
 		fmt.Printf("%*s(All operations including bucket deletion)\n", w, "")
 	}
 
+	if found.Context.Profile != "" {
+		output.DescribeKV("Profile:", w, "%s", found.Context.Profile)
+		fmt.Printf("%*s(Restricts the visible command surface)\n", w, "")
+	}
+
 	if found.Context.Description != "" {
 		output.DescribeKV("Description:", w, "%s", found.Context.Description)
 	}
@@ -297,7 +304,7 @@ func describeContext(name string) error {
 }
 
 // setContext creates or updates a named context (shared logic)
-func setContext(name, environment, tokenRef, safetyLevel, description string) error {
+func setContext(name, environment, tokenRef, safetyLevel, description, profile string) error {
 	cfg, err := loadConfigRaw()
 	if err != nil {
 		cfg = config.NewConfig()
@@ -339,9 +346,17 @@ func setContext(name, environment, tokenRef, safetyLevel, description string) er
 		}
 	}
 
+	// Warn (don't fail) on a profile name that is not currently resolvable: the
+	// profile may be defined later, or in a different config file. A soft warning
+	// catches the common typo without blocking legitimate ahead-of-time binding.
+	if profile != "" && profile != config.ProfileFull && !cfg.ProfileExists(profile) {
+		output.PrintWarning("profile %q is not defined yet; define it under 'profiles:' or it will error when the context is used", profile)
+	}
+
 	opts := &config.ContextOptions{
 		SafetyLevel: config.SafetyLevel(safetyLevel),
 		Description: description,
+		Profile:     profile,
 	}
 
 	cfg.SetContextWithOptions(name, environment, tokenRef, opts)
@@ -413,4 +428,6 @@ func init() {
 	ctxSetCmd.Flags().String("token-ref", "", "token reference name")
 	ctxSetCmd.Flags().String("safety-level", "", "safety level (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
 	ctxSetCmd.Flags().String("description", "", "human-readable description for this context")
+	ctxSetCmd.Flags().String("profile", "", "command profile to bind (restricts the visible command surface; e.g. query, investigate, full)")
+	_ = ctxSetCmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
 }

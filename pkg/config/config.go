@@ -23,6 +23,10 @@ type Config struct {
 	// Spill holds the global result-spill settings (D15). Per-context overrides
 	// live on Context.Spill.
 	Spill SpillConfig `yaml:"spill,omitempty"`
+	// Profiles is the set of named command profiles (default-deny allowlists of
+	// commands). A profile is selected via DTCTL_PROFILE or a context binding;
+	// see profile.go and docs/dev/COMMAND_PROFILES_DESIGN.md.
+	Profiles map[string]Profile `yaml:"profiles,omitempty"`
 
 	// localPath is the path of the auto-discovered local .dtctl.yaml this
 	// config was loaded from, if any. Empty when loaded from the global config
@@ -104,7 +108,11 @@ type Context struct {
 	TokenRef    string      `yaml:"token-ref" table:"TOKEN-REF"`
 	SafetyLevel SafetyLevel `yaml:"safety-level,omitempty" table:"SAFETY-LEVEL"`
 	Description string      `yaml:"description,omitempty" table:"DESCRIPTION,wide"`
-	Hooks       Hooks       `yaml:"hooks,omitempty"`
+	// Profile binds a command profile to this context, restricting the visible
+	// command surface when the context is active (unless overridden by
+	// DTCTL_PROFILE). Empty means the full command tree. See profile.go.
+	Profile string `yaml:"profile,omitempty" table:"PROFILE,wide"`
+	Hooks   Hooks  `yaml:"hooks,omitempty"`
 	// Spill overrides the global spill settings for this context (D15). Nil
 	// fields inherit the global spill config.
 	Spill *SpillConfig `yaml:"spill,omitempty"`
@@ -654,6 +662,7 @@ func (c *Config) MustGetToken(tokenRef string) string {
 type ContextOptions struct {
 	SafetyLevel SafetyLevel
 	Description string
+	Profile     string
 }
 
 // SetContext creates or updates a context
@@ -676,6 +685,9 @@ func (c *Config) SetContextWithOptions(name, environment, tokenRef string, opts 
 				if opts.Description != "" {
 					c.Contexts[i].Context.Description = opts.Description
 				}
+				if opts.Profile != "" {
+					c.Contexts[i].Context.Profile = opts.Profile
+				}
 			}
 			return
 		}
@@ -688,6 +700,7 @@ func (c *Config) SetContextWithOptions(name, environment, tokenRef string, opts 
 	if opts != nil {
 		ctx.SafetyLevel = opts.SafetyLevel
 		ctx.Description = opts.Description
+		ctx.Profile = opts.Profile
 	}
 
 	c.Contexts = append(c.Contexts, NamedContext{
