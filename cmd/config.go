@@ -29,10 +29,20 @@ func loadRawConfig() (*config.Config, error) {
 	return config.LoadWithoutExpansion()
 }
 
-// saveConfig saves configuration respecting the --config flag and local config presence
+// saveConfig saves configuration respecting the --config flag, DTCTL_CONFIG, and
+// local config presence. The path selection MUST mirror the read precedence used
+// by loadConfigRaw/loadRawConfig (and config.Load) so that config-management
+// commands round-trip the same file they loaded — otherwise a mutation read from
+// DTCTL_CONFIG would be written to a different file (global or a local
+// .dtctl.yaml), silently clobbering it.
 func saveConfig(cfg *config.Config) error {
 	if cfgFile != "" {
 		return cfg.SaveTo(cfgFile)
+	}
+	// An explicit config named in the environment is trusted like --config and
+	// short-circuits local discovery, so writes must target it too.
+	if envPath := os.Getenv(config.EnvConfig); envPath != "" {
+		return cfg.SaveTo(envPath)
 	}
 	// If a local config exists, save to it
 	if local := config.FindLocalConfig(); local != "" {

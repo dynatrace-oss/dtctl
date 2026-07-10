@@ -91,6 +91,98 @@ func TestConfigFlagRespected(t *testing.T) {
 	}
 }
 
+// TestEnvConfigSaveRoundTrips verifies that when DTCTL_CONFIG names an explicit
+// config, a config-mutating command writes back to that same file rather than
+// the global config or an auto-discovered local .dtctl.yaml. This guards the
+// load/save symmetry: loadConfigRaw reads DTCTL_CONFIG, so saveConfig must
+// target it too, otherwise the mutation would silently clobber a different file.
+func TestEnvConfigSaveRoundTrips(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// A global config location that must stay untouched.
+	defaultConfigDir := filepath.Join(tmpDir, "default")
+	if err := os.MkdirAll(defaultConfigDir, 0700); err != nil {
+		t.Fatalf("failed to create default config dir: %v", err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", defaultConfigDir)
+	xdg.Reload()
+	defer xdg.Reload()
+
+	// The explicit, trusted config named via DTCTL_CONFIG.
+	envConfigPath := filepath.Join(tmpDir, "workspace", "ws-config.yaml")
+	if err := os.MkdirAll(filepath.Dir(envConfigPath), 0700); err != nil {
+		t.Fatalf("failed to create workspace dir: %v", err)
+	}
+	seed := `apiVersion: v1
+kind: Config
+current-context: seed-ctx
+contexts:
+  - name: seed-ctx
+    context:
+      environment: https://seed.example.com
+      token-ref: seed-token
+`
+	if err := os.WriteFile(envConfigPath, []byte(seed), 0600); err != nil {
+		t.Fatalf("failed to write env config: %v", err)
+	}
+
+	// Ensure the --config flag is not in play; only DTCTL_CONFIG.
+	originalCfgFile := cfgFile
+	defer func() { cfgFile = originalCfgFile }()
+	cfgFile = ""
+
+	// Run from an empty dir so no local .dtctl.yaml can be auto-discovered.
+	emptyDir := filepath.Join(tmpDir, "empty")
+	if err := os.MkdirAll(emptyDir, 0700); err != nil {
+		t.Fatalf("failed to create empty dir: %v", err)
+	}
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(emptyDir); err != nil {
+		t.Fatalf("failed to change directory: %v", err)
+	}
+
+	t.Setenv(config.EnvConfig, envConfigPath)
+	viper.Reset()
+	defer viper.Reset()
+
+	// Mutate the config via set-context.
+	cmd := configSetContextCmd
+	if err := cmd.Flags().Set("environment", "https://updated.example.com"); err != nil {
+		t.Fatalf("failed to set environment flag: %v", err)
+	}
+	if err := cmd.Flags().Set("token-ref", "new-token"); err != nil {
+		t.Fatalf("failed to set token-ref flag: %v", err)
+	}
+	if err := cmd.Flags().Set("safety-level", "readonly"); err != nil {
+		t.Fatalf("failed to set safety-level flag: %v", err)
+	}
+	if err := cmd.RunE(cmd, []string{"new-ctx"}); err != nil {
+		t.Fatalf("set-context failed: %v", err)
+	}
+
+	// The mutation must have landed in the DTCTL_CONFIG file, preserving the seed.
+	cfg, err := config.LoadFrom(envConfigPath)
+	if err != nil {
+		t.Fatalf("failed to reload env config: %v", err)
+	}
+	if _, err := cfg.GetContext("new-ctx"); err != nil {
+		t.Error("new-ctx missing from DTCTL_CONFIG file; save did not target it")
+	}
+	if _, err := cfg.GetContext("seed-ctx"); err != nil {
+		t.Error("seed-ctx missing; save clobbered the existing DTCTL_CONFIG content instead of round-tripping")
+	}
+
+	// The global config must never have been created.
+	globalPath := filepath.Join(defaultConfigDir, "dtctl", "config")
+	if _, err := os.Stat(globalPath); err == nil {
+		t.Errorf("global config was written at %s; save ignored DTCTL_CONFIG", globalPath)
+	}
+}
+
 // TestConfigCommandsRespectCustomPath tests that all config commands respect the --config flag
 func TestConfigCommandsRespectCustomPath(t *testing.T) {
 	tmpDir := t.TempDir()
