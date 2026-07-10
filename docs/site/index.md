@@ -146,8 +146,8 @@ dtctl exec copilot nl2dql "error logs from last hour"
       <td>get, describe, find, open (deep linking)</td>
     </tr>
     <tr>
-      <td>Davis AI</td>
-      <td>analyzers, CoPilot chat, NL-to-DQL, document search</td>
+      <td>Analyzers &amp; CoPilot</td>
+      <td>statistical analyzers, CoPilot chat, NL-to-DQL, document search</td>
     </tr>
     <tr>
       <td>Live Debugger</td>

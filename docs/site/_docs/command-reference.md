@@ -167,6 +167,7 @@ dtctl query "..." --max-result-records 5000
 dtctl query "..." --default-timeframe-start "2024-01-01T00:00:00Z"
 dtctl query "..." --timezone "Europe/Paris"
 dtctl query "..." --metadata                    # Include execution metadata
+dtctl query "..." --no-progress                  # Disable the live progress bar (shown by default)
 dtctl query "..." --live --interval 5s           # Live mode
 
 # Spill a large result to a file, return a summary (see dql-queries#spilling-large-results-to-a-file)
@@ -262,6 +263,12 @@ dtctl exec analyzer <analyzer-id> --query "timeseries avg(dt.host.cpu.usage)"
 
 # App Functions
 dtctl exec function <app-id>/<function-name> --method POST --payload '{...}'
+dtctl exec function <app-id>/<function-name> --method POST --data payload.json   # payload from file (- = stdin)
+dtctl exec function <app-id>/<function-name> --defer                             # async / resumable
+
+# Ad-hoc JavaScript (no app deployment; --code or -f selects this mode)
+dtctl exec function --code 'export default async function () { return "hi" }'
+dtctl exec function -f script.js --payload '{"input":"data"}'                    # -f - reads code from stdin
 
 # Davis CoPilot
 dtctl exec copilot "What is DQL?" --stream

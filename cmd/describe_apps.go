@@ -53,11 +53,11 @@ Examples:
 			}
 
 			if app.ModificationInfo != nil {
-				if app.ModificationInfo.CreatedTime != "" {
-					output.DescribeKV("Created:", w, "%s (by %s)", app.ModificationInfo.CreatedTime, app.ModificationInfo.CreatedBy)
+				if app.ModificationInfo.CreatedAt != "" {
+					output.DescribeKV("Created:", w, "%s (by %s)", app.ModificationInfo.CreatedAt, app.ModificationInfo.CreatedBy)
 				}
-				if app.ModificationInfo.LastModifiedTime != "" {
-					output.DescribeKV("Modified:", w, "%s (by %s)", app.ModificationInfo.LastModifiedTime, app.ModificationInfo.LastModifiedBy)
+				if app.ModificationInfo.LastModifiedAt != "" {
+					output.DescribeKV("Modified:", w, "%s (by %s)", app.ModificationInfo.LastModifiedAt, app.ModificationInfo.LastModifiedBy)
 				}
 			}
 

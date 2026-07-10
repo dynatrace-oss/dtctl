@@ -129,6 +129,14 @@ type DQLExecuteOptions struct {
 	Locale   string // Query locale (e.g., "en_US")
 	Timezone string // Query timezone (e.g., "UTC", "Europe/Paris")
 
+	// ShowProgress opts in to the live progress bar drawn on stderr while an
+	// asynchronous query is polled. It is off by default so internal/library
+	// query callers (e.g. describe sub-queries, lookup metadata fetches) stay
+	// silent; only the user-facing `query` command sets it. Even when set, the
+	// bar is drawn only for interactive terminals and never affects stdout, so
+	// structured/piped output is unchanged regardless.
+	ShowProgress bool
+
 	// Metadata options
 	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, specific names = filtered
 
@@ -282,11 +290,51 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 		}
 	}
 
-	result, err := handler.ExecuteAndPoll(ctx, req, onUnauthorized)
+	// Live progress on stderr. The reporter is a no-op unless stderr is an
+	// interactive TTY, so piped/agent/structured output is untouched. Stop()
+	// erases the line on error and cancellation; Complete() replaces it with a
+	// summary on success.
+	reporter := output.NewProgressReporter(opts.ShowProgress, opts.AgentMode)
+	defer reporter.Stop()
+
+	// Remember the last live scan totals so the completion summary can fall back
+	// to them if the terminal result metadata omits scannedBytes/Records. The
+	// closure runs synchronously in this goroutine, so these need no locking.
+	var lastScannedBytes, lastScannedRecords int64
+	result, err := handler.ExecuteAndPollWithOptions(ctx, req, sdkquery.ExecuteAndPollOptions{
+		OnUnauthorized: onUnauthorized,
+		OnUpdate: func(u sdkquery.PollUpdate) {
+			state := output.ProgressState{
+				Progress:       u.Progress,
+				ScannedBytes:   u.ScannedBytes,
+				ScannedRecords: u.ScannedRecords,
+			}
+			if u.Preview != nil {
+				state.PreviewRows = len(u.Preview.Records)
+			}
+			if u.ScannedBytes > 0 {
+				lastScannedBytes = u.ScannedBytes
+			}
+			if u.ScannedRecords > 0 {
+				lastScannedRecords = u.ScannedRecords
+			}
+			reporter.Update(state)
+		},
+	})
 	if err != nil {
-		// If context was cancelled, print cancellation message
+		// Clear the bar before any further stderr output (cancellation notice,
+		// error hints). Stop is idempotent; the defer remains a safety net.
+		drawing := reporter.Drawing()
+		reporter.Stop()
+		// If context was cancelled, print cancellation message. When the reporter
+		// was drawing, Stop() above already cleared the line, so no leading
+		// newline is needed. When it was not (--no-progress, --plain, non-TTY),
+		// emit one to separate the message from a shell's "^C" echo.
 		if ctx.Err() != nil {
-			fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
+			if !drawing {
+				fmt.Fprintln(os.Stderr)
+			}
+			fmt.Fprintln(os.Stderr, "Query cancelled.")
 			return nil, nil
 		}
 		// Enhance known error types with CLI-specific hints
@@ -296,6 +344,21 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 		}
 		return nil, err
 	}
+
+	// On success, replace the bar with a completion summary carrying the final
+	// scan totals. Prefer the result metadata (authoritative), but fall back to
+	// the last live totals when the terminal envelope omits them, so a large scan
+	// the user watched climb is never reported as "done in Xs" with no volume.
+	final := output.ProgressState{Progress: 100, ScannedBytes: lastScannedBytes, ScannedRecords: lastScannedRecords}
+	if m := result.GetMetadata(); m != nil {
+		if m.ScannedBytes > 0 {
+			final.ScannedBytes = m.ScannedBytes
+		}
+		if m.ScannedRecords > 0 {
+			final.ScannedRecords = m.ScannedRecords
+		}
+	}
+	reporter.Complete(final)
 
 	return result, nil
 }
