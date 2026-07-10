@@ -107,7 +107,7 @@ func execute() int {
 		if cfg.IgnoredExecKeys() {
 			fmt.Fprintf(os.Stderr,
 				"warning: ignoring aliases and hooks from local config %q "+
-					"(code-execution keys are only honored from the global config)\n",
+					"(honored only from the global config, --config, or DTCTL_CONFIG)\n",
 				cfg.LocalConfigPath())
 		}
 

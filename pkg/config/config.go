@@ -216,9 +216,21 @@ func findLocalConfigFrom(startDir string) string {
 	}
 }
 
+// EnvConfig names an explicit config file, equivalent to passing --config.
+// When set, dtctl loads exactly that file and treats it as trusted (its
+// aliases and apply hooks are honored), skipping auto-discovery entirely. This
+// is the supported way to run in a prepared, trusted workspace — e.g. kb-run
+// creates a clean directory with a .dtctl.yaml and exports this variable, so an
+// agent invoking `dtctl apply` runs the intended hooks without a --config flag.
+// Because it names a specific operator-chosen file (not a directory to search),
+// it does not reopen the untrusted-working-directory vector that IsLocal()
+// guards against: a stray .dtctl.yaml elsewhere on disk can never be picked up.
+const EnvConfig = "DTCTL_CONFIG"
+
 // Load loads the configuration with the following precedence:
-//  1. Local config (.dtctl.yaml in current directory or parent directories)
-//  2. Global config (XDG_CONFIG_HOME/dtctl/config)
+//  1. Explicit config from the DTCTL_CONFIG environment variable (trusted)
+//  2. Local config (.dtctl.yaml in current directory or parent directories)
+//  3. Global config (XDG_CONFIG_HOME/dtctl/config)
 //
 // If a local config is found, it is used exclusively (not merged with global).
 //
@@ -226,12 +238,20 @@ func findLocalConfigFrom(startDir string) string {
 // classic "untrusted working directory / checked-out repo / shared dir"
 // scenario). Code-execution keys — shell aliases and apply hooks — defined in
 // such a config are never honored: alias resolution and hook execution check
-// IsLocal() and skip them. These keys are honored only from the global config
-// or an explicit --config file (loaded via LoadFrom), which carry stronger
-// ownership expectations. The keys are still loaded into the struct (and never
-// mutated here) so that config-management commands round-trip the file without
-// silently destroying a user's own aliases or hooks.
+// IsLocal() and skip them. These keys are honored only from the global config,
+// an explicit --config file, or a config named by DTCTL_CONFIG (all loaded via
+// LoadFrom without markLocal), which carry stronger ownership expectations. The
+// keys are still loaded into the struct (and never mutated here) so that
+// config-management commands round-trip the file without silently destroying a
+// user's own aliases or hooks.
 func Load() (*Config, error) {
+	// An explicit config named in the environment is trusted, exactly like
+	// --config, and short-circuits auto-discovery so a closer untrusted
+	// .dtctl.yaml can never shadow it. It is intentionally not marked local.
+	if envPath := os.Getenv(EnvConfig); envPath != "" {
+		return LoadFrom(envPath)
+	}
+
 	// Check for local config first
 	localConfig := FindLocalConfig()
 	if localConfig != "" {
@@ -306,6 +326,11 @@ func LoadFromWithoutExpansion(path string) (*Config, error) {
 // LoadWithoutExpansion loads the configuration without expanding environment variables,
 // using the same search order as Load (local config, then global config).
 func LoadWithoutExpansion() (*Config, error) {
+	// Honor DTCTL_CONFIG with the same precedence as Load: an explicit,
+	// trusted config that bypasses auto-discovery. See EnvConfig.
+	if envPath := os.Getenv(EnvConfig); envPath != "" {
+		return LoadFromWithoutExpansion(envPath)
+	}
 	if local := FindLocalConfig(); local != "" {
 		cfg, err := LoadFromWithoutExpansion(local)
 		if err != nil {
