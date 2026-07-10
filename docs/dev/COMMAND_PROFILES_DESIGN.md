@@ -146,7 +146,7 @@ profiles:
 Selection semantics:
 
 - **`commands`** -- a list of command-path *prefixes*: verbs (`query`), resources
-  (`get problems`), or full paths (`get workflows definition`). An entry matches a
+  (`get workflows`), or full paths (`get workflows definition`). An entry matches a
   command if it equals or is a prefix of that command's path, so listing a parent
   (`describe`) includes its whole subtree. No globs -- prefix matching already
   covers subtrees.
@@ -158,16 +158,27 @@ no way to say "everything except X" -- see [Design decisions](#design-decisions-
 
 ### Always-available commands
 
-A small set of commands is always allowed, regardless of profile, because removing
-them would make dtctl unusable or leave an agent unable to bootstrap:
+Only an irreducible core is allowed regardless of profile -- the machine-readable
+catalog an agent bootstraps from and the universal help escape hatch:
 
 - `commands`, `commands howto` -- agents must always be able to read the catalog.
-- `config` and `ctx` -- a product must be able to set/inspect/switch context.
-- `version`, `completion`, `help`.
+- `help`.
 
-These are merged into every profile's allowlist. (With default-deny this matters
-more than under a denylist: without it, a minimal profile would hide the very
-catalog an agent needs to discover its surface.)
+Both are pure discovery: they run no operation, read no data, and mutate nothing.
+They are merged into every profile's allowlist so a minimal profile never hides
+the very catalog an agent needs to discover its surface.
+
+**Everything else is subject to the allowlist -- including `config`, `ctx`,
+`completion`, and `version`.** This is deliberate. Earlier drafts kept
+`config`/`ctx` always-available for "context management", but those verbs can
+rotate credentials (`config set-credentials`) and switch environments
+(`ctx set`), which a locked-down agent profile must be able to withhold. In an
+embedding, the product provisions the context out-of-band (it writes the config);
+the agent has no reason to touch `config`. So the floor is the two discovery
+commands only, and a profile that genuinely wants `config`/`completion`/etc.
+lists it explicitly (`commands: [query, config]`). Keeping the floor this small
+also means "not listing it" is the disable mechanism -- no separate override knob
+is needed (see [Open Questions](#open-questions)).
 
 ### Selecting the active profile
 
@@ -426,8 +437,12 @@ command group can be added without breaking the schema above.
 
 1. **Telemetry.** Should the active profile be attached to the root OTel span (like
    command name is today) for usage analysis? Likely yes, low cost.
-2. **Should the always-available set be user-overridable?** Default is no (hardcoded)
-   for safety; revisit only if a product genuinely needs to hide `config`.
+2. ~~**Should the always-available set be user-overridable?**~~ **Resolved:** no
+   override knob. The always-available floor was shrunk to just `commands` and
+   `help` (see [Always-available commands](#always-available-commands)), so
+   `config`, `ctx`, `completion`, and `version` are now maskable by simply not
+   listing them. "Not listing it" is the disable mechanism; a configurable
+   always-available set would be redundant surface.
 
 ## Implementation Sketch (phased)
 

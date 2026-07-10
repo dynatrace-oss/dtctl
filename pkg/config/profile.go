@@ -32,17 +32,20 @@ type Profile struct {
 	Commands []string `yaml:"commands,omitempty"`
 }
 
-// alwaysAvailableCommands are allowed regardless of the active profile because
-// removing them would make dtctl unusable or leave an agent unable to bootstrap
-// its surface. Matching is segment-prefix based, so "config" covers every config
-// subcommand and "commands" covers "commands howto".
+// alwaysAvailableCommands is the irreducible core allowed regardless of the
+// active profile: the machine-readable catalog an agent bootstraps from and the
+// universal help escape hatch. Both are pure discovery — they run no operation,
+// read no data, and mutate nothing. Matching is segment-prefix based, so
+// "commands" covers "commands howto".
+//
+// Everything else — including config, ctx, completion, and version — is subject
+// to the allowlist. This is deliberate: config/ctx can mutate credentials and
+// switch environments, so a locked-down agent profile must be able to withhold
+// them. A profile that wants any of these simply lists it (e.g.
+// commands: [query, config]).
 var alwaysAvailableCommands = []string{
-	"commands",   // agents must always be able to read the catalog
-	"config",     // context management (set/inspect/switch)
-	"ctx",        // context management (shorthand verb)
-	"version",    // utility
-	"completion", // shell completion generator
-	"help",       // built-in help
+	"commands", // agents must always be able to read the catalog
+	"help",     // universal help escape hatch
 }
 
 // builtinProfiles are the topical presets shipped with dtctl so products need

@@ -68,7 +68,7 @@ profiles:
     commands:
       - query
       - logs
-      - get problems
+      - get slos      # only SLOs from the get verb, not all of `get`
       - describe
 
 contexts:
@@ -90,18 +90,24 @@ Matching rules:
   There is no denylist — you always list what is *allowed*. Adding a new command
   to dtctl never silently widens an existing profile.
 - To allow a parent but only some children, list the specific child paths
-  (`commands: [get problems, get slo]` rather than `commands: [get]`).
+  (`commands: [get analyzers, get slos]` rather than `commands: [get]`).
 
 User-defined profiles take precedence over a built-in preset of the same name.
 
 ## Always-available commands
 
-A small set is allowed regardless of profile, because removing it would leave an
-agent unable to bootstrap or a user unable to manage config:
+Only two commands are allowed regardless of profile — the irreducible core that
+lets an agent discover its surface and a user get help:
 
-- `commands` (and `commands howto`) — agents must always read the catalog
-- `config` and `ctx` — context management
-- `version`, `completion`, `help`
+- `commands` (and `commands howto`) — the machine-readable catalog agents
+  bootstrap from
+- `help`
+
+Everything else is subject to the allowlist, **including `config`, `ctx`,
+`completion`, and `version`**. This is deliberate: `config`/`ctx` can rotate
+credentials and switch environments, so a locked-down agent profile must be able
+to withhold them. If a profile needs any of these, list it explicitly (e.g.
+`commands: [query, config]`).
 
 ## Selecting the active profile
 

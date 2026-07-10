@@ -34,13 +34,9 @@ func TestProfileAllows(t *testing.T) {
 		"describe analyzer", // direct multi-segment
 		"get",               // ancestor of "get analyzers" — stays reachable
 		"describe",          // ancestor of "describe analyzer"
-		"commands",          // always-available
+		"commands",          // always-available core
 		"commands howto",    // always-available subtree
-		"config",            // always-available
-		"config set-context",
-		"ctx",
-		"version",
-		"help",
+		"help",              // always-available core
 	}
 	for _, path := range allowed {
 		if !p.Allows(path) {
@@ -54,7 +50,12 @@ func TestProfileAllows(t *testing.T) {
 		"get workflows", // sibling of allowed child, not itself allowed
 		"delete",
 		"apply",
-		"get analyzer", // singular — not the allowlisted "get analyzers"
+		"get analyzer",       // singular — not the allowlisted "get analyzers"
+		"config",             // no longer always-available — must be listed
+		"config set-context", // ditto (credential/context mutation)
+		"ctx",                // no longer always-available
+		"completion",         // no longer always-available
+		"version",            // no longer always-available
 	}
 	for _, path := range masked {
 		if p.Allows(path) {
