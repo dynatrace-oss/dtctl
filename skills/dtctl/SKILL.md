@@ -12,7 +12,9 @@ Operate `dtctl`, the kubectl-style CLI for Dynatrace. Pattern: `dtctl <verb> <re
 Run once to establish context, permissions, and the command catalog:
 
 ```bash
-dtctl commands --brief -o json          # all commands, flags, resources + aliases (capabilities)
+dtctl commands                          # compact overview: verbs, resources, subcommands (TOON default)
+# dtctl commands --brief                 # + mutating/access/scopes + flag types
+# dtctl commands --full                  # exhaustive catalog: descriptions, flag defaults, global flags
 dtctl config current-context            # active context
 dtctl config describe-context $(dtctl config current-context) --plain  # env URL + safety level
 dtctl auth status --plain               # token type (OAuth vs API/platform) + safety level

@@ -68,11 +68,14 @@ You can install all skills without penalty. Agents use progressive disclosure an
 In addition to skills, AI agents can discover dtctl's capabilities at runtime:
 
 ```bash
-# Compact command catalog (ideal for system prompts)
+# Minimal overview: verbs, resources, subcommands (TOON default, ideal for system prompts)
+dtctl commands
+
+# Brief catalog: adds mutating status, access levels, flag types, and scopes
 dtctl commands --brief -o json
 
-# Full catalog with descriptions and flag documentation
-dtctl commands -o json
+# Full catalog with descriptions, flag defaults, and global flags
+dtctl commands --full -o json
 
 # Human-readable how-to guide
 dtctl commands howto

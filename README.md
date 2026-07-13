@@ -94,7 +94,7 @@ See the **[Command Reference](https://dynatrace-oss.github.io/dtctl/docs/command
 
 ## AI Agent Skills
 
-dtctl ships with an [Agent Skill](https://agentskills.io) that teaches AI coding assistants how to use dtctl. Agents can also bootstrap at runtime with `dtctl commands --brief -o json`.
+dtctl ships with an [Agent Skill](https://agentskills.io) that teaches AI coding assistants how to use dtctl. Agents can also bootstrap at runtime with `dtctl commands`, which prints a compact minimal overview of verbs, resources, and subcommands (defaults to TOON); add `--brief` or `--full` for progressively more detail.
 
 ```bash
 # Install via skills.sh

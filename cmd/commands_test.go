@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,111 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
 )
+
+// runCommandsCLI drives `dtctl commands ...` through the real root command and
+// returns what it wrote to stdout. Flag state is reset first so invocations are
+// independent regardless of ordering.
+func runCommandsCLI(t *testing.T, args ...string) string {
+	t.Helper()
+
+	resetCommandsFlags(t)
+
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+
+	rootCmd.SetArgs(append([]string{"commands"}, args...))
+	execErr := rootCmd.Execute()
+
+	_ = w.Close()
+	os.Stdout = orig
+	out := <-done
+	require.NoError(t, execErr)
+	return out
+}
+
+func TestCommandsCmd_DefaultIsMinimalTOON(t *testing.T) {
+	out := runCommandsCLI(t)
+
+	// TOON, not JSON.
+	require.Contains(t, out, "tool: dtctl")
+	require.Contains(t, out, "command_model: verb-noun")
+	require.Contains(t, out, "verbs:")
+	require.NotContains(t, out, "{")
+
+	// Minimal: no per-verb detail fields.
+	require.NotContains(t, out, "mutating")
+	require.NotContains(t, out, "description")
+	require.NotContains(t, out, "required_scopes")
+	require.NotContains(t, out, "global_flags")
+	require.NotContains(t, out, "time_formats")
+}
+
+func TestCommandsCmd_BriefAddsDetail(t *testing.T) {
+	out := runCommandsCLI(t, "--brief")
+
+	// Brief keeps mutating status but drops the heavy full-mode sections.
+	require.Contains(t, out, "mutating")
+	require.NotContains(t, out, "time_formats")
+	require.NotContains(t, out, "global_flags")
+}
+
+func TestCommandsCmd_FullMatchesLegacyOutput(t *testing.T) {
+	out := runCommandsCLI(t, "--full", "-o", "json")
+
+	require.True(t, json.Valid([]byte(out)), "--full -o json should be valid JSON")
+
+	// Full mode is the legacy complete catalog.
+	var decoded commands.Listing
+	require.NoError(t, json.Unmarshal([]byte(out), &decoded))
+	require.NotEmpty(t, decoded.GlobalFlags)
+	require.NotNil(t, decoded.TimeFormats)
+	require.NotEmpty(t, decoded.Verbs["get"].Description)
+
+	// Byte-for-byte identical to building the full listing directly, annotated
+	// with the same active profile/safety context the command applies.
+	wantListing := commands.Build(rootCmd)
+	annotateListingContext(wantListing)
+	var want bytes.Buffer
+	require.NoError(t, commands.WriteTo(&want, wantListing, "json"))
+	require.Equal(t, want.String(), out)
+}
+
+// resetCommandsFlags clears the flag state that persists across rootCmd.Execute()
+// calls (both the Go vars and cobra's per-flag Changed markers), so each test
+// invocation starts clean regardless of ordering.
+func resetCommandsFlags(t *testing.T) {
+	t.Helper()
+
+	briefMode, fullMode, requiredScopesMode = false, false, false
+	outputFormat = "table"
+
+	outFlag := rootCmd.PersistentFlags().Lookup("output")
+	require.NoError(t, outFlag.Value.Set("table"))
+	outFlag.Changed = false
+
+	for _, name := range []string{"brief", "full", "required-scopes"} {
+		if f := commandsCmd.Flags().Lookup(name); f != nil {
+			require.NoError(t, f.Value.Set("false"))
+			f.Changed = false
+		}
+	}
+}
+
+func TestCommandsCmd_BriefFullMutuallyExclusive(t *testing.T) {
+	resetCommandsFlags(t)
+
+	rootCmd.SetArgs([]string{"commands", "--brief", "--full"})
+	err := rootCmd.Execute()
+	require.Error(t, err)
+}
 
 // TestEveryResourceHasScopeMapping fails the build when a new resource is added
 // to the command tree without either a canonical auth.ResourceScopes entry or

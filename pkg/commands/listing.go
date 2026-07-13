@@ -435,6 +435,62 @@ func flagTypeName(f *pflag.Flag) string {
 	}
 }
 
+// Minimal is an ultra-compact overview of the command tree: just verbs, their
+// resources, and nested subcommands. It carries no descriptions, flags, scopes,
+// or mutating status. It is the default `dtctl commands` output — a quick map of
+// what exists, since most verb-noun commands are self-explanatory. Use --brief
+// or --full for progressively more detail.
+type Minimal struct {
+	SchemaVersion int    `json:"schema_version" yaml:"schema_version"`
+	Tool          string `json:"tool" yaml:"tool"`
+	Version       string `json:"version" yaml:"version"`
+	CommandModel  string `json:"command_model" yaml:"command_model"`
+	// Profile and SafetyLevel advertise the active command profile and effective
+	// safety level (the two constraints shaping the surface), so agents see them
+	// even in the minimal overview. Omitted when unconstrained.
+	Profile     string                  `json:"profile,omitempty" yaml:"profile,omitempty"`
+	SafetyLevel string                  `json:"safety_level,omitempty" yaml:"safety_level,omitempty"`
+	Verbs       map[string]*MinimalVerb `json:"verbs" yaml:"verbs"`
+	Aliases     map[string]string       `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
+}
+
+// MinimalVerb is a verb reduced to its resources and nested subcommands.
+type MinimalVerb struct {
+	Resources   []string                `json:"resources,omitempty" yaml:"resources,omitempty"`
+	Subcommands map[string]*MinimalVerb `json:"subcommands,omitempty" yaml:"subcommands,omitempty"`
+}
+
+// NewMinimal returns an ultra-compact overview of the command tree. The original
+// listing is not modified.
+func NewMinimal(l *Listing) *Minimal {
+	m := &Minimal{
+		SchemaVersion: l.SchemaVersion,
+		Tool:          l.Tool,
+		Version:       l.Version,
+		CommandModel:  l.CommandModel,
+		Profile:       l.Profile,
+		SafetyLevel:   l.SafetyLevel,
+		Verbs:         make(map[string]*MinimalVerb, len(l.Verbs)),
+		Aliases:       l.Aliases,
+	}
+	for name, v := range l.Verbs {
+		m.Verbs[name] = newMinimalVerb(v)
+	}
+	return m
+}
+
+// newMinimalVerb strips a verb down to its resources and nested subcommands.
+func newMinimalVerb(v *Verb) *MinimalVerb {
+	mv := &MinimalVerb{Resources: v.Resources}
+	if len(v.Subcommands) > 0 {
+		mv.Subcommands = make(map[string]*MinimalVerb, len(v.Subcommands))
+		for name, sub := range v.Subcommands {
+			mv.Subcommands[name] = newMinimalVerb(sub)
+		}
+	}
+	return mv
+}
+
 // NewBrief returns a copy of the listing with verbose fields stripped for
 // reduced token count. It preserves mutating status since agents always need it.
 // The original listing is not modified.
@@ -444,6 +500,8 @@ func NewBrief(l *Listing) *Listing {
 		Tool:          l.Tool,
 		Version:       l.Version,
 		CommandModel:  l.CommandModel,
+		Profile:       l.Profile,
+		SafetyLevel:   l.SafetyLevel,
 		Verbs:         make(map[string]*Verb, len(l.Verbs)),
 		Aliases:       l.Aliases,
 		// Retain patterns/antipatterns: they are the primary grounding agents
@@ -658,22 +716,29 @@ func RequiredScopesForResource(l *Listing, resource string) []string {
 // WriteTo writes the listing to w in the given format ("json", "yaml"/"yml", or "toon").
 // Any other format value defaults to JSON.
 func WriteTo(w io.Writer, l *Listing, format string) error {
+	return WriteValue(w, l, format)
+}
+
+// WriteValue serializes any value to w in the given format ("json", "yaml"/"yml",
+// or "toon"). Any other format value defaults to JSON. It is used to emit the
+// minimal/brief/full catalog variants, which are distinct types.
+func WriteValue(w io.Writer, v any, format string) error {
 	switch format {
 	case "yaml", "yml":
 		enc := yaml.NewEncoder(w)
 		enc.SetIndent(2)
-		if err := enc.Encode(l); err != nil {
+		if err := enc.Encode(v); err != nil {
 			return err
 		}
 		return enc.Close()
 	case "toon":
 		// Round-trip through JSON to get a generic representation that
 		// respects json struct tags, then encode as TOON.
-		b, err := json.Marshal(l)
+		b, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
-		var generic interface{}
+		var generic any
 		if err := json.Unmarshal(b, &generic); err != nil {
 			return err
 		}
@@ -686,6 +751,6 @@ func WriteTo(w io.Writer, l *Listing, format string) error {
 	default:
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(l)
+		return enc.Encode(v)
 	}
 }

@@ -44,7 +44,7 @@ dtctl supports `--agent` / `-A` to wrap all output in a structured JSON envelope
 - Errors are also structured: `{"ok": false, "error": {"code": "not_found", "message": "..."}}`
 - Implementation: `pkg/output/agent.go` (`AgentPrinter`, `Response`, `PrintError`)
 - Per-command context enrichment via `enrichAgent()` helper in `cmd/root.go`
-- **Command catalog**: `dtctl commands --brief -o json` provides a machine-readable listing of all available commands, flags, and resource types — ideal for agent bootstrap
+- **Command catalog**: `dtctl commands` gives a compact minimal overview (verbs, resources, subcommands only; defaults to TOON) — ideal for agent bootstrap. `--brief` adds mutating status, access levels, flag types, and scopes; `--full` emits the exhaustive catalog (descriptions, flag defaults, global flags, materialized scopes). Override the format with `-o json`/`-o yaml`
 
 ## Color Control
 
