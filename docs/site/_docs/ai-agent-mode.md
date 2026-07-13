@@ -158,17 +158,20 @@ This ensures output is always machine-parseable.
 AI agents can bootstrap their knowledge of dtctl using the built-in command catalog:
 
 ```bash
-# Brief catalog -- compact listing of commands, flags, and resource types
+# Minimal overview -- verbs, resources, and subcommands only (defaults to TOON)
+dtctl commands
+
+# Brief catalog -- adds mutating status, access levels, flag types, and scopes
 dtctl commands --brief -o json
 
-# Full catalog -- detailed command descriptions and flag documentation
-dtctl commands -o json
+# Full catalog -- detailed command descriptions, flag defaults, and global flags
+dtctl commands --full -o json
 
 # Human-readable how-to guide in Markdown
 dtctl commands howto
 ```
 
-The brief catalog is ideal for including in an agent's system prompt or initial context, giving it a complete map of available operations without consuming excessive tokens.
+The bare `dtctl commands` overview is ideal for including in an agent's system prompt or initial context, giving it a complete map of available operations without consuming excessive tokens; step up to `--brief` or `--full` when more detail is needed.
 
 ## Tips and Tricks
 

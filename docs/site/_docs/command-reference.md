@@ -321,8 +321,9 @@ dtctl doctor    # Runs 6 checks: version, config, context, token, connectivity, 
 ## Command Catalog
 
 ```bash
-dtctl commands -o json            # Full catalog
-dtctl commands --brief -o json    # Compact (no descriptions, no global flags)
+dtctl commands                    # Minimal overview: verbs, resources, subcommands (TOON default)
+dtctl commands --brief -o json    # Compact: + mutating/access/scopes + flag types
+dtctl commands --full -o json     # Full catalog: descriptions, flag defaults, global flags
 dtctl commands workflow -o json   # Filter to specific resource
 dtctl commands howto              # Generate Markdown how-to guide
 ```

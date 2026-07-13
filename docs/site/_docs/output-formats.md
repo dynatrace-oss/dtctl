@@ -144,15 +144,20 @@ Color output follows the [no-color.org](https://no-color.org/) standard:
 dtctl can describe its own commands in machine-readable form:
 
 ```bash
-# Full command catalog as JSON
-dtctl commands -o json
+# Minimal overview: verbs, resources, subcommands (defaults to TOON, ideal for AI agent bootstrap)
+dtctl commands
 
-# Brief catalog (compact, ideal for AI agent bootstrap)
+# Brief catalog: adds mutating status, access levels, flag types, and scopes
 dtctl commands --brief -o json
+
+# Full command catalog: descriptions, flag defaults, and global flags
+dtctl commands --full -o json
 
 # Human-readable how-to guide in Markdown
 dtctl commands howto
 ```
+
+Unlike other commands, `dtctl commands` defaults to TOON (the most compact format) rather than the table format; pass `-o json` or `-o yaml` to override.
 
 ## Agent Mode
 

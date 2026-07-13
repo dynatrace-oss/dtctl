@@ -866,3 +866,96 @@ func TestWriteTo_YAMLWriteError(t *testing.T) {
 	err := WriteTo(errWriter{}, listing, "yaml")
 	require.Error(t, err)
 }
+
+// --- NewMinimal tests ---
+
+func TestNewMinimal_KeepsStructureOnly(t *testing.T) {
+	root := newTestRoot()
+	listing := Build(root)
+	m := NewMinimal(listing)
+
+	// Header fields carried over.
+	require.Equal(t, listing.SchemaVersion, m.SchemaVersion)
+	require.Equal(t, "dtctl", m.Tool)
+	require.Equal(t, "verb-noun", m.CommandModel)
+	require.Equal(t, listing.Aliases, m.Aliases)
+
+	// Every verb is present with just resources + subcommands.
+	require.Len(t, m.Verbs, len(listing.Verbs))
+	get := m.Verbs["get"]
+	require.NotNil(t, get)
+	require.ElementsMatch(t, listing.Verbs["get"].Resources, get.Resources)
+
+	// Nested subcommands survive.
+	exec := m.Verbs["exec"]
+	require.NotNil(t, exec)
+	require.Contains(t, exec.Subcommands, "copilot")
+	require.Contains(t, exec.Subcommands["copilot"].Subcommands, "nl2dql")
+}
+
+func TestNewMinimal_DoesNotMutateOriginal(t *testing.T) {
+	root := newTestRoot()
+	listing := Build(root)
+
+	origVerbCount := len(listing.Verbs)
+	origDesc := listing.Verbs["get"].Description
+	origGlobalFlags := len(listing.GlobalFlags)
+
+	_ = NewMinimal(listing)
+
+	require.Len(t, listing.Verbs, origVerbCount)
+	require.Equal(t, origDesc, listing.Verbs["get"].Description)
+	require.Len(t, listing.GlobalFlags, origGlobalFlags)
+	require.NotNil(t, listing.TimeFormats)
+}
+
+func TestNewMinimal_SmallerThanBrief(t *testing.T) {
+	root := newTestRoot()
+	listing := Build(root)
+
+	briefData, err := json.Marshal(NewBrief(listing))
+	require.NoError(t, err)
+	minimalData, err := json.Marshal(NewMinimal(listing))
+	require.NoError(t, err)
+
+	require.Less(t, len(minimalData), len(briefData),
+		"minimal output (%d bytes) should be smaller than brief (%d bytes)",
+		len(minimalData), len(briefData))
+}
+
+func TestNewMinimal_JSONRoundTrip(t *testing.T) {
+	root := newTestRoot()
+	m := NewMinimal(Build(root))
+
+	var buf bytes.Buffer
+	require.NoError(t, WriteValue(&buf, m, "json"))
+	require.True(t, json.Valid(buf.Bytes()))
+
+	var decoded Minimal
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &decoded))
+	require.Equal(t, "dtctl", decoded.Tool)
+	require.NotEmpty(t, decoded.Verbs)
+}
+
+// --- WriteValue tests ---
+
+func TestWriteValue_TOON(t *testing.T) {
+	root := newTestRoot()
+	m := NewMinimal(Build(root))
+
+	var buf bytes.Buffer
+	require.NoError(t, WriteValue(&buf, m, "toon"))
+	require.NotEmpty(t, buf.String())
+	require.Contains(t, buf.String(), "tool: dtctl")
+}
+
+func TestWriteValue_DefaultIsJSON(t *testing.T) {
+	root := newTestRoot()
+	m := NewMinimal(Build(root))
+
+	var jsonBuf, defaultBuf bytes.Buffer
+	require.NoError(t, WriteValue(&jsonBuf, m, "json"))
+	require.NoError(t, WriteValue(&defaultBuf, m, "table"))
+	require.Equal(t, jsonBuf.String(), defaultBuf.String(),
+		"unknown format should default to JSON")
+}
