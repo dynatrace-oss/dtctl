@@ -121,11 +121,28 @@ Examples:
 
   # Delete without confirmation
   dtctl delete settings <object-id> -y
+
+  # Validate deletion against the API without deleting
+  dtctl delete settings <object-id> --validate-only
 `,
 	Aliases: []string{"setting"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		objectID := args[0]
+		validateOnly, _ := cmd.Flags().GetBool("validate-only")
+
+		if validateOnly {
+			_, c, err := SetupClient()
+			if err != nil {
+				return err
+			}
+			handler := settings.NewHandler(c)
+			if err := handler.ValidateDelete(objectID); err != nil {
+				return fmt.Errorf("validation failed: %w", err)
+			}
+			output.PrintSuccess("Validation passed")
+			return nil
+		}
 
 		_, c, err := SetupWithSafety(safety.OperationDelete)
 		if err != nil {
@@ -168,4 +185,5 @@ func init() {
 
 	// Delete settings flags
 	deleteSettingsCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+	deleteSettingsCmd.Flags().Bool("validate-only", false, "validate the deletion against the API without deleting")
 }

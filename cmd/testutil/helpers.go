@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,6 +79,17 @@ func CreateTempFile(t *testing.T, content string, pattern string) string {
 func ResetCommandFlags(cmd *cobra.Command) {
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
 		flag.Changed = false
-		_ = flag.Value.Set(flag.DefValue)
+		if sv, ok := flag.Value.(pflag.SliceValue); ok {
+			// SliceValue.Set appends rather than replaces; use Replace to restore the
+			// declared default. StringArray stores DefValue as JSON; other slice types
+			// fall back to nil (empty) if the format doesn't parse.
+			var defaults []string
+			if flag.DefValue != "[]" {
+				_ = json.Unmarshal([]byte(flag.DefValue), &defaults)
+			}
+			_ = sv.Replace(defaults)
+		} else {
+			_ = flag.Value.Set(flag.DefValue)
+		}
 	})
 }

@@ -12,8 +12,8 @@
   },
   "modificationInfo": {
     "createdBy": "user-a@example.invalid",
-    "createdTime": "2025-01-10T08:00:00Z",
+    "createdAt": "2025-01-10T08:00:00Z",
     "lastModifiedBy": "user-b@example.invalid",
-    "lastModifiedTime": "2025-03-15T10:30:00Z"
+    "lastModifiedAt": "2025-03-15T10:30:00Z"
   }
 }

@@ -83,7 +83,7 @@ Token-based authentication and multi-environment configuration are covered in th
 | Extensions 2.0 | get, describe, apply monitoring configs |
 | Hub Extensions | get, describe, list releases, filter by keyword |
 | App Functions & Intents | get, describe, execute, find, open (deep linking) |
-| Davis AI | analyzers, CoPilot chat, NL-to-DQL, document search |
+| Analyzers & CoPilot | statistical analyzers, CoPilot chat, NL-to-DQL, document search |
 | Cloud Integrations | AWS, Azure & GCP connections and monitoring (get, describe, create, delete, apply, update, enable) |
 | EdgeConnect | get, describe, create, delete |
 | Notifications | get, describe, delete, watch |
@@ -137,7 +137,7 @@ Full documentation is available at **[dynatrace-oss.github.io/dtctl](https://dyn
 - [AI Agent Mode](https://dynatrace-oss.github.io/dtctl/docs/ai-agent-mode/): Structured envelope, auto-detection, agent skill
 - [Token Scopes](https://dynatrace-oss.github.io/dtctl/docs/token-scopes/): Required API token scopes per safety level
 
-Resource-specific guides: [DQL Queries](https://dynatrace-oss.github.io/dtctl/docs/dql-queries/) · [Workflows](https://dynatrace-oss.github.io/dtctl/docs/workflows/) · [Dashboards](https://dynatrace-oss.github.io/dtctl/docs/dashboards/) · [SLOs](https://dynatrace-oss.github.io/dtctl/docs/slos/) · [Settings](https://dynatrace-oss.github.io/dtctl/docs/settings/) · [Extensions](https://dynatrace-oss.github.io/dtctl/docs/extensions/) · [Davis AI](https://dynatrace-oss.github.io/dtctl/docs/davis-ai/) · [and more...](https://dynatrace-oss.github.io/dtctl/docs/quick-start/)
+Resource-specific guides: [DQL Queries](https://dynatrace-oss.github.io/dtctl/docs/dql-queries/) · [Workflows](https://dynatrace-oss.github.io/dtctl/docs/workflows/) · [Dashboards](https://dynatrace-oss.github.io/dtctl/docs/dashboards/) · [SLOs](https://dynatrace-oss.github.io/dtctl/docs/slos/) · [Settings](https://dynatrace-oss.github.io/dtctl/docs/settings/) · [Extensions](https://dynatrace-oss.github.io/dtctl/docs/extensions/) · [Analyzers](https://dynatrace-oss.github.io/dtctl/docs/analyzers/) · [CoPilot](https://dynatrace-oss.github.io/dtctl/docs/copilot/) · [and more...](https://dynatrace-oss.github.io/dtctl/docs/quick-start/)
 
 ## Contributing
 

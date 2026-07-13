@@ -29,6 +29,9 @@ Examples:
 
   # Dry run to preview
   dtctl create settings -f settings.yaml --schema builtin:openpipeline.logs.pipelines --scope environment --dry-run
+
+  # Validate against the API without creating
+  dtctl create settings -f settings.yaml --schema builtin:openpipeline.logs.pipelines --scope environment --validate-only
 `,
 	Aliases: []string{"setting"},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -36,6 +39,7 @@ Examples:
 		schemaID, _ := cmd.Flags().GetString("schema")
 		scope, _ := cmd.Flags().GetString("scope")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
+		validateOnly, _ := cmd.Flags().GetBool("validate-only")
 
 		if file == "" {
 			return fmt.Errorf("--file is required")
@@ -89,6 +93,25 @@ Examples:
 			return nil
 		}
 
+		req := settings.SettingsObjectCreate{
+			SchemaID: schemaID,
+			Scope:    scope,
+			Value:    value,
+		}
+
+		if validateOnly {
+			_, c, err := SetupClient()
+			if err != nil {
+				return err
+			}
+			handler := settings.NewHandler(c)
+			if err := handler.ValidateCreate(req); err != nil {
+				return fmt.Errorf("validation failed: %w", err)
+			}
+			output.PrintSuccess("Validation passed")
+			return nil
+		}
+
 		_, c, err := SetupWithSafety(safety.OperationCreate)
 		if err != nil {
 			return err
@@ -96,11 +119,7 @@ Examples:
 
 		handler := settings.NewHandler(c)
 
-		result, err := handler.Create(settings.SettingsObjectCreate{
-			SchemaID: schemaID,
-			Scope:    scope,
-			Value:    value,
-		})
+		result, err := handler.Create(req)
 		if err != nil {
 			return fmt.Errorf("failed to create settings object: %w", err)
 		}
@@ -116,6 +135,7 @@ func init() {
 	createSettingsCmd.Flags().String("schema", "", "schema ID (required)")
 	createSettingsCmd.Flags().String("scope", "", "scope for the settings object (required)")
 	createSettingsCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
+	createSettingsCmd.Flags().Bool("validate-only", false, "validate the settings object against the API without creating it")
 	_ = createSettingsCmd.MarkFlagRequired("file")
 	_ = createSettingsCmd.MarkFlagRequired("schema")
 	_ = createSettingsCmd.MarkFlagRequired("scope")

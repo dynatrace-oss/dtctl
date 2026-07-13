@@ -37,7 +37,7 @@
         src = ./.;
 
         # nixpkgs currently ships Go 1.26.2 in go_1_26, but go.mod requires
-        # >= 1.26.3. Until nixpkgs catches up, relax the `go` directive
+        # >= 1.26.5. Until nixpkgs catches up, relax the `go` directive
         # inside the Nix build only. The source tree is untouched.
         postPatch = ''
           ${pkgs.gnused}/bin/sed -i 's/^go 1\.26\.[0-9]\+$/go 1.26/' go.mod
@@ -105,7 +105,7 @@
           git
         ];
 
-        # `go 1.26.3` in go.mod is newer than nixpkgs go_1_26 (1.26.2).
+        # `go 1.26.5` in go.mod is newer than nixpkgs go_1_26 (1.26.2).
         # `auto` lets Go fetch the exact toolchain on first use; the local
         # cache lives under $GOPATH and is reused across shells.
         GOTOOLCHAIN = "auto";

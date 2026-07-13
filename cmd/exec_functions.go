@@ -26,8 +26,8 @@ Examples:
   # Execute with POST and payload
   dtctl exec function myapp/myfunction --method POST --payload '{"key":"value"}'
 
-  # Execute with payload from file
-  dtctl exec function myapp/myfunction --method POST --data @payload.json
+  # Execute with payload from file (use - to read the payload from stdin)
+  dtctl exec function myapp/myfunction --method POST --data payload.json
 
   # Defer execution (async, for resumable functions)
   dtctl exec function myapp/myfunction --defer
@@ -87,7 +87,7 @@ func init() {
 	// Function flags
 	execFunctionCmd.Flags().String("method", "GET", "HTTP method for app function (GET, POST, PUT, PATCH, DELETE)")
 	execFunctionCmd.Flags().String("payload", "", "request payload (JSON string)")
-	execFunctionCmd.Flags().String("data", "", "read payload from file (use @filename or - for stdin)")
+	execFunctionCmd.Flags().String("data", "", "read payload from file (or - for stdin)")
 	execFunctionCmd.Flags().String("code", "", "JavaScript code to execute (for ad-hoc execution)")
 	execFunctionCmd.Flags().StringP("file", "f", "", "read JavaScript code from file (for ad-hoc execution)")
 	execFunctionCmd.Flags().Bool("defer", false, "defer execution (async, for resumable functions)")

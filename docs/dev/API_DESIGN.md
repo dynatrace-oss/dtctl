@@ -663,12 +663,15 @@ dtctl describe function <app-id>/<function-name> -o json  # JSON output
 # Execute functions
 dtctl exec function <app-id>/<function-name>     # Execute function (GET)
 dtctl exec function <app-id>/<function-name> --method POST --payload '{"key":"value"}'
-dtctl exec function <app-id>/<function-name> --method POST --data @payload.json
+dtctl exec function <app-id>/<function-name> --method POST --data payload.json  # payload from file (- for stdin)
 dtctl exec function <app-id>/<function-name> -o json  # JSON output
 
-# Deferred (async) execution for resumable functions (not implemented yet)
-# dtctl exec function <app-id>/<function-name> --defer
-# dtctl get deferred-executions                    # List deferred executions
+# Deferred (async) execution for resumable functions
+dtctl exec function <app-id>/<function-name> --defer
+
+# Ad-hoc JavaScript execution (no app deployment)
+dtctl exec function --code 'export default async function() { return "hello" }'
+dtctl exec function -f script.js --payload '{"input":"data"}'  # -f - reads code from stdin
 # dtctl describe deferred-execution <execution-id> # Execution details
 
 # Function Executor (ad-hoc code execution)
