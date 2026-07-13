@@ -83,9 +83,12 @@ func TestCommandsCmd_FullMatchesLegacyOutput(t *testing.T) {
 	require.NotNil(t, decoded.TimeFormats)
 	require.NotEmpty(t, decoded.Verbs["get"].Description)
 
-	// Byte-for-byte identical to building + writing the full listing directly.
+	// Byte-for-byte identical to building the full listing directly, annotated
+	// with the same active profile/safety context the command applies.
+	wantListing := commands.Build(rootCmd)
+	annotateListingContext(wantListing)
 	var want bytes.Buffer
-	require.NoError(t, commands.WriteTo(&want, commands.Build(rootCmd), "json"))
+	require.NoError(t, commands.WriteTo(&want, wantListing, "json"))
 	require.Equal(t, want.String(), out)
 }
 

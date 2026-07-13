@@ -112,6 +112,11 @@ func runCommandsListing(cmd *cobra.Command, args []string) error {
 		listing = filtered
 	}
 
+	// Advertise the two active constraints (profile + safety level) on the base
+	// listing before the tier transform, so an agent sees the reduced surface and
+	// its permission envelope regardless of detail level.
+	annotateListingContext(listing)
+
 	// Select detail level (all transforms leave the original listing intact):
 	//   default → minimal overview, --brief → brief, --full → full.
 	switch {
@@ -131,6 +136,22 @@ func commandsFormat(cmd *cobra.Command) string {
 		return outputFormat
 	}
 	return "toon"
+}
+
+// annotateListingContext fills in the active command profile and effective
+// safety level. Best-effort: any config error leaves the fields empty, which
+// renders as the full surface at default safety.
+func annotateListingContext(l *commands.Listing) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return
+	}
+	if p, err := cfg.ResolveProfile(); err == nil && p != nil {
+		l.Profile = p.Name
+	}
+	if ctx, err := cfg.CurrentContextObj(); err == nil {
+		l.SafetyLevel = ctx.GetEffectiveSafetyLevel().String()
+	}
 }
 
 // writeRequiredScopes prints a scope union in the requested output format.

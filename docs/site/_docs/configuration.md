@@ -131,8 +131,9 @@ Commit the file to version control without secrets -- each developer or CI syste
 ### Config Search Order
 
 1. `--config` flag (explicit path)
-2. `.dtctl.yaml` in the current directory or any parent (walks up to root)
-3. Global config (`~/.config/dtctl/config`)
+2. `DTCTL_CONFIG` environment variable (explicit path)
+3. `.dtctl.yaml` in the current directory or any parent (walks up to root)
+4. Global config (`~/.config/dtctl/config`)
 
 > **Security: local configs cannot run commands.** Because a `.dtctl.yaml` is
 > auto-discovered by walking up from your current directory, it is treated as
@@ -141,10 +142,30 @@ Commit the file to version control without secrets -- each developer or CI syste
 > apply hooks** found in an auto-discovered local `.dtctl.yaml`, printing a
 > warning to stderr when it does. These code-execution keys are honored **only**
 > from the global config (`~/.config/dtctl/config`) or a config you point at
-> explicitly with `--config`. A local config may still define contexts, tokens,
-> and other preferences. As an additional safeguard, an alias can never shadow a
-> built-in command (e.g. `get`, `apply`, `version`) regardless of where it is
-> defined.
+> explicitly with `--config` or `DTCTL_CONFIG`. A local config may still define
+> contexts, tokens, and other preferences. As an additional safeguard, an alias
+> can never shadow a built-in command (e.g. `get`, `apply`, `version`)
+> regardless of where it is defined.
+
+#### Trusting a prepared workspace with `DTCTL_CONFIG`
+
+When you control the config file — for example an automation harness that
+generates a clean working directory with its own `.dtctl.yaml`, skills, and
+hooks — export `DTCTL_CONFIG` so dtctl treats that file as an explicit, trusted
+config, exactly like `--config`:
+
+```bash
+export DTCTL_CONFIG="$PWD/.dtctl.yaml"
+```
+
+This honors the file's aliases and apply hooks without touching the invocation
+(an agent can keep running `dtctl apply` unchanged), and it **skips
+auto-discovery entirely** — a stray `.dtctl.yaml` elsewhere on disk can never
+shadow the file you named. Because it points at one specific file rather than
+blanket-trusting whatever is discovered, it does not reopen the
+untrusted-working-directory threat model above. Point it only at a config you
+trust, and prefer scoping it to the session (e.g. exported by the harness or a
+per-repo setup script) rather than your global shell profile.
 
 ## Safety Levels
 
@@ -211,8 +232,9 @@ contexts:
 Per-context hooks take precedence over global hooks. The special value `"none"` disables the global hook for a specific context.
 
 > **Security: hooks are ignored in local configs.** Apply hooks are honored only
-> from the global config (`~/.config/dtctl/config`) or an explicit `--config`
-> file. Hooks defined in an auto-discovered local `.dtctl.yaml` (whether in
+> from the global config (`~/.config/dtctl/config`) or a config named explicitly
+> with `--config` or `DTCTL_CONFIG`. Hooks defined in an auto-discovered local
+> `.dtctl.yaml` (whether in
 > `preferences` or a context) are **ignored**, since a local config from an
 > untrusted working directory must not be able to run commands. dtctl prints a
 > warning to stderr when it ignores them. (The hook values remain in the file
@@ -371,7 +393,8 @@ This guard is also enforced at **resolution** time: even an alias written
 directly into a config file (bypassing `alias set`) can never override a
 built-in — dtctl ignores it and runs the real command, warning on stderr.
 
-Aliases are honored only from the global config or an explicit `--config` file.
+Aliases are honored only from the global config or a config named explicitly
+with `--config` or `DTCTL_CONFIG`.
 Aliases in an auto-discovered local `.dtctl.yaml` are **ignored** for security
 (see [Config Search Order](#config-search-order)), so `alias export` / `import`
 should target the global config, not a per-project file.

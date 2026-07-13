@@ -1058,6 +1058,152 @@ preferences:
 	}
 }
 
+// TestLoad_EnvConfigIsTrusted verifies that a config named by DTCTL_CONFIG is
+// treated as an explicit, trusted config (like --config): its aliases and apply
+// hooks are honored and it is not flagged as local. This is the kb-run /
+// prepared-workspace use case where an agent runs `dtctl apply` without a flag.
+func TestLoad_EnvConfigIsTrusted(t *testing.T) {
+	// NOT parallel: os.Chdir + os.Setenv are process-global.
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "workspace-config.yaml")
+	content := `apiVersion: v1
+kind: Config
+current-context: ws-ctx
+contexts:
+  - name: ws-ctx
+    context:
+      environment: https://ws.dt.com
+      token-ref: ws-token
+preferences:
+  hooks:
+    pre-apply: "bash validate.sh"
+    post-apply: "echo done"
+aliases:
+  wf: "get workflows"
+`
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	// Run from an empty dir so no local .dtctl.yaml can be auto-discovered.
+	emptyDir := t.TempDir()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(emptyDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	t.Setenv(EnvConfig, path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.IsLocal() {
+		t.Error("IsLocal() = true, want false for DTCTL_CONFIG-named config")
+	}
+	if cfg.IgnoredExecKeys() {
+		t.Error("IgnoredExecKeys() = true, want false for trusted env config")
+	}
+	if cfg.GetPreApplyHook() != "bash validate.sh" {
+		t.Errorf("GetPreApplyHook() = %q, want honored", cfg.GetPreApplyHook())
+	}
+	if cfg.GetPostApplyHook() != "echo done" {
+		t.Errorf("GetPostApplyHook() = %q, want honored", cfg.GetPostApplyHook())
+	}
+	if _, ok := cfg.GetAlias("wf"); !ok {
+		t.Error("GetAlias(wf) missing; env config must honor aliases")
+	}
+}
+
+// TestLoad_EnvConfigShadowsLocalDiscovery verifies that when DTCTL_CONFIG is
+// set, auto-discovery is skipped entirely: a closer (untrusted) .dtctl.yaml in
+// the working directory can never shadow or downgrade the explicitly named
+// config. This is the core security property distinguishing DTCTL_CONFIG from a
+// blanket "trust discovered configs" switch.
+func TestLoad_EnvConfigShadowsLocalDiscovery(t *testing.T) {
+	// NOT parallel: os.Chdir + os.Setenv are process-global.
+	trustedDir := t.TempDir()
+	trustedPath := filepath.Join(trustedDir, "trusted.yaml")
+	trusted := `apiVersion: v1
+kind: Config
+current-context: trusted-ctx
+contexts:
+  - name: trusted-ctx
+    context:
+      environment: https://trusted.dt.com
+      token-ref: t
+preferences:
+  hooks:
+    pre-apply: "echo trusted-hook"
+`
+	if err := os.WriteFile(trustedPath, []byte(trusted), 0600); err != nil {
+		t.Fatalf("Failed to write trusted config: %v", err)
+	}
+
+	// A hostile local config sitting in the working directory.
+	workDir := t.TempDir()
+	localPath := filepath.Join(workDir, LocalConfigName)
+	local := `apiVersion: v1
+kind: Config
+current-context: evil-ctx
+contexts:
+  - name: evil-ctx
+    context:
+      environment: https://evil.dt.com
+      token-ref: t
+preferences:
+  hooks:
+    pre-apply: "bash -c 'id > /tmp/pwned'"
+`
+	if err := os.WriteFile(localPath, []byte(local), 0600); err != nil {
+		t.Fatalf("Failed to write local config: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	t.Setenv(EnvConfig, trustedPath)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.IsLocal() {
+		t.Error("IsLocal() = true, want false: DTCTL_CONFIG must bypass discovery")
+	}
+	if cfg.CurrentContext != "trusted-ctx" {
+		t.Errorf("CurrentContext = %q, want trusted-ctx (local config must not be loaded)", cfg.CurrentContext)
+	}
+	if got := cfg.GetPreApplyHook(); got != "echo trusted-hook" {
+		t.Errorf("GetPreApplyHook() = %q, want the trusted hook (never the local one)", got)
+	}
+}
+
+// TestLoad_EnvConfigMissingFileErrors verifies that DTCTL_CONFIG pointing at a
+// nonexistent file fails closed rather than silently falling back to
+// (untrusted) auto-discovery, which would be a surprising security downgrade.
+func TestLoad_EnvConfigMissingFileErrors(t *testing.T) {
+	// NOT parallel: os.Setenv is process-global.
+	missing := filepath.Join(t.TempDir(), "does-not-exist.yaml")
+	t.Setenv(EnvConfig, missing)
+
+	if _, err := Load(); err == nil {
+		t.Error("Load() error = nil, want error for missing DTCTL_CONFIG file")
+	}
+}
+
 func TestConfig_DeleteContext(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
