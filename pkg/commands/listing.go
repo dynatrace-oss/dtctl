@@ -26,14 +26,22 @@ const SchemaVersion = 2
 
 // Listing is the top-level output of `dtctl commands`.
 type Listing struct {
-	SchemaVersion int               `json:"schema_version" yaml:"schema_version"`
-	Tool          string            `json:"tool" yaml:"tool"`
-	Version       string            `json:"version" yaml:"version"`
-	Description   string            `json:"description,omitempty" yaml:"description,omitempty"`
-	CommandModel  string            `json:"command_model" yaml:"command_model"`
-	GlobalFlags   map[string]*Flag  `json:"global_flags,omitempty" yaml:"global_flags,omitempty"`
-	Verbs         map[string]*Verb  `json:"verbs" yaml:"verbs"`
-	Aliases       map[string]string `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
+	SchemaVersion int    `json:"schema_version" yaml:"schema_version"`
+	Tool          string `json:"tool" yaml:"tool"`
+	Version       string `json:"version" yaml:"version"`
+	Description   string `json:"description,omitempty" yaml:"description,omitempty"`
+	CommandModel  string `json:"command_model" yaml:"command_model"`
+	// Profile is the active command profile shaping this catalog, if any. Omitted
+	// (empty) when the full command tree is exposed. Advertising it lets an agent
+	// see that it is looking at a reduced surface. See COMMAND_PROFILES_DESIGN.md.
+	Profile string `json:"profile,omitempty" yaml:"profile,omitempty"`
+	// SafetyLevel is the effective safety level of the active context, the
+	// orthogonal permission axis. Surfaced alongside Profile so both active
+	// constraints are visible at once.
+	SafetyLevel string            `json:"safety_level,omitempty" yaml:"safety_level,omitempty"`
+	GlobalFlags map[string]*Flag  `json:"global_flags,omitempty" yaml:"global_flags,omitempty"`
+	Verbs       map[string]*Verb  `json:"verbs" yaml:"verbs"`
+	Aliases     map[string]string `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
 	// ResourceScopes is the canonical (resource, access) → scopes table. Agents
 	// can derive any command's required scopes from this table plus each verb's
 	// access, which is what --brief relies on.

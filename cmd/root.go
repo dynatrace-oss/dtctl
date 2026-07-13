@@ -132,6 +132,20 @@ func execute() int {
 	}
 	// --- End alias resolution ---
 
+	// --- Command profile filter ---
+	// Resolve the active profile (DTCTL_PROFILE > context binding > full) and
+	// mask out-of-profile commands before Cobra dispatches, so help, the
+	// `commands` catalog, and completion all reflect the reduced surface. A
+	// nil profile is the full tree (backward compatible). An unknown profile
+	// name is a hard error rather than a silent surface expansion.
+	prof, profErr := resolveActiveProfile(spanArgs)
+	if profErr != nil {
+		output.PrintHumanError("%s", profErr)
+		return exitCodeForError(profErr)
+	}
+	applyProfile(rootCmd, prof)
+	// --- End command profile filter ---
+
 	// Initialise OpenTelemetry tracing. Done after alias resolution so that
 	// the span name reflects the actual command (not a pre-alias invocation).
 	// The root span covers the entire invocation; shutdown flushes buffered
@@ -347,6 +361,17 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// ProfileError — command masked by the active command profile (surface axis,
+	// distinct from safety_blocked which is the permission axis).
+	var profileErr *ProfileError
+	if errors.As(err, &profileErr) {
+		return &output.ErrorDetail{
+			Code:        "profile_blocked",
+			Message:     profileErr.Headline(),
+			Suggestions: profileErr.Suggestions(),
+		}
+	}
+
 	// apply.HookRejectedError — pre-apply hook rejected the resource
 	var hookErr *apply.HookRejectedError
 	if errors.As(err, &hookErr) {
@@ -519,6 +544,11 @@ func exitCodeForError(err error) int {
 	var apiErr *client.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.ExitCode()
+	}
+
+	var profileErr *ProfileError
+	if errors.As(err, &profileErr) {
+		return client.ExitUsageError
 	}
 
 	var cmdErr *suggest.CommandError
