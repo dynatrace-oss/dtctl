@@ -29,10 +29,20 @@ func loadRawConfig() (*config.Config, error) {
 	return config.LoadWithoutExpansion()
 }
 
-// saveConfig saves configuration respecting the --config flag and local config presence
+// saveConfig saves configuration respecting the --config flag, DTCTL_CONFIG, and
+// local config presence. The path selection MUST mirror the read precedence used
+// by loadConfigRaw/loadRawConfig (and config.Load) so that config-management
+// commands round-trip the same file they loaded — otherwise a mutation read from
+// DTCTL_CONFIG would be written to a different file (global or a local
+// .dtctl.yaml), silently clobbering it.
 func saveConfig(cfg *config.Config) error {
 	if cfgFile != "" {
 		return cfg.SaveTo(cfgFile)
+	}
+	// An explicit config named in the environment is trusted like --config and
+	// short-circuits local discovery, so writes must target it too.
+	if envPath := os.Getenv(config.EnvConfig); envPath != "" {
+		return cfg.SaveTo(envPath)
 	}
 	// If a local config exists, save to it
 	if local := config.FindLocalConfig(); local != "" {
@@ -155,6 +165,7 @@ type ContextListItem struct {
 	Name        string `table:"NAME"`
 	Environment string `table:"ENVIRONMENT"`
 	SafetyLevel string `table:"SAFETY-LEVEL"`
+	Profile     string `table:"PROFILE,wide"`
 	Description string `table:"DESCRIPTION,wide"`
 }
 
@@ -228,6 +239,14 @@ Examples:
     --token-ref staging-token \
     --safety-level readwrite-all \
     --description "Staging environment"
+
+  # Bind a command profile so an embedded agent only sees a reduced surface
+  # (compose with --safety-level to also constrain what those commands may do)
+  dtctl config set-context prod-agent \
+    --environment https://prod.dynatrace.com \
+    --token-ref prod-token \
+    --profile query \
+    --safety-level readonly
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -235,8 +254,9 @@ Examples:
 		tokenRef, _ := cmd.Flags().GetString("token-ref")
 		safetyLevel, _ := cmd.Flags().GetString("safety-level")
 		description, _ := cmd.Flags().GetString("description")
+		profile, _ := cmd.Flags().GetString("profile")
 
-		return setContext(args[0], environment, tokenRef, safetyLevel, description)
+		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile)
 	},
 }
 
@@ -421,6 +441,8 @@ func init() {
 	configSetContextCmd.Flags().String("token-ref", "", "token reference name")
 	configSetContextCmd.Flags().String("safety-level", "", "safety level (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
 	configSetContextCmd.Flags().String("description", "", "human-readable description for this context")
+	configSetContextCmd.Flags().String("profile", "", "command profile to bind (restricts the visible command surface; e.g. query, investigate, full)")
+	_ = configSetContextCmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
 
 	// Flags for set-credentials
 	configSetCredentialsCmd.Flags().String("token", "", "API token")
