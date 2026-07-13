@@ -107,7 +107,7 @@ func execute() int {
 		if cfg.IgnoredExecKeys() {
 			fmt.Fprintf(os.Stderr,
 				"warning: ignoring aliases and hooks from local config %q "+
-					"(code-execution keys are only honored from the global config)\n",
+					"(honored only from the global config, --config, or DTCTL_CONFIG)\n",
 				cfg.LocalConfigPath())
 		}
 
@@ -911,6 +911,10 @@ func initConfig() {
 
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
+	} else if envPath := os.Getenv(config.EnvConfig); envPath != "" {
+		// DTCTL_CONFIG is an explicit, trusted config that bypasses discovery —
+		// mirror config.Load's precedence so diagnostics name the right file.
+		viper.SetConfigFile(envPath)
 	} else {
 		// Check for local config first (.dtctl.yaml in current or parent directories)
 		localConfig := config.FindLocalConfig()
