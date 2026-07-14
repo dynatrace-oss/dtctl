@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -341,6 +342,47 @@ func TestDQLExecutor_ExecuteQueryWithOptions_ErrorHandling(t *testing.T) {
 				t.Errorf("expected error to start with '%s', got '%s'", tt.expectedErrMsg, err.Error())
 			}
 		})
+	}
+}
+
+func TestDQLExecutor_ExecuteQueryWithOptions_SingleQuoteHint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"single quotes are not allowed","details":{"errorType":"PARSE_ERROR_SINGLE_QUOTES"}}}`))
+	}))
+	defer server.Close()
+
+	c, err := client.NewForTesting(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	_, err = NewDQLExecutor(c).ExecuteQueryWithOptions(`fetch logs | filter status == 'ERROR'`, DQLExecuteOptions{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// The enriched message must guide the user toward double quotes.
+	msg := err.Error()
+	if !strings.Contains(msg, `double quotes`) {
+		t.Errorf("expected hint about double quotes, got:\n%s", msg)
+	}
+	if !strings.Contains(msg, `status == "ERROR"`) {
+		t.Errorf("expected a corrected example in the hint, got:\n%s", msg)
+	}
+
+	// The underlying *QueryError must remain in the chain so callers (agent
+	// envelope, wait fast-fail) can still classify it.
+	var qErr *QueryError
+	if !errors.As(err, &qErr) {
+		t.Fatalf("expected *QueryError to remain in the error chain, got %T", err)
+	}
+	if qErr.ErrorType != "PARSE_ERROR_SINGLE_QUOTES" {
+		t.Errorf("ErrorType = %q, want PARSE_ERROR_SINGLE_QUOTES", qErr.ErrorType)
+	}
+	if qErr.StatusCode != http.StatusBadRequest {
+		t.Errorf("StatusCode = %d, want 400", qErr.StatusCode)
 	}
 }
 
