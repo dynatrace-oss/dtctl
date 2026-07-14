@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -143,6 +144,49 @@ func TestWait_MaxAttemptsExceeded(t *testing.T) {
 	}
 	if callCount != 2 {
 		t.Errorf("expected 2 calls, got %d", callCount)
+	}
+}
+
+// --- Wait: permanent query error fails fast ---
+
+func TestWait_PermanentQueryError_FailsFast(t *testing.T) {
+	callCount := 0
+	executor, cleanup := newWaiterTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		// A malformed DQL query — the backend rejects it with a 4xx parse error.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":{"message":"single quotes are not allowed","details":{"errorType":"PARSE_ERROR_SINGLE_QUOTES"}}}`)
+	})
+	defer cleanup()
+
+	buf := &bytes.Buffer{}
+	config := WaitConfig{
+		Query:       "fetch logs | filter status == 'ERROR'",
+		Condition:   Condition{Type: ConditionTypeAny, Operator: OpGreater, Value: 0},
+		MaxAttempts: 5,
+		Quiet:       false,
+		ProgressOut: buf,
+		Backoff:     BackoffConfig{MinInterval: 0, MaxInterval: 0},
+	}
+	waiter := NewQueryWaiter(executor, config)
+
+	result, err := waiter.Wait(context.Background())
+	if err != nil {
+		t.Fatalf("Wait() error = %v (expected nil; controlled failure via result)", err)
+	}
+	if result == nil || result.Success {
+		t.Fatalf("expected non-success result, got %+v", result)
+	}
+	if result.FailureReason != "query error" {
+		t.Errorf("FailureReason = %q, want %q", result.FailureReason, "query error")
+	}
+	// Must not retry a query that can never parse.
+	if callCount != 1 {
+		t.Errorf("expected exactly 1 attempt (no retries), got %d", callCount)
+	}
+	if !strings.Contains(buf.String(), "not retryable") {
+		t.Errorf("expected progress output to explain the query is not retryable, got:\n%s", buf.String())
 	}
 }
 

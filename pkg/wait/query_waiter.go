@@ -2,8 +2,10 @@ package wait
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -143,6 +145,22 @@ func (w *QueryWaiter) Wait(ctx context.Context) (*Result, error) {
 				}, ctx.Err()
 			}
 
+			// Permanent query errors (e.g. a malformed DQL query) can never
+			// succeed, so retrying with backoff is pointless — fail fast.
+			if isPermanentQueryError(err) {
+				elapsed := time.Since(startTime)
+				if !w.config.Quiet {
+					fmt.Fprintf(w.config.ProgressOut, "\nQuery error (not retryable): %v\n", err)
+					fmt.Fprintf(w.config.ProgressOut, "Elapsed: %s\n", elapsed.Round(100*time.Millisecond))
+				}
+				return &Result{
+					Success:       false,
+					Attempts:      attempt + 1,
+					Elapsed:       elapsed,
+					FailureReason: "query error",
+				}, nil
+			}
+
 			// Transient error - log and retry
 			if w.config.Verbose {
 				fmt.Fprintf(w.config.ProgressOut, "  Query error: %v (will retry)\n", err)
@@ -229,6 +247,25 @@ func (w *QueryWaiter) Wait(ctx context.Context) (*Result, error) {
 
 		attempt++
 	}
+}
+
+// isPermanentQueryError reports whether a query execution error is permanent —
+// i.e. re-running the identical query cannot succeed. A structured DQL error
+// with a 4xx status means the query or request itself is rejected (parse
+// errors, unknown fields, invalid arguments), so retrying is futile. HTTP 408
+// (request timeout) and 429 (too many requests) are the transient exceptions
+// and remain retryable. Non-QueryError failures (network blips, 5xx) are
+// treated as transient.
+func isPermanentQueryError(err error) bool {
+	var qErr *exec.QueryError
+	if !errors.As(err, &qErr) {
+		return false
+	}
+	switch qErr.StatusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return false
+	}
+	return qErr.StatusCode >= 400 && qErr.StatusCode < 500
 }
 
 // PrintResults prints the query results if output format is specified

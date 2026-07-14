@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -337,10 +338,15 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 			fmt.Fprintln(os.Stderr, "Query cancelled.")
 			return nil, nil
 		}
-		// Enhance known error types with CLI-specific hints
+		// Enhance known error types with CLI-specific hints.
 		var qErr *QueryError
-		if ok := isQueryError(err, &qErr); ok && qErr.ErrorType == "FILTER_SEGMENT_REQUIRES_VARIABLE" {
-			return nil, formatSegmentVariableError(qErr)
+		if isQueryError(err, &qErr) {
+			switch qErr.ErrorType {
+			case "FILTER_SEGMENT_REQUIRES_VARIABLE":
+				return nil, formatSegmentVariableError(qErr)
+			case "PARSE_ERROR_SINGLE_QUOTES":
+				return nil, formatSingleQuoteError(qErr)
+			}
 		}
 		return nil, err
 	}
@@ -392,6 +398,36 @@ func formatSegmentVariableError(qErr *QueryError) error {
 		"        values: [\"your-value-here\"]\n\n"+
 		"  dtctl query \"...\" --segments-file segments.yaml",
 		segmentID, variableName, segmentID, variableName, segmentID, variableName)
+}
+
+// formatSingleQuoteError produces a helpful error when a query uses single
+// quotes for a string literal. DQL only accepts double quotes; single quotes
+// are almost always the result of a shell-quoting collision — wrapping the
+// whole query in double quotes leaves no room for double-quoted string
+// literals, so users reach for single quotes instead. The wrapped *QueryError
+// is preserved in the chain so callers (agent envelope, wait fast-fail) can
+// still classify it. Advice is tailored per platform.
+func formatSingleQuoteError(qErr *QueryError) error {
+	return fmt.Errorf("%w\n\n%s", qErr, singleQuoteHint())
+}
+
+// singleQuoteHint returns platform-specific guidance for fixing a single-quoted
+// DQL string literal. On Windows it spells out the PowerShell and cmd.exe
+// forms, since that is where the double-quote collision bites hardest.
+func singleQuoteHint() string {
+	const base = "DQL string literals must use double quotes (\"...\"), not single quotes ('...')."
+	if runtime.GOOS == "windows" {
+		return base + "\n\n" +
+			"Your shell most likely stripped the double quotes. Quote the query so the inner \" survive:\n\n" +
+			"  PowerShell:  dtctl query 'fetch logs | filter status == \"ERROR\"'\n" +
+			"  cmd.exe:     dtctl query \"fetch logs | filter status == \\\"ERROR\\\"\"\n\n" +
+			"Or avoid shell quoting entirely by reading the query from a file or stdin:\n\n" +
+			"  dtctl query -f query.dql\n" +
+			"  dtctl query -f -   # then type/pipe the query on stdin"
+	}
+	return base + "\n\n" +
+		"Wrap the query in single quotes and use double quotes for values inside:\n\n" +
+		"  dtctl query 'fetch logs | filter status == \"ERROR\"'"
 }
 
 // VerifyQuery verifies a DQL query without executing it

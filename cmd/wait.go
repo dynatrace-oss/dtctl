@@ -60,10 +60,11 @@ Exit Codes:
 
 Examples:
   # Wait for a specific test span to arrive
-  dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1
+  # (DQL string values need double quotes; wrap the query in single quotes)
+  dtctl wait query 'fetch spans | filter test_id == "test-123"' --for=count=1
 
   # Wait for any error logs
-  dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+  dtctl wait query 'fetch logs | filter status == "ERROR"' --for=any --timeout 2m
 
   # Query with template variables
   dtctl wait query -f query.dql --set test_id=my-test --for=count-gte=1

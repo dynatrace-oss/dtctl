@@ -28,6 +28,32 @@ smartscapeNodes SERVICE
 fieldsAdd ts = formatTimestamp(timestamp, format:"yyyy-MM-dd HH:mm:ss")
 ```
 
+## String Quoting (read this first)
+
+DQL string literals **must use double quotes** (`"ERROR"`), never single quotes.
+`filter status == 'ERROR'` fails with `PARSE_ERROR_SINGLE_QUOTES`, and an
+**unquoted** bareword like `filter status == ERROR` is parsed as a *field
+reference* (compares `status` to a field named `ERROR`) — so it silently
+returns **zero rows with no error**. Both are common mistakes; neither is a bug.
+
+```dql
+filter status == "ERROR"          -- correct
+filter status == 'ERROR'          -- WRONG: PARSE_ERROR_SINGLE_QUOTES
+filter status == ERROR            -- WRONG: matches nothing (ERROR = field ref)
+```
+
+Because the value needs double quotes, wrap the **whole query** so your shell
+preserves them:
+
+| Shell | Command |
+|-------|---------|
+| bash/zsh, PowerShell | `dtctl query 'fetch logs \| filter status == "ERROR"'` (single-quote the query) |
+| cmd.exe | `dtctl query "fetch logs \| filter status == \"ERROR\""` (escape inner quotes) |
+| any (quote-free) | `dtctl query -f query.dql` or pipe/stdin with `dtctl query -f -` |
+
+When generating a `dtctl query` command for a user, **prefer the single-quoted
+wrapper** (or `-f`) so the double-quoted DQL values survive intact.
+
 ## Data Sources
 
 ```dql
