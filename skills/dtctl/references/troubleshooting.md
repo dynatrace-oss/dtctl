@@ -37,6 +37,32 @@ dtctl auth status --plain
 
 ## Common Issues
 
+### PARSE_ERROR_SINGLE_QUOTES / query filter returns nothing
+DQL string literals require **double** quotes. Two frequent traps:
+
+- `filter status == 'ERROR'` → `PARSE_ERROR_SINGLE_QUOTES` (single quotes are invalid).
+- `filter status == ERROR` (unquoted) → silently returns **zero rows**; the
+  bareword is read as a field reference, not the string `"ERROR"`.
+
+Use double quotes for the value and pick a shell wrapper that preserves them:
+
+```bash
+# bash/zsh + PowerShell: single-quote the whole query
+dtctl query 'fetch logs | filter status == "ERROR"'
+```
+```cmd
+:: cmd.exe: escape the inner double quotes
+dtctl query "fetch logs | filter status == \"ERROR\""
+```
+```powershell
+# PowerShell here-string (no escaping headaches)
+dtctl query -f - -o json @'
+fetch logs | filter status == "ERROR"
+'@
+```
+
+Quote-free everywhere: put the DQL in a file and run `dtctl query -f query.dql`.
+
 ### 401/403 Authentication Errors
 ```bash
 # Re-store credentials
