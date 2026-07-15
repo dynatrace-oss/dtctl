@@ -3826,12 +3826,15 @@ Set default preferences:
 # Set default output format
 export DTCTL_OUTPUT=json
 
-# Set default context
+# Set default context (session-local — never written to the config file)
 export DTCTL_CONTEXT=production
 
-# Override with flags
+# Override with flags (flags always win over environment variables)
 dtctl get workflows -o yaml
 ```
+
+`DTCTL_CONTEXT` is session-local. To persist a context switch, use
+`dtctl ctx <name>`.
 
 ### Pipeline Commands
 

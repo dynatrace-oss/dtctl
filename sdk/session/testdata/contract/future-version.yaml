@@ -1,0 +1,8 @@
+# Golden contract fixture: a config from a hypothetical future breaking
+# schema. Readers that only understand v1 must refuse it with a clear error —
+# never misread it silently.
+apiVersion: v99
+kind: Config
+current-context: dev
+contexts: []
+tokens: []

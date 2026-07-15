@@ -22,7 +22,7 @@ jobs:
       - name: Check goimports formatting
         run: |
           go install golang.org/x/tools/cmd/goimports@latest
-          goimports_output=$(goimports -local github.com/dynatrace-oss/dtctl -l .)
+          goimports_output=$(goimports -local github.com/dynatrace-oss -l .)
           if [ -n "$goimports_output" ]; then
             echo "The following files are not properly formatted:"
             echo "$goimports_output"
@@ -44,3 +44,4 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.1
+

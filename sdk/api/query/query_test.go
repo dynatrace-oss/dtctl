@@ -1209,3 +1209,65 @@ func TestExecuteAndPollWithOptions_NoPreviewWhenDisabled(t *testing.T) {
 		}
 	}
 }
+
+// TestExecuteAndPoll_OnUnauthorizedRetryOnExecute verifies that a 401 on the
+// INITIAL execute (not just on polls) triggers the onUnauthorized callback and
+// retries the execute with the refreshed token — long-lived processes
+// outlive the first bearer token, and their next query starts here.
+func TestExecuteAndPoll_OnUnauthorizedRetryOnExecute(t *testing.T) {
+	var execCount atomic.Int32
+	var refreshCount atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		n := execCount.Add(1)
+		if n == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer new-token" {
+			t.Errorf("retry execute Authorization = %q, want %q", got, "Bearer new-token")
+		}
+		resp := Response{
+			State:  "SUCCEEDED",
+			Result: &Result{Records: []map[string]interface{}{{"refreshed": true}}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.ExecuteAndPoll(context.Background(), ExecuteRequest{Query: "fetch logs"}, func() (string, error) {
+		refreshCount.Add(1)
+		return "new-token", nil
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAndPoll() error: %v", err)
+	}
+	if result.State != "SUCCEEDED" {
+		t.Errorf("State = %q, want SUCCEEDED", result.State)
+	}
+	if refreshCount.Load() != 1 {
+		t.Errorf("expected 1 token refresh, got %d", refreshCount.Load())
+	}
+	if execCount.Load() != 2 {
+		t.Errorf("expected 2 executes (1 failed + 1 retry), got %d", execCount.Load())
+	}
+}
+
+// TestExecuteAndPoll_ExecuteUnauthorizedWithoutRefresher verifies a 401 on the
+// initial execute still fails cleanly when no refresher is wired.
+func TestExecuteAndPoll_ExecuteUnauthorizedWithoutRefresher(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":{"message":"jwt expired"}}`))
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	_, err := h.ExecuteAndPoll(context.Background(), ExecuteRequest{Query: "fetch logs"}, nil)
+	if err == nil {
+		t.Fatal("expected an error without a refresher")
+	}
+}

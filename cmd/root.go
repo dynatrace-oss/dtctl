@@ -183,8 +183,14 @@ func execute() int {
 
 		errStr := err.Error()
 
-		// Enhance unknown command errors with suggestions
+		// Unknown top-level commands get one shot at plugin dispatch before
+		// the suggestion enhancer: `dtctl foo` execs dtctl-foo from PATH if
+		// present (kubectl semantics; built-ins always win because they never
+		// reach this error path). See docs/dev/PLUGIN_CONVENTIONS.md.
 		if strings.Contains(errStr, "unknown command") {
+			if code, handled := tryPluginDispatch(spanArgs); handled {
+				return code
+			}
 			err = enhanceCommandError(rootCmd, err)
 		}
 
@@ -708,7 +714,11 @@ func GetAgentMode() bool {
 	return agentMode
 }
 
-// LoadConfig loads the config and applies the --context flag override if provided
+// LoadConfig loads the config and applies the context override, if any.
+// Precedence: --context flag > DTCTL_CONTEXT env var > current-context in the
+// config file. Both overrides are session-local — the config file is never
+// written, so a scripted `DTCTL_CONTEXT=x dtctl ...` cannot repoint other
+// processes on the machine.
 func LoadConfig() (*config.Config, error) {
 	var cfg *config.Config
 	var err error
@@ -724,9 +734,12 @@ func LoadConfig() (*config.Config, error) {
 		return nil, err
 	}
 
-	// Override current context if --context flag is provided
-	if contextName != "" {
-		cfg.CurrentContext = contextName
+	override := contextName
+	if override == "" {
+		override = os.Getenv("DTCTL_CONTEXT")
+	}
+	if override != "" {
+		cfg.CurrentContext = override
 	}
 
 	return cfg, nil
@@ -746,7 +759,7 @@ func NewClientFromConfig(cfg *config.Config) (*client.Client, error) {
 	}
 	// Propagate W3C trace context on every Dynatrace API request.
 	if tracingRootCtx != nil {
-		c.InjectTraceContext(tracingRootCtx)
+		client.InjectTraceContext(c, tracingRootCtx)
 	}
 	return c, nil
 }
@@ -898,7 +911,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (searches .dtctl.yaml upward, then $XDG_CONFIG_HOME/dtctl/config)")
-	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "use a specific context")
+	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "use a specific context for this invocation (env: DTCTL_CONTEXT; never persisted)")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "output format: json|yaml|csv|toon|table|wide")
 	rootCmd.PersistentFlags().StringVar(&jqFilter, "jq", "", "jq filter expression for structured output (json|yaml|toon); non-structured formats are auto-promoted to json")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
@@ -932,6 +945,15 @@ func initConfig() {
 	// Agent mode implies plain mode (no colors, no interactive prompts)
 	if agentMode {
 		plainMode = true
+	}
+
+	// DTCTL_OUTPUT provides a default output format when -o/--output is not
+	// given explicitly. The flag always wins; agent-mode auto-detection above
+	// also treats the env value as a default, not an explicit choice.
+	if f := rootCmd.PersistentFlags().Lookup("output"); f != nil && !f.Changed {
+		if env := os.Getenv("DTCTL_OUTPUT"); env != "" {
+			outputFormat = env
+		}
 	}
 
 	// Propagate plain mode to the output package so ColorEnabled() respects --plain

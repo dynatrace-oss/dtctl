@@ -168,6 +168,7 @@ func TestLoadConfig(t *testing.T) {
 		name               string
 		currentContext     string
 		contextFlagValue   string
+		envContextValue    string
 		wantCurrentContext string
 	}{
 		{
@@ -186,6 +187,19 @@ func TestLoadConfig(t *testing.T) {
 			name:               "context flag set to same as config",
 			currentContext:     "staging",
 			contextFlagValue:   "staging",
+			wantCurrentContext: "staging",
+		},
+		{
+			name:               "DTCTL_CONTEXT env overrides config",
+			currentContext:     "dev",
+			envContextValue:    "prod",
+			wantCurrentContext: "prod",
+		},
+		{
+			name:               "context flag beats DTCTL_CONTEXT env",
+			currentContext:     "dev",
+			contextFlagValue:   "staging",
+			envContextValue:    "prod",
 			wantCurrentContext: "staging",
 		},
 	}
@@ -220,8 +234,12 @@ func TestLoadConfig(t *testing.T) {
 				}
 			}()
 
-			// Unset environment variable to avoid interference
+			// Unset environment variable to avoid interference, then apply
+			// the test case's env override if any
 			_ = os.Unsetenv("DTCTL_CONTEXT")
+			if tt.envContextValue != "" {
+				_ = os.Setenv("DTCTL_CONTEXT", tt.envContextValue)
+			}
 
 			// Reset state
 			viper.Reset()

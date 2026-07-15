@@ -1,0 +1,45 @@
+# Golden contract fixture: a schema-v1 config exercising every known field
+# PLUS unknown fields a newer writer might add (see docs/dev/CONFIG_CONTRACT.md).
+# Readers must parse it without error; writers must preserve the unknown keys.
+# All values are synthetic (privacy: no real names, env IDs, tokens, emails).
+apiVersion: v1
+kind: Config
+current-context: dev
+future-top-level-field: keep-me
+contexts:
+  - name: dev
+    context:
+      environment: https://dev.example.invalid
+      token-ref: dev-token
+      safety-level: readonly
+      description: development tenant
+      hooks:
+        pre-apply: echo pre
+        post-apply: echo post
+      spill:
+        mode: auto
+        threshold: 50KB
+      future-context-field: keep-me-too
+  - name: prod
+    context:
+      environment: https://prod.example.invalid
+      token-ref: prod-token
+      safety-level: readwrite-all
+tokens:
+  - name: dev-token
+    token: ""
+    future-token-field: keep-me-three
+  - name: prod-token
+    token: dt0s16.SYNTHETIC.FIXTURE
+preferences:
+  output: table
+  editor: vim
+  future-preference: keep-me-four
+aliases:
+  errlogs: query 'fetch logs | filter status == "ERROR"'
+spill:
+  mode: auto
+  dir: /tmp/spill
+  format: jsonl
+  threshold: 50KB
+  ttl: 24h
