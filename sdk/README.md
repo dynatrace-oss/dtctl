@@ -17,7 +17,6 @@ go get github.com/dynatrace-oss/dtctl/sdk@latest
 | `sdk/httpclient` | HTTP client with retry, rate limiting, typed errors, pagination helpers |
 | `sdk/auth` | Token type detection (API token vs OAuth/Bearer) |
 | `sdk/urls` | Dynatrace environment URL validation and normalization |
-| `sdk/credstore` | OS keyring and file-based credential storage |
 | `sdk/agentmode` | AI agent environment detection and structured JSON envelope |
 
 ### API wrappers (`sdk/api/`)

@@ -1,0 +1,11 @@
+# Golden contract fixture: the minimal valid schema-v1 config.
+# apiVersion may be omitted entirely (configs predate its enforcement).
+current-context: only
+contexts:
+  - name: only
+    context:
+      environment: https://only.example.invalid
+      token-ref: only-token
+tokens:
+  - name: only-token
+    token: dt0s16.SYNTHETIC.FIXTURE

@@ -681,3 +681,46 @@ func TestAuthLogin_KeyringRecovery_WithFileStorage(t *testing.T) {
 		t.Errorf("expected file storage to bypass keyring gate, got: %v", err)
 	}
 }
+
+// TestAuthLogout_RemoveContext_DoesNotPersistEnvOverride guards the
+// session-locality contract of DTCTL_CONTEXT (see LoadConfig): a logout that
+// rewrites the config file must persist the file's own current-context, not
+// the in-memory env override.
+func TestAuthLogout_RemoveContext_DoesNotPersistEnvOverride(t *testing.T) {
+	viper.Reset()
+	t.Setenv("DTCTL_DISABLE_KEYRING", "1")
+	t.Setenv(config.EnvTokenStorage, "file")
+	t.Setenv("XDG_DATA_HOME", t.TempDir()) // keep the file token store off the real one
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := config.NewConfig()
+	cfg.SetContext("doomed", "https://doomed.example.invalid", "doomed-oauth")
+	cfg.SetContext("other", "https://other.example.invalid", "other-oauth")
+	cfg.CurrentContext = "doomed"
+	if err := cfg.SaveTo(configPath); err != nil {
+		t.Fatalf("save test config: %v", err)
+	}
+
+	cfgFile = configPath
+	defer func() { cfgFile = "" }()
+	t.Setenv("DTCTL_CONTEXT", "other") // session-local override, must never be written
+
+	rootCmd.SetArgs([]string{"auth", "logout", "doomed", "--remove-context"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("auth logout: %v", err)
+	}
+
+	saved, err := config.LoadFrom(configPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if saved.CurrentContext == "other" {
+		t.Fatal("DTCTL_CONTEXT env override was persisted to the config file")
+	}
+	if saved.CurrentContext != "" {
+		t.Errorf("current-context = %q, want cleared (the deleted context was current in the file)", saved.CurrentContext)
+	}
+	if _, err := saved.GetContext("doomed"); err == nil {
+		t.Error("context 'doomed' should have been removed")
+	}
+}

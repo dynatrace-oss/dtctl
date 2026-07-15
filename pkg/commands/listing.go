@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/json"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtctl/pkg/auth"
+	"github.com/dynatrace-oss/dtctl/pkg/plugin"
 	"github.com/dynatrace-oss/dtctl/pkg/version"
 )
 
@@ -49,6 +51,11 @@ type Listing struct {
 	TimeFormats    *TimeFormats                 `json:"time_formats,omitempty" yaml:"time_formats,omitempty"`
 	Patterns       []string                     `json:"patterns,omitempty" yaml:"patterns,omitempty"`
 	Antipatterns   []string                     `json:"antipatterns,omitempty" yaml:"antipatterns,omitempty"`
+	// Plugins are the dtctl-* executables discovered on PATH. Each runs as
+	// `dtctl <name>` (exec convention); agents cannot see them any other way,
+	// so the catalog is their discovery surface. Flags and behavior are the
+	// plugin's own — dtctl only knows the name and binary.
+	Plugins []plugin.Plugin `json:"plugins,omitempty" yaml:"plugins,omitempty"`
 }
 
 // Verb represents a top-level verb (get, describe, apply, ...).
@@ -175,8 +182,22 @@ func Build(root *cobra.Command) *Listing {
 		TimeFormats:    defaultTimeFormats,
 		Patterns:       defaultPatterns,
 		Antipatterns:   defaultAntipatterns,
+		Plugins:        plugin.Discover(os.Getenv("PATH"), commandNames(root)),
 	}
 	return listing
+}
+
+// commandNames collects the built-in command names and aliases for plugin
+// shadow warnings.
+func commandNames(root *cobra.Command) map[string]bool {
+	names := make(map[string]bool)
+	for _, c := range root.Commands() {
+		names[c.Name()] = true
+		for _, a := range c.Aliases {
+			names[a] = true
+		}
+	}
+	return names
 }
 
 // buildGlobalFlags extracts the persistent flags from the root command.
@@ -514,6 +535,8 @@ func NewBrief(l *Listing) *Listing {
 		// from resource_scopes[resource][verb.access] without the materialized
 		// per-command map.
 		ResourceScopes: l.ResourceScopes,
+		// Plugins are invisible to agents outside this catalog — keep them.
+		Plugins: l.Plugins,
 	}
 
 	for name, verb := range l.Verbs {

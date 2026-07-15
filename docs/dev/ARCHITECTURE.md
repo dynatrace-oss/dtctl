@@ -542,7 +542,6 @@ dtctl/
     ├── httpclient/             # HTTP client, response helpers, pagination, typed errors
     ├── auth/                   # Token type detection
     ├── urls/                   # URL validation/normalization
-    ├── credstore/              # Credential storage
     └── agentmode/              # AI agent detection
 ```
 
@@ -1007,7 +1006,7 @@ httpClient.SetTLSClientConfig(&tls.Config{
 ## Future Enhancements
 
 ### Phase 2 Additions:
-1. **Plugin System**: Support for extending dtctl with plugins (using Go plugins or exec-based)
+1. **Plugin System**: ✅ shipped 2026-07-12 as the kubectl-style exec convention — `dtctl foo` execs `dtctl-foo` from PATH; Go plugins rejected (see [PLUGIN_CONVENTIONS.md](PLUGIN_CONVENTIONS.md))
 2. **Interactive Mode**: TUI using bubbletea/lipgloss
 3. **Local Development Mode**: Mock server for testing
 4. **Credential Providers**: Integration with HashiCorp Vault, AWS Secrets Manager

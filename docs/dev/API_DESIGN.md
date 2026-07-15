@@ -2284,6 +2284,6 @@ Exit code: 4
 - Bulk operations (e.g., delete multiple filtered resources)
 - Resource diffing and change previews
 - Integration with CI/CD pipelines
-- Plugin system for custom commands
+- ~~Plugin system for custom commands~~ — shipped 2026-07-12: kubectl-style exec plugins (`dtctl-<name>` on PATH; see [PLUGIN_CONVENTIONS.md](PLUGIN_CONVENTIONS.md))
 - Shell integration (kubectl-like autocompletion)
 - Resource usage analytics and cost estimation

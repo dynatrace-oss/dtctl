@@ -407,7 +407,23 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 
 	result, err := h.Execute(execCtx, req)
 	if err != nil {
-		return nil, err
+		// A 401 on the initial execute gets the same one-shot refresh the
+		// poll loop has — long-lived processes outlive the first
+		// bearer token, and without this every query after expiry fails
+		// terminally even though a refresher is wired.
+		if isUnauthorized(err) && onUnauthorized != nil {
+			newToken, refreshErr := onUnauthorized()
+			if refreshErr != nil {
+				return nil, fmt.Errorf("execute returned 401 (%v) and token refresh failed: %w", err, refreshErr)
+			}
+			if newToken != "" {
+				h.client.SetToken(newToken)
+			}
+			result, err = h.Execute(execCtx, req)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// If caller cancelled while execute was in-flight, cancel backend query.
@@ -569,6 +585,21 @@ func (h *Handler) applyHeaders(req *resty.Request) {
 }
 
 // parseError parses the DQL API error response into a structured error.
+// isUnauthorized reports whether an error is an HTTP 401 from either error
+// shape this package produces: Execute wraps error bodies as *QueryError,
+// Poll as *httpclient.APIError.
+func isUnauthorized(err error) bool {
+	var apiErr *httpclient.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == 401
+	}
+	var queryErr *QueryError
+	if errors.As(err, &queryErr) {
+		return queryErr.StatusCode == 401
+	}
+	return false
+}
+
 func parseError(statusCode int, body []byte) error {
 	var apiErr ErrorResponse
 	if err := json.Unmarshal(body, &apiErr); err == nil && apiErr.Error.Message != "" {
@@ -579,7 +610,9 @@ func parseError(statusCode int, body []byte) error {
 			Arguments:  apiErr.Error.Details.Arguments,
 		}
 	}
-	return fmt.Errorf("query failed with status %d: %s", statusCode, string(body))
+	// Keep the fallback typed: callers branch on QueryError.StatusCode (the
+	// 401-refresh path), and Error() renders the same message either way.
+	return &QueryError{StatusCode: statusCode, Message: string(body)}
 }
 
 // QueryError is a structured error from the DQL Query API.

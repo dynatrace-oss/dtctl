@@ -119,7 +119,7 @@ lint:
 # Run strict linter (matches CI behavior — zero tolerance)
 lint-strict:
 	@echo "Checking goimports formatting..."
-	@goimports_output=$$(goimports -local github.com/dynatrace-oss/dtctl -l .); \
+	@goimports_output=$$(goimports -local github.com/dynatrace-oss -l .); \
 	if [ -n "$$goimports_output" ]; then \
 		echo "The following files are not properly formatted:"; \
 		echo "$$goimports_output"; \
@@ -141,10 +141,10 @@ security-scan:
 # Run all checks (lint-strict + security)
 check: lint-strict security-scan
 
-# Format code
+# Format code (goimports runs path-based, so it also covers the sdk module)
 fmt:
 	@go fmt ./...
-	@goimports -local github.com/dynatrace-oss/dtctl -w .
+	@goimports -local github.com/dynatrace-oss -w .
 
 # Markdown linting
 markdownlint:
@@ -195,3 +195,4 @@ sdk-check-imports:
 
 # Run all SDK checks
 sdk-check: test-sdk vet-sdk sdk-check-deps sdk-check-imports
+

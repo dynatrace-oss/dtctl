@@ -671,6 +671,13 @@ If no context name is provided, the current context will be used.`,
 				return fmt.Errorf("failed to remove context: %w", err)
 			}
 
+			// The in-memory CurrentContext may carry the session-local
+			// --context/DTCTL_CONTEXT override, which must never be
+			// persisted (LoadConfig's contract). Re-derive the stored value
+			// from the file before deciding whether to clear it.
+			if raw, err := loadConfigRaw(); err == nil {
+				cfg.CurrentContext = raw.CurrentContext
+			}
 			// If we deleted the current context, clear it
 			if cfg.CurrentContext == contextName {
 				cfg.CurrentContext = ""
