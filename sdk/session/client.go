@@ -193,6 +193,13 @@ const refreshWindow = 10 * time.Second
 // expired OAuth access token). The request is retried only when a genuinely
 // new token was obtained; static tokens and failed refreshes surface the
 // original 401. Safe for concurrent requests — one refresh serves them all.
+//
+// resolve runs while tokenMu is held, so Token/SetToken and other 401
+// handling on this client block for its duration — bounded by the refresh
+// lock timeout plus one token-endpoint round-trip. That serialization is
+// deliberate (concurrent requests would only collect more 401s until the
+// refresh lands); embedders should not call Token from a latency-sensitive
+// loop while requests are in flight.
 func (c *Client) EnableTokenRefresh(resolve func(rejected string) (string, error)) {
 	c.http.AddRetryCondition(func(r *resty.Response, err error) bool {
 		if err != nil || r == nil || r.StatusCode() != http.StatusUnauthorized {

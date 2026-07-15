@@ -29,6 +29,23 @@ type TokenManager struct {
 	tokenStore  *TokenStore
 	environment Environment
 	deps        tokenStoreDeps
+	warn        func(format string, args ...any)
+}
+
+// SetWarnFunc replaces the destination for non-fatal warnings (e.g. a failed
+// best-effort refresh-lock acquisition). The default writes to stderr, which
+// suits a CLI; embedders that own the terminal (a TUI like dynatui) should
+// route warnings into their own surface instead. A nil fn silences warnings.
+func (tm *TokenManager) SetWarnFunc(fn func(format string, args ...any)) {
+	if fn == nil {
+		fn = func(string, ...any) {}
+	}
+	tm.warn = fn
+}
+
+// warnf reports a non-fatal condition via the configured warn hook.
+func (tm *TokenManager) warnf(format string, args ...any) {
+	tm.warn(format, args...)
 }
 
 type tokenStoreDeps struct {
@@ -55,6 +72,9 @@ func NewTokenManager(oauthConfig *OAuthConfig) (*TokenManager, error) {
 		flow:        &OAuthFlow{config: oauthConfig, openURL: defaultOAuthOpenURL, httpDo: defaultOAuthHTTPDo},
 		tokenStore:  NewTokenStore(),
 		environment: oauthConfig.Environment,
+		warn: func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "dtctl: warning: "+format+"\n", args...)
+		},
 		deps: tokenStoreDeps{
 			keyringAvailable:   IsKeyringAvailable,
 			getToken:           func(ts *TokenStore, name string) (string, error) { return ts.GetToken(name) },
@@ -102,7 +122,7 @@ func (tm *TokenManager) GetToken(tokenName string) (string, error) {
 		// Lock is best-effort. Log a warning so the operator knows why they may
 		// still see occasional invalid_grant errors under high parallelism, but
 		// do not abort — the single-process case is unaffected.
-		fmt.Fprintf(os.Stderr, "dtctl: warning: could not acquire token refresh lock: %v\n", lockErr)
+		tm.warnf("could not acquire token refresh lock: %v", lockErr)
 	} else {
 		defer unlock()
 
@@ -196,7 +216,7 @@ func (tm *TokenManager) RefreshToken(tokenName string) (*TokenSet, error) {
 
 	unlock, lockErr := acquireRefreshLock(string(tm.environment), tokenName)
 	if lockErr != nil {
-		fmt.Fprintf(os.Stderr, "dtctl: warning: could not acquire token refresh lock: %v\n", lockErr)
+		tm.warnf("could not acquire token refresh lock: %v", lockErr)
 	} else {
 		defer unlock()
 

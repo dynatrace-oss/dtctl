@@ -67,11 +67,22 @@ func RefreshedTokenForContext(cfg *Config, environmentURL, tokenRef, rejected st
 	if err != nil {
 		return "", err
 	}
-	refreshed, err := tokenManager.RefreshToken(tokenRef)
+	return forceRefreshWithManager(tokenManager, tokenRef, token)
+}
+
+// forceRefreshWithManager forces an OAuth refresh and returns the new access
+// token. On failure it returns the fallback token with a nil error — the
+// caller retries once and surfaces the original 401 — but a session revoked
+// server-side (invalid_grant) first evicts the stale cache entry so the next
+// resolution re-authenticates instead of re-serving it (mirroring GetToken's
+// invalid_grant handling).
+func forceRefreshWithManager(tm *TokenManager, tokenRef, fallback string) (string, error) {
+	refreshed, err := tm.RefreshToken(tokenRef)
 	if err != nil {
-		// Not an OAuth entry (plain API token) or the session is revoked —
-		// nothing fresher exists; the caller surfaces the original 401.
-		return token, nil
+		if isInvalidGrantError(err) {
+			_ = tm.DeleteToken(tokenRef)
+		}
+		return fallback, nil
 	}
 	return refreshed.AccessToken, nil
 }
