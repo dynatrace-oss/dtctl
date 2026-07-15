@@ -1,6 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -110,6 +115,48 @@ func TestPluginEnv(t *testing.T) {
 	}
 }
 
+// The documented credential variables must be stripped from the plugin
+// environment even when the caller exported them (PLUGIN_CONVENTIONS.md:
+// "No tokens from dtctl").
+func TestPluginEnv_StripsCredentialEnvVars(t *testing.T) {
+	t.Setenv("DTCTL_TOKEN", "dt0s16.SECRET")
+	t.Setenv("DT_API_TOKEN", "dt0c01.SECRET")
+	t.Setenv("UNRELATED_VAR", "kept")
+
+	env := pluginEnv([]string{"--plain"})
+
+	joined := strings.Join(env, "\n")
+	for _, forbidden := range []string{"DTCTL_TOKEN=", "DT_API_TOKEN=", "SECRET"} {
+		if strings.Contains(joined, forbidden) {
+			t.Errorf("credential material leaked into plugin env (%s)", forbidden)
+		}
+	}
+	if !strings.Contains(joined, "UNRELATED_VAR=kept") {
+		t.Error("non-credential environment must be inherited")
+	}
+}
+
+// Contract values derive only from dtctl's own leading flags — a flag in the
+// plugin's argument list must not be reflected into the env contract.
+func TestPluginEnv_IgnoresPluginOwnFlags(t *testing.T) {
+	// Simulate `dtctl deploy --config foo.yaml --context prod`: dispatch
+	// passes only the leading flags (none here) to pluginEnv.
+	args := []string{"deploy", "--config", "foo.yaml", "--context", "prod"}
+	words, rest := splitPluginArgs(args)
+	leading := args[:len(args)-len(words)-len(rest)]
+
+	env := pluginEnv(leading)
+
+	for _, e := range env {
+		if strings.HasPrefix(e, "DTCTL_CONFIG=") && strings.Contains(e, "foo.yaml") {
+			t.Errorf("plugin's own --config leaked into DTCTL_CONFIG: %s", e)
+		}
+		if e == "DTCTL_CONTEXT=prod" {
+			t.Errorf("plugin's own --context leaked into DTCTL_CONTEXT")
+		}
+	}
+}
+
 func TestPluginEnv_AgentImpliesPlain(t *testing.T) {
 	env := pluginEnv([]string{"-A", "myplug"})
 	joined := strings.Join(env, "\n")
@@ -126,6 +173,48 @@ func TestOverrideEnv_ReplacesExisting(t *testing.T) {
 	joined := strings.Join(env, ";")
 	if strings.Count(joined, "A=") != 1 || !strings.Contains(joined, "A=9") {
 		t.Errorf("overrideEnv = %v, want single A=9", env)
+	}
+}
+
+// A found-but-unexecutable plugin must fail with the structured JSON envelope
+// in agent mode — machine consumers parse stdout, not stderr.
+func TestTryPluginDispatch_ExecFailureIsStructuredInAgentMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ENOEXEC-style exec failure is not portable to Windows")
+	}
+	dir := t.TempDir()
+	// Executable permission but no shebang and not a binary: LookPath accepts
+	// it, exec fails with ENOEXEC.
+	if err := os.WriteFile(filepath.Join(dir, "dtctl-failplug"), []byte("not a program\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	code, handled := tryPluginDispatch([]string{"-A", "failplug"})
+	os.Stdout = old
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+
+	if !handled || code != 1 {
+		t.Fatalf("dispatch = (%d, %v), want (1, true)", code, handled)
+	}
+	var envelope struct {
+		OK    bool `json:"ok"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out, &envelope); err != nil {
+		t.Fatalf("agent-mode exec failure must emit a JSON envelope on stdout, got %q: %v", out, err)
+	}
+	if envelope.OK || envelope.Error.Message == "" {
+		t.Errorf("envelope = %+v, want ok=false with a message", envelope)
 	}
 }
 

@@ -34,9 +34,19 @@ type Invocation struct {
 // dtctl-foo-bar-baz, then dtctl-foo-bar (arg baz), then dtctl-foo
 // (args bar baz). rest is appended after the unconsumed words. lookPath is
 // exec.LookPath in production; injected for tests.
+//
+// A candidate name containing a path separator is never looked up: a
+// separator would turn the name into a relative path, and exec.LookPath
+// resolves those against the working directory without the ErrDot guard
+// that otherwise keeps dispatch off cwd-relative binaries. Shorter
+// separator-free prefixes still resolve, so a path may appear as a plugin
+// argument (`dtctl foo some/file.yaml`), just never in the plugin name.
 func Resolve(words, rest []string, lookPath func(string) (string, error)) (*Invocation, bool) {
 	for n := len(words); n > 0; n-- {
 		name := Prefix + strings.Join(words[:n], "-")
+		if strings.ContainsAny(name, `/\`) {
+			continue
+		}
 		path, err := lookPath(name)
 		if err != nil {
 			continue
@@ -69,7 +79,10 @@ func Discover(pathEnv string, builtins map[string]bool) []Plugin {
 	var plugins []Plugin
 	for _, dir := range filepath.SplitList(pathEnv) {
 		if dir == "" {
-			dir = "."
+			// An empty PATH entry means the working directory, but dispatch
+			// refuses cwd-relative binaries (exec.LookPath's ErrDot guard) —
+			// don't list plugins that would not run.
+			continue
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -80,7 +93,7 @@ func Discover(pathEnv string, builtins map[string]bool) []Plugin {
 				continue
 			}
 			full := filepath.Join(dir, e.Name())
-			if !isExecutable(full, e) {
+			if !isExecutable(full) {
 				continue
 			}
 			if seen[e.Name()] {
@@ -104,9 +117,11 @@ func Discover(pathEnv string, builtins map[string]bool) []Plugin {
 	return plugins
 }
 
-// isExecutable reports whether the directory entry is a plausible plugin
-// executable: the executable bit on Unix, a recognized extension on Windows.
-func isExecutable(path string, e os.DirEntry) bool {
+// isExecutable reports whether the path is a plausible plugin executable:
+// the executable bit on Unix, a recognized extension on Windows. os.Stat
+// (not DirEntry.Info) so symlinked plugins — which exec.LookPath follows and
+// dispatch runs — are discovered too.
+func isExecutable(path string) bool {
 	if runtime.GOOS == "windows" {
 		switch strings.ToLower(filepath.Ext(path)) {
 		case ".exe", ".bat", ".cmd", ".com":
@@ -114,7 +129,7 @@ func isExecutable(path string, e os.DirEntry) bool {
 		}
 		return false
 	}
-	info, err := e.Info()
+	info, err := os.Stat(path)
 	if err != nil {
 		return false
 	}

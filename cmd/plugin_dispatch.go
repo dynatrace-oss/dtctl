@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/plugin"
 	"github.com/dynatrace-oss/dtctl/pkg/version"
 )
@@ -32,9 +33,20 @@ func tryPluginDispatch(args []string) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	code, err := execForward(inv.Path, inv.Args, pluginEnv(args))
+	// Only the flags dtctl consumed feed the env contract; everything from
+	// the command words on belongs to the plugin and must not be reflected
+	// (a plugin's own --config must not change DTCTL_CONFIG).
+	leading := args[:len(args)-len(words)-len(rest)]
+	code, err := execForward(inv.Path, inv.Args, pluginEnv(leading))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		err = fmt.Errorf("plugin %s: %w", inv.Path, err)
+		if pluginAgentMode(leading) {
+			// Mirror the root error path: machine consumers read the
+			// structured envelope from stdout.
+			_ = output.PrintError(os.Stdout, errorToDetail(err))
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		return 1, true
 	}
 	return code, true
@@ -100,30 +112,47 @@ func builtinCommandNames() map[string]bool {
 	return names
 }
 
-// pluginEnv builds the environment for a plugin exec: the inherited
-// environment plus the dtctl→plugin contract variables. No tokens are ever
-// passed — plugins resolve credentials themselves through the sdk (the same
-// config file and keyring service).
+// credentialEnvVars are the environment variables dtctl documents as token
+// carriers (docs/site/_docs/ai-agent-mode.md, `dtctl config init`'s
+// ${DT_API_TOKEN} scaffold). They are stripped from a plugin's environment:
+// plugins resolve credentials themselves through the sdk (the same config
+// file and keyring service), never through inherited env. Tokens placed in
+// user-chosen variables referenced via ${...} config expansion cannot be
+// recognized and are inherited like the rest of the environment.
+var credentialEnvVars = []string{"DTCTL_TOKEN", "DT_API_TOKEN"}
+
+// pluginEnv builds the environment for a plugin exec from dtctl's own leading
+// flags: the inherited environment minus credentialEnvVars, plus the
+// dtctl→plugin contract variables.
 //
 // Because dispatch happens on cobra's unknown-command error path, dtctl's
 // persistent flags were never parsed — the contract values are derived from
-// the raw args (and auto-detection), mirroring initConfig.
-func pluginEnv(args []string) []string {
+// the raw leading args (and auto-detection), mirroring initConfig.
+func pluginEnv(leading []string) []string {
 	env := os.Environ()
-	if ctx := rawFlagValue(args, "--context"); ctx != "" {
+	for _, key := range credentialEnvVars {
+		env = dropEnv(env, key)
+	}
+	if ctx := rawFlagValue(leading, "--context"); ctx != "" {
 		env = overrideEnv(env, "DTCTL_CONTEXT", ctx)
 	}
-	env = overrideEnv(env, "DTCTL_CONFIG", effectiveConfigPath(rawFlagValue(args, "--config")))
-	agent := hasRawFlag(args, "--agent") || hasShortFlagLetter(args, 'A') ||
-		(aidetect.Detect().Detected && !hasRawFlag(args, "--no-agent"))
+	env = overrideEnv(env, "DTCTL_CONFIG", effectiveConfigPath(rawFlagValue(leading, "--config")))
+	agent := pluginAgentMode(leading)
 	if agent {
 		env = overrideEnv(env, "DTCTL_AGENT", "1")
 	}
-	if agent || hasRawFlag(args, "--plain") {
+	if agent || hasRawFlag(leading, "--plain") {
 		env = overrideEnv(env, "DTCTL_PLAIN", "1")
 	}
 	env = overrideEnv(env, "DTCTL_CALLER_VERSION", version.Version)
 	return env
+}
+
+// pluginAgentMode mirrors initConfig's agent-mode resolution for the
+// unparsed leading flags of a plugin invocation.
+func pluginAgentMode(leading []string) bool {
+	return hasRawFlag(leading, "--agent") || hasShortFlagLetter(leading, 'A') ||
+		(aidetect.Detect().Detected && !hasRawFlag(leading, "--no-agent"))
 }
 
 // effectiveConfigPath resolves the config file path in effect for the plugin
@@ -143,6 +172,11 @@ func effectiveConfigPath(explicit string) string {
 // entries (duplicate keys in an exec environment are resolved
 // inconsistently across platforms, so never append blindly).
 func overrideEnv(env []string, key, value string) []string {
+	return append(dropEnv(env, key), key+"="+value)
+}
+
+// dropEnv returns env without any entries for key.
+func dropEnv(env []string, key string) []string {
 	prefix := key + "="
 	out := env[:0]
 	for _, e := range env {
@@ -150,7 +184,7 @@ func overrideEnv(env []string, key, value string) []string {
 			out = append(out, e)
 		}
 	}
-	return append(out, prefix+value)
+	return out
 }
 
 // rawFlagValue extracts a long flag's value from unparsed args, supporting

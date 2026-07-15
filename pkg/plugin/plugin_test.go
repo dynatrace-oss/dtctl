@@ -68,6 +68,40 @@ func TestResolve_NoMatch(t *testing.T) {
 	}
 }
 
+// A candidate name containing a path separator must never reach lookPath:
+// exec.LookPath resolves names with separators against the working directory
+// without the ErrDot guard, so `dtctl x/../evil` could exec ./evil.
+func TestResolve_PathSeparatorNeverLookedUp(t *testing.T) {
+	looked := []string{}
+	spy := func(name string) (string, error) {
+		looked = append(looked, name)
+		return "", errors.New("not found")
+	}
+	if _, ok := Resolve([]string{"x/../evil"}, nil, spy); ok {
+		t.Fatal("separator-containing word must not resolve")
+	}
+	if _, ok := Resolve([]string{`x\..\evil`}, nil, spy); ok {
+		t.Fatal("backslash separator must not resolve")
+	}
+	for _, name := range looked {
+		if strings.ContainsAny(name, `/\`) {
+			t.Errorf("lookPath was called with a path-like name: %q", name)
+		}
+	}
+}
+
+// A separator only taints candidate names that include it — a plugin may
+// still take a path as its first argument.
+func TestResolve_PathArgumentStillResolvesShorterPrefix(t *testing.T) {
+	inv, ok := Resolve([]string{"foo", "some/file.yaml"}, nil, fakeLookPath("dtctl-foo"))
+	if !ok {
+		t.Fatal("dtctl-foo must resolve with a path argument")
+	}
+	if inv.Path != "/fake/bin/dtctl-foo" || len(inv.Args) != 1 || inv.Args[0] != "some/file.yaml" {
+		t.Errorf("got %+v, want dtctl-foo with arg some/file.yaml", inv)
+	}
+}
+
 // writePlugin creates an executable plugin file in dir.
 func writePlugin(t *testing.T, dir, name string) {
 	t.Helper()
@@ -115,5 +149,43 @@ func TestDiscover(t *testing.T) {
 		if plugins[i-1].Name > plugins[i].Name {
 			t.Errorf("plugins not sorted: %v", plugins)
 		}
+	}
+}
+
+// Discovery must mirror what dispatch will actually run: symlinked plugins
+// run (exec.LookPath follows symlinks) so they must be listed; an empty PATH
+// entry means cwd, which dispatch refuses (ErrDot), so it must not be
+// scanned.
+func TestDiscover_MatchesDispatchSemantics(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix executable-bit and symlink semantics")
+	}
+	dir := t.TempDir()
+	writePlugin(t, dir, "dtctl-real")
+	if err := os.Symlink(filepath.Join(dir, "dtctl-real"), filepath.Join(dir, "dtctl-linked")); err != nil {
+		t.Fatal(err)
+	}
+
+	// cwd holds a would-be plugin that dispatch would refuse.
+	cwd := t.TempDir()
+	writePlugin(t, cwd, "dtctl-cwdplug")
+	t.Chdir(cwd)
+
+	// Leading empty entry, like PATH=":/usr/bin".
+	pathEnv := "" + string(os.PathListSeparator) + dir
+	plugins := Discover(pathEnv, nil)
+
+	names := map[string]bool{}
+	for _, p := range plugins {
+		names[p.Name] = true
+	}
+	if !names["linked"] {
+		t.Errorf("symlinked plugin not discovered: %v", names)
+	}
+	if !names["real"] {
+		t.Errorf("regular plugin not discovered: %v", names)
+	}
+	if names["cwdplug"] {
+		t.Error("empty PATH entry (cwd) must not be scanned — dispatch refuses cwd binaries")
 	}
 }

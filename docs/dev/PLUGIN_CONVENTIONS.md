@@ -34,9 +34,14 @@ dtctl sets these variables for the plugin process:
 | `DTCTL_PLAIN=1` | Plain mode — no colors, no interactive prompts |
 | `DTCTL_CALLER_VERSION` | The dispatching dtctl's version, for compatibility decisions |
 
-**No tokens, ever.** dtctl never passes credentials through the environment
-or argv. Plugins resolve credentials themselves via the shared config
-contract ([CONFIG_CONTRACT.md](CONFIG_CONTRACT.md)): the config file named by
+**No tokens from dtctl.** dtctl never passes credentials via argv, and it
+strips its documented credential variables (`DTCTL_TOKEN`, `DT_API_TOKEN`)
+from the plugin's environment. The rest of the caller's environment is
+inherited as-is — a token you placed in a custom variable (e.g. one referenced
+via `${MY_TOKEN}` in the config file) is not recognized as a credential and
+reaches the plugin like any other inherited variable. Plugins resolve
+credentials themselves via the shared config contract
+([CONFIG_CONTRACT.md](CONFIG_CONTRACT.md)): the config file named by
 `DTCTL_CONFIG` and the OS keyring service `dtctl`. The dtctl sdk
 (`github.com/dynatrace-oss/dtctl/sdk`) is the supported way to do this.
 
