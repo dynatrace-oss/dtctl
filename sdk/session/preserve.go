@@ -24,9 +24,11 @@ import (
 // preserveUnknownFields merges unknown keys from the existing config file
 // into the freshly marshaled document and returns the result. It is
 // best-effort by design: if the existing file does not parse, or the merged
-// document fails to re-marshal (e.g. grafted alias nodes without their
-// anchors), the fresh marshal is returned unchanged — a save must never fail
-// or corrupt the file for the sake of preservation.
+// document fails to re-marshal, or the merged document does not parse back
+// (grafting an alias node without its anchor produces a document that
+// marshals fine but fails on the next load), the fresh marshal is returned
+// unchanged — a save must never fail or corrupt the file for the sake of
+// preservation.
 func preserveUnknownFields(existing, fresh []byte) []byte {
 	var oldDoc, newDoc yaml.Node
 	if err := yaml.Unmarshal(existing, &oldDoc); err != nil {
@@ -45,6 +47,14 @@ func preserveUnknownFields(existing, fresh []byte) []byte {
 
 	merged, err := yaml.Marshal(newMap)
 	if err != nil {
+		return fresh
+	}
+	// Grafting can detach an alias from its anchor when the anchor sits on a
+	// known field the fresh marshal rewrote: yaml.Marshal still succeeds, but
+	// the written file would fail every subsequent load. Only accept the
+	// merged document if it parses back.
+	var check yaml.Node
+	if err := yaml.Unmarshal(merged, &check); err != nil {
 		return fresh
 	}
 	return merged

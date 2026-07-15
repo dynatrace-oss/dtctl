@@ -192,6 +192,68 @@ func TestContract_RoundTripPreservesUnknownFields(t *testing.T) {
 	}
 }
 
+// An unknown field that aliases an anchor on a known field cannot be grafted
+// intact: the fresh marshal rewrote the anchor away, so the merged document
+// would carry a dangling alias and fail every subsequent load. The save must
+// detect that and fall back to the fresh marshal — the file always stays
+// loadable, even at the cost of dropping the aliasing field.
+func TestContract_SaveWithCrossBoundaryAliasStaysLoadable(t *testing.T) {
+	for name, doc := range map[string]string{
+		"alias": "apiVersion: v1\nkind: Config\ncurrent-context: &cc dev\ncontexts:\n" +
+			"  - name: dev\n    context:\n      environment: https://dev.example.invalid\n      token-ref: t\n" +
+			"future-ref: *cc\n",
+		"merge-key": "apiVersion: v1\nkind: Config\ncurrent-context: dev\ncontexts:\n" +
+			"  - name: dev\n    context: &base\n      environment: https://dev.example.invalid\n      token-ref: t\n" +
+			"future-thing:\n  <<: *base\n  extra: y\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config")
+			if err := os.WriteFile(path, []byte(doc), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadFrom(path)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if err := cfg.SaveTo(path); err != nil {
+				t.Fatalf("save: %v", err)
+			}
+			if _, err := LoadFrom(path); err != nil {
+				t.Fatalf("config corrupted by save round-trip: %v", err)
+			}
+		})
+	}
+}
+
+// Anchors and aliases living entirely inside an unknown subtree stay intact:
+// the subtree is grafted as one node, so nothing dangles.
+func TestContract_UnknownSubtreeAliasPreserved(t *testing.T) {
+	doc := "apiVersion: v1\nkind: Config\ncurrent-context: dev\ncontexts:\n" +
+		"  - name: dev\n    context:\n      environment: https://dev.example.invalid\n      token-ref: t\n" +
+		"future-thing:\n  base: &b hello\n  ref: *b\n"
+	path := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(path, []byte(doc), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "future-thing") {
+		t.Errorf("self-contained unknown subtree was dropped:\n%s", data)
+	}
+	if _, err := LoadFrom(path); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+}
+
 // A save over a file that does not parse falls back to a plain write instead
 // of failing — preservation is strictly best-effort.
 func TestContract_SaveOverCorruptFileStillSucceeds(t *testing.T) {
