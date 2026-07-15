@@ -542,7 +542,6 @@ dtctl/
     ├── httpclient/             # HTTP client, response helpers, pagination, typed errors
     ├── auth/                   # Token type detection
     ├── urls/                   # URL validation/normalization
-    ├── credstore/              # Credential storage
     └── agentmode/              # AI agent detection
 ```
 

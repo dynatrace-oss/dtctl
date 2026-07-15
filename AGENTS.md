@@ -29,7 +29,6 @@ sdk/            # Separate Go module (github.com/dynatrace-oss/dtctl/sdk)
   ├── httpclient/  # HTTP client, response helpers, pagination, typed errors
   ├── auth/        # Token type detection
   ├── urls/        # Environment URL validation/normalization
-  ├── credstore/   # Deprecated — superseded by sdk/session (was never wired up)
   └── agentmode/   # AI agent environment detection
 ```
 

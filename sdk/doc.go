@@ -7,7 +7,6 @@
 //   - auth: Token type detection and classification
 //   - httpclient: HTTP client with retry, pagination, and typed errors
 //   - agentmode: AI agent detection and structured JSON envelope
-//   - credstore: OS keyring and file-based credential storage
 //
 // The SDK is designed to be leaf-shaped: it never imports from the CLI
 // module, has minimal dependencies, and avoids global state.
