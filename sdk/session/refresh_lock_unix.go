@@ -3,11 +3,9 @@
 package session
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -103,14 +101,4 @@ func doAcquireRefreshLock(environment, tokenName string, timeout, retryInterval 
 		_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
 		_ = f.Close()
 	}, nil
-}
-
-// refreshLockPath returns the advisory lock file path for the given environment
-// and token name. The filename is a truncated SHA-256 hash of their combination
-// so that different contexts never share a lock file and the path itself does
-// not contain any credential material.
-func refreshLockPath(environment, tokenName string) string {
-	h := sha256.Sum256([]byte(environment + ":" + tokenName))
-	name := fmt.Sprintf("dtctl-token-refresh-%x.lock", h[:8])
-	return filepath.Join(os.TempDir(), name)
 }
