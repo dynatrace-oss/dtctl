@@ -52,8 +52,8 @@ func DetectEnvironment(environmentURL string) Environment {
 	return session.DetectEnvironment(environmentURL)
 }
 
-func IsOAuthToken(tokenName string) bool     { return session.IsOAuthToken(tokenName) }
-func IsTokenExpired(tokens *TokenSet) bool   { return session.IsTokenExpired(tokens) }
+func IsOAuthToken(tokenName string) bool   { return session.IsOAuthToken(tokenName) }
+func IsTokenExpired(tokens *TokenSet) bool { return session.IsTokenExpired(tokens) }
 func DecodeRefreshTokenExpiry(refreshToken string) (time.Time, bool) {
 	return session.DecodeRefreshTokenExpiry(refreshToken)
 }
