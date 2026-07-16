@@ -31,6 +31,21 @@ Filters are workspace-scoped, so updating them with --filters also re-scopes
 every existing breakpoint in the workspace. When active breakpoints would be
 affected you are asked to confirm; pass --yes (-y) to skip the prompt.
 
+Condition expressions (--condition):
+  Conditions limit data collection to moments when the expression is true.
+  Supported operators: ==, !=, >, >=, <, <=, in, &&, ||, (), []
+  Use && for AND, || for OR, and parentheses to control precedence.
+  Array and map elements can be indexed with []: arr[4]!=4, dict['a']!=4
+  Use .size() to check collection length: arr.size() >= 32
+
+  Examples:
+    "value>othervalue"
+    "a==1 && b!='bbb'"
+    "(a<=1 || b=='bbb') && (x<y)"
+    "'bbb' in a"
+
+  Docs: https://docs.dynatrace.com/docs/shortlink/do-breakpoints#breakpoint-conditions
+
 Note: Live Debugger support is experimental. The underlying APIs and query
 behavior may change in future releases.
 
@@ -560,7 +575,7 @@ func getOptionalBoolFlag(cmd *cobra.Command, flagName string, trailingArgs []str
 
 func init() {
 	updateCmd.AddCommand(updateBreakpointCmd)
-	updateBreakpointCmd.Flags().String("condition", "", "Condition expression for the breakpoint")
+	updateBreakpointCmd.Flags().String("condition", "", `Condition expression (e.g. "a==1 && b!='bbb'", "'val' in arr", "x>0 && y<=10")`)
 	updateBreakpointCmd.Flags().String("enabled", "", "Enable or disable the breakpoint")
 	updateBreakpointCmd.Flags().String("filters", "", "workspace filters to apply (comma-separated key:value pairs)")
 	updateBreakpointCmd.Flags().BoolP("yes", "y", false, "skip the confirmation prompt when changing workspace filters affects existing breakpoints")
