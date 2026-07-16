@@ -288,9 +288,13 @@ func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVers
 	// Determine the active version from the environment configuration and mark it.
 	// The version list endpoint does not include the active flag; the environment
 	// configuration endpoint returns which version is currently active.
-	// Errors are silently ignored so that a missing or inaccessible environment
-	// configuration does not prevent the version list from being returned.
-	if envCfg, err := h.getActiveExtensionVersion(ctx, extensionName); err == nil && envCfg != "" {
+	// A 404 (no environment configuration) is treated as "no active version";
+	// other errors (403, 5xx, network) are propagated.
+	envCfg, err := h.GetActiveVersion(ctx, extensionName)
+	if err != nil {
+		return nil, fmt.Errorf("get extension active version: %w", err)
+	}
+	if envCfg != "" {
 		for i := range allVersions {
 			if allVersions[i].Version == envCfg {
 				allVersions[i].Active = true
@@ -307,21 +311,18 @@ func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVers
 
 // GetActiveVersion returns the currently active version of an extension
 // by querying the environment configuration endpoint. Returns an empty string
-// if the extension has no active version (HTTP 404) or the request fails.
+// if the extension has no active version (HTTP 404). Other errors are propagated.
 func (h *Handler) GetActiveVersion(ctx context.Context, extensionName string) (string, error) {
-	return h.getActiveExtensionVersion(ctx, extensionName)
-}
-
-// getActiveExtensionVersion returns the currently active version of an extension
-// by querying the environment configuration endpoint. Returns an empty string if
-// the extension has no active version or if the request fails.
-func (h *Handler) getActiveExtensionVersion(ctx context.Context, extensionName string) (string, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environment-configuration", url.PathEscape(extensionName)))
 	if err != nil {
 		return "", err
 	}
 	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return "", nil
+		}
 		return "", err
 	}
 

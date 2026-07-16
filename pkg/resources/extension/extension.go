@@ -211,21 +211,42 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 	}
 	result := fromSDKExtensionList(l)
 
-	// Fetch the active version for each extension concurrently.
-	// Errors (e.g. 404 when no environment configuration exists) are silently
-	// ignored so that a missing or inaccessible config does not prevent the list.
-	var wg sync.WaitGroup
+	// Fetch the active version for each extension concurrently, bounded to
+	// avoid bursting too many simultaneous requests. 404 (no env config) is
+	// already translated to ("", nil) by GetActiveVersion; any other error is
+	// propagated.
+	const maxWorkers = 10
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		firstErr error
+		sem      = make(chan struct{}, maxWorkers)
+	)
 	for i := range result.Items {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			activeVersion, err := h.sdk.GetActiveVersion(context.Background(), result.Items[idx].ExtensionName)
-			if err == nil && activeVersion != "" {
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				return
+			}
+			if activeVersion != "" {
 				result.Items[idx].ActiveVersion = activeVersion
 			}
 		}(i)
 	}
 	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	return result, nil
 }

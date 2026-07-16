@@ -132,6 +132,29 @@ func TestGet_NoActiveVersion(t *testing.T) {
 	}
 }
 
+func TestGet_ActiveVersionError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host", func(w http.ResponseWriter, r *http.Request) {
+		resp := ExtensionVersionList{
+			Items:      []ExtensionVersion{{Version: "1.0.0", ExtensionName: "com.dynatrace.extension.host"}},
+			TotalCount: 1,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+	// Environment configuration returns 403 — should be propagated, not silently ignored.
+	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/environment-configuration", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintf(w, `{"error":{"code":403,"message":"access denied"}}`)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	_, err := h.Get(context.Background(), "com.dynatrace.extension.host")
+	if err == nil {
+		t.Fatal("Get() expected error for 403 on environment-configuration, got nil")
+	}
+}
+
 func TestGetVersion(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/1.0.0", func(w http.ResponseWriter, r *http.Request) {
