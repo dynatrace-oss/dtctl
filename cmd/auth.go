@@ -98,6 +98,18 @@ func buildSessionStatus(contextName string, ctx *config.Context, tokenName strin
 	}
 
 	scopes := strings.Fields(stored.Scope)
+	if len(scopes) == 0 {
+		// Compact keyring storage may drop the scope string to fit size limits
+		// while keeping the (larger) access token cached. Prefer the scope
+		// companion entry, which preserves the full granted scope list; fall
+		// back to the access token's own scope claim (an audience-reduced
+		// subset) only if no companion exists.
+		if cached := tokenManager.CachedScopes(tokenName); len(cached) > 0 {
+			scopes = cached
+		} else if stored.AccessToken != "" {
+			scopes = auth.ExtractJWTScopes(stored.AccessToken)
+		}
+	}
 	if len(scopes) > 0 {
 		status.GrantedScopes = scopes
 	}

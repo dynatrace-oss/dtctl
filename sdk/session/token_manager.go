@@ -21,6 +21,12 @@ const (
 
 	// TokenRefreshBuffer is how long before expiry we refresh tokens
 	TokenRefreshBuffer = 5 * time.Minute
+
+	// scopeCompanionSuffix names a keyring entry that holds only the granted
+	// scope string. It preserves the scope list — permission names, not a
+	// secret — when the primary token entry had to drop it to fit the keyring
+	// item size limit while keeping the (larger) access token cached.
+	scopeCompanionSuffix = ":scopes"
 )
 
 // TokenManager manages OAuth tokens including storage and refresh
@@ -287,7 +293,8 @@ func (tm *TokenManager) DeleteToken(tokenName string) error {
 
 	if tm.deps.keyringAvailable() {
 		err := tm.deps.deleteToken(tm.tokenStore, keyringName)
-		// Best-effort cleanup of any file-based fallback token.
+		// Best-effort cleanup of the scope companion and any file-based fallback token.
+		_ = tm.deps.deleteToken(tm.tokenStore, keyringName+scopeCompanionSuffix)
 		_ = tm.deps.fileDeleteToken(keyringName)
 		return err
 	}
@@ -316,8 +323,31 @@ func (tm *TokenManager) needsRefresh(tokens *TokenSet) bool {
 		return false
 	}
 
-	// Refresh if token expires within the buffer period
-	return time.Now().Add(TokenRefreshBuffer).After(tokens.ExpiresAt)
+	// Refresh if token expires within the buffer period.
+	return time.Now().Add(refreshBufferFor(tokens)).After(tokens.ExpiresAt)
+}
+
+// refreshBufferFor returns how long before expiry a token should be refreshed.
+//
+// The default buffer (TokenRefreshBuffer, 5 min) suits long-lived tokens, but
+// some Dynatrace SSO environments issue short-lived access tokens (~5 min).
+// When the token's lifetime is at or below the fixed buffer, every GetToken
+// call sees the token as "about to expire" and refreshes — an SSO round-trip
+// on every invocation that defeats the cached-token fast path. When the token
+// lifetime is known (ExpiresIn), cap the buffer at a fraction of it (with a
+// small floor) so a freshly cached token is reused for most of its life while
+// still being refreshed slightly ahead of expiry.
+func refreshBufferFor(tokens *TokenSet) time.Duration {
+	buffer := TokenRefreshBuffer
+	if tokens.ExpiresIn > 0 {
+		if capped := time.Duration(tokens.ExpiresIn) * time.Second / 5; capped < buffer {
+			buffer = capped
+		}
+		if buffer < 30*time.Second {
+			buffer = 30 * time.Second
+		}
+	}
+	return buffer
 }
 
 // loadToken loads a token from storage
@@ -368,55 +398,61 @@ func (tm *TokenManager) loadToken(tokenName string) (*StoredToken, error) {
 	return nil, fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
 }
 
-// saveToken saves a token to storage
+// saveToken saves a token to storage.
+//
+// The full token set (access + ID token JWTs + scope) can exceed a keyring
+// backend's per-item size limit — most notably the macOS Keychain, where the
+// full JSON routinely overflows. Rather than immediately dropping the access
+// token (which would defeat GetToken's fast path and force an SSO refresh on
+// every invocation), saveToken tries progressively smaller keyring encodings
+// via keyringEncodings, keeping the access token as long as it fits. Only when
+// even the access token alone is too large does it fall back to an
+// access-token-less form, and finally to file storage that can hold the full
+// token.
 func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 	keyringName := tm.getKeyringName(tokenName)
 
-	// Serialize token
-	data, err := json.Marshal(stored)
+	// Serialize the full token for the file-store fallback below.
+	fullData, err := json.Marshal(stored)
 	if err != nil {
 		return fmt.Errorf("failed to serialize token: %w", err)
 	}
 
 	// Save to keyring
 	if tm.deps.keyringAvailable() {
-		if err := tm.deps.setToken(tm.tokenStore, keyringName, string(data)); err != nil {
-			// Full token is too large for the keyring. Try medium-compact first: drop the
-			// access and ID token JWTs but keep scope and expiry so auth status / doctor
-			// can still show meaningful information.
-			medium := mediumCompactStoredTokenForKeyring(stored)
-			mediumData, marshalErr := json.Marshal(medium)
-			if marshalErr == nil {
-				if mediumErr := tm.deps.setToken(tm.tokenStore, keyringName, string(mediumData)); mediumErr == nil {
-					return nil
-				}
-			}
-			// Still too large — fall back to minimal compact (refresh token + name only).
-			compact := compactStoredTokenForKeyring(stored)
-			compactData, marshalErr := json.Marshal(compact)
+		var lastErr error
+		for _, enc := range keyringEncodings(stored) {
+			data, marshalErr := json.Marshal(enc)
 			if marshalErr != nil {
-				return fmt.Errorf("failed to save token to keyring: %w", err)
+				lastErr = marshalErr
+				continue
 			}
-			if compactErr := tm.deps.setToken(tm.tokenStore, keyringName, string(compactData)); compactErr != nil {
-				// Even the refresh token alone exceeds the keyring limit (e.g. macOS Keychain).
-				// Fall back to file storage as a last resort.
-				if isKeyringTooLargeErr(compactErr) {
-					if fileErr := tm.deps.fileSetToken(keyringName, string(data)); fileErr == nil {
-						// Remove any stale keyring entry so loadToken reads from file next time.
-						_ = tm.deps.deleteToken(tm.tokenStore, keyringName)
-						return nil
-					}
-				}
-				return fmt.Errorf("failed to save token to keyring: %w (compact fallback also failed: %v)", err, compactErr)
+			if setErr := tm.deps.setToken(tm.tokenStore, keyringName, string(data)); setErr == nil {
+				tm.syncScopeCompanion(keyringName, stored.Scope, enc.Scope)
+				return nil
+			} else {
+				lastErr = setErr
 			}
-			return nil
 		}
-		return nil
+		// Even the minimal (refresh-token-only) encoding could not be written.
+		// If that was a size limit, fall back to file storage, which can hold
+		// the full token (including the access token, so the fast path still
+		// works). Any other error (locked/corrupt keyring) is returned as-is.
+		if isKeyringTooLargeErr(lastErr) {
+			if fileErr := tm.deps.fileSetToken(keyringName, string(fullData)); fileErr == nil {
+				// Remove any stale keyring entry (and scope companion) so loadToken
+				// reads the full token — scope included — from the file next time.
+				_ = tm.deps.deleteToken(tm.tokenStore, keyringName)
+				_ = tm.deps.deleteToken(tm.tokenStore, keyringName+scopeCompanionSuffix)
+				return nil
+			}
+		}
+		return fmt.Errorf("failed to save token to keyring: %w", lastErr)
 	}
 
 	// Fall back to file-based storage
 	if tm.deps.fileStoreAvailable() {
-		if err := tm.deps.fileSetToken(keyringName, string(data)); err != nil {
+		if err := tm.deps.fileSetToken(keyringName, string(fullData)); err != nil {
 			return fmt.Errorf("failed to save token to file store: %w", err)
 		}
 		return nil
@@ -434,6 +470,56 @@ func isKeyringTooLargeErr(err error) bool {
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "too big") || strings.Contains(msg, "exit status 161")
+}
+
+// keyringEncodings returns candidate serializations of stored for the keyring,
+// ordered from most complete to most compact. saveToken tries each in turn and
+// keeps the first that fits the backend's size limit.
+//
+// The ordering deliberately prefers retaining the access token (and its
+// expiry) over the id_token and the scope string, because a cached access
+// token lets GetToken's fast path skip the ~1s SSO refresh round-trip on every
+// invocation. The id_token is unused past login, and when the scope string is
+// dropped saveToken preserves it in a scope-companion entry (see
+// syncScopeCompanion), so dropping either from the primary entry is lossless.
+// Only when the access token itself does not fit do we fall back to the
+// access-token-less medium/minimal forms.
+func keyringEncodings(stored *StoredToken) []*StoredToken {
+	return []*StoredToken{
+		stored,                                     // full: access + id + scope + refresh
+		withoutIDTokenForKeyring(stored),           // drop id_token; keep access + scope
+		accessOnlyStoredTokenForKeyring(stored),    // drop id_token + scope; keep access (scope -> companion)
+		mediumCompactStoredTokenForKeyring(stored), // drop access + id; keep scope (no fast path)
+		compactStoredTokenForKeyring(stored),       // minimal: refresh token + name only
+	}
+}
+
+// withoutIDTokenForKeyring drops only the id_token JWT (unused by dtctl beyond
+// login), keeping the access token, scope, and expiry so both GetToken's fast
+// path and auth-status scope display keep working.
+func withoutIDTokenForKeyring(stored *StoredToken) *StoredToken {
+	if stored == nil {
+		return nil
+	}
+
+	compact := *stored
+	compact.IDToken = ""
+	return &compact
+}
+
+// accessOnlyStoredTokenForKeyring keeps the access token and its expiry (so the
+// fast path works) but drops the id_token JWT and the large scope string. The
+// dropped scope is preserved in the scope-companion entry so auth status still
+// shows the full granted scopes.
+func accessOnlyStoredTokenForKeyring(stored *StoredToken) *StoredToken {
+	if stored == nil {
+		return nil
+	}
+
+	compact := *stored
+	compact.IDToken = ""
+	compact.Scope = ""
+	return &compact
 }
 
 // mediumCompactStoredTokenForKeyring drops the large access/ID token JWTs but
@@ -464,6 +550,41 @@ func compactStoredTokenForKeyring(stored *StoredToken) *StoredToken {
 	compact.ExpiresIn = 0
 	compact.ExpiresAt = time.Time{}
 	return &compact
+}
+
+// syncScopeCompanion keeps the scope-companion keyring entry in sync with what
+// the primary token encoding actually stored. When the primary encoding had to
+// drop the scope string to fit the keyring size limit (origScope is non-empty
+// but the stored encoding's scope is empty), the scope is preserved in a
+// companion entry so auth status and doctor can still show the full granted
+// scopes without keeping the large scope string in the primary entry. In every
+// other case any stale companion is removed. The scope list is not a secret, so
+// this introduces no credential exposure. Best-effort: errors are ignored since
+// the companion is a display aid, not required for authentication.
+func (tm *TokenManager) syncScopeCompanion(keyringName, origScope, storedScope string) {
+	companion := keyringName + scopeCompanionSuffix
+	if origScope != "" && storedScope == "" {
+		_ = tm.deps.setToken(tm.tokenStore, companion, origScope)
+		return
+	}
+	_ = tm.deps.deleteToken(tm.tokenStore, companion)
+}
+
+// CachedScopes returns the granted scopes preserved in the scope-companion
+// keyring entry, or nil when there is none. It is used as a fallback for scope
+// display when the primary token entry dropped the scope string to fit size
+// limits. Only consulted for keyring storage; the file store keeps the full
+// token (scope included), so no companion is needed there.
+func (tm *TokenManager) CachedScopes(tokenName string) []string {
+	if !tm.deps.keyringAvailable() {
+		return nil
+	}
+	companion := tm.getKeyringName(tokenName) + scopeCompanionSuffix
+	v, err := tm.deps.getToken(tm.tokenStore, companion)
+	if err != nil || v == "" {
+		return nil
+	}
+	return strings.Fields(v)
 }
 
 // getKeyringName returns the keyring storage name for a token

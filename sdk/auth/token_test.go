@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"testing"
 )
 
@@ -87,5 +88,66 @@ func TestExtractJWTSubject(t *testing.T) {
 	_, err = ExtractJWTSubject("not-a-jwt")
 	if err == nil {
 		t.Error("expected error for invalid JWT")
+	}
+}
+
+// makeJWT builds a minimal unsigned JWT (header.payload.signature) whose
+// payload is the JSON encoding of claims. Only the payload is decoded by
+// ExtractJWTScopes, so header and signature are placeholders.
+func makeJWT(t *testing.T, claims map[string]any) string {
+	t.Helper()
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("marshal claims: %v", err)
+	}
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
+	body := base64.RawURLEncoding.EncodeToString(payload)
+	return header + "." + body + ".sig"
+}
+
+func TestExtractJWTScopes(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		want  []string
+	}{
+		{
+			name:  "scope claim, space-delimited",
+			token: makeJWT(t, map[string]any{"scope": "storage:logs:read storage:events:read"}),
+			want:  []string{"storage:logs:read", "storage:events:read"},
+		},
+		{
+			name:  "scp claim as array",
+			token: makeJWT(t, map[string]any{"scp": []string{"openid", "offline_access"}}),
+			want:  []string{"openid", "offline_access"},
+		},
+		{
+			name:  "scp claim as string",
+			token: makeJWT(t, map[string]any{"scp": "openid offline_access"}),
+			want:  []string{"openid", "offline_access"},
+		},
+		{
+			name:  "scope preferred over scp",
+			token: makeJWT(t, map[string]any{"scope": "a b", "scp": []string{"c"}}),
+			want:  []string{"a", "b"},
+		},
+		{name: "no scope claim", token: makeJWT(t, map[string]any{"sub": "user-1"}), want: nil},
+		{name: "empty token", token: "", want: nil},
+		{name: "not a jwt", token: "not-a-jwt", want: nil},
+		{name: "platform token is not a jwt", token: "dt0s16.ABC.DEF", want: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ExtractJWTScopes(tc.token)
+			if len(got) != len(tc.want) {
+				t.Fatalf("ExtractJWTScopes() = %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("scope[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
 	}
 }
