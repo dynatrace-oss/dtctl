@@ -224,6 +224,14 @@ func TestTokenManager_RefreshToken_ConcurrentRotation(t *testing.T) {
 		store[name] = val
 		return nil
 	}
+	// saveToken clears the scope-companion entry after a successful write, so
+	// deleteToken must share the same lock as get/set.
+	tm.deps.deleteToken = func(_ *TokenStore, name string) error {
+		storeMu.Lock()
+		defer storeMu.Unlock()
+		delete(store, name)
+		return nil
+	}
 
 	// Rotation-faithful provider: each refresh token is single-use.
 	var providerMu sync.Mutex
