@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
+	sdkauth "github.com/dynatrace-oss/dtctl/sdk/auth"
 	"github.com/dynatrace-oss/dtctl/sdk/session"
 )
 
@@ -56,6 +57,13 @@ func IsOAuthToken(tokenName string) bool   { return session.IsOAuthToken(tokenNa
 func IsTokenExpired(tokens *TokenSet) bool { return session.IsTokenExpired(tokens) }
 func DecodeRefreshTokenExpiry(refreshToken string) (time.Time, bool) {
 	return session.DecodeRefreshTokenExpiry(refreshToken)
+}
+
+// ExtractJWTScopes returns the granted scopes decoded from a JWT access token,
+// or nil when they cannot be determined. Used as a fallback for scope display
+// when the scope string was dropped from compact keyring storage.
+func ExtractJWTScopes(accessToken string) []string {
+	return sdkauth.ExtractJWTScopes(accessToken)
 }
 
 // GetScopesForSafetyLevel returns the OAuth scopes required for a given safety

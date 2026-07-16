@@ -97,3 +97,60 @@ func ExtractJWTSubject(token string) (string, error) {
 
 	return claims.Sub, nil
 }
+
+// ExtractJWTScopes extracts the granted scopes from a JWT access token. It reads
+// the "scope" claim (a space-delimited string) or, failing that, the "scp"
+// claim (either a space-delimited string or an array of strings). It returns
+// nil when the token is not a decodable JWT, is a Dynatrace platform token
+// (dt0s16.*, not a JWT), or carries no recognizable scope claim. Callers use
+// this as a best-effort fallback for displaying scopes when the scope string
+// was dropped from compact keyring storage.
+func ExtractJWTScopes(token string) []string {
+	if token == "" || IsPlatformToken(token) {
+		return nil
+	}
+
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+
+	payload := parts[1]
+	if pad := len(payload) % 4; pad > 0 {
+		payload += strings.Repeat("=", 4-pad)
+	}
+
+	decoded, err := base64.URLEncoding.DecodeString(payload)
+	if err != nil {
+		return nil
+	}
+
+	var claims struct {
+		Scope string          `json:"scope"`
+		Scp   json.RawMessage `json:"scp"`
+	}
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return nil
+	}
+
+	if scopes := strings.Fields(claims.Scope); len(scopes) > 0 {
+		return scopes
+	}
+
+	// "scp" may be encoded as a JSON array of strings or as a single
+	// space-delimited string, depending on the issuer.
+	if len(claims.Scp) > 0 {
+		var arr []string
+		if err := json.Unmarshal(claims.Scp, &arr); err == nil && len(arr) > 0 {
+			return arr
+		}
+		var str string
+		if err := json.Unmarshal(claims.Scp, &str); err == nil {
+			if scopes := strings.Fields(str); len(scopes) > 0 {
+				return scopes
+			}
+		}
+	}
+
+	return nil
+}
