@@ -465,10 +465,28 @@ func (h *Handler) executeGraphQL(ctx context.Context, query string, variables ma
 	}
 
 	if errorsValue, ok := response["errors"]; ok {
-		return response, fmt.Errorf("live debugger graphql returned errors: %v", errorsValue)
+		return response, fmt.Errorf("live debugger graphql returned errors: %s", extractGraphQLErrorMessages(errorsValue))
 	}
 
 	return response, nil
+}
+
+func extractGraphQLErrorMessages(errorsValue interface{}) string {
+	errs, ok := errorsValue.([]interface{})
+	if !ok {
+		return fmt.Sprintf("%v", errorsValue)
+	}
+	msgs := make([]string, 0, len(errs))
+	for _, e := range errs {
+		if m, ok := e.(map[string]interface{}); ok {
+			if msg, ok := m["message"].(string); ok {
+				msgs = append(msgs, msg)
+				continue
+			}
+		}
+		msgs = append(msgs, fmt.Sprintf("%v", e))
+	}
+	return strings.Join(msgs, "; ")
 }
 
 func buildGraphQLURL(environmentURL string) (string, error) {
