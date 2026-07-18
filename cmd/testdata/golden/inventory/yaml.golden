@@ -19,7 +19,7 @@ dataObjects:
   - dt.entity.service
   - logs
   - spans
-unfetchable:
+queryOnly:
   - metrics
 buckets:
   - default_logs

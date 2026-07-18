@@ -10,10 +10,13 @@ import (
 	"time"
 )
 
-// RunResult is one probe/query outcome as discovery sees it.
+// RunResult is one probe/query outcome as discovery sees it. Truncated means
+// the result is incomplete — a record/byte cap, scan limit, or timeout cut it
+// short — so "no matching row" in it is not evidence that none exists.
 type RunResult struct {
-	Records []map[string]interface{}
-	Seconds float64
+	Records   []map[string]interface{}
+	Seconds   float64
+	Truncated bool
 }
 
 // Runner executes DQL on the live environment. The cmd layer implements it
@@ -78,6 +81,12 @@ type discoveredFacts struct {
 	censusOK   bool
 	metricKeys []string
 	metricsOK  bool
+	// The *Truncated flags mark a fact source that loaded but incompletely
+	// (result cap, scan limit): a hit in it still proves presence, but a miss
+	// proves nothing and must degrade to unknown, not absent.
+	objectsTruncated bool
+	censusTruncated  bool
+	metricsTruncated bool
 }
 
 // Discover runs the discovery battery against a live environment and returns
@@ -108,25 +117,32 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 
 	// A hard error on the catalog aborts: without it nothing below is
 	// meaningful. Everything after degrades to a report note.
-	fetchable, unfetchable, err := br.dataObjectCatalog(ctx)
+	fetchable, queryOnly, objectsTruncated, err := br.dataObjectCatalog(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("data-object discovery failed: %w", err)
 	}
 	inv.DataObjects = fetchable
-	inv.Unfetchable = unfetchable
-	if len(unfetchable) > 0 {
+	inv.QueryOnly = queryOnly
+	if len(queryOnly) > 0 {
 		inv.Notes = append(inv.Notes, fmt.Sprintf(
 			"catalog objects without fetch support: %s — metric data is queried via the timeseries/metrics commands, smartscape via smartscapeNodes/smartscapeEdges",
-			strings.Join(unfetchable, ", ")))
+			strings.Join(queryOnly, ", ")))
 	}
 	facts := discoveredFacts{
 		// Capability shapes check catalog membership, not fetchability.
-		objects: stringSet(append(append([]string{}, fetchable...), unfetchable...)),
-		census:  map[string]int64{},
+		objects:          stringSet(append(append([]string{}, fetchable...), queryOnly...)),
+		objectsTruncated: objectsTruncated,
+		census:           map[string]int64{},
+	}
+	if objectsTruncated {
+		report.Notes = append(report.Notes, "data-object catalog truncated — the object list is incomplete")
 	}
 
-	if buckets, err := br.stringColumn(ctx, "fetch dt.system.buckets | fields name | sort name asc | limit 1000", "name"); err == nil {
+	if buckets, truncated, err := br.stringColumn(ctx, "fetch dt.system.buckets | fields name | sort name asc | limit 1000", "name"); err == nil {
 		inv.Buckets = buckets
+		if truncated {
+			report.Notes = append(report.Notes, "bucket list truncated — buckets are missing")
+		}
 	} else if ctx.Err() != nil {
 		return nil, ctx.Err()
 	} else if err != errBudgetExhausted {
@@ -140,7 +156,11 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 			}
 		}
 		facts.censusOK = true
+		facts.censusTruncated = res.Truncated
 		inv.EntityTypes = facts.census
+		if res.Truncated {
+			report.Notes = append(report.Notes, "entity census truncated — rare entity types may be missing")
+		}
 	} else if ctx.Err() != nil {
 		return nil, ctx.Err()
 	} else if err != errBudgetExhausted {
@@ -148,9 +168,13 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 	}
 
 	if anyMetricDef(defs) {
-		if keys, err := br.stringColumn(ctx, "metrics from:now()-2h | summarize c = count(), by:{metric.key} | limit 10000", "metric.key"); err == nil {
+		if keys, truncated, err := br.stringColumn(ctx, "metrics from:now()-2h | summarize c = count(), by:{metric.key} | limit 10000", "metric.key"); err == nil {
 			facts.metricKeys = keys
 			facts.metricsOK = true
+			facts.metricsTruncated = truncated
+			if truncated {
+				report.Notes = append(report.Notes, fmt.Sprintf("metric catalog truncated at %d keys — keys are missing", len(keys)))
+			}
 		} else if ctx.Err() != nil {
 			return nil, ctx.Err()
 		} else if err != errBudgetExhausted {
@@ -207,26 +231,49 @@ func (b *budgetRunner) evaluateCapabilities(ctx context.Context, defs map[string
 		noVerdict := func(reason string) {
 			unknown = append(unknown, CapabilityStatus{Name: name, Evidence: reason})
 		}
+		// A miss in a truncated fact source proves nothing: the match may sit in
+		// the rows that were cut off. A hit still proves presence.
 		switch {
 		case def.DataObject != "":
-			verdict(facts.objects[def.DataObject])
+			switch {
+			case facts.objects[def.DataObject]:
+				verdict(true)
+			case facts.objectsTruncated:
+				noVerdict("not evaluated: data-object catalog truncated")
+			default:
+				verdict(false)
+			}
 		case len(def.EntityTypes) > 0:
-			if !facts.censusOK {
+			switch {
+			case !facts.censusOK:
 				noVerdict("not evaluated: entity census unavailable")
-				continue
+			case censusMatches(def.EntityTypes, facts.census):
+				verdict(true)
+			case facts.censusTruncated:
+				noVerdict("not evaluated: entity census truncated")
+			default:
+				verdict(false)
 			}
-			verdict(censusMatches(def.EntityTypes, facts.census))
 		case def.MetricKey != "":
-			if !facts.metricsOK {
+			switch {
+			case !facts.metricsOK:
 				noVerdict("not evaluated: metric catalog unavailable")
-				continue
+			case anyGlobMatch(def.MetricKey, facts.metricKeys):
+				verdict(true)
+			case facts.metricsTruncated:
+				noVerdict("not evaluated: metric catalog truncated")
+			default:
+				verdict(false)
 			}
-			verdict(anyGlobMatch(def.MetricKey, facts.metricKeys))
 		case def.Probe != "":
 			res, perr := b.run(ctx, def.Probe)
 			switch {
+			case perr == nil && len(res.Records) > 0:
+				verdict(true)
+			case perr == nil && res.Truncated:
+				noVerdict("not evaluated: probe result was cut by a limit before any match")
 			case perr == nil:
-				verdict(len(res.Records) > 0)
+				verdict(false)
 			case ctx.Err() != nil:
 				return nil, nil, nil, ctx.Err()
 			case perr == errBudgetExhausted:
@@ -281,16 +328,16 @@ func anyGlobMatch(pattern string, keys []string) bool {
 // support (the catalog's usable_with column). The catalog lists objects that
 // only work through other commands — advertising those as fetch targets bakes
 // in DATA_OBJECT_NOT_SUPPORTED failures for consumers.
-func (b *budgetRunner) dataObjectCatalog(ctx context.Context) (fetchable, unfetchable []string, err error) {
+func (b *budgetRunner) dataObjectCatalog(ctx context.Context) (fetchable, queryOnly []string, truncated bool, err error) {
 	res, err := b.run(ctx,
 		`fetch dt.system.data_objects | fieldsAdd fetchable = in("fetch", usable_with) | fields name, fetchable | sort name asc | limit 5000`)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, nil, ctx.Err()
+			return nil, nil, false, ctx.Err()
 		}
 		// Environments without usable_with fall back to the flat list.
-		names, ferr := b.stringColumn(ctx, "fetch dt.system.data_objects | fields name | sort name asc | limit 5000", "name")
-		return names, nil, ferr
+		names, truncated, ferr := b.stringColumn(ctx, "fetch dt.system.data_objects | fields name | sort name asc | limit 5000", "name")
+		return names, nil, truncated, ferr
 	}
 	for _, rec := range res.Records {
 		name, _ := rec["name"].(string)
@@ -298,18 +345,18 @@ func (b *budgetRunner) dataObjectCatalog(ctx context.Context) (fetchable, unfetc
 			continue
 		}
 		if f, ok := rec["fetchable"].(bool); ok && !f {
-			unfetchable = append(unfetchable, name)
+			queryOnly = append(queryOnly, name)
 		} else {
 			fetchable = append(fetchable, name)
 		}
 	}
-	return fetchable, unfetchable, nil
+	return fetchable, queryOnly, res.Truncated, nil
 }
 
-func (b *budgetRunner) stringColumn(ctx context.Context, dql, column string) ([]string, error) {
+func (b *budgetRunner) stringColumn(ctx context.Context, dql, column string) ([]string, bool, error) {
 	res, err := b.run(ctx, dql)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var out []string
 	for _, rec := range res.Records {
@@ -317,7 +364,7 @@ func (b *budgetRunner) stringColumn(ctx context.Context, dql, column string) ([]
 			out = append(out, s)
 		}
 	}
-	return out, nil
+	return out, res.Truncated, nil
 }
 
 func anyMetricDef(defs map[string]*CapabilityDef) bool {

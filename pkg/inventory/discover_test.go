@@ -8,9 +8,10 @@ import (
 )
 
 type mockResponse struct {
-	match   string
-	records []map[string]interface{}
-	err     error
+	match     string
+	records   []map[string]interface{}
+	truncated bool
+	err       error
 }
 
 type mockRunner struct {
@@ -25,7 +26,7 @@ func (m *mockRunner) RunQuery(_ context.Context, dql string) (*RunResult, error)
 			if r.err != nil {
 				return nil, r.err
 			}
-			return &RunResult{Records: r.records, Seconds: 0.1}, nil
+			return &RunResult{Records: r.records, Seconds: 0.1, Truncated: r.truncated}, nil
 		}
 	}
 	return &RunResult{Seconds: 0.1}, nil // default: empty result
@@ -82,8 +83,8 @@ func TestDiscoverInventory(t *testing.T) {
 	if want := []string{"logs", "spans", "dt.davis.events"}; strings.Join(inv.DataObjects, ",") != strings.Join(want, ",") {
 		t.Errorf("DataObjects = %v, want %v", inv.DataObjects, want)
 	}
-	if len(inv.Unfetchable) != 1 || inv.Unfetchable[0] != "metrics" {
-		t.Errorf("Unfetchable = %v, want [metrics]", inv.Unfetchable)
+	if len(inv.QueryOnly) != 1 || inv.QueryOnly[0] != "metrics" {
+		t.Errorf("QueryOnly = %v, want [metrics]", inv.QueryOnly)
 	}
 	if len(inv.Buckets) != 1 || inv.Buckets[0] != "default_logs" {
 		t.Errorf("Buckets = %v", inv.Buckets)
@@ -306,5 +307,119 @@ func TestDiscoverCatalogFallbackWithoutUsableWith(t *testing.T) {
 	}
 	if len(inv.Capabilities) != 1 || inv.Capabilities[0] != "logs" {
 		t.Errorf("Capabilities = %v, want [logs]", inv.Capabilities)
+	}
+}
+
+// A truncated metric catalog is the regression behind false metric-family
+// absences on large tenants: >1000 distinct keys, the client cap cuts the
+// list, and every miss used to become fabricated absence evidence.
+func TestDiscoverTruncatedMetricCatalogMissIsUnknown(t *testing.T) {
+	runner := testRunner()
+	runner.responses = append([]mockResponse{
+		{match: "metrics from:", records: []map[string]interface{}{rec("metric.key", "dt.kubernetes.container.cpu")}, truncated: true},
+	}, runner.responses...)
+	defs := map[string]*CapabilityDef{
+		"k8s-metrics":  {MetricKey: "dt.kubernetes.*"},
+		"host-metrics": {MetricKey: "dt.host.*"},
+	}
+	inv, err := Discover(context.Background(), runner, defs, DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	// A hit in the truncated sample still proves presence.
+	if len(inv.Capabilities) != 1 || inv.Capabilities[0] != "k8s-metrics" {
+		t.Errorf("Capabilities = %v, want [k8s-metrics]", inv.Capabilities)
+	}
+	// A miss proves nothing: the key may sit in the rows that were cut.
+	if len(inv.Unknown) != 1 || inv.Unknown[0].Name != "host-metrics" || !strings.Contains(inv.Unknown[0].Evidence, "metric catalog truncated") {
+		t.Errorf("Unknown = %v, want host-metrics unknown with the truncation cited", inv.Unknown)
+	}
+	if len(inv.Absent) != 0 {
+		t.Errorf("Absent = %v, want none — a truncated catalog cannot prove absence", inv.Absent)
+	}
+	found := false
+	for _, n := range inv.Discovery.Notes {
+		if strings.Contains(n, "metric catalog truncated") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("missing truncation note in report: %v", inv.Discovery.Notes)
+	}
+}
+
+func TestDiscoverTruncatedObjectCatalogMissIsUnknown(t *testing.T) {
+	runner := testRunner()
+	runner.responses = append([]mockResponse{
+		{match: "dt.system.data_objects", records: []map[string]interface{}{
+			rec("name", "spans", "fetchable", true),
+		}, truncated: true},
+	}, runner.responses...)
+	defs := map[string]*CapabilityDef{
+		"spans": {DataObject: "spans"},
+		"rum":   {DataObject: "user.events"},
+	}
+	inv, err := Discover(context.Background(), runner, defs, DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	if len(inv.Capabilities) != 1 || inv.Capabilities[0] != "spans" {
+		t.Errorf("Capabilities = %v, want [spans]", inv.Capabilities)
+	}
+	if len(inv.Unknown) != 1 || inv.Unknown[0].Name != "rum" || !strings.Contains(inv.Unknown[0].Evidence, "data-object catalog truncated") {
+		t.Errorf("Unknown = %v, want rum unknown with the truncation cited", inv.Unknown)
+	}
+	if len(inv.Absent) != 0 {
+		t.Errorf("Absent = %v, want none", inv.Absent)
+	}
+}
+
+func TestDiscoverTruncatedCensusMissIsUnknown(t *testing.T) {
+	runner := testRunner()
+	runner.responses = append([]mockResponse{
+		{match: `smartscapeNodes "*"`, records: []map[string]interface{}{
+			rec("type", "HOST", "c", float64(5)),
+		}, truncated: true},
+	}, runner.responses...)
+	defs := map[string]*CapabilityDef{
+		"hosts": {EntityTypes: []string{"HOST"}},
+		"azure": {EntityTypes: []string{"AZURE_*"}},
+	}
+	inv, err := Discover(context.Background(), runner, defs, DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	if len(inv.Capabilities) != 1 || inv.Capabilities[0] != "hosts" {
+		t.Errorf("Capabilities = %v, want [hosts]", inv.Capabilities)
+	}
+	if len(inv.Unknown) != 1 || inv.Unknown[0].Name != "azure" || !strings.Contains(inv.Unknown[0].Evidence, "entity census truncated") {
+		t.Errorf("Unknown = %v, want azure unknown with the truncation cited", inv.Unknown)
+	}
+}
+
+func TestDiscoverTruncatedEmptyProbeIsUnknown(t *testing.T) {
+	runner := testRunner()
+	runner.responses = append([]mockResponse{
+		// The probe hit a limit (e.g. the scan cap) before finding any match:
+		// zero rows in a partial result is not absence.
+		{match: "RAPPROBE", truncated: true},
+	}, runner.responses...)
+	inv, err := Discover(context.Background(), runner, testDefs(), DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	var rap *CapabilityStatus
+	for i := range inv.Unknown {
+		if inv.Unknown[i].Name == "rap" {
+			rap = &inv.Unknown[i]
+		}
+	}
+	if rap == nil || !strings.Contains(rap.Evidence, "cut by a limit") {
+		t.Fatalf("rap must be unknown with the limit cited, got unknown=%v absent=%v", inv.Unknown, inv.Absent)
+	}
+	for _, a := range inv.Absent {
+		if a.Name == "rap" {
+			t.Errorf("a limit-cut probe must not fabricate absence evidence: %+v", a)
+		}
 	}
 }

@@ -138,6 +138,13 @@ Examples:
 	},
 }
 
+// inventoryMaxResultRecords must exceed the largest `| limit` in the discovery
+// battery (10000, the metric catalog): the executor's default client cap is
+// 1000 records, which silently under-cuts the catalog queries on big tenants —
+// on one, the metric catalog lost every dt.* key to the cut and turned live
+// metric families into fabricated absences.
+const inventoryMaxResultRecords = 20000
+
 // inventoryRunner adapts the DQL executor to the discovery Runner interface.
 // Every probe carries the scan cap; queries are tagged for observability.
 type inventoryRunner struct {
@@ -149,6 +156,7 @@ func (r *inventoryRunner) RunQuery(ctx context.Context, dql string) (*inventory.
 	start := time.Now()
 	resp, err := r.executor.ExecuteQueryWithContext(ctx, dql, exec.DQLExecuteOptions{
 		DefaultScanLimitGbytes: r.scanLimitGB,
+		MaxResultRecords:       inventoryMaxResultRecords,
 		ClientContext:          "inventory",
 	})
 	if err != nil {
@@ -157,9 +165,17 @@ func (r *inventoryRunner) RunQuery(ctx context.Context, dql string) (*inventory.
 	if resp == nil {
 		return nil, context.Canceled
 	}
+	truncated := false
+	for _, n := range resp.GetNotifications() {
+		if exec.ResultIsPartial(n) {
+			truncated = true
+			break
+		}
+	}
 	return &inventory.RunResult{
-		Records: resp.GetRecords(),
-		Seconds: time.Since(start).Seconds(),
+		Records:   resp.GetRecords(),
+		Seconds:   time.Since(start).Seconds(),
+		Truncated: truncated,
 	}, nil
 }
 
@@ -205,15 +221,20 @@ func printInventoryHuman(inv *inventory.Inventory) {
 		}
 		output.DescribeKV("Data objects:", w, "%s", line)
 	}
-	if len(inv.Unfetchable) > 0 {
-		output.DescribeKV("Query-only:", w, "%s (no fetch — see notes)", strings.Join(inv.Unfetchable, ", "))
+	if len(inv.QueryOnly) > 0 {
+		output.DescribeKV("Query-only:", w, "%s (no fetch — see notes)", strings.Join(inv.QueryOnly, ", "))
 	}
 	if len(inv.Buckets) > 0 {
-		output.DescribeKV("Buckets:", w, "%s", strings.Join(inv.Buckets, ", "))
+		output.DescribeKV("Buckets:", w, "%s", strings.Join(capNames(inv.Buckets, 20), ", "))
 	}
 	if len(inv.Segments) > 0 {
 		output.DescribeSection("Segments (apply with -S <name>)")
-		for _, s := range inv.Segments {
+		const maxSegments = 10
+		for i, s := range inv.Segments {
+			if i >= maxSegments {
+				fmt.Printf("  (+%d more — full list with -o json)\n", len(inv.Segments)-maxSegments)
+				break
+			}
 			desc := ""
 			if s.Description != "" {
 				desc = " — " + s.Description
@@ -230,6 +251,16 @@ func printInventoryHuman(inv *inventory.Inventory) {
 			fmt.Fprintf(os.Stderr, "  note: %s\n", n)
 		}
 	}
+}
+
+// capNames limits a name list to n entries for the human view, marking how
+// many were cut; the full list stays available via -o json|yaml.
+func capNames(names []string, n int) []string {
+	if len(names) <= n {
+		return names
+	}
+	capped := append([]string{}, names[:n]...)
+	return append(capped, fmt.Sprintf("(+%d more — see -o json)", len(names)-n))
 }
 
 // topCensusTypes formats the census as the top-n types by count.

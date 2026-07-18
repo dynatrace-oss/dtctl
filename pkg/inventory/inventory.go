@@ -74,11 +74,11 @@ type Inventory struct {
 	Unknown      []CapabilityStatus `json:"unknown,omitempty" yaml:"unknown,omitempty"`
 	// EntityTypes is the live topology census: entity type → count.
 	EntityTypes map[string]int64 `json:"entityTypes,omitempty" yaml:"entityTypes,omitempty"`
-	// DataObjects are catalog objects that support fetch; Unfetchable are
+	// DataObjects are catalog objects that support fetch; QueryOnly are
 	// catalog objects that are queried through other commands instead
 	// (metrics → timeseries, smartscape.* → smartscapeNodes/smartscapeEdges).
 	DataObjects []string      `json:"dataObjects,omitempty" yaml:"dataObjects,omitempty"`
-	Unfetchable []string      `json:"unfetchable,omitempty" yaml:"unfetchable,omitempty"`
+	QueryOnly   []string      `json:"queryOnly,omitempty" yaml:"queryOnly,omitempty"`
 	Buckets     []string      `json:"buckets,omitempty" yaml:"buckets,omitempty"`
 	Segments    []SegmentInfo `json:"segments,omitempty" yaml:"segments,omitempty"`
 	// Notes carry cross-cutting facts about how this environment's data is

@@ -23,7 +23,7 @@ func inventoryFixture() *inventory.Inventory {
 		},
 		EntityTypes: map[string]int64{"HOST": 12, "SERVICE": 40, "K8S_POD": 200},
 		DataObjects: []string{"dt.entity.host", "dt.entity.service", "logs", "spans"},
-		Unfetchable: []string{"metrics"},
+		QueryOnly:   []string{"metrics"},
 		Buckets:     []string{"default_logs", "default_spans"},
 		Segments:    []inventory.SegmentInfo{{UID: "seg-1", Name: "prod", Description: "production workloads"}},
 		Notes:       []string{"catalog objects without fetch support: metrics"},
@@ -40,6 +40,39 @@ func TestTopCensusTypes(t *testing.T) {
 	// Truncation reports how many types were dropped.
 	if got, want := topCensusTypes(census, 2), "K8S_POD:40 SERVICE:40 (+2 more types)"; got != want {
 		t.Errorf("topCensusTypes(n=2) = %q, want %q", got, want)
+	}
+}
+
+func TestCapNames(t *testing.T) {
+	names := []string{"a", "b", "c", "d"}
+	if got := strings.Join(capNames(names, 4), ", "); got != "a, b, c, d" {
+		t.Errorf("capNames(4) = %q, want all names", got)
+	}
+	if got := strings.Join(capNames(names, 2), ", "); got != "a, b, (+2 more — see -o json)" {
+		t.Errorf("capNames(2) = %q", got)
+	}
+}
+
+func TestPrintInventoryHumanCapsSegments(t *testing.T) {
+	originalPlainMode := plainMode
+	defer func() {
+		plainMode = originalPlainMode
+		output.ResetColorCache()
+	}()
+	plainMode = true
+	output.ResetColorCache()
+
+	inv := inventoryFixture()
+	inv.Segments = nil
+	for i := 0; i < 14; i++ {
+		inv.Segments = append(inv.Segments, inventory.SegmentInfo{UID: "s", Name: string(rune('a' + i))})
+	}
+	got := captureStdout(t, func() { printInventoryHuman(inv) })
+	if !strings.Contains(got, "(+4 more — full list with -o json)") {
+		t.Errorf("segment list must be capped in human output:\n%s", got)
+	}
+	if strings.Contains(got, "\n  k\n") {
+		t.Errorf("segments beyond the cap must not be listed:\n%s", got)
 	}
 }
 
