@@ -7,7 +7,10 @@
 # one of four fixed shapes, deliberately not an expression language:
 #
 #   dataObject:  present when the named object is in the dt.system.data_objects
-#                catalog (strong evidence, zero extra queries)
+#                catalog AND, where bucket statistics cover it, its buckets
+#                hold at least one record — an empty stream (e.g. user.events
+#                on a tenant that never ingested RUM) is absent, not present
+#                (strong evidence, zero extra queries)
 #   entityTypes: present when at least one entity of a matching type (glob
 #                patterns allowed) is in the live smartscape census
 #   metricKey:   present when at least one key matching the glob is in the

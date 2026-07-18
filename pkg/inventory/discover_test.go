@@ -62,7 +62,9 @@ func testRunner() *mockRunner {
 			rec("name", "dt.davis.events", "fetchable", true), rec("name", "metrics", "fetchable", false),
 			rec("name", "dt.entity.host", "fetchable", true),
 		}},
-		{match: "dt.system.buckets", records: []map[string]interface{}{rec("name", "default_logs")}},
+		{match: "dt.system.buckets", records: []map[string]interface{}{
+			rec("name", "default_logs", "dt.system.table", "logs", "records", float64(100), "has_access", true),
+		}},
 		{match: `smartscapeNodes "*"`, records: []map[string]interface{}{
 			rec("type", "HOST", "c", float64(5)),
 			rec("type", "K8S_POD", "c", float64(10)),
@@ -315,6 +317,74 @@ func TestDiscoverCatalogFallbackWithoutUsableWith(t *testing.T) {
 	}
 	if len(inv.Capabilities) != 1 || inv.Capabilities[0] != "logs" {
 		t.Errorf("Capabilities = %v, want [logs]", inv.Capabilities)
+	}
+}
+
+// Catalog membership alone must not prove a stream capability: on a tenant
+// that never ingested RUM, user.events is still in the catalog, but every one
+// of its buckets is empty. Bucket statistics (already fetched for the bucket
+// list) close that gap.
+func TestDiscoverEmptyStreamIsAbsent(t *testing.T) {
+	runner := testRunner()
+	runner.responses = append([]mockResponse{
+		{match: "dt.system.data_objects", records: []map[string]interface{}{
+			rec("name", "logs", "fetchable", true),
+			rec("name", "user.events", "fetchable", true),
+			rec("name", "dt.davis.problems", "fetchable", true),
+		}},
+		{match: "dt.system.buckets", records: []map[string]interface{}{
+			rec("name", "default_logs", "dt.system.table", "logs", "records", float64(100), "has_access", true),
+			rec("name", "default_user_events", "dt.system.table", "user.events", "records", float64(0), "has_access", true),
+		}},
+	}, runner.responses...)
+	defs := map[string]*CapabilityDef{
+		"logs": {DataObject: "logs"},
+		"rum":  {DataObject: "user.events"},
+		// No bucket covers dt.davis.problems: liveness is unjudgeable, the
+		// catalog verdict stands.
+		"davis": {DataObject: "dt.davis.problems"},
+	}
+	inv, err := Discover(context.Background(), runner, defs, DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	if want := "davis,logs"; strings.Join(inv.Capabilities, ",") != want {
+		t.Errorf("Capabilities = %v, want [%s]", inv.Capabilities, want)
+	}
+	if len(inv.Absent) != 1 || inv.Absent[0].Name != "rum" || !strings.Contains(inv.Absent[0].Evidence, "all its buckets are empty") {
+		t.Errorf("Absent = %v, want rum absent with the empty buckets cited", inv.Absent)
+	}
+}
+
+func TestDiscoverEmptyStreamLivenessSkippedWhenBucketsUnjudgeable(t *testing.T) {
+	catalog := mockResponse{match: "dt.system.data_objects", records: []map[string]interface{}{
+		rec("name", "user.events", "fetchable", true),
+	}}
+	defs := map[string]*CapabilityDef{"rum": {DataObject: "user.events"}}
+	cases := []struct {
+		name    string
+		buckets mockResponse
+	}{
+		{"truncated bucket list", mockResponse{match: "dt.system.buckets", records: []map[string]interface{}{
+			rec("name", "default_user_events", "dt.system.table", "user.events", "records", float64(0), "has_access", true),
+		}, truncated: true}},
+		{"inaccessible buckets", mockResponse{match: "dt.system.buckets", records: []map[string]interface{}{
+			rec("name", "default_user_events", "dt.system.table", "user.events", "records", float64(0), "has_access", false),
+		}}},
+		{"bucket discovery failed", mockResponse{match: "dt.system.buckets", err: fmt.Errorf("boom")}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &mockRunner{responses: []mockResponse{catalog, tc.buckets}}
+			inv, err := Discover(context.Background(), runner, defs, DiscoverOptions{})
+			if err != nil {
+				t.Fatalf("Discover() error: %v", err)
+			}
+			// Emptiness cannot be judged: the catalog verdict stands.
+			if len(inv.Capabilities) != 1 || inv.Capabilities[0] != "rum" {
+				t.Errorf("Capabilities = %v, want [rum] (absent=%v)", inv.Capabilities, inv.Absent)
+			}
+		})
 	}
 }
 

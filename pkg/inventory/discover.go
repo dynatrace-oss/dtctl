@@ -81,6 +81,11 @@ type discoveredFacts struct {
 	censusOK   bool
 	metricKeys []string
 	metricsOK  bool
+	// streamRows sums bucket records per stream (dt.system.table → records
+	// across its accessible buckets): a catalog object whose buckets are all
+	// empty holds no data within retention. Streams without bucket coverage
+	// are simply not in the map and keep their catalog verdict.
+	streamRows map[string]int64
 	// The *Truncated flags mark a fact source that loaded but incompletely
 	// (result cap, scan limit): a hit in it still proves presence, but a miss
 	// proves nothing and must degrade to unknown, not absent.
@@ -147,10 +152,27 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 		report.Notes = append(report.Notes, "data-object catalog truncated — the object list is incomplete")
 	}
 
-	if buckets, truncated, err := br.stringColumn(ctx, "fetch dt.system.buckets | fields name | sort name asc | limit 1000", "name"); err == nil {
-		inv.Buckets = buckets
-		if truncated {
+	if res, err := br.run(ctx, "fetch dt.system.buckets | fields name, dt.system.table, records, has_access | sort name asc | limit 1000"); err == nil {
+		streamRows := map[string]int64{}
+		for _, rec := range res.Records {
+			if name, ok := rec["name"].(string); ok && name != "" {
+				inv.Buckets = append(inv.Buckets, name)
+			}
+			// Inaccessible buckets report no usable record count — leaving them
+			// out keeps an all-inaccessible stream on its catalog verdict
+			// instead of a fabricated "empty".
+			if access, ok := rec["has_access"].(bool); ok && !access {
+				continue
+			}
+			if table, ok := rec["dt.system.table"].(string); ok && table != "" {
+				streamRows[table] += asInt64(rec["records"])
+			}
+		}
+		if res.Truncated {
+			// Unseen buckets may hold the rows: liveness can't be judged.
 			report.Notes = append(report.Notes, "bucket list truncated — buckets are missing")
+		} else {
+			facts.streamRows = streamRows
 		}
 	} else if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -228,13 +250,16 @@ func (b *budgetRunner) evaluateCapabilities(ctx context.Context, defs map[string
 	sort.Strings(names)
 	for _, name := range names {
 		def := defs[name]
+		// Carry the evidence with the verdict, so the negative is citable
+		// without anyone re-deriving it with fresh probes.
+		absentWith := func(evidence string) {
+			absent = append(absent, CapabilityStatus{Name: name, Evidence: evidence})
+		}
 		verdict := func(ok bool) {
 			if ok {
 				present = append(present, name)
 			} else {
-				// Carry the evidence with the verdict, so the negative is
-				// citable without anyone re-deriving it with fresh probes.
-				absent = append(absent, CapabilityStatus{Name: name, Evidence: absenceEvidence(def)})
+				absentWith(absenceEvidence(def))
 			}
 		}
 		noVerdict := func(reason string) {
@@ -246,7 +271,16 @@ func (b *budgetRunner) evaluateCapabilities(ctx context.Context, defs map[string
 		case def.DataObject != "":
 			switch {
 			case facts.objects[def.DataObject]:
-				verdict(true)
+				// Catalog membership proves the stream exists, not that it holds
+				// data: on a tenant that never ingested RUM, user.events is
+				// still in the catalog. Bucket statistics close that gap for
+				// free — when they cover the object and every accessible bucket
+				// is empty, the capability is absent, with the emptiness cited.
+				if rows, covered := facts.streamRows[def.DataObject]; covered && rows == 0 {
+					absentWith(def.DataObject + " is in the catalog, but all its buckets are empty (0 records within retention)")
+				} else {
+					verdict(true)
+				}
 			case facts.objectsTruncated:
 				noVerdict("not evaluated: data-object catalog truncated")
 			default:

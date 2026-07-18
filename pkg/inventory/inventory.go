@@ -18,7 +18,9 @@ const (
 // CapabilityDef defines a capability by how it is discovered — one of four
 // fixed shapes, deliberately not an expression language:
 //
-//   - DataObject: the named object exists in the dt.system.data_objects catalog
+//   - DataObject: the named object exists in the dt.system.data_objects
+//     catalog — and, where bucket statistics cover the object, its buckets
+//     hold at least one record (an empty stream is absent, not present)
 //   - EntityTypes: at least one entity of a matching type (glob patterns) is in
 //     the live topology census
 //   - MetricKey: at least one key matching the glob is in the metric catalog
