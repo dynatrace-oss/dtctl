@@ -41,12 +41,22 @@ type budgetRunner struct {
 	report  *Report
 	queries int
 	seconds float64
+	// skipped records that at least one query was refused for lack of budget —
+	// the condition under which the inventory is actually partial. Merely
+	// ending a run with zero budget left is not.
+	skipped bool
 }
 
 var errBudgetExhausted = fmt.Errorf("discovery budget exhausted")
 
 func (b *budgetRunner) run(ctx context.Context, dql string) (*RunResult, error) {
+	// A cancelled run must not keep issuing queries (each would round-trip to
+	// the executor just to fail); surface the cancellation instead.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if b.queries <= 0 || b.seconds <= 0 {
+		b.skipped = true
 		return nil, errBudgetExhausted
 	}
 	res, err := b.runner.RunQuery(ctx, dql)
@@ -59,10 +69,23 @@ func (b *budgetRunner) run(ctx context.Context, dql string) (*RunResult, error) 
 	return res, err
 }
 
+// discoveredFacts carries the structural facts capability evaluation runs
+// against, with availability flags: a fact source that failed or was skipped
+// must yield "unknown" verdicts, never fabricated absence evidence.
+type discoveredFacts struct {
+	objects    map[string]bool
+	census     map[string]int64
+	censusOK   bool
+	metricKeys []string
+	metricsOK  bool
+}
+
 // Discover runs the discovery battery against a live environment and returns
 // the inventory, its consumption receipt attached. Probes run cheapest-first:
 // data-object catalog → buckets → entity census → metric catalog (only when a
 // metricKey definition needs it) → probe-shaped capability definitions.
+// Cancellation aborts the whole run: a half-discovered inventory is never
+// returned as if it were a verdict.
 func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef, opts DiscoverOptions) (*Inventory, error) {
 	now := opts.Now
 	if now == nil {
@@ -96,50 +119,62 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 			"catalog objects without fetch support: %s — metric data is queried via the timeseries/metrics commands, smartscape via smartscapeNodes/smartscapeEdges",
 			strings.Join(unfetchable, ", ")))
 	}
-	// Capability shapes check catalog membership, not fetchability.
-	objects := stringSet(append(append([]string{}, fetchable...), unfetchable...))
+	facts := discoveredFacts{
+		// Capability shapes check catalog membership, not fetchability.
+		objects: stringSet(append(append([]string{}, fetchable...), unfetchable...)),
+		census:  map[string]int64{},
+	}
 
 	if buckets, err := br.stringColumn(ctx, "fetch dt.system.buckets | fields name | sort name asc | limit 1000", "name"); err == nil {
 		inv.Buckets = buckets
+	} else if ctx.Err() != nil {
+		return nil, ctx.Err()
 	} else if err != errBudgetExhausted {
 		report.Notes = append(report.Notes, "bucket discovery failed: "+firstLine(err.Error()))
 	}
 
-	census := map[string]int64{}
 	if res, err := br.run(ctx, `smartscapeNodes "*" | summarize c = count(), by:{type} | sort c desc | limit 1000`); err == nil {
 		for _, rec := range res.Records {
 			if t, ok := rec["type"].(string); ok {
-				census[t] = asInt64(rec["c"])
+				facts.census[t] = asInt64(rec["c"])
 			}
 		}
-		inv.EntityTypes = census
+		facts.censusOK = true
+		inv.EntityTypes = facts.census
+	} else if ctx.Err() != nil {
+		return nil, ctx.Err()
 	} else if err != errBudgetExhausted {
 		report.Notes = append(report.Notes, "entity census failed: "+firstLine(err.Error()))
 	}
 
-	var metricKeys []string
 	if anyMetricDef(defs) {
 		if keys, err := br.stringColumn(ctx, "metrics from:now()-2h | summarize c = count(), by:{metric.key} | limit 10000", "metric.key"); err == nil {
-			metricKeys = keys
+			facts.metricKeys = keys
+			facts.metricsOK = true
+		} else if ctx.Err() != nil {
+			return nil, ctx.Err()
 		} else if err != errBudgetExhausted {
 			report.Notes = append(report.Notes, "metric catalog failed: "+firstLine(err.Error()))
 		}
 	}
 
-	inv.Capabilities, inv.Absent = br.evaluateCapabilities(ctx, defs, objects, census, metricKeys)
+	inv.Capabilities, inv.Absent, inv.Unknown, err = br.evaluateCapabilities(ctx, defs, facts)
+	if err != nil {
+		return nil, err
+	}
 
 	// Canonical-stream notes: recurring mistakes where a plausible query
 	// silently measures the wrong thing — stated as facts so consumers can
 	// steer before the mistake, not after.
-	if objects["dt.davis.events"] {
+	if facts.objects["dt.davis.events"] {
 		inv.Notes = append(inv.Notes,
 			"Davis problem/event analytics: fetch dt.davis.events — the generic `events` stream mixes other event kinds and its counts diverge from Davis")
 	}
-	if len(census) > 0 {
+	if len(facts.census) > 0 {
 		inv.Notes = append(inv.Notes,
 			"current-state entity census: smartscapeNodes \"<TYPE>\" — `fetch dt.entity.*` is a lookback view over the query window and diverges from the live topology")
 	}
-	if br.queries <= 0 || br.seconds <= 0 {
+	if br.skipped {
 		note := fmt.Sprintf("discovery budget exhausted after %d queries / %.0fs — the inventory is partial", report.Queries, report.Seconds)
 		inv.Notes = append(inv.Notes, note)
 		report.Notes = append(report.Notes, note)
@@ -148,10 +183,11 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 }
 
 // evaluateCapabilities evaluates every definition: structural shapes against
-// the discovered facts, probe shapes against the live environment. A probe
-// hard error is evidence of absence (e.g. inner-map access on a missing
-// field), not of breakage.
-func (b *budgetRunner) evaluateCapabilities(ctx context.Context, defs map[string]*CapabilityDef, objects map[string]bool, census map[string]int64, metricKeys []string) (present, absent []string) {
+// the discovered facts, probe shapes against the live environment. Verdicts
+// are honest three-state: present, absent (with the evidence checked), or
+// unknown when no check actually ran — a failed probe, an exhausted budget, or
+// an unavailable fact source is not evidence of absence.
+func (b *budgetRunner) evaluateCapabilities(ctx context.Context, defs map[string]*CapabilityDef, facts discoveredFacts) (present []string, absent, unknown []CapabilityStatus, err error) {
 	names := make([]string, 0, len(defs))
 	for n := range defs {
 		names = append(names, n)
@@ -159,40 +195,48 @@ func (b *budgetRunner) evaluateCapabilities(ctx context.Context, defs map[string
 	sort.Strings(names)
 	for _, name := range names {
 		def := defs[name]
-		ok := false
+		verdict := func(ok bool) {
+			if ok {
+				present = append(present, name)
+			} else {
+				// Carry the evidence with the verdict, so the negative is
+				// citable without anyone re-deriving it with fresh probes.
+				absent = append(absent, CapabilityStatus{Name: name, Evidence: absenceEvidence(def)})
+			}
+		}
+		noVerdict := func(reason string) {
+			unknown = append(unknown, CapabilityStatus{Name: name, Evidence: reason})
+		}
 		switch {
 		case def.DataObject != "":
-			ok = objects[def.DataObject]
+			verdict(facts.objects[def.DataObject])
 		case len(def.EntityTypes) > 0:
-			for _, pattern := range def.EntityTypes {
-				for t, c := range census {
-					if c > 0 && globMatch(pattern, t) {
-						ok = true
-						break
-					}
-				}
+			if !facts.censusOK {
+				noVerdict("not evaluated: entity census unavailable")
+				continue
 			}
+			verdict(censusMatches(def.EntityTypes, facts.census))
 		case def.MetricKey != "":
-			for _, k := range metricKeys {
-				if globMatch(def.MetricKey, k) {
-					ok = true
-					break
-				}
+			if !facts.metricsOK {
+				noVerdict("not evaluated: metric catalog unavailable")
+				continue
 			}
+			verdict(anyGlobMatch(def.MetricKey, facts.metricKeys))
 		case def.Probe != "":
-			if res, err := b.run(ctx, def.Probe); err == nil && len(res.Records) > 0 {
-				ok = true
+			res, perr := b.run(ctx, def.Probe)
+			switch {
+			case perr == nil:
+				verdict(len(res.Records) > 0)
+			case ctx.Err() != nil:
+				return nil, nil, nil, ctx.Err()
+			case perr == errBudgetExhausted:
+				noVerdict("not evaluated: discovery budget exhausted")
+			default:
+				noVerdict("probe failed: " + firstLine(perr.Error()))
 			}
-		}
-		if ok {
-			present = append(present, name)
-		} else {
-			// Carry the evidence with the verdict, so the negative is citable
-			// without anyone re-deriving it with fresh probes.
-			absent = append(absent, name+" ("+absenceEvidence(def)+")")
 		}
 	}
-	return present, absent
+	return present, absent, unknown, nil
 }
 
 // absenceEvidence says what was checked when a capability came up absent.
@@ -211,6 +255,28 @@ func absenceEvidence(def *CapabilityDef) string {
 	}
 }
 
+// censusMatches reports whether any census type with a live count matches any
+// of the glob patterns.
+func censusMatches(patterns []string, census map[string]int64) bool {
+	for _, pattern := range patterns {
+		for t, c := range census {
+			if c > 0 && globMatch(pattern, t) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func anyGlobMatch(pattern string, keys []string) bool {
+	for _, k := range keys {
+		if globMatch(pattern, k) {
+			return true
+		}
+	}
+	return false
+}
+
 // dataObjectCatalog returns the queryable-object catalog partitioned by fetch
 // support (the catalog's usable_with column). The catalog lists objects that
 // only work through other commands — advertising those as fetch targets bakes
@@ -219,6 +285,9 @@ func (b *budgetRunner) dataObjectCatalog(ctx context.Context) (fetchable, unfetc
 	res, err := b.run(ctx,
 		`fetch dt.system.data_objects | fieldsAdd fetchable = in("fetch", usable_with) | fields name, fetchable | sort name asc | limit 5000`)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
 		// Environments without usable_with fall back to the flat list.
 		names, ferr := b.stringColumn(ctx, "fetch dt.system.data_objects | fields name | sort name asc | limit 5000", "name")
 		return names, nil, ferr

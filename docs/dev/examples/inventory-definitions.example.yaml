@@ -17,6 +17,13 @@
 #                WEAK evidence — absence of events is not absence of the
 #                capability — and each probe costs one query per run.
 #
+# Globs are case-sensitive: Smartscape entity types are UPPERCASE
+# (K8S_*, AZURE_*), so a lowercase pattern silently never matches.
+#
+# A capability whose check could not run — the probe errored, the discovery
+# budget ran out, or the census/metric catalog it evaluates against was
+# unavailable — is reported as `unknown` with the reason, never as absent.
+#
 # The built-in set is structural-only (the first three shapes). Probe shapes
 # are for definitions like the ones below, where only event data can answer.
 

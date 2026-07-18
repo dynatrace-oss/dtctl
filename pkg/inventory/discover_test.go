@@ -106,10 +106,12 @@ func TestDiscoverInventory(t *testing.T) {
 		t.Fatalf("Absent = %v, want %d entries", inv.Absent, len(wantAbsent))
 	}
 	for _, a := range inv.Absent {
-		name, evidence, _ := strings.Cut(a, " (")
-		if want, ok := wantAbsent[name]; !ok || !strings.Contains(evidence, want) {
-			t.Errorf("absent entry %q, want evidence %q", a, wantAbsent[name])
+		if want, ok := wantAbsent[a.Name]; !ok || !strings.Contains(a.Evidence, want) {
+			t.Errorf("absent entry %+v, want evidence %q", a, wantAbsent[a.Name])
 		}
+	}
+	if len(inv.Unknown) != 0 {
+		t.Errorf("Unknown = %v, want none on a fully evaluated run", inv.Unknown)
 	}
 
 	if len(inv.Segments) != 1 || inv.Segments[0].UID != "s1" {
@@ -140,7 +142,8 @@ func TestDiscoverSkipsMetricCatalogWithoutMetricDefs(t *testing.T) {
 
 func TestDiscoverBudgetStopsProbes(t *testing.T) {
 	runner := testRunner()
-	// 3 queries: catalog, buckets, census — no budget left for probes.
+	// 3 queries: catalog, buckets, census — no budget left for the metric
+	// catalog or the probes.
 	inv, err := Discover(context.Background(), runner, testDefs(), DiscoverOptions{BudgetQueries: 3})
 	if err != nil {
 		t.Fatalf("Discover() error: %v", err)
@@ -149,7 +152,28 @@ func TestDiscoverBudgetStopsProbes(t *testing.T) {
 	if report.Queries != 3 {
 		t.Errorf("report.Queries = %d, want 3", report.Queries)
 	}
-	// Probe-shaped capabilities degrade to absent; the partial state is noted.
+	// Capabilities that never got their check degrade to unknown — not to
+	// absent with fabricated evidence. Structural shapes whose facts did load
+	// still get real verdicts.
+	wantUnknown := map[string]string{
+		"genai":       "budget exhausted",
+		"rap":         "budget exhausted",
+		"k8s-metrics": "metric catalog unavailable",
+	}
+	if len(inv.Unknown) != len(wantUnknown) {
+		t.Fatalf("Unknown = %v, want %d entries", inv.Unknown, len(wantUnknown))
+	}
+	for _, u := range inv.Unknown {
+		if want, ok := wantUnknown[u.Name]; !ok || !strings.Contains(u.Evidence, want) {
+			t.Errorf("unknown entry %+v, want reason %q", u, wantUnknown[u.Name])
+		}
+	}
+	for _, a := range inv.Absent {
+		if _, clash := wantUnknown[a.Name]; clash {
+			t.Errorf("%q reported absent, but its check never ran", a.Name)
+		}
+	}
+	// The partial state is noted.
 	found := false
 	for _, n := range inv.Notes {
 		if strings.Contains(n, "budget exhausted") {
@@ -158,6 +182,102 @@ func TestDiscoverBudgetStopsProbes(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("missing budget-exhausted note: %v", inv.Notes)
+	}
+}
+
+func TestDiscoverExactBudgetIsNotPartial(t *testing.T) {
+	runner := testRunner()
+	defs := map[string]*CapabilityDef{"spans": {DataObject: "spans"}}
+	// Catalog, buckets, census: exactly 3 queries — the budget ends exactly
+	// spent with nothing skipped, so the inventory is complete, not partial.
+	inv, err := Discover(context.Background(), runner, defs, DiscoverOptions{BudgetQueries: 3})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	for _, n := range inv.Notes {
+		if strings.Contains(n, "partial") {
+			t.Errorf("exactly consumed budget must not report a partial inventory: %v", inv.Notes)
+		}
+	}
+}
+
+func TestDiscoverProbeErrorIsUnknown(t *testing.T) {
+	runner := testRunner()
+	runner.responses = append([]mockResponse{
+		{match: "GENAIPROBE", err: fmt.Errorf("scan limit of 25GB exceeded\nsecond line")},
+	}, runner.responses...)
+	inv, err := Discover(context.Background(), runner, testDefs(), DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	var genai *CapabilityStatus
+	for i := range inv.Unknown {
+		if inv.Unknown[i].Name == "genai" {
+			genai = &inv.Unknown[i]
+		}
+	}
+	if genai == nil {
+		t.Fatalf("genai must be unknown when its probe errors, got unknown=%v absent=%v", inv.Unknown, inv.Absent)
+	}
+	if !strings.Contains(genai.Evidence, "probe failed: scan limit of 25GB exceeded") {
+		t.Errorf("evidence = %q, want the probe failure cited", genai.Evidence)
+	}
+	for _, a := range inv.Absent {
+		if a.Name == "genai" {
+			t.Errorf("errored probe must not fabricate absence evidence: %+v", a)
+		}
+	}
+}
+
+func TestDiscoverCensusFailureYieldsUnknown(t *testing.T) {
+	runner := testRunner()
+	runner.responses = append([]mockResponse{
+		{match: `smartscapeNodes "*"`, err: fmt.Errorf("smartscape unavailable")},
+	}, runner.responses...)
+	defs := map[string]*CapabilityDef{"hosts": {EntityTypes: []string{"HOST"}}}
+	inv, err := Discover(context.Background(), runner, defs, DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	if len(inv.Unknown) != 1 || inv.Unknown[0].Name != "hosts" || !strings.Contains(inv.Unknown[0].Evidence, "census unavailable") {
+		t.Errorf("Unknown = %v, want hosts unknown with census unavailable", inv.Unknown)
+	}
+	if len(inv.Absent) != 0 {
+		t.Errorf("Absent = %v, want none — the census never ran", inv.Absent)
+	}
+}
+
+// cancellingRunner cancels the run's context when a marker query arrives,
+// mimicking Ctrl+C mid-probe: the executor reports context.Canceled and every
+// later query must be refused, not issued.
+type cancellingRunner struct {
+	inner  *mockRunner
+	cancel context.CancelFunc
+	marker string
+}
+
+func (c *cancellingRunner) RunQuery(ctx context.Context, dql string) (*RunResult, error) {
+	if strings.Contains(dql, c.marker) {
+		c.cancel()
+		c.inner.calls = append(c.inner.calls, dql)
+		return nil, context.Canceled
+	}
+	return c.inner.RunQuery(ctx, dql)
+}
+
+func TestDiscoverCancelledMidProbesAborts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	inner := testRunner()
+	runner := &cancellingRunner{inner: inner, cancel: cancel, marker: "GENAIPROBE"}
+	_, err := Discover(ctx, runner, testDefs(), DiscoverOptions{})
+	if err == nil {
+		t.Fatal("Discover() must abort on cancellation, not report a half-discovered inventory")
+	}
+	for _, c := range inner.calls {
+		if strings.Contains(c, "RAPPROBE") {
+			t.Errorf("query issued after cancellation: %v", inner.calls)
+		}
 	}
 }
 

@@ -29,7 +29,11 @@ which Grail data objects are fetchable (and which are queried through other
 commands), which buckets and filter segments exist, the live entity-type
 census, and which capabilities (spans, logs, RUM, k8s, cloud integrations,
 metric families, ...) are backed by evidence — with the evidence cited for
-every absent capability.
+every absent capability. A capability that could not be checked (failed
+probe, exhausted budget) is reported as unknown, never as absent.
+
+This is about the data in the environment, not the resources you manage —
+for dashboards, workflows, SLOs, and the rest, use 'dtctl get <resource>'.
 
 Discovery is read-only and budgeted: it runs a small battery of DQL queries
 (data-object catalog, buckets, entity census, metric catalog when needed,
@@ -83,12 +87,16 @@ Examples:
 			scanLimitGB: scanLimitGB,
 		}
 
-		// Segments come from the API, not DQL — fetched here, best-effort.
+		// Segments come from the API, not DQL — fetched here, best-effort. A
+		// failure must stay distinguishable from "no segments exist".
 		var segs []inventory.SegmentInfo
+		var segNote string
 		if list, serr := segment.NewHandler(c).List(); serr == nil {
 			for _, s := range list.FilterSegments {
 				segs = append(segs, inventory.SegmentInfo{UID: s.UID, Name: s.Name, Description: s.Description})
 			}
+		} else {
+			segNote = fmt.Sprintf("segment discovery failed: %v — the segment list is unknown, not empty", serr)
 		}
 
 		// Cancel cleanly on Ctrl+C: discovery aborts, nothing is half-reported.
@@ -111,6 +119,9 @@ Examples:
 		if err != nil {
 			return err
 		}
+		if segNote != "" {
+			inv.Notes = append(inv.Notes, segNote)
+		}
 
 		if outputFormat == "table" && !agentMode {
 			printInventoryHuman(inv)
@@ -119,8 +130,8 @@ Examples:
 		printer := NewPrinter()
 		if ap := enrichAgent(printer, "inventory", ""); ap != nil {
 			ap.SetSuggestions([]string{
-				"# query any listed data object: dtctl query 'fetch <object> | limit 10'",
-				"# absent capabilities carry the evidence checked — cite it instead of re-probing",
+				"Run 'dtctl query \"fetch <object> | limit 10\"' to sample any listed data object",
+				"Cite the evidence carried by absent capabilities instead of re-probing; unknown capabilities got no verdict and may still exist",
 			})
 		}
 		return printer.Print(inv)
@@ -161,9 +172,15 @@ func printInventoryHuman(inv *inventory.Inventory) {
 		output.DescribeKV("Capabilities:", w, "%s", strings.Join(inv.Capabilities, ", "))
 	}
 	if len(inv.Absent) > 0 {
-		output.DescribeSection("Absent (with the evidence checked)")
+		output.DescribeSection("Absent (what was checked)")
 		for _, a := range inv.Absent {
-			fmt.Printf("  %s\n", a)
+			fmt.Printf("  %s — %s\n", a.Name, a.Evidence)
+		}
+	}
+	if len(inv.Unknown) > 0 {
+		output.DescribeSection("Unknown (no verdict — not evidence of absence)")
+		for _, u := range inv.Unknown {
+			fmt.Printf("  %s — %s\n", u.Name, u.Evidence)
 		}
 	}
 	if len(inv.EntityTypes) > 0 {
@@ -246,7 +263,7 @@ func init() {
 	rootCmd.AddCommand(inventoryCmd)
 	inventoryCmd.Flags().StringArray("definitions", nil, "Capability-definitions file merged over the built-in set (repeatable, later files win)")
 	inventoryCmd.Flags().Bool("no-builtin-definitions", false, "Start from an empty capability set instead of the built-in one")
-	inventoryCmd.Flags().Int("budget-queries", 0, "Discovery budget: max queries (default 100)")
-	inventoryCmd.Flags().Float64("budget-seconds", 0, "Discovery budget: max cumulative query seconds (default 300)")
+	inventoryCmd.Flags().Int("budget-queries", 100, "Discovery budget: max queries")
+	inventoryCmd.Flags().Float64("budget-seconds", 300, "Discovery budget: max cumulative query seconds")
 	inventoryCmd.Flags().Float64("scan-limit-gbytes", 25, "Scan cap applied to every discovery probe")
 }

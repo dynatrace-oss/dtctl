@@ -18,9 +18,12 @@ dtctl commands                          # compact overview: verbs, resources, su
 dtctl config current-context            # active context
 dtctl config describe-context $(dtctl config current-context) --plain  # env URL + safety level
 dtctl auth status --plain               # token type (OAuth vs API/platform) + safety level
+dtctl inventory                         # what data exists HERE: fetchable objects, buckets, entity census, capabilities
 ```
 
 Safety levels: `readonly`, `readwrite-mine`, `readwrite-all`, `dangerously-unrestricted`.
+
+`dtctl commands` answers "what can I run?"; `dtctl inventory` answers "what is there to query?" — run it before exploratory DQL. It partitions catalog objects into fetchable vs query-only (never `fetch metrics` or `fetch smartscape.*`), and reports capabilities as present, absent (with the evidence checked — cite it instead of re-probing), or unknown (no verdict; not evidence of absence). Org-specific capability definitions: `--definitions file.yaml`.
 
 Don't use `dtctl auth whoami` to test connectivity — it needs an OAuth token with `app-engine:apps:run` and returns a spurious 403 for plain API or read-scoped tokens even when reads work. Confirm with a real `get`/`query`.
 

@@ -51,16 +51,27 @@ type SegmentInfo struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
+// CapabilityStatus names a capability together with the evidence for its
+// verdict: for an absent capability, what was checked and came up empty; for
+// an unknown one, why no check actually produced a verdict.
+type CapabilityStatus struct {
+	Name     string `json:"name" yaml:"name"`
+	Evidence string `json:"evidence" yaml:"evidence"`
+}
+
 // Inventory is the discovery result: what data is available on the
-// environment, with negative findings carried as evidence-bearing strings.
+// environment, with negative findings carried as structured evidence.
 type Inventory struct {
 	Context     string `json:"context,omitempty" yaml:"context,omitempty"`
 	GeneratedAt string `json:"generatedAt" yaml:"generatedAt"`
-	// Capabilities that discovery found present, and those found absent — each
-	// absent entry cites what was checked ("no user.events in the data-object
-	// catalog"), so the negative is usable without re-probing.
-	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
-	Absent       []string `json:"absent,omitempty" yaml:"absent,omitempty"`
+	// Capabilities that discovery found present. Absent capabilities cite what
+	// was checked ("no user.events in the data-object catalog"), so the
+	// negative is usable without re-probing. Unknown capabilities got no
+	// verdict — the probe failed, the budget ran out, or the fact source they
+	// evaluate against was unavailable — and must not be read as absent.
+	Capabilities []string           `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
+	Absent       []CapabilityStatus `json:"absent,omitempty" yaml:"absent,omitempty"`
+	Unknown      []CapabilityStatus `json:"unknown,omitempty" yaml:"unknown,omitempty"`
 	// EntityTypes is the live topology census: entity type → count.
 	EntityTypes map[string]int64 `json:"entityTypes,omitempty" yaml:"entityTypes,omitempty"`
 	// DataObjects are catalog objects that support fetch; Unfetchable are

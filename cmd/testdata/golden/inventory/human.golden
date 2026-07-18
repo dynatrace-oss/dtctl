@@ -1,0 +1,14 @@
+Context:      example
+Generated:    2026-01-02T03:04:05Z
+Capabilities: hosts, logs, spans
+Absent (what was checked)
+  rum — no user.events in the data-object catalog
+Unknown (no verdict — not evidence of absence)
+  genai — probe failed: scan limit exceeded
+Entities:     K8S_POD:200 SERVICE:40 HOST:12
+Data objects: logs, spans (+2 dt.entity.* lookback views)
+Query-only:   metrics (no fetch — see notes)
+Buckets:      default_logs, default_spans
+Segments (apply with -S <name>)
+  prod — production workloads
+Note:         catalog objects without fetch support: metrics
