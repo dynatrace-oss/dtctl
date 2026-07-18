@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/tracing"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 )
 
 var (
@@ -270,17 +272,62 @@ func collectSubcommands(cmd *cobra.Command) []string {
 	return commands
 }
 
+var (
+	unknownFlagRe = regexp.MustCompile(`unknown (?:shorthand )?flag: ['-]*(\w+)['-]*`)
+	unknownCmdRe  = regexp.MustCompile(`unknown command "(\w+)"`)
+)
+
 // enhanceFlagError adds suggestions to flag errors
 func enhanceFlagError(cmd *cobra.Command, err error) error {
 	errStr := err.Error()
 
 	// Handle unknown flag errors
 	if strings.Contains(errStr, "unknown flag") || strings.Contains(errStr, "unknown shorthand flag") {
+		if m := unknownFlagRe.FindStringSubmatch(errStr); len(m) == 2 {
+			if fe := adviseFlag(cmd, m[1]); fe != nil {
+				return fe
+			}
+		}
 		flags := collectFlags(cmd)
 		return suggest.ParseFlagError(errStr, flags)
 	}
 
 	return err
+}
+
+// adviseFlag handles flags agents carry over from other CLIs, where the
+// closest-name suggestion misleads (evals saw --limit → "did you mean --live?").
+func adviseFlag(cmd *cobra.Command, flag string) *suggest.FlagError {
+	switch {
+	case flag == "format":
+		return &suggest.FlagError{Flag: flag,
+			Message:    "unknown flag --format",
+			Suggestion: &suggest.Suggestion{Value: "output"}}
+	case cmd.Name() == "query" && flag == "limit":
+		return &suggest.FlagError{Flag: flag,
+			Message: "unknown flag --limit — DQL limits rows inside the query text: append `| limit N`"}
+	case cmd.Name() == "query" && flag == "query":
+		return &suggest.FlagError{Flag: flag,
+			Message: "unknown flag --query — pass the DQL text as the positional argument: dtctl query 'fetch ...'"}
+	}
+	return nil
+}
+
+// verbSynonyms maps verbs agents guess from other CLIs to the dtctl verb that
+// does the job; the edit-distance fallback suggests nonsense for these
+// (evals saw `list` → "did you mean alias?").
+var verbSynonyms = map[string]struct{ verb, hint string }{
+	"list":   {"get", "resources are listed with `dtctl get <resource>`; data is queried with `dtctl query '<DQL>'` (catalog: dtctl commands)"},
+	"ls":     {"get", "resources are listed with `dtctl get <resource>` (catalog: dtctl commands)"},
+	"show":   {"describe", "use `dtctl get <resource>` for lists, `dtctl describe <resource> <name>` for one item's detail"},
+	"search": {"query", "search data with DQL: dtctl query 'fetch logs | filter contains(content, \"...\")'"},
+	"remove": {"delete", "use `dtctl delete <resource> <id>`"},
+	"rm":     {"delete", "use `dtctl delete <resource> <id>`"},
+	// DQL commands agents promote to dtctl commands (evals: `dtctl smartscapeNodes ...`).
+	"smartscapeNodes": {"query", `smartscapeNodes is a DQL command — run it through query: dtctl query 'smartscapeNodes "HOST" | limit 10'`},
+	"smartscapeEdges": {"query", `smartscapeEdges is a DQL command — run it through query: dtctl query 'smartscapeEdges "runs_on" | limit 10'`},
+	"fetch":           {"query", "fetch is DQL — run it through query: dtctl query 'fetch logs | limit 10'"},
+	"timeseries":      {"query", "timeseries is DQL — run it through query: dtctl query 'timeseries avg(dt.host.cpu.usage), from:now()-1h'"},
 }
 
 // enhanceCommandError adds suggestions to unknown command errors
@@ -289,6 +336,16 @@ func enhanceCommandError(cmd *cobra.Command, err error) error {
 
 	// Handle unknown command errors
 	if strings.Contains(errStr, "unknown command") {
+		if m := unknownCmdRe.FindStringSubmatch(errStr); len(m) == 2 {
+			if syn, ok := verbSynonyms[m[1]]; ok {
+				return &suggest.CommandError{
+					Command:    m[1],
+					Message:    fmt.Sprintf("unknown command %q", m[1]),
+					Suggestion: &suggest.Suggestion{Value: syn.verb},
+					UsageHint:  syn.hint,
+				}
+			}
+		}
 		commands := collectSubcommands(cmd)
 		return suggest.ParseCommandError(errStr, commands)
 	}
@@ -305,6 +362,116 @@ func setupErrorHandlers(cmd *cobra.Command) {
 	for _, sub := range cmd.Commands() {
 		setupErrorHandlers(sub)
 	}
+}
+
+// coreStreams are Grail data objects agents most often need. Used to answer
+// UNKNOWN_DATA_OBJECT guesses with real names instead of leaving the agent
+// to enumerate variants (evals: usersession→user_sessions→rum_events→…, ten
+// failed guesses, then "0 RUM events" reported as the answer).
+var coreStreams = []string{
+	"logs", "spans", "events", "bizevents",
+	"user.events", "user.sessions",
+	"security.events",
+	"dt.davis.events", "dt.davis.problems",
+	"metric.series",
+	"dt.system.buckets", "dt.system.data_objects", "dt.system.events",
+}
+
+// streamKeywords routes an unknown data-object name to the streams agents
+// were actually looking for, by topic. Checked before edit distance because
+// the guesses are usually semantic (rum_events), not typos.
+var streamKeywords = []struct {
+	keys    []string
+	streams []string
+}{
+	{[]string{"session", "rum", "useraction", "user_action", "user.action"}, []string{"user.sessions", "user.events"}},
+	{[]string{"user"}, []string{"user.events", "user.sessions"}},
+	{[]string{"metric"}, []string{"metric.series"}},
+	{[]string{"vuln", "security", "compliance", "detection"}, []string{"security.events"}},
+	{[]string{"problem"}, []string{"dt.davis.problems"}},
+	{[]string{"davis"}, []string{"dt.davis.events", "dt.davis.problems"}},
+	{[]string{"trace", "span"}, []string{"spans"}},
+	{[]string{"log"}, []string{"logs"}},
+	{[]string{"bizevent", "business"}, []string{"bizevents"}},
+	{[]string{"bucket"}, []string{"dt.system.buckets"}},
+}
+
+// unknownObjectRe pulls the offending name out of the API's
+// "<name> isn't a valid data object." detail.
+var unknownObjectRe = regexp.MustCompile(`(\S+) isn't a valid data object`)
+
+// nearestStreams suggests real stream names for an unknown data-object guess:
+// keyword routing first, edit distance over coreStreams as fallback.
+func nearestStreams(name string) []string {
+	n := strings.ToLower(strings.Trim(name, `"'`))
+	for _, kw := range streamKeywords {
+		for _, k := range kw.keys {
+			if strings.Contains(n, k) {
+				return kw.streams
+			}
+		}
+	}
+	norm := func(s string) string {
+		return strings.NewReplacer(".", "", "_", "", "-", "").Replace(strings.ToLower(s))
+	}
+	var best []string
+	for _, s := range coreStreams {
+		if d := levenshtein(norm(n), norm(s)); d <= 3 {
+			best = append(best, s)
+		}
+	}
+	return best
+}
+
+// levenshtein is a plain edit distance; inputs here are short stream names.
+func levenshtein(a, b string) int {
+	prev := make([]int, len(b)+1)
+	cur := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(min(cur[j-1]+1, prev[j]+1), prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(b)]
+}
+
+// dqlErrorAdvice maps recurring DQL mistake classes (observed in agent evals)
+// to recovery suggestions carried in the error envelope.
+func dqlErrorAdvice(e *sdkquery.QueryError) []string {
+	text := e.Error()
+	var s []string
+	switch {
+	case strings.Contains(text, "smartscapeNode") || strings.Contains(text, "smartscapeEdge") ||
+		strings.Contains(text, "smartscape.nodes") || strings.Contains(text, "smartscape.edges"):
+		s = append(s, `smartscape is queried via the COMMANDS smartscapeNodes/smartscapeEdges, not fetch — start the query with them: dtctl query 'smartscapeNodes "HOST" | limit 10'`)
+	case e.ErrorType == "UNKNOWN_DATA_OBJECT" && strings.Contains(text, "dt.entity."):
+		s = append(s, `for a current-state entity census use: dtctl query 'smartscapeNodes "<TYPE>" | summarize count()' — dt.entity.* tables are event-lookback views and exist only for some types`)
+	case e.ErrorType == "UNKNOWN_DATA_OBJECT":
+		if m := unknownObjectRe.FindStringSubmatch(text); len(m) == 2 {
+			if near := nearestStreams(m[1]); len(near) > 0 {
+				s = append(s, fmt.Sprintf("no data object named %q — closest real streams: %s. The full catalog: dtctl query 'fetch dt.system.data_objects | fields name'", m[1], strings.Join(near, ", ")))
+			} else {
+				s = append(s, fmt.Sprintf("no data object named %q — common streams: %s. The full catalog: dtctl query 'fetch dt.system.data_objects | fields name'", m[1], strings.Join(coreStreams, ", ")))
+			}
+		}
+	}
+	if e.ErrorType == "FIELD_DOES_NOT_EXIST" &&
+		(strings.Contains(text, "toRelationships") || strings.Contains(text, "fromRelationships")) {
+		s = append(s, `toRelationships/fromRelationships are classic Environment-API fields, not DQL — topology hops use smartscapeEdges: dtctl query 'smartscapeEdges "runs_on" | filter in(source_id, {toSmartscapeId("SERVICE-…")}) | fields target_id'`)
+	}
+	if e.ErrorType == "INVALID_TIMEFRAME" {
+		s = append(s, "timeframe values accept ISO-8601 timestamps or now()-relative expressions — parentheses required: now()-6h, not now-6h — e.g. from:now()-6h, to:now() or --default-timeframe-start 'now()-6h'")
+	}
+	return s
 }
 
 // errorToDetail converts any error into a structured ErrorDetail for agent/plain mode output.
@@ -391,6 +558,23 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// query.QueryError — a typed DQL API error. The envelope code becomes the
+	// API's error type (e.g. unknown_data_object) and recurring mistake
+	// classes get a targeted recovery suggestion.
+	var queryErr *sdkquery.QueryError
+	if errors.As(err, &queryErr) {
+		code := strings.ToLower(queryErr.ErrorType)
+		if code == "" {
+			code = output.ClassifyHTTPError(queryErr.StatusCode)
+		}
+		return &output.ErrorDetail{
+			Code:        code,
+			Message:     queryErr.Error(),
+			StatusCode:  queryErr.StatusCode,
+			Suggestions: dqlErrorAdvice(queryErr),
+		}
+	}
+
 	// suggest.CommandError — unknown command with "did you mean?" suggestions
 	var cmdErr *suggest.CommandError
 	if errors.As(err, &cmdErr) {
@@ -402,6 +586,9 @@ func errorToDetail(err error) *output.ErrorDetail {
 			detail.Suggestions = []string{
 				fmt.Sprintf("did you mean %q?", cmdErr.Suggestion.Value),
 			}
+		}
+		if cmdErr.UsageHint != "" {
+			detail.Suggestions = append(detail.Suggestions, cmdErr.UsageHint)
 		}
 		return detail
 	}
@@ -586,6 +773,13 @@ func requireSubcommand(cmd *cobra.Command, args []string) error {
 		}
 		return fmt.Errorf("requires a resource type\n\nAvailable resources:\n  %s\n\nUsage:\n  %s <resource> [id] [flags]",
 			strings.Join(resources, "\n  "), cmd.CommandPath())
+	}
+
+	// Schema introspection is DQL-side, not a resource — agents try
+	// `describe field` / `describe dataobject` when hunting for a schema.
+	switch args[0] {
+	case "field", "fields", "dataobject", "data-object", "dataobjects", "schema":
+		return fmt.Errorf("unknown resource type %q — the data schema is queried, not described: dtctl query 'fetch dt.system.data_objects | fields name' lists tables; a table's fields show up in its records", args[0])
 	}
 
 	// Check if the first arg looks like an unknown subcommand
@@ -934,9 +1128,14 @@ func initConfig() {
 	// Auto-detect AI agent environment and enable agent mode
 	if !agentMode && !noAgent {
 		if info := aidetect.Detect(); info.Detected {
-			// Only auto-enable if user hasn't explicitly chosen a non-JSON output format
+			// Only auto-enable if user hasn't explicitly chosen a non-JSON
+			// output format. An explicit `-o json` is compatible — the agent
+			// envelope IS json. Agents append `-o json` to nearly every call
+			// out of habit, and treating that as an opt-out silently disarmed
+			// every envelope affordance (suggestions, warnings, advice) for
+			// exactly the audience they were built for (matrix-11 forensics).
 			outputFlag := rootCmd.PersistentFlags().Lookup("output")
-			if outputFlag == nil || !outputFlag.Changed {
+			if outputFlag == nil || !outputFlag.Changed || outputFormat == "json" {
 				agentMode = true
 			}
 		}

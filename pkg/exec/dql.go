@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -564,6 +566,108 @@ func notificationAdvice(notifications []QueryNotification) (warnings, suggestion
 		suggestions = append(suggestions, agentAdviceForNotification(n.NotificationType, n.Message)...)
 	}
 	return warnings, suggestions
+}
+
+// heavyScanWarnBytes is the scanned-data level above which the agent envelope
+// warns. An agent that cannot see the bill will happily re-run an 85 GB scan
+// it already paid for; the warning makes the cost visible and steers toward
+// reusing the result it just received.
+const heavyScanWarnBytes = 10 * 1000 * 1000 * 1000
+
+// heavyScanAdvice emits an envelope warning + suggestion when a query scanned
+// a large amount of data, so the cost is visible in-band.
+func heavyScanAdvice(result *DQLQueryResponse) (warnings, suggestions []string) {
+	meta := extractQueryMetadata(result)
+	if meta == nil || meta.ScannedBytes < heavyScanWarnBytes {
+		return nil, nil
+	}
+	warnings = append(warnings, fmt.Sprintf(
+		"this query scanned %.1f GB — re-running it costs the same again", float64(meta.ScannedBytes)/1e9))
+	suggestions = append(suggestions,
+		"# heavy scan: reuse this result (dtctl inspect on a spilled file) instead of re-querying; narrow the timeframe or bucket to reduce cost")
+	return warnings, suggestions
+}
+
+// timestampFilterRe spots a filter stage constraining the timestamp field —
+// the idiom agents reach for when they mean "query an older window".
+var timestampFilterRe = regexp.MustCompile(`(?i)\|\s*filter\b[^|]*\btimestamp\b`)
+
+// windowAdvice explains the silent-default-window trap on empty results.
+// Fires only on an empty result (no rows, or the single all-zero row a
+// `summarize count()` yields) from a query with no explicit window anywhere:
+//   - with a `filter timestamp` stage: the filter cannot widen the scanned
+//     window, so filtering for data older than the default returns nothing —
+//     silently (the t23 trap).
+//   - without one: the emptiness may still be the window, not the data —
+//     discovery fetches (metric.series) only show series that had datapoints
+//     inside the window, and agents reported "0 OOM pods" off exactly that
+//     (the t9 trap). Phrased as a possibility, since zero may be the answer.
+func windowAdvice(query string, records []map[string]interface{}, opts DQLExecuteOptions) []string {
+	if opts.DefaultTimeframeStart != "" || opts.DefaultTimeframeEnd != "" {
+		return nil
+	}
+	if len(records) > 1 || (len(records) == 1 && !allAggregatesZero(records[0])) {
+		return nil
+	}
+	if strings.Contains(query, "from:") || strings.Contains(query, "to:") || strings.Contains(query, "timeframe:") {
+		return nil
+	}
+	if timestampFilterRe.MatchString(query) {
+		return []string{"# empty result with a `filter timestamp ...` stage: timestamp filters do NOT widen the scanned window (default: the last 2h) — set the window in the fetch instead, e.g. `fetch logs, from:now()-24h, to:now()-12h`, or pass --default-timeframe-start/--default-timeframe-end"}
+	}
+	advice := "# empty result from the DEFAULT query window (the last 2h) — if data may exist outside it, widen the window explicitly, e.g. `, from:now()-7d`, before concluding the count is 0"
+	if strings.Contains(query, "metric.series") {
+		advice = "# empty result from the DEFAULT query window (the last 2h): metric.series lists only series with datapoints INSIDE the window — widen it for discovery, e.g. `fetch metric.series, from:now()-7d`"
+	}
+	return []string{advice}
+}
+
+// entityFetchRe spots a query fetching a classic dt.entity.* table, and
+// captures the type suffix for a concrete smartscapeNodes suggestion.
+var entityFetchRe = regexp.MustCompile(`(?i)\bfetch\s+dt\.entity\.([a-z0-9_]+)`)
+
+// lookbackAdvice rides SUCCESSFUL dt.entity.* fetches. The error-side
+// redirect (dqlErrorAdvice) cannot help here: dt.entity.<type> queries
+// SUCCEED and return the lookback population (entities that reported events
+// in the window), which diverges from the live topology — agents reported a
+// 17-host census against 12 currently monitored hosts in five consecutive
+// eval batches, every time via a query that returned rc 0.
+func lookbackAdvice(query string) []string {
+	m := entityFetchRe.FindStringSubmatch(query)
+	if m == nil {
+		return nil
+	}
+	t := strings.ToUpper(m[1])
+	return []string{fmt.Sprintf("# dt.entity.%s is an event-LOOKBACK view (entities seen in the query window), not the live topology — for a current-state census or inventory use: dtctl query 'smartscapeNodes \"%s\" | summarize count()'", m[1], t)}
+}
+
+// allAggregatesZero reports whether a single result row carries only zero
+// numeric values (DQL long aggregates arrive as JSON strings) — the shape a
+// `summarize count()` produces when nothing matched.
+func allAggregatesZero(rec map[string]interface{}) bool {
+	zeros := 0
+	for _, v := range rec {
+		switch x := v.(type) {
+		case float64:
+			if x != 0 {
+				return false
+			}
+			zeros++
+		case json.Number:
+			if f, err := x.Float64(); err == nil && f != 0 {
+				return false
+			}
+			zeros++
+		case string:
+			if f, err := strconv.ParseFloat(x, 64); err == nil {
+				if f != 0 {
+					return false
+				}
+				zeros++
+			}
+		}
+	}
+	return zeros > 0
 }
 
 // PrintNotifications prints query notifications/warnings to stderr

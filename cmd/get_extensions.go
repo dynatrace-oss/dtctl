@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
@@ -71,7 +73,14 @@ Examples:
   # Output as JSON
   dtctl get extension-configs com.dynatrace.extension.host-monitoring -o json
 `,
-	Args: cobra.ExactArgs(1),
+	// Not ExactArgs: evals showed agents calling this bare 8×/batch and getting
+	// the unhelpful "accepts 1 arg(s), received 0".
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return fmt.Errorf("extension-configs requires the extension name — list installed extensions first: dtctl get extensions")
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		extensionName := args[0]
 		configID, _ := cmd.Flags().GetString("config-id")

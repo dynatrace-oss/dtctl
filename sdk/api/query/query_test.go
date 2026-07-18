@@ -170,6 +170,48 @@ func TestExecute_AsyncWithPoll(t *testing.T) {
 	}
 }
 
+// TestExecute_NotStartedIsPolled locks the congested-tenant path: a queued
+// query answers execute (and early polls) with state NOT_STARTED, which is
+// in-flight, not terminal — returning it as success hands the caller the raw
+// {"state":"NOT_STARTED","requestToken":...} envelope with rc 0 (observed
+// live three times in a row on a busy dev tenant).
+func TestExecute_NotStartedIsPolled(t *testing.T) {
+	var pollCount atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		resp := Response{State: "NOT_STARTED", RequestToken: "tok-ns"}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		n := pollCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if n == 1 {
+			// still queued on the first poll
+			json.NewEncoder(w).Encode(Response{State: "NOT_STARTED", RequestToken: "tok-ns"})
+			return
+		}
+		json.NewEncoder(w).Encode(Response{
+			State:  "SUCCEEDED",
+			Result: &Result{Records: []map[string]interface{}{{"c": "1"}}},
+		})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.ExecuteAndPoll(context.Background(), ExecuteRequest{Query: "fetch logs"}, nil)
+	if err != nil {
+		t.Fatalf("ExecuteAndPoll() error: %v", err)
+	}
+	if result.State != "SUCCEEDED" {
+		t.Errorf("State = %q, want SUCCEEDED (NOT_STARTED must be polled, not returned)", result.State)
+	}
+	if pollCount.Load() < 2 {
+		t.Errorf("expected at least 2 polls, got %d", pollCount.Load())
+	}
+}
+
 func TestPoll_Success(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
@@ -916,6 +958,35 @@ func TestQueryError_ErrorFormatting(t *testing.T) {
 	t.Run("without error type", func(t *testing.T) {
 		e := &QueryError{StatusCode: 500, Message: "internal"}
 		want := "query failed with status 500: internal"
+		if e.Error() != want {
+			t.Errorf("Error() = %q, want %q", e.Error(), want)
+		}
+	})
+
+	// The API often repeats the error type as the message and puts the
+	// actionable text in details.errorMessage — that detail must surface.
+	t.Run("detail replaces a type-echo message", func(t *testing.T) {
+		e := &QueryError{StatusCode: 400, Message: "UNKNOWN_COMMAND", ErrorType: "UNKNOWN_COMMAND",
+			Detail: "There's no command `dqll`."}
+		want := "query failed (UNKNOWN_COMMAND): There's no command `dqll`."
+		if e.Error() != want {
+			t.Errorf("Error() = %q, want %q", e.Error(), want)
+		}
+	})
+
+	t.Run("detail appends to a distinct message", func(t *testing.T) {
+		e := &QueryError{StatusCode: 400, Message: "invalid query", ErrorType: "SYNTAX_ERROR",
+			Detail: "token `|` unexpected", Arguments: []string{"line 1"}}
+		want := "query failed (SYNTAX_ERROR): invalid query — token `|` unexpected [line 1]"
+		if e.Error() != want {
+			t.Errorf("Error() = %q, want %q", e.Error(), want)
+		}
+	})
+
+	t.Run("arguments skipped when already in message", func(t *testing.T) {
+		e := &QueryError{StatusCode: 400, Message: "field `foo` missing", ErrorType: "FIELD_DOES_NOT_EXIST",
+			Arguments: []string{"foo"}}
+		want := "query failed (FIELD_DOES_NOT_EXIST): field `foo` missing"
 		if e.Error() != want {
 			t.Errorf("Error() = %q, want %q", e.Error(), want)
 		}

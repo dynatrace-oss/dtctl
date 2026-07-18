@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -434,8 +435,11 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 		return nil, ctx.Err()
 	}
 
-	// If query completed synchronously, return.
-	if result.State != "RUNNING" {
+	// If query completed synchronously, return. NOT_STARTED is a queued query
+	// on a congested tenant — terminal-looking but in-flight; returning it here
+	// would hand the caller the raw {"state":"NOT_STARTED"} envelope as a
+	// success (observed live: three leaks in a row on a busy dev tenant).
+	if result.State != "RUNNING" && result.State != "NOT_STARTED" {
 		return result, nil
 	}
 
@@ -492,7 +496,7 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 			return pollResult, nil
 		case "FAILED":
 			return pollResult, fmt.Errorf("query execution failed")
-		case "RUNNING":
+		case "RUNNING", "NOT_STARTED":
 			emitUpdate(opts.OnUpdate, req.EnablePreview, pollResult)
 			continue
 		default:
@@ -607,6 +611,7 @@ func parseError(statusCode int, body []byte) error {
 			StatusCode: statusCode,
 			Message:    apiErr.Error.Message,
 			ErrorType:  apiErr.Error.Details.ErrorType,
+			Detail:     apiErr.Error.Details.ErrorMessage,
 			Arguments:  apiErr.Error.Details.Arguments,
 		}
 	}
@@ -620,12 +625,28 @@ type QueryError struct {
 	StatusCode int
 	Message    string
 	ErrorType  string
+	Detail     string
 	Arguments  []string
 }
 
 func (e *QueryError) Error() string {
 	if e.ErrorType != "" {
-		return fmt.Sprintf("query failed (%s): %s", e.ErrorType, e.Message)
+		// The top-level message often just repeats the error type
+		// (e.g. "UNKNOWN_COMMAND"); details.errorMessage and the arguments
+		// carry the actionable part (offending token, position), so include
+		// whatever adds information.
+		msg := e.Message
+		if e.Detail != "" && e.Detail != msg {
+			if msg == e.ErrorType || msg == "" {
+				msg = e.Detail
+			} else {
+				msg += " — " + e.Detail
+			}
+		}
+		if len(e.Arguments) > 0 && !strings.Contains(msg, e.Arguments[0]) {
+			msg += " [" + strings.Join(e.Arguments, ", ") + "]"
+		}
+		return fmt.Sprintf("query failed (%s): %s", e.ErrorType, msg)
 	}
 	return fmt.Sprintf("query failed with status %d: %s", e.StatusCode, e.Message)
 }
