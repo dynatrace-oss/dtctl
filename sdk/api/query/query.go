@@ -434,8 +434,11 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 		return nil, ctx.Err()
 	}
 
-	// If query completed synchronously, return.
-	if result.State != "RUNNING" {
+	// If query completed synchronously, return. NOT_STARTED is a queued query
+	// on a congested tenant — terminal-looking but in-flight; returning it here
+	// would hand the caller the raw {"state":"NOT_STARTED"} envelope as a
+	// success (observed live: three leaks in a row on a busy dev tenant).
+	if result.State != "RUNNING" && result.State != "NOT_STARTED" {
 		return result, nil
 	}
 
@@ -492,7 +495,7 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 			return pollResult, nil
 		case "FAILED":
 			return pollResult, fmt.Errorf("query execution failed")
-		case "RUNNING":
+		case "RUNNING", "NOT_STARTED":
 			emitUpdate(opts.OnUpdate, req.EnablePreview, pollResult)
 			continue
 		default:
