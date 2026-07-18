@@ -178,6 +178,26 @@ Examples:
 
 		queryFile, _ := cmd.Flags().GetString("file")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
+		dqlFlag, _ := cmd.Flags().GetString("dql")
+		if dqlFlag != "" && len(args) == 0 {
+			args = []string{dqlFlag}
+		}
+		// Agents write `dtctl query dql <text>` / `query execute <text>`
+		// (hallucinated subcommands) and shell-split queries into several
+		// positional args. Until now args[0] was sent alone — the literal
+		// string "dql", or a truncated query — producing an opaque
+		// UNKNOWN_COMMAND or silently wrong results. Strip the marker token
+		// and rejoin the fragments instead (no DQL statement starts with
+		// these words).
+		if len(args) > 1 {
+			switch args[0] {
+			case "dql", "execute", "exec", "run":
+				args = args[1:]
+			}
+		}
+		if len(args) > 1 {
+			args = []string{strings.Join(args, " ")}
+		}
 
 		var query string
 
@@ -719,6 +739,7 @@ func init() {
 	// Flags for main query command
 	queryCmd.Flags().StringP("file", "f", "", "read query from file")
 	queryCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
+	queryCmd.Flags().String("dql", "", "DQL text (alias for the positional argument)")
 
 	// Live mode flags
 	queryCmd.Flags().Bool("live", false, "enable live mode with periodic updates")

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 )
 
 // TestBuildSpanName verifies that buildSpanName correctly extracts the verb and
@@ -577,6 +579,137 @@ func TestEnhanceFlagError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestVerbSynonyms locks the mapping from verbs agents guess (list, show, …)
+// to real dtctl verbs, replacing the useless edit-distance fallback
+// ("list" → "alias") observed in evals.
+func TestVerbSynonyms(t *testing.T) {
+	err := enhanceCommandError(rootCmd, fmt.Errorf(`unknown command "list" for "dtctl"`))
+	var cmdErr *suggest.CommandError
+	if !errors.As(err, &cmdErr) {
+		t.Fatalf("expected CommandError, got %T: %v", err, err)
+	}
+	if cmdErr.Suggestion == nil || cmdErr.Suggestion.Value != "get" {
+		t.Errorf("list should suggest get, got %+v", cmdErr.Suggestion)
+	}
+	if !strings.Contains(cmdErr.UsageHint, "dtctl get <resource>") {
+		t.Errorf("usage hint missing: %q", cmdErr.UsageHint)
+	}
+	// The hint must reach the agent envelope.
+	detail := errorToDetail(err)
+	if len(detail.Suggestions) != 2 || !strings.Contains(detail.Suggestions[1], "dtctl get <resource>") {
+		t.Errorf("envelope suggestions = %v", detail.Suggestions)
+	}
+	// Non-synonym verbs still go through edit-distance matching.
+	err = enhanceCommandError(rootCmd, fmt.Errorf(`unknown command "quer" for "dtctl"`))
+	if !errors.As(err, &cmdErr) || cmdErr.Suggestion == nil || cmdErr.Suggestion.Value != "query" {
+		t.Errorf("quer should still suggest query, got %v", err)
+	}
+}
+
+// TestAdviseFlag locks the special-cased flag guidance for flags agents carry
+// over from other CLIs (--format, and --limit/--query on the query command).
+func TestAdviseFlag(t *testing.T) {
+	queryLike := &cobra.Command{Use: "query"}
+	getLike := &cobra.Command{Use: "get"}
+	cases := []struct {
+		cmd         *cobra.Command
+		flag        string
+		wantNil     bool
+		wantMessage string
+		wantSuggest string
+	}{
+		{getLike, "format", false, "unknown flag --format", "output"},
+		{queryLike, "limit", false, "append `| limit N`", ""},
+		{queryLike, "query", false, "positional argument", ""},
+		{getLike, "limit", true, "", ""},
+		{queryLike, "outpt", true, "", ""},
+	}
+	for _, tc := range cases {
+		fe := adviseFlag(tc.cmd, tc.flag)
+		if tc.wantNil {
+			if fe != nil {
+				t.Errorf("adviseFlag(%s, --%s) = %v, want nil", tc.cmd.Name(), tc.flag, fe)
+			}
+			continue
+		}
+		if fe == nil {
+			t.Fatalf("adviseFlag(%s, --%s) = nil", tc.cmd.Name(), tc.flag)
+		}
+		if !strings.Contains(fe.Message, tc.wantMessage) {
+			t.Errorf("message %q missing %q", fe.Message, tc.wantMessage)
+		}
+		if tc.wantSuggest != "" && (fe.Suggestion == nil || fe.Suggestion.Value != tc.wantSuggest) {
+			t.Errorf("suggestion = %+v, want %s", fe.Suggestion, tc.wantSuggest)
+		}
+	}
+}
+
+// TestDqlErrorAdviceTimeframe locks the INVALID_TIMEFRAME recovery hint
+// (evals: --default-timeframe-start now-6h, missing the parentheses).
+func TestDqlErrorAdviceTimeframe(t *testing.T) {
+	s := dqlErrorAdvice(&sdkquery.QueryError{ErrorType: "INVALID_TIMEFRAME", Message: "INVALID_TIMEFRAME"})
+	if len(s) != 1 || !strings.Contains(s[0], "now()-6h") {
+		t.Errorf("advice = %v", s)
+	}
+}
+
+// TestDqlErrorAdviceStreamNearMiss locks the UNKNOWN_DATA_OBJECT near-miss
+// suggestions (evals: agents guessed usersession/usersessions/rum_events/
+// dt.rum.sessions across ten calls without finding user.events, then
+// reported "0 RUM events" as the measured answer).
+func TestDqlErrorAdviceStreamNearMiss(t *testing.T) {
+	cases := []struct {
+		guess string
+		want  string
+	}{
+		{"usersessions", "user.sessions"},
+		{"rum_events", "user.sessions"},
+		{"dt.rum.sessions", "user.sessions"},
+		{"user_actions", "user.sessions"},
+		{"dt.metrics", "metric.series"},
+		{"vulnerabilities", "security.events"},
+		{"traces", "spans"},
+		{"bizevent", "bizevents"},
+	}
+	for _, tc := range cases {
+		e := &sdkquery.QueryError{ErrorType: "UNKNOWN_DATA_OBJECT",
+			Message: "UNKNOWN_DATA_OBJECT", Detail: tc.guess + " isn't a valid data object."}
+		s := dqlErrorAdvice(e)
+		if len(s) == 0 || !strings.Contains(s[0], tc.want) {
+			t.Errorf("advice for %q = %v, want mention of %q", tc.guess, s, tc.want)
+		}
+		if !strings.Contains(s[0], "dt.system.data_objects") {
+			t.Errorf("advice for %q lacks the catalog pointer: %v", tc.guess, s)
+		}
+	}
+	// dt.entity.* guesses keep their dedicated census advice, not near-miss.
+	e := &sdkquery.QueryError{ErrorType: "UNKNOWN_DATA_OBJECT",
+		Message: "UNKNOWN_DATA_OBJECT", Detail: "dt.entity.database isn't a valid data object."}
+	if s := dqlErrorAdvice(e); len(s) == 0 || !strings.Contains(s[0], "smartscapeNodes") {
+		t.Errorf("dt.entity advice = %v", s)
+	}
+}
+
+// TestDqlErrorAdviceClassicRelationships locks the redirect for the classic
+// Environment-API relationship idiom (evals: repeated `fieldsAdd
+// toRelationships` FIELD_DOES_NOT_EXIST failures, 28-call topology flail).
+func TestDqlErrorAdviceClassicRelationships(t *testing.T) {
+	for _, f := range []string{"toRelationships", "fromRelationships"} {
+		e := &sdkquery.QueryError{ErrorType: "FIELD_DOES_NOT_EXIST",
+			Message: "FIELD_DOES_NOT_EXIST", Detail: "The field " + f + " doesn't exist."}
+		s := dqlErrorAdvice(e)
+		if len(s) == 0 || !strings.Contains(s[0], "smartscapeEdges") {
+			t.Errorf("advice for %s = %v", f, s)
+		}
+	}
+	// Other unknown fields stay silent — no generic field advice exists.
+	e := &sdkquery.QueryError{ErrorType: "FIELD_DOES_NOT_EXIST",
+		Message: "FIELD_DOES_NOT_EXIST", Detail: "The field foo doesn't exist."}
+	if s := dqlErrorAdvice(e); len(s) != 0 {
+		t.Errorf("unexpected advice for unrelated field: %v", s)
 	}
 }
 

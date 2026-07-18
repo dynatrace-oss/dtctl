@@ -2799,3 +2799,76 @@ func TestDQLExecutor_ClientContextHeader_OnInternalCancel(t *testing.T) {
 		t.Errorf("context = %q, want %q", m["context"], "incident-response")
 	}
 }
+
+func TestWindowAdvice(t *testing.T) {
+	trap := `fetch logs | filter timestamp >= now() - 24h and timestamp < now() - 12h | summarize count()`
+	cases := []struct {
+		name    string
+		query   string
+		records []map[string]interface{}
+		opts    DQLExecuteOptions
+		want    bool
+	}{
+		{"trap query, no rows", trap, nil, DQLExecuteOptions{}, true},
+		{"trap query, single zero-count row", trap, []map[string]interface{}{{"count()": "0"}}, DQLExecuteOptions{}, true},
+		{"trap query, nonzero count row", trap, []map[string]interface{}{{"count()": "4136117"}}, DQLExecuteOptions{}, false},
+		{"trap query, many rows", trap, []map[string]interface{}{{"a": "1"}, {"a": "2"}}, DQLExecuteOptions{}, false},
+		{"explicit from: in query", `fetch logs, from:now()-24h | filter timestamp < now()-12h | summarize c = count()`, nil, DQLExecuteOptions{}, false},
+		{"timeframe flag set", trap, nil, DQLExecuteOptions{DefaultTimeframeStart: "2026-01-01T00:00:00Z"}, false},
+		// Since the t9 trap fix, an empty result WITHOUT a timestamp filter
+		// also fires (default-window wording) as long as no explicit window
+		// was set anywhere.
+		{"no timestamp filter", `fetch logs | summarize count()`, nil, DQLExecuteOptions{}, true},
+		{"filter on another field only", `fetch logs | filter loglevel == "ERROR"`, nil, DQLExecuteOptions{}, true},
+		{"no timestamp filter, explicit window", `fetch logs, from:now()-7d | summarize count()`, nil, DQLExecuteOptions{}, false},
+		{"no timestamp filter, nonempty result", `fetch logs | summarize count()`, []map[string]interface{}{{"count()": "42"}}, DQLExecuteOptions{}, false},
+		{"metric.series discovery, empty", `fetch metric.series | filter contains(metric.key, "oom")`, nil, DQLExecuteOptions{}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := windowAdvice(tc.query, tc.records, tc.opts)
+			if (len(got) > 0) != tc.want {
+				t.Errorf("windowAdvice(%q, %v) = %v, want fired=%v", tc.query, tc.records, got, tc.want)
+			}
+		})
+	}
+	// The two empty-result shapes carry distinct wording: the timestamp-filter
+	// trap names the filter; the plain default-window one suggests widening;
+	// metric.series gets the discovery-specific line.
+	tsAdvice := windowAdvice(trap, nil, DQLExecuteOptions{})
+	if len(tsAdvice) == 0 || !strings.Contains(tsAdvice[0], "filter timestamp") {
+		t.Errorf("timestamp-trap advice = %v", tsAdvice)
+	}
+	defAdvice := windowAdvice(`fetch logs | summarize count()`, nil, DQLExecuteOptions{})
+	if len(defAdvice) == 0 || !strings.Contains(defAdvice[0], "DEFAULT query window") {
+		t.Errorf("default-window advice = %v", defAdvice)
+	}
+	msAdvice := windowAdvice(`fetch metric.series | filter contains(metric.key, "oom")`, nil, DQLExecuteOptions{})
+	if len(msAdvice) == 0 || !strings.Contains(msAdvice[0], "metric.series") {
+		t.Errorf("metric.series advice = %v", msAdvice)
+	}
+}
+
+// TestLookbackAdvice locks the note riding SUCCESSFUL dt.entity.* fetches
+// (evals: 17-host lookback census reported against 12 live hosts in five
+// consecutive control batches — via queries that returned rc 0, so the
+// error-side redirect never fired).
+func TestLookbackAdvice(t *testing.T) {
+	s := lookbackAdvice(`fetch dt.entity.host | summarize count()`)
+	if len(s) != 1 || !strings.Contains(s[0], `smartscapeNodes "HOST"`) || !strings.Contains(s[0], "LOOKBACK") {
+		t.Errorf("advice = %v", s)
+	}
+	s = lookbackAdvice(`fetch dt.entity.aws_lambda_function | limit 10`)
+	if len(s) != 1 || !strings.Contains(s[0], `smartscapeNodes "AWS_LAMBDA_FUNCTION"`) {
+		t.Errorf("advice = %v", s)
+	}
+	for _, q := range []string{
+		`fetch logs | summarize count()`,
+		`smartscapeNodes "HOST" | summarize count()`,
+		`fetch dt.davis.events`,
+	} {
+		if s := lookbackAdvice(q); len(s) != 0 {
+			t.Errorf("unexpected advice for %q: %v", q, s)
+		}
+	}
+}
