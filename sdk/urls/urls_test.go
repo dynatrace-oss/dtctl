@@ -112,6 +112,53 @@ func TestSuggestions(t *testing.T) {
 	}
 }
 
+func TestNormalize(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "empty stays empty",
+			url:  "",
+			want: "",
+		},
+		{
+			name: "bare host gets https",
+			url:  "abc12345.apps.dynatrace.com",
+			want: "https://abc12345.apps.dynatrace.com",
+		},
+		{
+			name: "host with path gets https",
+			url:  "abc12345.apps.dynatrace.com/platform",
+			want: "https://abc12345.apps.dynatrace.com/platform",
+		},
+		{
+			name: "https untouched",
+			url:  "https://abc12345.apps.dynatrace.com",
+			want: "https://abc12345.apps.dynatrace.com",
+		},
+		{
+			name: "http untouched",
+			url:  "http://127.0.0.1:8080",
+			want: "http://127.0.0.1:8080",
+		},
+		{
+			name: "mixed-case scheme untouched",
+			url:  "HTTPS://abc12345.apps.dynatrace.com",
+			want: "HTTPS://abc12345.apps.dynatrace.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Normalize(tt.url); got != tt.want {
+				t.Errorf("Normalize(%q) = %q, want %q", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && containsStr(s, substr)
 }

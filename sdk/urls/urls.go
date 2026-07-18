@@ -15,6 +15,23 @@ type Problem struct {
 	SuggestedURL string
 }
 
+// Normalize returns the environment URL with an "https://" scheme prepended when
+// no scheme is present. A URL that already carries an http:// or https:// scheme,
+// or is empty, is returned unchanged. Without a scheme Go's HTTP client rejects
+// requests with "unsupported protocol scheme", so a context stored from a bare
+// host (e.g. "abc12345.apps.dynatrace.com") would authenticate yet fail on every
+// query. Normalize does not correct the domain-level mistakes reported by Check.
+func Normalize(environmentURL string) string {
+	if environmentURL == "" {
+		return environmentURL
+	}
+	lower := strings.ToLower(environmentURL)
+	if !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+		return "https://" + environmentURL
+	}
+	return environmentURL
+}
+
 // Check inspects a Dynatrace environment URL for common mistakes.
 // It returns a list of problems found (empty if the URL looks correct).
 func Check(environmentURL string) []Problem {
