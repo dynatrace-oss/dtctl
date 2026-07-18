@@ -493,6 +493,46 @@ func TestInitConfig(t *testing.T) {
 	}
 }
 
+// TestAgentModeAutoDetectWithExplicitJSON locks the matrix-11 finding: agents
+// append `-o json` to nearly every call, and treating any explicit -o as an
+// agent-mode opt-out silently disarmed every envelope affordance for exactly
+// the audience it was built for. Explicit json must keep agent mode on; an
+// explicit non-JSON format must still opt out.
+func TestAgentModeAutoDetectWithExplicitJSON(t *testing.T) {
+	origAgent, origNoAgent, origOutput := agentMode, noAgent, outputFormat
+	outputFlag := rootCmd.PersistentFlags().Lookup("output")
+	origChanged := outputFlag.Changed
+	defer func() {
+		agentMode, noAgent, outputFormat = origAgent, origNoAgent, origOutput
+		outputFlag.Changed = origChanged
+		os.Unsetenv("AI_AGENT")
+	}()
+	os.Setenv("AI_AGENT", "1")
+
+	cases := []struct {
+		name    string
+		format  string
+		changed bool
+		want    bool
+	}{
+		{"no explicit output", "table", false, true},
+		{"explicit -o json", "json", true, true},
+		{"explicit -o yaml", "yaml", true, false},
+		{"explicit -o table", "table", true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			agentMode, noAgent = false, false
+			outputFormat = tc.format
+			outputFlag.Changed = tc.changed
+			initConfig()
+			if agentMode != tc.want {
+				t.Errorf("agentMode = %v, want %v", agentMode, tc.want)
+			}
+		})
+	}
+}
+
 // TestEnhanceFlagError tests flag error enhancement with suggestions
 func TestEnhanceFlagError(t *testing.T) {
 	tests := []struct {

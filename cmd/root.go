@@ -934,9 +934,14 @@ func initConfig() {
 	// Auto-detect AI agent environment and enable agent mode
 	if !agentMode && !noAgent {
 		if info := aidetect.Detect(); info.Detected {
-			// Only auto-enable if user hasn't explicitly chosen a non-JSON output format
+			// Only auto-enable if user hasn't explicitly chosen a non-JSON
+			// output format. An explicit `-o json` is compatible — the agent
+			// envelope IS json. Agents append `-o json` to nearly every call
+			// out of habit, and treating that as an opt-out silently disarmed
+			// every envelope affordance (suggestions, warnings, advice) for
+			// exactly the audience they were built for.
 			outputFlag := rootCmd.PersistentFlags().Lookup("output")
-			if outputFlag == nil || !outputFlag.Changed {
+			if outputFlag == nil || !outputFlag.Changed || outputFormat == "json" {
 				agentMode = true
 			}
 		}
