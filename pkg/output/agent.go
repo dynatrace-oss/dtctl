@@ -46,6 +46,12 @@ type Response struct {
 	Result          interface{}      `json:"result"`
 	Error           *ErrorDetail     `json:"error,omitempty"`
 	Context         *ResponseContext `json:"context,omitempty"`
+	// Metadata carries the Grail query metadata (execution time, scanned
+	// records/bytes, sampled, queryId, ...) alongside the result, mirroring the
+	// non-agent `-o json --metadata` shape. Populated on the query envelope when
+	// --metadata is requested and the response carried metadata; omitted
+	// otherwise so other envelopes stay byte-for-byte unchanged.
+	Metadata interface{} `json:"metadata,omitempty"`
 }
 
 // ResponseContext provides operational metadata alongside the result.
