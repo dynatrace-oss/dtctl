@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -610,6 +611,7 @@ func parseError(statusCode int, body []byte) error {
 			StatusCode: statusCode,
 			Message:    apiErr.Error.Message,
 			ErrorType:  apiErr.Error.Details.ErrorType,
+			Detail:     apiErr.Error.Details.ErrorMessage,
 			Arguments:  apiErr.Error.Details.Arguments,
 		}
 	}
@@ -623,12 +625,28 @@ type QueryError struct {
 	StatusCode int
 	Message    string
 	ErrorType  string
+	Detail     string
 	Arguments  []string
 }
 
 func (e *QueryError) Error() string {
 	if e.ErrorType != "" {
-		return fmt.Sprintf("query failed (%s): %s", e.ErrorType, e.Message)
+		// The top-level message often just repeats the error type
+		// (e.g. "UNKNOWN_COMMAND"); details.errorMessage and the arguments
+		// carry the actionable part (offending token, position), so include
+		// whatever adds information.
+		msg := e.Message
+		if e.Detail != "" && e.Detail != msg {
+			if msg == e.ErrorType || msg == "" {
+				msg = e.Detail
+			} else {
+				msg += " — " + e.Detail
+			}
+		}
+		if len(e.Arguments) > 0 && !strings.Contains(msg, e.Arguments[0]) {
+			msg += " [" + strings.Join(e.Arguments, ", ") + "]"
+		}
+		return fmt.Sprintf("query failed (%s): %s", e.ErrorType, msg)
 	}
 	return fmt.Sprintf("query failed with status %d: %s", e.StatusCode, e.Message)
 }

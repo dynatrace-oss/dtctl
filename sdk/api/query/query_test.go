@@ -962,6 +962,35 @@ func TestQueryError_ErrorFormatting(t *testing.T) {
 			t.Errorf("Error() = %q, want %q", e.Error(), want)
 		}
 	})
+
+	// The API often repeats the error type as the message and puts the
+	// actionable text in details.errorMessage — that detail must surface.
+	t.Run("detail replaces a type-echo message", func(t *testing.T) {
+		e := &QueryError{StatusCode: 400, Message: "UNKNOWN_COMMAND", ErrorType: "UNKNOWN_COMMAND",
+			Detail: "There's no command `dqll`."}
+		want := "query failed (UNKNOWN_COMMAND): There's no command `dqll`."
+		if e.Error() != want {
+			t.Errorf("Error() = %q, want %q", e.Error(), want)
+		}
+	})
+
+	t.Run("detail appends to a distinct message", func(t *testing.T) {
+		e := &QueryError{StatusCode: 400, Message: "invalid query", ErrorType: "SYNTAX_ERROR",
+			Detail: "token `|` unexpected", Arguments: []string{"line 1"}}
+		want := "query failed (SYNTAX_ERROR): invalid query — token `|` unexpected [line 1]"
+		if e.Error() != want {
+			t.Errorf("Error() = %q, want %q", e.Error(), want)
+		}
+	})
+
+	t.Run("arguments skipped when already in message", func(t *testing.T) {
+		e := &QueryError{StatusCode: 400, Message: "field `foo` missing", ErrorType: "FIELD_DOES_NOT_EXIST",
+			Arguments: []string{"foo"}}
+		want := "query failed (FIELD_DOES_NOT_EXIST): field `foo` missing"
+		if e.Error() != want {
+			t.Errorf("Error() = %q, want %q", e.Error(), want)
+		}
+	})
 }
 
 // TestExecuteAndPoll_SetsRequestTimeout verifies that ExecuteAndPoll sets the
