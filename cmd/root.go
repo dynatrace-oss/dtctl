@@ -449,12 +449,13 @@ func levenshtein(a, b string) int {
 func dqlErrorAdvice(e *sdkquery.QueryError) []string {
 	text := e.Error()
 	var s []string
-	if strings.Contains(text, "smartscapeNode") || strings.Contains(text, "smartscapeEdge") ||
-		strings.Contains(text, "smartscape.nodes") || strings.Contains(text, "smartscape.edges") {
+	switch {
+	case strings.Contains(text, "smartscapeNode") || strings.Contains(text, "smartscapeEdge") ||
+		strings.Contains(text, "smartscape.nodes") || strings.Contains(text, "smartscape.edges"):
 		s = append(s, `smartscape is queried via the COMMANDS smartscapeNodes/smartscapeEdges, not fetch — start the query with them: dtctl query 'smartscapeNodes "HOST" | limit 10'`)
-	} else if e.ErrorType == "UNKNOWN_DATA_OBJECT" && strings.Contains(text, "dt.entity.") {
+	case e.ErrorType == "UNKNOWN_DATA_OBJECT" && strings.Contains(text, "dt.entity."):
 		s = append(s, `for a current-state entity census use: dtctl query 'smartscapeNodes "<TYPE>" | summarize count()' — dt.entity.* tables are event-lookback views and exist only for some types`)
-	} else if e.ErrorType == "UNKNOWN_DATA_OBJECT" {
+	case e.ErrorType == "UNKNOWN_DATA_OBJECT":
 		if m := unknownObjectRe.FindStringSubmatch(text); len(m) == 2 {
 			if near := nearestStreams(m[1]); len(near) > 0 {
 				s = append(s, fmt.Sprintf("no data object named %q — closest real streams: %s. The full catalog: dtctl query 'fetch dt.system.data_objects | fields name'", m[1], strings.Join(near, ", ")))
