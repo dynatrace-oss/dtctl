@@ -1,0 +1,42 @@
+# Example: custom capability definitions for `dtctl inventory`.
+#
+#   dtctl inventory --definitions ./inventory-definitions.example.yaml
+#
+# Definitions merge over dtctl's built-in set (later files win when the flag
+# is repeated). Every capability is defined by HOW it is discovered — exactly
+# one of four fixed shapes, deliberately not an expression language:
+#
+#   dataObject:  present when the named object is in the dt.system.data_objects
+#                catalog (strong evidence, zero extra queries)
+#   entityTypes: present when at least one entity of a matching type (glob
+#                patterns allowed) is in the live smartscape census
+#   metricKey:   present when at least one key matching the glob is in the
+#                live metric catalog
+#   probe:       present when the DQL probe returns at least one row; window
+#                is mandatory and names the evidence window the probe covers.
+#                WEAK evidence — absence of events is not absence of the
+#                capability — and each probe costs one query per run.
+#
+# The built-in set is structural-only (the first three shapes). Probe shapes
+# are for definitions like the ones below, where only event data can answer.
+
+apiVersion: dtctl.dev/v1alpha1
+kind: InventoryDefinitions
+capabilities:
+  # Cloud-managed databases often appear under hyperscaler entity types, not
+  # the generic DB type — cover both so managed postgres counts as postgres.
+  postgres:
+    entityTypes: [DB_INSTANCE_POSTGRES, "*_DBFORPOSTGRESQL_*"]
+
+  # Only visible in span attributes: probe with a capped, sampled scan.
+  genai:
+    probe: 'fetch spans, from:now()-24h, samplingRatio:100 | filter isNotNull(gen_ai.system) or isNotNull(gen_ai.usage.input_tokens) | limit 1'
+    window: 24h
+
+  # Compliance scans surface as security events.
+  kspm:
+    probe: 'fetch security.events, from:now()-7d | filter event.type == "COMPLIANCE_SCAN_COMPLETED" | limit 1'
+    window: 7d
+
+  # Remove a built-in capability from the merged set by mapping it to null.
+  aws-cloudwatch: null
