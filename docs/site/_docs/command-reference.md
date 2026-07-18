@@ -37,6 +37,7 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 | `ctx` | Quick context management |
 | `doctor` | Health check (config, context, token, connectivity, auth) |
 | `commands` | Machine-readable command catalog for AI agents |
+| `inventory` | Probe the environment: which data, entity types, and capabilities exist here |
 
 ## Global Flags
 
@@ -334,6 +335,17 @@ dtctl commands --full -o json     # Full catalog: descriptions, flag defaults, g
 dtctl commands workflow -o json   # Filter to specific resource
 dtctl commands howto              # Generate Markdown how-to guide
 ```
+
+## Environment Inventory
+
+```bash
+dtctl inventory                                  # What data exists HERE: objects, buckets, census, capabilities
+dtctl inventory -o json                          # Structured, full lists
+dtctl inventory --definitions ./caps.yaml        # Merge org-specific capability definitions
+dtctl inventory --budget-queries 100 --budget-seconds 300 --scan-limit-gbytes 25
+```
+
+See [Environment Inventory]({{ '/docs/inventory/' | relative_url }}) for the discovery model, verdict semantics, and customization.
 
 ## Common Patterns
 

@@ -173,6 +173,16 @@ dtctl commands howto
 
 The bare `dtctl commands` overview is ideal for including in an agent's system prompt or initial context, giving it a complete map of available operations without consuming excessive tokens; step up to `--brief` or `--full` when more detail is needed.
 
+## Environment Inventory
+
+Where `dtctl commands` answers *"what can I run?"*, `dtctl inventory` answers *"what is there to query?"* — run it before exploratory DQL:
+
+```bash
+dtctl inventory -o json
+```
+
+It reports (read-only, budgeted, 4 queries by default): which catalog objects are fetchable vs query-only (never `fetch metrics` or `fetch smartscape.*`), buckets, filter segments, a live entity-type census, and capabilities as **present**, **absent** (with the evidence checked, as structured `{name, evidence}` pairs — cite it instead of re-probing), or **unknown** (no verdict; not evidence of absence). The capability set is customizable via `--definitions`. See [Environment Inventory]({{ '/docs/inventory/' | relative_url }}).
+
 ## Tips and Tricks
 
 ### Name resolution
