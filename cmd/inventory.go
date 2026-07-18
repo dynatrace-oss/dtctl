@@ -203,21 +203,9 @@ func printInventoryHuman(inv *inventory.Inventory) {
 		output.DescribeKV("Entities:", w, "%s", topCensusTypes(inv.EntityTypes, 12))
 	}
 	if len(inv.DataObjects) > 0 {
-		// dt.entity.* views can number in the hundreds; the census above already
-		// says which entities exist, so compress them to a count here. The full
-		// list stays available via -o json|yaml.
-		var core []string
-		entityViews := 0
-		for _, o := range inv.DataObjects {
-			if strings.HasPrefix(o, "dt.entity.") {
-				entityViews++
-				continue
-			}
-			core = append(core, o)
-		}
-		line := strings.Join(core, ", ")
-		if entityViews > 0 {
-			line += fmt.Sprintf(" (+%d dt.entity.* lookback views)", entityViews)
+		line := strings.Join(inv.DataObjects, ", ")
+		if inv.EntityViews > 0 {
+			line += fmt.Sprintf(" (+%d dt.entity.* lookback views)", inv.EntityViews)
 		}
 		output.DescribeKV("Data objects:", w, "%s", line)
 	}

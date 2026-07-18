@@ -121,7 +121,16 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 	if err != nil {
 		return nil, fmt.Errorf("data-object discovery failed: %w", err)
 	}
-	inv.DataObjects = fetchable
+	// The legacy dt.entity.* lookback views are collapsed to a count: they can
+	// number in the hundreds, and the census below is the canonical entity
+	// surface. The full catalog still backs capability verdicts.
+	for _, name := range fetchable {
+		if strings.HasPrefix(name, "dt.entity.") {
+			inv.EntityViews++
+		} else {
+			inv.DataObjects = append(inv.DataObjects, name)
+		}
+	}
 	inv.QueryOnly = queryOnly
 	if len(queryOnly) > 0 {
 		inv.Notes = append(inv.Notes, fmt.Sprintf(

@@ -77,7 +77,11 @@ type Inventory struct {
 	// DataObjects are catalog objects that support fetch; QueryOnly are
 	// catalog objects that are queried through other commands instead
 	// (metrics → timeseries, smartscape.* → smartscapeNodes/smartscapeEdges).
+	// The legacy dt.entity.* lookback views are collapsed out of DataObjects
+	// into EntityViews (a count): they number in the hundreds, and the live
+	// census in EntityTypes is the canonical entity surface.
 	DataObjects []string      `json:"dataObjects,omitempty" yaml:"dataObjects,omitempty"`
+	EntityViews int           `json:"entityViews,omitempty" yaml:"entityViews,omitempty"`
 	QueryOnly   []string      `json:"queryOnly,omitempty" yaml:"queryOnly,omitempty"`
 	Buckets     []string      `json:"buckets,omitempty" yaml:"buckets,omitempty"`
 	Segments    []SegmentInfo `json:"segments,omitempty" yaml:"segments,omitempty"`

@@ -24,11 +24,10 @@
     "SERVICE": 40
   },
   "dataObjects": [
-    "dt.entity.host",
-    "dt.entity.service",
     "logs",
     "spans"
   ],
+  "entityViews": 2,
   "queryOnly": [
     "metrics"
   ],

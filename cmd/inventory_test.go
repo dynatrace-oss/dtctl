@@ -22,7 +22,8 @@ func inventoryFixture() *inventory.Inventory {
 			{Name: "genai", Evidence: "probe failed: scan limit exceeded"},
 		},
 		EntityTypes: map[string]int64{"HOST": 12, "SERVICE": 40, "K8S_POD": 200},
-		DataObjects: []string{"dt.entity.host", "dt.entity.service", "logs", "spans"},
+		DataObjects: []string{"logs", "spans"},
+		EntityViews: 2,
 		QueryOnly:   []string{"metrics"},
 		Buckets:     []string{"default_logs", "default_spans"},
 		Segments:    []inventory.SegmentInfo{{UID: "seg-1", Name: "prod", Description: "production workloads"}},
@@ -88,9 +89,9 @@ func TestPrintInventoryHumanGolden(t *testing.T) {
 	got := captureStdout(t, func() {
 		printInventoryHuman(inventoryFixture())
 	})
-	// The dt.entity.* views must be collapsed to a count, not enumerated.
-	if strings.Contains(got, "dt.entity.host") {
-		t.Errorf("dt.entity.* views must be collapsed in human output:\n%s", got)
+	// The collapsed dt.entity.* views surface as a count suffix.
+	if !strings.Contains(got, "(+2 dt.entity.* lookback views)") {
+		t.Errorf("missing entity-view count in human output:\n%s", got)
 	}
 	cmdtestutil.AssertGolden(t, "inventory/human", cmdtestutil.StripANSI(got))
 }

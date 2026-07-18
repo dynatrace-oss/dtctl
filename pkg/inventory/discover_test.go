@@ -42,13 +42,16 @@ func rec(kv ...interface{}) map[string]interface{} {
 
 func testDefs() map[string]*CapabilityDef {
 	return map[string]*CapabilityDef{
-		"spans":       {DataObject: "spans"},
-		"rum":         {DataObject: "user.events"},
-		"hosts":       {EntityTypes: []string{"HOST"}},
-		"azure":       {EntityTypes: []string{"AZURE_*"}},
-		"k8s-metrics": {MetricKey: "dt.kubernetes.*"},
-		"genai":       {Probe: "fetch spans GENAIPROBE | limit 1", Window: "24h"},
-		"rap":         {Probe: "fetch security.events RAPPROBE | limit 1", Window: "24h"},
+		"spans": {DataObject: "spans"},
+		"rum":   {DataObject: "user.events"},
+		// References a collapsed dt.entity.* view: verdicts must still see the
+		// full catalog even though the reported DataObjects list does not.
+		"classic-hosts": {DataObject: "dt.entity.host"},
+		"hosts":         {EntityTypes: []string{"HOST"}},
+		"azure":         {EntityTypes: []string{"AZURE_*"}},
+		"k8s-metrics":   {MetricKey: "dt.kubernetes.*"},
+		"genai":         {Probe: "fetch spans GENAIPROBE | limit 1", Window: "24h"},
+		"rap":           {Probe: "fetch security.events RAPPROBE | limit 1", Window: "24h"},
 	}
 }
 
@@ -57,6 +60,7 @@ func testRunner() *mockRunner {
 		{match: "dt.system.data_objects", records: []map[string]interface{}{
 			rec("name", "logs", "fetchable", true), rec("name", "spans", "fetchable", true),
 			rec("name", "dt.davis.events", "fetchable", true), rec("name", "metrics", "fetchable", false),
+			rec("name", "dt.entity.host", "fetchable", true),
 		}},
 		{match: "dt.system.buckets", records: []map[string]interface{}{rec("name", "default_logs")}},
 		{match: `smartscapeNodes "*"`, records: []map[string]interface{}{
@@ -80,8 +84,12 @@ func TestDiscoverInventory(t *testing.T) {
 	}
 	report := inv.Discovery
 
+	// dt.entity.* lookback views are collapsed to a count, not listed.
 	if want := []string{"logs", "spans", "dt.davis.events"}; strings.Join(inv.DataObjects, ",") != strings.Join(want, ",") {
 		t.Errorf("DataObjects = %v, want %v", inv.DataObjects, want)
+	}
+	if inv.EntityViews != 1 {
+		t.Errorf("EntityViews = %d, want 1", inv.EntityViews)
 	}
 	if len(inv.QueryOnly) != 1 || inv.QueryOnly[0] != "metrics" {
 		t.Errorf("QueryOnly = %v, want [metrics]", inv.QueryOnly)
@@ -93,7 +101,7 @@ func TestDiscoverInventory(t *testing.T) {
 		t.Errorf("EntityTypes = %v", inv.EntityTypes)
 	}
 
-	wantPresent := []string{"genai", "hosts", "k8s-metrics", "spans"}
+	wantPresent := []string{"classic-hosts", "genai", "hosts", "k8s-metrics", "spans"}
 	if strings.Join(inv.Capabilities, ",") != strings.Join(wantPresent, ",") {
 		t.Errorf("Capabilities = %v, want %v", inv.Capabilities, wantPresent)
 	}
