@@ -1,8 +1,6 @@
 package inventory
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -18,17 +16,8 @@ func TestBuiltinDefinitionsAreValid(t *testing.T) {
 	}
 }
 
-func writeDefs(t *testing.T, content string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "defs.yaml")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-func TestLoadDefinitionsFile(t *testing.T) {
-	path := writeDefs(t, `
+func TestParseDefinitions(t *testing.T) {
+	defs, err := ParseDefinitions([]byte(`
 apiVersion: dtctl.dev/v1alpha1
 kind: InventoryDefinitions
 capabilities:
@@ -38,10 +27,9 @@ capabilities:
     probe: 'fetch spans, from:now()-24h | filter isNotNull(gen_ai.system) | limit 1'
     window: 24h
   aws: null
-`)
-	defs, err := LoadDefinitionsFile(path)
+`))
 	if err != nil {
-		t.Fatalf("LoadDefinitionsFile() error: %v", err)
+		t.Fatalf("ParseDefinitions() error: %v", err)
 	}
 	if len(defs.Capabilities) != 3 {
 		t.Errorf("capabilities = %d, want 3", len(defs.Capabilities))
@@ -51,7 +39,7 @@ capabilities:
 	}
 }
 
-func TestLoadDefinitionsFileRejectsInvalid(t *testing.T) {
+func TestParseDefinitionsRejectsInvalid(t *testing.T) {
 	cases := []struct {
 		name, content, wantErr string
 	}{
@@ -63,7 +51,7 @@ func TestLoadDefinitionsFileRejectsInvalid(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := LoadDefinitionsFile(writeDefs(t, tc.content))
+			_, err := ParseDefinitions([]byte(tc.content))
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Errorf("error = %v, want mention of %q", err, tc.wantErr)
 			}

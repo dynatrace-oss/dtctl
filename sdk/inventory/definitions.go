@@ -2,7 +2,6 @@ package inventory
 
 import (
 	"fmt"
-	"os"
 
 	"gopkg.in/yaml.v3"
 )
@@ -38,25 +37,23 @@ func BuiltinDefinitions() map[string]*CapabilityDef {
 	}
 }
 
-// LoadDefinitionsFile reads and validates one capability-definitions file.
-func LoadDefinitionsFile(path string) (*Definitions, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read definitions %s: %w", path, err)
-	}
+// ParseDefinitions parses and validates one capability-definitions document
+// (the SDK never reads files — the caller supplies the bytes and owns path
+// context in errors).
+func ParseDefinitions(data []byte) (*Definitions, error) {
 	var defs Definitions
 	if err := yaml.Unmarshal(data, &defs); err != nil {
-		return nil, fmt.Errorf("failed to parse definitions %s: %w", path, err)
+		return nil, fmt.Errorf("failed to parse definitions: %w", err)
 	}
 	if defs.Kind != "" && defs.Kind != KindDefinitions {
-		return nil, fmt.Errorf("%s: kind is %q, expected %q", path, defs.Kind, KindDefinitions)
+		return nil, fmt.Errorf("kind is %q, expected %q", defs.Kind, KindDefinitions)
 	}
 	for name, def := range defs.Capabilities {
 		if def == nil {
 			continue // explicit null: removes the capability on merge
 		}
 		if err := validateDef(def); err != nil {
-			return nil, fmt.Errorf("%s: capability %q: %w", path, name, err)
+			return nil, fmt.Errorf("capability %q: %w", name, err)
 		}
 	}
 	return &defs, nil

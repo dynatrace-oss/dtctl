@@ -7,6 +7,10 @@
 //
 // Everything here is read-only: discovery runs a small, budgeted battery of
 // DQL queries and returns a report; nothing is persisted.
+//
+// The package is execution-agnostic: discovery drives every query through the
+// Runner interface, so any DQL executor — the dtctl CLI, a backend service
+// with its own query client — can embed it without further dependencies.
 package inventory
 
 // APIVersion / KindDefinitions identify a capability-definitions file.

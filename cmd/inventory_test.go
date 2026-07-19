@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	cmdtestutil "github.com/dynatrace-oss/dtctl/cmd/testutil"
-	"github.com/dynatrace-oss/dtctl/pkg/inventory"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/sdk/inventory"
 )
 
 func inventoryFixture() *inventory.Inventory {
@@ -29,6 +31,36 @@ func inventoryFixture() *inventory.Inventory {
 		Segments:    []inventory.SegmentInfo{{UID: "seg-1", Name: "prod", Description: "production workloads"}},
 		Notes:       []string{"catalog objects without fetch support: metrics"},
 		Discovery:   &inventory.Report{Queries: 4, Seconds: 2.5},
+	}
+}
+
+// TestLoadDefinitionsFile covers the CLI-side file loading around the SDK's
+// byte-based ParseDefinitions: a valid file loads, and both read and parse
+// failures carry the path so the user knows which --definitions file broke.
+func TestLoadDefinitionsFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "defs.yaml")
+	content := "kind: InventoryDefinitions\ncapabilities:\n  postgres:\n    entityTypes: [DB_INSTANCE_POSTGRES]\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defs, err := loadDefinitionsFile(path)
+	if err != nil {
+		t.Fatalf("loadDefinitionsFile() error: %v", err)
+	}
+	if defs.Capabilities["postgres"] == nil {
+		t.Errorf("postgres capability missing: %+v", defs.Capabilities)
+	}
+
+	if _, err := loadDefinitionsFile(filepath.Join(t.TempDir(), "absent.yaml")); err == nil || !strings.Contains(err.Error(), "absent.yaml") {
+		t.Errorf("read error must carry the path, got: %v", err)
+	}
+
+	broken := filepath.Join(t.TempDir(), "broken.yaml")
+	if err := os.WriteFile(broken, []byte("capabilities:\n  broken: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadDefinitionsFile(broken); err == nil || !strings.Contains(err.Error(), "broken.yaml") || !strings.Contains(err.Error(), "exactly one discovery shape") {
+		t.Errorf("parse error must carry path and cause, got: %v", err)
 	}
 }
 

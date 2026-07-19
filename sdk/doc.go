@@ -7,6 +7,8 @@
 //   - auth: Token type detection and classification
 //   - httpclient: HTTP client with retry, pagination, and typed errors
 //   - agentmode: AI agent detection and structured JSON envelope
+//   - inventory: environment data-inventory discovery (capability evidence,
+//     entity census, buckets) driven through a caller-supplied DQL runner
 //
 // The SDK is designed to be leaf-shaped: it never imports from the CLI
 // module, has minimal dependencies, and avoids global state.

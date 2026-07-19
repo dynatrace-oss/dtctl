@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
-	"github.com/dynatrace-oss/dtctl/pkg/inventory"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
+	"github.com/dynatrace-oss/dtctl/sdk/inventory"
 )
 
 // inventoryCmd probes the current environment for what data actually exists
@@ -70,7 +70,7 @@ Examples:
 		}
 		overlays := make([]*inventory.Definitions, 0, len(defFiles))
 		for _, f := range defFiles {
-			d, derr := inventory.LoadDefinitionsFile(f)
+			d, derr := loadDefinitionsFile(f)
 			if derr != nil {
 				return derr
 			}
@@ -136,6 +136,20 @@ Examples:
 		}
 		return printer.Print(inv)
 	},
+}
+
+// loadDefinitionsFile reads one capability-definitions file. File I/O stays in
+// the CLI layer — the SDK parses bytes (ParseDefinitions) and never sees paths.
+func loadDefinitionsFile(path string) (*inventory.Definitions, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read definitions %s: %w", path, err)
+	}
+	defs, err := inventory.ParseDefinitions(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return defs, nil
 }
 
 // inventoryMaxResultRecords must exceed the largest `| limit` in the discovery
