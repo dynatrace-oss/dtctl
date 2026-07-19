@@ -101,6 +101,12 @@ type discoveredFacts struct {
 // Cancellation aborts the whole run: a half-discovered inventory is never
 // returned as if it were a verdict.
 func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef, opts DiscoverOptions) (*Inventory, error) {
+	// Fail fast on a malformed definition set: the CLI path arrives validated
+	// (ParseDefinitions), but a set constructed in Go bypasses that — and a
+	// def with no shape would otherwise get no verdict at all, silently.
+	if err := ValidateDefinitions(defs); err != nil {
+		return nil, fmt.Errorf("invalid capability definitions: %w", err)
+	}
 	now := opts.Now
 	if now == nil {
 		now = time.Now

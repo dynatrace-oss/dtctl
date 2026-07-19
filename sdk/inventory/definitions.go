@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"fmt"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -80,6 +81,32 @@ func MergeDefinitions(base map[string]*CapabilityDef, overlays ...*Definitions) 
 		}
 	}
 	return merged
+}
+
+// ValidateDefinitions checks a definition set the same way ParseDefinitions
+// checks a parsed document: every definition must declare exactly one
+// discovery shape, and probe shapes must declare their evidence window. It
+// exists for sets constructed in Go rather than parsed — Discover runs it up
+// front, so a malformed definition fails fast instead of being silently
+// skipped. One asymmetry to ParseDefinitions: a nil definition is an error
+// here, because nil-as-removal is meaningful only inside an overlay handed to
+// MergeDefinitions, never in a merged set.
+func ValidateDefinitions(defs map[string]*CapabilityDef) error {
+	names := make([]string, 0, len(defs))
+	for name := range defs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		def := defs[name]
+		if def == nil {
+			return fmt.Errorf("capability %q: definition is nil (null removes a capability only in a MergeDefinitions overlay)", name)
+		}
+		if err := validateDef(def); err != nil {
+			return fmt.Errorf("capability %q: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // validateDef enforces the exactly-one-shape contract, and that probe shapes

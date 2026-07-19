@@ -501,3 +501,19 @@ func TestDiscoverTruncatedEmptyProbeIsUnknown(t *testing.T) {
 		}
 	}
 }
+
+// TestDiscoverRejectsInvalidDefinitions proves malformed Go-constructed
+// definitions fail fast — before any query is issued — instead of silently
+// getting no verdict.
+func TestDiscoverRejectsInvalidDefinitions(t *testing.T) {
+	runner := &mockRunner{}
+	_, err := Discover(context.Background(), runner, map[string]*CapabilityDef{
+		"broken": {},
+	}, DiscoverOptions{})
+	if err == nil || !strings.Contains(err.Error(), "invalid capability definitions") || !strings.Contains(err.Error(), `"broken"`) {
+		t.Fatalf("error = %v, want invalid-definitions naming the capability", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Errorf("no query must run on invalid definitions, got %d", len(runner.calls))
+	}
+}

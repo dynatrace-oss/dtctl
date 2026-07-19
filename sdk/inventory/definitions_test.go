@@ -59,6 +59,49 @@ func TestParseDefinitionsRejectsInvalid(t *testing.T) {
 	}
 }
 
+// TestValidateDefinitions covers the Go-construction path: sets built as
+// struct literals bypass ParseDefinitions, so ValidateDefinitions must catch
+// what YAML validation would have — including the nil that only an overlay
+// may carry.
+func TestValidateDefinitions(t *testing.T) {
+	valid := map[string]*CapabilityDef{
+		"logs":  {DataObject: "logs"},
+		"genai": {Probe: "fetch spans | limit 1", Window: "24h"},
+	}
+	if err := ValidateDefinitions(valid); err != nil {
+		t.Errorf("valid set rejected: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		defs    map[string]*CapabilityDef
+		wantErr string
+	}{
+		{"nil definition", map[string]*CapabilityDef{"aws": nil}, "null removes a capability only"},
+		{"no shape", map[string]*CapabilityDef{"broken": {}}, "exactly one discovery shape"},
+		{"two shapes", map[string]*CapabilityDef{"broken": {DataObject: "logs", MetricKey: "dt.*"}}, "exactly one discovery shape"},
+		{"probe without window", map[string]*CapabilityDef{"broken": {Probe: "fetch logs | limit 1"}}, "must declare window"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDefinitions(tc.defs)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error = %v, want mention of %q", err, tc.wantErr)
+			}
+		})
+	}
+
+	// Deterministic reporting: with several offenders, the alphabetically
+	// first capability is named, so error output is stable across runs.
+	err := ValidateDefinitions(map[string]*CapabilityDef{
+		"zeta":  {},
+		"alpha": {},
+	})
+	if err == nil || !strings.Contains(err.Error(), `"alpha"`) {
+		t.Errorf("error = %v, want the alphabetically first offender %q", err, "alpha")
+	}
+}
+
 func TestMergeDefinitions(t *testing.T) {
 	base := map[string]*CapabilityDef{
 		"aws":  {EntityTypes: []string{"AWS_*"}},
