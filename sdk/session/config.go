@@ -110,6 +110,7 @@ type Context struct {
 	TokenRef    string      `yaml:"token-ref" table:"TOKEN-REF"`
 	SafetyLevel SafetyLevel `yaml:"safety-level,omitempty" table:"SAFETY-LEVEL"`
 	Description string      `yaml:"description,omitempty" table:"DESCRIPTION,wide"`
+	AccountUUID string      `yaml:"account-uuid,omitempty" table:"ACCOUNT-UUID,wide"`
 	// Profile binds a command profile to this context, restricting the visible
 	// command surface when the context is active (unless overridden by
 	// DTCTL_PROFILE). Empty means the full command tree. See profile.go.
