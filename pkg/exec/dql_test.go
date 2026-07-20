@@ -2306,20 +2306,26 @@ func TestDQLExecutor_CancelQuery_EmptyToken(t *testing.T) {
 // before any poll request is sent.  ExecuteQueryWithContext must call query:cancel with
 // the correct token and return (nil, nil).
 func TestDQLExecutor_CancelAfterExecute(t *testing.T) {
-	executeReturned := make(chan struct{})
 	cancelCalled := false
 	cancelToken := ""
+
+	// Declare ctx/cancel before the server so the handler closure can call cancel().
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/platform/storage/query/v1/query:execute":
+			// Cancel ctx before writing the response body. The executor's HTTP call
+			// uses an independent context (execCtx), so it still receives the response.
+			// When ExecuteAndPollWithOptions checks ctx.Err() after Execute returns,
+			// the cancellation is guaranteed to be visible via the happens-before chain:
+			// cancel() → write body → (network) → read body → ctx.Err().
+			cancel()
 			resp := DQLQueryResponse{State: "RUNNING", RequestToken: "tok-after-execute"}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(resp)
-			// Signal that the execute response has been written; the test will now
-			// cancel the context before any poll request can be issued.
-			close(executeReturned)
 
 		case "/platform/storage/query/v1/query:cancel":
 			cancelCalled = true
@@ -2338,16 +2344,6 @@ func TestDQLExecutor_CancelAfterExecute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Cancel the context as soon as the execute response is delivered, so that
-	// the ctx.Err() check immediately after the POST fires before any poll.
-	go func() {
-		<-executeReturned
-		cancel()
-	}()
 
 	executor := NewDQLExecutor(c)
 	result, err := executor.ExecuteQueryWithContext(ctx, "fetch logs", DQLExecuteOptions{})
