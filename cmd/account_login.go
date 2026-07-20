@@ -103,6 +103,17 @@ The account UUID is resolved from: --account-uuid flag > DTCTL_ACCOUNT_UUID > co
 			return fmt.Errorf("failed to store tokens: %w", err)
 		}
 
+		// Persist the UUID so follow-up commands find the keyring entry without
+		// requiring --account-uuid or DTCTL_ACCOUNT_UUID each time.
+		if ctx.AccountUUID == "" {
+			if nc, err := cfg.GetContext(cfg.CurrentContext); err == nil {
+				nc.Context.AccountUUID = accountUUID
+				if saveErr := cfg.Save(); saveErr != nil {
+					output.PrintWarning("Could not persist account-uuid to context: %v", saveErr)
+				}
+			}
+		}
+
 		output.PrintSuccess("Account token stored. Run 'dtctl account token list' to verify access.")
 		return nil
 	},

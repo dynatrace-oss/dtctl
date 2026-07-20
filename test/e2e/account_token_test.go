@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/platformtoken"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -61,7 +62,7 @@ func TestAccountTokenLifecycle(t *testing.T) {
 	// Step 2: Create a token
 	t.Log("Step 2: Creating platform token...")
 	created, err := handler.Create(platformtoken.PlatformTokenCreate{
-		Name:           fmt.Sprintf("dtctl-e2e-test-token"),
+		Name:           fmt.Sprintf("dtctl-e2e-test-token-%d", time.Now().UnixMilli()),
 		UserUUID:       userUUID,
 		Scope:          []string{"account-idm-read"},
 		Resource:       []string{},

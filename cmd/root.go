@@ -1080,7 +1080,11 @@ func setupAccountClient(cfg *config.Config) (*httpclient.Client, string, error) 
 	}
 
 	env := auth.DetectEnvironment(ctx.Environment)
-	accountUUID, err := resolveAccountUUID(cfg, accountToken)
+
+	// Use the environment token for discovery — the IAM access-info endpoint
+	// rejects account-plane tokens.
+	envToken, _ := client.GetTokenWithOAuthSupport(cfg, ctx.TokenRef)
+	accountUUID, err := resolveAccountUUID(cfg, envToken)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1093,6 +1097,11 @@ func setupAccountClient(cfg *config.Config) (*httpclient.Client, string, error) 
 	level := verbosity
 	if debugMode {
 		level = 2
+	}
+	// Cap at 1 — level 2 dumps response bodies, which would expose the
+	// one-time token secret returned by `account token create`.
+	if level > 1 {
+		level = 1
 	}
 	c.EnableVerboseLogging(level, os.Stderr)
 	return c, accountUUID, nil
