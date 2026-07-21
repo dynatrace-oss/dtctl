@@ -90,6 +90,23 @@ func TestConfig_SetContext(t *testing.T) {
 	}
 }
 
+func TestConfig_SetContext_NormalizesEnvironmentScheme(t *testing.T) {
+	cfg := NewConfig()
+
+	// A bare host without a scheme must be stored with https:// so that later
+	// queries don't fail with "unsupported protocol scheme".
+	cfg.SetContext("dev", "abc12345.apps.dynatrace.com", "dev-token")
+	if got := cfg.Contexts[0].Context.Environment; got != "https://abc12345.apps.dynatrace.com" {
+		t.Errorf("Environment = %v, want https://abc12345.apps.dynatrace.com", got)
+	}
+
+	// An explicit scheme is preserved as-is.
+	cfg.SetContext("local", "http://127.0.0.1:8080", "local-token")
+	if got := cfg.Contexts[1].Context.Environment; got != "http://127.0.0.1:8080" {
+		t.Errorf("Environment = %v, want http://127.0.0.1:8080", got)
+	}
+}
+
 func TestConfig_SetToken(t *testing.T) {
 	cfg := NewConfig()
 
