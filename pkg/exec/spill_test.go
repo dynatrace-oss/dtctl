@@ -760,3 +760,130 @@ func TestBuildSpillResponse_ParquetExplicitPath(t *testing.T) {
 		t.Errorf("parquet spill file missing or empty: err=%v", serr)
 	}
 }
+
+// resultWithScanStats returns a small result carrying Grail execution metadata
+// (queryId, execution time, scanned records/bytes) so the envelope-building
+// paths can be checked for the top-level `metadata` block (#362).
+func resultWithScanStats() (*DQLQueryResponse, []map[string]interface{}) {
+	resp, records := sampleResult(false)
+	resp.Metadata.Grail.QueryID = "q-123"
+	resp.Metadata.Grail.ExecutionTimeMilliseconds = 219
+	resp.Metadata.Grail.ScannedRecords = 4200
+	resp.Metadata.Grail.ScannedBytes = 987654
+	return resp, records
+}
+
+func metadataMap(t *testing.T, resp output.Response) map[string]interface{} {
+	t.Helper()
+	if resp.Metadata == nil {
+		t.Fatalf("envelope has no top-level metadata")
+	}
+	// The metadata must live at the envelope's top level, not inside the result
+	// payload: an agent reads d["metadata"], mirroring `-o json --metadata`.
+	js, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(js, &parsed); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	m, ok := parsed["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("top-level metadata is %T, want object:\n%s", parsed["metadata"], js)
+	}
+	return m
+}
+
+func TestBuildSpillResponse_InlineMetadataTopLevel(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithScanStats()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"all"},
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !handled {
+		t.Fatalf("buildSpillResponse: handled=%v err=%v", handled, err)
+	}
+	if resp.Context.Decided != "inline" {
+		t.Fatalf("decided = %q, want inline", resp.Context.Decided)
+	}
+	m := metadataMap(t, resp)
+	if m["executionTimeMilliseconds"] != float64(219) {
+		t.Errorf("executionTimeMilliseconds = %v, want 219", m["executionTimeMilliseconds"])
+	}
+	if m["scannedBytes"] != float64(987654) {
+		t.Errorf("scannedBytes = %v, want 987654", m["scannedBytes"])
+	}
+	if m["queryId"] != "q-123" {
+		t.Errorf("queryId = %v, want q-123", m["queryId"])
+	}
+	// The result payload must not also carry the metadata (no duplication).
+	ir := resp.Result.(*output.InlineRecords)
+	rjs, _ := json.Marshal(ir)
+	if strings.Contains(string(rjs), "executionTimeMilliseconds") {
+		t.Errorf("metadata leaked into result payload:\n%s", rjs)
+	}
+}
+
+func TestBuildSpillResponse_SpilledMetadataTopLevel(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithScanStats()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"all"},
+		Spill:          SpillOptions{Mode: SpillAlways, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, spilled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !spilled {
+		t.Fatalf("expected spilled: spilled=%v err=%v", spilled, err)
+	}
+	m := metadataMap(t, resp)
+	if m["scannedRecords"] != float64(4200) {
+		t.Errorf("scannedRecords = %v, want 4200", m["scannedRecords"])
+	}
+}
+
+func TestBuildSpillResponse_FieldSelectionHonored(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithScanStats()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"executionTimeMilliseconds"},
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, _, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	m := metadataMap(t, resp)
+	if _, ok := m["executionTimeMilliseconds"]; !ok {
+		t.Errorf("selected field executionTimeMilliseconds missing: %v", m)
+	}
+	if _, ok := m["scannedBytes"]; ok {
+		t.Errorf("field selection not honored: scannedBytes should be absent: %v", m)
+	}
+}
+
+func TestBuildSpillResponse_NoMetadataWhenNotRequested(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithScanStats()
+	opts := DQLExecuteOptions{
+		AgentMode: true,
+		// MetadataFields empty: agent did not request metadata.
+		Spill: SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, _, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	if resp.Metadata != nil {
+		t.Errorf("metadata should be omitted when not requested, got %v", resp.Metadata)
+	}
+	js, _ := json.Marshal(resp)
+	if strings.Contains(string(js), `"metadata"`) {
+		t.Errorf("metadata key should be absent:\n%s", js)
+	}
+}

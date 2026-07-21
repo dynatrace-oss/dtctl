@@ -56,10 +56,12 @@ type SampleStats struct {
 // still behind the same self-describing discriminator so an agent branches on
 // result.kind uniformly across inline and spilled results (D2/D31). Emitted only
 // in agent mode on the spill-aware path; the non-spill output path is unchanged.
+// Query metadata rides on the envelope's top-level `metadata` key (Response.Metadata),
+// not inside the result payload, so it is placed identically for inline and
+// spilled results.
 type InlineRecords struct {
-	Kind     string                   `json:"kind"`
-	Records  []map[string]interface{} `json:"records"`
-	Metadata interface{}              `json:"metadata,omitempty"`
+	Kind    string                   `json:"kind"`
+	Records []map[string]interface{} `json:"records"`
 }
 
 // ResultFileManifest is the result payload for the KindResultFile /
