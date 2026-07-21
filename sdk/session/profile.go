@@ -57,11 +57,11 @@ var alwaysAvailableCommands = []string{
 var builtinProfiles = map[string]Profile{
 	"query": {
 		Description: "DQL queries plus Davis analyzers for investigation agents",
-		Commands:    []string{"query", "get analyzers", "describe analyzer", "exec analyzer", "verify analyzer"},
+		Commands:    []string{"query", "get analyzers", "describe analyzer", "exec analyzer", "verify analyzer", "inventory"},
 	},
 	"investigate": {
 		Description: "Read-only incident triage: query, logs, and resource discovery",
-		Commands:    []string{"query", "logs", "get", "find", "describe"},
+		Commands:    []string{"query", "logs", "get", "find", "describe", "inventory"},
 	},
 }
 

@@ -332,7 +332,7 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 
 // dqlScopeVerbs read Grail data via DQL; their scopes attach to the verb rather
 // than to a managed resource.
-var dqlScopeVerbs = map[string]bool{"query": true, "verify": true, "wait": true}
+var dqlScopeVerbs = map[string]bool{"query": true, "verify": true, "wait": true, "inventory": true}
 
 // populateVerbScopes fills in a verb's required scopes from the canonical
 // auth.ResourceScopes table: per-resource for resource-bearing verbs, and a flat

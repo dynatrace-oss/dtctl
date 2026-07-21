@@ -56,6 +56,12 @@ dtctl get slos
 dtctl query "fetch logs | limit 10"
 ```
 
+### Discover what data the environment has
+
+```bash
+dtctl inventory
+```
+
 ### Apply configuration from YAML
 
 ```bash

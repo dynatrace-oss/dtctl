@@ -45,7 +45,7 @@ title: Home
   </div>
   <div class="feature-card">
     <h3>Built for AI Agents</h3>
-    <p>Structured JSON output (<code>--agent</code>), machine-readable command catalog (<code>dtctl commands</code>), and a bundled <a href="https://agentskills.io">Agent Skill</a> that teaches AI assistants how to operate Dynatrace.</p>
+    <p>Structured JSON output (<code>--agent</code>), machine-readable command catalog (<code>dtctl commands</code>), environment data discovery (<code>dtctl inventory</code>), and a bundled <a href="https://agentskills.io">Agent Skill</a> that teaches AI assistants how to operate Dynatrace.</p>
   </div>
   <div class="feature-card">
     <h3>Multi-Environment</h3>

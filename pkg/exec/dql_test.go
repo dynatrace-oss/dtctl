@@ -669,6 +669,28 @@ func TestClassifyNotification(t *testing.T) {
 	}
 }
 
+func TestResultIsPartial(t *testing.T) {
+	partial := []QueryNotification{
+		{NotificationType: "RESULT_LIMIT_RECORDS"},
+		{NotificationType: "RESULT_LIMIT_BYTES"},
+		{NotificationType: "SCAN_LIMIT_GBYTES"},
+		{NotificationType: "FETCH_TIMEOUT"},
+		{NotificationType: "QUERY_CONSUMPTION_LIMIT"},
+		{Message: "Your result has been limited to 1000."},
+	}
+	for _, n := range partial {
+		if !ResultIsPartial(n) {
+			t.Errorf("ResultIsPartial(%+v) = false, want true", n)
+		}
+	}
+	// Sampling is a declared query property, not a silent truncation.
+	for _, n := range []QueryNotification{{NotificationType: "SAMPLING_APPLIED"}, {Message: "all good"}} {
+		if ResultIsPartial(n) {
+			t.Errorf("ResultIsPartial(%+v) = true, want false", n)
+		}
+	}
+}
+
 func TestAgentAdviceForNotification_ScanLimit(t *testing.T) {
 	got := agentAdviceForNotification("SCAN_LIMIT_GBYTES", "")
 	if len(got) == 0 {

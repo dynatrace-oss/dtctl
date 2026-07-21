@@ -79,6 +79,11 @@ dtctl commands --full -o json
 
 # Human-readable how-to guide
 dtctl commands howto
+
+# What data exists in THIS environment: fetchable objects, buckets, entity census, capabilities
+dtctl inventory
 ```
+
+`dtctl commands` answers *"what can I run?"*; [`dtctl inventory`]({{ '/docs/inventory/' | relative_url }}) answers *"what is there to query?"* — with every absent capability carrying the evidence checked, so agents can cite negatives instead of re-probing.
 
 See [AI Agent Mode]({{ '/docs/ai-agent-mode/' | relative_url }}) for details on structured JSON output, auto-detection, and the `--agent` flag.

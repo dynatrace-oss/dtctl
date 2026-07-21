@@ -488,6 +488,18 @@ func classifyNotification(notificationType, message string) string {
 	return ""
 }
 
+// ResultIsPartial reports whether a query notification means the result is
+// incomplete: a record/byte cap, scan limit, fetch timeout, or consumption
+// stop cut it short. Sampling is excluded — it is declared in the query text,
+// not a silent truncation.
+func ResultIsPartial(n QueryNotification) bool {
+	switch classifyNotification(n.NotificationType, n.Message) {
+	case notifResultLimit, notifScanLimit, notifTimeout, notifConsumption:
+		return true
+	}
+	return false
+}
+
 // getHintForNotification returns a concise CLI hint (a single line, for stderr)
 // for a given notification type or message. For a truncating notification it
 // leads with data-reduction advice — raising the limit is the expensive last

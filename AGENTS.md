@@ -29,7 +29,8 @@ sdk/            # Separate Go module (github.com/dynatrace-oss/dtctl/sdk)
   ├── httpclient/  # HTTP client, response helpers, pagination, typed errors
   ├── auth/        # Token type detection
   ├── urls/        # Environment URL validation/normalization
-  └── agentmode/   # AI agent environment detection
+  ├── agentmode/   # AI agent environment detection
+  └── inventory/   # Environment data-inventory discovery over a caller-supplied DQL Runner
 ```
 
 **SDK delegation pattern**: CLI resource handlers in `pkg/resources/` import types from `sdk/api/` (often via type aliases) and delegate HTTP calls to SDK functions. The `sdk/api/*` packages contain **no file I/O, no CLI concerns, no display logic**. File reading (e.g., `ReadFileOrStdin`, `ParseInputFromFile`) stays in `pkg/resources/`. (`sdk/session` is the deliberate exception on file I/O: it owns the config file and credential stores — that's its job.)

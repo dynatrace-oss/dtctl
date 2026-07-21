@@ -10,27 +10,28 @@ This guide provides practical examples for using dtctl to manage your Dynatrace 
 2. [Workflows](#workflows)
 3. [Dashboards & Notebooks](#dashboards--notebooks)
 4. [DQL Queries](#dql-queries)
-5. [Service Level Objectives (SLOs)](#service-level-objectives-slos)
-6. [Notifications](#notifications)
-7. [Grail Buckets](#grail-buckets)
-8. [Lookup Tables](#lookup-tables)
-9. [OpenPipeline](#openpipeline)
-10. [Settings API](#settings-api)
-11. [App Engine](#app-engine)
+5. [Environment Inventory](#environment-inventory)
+6. [Service Level Objectives (SLOs)](#service-level-objectives-slos)
+7. [Notifications](#notifications)
+8. [Grail Buckets](#grail-buckets)
+9. [Lookup Tables](#lookup-tables)
+10. [OpenPipeline](#openpipeline)
+11. [Settings API](#settings-api)
+12. [App Engine](#app-engine)
     - [List and View Apps](#list-and-view-apps)
     - [App Functions](#app-functions)
     - [App Intents](#app-intents)
-12. [EdgeConnect](#edgeconnect)
-13. [Davis AI](#davis-ai)
-14. [Live Debugger](#live-debugger)
-15. [Extensions 2.0](#extensions-20)
-16. [Output Formats](#output-formats)
-17. [AWS Monitoring](#aws-monitoring)
-18. [Azure Monitoring](#azure-monitoring)
-19. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
-20. [AI Agent Skills](#ai-agent-skills)
-21. [Tips & Tricks](#tips--tricks)
-22. [Troubleshooting](#troubleshooting)
+13. [EdgeConnect](#edgeconnect)
+14. [Davis AI](#davis-ai)
+15. [Live Debugger](#live-debugger)
+16. [Extensions 2.0](#extensions-20)
+17. [Output Formats](#output-formats)
+18. [AWS Monitoring](#aws-monitoring)
+19. [Azure Monitoring](#azure-monitoring)
+20. [GCP Monitoring (Preview)](#gcp-monitoring-preview)
+21. [AI Agent Skills](#ai-agent-skills)
+22. [Tips & Tricks](#tips--tricks)
+23. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -1404,6 +1405,37 @@ echo ""
 echo "Canonical:"
 dtctl verify query -f query.dql --canonical 2>&1 | grep -A 999 "Canonical Query:"
 ```
+
+---
+
+## Environment Inventory
+
+Where `dtctl commands` answers *"what can I run?"*, `dtctl inventory` answers *"what is there to query?"* — it probes the current context's environment (read-only, budgeted, nothing persisted) and reports what data actually exists there.
+
+```bash
+# The environment inventory for the current context
+dtctl inventory
+
+# Machine-readable, e.g. for AI agents
+dtctl inventory -o json
+
+# Merge organization-specific capability definitions over the built-in set
+dtctl inventory --definitions ./our-capabilities.yaml
+
+# Only your definitions, without the built-in set
+dtctl inventory --definitions ./our-capabilities.yaml --no-builtin-definitions
+```
+
+The inventory covers:
+
+- **Data objects**: which catalog objects are fetchable, and which are query-command-only (`metrics`, `smartscape.*`) so you aren't baited into `fetch` calls that cannot work
+- **Buckets** and **filter segments**
+- **Live entity-type census** via Smartscape (not the `dt.entity.*` lookback views)
+- **Capabilities**: present, absent (with the evidence checked cited, e.g. `rum — no user.events in the data-object catalog`), or unknown when a check could not run (failed probe, exhausted budget) — unknown is never evidence of absence
+
+Capabilities are defined declaratively by *how* they are discovered — one of four fixed shapes (`dataObject`, `entityTypes` globs, `metricKey` glob, or a DQL `probe` with a mandatory evidence `window`). See [docs/dev/examples/inventory-definitions.example.yaml](dev/examples/inventory-definitions.example.yaml) for the format.
+
+Discovery cost is bounded: the default battery is 4–5 DQL queries, every probe carries a scan cap (`--scan-limit-gbytes`, default 25), and a mandatory budget (`--budget-queries`, `--budget-seconds`) stops discovery with a partial inventory rather than overrunning.
 
 ---
 

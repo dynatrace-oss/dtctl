@@ -18,6 +18,7 @@ go get github.com/dynatrace-oss/dtctl/sdk@latest
 | `sdk/auth` | Token type detection (API token vs OAuth/Bearer) |
 | `sdk/urls` | Dynatrace environment URL validation and normalization |
 | `sdk/agentmode` | AI agent environment detection and structured JSON envelope |
+| `sdk/inventory` | Environment data-inventory discovery — capabilities present/absent/unknown with evidence, entity census, buckets — driven through a caller-supplied DQL `Runner` |
 
 ### API wrappers (`sdk/api/`)
 
