@@ -120,6 +120,16 @@ func TestDetect(t *testing.T) {
 			},
 		},
 		{
+			name: "OpenAI Codex CLI detected",
+			envVars: map[string]string{
+				"CODEX": "1",
+			},
+			expected: AgentInfo{
+				Detected: true,
+				Name:     "codex",
+			},
+		},
+		{
 			name: "generic AI agent detected",
 			envVars: map[string]string{
 				"AI_AGENT": "custom",

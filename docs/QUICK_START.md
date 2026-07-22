@@ -3659,7 +3659,7 @@ dtctl skills uninstall --cross-client
 dtctl skills install --list
 ```
 
-Supported agents: **claude**, **copilot**, **cursor**, **junie**, **kiro**, **opencode**, **openclaw**.
+Supported agents: **claude**, **codex**, **copilot**, **cursor**, **junie**, **kiro**, **opencode**, **openclaw**.
 
 ---
 
@@ -4040,6 +4040,7 @@ The detection is automatic and doesn't affect functionality. Supported AI agents
 - Kiro (`KIRO` env var)
 - Junie (`JUNIE` env var)
 - OpenClaw (`OPENCLAW` env var)
+- OpenAI Codex CLI (`CODEX` env var)
 - Codeium (`CODEIUM_AGENT` env var)
 - TabNine (`TABNINE_AGENT` env var)
 - Amazon Q (`AMAZON_Q` env var)

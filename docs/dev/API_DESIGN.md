@@ -313,6 +313,7 @@ dtctl automatically detects when running under AI coding assistants and includes
 - **Kiro**: Detected via `KIRO` environment variable
 - **Junie**: Detected via `JUNIE` environment variable
 - **OpenClaw**: Detected via `OPENCLAW` environment variable
+- **OpenAI Codex CLI**: Detected via `CODEX` environment variable
 - **Codeium**: Detected via `CODEIUM_AGENT` environment variable
 - **TabNine**: Detected via `TABNINE_AGENT` environment variable
 - **Amazon Q**: Detected via `AMAZON_Q` environment variable
@@ -325,7 +326,7 @@ This telemetry helps improve the CLI experience for AI-assisted workflows. Detec
 
 dtctl includes a `skills` command for installing skill files that teach AI coding assistants how to use dtctl effectively. Skills follow the [agentskills.io](https://agentskills.io) open standard.
 
-**Supported agents**: claude, copilot, cursor, junie, kiro, opencode, openclaw
+**Supported agents**: claude, codex, copilot, cursor, junie, kiro, opencode, openclaw
 
 **Installation modes**:
 

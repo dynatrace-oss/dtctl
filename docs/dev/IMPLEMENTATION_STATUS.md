@@ -51,7 +51,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `doctor` - Health check (config, context, token, connectivity, auth)
 - [x] `inventory` - Environment data inventory: fetchable data objects, buckets, entity census, capabilities present/absent with evidence; customizable via `--definitions`
 - [x] `commands` - Machine-readable command catalog (JSON/YAML, `--brief`, resource filter, `howto` subcommand)
-- [x] `skills` - AI agent skill file management (install, uninstall, status for Claude, Copilot, Cursor, Kiro, Junie, OpenCode, OpenClaw; cross-client via `--cross-client`)
+- [x] `skills` - AI agent skill file management (install, uninstall, status for Claude, Codex, Copilot, Cursor, Kiro, Junie, OpenCode, OpenClaw; cross-client via `--cross-client`)
 - [x] `plugin` - kubectl-style exec plugins: unknown commands dispatch to `dtctl-<name>` binaries on PATH (`plugin list`, catalog integration; see [PLUGIN_CONVENTIONS.md](PLUGIN_CONVENTIONS.md))
 
 ### Resources

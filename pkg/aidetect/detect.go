@@ -15,6 +15,7 @@ func Detect() AgentInfo {
 // knownAgents is kept for test compatibility — mirrors the SDK's internal list.
 var knownAgents = map[string]string{
 	"CLAUDECODE":     "claude-code",
+	"CODEX":          "codex",
 	"CURSOR_AGENT":   "cursor",
 	"GITHUB_COPILOT": "github-copilot",
 	"CODEIUM_AGENT":  "codeium",
