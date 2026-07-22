@@ -42,6 +42,44 @@ func TestCreateBreakpointYesFlagRegistered(t *testing.T) {
 	}
 }
 
+func TestExtractCreateBreakpointImmutableID(t *testing.T) {
+	resp := map[string]interface{}{
+		"data": map[string]interface{}{
+			"org": map[string]interface{}{
+				"workspace": map[string]interface{}{
+					"createRuleV2": map[string]interface{}{
+						"immutableId": "96294",
+					},
+				},
+			},
+		},
+	}
+	if id := extractCreateBreakpointImmutableID(resp); id != "00000000000000000000000000096294" {
+		t.Fatalf("expected padded immutable ID, got %q", id)
+	}
+	if id := extractCreateBreakpointImmutableID(map[string]interface{}{}); id != "" {
+		t.Fatalf("expected empty string for missing immutable ID, got %q", id)
+	}
+}
+
+func TestPadBreakpointID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"96294", "00000000000000000000000000096294"},
+		{"1", "00000000000000000000000000000001"},
+		{"", ""},
+		{"00000000000000000000000000096294", "00000000000000000000000000096294"},
+		{"999999999999999999999999999999999", "999999999999999999999999999999999"}, // longer than 32 — pass through
+	}
+	for _, tt := range tests {
+		if got := padBreakpointID(tt.input); got != tt.want {
+			t.Fatalf("padBreakpointID(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 // TestCreateBreakpointFiltersValidation exercises the early --filters validation
 // that runs before any config or network call, so no client/config setup is
 // required. The flag state is saved and restored to avoid leaking into other tests.

@@ -161,8 +161,21 @@ Examples:
 			}
 		}
 
-		return printBreakpointMessage("create", fmt.Sprintf("Created breakpoint at %s:%d", fileName, lineNumber))
+		msg := fmt.Sprintf("Created breakpoint at %s:%d", fileName, lineNumber)
+		if id := extractCreateBreakpointImmutableID(createResp); id != "" {
+			msg += fmt.Sprintf(" (id: %s)", id)
+		}
+		return printBreakpointMessage("create", msg)
 	},
+}
+
+func extractCreateBreakpointImmutableID(resp map[string]interface{}) string {
+	data, _ := resp["data"].(map[string]interface{})
+	org, _ := data["org"].(map[string]interface{})
+	workspace, _ := org["workspace"].(map[string]interface{})
+	rule, _ := workspace["createRuleV2"].(map[string]interface{})
+	id, _ := rule["immutableId"].(string)
+	return padBreakpointID(id)
 }
 
 func init() {
