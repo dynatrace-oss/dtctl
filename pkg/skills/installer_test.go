@@ -9,7 +9,7 @@ import (
 
 func TestSupportedAgents(t *testing.T) {
 	agents := SupportedAgents()
-	expected := []string{"claude", "copilot", "cursor", "kiro", "junie", "opencode", "openclaw"}
+	expected := []string{"claude", "codex", "copilot", "cursor", "kiro", "junie", "opencode", "openclaw"}
 	if len(agents) != len(expected) {
 		t.Fatalf("expected %d agents, got %d: %v", len(expected), len(agents), agents)
 	}
@@ -26,6 +26,7 @@ func TestFindAgent(t *testing.T) {
 		found bool
 	}{
 		{"claude", true},
+		{"codex", true},
 		{"copilot", true},
 		{"cursor", true},
 		{"kiro", true},
@@ -52,7 +53,7 @@ func TestFindAgent(t *testing.T) {
 func TestDetectAgent(t *testing.T) {
 	// Each subtest clears ALL agent env vars to ensure full isolation.
 	allEnvVars := []string{
-		"CLAUDECODE", "CURSOR_AGENT", "GITHUB_COPILOT", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW",
+		"CLAUDECODE", "CODEX", "CURSOR_AGENT", "GITHUB_COPILOT", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW",
 		"CODEIUM_AGENT", "TABNINE_AGENT", "AMAZON_Q", "AI_AGENT",
 	}
 
@@ -80,6 +81,18 @@ func TestDetectAgent(t *testing.T) {
 		}
 		if agent.Name != "claude" {
 			t.Errorf("expected claude, got %q", agent.Name)
+		}
+	})
+
+	t.Run("detects codex", func(t *testing.T) {
+		clearAllEnvVars(t)
+		t.Setenv("CODEX", "1")
+		agent, detected := DetectAgent()
+		if !detected {
+			t.Fatal("expected agent detected")
+		}
+		if agent.Name != "codex" {
+			t.Errorf("expected codex, got %q", agent.Name)
 		}
 	})
 
@@ -497,6 +510,7 @@ func TestAgentPaths(t *testing.T) {
 		pathPart string
 	}{
 		{"claude", ".claude/skills/dtctl"},
+		{"codex", ".codex/skills/dtctl"},
 		{"copilot", ".github/skills/dtctl"},
 		{"cursor", ".cursor/skills/dtctl"},
 		{"kiro", ".kiro/skills/dtctl"},
@@ -528,6 +542,7 @@ func TestAgentGlobalPaths(t *testing.T) {
 		supported  bool
 	}{
 		{"claude", ".claude/skills/dtctl", true},
+		{"codex", ".codex/skills/dtctl", true},
 		{"copilot", ".copilot/skills/dtctl", true},
 		{"cursor", "", false},
 		{"kiro", "", false},

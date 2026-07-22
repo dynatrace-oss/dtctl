@@ -36,7 +36,7 @@ func resetSkillsFlags(t *testing.T) {
 func clearAgentEnvVars(t *testing.T) {
 	t.Helper()
 	for _, env := range []string{
-		"CLAUDECODE", "CURSOR_AGENT", "GITHUB_COPILOT", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW",
+		"CLAUDECODE", "CODEX", "CURSOR_AGENT", "GITHUB_COPILOT", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW",
 		"CODEIUM_AGENT", "TABNINE_AGENT", "AMAZON_Q", "AI_AGENT",
 	} {
 		t.Setenv(env, "")

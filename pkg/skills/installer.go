@@ -59,6 +59,14 @@ var agents = []Agent{
 		DetectName:  "claude-code",
 	},
 	{
+		Name:        "codex",
+		DisplayName: "OpenAI Codex CLI",
+		ProjectPath: filepath.Join(".codex", "skills", "dtctl"),
+		GlobalPath:  filepath.Join(".codex", "skills", "dtctl"),
+		EnvVar:      "CODEX",
+		DetectName:  "codex",
+	},
+	{
 		Name:        "copilot",
 		DisplayName: "GitHub Copilot",
 		ProjectPath: filepath.Join(".github", "skills", "dtctl"),

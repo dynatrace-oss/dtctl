@@ -20,7 +20,7 @@ var skillsCmd = &cobra.Command{
 
 Skill files teach your AI assistant how to use dtctl effectively.
 Follows the agentskills.io open standard for skill installation.
-Supported agents: claude, copilot, cursor, junie, kiro, opencode, openclaw.
+Supported agents: claude, codex, copilot, cursor, junie, kiro, opencode, openclaw.
 
 Use --cross-client to install to the shared ~/.agents/skills/ directory,
 which is automatically discovered by any agentskills.io-compatible agent.`,
@@ -173,7 +173,7 @@ func init() {
 	skillsCmd.AddCommand(skillsStatusCmd)
 
 	// Flags for install
-	skillsInstallCmd.Flags().String("for", "", "install for a specific agent (claude, copilot, cursor, junie, kiro, opencode, openclaw)")
+	skillsInstallCmd.Flags().String("for", "", "install for a specific agent (claude, codex, copilot, cursor, junie, kiro, opencode, openclaw)")
 	skillsInstallCmd.Flags().Bool("cross-client", false, "install to the shared .agents/skills/ directory (agentskills.io convention)")
 	skillsInstallCmd.Flags().Bool("global", false, "install to user-wide location instead of project directory")
 	skillsInstallCmd.Flags().Bool("force", false, "overwrite existing files without prompting")
