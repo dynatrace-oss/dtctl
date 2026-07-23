@@ -138,6 +138,21 @@ func TestDetectResourceType(t *testing.T) {
 			wantErr:  false,
 		},
 		{
+			name: "aws monitoring config",
+			input: `{
+				"scope": "integration-aws",
+				"value": {
+					"description": "aws-monitoring",
+					"enabled": true,
+					"aws": {
+						"credentials": []
+					}
+				}
+			}`,
+			expected: ResourceAWSMonitoringConfig,
+			wantErr:  false,
+		},
+		{
 			name: "unknown resource",
 			input: `{
 				"random": "field"

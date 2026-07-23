@@ -152,6 +152,7 @@ const (
 	ResourceSLO                   ResourceType = "slo"
 	ResourceBucket                ResourceType = "bucket"
 	ResourceSettings              ResourceType = "settings"
+	ResourceAWSMonitoringConfig   ResourceType = "aws_monitoring_config"
 	ResourceAzureConnection       ResourceType = "azure_connection"
 	ResourceAzureMonitoringConfig ResourceType = "azure_monitoring_config"
 	ResourceGCPConnection         ResourceType = "gcp_connection"
@@ -328,6 +329,8 @@ func (a *Applier) applySingle(resourceType ResourceType, jsonData []byte, opts A
 		result, err = a.applyBucket(jsonData)
 	case ResourceSettings:
 		result, err = a.applySettings(jsonData)
+	case ResourceAWSMonitoringConfig:
+		result, err = a.applyAWSMonitoringConfig(jsonData)
 	case ResourceAzureMonitoringConfig:
 		result, err = a.applyAzureMonitoringConfig(jsonData)
 	case ResourceGCPMonitoringConfig:
@@ -476,6 +479,11 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 		return ResourceGCPMonitoringConfig, false, nil
 	}
 
+	// AWS Monitoring Config detection
+	if scope, ok := raw["scope"].(string); ok && scope == "integration-aws" {
+		return ResourceAWSMonitoringConfig, false, nil
+	}
+
 	// Check for explicit type field
 	if typeField, ok := raw["type"].(string); ok {
 		switch typeField {
@@ -582,6 +590,9 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 				}
 				if scope, ok := raw["scope"].(string); ok && scope == "integration-azure" {
 					return ResourceAzureMonitoringConfig, false, nil
+				}
+				if scope, ok := raw["scope"].(string); ok && scope == "integration-aws" {
+					return ResourceAWSMonitoringConfig, false, nil
 				}
 				return ResourceSettings, false, nil
 			}
