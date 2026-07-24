@@ -90,6 +90,18 @@ Examples:
 			}
 		}
 
+		if len(resources) == 0 {
+			cfg, err := LoadConfig()
+			if err != nil {
+				return fmt.Errorf("resolving default resource: %w", err)
+			}
+			ctx, err := cfg.CurrentContextObj()
+			if err != nil {
+				return fmt.Errorf("resolving default resource: %w", err)
+			}
+			resources = []string{ctx.Environment}
+		}
+
 		req := platformtoken.PlatformTokenCreate{
 			Name:           name,
 			UserUUID:       userUUID,
@@ -212,6 +224,6 @@ func init() {
 	accountTokenCreateCmd.Flags().String("expires", "90d", "token lifetime (e.g. 30d, 720h)")
 	accountTokenCreateCmd.Flags().String("expires-at", "", "exact expiration date in RFC3339 format (mutually exclusive with --expires)")
 	accountTokenCreateCmd.Flags().String("user-uuid", "", "user UUID the token belongs to (default: current user)")
-	accountTokenCreateCmd.Flags().StringArray("resource", nil, "token resource; may be specified multiple times")
+	accountTokenCreateCmd.Flags().StringArray("resource", nil, "environment URL(s) the token is scoped to (default: current environment)")
 	accountTokenCreateCmd.Flags().StringArray("tag", nil, "token tag; may be specified multiple times")
 }
