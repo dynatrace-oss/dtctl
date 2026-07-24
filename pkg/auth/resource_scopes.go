@@ -135,7 +135,7 @@ var ResourceScopes = map[string]AccessScopes{
 	// OpenPipeline. The classic-pipelines translation endpoint
 	// (/platform/openpipeline/v1/classic-pipelines/translate) is a read-only
 	// call that returns the translated pipeline document.
-	"classic-pipelines-translation": {Read: []string{"openpipeline:configurations:read"}},
+	"classic-pipelines": {Read: []string{"openpipeline:configurations:read"}},
 
 	// LQL-to-DQL matcher translation
 	// (/platform/openpipeline/v1/matcher/lqlToDql) is a read-only stateless
@@ -296,7 +296,7 @@ func (s *scopeSet) addReadTier(extended bool) {
 	s.addResource("edgeconnect", AccessRead)
 	s.addResource("notification", AccessRead)
 	s.add("hub:catalog:read")
-	s.addResource("classic-pipelines-translation", AccessRead)
+	s.addResource("classic-pipelines", AccessRead)
 	s.addResource("openpipeline-matcher", AccessRead)
 	s.addResource("openpipeline-dql-processor", AccessRead)
 	s.addResource("preview-processor", AccessRead)
@@ -360,7 +360,7 @@ func (s *scopeSet) addUnrestricted() {
 	s.addResource("edgeconnect", AccessRead)
 	s.addResource("notification", AccessRead)
 	s.add("hub:catalog:read")
-	s.addResource("classic-pipelines-translation", AccessRead)
+	s.addResource("classic-pipelines", AccessRead)
 	s.addResource("openpipeline-matcher", AccessRead)
 	s.addResource("openpipeline-dql-processor", AccessRead)
 	s.addResource("preview-processor", AccessRead)

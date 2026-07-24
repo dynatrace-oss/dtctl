@@ -11,10 +11,10 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/classicpipelinestranslate"
 )
 
-// getClassicPipelinesTranslationCmd translates a Classic pipeline into an
+// translateClassicPipelinesCmd translates a Classic pipeline into an
 // OpenPipeline configuration pipeline.
-var getClassicPipelinesTranslationCmd = &cobra.Command{
-	Use:   "classic-pipelines-translation <logs|bizevents>",
+var translateClassicPipelinesCmd = &cobra.Command{
+	Use:   "classic-pipelines <logs|bizevents>",
 	Short: "Translate a Classic pipeline into an OpenPipeline configuration pipeline",
 	Long: `Translate the tenant's Classic pipeline for a configuration scope into an
 OpenPipeline configuration pipeline (Settings shape).
@@ -32,16 +32,16 @@ Note: the underlying API is public but early-adopter and may change.
 
 Examples:
   # Translate the logs Classic pipeline (pretty-printed pipeline document)
-  dtctl get classic-pipelines-translation logs
+  dtctl translate classic-pipelines logs
 
   # Translate bizevents and export the document as YAML for review/editing
-  dtctl get classic-pipelines-translation bizevents -o yaml > reference-pipeline.yaml
+  dtctl translate classic-pipelines bizevents -o yaml > reference-pipeline.yaml
 
   # Print the translated pipeline as JSON
-  dtctl get classic-pipelines-translation logs -o json
+  dtctl translate classic-pipelines logs -o json
 
   # Skip disabled rules in the translation (overrides the server default)
-  dtctl get classic-pipelines-translation logs --skip-disabled-rules=true`,
+  dtctl translate classic-pipelines logs --skip-disabled-rules=true`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		scope := args[0]
@@ -72,7 +72,7 @@ Examples:
 			return err
 		}
 
-		ap := enrichAgent(printer, "get", "classic-pipelines-translation")
+		ap := enrichAgent(printer, "translate", "classic-pipelines")
 
 		// Surface the partial-translation warning out-of-band so it never
 		// pollutes the deliverable on stdout: on stderr for humans, via the
@@ -130,7 +130,7 @@ func printValueAsJSON(v any) error {
 }
 
 func init() {
-	getClassicPipelinesTranslationCmd.Flags().Bool("include-sample-data", true, "Include processor sample data in the translation")
-	getClassicPipelinesTranslationCmd.Flags().Bool("skip-disabled-rules", false, "Skip disabled rules during translation")
-	getClassicPipelinesTranslationCmd.Flags().Bool("skip-builtin-processing-rules", true, "Skip built-in processing rules during translation")
+	translateClassicPipelinesCmd.Flags().Bool("include-sample-data", true, "Include processor sample data in the translation")
+	translateClassicPipelinesCmd.Flags().Bool("skip-disabled-rules", false, "Skip disabled rules during translation")
+	translateClassicPipelinesCmd.Flags().Bool("skip-builtin-processing-rules", true, "Skip built-in processing rules during translation")
 }
