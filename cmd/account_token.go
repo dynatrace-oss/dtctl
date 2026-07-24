@@ -209,9 +209,7 @@ func normalizeScopes(scopes []string) []string {
 	var result []string
 	for _, s := range scopes {
 		s = strings.ReplaceAll(s, ",", " ")
-		for _, part := range strings.Fields(s) {
-			result = append(result, part)
-		}
+		result = append(result, strings.Fields(s)...)
 	}
 	return result
 }
