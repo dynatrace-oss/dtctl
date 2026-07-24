@@ -124,6 +124,13 @@ type DQLExecuteOptions struct {
 	IncludeTypes                 bool    // Include type information in results (default: true)
 	IncludeContributions         bool    // Include bucket contribution information in results
 
+	// Typed opts in to casting scalar columns (long, double, duration, boolean)
+	// to their native JSON/YAML types using the DQL type metadata, instead of the
+	// wire form where integer-valued columns arrive as strings. Off by default so
+	// output stays faithful to the API; implies IncludeTypes so the mapping is
+	// available. See output.ApplyTrueTypes.
+	Typed bool
+
 	// Timeframe options
 	DefaultTimeframeStart string // Query timeframe start timestamp (ISO-8601/RFC3339)
 	DefaultTimeframeEnd   string // Query timeframe end timestamp (ISO-8601/RFC3339)
@@ -729,6 +736,16 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		}
 	}
 
+	// --typed: cast scalar columns (long/double/duration → number, boolean →
+	// bool) to their native types using the DQL type metadata, so structured
+	// output is math-ready instead of carrying the API's string-encoded integers.
+	// Opt-in; a no-op when types are absent. Applied before the spill/agent branch
+	// so the agent envelope and spilled files see the same typed records.
+	colTypes := columnTypeMappings(result)
+	if opts.Typed {
+		output.ApplyTrueTypes(records, colTypes)
+	}
+
 	// Spill path (D2/D3/D19-buffered): when spilling is enabled, a large result
 	// is written to disk and a compact summary is emitted in place of the rows.
 	// This is strictly additive — when it decides "inline" (or spilling is
@@ -763,7 +780,7 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		Width:      opts.Width,
 		Height:     opts.Height,
 		Fullscreen: opts.Fullscreen,
-		Types:      columnTypeMappings(result),
+		Types:      colTypes,
 	})
 
 	switch effectiveFormat {
