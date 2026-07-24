@@ -563,15 +563,28 @@ func TestRunGetBreakpoints_TableView(t *testing.T) {
 func TestRunGetBreakpoints_WideView(t *testing.T) {
 	originalOutputFormat := outputFormat
 	originalAgentMode := agentMode
+	originalPlainMode := plainMode
+	originalDebugMode := debugMode
+	originalVerbosity := verbosity
 	originalOut := rootCmd.OutOrStdout()
 	defer func() {
 		outputFormat = originalOutputFormat
 		agentMode = originalAgentMode
+		plainMode = originalPlainMode
+		debugMode = originalDebugMode
+		verbosity = originalVerbosity
 		rootCmd.SetOut(originalOut)
 	}()
 
+	// plainMode must be reset explicitly: NewPrinterWithOptions coerces "wide"
+	// (and "table") to JSON when plainMode is true, which happens whenever an
+	// AI-agent shell is auto-detected (--plain is implied). Without this reset
+	// the test flakes depending on ambient state / launching environment.
 	outputFormat = "wide"
 	agentMode = false
+	plainMode = false
+	debugMode = false
+	verbosity = 0
 
 	deps := liveDebuggerDeps{}
 	deps.loadConfig = func() (*config.Config, error) {
