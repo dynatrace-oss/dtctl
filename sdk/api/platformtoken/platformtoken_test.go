@@ -38,7 +38,7 @@ func TestList(t *testing.T) {
 			return
 		}
 		resp := PlatformTokenListResponse{
-			Total:   2,
+			Total: 2,
 			Results: []PlatformToken{
 				{Name: "ci-token", TokenID: "tok-001", Status: "ACTIVE", Scope: []string{"storage:events:read"}},
 				{Name: "dev-token", TokenID: "tok-002", Status: "ACTIVE", Scope: []string{"account-idm-read"}},
