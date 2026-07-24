@@ -158,7 +158,7 @@ var localResources = map[string]bool{
 	"set-credentials": true, "migrate-tokens": true, "init": true,
 	"view": true, "current": true, "set": true,
 	// ctx aliases
-	"describe": true, "delete": true, "token": true,
+	"describe": true, "delete": true, "token": true, "discover-account": true,
 	// auth (local token storage / introspection)
 	"login": true, "logout": true, "refresh": true, "status": true, "whoami": true,
 	// alias management
