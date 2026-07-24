@@ -114,7 +114,7 @@ The account UUID is resolved from: --account-uuid flag > DTCTL_ACCOUNT_UUID > co
 			}
 		}
 
-		output.PrintSuccess("Account token stored. Run 'dtctl account token list' to verify access.")
+		output.PrintSuccess("Account token stored. Run 'dtctl account list token' to verify access.")
 		return nil
 	},
 }
