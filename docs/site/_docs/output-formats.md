@@ -124,6 +124,44 @@ Notes:
   otherwise a single placeholder column so the file stays readable by mainstream
   tooling (a column-less file is rejected by DuckDB, pyarrow, and pandas).
 
+## Numeric typing (`--typed`)
+
+The Grail query API deliberately serialises integer-valued columns (`long`,
+`duration`) as JSON **strings** to preserve full int64 precision for
+JavaScript/TypeScript consumers. dtctl's `json`, `yaml`, and `jsonl` output
+faithfully passes that through, so a `count()` reads as `"42"` (a string):
+
+```bash
+dtctl query 'fetch logs | summarize c = count()' -o json
+# [ { "c": "42" } ]
+```
+
+Pass `--typed` to cast scalar columns to their native types using the DQL type
+metadata — `long`/`duration` become JSON numbers, `boolean` becomes a real
+boolean — so the output is ready for `jq`, pandas, or DuckDB without a
+`tonumber` step:
+
+```bash
+dtctl query 'fetch logs | summarize c = count()' -o json --typed
+# [ { "c": 42 } ]
+```
+
+Notes:
+
+- **Opt-in by design.** The default output stays faithful to the API's wire
+  encoding. `--typed` implies `--include-types` so the type metadata is
+  available.
+- **Precision-safe in dtctl.** A `long` is emitted as its full decimal digits,
+  unquoted and lossless (never routed through a float). The only precision risk
+  is in a downstream consumer that parses JSON numbers as 64-bit floats (browser
+  `JSON.parse`, older `jq`) — which is exactly why it is opt-in.
+- **Timestamps stay strings.** JSON/YAML have no native date type, so `timestamp`
+  columns keep their portable RFC3339 string form. `string`, `ip`, `timeframe`,
+  and nested record/array columns are left unchanged.
+- Values that do not cleanly parse to their declared type (including non-finite
+  doubles such as `"NaN"`/`"Infinity"`, which JSON cannot represent) are left as
+  strings rather than failing the output.
+
 ## Plain Mode
 
 The `--plain` flag disables colors, progress indicators, and interactive prompts. This is useful for piping output or running in non-interactive environments:

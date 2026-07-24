@@ -2480,6 +2480,27 @@ func TestDQLExecutor_OutputFormats_Integration(t *testing.T) {
 			t.Errorf("unexpected jsonl line: %q", line)
 		}
 	})
+
+	t.Run("typed casts the long to an unquoted number end-to-end", func(t *testing.T) {
+		out := captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "fetch logs",
+				DQLExecuteOptions{OutputFormat: "jsonl", Typed: true}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		line := strings.TrimSpace(string(out))
+		// With --typed the DQL long "count" must render as a bare JSON number, not
+		// the API's string encoding; the string column stays quoted.
+		if !strings.Contains(line, `"count":194414758`) {
+			t.Errorf("expected unquoted count with --typed, got: %q", line)
+		}
+		if strings.Contains(line, `"count":"194414758"`) {
+			t.Errorf("count is still string-encoded despite --typed: %q", line)
+		}
+		if !strings.Contains(line, `"host":"web-01"`) {
+			t.Errorf("string column should be unchanged: %q", line)
+		}
+	})
 }
 
 // parseDTClientContext unmarshals the dt-client-context header value into a map.
