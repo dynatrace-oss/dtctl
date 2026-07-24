@@ -31,9 +31,9 @@ func TestIAMBaseURLForEnvironment(t *testing.T) {
 		env  auth.Environment
 		want string
 	}{
-		{auth.EnvironmentProd, "https://iam.dynatrace.com"},
-		{auth.EnvironmentDev, "https://iam-dev.dynatracelabs.com"},
-		{auth.EnvironmentHard, "https://iam-hardening.dynatracelabs.com"},
+		{auth.EnvironmentProd, "https://api.dynatrace.com"},
+		{auth.EnvironmentDev, "https://api-dev.internal.dynatracelabs.com"},
+		{auth.EnvironmentHard, "https://api-hardening.internal.dynatracelabs.com"},
 	}
 	for _, tt := range tests {
 		got := client.IAMBaseURLForEnvironment(tt.env)
