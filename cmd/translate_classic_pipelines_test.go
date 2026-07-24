@@ -13,7 +13,7 @@ const classicPipelinesTranslateEndpoint = "/platform/openpipeline/v1/classic-pip
 // captureStdout (defined in breakpoint_output_test.go) runs a function with
 // os.Stdout redirected to a pipe and returns what was written.
 
-func TestGetClassicPipelinesTranslationCmd_Success(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_Success(t *testing.T) {
 	var gotConfiguration string
 	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{
 		classicPipelinesTranslateEndpoint: func(w http.ResponseWriter, r *http.Request) {
@@ -40,9 +40,9 @@ func TestGetClassicPipelinesTranslationCmd_Success(t *testing.T) {
 	plainMode = true
 	agentMode = false
 
-	testutil.ResetCommandFlags(getClassicPipelinesTranslationCmd)
+	testutil.ResetCommandFlags(translateClassicPipelinesCmd)
 
-	if err := getClassicPipelinesTranslationCmd.RunE(getClassicPipelinesTranslationCmd, []string{"logs"}); err != nil {
+	if err := translateClassicPipelinesCmd.RunE(translateClassicPipelinesCmd, []string{"logs"}); err != nil {
 		t.Fatalf("RunE() error = %v", err)
 	}
 	if gotConfiguration != "logs" {
@@ -50,7 +50,7 @@ func TestGetClassicPipelinesTranslationCmd_Success(t *testing.T) {
 	}
 }
 
-func TestGetClassicPipelinesTranslationCmd_PassesFlags(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_PassesFlags(t *testing.T) {
 	gotParams := map[string]string{}
 	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{
 		classicPipelinesTranslateEndpoint: func(w http.ResponseWriter, r *http.Request) {
@@ -77,12 +77,12 @@ func TestGetClassicPipelinesTranslationCmd_PassesFlags(t *testing.T) {
 	cfgFile = configPath
 	plainMode = true
 
-	testutil.ResetCommandFlags(getClassicPipelinesTranslationCmd)
-	_ = getClassicPipelinesTranslationCmd.Flags().Set("include-sample-data", "true")
-	_ = getClassicPipelinesTranslationCmd.Flags().Set("skip-disabled-rules", "false")
-	_ = getClassicPipelinesTranslationCmd.Flags().Set("skip-builtin-processing-rules", "true")
+	testutil.ResetCommandFlags(translateClassicPipelinesCmd)
+	_ = translateClassicPipelinesCmd.Flags().Set("include-sample-data", "true")
+	_ = translateClassicPipelinesCmd.Flags().Set("skip-disabled-rules", "false")
+	_ = translateClassicPipelinesCmd.Flags().Set("skip-builtin-processing-rules", "true")
 
-	if err := getClassicPipelinesTranslationCmd.RunE(getClassicPipelinesTranslationCmd, []string{"bizevents"}); err != nil {
+	if err := translateClassicPipelinesCmd.RunE(translateClassicPipelinesCmd, []string{"bizevents"}); err != nil {
 		t.Fatalf("RunE() error = %v", err)
 	}
 
@@ -99,7 +99,7 @@ func TestGetClassicPipelinesTranslationCmd_PassesFlags(t *testing.T) {
 	}
 }
 
-func TestGetClassicPipelinesTranslationCmd_InvalidScope(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_InvalidScope(t *testing.T) {
 	// An invalid scope must fail fast without making an HTTP call.
 	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{
 		classicPipelinesTranslateEndpoint: func(w http.ResponseWriter, _ *http.Request) {
@@ -122,9 +122,9 @@ func TestGetClassicPipelinesTranslationCmd_InvalidScope(t *testing.T) {
 	cfgFile = configPath
 	plainMode = true
 
-	testutil.ResetCommandFlags(getClassicPipelinesTranslationCmd)
+	testutil.ResetCommandFlags(translateClassicPipelinesCmd)
 
-	err := getClassicPipelinesTranslationCmd.RunE(getClassicPipelinesTranslationCmd, []string{"metrics"})
+	err := translateClassicPipelinesCmd.RunE(translateClassicPipelinesCmd, []string{"metrics"})
 	if err == nil {
 		t.Fatal("expected an error for an invalid scope")
 	}
@@ -164,16 +164,16 @@ func runWithOutput(t *testing.T, format, body string, args []string) string {
 	agentMode = false
 	outputFormat = format
 
-	testutil.ResetCommandFlags(getClassicPipelinesTranslationCmd)
+	testutil.ResetCommandFlags(translateClassicPipelinesCmd)
 
 	return captureStdout(t, func() {
-		if err := getClassicPipelinesTranslationCmd.RunE(getClassicPipelinesTranslationCmd, args); err != nil {
+		if err := translateClassicPipelinesCmd.RunE(translateClassicPipelinesCmd, args); err != nil {
 			t.Fatalf("RunE() error = %v", err)
 		}
 	})
 }
 
-func TestGetClassicPipelinesTranslationCmd_DefaultPrintsValueOnly(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_DefaultPrintsValueOnly(t *testing.T) {
 	out := runWithOutput(t, "table",
 		`{"value":{"id":"pipe-1","processors":[]},"withWarning":false}`,
 		[]string{"logs"})
@@ -188,7 +188,7 @@ func TestGetClassicPipelinesTranslationCmd_DefaultPrintsValueOnly(t *testing.T) 
 	}
 }
 
-func TestGetClassicPipelinesTranslationCmd_JSONPrintsValueOnly(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_JSONPrintsValueOnly(t *testing.T) {
 	out := runWithOutput(t, "json",
 		`{"value":{"id":"pipe-1"},"withWarning":true}`,
 		[]string{"logs"})
@@ -203,7 +203,7 @@ func TestGetClassicPipelinesTranslationCmd_JSONPrintsValueOnly(t *testing.T) {
 	}
 }
 
-func TestGetClassicPipelinesTranslationCmd_YAMLRendersStructured(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_YAMLRendersStructured(t *testing.T) {
 	out := runWithOutput(t, "yaml",
 		`{"value":{"id":"pipe-1","processors":[{"type":"fieldsAdd"}]},"withWarning":false}`,
 		[]string{"bizevents"})
@@ -219,7 +219,7 @@ func TestGetClassicPipelinesTranslationCmd_YAMLRendersStructured(t *testing.T) {
 	}
 }
 
-func TestGetClassicPipelinesTranslationCmd_TOONRendersStructured(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_TOONRendersStructured(t *testing.T) {
 	out := runWithOutput(t, "toon",
 		`{"value":{"id":"pipe-1","processors":[{"type":"fieldsAdd"}]},"withWarning":false}`,
 		[]string{"logs"})
@@ -239,7 +239,7 @@ func TestGetClassicPipelinesTranslationCmd_TOONRendersStructured(t *testing.T) {
 	}
 }
 
-func TestGetClassicPipelinesTranslationCmd_NullValue(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_NullValue(t *testing.T) {
 	// A scope with no Classic pipeline configured yields a null document; the
 	// command must succeed and emit a consistent null on stdout (the human note
 	// goes to stderr).
@@ -252,7 +252,7 @@ func TestGetClassicPipelinesTranslationCmd_NullValue(t *testing.T) {
 	}
 }
 
-func TestGetClassicPipelinesTranslationCmd_AgentMode(t *testing.T) {
+func TestTranslateClassicPipelinesCmd_AgentMode(t *testing.T) {
 	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{
 		classicPipelinesTranslateEndpoint: func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -277,10 +277,10 @@ func TestGetClassicPipelinesTranslationCmd_AgentMode(t *testing.T) {
 	plainMode = true
 	agentMode = true
 
-	testutil.ResetCommandFlags(getClassicPipelinesTranslationCmd)
+	testutil.ResetCommandFlags(translateClassicPipelinesCmd)
 
 	out := captureStdout(t, func() {
-		if err := getClassicPipelinesTranslationCmd.RunE(getClassicPipelinesTranslationCmd, []string{"logs"}); err != nil {
+		if err := translateClassicPipelinesCmd.RunE(translateClassicPipelinesCmd, []string{"logs"}); err != nil {
 			t.Fatalf("RunE() error = %v", err)
 		}
 	})
