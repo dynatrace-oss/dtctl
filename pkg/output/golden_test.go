@@ -24,6 +24,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/hub"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherlqltodql"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
@@ -2648,6 +2649,34 @@ func TestGolden_DescribeExtensionAssets(t *testing.T) {
 				t.Fatalf("Print failed: %v", err)
 			}
 			assertGolden(t, "describe/extension-assets-"+name, buf.String())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Translate: lql-to-dql
+// ---------------------------------------------------------------------------
+
+func TestGolden_TranslateLqlToDql(t *testing.T) {
+	result := matcherlqltodql.TranslationResult{
+		Query: `matchesValue(log.source, "snmptraps") and matchesValue(snmp.trap_oid, "F5-BIGIP-COMMON-MIB")`,
+	}
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(result); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "translate/lql-to-dql-"+name, buf.String())
 		})
 	}
 }
