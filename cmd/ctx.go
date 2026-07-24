@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
@@ -191,6 +192,82 @@ var ctxDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return deleteContext(args[0])
 	},
+}
+
+// ctxDiscoverAccountCmd resolves the account UUID for the current context's
+// environment and optionally persists it into the context config.
+var ctxDiscoverAccountCmd = &cobra.Command{
+	Use:   "discover-account",
+	Short: "Discover the account UUID for the current context's environment",
+	Long: `Resolve the Dynatrace account UUID that owns the current context's environment
+by querying the IAM access-info endpoint, using the environment token stored for
+the context (run 'dtctl auth login' first).
+
+With --save, the discovered UUID is written to the current context's account-uuid
+field so account commands no longer need --account-uuid or DTCTL_ACCOUNT_UUID.`,
+	Example: `  # Show the account UUID for the current environment
+  dtctl ctx discover-account
+
+  # Discover and persist it into the current context
+  dtctl ctx discover-account --save`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		save, _ := cmd.Flags().GetBool("save")
+		return discoverAccount(save)
+	},
+}
+
+// discoverAccount resolves the account UUID for the current context's environment
+// via the IAM access-info endpoint. When save is true, the UUID is persisted to
+// the current context's account-uuid field.
+func discoverAccount(save bool) error {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		return err
+	}
+	if ctx.Environment == "" {
+		return fmt.Errorf("current context has no environment URL; auto-discovery needs an environment to match against")
+	}
+
+	envToken, err := client.GetTokenWithOAuthSupport(cfg, ctx.TokenRef)
+	if err != nil || envToken == "" {
+		return fmt.Errorf("no environment token available; run 'dtctl auth login' first")
+	}
+
+	env := auth.DetectEnvironment(ctx.Environment)
+	iamBase := client.IAMBaseURLForEnvironment(env)
+	envID := extractEnvironmentID(ctx.Environment)
+
+	uuid, name, err := client.DiscoverAccountUUID(iamBase, envToken, envID)
+	if err != nil {
+		return fmt.Errorf("could not discover account for environment %q: %w", envID, err)
+	}
+
+	if name != "" {
+		output.PrintInfo("Environment %s belongs to account %q (%s)", envID, name, uuid)
+	} else {
+		output.PrintInfo("Environment %s belongs to account %s", envID, uuid)
+	}
+
+	if !save {
+		output.PrintHint("Re-run with --save to persist this account-uuid into context %q", cfg.CurrentContext)
+		return nil
+	}
+
+	nc, err := cfg.GetContext(cfg.CurrentContext)
+	if err != nil {
+		return err
+	}
+	nc.Context.AccountUUID = uuid
+	if err := cfg.Save(); err != nil {
+		return fmt.Errorf("failed to persist account-uuid: %w", err)
+	}
+	output.PrintSuccess("Saved account-uuid %s to context %q", uuid, cfg.CurrentContext)
+	return nil
 }
 
 // listContexts lists all available contexts (shared logic)
@@ -422,6 +499,8 @@ func init() {
 	ctxCmd.AddCommand(ctxDescribeCmd)
 	ctxCmd.AddCommand(ctxSetCmd)
 	ctxCmd.AddCommand(ctxDeleteCmd)
+	ctxCmd.AddCommand(ctxDiscoverAccountCmd)
+	ctxDiscoverAccountCmd.Flags().Bool("save", false, "persist the discovered account-uuid into the current context")
 
 	// Flags for ctx set
 	ctxSetCmd.Flags().String("environment", "", "environment URL")

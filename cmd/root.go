@@ -1017,6 +1017,35 @@ func resolveUUIDNoDiscovery(ctx *config.Context, flagValue string) string {
 	return ctx.AccountUUID
 }
 
+// resolveLoginAccountUUID resolves the account UUID for `dtctl account login`
+// in priority order: explicit flag > DTCTL_ACCOUNT_UUID > context account-uuid >
+// auto-discovery via the IAM access-info endpoint (using the environment token).
+//
+// discoveredName is non-empty only when the UUID was obtained via auto-discovery,
+// letting the caller surface an informational message. envToken and iamBaseURL
+// are passed in (rather than resolved internally) to keep the function unit-testable.
+func resolveLoginAccountUUID(ctx *config.Context, flagValue, envToken, iamBaseURL string) (uuid, discoveredName string, err error) {
+	if flagValue != "" {
+		return flagValue, "", nil
+	}
+	if v := os.Getenv("DTCTL_ACCOUNT_UUID"); v != "" {
+		return v, "", nil
+	}
+	if ctx.AccountUUID != "" {
+		return ctx.AccountUUID, "", nil
+	}
+	// Fall back to auto-discovery. This needs the environment token (openid scope);
+	// the account-plane token does not exist yet and is rejected by access-info.
+	if envToken == "" {
+		return "", "", fmt.Errorf("no environment token available for auto-discovery")
+	}
+	u, name, derr := client.DiscoverAccountUUID(iamBaseURL, envToken, extractEnvironmentID(ctx.Environment))
+	if derr != nil {
+		return "", "", derr
+	}
+	return u, name, nil
+}
+
 // resolveAccountToken resolves the account token using:
 // 1. DTCTL_ACCOUNT_TOKEN env var
 // 2. Keyring (if accountUUID is known) — stored by `dtctl account login`
