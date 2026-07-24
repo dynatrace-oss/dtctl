@@ -89,6 +89,7 @@ Token-based authentication and multi-environment configuration are covered in th
 | Notifications | get, describe, delete, watch |
 | Users & Groups | get, describe |
 | Live Debugger | breakpoints, workspace filters, snapshot decoding |
+| Platform Tokens | account create/list/delete token (`dt0s16.*` via Account Management API) |
 
 See the **[Command Reference](https://dynatrace-oss.github.io/dtctl/docs/command-reference/)** for the full list of verbs, flags, resource types, and aliases.
 

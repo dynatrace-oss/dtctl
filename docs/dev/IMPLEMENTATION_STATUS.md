@@ -85,6 +85,12 @@ This document tracks the current implementation status of dtctl. For future plan
 | anomaly-detector | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | classic-pipelines-translation | ✅ | - | - | - | - | - |
 
+#### Account Management
+
+| Resource | list | create | revoke |
+|----------|------|--------|--------|
+| token (account) | ✅ | ✅ | ✅ |
+
 #### Cloud Connections
 
 | Resource | get | describe | create | delete | apply |

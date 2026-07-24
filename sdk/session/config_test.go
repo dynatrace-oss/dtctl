@@ -2319,6 +2319,41 @@ func TestConfig_PruneEmptyEnvironments(t *testing.T) {
 	}
 }
 
+func TestContext_AccountUUIDRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := NewConfig()
+	cfg.CurrentContext = "prod"
+	cfg.Contexts = []NamedContext{
+		{
+			Name: "prod",
+			Context: Context{
+				Environment: "https://abc12345.apps.dynatrace.com",
+				TokenRef:    "prod-token",
+				AccountUUID: "aaaabbbb-cccc-dddd-eeee-ffffaaaabbbb",
+			},
+		},
+	}
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+
+	loaded, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if len(loaded.Contexts) != 1 {
+		t.Fatalf("want 1 context, got %d", len(loaded.Contexts))
+	}
+	got := loaded.Contexts[0].Context.AccountUUID
+	want := cfg.Contexts[0].Context.AccountUUID
+	if got != want {
+		t.Errorf("AccountUUID = %q, want %q", got, want)
+	}
+}
+
 func contextNames(contexts []NamedContext) []string {
 	names := make([]string, len(contexts))
 	for i, nc := range contexts {
