@@ -57,6 +57,32 @@ func TestFromSDK(t *testing.T) {
 	}
 }
 
+func TestFromSDK_ExpiredToken(t *testing.T) {
+	sdk := sdkpt.PlatformToken{
+		Name:           "old-token",
+		TokenID:        "tok-old",
+		Status:         "ACTIVE",
+		ExpirationDate: "2020-01-01T00:00:00.000Z",
+	}
+	got := fromSDK(&sdk)
+	if got.Status != "EXPIRED" {
+		t.Errorf("Status = %q, want %q for past expiration", got.Status, "EXPIRED")
+	}
+}
+
+func TestFromSDK_RevokedNotOverridden(t *testing.T) {
+	sdk := sdkpt.PlatformToken{
+		Name:           "revoked-token",
+		TokenID:        "tok-rev",
+		Status:         "REVOKED",
+		ExpirationDate: "2020-01-01T00:00:00.000Z",
+	}
+	got := fromSDK(&sdk)
+	if got.Status != "REVOKED" {
+		t.Errorf("Status = %q, want %q (REVOKED should not be overridden)", got.Status, "REVOKED")
+	}
+}
+
 func TestToken_TableTag_HidesSecret(t *testing.T) {
 	// Token must have table:"-" — verify by checking struct tag
 	ft, ok := reflect.TypeOf(PlatformToken{}).FieldByName("Token")

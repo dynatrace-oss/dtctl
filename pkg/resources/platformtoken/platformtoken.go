@@ -3,6 +3,7 @@ package platformtoken
 import (
 	"context"
 	"strings"
+	"time"
 
 	sdkpt "github.com/dynatrace-oss/dtctl/sdk/api/platformtoken"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -32,10 +33,18 @@ func NewHandler(accountClient *httpclient.Client, accountUUID string) *Handler {
 }
 
 func fromSDK(s *sdkpt.PlatformToken) PlatformToken {
+	status := s.Status
+	if s.ExpirationDate != "" && status == "ACTIVE" {
+		if exp, err := time.Parse(time.RFC3339Nano, s.ExpirationDate); err == nil {
+			if time.Now().UTC().After(exp) {
+				status = "EXPIRED"
+			}
+		}
+	}
 	return PlatformToken{
 		Name:           s.Name,
 		TokenID:        s.TokenID,
-		Status:         s.Status,
+		Status:         status,
 		ExpirationDate: s.ExpirationDate,
 		Scope:          strings.Join(s.Scope, " "),
 		Token:          s.Token,

@@ -29,6 +29,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/tracing"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
+	sdkauth "github.com/dynatrace-oss/dtctl/sdk/auth"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
@@ -1036,6 +1037,20 @@ func resolveAccountToken(cfg *config.Config, accountUUID string) (string, error)
 		}
 	}
 	return "", fmt.Errorf("account token required: set DTCTL_ACCOUNT_TOKEN or run 'dtctl account login'")
+}
+
+// resolveCurrentAccountUserUUID extracts the current user's UUID from the account
+// token's JWT sub claim. Used to auto-populate --user-uuid on token creation.
+func resolveCurrentAccountUserUUID(accountUUID string) (string, error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return "", err
+	}
+	token, err := resolveAccountToken(cfg, accountUUID)
+	if err != nil {
+		return "", err
+	}
+	return sdkauth.ExtractJWTSubject(token)
 }
 
 // SetupAccount resolves account credentials and builds an account-plane httpclient.

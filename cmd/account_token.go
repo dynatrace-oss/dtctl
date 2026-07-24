@@ -25,18 +25,24 @@ var accountTokenCreateCmd = &cobra.Command{
 	Short: "Create a platform token",
 	Long: `Create a new Dynatrace platform token.
 
+The --user-uuid flag is optional; if omitted, the current user's UUID is
+resolved automatically from the account token's JWT subject claim.
+
 Examples:
   # Create a token with 90-day expiry (default)
-  dtctl account token create --name ci-pipeline --scope account-idm-read --user-uuid <uuid>
+  dtctl account token create --name ci-pipeline --scope account-idm-read
 
   # Create a token expiring in 30 days
-  dtctl account token create --name ci-pipeline --scope account-idm-read --user-uuid <uuid> --expires 30d
+  dtctl account token create --name ci-pipeline --scope account-idm-read --expires 30d
 
   # Create with explicit expiration date (RFC3339)
-  dtctl account token create --name ci-pipeline --scope account-idm-read --user-uuid <uuid> --expires-at 2026-10-01T00:00:00Z
+  dtctl account token create --name ci-pipeline --scope account-idm-read --expires-at 2026-10-01T00:00:00Z
+
+  # Create for a specific user
+  dtctl account token create --name ci-pipeline --scope account-idm-read --user-uuid <uuid>
 
   # Dry run to preview
-  dtctl account token create --name ci-pipeline --scope account-idm-read --user-uuid <uuid> --dry-run
+  dtctl account token create --name ci-pipeline --scope account-idm-read --dry-run
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
@@ -52,9 +58,6 @@ Examples:
 		}
 		if len(scopes) == 0 {
 			return fmt.Errorf("--scope is required")
-		}
-		if userUUID == "" {
-			return fmt.Errorf("--user-uuid is required")
 		}
 		if expiresAt != "" && cmd.Flags().Changed("expires") {
 			return fmt.Errorf("--expires and --expires-at are mutually exclusive")
@@ -83,6 +86,18 @@ Examples:
 			tags = []string{}
 		}
 
+		accClient, accountUUID, err := SetupAccountWithSafety(safety.OperationCreate)
+		if err != nil {
+			return err
+		}
+
+		if userUUID == "" {
+			userUUID, err = resolveCurrentAccountUserUUID(accountUUID)
+			if err != nil {
+				return fmt.Errorf("could not auto-resolve user UUID from account token: %w\nHint: provide --user-uuid explicitly", err)
+			}
+		}
+
 		req := platformtoken.PlatformTokenCreate{
 			Name:           name,
 			UserUUID:       userUUID,
@@ -99,11 +114,6 @@ Examples:
 			output.PrintInfo("UserUUID: %s", req.UserUUID)
 			output.PrintInfo("Expires:  %s", req.ExpirationDate)
 			return nil
-		}
-
-		accClient, accountUUID, err := SetupAccountWithSafety(safety.OperationCreate)
-		if err != nil {
-			return err
 		}
 
 		handler := platformtoken.NewHandler(accClient, accountUUID)
@@ -209,7 +219,7 @@ func init() {
 	accountTokenCreateCmd.Flags().StringArray("scope", nil, "token scope; may be specified multiple times (required)")
 	accountTokenCreateCmd.Flags().String("expires", "90d", "token lifetime (e.g. 30d, 720h)")
 	accountTokenCreateCmd.Flags().String("expires-at", "", "exact expiration date in RFC3339 format (mutually exclusive with --expires)")
-	accountTokenCreateCmd.Flags().String("user-uuid", "", "user UUID the token belongs to (required)")
+	accountTokenCreateCmd.Flags().String("user-uuid", "", "user UUID the token belongs to (default: current user)")
 	accountTokenCreateCmd.Flags().StringArray("resource", nil, "token resource; may be specified multiple times")
 	accountTokenCreateCmd.Flags().StringArray("tag", nil, "token tag; may be specified multiple times")
 }
