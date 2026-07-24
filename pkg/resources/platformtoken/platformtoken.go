@@ -44,13 +44,13 @@ func fromSDK(s *sdkpt.PlatformToken) PlatformToken {
 
 // List returns all platform tokens.
 func (h *Handler) List() ([]PlatformToken, error) {
-	res, err := h.sdk.List(context.Background())
+	sdkTokens, err := h.sdk.List(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	tokens := make([]PlatformToken, len(res.PlatformTokens))
-	for i := range res.PlatformTokens {
-		tokens[i] = fromSDK(&res.PlatformTokens[i])
+	tokens := make([]PlatformToken, len(sdkTokens))
+	for i := range sdkTokens {
+		tokens[i] = fromSDK(&sdkTokens[i])
 	}
 	return tokens, nil
 }

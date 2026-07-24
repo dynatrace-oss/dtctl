@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -33,10 +34,12 @@ type PlatformToken struct {
 	Owner          string   `json:"owner,omitempty"`
 }
 
-// PlatformTokenListResponse wraps the list API response.
+// PlatformTokenListResponse wraps the list API page response.
 type PlatformTokenListResponse struct {
-	PlatformTokens []PlatformToken `json:"platformTokens"`
-	NextPageKey    string          `json:"nextPageKey,omitempty"`
+	Total      int             `json:"total"`
+	PageSize   int             `json:"pageSize"`
+	PageNumber int             `json:"pageNumber"`
+	Results    []PlatformToken `json:"results"`
 }
 
 // PlatformTokenCreate is the request body for creating a platform token.
@@ -53,15 +56,15 @@ func (h *Handler) basePath() string {
 	return fmt.Sprintf("/iam/v1/accounts/%s/platform-tokens", h.accountUUID)
 }
 
+const listPageSize = 100
+
 // List returns all platform tokens for the account.
-func (h *Handler) List(ctx context.Context) (*PlatformTokenListResponse, error) {
+func (h *Handler) List(ctx context.Context) ([]PlatformToken, error) {
 	var all []PlatformToken
-	var nextPageKey string
-	for {
-		req := h.client.HTTP().R().SetContext(ctx)
-		if nextPageKey != "" {
-			req.SetQueryParam("page-key", nextPageKey)
-		}
+	for pageNum := 0; ; pageNum++ {
+		req := h.client.HTTP().R().SetContext(ctx).
+			SetQueryParam("pageSize", strconv.Itoa(listPageSize)).
+			SetQueryParam("pageNumber", strconv.Itoa(pageNum))
 		resp, err := req.Get(h.basePath())
 		if err != nil {
 			return nil, fmt.Errorf("list platform tokens: %w", err)
@@ -73,13 +76,12 @@ func (h *Handler) List(ctx context.Context) (*PlatformTokenListResponse, error) 
 		if err := json.Unmarshal(resp.Body(), &page); err != nil {
 			return nil, fmt.Errorf("list platform tokens: parse response: %w", err)
 		}
-		all = append(all, page.PlatformTokens...)
-		if page.NextPageKey == "" {
+		all = append(all, page.Results...)
+		if len(page.Results) == 0 || len(all) >= page.Total {
 			break
 		}
-		nextPageKey = page.NextPageKey
 	}
-	return &PlatformTokenListResponse{PlatformTokens: all}, nil
+	return all, nil
 }
 
 // Create creates a new platform token.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -29,16 +30,6 @@ func tokenBasePath() string {
 	return fmt.Sprintf("/iam/v1/accounts/%s/platform-tokens", testAccountUUID)
 }
 
-// paginationGuard rejects page-size combined with page-key (API constraint).
-func paginationGuard(w http.ResponseWriter, r *http.Request) bool {
-	if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"error":{"code":400,"message":"Constraints violated."}}`)
-		return true
-	}
-	return false
-}
-
 func TestList(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc(tokenBasePath(), func(w http.ResponseWriter, r *http.Request) {
@@ -46,11 +37,9 @@ func TestList(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if paginationGuard(w, r) {
-			return
-		}
 		resp := PlatformTokenListResponse{
-			PlatformTokens: []PlatformToken{
+			Total:   2,
+			Results: []PlatformToken{
 				{Name: "ci-token", TokenID: "tok-001", Status: "ACTIVE", Scope: []string{"storage:events:read"}},
 				{Name: "dev-token", TokenID: "tok-002", Status: "ACTIVE", Scope: []string{"account-idm-read"}},
 			},
@@ -64,11 +53,11 @@ func TestList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
-	if len(result.PlatformTokens) != 2 {
-		t.Errorf("got %d tokens, want 2", len(result.PlatformTokens))
+	if len(result) != 2 {
+		t.Errorf("got %d tokens, want 2", len(result))
 	}
-	if result.PlatformTokens[0].TokenID != "tok-001" {
-		t.Errorf("TokenID = %q, want %q", result.PlatformTokens[0].TokenID, "tok-001")
+	if result[0].TokenID != "tok-001" {
+		t.Errorf("TokenID = %q, want %q", result[0].TokenID, "tok-001")
 	}
 }
 
@@ -80,25 +69,22 @@ func TestList_Paginated(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if paginationGuard(w, r) {
-			return
-		}
 		call++
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Query().Get("page-key") == "" {
-			// First page
+		pageNum, _ := strconv.Atoi(r.URL.Query().Get("pageNumber"))
+		if pageNum == 0 {
 			json.NewEncoder(w).Encode(PlatformTokenListResponse{
-				PlatformTokens: []PlatformToken{
-					{Name: "token-a", TokenID: "tok-a", Status: "ACTIVE"},
-				},
-				NextPageKey: "page2key",
+				Total:      2,
+				PageSize:   1,
+				PageNumber: 0,
+				Results:    []PlatformToken{{Name: "token-a", TokenID: "tok-a", Status: "ACTIVE"}},
 			})
 		} else {
-			// Second page
 			json.NewEncoder(w).Encode(PlatformTokenListResponse{
-				PlatformTokens: []PlatformToken{
-					{Name: "token-b", TokenID: "tok-b", Status: "ACTIVE"},
-				},
+				Total:      2,
+				PageSize:   1,
+				PageNumber: 1,
+				Results:    []PlatformToken{{Name: "token-b", TokenID: "tok-b", Status: "ACTIVE"}},
 			})
 		}
 	})
@@ -108,17 +94,17 @@ func TestList_Paginated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
-	if len(result.PlatformTokens) != 2 {
-		t.Errorf("got %d tokens after pagination, want 2", len(result.PlatformTokens))
+	if len(result) != 2 {
+		t.Errorf("got %d tokens after pagination, want 2", len(result))
 	}
 	if call != 2 {
 		t.Errorf("expected 2 HTTP calls, got %d", call)
 	}
-	if result.PlatformTokens[0].TokenID != "tok-a" {
-		t.Errorf("first token = %q, want %q", result.PlatformTokens[0].TokenID, "tok-a")
+	if result[0].TokenID != "tok-a" {
+		t.Errorf("first token = %q, want %q", result[0].TokenID, "tok-a")
 	}
-	if result.PlatformTokens[1].TokenID != "tok-b" {
-		t.Errorf("second token = %q, want %q", result.PlatformTokens[1].TokenID, "tok-b")
+	if result[1].TokenID != "tok-b" {
+		t.Errorf("second token = %q, want %q", result[1].TokenID, "tok-b")
 	}
 }
 

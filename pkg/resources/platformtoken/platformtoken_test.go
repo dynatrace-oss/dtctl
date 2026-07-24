@@ -75,7 +75,8 @@ func TestList(t *testing.T) {
 	mux.HandleFunc(tokenBasePath(uuid), func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(sdkpt.PlatformTokenListResponse{
-			PlatformTokens: []sdkpt.PlatformToken{
+			Total: 2,
+			Results: []sdkpt.PlatformToken{
 				{Name: "alpha", TokenID: "tok-a", Status: "ACTIVE", Scope: []string{"account-idm-read"}},
 				{Name: "beta", TokenID: "tok-b", Status: "REVOKED", Scope: []string{"storage:events:read"}},
 			},
