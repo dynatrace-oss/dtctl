@@ -32,6 +32,9 @@ Examples:
   # Create a token with 90-day expiry (default)
   dtctl account token create --name ci-pipeline --scope account-idm-read
 
+  # Create a token with multiple scopes (repeat --scope for each)
+  dtctl account token create --name ci-pipeline --scope account-idm-read --scope storage:buckets:read
+
   # Create a token expiring in 30 days
   dtctl account token create --name ci-pipeline --scope account-idm-read --expires 30d
 
