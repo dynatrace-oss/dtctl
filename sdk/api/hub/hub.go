@@ -44,7 +44,7 @@ type HubExtensionRelease struct {
 
 // HubExtensionReleaseList represents a list of Hub extension releases.
 type HubExtensionReleaseList struct {
-	Items       []HubExtensionRelease `json:"items"`
+	Items       []HubExtensionRelease `json:"releases"`
 	TotalCount  int                   `json:"totalCount"`
 	NextPageKey string                `json:"nextPageKey,omitempty"`
 }

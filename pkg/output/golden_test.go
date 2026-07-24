@@ -389,6 +389,7 @@ func extensionFixtures() []extension.Extension {
 		{
 			ExtensionName: "com.dynatrace.extension.host-monitoring",
 			Version:       "1.2.3",
+			ActiveVersion: "1.2.0",
 		},
 		{
 			ExtensionName: "com.dynatrace.extension.jmx",

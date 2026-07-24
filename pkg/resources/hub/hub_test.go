@@ -255,9 +255,13 @@ func TestListExtensionReleases(t *testing.T) {
 		if paginationGuard(t, w, r) {
 			return
 		}
-		writeJSON(w, http.StatusOK, HubExtensionReleaseList{
+		// The releases endpoint uses "releases" as the JSON key for the items array.
+		writeJSON(w, http.StatusOK, struct {
+			Releases   []HubExtensionRelease `json:"releases"`
+			TotalCount int                   `json:"totalCount"`
+		}{
 			TotalCount: 2,
-			Items: []HubExtensionRelease{
+			Releases: []HubExtensionRelease{
 				{Version: "1.0.1", ReleaseDate: "2024-12-01"},
 				{Version: "1.0.0", ReleaseDate: "2024-10-10"},
 			},
@@ -327,9 +331,13 @@ func TestListExtensionReleases_URLEscaping(t *testing.T) {
 		if paginationGuard(t, w, r) {
 			return
 		}
-		writeJSON(w, http.StatusOK, HubExtensionReleaseList{
+		// The releases endpoint uses "releases" as the JSON key for the items array.
+		writeJSON(w, http.StatusOK, struct {
+			Releases   []HubExtensionRelease `json:"releases"`
+			TotalCount int                   `json:"totalCount"`
+		}{
 			TotalCount: 1,
-			Items: []HubExtensionRelease{
+			Releases: []HubExtensionRelease{
 				{Version: "1.0.0", ReleaseDate: "2024-12-01"},
 			},
 		})

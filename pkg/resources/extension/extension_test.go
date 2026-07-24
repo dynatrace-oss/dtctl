@@ -158,6 +158,13 @@ func TestList(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pageIndex := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				// Environment configuration requests return 404 (no active version) by default.
+				// This allows the concurrent active version fetch in List() to silently skip.
+				if strings.HasSuffix(r.URL.Path, "/environment-configuration") {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+
 				if r.URL.Path != "/platform/extensions/v2/extensions" {
 					t.Errorf("unexpected path: %s", r.URL.Path)
 					w.WriteHeader(http.StatusNotFound)
@@ -226,12 +233,82 @@ func TestList(t *testing.T) {
 	}
 }
 
+func TestList_ActiveVersionEnrichment(t *testing.T) {
+	extensions := []Extension{
+		{ExtensionName: "com.dynatrace.extension.host-monitoring", Version: "1.2.3"},
+		{ExtensionName: "com.dynatrace.extension.jmx", Version: "2.0.0"},
+	}
+	activeVersions := map[string]string{
+		"com.dynatrace.extension.host-monitoring": "1.2.0",
+		// jmx has no active version (404)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Handle environment configuration requests
+		for extName, activeVer := range activeVersions {
+			envCfgPath := "/platform/extensions/v2/extensions/" + url.PathEscape(extName) + "/environment-configuration"
+			if r.URL.Path == envCfgPath {
+				json.NewEncoder(w).Encode(map[string]string{"version": activeVer})
+				return
+			}
+		}
+		// Unknown env config path: 404 (extension has no active version)
+		if strings.HasSuffix(r.URL.Path, "/environment-configuration") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// Extension list endpoint
+		if r.URL.Path == "/platform/extensions/v2/extensions" {
+			json.NewEncoder(w).Encode(ExtensionList{TotalCount: len(extensions), Items: extensions})
+			return
+		}
+
+		t.Errorf("unexpected path: %s", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	handler := NewHandler(c)
+	result, err := handler.List("", 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 extensions, got %d", len(result.Items))
+	}
+
+	byName := make(map[string]Extension)
+	for _, ext := range result.Items {
+		byName[ext.ExtensionName] = ext
+	}
+
+	hostMon := byName["com.dynatrace.extension.host-monitoring"]
+	if hostMon.ActiveVersion != "1.2.0" {
+		t.Errorf("expected ActiveVersion %q for host-monitoring, got %q", "1.2.0", hostMon.ActiveVersion)
+	}
+
+	jmx := byName["com.dynatrace.extension.jmx"]
+	if jmx.ActiveVersion != "" {
+		t.Errorf("expected empty ActiveVersion for jmx, got %q", jmx.ActiveVersion)
+	}
+}
+
 func TestGet(t *testing.T) {
 	tests := []struct {
 		name          string
 		extensionName string
 		statusCode    int
 		response      ExtensionVersionList
+		activeVersion string
 		expectError   bool
 		errorContains string
 	}{
@@ -246,6 +323,7 @@ func TestGet(t *testing.T) {
 					{Version: "1.2.2", ExtensionName: "com.dynatrace.extension.host-monitoring"},
 				},
 			},
+			activeVersion: "1.2.3",
 		},
 		{
 			name:          "not found",
@@ -266,17 +344,27 @@ func TestGet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName
-				if r.URL.Path != expectedPath {
-					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
-					w.WriteHeader(http.StatusNotFound)
-					return
-				}
+				versionListPath := "/platform/extensions/v2/extensions/" + tt.extensionName
+				envConfigPath := versionListPath + "/environment-configuration"
 
 				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(tt.statusCode)
-				if tt.statusCode == 200 {
-					json.NewEncoder(w).Encode(tt.response)
+
+				switch r.URL.Path {
+				case envConfigPath:
+					if tt.activeVersion != "" {
+						w.WriteHeader(http.StatusOK)
+						json.NewEncoder(w).Encode(map[string]string{"version": tt.activeVersion})
+					} else {
+						w.WriteHeader(http.StatusNotFound)
+					}
+				case versionListPath:
+					w.WriteHeader(tt.statusCode)
+					if tt.statusCode == 200 {
+						json.NewEncoder(w).Encode(tt.response)
+					}
+				default:
+					t.Errorf("unexpected path: %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
 				}
 			}))
 			defer server.Close()
@@ -305,6 +393,21 @@ func TestGet(t *testing.T) {
 
 			if len(result.Items) != len(tt.response.Items) {
 				t.Errorf("expected %d versions, got %d", len(tt.response.Items), len(result.Items))
+			}
+
+			if tt.activeVersion != "" {
+				found := false
+				for _, v := range result.Items {
+					if v.Version == tt.activeVersion && v.Active {
+						found = true
+					}
+					if v.Version != tt.activeVersion && v.Active {
+						t.Errorf("version %q should not be active", v.Version)
+					}
+				}
+				if !found {
+					t.Errorf("expected version %q to be marked active", tt.activeVersion)
+				}
 			}
 		})
 	}
@@ -427,7 +530,7 @@ func TestGetEnvironmentConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/" + tt.version + "/environmentConfiguration"
+				expectedPath := "/platform/extensions/v2/extensions/" + tt.extensionName + "/" + tt.version + "/environment-configuration"
 				if r.URL.Path != expectedPath {
 					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
 					w.WriteHeader(http.StatusNotFound)
