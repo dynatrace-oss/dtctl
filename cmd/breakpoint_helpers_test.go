@@ -560,6 +560,81 @@ func TestRunGetBreakpoints_TableView(t *testing.T) {
 	}
 }
 
+func TestRunGetBreakpoints_WideView(t *testing.T) {
+	originalOutputFormat := outputFormat
+	originalAgentMode := agentMode
+	originalPlainMode := plainMode
+	originalDebugMode := debugMode
+	originalVerbosity := verbosity
+	originalOut := rootCmd.OutOrStdout()
+	defer func() {
+		outputFormat = originalOutputFormat
+		agentMode = originalAgentMode
+		plainMode = originalPlainMode
+		debugMode = originalDebugMode
+		verbosity = originalVerbosity
+		rootCmd.SetOut(originalOut)
+	}()
+
+	// plainMode must be reset explicitly: NewPrinterWithOptions coerces "wide"
+	// (and "table") to JSON when plainMode is true, which happens whenever an
+	// AI-agent shell is auto-detected (--plain is implied). Without this reset
+	// the test flakes depending on ambient state / launching environment.
+	outputFormat = "wide"
+	agentMode = false
+	plainMode = false
+	debugMode = false
+	verbosity = 0
+
+	deps := liveDebuggerDeps{}
+	deps.loadConfig = func() (*config.Config, error) {
+		cfg := config.NewConfig()
+		cfg.SetContext("test", "https://example.invalid", "token")
+		cfg.CurrentContext = "test"
+		return cfg, nil
+	}
+	deps.newClient = func(cfg *config.Config) (*client.Client, error) { return nil, nil }
+	deps.newHandler = func(c *client.Client, environment string) (*livedebugger.Handler, error) { return nil, nil }
+	deps.getOrCreateWorkspace = func(handler *livedebugger.Handler, projectPath string) (map[string]interface{}, string, error) {
+		return map[string]interface{}{"data": map[string]interface{}{}}, "ws-1", nil
+	}
+	deps.getWorkspaceRules = func(handler *livedebugger.Handler, workspaceID string) (map[string]interface{}, error) {
+		return map[string]interface{}{
+			"data": map[string]interface{}{
+				"org": map[string]interface{}{
+					"workspace": map[string]interface{}{
+						"rules": []interface{}{
+							map[string]interface{}{
+								"id":          "bp-1",
+								"immutableId": "96294",
+								"is_disabled": false,
+								"aug_json": map[string]interface{}{
+									"location": map[string]interface{}{"filename": "OrderController.java", "lineno": float64(306)},
+								},
+							},
+						},
+					},
+				},
+			},
+		}, nil
+	}
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+
+	if err := runGetBreakpointsWithDeps(nil, nil, deps); err != nil {
+		t.Fatalf("runGetBreakpoints returned error: %v", err)
+	}
+
+	text := out.String()
+	if !strings.Contains(text, "BREAKPOINT ID") {
+		t.Fatalf("expected BREAKPOINT ID column in wide output: %q", text)
+	}
+	if !strings.Contains(text, "00000000000000000000000000096294") {
+		t.Fatalf("expected padded immutable ID in wide output: %q", text)
+	}
+}
+
 func TestRunGetBreakpoints_StructuredView(t *testing.T) {
 	originalOutputFormat := outputFormat
 	originalAgentMode := agentMode

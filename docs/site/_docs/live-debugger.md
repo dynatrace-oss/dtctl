@@ -104,6 +104,10 @@ When a breakpoint is hit, the runtime captures a snapshot of local variables and
 ```bash
 # Query snapshots and decode variable data
 dtctl query "fetch application.snapshots | limit 10" --decode-snapshots
+
+# Filter snapshots by a specific breakpoint using its immutable ID
+# The breakpoint ID is shown in: dtctl create breakpoint / dtctl get breakpoints / dtctl describe breakpoint
+dtctl query "fetch application.snapshots | filter breakpoint.id == toUid(\"00000000000000000000000000096294\")" --decode-snapshots
 ```
 
 ### Full vs Simplified Decoding

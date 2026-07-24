@@ -3294,6 +3294,10 @@ dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --deco
 # Compose with any output format
 dtctl query "fetch application.snapshots | limit 5" --decode-snapshots -o json
 dtctl query "fetch application.snapshots | limit 5" --decode-snapshots -o yaml
+
+# Filter snapshots by a specific breakpoint using its immutable ID
+# The breakpoint ID is shown in: dtctl create breakpoint / dtctl get breakpoints / dtctl describe breakpoint
+dtctl query "fetch application.snapshots | filter breakpoint.id == toUid(\"00000000000000000000000000096294\")" --decode-snapshots
 ```
 
 `--decode-snapshots` enriches each record with `parsed_snapshot` decoded from `snapshot.data` and `snapshot.string_map`. By default, variant wrappers are simplified to plain values; use `--decode-snapshots=full` to preserve type annotations.

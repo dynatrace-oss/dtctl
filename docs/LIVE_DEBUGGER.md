@@ -226,6 +226,10 @@ dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --deco
 # Compose with any output format
 dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots -o json
 dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots -o yaml
+
+# Filter snapshots by a specific breakpoint using its immutable ID
+# The breakpoint ID is shown in the output of: dtctl create breakpoint / dtctl get breakpoints / dtctl describe breakpoint
+dtctl query "fetch application.snapshots | filter breakpoint.id == toUid(\"00000000000000000000000000096294\")" --decode-snapshots
 ```
 
 The `--decode-snapshots` flag enriches each record with a decoded `parsed_snapshot` field built from:
