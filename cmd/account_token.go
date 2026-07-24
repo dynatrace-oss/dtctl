@@ -32,7 +32,8 @@ Examples:
   # Create a token with 90-day expiry (default)
   dtctl account token create --name ci-pipeline --scope account-idm-read
 
-  # Create a token with multiple scopes (repeat --scope for each)
+  # Create a token with multiple scopes (repeat or comma-separate)
+  dtctl account token create --name ci-pipeline --scope account-idm-read,storage:buckets:read
   dtctl account token create --name ci-pipeline --scope account-idm-read --scope storage:buckets:read
 
   # Create a token expiring in 30 days
@@ -49,7 +50,7 @@ Examples:
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
-		scopes, _ := cmd.Flags().GetStringArray("scope")
+		scopes, _ := cmd.Flags().GetStringSlice("scope")
 		expires, _ := cmd.Flags().GetString("expires")
 		expiresAt, _ := cmd.Flags().GetString("expires-at")
 		userUUID, _ := cmd.Flags().GetString("user-uuid")
@@ -121,7 +122,7 @@ Examples:
 			return err
 		}
 
-		output.PrintSuccess("Platform token %q created (expires: %s)", res.Name, res.ExpirationDate)
+		output.PrintSuccess("Platform token %q created (expires: %s)", res.Name, expirationDate)
 		output.PrintWarning("Token secret shown once — store it now:")
 		fmt.Println(res.Token)
 		return nil
@@ -215,7 +216,7 @@ func init() {
 
 	// Create flags
 	accountTokenCreateCmd.Flags().String("name", "", "token name (required)")
-	accountTokenCreateCmd.Flags().StringArray("scope", nil, "token scope; may be specified multiple times (required)")
+	accountTokenCreateCmd.Flags().StringSlice("scope", nil, "token scope; repeat or comma-separate for multiple (required)")
 	accountTokenCreateCmd.Flags().String("expires", "90d", "token lifetime (e.g. 30d, 720h)")
 	accountTokenCreateCmd.Flags().String("expires-at", "", "exact expiration date in RFC3339 format (mutually exclusive with --expires)")
 	accountTokenCreateCmd.Flags().String("user-uuid", "", "user UUID the token belongs to (default: current user)")
