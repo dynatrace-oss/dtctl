@@ -162,7 +162,7 @@ var localResources = map[string]bool{
 	// auth (local token storage / introspection)
 	"login": true, "logout": true, "refresh": true, "status": true, "whoami": true,
 	// alias management
-	"export": true, "import": true, "list": true,
+	"export": true, "import": true, "list": true, "create": true,
 	// skills (local install)
 	"install": true, "uninstall": true,
 }
