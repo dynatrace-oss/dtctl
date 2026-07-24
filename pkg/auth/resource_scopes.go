@@ -137,6 +137,11 @@ var ResourceScopes = map[string]AccessScopes{
 	// call that returns the translated pipeline document.
 	"classic-pipelines-translation": {Read: []string{"openpipeline:configurations:read"}},
 
+	// LQL-to-DQL matcher translation
+	// (/platform/openpipeline/v1/matcher/lqlToDql) is a read-only stateless
+	// call that converts a single LQL matcher expression into its DQL equivalent.
+	"lql-to-dql": {Read: []string{"openpipeline:configurations:read"}},
+
 	// OpenPipeline verify and preview endpoints — all read-only; they validate
 	// or preview pipeline definitions without persisting any changes.
 	"openpipeline-matcher":       {Read: []string{"openpipeline:configurations:read"}},
