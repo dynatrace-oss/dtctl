@@ -47,8 +47,8 @@ type PlatformTokenCreate struct {
 	Name           string   `json:"name"`
 	UserUUID       string   `json:"userUuid"`
 	Scope          []string `json:"scope"`
-	Resource       []string `json:"resource"`
-	Tags           []string `json:"tags"`
+	Resource       []string `json:"resource,omitempty"`
+	Tags           []string `json:"tags,omitempty"`
 	ExpirationDate string   `json:"expirationDate"`
 }
 

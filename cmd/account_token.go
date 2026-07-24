@@ -78,14 +78,6 @@ Examples:
 			expirationDate = t.UTC().Format("2006-01-02T15:04:05.000Z")
 		}
 
-		// Ensure empty slices (not nil) so API receives [] not null.
-		if resources == nil {
-			resources = []string{}
-		}
-		if tags == nil {
-			tags = []string{}
-		}
-
 		accClient, accountUUID, err := SetupAccountWithSafety(safety.OperationCreate)
 		if err != nil {
 			return err
