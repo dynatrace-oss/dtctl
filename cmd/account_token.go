@@ -91,15 +91,7 @@ Examples:
 		}
 
 		if len(resources) == 0 {
-			cfg, err := LoadConfig()
-			if err != nil {
-				return fmt.Errorf("resolving default resource: %w", err)
-			}
-			ctx, err := cfg.CurrentContextObj()
-			if err != nil {
-				return fmt.Errorf("resolving default resource: %w", err)
-			}
-			resources = []string{ctx.Environment}
+			resources = []string{"urn:dtaccount:" + accountUUID}
 		}
 
 		req := platformtoken.PlatformTokenCreate{
