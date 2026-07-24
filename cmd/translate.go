@@ -14,4 +14,5 @@ Available subcommands:
 func init() {
 	rootCmd.AddCommand(translateCmd)
 	translateCmd.AddCommand(translateLqlToDqlCmd)
+	translateCmd.AddCommand(translateClassicPipelinesCmd)
 }

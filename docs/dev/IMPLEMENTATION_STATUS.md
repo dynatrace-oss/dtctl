@@ -83,13 +83,6 @@ This document tracks the current implementation status of dtctl. For future plan
 | intent | ✅ | ✅ | - | - | - | - |
 | segment | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | anomaly-detector | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| classic-pipelines-translation | ✅ | - | - | - | - | - |
-
-#### Translate
-
-| Command | translate |
-|---------|-----------|
-| lql-to-dql | ✅ |
 
 #### Cloud Connections
 
@@ -101,6 +94,13 @@ This document tracks the current implementation status of dtctl. For future plan
 | aws monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ enable |
 | gcp connection (Preview) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | gcp monitoring (Preview) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ enable |
+
+#### OpenPipeline
+
+| Resource | translate |
+|----------|-----------|
+| classic-pipelines | ✅ |
+| lql-to-dql | ✅ |
 
 #### Advanced Operations
 
