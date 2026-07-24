@@ -135,7 +135,7 @@ var ResourceScopes = map[string]AccessScopes{
 	// OpenPipeline. The classic-pipelines translation endpoint
 	// (/platform/openpipeline/v1/classic-pipelines/translate) is a read-only
 	// call that returns the translated pipeline document.
-	"classic-pipelines": {Read: []string{"openpipeline:configurations:read"}},
+	"classic-pipelines": {Read: []string{"settings:objects:read"}},
 
 	// LQL-to-DQL matcher translation
 	// (/platform/openpipeline/v1/matcher/lqlToDql) is a read-only stateless
@@ -291,6 +291,7 @@ func (s *scopeSet) addReadTier(extended bool) {
 	s.addResource("notification", AccessRead)
 	s.add("hub:catalog:read")
 	s.addResource("classic-pipelines", AccessRead)
+	s.addResource("lql-to-dql", AccessRead)
 }
 
 // addMineWrites adds the write/run scopes granted from readwrite-mine upward:
@@ -352,6 +353,7 @@ func (s *scopeSet) addUnrestricted() {
 	s.addResource("notification", AccessRead)
 	s.add("hub:catalog:read")
 	s.addResource("classic-pipelines", AccessRead)
+	s.addResource("lql-to-dql", AccessRead)
 	// writes / destructive
 	s.addResource("dashboard", AccessWrite, AccessDelete)
 	s.add("document:environment-shares:write")
