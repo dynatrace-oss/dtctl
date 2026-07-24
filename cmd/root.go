@@ -23,6 +23,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	"github.com/dynatrace-oss/dtctl/pkg/metrics"
 	"github.com/dynatrace-oss/dtctl/pkg/inspect"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
@@ -163,6 +164,12 @@ func execute() int {
 	)
 	tracingRootCtx = tracingCtx
 	rootSpan := trace.SpanFromContext(tracingCtx)
+	commandStart := time.Now()
+	collector := metrics.Default()
+	var runErr error
+	defer func() {
+		collector.RecordCommand(spanName, time.Since(commandStart), runErr)
+	}()
 	defer func() {
 		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -180,12 +187,15 @@ func execute() int {
 		if errors.As(err, &silent) {
 			if silent.code == 0 {
 				rootSpan.SetStatus(codes.Ok, "")
+				runErr = nil
 			} else {
 				rootSpan.SetStatus(codes.Error, "insufficient scope")
+				runErr = err
 			}
 			return silent.code
 		}
 
+		runErr = err
 		errStr := err.Error()
 
 		// Unknown top-level commands get one shot at plugin dispatch before
