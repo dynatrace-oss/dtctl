@@ -24,21 +24,3 @@ func TestAccountBaseURLForEnvironment(t *testing.T) {
 		}
 	}
 }
-
-func TestIAMBaseURLForEnvironment(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		env  auth.Environment
-		want string
-	}{
-		{auth.EnvironmentProd, "https://api.dynatrace.com"},
-		{auth.EnvironmentDev, "https://api-dev.internal.dynatracelabs.com"},
-		{auth.EnvironmentHard, "https://api-hardening.internal.dynatracelabs.com"},
-	}
-	for _, tt := range tests {
-		got := client.IAMBaseURLForEnvironment(tt.env)
-		if got != tt.want {
-			t.Errorf("IAMBaseURLForEnvironment(%q) = %q, want %q", tt.env, got, tt.want)
-		}
-	}
-}

@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/auth"
-	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
@@ -24,14 +23,13 @@ in the system keyring (or DTCTL_TOKEN_STORAGE=file fallback) so subsequent
 account commands work without DTCTL_ACCOUNT_TOKEN.
 
 The account UUID is resolved from: --account-uuid flag > DTCTL_ACCOUNT_UUID >
-context account-uuid > auto-discovery via the IAM access-info endpoint. Auto-discovery
-requires a prior 'dtctl auth login' so an environment token is available.`,
-	Example: `  # Login, auto-discovering the account UUID from the environment
-  # (run 'dtctl auth login' first)
-  dtctl account login
+context account-uuid. It must be provided by one of these; find it in the
+Dynatrace Account Management console (myaccount.dynatrace.com).`,
+	Example: `  # Login with explicit account UUID
+  dtctl account login --account-uuid xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
-  # Login with explicit account UUID
-  dtctl account login --account-uuid xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+  # Or provide it via the environment
+  DTCTL_ACCOUNT_UUID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx dtctl account login`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		uuidFlag, _ := cmd.Flags().GetString("account-uuid")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
@@ -52,18 +50,10 @@ requires a prior 'dtctl auth login' so an environment token is available.`,
 
 		env := auth.DetectEnvironment(ctx.Environment)
 
-		// Resolve UUID: flag > DTCTL_ACCOUNT_UUID > context config > auto-discovery.
-		// Auto-discovery uses the environment token (from 'dtctl auth login')
-		// against the IAM access-info endpoint; the account-plane token does not
-		// exist yet at this point and is rejected by that endpoint anyway.
-		envToken, _ := client.GetTokenWithOAuthSupport(cfg, ctx.TokenRef)
-		iamBase := client.IAMBaseURLForEnvironment(env)
-		accountUUID, discoveredName, err := resolveLoginAccountUUID(ctx, uuidFlag, envToken, iamBase)
-		if err != nil {
-			return fmt.Errorf("account UUID required: pass --account-uuid, set DTCTL_ACCOUNT_UUID, or run 'dtctl auth login' first so dtctl can auto-discover the account for environment %q (%v)", extractEnvironmentID(ctx.Environment), err)
-		}
-		if discoveredName != "" {
-			output.PrintInfo("Auto-discovered account %q (%s) for environment %s", discoveredName, accountUUID, extractEnvironmentID(ctx.Environment))
+		// Resolve UUID: flag > DTCTL_ACCOUNT_UUID > context config.
+		accountUUID := resolveUUIDNoDiscovery(ctx, uuidFlag)
+		if accountUUID == "" {
+			return fmt.Errorf("account UUID required for environment %q: pass --account-uuid, set DTCTL_ACCOUNT_UUID, or add account-uuid to the current context", extractEnvironmentID(ctx.Environment))
 		}
 
 		oauthConfig := auth.AccountOAuthConfig(env, ctx.SafetyLevel, accountUUID)
