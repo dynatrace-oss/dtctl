@@ -45,7 +45,7 @@ func defaultLiveDebuggerDeps() liveDebuggerDeps {
 
 type breakpointRow struct {
 	ID          string `table:"ID" json:"id" yaml:"id"`
-	ImmutableID string `table:"BREAKPOINT ID" json:"breakpointId" yaml:"breakpointId"`
+	ImmutableID string `table:"BREAKPOINT ID,wide" json:"breakpointId" yaml:"breakpointId"`
 	Filename    string `table:"FILENAME" json:"filename" yaml:"filename"`
 	Line        int    `table:"LINE NUMBER" json:"lineNumber" yaml:"lineNumber"`
 	Active      bool   `table:"ACTIVE" json:"active" yaml:"active"`
@@ -266,10 +266,6 @@ func formatFilters(parsed map[string][]string) string {
 	return strings.Join(pairs, ",")
 }
 
-// requireFiltersValue validates that a --filters flag which was provided also
-// carries a value. It is shared by create and update breakpoint so the
-// "empty --filters" error is identical (and greppable) in both commands. An
-// empty value means the flag was set but blank, e.g. --filters "".
 // padBreakpointID zero-pads a numeric immutable breakpoint ID to 32 characters,
 // matching the breakpoint.id format used in DQL snapshot queries.
 func padBreakpointID(id string) string {
@@ -279,6 +275,10 @@ func padBreakpointID(id string) string {
 	return strings.Repeat("0", 32-len(id)) + id
 }
 
+// requireFiltersValue validates that a --filters flag which was provided also
+// carries a value. It is shared by create and update breakpoint so the
+// "empty --filters" error is identical (and greppable) in both commands. An
+// empty value means the flag was set but blank, e.g. --filters "".
 func requireFiltersValue(filters string) error {
 	if strings.TrimSpace(filters) == "" {
 		return fmt.Errorf("--filters provided without a value")
