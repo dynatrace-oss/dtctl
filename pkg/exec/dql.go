@@ -124,6 +124,13 @@ type DQLExecuteOptions struct {
 	IncludeTypes                 bool    // Include type information in results (default: true)
 	IncludeContributions         bool    // Include bucket contribution information in results
 
+	// EmitTypes surfaces the DQL per-column type block as a top-level "types"
+	// key alongside "records" in structured (json/yaml) output. It is set only
+	// when the user explicitly passed --include-types, so the metadata that
+	// parquet/--typed request internally is not accidentally emitted. Has no
+	// effect unless the API actually returned type information.
+	EmitTypes bool
+
 	// Typed opts in to casting scalar columns (long, double, duration, boolean)
 	// to their native JSON/YAML types using the DQL type metadata, instead of the
 	// wire form where integer-valued columns arrive as strings. Off by default so
@@ -842,6 +849,15 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		}
 		if meta != nil {
 			out["metadata"] = output.MetadataToMap(meta, opts.MetadataFields)
+		}
+		// Surface the DQL per-column type block (indexRange + mappings) as a
+		// sibling of "records" when the user explicitly asked for it via
+		// --include-types. JSONL has no place for a document-level sibling, so
+		// it is skipped there; json/yaml carry it inline.
+		if opts.EmitTypes && effectiveFormat != "jsonl" {
+			if types := result.GetTypes(); len(types) > 0 {
+				out["types"] = types
+			}
 		}
 		if len(out) > 0 {
 			return printer.Print(out)

@@ -265,6 +265,11 @@ Examples:
 		enforceQueryConsumptionLimit, _ := cmd.Flags().GetBool("enforce-query-consumption-limit")
 		includeTypes, _ := cmd.Flags().GetBool("include-types")
 		typed, _ := cmd.Flags().GetBool("typed")
+		// Only an explicit --include-types surfaces the DQL type block as a
+		// top-level "types" key in structured output. Parquet/--typed force
+		// includeTypes on below to *consume* the metadata internally, but that
+		// must not start emitting the block, so capture intent before forcing.
+		emitTypes := cmd.Flags().Changed("include-types")
 		// Parquet derives its column schema from DQL types, so request them even
 		// if the user did not pass --include-types. The type metadata is consumed
 		// to build the schema and is not added to the output rows.
@@ -407,6 +412,7 @@ Examples:
 			EnablePreview:                enablePreview,
 			EnforceQueryConsumptionLimit: enforceQueryConsumptionLimit,
 			IncludeTypes:                 includeTypes,
+			EmitTypes:                    emitTypes,
 			IncludeContributions:         includeContributions,
 			Typed:                        typed,
 			DefaultTimeframeStart:        defaultTimeframeStart,
@@ -771,7 +777,7 @@ func init() {
 	queryCmd.Flags().Bool("enable-preview", false, "request preview results if available within timeout")
 	queryCmd.Flags().Bool("no-progress", false, "disable the live progress bar shown on stderr for long queries")
 	queryCmd.Flags().Bool("enforce-query-consumption-limit", false, "enforce query consumption limit")
-	queryCmd.Flags().Bool("include-types", false, "include type information in query results")
+	queryCmd.Flags().Bool("include-types", false, "surface DQL per-column type info as a top-level \"types\" key (json/yaml output)")
 	queryCmd.Flags().Bool("include-contributions", false, "include bucket contribution information in query results")
 	queryCmd.Flags().Bool("typed", false, "cast scalar columns (long, double, duration, boolean) to native JSON/YAML types instead of the API's string encoding; opt-in, implies --include-types")
 

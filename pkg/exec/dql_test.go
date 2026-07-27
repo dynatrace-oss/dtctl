@@ -2501,6 +2501,48 @@ func TestDQLExecutor_OutputFormats_Integration(t *testing.T) {
 			t.Errorf("string column should be unchanged: %q", line)
 		}
 	})
+
+	t.Run("EmitTypes surfaces a top-level types block in json", func(t *testing.T) {
+		out := captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "fetch logs",
+				DQLExecuteOptions{OutputFormat: "json", IncludeTypes: true, EmitTypes: true}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		var doc map[string]json.RawMessage
+		if err := json.Unmarshal(out, &doc); err != nil {
+			t.Fatalf("output is not valid JSON: %v — %s", err, out)
+		}
+		if _, ok := doc["records"]; !ok {
+			t.Errorf("expected a records key alongside types, got: %s", out)
+		}
+		raw, ok := doc["types"]
+		if !ok {
+			t.Fatalf("expected a top-level types key with EmitTypes, got: %s", out)
+		}
+		// The block must preserve the raw API shape: [{indexRange, mappings}].
+		var groups []sdkquery.ColumnTypes
+		if err := json.Unmarshal(raw, &groups); err != nil {
+			t.Fatalf("types block is not the expected shape: %v — %s", err, raw)
+		}
+		if len(groups) != 1 || groups[0].Mappings["count"].Type != "long" {
+			t.Errorf("unexpected types block: %s", raw)
+		}
+	})
+
+	t.Run("types block is omitted without an explicit --include-types", func(t *testing.T) {
+		// --typed forces IncludeTypes on internally, but EmitTypes stays false, so
+		// the block must not leak into output.
+		out := captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "fetch logs",
+				DQLExecuteOptions{OutputFormat: "json", Typed: true}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		if bytes.Contains(out, []byte(`"types"`)) {
+			t.Errorf("types block leaked into output without --include-types: %s", out)
+		}
+	})
 }
 
 // parseDTClientContext unmarshals the dt-client-context header value into a map.
