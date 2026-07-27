@@ -124,6 +124,40 @@ Notes:
   otherwise a single placeholder column so the file stays readable by mainstream
   tooling (a column-less file is rejected by DuckDB, pyarrow, and pandas).
 
+## Column types (`--include-types`)
+
+Pass `--include-types` to surface the DQL per-column type information the query
+API returns. In `json` and `yaml` output it appears as a top-level `types` key
+alongside `records`, preserving the API's shape (`indexRange` + `mappings`):
+
+```bash
+dtctl query 'fetch logs | limit 1' -o json --include-types
+# {
+#   "records": [ { "content": "...", "loglevel": "INFO", "status.code": "200" } ],
+#   "types": [
+#     {
+#       "indexRange": [0, 0],
+#       "mappings": {
+#         "content":     { "type": "string" },
+#         "loglevel":    { "type": "string" },
+#         "status.code": { "type": "long" }
+#       }
+#     }
+#   ]
+# }
+```
+
+Notes:
+
+- **Only with an explicit flag.** The block is emitted only when you pass
+  `--include-types` yourself. `--typed` and Parquet output request the same
+  metadata internally to do their work, but that does not add the `types` key.
+- **`json`/`yaml` only.** `jsonl` (one record per line) and `csv` (tabular) have
+  no place for a document-level sibling, so the block is not emitted there.
+- Note the distinction from `--typed` below: `--include-types` reports the
+  declared type while leaving values in their wire form (so a `long` still reads
+  as `"200"`), whereas `--typed` uses the same metadata to rewrite the values.
+
 ## Numeric typing (`--typed`)
 
 The Grail query API deliberately serialises integer-valued columns (`long`,
