@@ -8,7 +8,8 @@ var translateCmd = &cobra.Command{
 	Long: `Translate expressions and configurations between formats.
 
 Available subcommands:
-  lql-to-dql   Translate an LQL matcher expression into a DQL matcher expression`,
+  lql-to-dql         Translate an LQL matcher expression into a DQL matcher expression
+  classic-pipelines  Translate a Classic pipeline into an OpenPipeline configuration pipeline`,
 }
 
 func init() {

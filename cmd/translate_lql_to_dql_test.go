@@ -173,38 +173,27 @@ func TestTranslateLqlToDqlCmd_ExplicitOutputFormat(t *testing.T) {
 	_, configPath, cleanup := setupLqlToDqlServer(t, lqlToDqlResponse)
 	defer cleanup()
 
-	origCfgFile := cfgFile
-	origPlain := plainMode
-	origAgent := agentMode
-	origFormat := outputFormat
-	defer func() {
-		cfgFile = origCfgFile
-		plainMode = origPlain
-		agentMode = origAgent
-		outputFormat = origFormat
-	}()
-	cfgFile = configPath
-	plainMode = true
-	agentMode = false
-	outputFormat = "json"
+	withLqlToDqlGlobals(t, configPath, func() {
+		outputFormat = "json"
 
-	testutil.ResetCommandFlags(translateLqlToDqlCmd)
+		testutil.ResetCommandFlags(translateLqlToDqlCmd)
 
-	// Mark the output flag as changed to simulate an explicit -o json.
-	rootCmd.PersistentFlags().Lookup("output").Changed = true
-	defer func() {
-		rootCmd.PersistentFlags().Lookup("output").Changed = false
-	}()
+		// Mark the output flag as changed to simulate an explicit -o json.
+		rootCmd.PersistentFlags().Lookup("output").Changed = true
+		defer func() {
+			rootCmd.PersistentFlags().Lookup("output").Changed = false
+		}()
 
-	out := captureStdout(t, func() {
-		if err := translateLqlToDqlCmd.RunE(translateLqlToDqlCmd, []string{`log.source="snmptraps"`}); err != nil {
-			t.Fatalf("RunE() error = %v", err)
+		out := captureStdout(t, func() {
+			if err := translateLqlToDqlCmd.RunE(translateLqlToDqlCmd, []string{`log.source="snmptraps"`}); err != nil {
+				t.Fatalf("RunE() error = %v", err)
+			}
+		})
+
+		if !strings.Contains(out, "matchesValue") {
+			t.Errorf("json output missing DQL; got: %q", out)
 		}
 	})
-
-	if !strings.Contains(out, "matchesValue") {
-		t.Errorf("json output missing DQL; got: %q", out)
-	}
 }
 
 func TestTranslateLqlToDqlCmd_AgentMode(t *testing.T) {

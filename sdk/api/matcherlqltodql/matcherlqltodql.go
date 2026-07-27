@@ -1,9 +1,4 @@
-// Package matcherlqltodql is a thin, read-only SDK client for the OpenPipeline
-// matcher LQL-to-DQL translation endpoint, which converts a single LQL matcher
-// expression into its semantically equivalent DQL matcher expression.
-//
-// The translated DQL string is forwarded verbatim; this package does not
-// interpret, reshape, or validate the result.
+// Package matcherlqltodql is a thin SDK client for the OpenPipeline LQL-to-DQL translation endpoint.
 package matcherlqltodql
 
 import (

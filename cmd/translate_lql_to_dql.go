@@ -84,8 +84,9 @@ Examples:
 			return printer.Print(result)
 		}
 
-		// Default (no explicit -o): print the raw DQL string, ready to pipe.
-		// An explicit -o flag routes to the structured printer.
+		// Use .Changed (not outputFormat) to distinguish "user passed -o" from
+		// "defaulted to table" — outputFormat defaults to "table", so checking
+		// its value alone can't tell whether the user asked for it explicitly.
 		outputFlag := cmd.Root().PersistentFlags().Lookup("output")
 		if outputFlag != nil && outputFlag.Changed {
 			return printer.Print(result)

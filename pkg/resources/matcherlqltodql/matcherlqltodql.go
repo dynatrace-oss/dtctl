@@ -1,6 +1,4 @@
-// Package matcherlqltodql is the CLI resource layer for the OpenPipeline
-// LQL-to-DQL matcher translation endpoint. It delegates HTTP calls to the SDK
-// and exposes the translated DQL expression as a typed result ready for display.
+// Package matcherlqltodql is the CLI resource layer for the LQL-to-DQL translation endpoint.
 package matcherlqltodql
 
 import (
