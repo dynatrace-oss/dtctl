@@ -103,9 +103,16 @@ func toSDKDocument(d *Document) *sdkdocument.Document {
 
 // DirectShare is the CLI read model for a direct share.
 type DirectShare struct {
-	ID         string `json:"id" table:"ID"`
-	DocumentID string `json:"documentId" table:"DOCUMENT_ID"`
-	Access     string `json:"access" table:"ACCESS"`
+	ID         string   `json:"id" table:"ID"`
+	DocumentID string   `json:"documentId" table:"DOCUMENT_ID"`
+	Access     []string `json:"access" table:"ACCESS"`
+}
+
+// ExactAccess reports whether the share grants exactly the given access level.
+// Delegates to the SDK DirectShare.ExactAccess method.
+func (s DirectShare) ExactAccess(level string) bool {
+	sdkShare := sdkdocument.DirectShare{Access: s.Access}
+	return sdkShare.ExactAccess(level)
 }
 
 // fromSDKDirectShare converts an SDK DirectShare to the CLI DirectShare.

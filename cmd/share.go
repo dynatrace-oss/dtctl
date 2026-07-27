@@ -107,7 +107,7 @@ Examples:
 
 		var existingShare *document.DirectShare
 		for _, s := range shares.Shares {
-			if s.Access == access {
+			if s.ExactAccess(access) {
 				existingShare = &s
 				break
 			}
@@ -227,7 +227,7 @@ Examples:
 			// Delete all shares (optionally filtered by access level)
 			deleted := 0
 			for _, share := range shares.Shares {
-				if access != "" && share.Access != access {
+				if access != "" && !share.ExactAccess(access) {
 					continue
 				}
 				if err := handler.DeleteDirectShare(share.ID); err != nil {
@@ -241,7 +241,7 @@ Examples:
 			recipientIDs := append(users, groups...)
 			removed := 0
 			for _, share := range shares.Shares {
-				if access != "" && share.Access != access {
+				if access != "" && !share.ExactAccess(access) {
 					continue
 				}
 				if err := handler.RemoveDirectShareRecipients(share.ID, recipientIDs); err != nil {

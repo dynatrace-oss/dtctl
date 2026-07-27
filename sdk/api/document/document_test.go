@@ -235,6 +235,35 @@ func TestListEnvironmentShares(t *testing.T) {
 	}
 }
 
+func TestListDirectShares(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/direct-shares", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// The API returns the array under the kebab-case "direct-shares" key, and access as
+		// an array, both matching environment-shares.
+		_, _ = w.Write([]byte(`{"direct-shares":[{"id":"share-1","documentId":"doc-123","access":["read"]}],"totalCount":1}`))
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.ListDirectShares(context.Background(), "doc-123")
+	if err != nil {
+		t.Fatalf("ListDirectShares() error: %v", err)
+	}
+	if len(result.Shares) != 1 {
+		t.Fatalf("got %d shares, want 1", len(result.Shares))
+	}
+	if result.Shares[0].ID != "share-1" {
+		t.Errorf("got share ID %q, want share-1", result.Shares[0].ID)
+	}
+	if !result.Shares[0].ExactAccess("read") {
+		t.Errorf("got access %v, want exactly read", result.Shares[0].Access)
+	}
+}
+
 func TestDeleteEnvironmentShare(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
