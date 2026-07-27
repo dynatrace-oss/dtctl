@@ -123,6 +123,16 @@ Notes:
   file (never a zero-byte file): it carries the DQL schema when types are known,
   otherwise a single placeholder column so the file stays readable by mainstream
   tooling (a column-less file is rejected by DuckDB, pyarrow, and pandas).
+- **Parquet files also carry the DQL types in the file footer**, under the
+  key-value metadata key `dtctl.dql.types` (a JSON object mapping column name to
+  DQL type, e.g. `{"status.code":"long","content":"string"}`). This lets a reader
+  recover type information the physical schema alone loses — a Grail `long` is
+  stored as `INT64`, but Grail's own JSON serialiser emits it as a quoted string,
+  so a consumer reproducing Grail's wire form needs the declared type to know
+  which columns to stringify. The footer records **every** declared column,
+  including ones that were null in every row (Grail omits null fields from
+  records, so such a column has no physical column in the file). Read it with
+  DuckDB's `parquet_kv_metadata()` or any Parquet footer reader.
 
 ## Column types (`--include-types`)
 

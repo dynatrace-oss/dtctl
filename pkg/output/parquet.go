@@ -45,6 +45,14 @@ import (
 //
 // Cells that cannot be coerced to their column's physical type are written as
 // null rather than failing the whole export.
+//
+// # DQL types in the footer
+//
+// The full DQL type block is also persisted in the file footer under
+// dqlTypesMetadataKey, so a reader can recover the declared Grail type of every
+// column — including the disambiguation the physical schema loses (long vs
+// string, both numeric on the wire) and columns that were null in every row (and
+// so absent from the physical schema entirely). See dqlTypesMetadata.
 type ParquetPrinter struct {
 	writer io.Writer
 	// types carries the DQL column type mappings (from Response.GetTypes()).
@@ -90,6 +98,37 @@ const parquetRowsPerRowGroup = 100_000
 // file"), so we emit one nullable placeholder column to keep the file portable.
 const parquetEmptyResultColumn = "_dtctl_empty"
 
+// dqlTypesMetadataKey is the parquet file-footer key under which the DQL column
+// types are stored, as a JSON object mapping column name to DQL type name
+// (e.g. {"status.code":"long","content":"string"}). A reader (e.g. a snapshot
+// server reproducing Grail's JSON serialisation) consults it to recover types
+// the physical schema loses: a Grail `long` is written as INT64, but Grail's own
+// JSON serialiser emits it as a quoted string, so a reader needs the declared
+// type to decide whether to stringify. The key is namespaced to avoid clashing
+// with unrelated writer metadata.
+const dqlTypesMetadataKey = "dtctl.dql.types"
+
+// dqlTypesMetadata renders the full DQL type block as a JSON object for the file
+// footer, or "" when no types are known (nothing to record). It intentionally
+// serialises every declared column — not just the ones that materialised as
+// physical columns — so a reader recovers columns that were null in every row
+// and thus absent from the record-key union the schema is built from.
+// encoding/json marshals maps with sorted keys, so the output is deterministic.
+func (p *ParquetPrinter) dqlTypesMetadata() string {
+	if len(p.types) == 0 {
+		return ""
+	}
+	m := make(map[string]string, len(p.types))
+	for _, t := range p.types {
+		m[t.Name] = t.Type
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 // Print writes a single object as a one-row Parquet file.
 func (p *ParquetPrinter) Print(obj interface{}) error {
 	return p.PrintList([]interface{}{obj})
@@ -132,7 +171,19 @@ func (p *ParquetPrinter) PrintList(obj interface{}) error {
 	}
 	schema := parquet.NewSchema("dtctl", group)
 
-	w := parquet.NewWriter(p.writer, schema, parquet.MaxRowsPerRowGroup(parquetRowsPerRowGroup))
+	writerOpts := []parquet.WriterOption{schema, parquet.MaxRowsPerRowGroup(parquetRowsPerRowGroup)}
+	// Persist the DQL column types into the file footer. The physical schema
+	// above can only carry the columns that materialised (the union of record
+	// keys — and Grail omits null-valued fields from records, so a field that is
+	// null in every returned row produces no column). The footer instead carries
+	// the FULL DQL type block, so a reader recovers the complete declared schema,
+	// including all-null columns absent from the physical schema, and the exact
+	// Grail type of each column (e.g. long vs string) that INT64/DOUBLE alone
+	// cannot disambiguate. See dqlTypesMetadata.
+	if meta := p.dqlTypesMetadata(); meta != "" {
+		writerOpts = append(writerOpts, parquet.KeyValueMetadata(dqlTypesMetadataKey, meta))
+	}
+	w := parquet.NewWriter(p.writer, writerOpts...)
 	for _, rec := range records {
 		row := make(map[string]interface{}, len(columns))
 		for _, name := range columns {
