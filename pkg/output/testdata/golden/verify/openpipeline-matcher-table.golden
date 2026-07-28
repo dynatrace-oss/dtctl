@@ -1,0 +1,4 @@
+VALID   NOTIFICATIONS                       
+true                                        
+false   ERROR (1:1-1:6): unexpected token   
+        WARN: expression is deprecated      
