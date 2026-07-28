@@ -37,7 +37,6 @@ Examples:
 
 type breakpointStatusResult struct {
 	ID                 string                  `json:"id" yaml:"id"`
-	ImmutableID        string                  `json:"breakpointId,omitempty" yaml:"breakpointId,omitempty"`
 	Location           string                  `json:"location,omitempty" yaml:"location,omitempty"`
 	Enabled            bool                    `json:"enabled" yaml:"enabled"`
 	DisableReason      string                  `json:"disableReason,omitempty" yaml:"disableReason,omitempty"`
@@ -194,7 +193,6 @@ func buildBreakpointStatusResult(rule livedebugger.BreakpointRule, statusResp ma
 	}
 	if row, ok := breakpointRowFromRule(rule); ok {
 		result.ID = row.ID
-		result.ImmutableID = row.ImmutableID
 		result.Location = fmt.Sprintf("%s:%d", row.Filename, row.Line)
 		result.Enabled = row.Active
 	}
@@ -459,9 +457,6 @@ func printBreakpointStatusResult(result breakpointStatusResult) {
 	w := rootCmd.OutOrStdout()
 	const kw = 16
 	output.FprintDescribeKV(w, "ID:", kw, "%s", result.ID)
-	if result.ImmutableID != "" {
-		output.FprintDescribeKV(w, "Breakpoint ID:", kw, "%s", result.ImmutableID)
-	}
 	if result.Location != "" {
 		output.FprintDescribeKV(w, "Location:", kw, "%s", result.Location)
 	}

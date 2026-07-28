@@ -33,7 +33,6 @@ type Workspace struct {
 
 type BreakpointRule struct {
 	ID            string                 `json:"id"`
-	ImmutableID   string                 `json:"immutableId,omitempty"`
 	IsDisabled    bool                   `json:"is_disabled"`
 	DisableReason string                 `json:"disable_reason,omitempty"`
 	AugJSON       map[string]interface{} `json:"aug_json"`
