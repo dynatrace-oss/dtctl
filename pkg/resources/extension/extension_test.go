@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -213,7 +214,7 @@ func TestList(t *testing.T) {
 			}
 
 			handler := NewHandler(c)
-			result, err := handler.List(tt.nameFilter, tt.chunkSize)
+			result, err := handler.List(context.Background(), tt.nameFilter, tt.chunkSize)
 
 			if tt.expectError {
 				if err == nil {
@@ -277,7 +278,7 @@ func TestList_ActiveVersionEnrichment(t *testing.T) {
 	}
 
 	handler := NewHandler(c)
-	result, err := handler.List("", 0)
+	result, err := handler.List(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -299,6 +300,45 @@ func TestList_ActiveVersionEnrichment(t *testing.T) {
 	jmx := byName["com.dynatrace.extension.jmx"]
 	if jmx.ActiveVersion != "" {
 		t.Errorf("expected empty ActiveVersion for jmx, got %q", jmx.ActiveVersion)
+	}
+}
+
+func TestList_ActiveVersionEnrichmentError(t *testing.T) {
+	extensions := []Extension{
+		{ExtensionName: "com.dynatrace.extension.host-monitoring", Version: "1.2.3"},
+		{ExtensionName: "com.dynatrace.extension.jmx", Version: "2.0.0"},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/environment-configuration") {
+			// Return 403 for all env-config requests — should not abort the listing.
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if r.URL.Path == "/platform/extensions/v2/extensions" {
+			json.NewEncoder(w).Encode(ExtensionList{TotalCount: len(extensions), Items: extensions})
+			return
+		}
+		t.Errorf("unexpected path: %s", r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	c, err := client.New(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	handler := NewHandler(c)
+	result, err := handler.List(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("non-404 env-config error must not abort listing, got error: %v", err)
+	}
+	for _, ext := range result.Items {
+		if ext.ActiveVersion != "" {
+			t.Errorf("expected empty ActiveVersion for %q on 403, got %q", ext.ExtensionName, ext.ActiveVersion)
+		}
 	}
 }
 

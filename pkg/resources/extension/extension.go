@@ -204,8 +204,8 @@ func NewHandler(c *client.Client) *Handler {
 }
 
 // List lists all extensions with automatic pagination
-func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
-	l, err := h.sdk.List(context.Background(), name, chunkSize)
+func (h *Handler) List(ctx context.Context, name string, chunkSize int64) (*ExtensionList, error) {
+	l, err := h.sdk.List(ctx, name, chunkSize)
 	if err != nil {
 		return nil, err
 	}
@@ -214,13 +214,12 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 	// Fetch the active version for each extension concurrently, bounded to
 	// avoid bursting too many simultaneous requests. 404 (no env config) is
 	// already translated to ("", nil) by GetActiveVersion; any other error is
-	// propagated.
+	// treated as best-effort — the ACTIVE VERSION column is left empty rather
+	// than failing the entire listing.
 	const maxWorkers = 10
 	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		firstErr error
-		sem      = make(chan struct{}, maxWorkers)
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, maxWorkers)
 	)
 	for i := range result.Items {
 		wg.Add(1)
@@ -229,13 +228,8 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			activeVersion, err := h.sdk.GetActiveVersion(context.Background(), result.Items[idx].ExtensionName)
+			activeVersion, err := h.sdk.GetActiveVersion(ctx, result.Items[idx].ExtensionName)
 			if err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = err
-				}
-				mu.Unlock()
 				return
 			}
 			if activeVersion != "" {
@@ -244,9 +238,6 @@ func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
 		}(i)
 	}
 	wg.Wait()
-	if firstErr != nil {
-		return nil, firstErr
-	}
 
 	return result, nil
 }
