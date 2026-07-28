@@ -3282,18 +3282,31 @@ dtctl delete breakpoint OrderController.java:306
 dtctl delete breakpoint --all -y
 ```
 
-### Decoded snapshot output
+### Get snapshots
+
+Fetch snapshots captured by a breakpoint by location or stable rule ID:
 
 ```bash
-# Simplified (variant wrappers flattened to plain values)
-dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots
+# By location
+dtctl get snapshots OrderController.java:306
+
+# By stable rule ID (shown after create or in get breakpoints)
+dtctl get snapshots dtctl-rule-5bfb45a29fce7a46
+
+# Decoded snapshot output (variant wrappers flattened to plain values)
+dtctl get snapshots OrderController.java:306 --decode-snapshots
 
 # Full decoded tree with type annotations
-dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots=full
+dtctl get snapshots OrderController.java:306 --decode-snapshots=full
 
-# Compose with any output format
-dtctl query "fetch application.snapshots | limit 5" --decode-snapshots -o json
-dtctl query "fetch application.snapshots | limit 5" --decode-snapshots -o yaml
+# Structured output
+dtctl get snapshots OrderController.java:306 -o json
+dtctl get snapshots OrderController.java:306 -o yaml
+
+# Scope to a time window
+dtctl get snapshots OrderController.java:306 \
+  --default-timeframe-start 2024-01-01T00:00:00Z \
+  --default-timeframe-end   2024-01-02T00:00:00Z
 ```
 
 `--decode-snapshots` enriches each record with `parsed_snapshot` decoded from `snapshot.data` and `snapshot.string_map`. By default, variant wrappers are simplified to plain values; use `--decode-snapshots=full` to preserve type annotations.

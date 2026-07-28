@@ -118,8 +118,9 @@ var ResourceScopes = map[string]AccessScopes{
 	"user":  {Read: []string{"iam:users:read"}},
 	"group": {Read: []string{"iam:groups:read"}},
 
-	// Live Debugger (single scope covers create/update/delete)
+	// Live Debugger (single scope covers all operations including snapshot queries)
 	"breakpoint": {Read: []string{"dev-obs:breakpoints:set"}, Write: []string{"dev-obs:breakpoints:set"}, Delete: []string{"dev-obs:breakpoints:set"}},
+	"snapshots":  {Read: []string{"dev-obs:breakpoints:set"}},
 
 	// Hub catalog (/platform/hub/v1/catalog/...). dtctl's login requests
 	// hub:catalog:read for this surface (docs/TOKEN_SCOPES.md also lists

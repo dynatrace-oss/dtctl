@@ -144,6 +144,7 @@ func init() {
 	getCmd.AddCommand(getSettingsSchemasCmd)
 	getCmd.AddCommand(getSettingsCmd)
 	getCmd.AddCommand(getBreakpointsCmd)
+	getCmd.AddCommand(getSnapshotsCmd)
 	getCmd.AddCommand(getExtensionsCmd)
 	getCmd.AddCommand(getExtensionConfigsCmd)
 	getCmd.AddCommand(getDocumentsCmd)
