@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -108,6 +109,83 @@ func TestParquetPrinter_DQLTypes(t *testing.T) {
 	}
 	if rows[1]["duration"] != int64(4781900) {
 		t.Errorf("duration = %#v, want int64(4781900)", rows[1]["duration"])
+	}
+}
+
+// TestParquetPrinter_DQLTypesFooter verifies the DQL type block is persisted
+// into the file footer (dtctl.dql.types), and — critically for reproducing
+// Grail's serialisation — that it carries EVERY declared column, including one
+// that is null in every record and therefore has no physical parquet column.
+func TestParquetPrinter_DQLTypesFooter(t *testing.T) {
+	var buf bytes.Buffer
+	p := &ParquetPrinter{
+		writer: &buf,
+		types: []ColumnTypeMapping{
+			{Name: "count", Type: "long"},
+			{Name: "host", Type: "string"},
+			// Declared by the DQL schema but null in every record below. Grail
+			// omits null fields from JSON records, so this never becomes a
+			// physical column — yet the footer must still report it and its type.
+			{Name: "duration_ns", Type: "duration"},
+		},
+	}
+	records := []map[string]interface{}{
+		{"count": "42", "host": "web-01"},
+		{"count": "7", "host": "web-02"},
+	}
+	if err := p.PrintList(records); err != nil {
+		t.Fatalf("PrintList: %v", err)
+	}
+
+	f, err := parquet.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("open parquet: %v", err)
+	}
+
+	// Sanity: the all-null column is absent from the physical schema...
+	physical := map[string]bool{}
+	for _, path := range f.Schema().Columns() {
+		physical[path[len(path)-1]] = true
+	}
+	if physical["duration_ns"] {
+		t.Fatalf("did not expect an all-null column in the physical schema: %v", physical)
+	}
+
+	// ...but the footer still records its declared type.
+	raw, ok := f.Lookup(dqlTypesMetadataKey)
+	if !ok {
+		t.Fatalf("footer key %q missing", dqlTypesMetadataKey)
+	}
+	var got map[string]string
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("footer value is not JSON: %v — %q", err, raw)
+	}
+	want := map[string]string{"count": "long", "host": "string", "duration_ns": "duration"}
+	if len(got) != len(want) {
+		t.Fatalf("footer types = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("footer type[%q] = %q, want %q", k, got[k], v)
+		}
+	}
+}
+
+// TestParquetPrinter_NoTypesNoFooter verifies the footer key is omitted entirely
+// when no DQL types are known (value-inference path), rather than writing an
+// empty or misleading annotation.
+func TestParquetPrinter_NoTypesNoFooter(t *testing.T) {
+	var buf bytes.Buffer
+	p := &ParquetPrinter{writer: &buf} // no types
+	if err := p.PrintList([]map[string]interface{}{{"a": float64(1)}}); err != nil {
+		t.Fatalf("PrintList: %v", err)
+	}
+	f, err := parquet.OpenFile(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("open parquet: %v", err)
+	}
+	if v, ok := f.Lookup(dqlTypesMetadataKey); ok {
+		t.Errorf("expected no footer key without DQL types, got %q", v)
 	}
 }
 
