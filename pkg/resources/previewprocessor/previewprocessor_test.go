@@ -2,10 +2,111 @@ package previewprocessor
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
+
+const previewPath = "/platform/openpipeline/v1/preview/processor"
+
+// newTestHandler wires a Handler to a mock server serving the given response body
+// at the preview endpoint. When capture is non-nil the request body is recorded.
+func newTestHandler(t *testing.T, status int, body string, capture *[]byte) *Handler {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != previewPath {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if capture != nil {
+			b, _ := io.ReadAll(r.Body)
+			*capture = b
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	c, err := client.NewForTesting(srv.URL, "test-token")
+	if err != nil {
+		t.Fatalf("client.NewForTesting: %v", err)
+	}
+	return NewHandler(c)
+}
+
+// writeProcessorFile writes a processor body to a temp file and returns its path.
+func writeProcessorFile(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "processor.json")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	return path
+}
+
+func TestHandler_Preview(t *testing.T) {
+	resp := `{"results":[
+		{"matched":true,"record":{"content":"hello","severity":"INFO"}},
+		{"matched":false}
+	]}`
+	var reqBody []byte
+	h := newTestHandler(t, http.StatusOK, resp, &reqBody)
+
+	path := writeProcessorFile(t, `{"type":"dql","matcher":"true","dqlScript":"fieldsAdd severity = \"INFO\""}`)
+	results, err := h.Preview(path, "logs")
+	if err != nil {
+		t.Fatalf("Preview() error = %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	if !results[0].Matched {
+		t.Errorf("results[0].Matched = false, want true")
+	}
+	if results[0].Record["severity"] != "INFO" {
+		t.Errorf("results[0].Record[severity] = %v, want INFO", results[0].Record["severity"])
+	}
+	if results[1].Matched {
+		t.Errorf("results[1].Matched = true, want false")
+	}
+	// The handler must wrap the processor body in an envelope and add configId.
+	if !strings.Contains(string(reqBody), `"processor"`) || !strings.Contains(string(reqBody), `"configId":"logs"`) {
+		t.Errorf("request body missing envelope/configId: %s", reqBody)
+	}
+}
+
+func TestHandler_Preview_FileError(t *testing.T) {
+	h := newTestHandler(t, http.StatusOK, `{"results":[]}`, nil)
+	if _, err := h.Preview(filepath.Join(t.TempDir(), "missing.json"), ""); err == nil {
+		t.Fatal("Preview() expected error for missing file, got nil")
+	}
+}
+
+func TestHandler_Preview_InvalidBody(t *testing.T) {
+	h := newTestHandler(t, http.StatusOK, `{"results":[]}`, nil)
+	// A non-object body is valid JSON but fails the envelope object check before
+	// any HTTP call is made.
+	path := writeProcessorFile(t, `["not","an","object"]`)
+	if _, err := h.Preview(path, ""); err == nil {
+		t.Fatal("Preview() expected error for non-object body, got nil")
+	}
+}
+
+func TestHandler_Preview_ServerError(t *testing.T) {
+	h := newTestHandler(t, http.StatusInternalServerError, `{"error":{"message":"boom"}}`, nil)
+	path := writeProcessorFile(t, `{"type":"dql"}`)
+	if _, err := h.Preview(path, ""); err == nil {
+		t.Fatal("Preview() expected error for 500, got nil")
+	}
+}
 
 func TestBuildEnvelope(t *testing.T) {
 	tests := []struct {
