@@ -43,6 +43,9 @@ behavior may change in future releases.`,
   # Output as JSON
   dtctl get snapshots OrderController.java:306 -o json
 
+  # Limit number of results
+  dtctl get snapshots OrderController.java:306 --limit 50
+
   # Scope to a time window
   dtctl get snapshots OrderController.java:306 \
     --default-timeframe-start 2024-01-01T00:00:00Z \
@@ -94,6 +97,9 @@ behavior may change in future releases.`,
 		rule := matchedRules[0]
 		dqlID := padBreakpointID(rule.ImmutableID)
 		dqlQuery := fmt.Sprintf(`fetch application.snapshots | filter breakpoint.id == toUid("%s")`, dqlID)
+		if limit, _ := cmd.Flags().GetInt("limit"); limit > 0 {
+			dqlQuery += fmt.Sprintf(" | limit %d", limit)
+		}
 
 		fmt.Fprintln(os.Stderr, "Note: Snapshots from the latest version of the breakpoint will be shown")
 
@@ -155,6 +161,8 @@ behavior may change in future releases.`,
 }
 
 func init() {
+	getSnapshotsCmd.Flags().Int("limit", 0, "maximum number of snapshots to return (0 = no limit)")
+
 	getSnapshotsCmd.Flags().String("decode-snapshots", "", `(experimental) decode Live Debugger snapshot payloads in query results
 bare --decode-snapshots simplifies variant wrappers to plain values;
 --decode-snapshots=full preserves the full decoded tree with type annotations`)
