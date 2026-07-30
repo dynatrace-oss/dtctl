@@ -44,6 +44,13 @@ type NotebookApplyResult struct {
 	SectionCount    int    `json:"sectionCount,omitempty" yaml:"sectionCount,omitempty" table:"SECTIONS"`
 }
 
+// DocumentApplyResult is the result of applying a document of a custom type
+// (any type other than dashboard or notebook, e.g. "launchpad" or "acme:config").
+type DocumentApplyResult struct {
+	ApplyResultBase `yaml:",inline"`
+	URL             string `json:"url,omitempty" yaml:"url,omitempty" table:"URL,wide"`
+}
+
 // SLOApplyResult is the result of applying an SLO resource.
 type SLOApplyResult struct {
 	ApplyResultBase `yaml:",inline"`

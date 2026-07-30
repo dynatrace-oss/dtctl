@@ -58,10 +58,21 @@ Supported resource types:
   - Workflows (automation)
   - Dashboards
   - Notebooks
+  - Documents of any type (launchpad, custom app documents, e.g. acme:config)
   - SLOs
   - Grail buckets
   - Settings objects
   - Extension monitoring configurations
+
+Custom document types (--type):
+  Documents exported with 'dtctl get document -o json' carry their "type" field
+  and are detected automatically, so the export → edit → apply round-trip works
+  for any document type. Use --type to apply a file that has no embedded type, or
+  to force a specific type:
+
+    dtctl get document acme-config -o json > doc.json   # includes "type"
+    dtctl apply -f doc.json                              # updates, type auto-detected
+    dtctl apply -f raw-content.json --type acme:config --id acme-config
 
 Array input (bulk apply):
   Files containing an array of resources (e.g., from 'dtctl get settings --schema ...
@@ -126,6 +137,7 @@ resources in sync with their file definitions.
 		noHooks, _ := cmd.Flags().GetBool("no-hooks")
 		overrideID, _ := cmd.Flags().GetString("id")
 		writeID, _ := cmd.Flags().GetBool("write-id")
+		docType, _ := cmd.Flags().GetString("type")
 		shareEnvironment, _ := cmd.Flags().GetString("share-environment")
 
 		if err := validateShareEnvironmentValue(shareEnvironment); err != nil {
@@ -190,6 +202,7 @@ resources in sync with their file definitions.
 			ShowDiff:     showDiff,
 			OverrideID:   overrideID,
 			WriteID:      writeID,
+			Type:         docType,
 		}
 
 		results, applyErr := applier.Apply(fileData, opts)
@@ -265,6 +278,7 @@ func init() {
 	applyCmd.Flags().Bool("no-hooks", false, "skip pre-apply and post-apply hooks")
 	applyCmd.Flags().String("id", "", "override or inject resource ID (use with --write-id to stamp ID into file)")
 	applyCmd.Flags().Bool("write-id", false, "write the created resource ID back into the source file for idempotent future applies")
+	applyCmd.Flags().String("type", "", "document type (e.g. launchpad, acme:config); forces the file to be applied as a document of this type")
 	applyCmd.Flags().String("share-environment", "", "share the applied notebook/dashboard with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")
 	applyCmd.Flags().Lookup("share-environment").NoOptDefVal = "read"
 

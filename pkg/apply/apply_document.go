@@ -11,12 +11,25 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
-// applyDocument applies a document resource (dashboard or notebook)
+// applyDocument applies a document resource of any type (dashboard, notebook,
+// or a custom type such as "launchpad" or "acme:config").
+//
+// docType is the concrete document type. When empty it is resolved from the
+// payload's "type" field, allowing round-trip apply of documents exported with
+// 'dtctl get document -o json'.
 func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) (ApplyResult, error) {
 	// Parse to check for ID and name
 	var doc map[string]interface{}
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("failed to parse %s JSON: %w", docType, err)
+		return nil, fmt.Errorf("failed to parse document JSON: %w", err)
+	}
+
+	// Resolve the document type from the payload when not supplied by the caller.
+	if docType == "" {
+		docType, _ = doc["type"].(string)
+	}
+	if docType == "" {
+		return nil, fmt.Errorf("document type is required: use --type or include a \"type\" field in the payload")
 	}
 
 	// Extract and validate content - handle round-trippable format from 'get' command
@@ -39,6 +52,11 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 
 	id, hasID := doc["id"].(string)
 	if !hasID || id == "" {
+		// No ID provided. Update semantics require a target ID.
+		if opts.RequireExisting {
+			return nil, fmt.Errorf("cannot update %s without an id: provide --id or include an \"id\" field", docType)
+		}
+
 		// No ID provided - create new document
 		// Safety check for create operation
 		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
@@ -81,6 +99,11 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	// Check if document exists
 	metadata, err := handler.GetMetadata(id)
 	if err != nil {
+		// Update semantics: do not silently create a document that does not exist.
+		if opts.RequireExisting {
+			return nil, fmt.Errorf("%s %q not found (use 'dtctl create document' to create it): %w", docType, id, err)
+		}
+
 		// Document doesn't exist, create it
 		// Safety check for create operation
 		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
@@ -172,9 +195,12 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	return a.buildDocumentResult(ActionUpdated, docType, resultID, resultName, tileCount, resultWarnings), nil
 }
 
-// buildDocumentResult constructs the appropriate document result type based on docType
+// buildDocumentResult constructs the appropriate document result type based on docType.
+// Custom document types (anything other than dashboard/notebook) map to the generic
+// DocumentApplyResult so the emitted resourceType reflects the real type.
 func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCount int, warnings []string) ApplyResult {
-	if docType == "notebook" {
+	switch docType {
+	case "notebook":
 		return &NotebookApplyResult{
 			ApplyResultBase: ApplyResultBase{
 				Action:       action,
@@ -186,17 +212,29 @@ func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCoun
 			URL:          a.documentURL(docType, id),
 			SectionCount: itemCount,
 		}
-	}
-	return &DashboardApplyResult{
-		ApplyResultBase: ApplyResultBase{
-			Action:       action,
-			ResourceType: "dashboard",
-			ID:           id,
-			Name:         name,
-			Warnings:     warnings,
-		},
-		URL:       a.documentURL(docType, id),
-		TileCount: itemCount,
+	case "dashboard":
+		return &DashboardApplyResult{
+			ApplyResultBase: ApplyResultBase{
+				Action:       action,
+				ResourceType: "dashboard",
+				ID:           id,
+				Name:         name,
+				Warnings:     warnings,
+			},
+			URL:       a.documentURL(docType, id),
+			TileCount: itemCount,
+		}
+	default:
+		return &DocumentApplyResult{
+			ApplyResultBase: ApplyResultBase{
+				Action:       action,
+				ResourceType: docType,
+				ID:           id,
+				Name:         name,
+				Warnings:     warnings,
+			},
+			URL: a.documentURL(docType, id),
+		}
 	}
 }
 
@@ -367,9 +405,9 @@ func (a *Applier) documentURL(docType, id string) string {
 	}
 }
 
-// dryRunDocument performs dry-run validation for dashboard/notebook documents
-func (a *Applier) dryRunDocument(resourceType ResourceType, doc map[string]interface{}) (ApplyResult, error) {
-	docType := string(resourceType)
+// dryRunDocument performs dry-run validation for a document of any type
+// (dashboard, notebook, or a custom type).
+func (a *Applier) dryRunDocument(docType string, doc map[string]interface{}) (ApplyResult, error) {
 	id, _ := doc["id"].(string)
 
 	// Use the same extraction/validation logic as apply

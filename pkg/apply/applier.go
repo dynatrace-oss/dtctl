@@ -133,13 +133,15 @@ func (a *Applier) determineOwnership(resourceOwnerID string) safety.ResourceOwne
 
 // ApplyOptions holds options for apply operation
 type ApplyOptions struct {
-	TemplateVars map[string]interface{}
-	DryRun       bool
-	Force        bool
-	ShowDiff     bool
-	NoHooks      bool   // skip pre-apply hooks
-	OverrideID   string // override or inject resource ID (from --id flag)
-	WriteID      bool   // write created resource ID back into the source file (from --write-id flag)
+	TemplateVars    map[string]interface{}
+	DryRun          bool
+	Force           bool
+	ShowDiff        bool
+	NoHooks         bool   // skip pre-apply hooks
+	OverrideID      string // override or inject resource ID (from --id flag)
+	WriteID         bool   // write created resource ID back into the source file (from --write-id flag)
+	Type            string // document type override (from --type flag); forces generic document handling
+	RequireExisting bool   // fail instead of creating when a document ID is missing (update semantics)
 }
 
 // ResourceType represents the type of resource
@@ -160,6 +162,7 @@ const (
 	ResourceExtensionConfig       ResourceType = "extension_config"
 	ResourceSegment               ResourceType = "segment"
 	ResourceAnomalyDetector       ResourceType = "anomaly_detector"
+	ResourceDocument              ResourceType = "document"
 	ResourceUnknown               ResourceType = "unknown"
 )
 
@@ -182,10 +185,22 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 		jsonData = []byte(rendered)
 	}
 
-	// Detect resource type
-	resourceType, isArray, err := detectResourceType(jsonData)
-	if err != nil {
-		return nil, err
+	// Determine resource type. An explicit --type (opts.Type) forces generic
+	// document handling and bypasses content-based detection: the user has
+	// declared the type, so we must not let a heuristic override it (e.g. a
+	// custom document whose content happens to carry a "tasks" field).
+	var resourceType ResourceType
+	var isArray bool
+	if opts.Type != "" {
+		if bytes.HasPrefix(bytes.TrimSpace(jsonData), []byte("[")) {
+			return nil, fmt.Errorf("--type cannot be used with array input")
+		}
+		resourceType = ResourceDocument
+	} else {
+		resourceType, isArray, err = detectResourceType(jsonData)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Array input: split into individual elements and apply each one
@@ -232,7 +247,7 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 	}
 
 	if opts.DryRun {
-		result, err := a.dryRun(resourceType, jsonData)
+		result, err := a.dryRun(resourceType, jsonData, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -323,6 +338,10 @@ func (a *Applier) applySingle(resourceType ResourceType, jsonData []byte, opts A
 		result, err = a.applyDocument(jsonData, "dashboard", opts)
 	case ResourceNotebook:
 		result, err = a.applyDocument(jsonData, "notebook", opts)
+	case ResourceDocument:
+		// Generic document of any type. opts.Type wins when set (--type flag);
+		// otherwise applyDocument resolves the type from the payload's "type" field.
+		result, err = a.applyDocument(jsonData, opts.Type, opts)
 	case ResourceSLO:
 		result, err = a.applySLO(jsonData)
 	case ResourceBucket:
@@ -397,7 +416,7 @@ func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOp
 
 	for i, elem := range elements {
 		if opts.DryRun {
-			r, err := a.dryRun(resourceType, elem)
+			r, err := a.dryRun(resourceType, elem, opts)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("item %d: %s", i+1, err))
 				continue
@@ -504,13 +523,15 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 
 	// Documents have "metadata" or "content" at root level
 	if _, hasMetadata := raw["metadata"]; hasMetadata {
-		// Further distinguish between dashboard and notebook
-		if typeField, ok := raw["type"].(string); ok {
-			if typeField == "dashboard" {
+		// Further distinguish between dashboard, notebook, and custom types
+		if typeField, ok := raw["type"].(string); ok && typeField != "" {
+			switch typeField {
+			case "dashboard":
 				return ResourceDashboard, false, nil
-			}
-			if typeField == "notebook" {
+			case "notebook":
 				return ResourceNotebook, false, nil
+			default:
+				return ResourceDocument, false, nil // Custom document type
 			}
 		}
 		return ResourceDashboard, false, nil // Default to dashboard for documents
@@ -627,20 +648,37 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 		}
 	}
 
+	// Generic document fallback: any object carrying a non-empty string "type"
+	// field that did not match a more specific resource above is treated as a
+	// custom document (e.g. "launchpad", "acme:config"). This mirrors what
+	// 'create document' accepts and enables round-trip apply/update of any
+	// document type. Kept last so all specific detectors take precedence.
+	if typeField, ok := raw["type"].(string); ok && typeField != "" {
+		return ResourceDocument, false, nil
+	}
+
 	return ResourceUnknown, false, fmt.Errorf("could not detect resource type from file content")
 }
 
 // dryRun validates what would be applied without actually applying.
 // Returns a DryRunResult with structured information about the planned operation.
-func (a *Applier) dryRun(resourceType ResourceType, data []byte) (ApplyResult, error) {
+func (a *Applier) dryRun(resourceType ResourceType, data []byte, opts ApplyOptions) (ApplyResult, error) {
 	var doc map[string]interface{}
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 
 	// For documents, check if it would be create or update
-	if resourceType == ResourceDashboard || resourceType == ResourceNotebook {
-		return a.dryRunDocument(resourceType, doc)
+	if resourceType == ResourceDashboard || resourceType == ResourceNotebook || resourceType == ResourceDocument {
+		docType := string(resourceType)
+		if resourceType == ResourceDocument {
+			// Resolve the concrete document type: --type wins, else payload "type".
+			docType = opts.Type
+			if docType == "" {
+				docType, _ = doc["type"].(string)
+			}
+		}
+		return a.dryRunDocument(docType, doc)
 	}
 
 	// Extension monitoring configs have specific fields
