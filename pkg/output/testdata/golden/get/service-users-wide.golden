@@ -1,0 +1,3 @@
+NAME               EMAIL                              UID                                    CREATED                SURNAME       DESCRIPTION                      GROUP-UUID                             
+automation-alpha   automation-alpha@example.invalid   00000000-0000-4000-8000-000000000101   2026-03-01T12:00:00Z   ServiceUser   Synthetic integration identity   00000000-0000-4000-8000-000000000201   
+automation-beta    automation-beta@example.invalid    00000000-0000-4000-8000-000000000102   2026-03-02T13:30:00Z   ServiceUser   Synthetic reporting identity     00000000-0000-4000-8000-000000000202   

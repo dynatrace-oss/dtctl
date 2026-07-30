@@ -202,9 +202,9 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 ## Summary
 
-- commands: 269 stable, 15 experimental, 11 development
+- commands: 269 stable, 15 experimental, 14 development
 - global flags (accepted on every command): 11
-- entries below (commands + flags): 926
+- entries below (commands + flags): 933
 
 ## Surface
 
@@ -223,6 +223,10 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
   --verbose                          stable
 account                              development  (opt-in key: account)
 account create                       development
+account create service-user          development
+  --description                      development
+  --dry-run                          development
+  --name                             development
 account create token                 development
   --dry-run                          development
   --expires                          development
@@ -233,9 +237,12 @@ account create token                 development
   --tag                              development
   --user-uuid                        development
 account delete                       development
+account delete service-user          development
+  --dry-run                          development
 account delete token                 development
   --dry-run                          development
 account list                         development
+account list service-user            development
 account list token                   development
 account login                        development
   --account-uuid                     development

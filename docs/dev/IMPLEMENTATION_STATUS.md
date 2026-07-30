@@ -103,6 +103,7 @@ This document tracks the current implementation status of dtctl. For future plan
 | Resource | list | create | revoke |
 |----------|------|--------|--------|
 | token (account) | ✅ | ✅ | ✅ |
+| service-user (account) | ✅ | ✅ | ✅ |
 
 #### Cloud Connections
 

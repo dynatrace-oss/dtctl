@@ -166,7 +166,9 @@ func deleteDryRun(cmd *cobra.Command, kind, name, id string) error {
 // apply and update document define their own --dry-run flag.
 var dryRunCommands = []*cobra.Command{
 	accountCreateTokenCmd,
+	accountCreateServiceUserCmd,
 	accountDeleteTokenCmd,
+	accountDeleteServiceUserCmd,
 	applyExtensionConfigCmd,
 	configDeleteContextCmd,
 	configDeleteCredentialsCmd,
