@@ -134,6 +134,8 @@ func New(baseURL string, opts ...Option) (*Client, error) {
 		c.http.SetRetryWaitTime(1 * time.Second)
 		c.http.SetRetryMaxWaitTime(10 * time.Second)
 	}
+	// Multipart bodies are one-shot readers, so rewind them before a retry
+	c.http.SetRetryResetReaders(true)
 	c.http.AddRetryCondition(func(r *resty.Response, err error) bool {
 		retry := isRetryable(r, err)
 		if retry {

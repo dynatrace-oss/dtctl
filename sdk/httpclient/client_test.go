@@ -1,6 +1,8 @@
 package httpclient
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -72,5 +74,54 @@ func TestClient_Retry(t *testing.T) {
 	}
 	if attempts != 3 {
 		t.Errorf("attempts = %d, want 3", attempts)
+	}
+}
+
+func TestClient_RetryResendsMultipartBody(t *testing.T) {
+	const content = `{"tiles":{"0":{"type":"markdown"}}}`
+
+	attempts := 0
+	received := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		file, _, err := r.FormFile("content")
+		if err != nil {
+			t.Errorf("FormFile: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		body, err := io.ReadAll(file)
+		if err != nil {
+			t.Errorf("ReadAll: %v", err)
+		}
+		received = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, WithToken("test-token"), WithRetry(3, 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := c.HTTP().R().
+		SetMultipartField("content", "content.json", "application/json", bytes.NewReader([]byte(content))).
+		Patch("/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode())
+	}
+	if attempts != 2 {
+		t.Errorf("attempts = %d, want 2", attempts)
+	}
+	if received != content {
+		t.Errorf("content = %q, want %q", received, content)
 	}
 }
