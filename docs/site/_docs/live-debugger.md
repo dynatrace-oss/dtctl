@@ -63,14 +63,14 @@ When `--filters` changes the workspace filters, it also re-scopes existing break
 ### List Breakpoints
 
 ```bash
-# List all breakpoints
+# List all breakpoints (includes the log message column)
 dtctl get breakpoints
 ```
 
 ### Describe a Breakpoint
 
 ```bash
-# View full details of a breakpoint including hit count and status
+# View full details of a breakpoint including its log message, hit count, and status
 dtctl describe breakpoint bp-abc123
 ```
 
@@ -80,9 +80,19 @@ dtctl describe breakpoint bp-abc123
 # Add a conditional expression to a breakpoint
 dtctl update breakpoint bp-abc123 --condition "userId != null"
 
+# Change the log message emitted when the breakpoint is hit
+dtctl update breakpoint bp-abc123 --log-message "Hit on {frame.filename}:{frame.line} user={userId}"
+
 # Disable a breakpoint without deleting it
 dtctl update breakpoint bp-abc123 --enabled=false
 ```
+
+The log message supports `{variable}` placeholders: `{frame.*}` fields expose the
+hit location, any other name (for example `{userId}`) references a captured
+application variable, and reserved namespaces such as `{rook.*}` or
+`{controller.*}` pass through unchanged. Use the short, friendly form — messages
+are displayed the same way in `get` and `describe`. At least one of
+`--condition`, `--log-message`, or `--enabled` is required.
 
 ### Delete Breakpoints
 
