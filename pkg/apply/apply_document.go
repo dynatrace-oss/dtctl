@@ -22,6 +22,10 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	// Extract and validate content - handle round-trippable format from 'get' command
 	contentData, name, description, validationWarnings := extractDocumentContent(doc, docType)
 
+	// Labels ride along in the exported document ('get document -o json'), so a
+	// round-trip apply preserves (and can update) them.
+	labels := extractDocumentLabels(doc)
+
 	// Show validation warnings on stderr and collect for result
 	var resultWarnings []string
 	for _, w := range validationWarnings {
@@ -50,6 +54,7 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 			Type:        docType,
 			Description: description,
 			Content:     contentData,
+			Labels:      labels,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create %s: %w", docType, err)
@@ -100,6 +105,7 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 			Type:        docType,
 			Description: description,
 			Content:     contentData,
+			Labels:      labels,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create %s: %w", docType, err)
@@ -138,8 +144,14 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 		}
 	}
 
-	// Update the existing document (including metadata if name or description provided)
-	result, err := handler.UpdateWithMetadata(id, metadata.Version, contentData, "application/json", name, description)
+	// Update the existing document (including metadata/labels if provided).
+	result, err := handler.UpdateDocument(id, metadata.Version, document.UpdateRequest{
+		Content:     contentData,
+		ContentType: "application/json",
+		Name:        name,
+		Description: description,
+		Labels:      labels,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply %s: %w", docType, err)
 	}
@@ -186,6 +198,24 @@ func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCoun
 		URL:       a.documentURL(docType, id),
 		TileCount: itemCount,
 	}
+}
+
+// extractDocumentLabels pulls a "labels" string array from a parsed document
+// payload (as produced by 'dtctl get document -o json'). Non-string entries are
+// skipped; nil is returned when no usable labels are present so the update path
+// treats it as "no change".
+func extractDocumentLabels(doc map[string]interface{}) []string {
+	raw, ok := doc["labels"].([]interface{})
+	if !ok {
+		return nil
+	}
+	var labels []string
+	for _, v := range raw {
+		if s, ok := v.(string); ok && s != "" {
+			labels = append(labels, s)
+		}
+	}
+	return labels
 }
 
 // extractDocumentContent extracts the content from a document, handling various input formats
