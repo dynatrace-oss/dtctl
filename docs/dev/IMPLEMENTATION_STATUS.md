@@ -12,7 +12,7 @@ This document tracks the current implementation status of dtctl. For future plan
 
 ### Core Infrastructure
 - [x] Go module with Cobra CLI framework
-- [x] **SDK module** (`sdk/`): Separate Go module (`github.com/dynatrace-oss/dtctl/sdk`) with typed API wrappers for 15 Dynatrace APIs, shared HTTP client, auth, URL handling, and credential storage. CLI resource handlers delegate to SDK.
+- [x] **SDK module** (`sdk/`): Separate Go module (`github.com/dynatrace-oss/dtctl/sdk`) with typed API wrappers for 19 Dynatrace APIs, shared HTTP client, auth, URL handling, and credential storage. CLI resource handlers delegate to SDK.
 - [x] Configuration management (YAML config, contexts, token storage)
 - [x] Context safety levels (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)
 - [x] HTTP client with retry, rate limiting, error handling
@@ -87,9 +87,10 @@ This document tracks the current implementation status of dtctl. For future plan
 
 #### Account Management
 
-| Resource | list | create | revoke |
+| Resource | list | create | delete |
 |----------|------|--------|--------|
-| token (account) | ✅ | ✅ | ✅ |
+| token (account) | ✅ | ✅ | ✅ (revoke) |
+| service-user (account) | ✅ | ✅ | ✅ |
 
 #### Cloud Connections
 
@@ -360,7 +361,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for the complete implementation pla
 - [x] Unit tests for core packages
 - [x] Integration tests
 - [x] E2E tests
-- [x] Golden (snapshot) tests for all output formatters (`pkg/output/golden_test.go`, 139 golden files)
+- [x] Golden (snapshot) tests for all output formatters (`pkg/output/golden_test.go`, 146 golden files)
 - [ ] Improve test coverage (target: 80%+)
 
 ### Code Quality

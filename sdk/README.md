@@ -29,16 +29,19 @@ Thin, typed Go clients for Dynatrace REST APIs. Each package covers one API surf
 | `api/analyzer` | Query analyzer (DQL validation) |
 | `api/appengine` | App Engine (functions) |
 | `api/bucket` | Grail bucket management |
+| `api/classicpipelinestranslate` | Classic pipeline translation |
 | `api/copilot` | Davis Copilot completions |
 | `api/document` | Documents (dashboards, notebooks) + trash |
 | `api/edgeconnect` | EdgeConnect management |
 | `api/extension` | Extensions 2.0 lifecycle |
 | `api/hub` | Dynatrace Hub items |
-| `api/iam` | Account-level IAM (groups, users, policies, service users) |
+| `api/iam` | Account-level IAM (groups, users, policies) |
 | `api/livedebugger` | Live debugger sessions |
 | `api/notification` | Notification/alerting configuration |
+| `api/platformtoken` | Account platform-token management |
 | `api/query` | DQL query execution |
 | `api/segment` | Data segments |
+| `api/serviceuser` | Account service-user management |
 | `api/settings` | Settings 2.0 objects |
 | `api/slo` | Service Level Objectives |
 | `api/workflow` | Workflow CRUD and execution |

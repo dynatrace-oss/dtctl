@@ -26,6 +26,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/platformtoken"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/serviceuser"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
@@ -2710,4 +2711,60 @@ func TestGolden_GetPlatformTokens_Empty(t *testing.T) {
 		t.Fatalf("PrintList failed: %v", err)
 	}
 	assertGolden(t, "empty/platform-tokens", buf.String())
+}
+
+func serviceUserFixtures() []serviceuser.ServiceUser {
+	return []serviceuser.ServiceUser{
+		{
+			Name:        "automation-alpha",
+			Email:       "automation-alpha@example.invalid",
+			UID:         "00000000-0000-4000-8000-000000000101",
+			CreatedAt:   "2026-03-01T12:00:00Z",
+			Surname:     "ServiceUser",
+			Description: "Synthetic integration identity",
+			GroupUUID:   "00000000-0000-4000-8000-000000000201",
+		},
+		{
+			Name:        "automation-beta",
+			Email:       "automation-beta@example.invalid",
+			UID:         "00000000-0000-4000-8000-000000000102",
+			CreatedAt:   "2026-03-02T13:30:00Z",
+			Surname:     "ServiceUser",
+			Description: "Synthetic reporting identity",
+			GroupUUID:   "00000000-0000-4000-8000-000000000202",
+		},
+	}
+}
+
+func TestGolden_GetServiceUsers(t *testing.T) {
+	users := serviceUserFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(users); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/service-users-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_GetServiceUsers_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	printer := NewPrinterWithWriter("table", &buf)
+	if err := printer.PrintList([]serviceuser.ServiceUser{}); err != nil {
+		t.Fatalf("PrintList failed: %v", err)
+	}
+	assertGolden(t, "empty/service-users", buf.String())
 }

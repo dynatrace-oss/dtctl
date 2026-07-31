@@ -1,0 +1,14 @@
+- name: automation-alpha
+  email: automation-alpha@example.invalid
+  uid: 00000000-0000-4000-8000-000000000101
+  createdat: "2026-03-01T12:00:00Z"
+  surname: ServiceUser
+  description: Synthetic integration identity
+  groupuuid: 00000000-0000-4000-8000-000000000201
+- name: automation-beta
+  email: automation-beta@example.invalid
+  uid: 00000000-0000-4000-8000-000000000102
+  createdat: "2026-03-02T13:30:00Z"
+  surname: ServiceUser
+  description: Synthetic reporting identity
+  groupuuid: 00000000-0000-4000-8000-000000000202
