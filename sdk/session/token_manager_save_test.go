@@ -35,7 +35,7 @@ func newTMWithSizedKeyring(t *testing.T, limitBytes int) (tm *TokenManager, keyr
 	}
 	tm.deps.setToken = func(_ *TokenStore, name, val string) error {
 		if limitBytes >= 0 && len(val) > limitBytes {
-			return fmt.Errorf("data passed to Set was too big") // matches isKeyringTooLargeErr
+			return fmt.Errorf("data passed to Set was too big") // matches isKeyringFallbackErr
 		}
 		keyring[name] = val
 		return nil
@@ -186,6 +186,41 @@ func TestSaveToken_PreservesAccessTokenUnderSizeLimit(t *testing.T) {
 				t.Errorf("expiry must be preserved alongside a cached access token")
 			}
 		})
+	}
+}
+
+// TestSaveToken_FallsBackToFileOnKeyringWriteDenied covers the macOS
+// "exit status 44" case: unsigned CGO_ENABLED=0 binaries on macOS Ventura+
+// cannot create new keychain items. All keyring encodings fail, so saveToken
+// must fall back to file storage instead of returning an error.
+func TestSaveToken_FallsBackToFileOnKeyringWriteDenied(t *testing.T) {
+	t.Parallel()
+	stored := sampleStoredToken()
+
+	tm, keyring, files := newTMWithSizedKeyring(t, -1) // -1 = unlimited size
+	// Override setToken to simulate macOS "exit status 44" on every write.
+	tm.deps.setToken = func(_ *TokenStore, _, _ string) error {
+		return fmt.Errorf("failed to store token in keyring: exit status 44")
+	}
+
+	if err := tm.saveToken("my-token", stored); err != nil {
+		t.Fatalf("saveToken() error = %v, want nil (file fallback)", err)
+	}
+
+	key := tm.getKeyringName("my-token")
+	if _, ok := keyring[key]; ok {
+		t.Errorf("keyring entry should be absent when write is denied")
+	}
+	raw, ok := files[key]
+	if !ok {
+		t.Fatalf("expected full token in file store, none found")
+	}
+	var got StoredToken
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.AccessToken != stored.AccessToken {
+		t.Errorf("file store access token = %q, want full access token", got.AccessToken)
 	}
 }
 

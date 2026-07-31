@@ -435,10 +435,10 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 			}
 		}
 		// Even the minimal (refresh-token-only) encoding could not be written.
-		// If that was a size limit, fall back to file storage, which can hold
-		// the full token (including the access token, so the fast path still
-		// works). Any other error (locked/corrupt keyring) is returned as-is.
-		if isKeyringTooLargeErr(lastErr) {
+		// Fall back to file storage for persistent write failures (size limit or
+		// write-access denied on macOS for unsigned binaries). Transient errors
+		// (locked/corrupt keyring) are returned as-is.
+		if isKeyringFallbackErr(lastErr) {
 			if fileErr := tm.deps.fileSetToken(keyringName, string(fullData)); fileErr == nil {
 				// Remove any stale keyring entry (and scope companion) so loadToken
 				// reads the full token — scope included — from the file next time.
@@ -461,15 +461,20 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 	return fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
 }
 
-// isKeyringTooLargeErr reports whether err is a keyring "data too large" error.
-// On macOS the go-keyring library surfaces errSecDataTooLarge (-25313) as
-// "data passed to Set was too big"; the security(1) CLI exits with code 161.
-func isKeyringTooLargeErr(err error) bool {
+// isKeyringFallbackErr reports whether a keyring write error should trigger the
+// file-storage fallback. Covers two persistent (non-transient) failure modes:
+//   - "too big" / "exit status 161": errSecDataTooLarge (-25313) — data exceeds
+//     the macOS Keychain per-item size limit
+//   - "exit status 44": macOS rejects keychain writes from unsigned
+//     CGO_ENABLED=0 binaries (observed on Ventura+; exact OSStatus unverified)
+func isKeyringFallbackErr(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "too big") || strings.Contains(msg, "exit status 161")
+	return strings.Contains(msg, "too big") ||
+		strings.Contains(msg, "exit status 44") ||
+		strings.Contains(msg, "exit status 161")
 }
 
 // keyringEncodings returns candidate serializations of stored for the keyring,
