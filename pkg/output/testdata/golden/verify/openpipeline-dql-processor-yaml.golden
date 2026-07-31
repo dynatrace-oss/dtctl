@@ -1,0 +1,14 @@
+- valid: true
+- valid: false
+  notifications:
+    - severity: ERROR
+      message: invalid field reference
+      syntaxPosition:
+        start:
+          line: 2
+          column: 5
+          index: 0
+        end:
+          line: 2
+          column: 12
+          index: 0

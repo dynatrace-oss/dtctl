@@ -18,17 +18,21 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/dqlprocessorverify"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/hub"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherverify"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/platformtoken"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/previewprocessor"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	sdkmatcherverify "github.com/dynatrace-oss/dtctl/sdk/api/matcherverify"
 )
 
 // -update flag: regenerate golden files
@@ -2711,4 +2715,129 @@ func TestGolden_GetPlatformTokens_Empty(t *testing.T) {
 		t.Fatalf("PrintList failed: %v", err)
 	}
 	assertGolden(t, "empty/platform-tokens", buf.String())
+}
+
+// ---------------------------------------------------------------------------
+// OpenPipeline verify and preview golden tests
+// ---------------------------------------------------------------------------
+
+func matcherVerifyResultFixtures() []matcherverify.VerifyResult {
+	return []matcherverify.VerifyResult{
+		*matcherverify.FromSDKVerifyResponse(&sdkmatcherverify.VerifyResponse{Valid: true}),
+		*matcherverify.FromSDKVerifyResponse(&sdkmatcherverify.VerifyResponse{
+			Valid: false,
+			Notifications: []sdkmatcherverify.MetadataNotification{
+				{
+					Severity: "ERROR",
+					Message:  "unexpected token",
+					SyntaxPosition: &sdkmatcherverify.SyntaxRange{
+						Start: sdkmatcherverify.SyntaxPosition{Line: 1, Column: 1, Index: 0},
+						End:   sdkmatcherverify.SyntaxPosition{Line: 1, Column: 6, Index: 5},
+					},
+				},
+				{Severity: "WARN", Message: "expression is deprecated"},
+			},
+		}),
+	}
+}
+
+func TestGolden_VerifyOpenpipelineMatcher(t *testing.T) {
+	fixtures := matcherVerifyResultFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(fixtures); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "verify/openpipeline-matcher-"+name, buf.String())
+		})
+	}
+}
+
+func dqlProcessorVerifyResultFixtures() []dqlprocessorverify.VerifyResult {
+	return []dqlprocessorverify.VerifyResult{
+		*matcherverify.FromSDKVerifyResponse(&sdkmatcherverify.VerifyResponse{Valid: true}),
+		*matcherverify.FromSDKVerifyResponse(&sdkmatcherverify.VerifyResponse{
+			Valid: false,
+			Notifications: []sdkmatcherverify.MetadataNotification{
+				{
+					Severity: "ERROR",
+					Message:  "invalid field reference",
+					SyntaxPosition: &sdkmatcherverify.SyntaxRange{
+						Start: sdkmatcherverify.SyntaxPosition{Line: 2, Column: 5, Index: 0},
+						End:   sdkmatcherverify.SyntaxPosition{Line: 2, Column: 12, Index: 0},
+					},
+				},
+			},
+		}),
+	}
+}
+
+func TestGolden_VerifyOpenpipelineDQLProcessor(t *testing.T) {
+	fixtures := dqlProcessorVerifyResultFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(fixtures); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "verify/openpipeline-dql-processor-"+name, buf.String())
+		})
+	}
+}
+
+func previewProcessorResultFixtures() []previewprocessor.PreviewResult {
+	return []previewprocessor.PreviewResult{
+		{
+			Matched: true,
+			Record: map[string]any{
+				"content":  "error occurred in service-a",
+				"severity": "ERROR",
+				"foo":      float64(1),
+			},
+		},
+		{
+			Matched: false,
+			Record: map[string]any{
+				"content": "info log from service-b",
+			},
+		},
+	}
+}
+
+func TestGolden_ExecPreviewProcessor(t *testing.T) {
+	fixtures := previewProcessorResultFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(fixtures); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "exec/preview-processor-"+name, buf.String())
+		})
+	}
 }

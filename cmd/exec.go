@@ -9,7 +9,8 @@ var execCmd = &cobra.Command{
 	Use:   "exec",
 	Short: "Execute queries, workflows, or functions",
 	Long: `Execute operations on the Dynatrace platform: run workflows, invoke
-serverless functions, evaluate SLOs, or chat with Davis CoPilot.
+serverless functions, evaluate SLOs, chat with Davis CoPilot, or preview
+OpenPipeline processor definitions against sample records.
 
 For DQL queries, use 'dtctl query' instead (exec dql is deprecated).
 
@@ -18,7 +19,8 @@ Available operations:
   function (fn, func)     Invoke an app function or run ad-hoc JavaScript
   analyzer (az)           Run a Davis AI analyzer
   slo                     Evaluate a service-level objective
-  copilot (cp, chat)      Chat with Davis CoPilot interactively`,
+  copilot (cp, chat)      Chat with Davis CoPilot interactively
+  preview-processor       Preview an OpenPipeline processor against sample records`,
 	Example: `  # Execute a workflow and wait for completion
   dtctl exec workflow <workflow-id>
 
@@ -32,7 +34,10 @@ Available operations:
   dtctl exec slo <slo-id>
 
   # Chat with Davis CoPilot
-  dtctl exec copilot "What happened in the last hour?"`,
+  dtctl exec copilot "What happened in the last hour?"
+
+  # Preview a processor definition against sample records
+  dtctl exec preview-processor -f processor.json`,
 	RunE: requireSubcommand,
 }
 
@@ -45,4 +50,5 @@ func init() {
 	execCmd.AddCommand(execAnalyzerCmd)
 	execCmd.AddCommand(execCopilotCmd)
 	execCmd.AddCommand(execSLOCmd)
+	execCmd.AddCommand(execPreviewProcessorCmd)
 }

@@ -1,0 +1,8 @@
+- matched: true
+  record:
+    content: error occurred in service-a
+    foo: 1
+    severity: ERROR
+- matched: false
+  record:
+    content: info log from service-b

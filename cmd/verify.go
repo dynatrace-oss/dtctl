@@ -41,8 +41,11 @@ Examples:
   # Verify inline DQL query
   dtctl verify query "fetch logs | summarize count()"
 
-  # Verify with template variables
-  dtctl verify query -f query.dql --set env=prod --set timeframe=1h
+  # Verify an OpenPipeline matcher expression
+  dtctl verify openpipeline-matcher 'matchesValue(content, "error")'
+
+  # Verify an OpenPipeline DQL processor script
+  dtctl verify openpipeline-dql-processor 'fieldsAdd severity = "INFO"'
 
   # Verify and fail on warnings (strict mode for CI/CD)
   dtctl verify query -f query.dql --fail-on-warn
@@ -59,4 +62,6 @@ Use "dtctl verify <command> --help" for more information about a command.
 
 func init() {
 	rootCmd.AddCommand(verifyCmd)
+	verifyCmd.AddCommand(verifyOpenPipelineMatcherCmd)
+	verifyCmd.AddCommand(verifyOpenPipelineDQLProcessorCmd)
 }
