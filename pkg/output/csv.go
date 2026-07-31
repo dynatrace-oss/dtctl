@@ -36,8 +36,16 @@ func (p *CSVPrinter) PrintList(obj interface{}) error {
 	}
 
 	writer := csv.NewWriter(p.writer)
-	defer writer.Flush()
+	if err := p.writeRecords(v, writer); err != nil {
+		return err
+	}
 
+	// csv.Writer buffers, so a failed write only surfaces here
+	writer.Flush()
+	return writer.Error()
+}
+
+func (p *CSVPrinter) writeRecords(v reflect.Value, writer *csv.Writer) error {
 	// Handle slice of maps (most common for DQL results)
 	if v.Index(0).Kind() == reflect.Map || (v.Index(0).Kind() == reflect.Interface && v.Index(0).Elem().Kind() == reflect.Map) {
 		return p.printMaps(v, writer)
