@@ -3,6 +3,7 @@ package extension
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkext "github.com/dynatrace-oss/dtctl/sdk/api/extension"
@@ -13,6 +14,7 @@ import (
 type Extension struct {
 	ExtensionName string `json:"extensionName" table:"NAME"`
 	Version       string `json:"version,omitempty" table:"VERSION"`
+	ActiveVersion string `json:"activeVersion,omitempty" table:"ACTIVE VERSION"`
 }
 
 // fromSDKExtension converts an SDK Extension to the CLI Extension.
@@ -202,12 +204,42 @@ func NewHandler(c *client.Client) *Handler {
 }
 
 // List lists all extensions with automatic pagination
-func (h *Handler) List(name string, chunkSize int64) (*ExtensionList, error) {
-	l, err := h.sdk.List(context.Background(), name, chunkSize)
+func (h *Handler) List(ctx context.Context, name string, chunkSize int64) (*ExtensionList, error) {
+	l, err := h.sdk.List(ctx, name, chunkSize)
 	if err != nil {
 		return nil, err
 	}
-	return fromSDKExtensionList(l), nil
+	result := fromSDKExtensionList(l)
+
+	// Fetch the active version for each extension concurrently, bounded to
+	// avoid bursting too many simultaneous requests. 404 (no env config) is
+	// already translated to ("", nil) by GetActiveVersion; any other error is
+	// treated as best-effort — the ACTIVE VERSION column is left empty rather
+	// than failing the entire listing.
+	const maxWorkers = 10
+	var (
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, maxWorkers)
+	)
+	for i := range result.Items {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			activeVersion, err := h.sdk.GetActiveVersion(ctx, result.Items[idx].ExtensionName)
+			if err != nil {
+				return
+			}
+			if activeVersion != "" {
+				result.Items[idx].ActiveVersion = activeVersion
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	return result, nil
 }
 
 // Get gets a specific extension by name (returns all versions)

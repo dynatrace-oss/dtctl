@@ -47,7 +47,7 @@ Examples:
 			return printer.PrintList(versions.Items)
 		}
 
-		list, err := handler.List(name, GetChunkSize())
+		list, err := handler.List(cmd.Context(), name, GetChunkSize())
 		if err != nil {
 			return err
 		}

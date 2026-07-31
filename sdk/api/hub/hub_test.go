@@ -99,3 +99,43 @@ func TestGetExtension_NotFound(t *testing.T) {
 		t.Fatal("GetExtension() expected error for 404")
 	}
 }
+
+func TestListExtensionReleases(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/hub/v1/catalog/extensions/com.dynatrace.extension.host/releases", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Simulate API constraint: page-size must not be combined with page-key
+		if r.URL.Query().Get("page-size") != "" && r.URL.Query().Get("page-key") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, `{"error":{"code":400,"message":"Constraints violated."}}`)
+			return
+		}
+
+		// The releases endpoint returns items under the "releases" key.
+		resp := HubExtensionReleaseList{
+			Items: []HubExtensionRelease{
+				{Version: "2.0.0", ReleaseDate: "2024-01-01"},
+				{Version: "1.9.0", ReleaseDate: "2023-06-01"},
+			},
+			TotalCount: 2,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.ListExtensionReleases(context.Background(), "com.dynatrace.extension.host", 0)
+	if err != nil {
+		t.Fatalf("ListExtensionReleases() error: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Errorf("got %d releases, want 2", len(result.Items))
+	}
+	if result.Items[0].Version != "2.0.0" {
+		t.Errorf("Items[0].Version = %q, want %q", result.Items[0].Version, "2.0.0")
+	}
+}

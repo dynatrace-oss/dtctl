@@ -285,10 +285,53 @@ func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVers
 		nextPageKey = result.NextPageKey
 	}
 
+	// Determine the active version from the environment configuration and mark it.
+	// The version list endpoint does not include the active flag; the environment
+	// configuration endpoint returns which version is currently active.
+	//
+	// This enrichment is best-effort: the version list was already fetched
+	// successfully, so a failure of the secondary env-config lookup must not
+	// fail the whole call. A 404 (no environment configuration) is treated as
+	// "no active version"; any other error (403, 5xx, network) simply leaves
+	// every version's Active flag unset. This mirrors List(), which leaves the
+	// ACTIVE VERSION column empty rather than aborting the listing.
+	if envCfg, err := h.GetActiveVersion(ctx, extensionName); err == nil && envCfg != "" {
+		for i := range allVersions {
+			if allVersions[i].Version == envCfg {
+				allVersions[i].Active = true
+				break
+			}
+		}
+	}
+
 	return &ExtensionVersionList{
 		Items:      allVersions,
 		TotalCount: totalCount,
 	}, nil
+}
+
+// GetActiveVersion returns the currently active version of an extension
+// by querying the environment configuration endpoint. Returns an empty string
+// if the extension has no active version (HTTP 404). Other errors are propagated.
+func (h *Handler) GetActiveVersion(ctx context.Context, extensionName string) (string, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environment-configuration", url.PathEscape(extensionName)))
+	if err != nil {
+		return "", err
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return "", nil
+		}
+		return "", err
+	}
+
+	var cfg ExtensionEnvironmentConfig
+	if err := json.Unmarshal(resp.Body(), &cfg); err != nil {
+		return "", err
+	}
+	return cfg.Version, nil
 }
 
 // GetVersion gets details for a specific extension version
@@ -322,7 +365,7 @@ func (h *Handler) GetVersion(ctx context.Context, extensionName, version string)
 // The version parameter is required by the Dynatrace Extensions 2.0 API.
 func (h *Handler) GetEnvironmentConfig(ctx context.Context, extensionName, version string) (*ExtensionEnvironmentConfig, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environmentConfiguration", url.PathEscape(extensionName), url.PathEscape(version)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environment-configuration", url.PathEscape(extensionName), url.PathEscape(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
 	}
