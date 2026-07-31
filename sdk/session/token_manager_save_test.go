@@ -190,9 +190,9 @@ func TestSaveToken_PreservesAccessTokenUnderSizeLimit(t *testing.T) {
 }
 
 // TestSaveToken_FallsBackToFileOnKeyringWriteDenied covers the macOS
-// "exit status 44" (errSecItemNotFound) case: unsigned CGO_ENABLED=0 binaries
-// on macOS Ventura+ cannot create new keychain items. All keyring encodings fail,
-// so saveToken must fall back to file storage instead of returning an error.
+// "exit status 44" case: unsigned CGO_ENABLED=0 binaries on macOS Ventura+
+// cannot create new keychain items. All keyring encodings fail, so saveToken
+// must fall back to file storage instead of returning an error.
 func TestSaveToken_FallsBackToFileOnKeyringWriteDenied(t *testing.T) {
 	t.Parallel()
 	stored := sampleStoredToken()

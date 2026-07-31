@@ -465,8 +465,8 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 // file-storage fallback. Covers two persistent (non-transient) failure modes:
 //   - "too big" / "exit status 161": errSecDataTooLarge (-25313) — data exceeds
 //     the macOS Keychain per-item size limit
-//   - "exit status 44": errSecItemNotFound (-25300) — macOS rejects keychain
-//     writes from unsigned CGO_ENABLED=0 binaries (Ventura+)
+//   - "exit status 44": macOS rejects keychain writes from unsigned
+//     CGO_ENABLED=0 binaries (observed on Ventura+; exact OSStatus unverified)
 func isKeyringFallbackErr(err error) bool {
 	if err == nil {
 		return false
