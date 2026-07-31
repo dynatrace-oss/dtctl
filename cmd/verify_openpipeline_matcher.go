@@ -106,16 +106,7 @@ Examples:
 				return err
 			}
 		} else {
-			if result.Valid {
-				fmt.Println("✓ Valid")
-			} else {
-				fmt.Println("✗ Invalid")
-			}
-			if result.Summary != "" {
-				for _, line := range strings.Split(result.Summary, "\n") {
-					fmt.Printf("  %s\n", line)
-				}
-			}
+			printVerifyResultHuman(result)
 		}
 
 		// A false verdict is a successful API call that must still exit non-zero
@@ -127,6 +118,30 @@ Examples:
 		}
 		return nil
 	},
+}
+
+// printVerifyResultHuman prints a verify verdict and its diagnostics in the same
+// human-readable style as "verify query": the verdict is written to stderr
+// (colored when stderr is a terminal) so redirecting the command's stdout keeps
+// the verdict visible. Shared by the matcher and DQL-processor verify commands,
+// whose VerifyResult is the same type.
+func printVerifyResultHuman(result *matcherverify.VerifyResult) {
+	useColor := isStderrTerminal()
+	switch {
+	case result.Valid && useColor:
+		fmt.Fprintf(os.Stderr, "%s✔%s Valid\n", colorGreen, colorReset)
+	case result.Valid:
+		fmt.Fprintln(os.Stderr, "✔ Valid")
+	case useColor:
+		fmt.Fprintf(os.Stderr, "%s✖%s Invalid\n", colorRed, colorReset)
+	default:
+		fmt.Fprintln(os.Stderr, "✖ Invalid")
+	}
+	if result.Summary != "" {
+		for _, line := range strings.Split(result.Summary, "\n") {
+			fmt.Fprintf(os.Stderr, "  %s\n", line)
+		}
+	}
 }
 
 // readVerifyExpressionFromFile reads a text expression from a file or stdin.

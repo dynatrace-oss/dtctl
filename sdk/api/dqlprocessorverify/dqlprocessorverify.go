@@ -29,9 +29,8 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // DQLProcessorVerifyRequest is the request body for the DQL processor verify endpoint.
 type DQLProcessorVerifyRequest struct {
-	Script          string   `json:"script"`
-	ConfigurationID string   `json:"configurationId,omitempty"`
-	ProtectedFields []string `json:"protectedFields,omitempty"`
+	Script          string `json:"script"`
+	ConfigurationID string `json:"configurationId,omitempty"`
 }
 
 // Verify sends a DQL processor verify request and returns the parsed response.

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -99,16 +98,7 @@ Examples:
 				return err
 			}
 		} else {
-			if result.Valid {
-				fmt.Println("✓ Valid")
-			} else {
-				fmt.Println("✗ Invalid")
-			}
-			if result.Summary != "" {
-				for _, line := range strings.Split(result.Summary, "\n") {
-					fmt.Printf("  %s\n", line)
-				}
-			}
+			printVerifyResultHuman(result)
 		}
 
 		// A false verdict is a successful API call that must still exit non-zero

@@ -29,10 +29,9 @@ func NewHandler(c *httpclient.Client) *Handler {
 
 // MatcherVerifyRequest is the request body for the matcher verify endpoint.
 type MatcherVerifyRequest struct {
-	Query            string   `json:"query"`
-	ConfigurationID  string   `json:"configurationId,omitempty"`
-	Context          string   `json:"context,omitempty"`
-	RestrictedFields []string `json:"restrictedFields,omitempty"`
+	Query           string `json:"query"`
+	ConfigurationID string `json:"configurationId,omitempty"`
+	Context         string `json:"context,omitempty"`
 }
 
 // SyntaxPosition describes a single position (line/column/index) in a source expression.

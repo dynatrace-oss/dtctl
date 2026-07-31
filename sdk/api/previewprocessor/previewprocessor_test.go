@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -85,7 +86,7 @@ func TestPreview_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("Preview() expected error for 404")
 	}
-	if msg := err.Error(); !containsStr(msg, "not found") {
+	if msg := err.Error(); !strings.Contains(msg, "not found") {
 		t.Errorf("expected not-found message, got: %v", err)
 	}
 }
@@ -101,7 +102,7 @@ func TestPreview_Timeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("Preview() expected error for 408")
 	}
-	if msg := err.Error(); !containsStr(msg, "timed out") {
+	if msg := err.Error(); !strings.Contains(msg, "timed out") {
 		t.Errorf("expected timeout message, got: %v", err)
 	}
 }
@@ -117,7 +118,7 @@ func TestPreview_TooManyRequests(t *testing.T) {
 	if err == nil {
 		t.Fatal("Preview() expected error for 429")
 	}
-	if msg := err.Error(); !containsStr(msg, "concurrent") {
+	if msg := err.Error(); !strings.Contains(msg, "concurrent") {
 		t.Errorf("expected concurrency message, got: %v", err)
 	}
 }
@@ -133,16 +134,4 @@ func TestPreview_ServerError(t *testing.T) {
 	if _, err := h.Preview(context.Background(), sampleEnvelope); err == nil {
 		t.Fatal("Preview() expected error for 500")
 	}
-}
-
-func containsStr(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr ||
-		func() bool {
-			for i := 0; i+len(substr) <= len(s); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-			return false
-		}())
 }

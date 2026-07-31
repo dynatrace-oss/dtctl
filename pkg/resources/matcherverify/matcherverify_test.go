@@ -1,6 +1,7 @@
 package matcherverify
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,9 +26,8 @@ func newTestHandler(t *testing.T, status int, body string, capture *[]byte) *Han
 			t.Errorf("method = %s, want POST", r.Method)
 		}
 		if capture != nil {
-			buf := make([]byte, r.ContentLength)
-			_, _ = r.Body.Read(buf)
-			*capture = buf
+			b, _ := io.ReadAll(r.Body)
+			*capture = b
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
