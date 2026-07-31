@@ -5,6 +5,8 @@ title: "Dashboards & Notebooks"
 
 Dynatrace dashboards and notebooks are managed as documents. dtctl supports the full lifecycle: list, view, create, edit, share, version-track, and delete — for both resource types.
 
+> Dashboards and notebooks are the two most common document types, but dtctl can create, apply, and update documents of **any** type (launchpads, custom app documents) and attach classification labels. See [Documents (any type)]({{ '/docs/documents/' | relative_url }}).
+
 ## Listing Documents
 
 ```bash

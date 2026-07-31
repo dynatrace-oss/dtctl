@@ -26,7 +26,7 @@ the payload. This command works for any document type: dashboard, notebook,
 launchpad, custom app documents, etc.
 
 Labels can be attached with repeatable --label flags, or carried in the payload
-under a "labels" array (as produced by 'dtctl get document -o json'). Because
+under a "labels" array (as produced by 'dtctl get document -o yaml'). Because
 the create API cannot set labels directly, they are applied with a follow-up
 update immediately after creation.
 
@@ -193,7 +193,7 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 		// Extract content, name, description using the same logic as apply
 		contentData, extractedName, extractedDesc, warnings := extractDocumentContent(doc, docType)
 
-		// Fall back to labels embedded in the payload (e.g. from 'get -o json')
+		// Fall back to labels embedded in the payload (e.g. from 'get -o yaml')
 		// when none were supplied via --label.
 		if len(labels) == 0 {
 			labels = extractDocumentLabels(doc)
@@ -285,7 +285,11 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 		if tileCount > 0 {
 			output.PrintInfo("  %s: %d", capitalize(itemName(docType)), tileCount)
 		}
-		if result.ID != "" {
+		// Only dashboards and notebooks have a known viewer app whose URL can be
+		// derived from the type. For custom document types the app ID is unknown
+		// (e.g. "acme:config" is not served by "dynatrace.acme:configs"), so print
+		// no URL rather than a broken guess.
+		if result.ID != "" && (docType == "dashboard" || docType == "notebook") {
 			output.PrintInfo("  URL:  %s/ui/apps/dynatrace.%ss/%s/%s", c.BaseURL(), docType, docType, result.ID)
 		}
 		return nil
@@ -354,7 +358,7 @@ func extractDocumentContent(doc map[string]interface{}, docType string) ([]byte,
 }
 
 // extractDocumentLabels pulls a "labels" string array from a parsed document
-// payload (as produced by 'dtctl get document -o json'). Non-string entries are
+// payload (as produced by 'dtctl get document -o yaml'). Non-string entries are
 // skipped. Returns nil when no usable labels are present.
 func extractDocumentLabels(doc map[string]interface{}) []string {
 	raw, ok := doc["labels"].([]interface{})

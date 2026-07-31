@@ -16,7 +16,7 @@ import (
 //
 // docType is the concrete document type. When empty it is resolved from the
 // payload's "type" field, allowing round-trip apply of documents exported with
-// 'dtctl get document -o json'.
+// 'dtctl get document -o yaml'.
 func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) (ApplyResult, error) {
 	// Parse to check for ID and name
 	var doc map[string]interface{}
@@ -36,7 +36,7 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	contentData, name, description, validationWarnings := extractDocumentContent(doc, docType)
 
 	// Labels come from --label flags (opts.Labels) when supplied; otherwise they
-	// ride along in the exported document ('get document -o json') so a round-trip
+	// ride along in the exported document ('get document -o yaml') so a round-trip
 	// apply preserves (and can update) them. An empty opts.Labels (the flag's
 	// zero value when --label is absent) falls back to the payload.
 	labels := opts.Labels
@@ -346,12 +346,18 @@ func countDocumentItems(contentData []byte, docType string) int {
 	return 0
 }
 
-// itemName returns the item name for a document type (tiles for dashboards, sections for notebooks)
+// itemName returns the item name for a document type: tiles for dashboards,
+// sections for notebooks, and a generic "items" for custom document types
+// (whose content shape is unknown).
 func itemName(docType string) string {
-	if docType == "dashboard" {
+	switch docType {
+	case "dashboard":
 		return "tiles"
+	case "notebook":
+		return "sections"
+	default:
+		return "items"
 	}
-	return "sections"
 }
 
 // showJSONDiff displays a simple diff between two JSON documents
@@ -413,7 +419,10 @@ func (a *Applier) documentURL(docType, id string) string {
 	case "notebook":
 		return fmt.Sprintf("%s/ui/apps/dynatrace.notebooks/notebook/%s", a.baseURL, id)
 	default:
-		return fmt.Sprintf("%s/ui/apps/dynatrace.%ss/%s/%s", a.baseURL, docType, docType, id)
+		// Custom document types have no known viewer app — the app ID cannot be
+		// derived from the type (e.g. "acme:config" is not served by an app named
+		// "dynatrace.acme:configs"). Emit no URL rather than a broken guess.
+		return ""
 	}
 }
 

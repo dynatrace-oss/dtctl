@@ -24,9 +24,13 @@ This is the update-only counterpart to 'create document'. It works for any
 document type — dashboard, notebook, launchpad, or custom app documents such as
 acme:config — and completes the round-trip that 'create document' starts:
 
-  dtctl get document acme-config -o json > doc.json
-  # edit doc.json...
-  dtctl update document -f doc.json                # type + id read from the file
+  dtctl get document acme-config -o yaml > doc.yaml
+  # edit doc.yaml...
+  dtctl update document -f doc.yaml                # type + id read from the file
+
+Use -o yaml (not -o json) for the export: JSON output is wrapped in a result
+envelope that this command cannot read back; YAML is emitted as the plain
+document.
 
 The document type is resolved from --type, falling back to the "type" field in
 the payload. The target ID is resolved from --id, falling back to the "id" field
@@ -34,24 +38,25 @@ in the payload. Unlike 'apply', this command fails if the document does not
 already exist, so a typo in the ID never silently creates a new document.
 
 Labels are set with repeatable --label flags, or carried in the payload under a
-"labels" array (as produced by 'dtctl get document -o json'). Providing labels
+"labels" array (as produced by 'dtctl get document -o yaml'). Providing labels
 replaces the document's entire label set; omitting them leaves labels unchanged.
+Labels cannot be cleared, only replaced.
 
 Examples:
   # Round-trip update (type and id come from the exported file)
-  dtctl update document -f doc.json
+  dtctl update document -f doc.yaml
 
   # Update a custom document by explicit type and id
   dtctl update document -f content.json --type acme:config --id acme-config
 
   # Replace the document's labels
-  dtctl update document -f doc.json --label team-a --label env:prod
+  dtctl update document -f doc.yaml --label team-a --label env:prod
 
   # Preview the change without applying it
-  dtctl update document -f doc.json --dry-run
+  dtctl update document -f doc.yaml --dry-run
 
   # Show what changed
-  dtctl update document -f doc.json --show-diff
+  dtctl update document -f doc.yaml --show-diff
 
 See also:
   dtctl create document --help   # create a new document of any type
@@ -139,7 +144,7 @@ func init() {
 	updateDocumentCmd.Flags().String("type", "", "document type (e.g. launchpad, acme:config); read from payload if not provided")
 	updateDocumentCmd.Flags().String("id", "", "ID of the document to update; read from payload if not provided")
 	updateDocumentCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	updateDocumentCmd.Flags().StringArray("label", []string{}, "classification label to set (repeatable); replaces the document's labels. Falls back to labels in the payload")
+	updateDocumentCmd.Flags().StringArray("label", []string{}, "classification label to set (repeatable); replaces the document's labels (cannot be cleared, only replaced). Falls back to labels in the payload")
 	updateDocumentCmd.Flags().Bool("dry-run", false, "preview the update without applying it")
 	updateDocumentCmd.Flags().Bool("show-diff", false, "show a diff of the change")
 	_ = updateDocumentCmd.MarkFlagRequired("file")
