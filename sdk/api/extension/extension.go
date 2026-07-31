@@ -288,13 +288,14 @@ func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVers
 	// Determine the active version from the environment configuration and mark it.
 	// The version list endpoint does not include the active flag; the environment
 	// configuration endpoint returns which version is currently active.
-	// A 404 (no environment configuration) is treated as "no active version";
-	// other errors (403, 5xx, network) are propagated.
-	envCfg, err := h.GetActiveVersion(ctx, extensionName)
-	if err != nil {
-		return nil, fmt.Errorf("get extension active version: %w", err)
-	}
-	if envCfg != "" {
+	//
+	// This enrichment is best-effort: the version list was already fetched
+	// successfully, so a failure of the secondary env-config lookup must not
+	// fail the whole call. A 404 (no environment configuration) is treated as
+	// "no active version"; any other error (403, 5xx, network) simply leaves
+	// every version's Active flag unset. This mirrors List(), which leaves the
+	// ACTIVE VERSION column empty rather than aborting the listing.
+	if envCfg, err := h.GetActiveVersion(ctx, extensionName); err == nil && envCfg != "" {
 		for i := range allVersions {
 			if allVersions[i].Version == envCfg {
 				allVersions[i].Active = true

@@ -142,16 +142,24 @@ func TestGet_ActiveVersionError(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	})
-	// Environment configuration returns 403 — should be propagated, not silently ignored.
+	// Environment configuration returns 403. The version list was already
+	// fetched successfully, so the enrichment failure must degrade gracefully:
+	// Get() returns the versions with no Active flag set, not an error.
 	mux.HandleFunc("/platform/extensions/v2/extensions/com.dynatrace.extension.host/environment-configuration", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprintf(w, `{"error":{"code":403,"message":"access denied"}}`)
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	_, err := h.Get(context.Background(), "com.dynatrace.extension.host")
-	if err == nil {
-		t.Fatal("Get() expected error for 403 on environment-configuration, got nil")
+	result, err := h.Get(context.Background(), "com.dynatrace.extension.host")
+	if err != nil {
+		t.Fatalf("Get() must not fail when env-config lookup returns 403, got error: %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("got %d versions, want 1", len(result.Items))
+	}
+	if result.Items[0].Active {
+		t.Error("expected no active version when env-config lookup fails with 403")
 	}
 }
 
