@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 )
@@ -175,5 +176,24 @@ func TestCSVPrinter_PrintList_NonSlice(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "expected slice") {
 		t.Errorf("expected 'expected slice' error, got: %v", err)
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+func TestPrintList_ReportsWriteError(t *testing.T) {
+	// A single row fits in csv.Writer's buffer, so the failure can only
+	// surface on the final flush.
+	rows := []map[string]interface{}{{"host": "host-1", "status": "ERROR"}}
+
+	for _, format := range []string{"csv", "json", "jsonl", "yaml"} {
+		t.Run(format, func(t *testing.T) {
+			p := NewPrinterWithOpts(PrinterOptions{Format: format, Writer: failingWriter{}})
+			if err := p.PrintList(rows); err == nil {
+				t.Error("PrintList returned nil although every write failed")
+			}
+		})
 	}
 }
