@@ -25,14 +25,14 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 | `query` | Execute a DQL query |
 | `wait` | Poll a DQL query until a record-count condition is met (tests/CI) |
 | `inspect` | Inspect a spilled query-result file locally (rows, schema, stats) without re-querying Grail |
-| `exec` | Execute a workflow, function, analyzer, or CoPilot skill |
+| `exec` | Execute a workflow, function, analyzer, CoPilot skill, or OpenPipeline processor preview |
 | `history` | Show version history (snapshots) of a document |
 | `restore` | Restore a document to a previous version |
 | `diff` | Show differences between local and remote resources |
 | `enable` | Enable a cloud monitoring configuration (GCP/Azure) in one step |
 | `share` | Share a document with users or groups |
 | `unshare` | Remove sharing from a document |
-| `verify` | Verify DQL query syntax |
+| `verify` | Verify DQL query syntax and OpenPipeline matcher/DQL-processor components |
 | `alias` | Manage command aliases |
 | `ctx` | Quick context management |
 | `doctor` | Health check (config, context, token, connectivity, auth) |
@@ -185,6 +185,11 @@ dtctl query "..." --segments-file segments.yaml  # Segments with variables from 
 # Verify query syntax
 dtctl verify query "fetch logs | limit 10"
 dtctl verify query -f query.dql --canonical --fail-on-warn
+
+# Verify OpenPipeline components (restricted DQL subset; exits non-zero if invalid)
+dtctl verify openpipeline-matcher 'matchesValue(content, "error")'
+dtctl verify openpipeline-matcher -f matcher.dql --context ROUTING_RULE
+dtctl verify openpipeline-dql-processor 'parse content, "IPV4:ip"' --config-id logs
 ```
 
 ## Inspect Commands
@@ -276,6 +281,10 @@ dtctl exec copilot "What is DQL?" --stream
 dtctl exec copilot nl2dql "error logs from last hour"
 dtctl exec copilot dql2nl "fetch logs | filter status='ERROR'"
 dtctl exec copilot document-search "CPU analysis" --collections notebooks
+
+# OpenPipeline processor preview (dry-run against embedded sample records; -f required)
+dtctl exec preview-processor -f processor.json
+dtctl exec preview-processor -f processor.json --config-id logs
 ```
 
 ## Diff Command

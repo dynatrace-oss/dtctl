@@ -51,6 +51,10 @@ Examples:
   dtctl verify openpipeline-matcher 'matchesValue(content, "error")' -o json
   dtctl verify openpipeline-matcher 'matchesValue(content, "error")' -o yaml`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !isSupportedVerifyOutputFormat(outputFormat) {
+			return fmt.Errorf("unsupported output format %q for verify openpipeline-matcher (supported: json, yaml, toon)", outputFormat)
+		}
+
 		fileFlag, _ := cmd.Flags().GetString("file")
 		contextFlag, _ := cmd.Flags().GetString("context")
 		configIDFlag, _ := cmd.Flags().GetString("config-id")

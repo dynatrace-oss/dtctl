@@ -116,6 +116,23 @@ func TestVerifyOpenPipelineMatcherCmd_JSONOutput(t *testing.T) {
 	}
 }
 
+func TestVerifyOpenPipelineMatcherCmd_UnsupportedOutputFormat(t *testing.T) {
+	setupVerifyMatcherTest(t, `{"valid":true,"notifications":[]}`)
+
+	// csv/wide are rejected for the verify family (same as "verify query"),
+	// so the command errors before making a request.
+	outputFormat = "csv"
+	rootCmd.PersistentFlags().Lookup("output").Changed = true
+
+	err := verifyOpenPipelineMatcherCmd.RunE(verifyOpenPipelineMatcherCmd, []string{`matchesValue(content, "x")`})
+	if err == nil {
+		t.Fatal("RunE() error = nil, want error for unsupported output format")
+	}
+	if !strings.Contains(err.Error(), "unsupported output format") {
+		t.Errorf("error = %q, want it to mention unsupported output format", err.Error())
+	}
+}
+
 func TestVerifyOpenPipelineMatcherCmd_ServerError(t *testing.T) {
 	// Point the command at a config whose server always 500s.
 	ms := testutil.NewMockServer(t, map[string]http.HandlerFunc{

@@ -2034,6 +2034,38 @@ dtctl get settings <object-id> --schema builtin:openpipeline.logs.pipelines
 
 **Note:** See the [Settings API](#settings-api) section below for full details on managing OpenPipeline configurations.
 
+### Verify & Preview Pipeline Components
+
+Before you apply a pipeline change, validate its individual components against the OpenPipeline engine and dry-run a processor against sample records — all read-only, no live config is touched. These use the same restricted DQL subset the engine enforces (matchers allow only `matchesPhrase`, `matchesValue`, `isNull`, `iAny`, …; DQL processor scripts are limited to processor commands like `parse`, `fields*`, `fieldsFlatten`), so they catch pipeline-context errors that a generic `dtctl verify query` misses.
+
+```bash
+# Verify a matching condition (inline, file, or stdin)
+dtctl verify openpipeline-matcher 'matchesValue(content, "error")'
+dtctl verify openpipeline-matcher -f matcher.dql
+echo 'matchesValue(content, "error")' | dtctl verify openpipeline-matcher -f -
+
+# Scope to a stage context or a configuration
+dtctl verify openpipeline-matcher 'matchesValue(content, "error")' --context ROUTING_RULE
+dtctl verify openpipeline-matcher 'matchesValue(content, "error")' --config-id logs
+
+# Verify a DQL processor script
+dtctl verify openpipeline-dql-processor 'parse content, "IPV4:ip"'
+dtctl verify openpipeline-dql-processor -f processor.dql --config-id logs
+
+# Preview a processor against its embedded sample records (-f required; pass the
+# processor body itself — dtctl builds the request envelope around it)
+dtctl exec preview-processor -f processor.json
+dtctl exec preview-processor -f processor.json --config-id logs
+cat processor.json | dtctl exec preview-processor -f -
+
+# Structured output on any of them (verify: json/yaml/toon; preview also table/csv)
+dtctl verify openpipeline-matcher 'matchesValue(content, "error")' -o json
+dtctl verify openpipeline-dql-processor 'parse content, "x"' -o yaml
+dtctl exec preview-processor -f processor.json -o yaml
+```
+
+The two `verify` commands **exit non-zero on an invalid verdict** in every output mode (including `-A`), so they drop straight into CI and agent pipelines without parsing JSON. Diagnostics (severity, message, source position) are surfaced in all formats. All three need only `openpipeline:configurations:read` — already in the read scope tier, so no new grants.
+
 ### Translate Classic Pipelines to OpenPipeline
 
 Migrating from Classic pipelines to OpenPipeline? `dtctl get classic-pipelines-translation` converts your tenant's Classic pipeline configuration for a scope into an OpenPipeline configuration pipeline (Settings shape). It is a read-only call that returns the translated pipeline verbatim — the reliable starting point you then review and apply via the Settings API.

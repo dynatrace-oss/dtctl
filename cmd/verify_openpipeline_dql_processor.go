@@ -46,6 +46,10 @@ Examples:
   dtctl verify openpipeline-dql-processor 'fieldsAdd x = 1' -o json
   dtctl verify openpipeline-dql-processor 'fieldsAdd x = 1' -o yaml`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !isSupportedVerifyOutputFormat(outputFormat) {
+			return fmt.Errorf("unsupported output format %q for verify openpipeline-dql-processor (supported: json, yaml, toon)", outputFormat)
+		}
+
 		fileFlag, _ := cmd.Flags().GetString("file")
 		configIDFlag, _ := cmd.Flags().GetString("config-id")
 
