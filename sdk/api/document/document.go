@@ -542,14 +542,35 @@ func extractIDFromResponse(body []byte) string {
 
 // DirectShare represents a direct share for a document
 type DirectShare struct {
-	ID         string `json:"id"`
-	DocumentID string `json:"documentId"`
-	Access     string `json:"access"`
+	ID         string   `json:"id"`
+	DocumentID string   `json:"documentId"`
+	Access     []string `json:"access"`
+}
+
+// ExactAccess reports whether the share grants exactly the given access level.
+func (s DirectShare) ExactAccess(level string) bool {
+	want := accessToLevels(level)
+	if len(s.Access) != len(want) {
+		return false
+	}
+	for _, w := range want {
+		found := false
+		for _, a := range s.Access {
+			if a == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // DirectShareList represents a list of direct shares
 type DirectShareList struct {
-	Shares      []DirectShare `json:"directShares"`
+	Shares      []DirectShare `json:"direct-shares"`
 	TotalCount  int           `json:"totalCount"`
 	NextPageKey string        `json:"nextPageKey,omitempty"`
 }
