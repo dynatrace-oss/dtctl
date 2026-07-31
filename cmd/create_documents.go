@@ -25,12 +25,20 @@ The document type must be provided via --type or included as a "type" field in
 the payload. This command works for any document type: dashboard, notebook,
 launchpad, custom app documents, etc.
 
+Labels can be attached with repeatable --label flags, or carried in the payload
+under a "labels" array (as produced by 'dtctl get document -o json'). Because
+the create API cannot set labels directly, they are applied with a follow-up
+update immediately after creation.
+
 Examples:
   # Create a launchpad document from JSON
   dtctl create document -f launchpad.json --type launchpad
 
   # Create from a payload that already contains a "type" field
   dtctl create document -f my-app-config.yaml
+
+  # Create with classification labels
+  dtctl create document -f config.yaml --type my-app:config --label team-a --label env:prod
 
   # Create with template variables
   dtctl create document -f config.yaml --type my-app:config --set env=prod
@@ -149,6 +157,7 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 		description, _ := cmd.Flags().GetString("description")
 		id, _ := cmd.Flags().GetString("id")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
+		labels, _ := cmd.Flags().GetStringArray("label")
 
 		// Read the file
 		fileData, err := os.ReadFile(file)
@@ -183,6 +192,12 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 
 		// Extract content, name, description using the same logic as apply
 		contentData, extractedName, extractedDesc, warnings := extractDocumentContent(doc, docType)
+
+		// Fall back to labels embedded in the payload (e.g. from 'get -o json')
+		// when none were supplied via --label.
+		if len(labels) == 0 {
+			labels = extractDocumentLabels(doc)
+		}
 
 		// Show validation warnings
 		for _, w := range warnings {
@@ -244,6 +259,7 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 			Type:        docType,
 			Description: description,
 			Content:     contentData,
+			Labels:      labels,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create %s: %w", docType, err)
@@ -337,6 +353,23 @@ func extractDocumentContent(doc map[string]interface{}, docType string) ([]byte,
 	return contentData, name, description, warnings
 }
 
+// extractDocumentLabels pulls a "labels" string array from a parsed document
+// payload (as produced by 'dtctl get document -o json'). Non-string entries are
+// skipped. Returns nil when no usable labels are present.
+func extractDocumentLabels(doc map[string]interface{}) []string {
+	raw, ok := doc["labels"].([]interface{})
+	if !ok {
+		return nil
+	}
+	var labels []string
+	for _, v := range raw {
+		if s, ok := v.(string); ok && s != "" {
+			labels = append(labels, s)
+		}
+	}
+	return labels
+}
+
 // countDocumentItems counts tiles (for dashboards) or sections (for notebooks)
 func countDocumentItems(contentData []byte, docType string) int {
 	var content map[string]interface{}
@@ -388,6 +421,7 @@ func init() {
 	createDocumentCmd.Flags().String("description", "", "description for the document")
 	createDocumentCmd.Flags().String("id", "", "custom ID for the document (auto-generated if not provided)")
 	createDocumentCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
+	createDocumentCmd.Flags().StringArray("label", []string{}, "classification label to attach (repeatable); falls back to labels in the payload")
 	_ = createDocumentCmd.MarkFlagRequired("file")
 
 	// Notebook flags

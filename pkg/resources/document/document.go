@@ -251,6 +251,7 @@ type (
 	ShareInfo                     = sdkdocument.ShareInfo
 	UserContext                   = sdkdocument.UserContext
 	CreateRequest                 = sdkdocument.CreateRequest
+	UpdateRequest                 = sdkdocument.UpdateRequest
 	SsoEntity                     = sdkdocument.SsoEntity
 	CreateDirectShareRequest      = sdkdocument.CreateDirectShareRequest
 	CreateEnvironmentShareRequest = sdkdocument.CreateEnvironmentShareRequest
@@ -364,6 +365,17 @@ func (h *Handler) Update(id string, version int, content []byte, contentType str
 // UpdateWithMetadata updates a document's content and optionally its metadata (name, description).
 func (h *Handler) UpdateWithMetadata(id string, version int, content []byte, contentType string, name string, description string) (*Document, error) {
 	d, err := h.sdk.UpdateWithMetadata(context.Background(), id, version, content, contentType, name, description)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDocument(d), nil
+}
+
+// UpdateDocument performs a partial update of a document (content, name,
+// description, and/or labels). It is the general form behind Update /
+// UpdateWithMetadata and the only write path that can set labels.
+func (h *Handler) UpdateDocument(id string, version int, req UpdateRequest) (*Document, error) {
+	d, err := h.sdk.UpdateDocument(context.Background(), id, version, req)
 	if err != nil {
 		return nil, err
 	}
