@@ -528,7 +528,7 @@ func TestItemName(t *testing.T) {
 	}{
 		{"dashboard", "tiles"},
 		{"notebook", "sections"},
-		{"other", "sections"}, // default
+		{"acme:config", "items"}, // custom types get a generic item name
 	}
 
 	for _, tt := range tests {
@@ -643,11 +643,11 @@ func TestDocumentURL(t *testing.T) {
 			expected: "https://abc12345.apps.dynatrace.com/ui/apps/dynatrace.notebooks/notebook/nb-456",
 		},
 		{
-			name:     "other document type URL",
+			name:     "custom document type has no derivable viewer app URL",
 			baseURL:  "https://tenant.apps.dynatrace.com",
-			docType:  "report",
+			docType:  "acme:config",
 			id:       "rpt-789",
-			expected: "https://tenant.apps.dynatrace.com/ui/apps/dynatrace.reports/report/rpt-789",
+			expected: "",
 		},
 	}
 

@@ -11,20 +11,38 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
-// applyDocument applies a document resource (dashboard or notebook)
+// applyDocument applies a document resource of any type (dashboard, notebook,
+// or a custom type such as "launchpad" or "acme:config").
+//
+// docType is the concrete document type. When empty it is resolved from the
+// payload's "type" field, allowing round-trip apply of documents exported with
+// 'dtctl get document -o yaml'.
 func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) (ApplyResult, error) {
 	// Parse to check for ID and name
 	var doc map[string]interface{}
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("failed to parse %s JSON: %w", docType, err)
+		return nil, fmt.Errorf("failed to parse document JSON: %w", err)
+	}
+
+	// Resolve the document type from the payload when not supplied by the caller.
+	if docType == "" {
+		docType, _ = doc["type"].(string)
+	}
+	if docType == "" {
+		return nil, fmt.Errorf("document type is required: use --type or include a \"type\" field in the payload")
 	}
 
 	// Extract and validate content - handle round-trippable format from 'get' command
 	contentData, name, description, validationWarnings := extractDocumentContent(doc, docType)
 
-	// Labels ride along in the exported document ('get document -o json'), so a
-	// round-trip apply preserves (and can update) them.
-	labels := extractDocumentLabels(doc)
+	// Labels come from --label flags (opts.Labels) when supplied; otherwise they
+	// ride along in the exported document ('get document -o yaml') so a round-trip
+	// apply preserves (and can update) them. An empty opts.Labels (the flag's
+	// zero value when --label is absent) falls back to the payload.
+	labels := opts.Labels
+	if len(labels) == 0 {
+		labels = extractDocumentLabels(doc)
+	}
 
 	// Show validation warnings on stderr and collect for result
 	var resultWarnings []string
@@ -39,6 +57,11 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 
 	id, hasID := doc["id"].(string)
 	if !hasID || id == "" {
+		// No ID provided. Update semantics require a target ID.
+		if opts.RequireExisting {
+			return nil, fmt.Errorf("cannot update %s without an id: provide --id or include an \"id\" field", docType)
+		}
+
 		// No ID provided - create new document
 		// Safety check for create operation
 		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
@@ -75,12 +98,22 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 			applyWriteBack(a.sourceFile, resultID, docType, opts.WriteID, false, &resultWarnings)
 		}
 
-		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings), nil
+		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings, labels), nil
 	}
 
 	// Check if document exists
 	metadata, err := handler.GetMetadata(id)
 	if err != nil {
+		// Update semantics: do not silently create a document that does not exist.
+		if opts.RequireExisting {
+			// Distinguish a genuine 404 from transient/auth/other failures so the
+			// "create it instead" hint isn't shown for errors that aren't a 404.
+			if document.IsNotFound(err) {
+				return nil, fmt.Errorf("%s %q not found (use 'dtctl create document' to create it)", docType, id)
+			}
+			return nil, fmt.Errorf("cannot verify %s %q for update: %w", docType, id, err)
+		}
+
 		// Document doesn't exist, create it
 		// Safety check for create operation
 		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
@@ -127,7 +160,7 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 		fileAlreadyHasID := !isUUID(id) // non-UUID id was in the file and is preserved
 		applyWriteBack(a.sourceFile, resultID, docType, opts.WriteID, fileAlreadyHasID, &resultWarnings)
 
-		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings), nil
+		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings, labels), nil
 	}
 
 	// Safety check for update operation - determine ownership from metadata
@@ -169,12 +202,16 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 		resultID = id
 	}
 
-	return a.buildDocumentResult(ActionUpdated, docType, resultID, resultName, tileCount, resultWarnings), nil
+	return a.buildDocumentResult(ActionUpdated, docType, resultID, resultName, tileCount, resultWarnings, labels), nil
 }
 
-// buildDocumentResult constructs the appropriate document result type based on docType
-func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCount int, warnings []string) ApplyResult {
-	if docType == "notebook" {
+// buildDocumentResult constructs the appropriate document result type based on docType.
+// Custom document types (anything other than dashboard/notebook) map to the generic
+// DocumentApplyResult so the emitted resourceType reflects the real type. labels are
+// surfaced on the custom-document result so a round-trip apply confirms what was set.
+func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCount int, warnings, labels []string) ApplyResult {
+	switch docType {
+	case "notebook":
 		return &NotebookApplyResult{
 			ApplyResultBase: ApplyResultBase{
 				Action:       action,
@@ -186,17 +223,30 @@ func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCoun
 			URL:          a.documentURL(docType, id),
 			SectionCount: itemCount,
 		}
-	}
-	return &DashboardApplyResult{
-		ApplyResultBase: ApplyResultBase{
-			Action:       action,
-			ResourceType: "dashboard",
-			ID:           id,
-			Name:         name,
-			Warnings:     warnings,
-		},
-		URL:       a.documentURL(docType, id),
-		TileCount: itemCount,
+	case "dashboard":
+		return &DashboardApplyResult{
+			ApplyResultBase: ApplyResultBase{
+				Action:       action,
+				ResourceType: "dashboard",
+				ID:           id,
+				Name:         name,
+				Warnings:     warnings,
+			},
+			URL:       a.documentURL(docType, id),
+			TileCount: itemCount,
+		}
+	default:
+		return &DocumentApplyResult{
+			ApplyResultBase: ApplyResultBase{
+				Action:       action,
+				ResourceType: docType,
+				ID:           id,
+				Name:         name,
+				Warnings:     warnings,
+			},
+			URL:    a.documentURL(docType, id),
+			Labels: labels,
+		}
 	}
 }
 
@@ -296,12 +346,18 @@ func countDocumentItems(contentData []byte, docType string) int {
 	return 0
 }
 
-// itemName returns the item name for a document type (tiles for dashboards, sections for notebooks)
+// itemName returns the item name for a document type: tiles for dashboards,
+// sections for notebooks, and a generic "items" for custom document types
+// (whose content shape is unknown).
 func itemName(docType string) string {
-	if docType == "dashboard" {
+	switch docType {
+	case "dashboard":
 		return "tiles"
+	case "notebook":
+		return "sections"
+	default:
+		return "items"
 	}
-	return "sections"
 }
 
 // showJSONDiff displays a simple diff between two JSON documents
@@ -363,13 +419,16 @@ func (a *Applier) documentURL(docType, id string) string {
 	case "notebook":
 		return fmt.Sprintf("%s/ui/apps/dynatrace.notebooks/notebook/%s", a.baseURL, id)
 	default:
-		return fmt.Sprintf("%s/ui/apps/dynatrace.%ss/%s/%s", a.baseURL, docType, docType, id)
+		// Custom document types have no known viewer app — the app ID cannot be
+		// derived from the type (e.g. "acme:config" is not served by an app named
+		// "dynatrace.acme:configs"). Emit no URL rather than a broken guess.
+		return ""
 	}
 }
 
-// dryRunDocument performs dry-run validation for dashboard/notebook documents
-func (a *Applier) dryRunDocument(resourceType ResourceType, doc map[string]interface{}) (ApplyResult, error) {
-	docType := string(resourceType)
+// dryRunDocument performs dry-run validation for a document of any type
+// (dashboard, notebook, or a custom type).
+func (a *Applier) dryRunDocument(docType string, doc map[string]interface{}) (ApplyResult, error) {
 	id, _ := doc["id"].(string)
 
 	// Use the same extraction/validation logic as apply

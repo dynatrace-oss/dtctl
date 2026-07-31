@@ -22,6 +22,10 @@ func extractApplyBase(result apply.ApplyResult) *apply.ApplyResultBase {
 		return &r.ApplyResultBase
 	case apply.NotebookApplyResult:
 		return &r.ApplyResultBase
+	case *apply.DocumentApplyResult:
+		return &r.ApplyResultBase
+	case apply.DocumentApplyResult:
+		return &r.ApplyResultBase
 	case *apply.SLOApplyResult:
 		return &r.ApplyResultBase
 	case apply.SLOApplyResult:

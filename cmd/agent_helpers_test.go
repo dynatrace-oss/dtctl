@@ -33,6 +33,16 @@ func TestExtractApplyBase_PointerTypes(t *testing.T) {
 			want: "dashboard",
 		},
 		{
+			name: "DocumentApplyResult pointer (custom type)",
+			result: &apply.DocumentApplyResult{
+				ApplyResultBase: apply.ApplyResultBase{
+					Action: apply.ActionUpdated, ResourceType: "acme:config", ID: "doc1",
+				},
+				Labels: []string{"team-a"},
+			},
+			want: "acme:config",
+		},
+		{
 			name: "SettingsApplyResult pointer",
 			result: &apply.SettingsApplyResult{
 				ApplyResultBase: apply.ApplyResultBase{

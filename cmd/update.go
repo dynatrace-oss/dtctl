@@ -16,13 +16,21 @@ Unlike 'apply' which works from YAML/JSON files, 'update' modifies individual
 fields of a resource using command-line flags. This is useful for quick,
 targeted changes without exporting and re-importing a full resource definition.
 
+Most 'update' subcommands modify individual fields via flags. The 'document'
+subcommand is file-based instead: it updates an existing document of any type
+from a YAML/JSON file (the update-only counterpart to 'create document').
+
 Available resources:
+  document                Update an existing document of any type from a file
   breakpoint              Update breakpoint condition/enabled state or workspace filters
   azure connection        Update Azure connection credentials
   azure monitoring        Update Azure monitoring configuration
   gcp connection          Update GCP connection credentials (Preview)
   gcp monitoring          Update GCP monitoring configuration (Preview)`,
-	Example: `  # Update an Azure connection
+	Example: `  # Update a custom document type (round-trip from 'get')
+  dtctl update document -f doc.json --type acme:config --id acme-config
+
+  # Update an Azure connection
   dtctl update azure connection <id> --name "New Name"
 
   # Update Live Debugger workspace filters
@@ -57,5 +65,6 @@ var updateSettingsHintCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(updateCmd)
+	updateCmd.AddCommand(updateDocumentCmd)
 	updateCmd.AddCommand(updateSettingsHintCmd)
 }

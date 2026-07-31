@@ -68,7 +68,7 @@ dtctl supports both singular and plural resource names, plus short aliases.
 | `wfe-task-result` | — | get |
 | `dashboards` | `dashboard`, `dash`, `db` | get, describe, create, edit, delete, apply, share, unshare, history, restore, diff, watch |
 | `notebooks` | `notebook`, `nb` | get, describe, create, edit, delete, apply, share, unshare, history, restore, diff, watch |
-| `documents` | `document`, `doc` | get, describe, create, edit, delete, history, restore |
+| `documents` | `document`, `doc` | get, describe, create, apply, update, edit, delete, history, restore |
 | `trash` | — | get, describe, restore, delete |
 | `slos` | `slo` | get, describe, create, delete, apply, exec (evaluate), watch |
 | `slo-templates` | `slo-template` | get, describe |
