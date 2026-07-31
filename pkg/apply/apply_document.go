@@ -35,9 +35,14 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	// Extract and validate content - handle round-trippable format from 'get' command
 	contentData, name, description, validationWarnings := extractDocumentContent(doc, docType)
 
-	// Labels ride along in the exported document ('get document -o json'), so a
-	// round-trip apply preserves (and can update) them.
-	labels := extractDocumentLabels(doc)
+	// Labels come from --label flags (opts.Labels) when supplied; otherwise they
+	// ride along in the exported document ('get document -o json') so a round-trip
+	// apply preserves (and can update) them. An empty opts.Labels (the flag's
+	// zero value when --label is absent) falls back to the payload.
+	labels := opts.Labels
+	if len(labels) == 0 {
+		labels = extractDocumentLabels(doc)
+	}
 
 	// Show validation warnings on stderr and collect for result
 	var resultWarnings []string
@@ -93,7 +98,7 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 			applyWriteBack(a.sourceFile, resultID, docType, opts.WriteID, false, &resultWarnings)
 		}
 
-		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings), nil
+		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings, labels), nil
 	}
 
 	// Check if document exists
@@ -101,7 +106,12 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	if err != nil {
 		// Update semantics: do not silently create a document that does not exist.
 		if opts.RequireExisting {
-			return nil, fmt.Errorf("%s %q not found (use 'dtctl create document' to create it): %w", docType, id, err)
+			// Distinguish a genuine 404 from transient/auth/other failures so the
+			// "create it instead" hint isn't shown for errors that aren't a 404.
+			if document.IsNotFound(err) {
+				return nil, fmt.Errorf("%s %q not found (use 'dtctl create document' to create it)", docType, id)
+			}
+			return nil, fmt.Errorf("cannot verify %s %q for update: %w", docType, id, err)
 		}
 
 		// Document doesn't exist, create it
@@ -150,7 +160,7 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 		fileAlreadyHasID := !isUUID(id) // non-UUID id was in the file and is preserved
 		applyWriteBack(a.sourceFile, resultID, docType, opts.WriteID, fileAlreadyHasID, &resultWarnings)
 
-		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings), nil
+		return a.buildDocumentResult(ActionCreated, docType, resultID, resultName, tileCount, resultWarnings, labels), nil
 	}
 
 	// Safety check for update operation - determine ownership from metadata
@@ -192,13 +202,14 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 		resultID = id
 	}
 
-	return a.buildDocumentResult(ActionUpdated, docType, resultID, resultName, tileCount, resultWarnings), nil
+	return a.buildDocumentResult(ActionUpdated, docType, resultID, resultName, tileCount, resultWarnings, labels), nil
 }
 
 // buildDocumentResult constructs the appropriate document result type based on docType.
 // Custom document types (anything other than dashboard/notebook) map to the generic
-// DocumentApplyResult so the emitted resourceType reflects the real type.
-func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCount int, warnings []string) ApplyResult {
+// DocumentApplyResult so the emitted resourceType reflects the real type. labels are
+// surfaced on the custom-document result so a round-trip apply confirms what was set.
+func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCount int, warnings, labels []string) ApplyResult {
 	switch docType {
 	case "notebook":
 		return &NotebookApplyResult{
@@ -233,7 +244,8 @@ func (a *Applier) buildDocumentResult(action, docType, id, name string, itemCoun
 				Name:         name,
 				Warnings:     warnings,
 			},
-			URL: a.documentURL(docType, id),
+			URL:    a.documentURL(docType, id),
+			Labels: labels,
 		}
 	}
 }

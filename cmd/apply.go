@@ -74,6 +74,11 @@ Custom document types (--type):
     dtctl apply -f doc.json                              # updates, type auto-detected
     dtctl apply -f raw-content.json --type acme:config --id acme-config
 
+  Labels ride along in an exported document and are preserved on a round-trip
+  apply. Override them with repeatable --label flags (this replaces the full set):
+
+    dtctl apply -f doc.json --label team-a --label env:prod
+
 Array input (bulk apply):
   Files containing an array of resources (e.g., from 'dtctl get settings --schema ...
   -o yaml') are applied element-by-element. Partial failures do not abort the batch;
@@ -138,6 +143,7 @@ resources in sync with their file definitions.
 		overrideID, _ := cmd.Flags().GetString("id")
 		writeID, _ := cmd.Flags().GetBool("write-id")
 		docType, _ := cmd.Flags().GetString("type")
+		labels, _ := cmd.Flags().GetStringArray("label")
 		shareEnvironment, _ := cmd.Flags().GetString("share-environment")
 
 		if err := validateShareEnvironmentValue(shareEnvironment); err != nil {
@@ -203,6 +209,7 @@ resources in sync with their file definitions.
 			OverrideID:   overrideID,
 			WriteID:      writeID,
 			Type:         docType,
+			Labels:       labels,
 		}
 
 		results, applyErr := applier.Apply(fileData, opts)
@@ -279,6 +286,7 @@ func init() {
 	applyCmd.Flags().String("id", "", "override or inject resource ID (use with --write-id to stamp ID into file)")
 	applyCmd.Flags().Bool("write-id", false, "write the created resource ID back into the source file for idempotent future applies")
 	applyCmd.Flags().String("type", "", "document type (e.g. launchpad, acme:config); forces the file to be applied as a document of this type")
+	applyCmd.Flags().StringArray("label", []string{}, "document classification label (repeatable); replaces the document's labels, overriding any in the payload")
 	applyCmd.Flags().String("share-environment", "", "share the applied notebook/dashboard with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")
 	applyCmd.Flags().Lookup("share-environment").NoOptDefVal = "read"
 

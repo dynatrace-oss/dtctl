@@ -137,11 +137,12 @@ type ApplyOptions struct {
 	DryRun          bool
 	Force           bool
 	ShowDiff        bool
-	NoHooks         bool   // skip pre-apply hooks
-	OverrideID      string // override or inject resource ID (from --id flag)
-	WriteID         bool   // write created resource ID back into the source file (from --write-id flag)
-	Type            string // document type override (from --type flag); forces generic document handling
-	RequireExisting bool   // fail instead of creating when a document ID is missing (update semantics)
+	NoHooks         bool     // skip pre-apply hooks
+	OverrideID      string   // override or inject resource ID (from --id flag)
+	WriteID         bool     // write created resource ID back into the source file (from --write-id flag)
+	Type            string   // document type override (from --type flag); forces generic document handling
+	RequireExisting bool     // fail instead of creating when a document ID is missing (update semantics)
+	Labels          []string // document labels (from --label flags); when non-empty, overrides labels in the payload
 }
 
 // ResourceType represents the type of resource

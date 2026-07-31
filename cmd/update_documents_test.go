@@ -22,6 +22,18 @@ func TestUpdateDocumentRegistered(t *testing.T) {
 	}
 }
 
+// TestUpdateDocumentHasLabelFlag verifies the repeatable --label flag is
+// registered so labels can be set on update (the counterpart to create's --label).
+func TestUpdateDocumentHasLabelFlag(t *testing.T) {
+	f := updateDocumentCmd.Flags().Lookup("label")
+	if f == nil {
+		t.Fatal("update document is missing the --label flag")
+	}
+	if f.Value.Type() != "stringArray" {
+		t.Errorf("expected --label to be a stringArray, got %q", f.Value.Type())
+	}
+}
+
 // TestUpdateDocumentRequiresFile ensures the command fails fast when --file is
 // omitted, before any network/config access.
 func TestUpdateDocumentRequiresFile(t *testing.T) {

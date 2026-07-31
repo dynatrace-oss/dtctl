@@ -330,6 +330,12 @@ func (h *Handler) GetMetadata(id string) (*DocumentMetadata, error) {
 	return h.sdk.GetMetadata(context.Background(), id)
 }
 
+// IsNotFound reports whether err indicates the document does not exist (HTTP 404),
+// as opposed to a transient, auth, or other failure.
+func IsNotFound(err error) bool {
+	return errors.Is(err, httpclient.ErrNotFound)
+}
+
 // GetRaw retrieves a document's content as raw bytes.
 func (h *Handler) GetRaw(id string) ([]byte, error) {
 	doc, err := h.sdk.Get(context.Background(), id)

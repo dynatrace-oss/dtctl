@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -243,6 +244,54 @@ func TestApply_RequireExisting_NoID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "without an id") {
 		t.Errorf("expected 'without an id' error, got %v", err)
+	}
+}
+
+// TestApply_OptsLabels_OverridePayload verifies that labels supplied via
+// ApplyOptions (the --label flag) replace labels embedded in the payload on
+// update, and are surfaced on the returned DocumentApplyResult.
+func TestApply_OptsLabels_OverridePayload(t *testing.T) {
+	const id = "acme-cfg-2"
+	var patchLabels []string
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		"/platform/document/v1/documents/" + id + "/metadata": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id": id, "name": "My Config", "type": "acme:config", "version": 2,
+			})
+		},
+		"/platform/document/v1/documents/" + id: func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatalf("ParseMultipartForm: %v", err)
+			}
+			patchLabels = r.MultipartForm.Value["labels"]
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id": id, "name": "My Config", "type": "acme:config", "version": 3,
+			})
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	// Payload carries labels [old]; --label (opts.Labels) should win.
+	payload := `{"id":"` + id + `","type":"acme:config","labels":["old"],"settings":{"enabled":true}}`
+	results, err := a.Apply([]byte(payload), ApplyOptions{Labels: []string{"team-a", "env:prod"}})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if want := []string{"team-a", "env:prod"}; !reflect.DeepEqual(patchLabels, want) {
+		t.Errorf("labels sent on update = %v, want %v (opts.Labels must override payload)", patchLabels, want)
+	}
+	res, ok := results[0].(*DocumentApplyResult)
+	if !ok {
+		t.Fatalf("expected *DocumentApplyResult, got %T", results[0])
+	}
+	if want := []string{"team-a", "env:prod"}; !reflect.DeepEqual(res.Labels, want) {
+		t.Errorf("result labels = %v, want %v", res.Labels, want)
 	}
 }
 

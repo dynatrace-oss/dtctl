@@ -48,7 +48,8 @@ type NotebookApplyResult struct {
 // (any type other than dashboard or notebook, e.g. "launchpad" or "acme:config").
 type DocumentApplyResult struct {
 	ApplyResultBase `yaml:",inline"`
-	URL             string `json:"url,omitempty" yaml:"url,omitempty" table:"URL,wide"`
+	URL             string   `json:"url,omitempty"    yaml:"url,omitempty"    table:"URL,wide"`
+	Labels          []string `json:"labels,omitempty" yaml:"labels,omitempty" table:"-"`
 }
 
 // SLOApplyResult is the result of applying an SLO resource.
