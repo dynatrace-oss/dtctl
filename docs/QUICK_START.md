@@ -2053,7 +2053,12 @@ dtctl verify openpipeline-dql-processor 'parse content, "IPV4:ip"'
 dtctl verify openpipeline-dql-processor -f processor.dql --config-id logs
 
 # Preview a processor against its embedded sample records (-f required; pass the
-# processor body itself — dtctl builds the request envelope around it)
+# processor body itself — dtctl builds the request envelope around it). The body
+# must be a complete processor definition; the endpoint validates the full schema
+# and rejects a partial body. A minimal DQL processor:
+#   {"type":"dql","id":"preview","description":"preview","enabled":true,
+#    "matcher":"true","dqlScript":"fieldsAdd severity = \"INFO\"",
+#    "sampleData":"{\"content\":\"hello\"}"}
 dtctl exec preview-processor -f processor.json
 dtctl exec preview-processor -f processor.json --config-id logs
 cat processor.json | dtctl exec preview-processor -f -

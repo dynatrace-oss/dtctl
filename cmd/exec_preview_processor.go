@@ -23,7 +23,13 @@ and returns the matched/modified result for each record.
 
 The file (use "-" for stdin; there is no positional argument) is the processor
 definition body itself — the same JSON shape a processor has inside a pipeline
-config, e.g. {"type":"dql","matcher":"true","dqlScript":"...","sampleData":"..."}.
+config. It must be a complete processor definition; the endpoint validates the
+full schema and rejects a partial body, e.g. a DQL processor needs at least:
+
+  {"type":"dql","id":"preview","description":"preview","enabled":true,
+   "matcher":"true","dqlScript":"fieldsAdd severity = \"INFO\"",
+   "sampleData":"{\"content\":\"hello\"}"}
+
 You do NOT wrap it in a request envelope: dtctl builds the request around it and
 adds the configuration scope from --config-id. The processor body is forwarded
 verbatim, so any of the endpoint's processor types are accepted.
