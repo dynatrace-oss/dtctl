@@ -112,14 +112,15 @@ func builtinCommandNames() map[string]bool {
 	return names
 }
 
-// credentialEnvVars are the environment variables dtctl documents as token
+// credentialEnvVars are the environment variables dtctl itself names as token
 // carriers (docs/site/_docs/ai-agent-mode.md, `dtctl config init`'s
-// ${DT_API_TOKEN} scaffold). They are stripped from a plugin's environment:
-// plugins resolve credentials themselves through the sdk (the same config
-// file and keyring service), never through inherited env. Tokens placed in
-// user-chosen variables referenced via ${...} config expansion cannot be
-// recognized and are inherited like the rest of the environment.
-var credentialEnvVars = []string{"DTCTL_TOKEN", "DT_API_TOKEN"}
+// ${DT_API_TOKEN} scaffold, and `dtctl account login`/`account status` for the
+// account token). They are stripped from a plugin's environment: plugins
+// resolve credentials themselves through the sdk (the same config file and
+// keyring service), never through inherited env. Tokens placed in user-chosen
+// variables referenced via ${...} config expansion cannot be recognized and
+// are inherited like the rest of the environment.
+var credentialEnvVars = []string{"DTCTL_TOKEN", "DT_API_TOKEN", "DTCTL_ACCOUNT_TOKEN"}
 
 // pluginEnv builds the environment for a plugin exec from dtctl's own leading
 // flags: the inherited environment minus credentialEnvVars, plus the
