@@ -168,7 +168,7 @@ func TestBuildEditBreakpointSettings_LogMessageChanged(t *testing.T) {
 					},
 				},
 			},
-			"location": map[string]interface{}{"filename": "OrderController.java", "lineno": float64(306)},
+			"location":  map[string]interface{}{"filename": "OrderController.java", "lineno": float64(306)},
 			"rateLimit": "150/20000",
 		},
 		Processing: map[string]interface{}{
