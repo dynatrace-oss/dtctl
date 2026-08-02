@@ -153,6 +153,54 @@ func TestBuildEditBreakpointSettings(t *testing.T) {
 	}
 }
 
+func TestBuildEditBreakpointSettings_LogMessageChanged(t *testing.T) {
+	rule := livedebugger.BreakpointRule{
+		ID: "dtctl-rule-2",
+		AugJSON: map[string]interface{}{
+			"action": map[string]interface{}{
+				"operations": []interface{}{
+					map[string]interface{}{
+						"name": "set",
+						"paths": map[string]interface{}{
+							"store.rookout.frame":     "frame.dump()",
+							"store.rookout.traceback": "stack.traceback()",
+						},
+					},
+				},
+			},
+			"location": map[string]interface{}{"filename": "OrderController.java", "lineno": float64(306)},
+			"rateLimit": "150/20000",
+		},
+		Processing: map[string]interface{}{
+			"operations": []interface{}{
+				map[string]interface{}{"name": "set", "paths": map[string]interface{}{"temp.message.rookout": "store.rookout"}},
+				map[string]interface{}{"name": "format", "path": "temp.message.rookout.message", "format": "Hit on {store.rookout.frame.filename}:{store.rookout.frame.line}"},
+				map[string]interface{}{"name": "send_rookout", "path": "temp.message"},
+			},
+		},
+	}
+
+	settings, err := buildEditBreakpointSettings(rule, "", false, "Hit on {frame.filename}:{frame.line} value={myVar}", true)
+	if err != nil {
+		t.Fatalf("buildEditBreakpointSettings returned error: %v", err)
+	}
+
+	// When logMessageChanged=true, outputMessage must be the raw user-supplied string.
+	// The backend is responsible for qualifying {frame.X} → store.rookout.frame.X at storage time.
+	if settings["outputMessage"] != "Hit on {frame.filename}:{frame.line} value={myVar}" {
+		t.Fatalf("expected raw user-supplied log message, got: %#v", settings["outputMessage"])
+	}
+
+	// Empty string resets to the friendly default rather than sending an empty message.
+	settings, err = buildEditBreakpointSettings(rule, "", false, "", true)
+	if err != nil {
+		t.Fatalf("buildEditBreakpointSettings returned error: %v", err)
+	}
+	if settings["outputMessage"] != "Hit on {frame.filename}:{frame.line}" {
+		t.Fatalf("expected friendly default on empty log message, got: %#v", settings["outputMessage"])
+	}
+}
+
 func TestResolveBreakpointRulesForEdit(t *testing.T) {
 	rules := []livedebugger.BreakpointRule{
 		{
@@ -364,6 +412,9 @@ func TestDescribeBreakpointEdits(t *testing.T) {
 	}
 	if got := describeBreakpointEdits(false, "", true, "Hit {frame.line}", false, false); got != "log-message=\"Hit {frame.line}\"" {
 		t.Fatalf("unexpected log-message-only description: %q", got)
+	}
+	if got := describeBreakpointEdits(false, "", true, "", false, false); got != "log-message=\"Hit on {frame.filename}:{frame.line}\"" {
+		t.Fatalf("unexpected empty log-message reset description: %q", got)
 	}
 }
 

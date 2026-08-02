@@ -192,7 +192,9 @@ It supports `{variable}` placeholders that are interpolated at runtime:
 
 You always use the short, friendly form (e.g. `{frame.line}`), and the message
 is displayed the same way in `get` and `describe`. If `--log-message` is omitted
-on update, the current message is preserved.
+on update, the current message is preserved. Passing an empty string
+(`--log-message ""`) resets the message to the default:
+`Hit on {frame.filename}:{frame.line}`.
 
 ### Notes
 

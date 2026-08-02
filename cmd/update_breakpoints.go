@@ -357,7 +357,11 @@ func buildEditBreakpointSettings(rule livedebugger.BreakpointRule, condition str
 
 	outputMessage := extractBreakpointOutputMessage(rule)
 	if logMessageChanged {
-		outputMessage = logMessage
+		if logMessage == "" {
+			outputMessage = unqualifyBreakpointOutputMessage(breakpointDefaultOutputMessage)
+		} else {
+			outputMessage = logMessage
+		}
 	}
 
 	settings := map[string]interface{}{
@@ -572,7 +576,11 @@ func describeBreakpointEdits(conditionChanged bool, condition string, logMessage
 		changes = append(changes, fmt.Sprintf("condition=%q", condition))
 	}
 	if logMessageChanged {
-		changes = append(changes, fmt.Sprintf("log-message=%q", logMessage))
+		displayMessage := logMessage
+		if displayMessage == "" {
+			displayMessage = unqualifyBreakpointOutputMessage(breakpointDefaultOutputMessage)
+		}
+		changes = append(changes, fmt.Sprintf("log-message=%q", displayMessage))
 	}
 	if enabledChanged {
 		changes = append(changes, fmt.Sprintf("enabled=%t", enabled))
