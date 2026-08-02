@@ -95,6 +95,9 @@ behavior may change in future releases.`,
 		}
 
 		rule := matchedRules[0]
+		if rule.ImmutableID == "" {
+			return fmt.Errorf("breakpoint %q has no snapshot ID", identifier)
+		}
 		dqlID := padBreakpointID(rule.ImmutableID)
 		dqlQuery := fmt.Sprintf(`fetch application.snapshots | filter breakpoint.id == toUid("%s")`, dqlID)
 		if limit, _ := cmd.Flags().GetInt("limit"); limit > 0 {
