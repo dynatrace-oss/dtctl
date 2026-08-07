@@ -121,12 +121,13 @@ func TestPluginEnv(t *testing.T) {
 func TestPluginEnv_StripsCredentialEnvVars(t *testing.T) {
 	t.Setenv("DTCTL_TOKEN", "dt0s16.SECRET")
 	t.Setenv("DT_API_TOKEN", "dt0c01.SECRET")
+	t.Setenv("DTCTL_ACCOUNT_TOKEN", "dt0s16.SECRET")
 	t.Setenv("UNRELATED_VAR", "kept")
 
 	env := pluginEnv([]string{"--plain"})
 
 	joined := strings.Join(env, "\n")
-	for _, forbidden := range []string{"DTCTL_TOKEN=", "DT_API_TOKEN=", "SECRET"} {
+	for _, forbidden := range []string{"DTCTL_TOKEN=", "DT_API_TOKEN=", "DTCTL_ACCOUNT_TOKEN=", "SECRET"} {
 		if strings.Contains(joined, forbidden) {
 			t.Errorf("credential material leaked into plugin env (%s)", forbidden)
 		}

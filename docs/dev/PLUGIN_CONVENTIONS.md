@@ -35,8 +35,8 @@ dtctl sets these variables for the plugin process:
 | `DTCTL_CALLER_VERSION` | The dispatching dtctl's version, for compatibility decisions |
 
 **No tokens from dtctl.** dtctl never passes credentials via argv, and it
-strips its documented credential variables (`DTCTL_TOKEN`, `DT_API_TOKEN`)
-from the plugin's environment. The rest of the caller's environment is
+strips its documented credential variables (`DTCTL_TOKEN`, `DT_API_TOKEN`,
+`DTCTL_ACCOUNT_TOKEN`) from the plugin's environment. The rest of the caller's environment is
 inherited as-is — a token you placed in a custom variable (e.g. one referenced
 via `${MY_TOKEN}` in the config file) is not recognized as a credential and
 reaches the plugin like any other inherited variable. Plugins resolve
