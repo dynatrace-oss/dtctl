@@ -610,30 +610,61 @@ func (h *Handler) CreateDirectShare(ctx context.Context, req CreateDirectShareRe
 	return &result, nil
 }
 
-// ListDirectShares lists direct shares for a document
+// ListDirectShares lists direct shares for a document.
+// Paginates automatically using the Document API style (page-size sent on every request).
 func (h *Handler) ListDirectShares(ctx context.Context, documentID string) (*DirectShareList, error) {
-	req := h.client.HTTP().R().SetContext(ctx)
+	var allShares []DirectShare
+	var totalCount int
+	nextPageKey := ""
 
+	filterStr := ""
 	if documentID != "" {
-		req.SetQueryParam("filter", fmt.Sprintf("documentId=='%s'", escapeFilterValue(documentID)))
+		filterStr = fmt.Sprintf("documentId=='%s'", escapeFilterValue(documentID))
 	}
 
-	resp, err := req.Get("/platform/document/v1/direct-shares")
+	for {
+		var result DirectShareList
+		req := h.client.HTTP().R().SetContext(ctx)
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to list direct shares: %w", err)
+		filters := map[string]string{}
+		if filterStr != "" {
+			filters["filter"] = filterStr
+		}
+
+		req.SetQueryParamsFromValues(httpclient.PaginationParams{
+			Style:         httpclient.PaginationDocumentAPI,
+			PageKeyParam:  "page-key",
+			PageSizeParam: "page-size",
+			NextPageKey:   nextPageKey,
+			Filters:       filters,
+		}.QueryParams())
+
+		resp, err := req.Get("/platform/document/v1/direct-shares")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list direct shares: %w", err)
+		}
+
+		if err := httpclient.CheckResponse(resp); err != nil {
+			return nil, fmt.Errorf("failed to list direct shares: %w", err)
+		}
+
+		if err := json.Unmarshal(resp.Body(), &result); err != nil {
+			return nil, fmt.Errorf("list direct shares: parse response: %w", err)
+		}
+
+		allShares = append(allShares, result.Shares...)
+		totalCount = result.TotalCount
+
+		if result.NextPageKey == "" {
+			break
+		}
+		nextPageKey = result.NextPageKey
 	}
 
-	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, fmt.Errorf("failed to list direct shares: %w", err)
-	}
-
-	var result DirectShareList
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("list direct shares: parse response: %w", err)
-	}
-
-	return &result, nil
+	return &DirectShareList{
+		Shares:     allShares,
+		TotalCount: totalCount,
+	}, nil
 }
 
 // DeleteDirectShare deletes a direct share
