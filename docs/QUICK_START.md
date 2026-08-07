@@ -2073,20 +2073,20 @@ The two `verify` commands **exit non-zero on an invalid verdict** in every outpu
 
 ### Translate Classic Pipelines to OpenPipeline
 
-Migrating from Classic pipelines to OpenPipeline? `dtctl get classic-pipelines-translation` converts your tenant's Classic pipeline configuration for a scope into an OpenPipeline configuration pipeline (Settings shape). It is a read-only call that returns the translated pipeline verbatim — the reliable starting point you then review and apply via the Settings API.
+Migrating from Classic pipelines to OpenPipeline? `dtctl translate classic-pipelines` converts your tenant's Classic pipeline configuration for a scope into an OpenPipeline configuration pipeline (Settings shape). It is a read-only call that returns the translated pipeline verbatim — the reliable starting point you then review and apply via the Settings API.
 
 ```bash
 # Translate the logs Classic pipeline (pretty-printed pipeline document)
-dtctl get classic-pipelines-translation logs
+dtctl translate classic-pipelines logs
 
 # Translate business events and export as YAML for review/editing
-dtctl get classic-pipelines-translation bizevents -o yaml > reference-pipeline.yaml
+dtctl translate classic-pipelines bizevents -o yaml > reference-pipeline.yaml
 
 # Print the translated pipeline as JSON
-dtctl get classic-pipelines-translation logs -o json
+dtctl translate classic-pipelines logs -o json
 
 # Skip disabled rules in the translation (overrides the server default)
-dtctl get classic-pipelines-translation logs --skip-disabled-rules=true
+dtctl translate classic-pipelines logs --skip-disabled-rules=true
 ```
 
 The scope is a positional argument and must be `logs` or `bizevents`. Every output format emits the translated pipeline document directly (no `{value, withWarning}` wrapper), so the exported file is applyable as-is. The translation is deterministic where possible; when a processing rule's definition script could not be translated automatically (`withWarning=true`), a warning is printed to stderr (and carried in the agent envelope under `-A`) and that part needs a manual rewrite. Apply the reviewed result with `dtctl create settings --schema builtin:openpipeline.<scope>.pipelines -f <file>`.
