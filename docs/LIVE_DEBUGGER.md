@@ -120,6 +120,7 @@ Default output is a table with:
 - filename
 - line number
 - active state
+- log message (with `{variable}` placeholders in their friendly form; see [Log messages](#log-messages))
 
 Structured output is also supported:
 
@@ -143,6 +144,7 @@ dtctl describe OrderController.java:306
 The command uses `GetRuleStatusBreakdown` and summarizes:
 
 - enabled/disabled state
+- log message (see [Log messages](#log-messages))
 - overall status
 - active and pending rooks
 - warnings and errors
@@ -171,11 +173,35 @@ dtctl update breakpoint OrderController.java:306 --enabled true
 dtctl update breakpoint OrderController.java:306 --enabled false
 ```
 
+Change the log message:
+
+```bash
+dtctl update breakpoint OrderController.java:306 --log-message "Hit on {frame.filename}:{frame.line} value={newTodoRecord.title}"
+```
+
+### Log messages
+
+A breakpoint's log message is the line emitted each time the breakpoint is hit.
+It supports `{variable}` placeholders that are interpolated at runtime:
+
+- `{frame.filename}`, `{frame.line}`, and other `frame.*` fields expose the hit
+  location and stack frame.
+- `{myVar.field}` (any other name) references a captured application variable.
+- Reserved namespaces such as `{rook.*}`, `{agent.*}`, `{bp.*}`,
+  `{message_info.*}`, and `{controller.*}` pass through unchanged.
+
+You always use the short, friendly form (e.g. `{frame.line}`), and the message
+is displayed the same way in `get` and `describe`. If `--log-message` is omitted
+on update, the current message is preserved. Passing an empty string
+(`--log-message ""`) resets the message to the default:
+`Hit on {frame.filename}:{frame.line}`.
+
 ### Notes
 
 - identifiers can be either a mutable breakpoint ID or `filename:line`
 - source locations resolve all matching breakpoints in the current workspace
 - `--dry-run` is supported
+- at least one of `--condition`, `--log-message`, or `--enabled` is required
 
 ## 6. Delete breakpoints
 

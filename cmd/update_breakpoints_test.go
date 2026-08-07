@@ -106,7 +106,7 @@ func TestBuildEditBreakpointSettings(t *testing.T) {
 		},
 	}
 
-	settings, err := buildEditBreakpointSettings(rule, "value>othervalue", true)
+	settings, err := buildEditBreakpointSettings(rule, "value>othervalue", true, "", false)
 	if err != nil {
 		t.Fatalf("buildEditBreakpointSettings returned error: %v", err)
 	}
@@ -150,6 +150,54 @@ func TestBuildEditBreakpointSettings(t *testing.T) {
 	}
 	if targetConfiguration["targetId"] != breakpointRookoutTargetID {
 		t.Fatalf("unexpected targetId: %#v", targetConfiguration["targetId"])
+	}
+}
+
+func TestBuildEditBreakpointSettings_LogMessageChanged(t *testing.T) {
+	rule := livedebugger.BreakpointRule{
+		ID: "dtctl-rule-2",
+		AugJSON: map[string]interface{}{
+			"action": map[string]interface{}{
+				"operations": []interface{}{
+					map[string]interface{}{
+						"name": "set",
+						"paths": map[string]interface{}{
+							"store.rookout.frame":     "frame.dump()",
+							"store.rookout.traceback": "stack.traceback()",
+						},
+					},
+				},
+			},
+			"location":  map[string]interface{}{"filename": "OrderController.java", "lineno": float64(306)},
+			"rateLimit": "150/20000",
+		},
+		Processing: map[string]interface{}{
+			"operations": []interface{}{
+				map[string]interface{}{"name": "set", "paths": map[string]interface{}{"temp.message.rookout": "store.rookout"}},
+				map[string]interface{}{"name": "format", "path": "temp.message.rookout.message", "format": "Hit on {store.rookout.frame.filename}:{store.rookout.frame.line}"},
+				map[string]interface{}{"name": "send_rookout", "path": "temp.message"},
+			},
+		},
+	}
+
+	settings, err := buildEditBreakpointSettings(rule, "", false, "Hit on {frame.filename}:{frame.line} value={myVar}", true)
+	if err != nil {
+		t.Fatalf("buildEditBreakpointSettings returned error: %v", err)
+	}
+
+	// When logMessageChanged=true, outputMessage must be the raw user-supplied string.
+	// The backend is responsible for qualifying {frame.X} → store.rookout.frame.X at storage time.
+	if settings["outputMessage"] != "Hit on {frame.filename}:{frame.line} value={myVar}" {
+		t.Fatalf("expected raw user-supplied log message, got: %#v", settings["outputMessage"])
+	}
+
+	// Empty string resets to the friendly default rather than sending an empty message.
+	settings, err = buildEditBreakpointSettings(rule, "", false, "", true)
+	if err != nil {
+		t.Fatalf("buildEditBreakpointSettings returned error: %v", err)
+	}
+	if settings["outputMessage"] != "Hit on {frame.filename}:{frame.line}" {
+		t.Fatalf("expected friendly default on empty log message, got: %#v", settings["outputMessage"])
 	}
 }
 
@@ -350,16 +398,63 @@ func TestIntValue(t *testing.T) {
 }
 
 func TestDescribeBreakpointEdits(t *testing.T) {
-	if got := describeBreakpointEdits(false, "", false, false); got != "" {
+	if got := describeBreakpointEdits(false, "", false, "", false, false); got != "" {
 		t.Fatalf("expected empty changes, got %q", got)
 	}
-	if got := describeBreakpointEdits(true, "a>1", false, false); got != "condition=\"a>1\"" {
+	if got := describeBreakpointEdits(true, "a>1", false, "", false, false); got != "condition=\"a>1\"" {
 		t.Fatalf("unexpected condition-only description: %q", got)
 	}
-	if got := describeBreakpointEdits(false, "", true, true); got != "enabled=true" {
+	if got := describeBreakpointEdits(false, "", false, "", true, true); got != "enabled=true" {
 		t.Fatalf("unexpected enabled-only description: %q", got)
 	}
-	if got := describeBreakpointEdits(true, "a>1", true, false); got != "condition=\"a>1\", enabled=false" {
+	if got := describeBreakpointEdits(true, "a>1", false, "", true, false); got != "condition=\"a>1\", enabled=false" {
 		t.Fatalf("unexpected combined description: %q", got)
+	}
+	if got := describeBreakpointEdits(false, "", true, "Hit {frame.line}", false, false); got != "log-message=\"Hit {frame.line}\"" {
+		t.Fatalf("unexpected log-message-only description: %q", got)
+	}
+	if got := describeBreakpointEdits(false, "", true, "", false, false); got != "log-message=\"Hit on {frame.filename}:{frame.line}\"" {
+		t.Fatalf("unexpected empty log-message reset description: %q", got)
+	}
+}
+
+func TestUnqualifyBreakpointOutputMessage(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "frame prefix stripped to frame",
+			in:   "Hit on {store.rookout.frame.filename}:{store.rookout.frame.line}",
+			want: "Hit on {frame.filename}:{frame.line}",
+		},
+		{
+			name: "variables prefix stripped entirely",
+			in:   "value={store.rookout.variables.newTodoRecord.title}",
+			want: "value={newTodoRecord.title}",
+		},
+		{
+			name: "other namespaces pass through unchanged",
+			in:   "agent {agent.id} rook {rook.id} bp {bp.id}",
+			want: "agent {agent.id} rook {rook.id} bp {bp.id}",
+		},
+		{
+			name: "mixed prefixes",
+			in:   "{store.rookout.frame.line} {store.rookout.variables.x.y} {controller.id}",
+			want: "{frame.line} {x.y} {controller.id}",
+		},
+		{
+			name: "no placeholders",
+			in:   "plain message",
+			want: "plain message",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := unqualifyBreakpointOutputMessage(tc.in); got != tc.want {
+				t.Fatalf("unqualifyBreakpointOutputMessage(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }

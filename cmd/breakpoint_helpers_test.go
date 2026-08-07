@@ -623,6 +623,9 @@ func TestRunGetBreakpoints_StructuredView(t *testing.T) {
 	if !strings.Contains(output, "\"id\": \"bp-1\"") || !strings.Contains(output, "\"filename\": \"OrderController.java\"") {
 		t.Fatalf("unexpected structured output: %q", output)
 	}
+	if !strings.Contains(output, "\"logMessage\": \"Hit on {frame.filename}:{frame.line}\"") {
+		t.Fatalf("expected unqualified log message in output: %q", output)
+	}
 }
 
 func TestRunGetBreakpoints_AgentEnvelope(t *testing.T) {

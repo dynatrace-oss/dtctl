@@ -40,6 +40,7 @@ type breakpointStatusResult struct {
 	Location           string                  `json:"location,omitempty" yaml:"location,omitempty"`
 	Enabled            bool                    `json:"enabled" yaml:"enabled"`
 	DisableReason      string                  `json:"disableReason,omitempty" yaml:"disableReason,omitempty"`
+	LogMessage         string                  `json:"logMessage,omitempty" yaml:"logMessage,omitempty"`
 	Status             string                  `json:"status" yaml:"status"`
 	ActiveRooks        []breakpointRookInfo    `json:"activeRooks,omitempty" yaml:"activeRooks,omitempty"`
 	ActiveTips         []breakpointTip         `json:"activeTips,omitempty" yaml:"activeTips,omitempty"`
@@ -197,6 +198,7 @@ func buildBreakpointStatusResult(rule livedebugger.BreakpointRule, statusResp ma
 		result.Enabled = row.Active
 	}
 	result.DisableReason = rule.DisableReason
+	result.LogMessage = unqualifyBreakpointOutputMessage(extractBreakpointOutputMessage(rule))
 
 	ruleStatuses, err := extractRuleStatuses(statusResp)
 	if err != nil {
@@ -463,6 +465,9 @@ func printBreakpointStatusResult(result breakpointStatusResult) {
 	output.FprintDescribeKV(w, "Enabled:", kw, "%t", result.Enabled)
 	if result.DisableReason != "" {
 		output.FprintDescribeKV(w, "Disable reason:", kw, "%s", result.DisableReason)
+	}
+	if result.LogMessage != "" {
+		output.FprintDescribeKV(w, "Log message:", kw, "%s", result.LogMessage)
 	}
 	output.FprintDescribeKV(w, "Status:", kw, "%s", result.Status)
 	_, _ = fmt.Fprintln(w)

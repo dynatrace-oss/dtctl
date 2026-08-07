@@ -3309,9 +3309,10 @@ dtctl get breakpoints
 dtctl describe OrderController.java:306
 dtctl describe dtctl-rule-123
 
-# Edit condition / enabled state
+# Edit condition / enabled state / log message
 dtctl update breakpoint OrderController.java:306 --condition "orderId != null"
 dtctl update breakpoint OrderController.java:306 --enabled false
+dtctl update breakpoint OrderController.java:306 --log-message "Hit on {frame.filename}:{frame.line} order={orderId}"
 
 # Delete by ID, by location, or all
 dtctl delete breakpoint dtctl-rule-123
@@ -3347,6 +3348,8 @@ dtctl get snapshots OrderController.java:306 \
 ```
 
 `--decode-snapshots` enriches each record with `parsed_snapshot` decoded from `snapshot.data` and `snapshot.string_map`. By default, variant wrappers are simplified to plain values; use `--decode-snapshots=full` to preserve type annotations.
+
+The breakpoint log message (shown in `get`/`describe` and set via `update breakpoint --log-message`) supports `{variable}` placeholders — `{frame.*}` for the hit location, any other name (for example `{orderId}`) for a captured variable. Use the short form; messages are displayed the same way in `get` and `describe`.
 
 ---
 

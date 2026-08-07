@@ -44,10 +44,11 @@ func defaultLiveDebuggerDeps() liveDebuggerDeps {
 }
 
 type breakpointRow struct {
-	ID       string `table:"ID" json:"id" yaml:"id"`
-	Filename string `table:"FILENAME" json:"filename" yaml:"filename"`
-	Line     int    `table:"LINE NUMBER" json:"lineNumber" yaml:"lineNumber"`
-	Active   bool   `table:"ACTIVE" json:"active" yaml:"active"`
+	ID         string `table:"ID" json:"id" yaml:"id"`
+	Filename   string `table:"FILENAME" json:"filename" yaml:"filename"`
+	Line       int    `table:"LINE NUMBER" json:"lineNumber" yaml:"lineNumber"`
+	Active     bool   `table:"ACTIVE" json:"active" yaml:"active"`
+	LogMessage string `table:"LOG MESSAGE" json:"logMessage" yaml:"logMessage"`
 }
 
 func runGetBreakpoints(cmd *cobra.Command, args []string) error {
@@ -180,7 +181,8 @@ func breakpointRowFromRule(rule livedebugger.BreakpointRule) (breakpointRow, boo
 	}
 
 	isDisabled := rule.IsDisabled
-	return breakpointRow{ID: id, Filename: filename, Line: line, Active: !isDisabled}, true
+	logMessage := unqualifyBreakpointOutputMessage(extractBreakpointOutputMessage(rule))
+	return breakpointRow{ID: id, Filename: filename, Line: line, Active: !isDisabled, LogMessage: logMessage}, true
 }
 
 func currentProjectPath() string {

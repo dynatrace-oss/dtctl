@@ -1879,6 +1879,7 @@ dtctl get breakpoints                                          # list breakpoint
 dtctl describe breakpoint <breakpoint-id|filename:line>                   # describe breakpoint rollout/status
 dtctl update breakpoint <id|filename:line> --condition "..."   # update condition
 dtctl update breakpoint <id|filename:line> --enabled true|false # enable/disable
+dtctl update breakpoint <id|filename:line> --log-message "..."  # update the hit log message
 dtctl delete breakpoint <id|filename:line|--all>               # delete breakpoints
 ```
 
@@ -1887,6 +1888,7 @@ dtctl delete breakpoint <id|filename:line|--all>               # delete breakpoi
 Design notes:
 - `dtctl describe` keeps existing resource-subcommand behavior; breakpoint describe is only routed for breakpoint-like identifiers.
 - Mutating operations (`update` filter update, `create`, `update`, `delete`) must run safety checks, including in dry-run mode.
+- Breakpoint log messages use `{variable}` placeholders and are stored qualified by the backend (`{frame.line}` → `store.rookout.frame.line`, other names → `store.rookout.variables.*`). The CLI passes the raw user string through on update and strips those prefixes back out for display in `get`/`describe`, so users only ever deal with the short form. `get breakpoints` includes the log message in its default (non-wide) table.
 - `--filters` is optional on `create`. Filters are workspace-scoped and sticky: once set (via `update breakpoint --filters` or `create breakpoint ... --filters`), they persist for subsequent breakpoints until changed. Because a single filter set applies to the whole workspace, changing the filters re-scopes all existing breakpoints (not just new ones); `create`/`update` count the active breakpoints affected and prompt for confirmation before applying the change, bypassable with `--yes` (`-y`) and skipped in non-interactive contexts (`--plain`/agent mode). When `--filters` is supplied on `create`, the workspace filters are updated first, then the breakpoint is created; otherwise `create` requires that workspace filters were already configured.
 
 ## Examples

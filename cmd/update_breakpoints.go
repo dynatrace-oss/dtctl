@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,6 +54,9 @@ Examples:
   # Add or update a condition
 	 dtctl update breakpoint dtctl-rule-123 --condition "value>othervalue"
 
+  # Change the log message (use {variable} placeholders)
+	 dtctl update breakpoint dtctl-rule-123 --log-message "Hit on {frame.filename}:{frame.line} value={newTodoRecord.title}"
+
   # Enable a breakpoint
 	 dtctl update breakpoint OrderController.java:306 --enabled true
 
@@ -75,6 +79,7 @@ Examples:
 		}
 
 		conditionChanged := cmd.Flags().Changed("condition")
+		logMessageChanged := cmd.Flags().Changed("log-message")
 		enabled, enabledChanged, err := getOptionalBoolFlag(cmd, "enabled", trailingArgs)
 		if err != nil {
 			return err
@@ -84,8 +89,8 @@ Examples:
 			if err := requireFiltersValue(filters); err != nil {
 				return err
 			}
-			if conditionChanged || enabledChanged {
-				return fmt.Errorf("--filters cannot be combined with --condition or --enabled")
+			if conditionChanged || enabledChanged || logMessageChanged {
+				return fmt.Errorf("--filters cannot be combined with --condition, --log-message, or --enabled")
 			}
 			if len(args) > 0 {
 				return fmt.Errorf("--filters does not accept a breakpoint identifier")
@@ -181,11 +186,12 @@ Examples:
 		if len(args) > 1 && !enabledChanged {
 			return fmt.Errorf("accepts 1 arg(s), received %d", len(args))
 		}
-		if !conditionChanged && !enabledChanged {
-			return fmt.Errorf("at least one of --condition or --enabled is required")
+		if !conditionChanged && !enabledChanged && !logMessageChanged {
+			return fmt.Errorf("at least one of --condition, --log-message, or --enabled is required")
 		}
 
 		condition, _ := cmd.Flags().GetString("condition")
+		logMessage, _ := cmd.Flags().GetString("log-message")
 		identifier := strings.TrimSpace(args[0])
 
 		cfg, err := LoadConfig()
@@ -207,7 +213,7 @@ Examples:
 		}
 
 		if dryRun {
-			changes := describeBreakpointEdits(conditionChanged, condition, enabledChanged, enabled)
+			changes := describeBreakpointEdits(conditionChanged, condition, logMessageChanged, logMessage, enabledChanged, enabled)
 			return printBreakpointMessage("update", fmt.Sprintf("Dry run: would update breakpoint %s (%s)", identifier, changes))
 		}
 
@@ -257,12 +263,12 @@ Examples:
 			return err
 		}
 
-		if conditionChanged {
+		if conditionChanged || logMessageChanged {
 			if len(targetRules) == 0 {
 				return fmt.Errorf("breakpoint %q not found in the current workspace", identifier)
 			}
 			for _, rule := range targetRules {
-				ruleSettings, err := buildEditBreakpointSettings(rule, condition, true)
+				ruleSettings, err := buildEditBreakpointSettings(rule, condition, conditionChanged, logMessage, logMessageChanged)
 				if err != nil {
 					return err
 				}
@@ -308,7 +314,7 @@ Examples:
 			}
 		}
 
-		return printBreakpointMessage("update", fmt.Sprintf("Updated breakpoint %s (%s)", targetDescription, describeBreakpointEdits(conditionChanged, condition, enabledChanged, enabled)))
+		return printBreakpointMessage("update", fmt.Sprintf("Updated breakpoint %s (%s)", targetDescription, describeBreakpointEdits(conditionChanged, condition, logMessageChanged, logMessage, enabledChanged, enabled)))
 	},
 }
 
@@ -328,7 +334,7 @@ func resolveBreakpointRulesForEdit(rules []livedebugger.BreakpointRule, identifi
 	return nil, identifier, true, nil
 }
 
-func buildEditBreakpointSettings(rule livedebugger.BreakpointRule, condition string, conditionChanged bool) (map[string]interface{}, error) {
+func buildEditBreakpointSettings(rule livedebugger.BreakpointRule, condition string, conditionChanged bool, logMessage string, logMessageChanged bool) (map[string]interface{}, error) {
 	row, ok := breakpointRowFromRule(rule)
 	if !ok || row.ID == "" {
 		return nil, fmt.Errorf("rule missing mutable rule id")
@@ -349,6 +355,15 @@ func buildEditBreakpointSettings(rule livedebugger.BreakpointRule, condition str
 		currentCondition = condition
 	}
 
+	outputMessage := extractBreakpointOutputMessage(rule)
+	if logMessageChanged {
+		if logMessage == "" {
+			outputMessage = unqualifyBreakpointOutputMessage(breakpointDefaultOutputMessage)
+		} else {
+			outputMessage = logMessage
+		}
+	}
+
 	settings := map[string]interface{}{
 		"mutableRuleId":               row.ID,
 		"collectLocalsMethod":         stringValue(paths["store.rookout.frame"]),
@@ -358,7 +373,7 @@ func buildEditBreakpointSettings(rule livedebugger.BreakpointRule, condition str
 		"ttlTimeLimitInterval":        0,
 		"collectedVariables":          extractCollectedVariables(paths),
 		"targetConfiguration":         map[string]interface{}{"targetId": extractBreakpointTargetID(rule)},
-		"outputMessage":               extractBreakpointOutputMessage(rule),
+		"outputMessage":               outputMessage,
 		"condition":                   currentCondition,
 		"rateLimit":                   stringValue(aug["rateLimit"]),
 		"tracingCollection":           stringValue(paths["store.rookout.tracing"]) == "trace.dump()",
@@ -434,12 +449,33 @@ func parseThreadLocalPath(path string) (string, string, bool) {
 	return className, member, true
 }
 
+// breakpointPlaceholderPattern matches {placeholder} tokens in a log message.
+var breakpointPlaceholderPattern = regexp.MustCompile(`\{[^{}]*\}`)
+
+// unqualifyBreakpointOutputMessage reverses the backend qualification of a log
+// message so users see the friendly form. The backend rewrites {frame.X} to
+// store.rookout.frame.X and {anything.else} to
+// store.rookout.variables.anything.else; this strips those prefixes back out.
+// Other namespaces (rook, agent, bp, message_info, controller) pass through
+// unchanged, matching the backend.
+func unqualifyBreakpointOutputMessage(message string) string {
+	return breakpointPlaceholderPattern.ReplaceAllStringFunc(message, func(match string) string {
+		inner := match[1 : len(match)-1]
+		switch {
+		case strings.HasPrefix(inner, "store.rookout.frame."):
+			inner = "frame." + strings.TrimPrefix(inner, "store.rookout.frame.")
+		case strings.HasPrefix(inner, "store.rookout.variables."):
+			inner = strings.TrimPrefix(inner, "store.rookout.variables.")
+		}
+		return "{" + inner + "}"
+	})
+}
+
 func extractBreakpointOutputMessage(rule livedebugger.BreakpointRule) string {
 	processing := rule.Processing
 	if processing == nil {
 		return breakpointDefaultOutputMessage
 	}
-
 	_, ok := processing["operations"].([]interface{})
 	if !ok {
 		return breakpointDefaultOutputMessage
@@ -534,10 +570,17 @@ func intValue(value interface{}, defaultValue int) int {
 	}
 }
 
-func describeBreakpointEdits(conditionChanged bool, condition string, enabledChanged bool, enabled bool) string {
-	changes := make([]string, 0, 2)
+func describeBreakpointEdits(conditionChanged bool, condition string, logMessageChanged bool, logMessage string, enabledChanged bool, enabled bool) string {
+	changes := make([]string, 0, 3)
 	if conditionChanged {
 		changes = append(changes, fmt.Sprintf("condition=%q", condition))
+	}
+	if logMessageChanged {
+		displayMessage := logMessage
+		if displayMessage == "" {
+			displayMessage = unqualifyBreakpointOutputMessage(breakpointDefaultOutputMessage)
+		}
+		changes = append(changes, fmt.Sprintf("log-message=%q", displayMessage))
 	}
 	if enabledChanged {
 		changes = append(changes, fmt.Sprintf("enabled=%t", enabled))
@@ -576,6 +619,7 @@ func getOptionalBoolFlag(cmd *cobra.Command, flagName string, trailingArgs []str
 func init() {
 	updateCmd.AddCommand(updateBreakpointCmd)
 	updateBreakpointCmd.Flags().String("condition", "", `Condition expression (e.g. "a==1 && b!='bbb'", "'val' in arr", "x>0 && y<=10")`)
+	updateBreakpointCmd.Flags().String("log-message", "", `Log message template with {variable} placeholders (e.g. "Hit on {frame.filename}:{frame.line} value={newTodoRecord.title}")`)
 	updateBreakpointCmd.Flags().String("enabled", "", "Enable or disable the breakpoint")
 	updateBreakpointCmd.Flags().String("filters", "", "workspace filters to apply (comma-separated key:value pairs)")
 	updateBreakpointCmd.Flags().BoolP("yes", "y", false, "skip the confirmation prompt when changing workspace filters affects existing breakpoints")
