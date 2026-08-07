@@ -281,8 +281,10 @@ func extractDocumentContent(doc map[string]interface{}, docType string) ([]byte,
 		if isMap {
 			// Check for double-nested content (common mistake)
 			if innerContent, hasInner := contentMap["content"]; hasInner {
-				warnings = append(warnings, "detected double-nested content (.content.content) - using inner content")
-				contentMap = innerContent.(map[string]interface{})
+				if inner, ok := innerContent.(map[string]interface{}); ok {
+					warnings = append(warnings, "detected double-nested content (.content.content) - using inner content")
+					contentMap = inner
+				}
 			}
 
 			// Validate structure based on document type

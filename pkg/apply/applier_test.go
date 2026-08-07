@@ -460,6 +460,46 @@ func TestExtractDocumentContent(t *testing.T) {
 	}
 }
 
+func TestExtractDocumentContent_NonMapNestedContent(t *testing.T) {
+	tests := []struct {
+		name  string
+		inner interface{}
+	}{
+		{"string", "# Welcome to the team"},
+		{"nil", nil},
+		{"slice", []interface{}{"a"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := map[string]interface{}{
+				"name": "Launchpad",
+				"content": map[string]interface{}{
+					"content": tt.inner,
+					"format":  "markdown",
+				},
+			}
+
+			contentData, name, _, warnings := extractDocumentContent(doc, "launchpad")
+
+			if name != "Launchpad" {
+				t.Errorf("name = %q, want %q", name, "Launchpad")
+			}
+			if len(warnings) != 0 {
+				t.Errorf("got %d warnings, want 0: %v", len(warnings), warnings)
+			}
+
+			var content map[string]interface{}
+			if err := json.Unmarshal(contentData, &content); err != nil {
+				t.Fatalf("contentData is not valid JSON: %v", err)
+			}
+			if content["format"] != "markdown" {
+				t.Errorf("format = %v, want markdown - a non-map .content.content must leave the outer content in place", content["format"])
+			}
+		})
+	}
+}
+
 func TestCountDocumentItems(t *testing.T) {
 	tests := []struct {
 		name     string
