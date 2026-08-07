@@ -97,13 +97,22 @@ dtctl delete breakpoint com/example/MyService.java:42
 dtctl delete breakpoint --all
 ```
 
-## Decoded Snapshots
+## Snapshots
 
-When a breakpoint is hit, the runtime captures a snapshot of local variables and the call stack. You can query these snapshots using DQL and have dtctl decode them automatically.
+When a breakpoint is hit, the runtime captures a snapshot of local variables and the call stack. Use `dtctl get snapshots` to fetch them by breakpoint location or stable rule ID:
 
 ```bash
-# Query snapshots and decode variable data
-dtctl query "fetch application.snapshots | limit 10" --decode-snapshots
+# By location
+dtctl get snapshots com/example/PaymentService.java:87
+
+# By stable rule ID (shown after create or in get breakpoints)
+dtctl get snapshots dtctl-rule-5bfb45a29fce7a46
+
+# Decode variable data (variant wrappers flattened to plain values)
+dtctl get snapshots com/example/PaymentService.java:87 --decode-snapshots
+
+# Structured output
+dtctl get snapshots com/example/PaymentService.java:87 -o json
 ```
 
 ### Full vs Simplified Decoding
@@ -112,8 +121,7 @@ By default, `--decode-snapshots` (equivalent to `--decode-snapshots=simplified`)
 
 ```bash
 # Full decoding with complete object graphs
-dtctl query "fetch application.snapshots | limit 5" \
-  --decode-snapshots=full
+dtctl get snapshots com/example/PaymentService.java:87 --decode-snapshots=full
 ```
 
 ## Safety and Dry-Run
@@ -139,10 +147,8 @@ dtctl create breakpoint com/example/PaymentService.java:87 --filters k8s.namespa
 # 3. List breakpoints to confirm
 dtctl get breakpoints
 
-# 4. Wait for the breakpoint to be hit, then query snapshots
-dtctl query "fetch application.snapshots \
-  | filter source.file == 'com/example/PaymentService.java' \
-  | limit 5" --decode-snapshots
+# 4. Wait for the breakpoint to be hit, then fetch snapshots
+dtctl get snapshots com/example/PaymentService.java:87 --decode-snapshots
 
 # 5. Inspect the decoded variables to diagnose the issue
 

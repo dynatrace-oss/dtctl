@@ -265,6 +265,15 @@ func formatFilters(parsed map[string][]string) string {
 	return strings.Join(pairs, ",")
 }
 
+// padBreakpointID zero-pads a numeric immutable breakpoint ID to 32 characters,
+// matching the breakpoint.id format used in DQL snapshot queries.
+func padBreakpointID(id string) string {
+	if len(id) == 0 || len(id) >= 32 {
+		return id
+	}
+	return strings.Repeat("0", 32-len(id)) + id
+}
+
 // requireFiltersValue validates that a --filters flag which was provided also
 // carries a value. It is shared by create and update breakpoint so the
 // "empty --filters" error is identical (and greppable) in both commands. An

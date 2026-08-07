@@ -134,7 +134,7 @@ func runDescribeBreakpointWithDeps(cmd *cobra.Command, identifier string, deps l
 		return err
 	}
 	if allowDirectID {
-		targetRules = []livedebugger.BreakpointRule{{ID: strings.TrimSpace(identifier)}}
+		return fmt.Errorf("no breakpoint found with identifier %q", strings.TrimSpace(identifier))
 	}
 
 	results := make([]breakpointStatusResult, 0, len(targetRules))

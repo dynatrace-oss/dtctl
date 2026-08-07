@@ -409,7 +409,15 @@ func TestRunDescribeBreakpoint_DirectIDSuccess(t *testing.T) {
 			"data": map[string]interface{}{
 				"org": map[string]interface{}{
 					"workspace": map[string]interface{}{
-						"rules": []interface{}{},
+						"rules": []interface{}{
+							map[string]interface{}{
+								"id":          "123456789",
+								"is_disabled": false,
+								"aug_json": map[string]interface{}{
+									"location": map[string]interface{}{"filename": "OrderController.java", "lineno": float64(306)},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -433,6 +441,44 @@ func TestRunDescribeBreakpoint_DirectIDSuccess(t *testing.T) {
 
 	if !strings.Contains(output, "\"id\": \"123456789\"") {
 		t.Fatalf("unexpected direct-id output: %q", output)
+	}
+}
+
+func TestRunDescribeBreakpoint_UnknownIdentifierError(t *testing.T) {
+	deps := liveDebuggerDeps{}
+	deps.loadConfig = func() (*config.Config, error) {
+		cfg := config.NewConfig()
+		cfg.SetContext("test", "https://example.invalid", "token")
+		cfg.CurrentContext = "test"
+		return cfg, nil
+	}
+	deps.newClient = func(cfg *config.Config) (*client.Client, error) { return nil, nil }
+	deps.newHandler = func(c *client.Client, environment string) (*livedebugger.Handler, error) { return nil, nil }
+	deps.getOrCreateWorkspace = func(handler *livedebugger.Handler, projectPath string) (map[string]interface{}, string, error) {
+		return map[string]interface{}{"data": map[string]interface{}{}}, "ws-1", nil
+	}
+	deps.getWorkspaceRules = func(handler *livedebugger.Handler, workspaceID string) (map[string]interface{}, error) {
+		return map[string]interface{}{
+			"data": map[string]interface{}{
+				"org": map[string]interface{}{
+					"workspace": map[string]interface{}{
+						"rules": []interface{}{},
+					},
+				},
+			},
+		}, nil
+	}
+	deps.getRuleStatusBreakdown = func(handler *livedebugger.Handler, ruleID string) (map[string]interface{}, error) {
+		t.Fatalf("getRuleStatusBreakdown should not be called for unknown identifier")
+		return nil, nil
+	}
+
+	err := runDescribeBreakpointWithDeps(describeCmd, "asdfasdfasdfadfasfd", deps)
+	if err == nil {
+		t.Fatalf("expected error for unknown identifier")
+	}
+	if !strings.Contains(err.Error(), "no breakpoint found") {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }
 

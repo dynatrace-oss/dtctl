@@ -42,6 +42,43 @@ func TestCreateBreakpointYesFlagRegistered(t *testing.T) {
 	}
 }
 
+func TestExtractCreatedBreakpointStableID(t *testing.T) {
+	tests := []struct {
+		name string
+		resp map[string]interface{}
+		want string
+	}{
+		{
+			name: "happy path",
+			resp: map[string]interface{}{
+				"data": map[string]interface{}{
+					"org": map[string]interface{}{
+						"workspace": map[string]interface{}{
+							"createRuleV2": map[string]interface{}{
+								"id": "dtctl-rule-abc123",
+							},
+						},
+					},
+				},
+			},
+			want: "dtctl-rule-abc123",
+		},
+		{name: "missing data", resp: map[string]interface{}{}, want: ""},
+		{name: "missing org", resp: map[string]interface{}{"data": map[string]interface{}{}}, want: ""},
+		{name: "missing createRuleV2", resp: map[string]interface{}{"data": map[string]interface{}{"org": map[string]interface{}{"workspace": map[string]interface{}{}}}}, want: ""},
+		{name: "id not a string", resp: map[string]interface{}{"data": map[string]interface{}{"org": map[string]interface{}{"workspace": map[string]interface{}{"createRuleV2": map[string]interface{}{"id": 42}}}}}, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractCreatedBreakpointStableID(tt.resp)
+			if got != tt.want {
+				t.Fatalf("extractCreatedBreakpointStableID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestCreateBreakpointFiltersValidation exercises the early --filters validation
 // that runs before any config or network call, so no client/config setup is
 // required. The flag state is saved and restored to avoid leaking into other tests.

@@ -14,7 +14,7 @@ The current Live Debugger flow in `dtctl` supports:
 - describing breakpoint status with `dtctl describe <id|filename:line>`
 - updating breakpoints with `dtctl update breakpoint ...`
 - deleting breakpoints with `dtctl delete breakpoint ...`
-- viewing decoded snapshot output with `dtctl query ... --decode-snapshots`
+- fetching snapshots for a breakpoint with `dtctl get snapshots <breakpoint> --decode-snapshots`
 
 `dtctl` resolves or creates a Live Debugger workspace for the current project path, so commands operate on the workspace associated with the directory you run them from.
 
@@ -210,22 +210,31 @@ dtctl delete breakpoint --all -y
 dtctl delete breakpoint OrderController.java:306 --dry-run
 ```
 
-## 7. View decoded snapshots
+## 7. View snapshots
 
-Live Debugger snapshot data can be decoded using the `--decode-snapshots` flag on `query`.
-
-Example:
+Use `dtctl get snapshots` to fetch snapshots captured by a breakpoint. Specify the breakpoint by location or stable rule ID:
 
 ```bash
-# Simplified output (variant wrappers flattened to plain values)
-dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots
+# By location (filename:line)
+dtctl get snapshots OrderController.java:306
+
+# By stable rule ID (shown after dtctl create breakpoint or in dtctl get breakpoints)
+dtctl get snapshots dtctl-rule-5bfb45a29fce7a46
+
+# Decode snapshot payloads into readable fields
+dtctl get snapshots OrderController.java:306 --decode-snapshots
 
 # Full decoded tree with type annotations
-dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots=full
+dtctl get snapshots OrderController.java:306 --decode-snapshots=full
 
-# Compose with any output format
-dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots -o json
-dtctl query "fetch application.snapshots | sort timestamp desc | limit 5" --decode-snapshots -o yaml
+# Structured output
+dtctl get snapshots OrderController.java:306 -o json
+dtctl get snapshots OrderController.java:306 -o yaml
+
+# Scope to a time window
+dtctl get snapshots OrderController.java:306 \
+  --default-timeframe-start 2024-01-01T00:00:00Z \
+  --default-timeframe-end   2024-01-02T00:00:00Z
 ```
 
 The `--decode-snapshots` flag enriches each record with a decoded `parsed_snapshot` field built from:
