@@ -25,6 +25,7 @@ GEM
     faraday-net_http (3.4.4)
       net-http (~> 0.5)
     ffi (1.17.4-arm64-darwin)
+    ffi (1.17.4-x86_64-linux-gnu)
     forwardable-extended (2.6.0)
     gemoji (3.0.1)
     github-pages (170)
@@ -180,7 +181,7 @@ GEM
       gemoji (~> 3.0)
       html-pipeline (~> 2.2)
       jekyll (>= 3.0)
-    json (2.20.0)
+    json (2.21.2)
     kramdown (1.14.0)
     liquid (4.0.0)
     listen (3.0.6)
@@ -195,6 +196,8 @@ GEM
     net-http (0.9.1)
       uri (>= 0.11.1)
     nokogiri (1.19.4-arm64-darwin)
+      racc (~> 1.4)
+    nokogiri (1.19.4-x86_64-linux-gnu)
       racc (~> 1.4)
     octokit (4.25.1)
       faraday (>= 1, < 3)
@@ -230,93 +233,96 @@ GEM
 
 PLATFORMS
   arm64-darwin
+  x86_64-linux
 
 DEPENDENCIES
   github-pages
   jekyll-remote-theme
 
 CHECKSUMS
-  activesupport (4.2.9)
-  addressable (2.9.0)
-  coffee-script (2.4.1)
-  coffee-script-source (1.11.1)
-  colorator (1.1.0)
-  concurrent-ruby (1.3.7)
-  ethon (0.18.0)
-  execjs (2.10.1)
-  faraday (2.14.3)
-  faraday-net_http (3.4.4)
-  ffi (1.17.4-arm64-darwin)
-  forwardable-extended (2.6.0)
-  gemoji (3.0.1)
-  github-pages (170)
-  github-pages-health-check (1.3.5)
-  html-pipeline (2.14.3)
-  i18n (0.9.5)
-  jekyll (3.6.2)
-  jekyll-avatar (0.5.0)
-  jekyll-coffeescript (1.0.2)
-  jekyll-default-layout (0.1.4)
-  jekyll-feed (0.9.2)
-  jekyll-gist (1.4.1)
-  jekyll-github-metadata (2.9.3)
-  jekyll-mentions (1.2.0)
-  jekyll-optional-front-matter (0.3.0)
-  jekyll-paginate (1.1.0)
-  jekyll-readme-index (0.2.0)
-  jekyll-redirect-from (0.12.1)
-  jekyll-relative-links (0.5.2)
-  jekyll-remote-theme (0.5.1)
-  jekyll-sass-converter (1.5.0)
-  jekyll-seo-tag (2.3.0)
-  jekyll-sitemap (1.1.1)
-  jekyll-swiss (0.4.0)
-  jekyll-theme-architect (0.1.0)
-  jekyll-theme-cayman (0.1.0)
-  jekyll-theme-dinky (0.1.0)
-  jekyll-theme-hacker (0.1.0)
-  jekyll-theme-leap-day (0.1.0)
-  jekyll-theme-merlot (0.1.0)
-  jekyll-theme-midnight (0.1.0)
-  jekyll-theme-minimal (0.1.0)
-  jekyll-theme-modernist (0.1.0)
-  jekyll-theme-primer (0.5.2)
-  jekyll-theme-slate (0.1.0)
-  jekyll-theme-tactile (0.1.0)
-  jekyll-theme-time-machine (0.1.0)
-  jekyll-titles-from-headings (0.5.0)
-  jekyll-watch (1.5.1)
-  jemoji (0.8.1)
-  json (2.20.0)
-  kramdown (1.14.0)
-  liquid (4.0.0)
-  listen (3.0.6)
-  logger (1.7.0)
-  mercenary (0.3.6)
-  minima (2.1.1)
-  minitest (5.27.0)
-  net-dns (0.20.0)
-  net-http (0.9.1)
-  nokogiri (1.19.4-arm64-darwin)
-  octokit (4.25.1)
-  openssl (4.0.2)
-  pathutil (0.16.2)
-  public_suffix (2.0.5)
-  racc (1.8.1)
-  rb-fsevent (0.11.2)
-  rb-inotify (0.11.1)
-  rouge (2.2.1)
-  rubyzip (2.4.1)
-  safe_yaml (1.0.5)
-  sass (3.7.4)
-  sass-listen (4.0.0)
-  sawyer (0.9.3)
-  terminal-table (1.8.0)
-  thread_safe (0.3.6)
-  typhoeus (0.8.0)
-  tzinfo (1.2.11)
-  unicode-display_width (1.8.0)
-  uri (1.1.1)
+  activesupport (4.2.9) sha256=5717d2fe6409d4df72f0d20e46d7261503ccafc80ab228e91455d47185190ab4
+  addressable (2.9.0) sha256=7fdf6ac3660f7f4e867a0838be3f6cf722ace541dd97767fa42bc6cfa980c7af
+  coffee-script (2.4.1) sha256=82fe281e11b93c8117b98c5ea8063e71741870f1c4fbb27177d7d6333dd38765
+  coffee-script-source (1.11.1) sha256=096ee2a4c29e286077292da31675199cd7a0e9e308319e86410e01f42984da75
+  colorator (1.1.0) sha256=e2f85daf57af47d740db2a32191d1bdfb0f6503a0dfbc8327d0c9154d5ddfc38
+  concurrent-ruby (1.3.7) sha256=4412caec3a5ea2e5fdc52076724c071a81f2c0593d83b2ac8cbb8ca63b3151b0
+  ethon (0.18.0) sha256=b598afc9f30448cb068b850714b7d6948e941476095d04f90a4ac65b8d6efcb2
+  execjs (2.10.1) sha256=abe0ae028467eb8e30c10814eb934d07876a691aae7e803d813b7ce5a75e73f1
+  faraday (2.14.3) sha256=1882247e6766615c8220b4392bf1d27f6ebb63d8e28267587cef1fb0bf37f278
+  faraday-net_http (3.4.4) sha256=0e78af151747ed1b00f33e25973b4bc220d7f16c00c39676817c8b12331eb588
+  ffi (1.17.4-arm64-darwin) sha256=19071aaf1419251b0a46852abf960e77330a3b334d13a4ab51d58b31a937001b
+  ffi (1.17.4-x86_64-linux-gnu) sha256=9d3db14c2eae074b382fa9c083fe95aec6e0a1451da249eab096c34002bc752d
+  forwardable-extended (2.6.0) sha256=1bec948c469bbddfadeb3bd90eb8c85f6e627a412a3e852acfd7eaedbac3ec97
+  gemoji (3.0.1) sha256=80553f2f4932a7a95fb1b3c7c63f7dd937e7c8c610164bbdea28fd06eba5f36d
+  github-pages (170) sha256=b821d9c46ef9526b1c73448bfc0f2efa0ae3796f0728db6ca5a5d3b92e09e229
+  github-pages-health-check (1.3.5) sha256=32cbfc545b0f836f8957d841225f54d8c5b9956ea43e1e9a318cc33b62367e9f
+  html-pipeline (2.14.3) sha256=8a1d4d7128b2141913387cac0f8ba898bb6812557001acc0c2b46910f59413a0
+  i18n (0.9.5) sha256=43a58b55056ef171cae9b35df8aa5dee22d3a782f8a9bdd0ec8e8d36cfdf180d
+  jekyll (3.6.2) sha256=71d232130f63eef73adcda3860001b9081bbd34659cc4636cf9df3eb0daded65
+  jekyll-avatar (0.5.0) sha256=4e5f6e7241981b58199c46bb7dc33d5e8dc2c3e609159c7b6ba34ea8ec3d5c78
+  jekyll-coffeescript (1.0.2) sha256=d65e8909cdeb2eade4d6193e655a1ed2d54fd76040ee3909f0ad8d2576c8e378
+  jekyll-default-layout (0.1.4) sha256=7d128fc8972353370cdf22beb1610434421c732d707ba4c77513d65941bb3f01
+  jekyll-feed (0.9.2) sha256=bc2615bb703df57f9cec1aec026f0cd0dc903e67af61afba77a4a88aeebe8c1f
+  jekyll-gist (1.4.1) sha256=ec024a43670b8b8db2f01811502b03f21b8d89580c7c76ef86b54f68c45e4083
+  jekyll-github-metadata (2.9.3) sha256=f71bbda8ee6dec7c0abdfeb686de08733a8766e663aa5d77703c3ac3af948bf7
+  jekyll-mentions (1.2.0) sha256=cd4f5c24d6ca34baa7271925a742d5a26277f0f70af44d765d3146f26ca8d802
+  jekyll-optional-front-matter (0.3.0) sha256=d0c916e8eaba28d22c9f17517f2257f78afd8008e58f33a646e32d8bf7333c83
+  jekyll-paginate (1.1.0) sha256=880aadf4b02529a93541d508c5cbb744f014cbfc071d0263a31f25ec9066eb64
+  jekyll-readme-index (0.2.0) sha256=21d649fc2ae4ca6b0c9fa8735f066825be5d65104af65da1a12625f462a6e7d4
+  jekyll-redirect-from (0.12.1) sha256=c299b7592eba5cab4588cb98c01b4270c4c469a93255cfe8b14a3261dd27b80c
+  jekyll-relative-links (0.5.2) sha256=9524c7f32df8ead06fd0261a6eac133031ec32cbb743ce675400347c88e45b99
+  jekyll-remote-theme (0.5.1) sha256=364a441273f7fb5a009aac0c7e0d9a75b8dd2160b48ebaac16c3bc4086474b0a
+  jekyll-sass-converter (1.5.0) sha256=018fe9bc0b060ba61fc4d7beaf08236e08f3718f658ec15ee8cff9614e10a906
+  jekyll-seo-tag (2.3.0) sha256=438da533c97ca245ba67fd41da64428b035d16298ae2811b748c733355b48757
+  jekyll-sitemap (1.1.1) sha256=e2dacd4bb0a4decbc7d20c9ee700b6bfa642fd219354177b3afbce4f2674e83a
+  jekyll-swiss (0.4.0) sha256=15d91256f0eadd5269951ee1c230234da730ccdeca3bf20d12f3081d80309198
+  jekyll-theme-architect (0.1.0) sha256=861c534c695c641a714b4dfee026a739308f6b2fa045657dcb14275651a80014
+  jekyll-theme-cayman (0.1.0) sha256=be533ece740bc8cf53451d6446970d1ad84a3ae9d219682b4091d22b7930a88c
+  jekyll-theme-dinky (0.1.0) sha256=8f1f9f730918e9a8752cb238d0c7546cdb9cb1cf667a713dbde491baff8e7778
+  jekyll-theme-hacker (0.1.0) sha256=19a902672dc69b2fd40960c4714a4a9ef139fe254f611ed2a48ed490e396d017
+  jekyll-theme-leap-day (0.1.0) sha256=11c82f32fda533587a68c6c92fec52f24a703fe2dc753449ad49e3bab90c21ea
+  jekyll-theme-merlot (0.1.0) sha256=36761142fe5557260d26f46f4e4d494fc01ad04372725da2f9ff3a9ab1e6f5c2
+  jekyll-theme-midnight (0.1.0) sha256=e7bc372febc58793ade11d69c2eb08d23a836946eb8e691824931046c728e9fa
+  jekyll-theme-minimal (0.1.0) sha256=60bd278a721201d4b1c0ea611ad9ee29945502f6edd262d0445903bf59051ad2
+  jekyll-theme-modernist (0.1.0) sha256=97d4990e68190a35dc9932109009600c12687c3d2f0d8571c3dddef0e516cc07
+  jekyll-theme-primer (0.5.2) sha256=a8d3c47d19287ed745546f0161f5242f5fb57c3d271aaa4e9f4bdfc8a6f9369e
+  jekyll-theme-slate (0.1.0) sha256=865ef54ee32bffc0e3ba004c618f80927be9a3b53b4e2818dffe9d2ee1d125ab
+  jekyll-theme-tactile (0.1.0) sha256=0ad54dfbfcb44d351440867234c1111b4b7281c6014b5cdbd9db04054e6b4408
+  jekyll-theme-time-machine (0.1.0) sha256=00e8e3f294b027989b5c6713d0dc9b4b6a5be07cb48b27f16344fea1e0b5c22b
+  jekyll-titles-from-headings (0.5.0) sha256=0da273f44fb62a6a664bc791b3e1e98533a5e8789f4e95cfee3d525744ea3757
+  jekyll-watch (1.5.1) sha256=b6b135776a63eaad87bf2771d8b0686720b31e3af3aed9da72eaa5bb971c17b8
+  jemoji (0.8.1) sha256=f9eddf3b5636709d4339eac45e20c2fc602e9a6d4d7c897514208663cee4e823
+  json (2.21.2) sha256=1f1d3b7cf2b3ba1a69beca0bb6db13d5438b80bff3cd54cdaaa620b9b07c1c6a
+  kramdown (1.14.0) sha256=f166820406ba92beeedb8cc496c1d1040cb237d5ad9d073b251e4a26562650a1
+  liquid (4.0.0) sha256=5ef4c157436096e6dac49f8b1edc0eb6c8f3b55fc8ffed5d1949a5ca9f04ca9d
+  listen (3.0.6) sha256=eba4df6615b63079930caa5dd9b5f8684a6e08b3feecee6371d5723b6ccb687f
+  logger (1.7.0) sha256=196edec7cc44b66cfb40f9755ce11b392f21f7967696af15d274dde7edff0203
+  mercenary (0.3.6) sha256=2a084b18f5692c86a633e185d5311ba6d11fc46c802eb414ae05368178078a82
+  minima (2.1.1) sha256=e5f1ea02db43999f284f5858e840085ac687839a331e674126275ec2d500f731
+  minitest (5.27.0) sha256=2d3b17f8a36fe7801c1adcffdbc38233b938eb0b4966e97a6739055a45fa77d5
+  net-dns (0.20.0) sha256=9340a20ae6641690b41dc4df97050e9f4216dc61201fa76cc9ddb6aaf82fa4cf
+  net-http (0.9.1) sha256=25ba0b67c63e89df626ed8fac771d0ad24ad151a858af2cc8e6a716ca4336996
+  nokogiri (1.19.4-arm64-darwin) sha256=a46db9853286e6597b36ebc6953817d15acf3a299583eb3f89fdc6f91dd63527
+  nokogiri (1.19.4-x86_64-linux-gnu) sha256=379fae440b28915e3f19d752ce2dcf8465ed2b2fbefd2a7ca0dd497bc981a06a
+  octokit (4.25.1) sha256=c02092ee82dcdfe84db0e0ea630a70d32becc54245a4f0bacfd21c010df09b96
+  openssl (4.0.2) sha256=1037ad2868ae58df9ad917891c0c0f9815a1172f6846d4bcdd508e4c2ee747c2
+  pathutil (0.16.2) sha256=e43b74365631cab4f6d5e4228f812927efc9cb2c71e62976edcb252ee948d589
+  public_suffix (2.0.5) sha256=f8488b110921532ff291af74eef70fa4e3c036141c4ef80009dcdc2b51721210
+  racc (1.8.1) sha256=4a7f6929691dbec8b5209a0b373bc2614882b55fc5d2e447a21aaa691303d62f
+  rb-fsevent (0.11.2) sha256=43900b972e7301d6570f64b850a5aa67833ee7d87b458ee92805d56b7318aefe
+  rb-inotify (0.11.1) sha256=a0a700441239b0ff18eb65e3866236cd78613d6b9f78fea1f9ac47a85e47be6e
+  rouge (2.2.1) sha256=9a6dfba66fd686449eff227fb5f938e0abfe6722a61c6bbb1f834d5b2654770a
+  rubyzip (2.4.1) sha256=8577c88edc1fde8935eb91064c5cb1aef9ad5494b940cf19c775ee833e075615
+  safe_yaml (1.0.5) sha256=a6ac2d64b7eb027bdeeca1851fe7e7af0d668e133e8a88066a0c6f7087d9f848
+  sass (3.7.4) sha256=808b0d39053aa69068df939e24671fe84fd5a9d3314486e1a1457d0934a4255d
+  sass-listen (4.0.0) sha256=ae9dcb76dd3e234329e5ba6e213f48e532c5a3e7b0b4d8a87f13aaca0cc18377
+  sawyer (0.9.3) sha256=0d0f19298408047037638639fe62f4794483fb04320269169bd41af2bdcf5e41
+  terminal-table (1.8.0) sha256=13371f069af18e9baa4e44d404a4ada9301899ce0530c237ac1a96c19f652294
+  thread_safe (0.3.6) sha256=9ed7072821b51c57e8d6b7011a8e282e25aeea3a4065eab326e43f66f063b05a
+  typhoeus (0.8.0) sha256=28b7cf3c7d915a06d412bddab445df94ab725252009aa409f5ea41ab6577a30f
+  tzinfo (1.2.11) sha256=6501f6a12175ca0243118b83f7c7c2b7978aaec7a0980550a124d007ad6361b6
+  unicode-display_width (1.8.0) sha256=0292132d364d59fcdd83f144910c48b3c8332b28a14c5c04bb093dd165600488
+  uri (1.1.1) sha256=379fa58d27ffb1387eaada68c749d1426738bd0f654d812fcc07e7568f5c57c6
 
 BUNDLED WITH
   4.0.2
