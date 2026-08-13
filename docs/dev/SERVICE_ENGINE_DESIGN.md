@@ -290,11 +290,20 @@ Three pieces keep it honest, and all three are load-bearing:
   missing annotation, a missing replace, and drift between the require and
   `version.Version`.
 
-Consequence for development: between releases, the require names the *previous*
-release's sdk tag. In-repo that is invisible (the replace wins), but a caller
-pinning a pseudo-version off `main` gets the older sdk — and fails to build if
-`main` has started using an sdk symbol added since. Callers pin releases; the
-release is where the two modules are cut from one commit.
+Consequence for development: **only release tags are importable — `main` is not,
+and there are two different windows in which it is broken.** In-repo both are
+invisible, because the replace wins.
+
+- Between a release and the next release PR, the require names the *previous*
+  release's sdk tag. That tag exists, so a caller pinning a pseudo-version off
+  `main` resolves it — and then fails to build if `main` has started using an sdk
+  symbol added since.
+- Between merging a release PR and the dispatch that actually tags it, the require
+  names the *upcoming* sdk tag, which does not exist yet. A caller pinning off
+  `main` there fails outright, the same `unknown revision` as the original bug.
+
+Callers pin releases; the release is the one commit where both modules are cut and
+both tags exist.
 
 ## Maturity
 

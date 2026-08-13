@@ -27,7 +27,16 @@ var (
 		`(?m)^replace\s+github\.com/dynatrace-oss/dtctl/sdk\s+=>\s+\./sdk\s*$`)
 	versionVarRe = regexp.MustCompile(
 		`(?m)^var Version = "([^"]+)"\s*//\s*x-release-please-version\s*$`)
-	releaseTagRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+	// vX.Y.Z with an optional semver prerelease of dot-separated alphanumeric
+	// identifiers, so release candidates (v0.36.0-rc.1) are accepted — release-please
+	// writes those into go.mod verbatim, and sdk/vX.Y.Z-rc.N is a valid module tag.
+	//
+	// Hyphens are deliberately disallowed *inside* the prerelease, even though semver
+	// permits them: that is the one thing separating a release tag from a Go
+	// pseudo-version. It is what keeps the placeholder this test exists to catch
+	// (v0.0.0-00010101000000-000000000000) and real pseudo-versions
+	// (v0.37.1-0.20260101120000-abcdef123456) from slipping through.
+	releaseTagRe = regexp.MustCompile(`^v\d+\.\d+\.\d+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$`)
 )
 
 func TestSDKRequireIsResolvable(t *testing.T) {
@@ -40,10 +49,11 @@ func TestSDKRequireIsResolvable(t *testing.T) {
 			"bumping the version on release, and the require silently rots behind the sdk/ tags.")
 
 	require.Regexp(t, releaseTagRe, m[1],
-		"the sdk require must name a released tag (sdk/vX.Y.Z), not a pseudo-version. "+
-			"A pseudo-version or the `v0.0.0-00010101000000-000000000000` placeholder builds fine "+
-			"in-repo (the replace directive covers it) but makes this module impossible to import: "+
-			"`go get github.com/dynatrace-oss/dtctl` fails with `invalid version: unknown revision`.")
+		"the sdk require must name a released tag (sdk/vX.Y.Z, optionally -rc.N), not a "+
+			"pseudo-version. A pseudo-version or the `v0.0.0-00010101000000-000000000000` "+
+			"placeholder builds fine in-repo (the replace directive covers it) but makes this "+
+			"module impossible to import: `go get github.com/dynatrace-oss/dtctl` fails with "+
+			"`invalid version: unknown revision`.")
 
 	require.Regexp(t, sdkReplaceRe, goMod,
 		"go.mod must keep `replace github.com/dynatrace-oss/dtctl/sdk => ./sdk`. It is ignored "+

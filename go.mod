@@ -79,6 +79,10 @@ require (
 // Local development builds against the in-tree sdk/. This directive is ignored
 // when this module is consumed as a dependency, so the require above must name a
 // real published sdk/vX.Y.Z tag — release-please keeps it equal to the CLI
-// version (see the x-release-please-version annotation) and the release workflow
-// tags sdk/vX.Y.Z at the same commit. TestSDKRequireIsResolvable guards this.
+// version via the annotation on that require line, and the release workflow tags
+// sdk/vX.Y.Z at the same commit. TestSDKRequireIsResolvable guards this.
+//
+// Keep version numbers out of this comment block. go.mod is a release-please
+// generic extra-file, and the updater rewrites the first semver token on any line
+// that mentions the annotation marker — including a line that only talks about it.
 replace github.com/dynatrace-oss/dtctl/sdk => ./sdk

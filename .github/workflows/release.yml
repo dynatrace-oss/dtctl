@@ -24,9 +24,25 @@ name: Release
 # is what makes the root module's `require github.com/dynatrace-oss/dtctl/sdk`
 # resolvable for anyone importing e.g. pkg/engine — the local `replace` in go.mod
 # is ignored downstream. verify-consumable then proves it from outside the repo.
+#
+# RECOVERY: tag-sdk only runs on the dispatch that creates the release, because
+# that is the only run where release_created is true. If it fails then (transient
+# API error), simply re-dispatching will NOT retry it — the release already exists,
+# so release_created is false and the job is skipped, leaving a published release
+# whose sdk tag is missing and which therefore cannot be imported. Re-dispatch with
+# the `retag_sdk` input set to that release tag to create the sdk tag and re-verify.
 
 on:
   workflow_dispatch:
+    inputs:
+      retag_sdk:
+        description: >-
+          Recovery only: release tag (e.g. v0.38.0) whose sdk/ tag is missing because
+          the Tag SDK Module job failed after the release was created. Leave empty for
+          a normal release.
+        required: false
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -52,7 +68,7 @@ jobs:
   tag-sdk:
     name: Tag SDK Module
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' || inputs.retag_sdk != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -61,9 +77,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
+          TAG: ${{ inputs.retag_sdk || needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
+          # TAG can come from a hand-typed recovery input, and a Go module tag is
+          # effectively permanent once the proxy observes it. Reject anything that is
+          # not a release tag rather than minting a ref nobody can retract.
+          # Hyphens are disallowed inside the prerelease on purpose: that is what
+          # rejects a Go pseudo-version (v0.0.0-00010101000000-000000000000) while
+          # still accepting a release candidate (v0.36.0-rc.1). Kept in a variable
+          # because an inline =~ pattern is parsed differently by other shells.
+          release_tag_re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+          if [[ ! "$TAG" =~ $release_tag_re ]]; then
+            echo "::error::Refusing to tag: '$TAG' is not a release tag (vX.Y.Z[-rc.N])."
+            exit 1
+          fi
           # Resolve the commit release-please tagged, rather than trusting HEAD.
           # /commits/<ref> dereferences to a commit whether the tag is lightweight
           # or annotated; Go needs the tag to point at the commit either way.
@@ -81,7 +109,7 @@ jobs:
   verify-consumable:
     name: Verify Module Is Importable
     needs: [release-please, tag-sdk]
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' || inputs.retag_sdk != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Set up Go
@@ -91,7 +119,7 @@ jobs:
 
       - name: Import pkg/engine from a module outside this repo
         env:
-          TAG: ${{ needs.release-please.outputs.tag_name }}
+          TAG: ${{ inputs.retag_sdk || needs.release-please.outputs.tag_name }}
           # Fetch dtctl itself straight from GitHub: the tags were created seconds
           # ago, so neither the module proxy nor the checksum database has
           # observed them yet. Everything else still goes through the proxy.
