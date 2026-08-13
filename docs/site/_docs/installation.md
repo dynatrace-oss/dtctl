@@ -25,6 +25,34 @@ This downloads the latest release, extracts it to `~/.local/bin` (Linux) or `/us
 curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | DTCTL_INSTALL_DIR=~/bin sh
 ```
 
+## Nix (community maintained)
+
+dtctl is not in nixpkgs, but a community flake packages the official release
+binaries and tracks new releases automatically.
+
+```bash
+nix run github:srizzling/dtctl-nix -- version
+```
+
+To add it to a flake, use the package or the overlay:
+
+```nix
+{
+  inputs.dtctl-nix.url = "github:srizzling/dtctl-nix";
+
+  # dtctl-nix.packages.${system}.dtctl
+  # or: nixpkgs.overlays = [ dtctl-nix.overlays.default ];  ->  pkgs.dtctl
+}
+```
+
+Shell completions are installed alongside the binary. Supported systems are
+`aarch64-darwin`, `aarch64-linux` and `x86_64-linux`; Intel macOS works through
+the overlay on a nixpkgs that still supports `x86_64-darwin`.
+
+This flake is maintained by the community and is not part of the dtctl project.
+Please report packaging issues to
+[srizzling/dtctl-nix](https://github.com/srizzling/dtctl-nix/issues).
+
 ## Windows (PowerShell)
 
 ```powershell
@@ -133,6 +161,9 @@ brew update && brew upgrade dtctl
 
 # Shell script (re-run)
 curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh | sh
+
+# Nix (community flake, from a flake that inputs it)
+nix flake update dtctl-nix
 
 # From source
 git pull && make build
