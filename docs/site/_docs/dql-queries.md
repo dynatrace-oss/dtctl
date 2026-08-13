@@ -52,16 +52,24 @@ echo 'fetch logs | limit 5' | dtctl query
 
 ### PowerShell Quoting
 
-On Windows PowerShell, use here-strings to avoid escaping issues:
+On Windows PowerShell, **pipe** a here-string into dtctl. Passing the query as an
+argument loses the double quotes DQL needs on Windows PowerShell 5.1, which
+silently returns zero records:
 
 ```powershell
-# PowerShell here-string
-dtctl query @'
+# PowerShell here-string piped to stdin
+@'
 fetch logs
 | filter loglevel == "ERROR"
 | limit 10
-'@
+'@ | dtctl query
 ```
+
+A here-string is a string value, not a redirection like a bash heredoc, so
+`dtctl query @'...'@` still goes through argument parsing — and
+`dtctl query -f - @'...'@` is rejected, because `-f -` points at stdin while the
+query sits in the arguments. See
+[Windows: Quoting](https://github.com/dynatrace-oss/dtctl/blob/main/docs/WINDOWS.md#quoting).
 
 ## Template Queries
 
@@ -406,7 +414,7 @@ Stream query results at a regular interval:
 
 ```bash
 # Re-run every 5 seconds
-dtctl query "fetch logs | filter loglevel == 'ERROR' | sort timestamp desc | limit 10" \
+dtctl query 'fetch logs | filter loglevel == "ERROR" | sort timestamp desc | limit 10' \
   --live --interval 5s
 ```
 
@@ -424,7 +432,7 @@ before making assertions.
 dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1
 
 # Wait for any error logs, up to 2 minutes
-dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+dtctl wait query 'fetch logs | filter status == "ERROR"' --for=any --timeout 2m
 
 # Template variables and file-based queries work here too
 dtctl wait query -f query.dql --set test_id=my-test --for=count-gte=1

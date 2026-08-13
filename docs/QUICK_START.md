@@ -947,10 +947,10 @@ Execute Dynatrace Query Language (DQL) queries to fetch logs, metrics, events, a
 dtctl query "fetch logs | limit 10"
 
 # Filter logs by status
-dtctl query "fetch logs | filter status='ERROR' | limit 100"
+dtctl query 'fetch logs | filter status == "ERROR" | limit 100'
 
 # Query recent events
-dtctl query "fetch events | filter event.type='CUSTOM_ALERT' | limit 50"
+dtctl query 'fetch events | filter event.type == "CUSTOM_ALERT" | limit 50'
 
 # Summarize data
 dtctl query "fetch logs | summarize count(), by: {status} | sort count desc"
@@ -997,11 +997,18 @@ PowerShell has different quoting rules that can cause problems with inline DQL q
 
 #### The Problem
 
+Windows PowerShell 5.1 does not escape double quotes when it passes an argument to a native `.exe`, so the quotes DQL needs for string literals are eaten by the Windows command-line parser. PowerShell 7.3+ fixed this (`$PSNativeCommandArgumentPassing` defaults to `Windows` mode); check with `$PSVersionTable.PSVersion`.
+
 ```powershell
-# ❌ FAILS - PowerShell removes inner double quotes
+# ❌ FAILS on PowerShell 5.1 - inner double quotes are removed
 dtctl query 'fetch logs, bucket:{"custom-logs"} | filter contains(host.name, "api")'
 # Error: MANDATORY_PARAMETER_HAS_TO_BE_CONSTANT
-# PowerShell passes: bucket:{custom-logs} (missing quotes around "custom-logs")
+# dtctl receives: bucket:{custom-logs} (missing quotes around "custom-logs")
+
+# ❌ WORSE - fails silently with zero records instead of an error
+dtctl query 'fetch logs | filter loglevel == "INFO" | limit 10'
+# dtctl receives: filter loglevel == INFO
+# That is valid DQL (field vs. field), so Grail returns {} with no complaint.
 
 # ❌ FAILS - DQL doesn't support single quotes
 dtctl query "fetch logs, bucket:{'custom-logs'} | filter contains(host.name, 'api')"
@@ -1009,33 +1016,37 @@ dtctl query "fetch logs, bucket:{'custom-logs'} | filter contains(host.name, 'ap
 # Single quotes are not supported. Please use double quotes for strings.
 ```
 
-#### Solution 1: Use PowerShell Here-Strings (Recommended)
+Run any suspicious query with `-vv` to see the exact request body dtctl sent.
 
-PowerShell's here-string syntax (`@'...'@`) preserves all characters exactly:
+#### Solution 1: Pipe a Here-String (Recommended)
+
+A here-string (`@'...'@`) is a string *value*, not a redirection like a bash heredoc — passing it as an argument loses quotes just like any other argument. **Pipe it** instead: the pipeline writes to stdin and never goes through argument parsing, so it works on every PowerShell version.
 
 ```powershell
-# ✅ WORKS - Use @'...'@ for verbatim strings
-dtctl query -f - -o json @'
+# ✅ WORKS - here-string piped to stdin
+@'
 fetch logs, bucket:{"custom-logs"}
 | filter contains(host.name, "api")
 | limit 10
-'@
+'@ | dtctl query -o json
 
 # ✅ More complex example with multiple quotes
-dtctl query -f - -o json @'
+@'
 fetch logs, bucket:{"application-logs"}
 | filter contains(log.source, "backend")
-| filter status = "ERROR"
+| filter status == "ERROR"
 | summarize count(), by:{log.source}
 | limit 100
-'@
+'@ | dtctl query -o json
 
 # ✅ Works with any DQL query structure
-dtctl query -f - -o csv @'
+@'
 timeseries avg(dt.host.cpu.usage), by:{dt.entity.host}
 | filter avg > 80
-'@
+'@ | dtctl query -o csv
 ```
+
+> ⚠️ Do not write `dtctl query -f - @'...'@`. `-f -` makes dtctl read stdin while the here-string is passed as an argument, so dtctl waits on an idle terminal and the command looks like it hangs. dtctl now reports this instead of blocking, but the fix is to pipe.
 
 #### Solution 2: Use a Query File
 
@@ -1065,21 +1076,24 @@ cat query.dql | dtctl query -o json
 
 #### Quick Reference: PowerShell vs Bash
 
-| Shell | Heredoc Syntax | Example |
-|-------|----------------|---------|
-| **Bash/Zsh** | `<<'EOF'` | `dtctl query -f - <<'EOF'`<br>`fetch logs`<br>`EOF` |
-| **PowerShell** | `@'...'@` | `dtctl query -f - @'`<br>`fetch logs`<br>`'@` |
+| Shell | Multi-line query | Example |
+|-------|------------------|---------|
+| **Bash/Zsh** | heredoc `<<'EOF'` (a redirection) | `dtctl query -f - <<'EOF'`<br>`fetch logs`<br>`EOF` |
+| **PowerShell** | here-string `@'...'@` piped in (a value) | `@'`<br>`fetch logs`<br>`'@ \| dtctl query` |
 
 **Why This Matters:**
 - DQL requires double quotes for strings (e.g., `"custom-logs"`, `"ERROR"`, `"api"`)
-- PowerShell's quote parsing can strip or convert these quotes
-- Using `-f -` (stdin) with here-strings bypasses shell quote parsing entirely
+- Windows PowerShell 5.1 strips those quotes from arguments passed to native executables; PowerShell 7.3+ does not
+- Only **stdin** (a pipe, a heredoc, or `-f file`) bypasses argument parsing entirely — a here-string passed as an argument does not
+- On Windows, prefer `@'...'@ | dtctl query` or `dtctl query -f query.dql`
+
+For the full explanation, see [Windows: Quoting](WINDOWS.md#quoting).
 
 **Example query file** (`queries/errors.dql`):
 
 ```dql
 fetch logs
-| filter status = 'ERROR'
+| filter status == "ERROR"
 | filter timestamp > now() - 1h
 | summarize count(), by: {log.source}
 | sort count desc
@@ -1157,7 +1171,7 @@ dtctl query "fetch logs" \
   -o csv > large_export.csv
 
 # Combine with filters for targeted exports
-dtctl query "fetch logs | filter status='ERROR'" \
+dtctl query 'fetch logs | filter status == "ERROR"' \
   --max-result-records 5000 \
   -o csv > error_logs.csv
 ```
@@ -1233,7 +1247,7 @@ Monitor DQL query results in real-time with live mode:
 
 ```bash
 # Live mode with periodic updates (default: 60s)
-dtctl query "fetch logs | filter status='ERROR'" --live
+dtctl query 'fetch logs | filter status == "ERROR"' --live
 
 # Live mode with custom interval
 dtctl query "fetch logs" --live --interval 5s
@@ -1374,10 +1388,10 @@ fi
 #### PowerShell Examples
 
 ```powershell
-# Verify query using here-strings
-dtctl verify query -f - @'
+# Verify query using a piped here-string
+@'
 fetch logs, bucket:{"custom-logs"} | filter contains(host.name, "api")
-'@
+'@ | dtctl verify query
 
 # Validate all queries in a directory
 Get-ChildItem queries/*.dql | ForEach-Object {
@@ -1753,7 +1767,7 @@ Once created, use lookup tables to enrich your query results:
 # Simple lookup join
 dtctl query "
 fetch logs
-| filter status = 'ERROR'
+| filter status == "ERROR"
 | lookup [
     fetch dt.system.files
     | load '/lookups/production/error_codes'
@@ -1774,7 +1788,7 @@ fetch dt.entity.host
 # Map user IDs to names
 dtctl query "
 fetch logs
-| filter log.source = 'api'
+| filter log.source == "api"
 | lookup [
     load '/lookups/users/directory'
   ], sourceField:user_id, lookupField:id, fields:{name, email, department}
@@ -1808,7 +1822,7 @@ dtctl create lookup -f error_codes.csv \
 # Use in query
 dtctl query "
 fetch logs
-| filter status = 'ERROR'
+| filter status == "ERROR"
 | lookup [load '/lookups/monitoring/error_codes'], 
   sourceField:error_code, lookupField:code
 | fields timestamp, error_code, message, severity, documentation_url
@@ -1839,7 +1853,7 @@ dtctl create lookup -f ip_locations.csv \
 # Use in query to geo-locate traffic
 dtctl query "
 fetch logs
-| filter log.source = 'nginx'
+| filter log.source == "nginx"
 | lookup [load '/lookups/infrastructure/ip_locations'], 
   sourceField:client_ip, lookupField:ip_address
 | summarize request_count=count(), by:{city, country, datacenter}
@@ -1870,7 +1884,7 @@ dtctl create lookup -f service_owners.csv \
 # Find errors by team
 dtctl query "
 fetch logs
-| filter status = 'ERROR'
+| filter status == "ERROR"
 | lookup [load '/lookups/services/ownership'], 
   sourceField:service, lookupField:service_id
 | summarize error_count=count(), by:{team, team_email, slack_channel}
@@ -1902,7 +1916,7 @@ dtctl create lookup -f country_codes.csv \
 # Enrich user analytics
 dtctl query "
 fetch logs
-| filter log.source = 'analytics'
+| filter log.source == "analytics"
 | lookup [load '/lookups/reference/countries'], 
   sourceField:country_code, lookupField:code, 
   fields:{name, continent, currency}
@@ -2856,7 +2870,7 @@ dtctl exec copilot "List the top 5 error types" \
 dtctl exec copilot "Write a DQL query to find all ERROR logs from the last hour"
 
 # Understand existing queries
-dtctl exec copilot "Explain this query: fetch logs | filter status='ERROR' | summarize count()"
+dtctl exec copilot 'Explain this query: fetch logs | filter status == "ERROR" | summarize count()'
 
 # Troubleshoot issues
 dtctl exec copilot "Why might my service response time be increasing?"
@@ -2891,7 +2905,7 @@ Get natural language explanations of DQL queries:
 
 ```bash
 # Explain a DQL query
-dtctl exec copilot dql2nl "fetch logs | filter status='ERROR' | summarize count(), by:{host}"
+dtctl exec copilot dql2nl 'fetch logs | filter status == "ERROR" | summarize count(), by:{host}'
 # Output:
 # Summary: Count error logs grouped by host
 # Explanation: This query fetches logs, filters for ERROR status, and counts them by host.
@@ -3770,7 +3784,7 @@ mkdir -p ~/.local/share/dtctl/queries
 # Create reusable queries
 cat > ~/.local/share/dtctl/queries/errors-last-hour.dql <<EOF
 fetch logs
-| filter status = 'ERROR'
+| filter status == "ERROR"
 | filter timestamp > now() - 1h
 | limit {{.limit | default 100}}
 EOF
@@ -3946,7 +3960,7 @@ Export large datasets from DQL queries for offline analysis:
 
 ```bash
 # Export up to 5000 records to CSV
-dtctl query "fetch logs | filter status='ERROR'" \
+dtctl query 'fetch logs | filter status == "ERROR"' \
   --max-result-records 5000 \
   -o csv > error_logs.csv
 

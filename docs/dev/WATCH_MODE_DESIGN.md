@@ -42,7 +42,7 @@ dtctl get workflow my-workflow --watch
 dtctl get dashboards --mine --watch
 
 # Live mode for DQL query results
-dtctl query "fetch logs | filter status == 'ERROR'" --live
+dtctl query 'fetch logs | filter status == "ERROR"' --live
 ```
 
 ### Output Behavior
@@ -422,7 +422,7 @@ dtctl get executions --workflow error-handler --watch
 dtctl get slos --watch --interval 10s
 
 # Live mode to monitor failures
-dtctl query "fetch dt.entity.slo | filter status == 'FAILURE'" --live
+dtctl query 'fetch dt.entity.slo | filter status == "FAILURE"' --live
 ```
 
 ### Monitor Dashboard Changes
@@ -443,7 +443,7 @@ dtctl get execution $EXEC_ID --watch | grep -q "COMPLETED"
 echo "Workflow completed!"
 
 # Monitor deployment
-dtctl query "fetch logs | filter deployment_id == '$DEPLOY_ID'" --live
+dtctl query "fetch logs | filter deployment_id == \"$DEPLOY_ID\"" --live
 ```
 
 ---

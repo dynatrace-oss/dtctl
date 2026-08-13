@@ -47,7 +47,7 @@ DQL string literals require **double** quotes. Two frequent traps:
 Use double quotes for the value and pick a shell wrapper that preserves them:
 
 ```bash
-# bash/zsh + PowerShell: single-quote the whole query
+# bash/zsh: single-quote the whole query
 dtctl query 'fetch logs | filter status == "ERROR"'
 ```
 ```cmd
@@ -55,13 +55,20 @@ dtctl query 'fetch logs | filter status == "ERROR"'
 dtctl query "fetch logs | filter status == \"ERROR\""
 ```
 ```powershell
-# PowerShell here-string (no escaping headaches)
-dtctl query -f - -o json @'
+# PowerShell: pipe a here-string to stdin. Do NOT pass it as an argument
+# (`dtctl query @'...'@`) — Windows PowerShell 5.1 strips the inner quotes,
+# which produces the silent zero-row case above. Never `-f - @'...'@`: that
+# waits on stdin and looks like a hang.
+@'
 fetch logs | filter status == "ERROR"
-'@
+'@ | dtctl query -o json
 ```
 
 Quote-free everywhere: put the DQL in a file and run `dtctl query -f query.dql`.
+
+If a Windows user reports empty results, have them re-run with `-vv` and compare
+the `BODY:` query against what they typed — missing quotes confirm the shell,
+not the query, is at fault.
 
 ### 401/403 Authentication Errors
 ```bash

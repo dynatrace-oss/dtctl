@@ -191,32 +191,91 @@ Note: In PowerShell, use the backtick (`` ` ``) for line continuation instead of
 
 ### Quoting
 
-PowerShell handles quotes differently from bash/zsh. This matters most with DQL queries that contain double quotes.
+DQL string literals **must** use double quotes (`"ERROR"`); single quotes are a syntax error. Getting those double quotes through PowerShell intact is the single most common Windows problem with dtctl, so it is worth understanding the mechanism.
 
-**Use here-strings** for DQL queries to avoid quoting issues:
+#### The symptom: zero records, no error
 
 ```powershell
-# Here-string preserves all quotes exactly
-dtctl query -f - -o json @'
-fetch logs
-| filter status = "ERROR"
-| limit 10
-'@
+PS> dtctl query 'fetch logs | filter loglevel == "INFO" | limit 10' -o json
+{
+  "records": []
+}
 ```
 
-**Or use query files** to sidestep quoting entirely:
+The same query returns rows in a Dynatrace notebook. Nothing is wrong with your query or your credentials — the double quotes never reached dtctl. Confirm it with `-vv`, which prints the request body dtctl actually sent:
 
 ```powershell
-# Save query to file
-@"
-fetch logs
-| filter status = "ERROR"
-| limit 10
-"@ | Out-File -Encoding UTF8 query.dql
+PS> dtctl query 'fetch logs | filter loglevel == "INFO" | limit 10' -vv
+...
+BODY:
+{"query":"fetch logs | filter loglevel == INFO | limit 10", ...}
+```
 
-# Execute
+`loglevel == INFO` is *valid* DQL — it compares the `loglevel` field to a field named `INFO`. Both are unequal (or absent), so Grail returns an empty result and no error. That is why this fails silently instead of complaining.
+
+#### Why it happens
+
+**Windows PowerShell 5.1** (the blue `powershell.exe`, still the default on most Windows machines) re-quotes every argument before handing it to a native `.exe`, and it does **not** escape double quotes that are inside the argument. dtctl receives `"fetch logs | filter loglevel == "INFO" | limit 10"`, and the Windows command-line parser reads the inner quotes as end/start of quoting — so they vanish.
+
+This affects **every** way of writing the query as an argument, including single-quoted strings and here-strings. A here-string is a plain string *value*, not a redirection like a bash heredoc, so `dtctl query @'...'@` still goes through argument passing and still loses the quotes.
+
+PowerShell 7.3 and later fixed this: [`$PSNativeCommandArgumentPassing`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_preference_variables#psnativecommandargumentpassing) defaults to `Windows` mode, which escapes arguments correctly for normal executables. Check which one you are on:
+
+```powershell
+$PSVersionTable.PSVersion
+```
+
+If that prints `5.1.x`, use one of the forms below. If it prints `7.3` or later, quoting an argument works as it does on Linux and macOS.
+
+#### Fix 1: pipe the query in (works on every PowerShell version)
+
+The pipeline sends bytes to stdin and never touches argument parsing, so quotes always survive. This is the recommended form:
+
+```powershell
+@'
+fetch logs
+| filter loglevel == "INFO"
+| limit 10
+'@ | dtctl query -o json
+```
+
+> Do **not** write `dtctl query -f - @'...'@`. `-f -` tells dtctl to read stdin while the here-string is passed as an argument, so the two disagree about where the query is. dtctl rejects that combination with a hint (older versions waited on the idle terminal and appeared to hang). Pipe it (`'@ | dtctl query`) instead, with or without `-f -`.
+
+#### Fix 2: use a query file
+
+```powershell
+@'
+fetch logs
+| filter loglevel == "INFO"
+| limit 10
+'@ | Out-File -Encoding UTF8 query.dql
+
 dtctl query -f query.dql
+Get-Content query.dql | dtctl query   # equivalent
 ```
+
+#### Fix 3: inline on one line (5.1 only)
+
+If you must keep everything on one line in Windows PowerShell 5.1, escape the inner quotes with a backslash so the Windows parser hands them to dtctl:
+
+```powershell
+dtctl query 'fetch logs | filter loglevel == \"INFO\" | limit 10'
+```
+
+This is 5.1-specific: on PowerShell 7.3+ the backslashes are passed through literally and DQL rejects them. Prefer fix 1 or 2 in anything shared or scripted.
+
+#### Summary
+
+| Form                                       | PowerShell 5.1 | PowerShell 7.3+ |
+| ------------------------------------------ | -------------- | --------------- |
+| `@'...'@ \| dtctl query`                   | ✅ works       | ✅ works        |
+| `dtctl query -f query.dql`                 | ✅ works       | ✅ works        |
+| `dtctl query 'fetch ... "INFO"'`           | ❌ quotes lost | ✅ works        |
+| `dtctl query @'...'@`                      | ❌ quotes lost | ✅ works        |
+| `dtctl query -f - @'...'@`                 | ❌ rejected    | ❌ rejected     |
+| `dtctl query 'fetch ... \"INFO\"'`         | ✅ works       | ❌ literal `\`  |
+
+When results look suspicious, `-vv` shows the exact query dtctl sent — always check there first.
 
 See the [DQL Queries](QUICK_START.md#powershell-quoting-issues-and-solutions) section in the Quick Start guide for more examples.
 

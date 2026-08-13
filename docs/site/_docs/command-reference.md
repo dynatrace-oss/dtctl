@@ -249,7 +249,7 @@ full condition list, polling controls, and exit codes.
 dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1
 
 # Wait for any error logs, with a custom timeout
-dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+dtctl wait query 'fetch logs | filter status == "ERROR"' --for=any --timeout 2m
 
 # Conditions: count=N | count-gte=N | count-gt=N | count-lte=N | count-lt=N | any | none
 # Polling:    --timeout --max-attempts --initial-delay --min-interval --max-interval --backoff-multiplier
@@ -280,7 +280,7 @@ dtctl exec function -f script.js --payload '{"input":"data"}'                   
 # Davis CoPilot
 dtctl exec copilot "What is DQL?" --stream
 dtctl exec copilot nl2dql "error logs from last hour"
-dtctl exec copilot dql2nl "fetch logs | filter status='ERROR'"
+dtctl exec copilot dql2nl 'fetch logs | filter status == "ERROR"'
 dtctl exec copilot document-search "CPU analysis" --collections notebooks
 
 # OpenPipeline processor preview (dry-run against embedded sample records; -f required)

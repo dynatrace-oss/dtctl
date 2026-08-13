@@ -123,7 +123,7 @@ dtctl get workflows --watch
 dtctl get workflows --watch --interval 5s
 
 # Live query results
-dtctl query "fetch logs | filter status='ERROR'" --live
+dtctl query 'fetch logs | filter status == "ERROR"' --live
 
 # Only show changes (skip initial state)
 dtctl get workflows --watch --watch-only
@@ -602,7 +602,7 @@ dtctl query -f query.dql --set host=h-123 --set timerange=2h
 # Wait for Query Results
 # Poll a query until a specific condition is met
 dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1 --timeout 5m
-dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+dtctl wait query 'fetch logs | filter status == "ERROR"' --for=any --timeout 2m
 dtctl wait query -f query.dql --set test_id=my-test --for=count-gte=1
 
 # Wait conditions:
@@ -945,7 +945,7 @@ dtctl exec copilot nl2dql -f prompt.txt          # Read prompt from file
 dtctl exec copilot nl2dql "..." -o json          # Output as JSON (includes messageToken)
 
 # DQL to NL
-dtctl exec copilot dql2nl "fetch logs | filter status='ERROR' | limit 10"
+dtctl exec copilot dql2nl 'fetch logs | filter status == "ERROR" | limit 10'
 dtctl exec copilot dql2nl -f query.dql           # Read query from file
 dtctl exec copilot dql2nl "..." -o json          # Output as JSON (includes summary + explanation)
 
@@ -2004,7 +2004,7 @@ dtctl logs wfe <execution-id> --task <name> # Specific task
 
 ```bash
 # Simple query
-dtctl query "fetch logs | filter status='ERROR' | limit 100"
+dtctl query 'fetch logs | filter status == "ERROR" | limit 100'
 
 # Query with output formatting
 dtctl query "fetch logs | summarize count(), by: {status}" -o json
@@ -2034,7 +2034,7 @@ dtctl wait query "fetch spans | filter test_id == 'integration-test-123'" \
   --timeout 5m
 
 # Wait for any error logs in the last 5 minutes
-dtctl wait query "fetch logs | filter status == 'ERROR' | filter timestamp > now() - 5m" \
+dtctl wait query 'fetch logs | filter status == "ERROR" | filter timestamp > now() - 5m' \
   --for=any \
   --timeout 2m
 
