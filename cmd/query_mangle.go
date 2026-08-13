@@ -28,6 +28,12 @@ import (
 // rawCommandLine returns the process's unparsed command line, or "" on platforms
 // where the concept does not apply (everything except Windows). It is a variable
 // so tests can supply a command line directly.
+//
+// This is host-process state, so it is meaningless for an embedded invocation:
+// under `dtctl serve http` on Windows it is the *server's* command line, not the
+// request's. Harmless in practice -- the request's query would have to appear on
+// it verbatim as a token carrying interior quotes -- but it is why the detector
+// only ever warns and never changes the query.
 var rawCommandLine = platformRawCommandLine
 
 // rawToken is one argument of the raw command line, both decoded and described.
@@ -56,10 +62,19 @@ func looksQuoteMangled(rawCmdLine, arg string) bool {
 }
 
 // parseRawCommandLine splits a Windows command line into tokens following the
-// Microsoft C runtime rules that Go's own argv parsing implements: whitespace
-// separates tokens outside quotes, a run of 2n backslashes before a quote is n
-// backslashes plus a delimiter quote, and 2n+1 backslashes before a quote is n
-// backslashes plus a literal quote.
+// Microsoft C runtime rules: whitespace separates tokens outside quotes, a run
+// of 2n backslashes before a quote is n backslashes plus a delimiter quote, and
+// 2n+1 backslashes before a quote is n backslashes plus a literal quote.
+//
+// It deliberately omits one rule Go's own argv parsing implements (the "prior to
+// 2008" doubled-quote rule, where "" inside a quoted run yields a literal quote:
+// see readNextArg in $GOROOT/src/os/exec_windows.go, which is what builds
+// os.Args on Windows). A command line using that form therefore decodes
+// differently here than it does in os.Args, so the token never matches arg and
+// looksQuoteMangled stays silent. That is the safe direction -- doubled quotes
+// are a well-formed way to pass a quote through cmd.exe and deserve no warning
+// anyway -- and it keeps this splitter simple. Do not rely on the decoded value
+// for anything but the equality check against an already-parsed argument.
 func parseRawCommandLine(cmdline string) []rawToken {
 	var tokens []rawToken
 

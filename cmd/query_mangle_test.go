@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"io"
 	"strings"
 	"testing"
 )
@@ -192,7 +193,7 @@ func TestResolveQueryInput_NoWarningForStdinQuery(t *testing.T) {
 
 func swapQueryWarnOut(w *strings.Builder) func() {
 	prev := queryWarnOut
-	queryWarnOut = w
+	queryWarnOut = func() io.Writer { return w }
 	return func() { queryWarnOut = prev }
 }
 

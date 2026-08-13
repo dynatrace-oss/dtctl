@@ -19,9 +19,12 @@ type queryStdin struct {
 	isTerminal bool
 }
 
-// queryWarnOut receives query-input warnings. It is a variable so tests can
-// capture them.
-var queryWarnOut io.Writer = os.Stderr
+// queryWarnOut resolves the stream query-input warnings go to. It must resolve
+// os.Stderr at call time, not capture it: the stdio seam swaps that variable
+// per invocation (see stdio.go), so a cached writer would send an embedded
+// invocation's warning to the host's stderr instead of the request's. It is a
+// function variable so tests can capture the output.
+var queryWarnOut = func() io.Writer { return os.Stderr }
 
 // osStdin wraps the process's real stdin.
 func osStdin() queryStdin {
@@ -65,7 +68,7 @@ func resolveQueryInput(queryFile string, args []string, stdin queryStdin) (strin
 		// Only an argv-sourced query can have been mangled in transit; a file or
 		// a pipe delivers bytes untouched.
 		if looksQuoteMangled(rawCommandLine(), args[0]) {
-			fmt.Fprintln(queryWarnOut, quoteMangleWarning(args[0]))
+			fmt.Fprintln(queryWarnOut(), quoteMangleWarning(args[0]))
 		}
 		return args[0], nil
 	case !stdin.isTerminal:
