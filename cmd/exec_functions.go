@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
 // execFunctionCmd executes an app function or ad-hoc code
@@ -42,13 +43,6 @@ Examples:
   dtctl exec function -f script.js --payload '{"input":"data"}'
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, c, err := SetupClient()
-		if err != nil {
-			return err
-		}
-
-		executor := exec.NewFunctionExecutor(c)
-
 		// Get flags
 		method, _ := cmd.Flags().GetString("method")
 		payload, _ := cmd.Flags().GetString("payload")
@@ -56,6 +50,26 @@ Examples:
 		sourceCode, _ := cmd.Flags().GetString("code")
 		sourceCodeFile, _ := cmd.Flags().GetString("file")
 		defer_, _ := cmd.Flags().GetBool("defer")
+
+		// Ad-hoc JavaScript is unclassifiable by construction: AppEngine injects a
+		// bearer on relative fetch(), so the code can POST or DELETE against any
+		// platform API the token reaches. It is gated as a delete — the strictest
+		// generally-reachable operation — for the same reason `exec api` escalates a
+		// request whose operation it cannot resolve. Gating it any lower would make
+		// that gate theatre, since a caller blocked on `exec api` could reach the
+		// same endpoint through --code. A *named* app function runs the app's own
+		// reviewed code and is gated as a create, matching the `exec` verb.
+		op := safety.OperationCreate
+		if sourceCode != "" || sourceCodeFile != "" {
+			op = safety.OperationDelete
+		}
+
+		_, c, err := SetupWithSafety(op)
+		if err != nil {
+			return err
+		}
+
+		executor := exec.NewFunctionExecutor(c)
 
 		opts := exec.FunctionExecuteOptions{
 			Method:         method,

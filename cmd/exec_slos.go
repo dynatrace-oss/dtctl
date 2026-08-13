@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
 // execSLOCmd evaluates an SLO
@@ -38,7 +39,10 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sloID := args[0]
 
-		_, c, err := SetupClient()
+		// SLO evaluation is a read-shaped POST: it computes a result and persists
+		// nothing (the API declares a :read scope), so gating it as a create would
+		// wrongly block it in a readonly context.
+		_, c, err := SetupWithSafety(safety.OperationRead)
 		if err != nil {
 			return err
 		}

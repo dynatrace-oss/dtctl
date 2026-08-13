@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/copilot"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
@@ -36,7 +37,7 @@ Examples:
   dtctl exec copilot "List top errors" --instruction "Answer in bullet points"
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, c, err := SetupClient()
+		_, c, err := SetupWithSafety(safety.OperationRead)
 		if err != nil {
 			return err
 		}
@@ -120,7 +121,7 @@ Examples:
   dtctl exec copilot nl2dql "find hosts with high CPU" -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, c, err := SetupClient()
+		_, c, err := SetupWithSafety(safety.OperationRead)
 		if err != nil {
 			return err
 		}
@@ -177,7 +178,7 @@ Examples:
   dtctl exec copilot dql2nl "fetch logs | limit 10" -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, c, err := SetupClient()
+		_, c, err := SetupWithSafety(safety.OperationRead)
 		if err != nil {
 			return err
 		}
@@ -238,7 +239,7 @@ Examples:
   dtctl exec copilot document-search "kubernetes" --collections notebooks -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, c, err := SetupClient()
+		_, c, err := SetupWithSafety(safety.OperationRead)
 		if err != nil {
 			return err
 		}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
 // execAnalyzerCmd executes a Davis analyzer
@@ -40,7 +41,9 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		analyzerName := args[0]
 
-		_, c, err := SetupClient()
+		// Running an analyzer computes over data and persists nothing, so it is a
+		// read despite being a POST.
+		_, c, err := SetupWithSafety(safety.OperationRead)
 		if err != nil {
 			return err
 		}

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/previewprocessor"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
 // execPreviewProcessorCmd executes a processor definition against sample
@@ -58,7 +59,7 @@ Examples:
 			return fmt.Errorf("--file is required")
 		}
 
-		_, c, printer, err := Setup()
+		_, c, printer, err := SetupWithSafetyAndPrinter(safety.OperationRead)
 		if err != nil {
 			return err
 		}
