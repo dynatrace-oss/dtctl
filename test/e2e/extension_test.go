@@ -6,6 +6,7 @@ package e2e
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestExtensionList(t *testing.T) {
 	handler := extension.NewHandler(env.Client)
 
 	t.Run("list all extensions", func(t *testing.T) {
-		result, err := handler.List("", 0)
+		result, err := handler.List(context.Background(), "", 0)
 		if err != nil {
 			t.Fatalf("Failed to list extensions: %v", err)
 		}
@@ -41,7 +42,7 @@ func TestExtensionList(t *testing.T) {
 
 	t.Run("list with name filter", func(t *testing.T) {
 		// Use a broad filter that should match at least some extensions
-		result, err := handler.List("com.dynatrace", 10)
+		result, err := handler.List(context.Background(), "com.dynatrace", 10)
 		if err != nil {
 			t.Fatalf("Failed to list extensions with filter: %v", err)
 		}
@@ -54,7 +55,7 @@ func TestExtensionList(t *testing.T) {
 
 	t.Run("list with pagination", func(t *testing.T) {
 		// Use small page size to exercise pagination
-		result, err := handler.List("", 2)
+		result, err := handler.List(context.Background(), "", 2)
 		if err != nil {
 			t.Fatalf("Failed to list extensions with pagination: %v", err)
 		}
@@ -72,7 +73,7 @@ func TestExtensionList(t *testing.T) {
 // Skips the test if no extensions are installed.
 func findFirstExtension(t *testing.T, handler *extension.Handler) extension.Extension {
 	t.Helper()
-	result, err := handler.List("", 0)
+	result, err := handler.List(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Failed to list extensions: %v", err)
 	}
@@ -167,7 +168,7 @@ func TestExtensionGetEnvironmentConfig(t *testing.T) {
 	handler := extension.NewHandler(env.Client)
 
 	// Find an extension with an active version (environment config only exists if a version is active)
-	result, err := handler.List("", 0)
+	result, err := handler.List(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Failed to list extensions: %v", err)
 	}
@@ -248,7 +249,7 @@ func TestMonitoringConfigurationLifecycle(t *testing.T) {
 	// Find an extension with an active version that accepts our generic fixture.
 	// Extensions like da-aws require cloud-provider-specific fields; we iterate
 	// until we find one that creates successfully, then use it for the lifecycle.
-	result, err := handler.List("", 0)
+	result, err := handler.List(context.Background(), "", 0)
 	if err != nil {
 		t.Fatalf("Failed to list extensions: %v", err)
 	}
