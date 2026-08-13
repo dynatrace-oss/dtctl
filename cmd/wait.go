@@ -3,15 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 	"github.com/dynatrace-oss/dtctl/pkg/wait"
 )
 
@@ -92,28 +89,9 @@ Examples:
 		queryFile, _ := cmd.Flags().GetString("file")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 
-		var query string
-
-		if queryFile != "" {
-			// Read query from file (use "-" for stdin)
-			if queryFile == "-" {
-				content, err := io.ReadAll(os.Stdin)
-				if err != nil {
-					return fmt.Errorf("failed to read query from stdin: %w", err)
-				}
-				query = string(content)
-			} else {
-				content, err := vfs.ReadFile(queryFile)
-				if err != nil {
-					return fmt.Errorf("failed to read query file: %w", err)
-				}
-				query = string(content)
-			}
-		} else if len(args) > 0 {
-			// Use inline query
-			query = args[0]
-		} else {
-			return fmt.Errorf("query string or --file is required")
+		query, err := resolveQueryInput(queryFile, args, osStdin())
+		if err != nil {
+			return err
 		}
 
 		// Apply template rendering if --set flags are provided
