@@ -51,4 +51,5 @@ func init() {
 	execCmd.AddCommand(execCopilotCmd)
 	execCmd.AddCommand(execSLOCmd)
 	execCmd.AddCommand(execPreviewProcessorCmd)
+	execCmd.AddCommand(execAPICmd)
 }

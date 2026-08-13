@@ -24,6 +24,12 @@ const (
 	// new kind, so a pre-inspect consumer treats it as opaque and falls back to
 	// context — non-breaking by construction (D31).
 	KindFileSummary = "file-summary"
+	// KindDocumentFile means an opaque document — not a row set — was written to
+	// disk and the payload is a handle to it. It is emitted by
+	// `dtctl describe api --raw`, whose payload is one published OpenAPI document
+	// rather than records, so none of the row/column primitives apply. Another new
+	// kind, opaque to older consumers (D31).
+	KindDocumentFile = "document-file"
 	// KindFileList is emitted by `dtctl inspect --list`: an enumeration of the
 	// spilled files visible in the active context's partition, each with its
 	// sidecar provenance. It lets an agent recover a file handle that has aged out
@@ -62,6 +68,21 @@ type SampleStats struct {
 type InlineRecords struct {
 	Kind    string                   `json:"kind"`
 	Records []map[string]interface{} `json:"records"`
+}
+
+// SpecFileManifest is the result payload for the KindDocumentFile envelope: a
+// handle to a written document plus enough provenance to know what it is. It is
+// deliberately not ResultFileManifest — that shape promises rows, columns and a
+// row sample, and every one of those would be a lie about an API specification.
+type SpecFileManifest struct {
+	Kind   string `json:"kind"`
+	Path   string `json:"path"`
+	Format string `json:"format"`
+	Bytes  int64  `json:"bytes"`
+	// API is the API the document describes, as the environment's index names it.
+	API string `json:"api,omitempty"`
+	// Document is the environment-relative path the document was fetched from.
+	Document string `json:"document,omitempty"`
 }
 
 // ResultFileManifest is the result payload for the KindResultFile /

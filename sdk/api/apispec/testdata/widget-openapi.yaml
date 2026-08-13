@@ -1,0 +1,214 @@
+# Synthetic OpenAPI document for apispec tests.
+#
+# Every name here is invented. Fixtures must never reproduce a real Dynatrace
+# service name, environment identifier, or scope from a non-public API surface:
+# a committed fixture is permanent public documentation of whatever it names.
+#
+# The shapes, however, are real — each one reproduces something observed on a
+# live specification that the parser has to survive:
+#   * `info` extensions (x-service-category, x-summary)
+#   * an unquoted numeric `version`, which YAML types as a float
+#   * `servers[0].x-api-gateway-url` as the authoritative base path
+#   * per-operation `security` with a declared scope
+#   * an explicitly *empty* `ssoAuth: []`, which declares nothing
+#   * an operation with no `security` key at all, inheriting the document's
+#   * path-level `parameters` shared by every operation under the path
+#   * `$ref` in parameters, request bodies and responses
+#   * a custom action in the same path segment as an identifier (`{id}:favorite`)
+openapi: 3.0.3
+info:
+  title: Widget Service
+  version: 2.7
+  x-service-category: Core
+  x-summary: Manage widgets and their sprockets.
+servers:
+  - url: https://example.invalid/platform/widget/v1
+    x-api-gateway-url: /platform/widget/v1
+security:
+  - ssoAuth:
+      - widget:widgets:read
+paths:
+  # An operation keyed on the empty path: the base path itself is the endpoint.
+  # Published specifications really do this, and it used to yield the unusable
+  # operation ID "GET " plus an operation no request could ever match.
+  '':
+    get:
+      operationId: getServiceRoot
+      summary: Describe the service
+      security:
+        - ssoAuth:
+            - widget:widgets:read
+  /widgets:
+    get:
+      operationId: listWidgets
+      summary: List widgets
+      security:
+        - ssoAuth:
+            - widget:widgets:read
+        - ssoBearerAuth: []
+      parameters:
+        - name: page-size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - $ref: '#/components/parameters/PageKey'
+      responses:
+        '200':
+          description: A page of widgets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetList'
+    post:
+      operationId: createWidget
+      summary: Create a widget
+      security:
+        - ssoAuth:
+            - widget:widgets:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Widget'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+        '400':
+          description: Malformed request
+  /widgets/search:
+    post:
+      operationId: searchWidgets
+      # A read-shaped POST: it declares a :read scope and persists nothing.
+      # Method-based inference would wrongly classify this as a mutation.
+      summary: Search widgets
+      security:
+        - ssoAuth:
+            - widget:widgets:read
+      responses:
+        '200':
+          description: Matching widgets
+  /widgets/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WidgetID'
+    get:
+      operationId: getWidget
+      summary: Get a widget
+      security:
+        - ssoAuth:
+            - widget:widgets:read
+      responses:
+        '200':
+          description: The widget
+    patch:
+      operationId: updateWidget
+      summary: Update a widget
+      security:
+        - ssoAuth:
+            - widget:widgets:write
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Updated
+    delete:
+      operationId: deleteWidget
+      summary: Delete a widget
+      security:
+        - ssoAuth:
+            - widget:widgets:delete
+      responses:
+        '204':
+          description: Deleted
+  /widgets/{id}:favorite:
+    post:
+      operationId: favoriteWidget
+      # A custom action sharing the last path segment with the identifier, and
+      # another read-shaped POST.
+      summary: Mark a widget as a favorite
+      security:
+        - ssoAuth:
+            - widget:widgets:read
+      responses:
+        '204':
+          description: Marked
+  /widgets:purge:
+    post:
+      operationId: purgeWidgets
+      # A POST whose declared scope is :delete — the dangerous direction that
+      # method inference gets wrong, permitting a delete as a create.
+      summary: Purge all widgets
+      security:
+        - ssoAuth:
+            - widget:widgets:delete
+      responses:
+        '204':
+          description: Purged
+  /sprockets:verify:
+    post:
+      operationId: verifySprocket
+      # Declares an explicitly empty scope list: the document states nothing
+      # about what this needs, so it must classify as unknown rather than free.
+      summary: Verify a sprocket definition
+      security:
+        - ssoAuth: []
+      responses:
+        '200':
+          description: Verification result
+  /sprockets:
+    get:
+      operationId: listSprockets
+      # No `security` key at all: inherits the document-level declaration.
+      summary: List sprockets
+      responses:
+        '200':
+          description: Sprockets
+components:
+  parameters:
+    PageKey:
+      name: page-key
+      in: query
+      required: false
+      description: Cursor from a previous page.
+      schema:
+        type: string
+    WidgetID:
+      name: id
+      in: path
+      required: true
+      description: The widget identifier.
+      schema:
+        type: string
+  schemas:
+    Widget:
+      type: object
+      required:
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sprockets:
+          type: array
+          items:
+            type: string
+    WidgetList:
+      type: object
+      properties:
+        widgets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Widget'

@@ -1,0 +1,6 @@
+OPERATION                  SUMMARY                            SCOPE                  DEPRECATED   
+GET /widgets               List all widgets.                  widget:widgets:read    false        
+POST /widgets              Create a widget.                   widget:widgets:write   false        
+POST /widgets:search       Search widgets.                    widget:widgets:read    false        
+PUT /widgets/{id}          Replace a widget.                                         false        
+GET /widgets/{id}/legacy   Fetch the legacy representation.   widget:widgets:read    true         

@@ -25,6 +25,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/inspect"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/tracing"
@@ -247,9 +248,13 @@ func executeArgs(argv []string) int {
 		// Check for auth-related hints (e.g., expired OAuth session)
 		authHints := getAuthHintsForError(err)
 
-		allHints := make([]string, 0, len(urlHints)+len(authHints))
+		// Check for a missing API specification index (`get apis` / `describe api`)
+		indexHints := getAPIIndexHintsForError(err)
+
+		allHints := make([]string, 0, len(urlHints)+len(authHints)+len(indexHints))
 		allHints = append(allHints, urlHints...)
 		allHints = append(allHints, authHints...)
+		allHints = append(allHints, indexHints...)
 
 		// Record the error on the root span so it appears in traces.
 		rootSpan.SetStatus(codes.Error, err.Error())
@@ -579,6 +584,20 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// resapi.BlockedError — a generic `exec api` request refused by the gate. It
+	// wraps the safety refusal, so this case must come first: the same
+	// safety_blocked code, but the message says why the request was classified as
+	// it was, which is what tells a caller what to do differently.
+	var apiBlockedErr *resapi.BlockedError
+	if errors.As(err, &apiBlockedErr) {
+		return &output.ErrorDetail{
+			Code:        "safety_blocked",
+			Message:     apiBlockedErr.Headline(),
+			Operation:   fmt.Sprintf("call %s %s", apiBlockedErr.Method, apiBlockedErr.RequestPath),
+			Suggestions: apiBlockedErr.Suggestions(),
+		}
+	}
+
 	// safety.SafetyError — operation blocked by safety level
 	var safetyErr *safety.SafetyError
 	if errors.As(err, &safetyErr) {
@@ -684,6 +703,41 @@ func errorToDetail(err error) *output.ErrorDetail {
 		return detail
 	}
 
+	// apispec.RegistryUnavailableError — the environment publishes no
+	// machine-readable API index. A distinct code because it is an expected
+	// property of an environment, not a failure of the command: a consumer should
+	// stop probing for specifications rather than retry.
+	var registryErr *resapi.RegistryUnavailableError
+	if errors.As(err, &registryErr) {
+		// A refused index is not a missing one, and a consumer must be able to tell
+		// them apart without parsing the message: only the former is worth retrying
+		// with a different credential.
+		if registryErr.StatusCode == 401 || registryErr.StatusCode == 403 {
+			return &output.ErrorDetail{
+				Code:       output.ClassifyHTTPError(registryErr.StatusCode),
+				Message:    registryErr.Error(),
+				StatusCode: registryErr.StatusCode,
+			}
+		}
+		return &output.ErrorDetail{
+			Code:       "api_index_unavailable",
+			Message:    registryErr.Error(),
+			StatusCode: registryErr.StatusCode,
+		}
+	}
+
+	// apispec.SpecUnavailableError — a listed specification could not be read.
+	// Distinct from the generic HTTP classification so a consumer can tell "no
+	// specification" apart from "the API call failed".
+	var specErr *resapi.SpecUnavailableError
+	if errors.As(err, &specErr) {
+		return &output.ErrorDetail{
+			Code:       "api_spec_unavailable",
+			Message:    specErr.Error(),
+			StatusCode: specErr.StatusCode,
+		}
+	}
+
 	// inspect.Error — `dtctl inspect` carries a stable envelope code (spill_file_*,
 	// inspect_bad_flags, inspect_unknown_field) plus actionable suggestions.
 	var inspectErr *inspect.Error
@@ -752,6 +806,54 @@ func getAuthHintsForError(err error) []string {
 	return []string{
 		"Run 'dtctl auth login' to re-authenticate",
 	}
+}
+
+// getAPIIndexHintsForError returns recovery hints when an environment publishes
+// no machine-readable API index.
+//
+// The index is an observed convention rather than a documented contract, so its
+// absence is an expected outcome with two concrete fallbacks — not a failure to
+// merely report. Hints flow to both audiences: they become envelope suggestions
+// in agent mode and printed hints for a human.
+func getAPIIndexHintsForError(err error) []string {
+	var registryErr *resapi.RegistryUnavailableError
+	if errors.As(err, &registryErr) {
+		// A refused index is a fact about the credential, not about the environment,
+		// and it must not be answered with advice about the environment: someone told
+		// their index is unpublished will go looking at the wrong layer entirely.
+		if registryErr.StatusCode == 401 || registryErr.StatusCode == 403 {
+			return []string{
+				"the index request was rejected, so this says nothing about whether the " +
+					"environment publishes one — check the credential first",
+				"run 'dtctl doctor' to verify the active context's token",
+			}
+		}
+		return []string{
+			"browse this environment's own API explorer at " + resapi.SwaggerUIPath,
+			"address an API by base path, e.g. dtctl describe api /platform/document/v1",
+		}
+	}
+
+	// A listed document that cannot be read. The status carries the whole story,
+	// and the body does not: a 403 here is answered with a page about SSO, which
+	// would otherwise be forwarded verbatim to a caller it cannot help.
+	var specErr *resapi.SpecUnavailableError
+	if errors.As(err, &specErr) {
+		switch specErr.StatusCode {
+		case 401, 403:
+			return []string{
+				"this environment refused the specification document even though your token is valid — " +
+					"some environments serve specifications only to an interactive session",
+				"open " + resapi.SwaggerUIPath + " in a browser against this environment instead",
+				"the API itself is unaffected: 'dtctl exec api <path>' does not need the specification",
+			}
+		case 404:
+			return []string{
+				"the environment's API index lists this API but publishes no specification document for it",
+			}
+		}
+	}
+	return nil
 }
 
 // isTokenRefreshError returns true if the error looks like an OAuth token
@@ -934,6 +1036,16 @@ func SetupWithSafety(op safety.Operation) (*config.Config, *client.Client, error
 		return nil, nil, err
 	}
 	return cfg, c, nil
+}
+
+// SetupWithSafetyAndPrinter is SetupWithSafety plus a Printer, for mutating
+// commands that render their result through the normal output pipeline.
+func SetupWithSafetyAndPrinter(op safety.Operation) (*config.Config, *client.Client, output.Printer, error) {
+	cfg, c, err := SetupWithSafety(op)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return cfg, c, NewPrinter(), nil
 }
 
 // NewSafetyChecker creates a new safety checker for the current context

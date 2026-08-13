@@ -73,6 +73,17 @@ dtctl as an in-process library a service calls once per request:
 
 ---
 
+### [GENERIC_API_ACCESS.md](GENERIC_API_ACCESS.md)
+API spec discovery and the governed HTTP passthrough:
+- **Discovery** - `dtctl get apis`, `dtctl describe api`, and the (undocumented) index/spec conventions
+- **The Gate** - why the HTTP method does not decide the safety operation, and what does
+- **Never the Integration Target** - unadvertised commands, native-command suggestions, the coverage map
+- **Disclosure Rules** - dtctl mirrors the environment's index and filters nothing
+
+**Use this for**: touching `sdk/api/apispec/`, `pkg/resources/api/`, `cmd/exec_api.go`, or the native-coverage map.
+
+---
+
 ### [../LIVE_DEBUGGER.md](../LIVE_DEBUGGER.md)
 User-facing Live Debugger workflow documentation:
 - **Workspace Filters** - Target runtimes with `dtctl update breakpoint --filters`

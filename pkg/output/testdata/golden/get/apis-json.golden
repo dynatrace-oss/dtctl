@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Widget Service",
+    "base_path": "/platform/widget/v1",
+    "category": "Widgets",
+    "operations": 14,
+    "dtctl": "widget"
+  },
+  {
+    "name": "Sprocket Service",
+    "base_path": "/platform/sprocket/v1",
+    "category": "Sprockets",
+    "operations": 3
+  },
+  {
+    "name": "Cog Service",
+    "base_path": "/platform/cog/v1"
+  },
+  {
+    "name": "Elsewhere API",
+    "base_path": "",
+    "external": true
+  }
+]

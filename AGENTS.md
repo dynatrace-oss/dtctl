@@ -31,6 +31,8 @@ pkg/
 sdk/            # Separate Go module (github.com/dynatrace-oss/dtctl/sdk)
   ├── session/     # The session layer (docs/dev/CONFIG_CONTRACT.md): config model + load/save, credential stores, OAuth flow/refresh + cross-process lock, client-from-context with parameterized User-Agent, safety semantics
   ├── api/         # Typed API wrappers (one package per Dynatrace API surface)
+  │                #   apispec/ is the odd one out: it reads the environment's *own* API index and
+  │                #   OpenAPI documents (docs/dev/GENERIC_API_ACCESS.md)
   ├── httpclient/  # HTTP client, response helpers, pagination, typed errors
   ├── auth/        # Token type detection
   ├── urls/        # Environment URL validation/normalization
@@ -89,6 +91,7 @@ When adding a new AI agent to the skills system, update **all** of the following
 3. **Commands**: Add to `cmd/get.go`, `cmd/describe.go`, etc. Mutating verbs need a safety check; `-f`/`--file` flags go through `vfs`; no `os.Exit`, no ungated subprocess.
 4. Register in resolver
 5. Add tests: `sdk/api/<name>/*_test.go` (SDK unit tests) + `test/e2e/<name>_test.go` (E2E)
+6. **Claim the coverage**: add the API's base path to `nativeCoverage` in `pkg/resources/api/coverage.go`, so `dtctl get apis` stops listing it as uncovered and `dtctl exec api` points callers at the new command. `Command` must be what a user would actually type (`dtctl query`, not `dtctl get query`). *Guard*: `go test ./cmd/ -run TestNativeCoverageNamesRealCommands`
 
 **SDK handler signature** (in `sdk/api/<name>/`):
 ```go
@@ -98,6 +101,15 @@ func (h *Handler) List(opts ListOptions) ([]Resource, error)
 ```
 
 **CLI handler** (in `pkg/resources/<name>/`): imports SDK types (often via type alias) and wraps with file I/O, display fields, etc.
+
+## Generic API Access
+
+`dtctl get apis` / `describe api` / `exec api` cover the APIs dtctl does **not** wrap natively. Full rationale: [docs/dev/GENERIC_API_ACCESS.md](docs/dev/GENERIC_API_ACCESS.md). Four conventions to respect when touching them:
+
+1. **dtctl mirrors the environment's API index and filters nothing.** A dtctl-side filter would have to hard-code which APIs to conceal, and in an open-source tool that list *is* the disclosure. Resolution consults only what the index returned — never synthesize a candidate path from a name and retry it, which would turn a name lookup into an existence oracle.
+2. **The HTTP method never decides the safety gate.** `resapi.Classify` takes the stricter of the method floor and the specification's declared scope; POST's floor is `OperationRead`, because plenty of read-only endpoints are POSTs. Unresolvable → `OperationDelete`. There is deliberately no flag to assert an operation.
+3. **`exec api` must never be the integration target.** It stays `Hidden` (present in `dtctl commands --full` via `unadvertisedResources` in `pkg/commands/listing.go`, absent from `--help` and the compact catalogs), it names the native command whenever one covers the path, and no command profile grants it.
+4. **No committed artifact names a non-public API.** Help text, examples, golden files, and E2E fixtures are synthetic; live tests assert invariants of the mechanism, never a list of expected APIs.
 
 ## Design Principles
 
@@ -117,6 +129,8 @@ func (h *Handler) List(opts ListOptions) ([]Resource, error)
 | Fix output | `pkg/output/<format>.go` | Test: `dtctl get <resource> -o <format>` |
 | Read a user file | `pkg/vfs/` | `vfs.ReadFile` / `vfs.ReadFileOrStdin` — never `os.ReadFile` |
 | Add a serve protocol | `pkg/serve/<proto>.go` | Copy `pkg/serve/http.go`; register in `NewCommand()` |
+| Wrap a new API natively | `pkg/resources/api/coverage.go` | Add the base path with the *runnable* command (see below) |
+| Gate an irreversible endpoint | `pkg/resources/api/classify.go` | Add a `destructivePatterns` entry (docs/dev/GENERIC_API_ACCESS.md) |
 
 **Tests**: `make test` or `go test ./...` • E2E: `test/e2e/` • Integration: `test/integration/`
 
@@ -166,6 +180,7 @@ make test
 ### Required for These Commands
 
 ✅ `create`, `edit`, `apply`, `delete`, `update` (all modify resources)  
+✅ `exec` — every subcommand, with the operation matching what the execution actually does: `OperationRead` for an analysis or a preview, `OperationCreate` for a run that creates state, `OperationDelete` for ad-hoc code (`exec function --code` can do anything), and for `exec api` the operation derived from the API's own specification. Use `SetupWithSafety(op)`, not the ungated `SetupClient()`. *Guard*: `go test ./cmd/ -run TestExec.*Readonly`  
 ❌ `get`, `describe`, `query`, `logs`, `history`, `ctx`, `doctor`, `commands` (read-only)
 
 ### Pattern (after `LoadConfig()`, before client ops)
@@ -295,7 +310,10 @@ Never put customer names, employee names, usernames, or specific Dynatrace envir
 ✅ **Do** return data, let cmd/ handle output
 
 ❌ **Don't** skip safety checks on mutating commands  
-✅ **Do** add safety checks to ALL create/edit/apply/delete/update commands
+✅ **Do** add safety checks to ALL create/edit/apply/delete/update/exec commands
+
+❌ **Don't** script against `dtctl exec api` — an escape hatch that becomes the integration target has failed  
+✅ **Do** add a native command for the API instead (`dtctl get apis --uncovered` is the backlog)
 
 ❌ **Don't** read a user-supplied path with `os.ReadFile` / `os.Open`  
 ✅ **Do** use `vfs.ReadFile` / `vfs.ReadFileOrStdin` (see Embedding Invariants)
@@ -473,6 +491,7 @@ if r.URL.Query().Get("nextPageKey") != "" {
 - **Architecture**: [docs/dev/ARCHITECTURE.md](docs/dev/ARCHITECTURE.md)
 - **Status**: [docs/dev/IMPLEMENTATION_STATUS.md](docs/dev/IMPLEMENTATION_STATUS.md)
 - **Embedding/service model**: [docs/dev/SERVICE_ENGINE_DESIGN.md](docs/dev/SERVICE_ENGINE_DESIGN.md)
+- **API discovery + passthrough**: [docs/dev/GENERIC_API_ACCESS.md](docs/dev/GENERIC_API_ACCESS.md)
 - **Future Work**: [docs/dev/FUTURE_FEATURES.md](docs/dev/FUTURE_FEATURES.md)
 
 ---

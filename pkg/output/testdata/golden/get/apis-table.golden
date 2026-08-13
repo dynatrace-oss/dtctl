@@ -1,0 +1,5 @@
+NAME               BASE PATH               OPS   DTCTL    
+Widget Service     /platform/widget/v1     14    widget   
+Sprocket Service   /platform/sprocket/v1   3              
+Cog Service        /platform/cog/v1                       
+Elsewhere API                                             

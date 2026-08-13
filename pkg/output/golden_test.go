@@ -13,6 +13,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/api"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
@@ -2867,6 +2868,110 @@ func TestGolden_ExecPreviewProcessor(t *testing.T) {
 				t.Fatalf("PrintList failed: %v", err)
 			}
 			assertGolden(t, "exec/preview-processor-"+name, buf.String())
+		})
+	}
+}
+
+// apiInfoFixtures covers the three states a row of `dtctl get apis` can be in,
+// because each renders differently and each has been got wrong: an API dtctl
+// wraps natively, one it does not, and one documented at an absolute URL on
+// another host (no base path, nothing dtctl can fetch).
+//
+// All of it is synthetic. A recording of a real environment's index would commit
+// that environment's published API list to a public repository — and the list is a
+// property of the environment, not of dtctl.
+func apiInfoFixtures() []api.APIInfo {
+	fourteen := 14
+	three := 3
+	return []api.APIInfo{
+		{
+			Name:       "Widget Service",
+			BasePath:   "/platform/widget/v1",
+			Category:   "Widgets",
+			Operations: &fourteen,
+			Dtctl:      "widget",
+		},
+		{
+			Name:       "Sprocket Service",
+			BasePath:   "/platform/sprocket/v1",
+			Category:   "Sprockets",
+			Operations: &three,
+		},
+		{
+			// Operations is nil: the count is unknown rather than zero, and the OPS
+			// cell must come out blank. A -1 sentinel used to print "-1" here.
+			Name:     "Cog Service",
+			BasePath: "/platform/cog/v1",
+		},
+		{
+			Name:     "Elsewhere API",
+			External: true,
+		},
+	}
+}
+
+func TestGolden_GetAPIs(t *testing.T) {
+	apis := apiInfoFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(apis); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/apis-"+name, buf.String())
+		})
+	}
+}
+
+// operationSummaryFixtures pins the operation index, including the two rows that
+// carry meaning by being empty: an operation whose specification declares no scope
+// (blank, and not the same as "needs nothing"), and a deprecated one, which is
+// wide-only so the default view stays narrow.
+func operationSummaryFixtures() []api.OperationSummary {
+	return []api.OperationSummary{
+		{Operation: "GET /widgets", Summary: "List all widgets.", Scope: "widget:widgets:read"},
+		{Operation: "POST /widgets", Summary: "Create a widget.", Scope: "widget:widgets:write"},
+		{Operation: "POST /widgets:search", Summary: "Search widgets.", Scope: "widget:widgets:read"},
+		{Operation: "PUT /widgets/{id}", Summary: "Replace a widget."},
+		{
+			Operation:  "GET /widgets/{id}/legacy",
+			Summary:    "Fetch the legacy representation.",
+			Scope:      "widget:widgets:read",
+			Deprecated: true,
+		},
+	}
+}
+
+func TestGolden_DescribeAPIOperations(t *testing.T) {
+	ops := operationSummaryFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(ops); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "describe/api-operations-"+name, buf.String())
 		})
 	}
 }

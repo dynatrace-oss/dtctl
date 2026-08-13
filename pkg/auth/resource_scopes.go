@@ -157,6 +157,17 @@ var ResourceScopes = map[string]AccessScopes{
 	"aws":   {Read: []string{"settings:objects:read", "extensions:configurations:read"}, Write: []string{"settings:objects:write", "extensions:configurations:write"}},
 	"azure": {Read: []string{"settings:objects:read", "extensions:configurations:read"}, Write: []string{"settings:objects:write", "extensions:configurations:write"}},
 	"gcp":   {Read: []string{"settings:objects:read", "extensions:configurations:read"}, Write: []string{"settings:objects:write", "extensions:configurations:write"}},
+
+	// API specifications — the environment's own API index and each API's
+	// OpenAPI document. Reading them needs a valid token but no resource scope:
+	// they are the same documents the environment serves to its Swagger UI.
+	//
+	// The Run level is deliberately empty rather than guessed. `exec api` calls
+	// an arbitrary operation, so the scope it needs is whatever that operation's
+	// specification declares — resolved per call (see pkg/resources/api), never
+	// from a static table. An entry here claiming a single scope for every
+	// possible target would be wrong for almost all of them.
+	"api": {},
 }
 
 // localResources are catalog subcommands that operate entirely on the local

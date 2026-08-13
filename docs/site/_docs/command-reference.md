@@ -90,6 +90,7 @@ dtctl supports both singular and plural resource names, plus short aliases.
 | `notifications` | `notification` | get, describe, delete, watch |
 | `edgeconnects` | `edgeconnect`, `ec` | get, describe, create, delete, apply |
 | `breakpoints` | `breakpoint` | get, describe, create, update, delete |
+| `apis` | `api` | get, describe ([API Discovery]({{ '/docs/api-discovery/' | relative_url }})) |
 
 ## Configuration Commands
 

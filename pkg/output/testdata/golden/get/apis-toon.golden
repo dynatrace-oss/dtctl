@@ -1,0 +1,15 @@
+[#4]:
+  - base_path: /platform/widget/v1
+    category: Widgets
+    dtctl: widget
+    name: Widget Service
+    operations: 14
+  - base_path: /platform/sprocket/v1
+    category: Sprockets
+    name: Sprocket Service
+    operations: 3
+  - base_path: /platform/cog/v1
+    name: Cog Service
+  - base_path: ""
+    external: true
+    name: Elsewhere API
