@@ -254,8 +254,8 @@ Note that this is the **CLI** module, not the separate
 [`sdk/` module](https://github.com/dynatrace-oss/dtctl/tree/main/sdk): embedding
 the engine means embedding the whole command surface, because that is what makes
 the output identical. If you want typed API wrappers without the CLI, use the SDK
-instead. Importing the CLI module requires a release **after v0.37.0** — earlier
-tags could not be resolved as a library dependency.
+instead. Importing the CLI module requires **v0.38.0 or newer** — earlier tags
+could not be resolved as a library dependency at all.
 
 ```go
 res, err := engine.Execute(ctx, engine.Request{
