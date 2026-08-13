@@ -43,6 +43,11 @@ curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh
 irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
 ```
 
+```bash
+# Nix flake (community maintained, not part of this project)
+nix run github:srizzling/dtctl-nix -- version
+```
+
 Binary downloads, building from source, shell completion setup, and more in the **[Installation Guide](https://dynatrace-oss.github.io/dtctl/docs/installation/)**.
 
 ## Authenticate
