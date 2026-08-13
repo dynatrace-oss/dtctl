@@ -213,6 +213,15 @@ BODY:
 
 `loglevel == INFO` is *valid* DQL — it compares the `loglevel` field to a field named `INFO`. Both are unequal (or absent), so Grail returns an empty result and no error. That is why this fails silently instead of complaining.
 
+dtctl detects this case by inspecting the raw command line and prints a warning before running the query, so you should not have to reach for `-vv`:
+
+```
+Warning: your shell stripped the double quotes from this query.
+dtctl received: fetch logs | filter loglevel == INFO | limit 10
+```
+
+The query still runs — dtctl cannot know for certain that you meant a string literal — but the warning tells you why the result is empty.
+
 #### Why it happens
 
 **Windows PowerShell 5.1** (the blue `powershell.exe`, still the default on most Windows machines) re-quotes every argument before handing it to a native `.exe`, and it does **not** escape double quotes that are inside the argument. dtctl receives `"fetch logs | filter loglevel == "INFO" | limit 10"`, and the Windows command-line parser reads the inner quotes as end/start of quoting — so they vanish.

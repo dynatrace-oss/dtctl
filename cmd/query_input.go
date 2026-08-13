@@ -19,6 +19,10 @@ type queryStdin struct {
 	isTerminal bool
 }
 
+// queryWarnOut receives query-input warnings. It is a variable so tests can
+// capture them.
+var queryWarnOut io.Writer = os.Stderr
+
 // osStdin wraps the process's real stdin.
 func osStdin() queryStdin {
 	return queryStdin{r: os.Stdin, isTerminal: isTerminal(os.Stdin)}
@@ -58,6 +62,11 @@ func resolveQueryInput(queryFile string, args []string, stdin queryStdin) (strin
 		}
 		return string(content), nil
 	case len(args) > 0:
+		// Only an argv-sourced query can have been mangled in transit; a file or
+		// a pipe delivers bytes untouched.
+		if looksQuoteMangled(rawCommandLine(), args[0]) {
+			fmt.Fprintln(queryWarnOut, quoteMangleWarning(args[0]))
+		}
 		return args[0], nil
 	case !stdin.isTerminal:
 		// Piped stdin without --file, e.g. `cat query.dql | dtctl query`.
