@@ -17,6 +17,13 @@ name: Release
 # Note: release-please creates the tag with GITHUB_TOKEN, which would not trigger
 # `on: push: tags` workflows anyway — that is why GoReleaser runs as a gated job
 # in this same workflow rather than in a separate tag-triggered one.
+#
+# sdk/ is a second Go module in this repo, and Go resolves it by the tag
+# `sdk/vX.Y.Z`. release-please only manages the root package, so the tag-sdk job
+# below mirrors each release tag into the sdk namespace at the same commit. That
+# is what makes the root module's `require github.com/dynatrace-oss/dtctl/sdk`
+# resolvable for anyone importing e.g. pkg/engine — the local `replace` in go.mod
+# is ignored downstream. verify-consumable then proves it from outside the repo.
 
 on:
   workflow_dispatch:
@@ -41,6 +48,79 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  tag-sdk:
+    name: Tag SDK Module
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Mirror the release tag into the sdk/ namespace
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          # Resolve the commit release-please tagged, rather than trusting HEAD.
+          # /commits/<ref> dereferences to a commit whether the tag is lightweight
+          # or annotated; Go needs the tag to point at the commit either way.
+          sha=$(gh api "repos/$REPO/commits/$TAG" --jq '.sha')
+          echo "Release $TAG is at $sha"
+          if gh api "repos/$REPO/git/ref/tags/sdk/$TAG" >/dev/null 2>&1; then
+            echo "sdk/$TAG already exists — nothing to do."
+            exit 0
+          fi
+          gh api "repos/$REPO/git/refs" \
+            -f "ref=refs/tags/sdk/$TAG" \
+            -f "sha=$sha" >/dev/null
+          echo "Created sdk/$TAG at $sha"
+
+  verify-consumable:
+    name: Verify Module Is Importable
+    needs: [release-please, tag-sdk]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+
+      - name: Import pkg/engine from a module outside this repo
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+          # Fetch dtctl itself straight from GitHub: the tags were created seconds
+          # ago, so neither the module proxy nor the checksum database has
+          # observed them yet. Everything else still goes through the proxy.
+          GOPRIVATE: github.com/dynatrace-oss/dtctl
+          GOFLAGS: -mod=mod
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/consumer"
+          mkdir -p "$work"
+          cd "$work"
+          go mod init example.invalid/consumer
+          cat > main.go <<'EOF'
+          package main
+
+          import (
+          	"fmt"
+
+          	"github.com/dynatrace-oss/dtctl/pkg/engine"
+          )
+
+          func main() {
+          	fmt.Println(len(engine.UnsupportedCommands()))
+          }
+          EOF
+          # Fails if go.mod's sdk require does not name a real sdk/vX.Y.Z tag —
+          # the local `replace` that makes in-repo builds work is ignored here.
+          go get "github.com/dynatrace-oss/dtctl@$TAG"
+          go build ./...
+          echo "pkg/engine is importable from an external module at $TAG"
 
   goreleaser:
     name: GoReleaser

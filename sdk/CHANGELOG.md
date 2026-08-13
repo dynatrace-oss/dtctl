@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Versioning is now aligned with the dtctl CLI.** The SDK is tagged `sdk/vX.Y.Z` at the same commit as the CLI's `vX.Y.Z`, so the next release jumps from `0.2.0` to the CLI's version rather than to `0.3.0`. Nothing about the API changes; the alignment is what makes the CLI module's dependency on the SDK resolvable for external importers (see `docs/dev/SERVICE_ENGINE_DESIGN.md`). A new tag therefore appears on every CLI release, whether or not `sdk/` changed — this file remains the record of what actually moved.
+
 ### Added
 
 - `sdk/inventory` — Environment data-inventory discovery engine: capabilities present/absent/unknown with cited evidence, live entity census, buckets, data-object catalog partition, and a budgeted discovery battery. Execution-agnostic — every query runs through a caller-supplied `Runner` interface, so backend services can embed discovery with their own DQL client. Definitions parsing is byte-based (`ParseDefinitions`); file loading stays in the CLI layer. Definition sets constructed in Go (bypassing `ParseDefinitions`) are checked by `ValidateDefinitions`, which `Discover` runs up front — a malformed or nil definition fails fast instead of being silently skipped.

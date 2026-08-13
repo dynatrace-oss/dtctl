@@ -40,6 +40,8 @@ sdk/            # Separate Go module (github.com/dynatrace-oss/dtctl/sdk)
 
 **SDK delegation pattern**: CLI resource handlers in `pkg/resources/` import types from `sdk/api/` (often via type aliases) and delegate HTTP calls to SDK functions. The `sdk/api/*` packages contain **no file I/O, no CLI concerns, no display logic**. File reading (e.g., `ReadFileOrStdin`, `ParseInputFromFile`) stays in `pkg/resources/`. (`sdk/session` is the deliberate exception on file I/O: it owns the config file and credential stores — that's its job.)
 
+**Two modules, one release**: the root `go.mod` requires `dtctl/sdk` *and* `replace`s it with `./sdk`. Go ignores that `replace` downstream, so the `require` must always name a real `sdk/vX.Y.Z` tag — otherwise the root module cannot be imported at all (e.g. a service embedding `pkg/engine`), while every in-repo build stays green because the replace covers it. The require carries `// x-release-please-version` so release-please keeps it equal to the CLI version, and `.github/workflows/release.yml` mirrors each `vX.Y.Z` into `sdk/vX.Y.Z`. Never hand-edit that version or drop the annotation. *Guard*: `go test ./pkg/version/ -run TestSDKRequireIsResolvable`
+
 **Plugins**: dtctl dispatches unknown commands to `dtctl-<name>` executables on PATH (kubectl semantics; built-ins always win). See [docs/dev/PLUGIN_CONVENTIONS.md](docs/dev/PLUGIN_CONVENTIONS.md) for the env contract (`DTCTL_CONTEXT`, `DTCTL_CONFIG`, `DTCTL_AGENT`, `DTCTL_PLAIN`, `DTCTL_CALLER_VERSION` — never tokens).
 
 ## Agent Output Mode

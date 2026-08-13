@@ -247,6 +247,55 @@ The service is not a perfect mirror, and the differences are intentional:
   exporters, and other process-level behavior. Embedding hosts that need it use
   `engine.Request.Env` directly, in-process.
 
+## Consuming `pkg/engine` from another module
+
+`pkg/engine` lives in the **root** module, `github.com/dynatrace-oss/dtctl` — not
+in `sdk/`, and it cannot move there: `engine.Execute` runs the real command tree,
+so it depends on `cmd/`, which depends on every `pkg/resources/*`, which depends
+back on `sdk/api/*`. The SDK is deliberately the opposite kind of artifact (a few
+typed API wrappers, 8 direct dependencies, no CLI concerns); the engine pulls in
+601 packages. A service embeds the CLI or it uses the SDK — those are different
+choices, not two doors to the same room.
+
+```go
+import "github.com/dynatrace-oss/dtctl/pkg/engine"
+```
+
+```bash
+go get github.com/dynatrace-oss/dtctl@latest
+```
+
+That works only because of a coupling worth stating explicitly, since it broke
+silently once. This repo holds **two modules**, and Go resolves the inner one by
+the tag `sdk/vX.Y.Z`. The root `go.mod` both requires the sdk module and
+`replace`s it with `./sdk` — and **Go ignores a `replace` directive in a module
+it is consuming as a dependency**. So in-repo builds and all of CI resolve the sdk
+through the replace and never validate the `require`, while every external
+importer resolves the `require` literally. For the module's whole life that line
+read `v0.0.0-00010101000000-000000000000`, and `go get` on the root module failed
+with `invalid version: unknown revision 000000000000`.
+
+Three pieces keep it honest, and all three are load-bearing:
+
+- The require carries `// x-release-please-version`, so release-please rewrites it
+  on every release — the same generic-updater mechanism as
+  `pkg/version/version.go`. The sdk require and the CLI version are therefore
+  equal by construction.
+- The `tag-sdk` job in `.github/workflows/release.yml` mirrors each release tag
+  `vX.Y.Z` into `sdk/vX.Y.Z` at the same commit, which is the tag that require
+  now names. `verify-consumable` then does the real thing from a scratch module
+  outside the repo — `go get` the freshly tagged root module and build a program
+  that imports `pkg/engine`.
+- `TestSDKRequireIsResolvable` (`pkg/version/`) rejects a pseudo-version, a
+  missing annotation, a missing replace, and drift between the require and
+  `version.Version`.
+
+Consequence for development: between releases, the require names the *previous*
+release's sdk tag. In-repo that is invisible (the replace wins), but a caller
+pinning a pseudo-version off `main` gets the older sdk — and fails to build if
+`main` has started using an sdk symbol added since. Callers pin releases; the
+release is where the two modules are cut from one commit.
+
 ## Maturity
 
 `pkg/engine` is the stable half: a Go caller opts into it at compile time, and

@@ -246,6 +246,17 @@ directly from Go. `pkg/engine` is the surface `dtctl serve http` is a thin
 wrapper over — same request shape, same isolation, no HTTP hop and no port to
 protect:
 
+```bash
+go get github.com/dynatrace-oss/dtctl@latest
+```
+
+Note that this is the **CLI** module, not the separate
+[`sdk/` module](https://github.com/dynatrace-oss/dtctl/tree/main/sdk): embedding
+the engine means embedding the whole command surface, because that is what makes
+the output identical. If you want typed API wrappers without the CLI, use the SDK
+instead. Importing the CLI module requires a release **after v0.37.0** — earlier
+tags could not be resolved as a library dependency.
+
 ```go
 res, err := engine.Execute(ctx, engine.Request{
     Command:        `apply -f workflow.yaml --write-id --agent`,

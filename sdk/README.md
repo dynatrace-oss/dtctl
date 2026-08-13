@@ -8,6 +8,19 @@ A shared Go module for building tools and integrations against the Dynatrace pla
 go get github.com/dynatrace-oss/dtctl/sdk@latest
 ```
 
+## Versioning
+
+The SDK is tagged `sdk/vX.Y.Z` **in lockstep with the dtctl CLI release** it was
+cut from: dtctl `vX.Y.Z` and `sdk/vX.Y.Z` are the same commit. The two modules
+ship from one repository and are compiled against each other in CI, so aligning
+the numbers is what lets the CLI module declare a resolvable dependency on the
+SDK — and lets you pair a CLI version with the SDK that matches it.
+
+Two consequences: a new SDK tag appears on every CLI release, including ones that
+change nothing under `sdk/` (check [CHANGELOG.md](CHANGELOG.md) for what actually
+moved), and the version jumped from `sdk/v0.2.0` straight to the CLI's line when
+this alignment was introduced.
+
 ## What's in the SDK
 
 ### Infrastructure
