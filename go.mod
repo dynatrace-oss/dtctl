@@ -10,7 +10,7 @@ require (
 	github.com/guptarohit/asciigraph v0.10.0
 	github.com/itchyny/gojq v0.12.19
 	github.com/olekukonko/tablewriter v1.1.4
-	github.com/parquet-go/parquet-go v0.30.1
+	github.com/parquet-go/parquet-go v0.32.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
