@@ -10,6 +10,7 @@ package api
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -251,6 +252,15 @@ func (h *Handler) ResolveForRequest(method, requestPath string) (apiName string,
 	// The classification is about the endpoint, not the query.
 	if i := strings.IndexAny(requestPath, "?#"); i >= 0 {
 		requestPath = requestPath[:i]
+	}
+	// Resolution models the router, and the router decodes before matching: a
+	// path spelled with %3A must resolve to the same operation as one spelled
+	// with ':'. Structure-changing spellings never reach a request — the
+	// command refuses them (see CanonicalRequestPath) — and if one arrives
+	// here anyway, decoding at worst makes this lookup miss, which the
+	// classifier gates closed.
+	if decoded, err := url.PathUnescape(requestPath); err == nil {
+		requestPath = decoded
 	}
 
 	reg, err := h.Registry()

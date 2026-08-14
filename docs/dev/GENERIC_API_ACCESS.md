@@ -185,6 +185,17 @@ declared delete into a create. The live E2E test asserts precisely this invarian
 across every operation the environment publishes — no verdict is ever looser than
 the method's floor.
 
+**Accepted tradeoff, eyes open:** for POST, gate correctness in a `readonly`
+context depends entirely on the accuracy of the specification the environment
+serves at request time — a POST is admitted as a read exactly when the document
+declares only `:read` scopes for it. This is deliberate. Any stricter POST floor
+is wrong in both directions (it refuses the DQL API's read-only POSTs, and it
+still under-gates the POST that deletes), and the specification is the
+environment's own statement about its own endpoint. An environment that
+misdeclares a mutating POST as `:read` is lying to every client, not just this
+one — but it is worth stating that the gate inherits that lie rather than
+detecting it.
+
 ### Unknown means delete
 
 When no operation matched — the path belongs to no listed API, the specification
@@ -216,6 +227,27 @@ the command it shadows.** That is the failure mode the table exists to prevent, 
 It currently holds three entries (bucket deletion, bucket truncation, record
 deletion). Add one whenever an irreversible endpoint's destructiveness is invisible
 in its URL.
+
+**The table matches spellings, not just strings.** The server-side router
+percent-decodes and normalizes a path before routing, so
+`bucket-definitions/foo%3Atruncate`, `x/../bucket-definitions/foo`, and
+`management//v1/bucket-definitions/foo` all reach the endpoint the canonical
+spelling names — and a table matched only against the literal request text
+would gate each of them one level too low. Two mechanisms close this:
+
+1. `escalateDestructive` matches every *routable spelling* of the path — the
+   literal text, each successive percent-decoding (to a bounded fixpoint, for
+   double-encoding), and the dot-segment/duplicate-slash-normalized form of
+   each. This is safe precisely because escalation only ever raises the gate.
+2. `exec api` refuses any spelling that changes **structure** under
+   normalization (`CanonicalRequestPath`): dot segments, duplicate or trailing
+   slashes, encoded separators, control characters, and router-delimiter
+   characters (`;`, `\`, decoded `?`/`#`). Benign percent-encoding (`%20` in an
+   identifier) is accepted, and classification runs on the *decoded* form —
+   the path the server routes — while the caller's spelling goes on the wire.
+
+`TestClassify_NormalizationDoesNotDefeatEscalation` and
+`TestExecAPIRefusesAmbiguousPathSpellings` pin both halves.
 
 ### Never the integration target
 
@@ -268,6 +300,10 @@ Path matching uses the longest base-path prefix at a segment boundary, so
 - **A body requires an explicit `-X`.** curl promotes `-d` to POST; dtctl refuses.
   Inferring the method would infer the safety operation, which contradicts the
   command's premise.
+- **`-H` cannot supply credentials.** `Authorization` and `Proxy-Authorization`
+  are refused: the context is the identity, dtctl attaches its credentials
+  itself, and a caller-supplied value would silently fight the client's own
+  auth (whichever writes last wins). Changing identity means changing context.
 - **The output protocol is declared, not sniffed.** A JSON body goes through the
   normal printer, so `-o json/yaml` and the agent envelope behave as they do
   everywhere else. Anything else is passed through **verbatim, even under

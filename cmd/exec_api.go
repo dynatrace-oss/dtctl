@@ -96,7 +96,13 @@ func runExecAPI(cmd *cobra.Command, args []string) error {
 		method = http.MethodGet
 	}
 
-	if err := validateRequestPath(requestPath); err != nil {
+	// canonicalPath is the spelling classification runs on; requestPath, the
+	// caller's spelling, is what goes on the wire. The two may differ only in
+	// benign percent-encoding — a spelling that changes *structure* under
+	// normalization is refused here, because it would let the gate classify a
+	// different endpoint than the server routes.
+	canonicalPath, err := validateRequestPath(requestPath)
+	if err != nil {
 		return err
 	}
 	// A body without an explicit method is refused rather than promoted to POST
@@ -128,11 +134,11 @@ func runExecAPI(cmd *cobra.Command, args []string) error {
 	}
 
 	handler := resapi.NewHandler(c)
-	apiName, op := handler.ResolveForRequest(method, requestPath)
-	class := resapi.Classify(method, requestPath, apiName, op)
+	apiName, op := handler.ResolveForRequest(method, canonicalPath)
+	class := resapi.Classify(method, canonicalPath, apiName, op)
 
-	nativeBase, native := resapi.NativeCoverageForPath(requestPath)
-	warnAboutTarget(requestPath, nativeBase, native.Command)
+	nativeBase, native := resapi.NativeCoverageForPath(canonicalPath)
+	warnAboutTarget(canonicalPath, nativeBase, native.Command)
 
 	if dryRun {
 		return printAPIDryRun(cfg, method, requestPath, headerMap, body, class, native.Command)
@@ -179,20 +185,23 @@ func runExecAPI(cmd *cobra.Command, args []string) error {
 }
 
 // validateRequestPath enforces that the target is a path on the configured
-// environment. An absolute URL is refused rather than followed: the caller's
-// credentials belong to the environment the context names, and a passthrough
-// that leaves it would send them somewhere else.
-func validateRequestPath(p string) error {
+// environment, and returns the canonical spelling classification must run on.
+// An absolute URL is refused rather than followed: the caller's credentials
+// belong to the environment the context names, and a passthrough that leaves
+// it would send them somewhere else. A path that changes under normalization
+// (dot segments, duplicate slashes, an encoded separator) is refused too — the
+// gate must classify the endpoint the server routes, not a spelling of it.
+func validateRequestPath(p string) (canonical string, err error) {
 	if resapi.IsAbsoluteURL(p) {
-		return fmt.Errorf("%q is an absolute URL; pass a path on the current environment instead "+
+		return "", fmt.Errorf("%q is an absolute URL; pass a path on the current environment instead "+
 			"(e.g. /platform/example/v1/things). dtctl sends the context's credentials, so it "+
 			"will not call another host", p)
 	}
 	if !strings.HasPrefix(p, "/") {
-		return fmt.Errorf("path must start with '/' (got %q); it is relative to the environment, "+
+		return "", fmt.Errorf("path must start with '/' (got %q); it is relative to the environment, "+
 			"e.g. /platform/example/v1/things", p)
 	}
-	return nil
+	return resapi.CanonicalRequestPath(p)
 }
 
 // readRequestBody resolves the -d value: inline text, @file, or @- for stdin —
@@ -225,6 +234,10 @@ func readRequestBody(data string) ([]byte, error) {
 
 // parseHeaderFlags parses -H 'Name: value' pairs, canonicalizing the name so a
 // caller-supplied content type is recognised however it was capitalized.
+//
+// Auth headers are refused: the context is the identity, and dtctl attaches
+// its credentials itself. A -H that replaced them would fight the client's own
+// auth silently — whichever writes last wins, and nothing would say so.
 func parseHeaderFlags(headers []string) (map[string]string, error) {
 	out := make(map[string]string, len(headers))
 	for _, h := range headers {
@@ -236,7 +249,12 @@ func parseHeaderFlags(headers []string) (map[string]string, error) {
 		if name == "" {
 			return nil, fmt.Errorf("invalid header %q: the name is empty", h)
 		}
-		out[http.CanonicalHeaderKey(name)] = strings.TrimSpace(value)
+		canonical := http.CanonicalHeaderKey(name)
+		if canonical == "Authorization" || canonical == "Proxy-Authorization" {
+			return nil, fmt.Errorf("refusing -H %s: dtctl sends the current context's credentials; "+
+				"to call as a different identity, switch contexts (dtctl ctx use <name>)", canonical)
+		}
+		out[canonical] = strings.TrimSpace(value)
 	}
 	return out, nil
 }
@@ -320,7 +338,8 @@ func safetyRefusalReason(err error) string {
 // dry run's output is exactly the thing that gets pasted into a bug report.
 func redactedHeaderLines(headers map[string]string) []string {
 	sensitive := map[string]bool{
-		"Authorization": true, "Cookie": true, "X-Api-Key": true, "Api-Token": true,
+		"Authorization": true, "Proxy-Authorization": true, "Cookie": true,
+		"X-Api-Key": true, "Api-Token": true,
 	}
 	out := make([]string, 0, len(headers))
 	for name, value := range headers {

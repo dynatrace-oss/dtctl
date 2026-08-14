@@ -313,6 +313,95 @@ func TestClassify_QueryStringDoesNotDefeatEscalation(t *testing.T) {
 		"a query string must not let a request slip past a path pattern")
 }
 
+// TestClassify_NormalizationDoesNotDefeatEscalation pins the escalation table
+// against re-spellings a server-side router reduces to the destructive path: the
+// router percent-decodes and normalizes before routing, so the request still
+// truncates or deletes the bucket, and the gate must see through the spelling.
+func TestClassify_NormalizationDoesNotDefeatEscalation(t *testing.T) {
+	cases := []struct {
+		name   string
+		method string
+		path   string
+	}{
+		{
+			name:   "percent-encoded colon in a truncate call",
+			method: "POST",
+			path:   "/platform/storage/management/v1/bucket-definitions/foo%3Atruncate",
+		},
+		{
+			name:   "double-encoded colon in a truncate call",
+			method: "POST",
+			path:   "/platform/storage/management/v1/bucket-definitions/foo%253Atruncate",
+		},
+		{
+			name:   "dot segment routed back into a bucket deletion",
+			method: "DELETE",
+			path:   "/platform/storage/management/v1/x/../bucket-definitions/foo",
+		},
+		{
+			name:   "duplicate slashes in a bucket deletion",
+			method: "DELETE",
+			path:   "/platform/storage/management//v1/bucket-definitions/foo",
+		},
+		{
+			name:   "encoded dot segments in a bucket deletion",
+			method: "DELETE",
+			path:   "/platform/storage/management/v1/x/%2E%2E/bucket-definitions/foo",
+		},
+		{
+			name:   "encoded record deletion",
+			method: "POST",
+			path:   "/platform/storage/management/v1/record%2Ddeletion",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Classify(tc.method, tc.path, "", nil)
+			require.Equal(t, safety.OperationDeleteBucket, c.SafetyOp,
+				"the spelling %q must not gate below the endpoint it routes to", tc.path)
+		})
+	}
+}
+
+// TestCanonicalRequestPath pins which spellings the passthrough accepts at all.
+// Benign percent-encoding is legitimate (an identifier can contain a space or a
+// colon) and canonicalizes to its decoded form; anything that changes structure
+// under normalization is refused, because the gate would classify a different
+// endpoint than the server routes.
+func TestCanonicalRequestPath(t *testing.T) {
+	accepted := []struct{ in, want string }{
+		{"/platform/example/v1/things", "/platform/example/v1/things"},
+		{"/platform/example/v1/things?filter=x%2Fy", "/platform/example/v1/things"},
+		{"/platform/example/v1/things/a%20b", "/platform/example/v1/things/a b"},
+		{"/platform/storage/management/v1/bucket-definitions/foo%3Atruncate",
+			"/platform/storage/management/v1/bucket-definitions/foo:truncate"},
+		{"/", "/"},
+	}
+	for _, tc := range accepted {
+		got, err := CanonicalRequestPath(tc.in)
+		require.NoError(t, err, "spelling %q must be accepted", tc.in)
+		require.Equal(t, tc.want, got)
+	}
+
+	refused := []string{
+		"/platform/example/v1/x/../things",       // dot segment
+		"/platform/example/v1//things",           // duplicate slash
+		"/platform/example/v1/things/",           // trailing slash
+		"/platform/example/v1/things%2Fsub",      // encoded separator
+		"/platform/example/v1/x/%2E%2E/things",   // encoded dot segment
+		"/platform/example/v1/things%00",         // control character
+		"/platform/example/v1/things;jsessionid", // path-parameter delimiter
+		"/platform/example/v1/things%3Fq",        // decoded query delimiter
+		"/platform/example/v1/things%zz",         // invalid encoding
+		"platform/example/v1/things",             // not rooted
+	}
+	for _, in := range refused {
+		_, err := CanonicalRequestPath(in)
+		require.Error(t, err, "spelling %q must be refused", in)
+	}
+}
+
 func TestClassify_CarriesScopesAndIdentity(t *testing.T) {
 	c := Classify("POST", "/platform/widget/v1/widgets", "Widget Service",
 		op("POST", "/widgets", "widget:widgets:write"))

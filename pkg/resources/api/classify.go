@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 	"fmt"
+	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
@@ -241,17 +243,28 @@ var destructivePatterns = []destructivePattern{
 // escalateDestructive raises the gate for a curated set of irreversible
 // endpoints. It returns the empty string when no pattern applies, and never
 // lowers an operation.
+//
+// Patterns are matched against every routable spelling of the path, not just
+// the literal one: the server-side router percent-decodes and normalizes
+// before routing, so `foo%3Atruncate`, `x/../bucket-definitions/foo`, and
+// `bucket-definitions//foo` all reach the endpoint the literal spelling would
+// have named — and a table that matched only the literal spelling would gate
+// them one level too low.
 func escalateDestructive(method, requestPath string, current safety.Operation) (safety.Operation, string) {
-	// Strip any query string: the classification is about the endpoint.
-	if i := strings.IndexAny(requestPath, "?#"); i >= 0 {
-		requestPath = requestPath[:i]
-	}
+	spellings := routableSpellings(requestPath)
 
 	for _, p := range destructivePatterns {
 		if !matchesMethod(p.methods, method) {
 			continue
 		}
-		if !p.path.MatchString(requestPath) {
+		matched := false
+		for _, s := range spellings {
+			if p.path.MatchString(s) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			continue
 		}
 		escalated := stricter(current, p.op)
@@ -261,6 +274,104 @@ func escalateDestructive(method, requestPath string, current safety.Operation) (
 		return escalated, p.why
 	}
 	return current, ""
+}
+
+// routableSpellings returns every path a server-side router could reduce the
+// request to: the spelling as given (query stripped), each successive
+// percent-decoding, and the dot-segment/duplicate-slash-normalized form of
+// each. A router decodes once; a misbehaving proxy chain can decode more than
+// once, so decoding runs to a bounded fixpoint.
+//
+// Matching all of them is safe precisely because escalation only ever raises
+// the gate: one spelling too many over-gates a bizarrely named resource, one
+// too few reopens the bucket under-block through an encoded or dotted
+// spelling.
+func routableSpellings(requestPath string) []string {
+	// Strip any query string: the classification is about the endpoint.
+	if i := strings.IndexAny(requestPath, "?#"); i >= 0 {
+		requestPath = requestPath[:i]
+	}
+
+	spellings := make([]string, 0, 8)
+	seen := make(map[string]bool)
+	add := func(s string) {
+		if !seen[s] {
+			seen[s] = true
+			spellings = append(spellings, s)
+		}
+	}
+
+	form := requestPath
+	for range 4 {
+		add(form)
+		add(path.Clean(form))
+		decoded, err := url.PathUnescape(form)
+		if err != nil || decoded == form {
+			break
+		}
+		form = decoded
+	}
+	add(form)
+	add(path.Clean(form))
+	return spellings
+}
+
+// CanonicalRequestPath returns the spelling of a request path that resolution
+// and classification must run on, refusing spellings that change meaning under
+// the normalization a server-side router performs before matching a route.
+//
+// The gate reasons about paths textually — the destructive table is a set of
+// patterns, specification templates are segment patterns — while the platform
+// router decodes and normalizes before routing. Any spelling a router reduces
+// to a *different* path is therefore a way to make the text the gate sees
+// disagree with the endpoint the server executes. Those spellings are refused
+// outright: no legitimate caller writes `x/../y`, `a//b`, or an encoded `/`,
+// and gating them "correctly" would mean guessing which router semantics the
+// environment uses.
+//
+// Benign percent-encoding is different: `%20` in an identifier is the only way
+// to spell a space, so it is accepted — and the *decoded* form is returned,
+// because that is the path the server routes on. `%3A` and `:` must classify
+// identically, or encoding a colon would spell `:truncate` past the
+// destructive table.
+func CanonicalRequestPath(requestPath string) (string, error) {
+	p := requestPath
+	if i := strings.IndexAny(p, "?#"); i >= 0 {
+		p = p[:i]
+	}
+	if !strings.HasPrefix(p, "/") {
+		return "", fmt.Errorf("path %q must start with '/'", p)
+	}
+
+	decoded, err := url.PathUnescape(p)
+	if err != nil {
+		return "", fmt.Errorf("invalid percent-encoding in path %q: %v", p, err)
+	}
+	if strings.Count(decoded, "/") != strings.Count(p, "/") {
+		return "", fmt.Errorf("path %q percent-encodes a '/': an encoded separator makes the routed "+
+			"endpoint ambiguous, so dtctl refuses it — spell path separators literally", p)
+	}
+	for _, r := range decoded {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("path %q contains a control character after decoding; that is not a "+
+				"spellable endpoint", p)
+		}
+	}
+	// ';' is a path-parameter delimiter to servlet routers, '\' a separator to
+	// others, and a decoded '?' or '#' is indistinguishable from a query or
+	// fragment delimiter once the path is inspected as text. Each one makes the
+	// endpoint the gate classifies diverge from the endpoint a router may
+	// route, and none appears in a legitimate platform identifier.
+	if i := strings.IndexAny(decoded, `;\?#`); i >= 0 {
+		return "", fmt.Errorf("path %q contains %q, which routers treat as a delimiter: the routed "+
+			"endpoint would be ambiguous, so dtctl refuses it", p, decoded[i])
+	}
+	if cleaned := path.Clean(decoded); cleaned != decoded {
+		return "", fmt.Errorf("path %q normalizes to %q: dot segments and duplicate or trailing slashes "+
+			"make the gate see a different endpoint than the server routes, so dtctl refuses the "+
+			"spelling — write the path canonically", p, cleaned)
+	}
+	return decoded, nil
 }
 
 func matchesMethod(methods []string, method string) bool {

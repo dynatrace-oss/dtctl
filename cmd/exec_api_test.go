@@ -120,6 +120,64 @@ func TestExecAPIDoesNotUndercutTheCommandItShadows(t *testing.T) {
 	require.False(t, env.called(http.MethodDelete, path))
 }
 
+// TestExecAPIEncodedSpellingDoesNotDefeatTheGate mirrors
+// TestExecAPIDoesNotUndercutTheCommandItShadows for a percent-encoded spelling:
+// the server router decodes before routing, so `foo%3Atruncate` truncates the
+// bucket exactly as `foo:truncate` would, and it must be gated identically.
+func TestExecAPIEncodedSpellingDoesNotDefeatTheGate(t *testing.T) {
+	const path = "/platform/storage/management/v1/bucket-definitions/custom_example%3Atruncate"
+	env := newMockEnvironmentAt(t, "readwrite-all")
+
+	code, _, errOut := runAPI(t, []string{"exec", "api", path, "-X", "POST"}, RunOptions{})
+
+	require.NotZero(t, code)
+	require.Contains(t, errOut, "dangerously-unrestricted",
+		"an encoded colon must not gate a truncate below the literal spelling")
+	require.False(t, env.called(http.MethodPost, path))
+}
+
+// TestExecAPIRefusesAmbiguousPathSpellings pins that a path which changes under
+// normalization never becomes a request: dot segments, duplicate slashes, and
+// encoded separators are the spellings that make the gate classify a different
+// endpoint than the server routes, so they are refused outright — before any
+// client is built or any request is spent.
+func TestExecAPIRefusesAmbiguousPathSpellings(t *testing.T) {
+	env := newMockEnvironmentAt(t, "dangerously-unrestricted")
+
+	for _, target := range []string{
+		"/platform/storage/management/v1/x/../bucket-definitions/foo",
+		"/platform/storage/management//v1/bucket-definitions/foo",
+		"/platform/widget/v1/widgets%2Fsub",
+		"/platform/widget/v1/widgets/",
+		"/platform/widget/v1/widgets;jsessionid=x",
+	} {
+		code, _, errOut := runAPI(t, []string{"exec", "api", target}, RunOptions{})
+		require.NotZero(t, code, "spelling %q must be refused", target)
+		require.NotEmpty(t, errOut)
+	}
+	require.Zero(t, env.requestCount(), "a refused spelling must not cost a request")
+}
+
+// TestExecAPIRefusesCallerSuppliedAuthHeaders pins that -H cannot supply or
+// replace credentials. The context is the identity; a caller-supplied
+// Authorization would silently fight the client's own auth.
+func TestExecAPIRefusesCallerSuppliedAuthHeaders(t *testing.T) {
+	env := newMockEnvironmentAt(t, "readonly")
+
+	for _, header := range []string{
+		"Authorization: Bearer sneaky",
+		"authorization: Bearer sneaky",
+		"Proxy-Authorization: Basic sneaky",
+	} {
+		code, _, errOut := runAPI(t, []string{
+			"exec", "api", "/platform/widget/v1/widgets", "-H", header,
+		}, RunOptions{})
+		require.NotZero(t, code, "header %q must be refused", header)
+		require.Contains(t, errOut, "context", "the refusal must point at contexts as the way to change identity")
+	}
+	require.Zero(t, env.requestCount(), "the refusal must precede every request")
+}
+
 // TestExecAPIRefusesToInferAMethod pins that a body does not promote a request to
 // POST the way curl does. Inferring the method would infer the safety operation,
 // which is the one thing this command must never do.
@@ -196,13 +254,16 @@ func TestExecAPIBodyFromStdinUsesTheStreamSeam(t *testing.T) {
 
 // TestExecAPIDryRunShowsTheVerdictWithoutSendingOrLeaking pins the two properties
 // of --dry-run: nothing is sent, and the output is safe to paste into a bug report
-// even when the caller passed a credential in a header.
+// even when the caller passed a credential in a header. (Authorization itself is
+// refused before it gets this far — see
+// TestExecAPIRefusesCallerSuppliedAuthHeaders — so the credential here rides in a
+// header that is still permitted.)
 func TestExecAPIDryRunShowsTheVerdictWithoutSendingOrLeaking(t *testing.T) {
 	env := newMockEnvironmentAt(t, "readonly")
 
 	code, out, errOut := runAPI(t, []string{
 		"exec", "api", "/platform/widget/v1/widgets", "-X", "POST", "-d", `{"name":"x"}`,
-		"-H", "Authorization: Bearer super-secret", "--dry-run",
+		"-H", "X-Api-Key: super-secret", "--dry-run",
 	}, RunOptions{})
 
 	require.Zero(t, code, errOut)
