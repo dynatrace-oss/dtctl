@@ -127,7 +127,14 @@ func TestPluginEnv_StripsCredentialEnvVars(t *testing.T) {
 	env := pluginEnv([]string{"--plain"})
 
 	joined := strings.Join(env, "\n")
-	for _, forbidden := range []string{"DTCTL_TOKEN=", "DT_API_TOKEN=", "DTCTL_ACCOUNT_TOKEN=", "SECRET"} {
+	// Scan for the planted credential *values*, not a bare substring like
+	// "SECRET": the plugin env inherits the host environment, and any machine
+	// exporting e.g. AWS_SECRET_ACCESS_KEY would trip a substring match on the
+	// variable's name alone.
+	for _, forbidden := range []string{
+		"DTCTL_TOKEN=", "DT_API_TOKEN=", "DTCTL_ACCOUNT_TOKEN=",
+		"dt0s16.SECRET", "dt0c01.SECRET",
+	} {
 		if strings.Contains(joined, forbidden) {
 			t.Errorf("credential material leaked into plugin env (%s)", forbidden)
 		}
