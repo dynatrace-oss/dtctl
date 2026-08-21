@@ -26,10 +26,15 @@ description, kind) joined from the metrics catalog.
 Each record represents a unique timeseries tuple (metric key + dimension
 combination). Metadata fields are prefixed with "metadata.".
 
-Value types for --dimension:
-  strings must be double-quoted:  key="value"
-  booleans and integers unquoted: failed=false  http.response.status_code=200
-  smartscape entity IDs detected: dt.smartscape.service=SERVICE-HEXID16
+Two dimension filter flags are available:
+
+  --string-dimension key=value
+    Always treated as a string match (~ operator). No inner quoting needed.
+    Use this when the dimension value is a plain string or entity ID.
+
+  --dimension key=value
+    Typed: booleans and integers unquoted, strings must be double-quoted.
+    Smartscape entity IDs are auto-detected and need no quotes.
 
 Examples:
   # List all metric timeseries with metadata
@@ -38,17 +43,20 @@ Examples:
   # Filter by metric keys
   dtctl get metrics --metric-keys dt.service.request.count,dt.service.messaging.process.count
 
-  # Filter by dimensions
-  dtctl get metrics --dimension dt.smartscape.service=SERVICE-440469AFB753DD1A
-  dtctl get metrics --dimension 'dt.process_group.detected_name="com.example.MyService"'
+  # Filter by string dimensions (no quoting needed)
+  dtctl get metrics --string-dimension dt.smartscape.service=SERVICE-440469AFB753DD1A
+  dtctl get metrics --string-dimension dt.process_group.detected_name=com.example.MyService
+
+  # Filter by typed dimensions (booleans/integers unquoted, strings double-quoted)
   dtctl get metrics --dimension failed=false
   dtctl get metrics --dimension http.response.status_code=200
+  dtctl get metrics --dimension 'endpoint.name="POST /checkout"'
 
   # Combine filters
   dtctl get metrics \
-    --metric-keys dt.service.request.count,dt.service.messaging.process.count \
-    --dimension dt.smartscape.service=SERVICE-440469AFB753DD1A \
-    --dimension 'dt.process_group.detected_name="com.example.MyService"'
+    --metric-keys dt.service.request.count \
+    --string-dimension dt.smartscape.service=SERVICE-440469AFB753DD1A \
+    --string-dimension dt.process_group.detected_name=com.example.MyService
 
   # Output as JSON
   dtctl get metrics -o json
@@ -61,8 +69,9 @@ Examples:
 
 		metricKeys, _ := cmd.Flags().GetStringSlice("metric-keys")
 		dimensions, _ := cmd.Flags().GetStringArray("dimension")
+		stringDimensions, _ := cmd.Flags().GetStringArray("string-dimension")
 
-		query, err := buildMetricsQuery(metricKeys, dimensions)
+		query, err := buildMetricsQuery(metricKeys, dimensions, stringDimensions)
 		if err != nil {
 			return err
 		}
@@ -77,7 +86,7 @@ Examples:
 	},
 }
 
-func buildMetricsQuery(metricKeys []string, dimensions []string) (string, error) {
+func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimensions []string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("metrics")
 
@@ -92,15 +101,22 @@ func buildMetricsQuery(metricKeys []string, dimensions []string) (string, error)
 		sb.WriteString("})")
 	}
 
-	if len(dimensions) > 0 {
-		filters := make([]string, 0, len(dimensions))
-		for _, dim := range dimensions {
-			f, err := dimensionFilter(dim)
-			if err != nil {
-				return "", err
-			}
-			filters = append(filters, f)
+	var filters []string
+	for _, dim := range dimensions {
+		f, err := dimensionFilter(dim)
+		if err != nil {
+			return "", err
 		}
+		filters = append(filters, f)
+	}
+	for _, dim := range stringDimensions {
+		f, err := stringDimensionFilter(dim)
+		if err != nil {
+			return "", err
+		}
+		filters = append(filters, f)
+	}
+	if len(filters) > 0 {
 		sb.WriteString("\n| filter ")
 		sb.WriteString(strings.Join(filters, " and "))
 	}
@@ -108,6 +124,21 @@ func buildMetricsQuery(metricKeys []string, dimensions []string) (string, error)
 	sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
 
 	return sb.String(), nil
+}
+
+// stringDimensionFilter converts a key=value flag into a DQL ~ filter.
+// The value is always treated as a string — no inner quoting required.
+func stringDimensionFilter(dim string) (string, error) {
+	eqIdx := strings.Index(dim, "=")
+	if eqIdx < 0 {
+		return "", fmt.Errorf("invalid --string-dimension %q: expected key=value", dim)
+	}
+	key := strings.TrimSpace(dim[:eqIdx])
+	val := strings.TrimSpace(dim[eqIdx+1:])
+	if key == "" {
+		return "", fmt.Errorf("invalid --string-dimension %q: key must not be empty", dim)
+	}
+	return fmt.Sprintf("%s ~ %q", key, val), nil
 }
 
 // dimensionFilter converts a key=value flag into a DQL filter expression.
@@ -148,6 +179,6 @@ func dimensionFilter(dim string) (string, error) {
 
 func init() {
 	getMetricsCmd.Flags().StringSlice("metric-keys", nil, "filter by metric keys (comma-separated)")
-	getMetricsCmd.Flags().StringArray("dimension", nil, `filter by dimension (key=value, repeatable)
-strings must be quoted: key="value"; booleans/integers unquoted: failed=false`)
+	getMetricsCmd.Flags().StringArray("dimension", nil, `filter by dimension (key=value, repeatable); strings must be double-quoted: key="value"; booleans/integers unquoted`)
+	getMetricsCmd.Flags().StringArray("string-dimension", nil, "filter by string dimension (key=value, repeatable); value always treated as string, no quoting needed")
 }
