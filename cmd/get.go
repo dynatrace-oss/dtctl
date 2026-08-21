@@ -40,6 +40,7 @@ Supported resources:
   wfe-task-result         extensions (ext)          extension-configs (extcfg)
   documents (doc)         anomaly-detectors (ad)    hub-extensions
   hub-extension-releases  apis
+  metrics
 
 Use 'dtctl get <resource> --help' for resource-specific options.`,
 	Example: `  # List all workflows
@@ -153,4 +154,5 @@ func init() {
 	getCmd.AddCommand(getHubExtensionsCmd)
 	getCmd.AddCommand(getHubExtensionReleasesCmd)
 	getCmd.AddCommand(getAPIsCmd)
+	getCmd.AddCommand(getMetricsCmd)
 }
