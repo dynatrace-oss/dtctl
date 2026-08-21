@@ -119,8 +119,8 @@ func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimension
 		sb.WriteString(strings.Join(filters, " and "))
 	}
 
-	sb.WriteString("\n| dedup metric.key")
 	sb.WriteString("\n| fields metric.key")
+	sb.WriteString("\n| dedup metric.key")
 
 	if wide {
 		sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" | fields metric.key, name, unit, kind, description ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
