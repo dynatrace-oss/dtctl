@@ -20,13 +20,14 @@ var getMetricsCmd = &cobra.Command{
 	Use:     "metrics",
 	Aliases: []string{"metric"},
 	Short:   "List available metric timeseries with metadata",
-	Long: `List available metric timeseries, enriched with metadata (name, unit,
-description, kind) joined from the metrics catalog.
+	Long: `List available metric timeseries, enriched with catalog metadata via a
+left-outer join on metric.key.
 
 Each record represents a unique timeseries tuple (metric key + dimension
-combination). Compact metadata fields (name, unit, kind) are joined from the
-catalog automatically and prefixed with "metadata.". Use --include-metadata to
-also include the verbose fields (description, dimensions schema).
+combination). Metadata fields are prefixed with "metadata.".
+
+Default output includes metadata.unit and metadata.kind.
+Use -o wide to also include metadata.name and metadata.description.
 
 Two dimension filter flags are available:
 
@@ -39,7 +40,7 @@ Two dimension filter flags are available:
     Smartscape entity IDs are auto-detected and need no quotes.
 
 Examples:
-  # List all metric timeseries with metadata
+  # List all metric timeseries
   dtctl get metrics
 
   # Filter by metric keys
@@ -54,13 +55,10 @@ Examples:
   dtctl get metrics --dimension http.response.status_code=200
   dtctl get metrics --dimension 'endpoint.name="POST /checkout"'
 
-  # Combine filters
-  dtctl get metrics \
-    --metric-keys dt.service.request.count \
-    --string-dimension dt.smartscape.service=SERVICE-440469AFB753DD1A \
-    --string-dimension dt.process_group.detected_name=com.example.MyService
+  # Wide output: adds name and description
+  dtctl get metrics --string-dimension dt.smartscape.service=SERVICE-440469AFB753DD1A -o wide
 
-  # Output as JSON
+  # JSON output
   dtctl get metrics -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,9 +70,8 @@ Examples:
 		metricKeys, _ := cmd.Flags().GetStringSlice("metric-keys")
 		dimensions, _ := cmd.Flags().GetStringArray("dimension")
 		stringDimensions, _ := cmd.Flags().GetStringArray("string-dimension")
-		includeMetadata, _ := cmd.Flags().GetBool("include-metadata")
 
-		query, err := buildMetricsQuery(metricKeys, dimensions, stringDimensions, includeMetadata)
+		query, err := buildMetricsQuery(metricKeys, dimensions, stringDimensions, outputFormat == "wide")
 		if err != nil {
 			return err
 		}
@@ -89,7 +86,7 @@ Examples:
 	},
 }
 
-func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimensions []string, includeMetadata bool) (string, error) {
+func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimensions []string, wide bool) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("metrics")
 
@@ -124,12 +121,12 @@ func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimension
 		sb.WriteString(strings.Join(filters, " and "))
 	}
 
-	if includeMetadata {
-		sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
+	if wide {
+		sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" | fields metric.key, name, unit, kind, description ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
 	} else {
-		sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" | fields metric.key, name, unit, kind ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
-		sb.WriteString("\n| fieldsRemove `metadata.metric.key`")
+		sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" | fields metric.key, unit, kind ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
 	}
+	sb.WriteString("\n| fieldsRemove `metadata.metric.key`")
 
 	return sb.String(), nil
 }
@@ -189,5 +186,4 @@ func init() {
 	getMetricsCmd.Flags().StringSlice("metric-keys", nil, "filter by metric keys (comma-separated)")
 	getMetricsCmd.Flags().StringArray("dimension", nil, `filter by dimension (key=value, repeatable); strings must be double-quoted: key="value"; booleans/integers unquoted`)
 	getMetricsCmd.Flags().StringArray("string-dimension", nil, "filter by string dimension (key=value, repeatable); value always treated as string, no quoting needed")
-	getMetricsCmd.Flags().Bool("include-metadata", false, "include verbose metadata fields (description, dimensions schema); compact fields (name, unit, kind) are always included")
 }
