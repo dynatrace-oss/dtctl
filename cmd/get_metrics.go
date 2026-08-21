@@ -24,7 +24,9 @@ var getMetricsCmd = &cobra.Command{
 description, kind) joined from the metrics catalog.
 
 Each record represents a unique timeseries tuple (metric key + dimension
-combination). Metadata fields are prefixed with "metadata.".
+combination). Compact metadata fields (name, unit, kind) are joined from the
+catalog automatically and prefixed with "metadata.". Use --include-metadata to
+also include the verbose fields (description, dimensions schema).
 
 Two dimension filter flags are available:
 
@@ -70,8 +72,9 @@ Examples:
 		metricKeys, _ := cmd.Flags().GetStringSlice("metric-keys")
 		dimensions, _ := cmd.Flags().GetStringArray("dimension")
 		stringDimensions, _ := cmd.Flags().GetStringArray("string-dimension")
+		includeMetadata, _ := cmd.Flags().GetBool("include-metadata")
 
-		query, err := buildMetricsQuery(metricKeys, dimensions, stringDimensions)
+		query, err := buildMetricsQuery(metricKeys, dimensions, stringDimensions, includeMetadata)
 		if err != nil {
 			return err
 		}
@@ -86,7 +89,7 @@ Examples:
 	},
 }
 
-func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimensions []string) (string, error) {
+func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimensions []string, includeMetadata bool) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("metrics")
 
@@ -121,7 +124,12 @@ func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimension
 		sb.WriteString(strings.Join(filters, " and "))
 	}
 
-	sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
+	if includeMetadata {
+		sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
+	} else {
+		sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" | fields metric.key, name, unit, kind ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
+		sb.WriteString("\n| fieldsRemove `metadata.metric.key`")
+	}
 
 	return sb.String(), nil
 }
@@ -181,4 +189,5 @@ func init() {
 	getMetricsCmd.Flags().StringSlice("metric-keys", nil, "filter by metric keys (comma-separated)")
 	getMetricsCmd.Flags().StringArray("dimension", nil, `filter by dimension (key=value, repeatable); strings must be double-quoted: key="value"; booleans/integers unquoted`)
 	getMetricsCmd.Flags().StringArray("string-dimension", nil, "filter by string dimension (key=value, repeatable); value always treated as string, no quoting needed")
+	getMetricsCmd.Flags().Bool("include-metadata", false, "include verbose metadata fields (description, dimensions schema); compact fields (name, unit, kind) are always included")
 }
