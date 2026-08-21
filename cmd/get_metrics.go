@@ -143,7 +143,7 @@ func dimensionFilter(dim string) (string, error) {
 	if _, err := strconv.ParseInt(val, 10, 64); err == nil {
 		return fmt.Sprintf("%s == %s", key, val), nil
 	}
-	return "", fmt.Errorf("--dimension value %q is ambiguous: wrap strings in double quotes (e.g. key=%q)", val, val)
+	return "", fmt.Errorf("--dimension value %q is ambiguous: wrap string values in double quotes, e.g. --dimension '%s=\"%s\"'", val, key, val)
 }
 
 func init() {
