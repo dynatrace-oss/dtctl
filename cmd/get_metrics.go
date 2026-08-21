@@ -19,47 +19,45 @@ var smartscapeIDPattern = regexp.MustCompile(`^[A-Z][A-Z_]*-[0-9A-F]{16}$`)
 var getMetricsCmd = &cobra.Command{
 	Use:     "metrics",
 	Aliases: []string{"metric"},
-	Short:   "List available metric timeseries with metadata",
-	Long: `List available metric timeseries, enriched with catalog metadata via a
-left-outer join on metric.key.
+	Short:   "List available metric keys with unit and kind",
+	Long: `List available metric keys, optionally scoped to a dimension filter,
+with unit and kind joined from the catalog.
 
-Each record represents a unique timeseries tuple (metric key + dimension
-combination). Metadata fields are prefixed with "metadata.".
+Each record represents one unique metric key. Use --dimension or
+--string-dimension to scope results to a specific service, host, or other
+dimension — the filter applies before deduplication, so only metric keys
+actually emitted by that entity are returned.
 
-Default output includes metadata.unit and metadata.kind.
-Use -o wide to also include metadata.name and metadata.description.
+Use -o wide to also include the metric display name and description.
 
 Two dimension filter flags are available:
 
   --string-dimension key=value
     Always treated as a string match (~ operator). No inner quoting needed.
-    Use this when the dimension value is a plain string or entity ID.
+    Preferred for entity IDs and plain strings (agent-friendly).
 
   --dimension key=value
     Typed: booleans and integers unquoted, strings must be double-quoted.
     Smartscape entity IDs are auto-detected and need no quotes.
 
 Examples:
-  # List all metric timeseries
+  # All metric keys in the environment
   dtctl get metrics
 
-  # Filter by metric keys
-  dtctl get metrics --metric-keys dt.service.request.count,dt.service.messaging.process.count
-
-  # Filter by string dimensions (no quoting needed)
+  # Metric keys available for a specific service
   dtctl get metrics --string-dimension dt.smartscape.service=SERVICE-440469AFB753DD1A
+
+  # Metric keys for a process group
   dtctl get metrics --string-dimension dt.process_group.detected_name=com.example.MyService
 
-  # Filter by typed dimensions (booleans/integers unquoted, strings double-quoted)
-  dtctl get metrics --dimension failed=false
-  dtctl get metrics --dimension http.response.status_code=200
-  dtctl get metrics --dimension 'endpoint.name="POST /checkout"'
+  # Narrow to specific keys
+  dtctl get metrics --metric-keys dt.service.request.count,dt.service.request.response_time
 
-  # Wide output: adds name and description
+  # Wide: adds display name and description
   dtctl get metrics --string-dimension dt.smartscape.service=SERVICE-440469AFB753DD1A -o wide
 
-  # JSON output
-  dtctl get metrics -o json
+  # JSON for agent consumption
+  dtctl get metrics --string-dimension dt.smartscape.service=SERVICE-440469AFB753DD1A -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, c, err := SetupClient()
@@ -120,6 +118,9 @@ func buildMetricsQuery(metricKeys []string, dimensions []string, stringDimension
 		sb.WriteString("\n| filter ")
 		sb.WriteString(strings.Join(filters, " and "))
 	}
+
+	sb.WriteString("\n| dedup metric.key")
+	sb.WriteString("\n| fields metric.key")
 
 	if wide {
 		sb.WriteString("\n| join [ load \"/dt/platform/metrics.metadata\" | fields metric.key, name, unit, kind, description ], on: { metric.key }, prefix: \"metadata.\", kind: leftOuter")
