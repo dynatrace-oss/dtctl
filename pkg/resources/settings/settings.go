@@ -209,14 +209,11 @@ func (h *Handler) Update(objectID string, value map[string]any) (*SettingsObject
 	return h.Get(obj.ObjectID)
 }
 
-// ValidateDelete validates a settings object deletion without applying it.
-// Auto-fetches the current schemaVersion for the If-Match header.
+// ValidateDelete checks that the settings object is reachable without deleting it.
+// It returns an error if the object cannot be fetched (e.g., not found, forbidden).
 func (h *Handler) ValidateDelete(objectID string) error {
-	obj, err := h.sdk.Get(context.Background(), objectID)
-	if err != nil {
-		return err
-	}
-	return h.sdk.ValidateDelete(context.Background(), objectID, obj.SchemaVersion)
+	_, err := h.Get(objectID)
+	return err
 }
 
 // Delete deletes a settings object.

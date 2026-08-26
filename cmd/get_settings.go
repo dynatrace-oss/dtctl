@@ -122,7 +122,7 @@ Examples:
   # Delete without confirmation
   dtctl delete settings <object-id> -y
 
-  # Validate deletion against the API without deleting
+  # Check the object exists and is reachable without deleting it
   dtctl delete settings <object-id> --validate-only
 `,
 	Aliases: []string{"setting"},
@@ -185,5 +185,5 @@ func init() {
 
 	// Delete settings flags
 	deleteSettingsCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
-	deleteSettingsCmd.Flags().Bool("validate-only", false, "validate the deletion against the API without deleting")
+	deleteSettingsCmd.Flags().Bool("validate-only", false, "check the object exists and is reachable; no deletion occurs")
 }

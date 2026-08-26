@@ -2263,7 +2263,7 @@ dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001
 # Delete without confirmation
 dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001 -y
 
-# Validate deletion against the API without deleting
+# Check the object exists and is reachable (no deletion occurs)
 dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001 --validate-only
 ```
 

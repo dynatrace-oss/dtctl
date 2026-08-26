@@ -572,15 +572,18 @@ func TestValidateCreate_ValidationFailed(t *testing.T) {
 func TestValidateDelete_Success(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/classic/environment-api/v2/settings/objects/obj-to-validate-delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			t.Errorf("unexpected DELETE — validate-only must not delete")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		if r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(SettingsObject{ObjectID: "obj-to-validate-delete", SchemaVersion: "1"})
-		} else if r.Method == http.MethodDelete {
-			if r.URL.Query().Get("validateOnly") != "true" {
-				t.Error("expected validateOnly=true query param")
-			}
-			w.WriteHeader(http.StatusNoContent)
+			return
 		}
+		t.Errorf("unexpected method %s", r.Method)
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
 	h, cleanup := newTestHandler(t, mux)
 	defer cleanup()
@@ -593,14 +596,9 @@ func TestValidateDelete_Success(t *testing.T) {
 
 func TestValidateDelete_ValidationFailed(t *testing.T) {
 	mux := http.NewServeMux()
+	// GET returns 404 — object is not reachable.
 	mux.HandleFunc("/platform/classic/environment-api/v2/settings/objects/obj-validate-fail", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(SettingsObject{ObjectID: "obj-validate-fail", SchemaVersion: "1"})
-		} else if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprint(w, "deletion not allowed")
-		}
+		w.WriteHeader(http.StatusNotFound)
 	})
 	h, cleanup := newTestHandler(t, mux)
 	defer cleanup()
@@ -611,7 +609,7 @@ func TestValidateDelete_ValidationFailed(t *testing.T) {
 	}
 }
 
-func TestValidateDelete_GetFails(t *testing.T) {
+func TestValidateDelete_NotFound(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/classic/environment-api/v2/settings/objects/not-found-obj", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -621,7 +619,21 @@ func TestValidateDelete_GetFails(t *testing.T) {
 
 	err := h.ValidateDelete("not-found-obj")
 	if err == nil {
-		t.Fatal("expected error from Get, got nil")
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestValidateDelete_Forbidden(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/classic/environment-api/v2/settings/objects/forbidden-obj", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	})
+	h, cleanup := newTestHandler(t, mux)
+	defer cleanup()
+
+	err := h.ValidateDelete("forbidden-obj")
+	if err == nil {
+		t.Fatal("expected error for forbidden object, got nil")
 	}
 }
 
