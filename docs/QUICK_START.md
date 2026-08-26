@@ -2262,9 +2262,6 @@ dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001
 
 # Delete without confirmation
 dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001 -y
-
-# Validate deletion against the API without deleting
-dtctl delete settings aaaaaaaa-bbbb-cccc-dddd-000000000001 --validate-only
 ```
 
 ### OpenPipeline Configuration Workflow
