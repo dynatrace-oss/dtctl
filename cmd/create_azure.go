@@ -27,6 +27,7 @@ var (
 	createAzureMonitoringConfigCredentials       string
 	createAzureMonitoringConfigLocationFiltering string
 	createAzureMonitoringConfigFeatureSets       string
+	createAzureMonitoringConfigCentral           bool
 )
 
 var createAzureProviderCmd = &cobra.Command{
@@ -159,23 +160,8 @@ Examples:
 			return fmt.Errorf("failed to determine extension version: %w", err)
 		}
 
-		payload := azuremonitoringconfig.AzureMonitoringConfig{
-			Scope: "integration-azure",
-			Value: azuremonitoringconfig.Value{
-				Enabled:     false,
-				Description: createAzureMonitoringConfigName,
-				Version:     version,
-				Azure: azuremonitoringconfig.AzureConfig{
-					DeploymentScope:           "SUBSCRIPTION",
-					ConfigurationMode:         "ADVANCED",
-					DeploymentMode:            "AUTOMATED",
-					SubscriptionFilteringMode: "INCLUDE",
-					Credentials:               []azuremonitoringconfig.Credential{credential},
-					LocationFiltering:         locations,
-				},
-				FeatureSets: featureSets,
-			},
-		}
+		payload := buildAzureMonitoringConfig(
+			createAzureMonitoringConfigName, version, credential, locations, featureSets, createAzureMonitoringConfigCentral)
 
 		body, err := json.Marshal(payload)
 		if err != nil {
@@ -191,6 +177,28 @@ Examples:
 		output.PrintInfo("Run 'dtctl enable azure monitoring --name %q' to enable it", createAzureMonitoringConfigName)
 		return nil
 	},
+}
+
+func buildAzureMonitoringConfig(name, version string, credential azuremonitoringconfig.Credential,
+	locations, featureSets []string, central bool) azuremonitoringconfig.AzureMonitoringConfig {
+	return azuremonitoringconfig.AzureMonitoringConfig{
+		Scope: "integration-azure",
+		Value: azuremonitoringconfig.Value{
+			Enabled:     false,
+			Description: name,
+			Version:     version,
+			Azure: azuremonitoringconfig.AzureConfig{
+				UseIngestEnrichmentConfig: centralEnrichmentIntent(central),
+				DeploymentScope:           "SUBSCRIPTION",
+				ConfigurationMode:         "ADVANCED",
+				DeploymentMode:            "AUTOMATED",
+				SubscriptionFilteringMode: "INCLUDE",
+				Credentials:               []azuremonitoringconfig.Credential{credential},
+				LocationFiltering:         locations,
+			},
+			FeatureSets: featureSets,
+		},
+	}
 }
 
 func printFederatedCreateInstructions(baseURL, objectID, connectionName, issuerOverride string) {
@@ -268,6 +276,7 @@ func init() {
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations (default: all from schema)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets (default: all *_essential from schema)")
 	createAzureMonitoringConfigCmd.Flags().StringVar(&createAzureMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
+	addCentralEnrichmentFlag(createAzureMonitoringConfigCmd, &createAzureMonitoringConfigCentral)
 	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("name")
 	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("credentials")
 }

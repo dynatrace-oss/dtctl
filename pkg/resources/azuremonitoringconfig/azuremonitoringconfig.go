@@ -81,6 +81,7 @@ type Value struct {
 }
 
 type AzureConfig struct {
+	UseIngestEnrichmentConfig *bool             `json:"useIngestEnrichmentConfig,omitempty" yaml:"useIngestEnrichmentConfig,omitempty"`
 	DeploymentScope           string            `json:"deploymentScope,omitempty"`
 	SubscriptionFilteringMode string            `json:"subscriptionFilteringMode,omitempty"`
 	Credentials               []Credential      `json:"credentials"`

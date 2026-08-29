@@ -241,3 +241,33 @@ func TestListPaginationStitchesPages(t *testing.T) {
 		t.Fatalf("got %d calls / %d items, want 3/3", calls, len(items))
 	}
 }
+
+func TestCentralEnrichmentModeJSON(t *testing.T) {
+	legacy := false
+	central := true
+	for _, test := range []struct {
+		name string
+		mode *bool
+	}{
+		{name: "omitted"},
+		{name: "legacy", mode: &legacy},
+		{name: "central", mode: &central},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			encoded, err := json.Marshal(AzureConfig{UseIngestEnrichmentConfig: test.mode})
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			var decoded AzureConfig
+			if err := json.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			if (decoded.UseIngestEnrichmentConfig != nil) != (test.mode != nil) {
+				t.Fatalf("mode presence did not survive round trip: %s", encoded)
+			}
+			if test.mode != nil && *decoded.UseIngestEnrichmentConfig != *test.mode {
+				t.Errorf("mode = %v, want %v", *decoded.UseIngestEnrichmentConfig, *test.mode)
+			}
+		})
+	}
+}

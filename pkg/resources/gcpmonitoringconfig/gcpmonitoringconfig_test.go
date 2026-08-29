@@ -163,3 +163,29 @@ func TestListPaginationStitchesPages(t *testing.T) {
 		t.Fatalf("got %d calls / %d items, want 3/3", calls, len(items))
 	}
 }
+
+func TestCentralEnrichmentAndDtLabelsJSON(t *testing.T) {
+	central := true
+	config := GoogleCloudConfig{
+		UseIngestEnrichmentConfig: &central,
+		DtLabelsEnrichment: map[string]DtLabelMapping{
+			"dt.cost.product": {LabelKey: "product"},
+		},
+	}
+
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var decoded GoogleCloudConfig
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.UseIngestEnrichmentConfig == nil || !*decoded.UseIngestEnrichmentConfig {
+		t.Fatalf("central mode did not survive round trip: %s", encoded)
+	}
+	mapping, ok := decoded.DtLabelsEnrichment["dt.cost.product"]
+	if !ok || mapping.LabelKey != "product" {
+		t.Fatalf("dtLabelsEnrichment did not survive round trip: %#v", decoded.DtLabelsEnrichment)
+	}
+}

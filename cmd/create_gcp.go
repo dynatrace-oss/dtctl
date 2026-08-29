@@ -20,6 +20,7 @@ var (
 	createGCPMonitoringConfigCredentials       string
 	createGCPMonitoringConfigLocationFiltering string
 	createGCPMonitoringConfigFeatureSets       string
+	createGCPMonitoringConfigCentral           bool
 )
 
 var createGCPConnectionCmd = &cobra.Command{
@@ -178,28 +179,8 @@ Examples:
 			return fmt.Errorf("failed to determine extension version: %w", err)
 		}
 
-		payload := gcpmonitoringconfig.GCPMonitoringConfig{
-			Scope: "integration-gcp",
-			Value: gcpmonitoringconfig.Value{
-				Enabled:     false,
-				Description: createGCPMonitoringConfigName,
-				Version:     version,
-				GoogleCloud: gcpmonitoringconfig.GoogleCloudConfig{
-					Credentials:                []gcpmonitoringconfig.Credential{credential},
-					LocationFiltering:          locations,
-					ProjectFiltering:           []string{},
-					FolderFiltering:            []string{},
-					TagFiltering:               []gcpmonitoringconfig.TagFilter{},
-					LabelFiltering:             []gcpmonitoringconfig.TagFilter{},
-					TagEnrichment:              []string{},
-					LabelEnrichment:            []string{},
-					ObservabilityScopesEnabled: false,
-					SmartscapeConfiguration:    gcpmonitoringconfig.FlagConfig{Enabled: true},
-					Resources:                  []gcpmonitoringconfig.MetricSource{},
-				},
-				FeatureSets: featureSets,
-			},
-		}
+		payload := buildGCPMonitoringConfig(
+			createGCPMonitoringConfigName, version, credential, locations, featureSets, createGCPMonitoringConfigCentral)
 
 		body, err := json.Marshal(payload)
 		if err != nil {
@@ -217,6 +198,33 @@ Examples:
 	},
 }
 
+func buildGCPMonitoringConfig(name, version string, credential gcpmonitoringconfig.Credential,
+	locations, featureSets []string, central bool) gcpmonitoringconfig.GCPMonitoringConfig {
+	return gcpmonitoringconfig.GCPMonitoringConfig{
+		Scope: "integration-gcp",
+		Value: gcpmonitoringconfig.Value{
+			Enabled:     false,
+			Description: name,
+			Version:     version,
+			GoogleCloud: gcpmonitoringconfig.GoogleCloudConfig{
+				UseIngestEnrichmentConfig:  centralEnrichmentIntent(central),
+				Credentials:                []gcpmonitoringconfig.Credential{credential},
+				LocationFiltering:          locations,
+				ProjectFiltering:           []string{},
+				FolderFiltering:            []string{},
+				TagFiltering:               []gcpmonitoringconfig.TagFilter{},
+				LabelFiltering:             []gcpmonitoringconfig.TagFilter{},
+				TagEnrichment:              []string{},
+				LabelEnrichment:            []string{},
+				ObservabilityScopesEnabled: false,
+				SmartscapeConfiguration:    gcpmonitoringconfig.FlagConfig{Enabled: true},
+				Resources:                  []gcpmonitoringconfig.MetricSource{},
+			},
+			FeatureSets: featureSets,
+		},
+	}
+}
+
 func init() {
 	createGCPProviderCmd.AddCommand(createGCPConnectionCmd)
 	createGCPProviderCmd.AddCommand(createGCPMonitoringConfigCmd)
@@ -230,6 +238,7 @@ func init() {
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations (default: all from schema)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets (default: all *_essential from schema)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
+	addCentralEnrichmentFlag(createGCPMonitoringConfigCmd, &createGCPMonitoringConfigCentral)
 	_ = createGCPMonitoringConfigCmd.MarkFlagRequired("name")
 	_ = createGCPMonitoringConfigCmd.MarkFlagRequired("credentials")
 }
