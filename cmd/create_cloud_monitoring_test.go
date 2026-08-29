@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
-	"github.com/spf13/cobra"
 )
 
 func TestCloudMonitoringCentralEnrichmentFlagsAreHiddenAndDisabledByDefault(t *testing.T) {
