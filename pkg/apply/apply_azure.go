@@ -163,6 +163,10 @@ func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 // applyAzureMonitoringConfig applies Azure monitoring configuration
 func (a *Applier) applyAzureMonitoringConfig(data []byte) (ApplyResult, error) {
 	handler := azuremonitoringconfig.NewHandler(a.client)
+	document, err := parseCloudMonitoringDocument(data, "azure")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Azure monitoring config JSON: %w", err)
+	}
 
 	// Unmarshal to struct to handle casing properly via json tags
 	var config azuremonitoringconfig.AzureMonitoringConfig
@@ -200,7 +204,7 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) (ApplyResult, error) {
 		}
 
 		// New creation
-		cleanData, err := json.Marshal(config)
+		cleanData, err := document.marshal(config, config.Value.Azure)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal clean config: %w", err)
 		}
@@ -235,7 +239,7 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) (ApplyResult, error) {
 		}
 	}
 
-	cleanData, err := json.Marshal(config)
+	cleanData, err := document.marshal(config, config.Value.Azure)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal clean config: %w", err)
 	}

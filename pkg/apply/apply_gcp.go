@@ -117,6 +117,10 @@ func (a *Applier) applyGCPConnection(data []byte) ([]ApplyResult, error) {
 // applyGCPMonitoringConfig applies GCP monitoring configuration
 func (a *Applier) applyGCPMonitoringConfig(data []byte) (ApplyResult, error) {
 	handler := gcpmonitoringconfig.NewHandler(a.client)
+	document, err := parseCloudMonitoringDocument(data, "googleCloud")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse GCP monitoring config JSON: %w", err)
+	}
 
 	var config gcpmonitoringconfig.GCPMonitoringConfig
 	if err := json.Unmarshal(data, &config); err != nil {
@@ -151,7 +155,7 @@ func (a *Applier) applyGCPMonitoringConfig(data []byte) (ApplyResult, error) {
 			stderrWarn(&warnings, "Using latest extension version: %s", latestVersion)
 		}
 
-		cleanData, err := json.Marshal(config)
+		cleanData, err := document.marshal(config, config.Value.GoogleCloud)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal clean config: %w", err)
 		}
@@ -182,7 +186,7 @@ func (a *Applier) applyGCPMonitoringConfig(data []byte) (ApplyResult, error) {
 		config.Version = existing.Value.Version
 	}
 
-	cleanData, err := json.Marshal(config)
+	cleanData, err := document.marshal(config, config.Value.GoogleCloud)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal clean config: %w", err)
 	}

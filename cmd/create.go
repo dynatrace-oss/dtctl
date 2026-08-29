@@ -4,6 +4,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	// Change both values when Cluster direct central create is customer-released.
+	centralEnrichmentDefault = false
+	centralEnrichmentHidden  = true
+)
+
 // createCmd represents the create command
 var createCmd = &cobra.Command{
 	Use:   "create",
@@ -32,6 +38,20 @@ Supported resources:
   # Preview what would be created
   dtctl create workflow -f workflow.yaml --dry-run`,
 	RunE: requireSubcommand,
+}
+
+func centralEnrichmentIntent(enabled bool) *bool {
+	if !enabled {
+		return nil
+	}
+	return &enabled
+}
+
+func addCentralEnrichmentFlag(command *cobra.Command, target *bool) {
+	command.Flags().BoolVar(target, "central-enrichment", centralEnrichmentDefault, "Use central enrichment configuration")
+	if centralEnrichmentHidden {
+		_ = command.Flags().MarkHidden("central-enrichment")
+	}
 }
 
 func init() {

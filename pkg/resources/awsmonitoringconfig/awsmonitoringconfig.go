@@ -91,6 +91,7 @@ type Value struct {
 }
 
 type AWSConfig struct {
+	UseIngestEnrichmentConfig   *bool                     `json:"useIngestEnrichmentConfig,omitempty" yaml:"useIngestEnrichmentConfig,omitempty"`
 	DeploymentRegion            string                    `json:"deploymentRegion,omitempty"`
 	Credentials                 []Credential              `json:"credentials"`
 	RegionFiltering             []string                  `json:"regionFiltering"`
