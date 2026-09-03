@@ -31,6 +31,7 @@ type Coverage struct {
 // rather than misdirecting a caller.
 var nativeCoverage = map[string]Coverage{
 	"/platform/automation/v1":                   {"workflow", "dtctl get workflows"},
+	"/platform/automation/v1/scheduling-rules":  {"scheduling-rule", "dtctl get scheduling-rules"},
 	"/platform/document/v1":                     {"document", "dtctl get documents"},
 	"/platform/slo/v1":                          {"slo", "dtctl get slos"},
 	"/platform/storage/query/v1":                {"query", "dtctl query"},

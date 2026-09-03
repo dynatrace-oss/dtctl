@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/hook"
@@ -150,6 +151,7 @@ type ResourceType string
 
 const (
 	ResourceWorkflow              ResourceType = "workflow"
+	ResourceSchedulingRule        ResourceType = "scheduling-rule"
 	ResourceDashboard             ResourceType = "dashboard"
 	ResourceNotebook              ResourceType = "notebook"
 	ResourceSLO                   ResourceType = "slo"
@@ -335,6 +337,8 @@ func (a *Applier) applySingle(resourceType ResourceType, jsonData []byte, opts A
 	switch resourceType {
 	case ResourceWorkflow:
 		result, err = a.applyWorkflow(jsonData, opts)
+	case ResourceSchedulingRule:
+		result, err = a.applySchedulingRule(jsonData, opts)
 	case ResourceDashboard:
 		result, err = a.applyDocument(jsonData, "dashboard", opts)
 	case ResourceNotebook:
@@ -517,6 +521,11 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 	}
 
 	// Heuristic detection based on field presence
+	// Scheduling rules have an iCal RRULE in the "rule" field.
+	if rule, ok := raw["rule"].(string); ok && strings.HasPrefix(rule, "FREQ=") {
+		return ResourceSchedulingRule, false, nil
+	}
+
 	// Workflows have a "tasks" field; "trigger" may be absent for manual triggers
 	if _, hasTasks := raw["tasks"]; hasTasks {
 		return ResourceWorkflow, false, nil

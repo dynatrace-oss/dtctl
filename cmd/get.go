@@ -31,15 +31,15 @@ Results can be filtered with --mine and formatted with -o (json, yaml, wide, cha
 
 Supported resources:
   workflows (wf)          dashboards (dash, db)     notebooks (nb)
-  slos                    slo-templates             settings
-  settings-schemas        buckets (bkt)             apps
-  functions               intents                   notifications
-  users                   groups                    edgeconnect (ec)
-  sdk-versions            analyzers                 copilot-skills
-  lookup-tables (lu)      trash                     workflow-executions (wfe)
-  wfe-task-result         extensions (ext)          extension-configs (extcfg)
-  documents (doc)         anomaly-detectors (ad)    hub-extensions
-  hub-extension-releases  apis
+  scheduling-rules (sr)   slos                      slo-templates
+  settings                settings-schemas          buckets (bkt)
+  apps                    functions                 intents
+  notifications           users                     groups
+  edgeconnect (ec)        sdk-versions              analyzers
+  copilot-skills          lookup-tables (lu)        trash
+  workflow-executions (wfe)  wfe-task-result        extensions (ext)
+  extension-configs (extcfg) documents (doc)        anomaly-detectors (ad)
+  hub-extensions          hub-extension-releases    apis
 
 Use 'dtctl get <resource> --help' for resource-specific options.`,
 	Example: `  # List all workflows
@@ -122,6 +122,7 @@ func init() {
 
 	// Get subcommands (command definitions live in get_*.go files)
 	getCmd.AddCommand(getWorkflowsCmd)
+	getCmd.AddCommand(getSchedulingRulesCmd)
 	getCmd.AddCommand(getWorkflowExecutionsCmd)
 	getCmd.AddCommand(getWfeTaskResultCmd)
 	getCmd.AddCommand(getDashboardsCmd)

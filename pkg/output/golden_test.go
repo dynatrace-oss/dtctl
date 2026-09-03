@@ -30,6 +30,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherverify"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/platformtoken"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/previewprocessor"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/schedulingrule"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
@@ -2972,6 +2973,51 @@ func TestGolden_DescribeAPIOperations(t *testing.T) {
 				t.Fatalf("PrintList failed: %v", err)
 			}
 			assertGolden(t, "describe/api-operations-"+name, buf.String())
+		})
+	}
+}
+
+func schedulingRuleFixtures() []schedulingrule.SchedulingRule {
+	return []schedulingrule.SchedulingRule{
+		{
+			ID:          "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+			Title:       "Business Hours",
+			Timezone:    "UTC",
+			Description: "Monday to Friday, 9 AM to 5 PM",
+			Rule:        "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9,10,11,12,13,14,15,16",
+			Owner:       "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+			OwnerType:   "USER",
+		},
+		{
+			ID:        "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+			Title:     "Maintenance Window",
+			Timezone:  "Europe/Vienna",
+			Rule:      "FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=2",
+			Owner:     "8b9c0d1e-2f3a-4b5c-9d0e-1f2a3b4c5d6e",
+			OwnerType: "USER",
+		},
+	}
+}
+
+func TestGolden_GetSchedulingRules(t *testing.T) {
+	rules := schedulingRuleFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(rules); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/scheduling-rules-"+name, buf.String())
 		})
 	}
 }

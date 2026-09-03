@@ -67,6 +67,7 @@ var ResourceScopes = map[string]AccessScopes{
 	"workflow":           {Read: []string{"automation:workflows:read"}, Write: []string{"automation:workflows:write"}, Run: []string{"automation:workflows:run"}},
 	"workflow-execution": {Read: []string{"automation:workflows:read"}},
 	"wfe-task-result":    {Read: []string{"automation:workflows:read"}},
+	"scheduling-rule":    {Read: []string{"automation:rules:read"}, Write: []string{"automation:rules:write"}},
 
 	// Documents (dashboards / notebooks are Documents). Delete is a distinct
 	// scope (documents move to trash on delete).
@@ -286,6 +287,7 @@ func (s *scopeSet) addResource(resource string, accesses ...Access) {
 // included (readwrite-mine passes false).
 func (s *scopeSet) addReadTier(extended bool) {
 	s.addResource("workflow", AccessRead)
+	s.addResource("scheduling-rule", AccessRead)
 	s.addResource("dashboard", AccessRead)
 	s.add("document:direct-shares:read", "document:trash.documents:read")
 	s.addResource("slo", AccessRead)
@@ -321,6 +323,7 @@ func (s *scopeSet) addMineWrites() {
 	s.addResource("dashboard", AccessWrite, AccessDelete)
 	s.add("document:direct-shares:write", "document:direct-shares:delete", "document:trash.documents:restore")
 	s.addResource("workflow", AccessWrite, AccessRun)
+	s.addResource("scheduling-rule", AccessWrite)
 	s.addResource("slo", AccessWrite)
 	s.addResource("setting", AccessWrite)
 	s.addResource("extension", AccessWrite)
@@ -353,6 +356,7 @@ func (s *scopeSet) addAllExtras() {
 func (s *scopeSet) addUnrestricted() {
 	// reads (environment shares replace direct shares)
 	s.addResource("workflow", AccessRead)
+	s.addResource("scheduling-rule", AccessRead)
 	s.addResource("dashboard", AccessRead)
 	s.add("document:environment-shares:read", "document:trash.documents:read")
 	s.addResource("slo", AccessRead)
@@ -383,6 +387,7 @@ func (s *scopeSet) addUnrestricted() {
 	s.add("document:environment-shares:write")
 	s.add("document:trash.documents:restore", "document:trash.documents:delete")
 	s.addResource("workflow", AccessWrite, AccessRun)
+	s.addResource("scheduling-rule", AccessWrite)
 	s.addResource("slo", AccessWrite)
 	s.addResource("setting", AccessWrite)
 	s.addResource("extension", AccessWrite)
