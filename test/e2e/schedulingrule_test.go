@@ -38,8 +38,11 @@ func TestSchedulingRuleLifecycle(t *testing.T) {
 	if retrieved.ID != created.ID {
 		t.Errorf("Retrieved scheduling rule ID mismatch: got %s, want %s", retrieved.ID, created.ID)
 	}
-	if retrieved.Rule == "" {
-		t.Error("Retrieved scheduling rule has an empty rule")
+	if retrieved.RuleType == "" {
+		t.Error("Retrieved scheduling rule has an empty ruleType")
+	}
+	if len(retrieved.RRule) == 0 {
+		t.Error("Retrieved rrule rule has an empty rrule body")
 	}
 	t.Logf("✓ Retrieved scheduling rule: %s", retrieved.Title)
 

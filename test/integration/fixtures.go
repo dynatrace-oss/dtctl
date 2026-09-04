@@ -38,8 +38,12 @@ func SchedulingRuleFixture(prefix string) []byte {
 	rule := map[string]interface{}{
 		"title":       fmt.Sprintf("%s-scheduling-rule", prefix),
 		"description": "Integration test scheduling rule",
-		"rule":        "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
-		"timezone":    "UTC",
+		"ruleType":    "rrule",
+		"rrule": map[string]interface{}{
+			"freq":      "WEEKLY",
+			"datestart": "2026-01-05",
+			"byday":     []string{"MO", "TU", "WE", "TH", "FR"},
+		},
 	}
 
 	data, _ := json.Marshal(rule)
@@ -51,8 +55,11 @@ func SchedulingRuleFixtureModified(prefix string) []byte {
 	rule := map[string]interface{}{
 		"title":       fmt.Sprintf("%s-scheduling-rule-modified", prefix),
 		"description": "Modified integration test scheduling rule",
-		"rule":        "FREQ=DAILY",
-		"timezone":    "Europe/Vienna",
+		"ruleType":    "rrule",
+		"rrule": map[string]interface{}{
+			"freq":      "DAILY",
+			"datestart": "2026-01-05",
+		},
 	}
 
 	data, _ := json.Marshal(rule)

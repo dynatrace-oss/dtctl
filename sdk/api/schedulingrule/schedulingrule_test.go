@@ -32,8 +32,8 @@ func TestList(t *testing.T) {
 		resp := SchedulingRuleList{
 			Count: 2,
 			Results: []SchedulingRule{
-				{ID: "sr-1", Title: "Business Hours", Rule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", Timezone: "UTC"},
-				{ID: "sr-2", Title: "Maintenance Window", Rule: "FREQ=MONTHLY;BYMONTHDAY=1", Timezone: "Europe/Vienna"},
+				{ID: "sr-1", Title: "Business Hours", RuleType: "rrule", RRule: map[string]interface{}{"freq": "WEEKLY"}},
+				{ID: "sr-2", Title: "Maintenance Window", RuleType: "grouping", GroupingRule: map[string]interface{}{"combine": []interface{}{"sr-1"}}},
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -74,7 +74,7 @@ func TestGet(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		rule := SchedulingRule{ID: "sr-1", Title: "Business Hours", Rule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", Timezone: "UTC"}
+		rule := SchedulingRule{ID: "sr-1", Title: "Business Hours", RuleType: "rrule", RRule: map[string]interface{}{"freq": "WEEKLY"}}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(rule)
 	})
@@ -110,14 +110,14 @@ func TestCreate(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		rule := SchedulingRule{ID: "sr-new", Title: "New Rule", Rule: "FREQ=DAILY", Timezone: "UTC"}
+		rule := SchedulingRule{ID: "sr-new", Title: "New Rule", RuleType: "rrule", RRule: map[string]interface{}{"freq": "DAILY"}}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(rule)
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	data := []byte(`{"title":"New Rule","rule":"FREQ=DAILY","timezone":"UTC"}`)
+	data := []byte(`{"title":"New Rule","ruleType":"rrule","rrule":{"freq":"DAILY","datestart":"2026-01-05"}}`)
 	result, err := h.Create(context.Background(), data)
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
@@ -134,13 +134,13 @@ func TestUpdate(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		rule := SchedulingRule{ID: "sr-1", Title: "Updated Rule", Rule: "FREQ=WEEKLY;BYDAY=MO", Timezone: "UTC"}
+		rule := SchedulingRule{ID: "sr-1", Title: "Updated Rule", RuleType: "rrule", RRule: map[string]interface{}{"freq": "WEEKLY"}}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(rule)
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	data := []byte(`{"title":"Updated Rule","rule":"FREQ=WEEKLY;BYDAY=MO","timezone":"UTC"}`)
+	data := []byte(`{"title":"Updated Rule","ruleType":"rrule","rrule":{"freq":"WEEKLY","byday":["MO"]}}`)
 	result, err := h.Update(context.Background(), "sr-1", data)
 	if err != nil {
 		t.Fatalf("Update() error: %v", err)
@@ -188,7 +188,7 @@ func newPagingMux(total int, reqs *[][2]string) *http.ServeMux {
 
 		var results []SchedulingRule
 		for i := offset; i < total && i < offset+limit; i++ {
-			results = append(results, SchedulingRule{ID: fmt.Sprintf("sr-%d", i)})
+			results = append(results, SchedulingRule{ID: fmt.Sprintf("sr-%d", i), RuleType: "rrule"})
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(SchedulingRuleList{Count: total, Results: results})
@@ -244,7 +244,7 @@ func TestList_TruncatesOverReturn(t *testing.T) {
 	mux.HandleFunc("/platform/automation/v1/scheduling-rules", func(w http.ResponseWriter, r *http.Request) {
 		results := make([]SchedulingRule, 10)
 		for i := range results {
-			results[i] = SchedulingRule{ID: fmt.Sprintf("sr-%d", i)}
+			results[i] = SchedulingRule{ID: fmt.Sprintf("sr-%d", i), RuleType: "rrule"}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(SchedulingRuleList{Count: 10, Results: results})

@@ -13,7 +13,7 @@ import (
 )
 
 func TestDetectSchedulingRule(t *testing.T) {
-	input := `{"title":"Business Hours","rule":"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR","timezone":"UTC"}`
+	input := `{"title":"Business Hours","ruleType":"rrule","rrule":{"freq":"WEEKLY","datestart":"2026-01-05","byday":["MO","TU","WE","TH","FR"]}}`
 	rt, isArray, err := detectResourceType([]byte(input))
 	if err != nil {
 		t.Fatalf("detectResourceType: %v", err)
@@ -27,7 +27,7 @@ func TestDetectSchedulingRule(t *testing.T) {
 }
 
 func TestDetectSchedulingRuleWithID(t *testing.T) {
-	input := `{"id":"sr-1","title":"Business Hours","rule":"FREQ=DAILY","timezone":"UTC"}`
+	input := `{"id":"sr-1","title":"Business Hours","ruleType":"rrule","rrule":{"freq":"DAILY","datestart":"2026-01-05"}}`
 	rt, _, err := detectResourceType([]byte(input))
 	if err != nil {
 		t.Fatalf("detectResourceType: %v", err)
@@ -48,16 +48,16 @@ func makeSchedulingRuleTestServer(t *testing.T) (*httptest.Server, *client.Clien
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"id":"sr-new","title":"Business Hours","rule":"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR","timezone":"UTC"}`))
+		w.Write([]byte(`{"id":"sr-new","title":"Business Hours","ruleType":"rrule","rrule":{"freq":"WEEKLY","datestart":"2026-01-05","byday":["MO","TU","WE","TH","FR"]}}`))
 	})
 	mux.HandleFunc("/platform/automation/v1/scheduling-rules/sr-existing", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"id":"sr-existing","title":"Business Hours","rule":"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR","timezone":"UTC","owner":"user-1"}`))
+			w.Write([]byte(`{"id":"sr-existing","title":"Business Hours","ruleType":"rrule","rrule":{"freq":"WEEKLY","datestart":"2026-01-05","byday":["MO","TU","WE","TH","FR"]},"modificationInfo":{"createdBy":"user-1","createdTime":"2026-01-05T08:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2026-01-05T08:00:00Z"}}`))
 		case http.MethodPut:
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"id":"sr-existing","title":"Business Hours Updated","rule":"FREQ=DAILY","timezone":"UTC","owner":"user-1"}`))
+			w.Write([]byte(`{"id":"sr-existing","title":"Business Hours Updated","ruleType":"rrule","rrule":{"freq":"DAILY","datestart":"2026-01-05"},"modificationInfo":{"createdBy":"user-1","createdTime":"2026-01-05T08:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2026-02-01T08:00:00Z"}}`))
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -96,7 +96,7 @@ func TestApplySchedulingRule_Create(t *testing.T) {
 	_, c := makeSchedulingRuleTestServer(t)
 	applier := makeTestApplierForSchedulingRule(t, c, config.SafetyLevelReadWriteAll)
 
-	data := []byte(`{"title":"Business Hours","rule":"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR","timezone":"UTC"}`)
+	data := []byte(`{"title":"Business Hours","ruleType":"rrule","rrule":{"freq":"WEEKLY","datestart":"2026-01-05","byday":["MO","TU","WE","TH","FR"]}}`)
 	results, err := applier.Apply(data, ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error: %v", err)
@@ -120,7 +120,7 @@ func TestApplySchedulingRule_Update(t *testing.T) {
 	_, c := makeSchedulingRuleTestServer(t)
 	applier := makeTestApplierForSchedulingRule(t, c, config.SafetyLevelReadWriteAll)
 
-	data := []byte(`{"id":"sr-existing","title":"Business Hours Updated","rule":"FREQ=DAILY","timezone":"UTC","owner":"user-1"}`)
+	data := []byte(`{"id":"sr-existing","title":"Business Hours Updated","ruleType":"rrule","rrule":{"freq":"DAILY","datestart":"2026-01-05"},"modificationInfo":{"createdBy":"user-1","createdTime":"2026-01-05T08:00:00Z","lastModifiedBy":"user-1","lastModifiedTime":"2026-02-01T08:00:00Z"}}`)
 	results, err := applier.Apply(data, ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error: %v", err)
@@ -142,7 +142,7 @@ func TestApplySchedulingRule_CreateWithMissingID(t *testing.T) {
 	applier := makeTestApplierForSchedulingRule(t, c, config.SafetyLevelReadWriteAll)
 
 	// Has an id field, but the resource doesn't exist — should create.
-	data := []byte(`{"id":"sr-missing","title":"New Rule","rule":"FREQ=DAILY","timezone":"UTC"}`)
+	data := []byte(`{"id":"sr-missing","title":"New Rule","ruleType":"rrule","rrule":{"freq":"DAILY","datestart":"2026-01-05"}}`)
 	results, err := applier.Apply(data, ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() error: %v", err)
@@ -163,7 +163,7 @@ func TestApplySchedulingRule_ReadonlyBlocked(t *testing.T) {
 	_, c := makeSchedulingRuleTestServer(t)
 	applier := makeTestApplierForSchedulingRule(t, c, config.SafetyLevelReadOnly)
 
-	data := []byte(`{"title":"Business Hours","rule":"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR","timezone":"UTC"}`)
+	data := []byte(`{"title":"Business Hours","ruleType":"rrule","rrule":{"freq":"WEEKLY","datestart":"2026-01-05","byday":["MO","TU","WE","TH","FR"]}}`)
 	_, err := applier.Apply(data, ApplyOptions{})
 	if err == nil {
 		t.Fatal("Apply() expected error for readonly context")
@@ -174,7 +174,7 @@ func TestApplySchedulingRule_DryRun(t *testing.T) {
 	_, c := makeSchedulingRuleTestServer(t)
 	applier := makeTestApplierForSchedulingRule(t, c, config.SafetyLevelReadWriteAll)
 
-	data := []byte(`{"title":"Business Hours","rule":"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR","timezone":"UTC"}`)
+	data := []byte(`{"title":"Business Hours","ruleType":"rrule","rrule":{"freq":"WEEKLY","datestart":"2026-01-05","byday":["MO","TU","WE","TH","FR"]}}`)
 	results, err := applier.Apply(data, ApplyOptions{DryRun: true})
 	if err != nil {
 		t.Fatalf("Apply(DryRun) error: %v", err)
@@ -211,21 +211,23 @@ func TestSchedulingRuleApplyResultJSON(t *testing.T) {
 	}
 }
 
-func TestDetectSchedulingRule_UnorderedRuleParts(t *testing.T) {
-	// FREQ is required but need not come first: RFC 5545 rule parts are unordered.
-	input := `{"title":"Every other day","rule":"INTERVAL=2;FREQ=DAILY","timezone":"UTC"}`
-	rt, _, err := detectResourceType([]byte(input))
-	if err != nil {
-		t.Fatalf("detectResourceType: %v", err)
-	}
-	if rt != ResourceSchedulingRule {
-		t.Errorf("detected = %q, want %q", rt, ResourceSchedulingRule)
+func TestDetectSchedulingRule_AllRuleTypes(t *testing.T) {
+	// ruleType is the API's own discriminator; every value must detect.
+	for _, rt := range []string{"rrule", "grouping", "fixed_offset", "relative_offset"} {
+		input := `{"title":"x","ruleType":"` + rt + `"}`
+		got, _, err := detectResourceType([]byte(input))
+		if err != nil {
+			t.Fatalf("detectResourceType(%s): %v", rt, err)
+		}
+		if got != ResourceSchedulingRule {
+			t.Errorf("ruleType %q detected = %q, want %q", rt, got, ResourceSchedulingRule)
+		}
 	}
 }
 
 func TestDetectSchedulingRule_WorkflowKeepsPrecedence(t *testing.T) {
-	// A workflow carrying a "rule"/"timezone" pair must still detect as a workflow.
-	input := `{"title":"wf","tasks":{},"rule":"FREQ=DAILY","timezone":"UTC"}`
+	// A workflow that happens to carry a ruleType key must still detect as a workflow.
+	input := `{"title":"wf","tasks":{},"ruleType":"rrule","rrule":{"freq":"DAILY","datestart":"2026-01-05"}}`
 	rt, _, err := detectResourceType([]byte(input))
 	if err != nil {
 		t.Fatalf("detectResourceType: %v", err)
@@ -241,22 +243,12 @@ func TestApplySchedulingRule_LookupErrorIsNotACreate(t *testing.T) {
 	_, c := makeSchedulingRuleTestServer(t)
 	applier := makeTestApplierForSchedulingRule(t, c, config.SafetyLevelReadWriteAll)
 
-	data := []byte(`{"id":"sr-forbidden","title":"Business Hours","rule":"FREQ=DAILY","timezone":"UTC"}`)
+	data := []byte(`{"id":"sr-forbidden","title":"Business Hours","ruleType":"rrule","rrule":{"freq":"DAILY","datestart":"2026-01-05"}}`)
 	results, err := applier.Apply(data, ApplyOptions{})
 	if err == nil {
 		t.Fatalf("Apply() expected error for 403 on lookup, got results: %v", results)
 	}
 	if !strings.Contains(err.Error(), "sr-forbidden") {
 		t.Errorf("error = %q, want it to name the rule being looked up", err.Error())
-	}
-}
-
-func TestDetectSchedulingRule_CronPairIsNotARule(t *testing.T) {
-	// A workflow schedule trigger uses the same rule/timezone pair with a cron
-	// string. Without the FREQ= requirement this would misdetect.
-	input := `{"title":"x","rule":"0 9 * * 1-5","timezone":"UTC"}`
-	rt, _, err := detectResourceType([]byte(input))
-	if err == nil && rt == ResourceSchedulingRule {
-		t.Errorf("cron rule detected as %q, want anything but a scheduling rule", rt)
 	}
 }

@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"fmt"
+	"sort"
+
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
@@ -36,16 +39,33 @@ Examples:
 		}
 
 		if useSchedulingRuleDescribeTextView() {
-			const kw = 13
+			const kw = 18
 			output.DescribeKV("ID:", kw, "%s", rule.ID)
 			output.DescribeKV("Title:", kw, "%s", rule.Title)
 			if rule.Description != "" {
 				output.DescribeKV("Description:", kw, "%s", rule.Description)
 			}
-			output.DescribeKV("Timezone:", kw, "%s", rule.Timezone)
-			output.DescribeKV("Rule:", kw, "%s", rule.Rule)
-			if rule.Owner != "" {
-				output.DescribeKV("Owner:", kw, "%s (%s)", rule.Owner, rule.OwnerType)
+			output.DescribeKV("Rule Type:", kw, "%s", rule.RuleType)
+			if rule.BusinessCalendar != "" {
+				output.DescribeKV("Business Calendar:", kw, "%s", rule.BusinessCalendar)
+			}
+			if rule.Version != 0 {
+				output.DescribeKV("Version:", kw, "%d", rule.Version)
+			}
+			if body := schedulingRuleBody(rule); body != nil {
+				fmt.Println()
+				fmt.Println("Rule:")
+				for _, k := range sortedKeys(body) {
+					output.DescribeKV("  "+k+":", kw, "%v", body[k])
+				}
+			}
+			if rule.ModificationInfo != nil {
+				fmt.Println()
+				fmt.Println("Modification Info:")
+				output.DescribeKV("  Created By:", kw, "%s", rule.ModificationInfo.CreatedBy)
+				output.DescribeKV("  Created:", kw, "%s", rule.ModificationInfo.CreatedTime)
+				output.DescribeKV("  Modified By:", kw, "%s", rule.ModificationInfo.LastModifiedBy)
+				output.DescribeKV("  Modified:", kw, "%s", rule.ModificationInfo.LastModifiedTime)
 			}
 			return nil
 		}
@@ -64,4 +84,29 @@ func useSchedulingRuleDescribeTextView() bool {
 		return false
 	}
 	return outputFormat == "" || outputFormat == "table"
+}
+
+// schedulingRuleBody returns the rule body matching the rule's type, or nil.
+func schedulingRuleBody(r *schedulingrule.SchedulingRule) map[string]interface{} {
+	switch r.RuleType {
+	case "rrule":
+		return r.RRule
+	case "grouping":
+		return r.GroupingRule
+	case "fixed_offset":
+		return r.FixedOffsetRule
+	case "relative_offset":
+		return r.RelativeOffsetRule
+	}
+	return nil
+}
+
+// sortedKeys keeps the describe output stable across runs.
+func sortedKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

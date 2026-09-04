@@ -2982,19 +2982,36 @@ func schedulingRuleFixtures() []schedulingrule.SchedulingRule {
 		{
 			ID:          "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
 			Title:       "Business Hours",
-			Timezone:    "UTC",
-			Description: "Monday to Friday, 9 AM to 5 PM",
-			Rule:        "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9,10,11,12,13,14,15,16",
-			Owner:       "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
-			OwnerType:   "USER",
+			RuleType:    "rrule",
+			Description: "Monday to Friday",
+			Version:     3,
+			RRule: map[string]interface{}{
+				"freq":      "WEEKLY",
+				"datestart": "2026-01-05",
+				"byday":     []interface{}{"MO", "TU", "WE", "TH", "FR"},
+			},
+			ModificationInfo: &schedulingrule.ModificationInfo{
+				CreatedBy:        "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+				CreatedTime:      "2026-01-05T08:00:00.000Z",
+				LastModifiedBy:   "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+				LastModifiedTime: "2026-02-11T10:30:00.000Z",
+			},
 		},
 		{
-			ID:        "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
-			Title:     "Maintenance Window",
-			Timezone:  "Europe/Vienna",
-			Rule:      "FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=2",
-			Owner:     "8b9c0d1e-2f3a-4b5c-9d0e-1f2a3b4c5d6e",
-			OwnerType: "USER",
+			ID:               "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+			Title:            "Maintenance Window",
+			RuleType:         "grouping",
+			BusinessCalendar: "c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e7f",
+			Version:          1,
+			GroupingRule: map[string]interface{}{
+				"combine": []interface{}{"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"},
+			},
+			ModificationInfo: &schedulingrule.ModificationInfo{
+				CreatedBy:        "8b9c0d1e-2f3a-4b5c-9d0e-1f2a3b4c5d6e",
+				CreatedTime:      "2026-01-06T09:15:00.000Z",
+				LastModifiedBy:   "8b9c0d1e-2f3a-4b5c-9d0e-1f2a3b4c5d6e",
+				LastModifiedTime: "2026-01-06T09:15:00.000Z",
+			},
 		},
 	}
 }

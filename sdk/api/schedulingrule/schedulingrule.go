@@ -22,15 +22,43 @@ func NewHandler(c *httpclient.Client) *Handler {
 }
 
 // SchedulingRule represents a scheduling rule resource.
+//
+// Exactly one of RRule, GroupingRule, FixedOffsetRule or RelativeOffsetRule is
+// populated, selected by RuleType. Those bodies stay untyped maps so an apply
+// round-trip preserves them verbatim: the API spec types several recurrence
+// fields as "integer or array of integers", which no single Go type models
+// without loss.
 type SchedulingRule struct {
-	ID          string `json:"id,omitempty"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Rule        string `json:"rule"`
-	Timezone    string `json:"timezone"`
-	Owner       string `json:"owner,omitempty"`
-	OwnerType   string `json:"ownerType,omitempty"`
+	ID                 string                 `json:"id,omitempty"`
+	Version            int                    `json:"version,omitempty"`
+	Title              string                 `json:"title"`
+	Description        string                 `json:"description,omitempty"`
+	RuleType           string                 `json:"ruleType"`
+	RRule              map[string]interface{} `json:"rrule,omitempty"`
+	GroupingRule       map[string]interface{} `json:"groupingRule,omitempty"`
+	FixedOffsetRule    map[string]interface{} `json:"fixedOffsetRule,omitempty"`
+	RelativeOffsetRule map[string]interface{} `json:"relativeOffsetRule,omitempty"`
+	BusinessCalendar   string                 `json:"businessCalendar,omitempty"`
+	Labels             map[string]string      `json:"labels,omitempty"`
+	ModificationInfo   *ModificationInfo      `json:"modificationInfo,omitempty"`
 }
+
+// ModificationInfo records who created and last changed a scheduling rule.
+// The API declares it read-only.
+type ModificationInfo struct {
+	CreatedBy        string `json:"createdBy,omitempty"`
+	CreatedTime      string `json:"createdTime,omitempty"`
+	LastModifiedBy   string `json:"lastModifiedBy,omitempty"`
+	LastModifiedTime string `json:"lastModifiedTime,omitempty"`
+}
+
+// Rule type values accepted by the API's ruleType field.
+const (
+	RuleTypeRecurrence     = "rrule"
+	RuleTypeGrouping       = "grouping"
+	RuleTypeFixedOffset    = "fixed_offset"
+	RuleTypeRelativeOffset = "relative_offset"
+)
 
 // SchedulingRuleList represents a list of scheduling rules.
 type SchedulingRuleList struct {

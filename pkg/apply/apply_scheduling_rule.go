@@ -77,7 +77,7 @@ func (a *Applier) applySchedulingRule(data []byte, opts ApplyOptions) (ApplyResu
 	}
 
 	// Safety check for update — determine ownership from existing resource.
-	ownership := a.determineOwnership(existing.Owner)
+	ownership := a.determineOwnership(existing.OwnerID())
 	if err := a.checkSafety(safety.OperationUpdate, ownership); err != nil {
 		return nil, err
 	}

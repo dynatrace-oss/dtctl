@@ -126,7 +126,7 @@ Examples:
 			return err
 		}
 		currentUserID, _ := c.CurrentUserID()
-		ownership := safety.DetermineOwnership(rule.Owner, currentUserID)
+		ownership := safety.DetermineOwnership(rule.OwnerID(), currentUserID)
 		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
 			return err
 		}

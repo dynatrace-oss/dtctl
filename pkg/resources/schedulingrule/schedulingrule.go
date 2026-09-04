@@ -12,13 +12,37 @@ import (
 
 // SchedulingRule represents a scheduling rule (CLI version with table tags).
 type SchedulingRule struct {
-	ID          string `json:"id,omitempty"          yaml:"id,omitempty"          table:"ID"`
-	Title       string `json:"title"                 yaml:"title"                 table:"TITLE"`
-	Timezone    string `json:"timezone"              yaml:"timezone"              table:"TIMEZONE"`
-	Description string `json:"description,omitempty" yaml:"description,omitempty" table:"DESCRIPTION,wide"`
-	Rule        string `json:"rule"                  yaml:"rule"                  table:"RULE,wide"`
-	Owner       string `json:"owner,omitempty"       yaml:"owner,omitempty"       table:"-"`
-	OwnerType   string `json:"ownerType,omitempty"   yaml:"ownerType,omitempty"   table:"-"`
+	ID                 string                 `json:"id,omitempty"                 yaml:"id,omitempty"                 table:"ID"`
+	Title              string                 `json:"title"                        yaml:"title"                        table:"TITLE"`
+	RuleType           string                 `json:"ruleType"                     yaml:"ruleType"                     table:"TYPE"`
+	Description        string                 `json:"description,omitempty"        yaml:"description,omitempty"        table:"DESCRIPTION,wide"`
+	BusinessCalendar   string                 `json:"businessCalendar,omitempty"   yaml:"businessCalendar,omitempty"   table:"CALENDAR,wide"`
+	Version            int                    `json:"version,omitempty"            yaml:"version,omitempty"            table:"-"`
+	RRule              map[string]interface{} `json:"rrule,omitempty"              yaml:"rrule,omitempty"              table:"-"`
+	GroupingRule       map[string]interface{} `json:"groupingRule,omitempty"       yaml:"groupingRule,omitempty"       table:"-"`
+	FixedOffsetRule    map[string]interface{} `json:"fixedOffsetRule,omitempty"    yaml:"fixedOffsetRule,omitempty"    table:"-"`
+	RelativeOffsetRule map[string]interface{} `json:"relativeOffsetRule,omitempty" yaml:"relativeOffsetRule,omitempty" table:"-"`
+	Labels             map[string]string      `json:"labels,omitempty"             yaml:"labels,omitempty"             table:"-"`
+	ModificationInfo   *ModificationInfo      `json:"modificationInfo,omitempty"   yaml:"modificationInfo,omitempty"   table:"-"`
+}
+
+// ModificationInfo records who created and last changed a scheduling rule.
+type ModificationInfo struct {
+	CreatedBy        string `json:"createdBy,omitempty"        yaml:"createdBy,omitempty"`
+	CreatedTime      string `json:"createdTime,omitempty"      yaml:"createdTime,omitempty"`
+	LastModifiedBy   string `json:"lastModifiedBy,omitempty"   yaml:"lastModifiedBy,omitempty"`
+	LastModifiedTime string `json:"lastModifiedTime,omitempty" yaml:"lastModifiedTime,omitempty"`
+}
+
+// OwnerID returns the user the rule belongs to, for safety-level ownership
+// checks. The API exposes no owner field, so creation is the ownership signal:
+// modificationInfo.createdBy. An empty result yields OwnershipUnknown, which the
+// safety checker already treats as the restrictive case.
+func (s *SchedulingRule) OwnerID() string {
+	if s.ModificationInfo == nil {
+		return ""
+	}
+	return s.ModificationInfo.CreatedBy
 }
 
 // SchedulingRuleList represents a list of scheduling rules.
@@ -29,15 +53,28 @@ type SchedulingRuleList struct {
 
 // fromSDKSchedulingRule converts an SDK SchedulingRule to a CLI SchedulingRule.
 func fromSDKSchedulingRule(s *sdkschedulingrule.SchedulingRule) SchedulingRule {
-	return SchedulingRule{
-		ID:          s.ID,
-		Title:       s.Title,
-		Timezone:    s.Timezone,
-		Description: s.Description,
-		Rule:        s.Rule,
-		Owner:       s.Owner,
-		OwnerType:   s.OwnerType,
+	r := SchedulingRule{
+		ID:                 s.ID,
+		Title:              s.Title,
+		RuleType:           s.RuleType,
+		Description:        s.Description,
+		BusinessCalendar:   s.BusinessCalendar,
+		Version:            s.Version,
+		RRule:              s.RRule,
+		GroupingRule:       s.GroupingRule,
+		FixedOffsetRule:    s.FixedOffsetRule,
+		RelativeOffsetRule: s.RelativeOffsetRule,
+		Labels:             s.Labels,
 	}
+	if s.ModificationInfo != nil {
+		r.ModificationInfo = &ModificationInfo{
+			CreatedBy:        s.ModificationInfo.CreatedBy,
+			CreatedTime:      s.ModificationInfo.CreatedTime,
+			LastModifiedBy:   s.ModificationInfo.LastModifiedBy,
+			LastModifiedTime: s.ModificationInfo.LastModifiedTime,
+		}
+	}
+	return r
 }
 
 // Handler handles scheduling rule resources.

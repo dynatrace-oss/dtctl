@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/hook"
@@ -526,12 +525,11 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 		return ResourceWorkflow, false, nil
 	}
 
-	// Scheduling rules carry a recurrence "rule" plus its "timezone". Require the
-	// RRULE's mandatory FREQ part as well: a workflow schedule trigger uses the
-	// same pair with a cron string. Match on Contains, not a prefix — RFC 5545
-	// rule parts are unordered, so "INTERVAL=2;FREQ=DAILY" is equally valid.
-	if rule, ok := raw["rule"].(string); ok && strings.Contains(strings.ToUpper(rule), "FREQ=") {
-		if _, ok := raw["timezone"].(string); ok {
+	// Scheduling rules are identified by their mandatory ruleType discriminator,
+	// which is unique to this resource and names the body field that follows.
+	if rt, ok := raw["ruleType"].(string); ok {
+		switch rt {
+		case "rrule", "grouping", "fixed_offset", "relative_offset":
 			return ResourceSchedulingRule, false, nil
 		}
 	}
