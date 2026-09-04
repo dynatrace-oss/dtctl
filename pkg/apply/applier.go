@@ -521,14 +521,19 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 	}
 
 	// Heuristic detection based on field presence
-	// Scheduling rules have an iCal RRULE in the "rule" field.
-	if rule, ok := raw["rule"].(string); ok && strings.HasPrefix(rule, "FREQ=") {
-		return ResourceSchedulingRule, false, nil
-	}
-
 	// Workflows have a "tasks" field; "trigger" may be absent for manual triggers
 	if _, hasTasks := raw["tasks"]; hasTasks {
 		return ResourceWorkflow, false, nil
+	}
+
+	// Scheduling rules carry a recurrence "rule" plus its "timezone". Require the
+	// RRULE's mandatory FREQ part as well: a workflow schedule trigger uses the
+	// same pair with a cron string. Match on Contains, not a prefix — RFC 5545
+	// rule parts are unordered, so "INTERVAL=2;FREQ=DAILY" is equally valid.
+	if rule, ok := raw["rule"].(string); ok && strings.Contains(strings.ToUpper(rule), "FREQ=") {
+		if _, ok := raw["timezone"].(string); ok {
+			return ResourceSchedulingRule, false, nil
+		}
 	}
 
 	// Documents have "metadata" or "content" at root level

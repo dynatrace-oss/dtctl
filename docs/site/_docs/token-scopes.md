@@ -133,7 +133,14 @@ storage:fieldsets:write
 | Create / Update / Apply | `automation:workflows:write` |
 | Execute / Run | `automation:workflows:run` |
 | Calendar access | `automation:calendars:read`, `automation:calendars:write` |
-| Event triggers | `automation:rules:read`, `automation:rules:write` |
+
+### Scheduling Rules
+
+| Operation | Required Scope |
+|---|---|
+| List / Get / Describe | `automation:rules:read` |
+| Create / Update / Apply | `automation:rules:write` |
+| Delete | `automation:rules:write` |
 
 ### Documents and Dashboards
 

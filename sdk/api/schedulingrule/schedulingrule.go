@@ -38,20 +38,73 @@ type SchedulingRuleList struct {
 	Results []SchedulingRule `json:"results"`
 }
 
-// List retrieves all scheduling rules.
-func (h *Handler) List(ctx context.Context) (*SchedulingRuleList, error) {
-	resp, err := h.client.HTTP().R().SetContext(ctx).Get(basePath)
-	if err != nil {
-		return nil, fmt.Errorf("list scheduling rules: %w", err)
+// List retrieves scheduling rules.
+// chunkSize controls page size; 0 returns only the first page.
+// limit caps the total number of results; 0 means unlimited.
+//
+// The Automation API applies a default page size when no limit is sent, so a
+// single unpaginated GET would silently truncate large environments.
+func (h *Handler) List(ctx context.Context, chunkSize, limit int64) (*SchedulingRuleList, error) {
+	var all []SchedulingRule
+	var totalCount int
+	offset := 0
+
+	for {
+		// Per-request page size: chunkSize, narrowed to the remaining budget when a limit is set.
+		pageSize := chunkSize
+		if limit > 0 {
+			remaining := limit - int64(len(all))
+			if remaining <= 0 {
+				break
+			}
+			// chunkSize==0 (single-page mode) combined with a limit: use the limit
+			// as the page size so we fetch exactly N in one request, then break.
+			if pageSize == 0 || remaining < pageSize {
+				pageSize = remaining
+			}
+		}
+
+		req := h.client.HTTP().R().SetContext(ctx)
+		if pageSize > 0 {
+			req.SetQueryParam("limit", fmt.Sprintf("%d", pageSize))
+			if offset > 0 {
+				req.SetQueryParam("offset", fmt.Sprintf("%d", offset))
+			}
+		}
+
+		resp, err := req.Get(basePath)
+		if err != nil {
+			return nil, fmt.Errorf("list scheduling rules: %w", err)
+		}
+		if err := httpclient.CheckResponse(resp); err != nil {
+			return nil, fmt.Errorf("list scheduling rules: %w", err)
+		}
+
+		var page SchedulingRuleList
+		if err := json.Unmarshal(resp.Body(), &page); err != nil {
+			return nil, fmt.Errorf("list scheduling rules: parse response: %w", err)
+		}
+
+		totalCount = page.Count
+		all = append(all, page.Results...)
+
+		if limit > 0 && int64(len(all)) >= limit {
+			break
+		}
+		// chunkSize == 0 means single-page mode (no pagination loop).
+		if chunkSize == 0 || len(all) >= totalCount || len(page.Results) == 0 {
+			break
+		}
+		offset += len(page.Results)
 	}
-	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, fmt.Errorf("list scheduling rules: %w", err)
+
+	// Defensive: the loop already caps well-behaved servers, but a server that
+	// ignores the limit param could over-return — trim to the requested limit.
+	if limit > 0 && int64(len(all)) > limit {
+		all = all[:limit]
 	}
-	var result SchedulingRuleList
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("list scheduling rules: parse response: %w", err)
-	}
-	return &result, nil
+
+	return &SchedulingRuleList{Count: totalCount, Results: all}, nil
 }
 
 // Get retrieves a specific scheduling rule.
@@ -68,18 +121,6 @@ func (h *Handler) Get(ctx context.Context, id string) (*SchedulingRule, error) {
 		return nil, fmt.Errorf("get scheduling rule: parse response: %w", err)
 	}
 	return &result, nil
-}
-
-// GetRaw retrieves a scheduling rule as raw JSON bytes.
-func (h *Handler) GetRaw(ctx context.Context, id string) ([]byte, error) {
-	resp, err := h.client.HTTP().R().SetContext(ctx).Get(fmt.Sprintf("%s/%s", basePath, id))
-	if err != nil {
-		return nil, fmt.Errorf("get scheduling rule: %w", err)
-	}
-	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, fmt.Errorf("get scheduling rule: %w", err)
-	}
-	return resp.Body(), nil
 }
 
 // Create creates a new scheduling rule.
@@ -126,5 +167,8 @@ func (h *Handler) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("delete scheduling rule: %w", err)
 	}
-	return httpclient.CheckResponse(resp)
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return fmt.Errorf("delete scheduling rule: %w", err)
+	}
+	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -64,6 +65,10 @@ func makeSchedulingRuleTestServer(t *testing.T) (*httptest.Server, *client.Clien
 	mux.HandleFunc("/platform/automation/v1/scheduling-rules/sr-missing", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"error":{"code":404,"message":"not found"}}`))
+	})
+	mux.HandleFunc("/platform/automation/v1/scheduling-rules/sr-forbidden", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"error":{"code":403,"message":"forbidden"}}`))
 	})
 	// Used by NewApplier to get current user ID (best-effort, ok to 401).
 	mux.HandleFunc("/platform/metadata/v1/user", func(w http.ResponseWriter, r *http.Request) {
@@ -203,5 +208,55 @@ func TestSchedulingRuleApplyResultJSON(t *testing.T) {
 	}
 	if m["action"] != ActionCreated {
 		t.Errorf("action = %v, want %q", m["action"], ActionCreated)
+	}
+}
+
+func TestDetectSchedulingRule_UnorderedRuleParts(t *testing.T) {
+	// FREQ is required but need not come first: RFC 5545 rule parts are unordered.
+	input := `{"title":"Every other day","rule":"INTERVAL=2;FREQ=DAILY","timezone":"UTC"}`
+	rt, _, err := detectResourceType([]byte(input))
+	if err != nil {
+		t.Fatalf("detectResourceType: %v", err)
+	}
+	if rt != ResourceSchedulingRule {
+		t.Errorf("detected = %q, want %q", rt, ResourceSchedulingRule)
+	}
+}
+
+func TestDetectSchedulingRule_WorkflowKeepsPrecedence(t *testing.T) {
+	// A workflow carrying a "rule"/"timezone" pair must still detect as a workflow.
+	input := `{"title":"wf","tasks":{},"rule":"FREQ=DAILY","timezone":"UTC"}`
+	rt, _, err := detectResourceType([]byte(input))
+	if err != nil {
+		t.Fatalf("detectResourceType: %v", err)
+	}
+	if rt != ResourceWorkflow {
+		t.Errorf("detected = %q, want %q", rt, ResourceWorkflow)
+	}
+}
+
+func TestApplySchedulingRule_LookupErrorIsNotACreate(t *testing.T) {
+	// A 403 on the existence check must surface, not silently fall through to
+	// create — that would both duplicate the rule and skip the ownership gate.
+	_, c := makeSchedulingRuleTestServer(t)
+	applier := makeTestApplierForSchedulingRule(t, c, config.SafetyLevelReadWriteAll)
+
+	data := []byte(`{"id":"sr-forbidden","title":"Business Hours","rule":"FREQ=DAILY","timezone":"UTC"}`)
+	results, err := applier.Apply(data, ApplyOptions{})
+	if err == nil {
+		t.Fatalf("Apply() expected error for 403 on lookup, got results: %v", results)
+	}
+	if !strings.Contains(err.Error(), "sr-forbidden") {
+		t.Errorf("error = %q, want it to name the rule being looked up", err.Error())
+	}
+}
+
+func TestDetectSchedulingRule_CronPairIsNotARule(t *testing.T) {
+	// A workflow schedule trigger uses the same rule/timezone pair with a cron
+	// string. Without the FREQ= requirement this would misdetect.
+	input := `{"title":"x","rule":"0 9 * * 1-5","timezone":"UTC"}`
+	rt, _, err := detectResourceType([]byte(input))
+	if err == nil && rt == ResourceSchedulingRule {
+		t.Errorf("cron rule detected as %q, want anything but a scheduling rule", rt)
 	}
 }

@@ -35,7 +35,7 @@ Examples:
 			return err
 		}
 
-		if outputFormat == "table" {
+		if useSchedulingRuleDescribeTextView() {
 			const kw = 13
 			output.DescribeKV("ID:", kw, "%s", rule.ID)
 			output.DescribeKV("Title:", kw, "%s", rule.Title)
@@ -53,4 +53,15 @@ Examples:
 		enrichAgent(printer, "describe", "scheduling-rule")
 		return printer.Print(rule)
 	},
+}
+
+// useSchedulingRuleDescribeTextView reports whether to render the human-readable
+// text view. Agent mode always takes the structured envelope path — note that
+// agent mode leaves outputFormat at its "table" default, so a bare format check
+// would wrongly emit human text into an agent session.
+func useSchedulingRuleDescribeTextView() bool {
+	if agentMode {
+		return false
+	}
+	return outputFormat == "" || outputFormat == "table"
 }

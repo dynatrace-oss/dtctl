@@ -33,6 +33,32 @@ func WorkflowFixture(prefix string) []byte {
 	return data
 }
 
+// SchedulingRuleFixture returns a minimal scheduling rule for integration tests
+func SchedulingRuleFixture(prefix string) []byte {
+	rule := map[string]interface{}{
+		"title":       fmt.Sprintf("%s-scheduling-rule", prefix),
+		"description": "Integration test scheduling rule",
+		"rule":        "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+		"timezone":    "UTC",
+	}
+
+	data, _ := json.Marshal(rule)
+	return data
+}
+
+// SchedulingRuleFixtureModified returns a modified scheduling rule for update testing
+func SchedulingRuleFixtureModified(prefix string) []byte {
+	rule := map[string]interface{}{
+		"title":       fmt.Sprintf("%s-scheduling-rule-modified", prefix),
+		"description": "Modified integration test scheduling rule",
+		"rule":        "FREQ=DAILY",
+		"timezone":    "Europe/Vienna",
+	}
+
+	data, _ := json.Marshal(rule)
+	return data
+}
+
 // WorkflowFixtureModified returns a modified version of the workflow for edit testing
 func WorkflowFixtureModified(prefix string) []byte {
 	workflow := map[string]interface{}{

@@ -19,15 +19,16 @@ import (
 // workflowFilter holds the workflow ID filter for executions
 var workflowFilter string
 
-// minWorkflowChunkSize is the smallest allowed --chunk-size for workflow listing.
+// minAutomationChunkSize is the smallest allowed --chunk-size for listing any
+// limit/offset-paginated Automation API resource (workflows, scheduling rules).
 // Smaller pages multiply the request count for no benefit and risk hammering the API.
-const minWorkflowChunkSize = 20
+const minAutomationChunkSize = 20
 
-// validateWorkflowChunkSize rejects tiny page sizes that fan a full listing out
-// into excessive API requests. 0 (single page) and >= minWorkflowChunkSize are allowed.
-func validateWorkflowChunkSize(chunk int64) error {
-	if chunk > 0 && chunk < minWorkflowChunkSize {
-		return fmt.Errorf("--chunk-size must be 0 or at least %d (got %d)", minWorkflowChunkSize, chunk)
+// validateAutomationChunkSize rejects tiny page sizes that fan a full listing out
+// into excessive API requests. 0 (single page) and >= minAutomationChunkSize are allowed.
+func validateAutomationChunkSize(chunk int64) error {
+	if chunk > 0 && chunk < minAutomationChunkSize {
+		return fmt.Errorf("--chunk-size must be 0 or at least %d (got %d)", minAutomationChunkSize, chunk)
 	}
 	return nil
 }
@@ -88,7 +89,7 @@ Examples:
 		limit, _ := cmd.Flags().GetInt64("limit")
 
 		chunk := GetChunkSize()
-		if err := validateWorkflowChunkSize(chunk); err != nil {
+		if err := validateAutomationChunkSize(chunk); err != nil {
 			return err
 		}
 

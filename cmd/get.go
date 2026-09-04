@@ -30,16 +30,16 @@ When called with a resource type and ID or name, retrieves that specific resourc
 Results can be filtered with --mine and formatted with -o (json, yaml, wide, chart).
 
 Supported resources:
-  workflows (wf)          dashboards (dash, db)     notebooks (nb)
-  scheduling-rules (sr)   slos                      slo-templates
-  settings                settings-schemas          buckets (bkt)
-  apps                    functions                 intents
-  notifications           users                     groups
-  edgeconnect (ec)        sdk-versions              analyzers
-  copilot-skills          lookup-tables (lu)        trash
-  workflow-executions (wfe)  wfe-task-result        extensions (ext)
-  extension-configs (extcfg) documents (doc)        anomaly-detectors (ad)
-  hub-extensions          hub-extension-releases    apis
+  workflows (wf)             dashboards (dash, db)     notebooks (nb)
+  scheduling-rules (sr)      slos                      slo-templates
+  settings                   settings-schemas          buckets (bkt)
+  apps                       functions                 intents
+  notifications              users                     groups
+  edgeconnect (ec)           sdk-versions              analyzers
+  copilot-skills             lookup-tables (lu)        trash
+  workflow-executions (wfe)  wfe-task-result           extensions (ext)
+  extension-configs (extcfg) documents (doc)           anomaly-detectors (ad)
+  hub-extensions             hub-extension-releases    apis
 
 Use 'dtctl get <resource> --help' for resource-specific options.`,
 	Example: `  # List all workflows

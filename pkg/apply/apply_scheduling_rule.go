@@ -46,7 +46,13 @@ func (a *Applier) applySchedulingRule(data []byte, opts ApplyOptions) (ApplyResu
 	// Check if scheduling rule exists.
 	existing, err := handler.Get(id)
 	if err != nil {
-		// Not found — create it.
+		// Only a genuine 404 may fall through to create. Treating every error as
+		// "absent" would turn a 403 on someone else's rule into an unowned create,
+		// bypassing the OwnershipOther check the update path applies.
+		if !schedulingrule.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to look up scheduling rule %s: %w", id, err)
+		}
+
 		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return nil, err
 		}
