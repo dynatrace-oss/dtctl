@@ -1,0 +1,47 @@
+# Documents & Trash
+
+<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+
+## Supported operations
+
+| Operation | Resource | Command syntax | Description | Mutating | Access |
+| --- | --- | --- | --- | --- | --- |
+| create | document | `dtctl create document` | Create resources from files | yes | write |
+| delete | document | `dtctl delete document` | Delete resources | yes | delete |
+| describe | document | `dtctl describe document` | Show details of a specific resource | no | read |
+| edit | document | `dtctl edit document` | Edit a resource | yes | write |
+| get | documents | `dtctl get documents` | Display one or many resources | no | read |
+| history | document | `dtctl history document` | Show version history of resources | no | read |
+| restore | document | `dtctl restore document` | Restore resources to a previous version | yes | write |
+| share | document | `dtctl share document` | Share documents with users or groups | yes | write |
+| unshare | document | `dtctl unshare document` | Remove sharing from documents | yes | write |
+| update | document | `dtctl update document` | Update resources | yes | write |
+| delete | trash | `dtctl delete trash` | Delete resources | yes | delete |
+| describe | trash | `dtctl describe trash` | Show details of a specific resource | no | read |
+| get | trash | `dtctl get trash` | Display one or many resources | no | read |
+| restore | trash | `dtctl restore trash` | Restore resources to a previous version | yes | write |
+
+
+## Flags
+
+Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, ...). A few **verbs** add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb entries in `COMMANDS.md`. The catalog exposes no per-resource flags.
+
+
+## Required token scopes
+
+| Safety level | Scopes |
+| --- | --- |
+| delete | `document:documents:delete`, `document:trash.documents:delete` |
+| read | `document:documents:read`, `document:trash.documents:read` |
+| write | `document:documents:write`, `document:trash.documents:restore` |
+
+
+## Output
+
+<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
+
+
+## Examples
+
+<!-- SME: 3-5 real invocations with sample output. -->
+
