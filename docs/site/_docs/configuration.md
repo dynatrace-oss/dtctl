@@ -19,6 +19,42 @@ Tokens are stored securely in your OS keyring. To log out:
 dtctl auth logout
 ```
 
+### Non-Interactive OAuth (CI/CD)
+
+Pipelines have no browser and no user, so the interactive login cannot complete
+there. Supplying an OAuth client ID and secret switches `auth login` to the
+client credentials grant, which needs neither:
+
+```bash
+export DTCTL_CLIENT_ID="dt0s02.EXAMPLE"
+export DTCTL_CLIENT_SECRET="dt0s02.EXAMPLE.SECRET"
+export DTCTL_ACCOUNT_URN="urn:dtaccount:00000000-0000-0000-0000-000000000000"
+export DTCTL_TOKEN_STORAGE=file   # no keyring on a build agent
+
+dtctl auth login \
+  --context ci \
+  --environment "https://abc12345.apps.dynatrace.com" \
+  --safety-level readonly
+```
+
+Prefer the environment variables over the equivalent `--client-id`,
+`--client-secret` and `--account-urn` flags: command line arguments are visible
+to every other process on the machine.
+
+By default the token carries whatever scopes the OAuth client was granted. Pass
+`--scopes` to request a narrower set:
+
+```bash
+dtctl auth login --context ci \
+  --environment "https://abc12345.apps.dynatrace.com" \
+  --scopes storage:logs:read,storage:buckets:read
+```
+
+This grant authenticates the application itself rather than a user, so no
+refresh token is issued ([RFC 6749 §4.4.3](https://www.rfc-editor.org/rfc/rfc6749#section-4.4.3)).
+A client that holds its own credentials does not need one -- run `dtctl auth
+login` again to obtain a fresh access token when the current one expires.
+
 ### Token-Based Auth
 
 For CI/CD or headless environments, use a platform API token:

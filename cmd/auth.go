@@ -29,6 +29,13 @@ var (
 	authEnsureKeyringFunc = config.EnsureKeyringCollection
 )
 
+// authClientCredentialsFunc performs the client credentials grant during
+// auth login. It defaults to the real implementation and can be overridden in
+// tests to exercise the non-interactive branch without a token endpoint.
+var authClientCredentialsFunc = func(flow *auth.OAuthFlow, clientID, clientSecret, resource string, scopes []string) (*auth.TokenSet, error) {
+	return flow.ClientCredentials(clientID, clientSecret, resource, scopes)
+}
+
 // authCmd represents the auth command
 var authCmd = &cobra.Command{
 	Use:   "auth",
@@ -383,6 +390,15 @@ func finalizeLoginConfig(cfg *config.Config, contextName, environment, tokenName
 	cfg.PruneEmptyEnvironments(contextName, placeholderNames)
 }
 
+// Environment variables that supply client credentials grant parameters. They
+// are preferred over the equivalent flags because command line arguments are
+// visible to other processes.
+const (
+	envLoginClientID     = "DTCTL_CLIENT_ID"
+	envLoginClientSecret = "DTCTL_CLIENT_SECRET"
+	envLoginAccountURN   = "DTCTL_ACCOUNT_URN"
+)
+
 // authLoginCmd initiates browser-based OAuth login
 var authLoginCmd = &cobra.Command{
 	Use:   "login",
@@ -407,7 +423,18 @@ Token storage:
   tokens in a local file (~/.local/share/dtctl/oauth-tokens/) with 0600 permissions.
 
 If neither keyring nor file storage is available, use API token authentication
-instead (dtctl config set-credentials).`,
+instead (dtctl config set-credentials).
+
+Non-interactive login (CI/CD):
+  Supplying a client ID and secret switches to the OAuth 2.0 client credentials
+  grant, which needs no browser and no user. Prefer the environment variables
+  over the flags, since command line arguments are visible to other processes:
+
+    DTCTL_CLIENT_ID, DTCTL_CLIENT_SECRET, DTCTL_ACCOUNT_URN
+
+  This grant authenticates the application itself, so there is no user identity
+  and, per RFC 6749 section 4.4.3, no refresh token is issued. Run the command
+  again to obtain a new access token when the current one expires.`,
 	Example: `  # Re-authenticate the current context (e.g. after token expiry)
   dtctl auth login
 
@@ -418,7 +445,14 @@ instead (dtctl config set-credentials).`,
   dtctl auth login --context my-env --environment https://abc12345.apps.dynatrace.com --token-name my-oauth-token
 
   # Login with custom timeout
-  dtctl auth login --context my-env --environment https://abc12345.apps.dynatrace.com --timeout 5m`,
+  dtctl auth login --context my-env --environment https://abc12345.apps.dynatrace.com --timeout 5m
+
+  # Non-interactive login for CI/CD (no browser)
+  export DTCTL_CLIENT_ID=dt0s02.EXAMPLE
+  export DTCTL_CLIENT_SECRET=dt0s02.EXAMPLE.SECRET
+  export DTCTL_ACCOUNT_URN=urn:dtaccount:00000000-0000-0000-0000-000000000000
+  export DTCTL_TOKEN_STORAGE=file
+  dtctl auth login --context ci --environment https://abc12345.apps.dynatrace.com --safety-level readonly`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Get flags
 		contextName, _ := cmd.Flags().GetString("context")
@@ -426,6 +460,36 @@ instead (dtctl config set-credentials).`,
 		tokenName, _ := cmd.Flags().GetString("token-name")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
 		safetyLevelStr, _ := cmd.Flags().GetString("safety-level")
+		clientID, _ := cmd.Flags().GetString("client-id")
+		clientSecret, _ := cmd.Flags().GetString("client-secret")
+		accountURN, _ := cmd.Flags().GetString("account-urn")
+		grantScopes, _ := cmd.Flags().GetStringSlice("scopes")
+
+		// Environment variables are the safer way to supply these in CI: command
+		// line flags are visible to every other process via the process table.
+		if clientID == "" {
+			clientID = os.Getenv(envLoginClientID)
+		}
+		if clientSecret == "" {
+			clientSecret = os.Getenv(envLoginClientSecret)
+		}
+		if accountURN == "" {
+			accountURN = os.Getenv(envLoginAccountURN)
+		}
+
+		// Any credential material selects the non-interactive grant.
+		nonInteractive := clientID != "" || clientSecret != ""
+		if nonInteractive && (clientID == "" || clientSecret == "") {
+			return &diagnostic.Error{
+				Operation: "auth login",
+				Message:   "the client credentials grant requires both a client ID and a client secret",
+				Suggestions: []string{
+					fmt.Sprintf("Set both %s and %s", envLoginClientID, envLoginClientSecret),
+					"Or pass --client-id and --client-secret",
+					"Omit both to use the interactive browser login",
+				},
+			}
+		}
 
 		// Resolve contextName, environment and tokenName from the config when not
 		// supplied as explicit flags.
@@ -545,7 +609,6 @@ instead (dtctl config set-credentials).`,
 		// Log which environment we detected
 		output.PrintInfo("Detected environment: %s", oauthConfig.Environment)
 		output.PrintInfo("Safety level: %s", oauthConfig.SafetyLevel)
-		output.PrintInfo("Requesting OAuth scopes for safety level %s...", oauthConfig.SafetyLevel)
 
 		// Create OAuth flow
 		flow, err := auth.NewOAuthFlow(oauthConfig)
@@ -553,24 +616,40 @@ instead (dtctl config set-credentials).`,
 			return fmt.Errorf("failed to initialize OAuth: %w", err)
 		}
 
-		// Start OAuth flow with timeout
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		output.PrintInfo("Starting OAuth authentication flow...")
-		tokens, err := flow.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("authentication failed: %w", err)
-		}
-
-		output.PrintSuccess("Authentication successful!")
-
-		// Get user info
-		userInfo, err := flow.GetUserInfo(tokens.AccessToken)
-		if err != nil {
-			output.PrintWarning("Failed to retrieve user info: %v", err)
+		var tokens *auth.TokenSet
+		if nonInteractive {
+			// Client credentials grant: no browser, no redirect, no user. Scopes
+			// default to whatever the OAuth client was granted unless --scopes
+			// narrows them.
+			output.PrintInfo("Authenticating with the client credentials grant (no browser)...")
+			tokens, err = authClientCredentialsFunc(flow, clientID, clientSecret, accountURN, grantScopes)
+			if err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+			output.PrintSuccess("Authentication successful!")
 		} else {
-			output.PrintInfo("Logged in as: %s (%s)", userInfo.Name, userInfo.Email)
+			output.PrintInfo("Requesting OAuth scopes for safety level %s...", oauthConfig.SafetyLevel)
+
+			// Start OAuth flow with timeout
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+
+			output.PrintInfo("Starting OAuth authentication flow...")
+			tokens, err = flow.Start(ctx)
+			if err != nil {
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+
+			output.PrintSuccess("Authentication successful!")
+
+			// Get user info. The client credentials grant authenticates the
+			// application itself, so it has no user identity to report.
+			userInfo, userErr := flow.GetUserInfo(tokens.AccessToken)
+			if userErr != nil {
+				output.PrintWarning("Failed to retrieve user info: %v", userErr)
+			} else {
+				output.PrintInfo("Logged in as: %s (%s)", userInfo.Name, userInfo.Email)
+			}
 		}
 
 		// Store tokens
@@ -792,6 +871,10 @@ func init() {
 	authLoginCmd.Flags().String("token-name", "", "name for storing the OAuth token (defaults to existing token name or <context>-oauth)")
 	authLoginCmd.Flags().String("timeout", "5m", "timeout for the authentication flow")
 	authLoginCmd.Flags().String("safety-level", string(config.DefaultSafetyLevel), "safety level for the context (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
+	authLoginCmd.Flags().String("client-id", "", "OAuth client ID for the non-interactive client credentials grant (env: "+envLoginClientID+")")
+	authLoginCmd.Flags().String("client-secret", "", "OAuth client secret for the client credentials grant; prefer the environment variable (env: "+envLoginClientSecret+")")
+	authLoginCmd.Flags().String("account-urn", "", "account URN sent as the resource indicator, e.g. urn:dtaccount:<uuid> (env: "+envLoginAccountURN+")")
+	authLoginCmd.Flags().StringSlice("scopes", nil, "scopes to request for the client credentials grant (defaults to the client's own scopes)")
 
 	// Flags for logout
 	authLogoutCmd.Flags().Bool("remove-context", false, "also remove the context configuration")
