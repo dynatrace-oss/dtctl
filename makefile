@@ -161,9 +161,12 @@ markdownlint-fix:
 # Builds the binary, dumps `dtctl commands --full -o json`, and feeds it to
 # scripts/gen-docs/gen_all.py, which writes docs/resources/*.md,
 # docs/COMMANDS.md, docs/TOKEN_SCOPES.md, and docs/INDEX.md.
-# Only the Overview and Examples sections of docs/resources/*.md are
-# hand-authored by SMEs; everything else is derived from the catalog, so
-# CI (see .github/workflows/docs-generate.yml) fails a PR if these files are
+# In docs/resources/*.md only the generator-managed block (the three tables:
+# Supported operations, Flags, Required token scopes, wrapped in
+# <!-- GENERATED:<resource>:start/end --> markers) is derived from the catalog;
+# the Overview, Output, Examples, and Notes sections are hand-authored by SMEs
+# and are preserved verbatim on regeneration. CI (see
+# .github/workflows/docs-generate.yml) fails a PR only if that managed block is
 # checked in stale. Requires python3; does not need dtctl on PATH (invokes
 # ./bin/dtctl directly) and needs no auth (commands --full is a static dump).
 docs-generate: build

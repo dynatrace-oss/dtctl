@@ -211,3 +211,118 @@ done
 ```
 
 Cancelling a running query: press `Ctrl+C` (or send `SIGTERM`) at any time. dtctl sends a best-effort `query:cancel` request to Grail so the backend stops executing, then exits, printing a confirmation or failure message to stderr.
+
+## Notes
+
+### Windows PowerShell quoting
+
+On Windows PowerShell, pipe a here-string into dtctl. Passing the query as an argument loses the double quotes DQL needs on Windows PowerShell 5.1, which silently returns zero records.
+
+```powershell
+# PowerShell here-string piped to stdin
+@'
+fetch logs
+| filter loglevel == "ERROR"
+| limit 10
+'@ | dtctl query
+```
+
+A here-string is a string value, not a redirection like a bash heredoc, so `dtctl query @'...'@` still goes through argument parsing. `dtctl query -f - @'...'@` is rejected, because `-f -` points at stdin while the query sits in the arguments. See the Windows quoting notes in the dtctl repository docs for more detail.
+
+### Filter segment variables
+
+Some segments require variable bindings. For example, a ready-made `k8s.namespace.name` segment needs a namespace value. Bind variables inline using URL-query-style syntax on `-S`.
+
+```bash
+# Bind a single variable
+dtctl query "fetch logs | limit 10" -S "my-segment?host=HOST-001"
+
+# Multiple values for a variable (comma-separated)
+dtctl query "fetch logs | limit 10" -S "my-segment?host=HOST-001,HOST-002"
+
+# Multiple variables on one segment
+dtctl query "fetch logs | limit 10" -S "my-segment?host=HOST-001&ns=production"
+
+# Works with segment names (resolved before variable binding)
+dtctl query "fetch logs | limit 10" \
+  -S "[READY-MADE] k8s.namespace.name?k8s.namespace.name=astroshop"
+```
+
+The format is `SEGMENT?var=value&var2=value1,value2`, where `SEGMENT` is a UID or name, `?` separates the ID from variables, `&` separates multiple variables, and `,` separates multiple values.
+
+Use `--segment-var` / `-V` to override variables from `--segments-file`:
+
+```bash
+# Override a file-defined variable
+dtctl query "fetch logs" --segments-file segments.yaml -V "seg-1:host=HOST-NEW"
+```
+
+For complex multi-segment configurations with many variables, use a YAML file:
+
+```yaml
+# segments.yaml
+- id: simple-segment-uid
+
+- id: segment-with-variables
+  variables:
+    - name: host
+      values: [HOST-0000000001, HOST-0000000002]
+
+- id: segment-with-namespace
+  variables:
+    - name: ns
+      values: [production, staging]
+```
+
+You can combine `--segment` and `--segments-file`. If the same segment ID appears in both, the file entry wins, since it may carry variables. Variables from `-V` take precedence over file variables for the same name. dtctl enforces a maximum of 10 segments per query, client-side.
+
+### Spilled result files
+
+Spilled files go to the OS user cache directory: `~/.cache/dtctl/results` on Linux, `~/Library/Caches/dtctl/results` on macOS, and `%LocalAppData%\dtctl\results` on Windows. Files are partitioned by context, written atomically with `0700`/`0600` permissions, and pruned after a 24h TTL. On a read-only filesystem, the command degrades to a summary without a path rather than dumping rows.
+
+`--spill-to` differs from shell redirection (`-o csv > out.csv`): redirection writes the raw bytes, while `--spill-to` writes the file and returns the summary or manifest in its place. Use redirection when you want the bytes, and `--spill-to` when you want the summary now and the bytes on disk for later. A user-chosen path opts out of the managed cache's TTL pruning and per-context partitioning; dtctl surfaces this as a warning.
+
+### Timeframe and sampling flags
+
+`--default-timeframe-start` / `--default-timeframe-end` only fill in a timeframe when the query itself does not specify one, for example via a `from`/`to` in the query. There is no `--timeframe` flag. Express relative ranges in DQL instead, for example `fetch logs, from:now()-2h`.
+
+`--default-sampling-ratio` is normalized to a power of 10, so a value of 1000 samples 1/1000 of matching records. There is no `--sampling-ratio` or `--preview` flag; use `--default-sampling-ratio` and `--enable-preview`.
+
+### Progress indicator
+
+While a long-running query is polling, dtctl draws a live progress bar on stderr showing the query's completion percentage, the volume of data scanned so far, the number of records scanned, and elapsed time:
+
+```
+scanning  57%  12.2 TB, 4.6B recs, 8.2s
+```
+
+When the query finishes, the bar is replaced with a one-line summary:
+
+```
+scanned 17.3 TB, 6.0B records in 42.1s
+```
+
+`NO_COLOR` keeps the bar but drops color. Fast queries that complete before the first poll show nothing.
+
+### Chart rendering
+
+When rendering to a terminal chart (`-o chart`, `sparkline`, `barchart`, `braille`), control the drawing area with `--width`, `--height`, and `--fullscreen`:
+
+```bash
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --width 120 --height 20
+dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --fullscreen  # use full terminal size
+```
+
+### Query warnings
+
+DQL may emit warnings, for example result truncation or deprecated syntax. These print to stderr, so they don't interfere with piped output:
+
+```bash
+# Warnings appear on stderr, results on stdout
+dtctl query "fetch logs" -o json > results.json
+# Any warnings are still visible in the terminal
+```
+
+### Live queries
+
+Press `Ctrl+C` to stop live mode.

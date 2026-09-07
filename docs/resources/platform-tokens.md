@@ -67,3 +67,7 @@ dtctl account create token --name ci-pipeline --scope account-idm-read --dry-run
 # Delete (revoke) a token by ID
 dtctl account delete token <tokenId>
 ```
+
+## Notes
+
+<!-- SME: free-form concepts, advanced usage, edge cases, and troubleshooting that do not fit the sections above. -->

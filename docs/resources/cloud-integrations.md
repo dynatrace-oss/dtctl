@@ -226,3 +226,53 @@ dtctl delete edgeconnect edge-123
 ```
 
 See [EdgeConnect](edgeconnect) for the dedicated resource reference.
+
+## Notes
+
+### AWS: IAM role deployment script
+
+The connection command prints a ready-to-run snippet, but the underlying script is worth knowing if you need to adapt it (for example, to change the stack name or region). It downloads Dynatrace's least-privilege role template and deploys it as a CloudFormation stack, then reads the role ARN back out of the stack outputs:
+
+```bash
+STACK="dynatrace-monitoring-my-aws-connection"
+curl -fsSLo da-role.yaml https://dynatrace-data-acquisition.s3.amazonaws.com/aws/deployment/cfn/latest/da-aws-nested-monitoring-role.yaml
+aws cloudformation deploy \
+  --stack-name "$STACK" \
+  --template-file da-role.yaml \
+  --parameter-overrides pDynatraceUrl=<your-tenant-url> pRoleExternalId=<connection-object-id> \
+  --capabilities CAPABILITY_NAMED_IAM
+
+ROLE_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Outputs[?OutputKey=='DynatraceMonitoringRoleArn'].OutputValue" --output text)
+```
+
+Run this in AWS CloudShell. The stack name follows the pattern `dynatrace-monitoring-<connection-name>`, which keeps it identifiable if you manage multiple AWS connections. `pRoleExternalId` must be the connection's `objectId`, and `pDynatraceUrl` is your tenant URL. `CAPABILITY_NAMED_IAM` is required because the template creates a named IAM role.
+
+### Azure: choosing and naming the subscription
+
+Before creating an Azure connection, pick the subscription you want to monitor and derive a connection name from it. Naming the connection after the subscription keeps multiple connections easy to tell apart:
+
+```bash
+az account list --output table
+
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+SUBSCRIPTION_NAME=$(az account show --query name -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+
+# Subscription names can contain spaces. Normalize them to dashes.
+CONNECTION_NAME="dtctl-$(echo "$SUBSCRIPTION_NAME" | tr ' ' '-')"
+```
+
+### Multiple subscriptions
+
+Both Azure authentication types (federated identity and client secret) use a single service principal that can be granted the Reader role on more than one subscription. Repeat the `az role assignment create` command, once per additional subscription, against the same `$CLIENT_ID`, rather than creating a separate service principal for each one.
+
+### Azure: security considerations for client secrets
+
+`az ad sp create-for-rbac` prints the client secret only once, so capture it immediately when creating a service principal for the `clientSecret` authentication type.
+
+When you pass `--clientSecret` to `dtctl`, the value doesn't touch bash history or disk, but it can still be visible in the `dtctl` process arguments while the command runs. Avoid running this on shared machines, and be aware of any process-argument logging in your environment.
+
+### GCP: workload identity federation setup
+
+After creating the service account and granting it the monitoring viewer role, you still need to configure workload identity federation or impersonation so that Dynatrace can assume the service account. Run `dtctl describe gcp connection` after creating the connection; it prints the specific instructions for this step.
