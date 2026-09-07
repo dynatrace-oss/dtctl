@@ -4,9 +4,18 @@ gen_all.py - project driver on top of gen_docs.py.
 
 Maps dtctl's catalog resources onto the PLANNED ~21-file docs structure for
 PRODUCT-18391 (including multi-resource grouped pages) and emits one .md per
-planned file, plus COMMANDS.md and TOKEN_SCOPES.md. Generated sections
-(supported operations + required token scopes) come from the catalog; prose
-(overview / output / examples) is left as SME placeholders.
+planned file, plus COMMANDS.md and TOKEN_SCOPES.md.
+
+Each generated resource page carries ONE generator-managed block, wrapped in
+`<!-- GENERATED:<resource>:start -->` / `<!-- GENERATED:<resource>:end -->`
+markers, holding the three derived tables (Supported operations, Flags,
+Required token scopes). Everything else - `## Overview`, `## Output`,
+`## Examples`, and the free-form `## Notes` section - is hand-authored prose
+that the generator NEVER touches. Regeneration is therefore durable: it injects
+only the managed block into an existing page and leaves all prose in place (and
+leaves marker-less authored pages entirely alone), so CI's
+`git diff --exit-code` stays clean while SME prose survives. Only a brand-new
+file gets the full skeleton written from scratch.
 
 Input:  `dtctl commands --full -o json`
 Output: <out-dir>/resources/<file>.md, <out-dir>/COMMANDS.md,
@@ -70,14 +79,16 @@ def matches(key: str, stems: set[str]) -> bool:
     return False
 
 
-def render_grouped_page(title: str, stems: list[str], catalog: dict,
-                        raw_index: dict[str, list[dict]], note: str) -> str:
+def resource_managed_body(title: str, stems: list[str], catalog: dict,
+                          raw_index: dict[str, list[dict]]) -> str:
+    """Build the generator-managed body for a resource page: the three tables
+    (Supported operations, Flags, Required token scopes). This is the ONLY part
+    of a resource page the generator owns; it is wrapped in
+    `<!-- GENERATED:<resource>:start/end -->` markers and injected in place,
+    leaving all hand-authored prose (Overview / Output / Examples / Notes)
+    untouched on regeneration."""
     stemset = set(stems)
-    out = [f"# {title}\n"]
-    if note:
-        out.append(f"<!-- NOTE: {note} -->\n")
-    out.append("<!-- SME: Overview - what this resource is in the Dynatrace platform, "
-               "when to use it, and how it relates to neighboring resources (1-2 sentences). -->\n")
+    out = []
 
     # Supported operations, merged across all matching catalog resource forms
     out.append("## Supported operations\n")
@@ -117,19 +128,48 @@ def render_grouped_page(title: str, stems: list[str], catalog: dict,
                   for level in sorted(by_level.keys())]
     out.append(gen_docs.md_table(["Safety level", "Scopes"], scope_rows))
 
-    out.append("\n## Output\n")
-    out.append("<!-- SME: describe the returned shape (key fields, id/name conventions) "
-               "and how -o json / -o wide differ. -->\n")
-    out.append("\n## Examples\n")
-    out.append("<!-- SME: 3-5 real invocations with sample output. -->\n")
-    return "\n".join(out) + "\n"
+    return "\n".join(out).rstrip() + "\n"
+
+
+def render_grouped_page(fname: str, title: str, stems: list[str], catalog: dict,
+                        raw_index: dict[str, list[dict]], note: str) -> str:
+    """Full skeleton for a NEW generated resource page (no markers present yet).
+
+    Section order: `# Title`, `## Overview` (placeholder), the GENERATED managed
+    block (the three tables), `## Output` (placeholder), `## Examples`
+    (placeholder), `## Notes` (placeholder for free-form concepts / advanced
+    usage / edge cases / troubleshooting). On regeneration of an EXISTING page,
+    `inject_managed` replaces only the managed block, so every placeholder that
+    an SME has since filled in is preserved."""
+    body = resource_managed_body(title, stems, catalog, raw_index)
+    parts = [f"# {title}\n"]
+    if note:
+        parts.append(f"<!-- NOTE: {note} -->\n")
+    parts.append("## Overview\n")
+    parts.append("<!-- SME: Overview - what this resource is in the Dynatrace platform, "
+                 "when to use it, and how it relates to neighboring resources (1-2 sentences). -->\n")
+    parts.append(managed_wrapper(fname, body) + "\n")
+    parts.append("## Output\n")
+    parts.append("<!-- SME: describe the returned shape (key fields, id/name conventions) "
+                 "and how -o json / -o wide differ. -->\n")
+    parts.append("## Examples\n")
+    parts.append("<!-- SME: 3-5 real invocations with sample output. -->\n")
+    parts.append("## Notes\n")
+    parts.append("<!-- SME: free-form concepts, advanced usage, edge cases, and "
+                 "troubleshooting that do not fit the sections above. -->\n")
+    return "\n".join(parts) + "\n"
 
 
 def render_authored_stub(title: str, note: str) -> str:
+    """Skeleton for a NEW authored page (dql-queries, cloud-integrations): these
+    have no generator-owned tables, so they carry NO managed block. Once the file
+    exists, the generator never overwrites it (see `emit_resource_page`)."""
     return (f"# {title}\n\n<!-- NOTE: {note} -->\n\n"
             "## Overview\n<!-- SME -->\n\n"
             "## Usage\n<!-- SME: this page is authored, not generated -->\n\n"
-            "## Examples\n<!-- SME -->\n")
+            "## Examples\n<!-- SME -->\n\n"
+            "## Notes\n<!-- SME: free-form concepts, advanced usage, edge cases, "
+            "and troubleshooting. -->\n")
 
 
 def build_raw_index(catalog: dict) -> dict[str, list[dict]]:
@@ -149,6 +189,21 @@ def token_scopes_body(catalog: dict) -> str:
     return "## Required scopes by resource (generated)\n" + "\n".join(body).strip() + "\n"
 
 
+def managed_wrapper(tag: str, body: str) -> str:
+    """The full generator-managed block for a tag: the start marker, the
+    do-not-edit notice, the generated `body`, and the end marker. Used both when
+    emitting a fresh skeleton and when injecting into an existing file, so the two
+    paths are byte-identical (this is what keeps CI's `git diff --exit-code`
+    clean after regeneration)."""
+    start = f"<!-- GENERATED:{tag}:start -->"
+    end = f"<!-- GENERATED:{tag}:end -->"
+    return (f"{start}\n"
+            f"<!-- Do not edit by hand. Generated by scripts/gen-docs from "
+            f"`dtctl commands --full -o json`; run `make docs-generate`. -->\n\n"
+            f"{body.rstrip()}\n"
+            f"{end}")
+
+
 def inject_managed(path: Path, tag: str, body: str) -> None:
     """Replace the content between <!-- GENERATED:<tag>:start --> and :end markers
     in an existing authored file. Refuses to write if the markers are absent, so a
@@ -162,12 +217,42 @@ def inject_managed(path: Path, tag: str, body: str) -> None:
         raise SystemExit(f"markers '{tag}' not found in {path}; refusing to overwrite authored content")
     pre, rest = text.split(start, 1)
     _, post = rest.split(end, 1)
-    managed = (f"{start}\n"
-               f"<!-- Do not edit by hand. Generated by scripts/gen-docs from "
-               f"`dtctl commands --full -o json`; run `make docs-generate`. -->\n\n"
-               f"{body.rstrip()}\n"
-               f"{end}")
-    path.write_text(pre + managed + post, encoding="utf-8")
+    path.write_text(pre + managed_wrapper(tag, body) + post, encoding="utf-8")
+
+
+def has_markers(path: Path, tag: str) -> bool:
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8")
+    return f"<!-- GENERATED:{tag}:start -->" in text and f"<!-- GENERATED:{tag}:end -->" in text
+
+
+def emit_resource_page(path: Path, fname: str, title: str, stems: list[str],
+                       catalog: dict, raw_index: dict[str, list[dict]],
+                       authored: bool, note: str) -> str:
+    """Write/refresh one docs/resources/<fname>.md, durable against regeneration:
+
+      - file does NOT exist            -> write the full skeleton (grouped page
+                                          with a managed block, or an authored
+                                          stub with no block).
+      - file exists, HAS markers       -> inject ONLY the managed block; all prose
+                                          outside the markers is left untouched.
+      - file exists, NO markers         -> leave the file entirely alone. This
+                                          protects hand-authored pages (the two
+                                          authored pages, or a generated page a
+                                          human is still migrating) from being
+                                          clobbered.
+
+    Returns a short status string for the run log."""
+    if not path.exists():
+        page = (render_authored_stub(title, note) if authored
+                else render_grouped_page(fname, title, stems, catalog, raw_index, note))
+        path.write_text(page, encoding="utf-8")
+        return "created"
+    if has_markers(path, fname):
+        inject_managed(path, fname, resource_managed_body(title, stems, catalog, raw_index))
+        return "injected"
+    return "skipped (no markers; authored/hand-edited page left untouched)"
 
 
 def main() -> int:
@@ -184,14 +269,12 @@ def main() -> int:
     index_rows = []
     covered_keys: set[str] = set()
     for fname, (title, stems, authored, note) in PLAN.items():
-        if authored:
-            page = render_authored_stub(title, note)
-            gen = "authored"
-        else:
-            page = render_grouped_page(title, stems, catalog, raw_index, note)
-            gen = "generated"
+        gen = "authored" if authored else "generated"
+        if not authored:
             covered_keys.update(k for k in all_keys if matches(k, set(stems)))
-        (out_dir / "resources" / f"{fname}.md").write_text(page, encoding="utf-8")
+        path = out_dir / "resources" / f"{fname}.md"
+        status = emit_resource_page(path, fname, title, stems, catalog, raw_index, authored, note)
+        print(f"  resources/{fname}.md: {status}")
         index_rows.append([f"`resources/{fname}.md`", title, ", ".join(stems) or "-", gen])
 
     # cross-cutting generated files (reuse proven core)

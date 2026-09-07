@@ -10,3 +10,6 @@
 
 ## Examples
 <!-- SME -->
+
+## Notes
+<!-- SME: free-form concepts, advanced usage, edge cases, and troubleshooting. -->
