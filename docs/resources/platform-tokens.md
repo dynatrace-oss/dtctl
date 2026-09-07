@@ -2,6 +2,8 @@
 
 <!-- NOTE: verify: may have no resource_scopes entry in the catalog. -->
 
+<!-- SME: no site source; author from the binary -->
+
 <!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
 
 ## Supported operations

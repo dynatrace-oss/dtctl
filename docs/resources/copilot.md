@@ -1,8 +1,10 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
 # Davis CoPilot
 
 <!-- NOTE: kept split from analyzers; grouped as 'Davis AI' on the docs.dynatrace.com page only. -->
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+CoPilot is Dynatrace's conversational AI assistant. dtctl lets you interact with it from the terminal: chat, translate natural language to DQL (and back), and search across your notebooks and dashboards. `copilot` also accepts the `cp` and `chat` aliases.
 
 ## Supported operations
 
@@ -26,10 +28,56 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
-
+Chat and `nl2dql`/`dql2nl` print plain text by default; pass `-o json` for structured output suitable for scripting. `document-search` results include the matching document IDs and collection.
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all available CoPilot skills
+dtctl get copilot-skills
+```
+
+Chat:
+
+```bash
+# Ask a question
+dtctl exec copilot "What caused the CPU spike on host-123?"
+
+# Stream the response in real time
+dtctl exec copilot "Explain the recent errors" --stream
+
+# Provide additional context for the conversation
+dtctl exec copilot "Why is my service slow?" \
+  --context "Service: payment-api, Environment: production"
+
+# Add formatting instructions to guide the response
+dtctl exec copilot "List top errors" \
+  --instruction "Answer in bullet points"
+
+# Disable Dynatrace documentation retrieval for faster responses
+dtctl exec copilot "What is DQL?" --no-docs
+```
+
+Natural language to DQL, and back:
+
+```bash
+dtctl exec copilot nl2dql "show me error logs from the last hour"
+dtctl exec copilot dql2nl 'fetch logs | filter status == "ERROR" | limit 10'
+```
+
+Document search across notebooks and dashboards (aliases `doc-search`, `ds`):
+
+```bash
+# Search within specific collections
+dtctl exec copilot document-search "CPU performance" \
+  --collections notebooks
+
+# Search multiple collections
+dtctl exec copilot document-search "error monitoring" \
+  --collections dashboards,notebooks
+
+# Exclude specific document IDs from results
+dtctl exec copilot document-search "performance" \
+  --exclude doc-123,doc-456
+```
 

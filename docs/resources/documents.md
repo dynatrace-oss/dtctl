@@ -1,6 +1,8 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
 # Documents & Trash
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Dashboards and notebooks (see [Dashboards & Notebooks](dashboards-notebooks)) are the two most familiar kinds of Dynatrace document, but the Document Service stores documents of any type, including launchpads and app-specific documents (for example `acme:config`). dtctl can create, export, apply, and update documents of any type, and attach classification labels to them. Deleted documents move to the trash, retained for 30 days before permanent removal.
 
 ## Supported operations
 
@@ -38,10 +40,70 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
-
+`get document -o yaml` emits the plain document (type, id, labels, and content) — use this form, not `-o json`, when the output will be fed back into `apply`/`update document`: JSON is wrapped in a result envelope that those commands cannot read back.
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+Every document carries a `type`; `dashboard` and `notebook` are built in, anything else (`launchpad`, `acme:config`, ...) is a custom type:
+
+```bash
+# List documents of a custom type with a raw Document API filter
+dtctl get documents --filter "type == 'launchpad'"
+```
+
+Create a document — the type comes from `--type` or a `type` field in the file. `create` always creates (fails if the ID already exists); use `apply` for create-or-update, or `update document` for update-only:
+
+```bash
+# Create a launchpad document
+dtctl create document -f launchpad.json --type launchpad
+
+# Create from a payload that already contains a "type" field
+dtctl create document -f my-app-config.yaml
+
+# Create with a custom ID and template variables
+dtctl create document -f config.yaml --type acme:config --id acme-config --set env=prod
+```
+
+Round-trip: export, edit, and re-import (type and id are read from the file):
+
+```bash
+dtctl get document acme-config -o yaml > doc.yaml
+# edit doc.yaml
+dtctl apply -f doc.yaml            # create-or-update
+dtctl update document -f doc.yaml  # update-only (fails if it doesn't exist)
+```
+
+Preview and diff before writing:
+
+```bash
+dtctl update document -f doc.yaml --dry-run
+dtctl update document -f doc.yaml --show-diff
+```
+
+Labels are classification strings stored in a document's metadata. Passing `--label` **replaces** the entire label set (labels cannot be cleared, only replaced); omitting it leaves existing labels unchanged:
+
+```bash
+# Set labels at creation
+dtctl create document -f config.yaml --type acme:config --label team-a --label env:prod
+
+# Replace labels on an existing document
+dtctl update document -f doc.yaml --label team-a --label env:prod
+
+# Query labels back
+dtctl get documents --add-fields labels
+dtctl get document acme-config -o yaml   # labels appear at the top level
+```
+
+Version history and deletion (same commands work for `document` or `trash`):
+
+```bash
+dtctl history document doc-123
+dtctl restore document doc-123 5
+
+dtctl delete document doc-123
+dtctl get trash
+dtctl describe trash doc-123
+dtctl restore trash doc-123
+dtctl delete trash doc-123 --permanent
+```
 

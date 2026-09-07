@@ -1,6 +1,8 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
 # Analyzers
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Analyzers perform statistical computations on your observability data: forecasting, change-point detection, correlation, and anomaly detection. You list the available analyzers, inspect an analyzer's input/output schema, run one against a DQL timeseries, and validate input before executing. `analyzer`, `analyzers`, and `az` are interchangeable aliases across `get`, `describe`, `exec`, and `verify`.
 
 ## Supported operations
 
@@ -27,10 +29,70 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
+`get analyzer` returns the raw analyzer definition. `describe analyzer` resolves the analyzer's JSON Schemas and renders the required and optional input fields as a readable table (and includes them in `-o json`/`-o yaml` output) — this is what tells you exactly what to pass to `exec analyzer`. Example `describe` output:
 
+```text
+Name:         dt.statistics.GenericForecastAnalyzer
+Display Name: Forecast Analysis
+Category:     Forecasting
+Type:         AnalyzerFactory
+
+Input (required):
+  timeSeriesData   string    DQL timeseries query to forecast
+  forecastHorizon  integer   Number of intervals to predict
+
+Input (optional):
+  coverageProbability  number   Confidence band width (e.g. 0.9)
+
+Output:
+  forecastQualityAssessment  object   Quality metrics for the forecast
+  output                     array    Predicted values with confidence bands
+```
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all available analyzers
+dtctl get analyzers
+
+# Get a single analyzer's raw definition
+dtctl get analyzer dt.statistics.GenericForecastAnalyzer
+
+# Filter the list (DQL-style expression)
+dtctl get analyzers --filter "name contains 'forecast'"
+```
+
+Describe an analyzer to see its input fields, or print its full markdown documentation:
+
+```bash
+dtctl describe analyzer dt.statistics.GenericForecastAnalyzer
+dtctl describe analyzer dt.statistics.GenericForecastAnalyzer --doc
+```
+
+Execute an analyzer:
+
+```bash
+# Run a forecast analyzer with the DQL query shorthand (timeseries-based analyzers)
+dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
+  --query "timeseries avg(dt.host.cpu.usage)"
+
+# Provide the full input as inline JSON, or from a file
+dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
+  --input '{"query":"timeseries avg(dt.host.cpu.usage)"}'
+dtctl exec analyzer dt.statistics.GenericForecastAnalyzer -f input.json
+
+# Execute and wait for completion (default; --wait=false returns immediately)
+dtctl exec analyzer dt.statistics.GenericForecastAnalyzer \
+  -f input.json --wait --timeout 300
+```
+
+Validate input against the analyzer's schema without running it (the same check `exec analyzer --validate` performs, exposed as its own verb):
+
+```bash
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer -f input.json
+dtctl verify analyzer dt.statistics.GenericForecastAnalyzer \
+  --query "timeseries avg(dt.host.cpu.usage)"
+```
+
+Common analyzers to start with: `dt.statistics.GenericForecastAnalyzer` (predict future values), `dt.statistics.GenericChangePointAnalyzer` (detect significant changes), `dt.statistics.GenericCorrelationAnalyzer` (find correlations), `dt.statistics.GenericAnomalyDetectionAnalyzer` (identify anomalous patterns). Use `dtctl get analyzers` to discover every analyzer available in your environment.
 

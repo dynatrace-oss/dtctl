@@ -1,6 +1,8 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
 # App Engine
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Dynatrace App Engine lets you extend the platform with custom and built-in applications. dtctl provides commands to list, inspect, and delete apps, as well as discover and execute app functions and intents.
 
 ## Supported operations
 
@@ -35,10 +37,74 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
-
+`get apps`/`get functions`/`get intents` print compact tables; `-o wide` on `get functions` adds detail such as the owning app. `describe function` includes the function's parameter and result schema so you know what to pass to `exec function`. `describe intent` shows the parameters accepted for deep-linking.
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all installed apps
+dtctl get apps
+
+# Describe a specific app
+dtctl describe app app-123
+```
+
+Discover and describe app functions:
+
+```bash
+# List all available functions across all apps
+dtctl get functions
+
+# List functions for a specific app with extra detail
+dtctl get functions --app dynatrace.automations -o wide
+
+# View function details including parameters and schema
+dtctl describe function dynatrace.automations/execute-dql-query
+```
+
+`dtctl exec function` has two modes, selected by the flags you pass: **app function** (invoke a function exposed by an installed app) is the default, and **ad-hoc JavaScript** (run code directly, without deploying an app) is selected by passing `--code` or `-f`/`--file`. The command has aliases `fn` and `func`.
+
+```bash
+# GET (default method, no payload)
+dtctl exec function dynatrace.automations/execute-dql-query
+
+# POST with an inline JSON payload
+dtctl exec function dynatrace.automations/execute-dql-query \
+  --method POST \
+  --payload '{"query":"fetch logs | limit 5"}'
+
+# Payload from a file, or from stdin with "-"
+dtctl exec function dynatrace.automations/execute-dql-query --method POST --data payload.json
+
+# Defer execution (async, for resumable functions) — returns a handle instead of the result
+dtctl exec function dynatrace.automations/long-running --method POST --payload '{}' --defer
+
+# Ad-hoc JavaScript (no app deployment; --code or -f selects this mode)
+dtctl exec function --code 'export default async function () { return "hi" }'
+dtctl exec function -f script.js --payload '{"input":"data"}'
+```
+
+`--method` accepts `GET` (default), `POST`, `PUT`, `PATCH`, or `DELETE`. `--payload` takes an inline JSON string; `--data` reads the same payload from a file (or `-` for stdin) — pass at most one of the two. If you're unsure what fields a function expects, try executing it with an empty payload (`--payload '{}'`); the error response typically lists the required fields.
+
+Discover and use app intents (deep-linking into specific app views with contextual data):
+
+```bash
+# List all registered intents, or describe one to see its parameters
+dtctl get intents
+dtctl describe intent dynatrace.distributedtracing/view-trace
+
+# Find intents that accept a given set of data fields
+dtctl find intents --data trace_id=abc123
+
+# Generate a deep-link URL and open it in the browser
+dtctl open intent dynatrace.distributedtracing/view-trace \
+  --data trace_id=abc123 \
+  --browser
+```
+
+Delete an app:
+
+```bash
+dtctl delete app app-123
+```
 

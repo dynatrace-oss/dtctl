@@ -1,6 +1,8 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
 # Dashboards & Notebooks
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Dynatrace dashboards and notebooks are managed as documents. dtctl supports the full lifecycle for both resource types: list, view, create, edit, share, version-track, and delete. dtctl can also create, apply, and update documents of any type (launchpads, custom app documents); see [Documents & Trash](documents) for that broader case.
 
 ## Supported operations
 
@@ -42,10 +44,95 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
-
+The describe view shows metadata (owner, sharing, version), a tile summary, and the dashboard's or notebook's URL in Dynatrace. `-o wide` on `get` adds owner, tile count, and last-modified columns; `-o json`/`-o yaml` return the full document, including the `originExtensionId`, `labels`, and `shareInfo.isShared` fields the default view omits. On a successful create or apply, dtctl prints the tile count and a direct URL to the resource in Dynatrace.
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all dashboards or notebooks
+dtctl get dashboards
+dtctl get notebooks
+
+# Filter by name substring, or show only your own
+dtctl get dashboards --name "Production"
+dtctl get dashboards --mine
+
+# Wide output with owner, tile count, and last modified date
+dtctl get dashboards -o wide
+
+# Sort by name ascending, last-modified descending
+dtctl get dashboards --sort "name,-modificationInfo.lastModifiedTime"
+
+# Request fields the API omits by default
+dtctl get dashboards --add-fields "originExtensionId,labels,shareInfo.isShared"
+
+# Raw Document API filter expression, sent verbatim, overrides --name/--mine
+dtctl get dashboards --filter "originAppId exists"
+
+# Watch mode: additions, modifications, and deletions highlighted in real time
+dtctl get dashboards --watch
+```
+
+Describe a dashboard by name (interactive disambiguation if multiple match) or by ID:
+
+```bash
+dtctl describe dashboard "Production Overview"
+dtctl describe dashboard dash-123
+```
+
+Edit a dashboard in your `$EDITOR` — on save, dtctl computes the diff and updates only the changed fields:
+
+```bash
+dtctl edit dashboard dash-123
+```
+
+Create from a YAML file, or apply for idempotent create-or-update:
+
+```bash
+# Create (fails if the document ID already exists)
+dtctl create dashboard -f dashboard.yaml
+
+# Apply (creates if new, updates if existing)
+dtctl apply -f dashboard.yaml
+
+# First apply: stamp the generated ID back into the file so future applies update in place
+dtctl apply -f dashboard.yaml --write-id
+
+# CI/scripting: apply a template to a specific known dashboard
+dtctl apply -f dashboard.yaml --id $DASHBOARD_ID
+```
+
+Round-trip export, edit, and re-import:
+
+```bash
+dtctl get dashboard abc-123 -o yaml > dashboard.yaml
+$EDITOR dashboard.yaml
+dtctl apply -f dashboard.yaml
+```
+
+Share or revoke access:
+
+```bash
+dtctl share dashboard dash-123 --user user@example.com --access read-write
+dtctl share dashboard dash-123 --user viewer@example.com --access read
+dtctl unshare dashboard dash-123 --user user@example.com
+```
+
+View and restore version history (Dynatrace keeps document snapshots):
+
+```bash
+dtctl history dashboard dash-123
+dtctl restore dashboard dash-123 5
+```
+
+Delete a dashboard (moves it to the trash, retained for 30 days), and manage the trash directly:
+
+```bash
+dtctl delete dashboard dash-123
+
+dtctl get trash
+dtctl describe trash dash-123
+dtctl restore trash dash-123
+dtctl delete trash dash-123 --permanent
+```
 

@@ -1,6 +1,8 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
 # Grail Buckets
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Grail buckets are storage containers in Dynatrace that hold observability data such as logs, events, and business analytics records. Each bucket defines its data table, retention period, and status.
 
 ## Supported operations
 
@@ -27,10 +29,47 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
-
+`get buckets` lists bucket name, table, retention, and status; `describe bucket` shows the full definition for one bucket. `-o json`/`-o yaml` return the full resource for scripting or for round-tripping through `apply`.
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all buckets
+dtctl get buckets
+
+# Describe a specific bucket
+dtctl describe bucket logs-production
+
+# Watch bucket status changes in real time
+dtctl get buckets --watch
+```
+
+Define a bucket in YAML and create or update it:
+
+```yaml
+# bucket.yaml
+bucketName: logs-production
+displayName: Production Logs
+table: logs
+retentionDays: 90
+status: active
+```
+
+```bash
+# Create a new bucket
+dtctl create bucket -f bucket.yaml
+
+# Apply (create or update)
+dtctl apply -f bucket.yaml
+```
+
+Delete a bucket:
+
+```bash
+# Delete with confirmation prompt
+dtctl delete bucket logs-staging
+
+# Skip confirmation
+dtctl delete bucket logs-staging -y
+```
 

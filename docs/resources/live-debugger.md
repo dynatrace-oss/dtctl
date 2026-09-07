@@ -1,6 +1,8 @@
 # Live Debugger
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+<!-- SME: already covered by the standalone guide at docs/LIVE_DEBUGGER.md; see that file for the full walkthrough (breakpoints, snapshots, decoding). Overview below should stay a short pointer, not a re-migration of that content. -->
+
+See [Live Debugger](../LIVE_DEBUGGER.md) for the full guide to managing breakpoints and snapshots with dtctl.
 
 ## Supported operations
 
@@ -30,10 +32,9 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
-
+See [Live Debugger](../LIVE_DEBUGGER.md).
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+See [Live Debugger](../LIVE_DEBUGGER.md) for full examples.
 

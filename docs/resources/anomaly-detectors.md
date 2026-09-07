@@ -1,6 +1,8 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
 # Anomaly Detectors
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Custom anomaly detectors are Davis AI configurations that continuously monitor time series data and trigger Davis events when anomalous behavior is detected. They use the `builtin:davis.anomaly-detectors` Settings schema. dtctl provides full CRUD management with a human-friendly flattened YAML format, plus the raw Settings API format for interoperability. The `ad` alias works everywhere `anomaly-detector` does.
 
 ## Supported operations
 
@@ -28,10 +30,90 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
+`get anomaly-detectors` prints a compact table; `-o wide` adds object IDs and descriptions. `describe anomaly-detector` shows full details including analyzer configuration, event template, and recent Davis problems triggered by the detector (cross-referenced via DQL), for example:
 
+```
+Title:                 Aurora cluster CPU utilization
+Object ID:             vu9U3hXa3q0AAAA
+Enabled:               true
+Source:                 Clouds
+Description:           Monitors Aurora cluster CPU utilization
+
+Analyzer:
+  Type:                Static Threshold
+  Alert Condition:     ABOVE 90
+  Sliding Window:      3 violating samples in 5 minutes
+
+Recent Problems (last 7 days):
+  DISPLAY ID        STATUS    START                 CATEGORY
+  P-2603120042      CLOSED    2026-03-28 14:22:00   PERFORMANCE
+```
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all custom anomaly detectors
+dtctl get anomaly-detectors
+
+# List only enabled or disabled detectors
+dtctl get anomaly-detectors --enabled
+dtctl get anomaly-detectors --enabled=false
+
+# Wide output (includes object IDs and descriptions)
+dtctl get anomaly-detectors -o wide
+
+# Watch for changes in real time
+dtctl get anomaly-detectors --watch
+```
+
+Describe by object ID or by title (interactive disambiguation if ambiguous):
+
+```bash
+dtctl describe anomaly-detector vu9U3hXa3q0AAAA
+dtctl describe anomaly-detector "Aurora cluster CPU utilization"
+```
+
+Define a detector in the flattened YAML format (recommended for version-controlled configurations) and create or apply it:
+
+```yaml
+title: "High CPU on production hosts"
+description: "Alert when CPU exceeds threshold on prod hosts"
+enabled: true
+source: "dtctl"
+analyzer:
+  name: dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer
+  input:
+    query: "timeseries cpu=avg(dt.host.cpu.usage), by:{dt.entity.host}, interval:1m"
+    threshold: "90"
+    alertCondition: ABOVE
+    violatingSamples: "3"
+    slidingWindow: "5"
+eventTemplate:
+  event.type: PERFORMANCE_EVENT
+  event.name: "High CPU on {dims:dt.entity.host}"
+```
+
+```bash
+# Create (fails if a detector with the same title already exists)
+dtctl create anomaly-detector -f detector.yaml
+
+# Apply (creates if new, updates if existing)
+dtctl apply -f detector.yaml
+
+# Create with template variables
+dtctl create anomaly-detector -f detector.yaml --set threshold=95
+```
+
+Edit a detector in your editor — dtctl fetches it, converts it to the flattened YAML format, opens `$EDITOR`, and applies changes on save (optimistic locking via the Settings API version is handled automatically):
+
+```bash
+dtctl edit anomaly-detector "High CPU on production hosts"
+```
+
+Delete by title or by object ID (dtctl prompts for confirmation in interactive mode; use `--plain` to skip it in CI):
+
+```bash
+dtctl delete anomaly-detector "High CPU on production hosts"
+dtctl delete anomaly-detector vu9U3hXa3q0AAAA -y
+```
 

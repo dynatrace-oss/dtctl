@@ -1,6 +1,8 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
 # Workflows
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Dynatrace Automation workflows let you orchestrate multi-step processes, from scheduled health checks to incident remediation. dtctl gives you full lifecycle management: list, inspect, create, edit, execute, and monitor workflows and their executions from your terminal.
 
 ## Supported operations
 
@@ -36,10 +38,84 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
-
+`get workflows` prints a compact table by default; `-o wide` adds owner, trigger type, and last-run columns. `-o json`/`-o yaml` return the full resource for scripting. `describe workflow` shows metadata (owner, sharing, version), a task summary, and the workflow's URL in Dynatrace. `describe workflow-execution` shows status, timing, and a per-task breakdown.
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all workflows (compact table)
+dtctl get workflows
+
+# Wide output with additional columns (owner, trigger type, last run)
+dtctl get workflows -o wide
+
+# Output as JSON or YAML for scripting
+dtctl get workflows -o json
+
+# Watch for changes in real time
+dtctl get workflows --watch
+```
+
+Inspect a single workflow by name (interactive disambiguation if multiple match) or by ID:
+
+```bash
+dtctl describe workflow "My Workflow"
+dtctl describe workflow workflow-123
+```
+
+Edit a workflow in your `$EDITOR` — dtctl downloads the current definition, opens it, and applies the diff on save (similar to `kubectl edit`):
+
+```bash
+dtctl edit workflow workflow-123
+```
+
+Create from a YAML file, or apply for idempotent create-or-update:
+
+```bash
+# Create (fails if the workflow already exists)
+dtctl create workflow -f my-workflow.yaml
+
+# Apply (creates if new, updates if existing)
+dtctl apply -f my-workflow.yaml
+
+# First apply: stamp the generated ID back into the file so future applies update in place
+dtctl apply -f my-workflow.yaml --write-id
+
+# CI/scripting: apply a template to a specific known workflow
+dtctl apply -f my-workflow.yaml --id $WORKFLOW_ID
+```
+
+Trigger an execution and view its results:
+
+```bash
+# Fire and forget
+dtctl exec workflow workflow-123
+
+# Pass parameters and wait for completion, then show task results
+dtctl exec workflow workflow-123 --params env=prod --wait --show-results
+
+# List recent executions, or the short alias
+dtctl get workflow-executions
+dtctl get wfe
+
+# Describe a specific execution, and stream its logs
+dtctl describe wfe exec-456
+dtctl logs wfe exec-456 --follow
+
+# Retrieve the output of one task within an execution
+dtctl get wfe-task-result exec-456 --task my_task -o json
+```
+
+View and restore version history:
+
+```bash
+dtctl history workflow workflow-123
+dtctl restore workflow workflow-123 5
+```
+
+Delete a workflow (permanent; dtctl prompts for confirmation in interactive mode, use `--plain` to skip it in CI):
+
+```bash
+dtctl delete workflow workflow-123
+```
 
