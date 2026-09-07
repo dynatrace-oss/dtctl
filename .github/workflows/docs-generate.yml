@@ -43,6 +43,12 @@ jobs:
 
       - name: Fail if generated docs are stale
         run: |
+          # `git add -N` records any brand-new (untracked) generated file as an
+          # intent-to-add so `git diff` notices it too; a plain `git diff`
+          # ignores untracked files, which would let a newly-created page (e.g. a
+          # new PLAN entry, or a deleted page the generator recreated) slip
+          # through as "up to date".
+          git add -N -- docs/resources docs/COMMANDS.md docs/TOKEN_SCOPES.md docs/INDEX.md
           if ! git diff --exit-code -- docs/resources docs/COMMANDS.md docs/TOKEN_SCOPES.md docs/INDEX.md; then
             echo ""
             echo "❌ Generated reference docs are out of date."

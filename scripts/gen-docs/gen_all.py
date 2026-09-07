@@ -23,7 +23,6 @@ Output: <out-dir>/resources/<file>.md, <out-dir>/COMMANDS.md,
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -60,23 +59,23 @@ PLAN = {
 }
 
 
-def deplural(x: str) -> str:
-    if x.endswith("es") and len(x) > 3:
-        return x[:-2]
-    if x.endswith("s") and len(x) > 2:
-        return x[:-1]
-    return x
-
-
 def matches(key: str, stems: set[str]) -> bool:
-    """Does a catalog resource key (singular or plural) belong to this file?"""
-    if key in stems:
-        return True
-    if deplural(key) in stems:
-        return True
-    if any(key == s + "s" or key == s + "es" for s in stems):
-        return True
-    return False
+    """Does a catalog resource key (singular or plural - casing varies by verb)
+    belong to this file's set of singular stems?
+
+    Folds in the naive de-pluralization that used to live in a separate helper:
+    a catalog key matches if it is a stem verbatim, if stripping a trailing
+    `s`/`es` yields a stem, or if adding one to a stem yields the key."""
+    singular = key
+    if key.endswith("es") and len(key) > 3:
+        singular = key[:-2]
+    elif key.endswith("s") and len(key) > 2:
+        singular = key[:-1]
+    return (
+        key in stems
+        or singular in stems
+        or any(key == s + "s" or key == s + "es" for s in stems)
+    )
 
 
 def resource_managed_body(title: str, stems: list[str], catalog: dict,
@@ -213,8 +212,18 @@ def inject_managed(path: Path, tag: str, body: str) -> None:
     if not path.exists():
         raise SystemExit(f"{path} does not exist; expected an authored file with '{start}' markers")
     text = path.read_text(encoding="utf-8")
-    if start not in text or end not in text:
-        raise SystemExit(f"markers '{tag}' not found in {path}; refusing to overwrite authored content")
+    n_start, n_end = text.count(start), text.count(end)
+    if n_start != 1 or n_end != 1:
+        # 0 markers -> authored/hand-edited page (never overwrite); >1 -> a
+        # duplicated block that a single split would silently leave half-stale.
+        raise SystemExit(
+            f"expected exactly one '{tag}' GENERATED block in {path} "
+            f"(found {n_start} start / {n_end} end markers); refusing to overwrite")
+    if text.index(start) > text.index(end):
+        # a hand-edit mistake that split() would turn into an opaque unpack error
+        raise SystemExit(
+            f"'{tag}' GENERATED end marker precedes its start marker in {path}; "
+            f"refusing to overwrite")
     pre, rest = text.split(start, 1)
     _, post = rest.split(end, 1)
     path.write_text(pre + managed_wrapper(tag, body) + post, encoding="utf-8")
@@ -259,7 +268,7 @@ def main() -> int:
     if len(sys.argv) < 2:
         print("usage: gen_all.py <commands-full.json> [out-dir]", file=sys.stderr)
         return 2
-    catalog = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    catalog = gen_docs.load_catalog(Path(sys.argv[1]))
     out_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("out-all")
     (out_dir / "resources").mkdir(parents=True, exist_ok=True)
 
@@ -270,8 +279,10 @@ def main() -> int:
     covered_keys: set[str] = set()
     for fname, (title, stems, authored, note) in PLAN.items():
         gen = "authored" if authored else "generated"
-        if not authored:
-            covered_keys.update(k for k in all_keys if matches(k, set(stems)))
+        # A file "covers" its catalog stems whether it is generated or authored:
+        # authored pages (e.g. cloud-integrations -> aws/azure/gcp) map real
+        # catalog keys too, so they must not surface as "unmapped".
+        covered_keys.update(k for k in all_keys if matches(k, set(stems)))
         path = out_dir / "resources" / f"{fname}.md"
         status = emit_resource_page(path, fname, title, stems, catalog, raw_index, authored, note)
         print(f"  resources/{fname}.md: {status}")
@@ -283,8 +294,10 @@ def main() -> int:
     # block. Inject the generated scope tables between markers; never overwrite the file.
     inject_managed(out_dir / "TOKEN_SCOPES.md", "token-scopes", token_scopes_body(catalog))
 
-    # coverage report: which catalog resource keys did NOT land in any file
-    uncovered = sorted(k for k in all_keys if k not in covered_keys and deplural(k) not in {deplural(c) for c in covered_keys})
+    # coverage report: which catalog resource keys did NOT land in any file.
+    # `covered_keys` already holds every key that matches() any file's stems in
+    # either singular or plural form, so a plain set difference is exact.
+    uncovered = sorted(k for k in all_keys if k not in covered_keys)
     idx = ["# INDEX - planned file -> catalog resources\n",
            gen_docs.md_table(["File", "Title", "Catalog stems", "Mode"], index_rows),
            "\n## Catalog resource keys not mapped to any file\n",

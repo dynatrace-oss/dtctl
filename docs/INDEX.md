@@ -32,8 +32,6 @@ _(review these - either fold into a file or confirm intentionally excluded)_
 
 | Unmapped key |
 | --- |
-| aws |
-| azure |
 | classic-pipelines |
 | current |
 | current-context |
@@ -42,7 +40,6 @@ _(review these - either fold into a file or confirm intentionally excluded)_
 | describe |
 | describe-context |
 | export |
-| gcp |
 | get-contexts |
 | import |
 | init |
