@@ -30,6 +30,8 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
+<!-- SME: unverified inference - the output shape below was NOT captured from a live run; verify against the binary. -->
+
 `get edgeconnects` returns each configuration's ID, name, and host patterns; `describe edgeconnect <id>` adds the full definition. Use `-o json` for the complete record.
 
 

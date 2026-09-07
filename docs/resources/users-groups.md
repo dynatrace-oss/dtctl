@@ -28,6 +28,8 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
+<!-- SME: unverified inference - the output shape below was NOT captured from a live run; verify against the binary. -->
+
 `get users` / `get groups` return each identity's UUID and name (email for users); `describe user <uuid>` / `describe group <uuid>` add the full record, including group membership. Use `-o json` for the complete structure.
 
 

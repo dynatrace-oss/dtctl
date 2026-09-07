@@ -27,6 +27,8 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
+<!-- SME: unverified inference - the output shape below was NOT captured from a live run; verify against the binary. -->
+
 `get notifications` returns each notification's ID, name, and type. Filter with `--type`, and use `-o json` for the full record.
 
 

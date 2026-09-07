@@ -38,6 +38,8 @@ dtctl account login
 
 ## Output
 
+<!-- SME: unverified inference - the output shape below was NOT captured from a live run; verify against the binary. -->
+
 `account list token` returns each token's ID, name, scopes, owner, expiry, and tags. Use `-o json` for the full structured record. `create` prints the new token value once (store it immediately; it cannot be retrieved again).
 
 ## Examples
