@@ -1,8 +1,8 @@
 # Notifications
 
-<!-- SME: no site source; author from the binary -->
+<!-- Authored from the dtctl binary; SME to verify against the current dtctl binary. -->
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Notifications are the platform's problem and event notification configurations. dtctl lists and inspects them and can delete them (aliases: `notification`, `notif`); creating notifications is done in the Dynatrace UI or the Settings API.
 
 ## Supported operations
 
@@ -27,10 +27,19 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
+`get notifications` returns each notification's ID, name, and type. Filter with `--type`, and use `-o json` for the full record.
 
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all notifications
+dtctl get notifications
+
+# Filter by notification type
+dtctl get notifications --type <type>
+
+# Delete one (skip the confirmation prompt)
+dtctl delete notification <notification-id> --yes
+```
 

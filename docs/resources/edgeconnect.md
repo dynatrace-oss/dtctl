@@ -1,8 +1,8 @@
 # EdgeConnect
 
-<!-- SME: no site source; author from the binary -->
+<!-- Authored from the dtctl binary; SME to verify against the current dtctl binary. -->
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+EdgeConnect provides secure connectivity from the Dynatrace platform to endpoints inside a private network. dtctl lists and inspects EdgeConnect configurations and can create and delete them (aliases: `edgeconnect`, `ec`).
 
 ## Supported operations
 
@@ -30,10 +30,25 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
+`get edgeconnects` returns each configuration's ID, name, and host patterns; `describe edgeconnect <id>` adds the full definition. Use `-o json` for the complete record.
 
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all EdgeConnect configurations
+dtctl get edgeconnects
+
+# Describe one
+dtctl describe edgeconnect <id>
+
+# Create (name is RFC 1123 compliant, max 50 chars)
+dtctl create edgeconnect --name my-edgeconnect --host-patterns "*.internal.example.com,db.example.com"
+
+# Create from a definition file
+dtctl create edgeconnect -f edgeconnect.yaml
+
+# Delete (skip the confirmation prompt)
+dtctl delete edgeconnect <id> --yes
+```
 

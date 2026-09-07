@@ -1,8 +1,8 @@
 # Users & Groups
 
-<!-- SME: no site source; author from the binary -->
+<!-- Authored from the dtctl binary; SME to verify against the current dtctl binary. -->
 
-<!-- SME: Overview - what this resource is in the Dynatrace platform, when to use it, and how it relates to neighboring resources (1-2 sentences). -->
+Users and groups are the IAM identities in your Dynatrace account. dtctl provides read-only access: list users and groups and inspect individual ones (aliases: `user`/`users`, `group`/`groups`). Managing membership and permissions is done through Dynatrace account management.
 
 ## Supported operations
 
@@ -28,10 +28,22 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 
 ## Output
 
-<!-- SME: describe the returned shape (key fields, id/name conventions) and how -o json / -o wide differ. -->
+`get users` / `get groups` return each identity's UUID and name (email for users); `describe user <uuid>` / `describe group <uuid>` add the full record, including group membership. Use `-o json` for the complete structure.
 
 
 ## Examples
 
-<!-- SME: 3-5 real invocations with sample output. -->
+```bash
+# List all IAM users
+dtctl get users
+
+# Describe a specific user
+dtctl describe user <user-uuid>
+
+# List all IAM groups
+dtctl get groups
+
+# Describe a specific group
+dtctl describe group <group-uuid>
+```
 
