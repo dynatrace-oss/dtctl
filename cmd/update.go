@@ -23,6 +23,8 @@ from a YAML/JSON file (the update-only counterpart to 'create document').
 Available resources:
   document                Update an existing document of any type from a file
   breakpoint              Update breakpoint condition/enabled state or workspace filters
+  extension               Activate a specific, latest-installed, or Hub-latest version of an extension
+  extensions              Bulk-upgrade all installed extensions (requires --all)
   azure connection        Update Azure connection credentials
   azure monitoring        Update Azure monitoring configuration
   gcp connection          Update GCP connection credentials (Preview)

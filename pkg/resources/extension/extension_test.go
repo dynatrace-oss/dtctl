@@ -1631,3 +1631,24 @@ func TestGetActiveGateGroups(t *testing.T) {
 		})
 	}
 }
+
+func TestSemverGreater(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want bool
+	}{
+		{"1.2.3", "1.2.2", true},
+		{"1.2.2", "1.2.3", false},
+		{"2.0.0", "1.9.9", true},
+		{"1.0.0", "1.0.0", false},
+		{"1.10.0", "1.9.0", true},
+		{"1.2", "1.1.99", true},
+		{"1.0.0", "0.9.0", true},
+	}
+	for _, tt := range tests {
+		got := SemverGreater(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("semverGreater(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
