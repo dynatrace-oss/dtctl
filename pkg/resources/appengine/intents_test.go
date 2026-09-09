@@ -1,7 +1,13 @@
 package appengine
 
 import (
+	"encoding/json"
+	"net/url"
+	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
 
 func TestExtractIntentsFromManifest(t *testing.T) {
@@ -299,55 +305,52 @@ func TestParseFullIntentName(t *testing.T) {
 	}
 }
 
-func TestGenerateIntentURL(t *testing.T) {
+// TestGenerateIntentURLFragmentRoundTrip is a regression test for #439:
+// form encoding (url.QueryEscape) turns spaces into "+" which the fragment
+// treats as a literal plus, corrupting DQL payloads.
+func TestGenerateIntentURLFragmentRoundTrip(t *testing.T) {
 	tests := []struct {
-		name        string
-		baseURL     string
-		appID       string
-		intentID    string
-		payload     map[string]interface{}
-		expectError bool
+		name    string
+		payload map[string]interface{}
 	}{
-		{
-			name:     "simple payload",
-			baseURL:  "https://example.apps.dynatrace.com",
-			appID:    "test.app",
-			intentID: "view-trace",
-			payload: map[string]interface{}{
-				"trace_id": "abc123",
-			},
-			expectError: false,
-		},
-		{
-			name:     "complex payload",
-			baseURL:  "https://example.apps.dynatrace.com",
-			appID:    "test.app",
-			intentID: "view-trace",
-			payload: map[string]interface{}{
-				"trace_id":  "abc123",
-				"timestamp": "2026-02-02T10:00:00Z",
-				"nested": map[string]interface{}{
-					"key": "value",
-				},
-			},
-			expectError: false,
-		},
+		{"simple payload", map[string]interface{}{"trace_id": "abc123"}},
+		{"dql query with spaces", map[string]interface{}{"dt.query": "fetch logs | limit 10"}},
+		{"literal plus sign", map[string]interface{}{"timestamp": "2026-02-02T16:04:19+01:00"}},
 	}
+
+	const baseURL = "https://example.apps.dynatrace.com"
+	const prefix = baseURL + "/ui/intent/dynatrace.notebooks/view-query#"
+
+	c, err := client.NewForTesting(baseURL, "fake-token")
+	if err != nil {
+		t.Fatalf("NewForTesting: %v", err)
+	}
+	handler := NewIntentHandler(c)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock client with the base URL
-			// For this test, we'll test the URL generation logic directly
-			// In a real scenario, we'd use a mock client
+			got, err := handler.GenerateIntentURL("dynatrace.notebooks", "view-query", tt.payload)
+			if err != nil {
+				t.Fatalf("GenerateIntentURL: %v", err)
+			}
+			if !strings.HasPrefix(got, prefix) {
+				t.Fatalf("expected URL to start with %q, got %q", prefix, got)
+			}
 
-			// The URL should follow pattern: {baseURL}/ui/intent/{appID}/{intentID}#{encoded-json}
-			// We can't test the full function without a client, but we can test the logic
-			// by checking the URL structure
+			// Use PathUnescape (not QueryUnescape): in a fragment "+" is a literal plus,
+			// so QueryUnescape would hide exactly the bug under test.
+			decoded, err := url.PathUnescape(strings.TrimPrefix(got, prefix))
+			if err != nil {
+				t.Fatalf("fragment is not valid percent-encoding: %v", err)
+			}
 
-			// Since GenerateIntentURL requires an IntentHandler with a client,
-			// we'll skip the actual test execution and just verify the test structure
-			if tt.expectError {
-				t.Skip("Test requires mock client implementation")
+			var roundTripped map[string]interface{}
+			if err := json.Unmarshal([]byte(decoded), &roundTripped); err != nil {
+				t.Fatalf("fragment is not valid JSON after decoding: %v\ndecoded: %q", err, decoded)
+			}
+
+			if !reflect.DeepEqual(roundTripped, tt.payload) {
+				t.Errorf("round-trip mismatch\n  want: %v\n   got: %v", tt.payload, roundTripped)
 			}
 		})
 	}
