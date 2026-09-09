@@ -42,6 +42,11 @@ Labels are set with repeatable --label flags, or carried in the payload under a
 replaces the document's entire label set; omitting them leaves labels unchanged.
 Labels cannot be cleared, only replaced.
 
+Updates overwrite the document's content in place. Pass --create-snapshot to keep
+the pre-update state as a snapshot, recoverable via 'dtctl history document' and
+'dtctl restore document'. The API keeps at most 50 snapshots per document and
+allows at most 5 per document per minute.
+
 Examples:
   # Round-trip update (type and id come from the exported file)
   dtctl update document -f doc.yaml
@@ -57,6 +62,12 @@ Examples:
 
   # Show what changed
   dtctl update document -f doc.yaml --show-diff
+
+  # Keep the previous content as a snapshot before overwriting it
+  dtctl update document -f doc.yaml --create-snapshot
+
+  # Snapshot with a description
+  dtctl update document -f doc.yaml --create-snapshot --snapshot-description "before Q3 rework"
 
 See also:
   dtctl create document --help   # create a new document of any type
@@ -82,6 +93,8 @@ func updateDocumentRunE(cmd *cobra.Command, _ []string) error {
 	labels, _ := cmd.Flags().GetStringArray("label")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	showDiff, _ := cmd.Flags().GetBool("show-diff")
+	createSnapshot, _ := cmd.Flags().GetBool("create-snapshot")
+	snapshotDescription, _ := cmd.Flags().GetString("snapshot-description")
 
 	fileData, err := vfs.ReadFile(file)
 	if err != nil {
@@ -115,13 +128,15 @@ func updateDocumentRunE(cmd *cobra.Command, _ []string) error {
 	}
 
 	results, err := applier.Apply(fileData, apply.ApplyOptions{
-		TemplateVars:    templateVars,
-		DryRun:          dryRun,
-		ShowDiff:        showDiff,
-		OverrideID:      id,
-		Type:            docType,
-		Labels:          labels,
-		RequireExisting: true,
+		TemplateVars:        templateVars,
+		DryRun:              dryRun,
+		ShowDiff:            showDiff,
+		OverrideID:          id,
+		Type:                docType,
+		Labels:              labels,
+		RequireExisting:     true,
+		CreateSnapshot:      createSnapshot,
+		SnapshotDescription: snapshotDescription,
 	})
 	if err != nil {
 		return err
@@ -145,6 +160,8 @@ func init() {
 	updateDocumentCmd.Flags().String("id", "", "ID of the document to update; read from payload if not provided")
 	updateDocumentCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	updateDocumentCmd.Flags().StringArray("label", []string{}, "classification label to set (repeatable); replaces the document's labels (cannot be cleared, only replaced). Falls back to labels in the payload")
+	updateDocumentCmd.Flags().Bool("create-snapshot", false, "snapshot the document's current state before updating it, so the previous version stays available via 'dtctl history document'/'dtctl restore document'")
+	updateDocumentCmd.Flags().String("snapshot-description", "", "description for the snapshot created by --create-snapshot (max 128 characters)")
 	updateDocumentCmd.Flags().Bool("dry-run", false, "preview the update without applying it")
 	updateDocumentCmd.Flags().Bool("show-diff", false, "show a diff of the change")
 	_ = updateDocumentCmd.MarkFlagRequired("file")

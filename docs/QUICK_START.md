@@ -783,6 +783,16 @@ dtctl unshare dashboard dash-123 --all
 
 ### Version History (Snapshots)
 
+Snapshots are opt-in: an update overwrites a document unless you ask for one with
+`--create-snapshot`, which captures the pre-update content first.
+
+```bash
+# Snapshot the current content, then update
+dtctl update document -f doc.yaml --create-snapshot
+dtctl apply -f dashboard.yaml --create-snapshot --snapshot-description "before Q3 rework"
+dtctl edit dashboard dash-123 --create-snapshot
+```
+
 View and restore previous versions of dashboards and notebooks:
 
 ```bash
@@ -815,7 +825,8 @@ dtctl restore notebook "Weekly Analysis" 3 --force
 ```
 
 **Notes:**
-- Snapshots are created when documents are updated with the `create-snapshot` option
+- Snapshots are only created when an update passes `--create-snapshot`, or implicitly by a restore
+- At most 5 snapshots per document per minute are accepted by the API
 - Maximum 50 snapshots per document (oldest auto-deleted when exceeded)
 - Snapshots auto-delete after 30 days
 - Only the document owner can restore snapshots

@@ -410,6 +410,19 @@ type UpdateRequest struct {
 	Name        string   // New name; omitted when empty
 	Description string   // New description; omitted when empty
 	Labels      []string // Replacement label set; omitted when empty
+
+	// CreateSnapshot asks the API to snapshot the document's current state
+	// before applying this update, so the pre-update content stays retrievable
+	// via ListSnapshots / RestoreSnapshot. Defaults to false: updates overwrite
+	// without keeping history unless this is set.
+	//
+	// The API caps snapshot creation at 5 per document per 60 seconds and keeps
+	// at most 50 snapshots per document (creating the 51st deletes the oldest).
+	CreateSnapshot bool
+
+	// SnapshotDescription labels the snapshot created by CreateSnapshot (max
+	// 128 characters). Ignored when CreateSnapshot is false.
+	SnapshotDescription string
 }
 
 // Update updates a document's content.
@@ -448,6 +461,15 @@ func (h *Handler) UpdateDocument(ctx context.Context, id string, version int, re
 		r.SetMultipartFormData(map[string]string{"description": req.Description})
 	}
 	addLabelParts(r, req.Labels)
+
+	// snapshotDescription is only meaningful alongside create-snapshot; the API
+	// ignores it otherwise, so don't send it and keep the request minimal.
+	if req.CreateSnapshot {
+		r.SetQueryParam("create-snapshot", "true")
+		if req.SnapshotDescription != "" {
+			r.SetMultipartFormData(map[string]string{"snapshotDescription": req.SnapshotDescription})
+		}
+	}
 
 	resp, err := r.Patch(fmt.Sprintf("/platform/document/v1/documents/%s", id))
 	if err != nil {

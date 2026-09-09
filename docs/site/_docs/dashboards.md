@@ -155,13 +155,17 @@ dtctl unshare dashboard dash-123 --user user@example.com
 
 ## Version History (Snapshots)
 
-Dynatrace keeps document snapshots. View and restore previous versions:
+Snapshots are opt-in — an update overwrites the dashboard unless you ask for one:
 
 ```bash
+# Snapshot the current content before overwriting it
+dtctl edit dashboard dash-123 --create-snapshot
+dtctl apply -f dashboard.yaml --create-snapshot --snapshot-description "before Q3 rework"
+
 # List all versions
 dtctl history dashboard dash-123
 
-# Restore a specific version
+# Restore a specific version (snapshots the current state first)
 dtctl restore dashboard dash-123 5
 ```
 

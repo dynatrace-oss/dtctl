@@ -39,6 +39,9 @@ dtctl apply -f dashboard.yaml --plain
 # Preview without applying
 dtctl apply -f dashboard.yaml --dry-run --plain
 
+# Keep the current content as a restorable snapshot before overwriting it
+dtctl apply -f dashboard.yaml --create-snapshot --plain
+
 # Delete
 dtctl delete dashboard <id> --plain
 ```

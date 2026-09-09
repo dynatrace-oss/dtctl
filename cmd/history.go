@@ -76,8 +76,10 @@ var historyDashboardCmd = &cobra.Command{
 	Short:   "Show version history of a dashboard",
 	Long: `Show the version history (snapshots) of a dashboard.
 
-Snapshots are created when updating a document with the create-snapshot option.
-Each snapshot captures the document's content at a specific point in time.
+Snapshots are not kept automatically: pass --create-snapshot when updating a
+document ('dtctl update document', 'dtctl apply', 'dtctl edit') to capture its
+content before the update overwrites it. Restoring also snapshots the current
+state first, so a restore is always reversible.
 
 Examples:
   # Show version history by ID
@@ -128,8 +130,10 @@ var historyNotebookCmd = &cobra.Command{
 	Short:   "Show version history of a notebook",
 	Long: `Show the version history (snapshots) of a notebook.
 
-Snapshots are created when updating a document with the create-snapshot option.
-Each snapshot captures the document's content at a specific point in time.
+Snapshots are not kept automatically: pass --create-snapshot when updating a
+document ('dtctl update document', 'dtctl apply', 'dtctl edit') to capture its
+content before the update overwrites it. Restoring also snapshots the current
+state first, so a restore is always reversible.
 
 Examples:
   # Show version history by ID
@@ -182,8 +186,10 @@ var historyDocumentCmd = &cobra.Command{
 
 Works for any document type (dashboard, notebook, launchpad, custom app documents, etc.).
 
-Snapshots are created when updating a document with the create-snapshot option.
-Each snapshot captures the document's content at a specific point in time.
+Snapshots are not kept automatically: pass --create-snapshot when updating a
+document ('dtctl update document', 'dtctl apply', 'dtctl edit') to capture its
+content before the update overwrites it. Restoring also snapshots the current
+state first, so a restore is always reversible.
 
 Examples:
   # Show version history by ID

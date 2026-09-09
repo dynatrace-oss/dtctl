@@ -143,6 +143,14 @@ type ApplyOptions struct {
 	Type            string   // document type override (from --type flag); forces generic document handling
 	RequireExisting bool     // fail instead of creating when a document ID is missing (update semantics)
 	Labels          []string // document labels (from --label flags); when non-empty, overrides labels in the payload
+
+	// CreateSnapshot snapshots a document's current state before overwriting it
+	// (from --create-snapshot). Documents only, and only on the update path:
+	// there is nothing to snapshot when the document is being created.
+	CreateSnapshot bool
+	// SnapshotDescription describes the snapshot created by CreateSnapshot
+	// (from --snapshot-description); ignored without CreateSnapshot.
+	SnapshotDescription string
 }
 
 // ResourceType represents the type of resource
