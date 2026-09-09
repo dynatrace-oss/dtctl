@@ -332,6 +332,34 @@ func (h *Handler) GetActiveVersion(ctx context.Context, extensionName string) (s
 	return cfg.Version, nil
 }
 
+// ActivateVersion sets the active version of an extension via the environment-configuration
+// endpoint. It is safe to call even if the version is already active.
+func (h *Handler) ActivateVersion(ctx context.Context, extensionName, version string) (*ExtensionEnvironmentConfig, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		SetBody(map[string]string{"version": version}).
+		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environment-configuration", url.PathEscape(extensionName)))
+	if err != nil {
+		return nil, fmt.Errorf("activate extension version: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		var apiErr *httpclient.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.StatusCode {
+			case http.StatusNotFound:
+				return nil, fmt.Errorf("extension %q or version %q not found", extensionName, version)
+			case http.StatusForbidden:
+				return nil, fmt.Errorf("access denied to extension %q", extensionName)
+			}
+		}
+		return nil, fmt.Errorf("activate extension version: %w", err)
+	}
+	var result ExtensionEnvironmentConfig
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("activate extension version: parse response: %w", err)
+	}
+	return &result, nil
+}
+
 // GetVersion gets details for a specific extension version
 func (h *Handler) GetVersion(ctx context.Context, extensionName, version string) (*ExtensionDetails, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
