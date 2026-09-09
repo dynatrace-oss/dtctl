@@ -314,7 +314,6 @@ func refreshMonitoringConfigurations(handler *extension.Handler, extensionName, 
 	return nil
 }
 
-
 // joinErrors concatenates error strings with newlines.
 func joinErrors(errs []string) string {
 	result := ""
