@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"sort"
 
 	"github.com/spf13/cobra"
@@ -39,34 +41,7 @@ Examples:
 		}
 
 		if useSchedulingRuleDescribeTextView() {
-			const kw = 18
-			output.DescribeKV("ID:", kw, "%s", rule.ID)
-			output.DescribeKV("Title:", kw, "%s", rule.Title)
-			if rule.Description != "" {
-				output.DescribeKV("Description:", kw, "%s", rule.Description)
-			}
-			output.DescribeKV("Rule Type:", kw, "%s", rule.RuleType)
-			if rule.BusinessCalendar != "" {
-				output.DescribeKV("Business Calendar:", kw, "%s", rule.BusinessCalendar)
-			}
-			if rule.Version != 0 {
-				output.DescribeKV("Version:", kw, "%d", rule.Version)
-			}
-			if body := schedulingRuleBody(rule); body != nil {
-				fmt.Println()
-				fmt.Println("Rule:")
-				for _, k := range sortedKeys(body) {
-					output.DescribeKV("  "+k+":", kw, "%v", body[k])
-				}
-			}
-			if rule.ModificationInfo != nil {
-				fmt.Println()
-				fmt.Println("Modification Info:")
-				output.DescribeKV("  Created By:", kw, "%s", rule.ModificationInfo.CreatedBy)
-				output.DescribeKV("  Created:", kw, "%s", rule.ModificationInfo.CreatedTime)
-				output.DescribeKV("  Modified By:", kw, "%s", rule.ModificationInfo.LastModifiedBy)
-				output.DescribeKV("  Modified:", kw, "%s", rule.ModificationInfo.LastModifiedTime)
-			}
+			printSchedulingRuleDescribeTable(os.Stdout, rule)
 			return nil
 		}
 
@@ -86,6 +61,38 @@ func useSchedulingRuleDescribeTextView() bool {
 	return outputFormat == "" || outputFormat == "table"
 }
 
+// printSchedulingRuleDescribeTable renders a scheduling rule in human-readable describe format.
+func printSchedulingRuleDescribeTable(w io.Writer, rule *schedulingrule.SchedulingRule) {
+	const kw = 18
+	output.FprintDescribeKV(w, "ID:", kw, "%s", rule.ID)
+	output.FprintDescribeKV(w, "Title:", kw, "%s", rule.Title)
+	if rule.Description != "" {
+		output.FprintDescribeKV(w, "Description:", kw, "%s", rule.Description)
+	}
+	output.FprintDescribeKV(w, "Rule Type:", kw, "%s", rule.RuleType)
+	if rule.BusinessCalendar != "" {
+		output.FprintDescribeKV(w, "Business Calendar:", kw, "%s", rule.BusinessCalendar)
+	}
+	if rule.Version != 0 {
+		output.FprintDescribeKV(w, "Version:", kw, "%d", rule.Version)
+	}
+	if body := schedulingRuleBody(rule); body != nil {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Rule:")
+		for _, k := range schedulingRuleBodyKeys(body) {
+			output.FprintDescribeKV(w, "  "+k+":", kw, "%v", body[k])
+		}
+	}
+	if rule.ModificationInfo != nil {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "Modification Info:")
+		output.FprintDescribeKV(w, "  Created By:", kw, "%s", rule.ModificationInfo.CreatedBy)
+		output.FprintDescribeKV(w, "  Created:", kw, "%s", rule.ModificationInfo.CreatedTime)
+		output.FprintDescribeKV(w, "  Modified By:", kw, "%s", rule.ModificationInfo.LastModifiedBy)
+		output.FprintDescribeKV(w, "  Modified:", kw, "%s", rule.ModificationInfo.LastModifiedTime)
+	}
+}
+
 // schedulingRuleBody returns the rule body matching the rule's type, or nil.
 func schedulingRuleBody(r *schedulingrule.SchedulingRule) map[string]interface{} {
 	switch r.RuleType {
@@ -101,8 +108,8 @@ func schedulingRuleBody(r *schedulingrule.SchedulingRule) map[string]interface{}
 	return nil
 }
 
-// sortedKeys keeps the describe output stable across runs.
-func sortedKeys(m map[string]interface{}) []string {
+// schedulingRuleBodyKeys keeps the describe output stable across runs.
+func schedulingRuleBodyKeys(m map[string]interface{}) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

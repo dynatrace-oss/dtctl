@@ -69,7 +69,7 @@ This document tracks the current implementation status of dtctl. For future plan
 |----------|-----|----------|--------|--------|------|-------|
 | workflow | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | execution | ✅ | ✅ | - | - | - | - |
-| scheduling-rule | ✅ | ✅ | - | ✅ | - | ✅ |
+| scheduling-rule | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | document | ✅ | ✅ | ✅ | ✅ | ✅ | - |
 | dashboard | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | notebook | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

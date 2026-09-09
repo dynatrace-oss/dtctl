@@ -1,0 +1,17 @@
+ID:               a1b2c3d4-e5f6-4a7b-8c9d-sr0000000001
+Title:            Weekly Maintenance
+Description:      Weekly maintenance window every Sunday
+Rule Type:        rrule
+Business Calendar: us-holidays
+Version:          3
+
+Rule:
+  byday:          SU
+  duration:       PT2H
+  freq:           WEEKLY
+
+Modification Info:
+  Created By:     admin@example.invalid
+  Created:        2024-01-15T10:00:00Z
+  Modified By:    ops@example.invalid
+  Modified:       2024-06-01T12:00:00Z
