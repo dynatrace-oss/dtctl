@@ -79,7 +79,7 @@ var historyDashboardCmd = &cobra.Command{
 Snapshots are not kept automatically: pass --create-snapshot when updating a
 document ('dtctl update document', 'dtctl apply', 'dtctl edit') to capture its
 content before the update overwrites it. Restoring also snapshots the current
-state first, so a restore is always reversible.
+state first (if one doesn't exist), so a restore is normally reversible.
 
 Examples:
   # Show version history by ID
@@ -116,6 +116,9 @@ Examples:
 
 		if len(snapshots.Snapshots) == 0 {
 			fmt.Println("No snapshots found for this dashboard")
+			if !plainMode {
+				fmt.Println("Snapshots are opt-in: pass --create-snapshot when updating to capture the pre-update content")
+			}
 			return nil
 		}
 
@@ -133,7 +136,7 @@ var historyNotebookCmd = &cobra.Command{
 Snapshots are not kept automatically: pass --create-snapshot when updating a
 document ('dtctl update document', 'dtctl apply', 'dtctl edit') to capture its
 content before the update overwrites it. Restoring also snapshots the current
-state first, so a restore is always reversible.
+state first (if one doesn't exist), so a restore is normally reversible.
 
 Examples:
   # Show version history by ID
@@ -170,6 +173,9 @@ Examples:
 
 		if len(snapshots.Snapshots) == 0 {
 			fmt.Println("No snapshots found for this notebook")
+			if !plainMode {
+				fmt.Println("Snapshots are opt-in: pass --create-snapshot when updating to capture the pre-update content")
+			}
 			return nil
 		}
 
@@ -189,7 +195,7 @@ Works for any document type (dashboard, notebook, launchpad, custom app document
 Snapshots are not kept automatically: pass --create-snapshot when updating a
 document ('dtctl update document', 'dtctl apply', 'dtctl edit') to capture its
 content before the update overwrites it. Restoring also snapshots the current
-state first, so a restore is always reversible.
+state first (if one doesn't exist), so a restore is normally reversible.
 
 Examples:
   # Show version history by ID
@@ -226,6 +232,9 @@ Examples:
 
 		if len(snapshots.Snapshots) == 0 {
 			fmt.Println("No snapshots found for this document")
+			if !plainMode {
+				fmt.Println("Snapshots are opt-in: pass --create-snapshot when updating to capture the pre-update content")
+			}
 			return nil
 		}
 

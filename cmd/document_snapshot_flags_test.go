@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -67,5 +68,115 @@ func TestEditUpdateRequest_SnapshotOptIn(t *testing.T) {
 	}
 	if req.SnapshotDescription != "before Q3 rework" {
 		t.Errorf("SnapshotDescription = %q, want 'before Q3 rework'", req.SnapshotDescription)
+	}
+}
+
+// TestValidateSnapshotFlags pins the dependency between the two flags: a
+// description on its own would otherwise be dropped silently, leaving the user
+// with neither a snapshot nor a warning.
+func TestValidateSnapshotFlags(t *testing.T) {
+	tests := []struct {
+		name           string
+		createSnapshot bool
+		description    string
+		wantErr        bool
+	}{
+		{name: "neither flag", wantErr: false},
+		{name: "flag alone", createSnapshot: true, wantErr: false},
+		{name: "flag with description", createSnapshot: true, description: "before Q3 rework", wantErr: false},
+		{name: "orphaned description", description: "before Q3 rework", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &cobra.Command{Use: "x"}
+			c.Flags().Bool("create-snapshot", false, "")
+			c.Flags().String("snapshot-description", "", "")
+			if tt.createSnapshot {
+				_ = c.Flags().Set("create-snapshot", "true")
+			}
+			if tt.description != "" {
+				_ = c.Flags().Set("snapshot-description", tt.description)
+			}
+
+			err := validateSnapshotFlags(c)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error for a description without --create-snapshot")
+				}
+				if !strings.Contains(err.Error(), "--snapshot-description requires --create-snapshot") {
+					t.Errorf("error = %v, want it to name both flags", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestEditCommandsValidateSnapshotFlags ensures the edit commands reject an
+// orphaned description before the editor opens, not after the user has already
+// written their changes.
+func TestEditCommandsValidateSnapshotFlags(t *testing.T) {
+	for name, c := range map[string]*cobra.Command{
+		"edit dashboard": editDashboardCmd,
+		"edit notebook":  editNotebookCmd,
+		"edit document":  editDocumentCmd,
+	} {
+		if c.PreRunE == nil {
+			t.Errorf("%s has no PreRunE to validate the snapshot flags", name)
+			continue
+		}
+
+		t.Cleanup(func() { _ = c.Flags().Set("snapshot-description", "") })
+		if err := c.Flags().Set("snapshot-description", "orphaned"); err != nil {
+			t.Fatalf("%s: setting the flag: %v", name, err)
+		}
+		if err := c.PreRunE(c, []string{"doc-1"}); err == nil {
+			t.Errorf("%s accepted --snapshot-description without --create-snapshot", name)
+		}
+		_ = c.Flags().Set("snapshot-description", "")
+	}
+}
+
+// TestSnapshotFlagsValidatedBeforeIO checks the file-driven commands reject the
+// orphaned description up front — before reading the file or loading config.
+func TestSnapshotFlagsValidatedBeforeIO(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  *cobra.Command
+		args []string
+	}{
+		{
+			name: "update document",
+			cmd:  updateDocumentCmd,
+			args: []string{"update", "document", "-f", "does-not-exist.yaml", "--snapshot-description", "orphaned"},
+		},
+		{
+			name: "apply",
+			cmd:  applyCmd,
+			args: []string{"apply", "-f", "does-not-exist.yaml", "--snapshot-description", "orphaned"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				rootCmd.SetArgs(nil)
+				_ = tt.cmd.Flags().Set("snapshot-description", "")
+				_ = tt.cmd.Flags().Set("file", "")
+			})
+
+			rootCmd.SetArgs(tt.args)
+			err := rootCmd.Execute()
+			if err == nil {
+				t.Fatal("expected an error for a description without --create-snapshot")
+			}
+			if !strings.Contains(err.Error(), "--snapshot-description requires --create-snapshot") {
+				t.Errorf("error = %v, want the flag-dependency error (not a file/config error)", err)
+			}
+		})
 	}
 }

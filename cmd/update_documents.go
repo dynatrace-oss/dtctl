@@ -96,6 +96,10 @@ func updateDocumentRunE(cmd *cobra.Command, _ []string) error {
 	createSnapshot, _ := cmd.Flags().GetBool("create-snapshot")
 	snapshotDescription, _ := cmd.Flags().GetString("snapshot-description")
 
+	if err := validateSnapshotFlags(cmd); err != nil {
+		return err
+	}
+
 	fileData, err := vfs.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)

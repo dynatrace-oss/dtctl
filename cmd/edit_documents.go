@@ -503,5 +503,8 @@ func init() {
 		c.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
 		c.Flags().Bool("create-snapshot", false, "snapshot the current content before saving the edit, so the previous version stays available via 'dtctl history'/'dtctl restore'")
 		c.Flags().String("snapshot-description", "", "description for the snapshot created by --create-snapshot (max 128 characters)")
+		// Reject an orphaned --snapshot-description before the editor opens,
+		// rather than after the user has already written their changes.
+		c.PreRunE = func(cmd *cobra.Command, _ []string) error { return validateSnapshotFlags(cmd) }
 	}
 }

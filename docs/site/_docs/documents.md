@@ -12,7 +12,8 @@ export, apply, and update documents of any type, and attach classification
 If you only work with dashboards and notebooks, see
 [Dashboards & Notebooks]({{ '/docs/dashboards/' | relative_url }}) — it covers the
 same commands with dashboard/notebook-specific detail. This page focuses on
-**custom document types** and **labels**, which apply to every document type.
+**custom document types**, plus **labels** and **snapshots**, which apply to every
+document type.
 
 > **Token scope:** creating, updating, or applying documents requires
 > `document:documents:write`. See
@@ -87,6 +88,37 @@ dtctl update document -f doc.yaml --show-diff
 ```
 
 `--type` cannot be combined with array (bulk) input.
+
+## Version history (snapshots)
+
+Updates overwrite a document's content in place — **snapshots are opt-in**. Pass
+`--create-snapshot` on any write path to have the API capture the pre-update
+content first, so it stays recoverable with `dtctl history` and `dtctl restore`:
+
+```bash
+# Update, keeping the previous content as a snapshot
+dtctl update document -f doc.yaml --create-snapshot
+
+# Same for apply and interactive edit, optionally with a description
+dtctl apply -f doc.yaml --create-snapshot --snapshot-description "before Q3 rework"
+dtctl edit document acme-config --create-snapshot
+
+# List and restore (restore snapshots the current state first)
+dtctl history document acme-config
+dtctl restore document acme-config 1
+```
+
+Behavior to know:
+
+- **Opt-in, and update-only.** The flag is a no-op when the document is being
+  created — there is no prior state to capture.
+- `--snapshot-description` (max 128 characters) requires `--create-snapshot`;
+  passing it alone is an error rather than a silently skipped snapshot.
+- **Rate limited.** The API accepts at most 5 snapshots per document per minute,
+  so avoid `--create-snapshot` in tight scripted apply loops.
+- **Retention.** At most 50 snapshots per document (the oldest is dropped when
+  exceeded), and snapshots auto-delete after 30 days.
+- Only the document owner can restore a snapshot.
 
 ## Labels
 

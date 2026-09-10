@@ -170,6 +170,10 @@ resources in sync with their file definitions.
 			return err
 		}
 
+		if err := validateSnapshotFlags(cmd); err != nil {
+			return err
+		}
+
 		// Read the file
 		fileData, err := vfs.ReadFile(file)
 		if err != nil {
