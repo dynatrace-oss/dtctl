@@ -301,7 +301,9 @@ def main() -> int:
     idx = ["# INDEX - planned file -> catalog resources\n",
            gen_docs.md_table(["File", "Title", "Catalog stems", "Mode"], index_rows),
            "\n## Catalog resource keys not mapped to any file\n",
-           "_(review these - either fold into a file or confirm intentionally excluded)_\n\n",
+           "<!-- SME: these catalog keys did not map to any doc page - expected verbs "
+           "and subcommands (login, set-context, openpipeline-*, sdk-version, ...), not "
+           "resources; confirm none needs its own page. -->\n\n",
            gen_docs.md_table(["Unmapped key"], [[k] for k in uncovered]) if uncovered else "_none_\n"]
     (out_dir / "INDEX.md").write_text("\n".join(idx), encoding="utf-8")
 
