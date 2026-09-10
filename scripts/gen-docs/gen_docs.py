@@ -209,7 +209,9 @@ def render_resource_page(resource: str, ops: list[dict], catalog: dict, display_
 # --------------------------------------------------------------------------
 
 def render_commands_matrix(catalog: dict) -> str:
-    out = ["# COMMANDS\n", "Generated verb x resource operation matrix.\n"]
+    out = ["# COMMANDS\n",
+           "Generated reference of every dtctl verb and the resources it operates on, "
+           "with required token scopes.\n"]
     verbs = catalog.get("verbs", {})
     for verb in sorted(verbs.keys()):
         info = verbs[verb]
@@ -219,11 +221,11 @@ def render_commands_matrix(catalog: dict) -> str:
         out.append(f"{info.get('description', '')}\n")
         meta_bits = []
         if "mutating" in info:
-            meta_bits.append(f"mutating: {info['mutating']}")
+            meta_bits.append("mutating" if info["mutating"] else "read-only")
         if info.get("access"):
             meta_bits.append(f"access: {info['access']}")
         if info.get("safety_operation"):
-            meta_bits.append(f"safety_operation: {info['safety_operation']}")
+            meta_bits.append(f"safety: {info['safety_operation']}")
         if meta_bits:
             out.append(f"_{' | '.join(meta_bits)}_\n")
 
@@ -257,7 +259,9 @@ def render_token_scopes(catalog: dict) -> str:
             for scope in scopes:
                 levels.setdefault(level, []).append((resource, scope))
 
-    out = ["# TOKEN_SCOPES\n", "Generated per-safety-level scope reference, from `resource_scopes`.\n"]
+    out = ["# TOKEN_SCOPES\n",
+           "Generated reference of the API token scopes each resource requires, "
+           "grouped by safety level.\n"]
     for level in sorted(levels.keys()):
         out.append(f"## {level}\n")
         rows = [[resource, f"`{scope}`"] for resource, scope in sorted(set(levels[level]))]

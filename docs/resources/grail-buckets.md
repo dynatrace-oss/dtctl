@@ -19,7 +19,7 @@ Grail buckets are storage containers in Dynatrace that hold observability data s
 
 ## Flags
 
-Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, ...). A few **verbs** add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb entries in `COMMANDS.md`. The catalog exposes no per-resource flags.
+These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, and more). Some verbs add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb in **[COMMANDS.md](../COMMANDS.md)**. No flags are specific to this resource.
 
 
 ## Required token scopes

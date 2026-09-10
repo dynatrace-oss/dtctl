@@ -25,7 +25,7 @@ Dynatrace App Engine lets you extend the platform with custom and built-in appli
 
 ## Flags
 
-Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, ...). A few **verbs** add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb entries in `COMMANDS.md`. The catalog exposes no per-resource flags.
+These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, and more). Some verbs add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb in **[COMMANDS.md](../COMMANDS.md)**. No flags are specific to this resource.
 
 
 ## Required token scopes
