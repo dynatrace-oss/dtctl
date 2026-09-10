@@ -27,7 +27,7 @@
 
 ## Catalog resource keys not mapped to any file
 
-_(review these - either fold into a file or confirm intentionally excluded)_
+<!-- SME: these catalog keys did not map to any doc page - expected verbs and subcommands (login, set-context, openpipeline-*, sdk-version, ...), not resources; confirm none needs its own page. -->
 
 
 | Unmapped key |
