@@ -22,6 +22,7 @@ var (
 	createAWSMonitoringConfigCredentials string
 	createAWSMonitoringConfigRegions     string
 	createAWSMonitoringConfigFeatureSets string
+	createAWSMonitoringConfigCentral     bool
 )
 
 var createAWSConnectionCmd = &cobra.Command{
@@ -122,31 +123,8 @@ Examples:
 			return fmt.Errorf("failed to determine extension version: %w", err)
 		}
 
-		deploymentRegion := regions[0]
-
-		payload := awsmonitoringconfig.AWSMonitoringConfig{
-			Scope: awsmonitoringconfig.DefaultScope,
-			Value: awsmonitoringconfig.Value{
-				Enabled:           false,
-				Description:       createAWSMonitoringConfigName,
-				Version:           version,
-				ActivationContext: awsmonitoringconfig.DefaultActivationContext,
-				FeatureSets:       featureSets,
-				Aws: awsmonitoringconfig.AWSConfig{
-					DeploymentRegion:        deploymentRegion,
-					Credentials:             []awsmonitoringconfig.Credential{credential},
-					RegionFiltering:         regions,
-					TagFiltering:            []awsmonitoringconfig.TagFilter{},
-					TagEnrichment:           []string{},
-					Namespaces:              []awsmonitoringconfig.CustomNamespace{},
-					ConfigurationMode:       "QUICK_START",
-					DeploymentMode:          "AUTOMATED",
-					DeploymentScope:         "SINGLE_ACCOUNT",
-					SmartscapeConfiguration: awsmonitoringconfig.FlagConfig{Enabled: true},
-					MetricsConfiguration:    awsmonitoringconfig.RegionalFlagConfig{Enabled: true, Regions: regions},
-				},
-			},
-		}
+		payload := buildAWSMonitoringConfig(
+			createAWSMonitoringConfigName, version, credential, regions, featureSets, createAWSMonitoringConfigCentral)
 
 		body, err := json.Marshal(payload)
 		if err != nil {
@@ -162,6 +140,34 @@ Examples:
 		output.PrintInfo("Run 'dtctl enable aws monitoring --name %q' to enable it", createAWSMonitoringConfigName)
 		return nil
 	},
+}
+
+func buildAWSMonitoringConfig(name, version string, credential awsmonitoringconfig.Credential,
+	regions, featureSets []string, central bool) awsmonitoringconfig.AWSMonitoringConfig {
+	return awsmonitoringconfig.AWSMonitoringConfig{
+		Scope: awsmonitoringconfig.DefaultScope,
+		Value: awsmonitoringconfig.Value{
+			Enabled:           false,
+			Description:       name,
+			Version:           version,
+			ActivationContext: awsmonitoringconfig.DefaultActivationContext,
+			FeatureSets:       featureSets,
+			Aws: awsmonitoringconfig.AWSConfig{
+				UseIngestEnrichmentConfig: centralEnrichmentIntent(central),
+				DeploymentRegion:          regions[0],
+				Credentials:               []awsmonitoringconfig.Credential{credential},
+				RegionFiltering:           regions,
+				TagFiltering:              []awsmonitoringconfig.TagFilter{},
+				TagEnrichment:             []string{},
+				Namespaces:                []awsmonitoringconfig.CustomNamespace{},
+				ConfigurationMode:         "QUICK_START",
+				DeploymentMode:            "AUTOMATED",
+				DeploymentScope:           "SINGLE_ACCOUNT",
+				SmartscapeConfiguration:   awsmonitoringconfig.FlagConfig{Enabled: true},
+				MetricsConfiguration:      awsmonitoringconfig.RegionalFlagConfig{Enabled: true, Regions: regions},
+			},
+		},
+	}
 }
 
 // printAWSConnectionInstructions prints a copy-paste 'aws cloudformation deploy'
@@ -233,4 +239,5 @@ func init() {
 	createAWSMonitoringConfigCmd.Flags().StringVar(&createAWSMonitoringConfigCredentials, "credentials", "", "AWS connection name or ID (required)")
 	createAWSMonitoringConfigCmd.Flags().StringVar(&createAWSMonitoringConfigRegions, "regions", "", "Comma-separated AWS regions (required, first is the deployment region)")
 	createAWSMonitoringConfigCmd.Flags().StringVar(&createAWSMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets (default: all *_essential)")
+	addCentralEnrichmentFlag(createAWSMonitoringConfigCmd, &createAWSMonitoringConfigCentral)
 }

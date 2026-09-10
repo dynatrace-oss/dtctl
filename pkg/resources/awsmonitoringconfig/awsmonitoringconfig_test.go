@@ -61,3 +61,41 @@ func TestListPaginationStitchesPages(t *testing.T) {
 		}
 	}
 }
+
+func TestCentralEnrichmentModeJSON(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		input   string
+		present bool
+		value   bool
+	}{
+		{name: "omitted", input: `{}`},
+		{name: "legacy", input: `{"useIngestEnrichmentConfig":false}`, present: true},
+		{name: "central", input: `{"useIngestEnrichmentConfig":true}`, present: true, value: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var config AWSConfig
+			if err := json.Unmarshal([]byte(test.input), &config); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			if (config.UseIngestEnrichmentConfig != nil) != test.present {
+				t.Fatalf("mode presence = %v, want %v", config.UseIngestEnrichmentConfig != nil, test.present)
+			}
+			if test.present && *config.UseIngestEnrichmentConfig != test.value {
+				t.Fatalf("mode = %v, want %v", *config.UseIngestEnrichmentConfig, test.value)
+			}
+			encoded, err := json.Marshal(config)
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			var fields map[string]any
+			if err := json.Unmarshal(encoded, &fields); err != nil {
+				t.Fatalf("json.Unmarshal(encoded) error = %v", err)
+			}
+			_, present := fields["useIngestEnrichmentConfig"]
+			if present != test.present {
+				t.Errorf("encoded mode presence = %v, want %v", present, test.present)
+			}
+		})
+	}
+}

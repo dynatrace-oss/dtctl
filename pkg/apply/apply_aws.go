@@ -10,6 +10,10 @@ import (
 // applyAWSMonitoringConfig applies AWS monitoring configuration
 func (a *Applier) applyAWSMonitoringConfig(data []byte) (ApplyResult, error) {
 	handler := awsmonitoringconfig.NewHandler(a.client)
+	document, err := parseCloudMonitoringDocument(data, "aws")
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse AWS monitoring config JSON: %w", err)
+	}
 
 	var config awsmonitoringconfig.AWSMonitoringConfig
 	if err := json.Unmarshal(data, &config); err != nil {
@@ -44,7 +48,7 @@ func (a *Applier) applyAWSMonitoringConfig(data []byte) (ApplyResult, error) {
 			stderrWarn(&warnings, "Using latest extension version: %s", latestVersion)
 		}
 
-		cleanData, err := json.Marshal(config)
+		cleanData, err := document.marshal(config, config.Value.Aws)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal clean config: %w", err)
 		}
@@ -75,7 +79,7 @@ func (a *Applier) applyAWSMonitoringConfig(data []byte) (ApplyResult, error) {
 		config.Version = existing.Value.Version
 	}
 
-	cleanData, err := json.Marshal(config)
+	cleanData, err := document.marshal(config, config.Value.Aws)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal clean config: %w", err)
 	}

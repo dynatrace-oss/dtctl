@@ -218,6 +218,9 @@ func (a *Applier) Apply(fileData []byte, opts ApplyOptions) ([]ApplyResult, erro
 			return nil, fmt.Errorf("failed to inject --id into resource: %w", err)
 		}
 	}
+	if err := validateCloudMonitoringDocument(resourceType, jsonData); err != nil {
+		return nil, err
+	}
 
 	// Run pre-apply hook (if configured and not skipped)
 	if !opts.NoHooks && a.preApplyHook != "" {
@@ -382,6 +385,11 @@ func (a *Applier) applyList(resourceType ResourceType, data []byte, opts ApplyOp
 	var elements []json.RawMessage
 	if err := json.Unmarshal(data, &elements); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON array: %w", err)
+	}
+	for i, elem := range elements {
+		if err := validateCloudMonitoringDocument(resourceType, elem); err != nil {
+			return nil, fmt.Errorf("item %d: %w", i+1, err)
+		}
 	}
 
 	// Run pre-apply hook once on the full array (if configured and not skipped)
