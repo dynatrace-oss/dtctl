@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check
+.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check docs-generate
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -156,6 +156,26 @@ markdownlint-fix:
 	docker run -v $(CURDIR):/workdir --rm \
 		--network=none --security-opt=no-new-privileges --cap-drop ALL --cap-add DAC_OVERRIDE \
 		$(MD_LINT_CLI_IMAGE) "**/*.md" --fix
+
+# Generate reference docs from dtctl's own command catalog.
+# Builds the binary, dumps `dtctl commands --full -o json`, and feeds it to
+# scripts/gen-docs/gen_all.py, which writes docs/resources/*.md,
+# docs/COMMANDS.md, docs/TOKEN_SCOPES.md, and docs/INDEX.md.
+# In docs/resources/*.md only the generator-managed block (the three tables:
+# Supported operations, Flags, Required token scopes, wrapped in
+# <!-- GENERATED:<resource>:start/end --> markers) is derived from the catalog;
+# the Overview, Output, Examples, and Notes sections are hand-authored by SMEs
+# and are preserved verbatim on regeneration. CI (see
+# .github/workflows/docs-generate.yml) fails a PR only if that managed block is
+# checked in stale. Requires python3; does not need dtctl on PATH (invokes
+# ./bin/dtctl directly) and needs no auth (commands --full is a static dump).
+docs-generate: build
+	@echo "Generating reference docs from dtctl's command catalog..."
+	@tmpdir=$$(mktemp -d) && \
+	trap 'rm -rf "$$tmpdir"' EXIT && \
+	./bin/dtctl commands --full -o json > "$$tmpdir/commands-full.json" && \
+	python3 scripts/gen-docs/gen_all.py "$$tmpdir/commands-full.json" docs && \
+	echo "Wrote docs/resources/*.md, docs/COMMANDS.md, docs/TOKEN_SCOPES.md, docs/INDEX.md"
 
 # Release (using goreleaser)
 release:
