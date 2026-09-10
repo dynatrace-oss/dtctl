@@ -1,0 +1,65 @@
+# INDEX - planned file -> catalog resources
+
+| File | Title | Catalog stems | Mode |
+| --- | --- | --- | --- |
+| `resources/workflows.md` | Workflows | workflow, workflow-execution, wfe-task-result | generated |
+| `resources/dql-queries.md` | DQL Queries | - | authored |
+| `resources/dashboards-notebooks.md` | Dashboards & Notebooks | dashboard, notebook | generated |
+| `resources/slos.md` | SLOs | slo, slo-template | generated |
+| `resources/settings-api.md` | Settings | setting, settings-schema | generated |
+| `resources/cloud-integrations.md` | Cloud Integrations | aws, azure, gcp | authored |
+| `resources/grail-buckets.md` | Grail Buckets | bucket | generated |
+| `resources/filter-segments.md` | Filter Segments | segment | generated |
+| `resources/lookup-tables.md` | Lookup Tables | lookup | generated |
+| `resources/extensions.md` | Extensions | extension, extension-config, hub-extension, hub-extension-release | generated |
+| `resources/app-engine.md` | App Engine | app, function, intent | generated |
+| `resources/analyzers.md` | Analyzers | analyzer | generated |
+| `resources/copilot.md` | Davis CoPilot | copilot, copilot-skill | generated |
+| `resources/anomaly-detectors.md` | Anomaly Detectors | anomaly-detector | generated |
+| `resources/live-debugger.md` | Live Debugger | breakpoint, snapshot | generated |
+| `resources/documents.md` | Documents & Trash | document, trash | generated |
+| `resources/edgeconnect.md` | EdgeConnect | edgeconnect | generated |
+| `resources/notifications.md` | Notifications | notification | generated |
+| `resources/api-discovery.md` | API Discovery | api | generated |
+| `resources/platform-tokens.md` | Platform Tokens | platform-token, account-token, token | generated |
+| `resources/users-groups.md` | Users & Groups | user, group | generated |
+
+
+## Catalog resource keys not mapped to any file
+
+<!-- SME: these catalog keys did not map to any doc page - expected verbs and subcommands (login, set-context, openpipeline-*, sdk-version, ...), not resources; confirm none needs its own page. -->
+
+
+| Unmapped key |
+| --- |
+| classic-pipelines |
+| current |
+| current-context |
+| delete |
+| delete-context |
+| describe |
+| describe-context |
+| export |
+| get-contexts |
+| import |
+| init |
+| install |
+| list |
+| login |
+| logout |
+| lql-to-dql |
+| migrate-tokens |
+| openpipeline-dql-processor |
+| openpipeline-matcher |
+| preview-processor |
+| query |
+| refresh |
+| sdk-version |
+| set |
+| set-context |
+| set-credentials |
+| status |
+| uninstall |
+| use-context |
+| view |
+| whoami |

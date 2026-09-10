@@ -1,0 +1,63 @@
+name: Docs - Generated Reference Freshness
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'scripts/gen-docs/**'
+      - 'docs/resources/**'
+      - 'docs/COMMANDS.md'
+      - 'docs/TOKEN_SCOPES.md'
+      - 'makefile'
+      - '.github/workflows/docs-generate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'scripts/gen-docs/**'
+      - 'docs/resources/**'
+      - 'docs/COMMANDS.md'
+      - 'docs/TOKEN_SCOPES.md'
+      - 'makefile'
+      - '.github/workflows/docs-generate.yml'
+
+jobs:
+  check-generated-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Regenerate reference docs
+        run: make docs-generate
+
+      - name: Fail if generated docs are stale
+        run: |
+          # `git add -N` records any brand-new (untracked) generated file as an
+          # intent-to-add so `git diff` notices it too; a plain `git diff`
+          # ignores untracked files, which would let a newly-created page (e.g. a
+          # new PLAN entry, or a deleted page the generator recreated) slip
+          # through as "up to date".
+          git add -N -- docs/resources docs/COMMANDS.md docs/TOKEN_SCOPES.md docs/INDEX.md
+          if ! git diff --exit-code -- docs/resources docs/COMMANDS.md docs/TOKEN_SCOPES.md docs/INDEX.md; then
+            echo ""
+            echo "❌ Generated reference docs are out of date."
+            echo ""
+            echo "📌 Solution: run 'make docs-generate' locally and commit the result:"
+            echo ""
+            echo "   make docs-generate"
+            echo "   git add docs/resources docs/COMMANDS.md docs/TOKEN_SCOPES.md docs/INDEX.md"
+            echo "   git commit"
+            exit 1
+          fi
+          echo "✅ Generated reference docs are up to date."
