@@ -109,10 +109,10 @@ def resource_managed_body(title: str, stems: list[str], catalog: dict,
 
     # Flags: verb-level only (catalog has no per-resource flags)
     out.append("\n## Flags\n")
-    out.append("Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, "
-               "`--context`, `--jq`, `-v`, ...). A few **verbs** add their own flags "
-               "(`apply`, `diff`, `query`, `inventory`); see the verb entries in `COMMANDS.md`. "
-               "The catalog exposes no per-resource flags.\n")
+    out.append("These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, "
+               "`--context`, `--jq`, `-v`, and more). Some verbs add their own flags "
+               "(`apply`, `diff`, `query`, `inventory`); see the verb in "
+               "**[COMMANDS.md](../COMMANDS.md)**. No flags are specific to this resource.\n")
 
     # Required token scopes, unioned across matching resource_scopes keys
     out.append("\n## Required token scopes\n")

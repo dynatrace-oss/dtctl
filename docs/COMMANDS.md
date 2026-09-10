@@ -1,12 +1,12 @@
 # COMMANDS
 
-Generated verb x resource operation matrix.
+Generated reference of every dtctl verb and the resources it operates on, with required token scopes.
 
 ## alias
 
 Manage command aliases
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -21,7 +21,7 @@ _mutating: False | access: read_
 
 Apply a configuration to create or update resources
 
-_mutating: True | access: write | safety_operation: OperationCreate_
+_mutating | access: write | safety: OperationCreate_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -32,7 +32,7 @@ _mutating: True | access: write | safety_operation: OperationCreate_
 
 Manage authentication and user identity
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -47,7 +47,7 @@ _mutating: False | access: read_
 
 Manage dtctl configuration
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -68,7 +68,7 @@ _mutating: False | access: read_
 
 Create resources from files
 
-_mutating: True | access: write | safety_operation: OperationCreate_
+_mutating | access: write | safety: OperationCreate_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -99,7 +99,7 @@ Subcommands:
 
 Manage contexts (shortcut for config context commands)
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -114,7 +114,7 @@ _mutating: False | access: read_
 
 Delete resources
 
-_mutating: True | access: delete | safety_operation: OperationDelete_
+_mutating | access: delete | safety: OperationDelete_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -147,7 +147,7 @@ Subcommands:
 
 Show details of a specific resource
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -190,14 +190,14 @@ Subcommands:
 
 Show differences between resources or files
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 
 ## disable
 
 Disable cloud monitoring configurations
 
-_mutating: True | access: write | safety_operation: OperationUpdate_
+_mutating | access: write | safety: OperationUpdate_
 
 Subcommands:
 
@@ -212,14 +212,14 @@ Subcommands:
 
 Check configuration, connectivity, and authentication health
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 
 ## download
 
 Download raw resource artifacts
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -230,7 +230,7 @@ _mutating: False | access: read_
 
 Edit a resource
 
-_mutating: True | access: write | safety_operation: OperationUpdate_
+_mutating | access: write | safety: OperationUpdate_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -255,7 +255,7 @@ Subcommands:
 
 Enable cloud monitoring configurations
 
-_mutating: True | access: write | safety_operation: OperationUpdate_
+_mutating | access: write | safety: OperationUpdate_
 
 Subcommands:
 
@@ -270,7 +270,7 @@ Subcommands:
 
 Execute queries, workflows, or functions
 
-_mutating: True | access: run | safety_operation: OperationCreate_
+_mutating | access: run | safety: OperationCreate_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -292,7 +292,7 @@ Subcommands:
 
 Find resources based on criteria
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -303,7 +303,7 @@ _mutating: False | access: read_
 
 Display one or many resources
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -353,7 +353,7 @@ Subcommands:
 
 Show version history of resources
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -367,21 +367,21 @@ _mutating: False | access: read_
 
 Inspect a spilled query-result file locally (row access, schema, stats)
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 
 ## inventory
 
 Probe the environment: which data, entity types, and capabilities exist here
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 
 ## logs
 
 Print logs for resources
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -392,7 +392,7 @@ _mutating: False | access: read_
 
 Open resources in browser
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -403,7 +403,7 @@ _mutating: False | access: read_
 
 Manage dtctl plugins (executables named dtctl-* on PATH)
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -414,14 +414,14 @@ _mutating: False | access: read_
 
 Execute a DQL query
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 
 ## restore
 
 Restore resources to a previous version
 
-_mutating: True | access: write | safety_operation: OperationUpdate_
+_mutating | access: write | safety: OperationUpdate_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -436,7 +436,7 @@ _mutating: True | access: write | safety_operation: OperationUpdate_
 
 Share documents with users or groups
 
-_mutating: True | access: write | safety_operation: OperationUpdate_
+_mutating | access: write | safety: OperationUpdate_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -449,7 +449,7 @@ _mutating: True | access: write | safety_operation: OperationUpdate_
 
 Manage AI coding assistant skill files
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -462,14 +462,14 @@ _mutating: False | access: read_
 
 Required token scopes for each safety level
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 
 ## translate
 
 Translate expressions between formats
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -481,7 +481,7 @@ _mutating: False | access: read_
 
 Remove sharing from documents
 
-_mutating: True | access: write | safety_operation: OperationUpdate_
+_mutating | access: write | safety: OperationUpdate_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -494,7 +494,7 @@ _mutating: True | access: write | safety_operation: OperationUpdate_
 
 Update resources
 
-_mutating: True | access: write | safety_operation: OperationUpdate_
+_mutating | access: write | safety: OperationUpdate_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -514,7 +514,7 @@ Subcommands:
 
 Verify resources without executing them
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
@@ -528,7 +528,7 @@ _mutating: False | access: read_
 
 Wait for specific conditions on resources
 
-_mutating: False | access: read_
+_read-only | access: read_
 
 | Resource | Required scopes |
 | --- | --- |
