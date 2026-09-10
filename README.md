@@ -42,7 +42,7 @@ curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh
 irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
 ```
 
-Binary downloads, building from source, shell completion setup, and more in the **[dtctl documentation](https://docs.dynatrace.com/docs/shortlink/dtctl-cli)** on docs.dynatrace.com.
+Binary downloads, building from source, shell completion setup, and more in **[docs/INSTALLATION.md](docs/INSTALLATION.md)**.
 
 ## Authenticate
 
@@ -64,7 +64,7 @@ dtctl is built for AI agents as much as for humans. The `--agent` flag wraps eve
 dtctl skills install              # Auto-detects your AI agent
 ```
 
-Full agent-mode reference lives in the **[dtctl documentation](https://docs.dynatrace.com/docs/shortlink/dtctl-cli)** on docs.dynatrace.com.
+Full agent-mode and Agent Skills reference lives in **[docs/AGENT_MODE.md](docs/AGENT_MODE.md)** and **[docs/AGENT_SKILLS.md](docs/AGENT_SKILLS.md)**.
 
 ## Observability
 
@@ -72,15 +72,15 @@ dtctl supports W3C Trace Context propagation and OTLP span export via the OpenTe
 
 ## Documentation
 
-The full dtctl guide, orientation, supported resources, agent mode, and authentication overview lives on docs.dynatrace.com:
+Find your way around this repository:
 
-**[dtctl on docs.dynatrace.com](https://docs.dynatrace.com/docs/shortlink/dtctl-cli)**
-
-For detailed, per-resource reference material, see the docs in this repo:
-
-- **[docs/COMMANDS.md](docs/COMMANDS.md)** - full command reference (auto-generated): all verbs, flags, resource types, and aliases
-- **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** - contexts, credentials, safety levels, apply hooks, aliases
-- **[docs/resources/](docs/resources/)** - per-resource guides (workflows, DQL queries, dashboards and notebooks, SLOs, settings, cloud integrations, and more)
+- **[docs/QUICK_START.md](docs/QUICK_START.md)**: Install, authenticate, and run your first commands
+- **[docs/INSTALLATION.md](docs/INSTALLATION.md)**: All install methods, build from source, shell completion
+- **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**: Contexts, credentials, safety levels, apply hooks, aliases
+- **[docs/COMMANDS.md](docs/COMMANDS.md)**: Full command reference (auto-generated), every verb, flag, resource type, and alias
+- **[docs/resources/](docs/resources/)**: Per-resource guides (workflows, DQL queries, dashboards and notebooks, SLOs, settings, cloud integrations, and more)
+- **[docs/AGENT_MODE.md](docs/AGENT_MODE.md)** and **[docs/AGENT_SKILLS.md](docs/AGENT_SKILLS.md)**: Use dtctl with AI agents
+- **[docs/OUTPUT_FORMATS.md](docs/OUTPUT_FORMATS.md)**, **[docs/COOKBOOK.md](docs/COOKBOOK.md)**, **[docs/SERVE.md](docs/SERVE.md)**, **[docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)**: Output formats, recipes, local serving, and tracing
 
 ## Contributing
 
