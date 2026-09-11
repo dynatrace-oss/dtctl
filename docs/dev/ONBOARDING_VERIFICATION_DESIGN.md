@@ -405,7 +405,7 @@ $ echo $?
 ### 4. Agent mode
 
 ```console
-$ dtctl inventory arrivals --since 15m --scope 'k8s.namespace.name == "payments"' --agent
+dtctl inventory arrivals --since 15m --scope 'k8s.namespace.name == "payments"' --agent
 ```
 
 ```json
