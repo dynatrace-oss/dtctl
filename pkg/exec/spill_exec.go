@@ -227,21 +227,53 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 // inlineRecordsResponse handles the inline (not-spilled) decision. In agent mode
 // it returns a self-describing kind:"records" envelope so a consumer branches on
 // result.kind uniformly across inline and spilled results (D2/D31); the rows are
-// carried directly. It deliberately leaves two shapes alone — falling through to
-// the caller's unchanged output path (handled=false) — so it never overrides an
-// explicit, non-JSON choice the caller already made:
-//   - a non-JSON display encoding (-o toon/csv/yaml/chart): the envelope is JSON;
-//     wrapping would silently discard the requested format.
+// carried directly, natively for -o json and as an encoded string for -o toon
+// (see InlineRecordsEncoded) — both under kind:"records", so the envelope is
+// present either side of the spill threshold rather than only above it.
+//
+// It deliberately leaves two shapes alone — falling through to the caller's
+// unchanged output path (handled=false) — so it never overrides an explicit
+// choice the caller already made that the envelope cannot carry:
+//   - a byte-oriented display encoding (-o csv/yaml/chart): a caller asking for
+//     those wants the bytes, not an envelope wrapping them.
 //   - a --jq transform: agent-mode jq already owns the output shape.
 //
 // Outside agent mode an inline result is always a fall-through (a human wants the
 // table/CSV, not an envelope).
 func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, measured int64, encoding string, opts DQLExecuteOptions) (output.Response, bool, error) {
-	if !opts.AgentMode || encoding != "json" || opts.JQFilter != "" {
+	// A --jq transform reshapes the result into something this envelope cannot
+	// describe, so it keeps its requested shape and falls through. So do the
+	// raw byte-oriented encodings (csv/yaml): an agent asking for those wants
+	// the bytes, not an envelope wrapping them.
+	if !opts.AgentMode || opts.JQFilter != "" {
 		return output.Response{}, false, nil
 	}
 
-	res := &output.InlineRecords{Kind: output.KindRecords, Records: records}
+	var res interface{}
+	var encodeWarning string
+	switch encoding {
+	case "json":
+		res = &output.InlineRecords{Kind: output.KindRecords, Records: records}
+	case "toon":
+		// `-o toon` keeps the envelope, with the rows encoded inside it. This is
+		// what makes the contract independent of result size: the same flags
+		// produce a `kind: "records"` envelope below the spill threshold and a
+		// `kind: "result-file"` envelope above it, so `ok`, `error.code` and
+		// `context` (heavy-scan warnings, suggestions) survive either way.
+		toonRows, err := output.MarshalTOON(records)
+		if err != nil {
+			encodeWarning = fmt.Sprintf("TOON encoding failed: %v; the rows were encoded as JSON instead", err)
+			res = &output.InlineRecords{Kind: output.KindRecords, Records: records}
+		} else {
+			res = &output.InlineRecordsEncoded{
+				Kind:     output.KindRecords,
+				Encoding: "toon",
+				Records:  toonRows,
+			}
+		}
+	default:
+		return output.Response{}, false, nil
+	}
 
 	// Even an inline (small) result can be PARTIAL — a scan-limit stop can leave
 	// few rows. Surface the same notification advice so the agent isn't misled
@@ -252,6 +284,9 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	notifSuggestions = append(notifSuggestions, scanSuggestions...)
 	notifSuggestions = append(notifSuggestions, windowAdvice(query, records, opts)...)
 	notifSuggestions = append(notifSuggestions, lookbackAdvice(query)...)
+	if encodeWarning != "" {
+		notifWarnings = append(notifWarnings, encodeWarning)
+	}
 
 	total := len(records)
 	ctx := &output.ResponseContext{

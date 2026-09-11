@@ -143,9 +143,74 @@ sample-based figures can't be misread as population truth.
 > The inline `kind: "records"` envelope is emitted on the spill-aware path
 > whenever agent mode emits JSON — including under `--spill=never`, which forces
 > every row inline regardless of size but still as a `kind: "records"` envelope
-> (never a human table). Explicit non-JSON output (`-o toon/csv/yaml`) and `--jq`
+> (never a human table). The byte-oriented encodings (`-o csv/yaml`) and `--jq`
 > transforms keep their requested shape and fall through to the plain
 > `{ "records": …, "metadata": … }` output.
+
+#### Dense rows: `-o toon`
+
+`-o toon` keeps the envelope and encodes the rows inside it, so the contract does
+not change with result size — the same flags give you a `kind: "records"`
+envelope below the spill threshold and a `kind: "result-file"` envelope above it,
+and `ok`, `error.code` and `context` (heavy-scan warnings, suggestions) are
+present either way. The rows arrive as a TOON string under `result.records`, with
+`result.encoding` naming the codec:
+
+```json
+{
+  "ok": true,
+  "envelope_version": 1,
+  "result": {
+    "kind": "records",
+    "encoding": "toon",
+    "records": "[#2]{host.name,loglevel}:\n  host-a,INFO\n  host-b,ERROR"
+  },
+  "context": { "verb": "query", "resource": "logs", "total": 2, "decided": "inline" }
+}
+```
+
+Branch on `result.encoding`: absent means `result.records` is a native JSON array,
+`"toon"` means it is a string to decode. TOON is worth it for **wide results with
+short values**, where folding the repeated keys into one header saves around 15%
+of the tokens of the JSON envelope. It saves very little on results dominated by
+long prose fields (a log `content` column), and it is *larger* than JSON on
+heterogeneous nested results, where there is no uniform key set to fold. It is
+not a blanket win — measure before reaching for it.
+
+Inside the envelope only `json` and `toon` are supported. Any other `-o` value
+(`csv`, `yaml`, `table`, …) on a command that emits the envelope falls back to
+JSON and says so in `context.warnings` rather than silently pretending the format
+was honoured.
+
+## Exit Codes
+
+The cheapest agent-readable channel is the exit status: it costs **zero tokens**,
+so when all you need is a yes/no gate, read it and discard stdout rather than
+parsing an envelope to reach the same verdict. In [server mode]({{ '/docs/serve/' | relative_url }})
+the same value comes back as the `exitCode` field, so a gate written against it
+ports unchanged.
+
+| Command | Code | Meaning |
+|---|---|---|
+| `dtctl verify query` / `verify analyzer` | 0 | valid |
+| | 1 | invalid (or warnings with `--fail-on-warn`) |
+| | 2 | authentication/permission error |
+| | 3 | network/server error |
+| `dtctl diff` | 0 | no differences |
+| | 1 | differences found |
+| | 2 | error |
+| `dtctl wait` | 0 | condition met |
+| | 1 | timed out |
+| | 2 | max attempts exceeded |
+| | 3 | other failure |
+
+> **`ok` is not the verdict.** `ok: true` means the command *ran* — it reached the
+> API and produced an answer. It does not mean the answer was the one you were
+> gating on. A command that successfully determines "these two resources differ"
+> exits non-zero while still reporting `ok: true`, because nothing went wrong.
+> Gate on the exit status (or on the specific verdict field in `result`), never on
+> `ok`. Reserve `ok: false` and `error.code` for *failures* — auth, network, a
+> malformed query.
 
 ## Auto-Detection
 

@@ -70,6 +70,20 @@ type InlineRecords struct {
 	Records []map[string]interface{} `json:"records"`
 }
 
+// InlineRecordsEncoded is the KindRecords payload when the agent asked for a
+// dense row encoding (`-o toon`). It carries the same `kind` discriminator as
+// InlineRecords so a consumer branches identically, but `records` is an encoded
+// string rather than native JSON, and `encoding` names the codec so the string
+// is self-describing. Keeping the envelope here is what makes `-o toon` behave
+// the same way either side of the spill threshold: below it the rows come back
+// encoded under this shape, above it as a `result-file` manifest — never as a
+// bare TOON document with no `ok`/`context`.
+type InlineRecordsEncoded struct {
+	Kind     string `json:"kind"`
+	Encoding string `json:"encoding"`
+	Records  string `json:"records"`
+}
+
 // SpecFileManifest is the result payload for the KindDocumentFile envelope: a
 // handle to a written document plus enough provenance to know what it is. It is
 // deliberately not ResultFileManifest — that shape promises rows, columns and a
