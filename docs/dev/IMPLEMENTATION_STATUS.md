@@ -1,6 +1,6 @@
 # dtctl Implementation Status
 
-Last Updated: March 2026
+Last Updated: August 2026
 
 ## Overview
 
@@ -29,6 +29,12 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Machine-readable command catalog (`dtctl commands`) for AI agent bootstrap
 - [x] [NO_COLOR](https://no-color.org/) standard: color disabled when piped, `NO_COLOR` env var, `FORCE_COLOR=1` override
 - [x] Consistent help text: all parent verb commands have `Long` descriptions and Cobra `Example` fields
+- [x] **Embeddable invocation** (`cmd.Run` + `RunOptions`): in-process entrypoint that never terminates the process, restores a pristine command tree per invocation, and serializes invocations (the command tree is package state). See [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)
+- [x] Per-invocation tenant (`cmd.Session`): one environment URL + token + safety level via a synthetic in-memory config; host config file, contexts, keyring, and credential env vars detached
+- [x] Capability gate (`cmd.Capabilities`): every subprocess spawn (plugins, shell aliases, apply hooks, editors, browser opens) is opt-in; embedded callers grant nothing
+- [x] Virtual filesystem seam (`pkg/vfs`): user-supplied file paths resolve against the host disk (CLI) or per-request virtual files (embedded), including `apply --write-id` writebacks
+- [x] Per-invocation streams: stdout/stderr/stdin redirect to caller-supplied writers, byte-identical to CLI output (enforced by a CLI-vs-engine equality test)
+- [x] Environment surface mask (`RunOptions.BlockedCommands`): host-only commands removed per invocation, with the stable agent error code `unsupported_in_service`
 
 ### Verbs Implemented
 - [x] `get` - List/retrieve resources
@@ -54,6 +60,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `commands` - Machine-readable command catalog (JSON/YAML, `--brief`, resource filter, `howto` subcommand)
 - [x] `skills` - AI agent skill file management (install, uninstall, status for Claude, Codex, Copilot, Cursor, Kiro, Junie, OpenCode, OpenClaw; cross-client via `--cross-client`)
 - [x] `plugin` - kubectl-style exec plugins: unknown commands dispatch to `dtctl-<name>` binaries on PATH (`plugin list`, catalog integration; see [PLUGIN_CONVENTIONS.md](PLUGIN_CONVENTIONS.md))
+- [x] `serve` (experimental, gated behind `DTCTL_EXPERIMENTAL_SERVE`) - Run dtctl as a server instead of a one-shot CLI, one subcommand per protocol: `serve http` (`POST /v1/execute`, `GET /healthz`, `--addr` default `127.0.0.1:7211`). Reference implementation over `pkg/engine`; see [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)
 
 ### Resources
 

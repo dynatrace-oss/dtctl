@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // verifyQueryCmd represents the verify query subcommand
@@ -135,7 +136,7 @@ Examples:
 				}
 				query = string(content)
 			} else {
-				content, err := os.ReadFile(queryFile)
+				content, err := vfs.ReadFile(queryFile)
 				if err != nil {
 					return fmt.Errorf("failed to read query file: %w", err)
 				}
@@ -192,9 +193,10 @@ Examples:
 
 		// Handle errors (network, auth, API)
 		if err != nil {
-			// Exit with appropriate code
+			// Exit with the mapped code; nothing further is printed (the
+			// verify contract encodes the failure class in the exit code).
 			if exitCode != 0 {
-				os.Exit(exitCode)
+				return &silentExitError{code: exitCode, reason: err.Error()}
 			}
 			return err
 		}
@@ -226,9 +228,9 @@ Examples:
 			}
 		}
 
-		// Exit with appropriate code if non-zero
+		// Non-zero code without an error: the verdict was already printed.
 		if exitCode != 0 {
-			os.Exit(exitCode)
+			return &silentExitError{code: exitCode, reason: "query verification failed"}
 		}
 
 		return nil

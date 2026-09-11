@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -10,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createExtensionCmd installs an extension — either a custom zip upload or a Hub extension.
@@ -67,7 +67,7 @@ Examples:
 
 func runUploadExtension(file string) error {
 	// Read the zip file
-	zipData, err := os.ReadFile(file)
+	zipData, err := vfs.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("failed to read file %q: %w", file, err)
 	}

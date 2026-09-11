@@ -49,6 +49,15 @@ contexts:
     description: "Personal dev environment - anything goes"
 ```
 
+### Per-Invocation Safety Level
+
+An embedded caller can supply the safety level per invocation via
+`cmd.Session.SafetyLevel` instead of a config-file context; an empty value
+selects the `readwrite-all` default. The session materializes as a single
+synthetic context named `session`, so the block messages below read
+`Context 'session' does not allow ...`. See
+[SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md).
+
 ## Operation Permission Matrix
 
 | Safety Level | Read | Create | Update Own | Update Shared | Delete Own | Delete Shared | Delete Bucket |

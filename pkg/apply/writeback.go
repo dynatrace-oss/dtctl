@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // writeIDToFile injects the given id into the top of a YAML or JSON source file
@@ -21,7 +23,9 @@ func writeIDToFile(filename, id string) error {
 		return fmt.Errorf("no source file to write ID back to")
 	}
 
-	original, err := os.ReadFile(filename)
+	// Through the vfs seam: for embedded invocations the writeback lands in
+	// the request's virtual filesystem, never on the host.
+	original, err := vfs.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", filename, err)
 	}
@@ -35,7 +39,7 @@ func writeIDToFile(filename, id string) error {
 		return nil
 	}
 
-	return os.WriteFile(filename, updated, 0o644)
+	return vfs.WriteFile(filename, updated, 0o644)
 }
 
 // injectIDIntoFileContent returns the file content with the id field injected,

@@ -17,6 +17,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 	"github.com/dynatrace-oss/dtctl/sdk/inventory"
 )
 
@@ -118,7 +119,7 @@ an instrumentation change or an ingest — use 'dtctl inventory arrivals'.
 // loadDefinitionsFile reads one capability-definitions file. File I/O stays in
 // the CLI layer — the SDK parses bytes (ParseDefinitions) and never sees paths.
 func loadDefinitionsFile(path string) (*inventory.Definitions, error) {
-	data, err := os.ReadFile(path)
+	data, err := vfs.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read definitions %s: %w", path, err)
 	}

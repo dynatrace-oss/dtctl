@@ -16,6 +16,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/version"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -996,7 +997,7 @@ func (e *DQLExecutor) CancelQuery(requestToken string) {
 
 // ExecuteFromFile executes a DQL query from a file
 func (e *DQLExecutor) ExecuteFromFile(filename string, outputFormat string) error {
-	data, err := os.ReadFile(filename)
+	data, err := vfs.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}

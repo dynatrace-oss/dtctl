@@ -21,6 +21,13 @@ installer, no registry, no RPC — deliberately.
 - Leading dtctl flags (`dtctl --context prod foo`) are consumed by dtctl and
   reflected into the environment contract below — they are not passed to the
   plugin.
+- **Dispatch is a gated host ability.** It runs only when
+  `Capabilities.PluginDispatch` is granted: the CLI binary grants it, embedded
+  and service invocations do not. Without the grant there is no `PATH` lookup at
+  all — an unknown command falls through to the normal suggestion-enhanced
+  unknown-command error. `plugin` itself is one of the top-level commands
+  removed from the service surface
+  ([SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)).
 
 ## Environment contract
 

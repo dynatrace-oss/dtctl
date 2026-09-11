@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createDocumentCmd creates a document of any type from a file
@@ -55,7 +55,7 @@ Examples:
 		if docType == "" {
 			file, _ := cmd.Flags().GetString("file")
 			if file != "" {
-				fileData, err := os.ReadFile(file)
+				fileData, err := vfs.ReadFile(file)
 				if err == nil {
 					jsonData, err := format.ValidateAndConvert(fileData)
 					if err == nil {
@@ -160,7 +160,7 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 		labels, _ := cmd.Flags().GetStringArray("label")
 
 		// Read the file
-		fileData, err := os.ReadFile(file)
+		fileData, err := vfs.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}

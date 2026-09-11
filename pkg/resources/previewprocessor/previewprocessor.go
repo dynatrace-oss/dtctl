@@ -10,10 +10,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 	sdkpreview "github.com/dynatrace-oss/dtctl/sdk/api/previewprocessor"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -94,22 +93,11 @@ func buildEnvelope(processor json.RawMessage, configID string) (json.RawMessage,
 	return out, nil
 }
 
-// readFileOrStdin reads a file (or stdin when filename is "-") and returns the
-// content as json.RawMessage after a basic JSON validity check.
+// readFileOrStdin reads a file (through the vfs seam, so embedded invocations
+// resolve virtual request files; "-" means stdin) and returns the content as
+// json.RawMessage after a basic JSON validity check.
 func readFileOrStdin(filename string) (json.RawMessage, error) {
-	var reader io.Reader
-	if filename == "-" {
-		reader = os.Stdin
-	} else {
-		f, err := os.Open(filename)
-		if err != nil {
-			return nil, fmt.Errorf("open %q: %w", filename, err)
-		}
-		defer func() { _ = f.Close() }()
-		reader = f
-	}
-
-	data, err := io.ReadAll(reader)
+	data, err := vfs.ReadFileOrStdin(filename)
 	if err != nil {
 		return nil, fmt.Errorf("read processor definition: %w", err)
 	}

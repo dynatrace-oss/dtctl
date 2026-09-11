@@ -14,6 +14,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // Handler handles lookup table resources
@@ -315,7 +316,7 @@ func (h *Handler) Create(req CreateRequest) (*UploadResponse, error) {
 			dataContent, err = io.ReadAll(os.Stdin)
 		} else {
 			// Read from file
-			dataContent, err = os.ReadFile(req.DataSource)
+			dataContent, err = vfs.ReadFile(req.DataSource)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to read data: %w", err)

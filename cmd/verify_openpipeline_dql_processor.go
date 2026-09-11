@@ -106,7 +106,7 @@ Examples:
 		// agent error-envelope path, so the ok:true envelope printed above stands
 		// as the sole output and the process still exits with ExitError.
 		if !result.Valid {
-			return &silentExitError{code: client.ExitError}
+			return &silentExitError{code: client.ExitError, reason: "verification failed"}
 		}
 		return nil
 	},

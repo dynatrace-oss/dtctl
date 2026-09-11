@@ -143,6 +143,26 @@ dtctl get workflows --watch --watch-only
 - Advanced options available via flags
 - Comprehensive help at every level
 
+### 10. Embeddable by Construction
+**The CLI is the API.** A service embeds the same command surface rather than a
+parallel one, so there is nothing to drift: `pkg/engine` takes a command line
+exactly as a user would type it and returns the bytes the CLI would have
+printed.
+
+- **No second surface** — anything typeable is callable, and output is
+  byte-identical (enforced by a CLI-vs-engine equality test, not by review)
+- **The invocation carries its world** — credentials, files, streams, and
+  environment arrive per request; nothing about the host process leaks into one,
+  and nothing about one request survives into the next
+- **Host abilities are opt-in** — subprocesses, editors, browsers, and the host
+  disk are granted explicitly by the CLI and withheld from embedded callers, so
+  they are structurally unreachable rather than merely discouraged
+- **Practical consequence for contributors** — user-supplied file paths go
+  through `pkg/vfs`, subprocess spawns go through a capability gateway, and
+  command bodies return errors instead of calling `os.Exit`
+
+See [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md).
+
 ## Command Structure
 
 ### Core Verbs
@@ -165,6 +185,8 @@ ctx         - Quick context management (list, switch, describe, set, delete)
 doctor      - Health check (config, context, token, connectivity, auth)
 diff        - Show differences between local and remote resources
 commands    - Machine-readable command catalog for AI agents (JSON/YAML, --brief, howto)
+serve       - Run dtctl as a server, one subcommand per protocol (serve http)
+              (experimental: registered only with DTCTL_EXPERIMENTAL_SERVE)
 
 # (not implemented yet)
 # patch       - Update specific fields of a resource
@@ -2288,5 +2310,6 @@ Exit code: 4
 - Resource diffing and change previews
 - Integration with CI/CD pipelines
 - ~~Plugin system for custom commands~~ — shipped 2026-07-12: kubectl-style exec plugins (`dtctl-<name>` on PATH; see [PLUGIN_CONVENTIONS.md](PLUGIN_CONVENTIONS.md))
+- ~~Run dtctl as a service~~ — shipped: `cmd.Run` + `pkg/engine` + `dtctl serve http` (see [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md))
 - Shell integration (kubectl-like autocompletion)
 - Resource usage analytics and cost estimation

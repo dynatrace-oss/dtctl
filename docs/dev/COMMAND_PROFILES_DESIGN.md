@@ -333,6 +333,21 @@ rather than `RemoveCommand`.
 - The **always-available** set is merged into the allowlist, so those commands
   survive regardless of how narrow the profile is.
 
+### A second mask on the same mechanics: `BlockedCommands`
+
+Embedded callers apply a second, orthogonal mask built from `Hidden` + a `RunE`
+guard exactly as above: `RunOptions.BlockedCommands` (`applyBlockedCommands`,
+`cmd/blocked.go`). The two answer different questions — a profile answers "which
+commands exist for this caller" and blocks with `profile_blocked`, while
+`BlockedCommands` answers "which commands make sense in this environment at all"
+and blocks with `unsupported_in_service`. They **compose**: both masks apply to a
+run, and the per-invocation tree restore undoes both before the next one.
+
+One deliberate difference: the blocked mask also guards **non-runnable parents**
+(and neutralizes their arg/flag parsing), so a masked bare `config` cannot answer
+with its own help text and exit 0. The profile mask guards only runnable nodes.
+See [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md).
+
 ### Config schema changes
 
 `pkg/config/config.go`:

@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createBucketCmd creates a Grail bucket
@@ -44,7 +44,7 @@ Examples:
 
 		if file != "" {
 			// Read from file
-			fileData, err := os.ReadFile(file)
+			fileData, err := vfs.ReadFile(file)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}

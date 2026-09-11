@@ -50,7 +50,13 @@ func (e *ScopeError) Error() string {
 // silentExitError carries a process exit code without producing any output.
 // Used by the explicit --check-scopes path, which prints its own verdict and
 // then needs to set a non-zero exit code without root.go printing a second error.
-type silentExitError struct{ code int }
+type silentExitError struct {
+	code int
+	// reason is recorded as the root span's status message for non-zero
+	// codes; it is never printed to the user (the command already produced
+	// its output — the code is part of its contract, not an error).
+	reason string
+}
 
 func (e *silentExitError) Error() string { return "" }
 
@@ -124,7 +130,7 @@ func scopePreflight(c *cobra.Command, _ []string) (skip bool, err error) {
 		}
 		printScopeVerdict(result)
 		if result.Status == scopeStatusInsufficient {
-			return true, &silentExitError{code: client.ExitPermissionError}
+			return true, &silentExitError{code: client.ExitPermissionError, reason: "insufficient scope"}
 		}
 		return true, nil
 	}

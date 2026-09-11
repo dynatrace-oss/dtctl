@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"os"
-	"strings"
-
 	"github.com/spf13/cobra"
 )
 
@@ -15,15 +12,9 @@ import (
 const accountExperimentalEnvVar = "DTCTL_EXPERIMENTAL_ACCOUNT"
 
 // accountExperimentalEnabled reports whether the experimental account command
-// surface should be registered. Any value other than empty/0/false/no/off
-// (case-insensitive) enables it.
+// surface should be registered.
 func accountExperimentalEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(accountExperimentalEnvVar))) {
-	case "", "0", "false", "no", "off":
-		return false
-	default:
-		return true
-	}
+	return ExperimentalEnabled(accountExperimentalEnvVar)
 }
 
 var accountCmd = &cobra.Command{

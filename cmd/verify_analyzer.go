@@ -73,7 +73,7 @@ Examples:
 		// (getAnalyzerValidateExitCode always returns non-zero when err != nil).
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			os.Exit(exitCode)
+			return &silentExitError{code: exitCode, reason: err.Error()}
 		}
 
 		switch outputFmt {
@@ -87,7 +87,8 @@ Examples:
 		}
 
 		if exitCode != 0 {
-			os.Exit(exitCode)
+			// Verdict already printed; the code encodes the failure class.
+			return &silentExitError{code: exitCode, reason: "analyzer validation failed"}
 		}
 		return nil
 	},

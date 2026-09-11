@@ -3,10 +3,11 @@ package diff
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 type Differ struct {
@@ -290,6 +291,9 @@ func calculateImpact(summary DiffSummary) ImpactLevel {
 	return ImpactLow
 }
 
+// readFile reads a user-named path (`dtctl diff -f a.yaml -f b.yaml`) through
+// the vfs seam, so an embedded invocation compares the files in its request
+// rather than whatever sits at that path on the host's disk.
 func readFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
+	return vfs.ReadFile(path)
 }

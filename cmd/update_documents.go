@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // updateDocumentCmd updates an existing document of any type from a file.
@@ -83,7 +83,7 @@ func updateDocumentRunE(cmd *cobra.Command, _ []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	showDiff, _ := cmd.Flags().GetBool("show-diff")
 
-	fileData, err := os.ReadFile(file)
+	fileData, err := vfs.ReadFile(file)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}

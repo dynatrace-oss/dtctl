@@ -37,6 +37,15 @@ dtctl commands howto                  # Usage-focused reference document
 - `-o` — reuses dtctl's standard output flag. `dtctl commands` defaults to `toon` (the most compact structured format); `json` and `yaml` are also supported. Other formats (table, chart, etc.) are not meaningful here.
 - `howto` subcommand — action-oriented; outputs an LLM-optimized usage guide.
 
+**The catalog is relative to the invocation, not absolute.** Two things vary the
+listed set. Commands can be registered on the root from outside package `cmd` via
+`cmd.AddCommand` — that is how `serve` appears, since `pkg/serve` imports
+`pkg/engine`, which imports `cmd`. And per-invocation masking hides commands from
+the catalog along with help and completion: a command profile
+([COMMAND_PROFILES_DESIGN.md](COMMAND_PROFILES_DESIGN.md)) or, for embedded
+callers, `RunOptions.BlockedCommands`
+([SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)).
+
 ### Output structure
 
 The following shows the exhaustive `--full` output, which describes dtctl's verb-noun command model in full. (The default bare `dtctl commands` emits only a minimal subset of this — see [Default overview](#default-overview-minimal) — and `--brief` a compact subset.) JSON is used here for readability; the command defaults to the more compact TOON format.

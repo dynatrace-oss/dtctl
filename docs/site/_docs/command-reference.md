@@ -38,6 +38,7 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 | `doctor` | Health check (config, context, token, connectivity, auth) |
 | `commands` | Machine-readable command catalog for AI agents |
 | `inventory` | Probe the environment: which data, entity types, and capabilities exist here |
+| `serve` | Run dtctl as a server that executes command lines for agents and automation (experimental: `DTCTL_EXPERIMENTAL_SERVE=1`) |
 
 ## Global Flags
 
@@ -355,6 +356,34 @@ dtctl inventory --budget-queries 100 --budget-seconds 300 --scan-limit-gbytes 25
 ```
 
 See [Environment Inventory]({{ '/docs/inventory/' | relative_url }}) for the discovery model, verdict semantics, and customization.
+
+## Serve
+
+**Experimental**, and not registered unless you opt in — without the variable
+below, `dtctl serve` is an unknown command:
+
+```bash
+export DTCTL_EXPERIMENTAL_SERVE=1
+
+dtctl serve                                      # List the protocols this build can speak
+dtctl serve http                                 # JSON over HTTP on 127.0.0.1:7211
+dtctl serve http --addr 0.0.0.0:8080             # Custom listen address
+dtctl serve http --max-request-bytes 33554432    # Body limit (default 10485760 = 10 MiB)
+```
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /v1/execute` | Run one dtctl command line for one tenant: `{"command": ..., "environmentUrl": ..., "token": ..., "files": ...}` → `{"exitCode": ..., "stdout": ..., "stderr": ..., "files": ..., "durationMs": ...}` |
+| `GET /healthz` | Liveness probe |
+
+Each request brings its own environment URL and token; the local config, keyring,
+and credential environment variables are never read. A failed command still
+answers HTTP 200 — the failure is in `exitCode`/`stderr`. The servers perform **no
+authentication of their own**.
+
+See [Server Mode]({{ '/docs/serve/' | relative_url }}) for the request/response
+contract, the unavailable command set, the concurrency model, and the security
+model.
 
 ## Common Patterns
 

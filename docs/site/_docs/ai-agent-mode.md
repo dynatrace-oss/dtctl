@@ -56,7 +56,38 @@ This makes it straightforward for AI agents to parse responses, handle errors, a
 }
 ```
 
-Error codes are stable identifiers that agents can match on programmatically (e.g. `auth_required`, `not_found`, `forbidden`, `rate_limited`).
+Error codes are stable identifiers that agents can match on programmatically:
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `auth_required` | Not authenticated (HTTP 401) | Authenticate, then retry once |
+| `permission_denied` | Authenticated but not allowed (HTTP 403) | Don't retry; report the missing permission |
+| `insufficient_scope` | Token lacks the scopes this command needs | Re-create the token with the `missing` scopes in the envelope |
+| `not_found` | Resource does not exist (HTTP 404) | Verify the ID with `dtctl get <resource>` |
+| `conflict` | Concurrent or duplicate change (HTTP 409) | Re-read the resource, re-apply on top |
+| `bad_request` | The API rejected the request shape (HTTP 400) | Fix the payload; don't retry unchanged |
+| `rate_limited` | Too many requests (HTTP 429) | Back off, then retry |
+| `server_error` | Dynatrace-side failure (HTTP 5xx) | Retry with backoff; escalate if persistent |
+| `timeout` | The operation timed out client-side | Narrow the request (timeframe, limit) and retry |
+| `safety_blocked` | The context's [safety level]({{ '/docs/configuration/#safety-levels' | relative_url }}) forbids this operation | Don't retry; ask a human to widen the level |
+| `profile_blocked` | The active [command profile]({{ '/docs/command-profiles/' | relative_url }}) doesn't expose this command | Re-read `dtctl commands` and pick a supported path |
+| `unsupported_in_service` | Host-only command, unavailable in [server mode]({{ '/docs/serve/' | relative_url }}) | Don't retry; the suggestion says why |
+| `capability_disabled` | A host ability (plugin, alias, hook, editor, browser) isn't granted | Don't retry; use an in-process alternative |
+| `hook_rejected` | A pre-apply hook rejected the resource | Fix the resource, or apply with `--no-hooks` |
+| `validation_error` | Local input validation failed | Fix the file or flags |
+| `unknown_command` | Unknown command or flag | Follow the "did you mean" suggestion; re-read `dtctl commands` |
+| `context_error` | No active context, or the named context is missing | Select a context (`dtctl ctx <name>`) |
+| `config_error` | The dtctl config could not be read or is invalid | Report it; needs human repair |
+| `spill_file_not_found` | The [spilled result file]({{ '/docs/dql-queries/#spilling-large-results-to-a-file' | relative_url }}) is gone | `dtctl inspect --list`, or re-run the query |
+| `spill_file_unreadable` | The spill file exists but cannot be parsed | Re-run the query |
+| `spill_file_wrong_context` | The spill file belongs to another context or tenant | Switch context, or re-query here |
+| `inspect_unknown_field` | `--fields` named a column the file doesn't have | Use `dtctl inspect <path> --schema` |
+| `inspect_bad_flags` | Incompatible `dtctl inspect` flags | Pick one row-access primitive per call |
+| `error` | Unclassified failure | Read `message`; treat as non-retryable |
+
+`dtctl query` additionally passes the DQL API's own error type through as the code
+(lowercased), e.g. `unknown_data_object`. **Treat an unrecognised code as
+`error`** — read `message` and `suggestions` instead of branching on it.
 
 ### Query results: the `result.kind` discriminator
 

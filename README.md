@@ -64,6 +64,7 @@ Token-based authentication and multi-environment configuration are covered in th
 - **Multi-environment**: Switch between dev/staging/prod with a single command; safety levels prevent accidental changes
 - **Watch mode**: Real-time monitoring with `--watch` for all resources
 - **DQL passthrough**: Execute queries directly, with template variables and file-based input
+- **Embeddable**: `dtctl serve http` (experimental, opt in with `DTCTL_EXPERIMENTAL_SERVE=1`) or `pkg/engine` in Go runs the same command surface in-process for services and Workflow actions — multi-tenant per request, no host config, output byte-identical to the CLI
 - **[NO_COLOR](https://no-color.org/) support**: Respects `NO_COLOR`, `FORCE_COLOR=1`, and auto-detects TTY
 
 ## Supported Resources
@@ -122,6 +123,10 @@ npx skills add dynatrace/dynatrace-for-ai
 
 These skills provide the domain context (e.g., how to write DQL queries, which metrics to use for service health, how to navigate distributed traces) while dtctl provides the operational tool to act on it. Together they give AI agents everything they need to work with Dynatrace effectively.
 
+## Running as a Service
+
+`dtctl serve http` exposes the CLI over HTTP for AI agents and automation. It is **experimental**: set `DTCTL_EXPERIMENTAL_SERVE=1` to enable the command, and expect the contract to change. One request executes one dtctl command line for one tenant (`POST /v1/execute`) and returns the exact output the CLI would have printed. Each request brings its own environment URL and token, file arguments resolve against per-request virtual files, and host-only commands are unavailable. Go callers can embed `pkg/engine` directly instead. It is a reference implementation with no authentication of its own — see [Server Mode](https://dynatrace-oss.github.io/dtctl/docs/serve/) before exposing it beyond localhost.
+
 ## Observability
 
 dtctl supports W3C Trace Context propagation and OTLP span export via the OpenTelemetry SDK. See [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) for full details on distributed tracing, environment variables, and CI/CD pipeline integration.
@@ -137,6 +142,7 @@ Full documentation is available at **[dynatrace-oss.github.io/dtctl](https://dyn
 - [Output Formats](https://dynatrace-oss.github.io/dtctl/docs/output-formats/): Table, JSON, YAML, CSV, charts
 - [AI Agent Mode](https://dynatrace-oss.github.io/dtctl/docs/ai-agent-mode/): Structured envelope, auto-detection, agent skill
 - [Token Scopes](https://dynatrace-oss.github.io/dtctl/docs/token-scopes/): Required API token scopes per safety level
+- [Server Mode](https://dynatrace-oss.github.io/dtctl/docs/serve/): Running dtctl as a server, the execute API, and embedding `pkg/engine`
 
 Resource-specific guides: [DQL Queries](https://dynatrace-oss.github.io/dtctl/docs/dql-queries/) · [Workflows](https://dynatrace-oss.github.io/dtctl/docs/workflows/) · [Dashboards](https://dynatrace-oss.github.io/dtctl/docs/dashboards/) · [SLOs](https://dynatrace-oss.github.io/dtctl/docs/slos/) · [Settings](https://dynatrace-oss.github.io/dtctl/docs/settings/) · [Extensions](https://dynatrace-oss.github.io/dtctl/docs/extensions/) · [Analyzers](https://dynatrace-oss.github.io/dtctl/docs/analyzers/) · [CoPilot](https://dynatrace-oss.github.io/dtctl/docs/copilot/) · [and more...](https://dynatrace-oss.github.io/dtctl/docs/quick-start/)
 

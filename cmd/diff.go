@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 var diffCmd = &cobra.Command{
@@ -138,12 +138,11 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		fmt.Print(result.Patch)
 	}
 
-	exitCode := ExitCodeNoDiff
 	if result.HasChanges {
-		exitCode = ExitCodeHasDiff
+		// diff(1) semantics: exit 1 signals "differences found" without an
+		// error message — the patch itself is the output.
+		return &silentExitError{code: ExitCodeHasDiff, reason: "differences found"}
 	}
-
-	os.Exit(exitCode)
 	return nil
 }
 
@@ -214,7 +213,7 @@ func handleTwoRemoteResources(differ *diff.Differ, resourceType, id1, id2 string
 }
 
 func parseYAMLFile(path string) (interface{}, error) {
-	data, err := os.ReadFile(path)
+	data, err := vfs.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

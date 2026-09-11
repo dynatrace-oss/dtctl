@@ -3,13 +3,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createLookupCmd creates a lookup table
@@ -66,7 +66,7 @@ Examples:
 		}
 
 		// Read file
-		fileData, err := os.ReadFile(file)
+		fileData, err := vfs.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}

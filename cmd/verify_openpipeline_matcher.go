@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -10,6 +9,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherverify"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // verifyOpenPipelineMatcherCmd validates a DQL matcher expression against the
@@ -114,7 +114,7 @@ Examples:
 		// agent error-envelope path, so the ok:true envelope printed above stands
 		// as the sole output and the process still exits with ExitError.
 		if !result.Valid {
-			return &silentExitError{code: client.ExitError}
+			return &silentExitError{code: client.ExitError, reason: "verification failed"}
 		}
 		return nil
 	},
@@ -144,22 +144,13 @@ func printVerifyResultHuman(result *matcherverify.VerifyResult) {
 	}
 }
 
-// readVerifyExpressionFromFile reads a text expression from a file or stdin.
+// readVerifyExpressionFromFile reads a text expression from a user-supplied
+// path ("-" for stdin) through the vfs seam, so an embedded invocation reads
+// the request's virtual files rather than the host disk.
 func readVerifyExpressionFromFile(path string) (string, error) {
-	var reader io.Reader
-	if path == "-" {
-		reader = os.Stdin
-	} else {
-		f, err := os.Open(path)
-		if err != nil {
-			return "", fmt.Errorf("open %q: %w", path, err)
-		}
-		defer func() { _ = f.Close() }()
-		reader = f
-	}
-	content, err := io.ReadAll(reader)
+	content, err := vfs.ReadFileOrStdin(path)
 	if err != nil {
-		return "", fmt.Errorf("read expression: %w", err)
+		return "", fmt.Errorf("read expression from %q: %w", path, err)
 	}
 	return string(content), nil
 }

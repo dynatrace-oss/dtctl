@@ -103,6 +103,15 @@ string. Management commands that rewrite the file must load with
 | `DTCTL_DISABLE_KEYRING` | Disable the OS keyring (any non-empty value). |
 | `DTCTL_TOKEN_STORAGE` | `file` forces the file-based OAuth store. |
 
+**Sanctioned bypass: `cmd.Session`.** An embedded invocation can carry its own
+environment and token, and then none of this contract applies to it: no config
+file is read (a synthetic in-memory single-context config stands in), no keyring
+is touched, and `DTCTL_TOKEN`, `DT_API_TOKEN`, `DTCTL_ACCOUNT_TOKEN`,
+`DTCTL_CONFIG`, `DTCTL_CONTEXT`, `DTCTL_PROFILE`, and `DTCTL_OUTPUT` are unset
+for the duration of the invocation so the host's identity and preferences cannot
+shape a tenant's request. See
+[SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md).
+
 ## Golden fixtures
 
 | Fixture | Asserts |

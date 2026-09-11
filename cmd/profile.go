@@ -51,7 +51,7 @@ func (e *ProfileError) Error() string {
 //
 // A nil profile is the full command tree (no-op), preserving today's behavior.
 // The filter runs once, after the whole command tree is registered and before
-// Cobra dispatches — see execute() in root.go.
+// Cobra dispatches — see executeArgs() in root.go.
 func applyProfile(root *cobra.Command, p *config.Profile) {
 	if p == nil {
 		return
@@ -158,6 +158,13 @@ func extractContextOverride(args []string) string {
 // for the full command tree, and a non-nil error only when a referenced profile
 // name does not exist.
 func resolveActiveProfile(args []string) (*config.Profile, error) {
+	// Session-backed invocations resolve against the synthetic config: no
+	// user-defined profiles and no context binding, but DTCTL_PROFILE (set per
+	// request via RunOptions.Env) still selects a built-in preset.
+	if runSession != nil {
+		return runSession.syntheticConfig().ResolveProfile()
+	}
+
 	var (
 		cfg *config.Config
 		err error

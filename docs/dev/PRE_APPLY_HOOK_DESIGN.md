@@ -459,6 +459,7 @@ type ApplyOptions struct {
 | **`--no-hooks`** | Skips hook entirely |
 | **`--dry-run`** | Hook still runs (validation is useful even in preview) |
 | **`--agent` mode** | Structured error with `code: "hook_rejected"` |
+| **Host forbids hooks** | When `cmd.Capabilities.ApplyHooks` is not granted (embedded/service callers) and a hook is configured, apply fails before touching the resource — `code: "capability_disabled"` in agent mode. It fails rather than skipping silently, because a validation hook that quietly does not run is worse than a refused apply. |
 
 ---
 

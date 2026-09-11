@@ -3,10 +3,9 @@ package appengine
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 	sdkae "github.com/dynatrace-oss/dtctl/sdk/api/appengine"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -46,24 +45,11 @@ func fromSDKVersion(s *sdkae.SDKVersion) SDKVersion {
 	return SDKVersion{Version: s.Version, Default: s.Default}
 }
 
-// ReadFileOrStdin reads content from a file or stdin.
+// ReadFileOrStdin reads content from a file (through the vfs seam, so
+// embedded invocations resolve virtual request files) or stdin.
 // This is a CLI-layer helper and intentionally not part of the SDK.
 func ReadFileOrStdin(filename string) (string, error) {
-	var reader io.Reader
-	if filename == "-" {
-		reader = os.Stdin
-	} else {
-		f, err := os.Open(filename)
-		if err != nil {
-			return "", fmt.Errorf("failed to open file: %w", err)
-		}
-		defer func() {
-			_ = f.Close()
-		}()
-		reader = f
-	}
-
-	content, err := io.ReadAll(reader)
+	content, err := vfs.ReadFileOrStdin(filename)
 	if err != nil {
 		return "", fmt.Errorf("failed to read content: %w", err)
 	}

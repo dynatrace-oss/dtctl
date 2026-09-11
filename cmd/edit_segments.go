@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -109,24 +107,9 @@ Examples:
 			return fmt.Errorf("failed to close temp file: %w", err)
 		}
 
-		// Get the editor
-		editor := os.Getenv("EDITOR")
-		if editor == "" {
-			editor = cfg.Preferences.Editor
-		}
-		if editor == "" {
-			editor = "vim"
-		}
-
-		// Open the editor
-		parts := strings.Fields(editor)
-		editorCmd := exec.Command(parts[0], append(parts[1:], tmpfile.Name())...)
-		editorCmd.Stdin = os.Stdin
-		editorCmd.Stdout = os.Stdout
-		editorCmd.Stderr = os.Stderr
-
-		if err := editorCmd.Run(); err != nil {
-			return fmt.Errorf("editor failed: %w", err)
+		// Open the editor (single gateway; enforces the Editor capability)
+		if err := launchEditor(cfg.Preferences.Editor, tmpfile.Name()); err != nil {
+			return err
 		}
 
 		// Read the edited file

@@ -25,6 +25,12 @@ import (
 // successful dispatch never returns (process replacement); the code path
 // returning here means Windows, or an exec failure.
 func tryPluginDispatch(args []string) (int, bool) {
+	// Capability gate: on Unix, dispatch REPLACES this process (syscall.Exec).
+	// Embedded callers must never reach it; falling through yields the normal
+	// unknown-command error with suggestions instead.
+	if !caps.PluginDispatch {
+		return 0, false
+	}
 	words, rest := splitPluginArgs(args)
 	if len(words) == 0 || isBuiltinCommandName(words[0]) {
 		return 0, false

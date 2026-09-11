@@ -141,6 +141,12 @@ In [agent mode](ai-agent-mode) the same block is reported as a structured error
 with `code: "profile_blocked"`. The `dtctl commands` catalog also advertises the
 active `profile` and `safety_level` so an agent can see both constraints at once.
 
+Masks **compose**: a command has to survive every active mask to be invocable, and
+the code you get back names the mask that stopped it. In
+[server mode]({{ '/docs/serve/' | relative_url }}), for example, the per-request
+profile and the service's own host-only-command mask both apply, so `config`
+reports `unsupported_in_service` no matter which profile is active.
+
 ## Profiles vs. safety levels
 
 Profiles and [safety levels](configuration#safety-levels) are **orthogonal axes**
@@ -157,3 +163,18 @@ that compose on a context:
 
 Set **both** on a context to express, e.g., "this agent only sees `query`/Davis
 analyzers **and** can never mutate."
+
+Two further axes exist when dtctl is not a local terminal process — they belong to
+the *environment* it runs in, not to your configuration, and they matter because
+an agent has to tell all four blocks apart:
+
+| Axis | Question | Chosen by | [Agent]({{ '/docs/ai-agent-mode/#error-responses' | relative_url }}) code |
+|---|---|---|---|
+| Safety level | "What may this command *do*?" | context, `--safety-level`, or the request | `safety_blocked` |
+| Profile | "Which commands *exist* for this caller?" | `DTCTL_PROFILE`, context, or the request | `profile_blocked` |
+| Environment | "Which commands *make sense* here at all?" | the embedding environment — [server mode]({{ '/docs/serve/' | relative_url }}) removes host-only commands (`config`, `ctx`, `auth`, …) | `unsupported_in_service` |
+| Capability | "Which *host abilities* may this process use?" | the embedding host — plugins, aliases, hooks, editors, and browser opens are all off for embedded callers | `capability_disabled` |
+
+The environment and capability axes are not configurable from a context: a service
+sets them once for its whole process, and they compose with whatever profile and
+safety level a request carries.

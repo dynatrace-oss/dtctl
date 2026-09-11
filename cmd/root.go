@@ -47,14 +47,15 @@ var (
 	noAgent      bool // --no-agent flag: opt out of auto-detected agent mode
 
 	// tracingRootCtx holds the context carrying the root OTel span for this
-	// invocation. Set by execute() and read by NewClientFromConfig to inject
+	// invocation. Set by executeArgs() and read by NewClientFromConfig to inject
 	// W3C trace context headers on outgoing Dynatrace API requests.
 	//
 	// This is a package-level variable (rather than a function parameter) because
 	// NewClientFromConfig is referenced as a function value in breakpoint_helpers.go
 	// and changing its signature would cascade across 100+ call sites. The global is
-	// acceptable here because dtctl is a single-invocation CLI: execute() sets it
-	// once before any client is created, and the process exits shortly after.
+	// acceptable here because invocations are serialized (see Run): executeArgs()
+	// sets it before any client is created, and no other invocation can run
+	// concurrently in the same process.
 	tracingRootCtx context.Context
 )
 
@@ -83,15 +84,28 @@ func validateGlobalFlags() error {
 	return nil
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
+// Execute runs the CLI process: one invocation from os.Args, then exit.
+// Embedders use Run instead, which returns the exit code without terminating
+// the process. Routing through Run (rather than executeArgs directly) keeps a
+// single execution path, and ensures deferred functions (e.g. tracing
+// shutdown/flush) run before os.Exit, which os.Exit would otherwise bypass.
 func Execute() {
-	os.Exit(execute())
+	os.Exit(Run(os.Args[1:], RunOptions{}))
 }
 
-// execute runs the CLI and returns an exit code. Separating it from Execute
-// ensures that deferred functions (e.g. tracing shutdown/flush) run before
-// os.Exit is called, which os.Exit would otherwise bypass.
-func execute() int {
+// AddCommand registers an additional top-level command on the dtctl root.
+// It exists for commands that live outside this package because they import
+// packages that themselves import cmd — registering from here would be an
+// import cycle. `dtctl serve` (pkg/serve, wired in main) is the canonical
+// case. Call before the first Execute/Run.
+func AddCommand(c *cobra.Command) {
+	rootCmd.AddCommand(c)
+}
+
+// executeArgs runs one invocation of the given command line (program name
+// excluded) and returns an exit code. Callers go through Run, which provides
+// serialization and the pristine-tree guarantee.
+func executeArgs(argv []string) int {
 	// Setup enhanced error handling after all subcommands are registered
 	setupErrorHandlers(rootCmd)
 
@@ -99,12 +113,19 @@ func execute() int {
 	// agent-mode auto-preflight). Must run after all subcommands are registered.
 	installScopePreflight(rootCmd)
 
+	// Cobra falls back to os.Args when no args were set — always pin the
+	// requested argv so embedded invocations never see the host's arguments.
+	rootCmd.SetArgs(argv)
+
 	// --- Alias resolution (before Cobra parses args AND before tracing init) ---
 	// Resolving aliases first ensures the span name reflects the real command,
 	// not the pre-expansion alias. Load config quietly; if it fails, skip alias
 	// resolution (the real command will produce the proper error later).
-	spanArgs := os.Args[1:]
-	if cfg, err := config.Load(); err == nil {
+	// Session-backed invocations skip aliases entirely: they are a host-config
+	// convenience, and a tenant request must not expand through the host's
+	// alias table.
+	spanArgs := argv
+	if cfg, err := config.Load(); err == nil && runSession == nil {
 		// Security: warn when an auto-discovered local .dtctl.yaml carries
 		// code-execution keys (aliases / apply hooks) that are ignored. This
 		// makes adoption of an untrusted per-project config visible instead of
@@ -116,14 +137,17 @@ func execute() int {
 				cfg.LocalConfigPath())
 		}
 
-		// os.Args[0] is the binary name; work with os.Args[1:]
-		expanded, isShell, err := resolveAlias(os.Args[1:], cfg)
+		expanded, isShell, err := resolveAlias(argv, cfg)
 		if err != nil {
 			output.PrintHumanError("%s", err)
 			return 1
 		}
 
 		if isShell {
+			if !caps.ShellAliases {
+				output.PrintHumanError("%s", &CapabilityError{Feature: "shell aliases"})
+				return 1
+			}
 			if err := execShellAlias(expanded[0]); err != nil {
 				return 1
 			}
@@ -151,6 +175,14 @@ func execute() int {
 	applyProfile(rootCmd, prof)
 	// --- End command profile filter ---
 
+	// --- Blocked-command filter (embedded callers) ---
+	// Mask commands the embedding caller declared unsupported in its
+	// environment (RunOptions.BlockedCommands) — e.g. the service engine
+	// removes host-oriented commands like config/ctx/auth. Applied after the
+	// profile filter so both masks compose; a nil set is the full surface.
+	applyBlockedCommands(rootCmd, runBlocked)
+	// --- End blocked-command filter ---
+
 	// Initialise OpenTelemetry tracing. Done after alias resolution so that
 	// the span name reflects the actual command (not a pre-alias invocation).
 	// The root span covers the entire invocation; shutdown flushes buffered
@@ -174,14 +206,19 @@ func execute() int {
 	}
 
 	if err := rootCmd.Execute(); err != nil {
-		// silentExitError carries an exit code only (e.g. --check-scopes already
-		// printed its verdict); set the status and return without re-printing.
+		// silentExitError carries an exit code only (e.g. --check-scopes printed
+		// its verdict, diff found differences, wait timed out); set the status
+		// and return without re-printing.
 		var silent *silentExitError
 		if errors.As(err, &silent) {
 			if silent.code == 0 {
 				rootSpan.SetStatus(codes.Ok, "")
 			} else {
-				rootSpan.SetStatus(codes.Error, "insufficient scope")
+				reason := silent.reason
+				if reason == "" {
+					reason = "silent non-zero exit"
+				}
+				rootSpan.SetStatus(codes.Error, reason)
 			}
 			return silent.code
 		}
@@ -218,7 +255,22 @@ func execute() int {
 		rootSpan.SetStatus(codes.Error, err.Error())
 		rootSpan.RecordError(err)
 
-		if agentMode || plainMode {
+		// Masked commands (profile mask, blocked-command filter) disable flag
+		// parsing so the guard is the only observable outcome — which also
+		// means --agent/--plain never reached the flag vars. Honor them from
+		// the raw argv so a machine caller still gets the structured envelope.
+		structuredError := agentMode || plainMode
+		if !structuredError {
+			var maskedProfile *ProfileError
+			var maskedUnsupported *UnsupportedCommandError
+			if errors.As(err, &maskedProfile) || errors.As(err, &maskedUnsupported) {
+				structuredError = hasRawFlag(spanArgs, "--agent") ||
+					hasShortFlagLetter(spanArgs, 'A') ||
+					hasRawFlag(spanArgs, "--plain")
+			}
+		}
+
+		if structuredError {
 			detail := errorToDetail(err)
 			detail.Suggestions = append(detail.Suggestions, allHints...)
 			// Agent/plain mode: error envelopes go to stdout (not stderr) because
@@ -548,6 +600,27 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// UnsupportedCommandError — command removed from the surface by the
+	// embedding caller (e.g. host-oriented commands inside the service engine).
+	var unsupportedErr *UnsupportedCommandError
+	if errors.As(err, &unsupportedErr) {
+		return &output.ErrorDetail{
+			Code:        "unsupported_in_service",
+			Message:     unsupportedErr.Headline(),
+			Suggestions: unsupportedErr.Suggestions(),
+		}
+	}
+
+	// CapabilityError — a host-restricted ability (subprocess spawn: plugins,
+	// aliases, hooks, editor, browser) was requested but not granted.
+	var capErr *CapabilityError
+	if errors.As(err, &capErr) {
+		return &output.ErrorDetail{
+			Code:    "capability_disabled",
+			Message: capErr.Error(),
+		}
+	}
+
 	// apply.HookRejectedError — pre-apply hook rejected the resource
 	var hookErr *apply.HookRejectedError
 	if errors.As(err, &hookErr) {
@@ -747,6 +820,11 @@ func exitCodeForError(err error) int {
 		return client.ExitUsageError
 	}
 
+	var unsupportedErr *UnsupportedCommandError
+	if errors.As(err, &unsupportedErr) {
+		return client.ExitUsageError
+	}
+
 	var cmdErr *suggest.CommandError
 	if errors.As(err, &cmdErr) {
 		return client.ExitUsageError
@@ -917,6 +995,13 @@ func GetAgentMode() bool {
 // written, so a scripted `DTCTL_CONTEXT=x dtctl ...` cannot repoint other
 // processes on the machine.
 func LoadConfig() (*config.Config, error) {
+	// A session-backed invocation (embedded callers, see Session) is pinned to
+	// its own environment + token: the config file and context overrides do
+	// not apply.
+	if runSession != nil {
+		return runSession.syntheticConfig(), nil
+	}
+
 	var cfg *config.Config
 	var err error
 
@@ -1256,8 +1341,12 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 
 // initConfig reads in config file and ENV variables if set
 func initConfig() {
-	// Auto-detect AI agent environment and enable agent mode
-	if !agentMode && !noAgent {
+	// Auto-detect AI agent environment and enable agent mode. Session-backed
+	// invocations skip auto-detection entirely: whether the *host process*
+	// runs under an AI agent says nothing about the request, and host env
+	// must not shape a tenant's output. Service callers opt in per request,
+	// explicitly, with --agent on the command line.
+	if !agentMode && !noAgent && runSession == nil {
 		if info := aidetect.Detect(); info.Detected {
 			// Only auto-enable if user hasn't explicitly chosen a non-JSON
 			// output format. An explicit `-o json` is compatible — the agent

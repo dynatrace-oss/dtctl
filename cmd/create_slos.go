@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createSLOCmd creates an SLO from a file
@@ -38,7 +38,7 @@ Examples:
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 
 		// Read the file
-		fileData, err := os.ReadFile(file)
+		fileData, err := vfs.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}

@@ -2,12 +2,11 @@ package exec
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // FunctionExecutor handles function execution
@@ -139,18 +138,14 @@ func (e *FunctionExecutor) GetSDKVersions() (*appengine.SDKVersionsResponse, err
 	return e.handler.GetSDKVersions()
 }
 
-// ReadFileOrStdin reads content from a file or stdin
+// ReadFileOrStdin reads content from a file (through the vfs seam, so
+// embedded invocations resolve virtual request files) or stdin.
 func ReadFileOrStdin(filename string) (string, error) {
-	if filename == "-" {
-		content, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return "", fmt.Errorf("failed to read from stdin: %w", err)
-		}
-		return string(content), nil
-	}
-
-	content, err := os.ReadFile(filename)
+	content, err := vfs.ReadFileOrStdin(filename)
 	if err != nil {
+		if filename == "-" {
+			return "", err
+		}
 		return "", fmt.Errorf("failed to read file %q: %w", filename, err)
 	}
 	return string(content), nil

@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 	sdkana "github.com/dynatrace-oss/dtctl/sdk/api/analyzer"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -147,7 +147,7 @@ func fromSDKExecuteResult(s *sdkana.ExecuteResult) *ExecuteResult {
 // ParseInputFromFile reads and parses analyzer input from a file.
 // This is a CLI-layer helper and intentionally not part of the SDK.
 func ParseInputFromFile(filename string) (map[string]interface{}, error) {
-	content, err := os.ReadFile(filename)
+	content, err := vfs.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

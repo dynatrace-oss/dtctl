@@ -14,6 +14,8 @@ kubectl-inspired CLI for Dynatrace (dashboards, workflows, SLOs, etc). Go + Cobr
 
 ```text
 cmd/          # Cobra commands (get, describe, create, delete, apply, exec, ctx, doctor, commands, plugin)
+              # plus the embedding entrypoint: run.go (cmd.Run + per-invocation isolation),
+              # session.go, capabilities.go, stdio.go, blocked.go (docs/dev/SERVICE_ENGINE_DESIGN.md)
 pkg/
   ├── client/    # Shim over sdk/session's client; keeps CLI-only extras (typed errors, pagination, OTel injection) and pins the dtctl/<version> User-Agent
   ├── config/    # Shim over sdk/session — the config model/keyring implementation lives in the sdk
@@ -22,7 +24,10 @@ pkg/
   ├── plugin/    # kubectl-style exec plugin resolution/discovery (docs/dev/PLUGIN_CONVENTIONS.md)
   ├── resources/ # Resource handlers — thin CLI wrappers that delegate to sdk/api/
   ├── output/    # Formatters (table, JSON, YAML, charts, agent envelope, color control)
-  └── exec/      # DQL query execution
+  ├── exec/      # DQL query execution
+  ├── vfs/       # Virtual-filesystem seam: user-supplied file paths resolve against the host disk (CLI) or per-request virtual files (engine)
+  ├── engine/    # Embeddable service engine: one dtctl command line per request — multi-tenant session, virtual files, CLI-identical output
+  └── serve/     # `dtctl serve <protocol>` — reference servers over pkg/engine, one subcommand per protocol (`serve http` today; wired in main, outside the invocation lock). Experimental: registered only when DTCTL_EXPERIMENTAL_SERVE is set
 sdk/            # Separate Go module (github.com/dynatrace-oss/dtctl/sdk)
   ├── session/     # The session layer (docs/dev/CONFIG_CONTRACT.md): config model + load/save, credential stores, OAuth flow/refresh + cross-process lock, client-from-context with parameterized User-Agent, safety semantics
   ├── api/         # Typed API wrappers (one package per Dynatrace API surface)
@@ -80,8 +85,8 @@ When adding a new AI agent to the skills system, update **all** of the following
 ## Adding a Resource
 
 1. **SDK layer** (`sdk/api/<name>/`): Create typed API wrapper with CRUD functions using `httpclient.Client`. No file I/O, no display logic.
-2. **CLI layer** (`pkg/resources/<name>/`): Create resource handler that delegates to SDK. Handle file reading, display fields, name resolution here.
-3. **Commands**: Add to `cmd/get.go`, `cmd/describe.go`, etc.
+2. **CLI layer** (`pkg/resources/<name>/`): Create resource handler that delegates to SDK. Handle file reading, display fields, name resolution here. Read user-supplied paths through `pkg/vfs`, never `os` directly (see [Embedding Invariants](#-critical-embedding-invariants-)).
+3. **Commands**: Add to `cmd/get.go`, `cmd/describe.go`, etc. Mutating verbs need a safety check; `-f`/`--file` flags go through `vfs`; no `os.Exit`, no ungated subprocess.
 4. Register in resolver
 5. Add tests: `sdk/api/<name>/*_test.go` (SDK unit tests) + `test/e2e/<name>_test.go` (E2E)
 
@@ -110,6 +115,8 @@ func (h *Handler) List(opts ListOptions) ([]Resource, error)
 | Add EXEC | `cmd/exec.go`, `pkg/exec/<type>.go` | See `pkg/exec/workflow.go` polling |
 | Add DQL template | `pkg/exec/dql.go`, `pkg/util/template/` | Use `text/template`, `--set` flag |
 | Fix output | `pkg/output/<format>.go` | Test: `dtctl get <resource> -o <format>` |
+| Read a user file | `pkg/vfs/` | `vfs.ReadFile` / `vfs.ReadFileOrStdin` — never `os.ReadFile` |
+| Add a serve protocol | `pkg/serve/<proto>.go` | Copy `pkg/serve/http.go`; register in `NewCommand()` |
 
 **Tests**: `make test` or `go test ./...` • E2E: `test/e2e/` • Integration: `test/integration/`
 
@@ -196,6 +203,82 @@ if !dryRun {
 
 **Examples**: [cmd/edit.go](cmd/edit.go), [cmd/create.go](cmd/create.go), [cmd/apply.go](cmd/apply.go)
 
+## 🚨 **CRITICAL: Embedding Invariants** 🚨
+
+dtctl runs as a one-shot CLI **and** as an in-process library, one invocation per
+service request (`cmd.Run` → `pkg/engine` → `dtctl serve http`). Same command
+tree, same code paths, same bytes on stdout — the only difference is where the
+invocation's credentials, files, and streams come from.
+
+Every rule below has a guard test, because every one of them was violated at
+least once — including twice inside the PR that introduced the model. Full
+rationale: [docs/dev/SERVICE_ENGINE_DESIGN.md](docs/dev/SERVICE_ENGINE_DESIGN.md).
+
+### 1. User-supplied file paths go through `pkg/vfs` — never `os` directly
+
+```go
+content, err := os.ReadFile(pathFromFlag)        // ❌ reads the SERVER's disk
+content, err := vfs.ReadFile(pathFromFlag)       // ✅
+content, err := vfs.ReadFileOrStdin(pathFromFlag) // ✅ when "-" means stdin
+```
+
+The test is **whose file is it**: a path the *user named* (`-f`, `--file`,
+`--data-file`, a query file, a file to `diff`, an `apply --write-id` writeback)
+is request state and must go through the seam. A path *dtctl chose* (editor temp
+file, config file, spill buffer) is host state and stays on `os` — but only when
+a blocked command or an ungranted capability keeps a request from reaching it.
+
+**The rule follows the path, not the package.** `cmd/` reading through the seam
+and then handing the path to a `pkg/` helper that calls `os.ReadFile` is the
+same hole one frame deeper. The guard scans `cmd/` *and* `pkg/`.
+
+Never open `/dev/stdin` as a path — the seam swaps the `os.Stdin` *variable*, so
+a path slips past it and doesn't exist on Windows. Use `os.Stdin` or
+`vfs.ReadFileOrStdin`.
+
+*Guard*: `go test ./cmd/ -run TestUserFilePathsGoThroughVFS`
+
+### 2. No subprocess — and no host disk — without a capability gate
+
+Spawning (`exec.Command`, `syscall.Exec`) belongs in one of the five gateway
+files, each gated on a `cmd.Capabilities` field. Host-disk features outside the
+vfs seam are gated the same way: result spilling needs `HostDiskSpill`, because a
+spilled file outlives the request on the server and its path means nothing to the
+caller. Embedded callers grant nothing, so those paths become structurally
+unreachable rather than merely discouraged.
+
+*Guard*: `go test ./cmd/ -run TestSubprocessSpawnsConfinedToGateways`
+
+### 3. No `os.Exit` in command bodies
+
+An in-process caller dies with it. Return an error — `*silentExitError` for a
+specific exit code with no extra message.
+
+*Guard*: `go test ./cmd/ -run TestNoOsExitOutsideExecute`
+
+### 4. Credentials come from `LoadConfig()`, never from the process
+
+A `Session` transparently swaps in a synthetic single-context config. Reaching
+for `os.Getenv("DTCTL_TOKEN")`, the keyring, or a config path directly would
+hand one tenant's request the host's credentials — a session has scrubbed all of
+them precisely so that cannot happen.
+
+### 5. Output stays byte-identical to the CLI
+
+Print via `pkg/output`, `fmt.Print*`, or cobra — all resolve `os.Stdout`/
+`os.Stderr` dynamically, so the stream seam catches them. Don't cache a writer
+across invocations; don't make output depend on the host environment.
+
+*Guard*: `go test ./pkg/engine/ -run TestEngineOutputEqualsCLI` (builds the real
+binary and diffs CLI vs. engine stdout/stderr/exit code)
+
+### 6. New top-level command? Decide if it belongs in a service
+
+Add it to `unsupportedCommands` in `pkg/engine/policy.go` **with a reason** if it
+manages host-local state (config, keyring, shell, installed tools, an
+interactive session) or would nest the service in itself. The reason is
+user-facing — it appears in the `unsupported_in_service` error's suggestions.
+
 ## Privacy
 
 Never put customer names, employee names, usernames, or specific Dynatrace environment identifiers into the codebase, GitHub issues, PRs, release notes, or commits.
@@ -213,6 +296,12 @@ Never put customer names, employee names, usernames, or specific Dynatrace envir
 
 ❌ **Don't** skip safety checks on mutating commands  
 ✅ **Do** add safety checks to ALL create/edit/apply/delete/update commands
+
+❌ **Don't** read a user-supplied path with `os.ReadFile` / `os.Open`  
+✅ **Do** use `vfs.ReadFile` / `vfs.ReadFileOrStdin` (see Embedding Invariants)
+
+❌ **Don't** call `exec.Command` or `os.Exit` from a command body  
+✅ **Do** go through a capability gateway, and return errors instead of exiting
 
 ❌ **Don't** send `page-size` together with `next-page-key`/`page-key` on paginated requests  
 ❌ **Don't** drop filter/search params on subsequent pages — page tokens do NOT always preserve them  
@@ -383,6 +472,7 @@ if r.URL.Query().Get("nextPageKey") != "" {
 - **Design**: [docs/dev/API_DESIGN.md](docs/dev/API_DESIGN.md)
 - **Architecture**: [docs/dev/ARCHITECTURE.md](docs/dev/ARCHITECTURE.md)
 - **Status**: [docs/dev/IMPLEMENTATION_STATUS.md](docs/dev/IMPLEMENTATION_STATUS.md)
+- **Embedding/service model**: [docs/dev/SERVICE_ENGINE_DESIGN.md](docs/dev/SERVICE_ENGINE_DESIGN.md)
 - **Future Work**: [docs/dev/FUTURE_FEATURES.md](docs/dev/FUTURE_FEATURES.md)
 
 ---

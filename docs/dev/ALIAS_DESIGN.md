@@ -446,6 +446,14 @@ func execShellAlias(shellCmd string) error {
 }
 ```
 
+`execShellAlias` is gated on `Capabilities.ShellAliases`: the CLI grants it,
+embedded and service invocations do not, so a `!` alias there fails with a
+capability error instead of running `sh -c`. Session-backed invocations skip
+alias resolution entirely — aliases are a host-config convenience, and a
+tenant's request must not expand through the host's alias table — and `alias`
+is one of the top-level commands removed from the service surface
+([SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)).
+
 ### Integration into Execute()
 
 ```go

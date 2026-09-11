@@ -1,8 +1,42 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+
 	"github.com/spf13/cobra"
 )
+
+// launchEditor opens path in the user's editor, resolving $EDITOR, then the
+// config preference, then vim. It is the single subprocess gateway for every
+// edit command and enforces the Editor capability, so embedded callers (which
+// grant no capabilities) can never spawn an editor.
+func launchEditor(preferredEditor, path string) error {
+	if !caps.Editor {
+		return &CapabilityError{Feature: "interactive editing (edit)"}
+	}
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = preferredEditor
+	}
+	if editor == "" {
+		editor = "vim"
+	}
+	parts := strings.Fields(editor)
+	if len(parts) == 0 {
+		return fmt.Errorf("no editor configured")
+	}
+	editorCmd := exec.Command(parts[0], append(parts[1:], path)...)
+	editorCmd.Stdin = os.Stdin
+	editorCmd.Stdout = os.Stdout
+	editorCmd.Stderr = os.Stderr
+	if err := editorCmd.Run(); err != nil {
+		return fmt.Errorf("editor failed: %w", err)
+	}
+	return nil
+}
 
 // editCmd represents the edit command
 var editCmd = &cobra.Command{

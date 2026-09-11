@@ -12,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // applyCmd represents the apply command
@@ -156,7 +157,7 @@ resources in sync with their file definitions.
 		}
 
 		// Read the file
-		fileData, err := os.ReadFile(file)
+		fileData, err := vfs.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -184,6 +185,10 @@ resources in sync with their file definitions.
 		// Create applier with safety checker (safety checks happen inside applier
 		// with proper ownership determination for updates)
 		applier := apply.NewApplier(c)
+		// The source file is the --write-id writeback target (and hook
+		// context) — it must be set regardless of whether hooks are
+		// configured, or the id never lands back in the file.
+		applier = applier.WithSourceFile(file)
 		if !dryRun {
 			checker, err := NewSafetyChecker(cfg)
 			if err != nil {
@@ -194,6 +199,12 @@ resources in sync with their file definitions.
 
 		// Configure pre-apply and post-apply hooks
 		if !noHooks {
+			// Capability gate: hooks execute arbitrary configured commands.
+			// Fail loudly when the config requests one the host forbids —
+			// silently skipping a validation hook would be worse.
+			if !caps.ApplyHooks && (cfg.GetPreApplyHook() != "" || cfg.GetPostApplyHook() != "") {
+				return &CapabilityError{Feature: "apply hooks"}
+			}
 			if hookCmd := cfg.GetPreApplyHook(); hookCmd != "" {
 				applier = applier.WithPreApplyHook(hookCmd).WithSourceFile(file)
 			}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -183,5 +184,83 @@ func TestSpillWritesParquet(t *testing.T) {
 		if got := spillWritesParquet(c.opts); got != c.want {
 			t.Errorf("%s: spillWritesParquet = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestResolveSpillOptions_WithoutHostDiskCapability: spilling writes a file to
+// the host disk and returns a path to read it back, so an embedded invocation
+// (which grants no capabilities) must not spill. The automatic case degrades
+// silently to "never" — the caller gets its rows inline, which is what it can
+// actually use — while an explicit request fails, because silently inlining a
+// result the command line asked to spill would misreport what happened.
+func TestResolveSpillOptions_WithoutHostDiskCapability(t *testing.T) {
+	origAgent := agentMode
+	origCaps := SetCapabilities(Capabilities{}) // grant nothing, as embedders do
+	defer func() {
+		agentMode = origAgent
+		SetCapabilities(origCaps)
+	}()
+
+	// Agent mode would default to auto; without the capability it is never.
+	agentMode = true
+	got, err := resolveSpillOptions(newSpillTestCmd(), emptyConfig())
+	if err != nil {
+		t.Fatalf("automatic spill must degrade quietly, got error: %v", err)
+	}
+	if got.Mode != exec.SpillNever {
+		t.Errorf("mode = %q, want never", got.Mode)
+	}
+	if got.ToPath != "" || got.Dir != "" {
+		t.Errorf("no host path may be resolved: ToPath=%q Dir=%q", got.ToPath, got.Dir)
+	}
+
+	// An explicit --spill-to is a capability error, not a silent no-op.
+	c := newSpillTestCmd()
+	if err := c.Flags().Set("spill-to", "/tmp/tenant-chosen.jsonl"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolveSpillOptions(c, emptyConfig())
+	var capErr *CapabilityError
+	if !errors.As(err, &capErr) {
+		t.Fatalf("--spill-to without the capability = %v, want *CapabilityError", err)
+	}
+
+	// So is an explicit --spill=always.
+	c = newSpillTestCmd()
+	if err := c.Flags().Set("spill", "always"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolveSpillOptions(c, emptyConfig())
+	if !errors.As(err, &capErr) {
+		t.Fatalf("--spill=always without the capability = %v, want *CapabilityError", err)
+	}
+
+	// An explicit --spill=never asks for nothing, so it is not an error.
+	c = newSpillTestCmd()
+	if err := c.Flags().Set("spill", "never"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveSpillOptions(c, emptyConfig()); err != nil {
+		t.Fatalf("--spill=never without the capability = %v, want no error", err)
+	}
+}
+
+// TestResolveSpillOptions_CLIKeepsSpilling guards the other direction: the CLI
+// grants HostDiskSpill, so none of the above changes local behaviour.
+func TestResolveSpillOptions_CLIKeepsSpilling(t *testing.T) {
+	origAgent := agentMode
+	origCaps := SetCapabilities(AllCapabilities())
+	defer func() {
+		agentMode = origAgent
+		SetCapabilities(origCaps)
+	}()
+
+	agentMode = true
+	got, err := resolveSpillOptions(newSpillTestCmd(), emptyConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != exec.SpillAuto {
+		t.Errorf("CLI agent-mode spill = %q, want auto", got.Mode)
 	}
 }

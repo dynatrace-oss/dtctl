@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/copilot"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // execCopilotCmd executes a Davis CoPilot query
@@ -48,7 +48,7 @@ Examples:
 		inputFile, _ := cmd.Flags().GetString("file")
 
 		if inputFile != "" {
-			content, err := os.ReadFile(inputFile)
+			content, err := vfs.ReadFile(inputFile)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
@@ -132,7 +132,7 @@ Examples:
 		inputFile, _ := cmd.Flags().GetString("file")
 
 		if inputFile != "" {
-			content, err := os.ReadFile(inputFile)
+			content, err := vfs.ReadFile(inputFile)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
@@ -189,7 +189,7 @@ Examples:
 		inputFile, _ := cmd.Flags().GetString("file")
 
 		if inputFile != "" {
-			content, err := os.ReadFile(inputFile)
+			content, err := vfs.ReadFile(inputFile)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}

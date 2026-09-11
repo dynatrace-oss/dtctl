@@ -14,6 +14,21 @@ import (
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
+// spillExplicitlyRequested reports whether the command line asked for a spill,
+// as opposed to leaving it to the mode default. --spill-format and
+// --spill-threshold only shape a spill that happens anyway, so they do not
+// count — they are inert here exactly as they are under --spill=never.
+func spillExplicitlyRequested(cmd *cobra.Command) bool {
+	if to, _ := cmd.Flags().GetString("spill-to"); to != "" {
+		return true
+	}
+	if !cmd.Flags().Changed("spill") {
+		return false
+	}
+	val, _ := cmd.Flags().GetString("spill")
+	return normalizeMode(val) != string(exec.SpillNever)
+}
+
 // resolveSpillOptions resolves the effective result-spill settings using the
 // precedence flag → env → context-config → global-config → built-in default
 // (D15), and enforces the fixed flag-conflict rules (D25). It emits a warning
@@ -24,6 +39,21 @@ func resolveSpillOptions(cmd *cobra.Command, cfg *config.Config) (exec.SpillOpti
 	var base config.SpillConfig
 	if cfg != nil {
 		base = cfg.EffectiveSpillConfig()
+	}
+
+	// Spilling writes results to the host's disk and hands the caller a path to
+	// read later, so it needs the HostDiskSpill capability. An embedded
+	// invocation has no host disk of its own: the file would land on the
+	// *server's* disk (durable, and visible to later requests) while the path in
+	// the response would be unreadable by the caller. Ungranted, spilling is off
+	// — silently when it would only have been automatic, loudly when the command
+	// line asked for it, since silently inlining a result the caller asked to
+	// spill would misreport what happened.
+	if !caps.HostDiskSpill {
+		if spillExplicitlyRequested(cmd) {
+			return exec.SpillOptions{}, &CapabilityError{Feature: "result spilling to disk"}
+		}
+		return exec.SpillOptions{Mode: exec.SpillNever}, nil
 	}
 
 	spillChanged := cmd.Flags().Changed("spill")

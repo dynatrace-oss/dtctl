@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 var (
@@ -73,13 +73,9 @@ Examples:
 		var data map[string]interface{}
 
 		if openIntentDataFile != "" {
-			// Read from file
-			var content []byte
-			if openIntentDataFile == "-" {
-				content, err = os.ReadFile("/dev/stdin")
-			} else {
-				content, err = os.ReadFile(openIntentDataFile)
-			}
+			// Read from file, or stdin for "-" — both through the vfs seam, so
+			// an embedded invocation reads the request's files and stdin.
+			content, err := vfs.ReadFileOrStdin(openIntentDataFile)
 			if err != nil {
 				return fmt.Errorf("failed to read data file: %w", err)
 			}
@@ -122,6 +118,10 @@ Examples:
 
 // openBrowser opens a URL in the default browser
 func openBrowser(url string) error {
+	if !caps.BrowserOpen {
+		return &CapabilityError{Feature: "opening a browser (open)"}
+	}
+
 	var cmd *exec.Cmd
 
 	switch runtime.GOOS {

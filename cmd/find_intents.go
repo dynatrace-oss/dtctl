@@ -3,12 +3,12 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 var (
@@ -66,13 +66,9 @@ Examples:
 		var data map[string]interface{}
 
 		if findIntentsDataFile != "" {
-			// Read from file
-			var content []byte
-			if findIntentsDataFile == "-" {
-				content, err = os.ReadFile("/dev/stdin")
-			} else {
-				content, err = os.ReadFile(findIntentsDataFile)
-			}
+			// Read from file, or stdin for "-" — both through the vfs seam, so
+			// an embedded invocation reads the request's files and stdin.
+			content, err := vfs.ReadFileOrStdin(findIntentsDataFile)
 			if err != nil {
 				return fmt.Errorf("failed to read data file: %w", err)
 			}

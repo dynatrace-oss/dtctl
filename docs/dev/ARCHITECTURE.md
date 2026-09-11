@@ -438,7 +438,12 @@ dtctl/
 │   ├── config.go               # Config command
 │   ├── auth.go                 # Auth command
 │   ├── completion.go           # Shell completion
-│   └── version.go              # Version command
+│   ├── version.go              # Version command
+│   ├── run.go                  # cmd.Run: in-process entrypoint + per-invocation isolation
+│   ├── capabilities.go         # Capability gate for subprocess spawns
+│   ├── session.go              # Per-invocation tenant (synthetic config)
+│   ├── stdio.go                # Per-invocation stream redirection
+│   └── blocked.go              # Per-invocation command-surface mask
 │
 ├── pkg/
 │   ├── api/                    # Generated API clients
@@ -498,6 +503,18 @@ dtctl/
 │   │   ├── slo.go              # SLO evaluator
 │   │   ├── function.go         # Function executor
 │   │   └── intent.go           # Intent URL generator
+│   │
+│   ├── vfs/                    # File-access seam for user-supplied paths
+│   │   ├── vfs.go              # FS interface + host filesystem default
+│   │   └── mapfs.go            # In-memory FS built from a request's files
+│   │
+│   ├── engine/                 # Embeddable service engine
+│   │   ├── engine.go           # Execute(ctx, Request) — one command line per request
+│   │   └── policy.go           # Commands unsupported in a service
+│   │
+│   ├── serve/                  # `dtctl serve <protocol>` reference servers
+│   │   ├── serve.go            # Protocol parent command + standalone dispatch
+│   │   └── http.go             # `serve http` — POST /v1/execute, GET /healthz
 │   │
 │   └── util/                   # Utilities
 │       ├── editor.go           # Interactive editor
@@ -898,6 +915,45 @@ func isRetryable(r *resty.Response, err error) bool {
 
 ---
 
+### 5. Invocation Model Pattern
+
+dtctl is both a one-shot process and an in-process library called once per
+service request. `cmd.Run(argv, RunOptions)` is the single entrypoint for both;
+`Execute()` (the CLI's `main`) delegates to it.
+
+```go
+res, err := cmd.Run(argv, cmd.RunOptions{
+    Capabilities:    cmd.Capabilities{},        // no subprocesses
+    Session:         &cmd.Session{...},         // this request's tenant
+    FS:              vfs.NewMapFS(files),       // this request's files
+    Stdout:          &stdout,                   // this request's streams
+    BlockedCommands: engine.UnsupportedCommands(),
+})
+```
+
+Each invocation is bracketed by setup/restore of process-wide state:
+
+1. **Pristine command tree** — a one-time snapshot of every command's
+   as-registered state (`RunE`, `Run`, `Args`, `Hidden`, `DisableFlagParsing`)
+   is restored, and all flag values reset to declared defaults, so per-run
+   mutations (profile masks, scope-preflight wraps) and stale flag values cannot
+   leak into the next invocation.
+2. **Capabilities** applied, then restored.
+3. **Session** installed behind `LoadConfig()` as a synthetic single-context
+   config, with host credential/config environment variables scrubbed.
+4. **Filesystem** installed for user-supplied paths (`pkg/vfs`).
+5. **Streams** redirected (`os.Stdout`/`os.Stderr`/`os.Stdin` swapped), then
+   drained and restored.
+
+Because all five touch package or process state, invocations **serialize** on a
+package mutex — the command tree is 277 command values wired by `init()`.
+Parallelism comes from more instances or processes, not more goroutines. This is
+the constraint that makes the rest safe; see
+[SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md) for the full rationale and
+the invariants contributors must preserve.
+
+---
+
 ## Performance Considerations
 
 ### 1. Parallel Operations
@@ -1007,12 +1063,13 @@ httpClient.SetTLSClientConfig(&tls.Config{
 
 ### Phase 2 Additions:
 1. **Plugin System**: ✅ shipped 2026-07-12 as the kubectl-style exec convention — `dtctl foo` execs `dtctl-foo` from PATH; Go plugins rejected (see [PLUGIN_CONVENTIONS.md](PLUGIN_CONVENTIONS.md))
-2. **Interactive Mode**: TUI using bubbletea/lipgloss
-3. **Local Development Mode**: Mock server for testing
-4. **Credential Providers**: Integration with HashiCorp Vault, AWS Secrets Manager
-5. **Advanced Caching**: Persistent cache with TTL and invalidation
-6. **Metrics**: Built-in metrics collection for usage analytics
-7. **Auto-update**: Automatic version checking and updates
+2. **Embeddable engine / service mode**: ✅ shipped as `cmd.Run` + `pkg/engine` + `dtctl serve http` — the CLI surface runs in-process, multi-tenant, one invocation per request (see [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md))
+3. **Interactive Mode**: TUI using bubbletea/lipgloss
+4. **Local Development Mode**: Mock server for testing
+5. **Credential Providers**: Integration with HashiCorp Vault, AWS Secrets Manager
+6. **Advanced Caching**: Persistent cache with TTL and invalidation
+7. **Metrics**: Built-in metrics collection for usage analytics
+8. **Auto-update**: Automatic version checking and updates
 
 ---
 

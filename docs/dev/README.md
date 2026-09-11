@@ -61,6 +61,18 @@ Command alias system design:
 
 ---
 
+### [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)
+dtctl as an in-process library a service calls once per request:
+- **The Seams** - Per-invocation command tree, capabilities, session, environment, files, streams
+- **Serialization** - Why invocations hold a package mutex, and what that rules out
+- **Surface Reduction** - The independent safety / profile / environment / capability axes
+- **Rules for Contributors** - `pkg/vfs` for user file paths, capability gates, no `os.Exit`
+- **`dtctl serve`** - The reference HTTP server and how to add a protocol
+
+**Use this for**: Changing anything in `cmd/`, adding a command, or reading a user-supplied file.
+
+---
+
 ### [../LIVE_DEBUGGER.md](../LIVE_DEBUGGER.md)
 User-facing Live Debugger workflow documentation:
 - **Workspace Filters** - Target runtimes with `dtctl update breakpoint --filters`
@@ -82,7 +94,7 @@ User-facing Live Debugger workflow documentation:
 **Adding a new resource?** Follow this pattern:
 1. Define in [API_DESIGN.md](API_DESIGN.md) - Resource Types section
 2. Implement in `pkg/resources/<resource>/`
-3. Add commands in `cmd/`
+3. Add commands in `cmd/` - read user-supplied file paths through `pkg/vfs` (not `os.ReadFile`), gate every subprocess spawn on `cmd.Capabilities`, and return errors instead of calling `os.Exit` (see [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md))
 4. Update [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)
 5. Add tests in `test/`
 
