@@ -37,6 +37,23 @@ type DiscoverOptions struct {
 	// inventory rather than overrunning.
 	BudgetQueries int     // 0 = 100
 	BudgetSeconds float64 // 0 = 300
+
+	// Since switches discovery into windowed arrival mode: instead of the
+	// retention-scoped capability verdicts, report per-signal ingest state for
+	// Where's scope inside the window. It is a DQL timeframe expression
+	// ("now()-15m"), already normalized by the caller.
+	Since string
+	// Where is the DQL filter fragment scoping every windowed probe. Windowed
+	// mode requires it: an unscoped windowed count is the single most
+	// expensive query in the battery (measured 204 GB on one tenant's logs),
+	// and the unscoped question is already answered for free by bucket
+	// metadata.
+	Where string
+	// StaleAfter is the age past which a signal that did match is reported
+	// stale rather than live.
+	StaleAfter time.Duration
+	// Signals optionally restricts windowed probing to named capabilities.
+	Signals []string
 }
 
 type budgetRunner struct {
@@ -51,6 +68,10 @@ type budgetRunner struct {
 }
 
 var errBudgetExhausted = fmt.Errorf("discovery budget exhausted")
+
+// metricCatalogLimit bounds the metric-key catalog read. Hitting it exactly is
+// treated as truncation: see the read site.
+const metricCatalogLimit = 10000
 
 func (b *budgetRunner) run(ctx context.Context, dql string) (*RunResult, error) {
 	// A cancelled run must not keep issuing queries (each would round-trip to
@@ -132,18 +153,24 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 	if err != nil {
 		return nil, fmt.Errorf("data-object discovery failed: %w", err)
 	}
+	// Windowed mode answers a narrow question and its result is consumed by
+	// gates and agents, so the environment-wide catalog listings are left out
+	// of it: they are not what was asked and they dominate the payload.
+	windowed := opts.Since != ""
 	// The legacy dt.entity.* lookback views are collapsed to a count: they can
 	// number in the hundreds, and the census below is the canonical entity
 	// surface. The full catalog still backs capability verdicts.
-	for _, name := range fetchable {
-		if strings.HasPrefix(name, "dt.entity.") {
-			inv.EntityViews++
-		} else {
-			inv.DataObjects = append(inv.DataObjects, name)
+	if !windowed {
+		for _, name := range fetchable {
+			if strings.HasPrefix(name, "dt.entity.") {
+				inv.EntityViews++
+			} else {
+				inv.DataObjects = append(inv.DataObjects, name)
+			}
 		}
+		inv.QueryOnly = queryOnly
 	}
-	inv.QueryOnly = queryOnly
-	if len(queryOnly) > 0 {
+	if len(queryOnly) > 0 && !windowed {
 		inv.Notes = append(inv.Notes, fmt.Sprintf(
 			"catalog objects without fetch support: %s — metric data is queried via the timeseries/metrics commands, smartscape via smartscapeNodes/smartscapeEdges",
 			strings.Join(queryOnly, ", ")))
@@ -161,7 +188,7 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 	if res, err := br.run(ctx, "fetch dt.system.buckets | fields name, dt.system.table, records, has_access | sort name asc | limit 1000"); err == nil {
 		streamRows := map[string]int64{}
 		for _, rec := range res.Records {
-			if name, ok := rec["name"].(string); ok && name != "" {
+			if name, ok := rec["name"].(string); ok && name != "" && !windowed {
 				inv.Buckets = append(inv.Buckets, name)
 			}
 			// Inaccessible buckets report no usable record count — leaving them
@@ -186,7 +213,10 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 		report.Notes = append(report.Notes, "bucket discovery failed: "+firstLine(err.Error()))
 	}
 
-	if res, err := br.run(ctx, `smartscapeNodes "*" | summarize c = count(), by:{type} | sort c desc | limit 1000`); err == nil {
+	if windowed {
+		// The entity census is a live-topology count with no "since" reading,
+		// and no signal state depends on it.
+	} else if res, err := br.run(ctx, `smartscapeNodes "*" | summarize c = count(), by:{type} | sort c desc | limit 1000`); err == nil {
 		for _, rec := range res.Records {
 			if t, ok := rec["type"].(string); ok {
 				facts.census[t] = asInt64(rec["c"])
@@ -204,11 +234,22 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 		report.Notes = append(report.Notes, "entity census failed: "+firstLine(err.Error()))
 	}
 
-	if anyMetricDef(defs) {
-		if keys, truncated, err := br.stringColumn(ctx, "metrics from:now()-2h | summarize c = count(), by:{metric.key} | limit 10000", "metric.key"); err == nil {
+	if needMetricCatalog(defs, opts, windowed) {
+		// In windowed mode the catalog is read over the caller's window, so a
+		// family that only reported before it does not resolve to a key and
+		// cannot be mistaken for arriving data.
+		catalogWindow := "now()-2h"
+		if windowed {
+			catalogWindow = opts.Since
+		}
+		if keys, truncated, err := br.stringColumn(ctx, fmt.Sprintf("metrics from:%s | summarize c = count(), by:{metric.key} | limit %d", catalogWindow, metricCatalogLimit), "metric.key"); err == nil {
 			facts.metricKeys = keys
 			facts.metricsOK = true
-			facts.metricsTruncated = truncated
+			// Grail caps the metric catalog silently — on one tenant it
+			// returned exactly 100,000 keys with no notification at all — and
+			// our own limit caps it again. Either way a full page means keys
+			// were cut, and a cut catalog cannot support an absence verdict.
+			facts.metricsTruncated = truncated || len(keys) >= metricCatalogLimit
 			if truncated {
 				report.Notes = append(report.Notes, fmt.Sprintf("metric catalog truncated at %d keys — keys are missing", len(keys)))
 			}
@@ -217,6 +258,28 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 		} else if err != errBudgetExhausted {
 			report.Notes = append(report.Notes, "metric catalog failed: "+firstLine(err.Error()))
 		}
+	}
+
+	if windowed {
+		inv.Window = &ArrivalWindow{
+			Since:      opts.Since,
+			Filter:     opts.Where,
+			StaleAfter: roundDuration(opts.StaleAfter),
+		}
+		inv.Signals, err = br.evaluateSignals(ctx, defs, facts, opts)
+		if err != nil {
+			return nil, err
+		}
+		inv.Summary = Summarize(inv.Signals)
+		if note := allZeroTripwire(inv.Signals); note != "" {
+			inv.Notes = append(inv.Notes, note)
+		}
+		if br.skipped {
+			note := fmt.Sprintf("discovery budget exhausted after %d queries / %.0fs — the inventory is partial", report.Queries, report.Seconds)
+			inv.Notes = append(inv.Notes, note)
+			report.Notes = append(report.Notes, note)
+		}
+		return inv, nil
 	}
 
 	inv.Capabilities, inv.Absent, inv.Unknown, err = br.evaluateCapabilities(ctx, defs, facts)
@@ -475,4 +538,48 @@ func valueOrF(v, def float64) float64 {
 		return v
 	}
 	return def
+}
+
+// needMetricCatalog reports whether the metric catalog has to be read: only
+// when some metric-shaped definition will actually be evaluated.
+func needMetricCatalog(defs map[string]*CapabilityDef, opts DiscoverOptions, windowed bool) bool {
+	if !windowed {
+		return anyMetricDef(defs)
+	}
+	for name, d := range defs {
+		if d.MetricKey == "" {
+			continue
+		}
+		if len(opts.Signals) == 0 || containsFold(opts.Signals, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// allZeroTripwire warns when every signal came up empty. Field existence
+// cannot be validated up front — neither dt.system.data_objects nor `describe`
+// lists the dynamic attributes people actually scope by — so a scope naming a
+// field or value that does not exist is indistinguishable from a source that
+// genuinely stopped. When nothing at all matched while the streams themselves
+// hold data, a wrong scope is by far the likelier explanation, and saying so
+// is cheaper and more honest than a confident all-empty verdict.
+func allZeroTripwire(signals []Signal) string {
+	evaluated, empty := 0, 0
+	for _, s := range signals {
+		switch s.State {
+		case SignalUnknown, SignalAbsent:
+			continue
+		case SignalEmpty:
+			empty++
+		}
+		evaluated++
+	}
+	if evaluated < 2 || empty != evaluated {
+		return ""
+	}
+	return "every signal matched 0 records while the streams hold data within retention — " +
+		"the scope is more likely wrong than every signal failing at once; check the field " +
+		"names and values in --where (dtctl cannot validate them: Grail does not expose the " +
+		"dynamic attributes a filter may reference)"
 }

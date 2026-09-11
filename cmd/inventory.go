@@ -55,11 +55,53 @@ Examples:
 
   # Only your definitions, without the built-in set
   dtctl inventory --definitions ./our-capabilities.yaml --no-builtin-definitions
+
+  # Onboarding verification: is data arriving for this scope right now?
+  dtctl inventory --since 15m --where 'k8s.namespace.name == "payments"'
+
+  # Gate a pipeline on it (exit 1 if a required signal is not live)
+  dtctl inventory --since 10m --where 'service.name == "checkout"' --require logs,spans
+
+  # Confirm an ingest actually landed
+  dtctl inventory --since 5m --where 'log.source == "batch-import"' --require logs
+
+Windowed arrival mode (--since) reports a per-signal ingest state instead of the
+environment-wide capability verdicts, because those are retention-scoped: a stream
+that received data once last week is "present" but not arriving. States are live,
+stale (matched, but stopped inside the window), empty (stream is live tenant-wide
+but nothing matched this scope), no-data, absent, and unknown.
+
+--since requires --where. An unscoped windowed count is the most expensive query in
+the battery, and the unscoped question is already answered for free without a window.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, c, err := SetupClient()
 		if err != nil {
 			return err
+		}
+
+		since, _ := cmd.Flags().GetString("since")
+		where, _ := cmd.Flags().GetString("where")
+		signals, _ := cmd.Flags().GetStringSlice("signals")
+		require, _ := cmd.Flags().GetStringSlice("require")
+		staleAfterFlag, _ := cmd.Flags().GetDuration("stale-after")
+
+		sinceExpr, windowLen, err := parseSinceFlag(since)
+		if err != nil {
+			return err
+		}
+		if sinceExpr != "" && strings.TrimSpace(where) == "" {
+			return fmt.Errorf("--since requires --where: an unscoped windowed count is the most expensive query available, and plain 'dtctl inventory' already answers the unscoped question for free")
+		}
+		if sinceExpr == "" && (strings.TrimSpace(where) != "" || len(signals) > 0 || len(require) > 0) {
+			return fmt.Errorf("--where, --signals, and --require apply to windowed arrival mode only: add --since <duration>")
+		}
+		staleAfter := staleAfterFlag
+		if staleAfter == 0 {
+			staleAfter = defaultStaleAfter(windowLen)
+		}
+		if windowLen > time.Hour {
+			fmt.Fprintf(os.Stderr, "warning: a %s window makes each probe scan proportionally more; probes cut short by the scan cap report as unknown, not absent — narrow --since if that happens\n", roundWindow(windowLen))
 		}
 
 		noBuiltin, _ := cmd.Flags().GetBool("no-builtin-definitions")
@@ -91,7 +133,10 @@ Examples:
 		// failure must stay distinguishable from "no segments exist".
 		var segs []inventory.SegmentInfo
 		var segNote string
-		if list, serr := segment.NewHandler(c).List(); serr == nil {
+		if sinceExpr != "" {
+			// Windowed mode reports arrival state for one scope; the segment
+			// catalog is neither asked for nor consumed there.
+		} else if list, serr := segment.NewHandler(c).List(); serr == nil {
 			for _, s := range list.FilterSegments {
 				segs = append(segs, inventory.SegmentInfo{UID: s.UID, Name: s.Name, Description: s.Description})
 			}
@@ -115,6 +160,10 @@ Examples:
 			Segments:      segs,
 			BudgetQueries: budgetQueries,
 			BudgetSeconds: budgetSeconds,
+			Since:         sinceExpr,
+			Where:         where,
+			StaleAfter:    staleAfter,
+			Signals:       signals,
 		})
 		if err != nil {
 			return err
@@ -124,17 +173,23 @@ Examples:
 		}
 
 		if outputFormat == "table" && !agentMode {
-			printInventoryHuman(inv)
+			if inv.Window != nil {
+				printInventorySignalsHuman(inv)
+			} else {
+				printInventoryHuman(inv)
+			}
+			exitForRequiredSignals(inv, require)
 			return nil
 		}
 		printer := NewPrinter()
 		if ap := enrichAgent(printer, "inventory", ""); ap != nil {
-			ap.SetSuggestions([]string{
-				"Run 'dtctl query \"fetch <object> | limit 10\"' to sample any listed data object",
-				"Cite the evidence carried by absent capabilities instead of re-probing; unknown capabilities got no verdict and may still exist",
-			})
+			ap.SetSuggestions(inventorySuggestions(inv))
 		}
-		return printer.Print(inv)
+		if err := printer.Print(inv); err != nil {
+			return err
+		}
+		exitForRequiredSignals(inv, require)
+		return nil
 	},
 }
 
@@ -299,4 +354,9 @@ func init() {
 	inventoryCmd.Flags().Int("budget-queries", 100, "Discovery budget: max queries")
 	inventoryCmd.Flags().Float64("budget-seconds", 300, "Discovery budget: max cumulative query seconds")
 	inventoryCmd.Flags().Float64("scan-limit-gbytes", 25, "Scan cap applied to every discovery probe")
+	inventoryCmd.Flags().String("since", "", "Windowed arrival mode: report per-signal ingest state over this window (e.g. 15m, 1h). Requires --where")
+	inventoryCmd.Flags().String("where", "", "DQL filter fragment scoping every windowed probe (e.g. 'k8s.namespace.name == \"payments\"')")
+	inventoryCmd.Flags().StringSlice("signals", nil, "Restrict windowed probing to these signals (default: all signal streams and metric families)")
+	inventoryCmd.Flags().StringSlice("require", nil, "Exit non-zero unless every named signal is live (1 = not live, 2 = no verdict)")
+	inventoryCmd.Flags().Duration("stale-after", 0, "Age past which a matched signal is stale rather than live (default max(2m, window/3))")
 }

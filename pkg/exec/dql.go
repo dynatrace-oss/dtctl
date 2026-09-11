@@ -484,7 +484,7 @@ func classifyNotification(notificationType, message string) string {
 		return notifScanLimit
 	case "RESULT_LIMIT_RECORDS", "RESULT_LIMIT_BYTES":
 		return notifResultLimit
-	case "FETCH_TIMEOUT":
+	case "FETCH_TIMEOUT", "FETCH_EXEC_TIME_LIMIT":
 		return notifTimeout
 	case "SAMPLING_APPLIED":
 		return notifSampling
@@ -498,6 +498,11 @@ func classifyNotification(notificationType, message string) string {
 		return notifScanLimit
 	case strings.Contains(msg, "result has been limited") || strings.Contains(msg, "limited to"):
 		return notifResultLimit
+	case strings.Contains(msg, "internal time limit"):
+		// Grail cuts a slow read short and says so only in the message on some
+		// deployments; without this the result reads as complete and every row
+		// below the cut becomes a fabricated absence.
+		return notifTimeout
 	}
 	return ""
 }

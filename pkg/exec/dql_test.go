@@ -2953,3 +2953,29 @@ func TestLookbackAdvice(t *testing.T) {
 		}
 	}
 }
+
+// TestFetchExecTimeLimitIsPartial covers a truncation Grail reports that dtctl
+// used to read as a complete result.
+//
+// `metrics | summarize count()` on a busy tenant returns a capped row count
+// alongside FETCH_EXEC_TIME_LIMIT ("the data couldn't be read within the
+// internal time limit of 10008 ms"). Unclassified, that result looked
+// complete, and every row below the cut became a fabricated absence — the same
+// failure `inventoryMaxResultRecords` exists to prevent, arriving by a
+// different route.
+func TestFetchExecTimeLimitIsPartial(t *testing.T) {
+	for _, n := range []QueryNotification{
+		{NotificationType: "FETCH_EXEC_TIME_LIMIT", Message: "Your result is incomplete because the data couldn't be read within the internal time limit of 10008 ms. Please try narrowing your timeframe."},
+		// Deployments that do not tag the notification must still be caught.
+		{NotificationType: "", Message: "Your result is incomplete because the data couldn't be read within the internal time limit of 10008 ms."},
+	} {
+		if !ResultIsPartial(n) {
+			t.Errorf("ResultIsPartial(%+v) = false, want true: a read cut short by the time limit is not a complete result", n)
+		}
+	}
+
+	// Guard the boundary: an ordinary informational notification is not truncation.
+	if ResultIsPartial(QueryNotification{NotificationType: "PARAMETERS_SHOULD_BE_GROUPED", Message: "The parameters should be grouped with curly braces: {}."}) {
+		t.Error("an informational notification must not mark the result partial")
+	}
+}

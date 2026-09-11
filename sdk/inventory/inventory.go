@@ -35,6 +35,11 @@ const (
 // negatives are strong. Exactly one shape must be set.
 type CapabilityDef struct {
 	DataObject  string   `json:"dataObject,omitempty" yaml:"dataObject,omitempty"`
+	// TimeField names the record field carrying each record's event time, used
+	// only by windowed arrival probes to report last_seen. It defaults to
+	// "timestamp"; `spans` is the known exception (it carries start_time and no
+	// timestamp at all, so takeMax(timestamp) silently yields nothing there).
+	TimeField   string   `json:"timeField,omitempty" yaml:"timeField,omitempty"`
 	EntityTypes []string `json:"entityTypes,omitempty" yaml:"entityTypes,omitempty"`
 	MetricKey   string   `json:"metricKey,omitempty" yaml:"metricKey,omitempty"`
 	Probe       string   `json:"probe,omitempty" yaml:"probe,omitempty"`
@@ -94,9 +99,74 @@ type Inventory struct {
 	// Notes carry cross-cutting facts about how this environment's data is
 	// queried (canonical streams, catalog caveats).
 	Notes []string `json:"notes,omitempty" yaml:"notes,omitempty"`
+	// Window, Signals, and Summary are populated only in windowed arrival mode
+	// (DiscoverOptions.Since set). Windowed mode answers "what is arriving for
+	// this scope, now", so it reports per-signal states instead of the
+	// environment-wide Capabilities/Absent/Unknown verdicts, which are
+	// retention-scoped and cannot be windowed.
+	Window  *ArrivalWindow `json:"window,omitempty" yaml:"window,omitempty"`
+	Signals []Signal       `json:"signals,omitempty" yaml:"signals,omitempty"`
+	Summary *StateSummary  `json:"summary,omitempty" yaml:"summary,omitempty"`
 	// Discovery is the consumption receipt of the run that produced this
 	// inventory.
 	Discovery *Report `json:"discovery,omitempty" yaml:"discovery,omitempty"`
+}
+
+// SignalState is one signal type's ingest verdict within the arrival window.
+// The split exists because present/absent is too coarse once there is a
+// window: the interesting onboarding failures are a source that stopped
+// mid-window (stale) and a live stream that this particular scope is not
+// producing into (empty).
+type SignalState string
+
+const (
+	// SignalLive: records matched and the newest is within StaleAfter.
+	SignalLive SignalState = "live"
+	// SignalStale: records matched, but the newest predates StaleAfter — the
+	// source emitted inside the window and then stopped.
+	SignalStale SignalState = "stale"
+	// SignalEmpty: nothing matched, but the stream holds records within
+	// retention — the stream works, this scope is not producing into it.
+	SignalEmpty SignalState = "empty"
+	// SignalNoData: nothing matched and the stream is empty within retention.
+	SignalNoData SignalState = "no-data"
+	// SignalAbsent: the stream is not in this environment's catalog.
+	SignalAbsent SignalState = "absent"
+	// SignalUnknown: no verdict — the probe was truncated, capped, or failed.
+	// Never to be read as absence.
+	SignalUnknown SignalState = "unknown"
+)
+
+// ArrivalWindow records what a windowed run actually asked.
+type ArrivalWindow struct {
+	Since      string `json:"since" yaml:"since"`
+	Filter     string `json:"filter,omitempty" yaml:"filter,omitempty"`
+	StaleAfter string `json:"staleAfter" yaml:"staleAfter"`
+}
+
+// Signal is one signal type's arrival state within the window. Records and
+// Datapoints are mutually exclusive: fetch-backed streams count records,
+// metric families count datapoints.
+type Signal struct {
+	Name       string      `json:"signal" yaml:"signal"`
+	State      SignalState `json:"state" yaml:"state"`
+	Records    int64       `json:"records,omitempty" yaml:"records,omitempty"`
+	Datapoints int64       `json:"datapoints,omitempty" yaml:"datapoints,omitempty"`
+	LastSeen   string      `json:"lastSeen,omitempty" yaml:"lastSeen,omitempty"`
+	AgeSeconds int64       `json:"ageSeconds,omitempty" yaml:"ageSeconds,omitempty"`
+	// Evidence says what was checked, for every state that is not live. It is
+	// carried so a negative is citable without re-probing.
+	Evidence string `json:"evidence,omitempty" yaml:"evidence,omitempty"`
+}
+
+// StateSummary counts signals by state.
+type StateSummary struct {
+	Live    int `json:"live" yaml:"live"`
+	Stale   int `json:"stale" yaml:"stale"`
+	Empty   int `json:"empty" yaml:"empty"`
+	NoData  int `json:"noData" yaml:"noData"`
+	Absent  int `json:"absent" yaml:"absent"`
+	Unknown int `json:"unknown" yaml:"unknown"`
 }
 
 // Report is the consumption receipt of a discovery run.

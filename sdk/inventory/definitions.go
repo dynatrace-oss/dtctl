@@ -21,7 +21,9 @@ func BuiltinDefinitions() map[string]*CapabilityDef {
 		"azure": {EntityTypes: []string{"AZURE_*"}},
 		"gcp":   {EntityTypes: []string{"GCP_*"}},
 		// signal streams
-		"spans":        {DataObject: "spans"},
+		// spans carries start_time, not timestamp — verified on a live tenant:
+		// takeMax(timestamp) there yields an undefined column, not an error.
+		"spans":        {DataObject: "spans", TimeField: "start_time"},
 		"logs":         {DataObject: "logs"},
 		"bizevents":    {DataObject: "bizevents"},
 		"rum":          {DataObject: "user.events"},
@@ -133,6 +135,9 @@ func validateDef(def *CapabilityDef) error {
 	}
 	if def.Probe == "" && def.Window != "" {
 		return fmt.Errorf("window is only valid with a probe shape")
+	}
+	if def.TimeField != "" && def.DataObject == "" {
+		return fmt.Errorf("timeField is only valid with a dataObject shape")
 	}
 	return nil
 }
