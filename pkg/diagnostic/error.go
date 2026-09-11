@@ -122,6 +122,8 @@ func suggestionsForStatusCode(statusCode int) []string {
 	case 403:
 		return []string{
 			"Insufficient permissions. Check that your API token has the required scopes",
+			"Verify the scopes this command needs with: '<command> --check-scopes'",
+			"Token scopes and IAM policy permissions are separate gates — if --check-scopes reports \"ok\", the tenant's IAM policy is what denies the request",
 			"View current context and safety level: 'dtctl config get-context'",
 			"If using a 'readonly' context, switch to a context with write permissions",
 			"Review required token scopes in the documentation",

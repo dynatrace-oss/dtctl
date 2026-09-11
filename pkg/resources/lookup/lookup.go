@@ -544,7 +544,7 @@ func handleUploadError(statusCode int, body string, path string) error {
 	case 400:
 		return fmt.Errorf("invalid upload request: %s", body)
 	case 403:
-		return fmt.Errorf("access denied to write file %q", path)
+		return forbiddenError("write", "storage:files:write", "dtctl create lookup --path "+path+" --check-scopes", path, body)
 	case 409:
 		return fmt.Errorf("lookup table %q already exists. Use 'dtctl apply' to update or add --overwrite flag", path)
 	case 413:
@@ -560,7 +560,7 @@ func handleDeleteError(statusCode int, body string, path string) error {
 	case 400:
 		return fmt.Errorf("invalid delete request: %s", body)
 	case 403:
-		return fmt.Errorf("access denied to delete file %q", path)
+		return forbiddenError("delete", "storage:files:delete", "dtctl delete lookup "+path+" --check-scopes", path, body)
 	case 404:
 		return fmt.Errorf("lookup table %q not found. Run 'dtctl get lookups' to list available lookups", path)
 	default:
