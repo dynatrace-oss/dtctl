@@ -15,6 +15,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/schedulingrule"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
@@ -117,6 +118,15 @@ func (c *CleanupTracker) deleteResource(resource Resource) error {
 	switch resource.Type {
 	case "workflow":
 		handler := workflow.NewHandler(c.client)
+		err := handler.Delete(resource.ID)
+		// Ignore 404 errors - resource already deleted is OK
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
+	case "scheduling-rule":
+		handler := schedulingrule.NewHandler(c.client)
 		err := handler.Delete(resource.ID)
 		// Ignore 404 errors - resource already deleted is OK
 		if err != nil && isNotFoundError(err) {
@@ -267,6 +277,15 @@ func (c *CleanupTracker) verifyDeletion(resource Resource) error {
 			return nil
 		}
 		return fmt.Errorf("workflow %s still exists after deletion", resource.ID)
+
+	case "scheduling-rule":
+		handler := schedulingrule.NewHandler(c.client)
+		_, err := handler.Get(resource.ID)
+		if err != nil {
+			// We expect an error (404) - this is success
+			return nil
+		}
+		return fmt.Errorf("scheduling rule %s still exists after deletion", resource.ID)
 
 	case "dashboard", "notebook":
 		handler := document.NewHandler(c.client)

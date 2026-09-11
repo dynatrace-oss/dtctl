@@ -19,7 +19,8 @@ apply is idempotent (creates if new, updates if existing).
 Supported resources:
   workflows (wf)          dashboards (dash, db)     notebooks (nb)
   slos                    settings                  buckets (bkt)
-  edgeconnect (ec)        lookup-tables (lu)        extensions (ext)`,
+  edgeconnect (ec)        lookup-tables (lu)        extensions (ext)
+  scheduling-rules (sr)`,
 	Example: `  # Create a workflow from a YAML file
   dtctl create workflow -f workflow.yaml
 
@@ -37,6 +38,7 @@ Supported resources:
 func init() {
 	rootCmd.AddCommand(createCmd)
 	createCmd.AddCommand(createWorkflowCmd)
+	createCmd.AddCommand(createSchedulingRuleCmd)
 	createCmd.AddCommand(createNotebookCmd)
 	createCmd.AddCommand(createDashboardCmd)
 	createCmd.AddCommand(createDocumentCmd)

@@ -300,9 +300,9 @@ func TestValidateWorkflowChunkSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateWorkflowChunkSize(tt.chunk)
+			err := validateAutomationChunkSize(tt.chunk)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateWorkflowChunkSize(%d) error = %v, wantErr %v", tt.chunk, err, tt.wantErr)
+				t.Errorf("validateAutomationChunkSize(%d) error = %v, wantErr %v", tt.chunk, err, tt.wantErr)
 			}
 		})
 	}

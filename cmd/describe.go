@@ -310,6 +310,7 @@ func init() {
 	describeAzureProviderCmd.AddCommand(describeAzureMonitoringConfigCmd)
 	rootCmd.AddCommand(describeCmd)
 	describeCmd.AddCommand(describeWorkflowCmd)
+	describeCmd.AddCommand(describeSchedulingRuleCmd)
 	describeCmd.AddCommand(describeBreakpointCmd)
 	describeCmd.AddCommand(describeWorkflowExecutionCmd)
 	describeCmd.AddCommand(describeDashboardCmd)

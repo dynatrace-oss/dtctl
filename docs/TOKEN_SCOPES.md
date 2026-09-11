@@ -32,6 +32,7 @@ document:documents:read,
 document:direct-shares:read,
 document:trash.documents:read,
 automation:workflows:read,
+automation:rules:read,
 slo:slos:read,
 slo:objective-templates:read,
 settings:schemas:read,
@@ -83,6 +84,8 @@ document:trash.documents:restore,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:run,
+automation:rules:read,
+automation:rules:write,
 dev-obs:breakpoints:set,
 slo:slos:read,
 slo:slos:write,
@@ -143,6 +146,8 @@ document:trash.documents:restore,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:run,
+automation:rules:read,
+automation:rules:write,
 dev-obs:breakpoints:set,
 slo:slos:read,
 slo:slos:write,
@@ -222,6 +227,8 @@ document:trash.documents:delete,
 automation:workflows:read,
 automation:workflows:write,
 automation:workflows:run,
+automation:rules:read,
+automation:rules:write,
 dev-obs:breakpoints:set,
 slo:slos:read,
 slo:slos:write,
@@ -302,6 +309,13 @@ email:emails:send
 | `automation:workflows:read`  | Read workflow definitions        |
 | `automation:workflows:write` | Create, update, delete workflows |
 | `automation:workflows:run`   | Execute workflows                |
+
+### Scheduling Rules
+
+| Scope                     | Description                             |
+| ------------------------- | --------------------------------------- |
+| `automation:rules:read`   | Read scheduling rules                   |
+| `automation:rules:write`  | Create, update, delete scheduling rules |
 
 ### Documents (Dashboards & Notebooks)
 

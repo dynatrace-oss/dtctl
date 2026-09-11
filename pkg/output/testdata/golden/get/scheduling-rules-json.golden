@@ -1,0 +1,44 @@
+[
+  {
+    "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "title": "Business Hours",
+    "ruleType": "rrule",
+    "description": "Monday to Friday",
+    "version": 3,
+    "rrule": {
+      "byday": [
+        "MO",
+        "TU",
+        "WE",
+        "TH",
+        "FR"
+      ],
+      "datestart": "2026-01-05",
+      "freq": "WEEKLY"
+    },
+    "modificationInfo": {
+      "createdBy": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+      "createdTime": "2026-01-05T08:00:00.000Z",
+      "lastModifiedBy": "7a8b9c0d-1e2f-4a3b-8c4d-5e6f7a8b9c0d",
+      "lastModifiedTime": "2026-02-11T10:30:00.000Z"
+    }
+  },
+  {
+    "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+    "title": "Maintenance Window",
+    "ruleType": "grouping",
+    "businessCalendar": "c3d4e5f6-a7b8-4c9d-8e0f-2a3b4c5d6e7f",
+    "version": 1,
+    "groupingRule": {
+      "combine": [
+        "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+      ]
+    },
+    "modificationInfo": {
+      "createdBy": "8b9c0d1e-2f3a-4b5c-9d0e-1f2a3b4c5d6e",
+      "createdTime": "2026-01-06T09:15:00.000Z",
+      "lastModifiedBy": "8b9c0d1e-2f3a-4b5c-9d0e-1f2a3b4c5d6e",
+      "lastModifiedTime": "2026-01-06T09:15:00.000Z"
+    }
+  }
+]
