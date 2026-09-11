@@ -1,0 +1,5 @@
+KEY                                ENABLED   
+AUTOMATION                         true      
+AI_FUNCTIONS                       true      
+LIVE_DEBUGGING                     true      
+CONTAINER_APPLICATION_MONITORING   false     

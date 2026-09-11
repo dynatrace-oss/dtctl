@@ -39,7 +39,8 @@ Supported resources:
   lookup-tables (lu)      trash                     workflow-executions (wfe)
   wfe-task-result         extensions (ext)          extension-configs (extcfg)
   documents (doc)         anomaly-detectors (ad)    hub-extensions
-  hub-extension-releases  apis
+  hub-extension-releases  apis                      environment
+  license                 license-settings
 
 Use 'dtctl get <resource> --help' for resource-specific options.`,
 	Example: `  # List all workflows
@@ -153,4 +154,7 @@ func init() {
 	getCmd.AddCommand(getHubExtensionsCmd)
 	getCmd.AddCommand(getHubExtensionReleasesCmd)
 	getCmd.AddCommand(getAPIsCmd)
+	getCmd.AddCommand(getEnvironmentCmd)
+	getCmd.AddCommand(getLicenseCmd)
+	getCmd.AddCommand(getLicenseSettingsCmd)
 }

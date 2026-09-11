@@ -19,12 +19,15 @@ We'll implement in this order (simple to complex):
 4. **Grail Filter Segments** - Standard CRUD pattern
 5. **Grail Resource Store** - Standard CRUD pattern
 
-## 1. Platform Management
+## 1. Platform Management ✅ IMPLEMENTED
 
-### Endpoints to Implement
+> **Status**: Implemented — see `sdk/api/platform/`, `pkg/resources/platform/`, `cmd/get_platform.go`, `cmd/describe_platform.go`
+
+### Endpoints Implemented
 
 - `GET /platform/management/v1/environment` - Get environment info
 - `GET /platform/management/v1/environment/license` - Get license info
+- `GET /platform/management/v1/environment/license/settings` - Get license feature settings (optional `key` filter)
 
 ### Commands
 
@@ -36,33 +39,36 @@ dtctl describe environment
 # Get license information
 dtctl get license
 dtctl describe license
+
+# Get license feature settings
+dtctl get license-settings
+dtctl get license-settings AUTOMATION   # filter to one key
 ```
 
-### Files to Create/Modify
-
-- `pkg/resources/platform/platform.go` - Handler implementation
-- `cmd/get.go` - Add commands: getEnvironmentCmd, getLicenseCmd
-- `cmd/describe.go` - Add describe commands for detailed view
-
-### Data Structures
+### Data Structures (actual API shapes)
 
 ```go
 type EnvironmentInfo struct {
-    ID          string `json:"id"`
-    Name        string `json:"name"`
-    Region      string `json:"region"`
-    Trial       bool   `json:"trial"`
+    EnvironmentID string    `json:"environmentId"`
+    Type          string    `json:"type"`
+    State         string    `json:"state"`
+    CreateTime    time.Time `json:"createTime"`
+    BlockTime     time.Time `json:"blockTime"`
 }
 
 type License struct {
-    Type           string    `json:"type"`
-    ExpirationDate time.Time `json:"expirationDate"`
-    MaxDemUnits    int       `json:"maxDemUnits"`
+    Trial                bool `json:"trial"`
+    PlatformSubscription bool `json:"platformSubscription"`
+}
+
+type LicenseSetting struct {
+    Key   string `json:"key"`
+    Value string `json:"value"`
 }
 ```
 
 ### Scope Required
-- `app-engine:apps:run` OR `app-engine:functions:run`
+- `app-engine:apps:run` (already requested at login; see TOKEN_SCOPES.md for the `platform-management:environments:read` narrow-scope alternative)
 
 ---
 
@@ -318,10 +324,10 @@ Create usage examples for each resource type with common workflows.
 ## Implementation Checklist
 
 ### Phase 1: Simple Read-Only Resources (Day 1)
-- [ ] Platform Management implementation
-- [ ] Platform Management commands
-- [ ] Platform Management tests
-- [ ] Platform Management documentation
+- [x] Platform Management implementation
+- [x] Platform Management commands
+- [x] Platform Management tests
+- [x] Platform Management documentation
 
 ### Phase 2: Simple Delete-Only Resources (Day 1)
 - [ ] State Management implementation

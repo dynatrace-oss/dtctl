@@ -447,6 +447,14 @@ email:emails:send
 
 `dev-obs:breakpoints:set` is not included in the `readonly` safety level.
 
+### Platform Management
+
+| Scope | Description |
+|-------|-------------|
+| `app-engine:apps:run` | Read environment info, license info, and license feature settings (`get environment`, `get license`, `get license-settings`) |
+
+> `platform-management:environments:read` is the narrower alternative scope that the API also accepts, but it is not grantable to OAuth clients via the standard login flow. dtctl uses `app-engine:apps:run`, which is already requested at login for App Engine access.
+
 ### IAM
 
 > **Note**: The `iam:users:read` and `iam:groups:read` scopes are defined in the IAM API spec but may not be available in all token management UIs (e.g., the platform token page). If unavailable, user and group listing features will not work with that token type.

@@ -28,6 +28,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherlqltodql"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherverify"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/platform"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/platformtoken"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/previewprocessor"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
@@ -2972,6 +2973,167 @@ func TestGolden_DescribeAPIOperations(t *testing.T) {
 				t.Fatalf("PrintList failed: %v", err)
 			}
 			assertGolden(t, "describe/api-operations-"+name, buf.String())
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Platform management: environment and license
+// ---------------------------------------------------------------------------
+
+func environmentFixture() platform.EnvironmentInfo {
+	return platform.EnvironmentInfo{
+		EnvironmentID: "abc12345",
+		Type:          "INTERNAL",
+		State:         "ACTIVE",
+		CreateTime:    time.Date(2025, 3, 13, 13, 11, 4, 0, time.UTC),
+		BlockTime:     time.Date(2031, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+}
+
+func licenseFixture() platform.License {
+	return platform.License{
+		Trial:                false,
+		PlatformSubscription: true,
+	}
+}
+
+func TestGolden_GetEnvironment(t *testing.T) {
+	info := environmentFixture()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(info); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "get/environment-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_GetLicense(t *testing.T) {
+	lic := licenseFixture()
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(lic); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "get/license-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeEnvironment(t *testing.T) {
+	info := environmentFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(info); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/environment-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_DescribeLicense(t *testing.T) {
+	lic := licenseFixture()
+
+	formats := map[string]string{
+		"json": "json",
+		"yaml": "yaml",
+		"toon": "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(lic); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "describe/license-"+name, buf.String())
+		})
+	}
+}
+
+func licenseSettingsFixture() []platform.LicenseSetting {
+	return []platform.LicenseSetting{
+		{Key: "AUTOMATION", Value: "true"},
+		{Key: "AI_FUNCTIONS", Value: "true"},
+		{Key: "LIVE_DEBUGGING", Value: "true"},
+		{Key: "CONTAINER_APPLICATION_MONITORING", Value: "false"},
+	}
+}
+
+func TestGolden_GetLicenseSettings(t *testing.T) {
+	settings := licenseSettingsFixture()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(settings); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/license-settings-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_GetLicenseSettings_Empty(t *testing.T) {
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList([]platform.LicenseSetting{}); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "empty/license-settings-"+name, buf.String())
 		})
 	}
 }

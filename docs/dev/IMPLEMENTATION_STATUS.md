@@ -91,6 +91,9 @@ This document tracks the current implementation status of dtctl. For future plan
 | segment | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | anomaly-detector | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | api | ✅ | ✅ | - | - | - | - |
+| environment | ✅ | ✅ | - | - | - | - |
+| license | ✅ | ✅ | - | - | - | - |
+| license-settings | ✅ | - | - | - | - | - |
 
 #### Account Management
 
@@ -368,7 +371,7 @@ This document tracks the current implementation status of dtctl. For future plan
 ## Future Planned Features 🔮
 
 See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for the complete implementation plan including:
-- Platform Management (environment info, license)
+- ~~Platform Management (environment info, license)~~ → Implemented (`environment`, `license`, `license-settings`)
 - State Management for Apps
 - ~~Grail Filter Segments~~ → Implemented (see `segment` resource)
 - Grail Fieldsets
