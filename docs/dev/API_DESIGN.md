@@ -477,7 +477,9 @@ dtctl restore dashboard "My Dashboard" 5         # Restore by name to version 5
 dtctl restore notebook "My Notebook" 3 --force   # Skip confirmation
 
 # Notes:
-# - Snapshots are created when updating documents with create-snapshot option
+# - Snapshots are opt-in: pass --create-snapshot on update/apply/edit to capture
+#   the pre-update content (--snapshot-description labels it)
+# - At most 5 snapshots per document per minute are accepted
 # - Maximum 50 snapshots per document (oldest deleted when exceeded)
 # - Snapshots auto-delete after 30 days
 # - Only document owner can restore snapshots

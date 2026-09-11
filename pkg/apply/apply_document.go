@@ -179,11 +179,13 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 
 	// Update the existing document (including metadata/labels if provided).
 	result, err := handler.UpdateDocument(id, metadata.Version, document.UpdateRequest{
-		Content:     contentData,
-		ContentType: "application/json",
-		Name:        name,
-		Description: description,
-		Labels:      labels,
+		Content:             contentData,
+		ContentType:         "application/json",
+		Name:                name,
+		Description:         description,
+		Labels:              labels,
+		CreateSnapshot:      opts.CreateSnapshot,
+		SnapshotDescription: opts.SnapshotDescription,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply %s: %w", docType, err)
