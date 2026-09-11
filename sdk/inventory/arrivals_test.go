@@ -151,10 +151,17 @@ func TestWindowedSignalStates(t *testing.T) {
 		t.Errorf("rum evidence should cite retention, got %q", ev)
 	}
 
-	// The n/a verdict must say it is about the question, not about the data.
-	if ev := signalByName(t, inv, "security").Evidence; !strings.Contains(ev, "k8s.namespace.name") ||
-		!strings.Contains(ev, "property of the question") {
-		t.Errorf("n/a evidence should name the field and disclaim the data, got %q", ev)
+	// A stream's n/a verdict must name the field and stay within what was
+	// actually measured: the window was sampled, so it may not claim the
+	// stream structurally cannot carry the scope. Overstating that would
+	// reproduce, one level up, the false-structural reading this state exists
+	// to prevent.
+	ev := signalByName(t, inv, "security").Evidence
+	if !strings.Contains(ev, "k8s.namespace.name") || !strings.Contains(ev, "the last 15m") {
+		t.Errorf("stream n/a evidence should name the field and the window, got %q", ev)
+	}
+	if strings.Contains(ev, "structurally") || strings.Contains(ev, "property of the question") {
+		t.Errorf("stream n/a evidence must not claim a structural absence, got %q", ev)
 	}
 
 	want := StateSummary{Live: 2, Stale: 1, Empty: 1, NoData: 1, NotApplicable: 1, Absent: 1}
@@ -603,5 +610,93 @@ func TestSignalNames(t *testing.T) {
 		if n == "hosts" || n == "genai" {
 			t.Errorf("%q is not a signal type", n)
 		}
+	}
+}
+
+// TestTruncatedEvidenceNamesItsRemedy pins the distinction that matters on a
+// high-volume tenant: the three truncation causes have different fixes, and a
+// scan cap in particular is a dtctl setting rather than a finding about the
+// customer's data. A message that lists all three leaves the reader to guess.
+func TestTruncatedEvidenceNamesItsRemedy(t *testing.T) {
+	tests := []struct {
+		name        string
+		cause       TruncationCause
+		scanLimitGB float64
+		want        []string
+		notWant     []string
+	}{
+		{
+			name:        "scan cap names the cap and the flag",
+			cause:       TruncationScanLimit,
+			scanLimitGB: 25,
+			want:        []string{"spans", "25 GB scan cap", "the last 15m", "--scan-limit-gbytes"},
+		},
+		{
+			name:    "scan cap stays honest when the cap is unknown",
+			cause:   TruncationScanLimit,
+			want:    []string{"the scan cap"},
+			notWant: []string{"0 GB"},
+		},
+		{
+			name:    "timeout does not advise raising the scan cap",
+			cause:   TruncationTimeout,
+			want:    []string{"timed out", "--since"},
+			notWant: []string{"--scan-limit-gbytes"},
+		},
+		{
+			name:  "an unrecognised cause still degrades to something actionable",
+			cause: "",
+			want:  []string{"cut short by a limit"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncatedEvidence("spans", tt.cause, "now()-15m", tt.scanLimitGB)
+			for _, w := range tt.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("evidence %q should contain %q", got, w)
+				}
+			}
+			for _, w := range tt.notWant {
+				if strings.Contains(got, w) {
+					t.Errorf("evidence %q should not contain %q", got, w)
+				}
+			}
+		})
+	}
+}
+
+// TestNotApplicableClaimStrength guards the asymmetry between the two n/a
+// probes. A metric dimension is resolved against the metric definition, so
+// "undefined" really is structural; a stream is only sampled over the window,
+// so the same word there would be a claim the evidence does not support.
+func TestNotApplicableClaimStrength(t *testing.T) {
+	fields := []string{"k8s.namespace.name"}
+
+	stream := notApplicableEvidenceStream("user.events", fields, "now()-15m")
+	if !strings.Contains(stream, "the last 15m") {
+		t.Errorf("stream n/a must scope its claim to the window, got %q", stream)
+	}
+	if strings.Contains(stream, "structurally") {
+		t.Errorf("stream n/a must not claim a structural absence, got %q", stream)
+	}
+
+	metric := notApplicableEvidenceMetric("any of the 3 keys probed from dt.kubernetes.*", fields)
+	if !strings.Contains(metric, "structurally") || !strings.Contains(metric, "not a dimension") {
+		t.Errorf("metric n/a may and should claim a structural absence, got %q", metric)
+	}
+	if strings.Contains(metric, "widen --since") {
+		t.Errorf("metric n/a needs no wider window to be sound, got %q", metric)
+	}
+}
+
+// TestWindowLabelReadsAsProse keeps the DQL timeframe out of user-facing
+// sentences without mangling a shape it does not recognise.
+func TestWindowLabelReadsAsProse(t *testing.T) {
+	if got := windowLabel("now()-15m"); got != "the last 15m" {
+		t.Errorf("windowLabel(now()-15m) = %q", got)
+	}
+	if got := windowLabel("2026-09-11T00:00:00Z"); got != "2026-09-11T00:00:00Z" {
+		t.Errorf("windowLabel should pass through an absolute timeframe, got %q", got)
 	}
 }

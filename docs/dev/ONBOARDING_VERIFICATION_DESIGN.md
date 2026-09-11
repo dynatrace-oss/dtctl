@@ -192,6 +192,24 @@ Step 3 exists because step 2 alone conflates "the field is absent" with "the str
 idle". Without it, any stream that happened to be quiet for fifteen minutes would be
 declared structurally incapable of the scope.
 
+**The two probes do not support equally strong claims, and the evidence must not pretend
+otherwise.** A metric dimension is resolved against the metric *definition*, so an
+`undefined` type really does mean the dimension does not exist on that key — structural,
+window-independent. A stream is only *sampled*: all the probe establishes is that no record
+in this window carried the field. That is strong evidence, not proof, and Grail offers
+nothing to make it proof — `describe` returns only core fields and the catalog carries no
+field list at all (open question 4). So the two verdicts are worded differently:
+
+| Shape | Evidence | Claim |
+|---|---|---|
+| metric family | `… is not a dimension of any of the 3 keys probed from dt.host.*` | **structural** — "an empty result here is a property of the question, not of the data" |
+| stream | `no logs record in the last 15m carries the scope's field (k8s.namespace.name)` | **window-scoped** — "the scope selects on nothing this signal has — widen `--since` to test that harder" |
+
+Collapsing these into one sentence was the first version, and it was wrong in the same way
+the bug this feature fixes is wrong: it dressed a windowed observation up as a structural
+fact. A multi-tenant run caught it — `bizevents` on one tenant and `logs` on another came
+back `n/a` under a namespace scope, both of which are fields those streams carry in general.
+
 **The type trick does not transfer to streams.** `| limit 1 | fields x = <field>` looked
 like a cheaper test than `isNotNull`, and it is wrong: on a live tenant, `service.name` over
 `logs` types as `undefined` because stream result types are inferred from the *sampled
@@ -208,6 +226,40 @@ string literals blanked out so their contents cannot be mistaken for fields, the
 dotted identifiers that are neither DQL keywords nor followed by `(`. A scope naming no
 fields at all — `--scope true` — yields no applicability verdict and everything behaves as
 before.
+
+### The scan cap is the binding constraint on large tenants
+
+Measurement 1 priced a filtered 15-minute logs probe at 10.8 GB, comfortably under the 25 GB
+default cap. That figure does not generalise. On the largest tenant tested, **`spans` scan
+44 GB in a *five*-minute window** — so at the default cap `logs` and `spans` are
+unanswerable there at any window worth asking about, and they are exactly the two signals
+an onboarding check is usually about.
+
+This is honest degradation: the probe reports `unknown`, never `absent`, so nothing is
+fabricated. But "unknown" next to `logs` is easy to read as a finding, and the original
+evidence line made it worse by listing three possible causes and two remedies:
+
+> not evaluated: probe was cut short by a limit (scan cap, result cap, or read timeout) —
+> narrow --since or raise the cap
+
+On that tenant, narrowing `--since` does not work at any practical window, so the first
+remedy offered is the one that cannot help. The three causes are therefore kept distinct
+(`TruncationCause`, threaded from `pkg/exec`'s existing notification classification through
+`RunResult` to the evidence) and each gets the remedy that applies to it:
+
+> not evaluated: spans scans more than the 25 GB scan cap over the last 15m, so the probe
+> stopped before it could count — raise --scan-limit-gbytes, or narrow --since far enough
+> that the stream fits under the cap
+
+Verified: at `--scan-limit-gbytes 500` the same two signals resolve on that tenant (spans
+live at 66,289 records; logs genuinely `empty`). The advice works, which is the only reason
+it is worth printing.
+
+Because a skimmed table shows only the word `unknown`, the scan cap is also called out
+above the evidence block and in the agent suggestions, and `Signal.Truncation` carries the
+cause structurally so a caller can branch on it rather than parse prose. The cap the run
+used is reported on the window (`ArrivalWindow.ScanLimitGBytes`) — without the number, "raise
+the cap" is not actionable.
 
 ### Per-stream time field
 
@@ -231,7 +283,7 @@ windowed probe plus the free bucket metadata and, for a zero match, an applicabi
 | `stale` | `matched > 0`, `last_seen` older than `--stale-after` | **Started, then stopped inside the window** |
 | `empty` | `matched == 0`, stream holds records in retention | Stream works; this source is not producing into it |
 | `no-data` | `matched == 0`, stream empty in retention | Stream exists but is unused on this tenant |
-| `n/a` | `matched == 0`, and no field the scope names exists on this signal | **The question was never askable of this source** — see "Scope applicability" |
+| `n/a` | `matched == 0`, and the scope's fields are absent from this signal — structurally for a metric family, across the window for a stream | **The question was never askable of this source** — see "Scope applicability" |
 | `absent` | Stream not in the data-object catalog | Not available in this environment |
 | `unknown` | Probe truncated, scan-capped, or errored | No verdict — never read as absence |
 
@@ -499,6 +551,13 @@ telemetry is not implicated.
   instead of costing the whole battery and yielding N identical failures.
 - **D15 — Gate exit codes start at 10.** Exit 1 stays cobra's, so a usage error is never
   mistaken for a telemetry verdict.
+- **D16 — The `n/a` evidence is worded to the strength of the probe behind it.** Structural
+  for metric dimensions, window-scoped for streams. Found by running across tenants: a
+  single shared sentence overclaimed on every stream verdict.
+- **D17 — Truncation causes are distinguished, not collapsed.** A scan cap, a result cap and
+  a read timeout have different remedies, and on a high-volume tenant the scan cap is the
+  binding constraint on the feature's headline use case. The cause is carried structurally
+  on `Signal.Truncation`, and the cap in force is reported on the window.
 
 ## Open questions — with recommendations
 
@@ -629,9 +688,9 @@ busywork, and the cost argument that motivates D4 is satisfied either way.
 
 | Area | What landed |
 |---|---|
-| `pkg/exec/dql.go` | Prerequisite fix: `FETCH_EXEC_TIME_LIMIT` → `notifTimeout`, plus an `"internal time limit"` message fallback. Re-exports `ColumnTypes`/`ColumnType` so result type metadata reaches the SDK |
+| `pkg/exec/dql.go` | Prerequisite fix: `FETCH_EXEC_TIME_LIMIT` → `notifTimeout`, plus an `"internal time limit"` message fallback. Re-exports `ColumnTypes`/`ColumnType` so result type metadata reaches the SDK; `PartialCause` exposes *which* limit truncated a result, where `ResultIsPartial` only said *that* one did |
 | `sdk/inventory/inventory.go` | `SignalState` (7 states), `Signal`, `ArrivalWindow`, `StateSummary`; `TimeField` and `BackingBuckets` on `CapabilityDef` |
-| `sdk/inventory/scope.go` | Scope-field lexing, `isNotNull` predicate assembly, metric-dimension applicability from result types, `n/a` evidence |
+| `sdk/inventory/scope.go` | Scope-field lexing, `isNotNull` predicate assembly, metric-dimension applicability from result types, the two `n/a` evidence variants |
 | `sdk/inventory/arrivals.go` | Windowed probing, state derivation, metric-family sampling, retention coverage through views, the applicability probes, scope-syntax-error detection, the all-zero tripwire |
 | `sdk/inventory/discover.go` | `Since`/`Scope`/`StaleAfter`/`Signals` options; `RunResult.ColumnTypes`; view→bucket/table resolution from the catalog's `query_string` |
 | `sdk/inventory/definitions.go` | `spans`/`rum` → `start_time`; Davis `backingBuckets`; `timeField` and `backingBuckets` validation |
@@ -661,16 +720,27 @@ busywork, and the cost argument that motivates D4 is satisfied either way.
 
 ### Live verification
 
-Two runs on the same tenant, same 15m window, different namespaces.
+**Six tenants, five reachable** (one had no token in the keyring), spanning a Grail-only dev
+tenant, three mid-size tenants, a demo tenant, and one very large production tenant. Two
+scope shapes (`k8s.namespace.name`, `service.name`), plus a multi-field scope, a malformed
+scope, an unknown signal name, and all four exit codes (0 / 10 not-live / 10 n/a / 11
+unknown / 1 usage error).
 
-A namespace with no data — the worst case, since every signal triggers an applicability
-probe: 7 `empty`, 4 `n/a`, 2 `unknown`, in 69 queries / 29.9 s. `rum`, `synthetic`,
-`host-metrics`, and `aws-cloudwatch` correctly reported `n/a` with evidence naming the
-field, where previously all four read as `empty`.
+On the mid-size tenants the applicability logic behaved consistently and reciprocally: under
+`k8s.namespace.name`, RUM / synthetic / host / AWS metrics go `n/a` while the k8s families
+stay live; under `service.name`, the k8s / process / host families go `n/a` while
+service-metrics stays live. That reciprocity is the property worth checking, and it held
+everywhere.
 
-A busy namespace: 7 `live`, 1 `empty`, 4 `n/a`, 1 `unknown`, in 43 queries / 20.6 s. Davis
-now resolves retention through its buckets (3,835,197,090 records), so its zero match is a
-substantiated `empty` rather than an unknown.
+Same tenant, two namespaces, to price the extremes: a namespace with no data — the worst
+case, since every signal triggers an applicability probe — cost 69 queries / 29.9 s;
+a busy one, 43 queries / 20.6 s, with Davis now resolving retention through its buckets
+(3,835,197,090 records).
+
+**The multi-tenant sweep is what found the two defects above**, and neither was reachable
+from a single tenant: the scan cap only binds at a volume the smaller tenants never reach,
+and the overclaiming `n/a` wording only shows itself on a tenant where a stream that
+normally carries a field happens not to during the window.
 
 Earlier runs caught two defects no unit test would have: the metric-family false `empty`
 described in D6, and timeseries bucket timestamps landing in the future (a bucket is stamped
@@ -688,3 +758,6 @@ with its end, so the current one is ahead of `now`; it is clamped).
   ("391 pts"), which are not records.
 - `--since` defaults to `15m` instead of being the mode switch.
 - The `--scope true` escape hatch is documented in the long help, alongside the seven states.
+- Truncation evidence names the limit that fired and the remedy for *that* limit, the scan
+  cap is called out above the evidence block, and the cap in force is reported on the window.
+- The `n/a` evidence no longer claims a structural absence for streams (D16).

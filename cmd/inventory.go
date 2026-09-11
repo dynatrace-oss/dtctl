@@ -156,19 +156,38 @@ func (r *inventoryRunner) RunQuery(ctx context.Context, dql string) (*inventory.
 	if resp == nil {
 		return nil, context.Canceled
 	}
-	truncated := false
+	var cause inventory.TruncationCause
 	for _, n := range resp.GetNotifications() {
-		if exec.ResultIsPartial(n) {
-			truncated = true
+		if c := truncationCause(exec.PartialCause(n)); c != "" {
+			cause = c
 			break
 		}
 	}
 	return &inventory.RunResult{
-		Records:     resp.GetRecords(),
-		Seconds:     time.Since(start).Seconds(),
-		Truncated:   truncated,
-		ColumnTypes: flattenColumnTypes(resp.GetTypes()),
+		Records:         resp.GetRecords(),
+		Seconds:         time.Since(start).Seconds(),
+		Truncated:       cause != "",
+		TruncationCause: cause,
+		ColumnTypes:     flattenColumnTypes(resp.GetTypes()),
 	}, nil
+}
+
+// truncationCause maps a dtctl notification class onto the SDK's cause. The
+// two enums happen to share their string values, but they belong to separate
+// modules and are mapped explicitly so that a rename on either side is a
+// compile error rather than a silently generic evidence line.
+func truncationCause(c string) inventory.TruncationCause {
+	switch c {
+	case exec.PartialScanLimit:
+		return inventory.TruncationScanLimit
+	case exec.PartialResultLimit:
+		return inventory.TruncationResultLimit
+	case exec.PartialTimeout:
+		return inventory.TruncationTimeout
+	case exec.PartialConsumption:
+		return inventory.TruncationConsumption
+	}
+	return ""
 }
 
 // flattenColumnTypes merges the API's per-index-range type blocks into one

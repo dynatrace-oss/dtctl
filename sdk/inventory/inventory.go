@@ -157,6 +157,11 @@ type ArrivalWindow struct {
 	Since      string `json:"since" yaml:"since"`
 	Filter     string `json:"filter,omitempty" yaml:"filter,omitempty"`
 	StaleAfter string `json:"staleAfter" yaml:"staleAfter"`
+	// ScanLimitGBytes is the per-probe scan cap this run was given. It is
+	// reported because it is the difference between "this signal is not
+	// arriving" and "dtctl was not allowed to look far enough to tell", and
+	// a caller that sees an unknown needs the number to decide.
+	ScanLimitGBytes float64 `json:"scanLimitGbytes,omitempty" yaml:"scanLimitGbytes,omitempty"`
 }
 
 // Signal is one signal type's arrival state within the window. Records and
@@ -172,6 +177,11 @@ type Signal struct {
 	// Evidence says what was checked, for every state that is not live. It is
 	// carried so a negative is citable without re-probing.
 	Evidence string `json:"evidence,omitempty" yaml:"evidence,omitempty"`
+	// Truncation is set when State is unknown because a limit cut the probe
+	// short, naming which limit. It is structured rather than left to the
+	// evidence prose so a caller can tell "dtctl could not afford to look"
+	// from "the probe failed", and act on the scan cap specifically.
+	Truncation TruncationCause `json:"truncation,omitempty" yaml:"truncation,omitempty"`
 }
 
 // StateSummary counts signals by state.

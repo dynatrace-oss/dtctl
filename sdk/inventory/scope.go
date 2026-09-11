@@ -157,14 +157,43 @@ func metricDimensionApplicability(types map[string]string, fields []string) appl
 	return applicabilityNo
 }
 
-// notApplicableEvidence phrases why a signal was not asked to account for the
-// scope, naming the fields so the reader can see it is about the question,
-// not about the data.
-func notApplicableEvidence(what string, fields []string) string {
-	subject := "none of the scope's fields (" + strings.Join(fields, ", ") + ") exist"
+// fieldSubject renders the scope's field names for an evidence line.
+func fieldSubject(fields []string) string {
 	if len(fields) == 1 {
-		subject = "the scope's field (" + fields[0] + ") does not exist"
+		return "the scope's field (" + fields[0] + ")"
 	}
-	return "not asked: " + subject + " on " + what +
-		", so this signal cannot carry this scope — an empty result here is a property of the question, not of the data"
+	return "any of the scope's fields (" + strings.Join(fields, ", ") + ")"
+}
+
+// notApplicableEvidenceStream phrases a stream's n/a verdict. The claim is
+// deliberately weaker than the metric one below: a stream is tested by
+// sampling the window for a record that carries the field, so the evidence is
+// "nothing in this window has it", not "this stream cannot have it". Grail
+// exposes no per-stream schema to make the stronger claim from — describe
+// returns only core fields, and the catalog carries no field list at all — so
+// overstating it here would repeat, one level up, exactly the false-structural
+// reading this state exists to prevent. The window is named so the reader can
+// see what would strengthen the test.
+func notApplicableEvidenceStream(object string, fields []string, since string) string {
+	return "not asked: no " + object + " record in " + windowLabel(since) + " carries " +
+		fieldSubject(fields) + ", so the scope selects on nothing this signal has" +
+		" — widen --since to test that harder"
+}
+
+// windowLabel turns the DQL timeframe expression back into something that
+// reads in a sentence: "now()-15m" is the query, "the last 15m" is the fact.
+func windowLabel(since string) string {
+	if rest, ok := strings.CutPrefix(since, "now()-"); ok {
+		return "the last " + rest
+	}
+	return since
+}
+
+// notApplicableEvidenceMetric phrases a metric family's n/a verdict. Here the
+// claim is genuinely structural: a timeseries by:{} dimension is resolved
+// against the metric definition, so a dimension the metric does not declare
+// comes back typed "undefined" regardless of what was ingested in the window.
+func notApplicableEvidenceMetric(what string, fields []string) string {
+	return "not asked: " + fieldSubject(fields) + " is not a dimension of " + what +
+		", so this signal structurally cannot carry this scope — an empty result here is a property of the question, not of the data"
 }

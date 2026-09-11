@@ -49,12 +49,20 @@ States:
   empty   nothing matched, yet the stream holds data within retention —
           the stream works, this scope is not producing into it
   no-data nothing matched and the stream is empty tenant-wide
-  n/a     the signal cannot carry this scope: none of the fields the scope
-          names exist on it (there is no k8s.namespace.name on RUM data, and
-          no service.name dimension on Kubernetes metrics)
+  n/a     the scope selects on nothing this signal has (there is no
+          k8s.namespace.name on RUM data, and no service.name dimension on
+          Kubernetes metrics). For a metric family this is structural — the
+          dimension is not in the metric definition. For a stream it means no
+          record in the window carried the field, which is strong evidence but
+          not proof; widen --since to test it harder.
   absent  the stream is not in this environment's data-object catalog
   unknown no verdict — the probe was truncated, capped, or failed. Never to
           be read as absence.
+
+On a high-volume tenant the scan cap is the usual source of 'unknown': a probe
+that would scan more than --scan-limit-gbytes (default 25) is stopped before it
+can count, and logs and spans are the first to hit it. That is a dtctl limit,
+not a finding about your data — the run says so explicitly and names the cap.
 
 --scope is required. An unscoped windowed count is the single most expensive query
 available, and the unscoped question is already answered for free, without a window,
@@ -115,19 +123,21 @@ Examples:
 			fmt.Fprintf(os.Stderr, "warning: a %s window makes each probe scan proportionally more; probes cut short by the scan cap report as unknown, not absent — narrow --since if that happens\n", roundWindow(windowLen))
 		}
 
+		scanLimitGB, _ := cmd.Flags().GetFloat64("scan-limit-gbytes")
 		runner := newInventoryRunner(cmd, cfg, c)
 		ctx, cancel := inventoryCancelContext()
 		defer cancel()
 
 		budgetQueries, budgetSeconds := inventoryBudget(cmd)
 		inv, err := inventory.Discover(ctx, runner, defs, inventory.DiscoverOptions{
-			ContextName:   cfg.CurrentContext,
-			BudgetQueries: budgetQueries,
-			BudgetSeconds: budgetSeconds,
-			Since:         sinceExpr,
-			Scope:         scope,
-			StaleAfter:    staleAfter,
-			Signals:       signals,
+			ContextName:     cfg.CurrentContext,
+			BudgetQueries:   budgetQueries,
+			BudgetSeconds:   budgetSeconds,
+			Since:           sinceExpr,
+			Scope:           scope,
+			StaleAfter:      staleAfter,
+			Signals:         signals,
+			ScanLimitGBytes: scanLimitGB,
 		})
 		if err != nil {
 			return err
@@ -303,6 +313,25 @@ func requiredSignalsExitCode(inv *inventory.Inventory, require []string) (int, [
 
 // inventorySuggestions tailors agent-mode guidance to what the run actually
 // found, so the advice is about this result rather than generic.
+// scanCappedSignals names the signals whose probe was stopped by the scan cap.
+func scanCappedSignals(inv *inventory.Inventory) []string {
+	var out []string
+	for _, sig := range inv.Signals {
+		if sig.Truncation == inventory.TruncationScanLimit {
+			out = append(out, sig.Name)
+		}
+	}
+	return out
+}
+
+// scanLimitOf reports the cap the run used, for the warning above.
+func scanLimitOf(inv *inventory.Inventory) float64 {
+	if inv.Window != nil {
+		return inv.Window.ScanLimitGBytes
+	}
+	return 0
+}
+
 func inventorySuggestions(inv *inventory.Inventory) []string {
 	if inv == nil || inv.Window == nil {
 		return []string{
@@ -321,6 +350,10 @@ func inventorySuggestions(inv *inventory.Inventory) []string {
 	}
 	if inv.Summary != nil && inv.Summary.NotApplicable > 0 {
 		out = append(out, "Signals marked n/a cannot carry this scope at all — do not report them as missing telemetry, and do not re-probe them")
+	}
+	if capped := scanCappedSignals(inv); len(capped) > 0 {
+		out = append(out, fmt.Sprintf("%s hit the %g GB scan cap, so dtctl could not count them — this says nothing about whether that data is arriving; raise --scan-limit-gbytes or narrow --since, and never report these as missing",
+			strings.Join(capped, ", "), scanLimitOf(inv)))
 	}
 	if inv.Summary != nil && inv.Summary.Unknown > 0 {
 		out = append(out, "Unknown signals got no verdict: re-run with a narrower --since or a raised --scan-limit-gbytes rather than treating them as absent")
@@ -399,6 +432,16 @@ func printInventorySignalsHuman(inv *inventory.Inventory) {
 		if len(parts) > 0 {
 			fmt.Printf("\n%s\n", strings.Join(parts, " · "))
 		}
+	}
+
+	// A scan-capped signal is the one "unknown" a reader is most likely to
+	// misread as a finding, and on a high-volume tenant it can hit exactly
+	// the signals they came to check. Say so above the evidence block rather
+	// than leaving it to be inferred from a per-signal line.
+	if capped := scanCappedSignals(inv); len(capped) > 0 {
+		fmt.Printf("\nScan cap: %s could not be counted — each scans more than the %g GB cap over this window.\n",
+			strings.Join(capped, ", "), scanLimitOf(inv))
+		fmt.Println("  This is a dtctl limit, not a verdict about your data. Raise --scan-limit-gbytes or narrow --since.")
 	}
 
 	var evidence []inventory.Signal

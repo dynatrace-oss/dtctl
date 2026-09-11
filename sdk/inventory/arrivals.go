@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -145,7 +146,8 @@ func (b *budgetRunner) probeStreamSignal(ctx context.Context, name string, def *
 		// A cut-short probe that found nothing proves nothing: the match may
 		// sit in the part that was never read.
 		sig.State = SignalUnknown
-		sig.Evidence = "not evaluated: probe was cut short by a limit (scan cap, result cap, or read timeout) — narrow --since or raise the cap"
+		sig.Truncation = res.TruncationCause
+		sig.Evidence = truncatedEvidence(def.DataObject, res.TruncationCause, opts.Since, opts.ScanLimitGBytes)
 		return sig, nil
 	}
 
@@ -174,7 +176,7 @@ func (b *budgetRunner) probeStreamSignal(ctx context.Context, name string, def *
 			return sig, aerr
 		case app == applicabilityNo:
 			sig.State = SignalNotApplicable
-			sig.Evidence = notApplicableEvidence(def.DataObject, fields)
+			sig.Evidence = notApplicableEvidenceStream(def.DataObject, fields, opts.Since)
 			return sig, nil
 		}
 		sig.State, sig.Evidence = emptyState(def.DataObject, cov)
@@ -328,7 +330,7 @@ func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *
 	}
 	if app == applicabilityNo {
 		sig.State = SignalNotApplicable
-		sig.Evidence = notApplicableEvidence(fmt.Sprintf("any of the %d keys probed from %s", probed, def.MetricKey), fields)
+		sig.Evidence = notApplicableEvidenceMetric(fmt.Sprintf("any of the %d keys probed from %s", probed, def.MetricKey), fields)
 		return sig, nil
 	}
 
@@ -397,6 +399,44 @@ func (b *budgetRunner) metricScopeApplicability(ctx context.Context, keys []stri
 		probed++
 	}
 	return applicabilityNo, probed, nil
+}
+
+// truncatedEvidence names the limit that cut a probe short and the remedy that
+// actually applies to it.
+//
+// The three causes are not interchangeable, and on a high-volume tenant the
+// difference decides whether the signal is answerable at all: a scan cap is a
+// dtctl setting the user owns and can raise, whereas a result cap wants
+// aggregation and a timeout wants a narrower read. The scan-cap case is the
+// common one and the one worth being blunt about — the stream is simply larger
+// inside this window than the cap allows, so narrowing --since only helps if
+// it is narrowed far enough, and on the largest tenants that can be below any
+// window worth asking about.
+func truncatedEvidence(object string, cause TruncationCause, since string, scanLimitGB float64) string {
+	const prefix = "not evaluated: "
+	switch cause {
+	case TruncationScanLimit:
+		return prefix + object + " scans more than " + scanCapLabel(scanLimitGB) + " over " + windowLabel(since) +
+			", so the probe stopped before it could count — raise --scan-limit-gbytes, or narrow --since far enough that the stream fits under the cap"
+	case TruncationResultLimit:
+		return prefix + "the probe's result hit dtctl's record cap before " + object +
+			" could be counted — unexpected for an aggregating probe, so treat this as a dtctl bug rather than a telemetry finding"
+	case TruncationTimeout:
+		return prefix + "the read timed out before " + object + " could be counted over " + windowLabel(since) +
+			" — narrow --since, or retry when the tenant is less busy"
+	case TruncationConsumption:
+		return prefix + "the query consumption limit stopped the probe before it could count " + object
+	}
+	return prefix + "the probe was cut short by a limit — narrow --since or raise --scan-limit-gbytes"
+}
+
+// scanCapLabel names the cap in the evidence when the Runner reported it, and
+// stays vague rather than inventing a number when it did not.
+func scanCapLabel(gb float64) string {
+	if gb <= 0 {
+		return "the scan cap"
+	}
+	return "the " + strconv.FormatFloat(gb, 'g', -1, 64) + " GB scan cap"
 }
 
 // emptyState distinguishes the two zero-match cases that matter. A stream that

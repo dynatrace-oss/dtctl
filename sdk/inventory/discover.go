@@ -18,6 +18,10 @@ type RunResult struct {
 	Records   []map[string]interface{}
 	Seconds   float64
 	Truncated bool
+	// TruncationCause says which limit cut the result short, so the evidence
+	// can name the one remedy that applies instead of listing three. Empty
+	// when Truncated is false, or when the runner cannot tell.
+	TruncationCause TruncationCause
 	// ColumnTypes maps a result column to its DQL type descriptor, merged
 	// across the response's index ranges. A column the query named but the
 	// data does not carry comes back as "undefined" — that is how a probe can
@@ -28,6 +32,20 @@ type RunResult struct {
 // TypeUndefined is the DQL type of a column the query referenced but the
 // underlying data has no such field for.
 const TypeUndefined = "undefined"
+
+// TruncationCause identifies which limit cut a probe short. The distinction is
+// load-bearing for onboarding verification on large tenants: a scan cap is a
+// dtctl setting the user can raise, while a result cap or a read timeout calls
+// for a different fix entirely, and a message that lists all three leaves the
+// reader to guess which of their signals is actually unanswerable and why.
+type TruncationCause string
+
+const (
+	TruncationScanLimit   TruncationCause = "scan_limit"
+	TruncationResultLimit TruncationCause = "result_limit"
+	TruncationTimeout     TruncationCause = "timeout"
+	TruncationConsumption TruncationCause = "consumption"
+)
 
 // Runner executes DQL on the live environment. The cmd layer implements it
 // over the existing DQL executor (with scan caps); tests implement it over
@@ -64,6 +82,11 @@ type DiscoverOptions struct {
 	StaleAfter time.Duration
 	// Signals optionally restricts windowed probing to named capabilities.
 	Signals []string
+	// ScanLimitGBytes is the per-probe scan cap the Runner applies, carried
+	// here only so evidence can name the number the user has to raise. The
+	// SDK never enforces it — that is the Runner's job — and 0 means the
+	// Runner did not say, in which case the evidence stays unquantified.
+	ScanLimitGBytes float64
 }
 
 type budgetRunner struct {
@@ -308,9 +331,10 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 
 	if windowed {
 		inv.Window = &ArrivalWindow{
-			Since:      opts.Since,
-			Filter:     opts.Scope,
-			StaleAfter: roundDuration(opts.StaleAfter),
+			Since:           opts.Since,
+			Filter:          opts.Scope,
+			StaleAfter:      roundDuration(opts.StaleAfter),
+			ScanLimitGBytes: opts.ScanLimitGBytes,
 		}
 		inv.Signals, err = br.evaluateSignals(ctx, defs, facts, opts)
 		if err != nil {
