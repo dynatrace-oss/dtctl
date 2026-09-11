@@ -145,8 +145,7 @@ Examples:
 
 		if outputFormat == "table" && !agentMode {
 			printInventorySignalsHuman(inv)
-			exitForRequiredSignals(inv, require)
-			return nil
+			return exitForRequiredSignals(inv, require)
 		}
 		printer := NewPrinter()
 		if ap := enrichAgent(printer, "inventory", "arrivals"); ap != nil {
@@ -155,8 +154,7 @@ Examples:
 		if err := printer.Print(inv); err != nil {
 			return err
 		}
-		exitForRequiredSignals(inv, require)
-		return nil
+		return exitForRequiredSignals(inv, require)
 	},
 }
 
@@ -248,14 +246,20 @@ func roundWindow(d time.Duration) string {
 
 // exitForRequiredSignals enforces --require after the report has been printed,
 // so the operator sees the evidence for the failure rather than just a code.
-func exitForRequiredSignals(inv *inventory.Inventory, require []string) {
+//
+// It returns a *silentExitError rather than calling os.Exit: the gate's code is
+// part of the command's contract, not an error to re-print, and a command body
+// that terminates the process cannot be embedded (see the E2 guard in
+// silent_exit_test.go).
+func exitForRequiredSignals(inv *inventory.Inventory, require []string) error {
 	code, messages := requiredSignalsExitCode(inv, require)
 	for _, m := range messages {
 		fmt.Fprintf(os.Stderr, "\n%s\n", m)
 	}
-	if code != 0 {
-		os.Exit(code)
+	if code == 0 {
+		return nil
 	}
+	return &silentExitError{code: code, reason: "required signals not live"}
 }
 
 // requiredSignalsExitCode is the pure decision behind --require, kept separate
