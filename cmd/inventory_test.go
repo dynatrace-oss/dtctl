@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	cmdtestutil "github.com/dynatrace-oss/dtctl/cmd/testutil"
-	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/sdk/inventory"
 )
@@ -149,35 +148,4 @@ func TestInventoryOutputGoldenAgent(t *testing.T) {
 		t.Fatalf("print failed: %v", err)
 	}
 	cmdtestutil.AssertGolden(t, "inventory/agent", buf.String())
-}
-
-// TestTruncationCauseMapping guards the seam between pkg/exec's notification
-// classes and the SDK's cause enum. They live in separate Go modules, so
-// nothing but this test stops the two from drifting apart and silently
-// degrading every scan-capped signal to a generic "cut short by a limit".
-func TestTruncationCauseMapping(t *testing.T) {
-	tests := []struct {
-		notificationType string
-		want             inventory.TruncationCause
-	}{
-		{"SCAN_LIMIT_GBYTES", inventory.TruncationScanLimit},
-		{"RESULT_LIMIT_RECORDS", inventory.TruncationResultLimit},
-		{"RESULT_LIMIT_BYTES", inventory.TruncationResultLimit},
-		{"FETCH_TIMEOUT", inventory.TruncationTimeout},
-		{"FETCH_EXEC_TIME_LIMIT", inventory.TruncationTimeout},
-		{"QUERY_CONSUMPTION_LIMIT", inventory.TruncationConsumption},
-		// Sampling is declared in the query, not a silent truncation.
-		{"SAMPLING_APPLIED", ""},
-		{"SOMETHING_ELSE", ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.notificationType, func(t *testing.T) {
-			got := truncationCause(exec.PartialCause(exec.QueryNotification{
-				NotificationType: tt.notificationType,
-			}))
-			if got != tt.want {
-				t.Errorf("truncationCause(%s) = %q, want %q", tt.notificationType, got, tt.want)
-			}
-		})
-	}
 }

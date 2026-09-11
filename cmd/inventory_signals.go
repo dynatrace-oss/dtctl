@@ -14,24 +14,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/sdk/inventory"
 )
 
-// Exit codes for --require.
-//
-// Deliberately outside the 0-3 band: 1 is what cobra returns for any command
-// error, and a gate that cannot tell "logs are not arriving" from "dtctl
-// could not authenticate" is not a gate. A signal with no verdict is likewise
-// kept separate from "not live" — failing a build closed because dtctl ran
-// out of scan budget would report a dtctl problem as a customer telemetry
-// problem.
-const (
-	exitRequiredSignalNotLive = 10
-	exitRequiredSignalUnknown = 11
-)
-
-// defaultArrivalWindow is the window used when --since is not given. Short
-// enough that every probe stays cheap, long enough to survive ordinary ingest
-// jitter.
-const defaultArrivalWindow = "15m"
-
 var inventoryArrivalsCmd = &cobra.Command{
 	Use:   "arrivals",
 	Short: "Is data arriving for this source right now? Per-signal ingest state over a window",
@@ -98,7 +80,7 @@ Examples:
 		if strings.TrimSpace(scope) == "" {
 			return fmt.Errorf("--scope is required: see 'dtctl inventory arrivals --help' for why an unscoped window is not offered")
 		}
-		sinceExpr, windowLen, err := parseSinceFlag(since)
+		sinceExpr, windowLen, err := inventory.NormalizeSince(since)
 		if err != nil {
 			return err
 		}
@@ -111,13 +93,13 @@ Examples:
 		// error, and discovering it after the battery has spent the budget
 		// would both waste the run and dress the mistake up as a telemetry
 		// verdict.
-		if err := validateSignalNames(defs, signals, require); err != nil {
+		if err := inventory.ValidateSignalNames(defs, signals, require); err != nil {
 			return err
 		}
 
 		staleAfter := staleAfterFlag
 		if staleAfter == 0 {
-			staleAfter = defaultStaleAfter(windowLen)
+			staleAfter = inventory.DefaultStaleAfter(windowLen)
 		}
 		if windowLen > time.Hour {
 			fmt.Fprintf(os.Stderr, "warning: a %s window makes each probe scan proportionally more; probes cut short by the scan cap report as unknown, not absent — narrow --since if that happens\n", roundWindow(windowLen))
@@ -158,85 +140,6 @@ Examples:
 	},
 }
 
-// validateSignalNames rejects a --signals or --require name that no
-// definition provides, and a --require name that --signals excluded — both
-// are mistakes the run itself could only report as a missing verdict.
-func validateSignalNames(defs map[string]*inventory.CapabilityDef, signals, require []string) error {
-	known := inventory.SignalNames(defs)
-	set := make(map[string]bool, len(known))
-	for _, n := range known {
-		set[strings.ToLower(n)] = true
-	}
-	var unknown []string
-	for _, n := range append(append([]string{}, signals...), require...) {
-		n = strings.TrimSpace(n)
-		if n != "" && !set[strings.ToLower(n)] {
-			unknown = append(unknown, n)
-		}
-	}
-	if len(unknown) > 0 {
-		return fmt.Errorf("unknown signal %s: this capability set provides %s",
-			strings.Join(unknown, ", "), strings.Join(known, ", "))
-	}
-	if len(signals) == 0 {
-		return nil
-	}
-	selected := make(map[string]bool, len(signals))
-	for _, n := range signals {
-		selected[strings.ToLower(strings.TrimSpace(n))] = true
-	}
-	var excluded []string
-	for _, n := range require {
-		n = strings.TrimSpace(n)
-		if n != "" && !selected[strings.ToLower(n)] {
-			excluded = append(excluded, n)
-		}
-	}
-	if len(excluded) > 0 {
-		return fmt.Errorf("--require names %s, which --signals excludes from probing: the gate could never pass", strings.Join(excluded, ", "))
-	}
-	return nil
-}
-
-// parseSinceFlag turns the --since value into a DQL timeframe expression and
-// the window length.
-//
-// Both "15m" and "-15m" are accepted: the sign is what a user reaching for a
-// lookback naturally writes either way. Note that a leading dash has to be
-// passed as --since=-15m, since pflag would otherwise read it as a flag.
-//
-// The expression is emitted in whole minutes where possible and seconds
-// otherwise, so a Go duration like "1h30m" — which DQL does not accept
-// verbatim — still produces a valid timeframe.
-func parseSinceFlag(v string) (expr string, window time.Duration, err error) {
-	v = strings.TrimSpace(v)
-	if v == "" {
-		v = defaultArrivalWindow
-	}
-	d, perr := time.ParseDuration(strings.TrimPrefix(v, "-"))
-	if perr != nil {
-		return "", 0, fmt.Errorf("invalid --since %q: expected a duration such as 15m, 2h, or 90s", v)
-	}
-	if d <= 0 {
-		return "", 0, fmt.Errorf("invalid --since %q: the window must be a positive duration", v)
-	}
-	if d%time.Minute == 0 {
-		return fmt.Sprintf("now()-%dm", int64(d/time.Minute)), d, nil
-	}
-	return fmt.Sprintf("now()-%ds", int64(d/time.Second)), d, nil
-}
-
-// defaultStaleAfter derives the freshness threshold from the window: a third
-// of the window, floored at two minutes so a short window does not call
-// normally-jittery ingest stale.
-func defaultStaleAfter(window time.Duration) time.Duration {
-	third := window / 3
-	if third < 2*time.Minute {
-		return 2 * time.Minute
-	}
-	return third
-}
-
 func roundWindow(d time.Duration) string {
 	if d%time.Minute == 0 {
 		return d.String()
@@ -252,67 +155,14 @@ func roundWindow(d time.Duration) string {
 // that terminates the process cannot be embedded (see the E2 guard in
 // silent_exit_test.go).
 func exitForRequiredSignals(inv *inventory.Inventory, require []string) error {
-	code, messages := requiredSignalsExitCode(inv, require)
-	for _, m := range messages {
+	verdict := inventory.CheckRequired(inv, require)
+	for _, m := range verdict.Messages {
 		fmt.Fprintf(os.Stderr, "\n%s\n", m)
 	}
-	if code == 0 {
-		return nil
+	if code := verdict.ExitCode(); code != 0 {
+		return &silentExitError{code: code, reason: "required signals not live"}
 	}
-	return &silentExitError{code: code, reason: "required signals not live"}
-}
-
-// requiredSignalsExitCode is the pure decision behind --require, kept separate
-// from the exit so it is testable.
-func requiredSignalsExitCode(inv *inventory.Inventory, require []string) (int, []string) {
-	if len(require) == 0 || inv == nil || inv.Window == nil {
-		return 0, nil
-	}
-	states := make(map[string]inventory.SignalState, len(inv.Signals))
-	for _, sig := range inv.Signals {
-		states[strings.ToLower(sig.Name)] = sig.State
-	}
-	code := 0
-	var messages []string
-	var notLive, unknown, notApplicable []string
-	for _, name := range require {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		state, ok := states[strings.ToLower(name)]
-		switch {
-		case !ok:
-			// The name was validated up front, so reaching here means the
-			// signal was never probed — no verdict, not a failure.
-			unknown = append(unknown, name)
-		case state == inventory.SignalLive:
-		case state == inventory.SignalUnknown:
-			unknown = append(unknown, name)
-		case state == inventory.SignalNotApplicable:
-			notApplicable = append(notApplicable, name)
-		default:
-			notLive = append(notLive, fmt.Sprintf("%s (%s)", name, state))
-		}
-	}
-	if len(notLive) > 0 {
-		messages = append(messages, fmt.Sprintf("required signals not live: %s", strings.Join(notLive, ", ")))
-		code = exitRequiredSignalNotLive
-	}
-	// A signal that cannot carry the scope was never really required — the
-	// gate asks a question of it that has no answer. Saying so beats both
-	// passing silently and failing as if the telemetry were missing.
-	if len(notApplicable) > 0 {
-		messages = append(messages, fmt.Sprintf("required signals cannot carry this scope: %s — none of the scope's fields exist on them, so this gate can never pass; drop them from --require or widen --scope", strings.Join(notApplicable, ", ")))
-		code = exitRequiredSignalNotLive
-	}
-	// Unknown wins: it is the weaker claim, and reporting "no verdict" as a
-	// telemetry failure is the mistake this whole command is built to avoid.
-	if len(unknown) > 0 {
-		messages = append(messages, fmt.Sprintf("required signals have no verdict: %s — dtctl could not establish their state; this is not evidence of absence", strings.Join(unknown, ", ")))
-		code = exitRequiredSignalUnknown
-	}
-	return code, messages
+	return nil
 }
 
 // inventorySuggestions tailors agent-mode guidance to what the run actually
@@ -526,7 +376,7 @@ func signalAge(sig inventory.Signal) string {
 func init() {
 	addInventoryDiscoveryFlags(inventoryArrivalsCmd)
 	inventoryArrivalsCmd.Flags().String("scope", "", "DQL filter fragment scoping every probe, e.g. 'k8s.namespace.name == \"payments\"' (required)")
-	inventoryArrivalsCmd.Flags().String("since", defaultArrivalWindow, "Window to report arrivals over (e.g. 15m, 1h)")
+	inventoryArrivalsCmd.Flags().String("since", inventory.DefaultWindow, "Window to report arrivals over (e.g. 15m, 1h)")
 	inventoryArrivalsCmd.Flags().StringSlice("signals", nil, "Restrict probing to these signals (default: all signal streams and metric families)")
 	inventoryArrivalsCmd.Flags().StringSlice("require", nil, "Exit non-zero unless every named signal is live (10 = not live, 11 = no verdict)")
 	inventoryArrivalsCmd.Flags().Duration("stale-after", 0, "Age past which a matched signal is stale rather than live (default max(2m, window/3))")

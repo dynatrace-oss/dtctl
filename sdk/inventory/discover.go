@@ -50,6 +50,13 @@ const (
 // Runner executes DQL on the live environment. The cmd layer implements it
 // over the existing DQL executor (with scan caps); tests implement it over
 // fixtures.
+//
+// Returning records is not the whole job. RunResult also carries the response's
+// column types and the reason a result was cut short, and several verdicts are
+// only as good as those two fields — a Runner that omits ColumnTypes turns every
+// "n/a" into a confident "empty", with no error to say so. Build the result with
+// ColumnTypesOf and FirstTruncationCause rather than filling those fields by
+// hand; see runner.go.
 type Runner interface {
 	RunQuery(ctx context.Context, dql string) (*RunResult, error)
 }
