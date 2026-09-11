@@ -21,14 +21,25 @@ func BuiltinDefinitions() map[string]*CapabilityDef {
 		"azure": {EntityTypes: []string{"AZURE_*"}},
 		"gcp":   {EntityTypes: []string{"GCP_*"}},
 		// signal streams
-		// spans carries start_time, not timestamp — verified on a live tenant:
-		// takeMax(timestamp) there yields an undefined column, not an error.
+		//
+		// TimeField: spans and user.events carry start_time and no timestamp
+		// at all — verified on a live tenant, where takeMax(timestamp) over a
+		// million matching user.events rows yields an undefined column rather
+		// than an error, so a windowed probe would report the signal live with
+		// no age and could never call it stale. logs, bizevents,
+		// security.events, dt.davis.problems, dt.davis.events and
+		// dt.synthetic.events were checked the same way and do carry timestamp.
+		//
+		// BackingBuckets: the davis views declare no query_string in
+		// dt.system.data_objects, so their buckets cannot be resolved from the
+		// catalog and are named here. dt.synthetic.events does declare one and
+		// is resolved automatically.
 		"spans":        {DataObject: "spans", TimeField: "start_time"},
 		"logs":         {DataObject: "logs"},
 		"bizevents":    {DataObject: "bizevents"},
-		"rum":          {DataObject: "user.events"},
-		"davis":        {DataObject: "dt.davis.problems"},
-		"davis-events": {DataObject: "dt.davis.events"},
+		"rum":          {DataObject: "user.events", TimeField: "start_time"},
+		"davis":        {DataObject: "dt.davis.problems", BackingBuckets: []string{"default_davis*", "davis*"}},
+		"davis-events": {DataObject: "dt.davis.events", BackingBuckets: []string{"default_davis*", "davis*"}},
 		"security":     {DataObject: "security.events"},
 		"synthetic":    {DataObject: "dt.synthetic.events"},
 		// metric families
@@ -138,6 +149,9 @@ func validateDef(def *CapabilityDef) error {
 	}
 	if def.TimeField != "" && def.DataObject == "" {
 		return fmt.Errorf("timeField is only valid with a dataObject shape")
+	}
+	if len(def.BackingBuckets) > 0 && def.DataObject == "" {
+		return fmt.Errorf("backingBuckets is only valid with a dataObject shape")
 	}
 	return nil
 }

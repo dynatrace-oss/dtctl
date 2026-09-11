@@ -75,6 +75,10 @@ var ResourceScopes = map[string]AccessScopes{
 	"notebook":  {Read: []string{"document:documents:read"}, Write: []string{"document:documents:write"}, Delete: []string{"document:documents:delete"}},
 	"trash":     {Read: []string{"document:trash.documents:read"}, Write: []string{"document:trash.documents:restore"}, Delete: []string{"document:trash.documents:delete"}},
 
+	// `inventory arrivals` is pure DQL against the environment's own data —
+	// same Grail read surface as `query`, no managed resource of its own.
+	"arrivals": {Read: QueryScopes},
+
 	// Grail storage. Buckets are managed via the bucket data scopes (delete
 	// folds into write); lookups and segments are stored as files / filter
 	// segments respectively.

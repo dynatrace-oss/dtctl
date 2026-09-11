@@ -43,6 +43,8 @@ func (b *budgetRunner) evaluateSignals(ctx context.Context, defs map[string]*Cap
 		now = time.Now
 	}
 
+	fields := scopeFields(opts.Scope)
+
 	signals := make([]Signal, 0, len(names))
 	for _, name := range names {
 		def := defs[name]
@@ -51,9 +53,9 @@ func (b *budgetRunner) evaluateSignals(ctx context.Context, defs map[string]*Cap
 			serr error
 		)
 		if def.MetricKey != "" {
-			sig, serr = b.probeMetricSignal(ctx, name, def, facts, opts, now())
+			sig, serr = b.probeMetricSignal(ctx, name, def, facts, opts, fields, now())
 		} else {
-			sig, serr = b.probeStreamSignal(ctx, name, def, facts, opts, now())
+			sig, serr = b.probeStreamSignal(ctx, name, def, facts, opts, fields, now())
 		}
 		if serr != nil {
 			return nil, serr
@@ -63,8 +65,43 @@ func (b *budgetRunner) evaluateSignals(ctx context.Context, defs map[string]*Cap
 	return signals, nil
 }
 
+// scopeSyntaxMarkers identify a probe failure caused by the scope expression
+// itself rather than by the environment.
+var scopeSyntaxMarkers = []string{
+	"DQL-ERROR-PARSING",
+	"PARSE_ERROR",
+	"SYNTAX_ERROR",
+	"isn't allowed here",
+	"mismatched input",
+}
+
+// isScopeSyntaxError reports whether a probe failed because the scope does not
+// parse. Such a failure is not a per-signal "unknown": it will repeat
+// identically for every remaining signal, burn the whole budget, and print
+// the same parse error a dozen times while presenting a typo as an
+// inconclusive environment.
+func isScopeSyntaxError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, m := range scopeSyntaxMarkers {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// scopeSyntaxError wraps a parse failure so the caller can report it against
+// the scope the user wrote rather than against the signal that happened to be
+// probed first.
+func scopeSyntaxError(scope string, err error) error {
+	return fmt.Errorf("the --scope expression does not parse as DQL, so no signal could be probed:\n  scope: %s\n  %s", scope, firstLine(err.Error()))
+}
+
 // probeStreamSignal evaluates one fetch-backed stream.
-func (b *budgetRunner) probeStreamSignal(ctx context.Context, name string, def *CapabilityDef, facts discoveredFacts, opts DiscoverOptions, now time.Time) (Signal, error) {
+func (b *budgetRunner) probeStreamSignal(ctx context.Context, name string, def *CapabilityDef, facts discoveredFacts, opts DiscoverOptions, fields []string, now time.Time) (Signal, error) {
 	sig := Signal{Name: name}
 
 	// A stream that is not in the catalog cannot be probed, and must not be:
@@ -86,7 +123,7 @@ func (b *budgetRunner) probeStreamSignal(ctx context.Context, name string, def *
 		timeField = DefaultTimeField
 	}
 	dql := fmt.Sprintf("fetch %s, from:%s | filter %s | summarize matched = count(), last_seen = takeMax(%s)",
-		def.DataObject, opts.Since, opts.Where, timeField)
+		def.DataObject, opts.Since, opts.Scope, timeField)
 
 	res, err := b.run(ctx, dql)
 	switch {
@@ -97,6 +134,8 @@ func (b *budgetRunner) probeStreamSignal(ctx context.Context, name string, def *
 		sig.State = SignalUnknown
 		sig.Evidence = "not evaluated: discovery budget exhausted"
 		return sig, nil
+	case isScopeSyntaxError(err):
+		return sig, scopeSyntaxError(opts.Scope, err)
 	default:
 		sig.State = SignalUnknown
 		sig.Evidence = "probe failed: " + firstLine(err.Error())
@@ -119,11 +158,95 @@ func (b *budgetRunner) probeStreamSignal(ctx context.Context, name string, def *
 	sig.Records = matched
 
 	if matched == 0 {
-		sig.State, sig.Evidence = emptyState(def.DataObject, facts)
+		cov := retentionFor(def.DataObject, facts)
+		// A stream that is empty tenant-wide is already fully explained, and
+		// asking it about the scope's fields could only mislead: it has no
+		// records for them to be absent from.
+		if cov.known && cov.rows == 0 {
+			sig.State, sig.Evidence = emptyState(def.DataObject, cov)
+			return sig, nil
+		}
+		// Otherwise, before blaming the source, establish that the question
+		// was askable of this stream at all. The check runs only here, so a
+		// live signal never pays for it.
+		switch app, aerr := b.streamScopeApplicability(ctx, def.DataObject, opts, fields); {
+		case aerr != nil:
+			return sig, aerr
+		case app == applicabilityNo:
+			sig.State = SignalNotApplicable
+			sig.Evidence = notApplicableEvidence(def.DataObject, fields)
+			return sig, nil
+		}
+		sig.State, sig.Evidence = emptyState(def.DataObject, cov)
 		return sig, nil
 	}
 	applyFreshness(&sig, lastSeen, now, opts.StaleAfter)
 	return sig, nil
+}
+
+// streamScopeApplicability asks whether a stream carries any of the fields
+// the scope names.
+//
+// `| limit 1` is what makes this affordable: it short-circuits as soon as one
+// record carries the field. Measured on a live tenant — logs +
+// k8s.namespace.name: 8.5 MB / 68 ms (a hit, found immediately); user.events
+// + k8s.namespace.name: 50 MB / 359 ms (a miss, so the full window, but that
+// is the same scan the scoped probe just did).
+//
+// A miss alone is not an answer, because a stream with no records at all in
+// the window would miss for a field it does carry. So a miss is confirmed
+// against a second, near-free probe for any record whatsoever; if the window
+// is simply quiet, the question stays unanswered rather than becoming a
+// false "this field does not exist here".
+//
+// Every failure path yields "unknown": a probe that did not answer must
+// never be read as "the field is missing".
+func (b *budgetRunner) streamScopeApplicability(ctx context.Context, object string, opts DiscoverOptions, fields []string) (applicability, error) {
+	if len(fields) == 0 {
+		return applicabilityUnknown, nil
+	}
+	present, err := b.countLimitOne(ctx,
+		fmt.Sprintf("fetch %s, from:%s | filter %s | limit 1 | summarize present = count()",
+			object, opts.Since, scopeFieldPredicate(fields)), "present")
+	if err != nil {
+		return applicabilityUnknown, err
+	}
+	if present == nil {
+		return applicabilityUnknown, nil
+	}
+	if *present > 0 {
+		return applicabilityYes, nil
+	}
+	any, err := b.countLimitOne(ctx,
+		fmt.Sprintf("fetch %s, from:%s | limit 1 | summarize any = count()", object, opts.Since), "any")
+	if err != nil {
+		return applicabilityUnknown, err
+	}
+	if any == nil || *any == 0 {
+		// Nothing at all arrived in the window, so the absence of the scope's
+		// fields says nothing about whether the stream can carry them.
+		return applicabilityUnknown, nil
+	}
+	return applicabilityNo, nil
+}
+
+// countLimitOne runs a short-circuiting existence probe and returns its
+// count, or nil when the probe gave no usable answer. Cancellation is the
+// only condition that propagates as an error: everything else is just an
+// unanswered question.
+func (b *budgetRunner) countLimitOne(ctx context.Context, dql, column string) (*int64, error) {
+	res, err := b.run(ctx, dql)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, nil
+	}
+	if res.Truncated || len(res.Records) == 0 {
+		return nil, nil
+	}
+	n := asInt64(res.Records[0][column])
+	return &n, nil
 }
 
 // metricKeySampleSize bounds how many keys of a family get probed. Each probe
@@ -144,7 +267,7 @@ const metricKeySampleSize = 8
 // flowing, because the arbitrary pick happened to be a key nobody emits. So a
 // bounded sample is probed, and a miss across the sample only becomes a real
 // absence verdict when the sample was the whole family.
-func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *CapabilityDef, facts discoveredFacts, opts DiscoverOptions, now time.Time) (Signal, error) {
+func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *CapabilityDef, facts discoveredFacts, opts DiscoverOptions, fields []string, now time.Time) (Signal, error) {
 	sig := Signal{Name: name}
 	if !facts.metricsOK {
 		sig.State = SignalUnknown
@@ -168,7 +291,7 @@ func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *
 	}
 
 	for _, key := range sample {
-		dql := fmt.Sprintf("timeseries n = count(%s), from:%s, filter: %s", key, opts.Since, opts.Where)
+		dql := fmt.Sprintf("timeseries n = count(%s), from:%s, filter: %s", key, opts.Since, opts.Scope)
 		res, err := b.run(ctx, dql)
 		switch {
 		case err == nil:
@@ -178,6 +301,8 @@ func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *
 			sig.State = SignalUnknown
 			sig.Evidence = "not evaluated: discovery budget exhausted"
 			return sig, nil
+		case isScopeSyntaxError(err):
+			return sig, scopeSyntaxError(opts.Scope, err)
 		default:
 			sig.State = SignalUnknown
 			sig.Evidence = "probe failed: " + firstLine(err.Error())
@@ -193,9 +318,22 @@ func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *
 		}
 	}
 
-	// Nothing in the sample reported. That is only an absence claim if the
-	// sample was the whole family — and only if the catalog it came from was
-	// complete.
+	// Nothing in the sample reported. Before reading that as absence, settle
+	// whether the family carries the scope's fields as dimensions at all —
+	// dt.host.* has no k8s.namespace.name and never will, and a filter on one
+	// there is silently never true.
+	app, probed, aerr := b.metricScopeApplicability(ctx, sample, opts, fields)
+	if aerr != nil {
+		return sig, aerr
+	}
+	if app == applicabilityNo {
+		sig.State = SignalNotApplicable
+		sig.Evidence = notApplicableEvidence(fmt.Sprintf("any of the %d keys probed from %s", probed, def.MetricKey), fields)
+		return sig, nil
+	}
+
+	// That is only an absence claim if the sample was the whole family — and
+	// only if the catalog it came from was complete.
 	if len(sample) < len(matching) || facts.metricsTruncated {
 		sig.State = SignalUnknown
 		sig.Evidence = fmt.Sprintf("not evaluated: no datapoints from %d of %d keys matching %s, which is a sample, not the family — probe a specific key with --signals to settle it",
@@ -208,20 +346,149 @@ func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *
 	return sig, nil
 }
 
+// metricApplicabilitySampleSize bounds how many keys are asked whether they
+// carry the scope's dimensions. Each probe scans nothing, but the query
+// budget is finite and the value probes above may already have spent eight of
+// it on this family alone.
+const metricApplicabilitySampleSize = 3
+
+// metricScopeApplicability asks whether any probed key of a family carries
+// any of the scope's fields as a dimension.
+//
+// Grouping by a dimension is the exact test and it is free: a metric without
+// that dimension returns the column typed "undefined" (verified live: 0
+// scanned bytes, ~150 ms), while a real dimension comes back with its own
+// type. It has to be a separate query from the value probe — a `filter:` that
+// matches nothing returns no rows and therefore no type information at all.
+//
+// Answering "yes" needs one key; answering "no" needs every probed key to
+// agree, so the count that was actually checked is returned for the evidence.
+func (b *budgetRunner) metricScopeApplicability(ctx context.Context, keys []string, opts DiscoverOptions, fields []string) (applicability, int, error) {
+	if len(fields) == 0 || len(keys) == 0 {
+		return applicabilityUnknown, 0, nil
+	}
+	if len(keys) > metricApplicabilitySampleSize {
+		keys = keys[:metricApplicabilitySampleSize]
+	}
+	quoted := make([]string, 0, len(fields))
+	for _, f := range fields {
+		quoted = append(quoted, quoteField(f))
+	}
+	by := strings.Join(quoted, ", ")
+
+	probed := 0
+	for _, key := range keys {
+		dql := fmt.Sprintf("timeseries n = count(%s), from:%s, by:{%s} | limit 1", key, opts.Since, by)
+		res, err := b.run(ctx, dql)
+		if err != nil {
+			if ctx.Err() != nil {
+				return applicabilityUnknown, probed, ctx.Err()
+			}
+			// Budget, syntax, or backend trouble: no verdict from this key.
+			// A partial "no" is not a "no", so stop rather than conclude.
+			return applicabilityUnknown, probed, nil
+		}
+		switch metricDimensionApplicability(res.ColumnTypes, fields) {
+		case applicabilityYes:
+			return applicabilityYes, probed + 1, nil
+		case applicabilityUnknown:
+			return applicabilityUnknown, probed, nil
+		}
+		probed++
+	}
+	return applicabilityNo, probed, nil
+}
+
 // emptyState distinguishes the two zero-match cases that matter. A stream that
 // holds records within retention but matched nothing for this scope is the
 // onboarding-failure signal; a stream that is empty tenant-wide is not about
 // this source at all.
-func emptyState(object string, facts discoveredFacts) (SignalState, string) {
-	rows, covered := facts.streamRows[object]
+func emptyState(object string, cov retentionCoverage) (SignalState, string) {
 	switch {
-	case covered && rows == 0:
-		return SignalNoData, object + " is in the catalog, but all its buckets are empty (0 records within retention)"
-	case covered:
-		return SignalEmpty, fmt.Sprintf("0 records matched in the window, but %s holds %d records within retention: the stream works, this scope is not producing into it", object, rows)
-	default:
+	case !cov.known:
 		return SignalEmpty, "0 records matched in the window (retention coverage for " + object + " is unknown, so tenant-wide liveness was not established)"
+	case cov.rows == 0:
+		// An empty backing is conclusive in this direction even when it is a
+		// superset: nothing can be in the view if nothing is in its buckets.
+		return SignalNoData, fmt.Sprintf("%s is in the catalog, but %s %s 0 records within retention", object, cov.source, cov.verb)
+	case cov.exact:
+		return SignalEmpty, fmt.Sprintf("0 records matched in the window, but %s %s %d records within retention: the stream works, this scope is not producing into it", cov.source, cov.verb, cov.rows)
+	default:
+		return SignalEmpty, fmt.Sprintf("0 records matched in the window; %s %s %d records within retention, but that is a superset of %s, so this object's own tenant-wide liveness was not established",
+			cov.source, cov.verb, cov.rows, object)
 	}
+}
+
+// retentionCoverage is how many records a data object holds within retention,
+// and how confident that figure is about the object itself.
+type retentionCoverage struct {
+	rows  int64
+	known bool
+	// exact is false when the count covers more than the object — a view's
+	// backing table, where a non-zero total says nothing about the view.
+	exact bool
+	// source names what was actually counted, for the evidence line, and
+	// verb agrees with it — "logs holds", but "its 3 buckets hold".
+	source string
+	verb   string
+}
+
+// retentionFor resolves a data object's retention coverage.
+//
+// dt.system.buckets keys records by table, so a view — dt.davis.problems,
+// dt.davis.events and dt.synthetic.events all are views over `events` — has
+// no entry of its own and would otherwise lose the empty/no-data
+// discrimination entirely. Resolution runs cheapest-and-most-precise first:
+// the object's own table, then the buckets the view declares (exact, because
+// those buckets are the view), then the table it fetches (a superset).
+func retentionFor(object string, facts discoveredFacts) retentionCoverage {
+	if rows, ok := facts.streamRows[object]; ok {
+		return retentionCoverage{rows: rows, known: true, exact: true, source: object, verb: "holds"}
+	}
+	if globs, ok := facts.viewBuckets[object]; ok && facts.bucketRows != nil {
+		var rows int64
+		var matched int
+		for name, n := range facts.bucketRows {
+			for _, g := range globs {
+				if globMatch(g, name) {
+					rows += n
+					matched++
+					break
+				}
+			}
+		}
+		if matched > 0 {
+			return retentionCoverage{
+				rows: rows, known: true, exact: true,
+				source: fmt.Sprintf("its %d %s", matched, plural(matched, "bucket")),
+				verb:   verbFor(matched),
+			}
+		}
+	}
+	if table, ok := facts.viewTable[object]; ok {
+		if rows, ok := facts.streamRows[table]; ok {
+			return retentionCoverage{
+				rows: rows, known: true, exact: false,
+				source: "its backing table " + table,
+				verb:   "holds",
+			}
+		}
+	}
+	return retentionCoverage{}
+}
+
+func verbFor(n int) string {
+	if n == 1 {
+		return "holds"
+	}
+	return "hold"
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 // applyFreshness turns a last-seen timestamp into live-or-stale. An
@@ -343,6 +610,8 @@ func Summarize(signals []Signal) *StateSummary {
 			sum.Empty++
 		case SignalNoData:
 			sum.NoData++
+		case SignalNotApplicable:
+			sum.NotApplicable++
 		case SignalAbsent:
 			sum.Absent++
 		case SignalUnknown:
@@ -350,6 +619,20 @@ func Summarize(signals []Signal) *StateSummary {
 		}
 	}
 	return sum
+}
+
+// SignalNames returns, sorted, the capability names windowed arrival mode can
+// probe. Callers use it to reject a misspelled signal name before a run
+// rather than after it, and to list the choices in the error.
+func SignalNames(defs map[string]*CapabilityDef) []string {
+	var out []string
+	for name, def := range defs {
+		if isSignalDef(def) {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // isSignalDef reports whether a capability definition describes a signal type

@@ -32,6 +32,8 @@ type (
 	Contributions         = sdkquery.Contributions
 	BucketContribution    = sdkquery.BucketContribution
 	QueryNotification     = sdkquery.Notification
+	ColumnTypes           = sdkquery.ColumnTypes
+	ColumnType            = sdkquery.ColumnType
 	AnalysisTimeframe     = sdkquery.AnalysisTimeframe
 	MetricInfo            = sdkquery.MetricInfo
 	DQLVerifyRequest      = sdkquery.VerifyRequest

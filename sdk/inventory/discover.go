@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,7 +18,16 @@ type RunResult struct {
 	Records   []map[string]interface{}
 	Seconds   float64
 	Truncated bool
+	// ColumnTypes maps a result column to its DQL type descriptor, merged
+	// across the response's index ranges. A column the query named but the
+	// data does not carry comes back as "undefined" — that is how a probe can
+	// tell "this dimension does not exist here" from "it exists and is empty".
+	ColumnTypes map[string]string
 }
+
+// TypeUndefined is the DQL type of a column the query referenced but the
+// underlying data has no such field for.
+const TypeUndefined = "undefined"
 
 // Runner executes DQL on the live environment. The cmd layer implements it
 // over the existing DQL executor (with scan caps); tests implement it over
@@ -40,15 +50,15 @@ type DiscoverOptions struct {
 
 	// Since switches discovery into windowed arrival mode: instead of the
 	// retention-scoped capability verdicts, report per-signal ingest state for
-	// Where's scope inside the window. It is a DQL timeframe expression
+	// Scope inside the window. It is a DQL timeframe expression
 	// ("now()-15m"), already normalized by the caller.
 	Since string
-	// Where is the DQL filter fragment scoping every windowed probe. Windowed
+	// Scope is the DQL filter fragment scoping every windowed probe. Windowed
 	// mode requires it: an unscoped windowed count is the single most
 	// expensive query in the battery (measured 204 GB on one tenant's logs),
 	// and the unscoped question is already answered for free by bucket
 	// metadata.
-	Where string
+	Scope string
 	// StaleAfter is the age past which a signal that did match is reported
 	// stale rather than live.
 	StaleAfter time.Duration
@@ -107,6 +117,17 @@ type discoveredFacts struct {
 	// empty holds no data within retention. Streams without bucket coverage
 	// are simply not in the map and keep their catalog verdict.
 	streamRows map[string]int64
+	// bucketRows is the same figure one level down (bucket name → records),
+	// needed because a view-shaped data object has no table of its own and
+	// can only be costed through the buckets it reads.
+	bucketRows map[string]int64
+	// viewBuckets maps a view-shaped data object to the bucket globs its
+	// catalog query_string names, so its retention coverage resolves as
+	// precisely as a table's rather than not at all.
+	viewBuckets map[string][]string
+	// viewTable maps a view-shaped data object to the table it fetches, the
+	// weaker fallback when the view names no buckets.
+	viewTable map[string]string
 	// The *Truncated flags mark a fact source that loaded but incompletely
 	// (result cap, scan limit): a hit in it still proves presence, but a miss
 	// proves nothing and must degrade to unknown, not absent.
@@ -149,7 +170,7 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 
 	// A hard error on the catalog aborts: without it nothing below is
 	// meaningful. Everything after degrades to a report note.
-	fetchable, queryOnly, objectsTruncated, err := br.dataObjectCatalog(ctx)
+	fetchable, queryOnly, viewQueries, objectsTruncated, err := br.dataObjectCatalog(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("data-object discovery failed: %w", err)
 	}
@@ -180,6 +201,24 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 		objects:          stringSet(append(append([]string{}, fetchable...), queryOnly...)),
 		objectsTruncated: objectsTruncated,
 		census:           map[string]int64{},
+		viewBuckets:      map[string][]string{},
+		viewTable:        map[string]string{},
+	}
+	for name, qs := range viewQueries {
+		buckets, table := viewBacking(qs)
+		if len(buckets) > 0 {
+			facts.viewBuckets[name] = buckets
+		}
+		if table != "" {
+			facts.viewTable[name] = table
+		}
+	}
+	// A definition may name its own buckets, for views the catalog describes
+	// without a query_string. An explicit declaration wins over inference.
+	for _, def := range defs {
+		if def != nil && def.DataObject != "" && len(def.BackingBuckets) > 0 {
+			facts.viewBuckets[def.DataObject] = def.BackingBuckets
+		}
 	}
 	if objectsTruncated {
 		report.Notes = append(report.Notes, "data-object catalog truncated — the object list is incomplete")
@@ -187,8 +226,10 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 
 	if res, err := br.run(ctx, "fetch dt.system.buckets | fields name, dt.system.table, records, has_access | sort name asc | limit 1000"); err == nil {
 		streamRows := map[string]int64{}
+		bucketRows := map[string]int64{}
 		for _, rec := range res.Records {
-			if name, ok := rec["name"].(string); ok && name != "" && !windowed {
+			name, _ := rec["name"].(string)
+			if name != "" && !windowed {
 				inv.Buckets = append(inv.Buckets, name)
 			}
 			// Inaccessible buckets report no usable record count — leaving them
@@ -197,8 +238,12 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 			if access, ok := rec["has_access"].(bool); ok && !access {
 				continue
 			}
+			records := asInt64(rec["records"])
+			if name != "" {
+				bucketRows[name] += records
+			}
 			if table, ok := rec["dt.system.table"].(string); ok && table != "" {
-				streamRows[table] += asInt64(rec["records"])
+				streamRows[table] += records
 			}
 		}
 		if res.Truncated {
@@ -206,6 +251,7 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 			report.Notes = append(report.Notes, "bucket list truncated — buckets are missing")
 		} else {
 			facts.streamRows = streamRows
+			facts.bucketRows = bucketRows
 		}
 	} else if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -263,7 +309,7 @@ func Discover(ctx context.Context, runner Runner, defs map[string]*CapabilityDef
 	if windowed {
 		inv.Window = &ArrivalWindow{
 			Since:      opts.Since,
-			Filter:     opts.Where,
+			Filter:     opts.Scope,
 			StaleAfter: roundDuration(opts.StaleAfter),
 		}
 		inv.Signals, err = br.evaluateSignals(ctx, defs, facts, opts)
@@ -440,17 +486,22 @@ func anyGlobMatch(pattern string, keys []string) bool {
 // support (the catalog's usable_with column). The catalog lists objects that
 // only work through other commands — advertising those as fetch targets bakes
 // in DATA_OBJECT_NOT_SUPPORTED failures for consumers.
-func (b *budgetRunner) dataObjectCatalog(ctx context.Context) (fetchable, queryOnly []string, truncated bool, err error) {
+// dataObjectCatalog reads the catalog. query_string comes along because it is
+// the only place a view's backing buckets are stated: a view is fetchable like
+// a table but owns no buckets, so without it every view loses its retention
+// coverage (see viewBacking).
+func (b *budgetRunner) dataObjectCatalog(ctx context.Context) (fetchable, queryOnly []string, views map[string]string, truncated bool, err error) {
 	res, err := b.run(ctx,
-		`fetch dt.system.data_objects | fieldsAdd fetchable = in("fetch", usable_with) | fields name, fetchable | sort name asc | limit 5000`)
+		`fetch dt.system.data_objects | fieldsAdd fetchable = in("fetch", usable_with) | fields name, fetchable, type, query_string | sort name asc | limit 5000`)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, nil, false, ctx.Err()
+			return nil, nil, nil, false, ctx.Err()
 		}
 		// Environments without usable_with fall back to the flat list.
 		names, truncated, ferr := b.stringColumn(ctx, "fetch dt.system.data_objects | fields name | sort name asc | limit 5000", "name")
-		return names, nil, truncated, ferr
+		return names, nil, nil, truncated, ferr
 	}
+	views = map[string]string{}
 	for _, rec := range res.Records {
 		name, _ := rec["name"].(string)
 		if name == "" {
@@ -461,8 +512,49 @@ func (b *budgetRunner) dataObjectCatalog(ctx context.Context) (fetchable, queryO
 		} else {
 			fetchable = append(fetchable, name)
 		}
+		if t, _ := rec["type"].(string); t == "view" {
+			if qs, _ := rec["query_string"].(string); qs != "" {
+				views[name] = qs
+			}
+		}
 	}
-	return fetchable, queryOnly, res.Truncated, nil
+	return fetchable, queryOnly, views, res.Truncated, nil
+}
+
+// viewBucketPattern captures the bucket list of a view's `fetch <table>,
+// bucket: {"a", "b*"}` clause. Views are the only catalog entries that carry a
+// query_string, and parsing just this one clause out of it is enough: the goal
+// is a retention figure, not a query planner.
+var viewBucketPattern = regexp.MustCompile(`bucket\s*:\s*\{([^}]*)\}`)
+
+// viewFetchPattern captures the table a view fetches, the coarser fallback
+// when it names no buckets.
+var viewFetchPattern = regexp.MustCompile(`(?m)^\s*fetch\s+([A-Za-z_][A-Za-z0-9_.]*)`)
+
+// viewQuoted pulls the individual quoted bucket names out of a bucket clause.
+var viewQuoted = regexp.MustCompile(`"([^"]+)"`)
+
+// viewBacking resolves a view's query_string to the buckets it reads, or
+// failing that the table it fetches.
+func viewBacking(queryString string) (buckets []string, table string) {
+	// Comments can carry an example `fetch`/`bucket:` that is not the query.
+	var body []string
+	for _, line := range strings.Split(queryString, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		body = append(body, line)
+	}
+	clean := strings.Join(body, "\n")
+	if m := viewBucketPattern.FindStringSubmatch(clean); m != nil {
+		for _, q := range viewQuoted.FindAllStringSubmatch(m[1], -1) {
+			buckets = append(buckets, q[1])
+		}
+	}
+	if m := viewFetchPattern.FindStringSubmatch(clean); m != nil {
+		table = m[1]
+	}
+	return buckets, table
 }
 
 func (b *budgetRunner) stringColumn(ctx context.Context, dql, column string) ([]string, bool, error) {
@@ -568,7 +660,12 @@ func allZeroTripwire(signals []Signal) string {
 	evaluated, empty := 0, 0
 	for _, s := range signals {
 		switch s.State {
-		case SignalUnknown, SignalAbsent:
+		// None of these say anything about whether the scope is valid, so
+		// none of them can weigh against the wrong-scope explanation. Leaving
+		// no-data in the denominator made the tripwire unfireable in
+		// practice: one stream that is empty tenant-wide — a tenant without
+		// synthetic monitoring, say — permanently suppressed the warning.
+		case SignalUnknown, SignalAbsent, SignalNoData, SignalNotApplicable:
 			continue
 		case SignalEmpty:
 			empty++
@@ -580,6 +677,6 @@ func allZeroTripwire(signals []Signal) string {
 	}
 	return "every signal matched 0 records while the streams hold data within retention — " +
 		"the scope is more likely wrong than every signal failing at once; check the field " +
-		"names and values in --where (dtctl cannot validate them: Grail does not expose the " +
+		"names and values in --scope (dtctl cannot validate them: Grail does not expose the " +
 		"dynamic attributes a filter may reference)"
 }

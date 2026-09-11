@@ -12,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
@@ -56,23 +58,9 @@ Examples:
   # Only your definitions, without the built-in set
   dtctl inventory --definitions ./our-capabilities.yaml --no-builtin-definitions
 
-  # Onboarding verification: is data arriving for this scope right now?
-  dtctl inventory --since 15m --where 'k8s.namespace.name == "payments"'
-
-  # Gate a pipeline on it (exit 1 if a required signal is not live)
-  dtctl inventory --since 10m --where 'service.name == "checkout"' --require logs,spans
-
-  # Confirm an ingest actually landed
-  dtctl inventory --since 5m --where 'log.source == "batch-import"' --require logs
-
-Windowed arrival mode (--since) reports a per-signal ingest state instead of the
-environment-wide capability verdicts, because those are retention-scoped: a stream
-that received data once last week is "present" but not arriving. States are live,
-stale (matched, but stopped inside the window), empty (stream is live tenant-wide
-but nothing matched this scope), no-data, absent, and unknown.
-
---since requires --where. An unscoped windowed count is the most expensive query in
-the battery, and the unscoped question is already answered for free without a window.
+These verdicts are retention-scoped: a stream that received data once last week
+reads as present. To ask whether data is arriving for one source right now — after
+an instrumentation change or an ingest — use 'dtctl inventory arrivals'.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, c, err := SetupClient()
@@ -80,90 +68,33 @@ the battery, and the unscoped question is already answered for free without a wi
 			return err
 		}
 
-		since, _ := cmd.Flags().GetString("since")
-		where, _ := cmd.Flags().GetString("where")
-		signals, _ := cmd.Flags().GetStringSlice("signals")
-		require, _ := cmd.Flags().GetStringSlice("require")
-		staleAfterFlag, _ := cmd.Flags().GetDuration("stale-after")
-
-		sinceExpr, windowLen, err := parseSinceFlag(since)
+		defs, err := inventoryDefinitions(cmd)
 		if err != nil {
 			return err
 		}
-		if sinceExpr != "" && strings.TrimSpace(where) == "" {
-			return fmt.Errorf("--since requires --where: an unscoped windowed count is the most expensive query available, and plain 'dtctl inventory' already answers the unscoped question for free")
-		}
-		if sinceExpr == "" && (strings.TrimSpace(where) != "" || len(signals) > 0 || len(require) > 0) {
-			return fmt.Errorf("--where, --signals, and --require apply to windowed arrival mode only: add --since <duration>")
-		}
-		staleAfter := staleAfterFlag
-		if staleAfter == 0 {
-			staleAfter = defaultStaleAfter(windowLen)
-		}
-		if windowLen > time.Hour {
-			fmt.Fprintf(os.Stderr, "warning: a %s window makes each probe scan proportionally more; probes cut short by the scan cap report as unknown, not absent — narrow --since if that happens\n", roundWindow(windowLen))
-		}
-
-		noBuiltin, _ := cmd.Flags().GetBool("no-builtin-definitions")
-		defFiles, _ := cmd.Flags().GetStringArray("definitions")
-		base := inventory.BuiltinDefinitions()
-		if noBuiltin {
-			base = map[string]*inventory.CapabilityDef{}
-		}
-		overlays := make([]*inventory.Definitions, 0, len(defFiles))
-		for _, f := range defFiles {
-			d, derr := loadDefinitionsFile(f)
-			if derr != nil {
-				return derr
-			}
-			overlays = append(overlays, d)
-		}
-		defs := inventory.MergeDefinitions(base, overlays...)
-
-		budgetQueries, _ := cmd.Flags().GetInt("budget-queries")
-		budgetSeconds, _ := cmd.Flags().GetFloat64("budget-seconds")
-		scanLimitGB, _ := cmd.Flags().GetFloat64("scan-limit-gbytes")
-
-		runner := &inventoryRunner{
-			executor:    NewDQLExecutorFromConfig(cfg, c),
-			scanLimitGB: scanLimitGB,
-		}
+		runner := newInventoryRunner(cmd, cfg, c)
 
 		// Segments come from the API, not DQL — fetched here, best-effort. A
 		// failure must stay distinguishable from "no segments exist".
 		var segs []inventory.SegmentInfo
 		var segNote string
-		if sinceExpr != "" {
-			// Windowed mode reports arrival state for one scope; the segment
-			// catalog is neither asked for nor consumed there.
-		} else if list, serr := segment.NewHandler(c).List(); serr == nil {
-			for _, s := range list.FilterSegments {
-				segs = append(segs, inventory.SegmentInfo{UID: s.UID, Name: s.Name, Description: s.Description})
+		if list, serr := segment.NewHandler(c).List(); serr == nil {
+			for _, sg := range list.FilterSegments {
+				segs = append(segs, inventory.SegmentInfo{UID: sg.UID, Name: sg.Name, Description: sg.Description})
 			}
 		} else {
 			segNote = fmt.Sprintf("segment discovery failed: %v — the segment list is unknown, not empty", serr)
 		}
 
-		// Cancel cleanly on Ctrl+C: discovery aborts, nothing is half-reported.
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := inventoryCancelContext()
 		defer cancel()
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-		defer signal.Stop(sigCh)
-		go func() {
-			<-sigCh
-			cancel()
-		}()
 
+		budgetQueries, budgetSeconds := inventoryBudget(cmd)
 		inv, err := inventory.Discover(ctx, runner, defs, inventory.DiscoverOptions{
 			ContextName:   cfg.CurrentContext,
 			Segments:      segs,
 			BudgetQueries: budgetQueries,
 			BudgetSeconds: budgetSeconds,
-			Since:         sinceExpr,
-			Where:         where,
-			StaleAfter:    staleAfter,
-			Signals:       signals,
 		})
 		if err != nil {
 			return err
@@ -173,23 +104,14 @@ the battery, and the unscoped question is already answered for free without a wi
 		}
 
 		if outputFormat == "table" && !agentMode {
-			if inv.Window != nil {
-				printInventorySignalsHuman(inv)
-			} else {
-				printInventoryHuman(inv)
-			}
-			exitForRequiredSignals(inv, require)
+			printInventoryHuman(inv)
 			return nil
 		}
 		printer := NewPrinter()
 		if ap := enrichAgent(printer, "inventory", ""); ap != nil {
 			ap.SetSuggestions(inventorySuggestions(inv))
 		}
-		if err := printer.Print(inv); err != nil {
-			return err
-		}
-		exitForRequiredSignals(inv, require)
-		return nil
+		return printer.Print(inv)
 	},
 }
 
@@ -242,10 +164,31 @@ func (r *inventoryRunner) RunQuery(ctx context.Context, dql string) (*inventory.
 		}
 	}
 	return &inventory.RunResult{
-		Records:   resp.GetRecords(),
-		Seconds:   time.Since(start).Seconds(),
-		Truncated: truncated,
+		Records:     resp.GetRecords(),
+		Seconds:     time.Since(start).Seconds(),
+		Truncated:   truncated,
+		ColumnTypes: flattenColumnTypes(resp.GetTypes()),
 	}, nil
+}
+
+// flattenColumnTypes merges the API's per-index-range type blocks into one
+// column→type map. Arrival probes use it to tell a field the data does not
+// have ("undefined") from one that exists and is empty, so a range that does
+// know a column's type must win over one that does not.
+func flattenColumnTypes(blocks []exec.ColumnTypes) map[string]string {
+	if len(blocks) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for _, b := range blocks {
+		for col, t := range b.Mappings {
+			if prev, ok := out[col]; ok && prev != inventory.TypeUndefined {
+				continue
+			}
+			out[col] = t.Type
+		}
+	}
+	return out
 }
 
 // printInventoryHuman renders the inventory for a terminal.
@@ -347,16 +290,67 @@ func topCensusTypes(census map[string]int64, n int) string {
 	return strings.Join(parts, " ")
 }
 
+// addInventoryDiscoveryFlags registers the flags every discovery run takes,
+// whichever question it is answering.
+func addInventoryDiscoveryFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArray("definitions", nil, "Capability-definitions file merged over the built-in set (repeatable, later files win)")
+	cmd.Flags().Bool("no-builtin-definitions", false, "Start from an empty capability set instead of the built-in one")
+	cmd.Flags().Int("budget-queries", 100, "Discovery budget: max queries")
+	cmd.Flags().Float64("budget-seconds", 300, "Discovery budget: max cumulative query seconds")
+	cmd.Flags().Float64("scan-limit-gbytes", 25, "Scan cap applied to every discovery probe")
+}
+
+// inventoryDefinitions builds the capability set a run evaluates.
+func inventoryDefinitions(cmd *cobra.Command) (map[string]*inventory.CapabilityDef, error) {
+	noBuiltin, _ := cmd.Flags().GetBool("no-builtin-definitions")
+	defFiles, _ := cmd.Flags().GetStringArray("definitions")
+	base := inventory.BuiltinDefinitions()
+	if noBuiltin {
+		base = map[string]*inventory.CapabilityDef{}
+	}
+	overlays := make([]*inventory.Definitions, 0, len(defFiles))
+	for _, f := range defFiles {
+		d, err := loadDefinitionsFile(f)
+		if err != nil {
+			return nil, err
+		}
+		overlays = append(overlays, d)
+	}
+	return inventory.MergeDefinitions(base, overlays...), nil
+}
+
+func inventoryBudget(cmd *cobra.Command) (int, float64) {
+	queries, _ := cmd.Flags().GetInt("budget-queries")
+	seconds, _ := cmd.Flags().GetFloat64("budget-seconds")
+	return queries, seconds
+}
+
+func newInventoryRunner(cmd *cobra.Command, cfg *config.Config, c *client.Client) *inventoryRunner {
+	scanLimitGB, _ := cmd.Flags().GetFloat64("scan-limit-gbytes")
+	return &inventoryRunner{
+		executor:    NewDQLExecutorFromConfig(cfg, c),
+		scanLimitGB: scanLimitGB,
+	}
+}
+
+// inventoryCancelContext cancels discovery cleanly on Ctrl+C, so a run aborts
+// rather than half-reporting.
+func inventoryCancelContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+	return ctx, func() {
+		signal.Stop(sigCh)
+		cancel()
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(inventoryCmd)
-	inventoryCmd.Flags().StringArray("definitions", nil, "Capability-definitions file merged over the built-in set (repeatable, later files win)")
-	inventoryCmd.Flags().Bool("no-builtin-definitions", false, "Start from an empty capability set instead of the built-in one")
-	inventoryCmd.Flags().Int("budget-queries", 100, "Discovery budget: max queries")
-	inventoryCmd.Flags().Float64("budget-seconds", 300, "Discovery budget: max cumulative query seconds")
-	inventoryCmd.Flags().Float64("scan-limit-gbytes", 25, "Scan cap applied to every discovery probe")
-	inventoryCmd.Flags().String("since", "", "Windowed arrival mode: report per-signal ingest state over this window (e.g. 15m, 1h). Requires --where")
-	inventoryCmd.Flags().String("where", "", "DQL filter fragment scoping every windowed probe (e.g. 'k8s.namespace.name == \"payments\"')")
-	inventoryCmd.Flags().StringSlice("signals", nil, "Restrict windowed probing to these signals (default: all signal streams and metric families)")
-	inventoryCmd.Flags().StringSlice("require", nil, "Exit non-zero unless every named signal is live (1 = not live, 2 = no verdict)")
-	inventoryCmd.Flags().Duration("stale-after", 0, "Age past which a matched signal is stale rather than live (default max(2m, window/3))")
+	addInventoryDiscoveryFlags(inventoryCmd)
+	inventoryCmd.AddCommand(inventoryArrivalsCmd)
 }

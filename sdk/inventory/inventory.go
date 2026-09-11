@@ -34,16 +34,25 @@ const (
 // Structural shapes (the first three) are preferred: they are cheap, and their
 // negatives are strong. Exactly one shape must be set.
 type CapabilityDef struct {
-	DataObject  string   `json:"dataObject,omitempty" yaml:"dataObject,omitempty"`
+	DataObject string `json:"dataObject,omitempty" yaml:"dataObject,omitempty"`
 	// TimeField names the record field carrying each record's event time, used
 	// only by windowed arrival probes to report last_seen. It defaults to
 	// "timestamp"; `spans` is the known exception (it carries start_time and no
 	// timestamp at all, so takeMax(timestamp) silently yields nothing there).
-	TimeField   string   `json:"timeField,omitempty" yaml:"timeField,omitempty"`
-	EntityTypes []string `json:"entityTypes,omitempty" yaml:"entityTypes,omitempty"`
-	MetricKey   string   `json:"metricKey,omitempty" yaml:"metricKey,omitempty"`
-	Probe       string   `json:"probe,omitempty" yaml:"probe,omitempty"`
-	Window      string   `json:"window,omitempty" yaml:"window,omitempty"`
+	TimeField string `json:"timeField,omitempty" yaml:"timeField,omitempty"`
+	// BackingBuckets names the Grail buckets a view-shaped dataObject reads,
+	// as glob patterns ("default_davis*"). It exists because retention
+	// coverage is only available per bucket: dt.system.buckets keys records by
+	// *table*, so a dataObject that is a view — dt.davis.problems and friends
+	// are views over `events` — never matches and loses the empty/no-data
+	// discrimination entirely. Most views declare their buckets in the
+	// catalog's query_string and are resolved automatically; this is the
+	// override for the ones that do not.
+	BackingBuckets []string `json:"backingBuckets,omitempty" yaml:"backingBuckets,omitempty"`
+	EntityTypes    []string `json:"entityTypes,omitempty" yaml:"entityTypes,omitempty"`
+	MetricKey      string   `json:"metricKey,omitempty" yaml:"metricKey,omitempty"`
+	Probe          string   `json:"probe,omitempty" yaml:"probe,omitempty"`
+	Window         string   `json:"window,omitempty" yaml:"window,omitempty"`
 }
 
 // Definitions is the on-disk customization format: a named set of capability
@@ -130,6 +139,12 @@ const (
 	SignalEmpty SignalState = "empty"
 	// SignalNoData: nothing matched and the stream is empty within retention.
 	SignalNoData SignalState = "no-data"
+	// SignalNotApplicable: nothing matched because the signal cannot carry
+	// this scope at all — none of the fields the scope names exist on it.
+	// There will never be RUM data under k8s.namespace.name, nor Kubernetes
+	// metrics under service.name, and reporting those as "empty" blames a
+	// source for a question that was never askable of it.
+	SignalNotApplicable SignalState = "n/a"
 	// SignalAbsent: the stream is not in this environment's catalog.
 	SignalAbsent SignalState = "absent"
 	// SignalUnknown: no verdict — the probe was truncated, capped, or failed.
@@ -161,12 +176,13 @@ type Signal struct {
 
 // StateSummary counts signals by state.
 type StateSummary struct {
-	Live    int `json:"live" yaml:"live"`
-	Stale   int `json:"stale" yaml:"stale"`
-	Empty   int `json:"empty" yaml:"empty"`
-	NoData  int `json:"noData" yaml:"noData"`
-	Absent  int `json:"absent" yaml:"absent"`
-	Unknown int `json:"unknown" yaml:"unknown"`
+	Live          int `json:"live" yaml:"live"`
+	Stale         int `json:"stale" yaml:"stale"`
+	Empty         int `json:"empty" yaml:"empty"`
+	NoData        int `json:"noData" yaml:"noData"`
+	NotApplicable int `json:"notApplicable" yaml:"notApplicable"`
+	Absent        int `json:"absent" yaml:"absent"`
+	Unknown       int `json:"unknown" yaml:"unknown"`
 }
 
 // Report is the consumption receipt of a discovery run.

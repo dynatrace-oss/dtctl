@@ -50,7 +50,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `ctx` - Quick context management (list, switch, describe, set, delete)
 - [x] `doctor` - Health check (config, context, token, connectivity, auth)
 - [x] `inventory` - Environment data inventory: fetchable data objects, buckets, entity census, capabilities present/absent with evidence; customizable via `--definitions`
-- [x] `inventory --since <window> --where <dql-filter>` - Onboarding verification: per-signal ingest state (live/stale/empty/no-data/absent/unknown) with counts and last-seen for one scope; `--require` turns it into a CI gate (see `docs/dev/ONBOARDING_VERIFICATION_DESIGN.md`)
+- [x] `inventory arrivals --scope <dql-filter>` - Onboarding verification: per-signal ingest state (live/stale/empty/no-data/n-a/absent/unknown) with counts and last-seen for one scope over a window (`--since`, default 15m); `--require` turns it into a CI gate (exit 10 not live, 11 no verdict) (see `docs/dev/ONBOARDING_VERIFICATION_DESIGN.md`)
 - [x] `commands` - Machine-readable command catalog (JSON/YAML, `--brief`, resource filter, `howto` subcommand)
 - [x] `skills` - AI agent skill file management (install, uninstall, status for Claude, Codex, Copilot, Cursor, Kiro, Junie, OpenCode, OpenClaw; cross-client via `--cross-client`)
 - [x] `plugin` - kubectl-style exec plugins: unknown commands dispatch to `dtctl-<name>` binaries on PATH (`plugin list`, catalog integration; see [PLUGIN_CONVENTIONS.md](PLUGIN_CONVENTIONS.md))

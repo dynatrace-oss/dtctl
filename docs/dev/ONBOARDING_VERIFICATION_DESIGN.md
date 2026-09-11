@@ -13,9 +13,9 @@ at the tenant, `dtctl ingest` a file — the next question is always the same:
 
 Today that question is answered either by an LLM investigation (minutes, non-deterministic)
 or by hand-authoring one DQL query per signal and knowing each stream's schema. This
-proposal makes it a single deterministic command by extending `dtctl inventory` with a
-**time window** and a **scope filter**, and by closing the confirmation gap that
-`dtctl ingest` is about to open.
+proposal makes it a single deterministic command — `dtctl inventory arrivals`, which adds
+a **time window** and a **scope filter** to the existing inventory machinery — and closes
+the confirmation gap that `dtctl ingest` is about to open.
 
 ## Goals
 
@@ -94,7 +94,7 @@ Three conclusions, each of which changes the design:
    count()` scans 203.7 GB — *more* than the filtered probe, despite referencing no columns.
    An unscoped windowed count must never run.
 3. **Metric arrival, and the retention metadata, are free.** `timeseries … filter:<expr>`
-   scopes metrics by the same `--where` predicate at 0 scanned bytes and 24 ms, and the
+   scopes metrics by the same `--scope` predicate at 0 scanned bytes and 24 ms, and the
    bucket-metadata query that backs the `empty` vs `no-data` distinction is likewise free.
    Metrics get a different probe than the `fetch` streams, and cost is a non-issue on either.
 
@@ -107,17 +107,20 @@ window and a mandatory scope.
 
 ## Design
 
-### `dtctl inventory --since <t> --where <dql-filter>`
+### `dtctl inventory arrivals --scope <dql-filter>`
 
 ```
---since <duration>             Windowed arrival mode, e.g. 15m or 2h. Requires a scope.
---where <dql-filter>           DQL filter fragment applied to each probed stream.
+--scope <dql-filter>           DQL filter fragment applied to each probed stream. Required.
+--since <duration>             Arrival window, e.g. 15m or 2h (default 15m).
 --signals <list>               Restrict probing to named capabilities (default: signal streams).
 --require <list>               Exit non-zero unless every named signal is live.
 --stale-after <duration>       Age past which a signal is stale, not live (default max(2m, window/3)).
 ```
 
-`--where` takes a **DQL filter expression**, inserted as `| filter <expr>` immediately after
+This is a **subcommand**, not a mode of `dtctl inventory` — see D1. The parent keeps its
+original shape and carries none of the windowed flags.
+
+`--scope` takes a **DQL filter expression**, inserted as `| filter <expr>` immediately after
 the fetch. It is not a new mini-language, not a key=value DSL, and not translated. This
 keeps faith with the "no second query language" constraint and means anything the user can
 express in DQL works on day one.
@@ -131,7 +134,7 @@ they are reported as evaluated-unwindowed rather than silently reinterpreted.
 Onboarding verification is inherently *"did **this new thing** arrive"*. Without a scope you
 are asking "is the tenant alive", which plain `inventory` already answers for free from
 bucket metadata. And per measurement 2, the unscoped windowed count is the single most
-expensive query in the battery. Requiring a scope — `--where`, `-S/--segment`, or both (see
+expensive query in the battery. Requiring a scope — `--scope`, `-S/--segment`, or both (see
 open question 5) — removes a 200 GB footgun and costs nothing in expressiveness.
 
 ### Distinguishing "no data" from "wrong filter"
@@ -153,6 +156,59 @@ all, in retention" without a window. Combining the two gives three distinguishab
 That third row is the one that actually matters after an instrumentation change, and it is
 reachable with zero extra queries.
 
+### Scope applicability — when the question was never askable
+
+A scope does not apply uniformly to every signal. `k8s.namespace.name` will never appear on
+RUM or synthetic events; `service.name` will never appear on Kubernetes or host metrics;
+Davis problems and security events carry neither unless something backend-side emits them
+for that scope. Grail does not complain about this: a `filter` on a field the stream does
+not have returns **zero records, no error, no notification**. Indistinguishable from a real
+onboarding failure.
+
+The consequence is not cosmetic. Under a namespace scope, `rum` came back as a confident
+`empty` — *"the stream works, this scope is not producing into it"* — which reads as an
+instrumentation problem to fix. And `--require rum` would exit non-zero forever on a signal
+that structurally cannot carry the scope. The all-zero tripwire does not catch it either: it
+fires only when *every* signal is empty, and here the k8s signals were live.
+
+So a zero match is not accepted at face value. It is disambiguated, and only ever after the
+cheaper explanations are ruled out:
+
+1. **No-data short-circuit.** If bucket metadata already says the stream holds nothing in
+   retention, the verdict is `no-data` and no applicability probe runs. Nothing to learn.
+2. **Field-existence probe**, per shape:
+   - **Streams** — `fetch <obj>, from:<window> | filter isNotNull(<f1>) or … | limit 1 |
+     summarize present = count()`. `isNotNull` over the scope's field names is the only
+     sound test here.
+   - **Metric families** — `timeseries n = count(<key>), from:<window>, by:{<f1>, …} |
+     limit 1`, read through the result's **type metadata**: a dimension the data does not
+     carry comes back typed `undefined`. Exact and zero-byte.
+3. **Quiet-window confirmation.** If the field probe finds nothing, a second near-free
+   `fetch <obj>, from:<window> | limit 1 | summarize any = count()` checks whether the
+   stream produced *anything at all* in the window. If it did not, the verdict is
+   `unknown`, never `n/a` — a quiet stream must not be reported as a missing field.
+
+Step 3 exists because step 2 alone conflates "the field is absent" with "the stream was
+idle". Without it, any stream that happened to be quiet for fifteen minutes would be
+declared structurally incapable of the scope.
+
+**The type trick does not transfer to streams.** `| limit 1 | fields x = <field>` looked
+like a cheaper test than `isNotNull`, and it is wrong: on a live tenant, `service.name` over
+`logs` types as `undefined` because stream result types are inferred from the *sampled
+record*, not from a schema. A record without the attribute is not evidence the attribute
+cannot exist. For `timeseries … by:{}` the grouping dimension is resolved against the metric
+definition, so there the same signal is sound.
+
+Cost is bounded: the probes run only for signals that matched nothing and hold data, at most
+two extra queries each, and the metric variant is free. The worst case measured — a scope
+where every signal came back empty — was 69 queries / 29.9 s.
+
+Scope fields are extracted by lexing the expression: backtick-quoted identifiers first, then
+string literals blanked out so their contents cannot be mistaken for fields, then bare
+dotted identifiers that are neither DQL keywords nor followed by `(`. A scope naming no
+fields at all — `--scope true` — yields no applicability verdict and everything behaves as
+before.
+
 ### Per-stream time field
 
 `fetch spans` carries **no `timestamp` field** — verified: `takeMax(timestamp)` on spans
@@ -166,8 +222,8 @@ so the exactly-one-shape contract in `validateDef` is untouched.
 ### Per-signal ingest state
 
 The three-state capability verdict (`present` / `absent` / `unknown`) is too coarse once a
-window exists. Windowed mode assigns each signal type one of six states, derived from the
-windowed probe plus the free bucket metadata:
+window exists. `arrivals` assigns each signal type one of seven states, derived from the
+windowed probe plus the free bucket metadata and, for a zero match, an applicability probe:
 
 | State | Condition | Means |
 |---|---|---|
@@ -175,6 +231,7 @@ windowed probe plus the free bucket metadata:
 | `stale` | `matched > 0`, `last_seen` older than `--stale-after` | **Started, then stopped inside the window** |
 | `empty` | `matched == 0`, stream holds records in retention | Stream works; this source is not producing into it |
 | `no-data` | `matched == 0`, stream empty in retention | Stream exists but is unused on this tenant |
+| `n/a` | `matched == 0`, and no field the scope names exists on this signal | **The question was never askable of this source** — see "Scope applicability" |
 | `absent` | Stream not in the data-object catalog | Not available in this environment |
 | `unknown` | Probe truncated, scan-capped, or errored | No verdict — never read as absence |
 
@@ -183,8 +240,9 @@ diagnostic one for onboarding: a source that emitted during rollout and then sto
 identical to a healthy one under any retention-scoped check. Default `--stale-after` is
 `max(2m, window/3)`.
 
-For `--require` purposes `live` passes; `stale`, `empty`, `no-data`, and `absent` fail;
-`unknown` exits 2.
+For `--require` purposes `live` passes; `stale`, `empty`, `no-data`, `n/a`, and `absent`
+fail; `unknown` and an unprobed name exit 11. A required `n/a` signal is reported as a gate
+that *can never pass* rather than as a telemetry failure.
 
 ### Exit codes
 
@@ -192,13 +250,18 @@ Plain `dtctl inventory` keeps exit code 0 always — no behaviour change. `--req
 to gate semantics, matching the `verify` family's conventions:
 
 ```
-0 - every required signal present
-1 - at least one required signal absent
-2 - at least one required signal unknown (no verdict — retry or widen the budget)
+ 0 - every required signal live
+10 - at least one required signal is not live (stale, empty, no-data, n/a, absent)
+11 - at least one required signal is unknown (no verdict — retry or widen the budget)
 ```
 
-`unknown` deliberately does not collapse into `absent`: a CI gate that fails closed on a
+`unknown` deliberately does not collapse into "not live": a CI gate that fails closed on a
 scan-capped probe is reporting a dtctl budget problem as a customer telemetry problem.
+
+Exit **1** is left to cobra and to ordinary command failure — a mistyped flag, an auth
+error, an unparseable scope. Overloading it with a gate result would make a usage error
+indistinguishable from a genuine telemetry verdict, which is exactly the confusion a CI
+gate must not have. Hence the gate codes start at 10.
 
 ---
 
@@ -210,14 +273,14 @@ Every number below is real: measured on the `gmg` tenant, 2026-09-11, with the p
 this document specifies.
 
 ```console
-$ dtctl inventory --since 15m --where 'k8s.namespace.name == "dps-ingest"'
+$ dtctl inventory arrivals --since 15m --scope 'k8s.namespace.name == "dps-ingest"'
 
 Context:    gmg
 Generated:  2026-09-11T06:25:00Z
 Window:     now()-15m → now()  (15m, stale after 5m)
 Scope:      k8s.namespace.name == "dps-ingest"
 
-SIGNAL             STATE     RECORDS    LAST SEEN   AGE
+SIGNAL             STATE      VOLUME    LAST SEEN   AGE
 spans              live    3,630,872    06:22:53    19s
 logs               live      237,194    06:22:32    39s
 events             live        7,434    06:22:46    28s
@@ -246,14 +309,14 @@ bucket metadata `inventory` already collects for free.
 ### 2. The false-healthy case this exists to prevent
 
 ```console
-$ dtctl inventory --where 'service.name == "pricing-service"'
+$ dtctl inventory
 Capabilities: logs, spans, bizevents        # ← retention-scoped: "yes, sometime in 35 days"
 ```
 
 ```console
-$ dtctl inventory --since 30m --where 'service.name == "pricing-service"'
+$ dtctl inventory arrivals --since 30m --scope 'service.name == "pricing-service"'
 
-SIGNAL      STATE    RECORDS   LAST SEEN   AGE
+SIGNAL      STATE     VOLUME   LAST SEEN   AGE
 logs        stale     12,904    05:58:11   27m
 spans       stale      3,551    05:58:09   27m
 bizevents   empty          0           —    —
@@ -273,15 +336,15 @@ during a deploy, reads as perfectly healthy without a window.
 ### 3. As a CI / agent gate
 
 ```console
-$ dtctl inventory --since 10m \
-    --where 'k8s.namespace.name == "payments"' \
+$ dtctl inventory arrivals --since 10m \
+    --scope 'k8s.namespace.name == "payments"' \
     --require logs,spans
 $ echo $?
 0
 ```
 
 ```console
-$ dtctl inventory --since 10m --where 'service.name == "checkout"' --require logs,spans,bizevents
+$ dtctl inventory arrivals --since 10m --scope 'service.name == "checkout"' --require logs,spans,bizevents
 ...
 $ echo $?
 1        # bizevents absent
@@ -290,7 +353,7 @@ $ echo $?
 ### 4. Agent mode
 
 ```console
-$ dtctl inventory --since 15m --where 'k8s.namespace.name == "payments"' --agent
+$ dtctl inventory arrivals --since 15m --scope 'k8s.namespace.name == "payments"' --agent
 ```
 
 ```json
@@ -300,7 +363,7 @@ $ dtctl inventory --since 15m --where 'k8s.namespace.name == "payments"' --agent
     "context": "prod-eu",
     "generatedAt": "2026-09-11T09:14:22Z",
     "window": { "since": "now()-15m", "filter": "k8s.namespace.name == \"payments\"" },
-    "summary": { "live": 6, "stale": 0, "empty": 1, "noData": 0, "absent": 1, "unknown": 0 },
+    "summary": { "live": 6, "stale": 0, "empty": 1, "noData": 0, "notApplicable": 0, "absent": 1, "unknown": 0 },
     "signals": [
       { "signal": "spans",           "state": "live",   "records": 3630872, "lastSeen": "2026-09-11T06:22:53Z", "ageSeconds": 19 },
       { "signal": "logs",            "state": "live",   "records": 237194,  "lastSeen": "2026-09-11T06:22:32Z", "ageSeconds": 39 },
@@ -338,7 +401,7 @@ accepted-line counts at all), so `202` is not confirmation. The documented recip
 $ dtctl ingest logs -f payload.json
 202 Accepted
 
-$ dtctl inventory --since 5m --where 'log.source == "batch-import"' --require logs
+$ dtctl inventory arrivals --since 5m --scope 'log.source == "batch-import"' --require logs
 $ echo $?
 0
 ```
@@ -353,7 +416,7 @@ $ dtctl wait query 'fetch logs | filter log.source == "batch-import"' \
 ### 6. An unknown is not an absence
 
 ```console
-$ dtctl inventory --since 1h --where 'k8s.namespace.name == "payments"'
+$ dtctl inventory arrivals --since 1h --scope 'k8s.namespace.name == "payments"'
 
 Unknown (no verdict — not evidence of absence)
   logs — probe exceeded the 25 GB scan cap (1h window ≈ 43 GB on this stream);
@@ -363,29 +426,42 @@ Discovery: 6 queries, 12.1s query time
   note: 1 probe refused by the scan cap — the inventory is partial
 ```
 
-Exit code with `--require logs` would be **2**, not 1: dtctl ran out of budget, the customer's
+Exit code with `--require logs` would be **11**, not 10: dtctl ran out of budget, the customer's
 telemetry is not implicated.
 
 ---
 
 ## Decision log
 
-- **D1 — Extend `inventory`, do not add a verb.** The evidence machinery, the budget, the
-  three-state verdict, and the agent envelope all already exist. `verify` is the wrong home:
-  in dtctl it means "validate without executing", and this executes.
-- **D2 — `--where` is a DQL filter fragment.** No key=value DSL, no `--service`. Upholds the
-  no-second-query-language constraint and works with any field on day one.
+- **D1 — Extend `inventory`, do not add a verb; windowed mode is a *subcommand*.** The
+  evidence machinery, the budget, the verdict model, and the agent envelope all already
+  exist, and `verify` is the wrong home: in dtctl it means "validate without executing", and
+  this executes. But **revised after review**: windowed mode is
+  `dtctl inventory arrivals`, not a flag on `dtctl inventory`. Four things had already made
+  it a separate command in all but name — two mutually exclusive flag sets, two disjoint
+  output schemas (`Capabilities`/`Absent`/`Unknown` versus `Signals`/`Window`/`Summary`),
+  a separate renderer, and an exit-code contract that exists in only one of the two modes.
+  A flag that suppresses most of a command's output and replaces the rest is a subcommand
+  wearing a disguise; naming it one makes the help text, the flag validation, and the
+  scope-required rule all fall out for free.
+- **D2 — `--scope` is a DQL filter fragment.** No key=value DSL, no `--service`. Upholds the
+  no-second-query-language constraint and works with any field on day one. Named `--scope`,
+  not `--where`, after review: `--where` sets up a SQL expectation the flag does not meet
+  (it is a fragment, not a clause, and it is applied to *every* probed stream rather than to
+  one query), and "scope" is already the word this design uses throughout for the thing
+  being verified.
 - **D3 — Filter-first probe shape; never `countIf`.** Measured 19× cheaper on logs, 48× on
   spans. Forfeits the single-query "live but unmatched" signal, which D4 recovers for free.
-- **D4 — `--since` requires a scope** (`--where` or `-S/--segment`). The unscoped windowed count is the most expensive
-  query available (203.7 GB measured), and bucket metadata already answers the unscoped
-  question at no cost.
+- **D4 — `arrivals` requires a scope** (`--scope` or, later, `-S/--segment`). The unscoped
+  windowed count is the most expensive query available (203.7 GB measured), and bucket
+  metadata already answers the unscoped question at no cost. `--since` now defaults to `15m`
+  rather than being the mode switch — with a subcommand there is no mode to switch.
 - **D5 — Per-stream `timeField` on `CapabilityDef`** (default `timestamp`, `spans` →
   `start_time`). Verified necessary: spans carry no `timestamp`. An optional attribute, not a
   new discovery shape — `validateDef`'s exactly-one-shape contract is untouched.
-- **D6 — Metrics are probed with `timeseries … , filter:<where>`, not `fetch`, over a bounded
+- **D6 — Metrics are probed with `timeseries … , filter:<scope>`, not `fetch`, over a bounded
   sample of the family's keys.** Measured **0 scanned bytes / ~25 ms** per probe while
-  honouring the same `--where` scope. Two constraints found during implementation, both
+  honouring the same scope. Two constraints found during implementation, both
   verified on a live tenant:
   - **The keys cannot be combined into one query.** A multi-aggregation
     `timeseries a = count(k1), b = count(k2), …` returns *no rows at all* when any single key
@@ -410,6 +486,19 @@ telemetry is not implicated.
   `ingest --wait-for '<dql-filter>'` — where the *user* supplies the discriminator — stays
   compatible with pass-through and can be added without rework.
 - **D11 — New `arrivals` block on `Inventory`.** Additive; existing consumers unaffected.
+- **D12 — A zero match is disambiguated, not reported.** The `n/a` state and the two-step
+  applicability probe above. The alternative — a static table of which scope fields apply to
+  which signal — was rejected: it would be wrong the moment a customer adds an attribute,
+  and it cannot be derived from any catalog surface (open question 4).
+- **D13 — Signal names are validated before the battery runs.** `--signals` and `--require`
+  are checked against the definition set up front, and `--require` outside `--signals` is
+  rejected. Previously a typo in `--require` ran the full battery and then exited as though
+  the signal were down, which is the most expensive possible way to report a typo.
+- **D14 — A scope that does not parse is a usage error, not a per-signal `unknown`.** DQL
+  parse notifications are detected and surfaced once, with the offending scope quoted,
+  instead of costing the whole battery and yielding N identical failures.
+- **D15 — Gate exit codes start at 10.** Exit 1 stays cobra's, so a usage error is never
+  mistaken for a telemetry verdict.
 
 ## Open questions — with recommendations
 
@@ -496,7 +585,7 @@ scope by. **Do not build it.**
    running the battery. It catches typos and malformed DQL; it will not catch unknown fields,
    and the docs should say so.
 2. **All-zero tripwire.** If *every* probed signal returns 0 while the streams themselves hold
-   records in retention, that is far more likely a wrong `--where` than a source that failed
+   records in retention, that is far more likely a wrong `--scope` than a source that failed
    on every signal at once. Emit a warning saying so rather than a confident all-absent
    verdict. Costs no extra query — both facts are already in hand.
 
@@ -504,14 +593,14 @@ This does not fully close the gap, and the doc should be honest that it does not
 
 ### 5. Segment interaction — recommend composing, and let `-S` satisfy the scope requirement
 
-**Not implemented in the first PR** — `--where` only. Segment name-to-UID resolution lives in
+**Not implemented in the first PR** — `--scope` only. Segment name-to-UID resolution lives in
 `cmd/query.go`, and wiring it into `inventory` is a separate change.
 
-**Recommendation for the follow-up:** `-S/--segment` and `--where` compose with AND. They are
+**Recommendation for the follow-up:** `-S/--segment` and `--scope` compose with AND. They are
 both filters, and a segment is simply the reusable, governed form of the same idea.
 
-Consequently, restate D4 as *`--since` requires **a scope***, satisfied by `--where`, by
-`-S`, or by both. Demanding a redundant `--where` next to an existing segment would be
+Consequently, restate D4 as *`arrivals` requires **a scope***, satisfied by `--scope`, by
+`-S`, or by both. Demanding a redundant `--scope` next to an existing segment would be
 busywork, and the cost argument that motivates D4 is satisfied either way.
 
 ## Implementation sketch
@@ -520,16 +609,17 @@ busywork, and the cost argument that motivates D4 is satisfied either way.
 |---|---|
 | `pkg/exec/dql.go` | **Prerequisite bug fix** (open question 2): `classifyNotification` must map `FETCH_EXEC_TIME_LIMIT` → `notifTimeout`, else truncated probes are read as complete |
 | `sdk/inventory/inventory.go` | `SignalState` enum + `Signal` type; `Signals []Signal`, `Summary`, `Window` on `Inventory`; `TimeField` on `CapabilityDef` |
-| `sdk/inventory/discover.go` | `DiscoverOptions.Since` / `.Where` / `.StaleAfter`; windowed branch in `evaluateCapabilities` emitting filter-first probes; state derivation from windowed count + `facts.streamRows` |
+| `sdk/inventory/discover.go` | `DiscoverOptions.Since` / `.Scope` / `.StaleAfter`; windowed branch in `evaluateCapabilities` emitting filter-first probes; state derivation from windowed count + `facts.streamRows` |
 | `sdk/inventory/definitions.go` | `timeField` parse + `spans: start_time` in `BuiltinDefinitions` |
-| `cmd/inventory.go` | `--since`, `--where`, `--signals`, `--require`, `--stale-after`; mutual-requirement validation; signal-state table in `printInventoryHuman`; exit-code mapping |
+| `cmd/inventory.go` | `--since`, `--scope`, `--signals`, `--require`, `--stale-after`; mutual-requirement validation; signal-state table in `printInventoryHuman`; exit-code mapping |
 | `docs/` | Onboarding-verification recipe; `ingest` → verify pairing |
 
 **Tests**
-- SDK: fixture-driven `Runner` covering each of the six signal states, including the
-  `empty` vs `no-data` split and the `live`/`stale` boundary at `--stale-after`; truncated
-  probe → `unknown`; `--since` without `--where` rejected; `spans` uses `start_time`.
-- cmd: flag validation, exit-code mapping (0/1/2), human and `--agent` golden output.
+- SDK: fixture-driven `Runner` covering each signal state, including the `empty` vs
+  `no-data` split, the `n/a` applicability path, and the `live`/`stale` boundary at
+  `--stale-after`; truncated probe → `unknown`; a missing `--scope` rejected; `spans` and
+  `rum` use `start_time`.
+- cmd: flag validation, exit-code mapping (0/10/11), human and `--agent` golden output.
 - Integration (not run in CI, Grail-only tenant per repo convention): probe shapes execute and
   return the expected columns on `logs`, `spans`, `bizevents`, `metrics`.
 
@@ -539,20 +629,62 @@ busywork, and the cost argument that motivates D4 is satisfied either way.
 
 | Area | What landed |
 |---|---|
-| `pkg/exec/dql.go` | Prerequisite fix: `FETCH_EXEC_TIME_LIMIT` → `notifTimeout`, plus an `"internal time limit"` message fallback |
-| `sdk/inventory/inventory.go` | `SignalState`, `Signal`, `ArrivalWindow`, `StateSummary`; `TimeField` on `CapabilityDef` |
-| `sdk/inventory/arrivals.go` | Windowed probing, state derivation, metric-family sampling, the all-zero tripwire |
-| `sdk/inventory/discover.go` | `Since`/`Where`/`StaleAfter`/`Signals` options; windowed branch; metric-catalog truncation by row count |
-| `sdk/inventory/definitions.go` | `spans` → `start_time`; `timeField` validation |
-| `cmd/inventory.go`, `cmd/inventory_signals.go` | Flags, the `--since`/`--where` mutual requirement, the signal table, `--require` exit codes, result-specific agent suggestions |
+| `pkg/exec/dql.go` | Prerequisite fix: `FETCH_EXEC_TIME_LIMIT` → `notifTimeout`, plus an `"internal time limit"` message fallback. Re-exports `ColumnTypes`/`ColumnType` so result type metadata reaches the SDK |
+| `sdk/inventory/inventory.go` | `SignalState` (7 states), `Signal`, `ArrivalWindow`, `StateSummary`; `TimeField` and `BackingBuckets` on `CapabilityDef` |
+| `sdk/inventory/scope.go` | Scope-field lexing, `isNotNull` predicate assembly, metric-dimension applicability from result types, `n/a` evidence |
+| `sdk/inventory/arrivals.go` | Windowed probing, state derivation, metric-family sampling, retention coverage through views, the applicability probes, scope-syntax-error detection, the all-zero tripwire |
+| `sdk/inventory/discover.go` | `Since`/`Scope`/`StaleAfter`/`Signals` options; `RunResult.ColumnTypes`; view→bucket/table resolution from the catalog's `query_string` |
+| `sdk/inventory/definitions.go` | `spans`/`rum` → `start_time`; Davis `backingBuckets`; `timeField` and `backingBuckets` validation |
+| `cmd/inventory.go` | Parent command reduced to its original shape; shared discovery flags, definition loading, budget, and runner construction extracted for both commands |
+| `cmd/inventory_signals.go` | The `arrivals` subcommand: flags, up-front signal-name validation, the signal table, exit codes 10/11, result-specific agent suggestions |
+| `pkg/auth/resource_scopes.go` | `arrivals` → query scopes |
 
 **Deferred:** `-S/--segment` composition (open question 5).
 
-**Verified against a live tenant.** A 15m window scoped to one Kubernetes namespace: 8 signals
-live, 3 empty, 2 unknown, in 31 queries / 13.8 s. Restricted with `--signals logs,spans` it
-runs in 4 queries / 1.8 s. `--require` exited 0 with both signals live and 1 with an empty
-signal required.
+### Three defects the review found, all verified on a live tenant
 
-Two defects the live run caught that no unit test would have: the metric-family false `empty`
+- **`rum` had the same missing-`timeField` defect the design fixed for `spans`.**
+  `describe user.events` lists `start_time`; `takeMax(timestamp)` over 1,005,336 records
+  returns type `undefined`. RUM could therefore only ever report `live` with no age, and
+  never `stale` — the one state this feature exists to surface. The other seven streams were
+  each checked and do carry `timestamp`.
+- **Retention coverage never resolved for views.** `facts.streamRows` is keyed by bucket
+  *table*, but `dt.davis.problems`, `dt.davis.events`, and `dt.synthetic.events` are **views
+  over `events`**, so the lookup always missed and those three permanently reported
+  "retention coverage unknown" — losing the `empty` vs `no-data` split exactly where
+  onboarding questions are asked. Fixed by resolving a view's buckets from the catalog's
+  `query_string`, with `backingBuckets` as the declarative override for views that do not
+  declare them.
+- **The all-zero tripwire could not fire.** It counted `no-data` signals as "evaluated and
+  not empty", so any tenant with one unused stream disarmed it. `no-data`, `absent`,
+  `unknown`, and `n/a` are now all excluded from the evaluated set.
+
+### Live verification
+
+Two runs on the same tenant, same 15m window, different namespaces.
+
+A namespace with no data — the worst case, since every signal triggers an applicability
+probe: 7 `empty`, 4 `n/a`, 2 `unknown`, in 69 queries / 29.9 s. `rum`, `synthetic`,
+`host-metrics`, and `aws-cloudwatch` correctly reported `n/a` with evidence naming the
+field, where previously all four read as `empty`.
+
+A busy namespace: 7 `live`, 1 `empty`, 4 `n/a`, 1 `unknown`, in 43 queries / 20.6 s. Davis
+now resolves retention through its buckets (3,835,197,090 records), so its zero match is a
+substantiated `empty` rather than an unknown.
+
+Earlier runs caught two defects no unit test would have: the metric-family false `empty`
 described in D6, and timeseries bucket timestamps landing in the future (a bucket is stamped
 with its end, so the current one is ahead of `now`; it is clamped).
+
+### Smaller UX changes from the review
+
+- `--where` → `--scope` (D2).
+- `--signals` / `--require` names validated before the battery runs (D13).
+- A scope that does not parse fails once, as a usage error, quoting the scope (D14).
+- Gate exit codes moved to 10/11 so exit 1 stays cobra's (D15).
+- `--require` on an unprobed signal is `unknown` (11), not "not live" (10).
+- `--require` on an `n/a` signal says the gate can never pass, rather than blaming the source.
+- The table's `RECORDS` header is now `VOLUME`: the column also carries metric datapoints
+  ("391 pts"), which are not records.
+- `--since` defaults to `15m` instead of being the mode switch.
+- The `--scope true` escape hatch is documented in the long help, alongside the seven states.
