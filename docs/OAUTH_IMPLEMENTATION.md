@@ -130,6 +130,34 @@ Scopes vary by safety level (see `pkg/auth/oauth_flow.go` → `GetScopesForSafet
 
 Additional scopes (storage, automation, settings, IAM, etc.) are added based on the safety level chosen at login. See [TOKEN_SCOPES.md](TOKEN_SCOPES.md) for the full per-level breakdown.
 
+## Client Credentials Grant (Non-Interactive)
+
+`auth login` switches from the authorization code flow to the OAuth 2.0 client
+credentials grant ([RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4))
+when a client ID and secret are supplied, via `--client-id`/`--client-secret` or
+`DTCTL_CLIENT_ID`/`DTCTL_CLIENT_SECRET`. This exists for CI/CD and other headless
+contexts, where there is no browser to redirect to and no user to consent.
+
+Differences from the interactive flow:
+
+- No callback server, no PKCE, no state parameter — there is no redirect.
+- No user info lookup: the grant authenticates the application, not a person.
+- **No refresh token.** RFC 6749 §4.4.3 says one SHOULD NOT be issued, because a
+  client holding its own credentials can simply request another access token.
+  Re-run `auth login` rather than calling `RefreshToken`.
+- Scopes default to those already granted to the OAuth client. `--scopes`
+  narrows the request; the token endpoint may still return fewer scopes than
+  asked for, so callers should read `TokenSet.Scope` rather than assume.
+- `DTCTL_ACCOUNT_URN` is sent as an [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707)
+  resource indicator (`urn:dtaccount:<uuid>`).
+
+Implemented by `session.(*OAuthFlow).ClientCredentials` in
+`sdk/session/oauth_flow.go`, re-exported through `pkg/auth`.
+
+Headless machines usually have no keyring, so `DTCTL_TOKEN_STORAGE=file` is
+normally required alongside the credentials for the resulting token to be
+storable.
+
 ## Dependencies Added
 
 - `github.com/pkg/browser` - For opening browser automatically
