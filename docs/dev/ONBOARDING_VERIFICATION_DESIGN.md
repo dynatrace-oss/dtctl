@@ -695,7 +695,9 @@ busywork, and the cost argument that motivates D4 is satisfied either way.
 | `sdk/inventory/discover.go` | `Since`/`Scope`/`StaleAfter`/`Signals` options; `RunResult.ColumnTypes`; view→bucket/table resolution from the catalog's `query_string` |
 | `sdk/inventory/definitions.go` | `spans`/`rum` → `start_time`; Davis `backingBuckets`; `timeField` and `backingBuckets` validation |
 | `cmd/inventory.go` | Parent command reduced to its original shape; shared discovery flags, definition loading, budget, and runner construction extracted for both commands |
-| `cmd/inventory_signals.go` | The `arrivals` subcommand: flags, up-front signal-name validation, the signal table, exit codes 10/11, result-specific agent suggestions |
+| `sdk/inventory/runner.go` | The Runner author's half of the contract: `ColumnTypesOf`, `TruncationCauseOf`, `FirstTruncationCause`, `NormalizeSince`, `DefaultStaleAfter` |
+| `sdk/inventory/require.go` | `CheckRequired`/`RequireVerdict`, `ValidateSignalNames`, and the exit-code contract |
+| `cmd/inventory_signals.go` | The `arrivals` subcommand: flags, the signal table, rendering, result-specific agent suggestions — all decisions delegated to the SDK |
 | `pkg/auth/resource_scopes.go` | `arrivals` → query scopes |
 
 **Deferred:** `-S/--segment` composition (open question 5).
@@ -745,6 +747,57 @@ normally carries a field happens not to during the window.
 Earlier runs caught two defects no unit test would have: the metric-family false `empty`
 described in D6, and timeseries bucket timestamps landing in the future (a bucket is stamped
 with its end, so the current one is ahead of `now`; it is clamped).
+
+### The SDK seam
+
+`sdk/inventory` advertises itself as execution-agnostic — any DQL executor can
+embed discovery through the `Runner` interface. That held for the retention-scoped
+path and **did not hold for arrivals**: driving it from outside `cmd/` meant
+reimplementing six helpers, two of which are correctness-critical and fail
+silently.
+
+`RunResult.ColumnTypes` is the sharp one. It is what separates `n/a` from
+`empty` for a metric family, and a Runner that leaves it nil does not get an
+error — it gets the wrong verdict. Measured on the `n/a` fixture, identical in
+every respect except the omitted field:
+
+| ColumnTypes | Verdict |
+|---|---|
+| populated | `n/a` — *"k8s.namespace.name is not a dimension of dt.host.*"* |
+| omitted | `empty` — *"all 1 keys matching dt.host.\* exist but reported no datapoints for this scope"* |
+
+The second line is the confident false-blame this whole feature exists to
+delete, reintroduced by an embedder who simply did not know the obligation
+existed. So the SDK now performs the translation instead of documenting it:
+
+| Correctness | |
+|---|---|
+| `ColumnTypesOf` | flattens the API's per-index-range type blocks (a known type beats `undefined`) |
+| `TruncationCauseOf` / `FirstTruncationCause` | classifies which limit cut a result short |
+
+| Convenience | |
+|---|---|
+| `NormalizeSince` | `"15m"` → `"now()-15m"` plus the window length |
+| `DefaultStaleAfter` | `max(2m, window/3)` |
+| `ValidateSignalNames` | rejects typos and unprobeable requirements before the battery runs |
+| `CheckRequired` → `RequireVerdict` | the gate decision, with `ExitCode()` and `Messages` |
+| `ExitRequiredSignalNotLive` / `…Unknown` | the exit contract, 10 and 11 |
+
+`cmd/` delegates to all of them and keeps only flag wiring, rendering, and agent
+suggestions.
+
+This also dissolved a seam the scan-cap work had to guard by hand: the cause
+classification used to take a `pkg/exec` notification class and map it onto the
+SDK enum by matching string values **across two Go modules**, with a test as the
+only thing holding them together. `TruncationCauseOf` takes `query.Notification`
+directly — the types now live in the same module, so there is nothing left to
+drift.
+
+**D18 — the Runner contract is discharged by helpers, not by documentation.** A
+rule that must be followed to avoid a silent wrong answer is a design defect,
+not a documentation gap. Where the obligation could not be removed outright, a
+test pins the degradation so that if it ever becomes detectable, that is noticed
+rather than absorbed.
 
 ### Smaller UX changes from the review
 
