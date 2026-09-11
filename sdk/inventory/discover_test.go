@@ -12,6 +12,10 @@ type mockResponse struct {
 	records   []map[string]interface{}
 	truncated bool
 	err       error
+	// types mirrors the DQL per-column type block. Applicability probes read
+	// it to tell a field the data does not have ("undefined") from one that
+	// exists and is simply empty.
+	types map[string]string
 }
 
 type mockRunner struct {
@@ -26,7 +30,7 @@ func (m *mockRunner) RunQuery(_ context.Context, dql string) (*RunResult, error)
 			if r.err != nil {
 				return nil, r.err
 			}
-			return &RunResult{Records: r.records, Seconds: 0.1, Truncated: r.truncated}, nil
+			return &RunResult{Records: r.records, Seconds: 0.1, Truncated: r.truncated, ColumnTypes: r.types}, nil
 		}
 	}
 	return &RunResult{Seconds: 0.1}, nil // default: empty result

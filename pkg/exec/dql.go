@@ -33,6 +33,8 @@ type (
 	Contributions         = sdkquery.Contributions
 	BucketContribution    = sdkquery.BucketContribution
 	QueryNotification     = sdkquery.Notification
+	ColumnTypes           = sdkquery.ColumnTypes
+	ColumnType            = sdkquery.ColumnType
 	AnalysisTimeframe     = sdkquery.AnalysisTimeframe
 	MetricInfo            = sdkquery.MetricInfo
 	DQLVerifyRequest      = sdkquery.VerifyRequest
@@ -485,7 +487,7 @@ func classifyNotification(notificationType, message string) string {
 		return notifScanLimit
 	case "RESULT_LIMIT_RECORDS", "RESULT_LIMIT_BYTES":
 		return notifResultLimit
-	case "FETCH_TIMEOUT":
+	case "FETCH_TIMEOUT", "FETCH_EXEC_TIME_LIMIT":
 		return notifTimeout
 	case "SAMPLING_APPLIED":
 		return notifSampling
@@ -499,20 +501,44 @@ func classifyNotification(notificationType, message string) string {
 		return notifScanLimit
 	case strings.Contains(msg, "result has been limited") || strings.Contains(msg, "limited to"):
 		return notifResultLimit
+	case strings.Contains(msg, "internal time limit"):
+		// Grail cuts a slow read short and says so only in the message on some
+		// deployments; without this the result reads as complete and every row
+		// below the cut becomes a fabricated absence.
+		return notifTimeout
+	}
+	return ""
+}
+
+// Causes of an incomplete result, as reported by PartialCause. They are
+// distinguished because the remedies are not interchangeable: a scan cap wants
+// less data scanned or a bigger cap, a result cap wants aggregation, a timeout
+// wants a narrower read. Collapsing them into one "cut short by a limit"
+// message forces the reader to guess which of three fixes applies.
+const (
+	PartialScanLimit   = notifScanLimit
+	PartialResultLimit = notifResultLimit
+	PartialTimeout     = notifTimeout
+	PartialConsumption = notifConsumption
+)
+
+// PartialCause reports why a query notification means the result is
+// incomplete, as one of the Partial* constants, or "" if the notification does
+// not truncate. Sampling is excluded — it is declared in the query text, not a
+// silent truncation.
+func PartialCause(n QueryNotification) string {
+	switch c := classifyNotification(n.NotificationType, n.Message); c {
+	case notifResultLimit, notifScanLimit, notifTimeout, notifConsumption:
+		return c
 	}
 	return ""
 }
 
 // ResultIsPartial reports whether a query notification means the result is
 // incomplete: a record/byte cap, scan limit, fetch timeout, or consumption
-// stop cut it short. Sampling is excluded — it is declared in the query text,
-// not a silent truncation.
+// stop cut it short.
 func ResultIsPartial(n QueryNotification) bool {
-	switch classifyNotification(n.NotificationType, n.Message) {
-	case notifResultLimit, notifScanLimit, notifTimeout, notifConsumption:
-		return true
-	}
-	return false
+	return PartialCause(n) != ""
 }
 
 // getHintForNotification returns a concise CLI hint (a single line, for stderr)

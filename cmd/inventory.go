@@ -12,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
@@ -56,6 +58,10 @@ Examples:
 
   # Only your definitions, without the built-in set
   dtctl inventory --definitions ./our-capabilities.yaml --no-builtin-definitions
+
+These verdicts are retention-scoped: a stream that received data once last week
+reads as present. To ask whether data is arriving for one source right now — after
+an instrumentation change or an ingest — use 'dtctl inventory arrivals'.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, c, err := SetupClient()
@@ -63,54 +69,28 @@ Examples:
 			return err
 		}
 
-		noBuiltin, _ := cmd.Flags().GetBool("no-builtin-definitions")
-		defFiles, _ := cmd.Flags().GetStringArray("definitions")
-		base := inventory.BuiltinDefinitions()
-		if noBuiltin {
-			base = map[string]*inventory.CapabilityDef{}
+		defs, err := inventoryDefinitions(cmd)
+		if err != nil {
+			return err
 		}
-		overlays := make([]*inventory.Definitions, 0, len(defFiles))
-		for _, f := range defFiles {
-			d, derr := loadDefinitionsFile(f)
-			if derr != nil {
-				return derr
-			}
-			overlays = append(overlays, d)
-		}
-		defs := inventory.MergeDefinitions(base, overlays...)
-
-		budgetQueries, _ := cmd.Flags().GetInt("budget-queries")
-		budgetSeconds, _ := cmd.Flags().GetFloat64("budget-seconds")
-		scanLimitGB, _ := cmd.Flags().GetFloat64("scan-limit-gbytes")
-
-		runner := &inventoryRunner{
-			executor:    NewDQLExecutorFromConfig(cfg, c),
-			scanLimitGB: scanLimitGB,
-		}
+		runner := newInventoryRunner(cmd, cfg, c)
 
 		// Segments come from the API, not DQL — fetched here, best-effort. A
 		// failure must stay distinguishable from "no segments exist".
 		var segs []inventory.SegmentInfo
 		var segNote string
 		if list, serr := segment.NewHandler(c).List(); serr == nil {
-			for _, s := range list.FilterSegments {
-				segs = append(segs, inventory.SegmentInfo{UID: s.UID, Name: s.Name, Description: s.Description})
+			for _, sg := range list.FilterSegments {
+				segs = append(segs, inventory.SegmentInfo{UID: sg.UID, Name: sg.Name, Description: sg.Description})
 			}
 		} else {
 			segNote = fmt.Sprintf("segment discovery failed: %v — the segment list is unknown, not empty", serr)
 		}
 
-		// Cancel cleanly on Ctrl+C: discovery aborts, nothing is half-reported.
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := inventoryCancelContext()
 		defer cancel()
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-		defer signal.Stop(sigCh)
-		go func() {
-			<-sigCh
-			cancel()
-		}()
 
+		budgetQueries, budgetSeconds := inventoryBudget(cmd)
 		inv, err := inventory.Discover(ctx, runner, defs, inventory.DiscoverOptions{
 			ContextName:   cfg.CurrentContext,
 			Segments:      segs,
@@ -130,10 +110,7 @@ Examples:
 		}
 		printer := NewPrinter()
 		if ap := enrichAgent(printer, "inventory", ""); ap != nil {
-			ap.SetSuggestions([]string{
-				"Run 'dtctl query \"fetch <object> | limit 10\"' to sample any listed data object",
-				"Cite the evidence carried by absent capabilities instead of re-probing; unknown capabilities got no verdict and may still exist",
-			})
+			ap.SetSuggestions(inventorySuggestions(inv))
 		}
 		return printer.Print(inv)
 	},
@@ -180,17 +157,13 @@ func (r *inventoryRunner) RunQuery(ctx context.Context, dql string) (*inventory.
 	if resp == nil {
 		return nil, context.Canceled
 	}
-	truncated := false
-	for _, n := range resp.GetNotifications() {
-		if exec.ResultIsPartial(n) {
-			truncated = true
-			break
-		}
-	}
+	cause := inventory.FirstTruncationCause(resp.GetNotifications())
 	return &inventory.RunResult{
-		Records:   resp.GetRecords(),
-		Seconds:   time.Since(start).Seconds(),
-		Truncated: truncated,
+		Records:         resp.GetRecords(),
+		Seconds:         time.Since(start).Seconds(),
+		Truncated:       cause != "",
+		TruncationCause: cause,
+		ColumnTypes:     inventory.ColumnTypesOf(resp.GetTypes()),
 	}, nil
 }
 
@@ -293,11 +266,67 @@ func topCensusTypes(census map[string]int64, n int) string {
 	return strings.Join(parts, " ")
 }
 
+// addInventoryDiscoveryFlags registers the flags every discovery run takes,
+// whichever question it is answering.
+func addInventoryDiscoveryFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArray("definitions", nil, "Capability-definitions file merged over the built-in set (repeatable, later files win)")
+	cmd.Flags().Bool("no-builtin-definitions", false, "Start from an empty capability set instead of the built-in one")
+	cmd.Flags().Int("budget-queries", 100, "Discovery budget: max queries")
+	cmd.Flags().Float64("budget-seconds", 300, "Discovery budget: max cumulative query seconds")
+	cmd.Flags().Float64("scan-limit-gbytes", 25, "Scan cap applied to every discovery probe")
+}
+
+// inventoryDefinitions builds the capability set a run evaluates.
+func inventoryDefinitions(cmd *cobra.Command) (map[string]*inventory.CapabilityDef, error) {
+	noBuiltin, _ := cmd.Flags().GetBool("no-builtin-definitions")
+	defFiles, _ := cmd.Flags().GetStringArray("definitions")
+	base := inventory.BuiltinDefinitions()
+	if noBuiltin {
+		base = map[string]*inventory.CapabilityDef{}
+	}
+	overlays := make([]*inventory.Definitions, 0, len(defFiles))
+	for _, f := range defFiles {
+		d, err := loadDefinitionsFile(f)
+		if err != nil {
+			return nil, err
+		}
+		overlays = append(overlays, d)
+	}
+	return inventory.MergeDefinitions(base, overlays...), nil
+}
+
+func inventoryBudget(cmd *cobra.Command) (int, float64) {
+	queries, _ := cmd.Flags().GetInt("budget-queries")
+	seconds, _ := cmd.Flags().GetFloat64("budget-seconds")
+	return queries, seconds
+}
+
+func newInventoryRunner(cmd *cobra.Command, cfg *config.Config, c *client.Client) *inventoryRunner {
+	scanLimitGB, _ := cmd.Flags().GetFloat64("scan-limit-gbytes")
+	return &inventoryRunner{
+		executor:    NewDQLExecutorFromConfig(cfg, c),
+		scanLimitGB: scanLimitGB,
+	}
+}
+
+// inventoryCancelContext cancels discovery cleanly on Ctrl+C, so a run aborts
+// rather than half-reporting.
+func inventoryCancelContext() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+	return ctx, func() {
+		signal.Stop(sigCh)
+		cancel()
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(inventoryCmd)
-	inventoryCmd.Flags().StringArray("definitions", nil, "Capability-definitions file merged over the built-in set (repeatable, later files win)")
-	inventoryCmd.Flags().Bool("no-builtin-definitions", false, "Start from an empty capability set instead of the built-in one")
-	inventoryCmd.Flags().Int("budget-queries", 100, "Discovery budget: max queries")
-	inventoryCmd.Flags().Float64("budget-seconds", 300, "Discovery budget: max cumulative query seconds")
-	inventoryCmd.Flags().Float64("scan-limit-gbytes", 25, "Scan cap applied to every discovery probe")
+	addInventoryDiscoveryFlags(inventoryCmd)
+	inventoryCmd.AddCommand(inventoryArrivalsCmd)
 }
