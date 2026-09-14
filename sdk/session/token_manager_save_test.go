@@ -26,6 +26,7 @@ func newTMWithSizedKeyring(t *testing.T, limitBytes int) (tm *TokenManager, keyr
 	}
 
 	tm.deps.keyringAvailable = func() bool { return true }
+	tm.deps.fileStorageRequested = func() bool { return false }
 	tm.deps.getToken = func(_ *TokenStore, name string) (string, error) {
 		v, ok := keyring[name]
 		if !ok {
@@ -365,6 +366,97 @@ func TestNeedsRefresh_AdaptiveBufferForShortLivedTokens(t *testing.T) {
 				t.Errorf("needsRefresh() = %v, want %v", got, tc.wantRefresh)
 			}
 		})
+	}
+}
+
+// TestSaveToken_FallsBackToFileOnWindowsAdminError covers the Windows
+// elevated-process case: keyring.Set returns "A specified logon session does not
+// exist. It may already have been terminated." (ERROR_NO_SUCH_LOGON_SESSION).
+// saveToken must fall back to file storage instead of returning an error.
+func TestSaveToken_FallsBackToFileOnWindowsAdminError(t *testing.T) {
+	t.Parallel()
+	stored := sampleStoredToken()
+
+	tm, keyring, files := newTMWithSizedKeyring(t, -1)
+	tm.deps.setToken = func(_ *TokenStore, _, _ string) error {
+		return fmt.Errorf("failed to store token in keyring: A specified logon session does not exist. It may already have been terminated.")
+	}
+
+	if err := tm.saveToken("my-token", stored); err != nil {
+		t.Fatalf("saveToken() error = %v, want nil (file fallback)", err)
+	}
+
+	key := tm.getKeyringName("my-token")
+	if _, ok := keyring[key]; ok {
+		t.Errorf("keyring entry should be absent when write fails with logon session error")
+	}
+	raw, ok := files[key]
+	if !ok {
+		t.Fatalf("expected full token in file store, none found")
+	}
+	var got StoredToken
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.AccessToken != stored.AccessToken {
+		t.Errorf("file store access token = %q, want full access token", got.AccessToken)
+	}
+}
+
+// TestSaveLoadDelete_FileStorageBypass verifies that DTCTL_TOKEN_STORAGE=file
+// bypasses the keyring entirely — even when the keyring is reported as available.
+// This is the fix for the Windows Admin PowerShell case where the GET probe
+// succeeds but SET fails.
+func TestSaveLoadDelete_FileStorageBypass(t *testing.T) {
+	t.Parallel()
+
+	stored := sampleStoredToken()
+	var keyringTouched bool
+
+	tm, _, files := newTMWithSizedKeyring(t, -1)
+	// Inject file-storage-requested bypass via deps (avoids env var mutation in parallel tests).
+	tm.deps.fileStorageRequested = func() bool { return true }
+	tm.deps.setToken = func(_ *TokenStore, _, _ string) error {
+		keyringTouched = true
+		return fmt.Errorf("should not be called")
+	}
+	tm.deps.getToken = func(_ *TokenStore, _ string) (string, error) {
+		keyringTouched = true
+		return "", fmt.Errorf("should not be called")
+	}
+	tm.deps.deleteToken = func(_ *TokenStore, _ string) error {
+		keyringTouched = true
+		return fmt.Errorf("should not be called")
+	}
+
+	if err := tm.saveToken("my-token", stored); err != nil {
+		t.Fatalf("saveToken() error = %v", err)
+	}
+	if keyringTouched {
+		t.Error("saveToken() touched the keyring despite file storage bypass")
+	}
+
+	got, err := tm.loadToken("my-token")
+	if err != nil {
+		t.Fatalf("loadToken() error = %v", err)
+	}
+	if got.AccessToken != stored.AccessToken {
+		t.Errorf("loadToken() access token = %q, want %q", got.AccessToken, stored.AccessToken)
+	}
+	if keyringTouched {
+		t.Error("loadToken() touched the keyring despite file storage bypass")
+	}
+
+	key := tm.getKeyringName("my-token")
+	files["extra-key"] = "sentinel"
+	if err := tm.DeleteToken("my-token"); err != nil {
+		t.Fatalf("DeleteToken() error = %v", err)
+	}
+	if _, ok := files[key]; ok {
+		t.Error("DeleteToken() should have removed the file store entry")
+	}
+	if keyringTouched {
+		t.Error("DeleteToken() touched the keyring despite file storage bypass")
 	}
 }
 

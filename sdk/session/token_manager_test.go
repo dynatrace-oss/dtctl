@@ -320,6 +320,7 @@ func newTMWithFakeKeyring(t *testing.T) (*TokenManager, map[string]string) {
 		delete(store, name)
 		return nil
 	}
+	tm.deps.fileStorageRequested = func() bool { return false }
 	tm.deps.fileStoreAvailable = func() bool { return false }
 
 	return tm, store
@@ -481,6 +482,7 @@ func TestTokenManager_GetToken_ConcurrentCompact(t *testing.T) {
 			delete(store, name)
 			return nil
 		}
+		tm.deps.fileStorageRequested = func() bool { return false }
 		tm.deps.fileStoreAvailable = func() bool { return false }
 
 		// Fake OAuth endpoint: increment the counter and return a fresh token.

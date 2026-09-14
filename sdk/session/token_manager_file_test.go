@@ -88,6 +88,7 @@ func TestTokenManager_NoStorageAvailable(t *testing.T) {
 
 	// Override deps: nothing available
 	tm.deps.keyringAvailable = func() bool { return false }
+	tm.deps.fileStorageRequested = func() bool { return false }
 	tm.deps.fileStoreAvailable = func() bool { return false }
 
 	tokens := &TokenSet{
@@ -260,6 +261,7 @@ func TestTokenManager_SaveToken_KeyringTooLarge(t *testing.T) {
 	}
 	tm.deps.deleteToken = func(_ *TokenStore, name string) error { return nil }
 	// fileStoreAvailable is false because keyring IS available (current system behaviour).
+	tm.deps.fileStorageRequested = func() bool { return false }
 	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.fileGetToken = func(name string) (string, error) { return fileStore.GetToken(name) }
 	tm.deps.fileSetToken = func(name, token string) error { return fileStore.SetToken(name, token) }

@@ -59,11 +59,12 @@ type tokenStoreDeps struct {
 	getToken         func(ts *TokenStore, name string) (string, error)
 	setToken         func(ts *TokenStore, name, token string) error
 	deleteToken      func(ts *TokenStore, name string) error
-	// File-based storage fallback
-	fileStoreAvailable func() bool
-	fileGetToken       func(name string) (string, error)
-	fileSetToken       func(name, token string) error
-	fileDeleteToken    func(name string) error
+	// File-based storage
+	fileStorageRequested func() bool // whether DTCTL_TOKEN_STORAGE=file is set
+	fileStoreAvailable   func() bool // file is the primary backend (keyring absent + requested)
+	fileGetToken         func(name string) (string, error)
+	fileSetToken         func(name, token string) error
+	fileDeleteToken      func(name string) error
 }
 
 // NewTokenManager creates a new token manager
@@ -82,14 +83,15 @@ func NewTokenManager(oauthConfig *OAuthConfig) (*TokenManager, error) {
 			fmt.Fprintf(os.Stderr, "dtctl: warning: "+format+"\n", args...)
 		},
 		deps: tokenStoreDeps{
-			keyringAvailable:   IsKeyringAvailable,
-			getToken:           func(ts *TokenStore, name string) (string, error) { return ts.GetToken(name) },
-			setToken:           func(ts *TokenStore, name, token string) error { return ts.SetToken(name, token) },
-			deleteToken:        func(ts *TokenStore, name string) error { return ts.DeleteToken(name) },
-			fileStoreAvailable: func() bool { return !IsKeyringAvailable() && IsFileTokenStorage() },
-			fileGetToken:       func(name string) (string, error) { return fileStore.GetToken(name) },
-			fileSetToken:       func(name, token string) error { return fileStore.SetToken(name, token) },
-			fileDeleteToken:    func(name string) error { return fileStore.DeleteToken(name) },
+			keyringAvailable:     IsKeyringAvailable,
+			getToken:             func(ts *TokenStore, name string) (string, error) { return ts.GetToken(name) },
+			setToken:             func(ts *TokenStore, name, token string) error { return ts.SetToken(name, token) },
+			deleteToken:          func(ts *TokenStore, name string) error { return ts.DeleteToken(name) },
+			fileStorageRequested: IsFileTokenStorage,
+			fileStoreAvailable:   func() bool { return !IsKeyringAvailable() && IsFileTokenStorage() },
+			fileGetToken:         func(name string) (string, error) { return fileStore.GetToken(name) },
+			fileSetToken:         func(name, token string) error { return fileStore.SetToken(name, token) },
+			fileDeleteToken:      func(name string) error { return fileStore.DeleteToken(name) },
 		},
 	}, nil
 }
@@ -291,6 +293,11 @@ func (tm *TokenManager) SaveToken(tokenName string, tokens *TokenSet) error {
 func (tm *TokenManager) DeleteToken(tokenName string) error {
 	keyringName := tm.getKeyringName(tokenName)
 
+	// File storage explicitly requested — bypass keyring entirely.
+	if tm.deps.fileStorageRequested() {
+		return tm.deps.fileDeleteToken(keyringName)
+	}
+
 	if tm.deps.keyringAvailable() {
 		err := tm.deps.deleteToken(tm.tokenStore, keyringName)
 		// Best-effort cleanup of the scope companion and any file-based fallback token.
@@ -353,6 +360,19 @@ func refreshBufferFor(tokens *TokenSet) time.Duration {
 // loadToken loads a token from storage
 func (tm *TokenManager) loadToken(tokenName string) (*StoredToken, error) {
 	keyringName := tm.getKeyringName(tokenName)
+
+	// File storage explicitly requested — bypass keyring entirely.
+	if tm.deps.fileStorageRequested() {
+		data, err := tm.deps.fileGetToken(keyringName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load token from file store: %w", err)
+		}
+		var stored StoredToken
+		if err := json.Unmarshal([]byte(data), &stored); err != nil {
+			return nil, fmt.Errorf("failed to parse stored token: %w", err)
+		}
+		return &stored, nil
+	}
 
 	// Try to load from keyring
 	if tm.deps.keyringAvailable() {
@@ -418,6 +438,16 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 		return fmt.Errorf("failed to serialize token: %w", err)
 	}
 
+	// File storage explicitly requested — bypass keyring entirely so that
+	// DTCTL_TOKEN_STORAGE=file works even when the keyring GET probe succeeds
+	// but writes fail (e.g. Windows elevated/Admin sessions).
+	if tm.deps.fileStorageRequested() {
+		if err := tm.deps.fileSetToken(keyringName, string(fullData)); err != nil {
+			return fmt.Errorf("failed to save token to file store: %w", err)
+		}
+		return nil
+	}
+
 	// Save to keyring
 	if tm.deps.keyringAvailable() {
 		var lastErr error
@@ -462,11 +492,14 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 }
 
 // isKeyringFallbackErr reports whether a keyring write error should trigger the
-// file-storage fallback. Covers two persistent (non-transient) failure modes:
+// file-storage fallback. Covers persistent (non-transient) failure modes:
 //   - "too big" / "exit status 161": errSecDataTooLarge (-25313) — data exceeds
 //     the macOS Keychain per-item size limit
 //   - "exit status 44": macOS rejects keychain writes from unsigned
 //     CGO_ENABLED=0 binaries (observed on Ventura+; exact OSStatus unverified)
+//   - "logon session does not exist": Windows ERROR_NO_SUCH_LOGON_SESSION —
+//     elevated (Admin) processes run under a different security token and cannot
+//     write to Windows Credential Manager
 func isKeyringFallbackErr(err error) bool {
 	if err == nil {
 		return false
@@ -474,7 +507,8 @@ func isKeyringFallbackErr(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "too big") ||
 		strings.Contains(msg, "exit status 44") ||
-		strings.Contains(msg, "exit status 161")
+		strings.Contains(msg, "exit status 161") ||
+		strings.Contains(msg, "logon session does not exist")
 }
 
 // keyringEncodings returns candidate serializations of stored for the keyring,
