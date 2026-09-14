@@ -293,6 +293,11 @@ func (tm *TokenManager) DeleteToken(tokenName string) error {
 
 	// File storage explicitly requested — bypass keyring entirely.
 	if tm.deps.fileStoreAvailable() {
+		// Best-effort: remove any token that may have been previously stored in
+		// the keyring (and its scope companion), so logout is complete even when
+		// the user switched to file storage after an earlier keyring login.
+		_ = tm.deps.deleteToken(tm.tokenStore, keyringName)
+		_ = tm.deps.deleteToken(tm.tokenStore, keyringName+scopeCompanionSuffix)
 		return tm.deps.fileDeleteToken(keyringName)
 	}
 
@@ -302,11 +307,6 @@ func (tm *TokenManager) DeleteToken(tokenName string) error {
 		_ = tm.deps.deleteToken(tm.tokenStore, keyringName+scopeCompanionSuffix)
 		_ = tm.deps.fileDeleteToken(keyringName)
 		return err
-	}
-
-	// Fall back to file-based storage
-	if tm.deps.fileStoreAvailable() {
-		return tm.deps.fileDeleteToken(keyringName)
 	}
 
 	return fmt.Errorf("OAuth token deletion requires a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
@@ -398,21 +398,6 @@ func (tm *TokenManager) loadToken(tokenName string) (*StoredToken, error) {
 		return nil, fmt.Errorf("failed to load token from keyring: %w", err)
 	}
 
-	// Fall back to file-based storage
-	if tm.deps.fileStoreAvailable() {
-		data, err := tm.deps.fileGetToken(keyringName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load token from file store: %w", err)
-		}
-
-		var stored StoredToken
-		if err := json.Unmarshal([]byte(data), &stored); err != nil {
-			return nil, fmt.Errorf("failed to parse stored token: %w", err)
-		}
-
-		return &stored, nil
-	}
-
 	return nil, fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
 }
 
@@ -478,14 +463,6 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 		return fmt.Errorf("failed to save token to keyring: %w", lastErr)
 	}
 
-	// Fall back to file-based storage
-	if tm.deps.fileStoreAvailable() {
-		if err := tm.deps.fileSetToken(keyringName, string(fullData)); err != nil {
-			return fmt.Errorf("failed to save token to file store: %w", err)
-		}
-		return nil
-	}
-
 	return fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
 }
 
@@ -495,9 +472,9 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 //     the macOS Keychain per-item size limit
 //   - "exit status 44": macOS rejects keychain writes from unsigned
 //     CGO_ENABLED=0 binaries (observed on Ventura+; exact OSStatus unverified)
-//   - "logon session does not exist": Windows ERROR_NO_SUCH_LOGON_SESSION —
-//     elevated (Admin) processes run under a different security token and cannot
-//     write to Windows Credential Manager
+//   - Windows ERROR_NO_SUCH_LOGON_SESSION (0x520): elevated (Admin) processes
+//     run under a different security token and cannot write to Credential Manager
+//     (checked via isWindowsAdminKeyringErr in token_manager_windows.go)
 func isKeyringFallbackErr(err error) bool {
 	if err == nil {
 		return false
@@ -506,7 +483,7 @@ func isKeyringFallbackErr(err error) bool {
 	return strings.Contains(msg, "too big") ||
 		strings.Contains(msg, "exit status 44") ||
 		strings.Contains(msg, "exit status 161") ||
-		strings.Contains(msg, "logon session does not exist")
+		isWindowsAdminKeyringErr(err)
 }
 
 // keyringEncodings returns candidate serializations of stored for the keyring,
