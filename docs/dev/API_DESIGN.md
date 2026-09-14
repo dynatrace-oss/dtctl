@@ -310,6 +310,8 @@ Failed to delete dashboard (HTTP 403): Forbidden
 
 Troubleshooting suggestions:
   • Insufficient permissions. Check that your API token has the required scopes
+  • Re-run the same command with --check-scopes to verify the scopes it requires
+  • Token scopes and IAM policy permissions are separate gates — if --check-scopes reports "ok", or "unknown" because the token is not introspectable, the tenant's IAM policy is what denies the request
   • View current context and safety level: 'dtctl config get-context'
   • If using a 'readonly' context, switch to a context with write permissions
   • Review required token scopes in the documentation

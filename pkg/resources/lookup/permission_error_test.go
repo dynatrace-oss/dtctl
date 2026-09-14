@@ -20,6 +20,23 @@ func TestServerErrorMessage(t *testing.T) {
 			want: "Delete failed: No permission to delete file '/lookups/a/b'.",
 		},
 		{
+			// details.missingScopes is the one field that settles the
+			// scope-vs-policy question, so it must not be dropped.
+			name: "missing scopes from details are appended",
+			body: `{"error":{"code":403,"message":"Insufficient permissions.","details":{"missingScopes":["storage:files:delete","storage:files:read"]}}}`,
+			want: "Insufficient permissions. (missing scopes: storage:files:delete, storage:files:read)",
+		},
+		{
+			name: "details as a plain string is appended",
+			body: `{"error":{"code":403,"message":"Forbidden.","details":"policy denies /lookups/prod/"}}`,
+			want: "Forbidden. (policy denies /lookups/prod/)",
+		},
+		{
+			name: "top-level message envelope",
+			body: `{"message":"No permission to delete file '/lookups/a/b'."}`,
+			want: "No permission to delete file '/lookups/a/b'.",
+		},
+		{
 			name: "plain text body falls back to raw",
 			body: "access denied",
 			want: "access denied",
@@ -42,6 +59,20 @@ func TestServerErrorMessage(t *testing.T) {
 				t.Errorf("serverErrorMessage() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// A proxy or WAF answering a 403 with a large HTML page must not become the
+// whole error message — in agent mode it lands in the envelope verbatim.
+func TestServerErrorMessageTruncatesRawBody(t *testing.T) {
+	body := "<html>" + strings.Repeat("x", 4096) + "</html>"
+
+	got := serverErrorMessage(body)
+	if len(got) > maxBodyExcerpt+len("... (truncated)") {
+		t.Errorf("raw body not truncated: got %d bytes", len(got))
+	}
+	if !strings.HasSuffix(got, "... (truncated)") {
+		t.Errorf("truncation not marked: %q", got[max(0, len(got)-40):])
 	}
 }
 
@@ -109,11 +140,13 @@ func TestForbiddenErrorWithEmptyBody(t *testing.T) {
 	err := handleDeleteError(403, "", "/lookups/a/b")
 
 	msg := err.Error()
-	if !strings.Contains(msg, `access denied to delete file "/lookups/a/b"`) {
+	if !strings.Contains(msg, `Failed to delete file "/lookups/a/b" (HTTP 403): access denied, and the server returned no reason`) {
 		t.Errorf("unexpected message: %q", msg)
 	}
-	if strings.Contains(msg, "file \"/lookups/a/b\": ") {
-		t.Errorf("empty body should not leave a dangling separator: %q", msg)
+	// Operation carries the verb and path; the fallback message must not repeat
+	// them, or the line reads twice.
+	if n := strings.Count(msg, `file "/lookups/a/b"`); n != 1 {
+		t.Errorf("verb and path repeated %d times across operation and message: %q", n, msg)
 	}
 	if !strings.Contains(msg, "separate gates") {
 		t.Errorf("guidance missing from message: %q", msg)

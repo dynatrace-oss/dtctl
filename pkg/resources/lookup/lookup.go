@@ -544,7 +544,7 @@ func handleUploadError(statusCode int, body string, path string) error {
 	case 400:
 		return fmt.Errorf("invalid upload request: %s", body)
 	case 403:
-		return forbiddenError("write", "storage:files:write", "dtctl create lookup --path "+path+" --check-scopes", path, body)
+		return forbiddenError("write", "storage:files:write", "re-run your create or apply command with --check-scopes", path, body)
 	case 409:
 		return fmt.Errorf("lookup table %q already exists. Use 'dtctl apply' to update or add --overwrite flag", path)
 	case 413:
