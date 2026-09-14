@@ -31,6 +31,7 @@ func TestIsOAuthToken(t *testing.T) {
 
 func TestTokenManagerDeleteToken(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 
 	t.Run("keyring unavailable", func(t *testing.T) {
 		tm.deps.keyringAvailable = func() bool { return false }
@@ -57,6 +58,7 @@ func TestTokenManagerDeleteToken(t *testing.T) {
 
 func TestTokenManagerLoadAndSaveTokenBranches(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return true }
 
 	t.Run("load parse error", func(t *testing.T) {
@@ -99,6 +101,7 @@ func TestTokenManagerLoadAndSaveTokenBranches(t *testing.T) {
 
 func TestTokenManagerGetToken_LoadError(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return true }
 	tm.deps.getToken = func(ts *TokenStore, name string) (string, error) {
 		return "", errors.New("missing")
@@ -112,6 +115,7 @@ func TestTokenManagerGetToken_LoadError(t *testing.T) {
 
 func TestTokenManagerGetTokenAndRefreshPaths(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return true }
 	tm.deps.setToken = func(ts *TokenStore, name, token string) error { return nil }
 
@@ -188,6 +192,7 @@ func TestTokenManagerGetTokenAndRefreshPaths(t *testing.T) {
 
 func TestTokenManagerRefreshTokenNoRefreshToken(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return true }
 	tm.deps.getToken = func(ts *TokenStore, name string) (string, error) {
 		return storedJSON(t, StoredToken{Name: name, TokenSet: TokenSet{AccessToken: "a"}}), nil
@@ -201,6 +206,7 @@ func TestTokenManagerRefreshTokenNoRefreshToken(t *testing.T) {
 
 func TestTokenManagerRefreshTokenAdditionalBranches(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return true }
 
 	t.Run("load token error", func(t *testing.T) {
@@ -260,6 +266,7 @@ func TestTokenManagerRefreshTokenAdditionalBranches(t *testing.T) {
 
 func TestTokenManagerRefreshToken_NilHTTPDoFallback(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return true }
 	tm.deps.getToken = func(ts *TokenStore, name string) (string, error) {
 		return storedJSON(t, StoredToken{Name: name, TokenSet: TokenSet{RefreshToken: "r1"}}), nil
@@ -289,6 +296,7 @@ func TestTokenManagerRefreshToken_NilHTTPDoFallback(t *testing.T) {
 
 func TestTokenManagerGetTokenInfo(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return true }
 	tm.deps.getToken = func(ts *TokenStore, name string) (string, error) {
 		return storedJSON(t, StoredToken{Name: name, TokenSet: TokenSet{AccessToken: "a", RefreshToken: "r"}}), nil
@@ -305,6 +313,7 @@ func TestTokenManagerGetTokenInfo(t *testing.T) {
 
 func TestTokenManagerSaveToken(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return true }
 	tm.deps.setToken = func(ts *TokenStore, name, token string) error { return nil }
 
@@ -316,6 +325,7 @@ func TestTokenManagerSaveToken(t *testing.T) {
 
 func TestTokenManagerSaveToken_KeyringUnavailable(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return false }
 
 	err := tm.SaveToken("abc", &TokenSet{AccessToken: "a", RefreshToken: "r", ExpiresIn: 60})
@@ -326,6 +336,7 @@ func TestTokenManagerSaveToken_KeyringUnavailable(t *testing.T) {
 
 func TestTokenManagerLoadToken_KeyringUnavailable(t *testing.T) {
 	tm, _ := NewTokenManager(DefaultOAuthConfig())
+	tm.deps.fileStoreAvailable = func() bool { return false }
 	tm.deps.keyringAvailable = func() bool { return false }
 
 	_, err := tm.loadToken("abc")
