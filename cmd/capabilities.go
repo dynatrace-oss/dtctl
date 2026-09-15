@@ -36,12 +36,12 @@ type Capabilities struct {
 // AllCapabilities is the CLI default: everything granted.
 func AllCapabilities() Capabilities {
 	return Capabilities{
-		PluginDispatch:    true,
-		ShellAliases:      true,
-		ApplyHooks:        true,
-		Editor:            true,
-		BrowserOpen:       true,
-		HostDiskSpill:     true,
+		PluginDispatch:     true,
+		ShellAliases:       true,
+		ApplyHooks:         true,
+		Editor:             true,
+		BrowserOpen:        true,
+		HostDiskSpill:      true,
 		LongRunningStreams: true,
 	}
 }

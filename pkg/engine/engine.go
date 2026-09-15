@@ -21,7 +21,6 @@ var engineSlot = make(chan struct{}, 1)
 // engineQueued tracks how many requests are currently waiting for or holding the slot.
 var engineQueued atomic.Int64
 
-
 // Request is one dtctl invocation for one tenant.
 type Request struct {
 	// Command is the command line exactly as a user would type it after
