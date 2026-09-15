@@ -402,9 +402,14 @@ for re-authenticating when both the access token and refresh token have expired.
 
 Token storage:
   By default, OAuth tokens are stored in the OS keyring (macOS Keychain, Windows
-  Credential Manager, or Linux Secret Service). On headless systems, WSL, or
-  containers where a keyring is unavailable, set DTCTL_TOKEN_STORAGE=file to store
-  tokens in a local file (~/.local/share/dtctl/oauth-tokens/) with 0600 permissions.
+  Credential Manager, or Linux Secret Service).
+
+  Set DTCTL_TOKEN_STORAGE=file to store tokens in a local file
+  (~/.local/share/dtctl/oauth-tokens/) with 0600 permissions. This causes a
+  hard cut-over: all reads and writes go to the file store, bypassing the
+  keyring entirely. Any token previously stored in the keyring will not be
+  read — re-authenticate after switching. Useful for headless systems, WSL,
+  containers, or Windows Admin sessions where keyring writes fail.
 
 If neither keyring nor file storage is available, use API token authentication
 instead (dtctl config set-credentials).`,

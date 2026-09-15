@@ -254,7 +254,9 @@ func TestHandleUploadError(t *testing.T) {
 			statusCode: 403,
 			body:       "access denied",
 			path:       "/lookups/test",
-			wantMsg:    "access denied to write file",
+			// The server's message is surfaced verbatim; see
+			// TestHandleUploadErrorForbidden for the full 403 contract.
+			wantMsg: `write file "/lookups/test" (HTTP 403): access denied`,
 		},
 		{
 			name:       "conflict",
@@ -313,7 +315,9 @@ func TestHandleDeleteError(t *testing.T) {
 			statusCode: 403,
 			body:       "access denied",
 			path:       "/lookups/test",
-			wantMsg:    "access denied to delete file",
+			// The server's message is surfaced verbatim; see
+			// TestHandleDeleteErrorForbidden for the full 403 contract.
+			wantMsg: `delete file "/lookups/test" (HTTP 403): access denied`,
 		},
 		{
 			name:       "not found",

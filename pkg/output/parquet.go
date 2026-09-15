@@ -477,7 +477,7 @@ func toRecordMaps(obj interface{}) ([]map[string]interface{}, error) {
 	}
 
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Slice {
@@ -490,7 +490,7 @@ func toRecordMaps(obj interface{}) ([]map[string]interface{}, error) {
 		if elem.Kind() == reflect.Interface {
 			elem = elem.Elem()
 		}
-		if elem.Kind() == reflect.Ptr {
+		if elem.Kind() == reflect.Pointer {
 			elem = elem.Elem()
 		}
 

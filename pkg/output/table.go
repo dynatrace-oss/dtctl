@@ -128,7 +128,7 @@ func getTableFields(t reflect.Type, wide bool) []tableFieldInfo {
 // getFieldByPath traverses a field path to get the final field value
 func getFieldByPath(v reflect.Value, indices []int) reflect.Value {
 	for _, idx := range indices {
-		if v.Kind() == reflect.Ptr {
+		if v.Kind() == reflect.Pointer {
 			if v.IsNil() {
 				return reflect.Value{}
 			}
@@ -252,7 +252,7 @@ func (p *TablePrinter) Print(obj interface{}) error {
 
 	// Use reflection to get field names and values
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -287,7 +287,7 @@ func (p *TablePrinter) PrintList(obj interface{}) error {
 	table := tablewriter.NewTable(p.writer, kubectlStyleOptions()...)
 
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -302,13 +302,13 @@ func (p *TablePrinter) PrintList(obj interface{}) error {
 
 	// Get headers from first element
 	first := v.Index(0)
-	if first.Kind() == reflect.Ptr {
+	if first.Kind() == reflect.Pointer {
 		first = first.Elem()
 	}
 	// Unwrap interface{} to get the actual value
 	if first.Kind() == reflect.Interface {
 		first = first.Elem()
-		if first.Kind() == reflect.Ptr {
+		if first.Kind() == reflect.Pointer {
 			first = first.Elem()
 		}
 	}
@@ -339,13 +339,13 @@ func (p *TablePrinter) PrintList(obj interface{}) error {
 	// Add rows
 	for i := 0; i < v.Len(); i++ {
 		elem := v.Index(i)
-		if elem.Kind() == reflect.Ptr {
+		if elem.Kind() == reflect.Pointer {
 			elem = elem.Elem()
 		}
 		// Unwrap interface{} to get the actual value
 		if elem.Kind() == reflect.Interface {
 			elem = elem.Elem()
-			if elem.Kind() == reflect.Ptr {
+			if elem.Kind() == reflect.Pointer {
 				elem = elem.Elem()
 			}
 		}
@@ -369,7 +369,7 @@ func formatValue(v reflect.Value) string {
 	}
 
 	// Handle pointer types
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return ""
 		}
@@ -464,7 +464,7 @@ func formatTableMapValue(val interface{}) string {
 	v := reflect.ValueOf(val)
 
 	// Handle pointers
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return ""
 		}

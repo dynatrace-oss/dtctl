@@ -93,7 +93,7 @@ func graftUnknown(oldMap, newMap *yaml.Node, t reflect.Type) {
 		}
 
 		ft := field.Type
-		for ft.Kind() == reflect.Ptr {
+		for ft.Kind() == reflect.Pointer {
 			ft = ft.Elem()
 		}
 		switch {

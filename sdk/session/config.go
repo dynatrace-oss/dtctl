@@ -606,9 +606,10 @@ func (c *Config) GetContext(name string) (*NamedContext, error) {
 // GetToken retrieves a token by reference name.
 // It first tries the OS keyring (checking both regular and OAuth tokens),
 // then file-based OAuth token storage, then falls back to the config file.
+// When DTCTL_TOKEN_STORAGE=file is set, keyring is skipped entirely.
 func (c *Config) GetToken(tokenRef string) (string, error) {
-	// Try keyring first
-	if IsKeyringAvailable() {
+	// Try keyring first (skipped when file storage is explicitly requested)
+	if IsKeyringAvailable() && !IsFileTokenStorage() {
 		ts := NewTokenStore()
 
 		// First check for OAuth token.
