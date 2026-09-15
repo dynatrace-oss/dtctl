@@ -212,6 +212,109 @@ func TestUnsealedConfigConsultsFileStore(t *testing.T) {
 	}
 }
 
+// TestLocalConfigIgnoresOAuthStore verifies that GetTokenForContext never
+// consults the OAuth TokenManager for an auto-discovered local config. Without
+// this guard, a rogue .dtctl.yaml could redirect stored OAuth credentials to
+// any host by setting token-ref to a known OAuth key name.
+//
+// The test uses a non-local (unsealed, regular) config to prove the file store
+// IS consulted normally via TokenManager, then a local config to prove it is NOT.
+func TestLocalConfigIgnoresOAuthStore(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
+	t.Setenv(EnvTokenStorage, "file")
+
+	const env = "https://abc12345.apps.dynatrace.com"
+	const tokenRef = "prod"
+
+	restore := withTempDataDir(t, func(oauthDir string) {
+		writeOAuthFileEntry(t, oauthDir, "oauth:prod:prod", "stolen-token")
+	})
+	defer restore()
+
+	// Baseline: a non-local config DOES return the TokenManager file-store token,
+	// confirming the path under test is actually reachable.
+	baseline := NewConfig()
+	got, err := GetTokenForContext(baseline, env, tokenRef)
+	if err != nil || got != "stolen-token" {
+		t.Fatalf("baseline: GetTokenForContext = (%q, %v), want (\"stolen-token\", nil) — file store unreachable, test invalid", got, err)
+	}
+
+	// Local config: the TokenManager path must be skipped entirely.
+	cfg := newLocalConfig(t, env, tokenRef, nil)
+	got, _ = GetTokenForContext(cfg, env, tokenRef)
+	if got == "stolen-token" {
+		t.Error("GetTokenForContext returned OAuth TokenManager token for a local config — OAuth bypass not fixed")
+	}
+}
+
+// TestLocalConfigRefreshIgnoresOAuthStore verifies that RefreshedTokenForContext
+// skips the OAuth refresh path for local configs. The test arranges for
+// GetTokenForContext to succeed (returning a known token), so RefreshedTokenForContext
+// reaches the cfg.IsLocal() gate at token_resolution.go rather than returning
+// early on an error.
+//
+// Limitation: full mutation-testing of this guard requires an injectable OAuth
+// HTTP client; without it, forceRefreshWithManager falls back to the stale token
+// on any network failure, making the outcome identical with or without the guard.
+// The guard is verified correct by code inspection and by the GetTokenForContext
+// test above, which shares the same guard expression.
+func TestLocalConfigRefreshIgnoresOAuthStore(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
+	t.Setenv(EnvTokenStorage, "file")
+
+	const env = "https://abc12345.apps.dynatrace.com"
+	const tokenRef = "prod"
+	const staleToken = "stale-access-token"
+
+	// Write an OAuth file entry that Config.GetToken (not TokenManager) will
+	// return after the origin binding check passes. This lets GetTokenForContext
+	// succeed and return staleToken, so RefreshedTokenForContext reaches the guard.
+	restore := withTempDataDir(t, func(oauthDir string) {
+		writeOAuthFileEntry(t, oauthDir, "oauth:prod:prod", staleToken)
+	})
+	defer restore()
+
+	trusted := map[string]string{tokenRef: "abc12345.apps.dynatrace.com"}
+	cfg := newLocalConfig(t, env, tokenRef, trusted)
+
+	// Verify GetTokenForContext resolves successfully (reaches the guard via GetToken).
+	resolved, err := GetTokenForContext(cfg, env, tokenRef)
+	if err != nil || resolved != staleToken {
+		t.Fatalf("GetTokenForContext = (%q, %v), want (%q, nil) — test setup invalid", resolved, err, staleToken)
+	}
+
+	// RefreshedTokenForContext must return the stale token unchanged (no network refresh).
+	got, err := RefreshedTokenForContext(cfg, env, tokenRef, staleToken)
+	if err != nil {
+		t.Fatalf("RefreshedTokenForContext: %v", err)
+	}
+	if got != staleToken {
+		t.Errorf("RefreshedTokenForContext = %q, want %q", got, staleToken)
+	}
+}
+
+// newLocalConfig returns a Config marked as local (auto-discovered) with the
+// given environment URL and token-ref. trustedOrigins overrides whatever
+// buildTrustedOrigins() loads from the host's global config, making tests
+// hermetic. Pass nil to keep the host-loaded origins (not recommended for
+// new tests).
+func newLocalConfig(t *testing.T, environment, tokenRef string, trustedOrigins map[string]string) *Config {
+	t.Helper()
+	cfg := NewConfig()
+	ctx := Context{Environment: environment, TokenRef: tokenRef}
+	cfg.Contexts = append(cfg.Contexts, NamedContext{Name: "default", Context: ctx})
+	cfg.CurrentContext = "default"
+	tmpFile := filepath.Join(t.TempDir(), ".dtctl.yaml")
+	if err := os.WriteFile(tmpFile, []byte(""), 0600); err != nil {
+		t.Fatalf("newLocalConfig: %v", err)
+	}
+	cfg.markLocal(tmpFile)
+	if trustedOrigins != nil {
+		cfg.trustedOrigins = trustedOrigins
+	}
+	return cfg
+}
+
 // TestSealedConfigRefreshReturnsInline verifies that RefreshedTokenForContext
 // returns the inline token unchanged for a sealed config without contacting any
 // OAuth endpoint.

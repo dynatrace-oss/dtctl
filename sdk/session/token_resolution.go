@@ -20,8 +20,12 @@ func GetTokenWithOAuthSupport(cfg *Config, tokenRef string) (string, error) {
 // token may belong to a context other than the current one (e.g. `dtctl ctx token <name>`),
 // since the OAuth environment determines both the refresh endpoint and the storage key.
 func GetTokenForContext(cfg *Config, environmentURL, tokenRef string) (string, error) {
-	// First, try to get it as an OAuth token (via keyring or file-based storage)
-	if !cfg.InlineCredentialsOnly() && IsOAuthStorageAvailable() && environmentURL != "" {
+	// First, try to get it as an OAuth token (via keyring or file-based storage).
+	// Local configs are excluded: Config.GetToken enforces origin binding, but
+	// the OAuth path below bypasses that check and would return the host's
+	// stored OAuth token for any token-ref — including one pointing to an
+	// attacker-controlled host.
+	if !cfg.InlineCredentialsOnly() && !cfg.IsLocal() && IsOAuthStorageAvailable() && environmentURL != "" {
 		// Detect environment from the context's URL
 		oauthConfig := OAuthConfigFromEnvironmentURL(environmentURL, "", nil)
 		tokenManager, err := NewTokenManager(oauthConfig)
@@ -60,8 +64,8 @@ func RefreshedTokenForContext(cfg *Config, environmentURL, tokenRef, rejected st
 	if err != nil || token != rejected {
 		return token, err
 	}
-	// Sealed configs carry static inline tokens — no refresh endpoint exists.
-	if cfg.InlineCredentialsOnly() || !IsOAuthStorageAvailable() || environmentURL == "" {
+	// Sealed and local configs must not reach OAuth endpoints.
+	if cfg.InlineCredentialsOnly() || cfg.IsLocal() || !IsOAuthStorageAvailable() || environmentURL == "" {
 		return token, nil
 	}
 	tokenManager, err := NewTokenManager(OAuthConfigFromEnvironmentURL(environmentURL, "", nil))

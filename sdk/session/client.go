@@ -17,6 +17,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	sdkauth "github.com/dynatrace-oss/dtctl/sdk/auth"
+	"github.com/dynatrace-oss/dtctl/sdk/urls"
 )
 
 // defaultUserAgentProduct identifies clients whose builder did not set an
@@ -68,15 +69,19 @@ func NewClientFromConfig(cfg *Config, opts ...ClientOption) (*Client, error) {
 		return nil, err
 	}
 
-	// Auto-discovered local configs must target an https:// URL with no
-	// credentials, query, or fragment embedded. This prevents a rogue
-	// .dtctl.yaml from sending tokens to a non-TLS or SSRF-style destination.
+	// Auto-discovered local configs must target a Dynatrace environment URL
+	// with no credentials, query, or fragment embedded. This prevents a rogue
+	// .dtctl.yaml from sending tokens to an arbitrary or non-TLS destination.
 	if cfg.IsLocal() {
-		u, parseErr := url.Parse(ctx.Environment)
-		if parseErr != nil || strings.ToLower(u.Scheme) != "https" || u.Host == "" ||
-			u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		if err := urls.IsDynatraceEnvironmentURL(ctx.Environment); err != nil {
 			return nil, fmt.Errorf(
-				"local config %q requires an https:// destination URL with no embedded credentials, query, or fragment (got %q) — use --config or DTCTL_CONFIG",
+				"local config %q: %w — use --config or DTCTL_CONFIG",
+				cfg.LocalConfigPath(), err)
+		}
+		u, _ := url.Parse(ctx.Environment)
+		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return nil, fmt.Errorf(
+				"local config %q requires a destination URL with no embedded credentials, query, or fragment (got %q) — use --config or DTCTL_CONFIG",
 				cfg.LocalConfigPath(), ctx.Environment)
 		}
 	}

@@ -822,3 +822,50 @@ func TestReadRequestBodyForDebug_NilGetBodyReader(t *testing.T) {
 		t.Fatalf("readRequestBodyForDebug() = %q, want empty string", got)
 	}
 }
+
+// TestNewClientFromConfig_LocalConfigDomainAllowlist verifies that
+// NewClientFromConfig rejects local configs targeting non-Dynatrace hosts.
+// The guard fires before token resolution so no real token is needed.
+func TestNewClientFromConfig_LocalConfigDomainAllowlist(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
+
+	tests := []struct {
+		name        string
+		environment string
+		wantErr     string
+	}{
+		{
+			name:        "foreign host rejected",
+			environment: "https://evil.example.com",
+			wantErr:     "dynatrace.com",
+		},
+		{
+			name:        "http rejected",
+			environment: "http://abc12345.apps.dynatrace.com",
+			wantErr:     "https",
+		},
+		{
+			name:        "embedded query rejected",
+			environment: "https://abc12345.apps.dynatrace.com?foo=bar",
+			wantErr:     "query",
+		},
+		{
+			name:        "embedded credentials rejected",
+			environment: "https://user:pass@abc12345.apps.dynatrace.com",
+			wantErr:     "credentials",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := newLocalConfig(t, tt.environment, "some-ref", nil)
+			_, err := NewClientFromConfig(cfg)
+			if err == nil {
+				t.Fatalf("NewClientFromConfig() succeeded for local config with %q, want error containing %q", tt.environment, tt.wantErr)
+			}
+			if !contains(err.Error(), tt.wantErr) {
+				t.Errorf("NewClientFromConfig() error = %q, want it to contain %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}

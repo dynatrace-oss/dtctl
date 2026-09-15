@@ -1,6 +1,7 @@
 package urls
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -163,4 +164,24 @@ func Host(environmentURL string) string {
 		return ""
 	}
 	return strings.ToLower(u.Hostname())
+}
+
+// IsDynatraceEnvironmentURL returns an error if environmentURL is not a valid
+// Dynatrace environment URL. A valid URL must use https and have a hostname
+// that is a subdomain of dynatrace.com or dynatracelabs.com. This is enforced
+// on auto-discovered local configs to prevent credential exfiltration to
+// attacker-controlled hosts.
+func IsDynatraceEnvironmentURL(environmentURL string) error {
+	u, err := url.Parse(environmentURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if strings.ToLower(u.Scheme) != "https" {
+		return fmt.Errorf("URL must use https (got %q)", u.Scheme)
+	}
+	host := strings.ToLower(u.Hostname())
+	if !strings.HasSuffix(host, ".dynatrace.com") && !strings.HasSuffix(host, ".dynatracelabs.com") {
+		return fmt.Errorf("URL must target a dynatrace.com or dynatracelabs.com host (got %q)", host)
+	}
+	return nil
 }

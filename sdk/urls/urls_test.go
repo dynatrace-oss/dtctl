@@ -159,6 +159,88 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
+func TestIsDynatraceEnvironmentURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr string
+	}{
+		{name: "valid prod", url: "https://abc12345.apps.dynatrace.com"},
+		{name: "valid dev", url: "https://abc12345.dev.apps.dynatracelabs.com"},
+		{name: "valid sprint", url: "https://abc12345.sprint.apps.dynatracelabs.com"},
+		{
+			name:    "http rejected",
+			url:     "http://abc12345.apps.dynatrace.com",
+			wantErr: "https",
+		},
+		{
+			name:    "foreign host rejected",
+			url:     "https://evil.example.com",
+			wantErr: "dynatrace.com",
+		},
+		{
+			name:    "dynatrace.com lookalike rejected",
+			url:     "https://evil-dynatrace.com",
+			wantErr: "dynatrace.com",
+		},
+		{
+			name:    "dynatrace.com suffix in path rejected",
+			url:     "https://evil.example.com/?x=apps.dynatrace.com",
+			wantErr: "dynatrace.com",
+		},
+		{
+			name:    "bare dynatrace.com rejected (no subdomain)",
+			url:     "https://dynatrace.com",
+			wantErr: "dynatrace.com",
+		},
+		{
+			name:    "no scheme rejected",
+			url:     "abc12345.apps.dynatrace.com",
+			wantErr: "https",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := IsDynatraceEnvironmentURL(tt.url)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("IsDynatraceEnvironmentURL(%q) unexpected error: %v", tt.url, err)
+				}
+			} else {
+				if err == nil {
+					t.Errorf("IsDynatraceEnvironmentURL(%q) = nil, want error containing %q", tt.url, tt.wantErr)
+				} else if !containsStr(err.Error(), tt.wantErr) {
+					t.Errorf("IsDynatraceEnvironmentURL(%q) error %q does not contain %q", tt.url, err.Error(), tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestHost(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "valid URL", url: "https://abc12345.apps.dynatrace.com", want: "abc12345.apps.dynatrace.com"},
+		{name: "uppercase scheme", url: "HTTPS://Abc.apps.dynatrace.com", want: "abc.apps.dynatrace.com"},
+		{name: "with path", url: "https://abc.apps.dynatrace.com/platform", want: "abc.apps.dynatrace.com"},
+		{name: "with port", url: "https://abc.apps.dynatrace.com:8443", want: "abc.apps.dynatrace.com"},
+		{name: "empty", url: "", want: ""},
+		{name: "unparseable", url: "://bad", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Host(tt.url); got != tt.want {
+				t.Errorf("Host(%q) = %q, want %q", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && containsStr(s, substr)
 }
