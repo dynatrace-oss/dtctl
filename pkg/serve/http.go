@@ -134,11 +134,31 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	_ = json.NewEncoder(w).Encode(errorResponse{Error: msg})
 }
 
+// ServeOptions holds timeout configuration for the HTTP server.
+type ServeOptions struct {
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
+	IdleTimeout  time.Duration
+}
+
+// newServer builds an *http.Server without starting it — extracted for testability.
+func newServer(addr string, handler http.Handler, opts ServeOptions) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       opts.ReadTimeout,
+		WriteTimeout:      opts.WriteTimeout,
+		IdleTimeout:       opts.IdleTimeout,
+	}
+}
+
 // newHTTPCommand builds `dtctl serve http`.
 func newHTTPCommand() *cobra.Command {
 	var (
 		addr            string
 		maxRequestBytes int64
+		opts            ServeOptions
 	)
 	c := &cobra.Command{
 		Use:   "http",
@@ -175,27 +195,29 @@ exposing it, or embed pkg/engine directly.`,
 				// lifetime and deadlock every request.
 				return errors.New("serve must be invoked directly as `dtctl serve http [flags]`, with no arguments before it")
 			}
-			return runHTTP(command.Context(), addr, maxRequestBytes)
+			return runHTTP(command.Context(), addr, maxRequestBytes, opts)
 		},
 	}
 	c.Flags().StringVar(&addr, "addr", "127.0.0.1:7211", "listen address")
 	c.Flags().Int64Var(&maxRequestBytes, "max-request-bytes", 10<<20,
 		"maximum request body size in bytes (virtual files travel inline)")
+	c.Flags().DurationVar(&opts.ReadTimeout, "read-timeout", 30*time.Second,
+		"time allowed to read the full request including body")
+	c.Flags().DurationVar(&opts.WriteTimeout, "write-timeout", 5*time.Minute,
+		"time allowed to write the response (set high enough for slow commands)")
+	c.Flags().DurationVar(&opts.IdleTimeout, "idle-timeout", 2*time.Minute,
+		"maximum time to wait for the next request on a keep-alive connection")
 	return c
 }
 
 // runHTTP serves until the context is cancelled or SIGINT/SIGTERM arrives,
 // then shuts down gracefully, letting an in-flight execution finish (a started
 // run cannot be interrupted — see the pkg/engine cancellation notes).
-func runHTTP(ctx context.Context, addr string, maxRequestBytes int64) error {
+func runHTTP(ctx context.Context, addr string, maxRequestBytes int64, opts ServeOptions) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := &http.Server{
-		Addr:              addr,
-		Handler:           Handler(maxRequestBytes),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	server := newServer(addr, Handler(maxRequestBytes), opts)
 
 	errc := make(chan error, 1)
 	go func() {
