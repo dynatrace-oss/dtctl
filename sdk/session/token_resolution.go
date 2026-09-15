@@ -21,7 +21,7 @@ func GetTokenWithOAuthSupport(cfg *Config, tokenRef string) (string, error) {
 // since the OAuth environment determines both the refresh endpoint and the storage key.
 func GetTokenForContext(cfg *Config, environmentURL, tokenRef string) (string, error) {
 	// First, try to get it as an OAuth token (via keyring or file-based storage)
-	if IsOAuthStorageAvailable() && environmentURL != "" {
+	if !cfg.InlineCredentialsOnly() && IsOAuthStorageAvailable() && environmentURL != "" {
 		// Detect environment from the context's URL
 		oauthConfig := OAuthConfigFromEnvironmentURL(environmentURL, "", nil)
 		tokenManager, err := NewTokenManager(oauthConfig)
@@ -60,7 +60,8 @@ func RefreshedTokenForContext(cfg *Config, environmentURL, tokenRef, rejected st
 	if err != nil || token != rejected {
 		return token, err
 	}
-	if !IsOAuthStorageAvailable() || environmentURL == "" {
+	// Sealed configs carry static inline tokens — no refresh endpoint exists.
+	if cfg.InlineCredentialsOnly() || !IsOAuthStorageAvailable() || environmentURL == "" {
 		return token, nil
 	}
 	tokenManager, err := NewTokenManager(OAuthConfigFromEnvironmentURL(environmentURL, "", nil))

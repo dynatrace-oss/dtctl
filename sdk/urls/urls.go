@@ -154,3 +154,13 @@ func fixDomain(rawURL, oldSuffix, newSuffix string) string {
 	}
 	return rawURL[:idx] + newSuffix + rawURL[idx+len(oldSuffix):]
 }
+
+// Host returns the lowercase hostname of an environment URL, or "" if the URL
+// cannot be parsed. Used to compare canonical origins across config entries.
+func Host(environmentURL string) string {
+	u, err := url.Parse(environmentURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}

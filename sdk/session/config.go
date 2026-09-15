@@ -40,6 +40,36 @@ type Config struct {
 	// are never honored at runtime — alias resolution and hook execution check
 	// IsLocal() and skip them. See markLocal, GetPreApplyHook, resolveAlias.
 	ignoredExecKeys bool
+	// ignoredEnvRefs is true when key config values (environment URLs, inline
+	// token values) in an auto-discovered local config contain literal '$'
+	// characters that were not expanded because expansion is skipped for
+	// untrusted local configs. The caller can surface a warning so the user
+	// knows to use --config / DTCTL_CONFIG if they intended expansion.
+	ignoredEnvRefs bool
+	// trustedOrigins maps token-ref names to the canonical hostname of their
+	// associated environment as recorded in the global config. When IsLocal()
+	// is true, GetToken checks that the local context's environment host
+	// matches the global binding so a rogue local config cannot redirect stored
+	// credentials to an attacker-controlled host.
+	trustedOrigins map[string]string
+	// inlineOnly is set by SealInlineCredentials to restrict token resolution to
+	// the inline Tokens list. When true, GetToken never consults the keyring,
+	// file store, or OAuth machinery — only the values carried in the struct.
+	inlineOnly bool
+}
+
+// SealInlineCredentials marks this config as inline-only: token resolution will
+// consult only c.Tokens and never touch the keyring, file store, or OAuth
+// machinery. Call this on synthetic session configs to prevent host credential
+// stores from overriding request-supplied tokens.
+func (c *Config) SealInlineCredentials() {
+	c.inlineOnly = true
+}
+
+// InlineCredentialsOnly reports whether the config has been sealed via
+// SealInlineCredentials.
+func (c *Config) InlineCredentialsOnly() bool {
+	return c.inlineOnly
 }
 
 // NamedContext holds a context with its name
@@ -272,7 +302,9 @@ func Load() (*Config, error) {
 	// Check for local config first
 	localConfig := FindLocalConfig()
 	if localConfig != "" {
-		cfg, err := LoadFrom(localConfig)
+		// Auto-discovered local configs are untrusted: skip env-var expansion so a
+		// malicious .dtctl.yaml cannot inject host secrets into its own values.
+		cfg, err := loadFrom(localConfig, false)
 		if err != nil {
 			return nil, err
 		}
@@ -295,6 +327,29 @@ func Load() (*Config, error) {
 func (c *Config) markLocal(path string) {
 	c.localPath = path
 	c.ignoredExecKeys = c.hasExecKeys()
+	c.ignoredEnvRefs = c.hasEnvRefs()
+	c.trustedOrigins = buildTrustedOrigins()
+}
+
+// buildTrustedOrigins loads the global config (best-effort, ignoring errors)
+// and returns a map from token-ref name to the lowercase hostname of the
+// environment bound to that ref. This is used by GetToken to prevent a local
+// config from redirecting stored credentials to a foreign host.
+func buildTrustedOrigins() map[string]string {
+	// Global config is trusted, so env-var expansion is safe here.
+	globalCfg, err := LoadFrom(DefaultConfigPath())
+	if err != nil {
+		return nil
+	}
+	origins := make(map[string]string)
+	for _, nc := range globalCfg.Contexts {
+		ref := nc.Context.TokenRef
+		host := urls.Host(nc.Context.Environment)
+		if ref != "" && host != "" {
+			origins[ref] = host
+		}
+	}
+	return origins
 }
 
 // hasExecKeys reports whether the config defines any code-execution key:
@@ -328,6 +383,28 @@ func (c *Config) LocalConfigPath() string { return c.localPath }
 // are present in the auto-discovered local config and are therefore ignored at
 // runtime. See markLocal.
 func (c *Config) IgnoredExecKeys() bool { return c.ignoredExecKeys }
+
+// hasEnvRefs reports whether any key config value contains a literal '$'
+// character — a sign that the author intended env-var expansion that was
+// skipped because the config was auto-discovered (untrusted).
+func (c *Config) hasEnvRefs() bool {
+	for _, nc := range c.Contexts {
+		if strings.ContainsRune(nc.Context.Environment, '$') {
+			return true
+		}
+	}
+	for _, nt := range c.Tokens {
+		if strings.ContainsRune(nt.Token, '$') {
+			return true
+		}
+	}
+	return false
+}
+
+// IgnoredEnvRefs reports whether key config values in the auto-discovered local
+// config contained unexpanded env-var references (literal '$' characters).
+// When true the caller should warn the user to use --config or DTCTL_CONFIG.
+func (c *Config) IgnoredEnvRefs() bool { return c.ignoredEnvRefs }
 
 // LoadFrom loads the configuration from a specific path
 func LoadFrom(path string) (*Config, error) {
@@ -607,6 +684,51 @@ func (c *Config) GetContext(name string) (*NamedContext, error) {
 // It first tries the OS keyring (checking both regular and OAuth tokens),
 // then file-based OAuth token storage, then falls back to the config file.
 func (c *Config) GetToken(tokenRef string) (string, error) {
+	// Sealed configs must only use inline tokens — no keyring, file store, or
+	// OAuth lookup. This prevents host credential stores from overriding a
+	// synthetic session's request-supplied token.
+	if c.inlineOnly {
+		for _, nt := range c.Tokens {
+			if nt.Name == tokenRef {
+				if nt.Token != "" {
+					return nt.Token, nil
+				}
+			}
+		}
+		return "", fmt.Errorf("token %q not found in sealed config", tokenRef)
+	}
+
+	// Local configs must not carry inline token values: an attacker-controlled
+	// .dtctl.yaml could define an arbitrary token and point at an arbitrary host.
+	// Use --config or DTCTL_CONFIG to supply inline tokens from a trusted path.
+	if c.IsLocal() {
+		for _, nt := range c.Tokens {
+			if nt.Name == tokenRef && nt.Token != "" {
+				return "", fmt.Errorf(
+					"local config %q defines inline token %q; inline tokens are not allowed in auto-discovered local configs — use --config or DTCTL_CONFIG",
+					c.localPath, tokenRef)
+			}
+		}
+
+		// Verify that the local context's environment points to the same host as
+		// the global config binding for this token-ref. This prevents a rogue
+		// .dtctl.yaml from redirecting stored credentials to a foreign host.
+		if ctx, err := c.CurrentContextObj(); err == nil && ctx.TokenRef == tokenRef {
+			localHost := urls.Host(ctx.Environment)
+			if trustedHost, ok := c.trustedOrigins[tokenRef]; ok {
+				if localHost != trustedHost {
+					return "", fmt.Errorf(
+						"local config %q redirects token %q from trusted host %q to %q — use --config or DTCTL_CONFIG",
+						c.localPath, tokenRef, trustedHost, localHost)
+				}
+			} else {
+				return "", fmt.Errorf(
+					"local config %q uses token-ref %q which is not bound to any environment in the global config — use --config or DTCTL_CONFIG",
+					c.localPath, tokenRef)
+			}
+		}
+	}
+
 	// Try keyring first
 	if IsKeyringAvailable() {
 		ts := NewTokenStore()

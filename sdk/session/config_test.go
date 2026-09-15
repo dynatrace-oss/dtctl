@@ -2361,3 +2361,259 @@ func contextNames(contexts []NamedContext) []string {
 	}
 	return names
 }
+
+// TestLoad_LocalConfigDoesNotExpandEnv verifies that env-var references in
+// auto-discovered local configs are left unexpanded (H1-1/H1-2 hardening).
+func TestLoad_LocalConfigDoesNotExpandEnv(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global.
+	t.Setenv("PLANTED_SECRET", "secret-val")
+
+	tmpDir := t.TempDir()
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local-ctx
+contexts:
+  - name: local-ctx
+    context:
+      environment: https://evil.example/$PLANTED_SECRET
+      token-ref: tok
+tokens:
+  - name: tok
+    token: $PLANTED_SECRET
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		t.Fatalf("CurrentContextObj: %v", err)
+	}
+	if !strings.Contains(ctx.Environment, "$PLANTED_SECRET") {
+		t.Errorf("Environment = %q; want literal $PLANTED_SECRET (not expanded)", ctx.Environment)
+	}
+	if !strings.Contains(cfg.Tokens[0].Token, "$PLANTED_SECRET") {
+		t.Errorf("Token = %q; want literal $PLANTED_SECRET (not expanded)", cfg.Tokens[0].Token)
+	}
+	if !cfg.IgnoredEnvRefs() {
+		t.Error("IgnoredEnvRefs() = false; want true")
+	}
+}
+
+// TestGetToken_LocalConfigIgnoresInlineToken verifies that an inline token
+// defined in an auto-discovered local config is rejected (H1-4 hardening).
+func TestGetToken_LocalConfigIgnoresInlineToken(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global.
+	tmpDir := t.TempDir()
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local-ctx
+contexts:
+  - name: local-ctx
+    context:
+      environment: https://abc.apps.dynatrace.com
+      token-ref: my-token
+tokens:
+  - name: my-token
+    token: dt0s08.SECRETTOKEN
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	_, err = cfg.GetToken("my-token")
+	if err == nil {
+		t.Fatal("GetToken() returned nil error; want error about inline token")
+	}
+	if !strings.Contains(err.Error(), "inline token") {
+		t.Errorf("GetToken() error = %q; want message about inline token", err.Error())
+	}
+}
+
+// TestGetToken_LocalConfigRejectsForeignOrigin verifies that a local config
+// cannot redirect a stored credential to a different host (H1-5 hardening).
+func TestGetToken_LocalConfigRejectsForeignOrigin(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := t.TempDir()
+
+	// Global config: token-ref "prod" bound to abc.apps.dynatrace.com.
+	globalDir := filepath.Join(tmpDir, "xdg", "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	globalCfg := `apiVersion: v1
+kind: Config
+current-context: prod
+contexts:
+  - name: prod
+    context:
+      environment: https://abc.apps.dynatrace.com
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
+	xdg.Reload()
+	defer xdg.Reload()
+
+	// Local config: same token-ref "prod" but pointing at evil.example.
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local
+contexts:
+  - name: local
+    context:
+      environment: https://evil.example
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	_, err = cfg.GetToken("prod")
+	if err == nil {
+		t.Fatal("GetToken() returned nil error; want error about foreign origin")
+	}
+	if !strings.Contains(err.Error(), "redirects token") && !strings.Contains(err.Error(), "foreign") && !strings.Contains(err.Error(), "evil.example") {
+		t.Errorf("GetToken() error = %q; want message about origin mismatch", err.Error())
+	}
+}
+
+// TestGetToken_LocalConfigMatchingOriginStillResolves verifies that a local
+// config pointing to the same host as the global binding is not rejected by
+// the origin check (H1-5 hardening — the happy path).
+func TestGetToken_LocalConfigMatchingOriginStillResolves(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := t.TempDir()
+
+	// Global config: token-ref "prod" bound to abc.apps.dynatrace.com.
+	globalDir := filepath.Join(tmpDir, "xdg", "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	globalCfg := `apiVersion: v1
+kind: Config
+current-context: prod
+contexts:
+  - name: prod
+    context:
+      environment: https://abc.apps.dynatrace.com
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
+	xdg.Reload()
+	defer xdg.Reload()
+
+	// Local config: same token-ref "prod" pointing at the SAME host.
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local
+contexts:
+  - name: local
+    context:
+      environment: https://abc.apps.dynatrace.com
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	_, err = cfg.GetToken("prod")
+	// Origin check passes; the error (if any) should be about the token not
+	// being found in the keyring or file store — not about origin binding.
+	if err != nil {
+		if strings.Contains(err.Error(), "redirects token") || strings.Contains(err.Error(), "not bound") {
+			t.Errorf("GetToken() returned origin error %q; origin should have been accepted", err.Error())
+		}
+		// Any other error (keyring unavailable, token not found) is expected.
+	}
+}
+
+// TestLoadFrom_ExplicitConfigStillExpandsEnv verifies that a config loaded via
+// DTCTL_CONFIG still has env-var expansion applied (only auto-discovered local
+// configs skip expansion — H1-1 hardening).
+func TestLoadFrom_ExplicitConfigStillExpandsEnv(t *testing.T) {
+	t.Setenv("DT_TEST_ENV_URL", "https://explicit.apps.dynatrace.com")
+
+	tmpDir := t.TempDir()
+	cfgContent := `apiVersion: v1
+kind: Config
+current-context: explicit
+contexts:
+  - name: explicit
+    context:
+      environment: $DT_TEST_ENV_URL
+      token-ref: tok
+`
+	cfgPath := filepath.Join(tmpDir, "explicit-config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Setenv(EnvConfig, cfgPath)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		t.Fatalf("CurrentContextObj: %v", err)
+	}
+	if ctx.Environment != "https://explicit.apps.dynatrace.com" {
+		t.Errorf("Environment = %q; want expanded value", ctx.Environment)
+	}
+	if cfg.IgnoredEnvRefs() {
+		t.Error("IgnoredEnvRefs() = true; explicit config should not set this flag")
+	}
+}

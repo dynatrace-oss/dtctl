@@ -18,9 +18,20 @@ update this spec in the same PR.
 | OAuth file store | `$XDG_DATA_HOME/dtctl/oauth-tokens/<sanitized-name>.json`, mode 0600 (dir 0700) |
 | Token-refresh lock | `$TMPDIR/dtctl-token-refresh-<sha256[:8] of env:tokenRef>.lock` |
 
-Security note: code-execution keys (aliases, apply hooks) in an
-auto-discovered `.dtctl.yaml` are loaded for round-tripping but **never
-honored** — see `Config.IsLocal()`.
+Security note: auto-discovered `.dtctl.yaml` files are treated as untrusted
+(the classic "checked-out repo / shared directory" scenario). Three restrictions
+apply — see `Config.IsLocal()`:
+
+1. **No env-var expansion.** `$VAR` references are left as-is; use `--config`
+   or `DTCTL_CONFIG` to load a trusted config where expansion runs.
+2. **No inline tokens.** A local config may reference a `token-ref` but not
+   define its value; credentials must come from the keyring / file store.
+3. **Origin binding.** The environment URL in the local context must resolve to
+   the same hostname as the global config binding for the same `token-ref`,
+   preventing credential redirection to a foreign host.
+
+Code-execution keys (aliases, apply hooks) are loaded for round-tripping but
+**never honored**.
 
 ## Schema (v1)
 
