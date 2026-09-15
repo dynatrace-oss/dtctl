@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,7 +60,16 @@ type RunOptions struct {
 	// Keyed by top-level command name; the value is the human-readable reason.
 	// nil is the full surface (the CLI default). See applyBlockedCommands.
 	BlockedCommands map[string]string
+
+	// Context carries the request's context into the Cobra command tree so
+	// command bodies can observe cancellation and deadlines via cmd.Context().
+	// nil defaults to context.Background(), preserving CLI behaviour.
+	Context context.Context
 }
+
+// runCtx holds the active invocation's context, threaded into the Cobra tree
+// via rootCmd.ExecuteContext. Guarded by runMu like the rest of per-run state.
+var runCtx = context.Background()
 
 // runMu serializes invocations. The command tree is package state (277
 // command values wired by init), so two interleaved executions would share
@@ -96,6 +106,14 @@ func Run(argv []string, opts RunOptions) int {
 	defer runMu.Unlock()
 	runActive.Store(true)
 	defer runActive.Store(false)
+
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	prevCtx := runCtx
+	runCtx = ctx
+	defer func() { runCtx = prevCtx }()
 
 	granted := AllCapabilities()
 	if opts.Capabilities != nil {

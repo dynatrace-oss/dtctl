@@ -85,7 +85,7 @@ Examples:
 		// Poll for results with exponential backoff
 		fmt.Printf("Polling for evaluation results...\n")
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+		ctx, cancel := context.WithTimeout(cmd.Context(), time.Duration(timeoutSeconds)*time.Second)
 		defer cancel()
 
 		pollInterval := 2 * time.Second

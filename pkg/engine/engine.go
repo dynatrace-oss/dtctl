@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync/atomic"
 
 	"github.com/google/shlex"
 
@@ -13,6 +14,13 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
+
+// engineSlot is the single-execution semaphore: only one invocation runs at a time.
+var engineSlot = make(chan struct{}, 1)
+
+// engineQueued tracks how many requests are currently waiting for or holding the slot.
+var engineQueued atomic.Int64
+
 
 // Request is one dtctl invocation for one tenant.
 type Request struct {
@@ -75,6 +83,10 @@ type Result struct {
 	// Files is the complete final state of the request's virtual filesystem:
 	// the input files plus anything the command wrote or rewrote.
 	Files map[string][]byte
+	// Truncated is true when stdout or stderr was cut at MaxOutputBytes.
+	// The output is still valid up to the cap; callers should surface this
+	// so users know the result is incomplete.
+	Truncated bool
 }
 
 // Execute runs one dtctl invocation and returns its outcome.
@@ -84,6 +96,11 @@ type Result struct {
 // was already done. Everything after the run starts — including command
 // failures — is expressed CLI-style in Result: exit code plus stdout/stderr.
 func Execute(ctx context.Context, req Request) (*Result, error) {
+	return ExecuteWithLimits(ctx, req, DefaultLimits())
+}
+
+// executeInner is the shared implementation called by ExecuteWithLimits.
+func executeInner(ctx context.Context, req Request, limits Limits) (*Result, error) {
 	argv, err := req.argv()
 	if err != nil {
 		return nil, err
@@ -91,10 +108,34 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 	if err := req.validate(); err != nil {
 		return nil, err
 	}
-	// The context gates the start only: a request cancelled while waiting in
-	// line must not run, but a run in progress cannot be killed (see the
-	// package documentation on cancellation).
-	if err := ctx.Err(); err != nil {
+	// Apply the duration budget. The timeout context is threaded into the
+	// command tree (via RunOptions.Context) so long-running loops that observe
+	// cmd.Context() are cancelled when the budget elapses.
+	timeoutCtx, cancelTimeout := context.WithTimeout(ctx, limits.MaxDuration)
+	defer cancelTimeout()
+
+	// Admission: bound queue depth and acquire the execution slot in a
+	// context-aware way so cancelled requests (including timed-out ones) do
+	// not block behind a long queue.
+	engineQueued.Add(1)
+	if engineQueued.Load() > int64(limits.MaxQueued) {
+		engineQueued.Add(-1)
+		return nil, errors.New("engine: too many queued requests")
+	}
+	select {
+	case engineSlot <- struct{}{}:
+	case <-timeoutCtx.Done():
+		engineQueued.Add(-1)
+		return nil, timeoutCtx.Err()
+	}
+	defer func() {
+		<-engineSlot
+		engineQueued.Add(-1)
+	}()
+
+	// Catch the race where the deadline fired between acquiring the slot and
+	// starting the run.
+	if err := timeoutCtx.Err(); err != nil {
 		return nil, err
 	}
 
@@ -113,7 +154,8 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 	stdin := io.Reader(bytes.NewReader(req.Stdin))
 
 	files := vfs.NewMapFS(req.Files)
-	var stdout, stderr bytes.Buffer
+	stdout := &cappedBuffer{limit: limits.MaxOutputBytes}
+	stderr := &cappedBuffer{limit: limits.MaxOutputBytes}
 	code := cmd.Run(argv, cmd.RunOptions{
 		// Grant nothing: no plugins, shell aliases, hooks, editors, or
 		// browser opens. Everything a request needs happens in-process.
@@ -126,16 +168,18 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 		Env:             env,
 		FS:              files,
 		Stdin:           stdin,
-		Stdout:          &stdout,
-		Stderr:          &stderr,
+		Stdout:          stdout,
+		Stderr:          stderr,
 		BlockedCommands: unsupportedCommands,
+		Context:         timeoutCtx,
 	})
 
 	return &Result{
-		ExitCode: code,
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
-		Files:    files.Files(),
+		ExitCode:  code,
+		Stdout:    stdout.Bytes(),
+		Stderr:    stderr.Bytes(),
+		Files:     files.Files(),
+		Truncated: stdout.truncated || stderr.truncated,
 	}, nil
 }
 
