@@ -175,7 +175,11 @@ func execWorkflowWait(cmd *cobra.Command, executor *exec.WorkflowExecutor, execu
 		Timeout:      timeout,
 	}
 
-	return executor.WaitForCompletion(context.Background(), executionID, opts)
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return executor.WaitForCompletion(ctx, executionID, opts)
 }
 
 // execWorkflowShowResults prints per-task results in human-readable format.

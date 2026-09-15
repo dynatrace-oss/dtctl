@@ -68,6 +68,9 @@ func executeWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher, printer
 	if !watchMode {
 		return nil
 	}
+	if !caps.LongRunningStreams {
+		return &CapabilityError{Feature: "watch mode"}
+	}
 
 	interval, _ := cmd.Flags().GetDuration("interval")
 	watchOnly, _ := cmd.Flags().GetBool("watch-only")
@@ -97,7 +100,7 @@ func executeWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher, printer
 		ShowInitial: !watchOnly,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
