@@ -46,6 +46,8 @@ type executeResponse struct {
 	// Files is the complete final state of the request's virtual filesystem.
 	Files      map[string]string `json:"files,omitempty"`
 	DurationMs int64             `json:"durationMs"`
+	// Truncated is true when stdout or stderr was cut at the output cap.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 type errorResponse struct {
@@ -123,6 +125,7 @@ func Handler(maxRequestBytes int64) http.Handler {
 			Stderr:     string(res.Stderr),
 			Files:      outFiles,
 			DurationMs: time.Since(start).Milliseconds(),
+			Truncated:  res.Truncated,
 		})
 	})
 	return mux
