@@ -137,6 +137,12 @@ func executeArgs(argv []string) int {
 					"(honored only from the global config, --config, or DTCTL_CONFIG)\n",
 				cfg.LocalConfigPath())
 		}
+		if cfg.IgnoredEnvRefs() {
+			fmt.Fprintf(os.Stderr,
+				"warning: local config %q contains env-var references ($...) that were not expanded "+
+					"(use --config or DTCTL_CONFIG to use a trusted config with env-var expansion)\n",
+				cfg.LocalConfigPath())
+		}
 
 		expanded, isShell, err := resolveAlias(argv, cfg)
 		if err != nil {
@@ -206,7 +212,7 @@ func executeArgs(argv []string) int {
 		fmt.Fprintf(os.Stderr, "dtctl: tracing: %v (check OTEL_EXPORTER_OTLP_ENDPOINT or unset it to disable export)\n", tracingErr)
 	}
 
-	if err := rootCmd.Execute(); err != nil {
+	if err := rootCmd.ExecuteContext(runCtx); err != nil {
 		// silentExitError carries an exit code only (e.g. --check-scopes printed
 		// its verdict, diff found differences, wait timed out); set the status
 		// and return without re-printing.

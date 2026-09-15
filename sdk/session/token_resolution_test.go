@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/adrg/xdg"
 )
 
 func TestErrOAuthSessionRevoked_IsRecognised(t *testing.T) {
@@ -119,5 +123,114 @@ func TestForceRefreshWithManager_TransientFailureKeepsCache(t *testing.T) {
 	}
 	if _, ok := store[key]; !ok {
 		t.Error("cache entry evicted on a transient failure")
+	}
+}
+
+// writeOAuthFileEntry writes a fake OAuth file entry to the given oauth-tokens dir.
+func writeOAuthFileEntry(t *testing.T, dir, keyringName, accessToken string) {
+	t.Helper()
+	data, _ := json.Marshal(map[string]string{"access_token": accessToken})
+	name := sanitizeTokenName(keyringName) + ".json"
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0600); err != nil {
+		t.Fatalf("writeOAuthFileEntry: %v", err)
+	}
+}
+
+// withTempDataDir overrides xdg.DataHome with a temp dir for the duration of
+// the test, writing any pre-populated oauth-tokens files via the callback.
+func withTempDataDir(t *testing.T, populate func(oauthDir string)) (restore func()) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	oauthDir := filepath.Join(tmpDir, "dtctl", "oauth-tokens")
+	if err := os.MkdirAll(oauthDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if populate != nil {
+		populate(oauthDir)
+	}
+	// Directly patch the global that DataDir() reads, then restore.
+	prev := xdg.DataHome
+	xdg.DataHome = tmpDir
+	return func() { xdg.DataHome = prev }
+}
+
+// TestSealedConfigIgnoresFileStore verifies that a sealed config returns the
+// inline token even when a file-store entry exists that would otherwise win.
+func TestSealedConfigIgnoresFileStore(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
+	t.Setenv(EnvTokenStorage, "file")
+
+	cfg := NewConfig()
+	if err := cfg.SetToken("session-test", "request-token"); err != nil {
+		t.Fatalf("SetToken: %v", err)
+	}
+	cfg.SealInlineCredentials()
+
+	// Write a file-store entry AFTER SetToken (SetToken invalidates OAuth cache
+	// entries) — the sealed config must return the inline value, not this.
+	restore := withTempDataDir(t, func(oauthDir string) {
+		writeOAuthFileEntry(t, oauthDir, "oauth:prod:session-test", "stolen-token")
+	})
+	defer restore()
+
+	got, err := GetTokenForContext(cfg, "https://prod.example.invalid", "session-test")
+	if err != nil {
+		t.Fatalf("GetTokenForContext: %v", err)
+	}
+	if got != "request-token" {
+		t.Errorf("GetTokenForContext = %q, want %q (file store must be ignored for sealed configs)", got, "request-token")
+	}
+}
+
+// TestUnsealedConfigConsultsFileStore is the baseline: without sealing, the
+// file store entry wins over the inline token. This guards against the seal
+// becoming a no-op.
+func TestUnsealedConfigConsultsFileStore(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
+	t.Setenv(EnvTokenStorage, "file")
+
+	cfg := NewConfig()
+	if err := cfg.SetToken("session-test", "inline-token"); err != nil {
+		t.Fatalf("SetToken: %v", err)
+	}
+	// NOT sealed — the file store should be consulted.
+
+	// Write the file-store entry AFTER SetToken: SetToken invalidates OAuth cache
+	// entries for the token name, which would delete a pre-written file.
+	restore := withTempDataDir(t, func(oauthDir string) {
+		writeOAuthFileEntry(t, oauthDir, "oauth:prod:session-test", "file-store-token")
+	})
+	defer restore()
+
+	got, err := cfg.GetToken("session-test")
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	// The file store entry wins over the inline token on an unsealed config.
+	if got != "file-store-token" {
+		t.Errorf("GetToken = %q, want %q (file store must be consulted for unsealed configs)", got, "file-store-token")
+	}
+}
+
+// TestSealedConfigRefreshReturnsInline verifies that RefreshedTokenForContext
+// returns the inline token unchanged for a sealed config without contacting any
+// OAuth endpoint.
+func TestSealedConfigRefreshReturnsInline(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
+	t.Setenv(EnvTokenStorage, "file")
+
+	cfg := NewConfig()
+	if err := cfg.SetToken("tok-ref", "inline-token"); err != nil {
+		t.Fatalf("SetToken: %v", err)
+	}
+	cfg.SealInlineCredentials()
+
+	// Use a non-routable address so any OAuth call would fail noticeably.
+	got, err := RefreshedTokenForContext(cfg, "https://192.0.2.1", "tok-ref", "inline-token")
+	if err != nil {
+		t.Fatalf("RefreshedTokenForContext: %v", err)
+	}
+	if got != "inline-token" {
+		t.Errorf("RefreshedTokenForContext = %q, want %q", got, "inline-token")
 	}
 }
