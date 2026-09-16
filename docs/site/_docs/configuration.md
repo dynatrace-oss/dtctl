@@ -125,7 +125,28 @@ preferences:
   output: table
 ```
 
-Set `environment` to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**: environment variable references (`${VAR}`) are not expanded and inline tokens are rejected. Tokens must come from the OS keyring (added via `dtctl ctx add`).
+Set `environment` to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**:
+
+- environment variable references (`${VAR}`) are not expanded
+- inline tokens are rejected — the credential comes from the OS keyring
+- `token-ref` must name a context in your **global** config that binds the *same* environment host, otherwise the token does not resolve
+- `safety-level` is clamped to the level that global context declares
+
+Create the global binding once, from **outside** the project directory (config
+writes target the local `.dtctl.yaml` whenever one is discovered):
+
+```bash
+dtctl config set-context my-environment \
+  --environment "https://your-environment.apps.dynatrace.com" \
+  --token-ref my-token
+dtctl config set-credentials my-token --token dt0c01.xxx
+```
+
+> **A credential store is required.** A local `.dtctl.yaml` resolves its
+> credential from the OS keyring (or, for OAuth, the file-based token store).
+> If no keyring is available, `dtctl config set-credentials` falls back to
+> writing an API token inline into the global config, which a local config is
+> not permitted to read — use `DTCTL_CONFIG` on those machines.
 
 Commit the file to version control. For CI, use `DTCTL_CONFIG` to point at a trusted config file where env-var expansion and inline tokens work — see [Trusting a prepared workspace with `DTCTL_CONFIG`](#trusting-a-prepared-workspace-with-dtctl_config) below.
 
@@ -144,9 +165,9 @@ Commit the file to version control. For CI, use `DTCTL_CONFIG` to point at a tru
 > warning to stderr when it does. These code-execution keys are honored **only**
 > from the global config (`~/.config/dtctl/config`) or a config you point at
 > explicitly with `--config` or `DTCTL_CONFIG`. A local config may still define
-> contexts, tokens, and other preferences. As an additional safeguard, an alias
-> can never shadow a built-in command (e.g. `get`, `apply`, `version`)
-> regardless of where it is defined.
+> contexts and other preferences, but not inline tokens. As an additional
+> safeguard, an alias can never shadow a built-in command (e.g. `get`, `apply`,
+> `version`) regardless of where it is defined.
 
 #### Trusting a prepared workspace with `DTCTL_CONFIG`
 

@@ -180,7 +180,12 @@ preferences:
   output: table
 ```
 
-Set `environment` to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**: environment variable references are not expanded and inline tokens are rejected. Tokens must come from the OS keyring (added via `dtctl ctx add`).
+Set `environment` to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**:
+
+- environment variable references (`${VAR}`) are not expanded
+- inline tokens are rejected — the credential comes from the OS keyring
+- `token-ref` must name a context in your **global** config that binds the *same* environment host, otherwise the token does not resolve
+- `safety-level` is clamped to the level that global context declares, so a project file cannot grant itself more than you did
 
 **Search Order:**
 1. `--config` flag (explicit path)
@@ -190,16 +195,30 @@ Set `environment` to your Dynatrace environment URL. Because `.dtctl.yaml` is au
 
 #### Developer workflow
 
+Create the global binding once per machine. Run it **outside** the project
+directory: config writes target the local `.dtctl.yaml` whenever one is
+discovered, which is not the file you want here.
+
 ```bash
-# Add token to the OS keyring (one-time per machine)
-dtctl ctx add my-environment \
+# One-time per machine, from your home directory
+dtctl config set-context my-environment \
   --environment "https://abc12345.apps.dynatrace.com" \
-  --token dt0c01.xxx
+  --token-ref my-token
+dtctl config set-credentials my-token --token dt0c01.xxx
 
 # Commit .dtctl.yaml; each developer runs dtctl normally
 cd my-project/
 dtctl get workflows
 ```
+
+The project's `.dtctl.yaml` then refers to `token-ref: my-token` and the same
+environment URL.
+
+> **A credential store is required.** A local `.dtctl.yaml` resolves its
+> credential from the OS keyring (or, for OAuth, the file-based token store).
+> If no keyring is available, `dtctl config set-credentials` falls back to
+> writing an API token inline into the global config, which a local config is
+> not permitted to read — use `DTCTL_CONFIG` on those machines.
 
 #### CI workflow
 

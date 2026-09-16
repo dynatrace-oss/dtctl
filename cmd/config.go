@@ -91,7 +91,10 @@ Examples:
   # Create .dtctl.yaml with a specific context pre-set
   dtctl config init --context production
 
-Environment variables can be used in the config file using ${VAR_NAME} syntax.
+An auto-discovered .dtctl.yaml is untrusted: ${VAR_NAME} references are not
+expanded and inline tokens are rejected. Its 'token-ref' must name a credential
+already bound to the same environment in your global config. Point DTCTL_CONFIG
+at a trusted file instead when you need expansion or inline tokens (e.g. in CI).
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Check if .dtctl.yaml already exists
@@ -121,7 +124,9 @@ Environment variables can be used in the config file using ${VAR_NAME} syntax.
 
 		output.PrintSuccess("Created %s", configPath)
 		output.PrintInfo("\nEdit this file and set 'environment' to your Dynatrace environment URL.")
-		output.PrintInfo("Add a token via 'dtctl ctx add' or set DTCTL_CONFIG to a trusted file for CI.")
+		output.PrintInfo("'token-ref' must match a context in your global config that binds the same environment.")
+		output.PrintInfo("Create that binding from outside this directory with 'dtctl config set-context' and")
+		output.PrintInfo("'dtctl config set-credentials', or set DTCTL_CONFIG to a trusted file for CI.")
 		return nil
 	},
 }
