@@ -1054,14 +1054,15 @@ func SetupWithSafetyAndPrinter(op safety.Operation) (*config.Config, *client.Cli
 	return cfg, c, NewPrinter(), nil
 }
 
-// NewSafetyChecker creates a new safety checker for the current context
+// NewSafetyChecker creates a new safety checker for the current context.
+// For auto-discovered local configs, the safety level is clamped to
+// min(local, global) so a rogue .dtctl.yaml cannot escalate past the global
+// guard (see Config.GetEffectiveSafetyLevel).
 func NewSafetyChecker(cfg *config.Config) (*safety.Checker, error) {
-	ctx, err := cfg.CurrentContextObj()
-	if err != nil {
+	if _, err := cfg.CurrentContextObj(); err != nil {
 		return nil, err
 	}
-
-	return safety.NewChecker(cfg.CurrentContext, ctx), nil
+	return safety.NewCheckerWithLevel(cfg.CurrentContext, cfg.GetEffectiveSafetyLevel()), nil
 }
 
 // NewPrinter creates a new printer respecting agent and plain mode settings

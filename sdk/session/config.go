@@ -52,6 +52,13 @@ type Config struct {
 	// matches the global binding so a rogue local config cannot redirect stored
 	// credentials to an attacker-controlled host.
 	trustedOrigins map[string]string
+	// globalSafetyLevel is the effective safety level of the matching context in
+	// the global config, populated during markLocal (same disk read as
+	// trustedOrigins). Used by GetEffectiveSafetyLevel to clamp the local
+	// context's level so a rogue .dtctl.yaml cannot escalate beyond what the
+	// global config permits. Empty when the global config is unreadable or has no
+	// matching context.
+	globalSafetyLevel SafetyLevel
 	// inlineOnly is set by SealInlineCredentials to restrict token resolution to
 	// the inline Tokens list. When true, GetToken never consults the keyring,
 	// file store, or OAuth machinery — only the values carried in the struct.
@@ -328,28 +335,30 @@ func (c *Config) markLocal(path string) {
 	c.localPath = path
 	c.ignoredExecKeys = c.hasExecKeys()
 	c.ignoredEnvRefs = c.hasEnvRefs()
-	c.trustedOrigins = buildTrustedOrigins()
+	c.trustedOrigins, c.globalSafetyLevel = buildGlobalData(c.CurrentContext)
 }
 
-// buildTrustedOrigins loads the global config (best-effort, ignoring errors)
-// and returns a map from token-ref name to the lowercase hostname of the
-// environment bound to that ref. This is used by GetToken to prevent a local
-// config from redirecting stored credentials to a foreign host.
-func buildTrustedOrigins() map[string]string {
-	// Global config is trusted, so env-var expansion is safe here.
+// buildGlobalData loads the global config (best-effort, ignoring errors) and
+// returns the token-ref→hostname origin map used by GetToken (the old
+// buildTrustedOrigins output) plus the effective safety level of the context
+// named currentContext (used by GetEffectiveSafetyLevel to clamp local
+// configs). Single disk read shared by both concerns.
+func buildGlobalData(currentContext string) (origins map[string]string, globalLevel SafetyLevel) {
 	globalCfg, err := LoadFrom(DefaultConfigPath())
 	if err != nil {
-		return nil
+		return nil, ""
 	}
-	origins := make(map[string]string)
+	origins = make(map[string]string)
 	for _, nc := range globalCfg.Contexts {
 		ref := nc.Context.TokenRef
-		host := urls.Host(nc.Context.Environment)
-		if ref != "" && host != "" {
+		if host := urls.Host(nc.Context.Environment); ref != "" && host != "" {
 			origins[ref] = host
 		}
+		if nc.Name == currentContext {
+			globalLevel = nc.Context.GetEffectiveSafetyLevel()
+		}
 	}
-	return origins
+	return origins, globalLevel
 }
 
 // hasExecKeys reports whether the config defines any code-execution key:
@@ -905,6 +914,42 @@ func (c *Context) GetEffectiveSafetyLevel() SafetyLevel {
 		return DefaultSafetyLevel
 	}
 	return c.SafetyLevel
+}
+
+// safetyLevelRank returns a permissiveness rank (lower = more restrictive).
+// Empty string is treated as DefaultSafetyLevel (readwrite-all, rank 2).
+func safetyLevelRank(l SafetyLevel) int {
+	switch l {
+	case SafetyLevelReadOnly:
+		return 0
+	case SafetyLevelReadWriteMine:
+		return 1
+	case SafetyLevelDangerouslyUnrestricted:
+		return 3
+	default: // SafetyLevelReadWriteAll, "", or unknown
+		return 2
+	}
+}
+
+// GetEffectiveSafetyLevel returns the effective safety level for the current
+// context. For non-local configs this is identical to ctx.GetEffectiveSafetyLevel().
+// For auto-discovered local configs (IsLocal()), the level is clamped to
+// min(local, global) so a rogue .dtctl.yaml cannot escalate beyond what the
+// global config permits. When no global context matches (globalSafetyLevel is
+// ""), the local level is returned unchanged.
+func (c *Config) GetEffectiveSafetyLevel() SafetyLevel {
+	ctx, err := c.CurrentContextObj()
+	if err != nil {
+		return DefaultSafetyLevel
+	}
+	localLevel := ctx.GetEffectiveSafetyLevel()
+	if !c.IsLocal() || c.globalSafetyLevel == "" {
+		return localLevel
+	}
+	if safetyLevelRank(localLevel) <= safetyLevelRank(c.globalSafetyLevel) {
+		return localLevel
+	}
+	return c.globalSafetyLevel
 }
 
 // GetPreApplyHook returns the effective pre-apply hook command.

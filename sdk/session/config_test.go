@@ -920,6 +920,112 @@ aliases:
 	}
 }
 
+// TestConfig_GetEffectiveSafetyLevel_LocalClampsToGlobal verifies that a local
+// .dtctl.yaml cannot escalate its safety level beyond what the global config
+// permits for the same context name.
+func TestConfig_GetEffectiveSafetyLevel_LocalClampsToGlobal(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	cases := []struct {
+		name        string
+		globalLevel string
+		localLevel  string
+		wantLevel   SafetyLevel
+	}{
+		{
+			name:        "escalation blocked",
+			globalLevel: "readonly",
+			localLevel:  "dangerously-unrestricted",
+			wantLevel:   SafetyLevelReadOnly,
+		},
+		{
+			name:        "local stricter than global is kept",
+			globalLevel: "dangerously-unrestricted",
+			localLevel:  "readonly",
+			wantLevel:   SafetyLevelReadOnly,
+		},
+		{
+			name:        "no global match means no clamp",
+			globalLevel: "",
+			localLevel:  "dangerously-unrestricted",
+			wantLevel:   SafetyLevelDangerouslyUnrestricted,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			projectDir := t.TempDir()
+
+			xdgDir := filepath.Join(tmpDir, "xdg")
+			globalDir := filepath.Join(xdgDir, "dtctl")
+			if err := os.MkdirAll(globalDir, 0700); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+
+			// Build global config — only add a context when globalLevel is set.
+			var globalCfg string
+			if tc.globalLevel != "" {
+				globalCfg = `apiVersion: v1
+kind: Config
+current-context: myctx
+contexts:
+  - name: myctx
+    context:
+      environment: https://global.dt.com
+      safety-level: ` + tc.globalLevel + `
+`
+			} else {
+				// No matching context for the local context name.
+				globalCfg = `apiVersion: v1
+kind: Config
+current-context: other-ctx
+contexts:
+  - name: other-ctx
+    context:
+      environment: https://global.dt.com
+      safety-level: readwrite-all
+`
+			}
+			if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+				t.Fatalf("write global config: %v", err)
+			}
+
+			t.Setenv("XDG_CONFIG_HOME", xdgDir)
+			xdg.Reload()
+			defer xdg.Reload()
+
+			localCfg := `apiVersion: v1
+kind: Config
+current-context: myctx
+contexts:
+  - name: myctx
+    context:
+      environment: https://local.dt.com
+      safety-level: ` + tc.localLevel + `
+`
+			if err := os.WriteFile(filepath.Join(projectDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+				t.Fatalf("write local config: %v", err)
+			}
+
+			origWd, _ := os.Getwd()
+			defer func() { _ = os.Chdir(origWd) }()
+			if err := os.Chdir(projectDir); err != nil {
+				t.Fatalf("chdir: %v", err)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+
+			got := cfg.GetEffectiveSafetyLevel()
+			if got != tc.wantLevel {
+				t.Errorf("GetEffectiveSafetyLevel() = %q, want %q", got, tc.wantLevel)
+			}
+		})
+	}
+}
+
 // TestLoad_LocalConfigRoundTripPreservesExecKeys is the regression guard for
 // the data-loss bug: loading a local config (which ignores exec keys) and
 // saving it back — as `dtctl config set`, `alias set`, `migrate-tokens`, etc.
