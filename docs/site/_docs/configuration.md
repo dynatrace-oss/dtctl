@@ -109,24 +109,25 @@ Create a `.dtctl.yaml` in your project root for team or CI/CD configuration:
 dtctl config init
 ```
 
-This generates a template with environment variable placeholders:
+This generates a template you fill in:
 
 ```yaml
 apiVersion: dtctl.io/v1
 kind: Config
-current-context: production
+current-context: my-environment
 contexts:
-  - name: production
+  - name: my-environment
     context:
-      environment: ${DT_ENVIRONMENT_URL}
+      environment: https://your-environment.apps.dynatrace.com
       token-ref: my-token
       safety-level: readwrite-all
-tokens:
-  - name: my-token
-    token: ${DT_API_TOKEN}
+preferences:
+  output: table
 ```
 
-Commit the file to version control without secrets -- each developer or CI system provides values via environment variables.
+Set `environment` to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**: environment variable references (`${VAR}`) are not expanded and inline tokens are rejected. Tokens must come from the OS keyring (added via `dtctl ctx add`).
+
+Commit the file to version control. For CI, use `DTCTL_CONFIG` to point at a trusted config file where env-var expansion and inline tokens work — see [Trusting a prepared workspace with `DTCTL_CONFIG`](#trusting-a-prepared-workspace-with-dtctl_config) below.
 
 ### Config Search Order
 

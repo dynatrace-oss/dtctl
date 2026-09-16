@@ -120,8 +120,8 @@ Environment variables can be used in the config file using ${VAR_NAME} syntax.
 		}
 
 		output.PrintSuccess("Created %s", configPath)
-		output.PrintInfo("\nEdit this file to configure your project-local settings.")
-		output.PrintInfo("Environment variables can be used with ${VAR_NAME} syntax.")
+		output.PrintInfo("\nEdit this file and set 'environment' to your Dynatrace environment URL.")
+		output.PrintInfo("Add a token via 'dtctl ctx add' or set DTCTL_CONFIG to a trusted file for CI.")
 		return nil
 	},
 }
@@ -132,6 +132,8 @@ func createLocalConfigTemplate(contextName string) *config.Config {
 		contextName = "my-environment"
 	}
 
+	// Auto-discovered local configs do not expand env vars and reject inline tokens.
+	// Leave environment as a recognisable placeholder; tokens must come from the keyring.
 	return &config.Config{
 		APIVersion:     "dtctl.io/v1",
 		Kind:           "Config",
@@ -140,17 +142,11 @@ func createLocalConfigTemplate(contextName string) *config.Config {
 			{
 				Name: contextName,
 				Context: config.Context{
-					Environment: "${DT_ENVIRONMENT_URL}",
+					Environment: "https://your-environment.apps.dynatrace.com",
 					TokenRef:    "my-token",
 					SafetyLevel: config.SafetyLevelReadWriteAll,
 					Description: "Project environment",
 				},
-			},
-		},
-		Tokens: []config.NamedToken{
-			{
-				Name:  "my-token",
-				Token: "${DT_API_TOKEN}",
 			},
 		},
 		Preferences: config.Preferences{

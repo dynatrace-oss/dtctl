@@ -49,7 +49,6 @@ func TestConfigInitCmd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary directory
 			tmpDir := t.TempDir()
 			origDir, err := os.Getwd()
 			if err != nil {
@@ -61,14 +60,12 @@ func TestConfigInitCmd(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			// Create existing file if needed
 			if tt.existingFile {
 				if err := os.WriteFile(config.LocalConfigName, []byte("existing"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
 
-			// Parse flags manually
 			contextName := ""
 			force := false
 			for i := 0; i < len(tt.args); i++ {
@@ -80,7 +77,6 @@ func TestConfigInitCmd(t *testing.T) {
 				}
 			}
 
-			// Check if .dtctl.yaml already exists
 			configPath := config.LocalConfigName
 			if _, err := os.Stat(configPath); err == nil {
 				if !force {
@@ -91,10 +87,8 @@ func TestConfigInitCmd(t *testing.T) {
 				}
 			}
 
-			// Create template config
 			template := createLocalConfigTemplate(contextName)
 
-			// Write to file
 			data, marshalErr := yaml.Marshal(template)
 			if marshalErr != nil {
 				t.Fatalf("Failed to marshal config template: %v", marshalErr)
@@ -108,13 +102,11 @@ func TestConfigInitCmd(t *testing.T) {
 				return
 			}
 
-			// Verify file was created
 			if _, err := os.Stat(config.LocalConfigName); os.IsNotExist(err) {
 				t.Error("Expected .dtctl.yaml to be created")
 				return
 			}
 
-			// Parse and verify content
 			fileData, err := os.ReadFile(config.LocalConfigName)
 			if err != nil {
 				t.Fatalf("Failed to read created file: %v", err)
@@ -125,7 +117,6 @@ func TestConfigInitCmd(t *testing.T) {
 				t.Fatalf("Failed to parse created config: %v", err)
 			}
 
-			// Verify structure
 			if cfg.APIVersion != "dtctl.io/v1" {
 				t.Errorf("APIVersion = %q, want dtctl.io/v1", cfg.APIVersion)
 			}
@@ -136,7 +127,6 @@ func TestConfigInitCmd(t *testing.T) {
 				t.Errorf("CurrentContext = %q, want %q", cfg.CurrentContext, tt.wantContext)
 			}
 
-			// Verify context exists
 			if len(cfg.Contexts) != 1 {
 				t.Fatalf("Expected 1 context, got %d", len(cfg.Contexts))
 			}
@@ -144,17 +134,15 @@ func TestConfigInitCmd(t *testing.T) {
 				t.Errorf("Context name = %q, want %q", cfg.Contexts[0].Name, tt.wantContext)
 			}
 
-			// Verify environment variable placeholders
-			if cfg.Contexts[0].Context.Environment != "${DT_ENVIRONMENT_URL}" {
-				t.Errorf("Environment = %q, want ${DT_ENVIRONMENT_URL}", cfg.Contexts[0].Context.Environment)
+			// Template must not embed env-var references — auto-discovered local configs do not expand them.
+			env := cfg.Contexts[0].Context.Environment
+			if env == "${DT_ENVIRONMENT_URL}" || env == "$DT_ENVIRONMENT_URL" {
+				t.Errorf("Environment = %q: local config template must not use env-var syntax", env)
 			}
 
-			// Verify token placeholder
-			if len(cfg.Tokens) != 1 {
-				t.Fatalf("Expected 1 token, got %d", len(cfg.Tokens))
-			}
-			if cfg.Tokens[0].Token != "${DT_API_TOKEN}" {
-				t.Errorf("Token = %q, want ${DT_API_TOKEN}", cfg.Tokens[0].Token)
+			// Template must not include inline tokens — auto-discovered local configs reject them.
+			if len(cfg.Tokens) != 0 {
+				t.Errorf("Expected no inline tokens in template, got %d", len(cfg.Tokens))
 			}
 		})
 	}
@@ -197,7 +185,6 @@ func TestCreateLocalConfigTemplate(t *testing.T) {
 				t.Errorf("CurrentContext = %q, want %q", cfg.CurrentContext, tt.wantContext)
 			}
 
-			// Verify contexts
 			if len(cfg.Contexts) != 1 {
 				t.Fatalf("Expected 1 context, got %d", len(cfg.Contexts))
 			}
@@ -205,9 +192,15 @@ func TestCreateLocalConfigTemplate(t *testing.T) {
 			if ctx.Name != tt.wantContext {
 				t.Errorf("Context name = %q, want %q", ctx.Name, tt.wantContext)
 			}
-			if ctx.Context.Environment != "${DT_ENVIRONMENT_URL}" {
-				t.Errorf("Environment = %q, want ${DT_ENVIRONMENT_URL}", ctx.Context.Environment)
+
+			// Must be a literal placeholder URL, not an env-var reference.
+			if ctx.Context.Environment == "" {
+				t.Error("Environment must not be empty")
 			}
+			if ctx.Context.Environment == "${DT_ENVIRONMENT_URL}" || ctx.Context.Environment == "$DT_ENVIRONMENT_URL" {
+				t.Errorf("Environment = %q: template must not use env-var syntax (not expanded for local configs)", ctx.Context.Environment)
+			}
+
 			if ctx.Context.TokenRef != "my-token" {
 				t.Errorf("TokenRef = %q, want my-token", ctx.Context.TokenRef)
 			}
@@ -215,19 +208,11 @@ func TestCreateLocalConfigTemplate(t *testing.T) {
 				t.Errorf("SafetyLevel = %q, want %q", ctx.Context.SafetyLevel, config.SafetyLevelReadWriteAll)
 			}
 
-			// Verify tokens
-			if len(cfg.Tokens) != 1 {
-				t.Fatalf("Expected 1 token, got %d", len(cfg.Tokens))
-			}
-			token := cfg.Tokens[0]
-			if token.Name != "my-token" {
-				t.Errorf("Token name = %q, want my-token", token.Name)
-			}
-			if token.Token != "${DT_API_TOKEN}" {
-				t.Errorf("Token = %q, want ${DT_API_TOKEN}", token.Token)
+			// No inline tokens — local configs reject them.
+			if len(cfg.Tokens) != 0 {
+				t.Errorf("Template must not include inline tokens, got %d", len(cfg.Tokens))
 			}
 
-			// Verify preferences
 			if cfg.Preferences.Output != "table" {
 				t.Errorf("Preferences.Output = %q, want table", cfg.Preferences.Output)
 			}
@@ -236,7 +221,6 @@ func TestCreateLocalConfigTemplate(t *testing.T) {
 }
 
 func TestConfigInitCmd_Integration(t *testing.T) {
-	// Create temporary directory
 	tmpDir := t.TempDir()
 	origDir, err := os.Getwd()
 	if err != nil {
@@ -248,7 +232,6 @@ func TestConfigInitCmd_Integration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create template config manually (like the command does)
 	template := createLocalConfigTemplate("test-env")
 	data, err := yaml.Marshal(template)
 	if err != nil {
@@ -259,30 +242,28 @@ func TestConfigInitCmd_Integration(t *testing.T) {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
-	// Set environment variables
-	os.Setenv("DT_ENVIRONMENT_URL", "https://test.dynatrace.com")
-	os.Setenv("DT_API_TOKEN", "dt0s16.TEST_TOKEN")
-	defer os.Unsetenv("DT_ENVIRONMENT_URL")
-	defer os.Unsetenv("DT_API_TOKEN")
-
-	// Load the config with environment variable expansion
+	// Load via the explicit (trusted) path — no env-var expansion is needed because
+	// the template now uses a literal placeholder URL and carries no inline tokens.
 	cfg, err := config.LoadFrom(filepath.Join(tmpDir, config.LocalConfigName))
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Verify environment variables were expanded
 	if len(cfg.Contexts) != 1 {
 		t.Fatalf("Expected 1 context, got %d", len(cfg.Contexts))
 	}
-	if cfg.Contexts[0].Context.Environment != "https://test.dynatrace.com" {
-		t.Errorf("Environment = %q, want https://test.dynatrace.com", cfg.Contexts[0].Context.Environment)
+
+	env := cfg.Contexts[0].Context.Environment
+	if env == "" {
+		t.Error("Environment must not be empty after load")
+	}
+	// The placeholder must not contain unresolved env-var references.
+	if env == "${DT_ENVIRONMENT_URL}" || env == "$DT_ENVIRONMENT_URL" {
+		t.Errorf("Environment = %q: unexpanded env-var reference in template", env)
 	}
 
-	if len(cfg.Tokens) != 1 {
-		t.Fatalf("Expected 1 token, got %d", len(cfg.Tokens))
-	}
-	if cfg.Tokens[0].Token != "dt0s16.TEST_TOKEN" {
-		t.Errorf("Token = %q, want dt0s16.TEST_TOKEN", cfg.Tokens[0].Token)
+	// No tokens section in the template.
+	if len(cfg.Tokens) != 0 {
+		t.Errorf("Expected no inline tokens, got %d", len(cfg.Tokens))
 	}
 }
