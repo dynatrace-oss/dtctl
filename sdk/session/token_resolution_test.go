@@ -310,7 +310,10 @@ func newLocalConfig(t *testing.T, environment, tokenRef string, trustedOrigins m
 	}
 	cfg.markLocal(tmpFile)
 	if trustedOrigins != nil {
-		cfg.trustedOrigins = trustedOrigins
+		cfg.globalBindings = make(map[string]globalBinding, len(trustedOrigins))
+		for ref, host := range trustedOrigins {
+			cfg.globalBindings[ref] = globalBinding{hosts: []string{host}, level: DefaultSafetyLevel}
+		}
 	}
 	return cfg
 }

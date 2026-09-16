@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/adrg/xdg"
@@ -46,19 +47,15 @@ type Config struct {
 	// untrusted local configs. The caller can surface a warning so the user
 	// knows to use --config / DTCTL_CONFIG if they intended expansion.
 	ignoredEnvRefs bool
-	// trustedOrigins maps token-ref names to the canonical hostname of their
-	// associated environment as recorded in the global config. When IsLocal()
-	// is true, GetToken checks that the local context's environment host
-	// matches the global binding so a rogue local config cannot redirect stored
-	// credentials to an attacker-controlled host.
-	trustedOrigins map[string]string
-	// globalSafetyLevel is the effective safety level of the matching context in
-	// the global config, populated during markLocal (same disk read as
-	// trustedOrigins). Used by GetEffectiveSafetyLevel to clamp the local
-	// context's level so a rogue .dtctl.yaml cannot escalate beyond what the
-	// global config permits. Empty when the global config is unreadable or has no
-	// matching context.
-	globalSafetyLevel SafetyLevel
+	// globalBindings maps token-ref names to what the global config records for
+	// them: the canonical hostname of the associated environment and that
+	// context's effective safety level. When IsLocal() is true, GetToken checks
+	// the host so a rogue local config cannot redirect stored credentials to an
+	// attacker-controlled host, and GetEffectiveSafetyLevel clamps to the level
+	// so it cannot escalate past what the credential's owner permits. Keyed by
+	// token-ref rather than context name because that is the binding a local
+	// config actually borrows — it is free to rename its context.
+	globalBindings map[string]globalBinding
 	// inlineOnly is set by SealInlineCredentials to restrict token resolution to
 	// the inline Tokens list. When true, GetToken never consults the keyring,
 	// file store, or OAuth machinery — only the values carried in the struct.
@@ -335,30 +332,56 @@ func (c *Config) markLocal(path string) {
 	c.localPath = path
 	c.ignoredExecKeys = c.hasExecKeys()
 	c.ignoredEnvRefs = c.hasEnvRefs()
-	c.trustedOrigins, c.globalSafetyLevel = buildGlobalData(c.CurrentContext)
+	c.globalBindings = buildGlobalBindings()
 }
 
-// buildGlobalData loads the global config (best-effort, ignoring errors) and
-// returns the token-ref→hostname origin map used by GetToken (the old
-// buildTrustedOrigins output) plus the effective safety level of the context
-// named currentContext (used by GetEffectiveSafetyLevel to clamp local
-// configs). Single disk read shared by both concerns.
-func buildGlobalData(currentContext string) (origins map[string]string, globalLevel SafetyLevel) {
+// globalBinding is what the global config records for one token-ref: the hosts
+// its credential belongs to and the safety level its owner granted. Several
+// global contexts may share a token-ref, so both fields accumulate across them:
+// every bound host is accepted, and the level is the most restrictive one
+// granted, so YAML ordering cannot widen either.
+type globalBinding struct {
+	hosts []string
+	level SafetyLevel
+}
+
+// allows reports whether host is one of the hosts this token-ref is bound to.
+func (b globalBinding) allows(host string) bool {
+	return slices.Contains(b.hosts, host)
+}
+
+// buildGlobalBindings loads the global config (best-effort, ignoring errors)
+// and returns the token-ref→binding map. GetToken uses the host to reject a
+// local config that redirects a credential elsewhere; GetEffectiveSafetyLevel
+// uses the level to clamp one that tries to escalate. Single disk read shared
+// by both concerns.
+func buildGlobalBindings() map[string]globalBinding {
 	globalCfg, err := LoadFrom(DefaultConfigPath())
 	if err != nil {
-		return nil, ""
+		return nil
 	}
-	origins = make(map[string]string)
+	bindings := make(map[string]globalBinding)
 	for _, nc := range globalCfg.Contexts {
 		ref := nc.Context.TokenRef
-		if host := urls.Host(nc.Context.Environment); ref != "" && host != "" {
-			origins[ref] = host
+		host := urls.Host(nc.Context.Environment)
+		if ref == "" || host == "" {
+			continue
 		}
-		if nc.Name == currentContext {
-			globalLevel = nc.Context.GetEffectiveSafetyLevel()
+		level := nc.Context.GetEffectiveSafetyLevel()
+		b, seen := bindings[ref]
+		if !seen {
+			bindings[ref] = globalBinding{hosts: []string{host}, level: level}
+			continue
 		}
+		if !b.allows(host) {
+			b.hosts = append(b.hosts, host)
+		}
+		if safetyLevelRank(level) < safetyLevelRank(b.level) {
+			b.level = level
+		}
+		bindings[ref] = b
 	}
-	return origins, globalLevel
+	return bindings
 }
 
 // hasExecKeys reports whether the config defines any code-execution key:
@@ -725,11 +748,11 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 		// .dtctl.yaml from redirecting stored credentials to a foreign host.
 		if ctx, err := c.CurrentContextObj(); err == nil && ctx.TokenRef == tokenRef {
 			localHost := urls.Host(ctx.Environment)
-			if trustedHost, ok := c.trustedOrigins[tokenRef]; ok {
-				if localHost != trustedHost {
+			if binding, ok := c.globalBindings[tokenRef]; ok {
+				if !binding.allows(localHost) {
 					return "", fmt.Errorf(
-						"local config %q redirects token %q from trusted host %q to %q — use --config or DTCTL_CONFIG",
-						c.localPath, tokenRef, trustedHost, localHost)
+						"local config %q redirects token %q from trusted host(s) %s to %q — use --config or DTCTL_CONFIG",
+						c.localPath, tokenRef, strings.Join(binding.hosts, ", "), localHost)
 				}
 			} else {
 				return "", fmt.Errorf(
@@ -935,21 +958,32 @@ func safetyLevelRank(l SafetyLevel) int {
 // context. For non-local configs this is identical to ctx.GetEffectiveSafetyLevel().
 // For auto-discovered local configs (IsLocal()), the level is clamped to
 // min(local, global) so a rogue .dtctl.yaml cannot escalate beyond what the
-// global config permits. When no global context matches (globalSafetyLevel is
-// ""), the local level is returned unchanged.
+// owner of the borrowed credential permits. The global level is looked up by
+// the context's token-ref — the same binding GetToken enforces — so renaming the
+// local context does not shed the clamp, and resolving it here rather than at
+// load time keeps it correct under --context / DTCTL_CONTEXT overrides.
+//
+// A token-ref with no global binding has no trust anchor at all, so it is
+// clamped to DefaultSafetyLevel rather than left free. Such a context cannot
+// reach an API either way (GetToken refuses to resolve it), so this costs
+// nothing and keeps the guarantee independent of token resolution.
 func (c *Config) GetEffectiveSafetyLevel() SafetyLevel {
 	ctx, err := c.CurrentContextObj()
 	if err != nil {
 		return DefaultSafetyLevel
 	}
 	localLevel := ctx.GetEffectiveSafetyLevel()
-	if !c.IsLocal() || c.globalSafetyLevel == "" {
+	if !c.IsLocal() {
 		return localLevel
 	}
-	if safetyLevelRank(localLevel) <= safetyLevelRank(c.globalSafetyLevel) {
+	ceiling := DefaultSafetyLevel
+	if binding, ok := c.globalBindings[ctx.TokenRef]; ok {
+		ceiling = binding.level
+	}
+	if safetyLevelRank(localLevel) <= safetyLevelRank(ceiling) {
 		return localLevel
 	}
-	return c.globalSafetyLevel
+	return ceiling
 }
 
 // GetPreApplyHook returns the effective pre-apply hook command.

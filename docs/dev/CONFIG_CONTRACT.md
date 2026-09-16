@@ -19,7 +19,7 @@ update this spec in the same PR.
 | Token-refresh lock | `$TMPDIR/dtctl-token-refresh-<sha256[:8] of env:tokenRef>.lock` |
 
 Security note: auto-discovered `.dtctl.yaml` files are treated as untrusted
-(the classic "checked-out repo / shared directory" scenario). Three restrictions
+(the classic "checked-out repo / shared directory" scenario). Five restrictions
 apply — see `Config.IsLocal()`:
 
 1. **No env-var expansion.** `$VAR` references are left as-is; use `--config`
@@ -29,6 +29,23 @@ apply — see `Config.IsLocal()`:
 3. **Origin binding.** The environment URL in the local context must resolve to
    the same hostname as the global config binding for the same `token-ref`,
    preventing credential redirection to a foreign host.
+4. **Safety-level clamp.** The context's level is reduced to
+   `min(local, global)` so a local file cannot grant itself more than the owner
+   of the borrowed credential granted. A `token-ref` with no global binding is
+   clamped to `DefaultSafetyLevel`.
+5. **Destination allowlist.** `NewClientFromConfig` requires the environment URL
+   to be https, on a `.dynatrace.com` / `.dynatracelabs.com` host, with no
+   embedded credentials, query, or fragment (`sdk/session/client.go`).
+
+Restrictions 3 and 4 share one lookup, `buildGlobalBindings()`, keyed by
+`token-ref` — *not* by context name, since a local config is free to rename its
+context while still borrowing the same credential. The clamp is resolved on
+each `GetEffectiveSafetyLevel()` call rather than snapshotted at load time, so
+it survives a `--context` / `DTCTL_CONTEXT` override. A `token-ref` with no
+global binding yields no ceiling of its own, so restriction 4 falls back to the
+default. Where several global contexts share a `token-ref`, the binding keeps
+every bound host and the *strictest* level, so YAML ordering cannot widen
+either.
 
 Code-execution keys (aliases, apply hooks) are loaded for round-tripping but
 **never honored**.

@@ -274,13 +274,21 @@ func describeContext(name string) error {
 		currentMark = " (current)"
 	}
 
+	// For the current context the enforced level may be clamped below what the
+	// file declares (a local .dtctl.yaml cannot exceed its global binding), so
+	// report the clamped one. Other contexts are described as written.
+	level := found.Context.GetEffectiveSafetyLevel()
+	if isCurrent {
+		level = cfg.GetEffectiveSafetyLevel()
+	}
+
 	const w = 14
 	output.DescribeKV("Name:", w, "%s%s", found.Name, currentMark)
 	output.DescribeKV("Environment:", w, "%s", found.Context.Environment)
 	output.DescribeKV("Token-Ref:", w, "%s", found.Context.TokenRef)
-	output.DescribeKV("Safety Level:", w, "%s", found.Context.GetEffectiveSafetyLevel())
+	output.DescribeKV("Safety Level:", w, "%s", level)
 
-	switch found.Context.GetEffectiveSafetyLevel() {
+	switch level {
 	case config.SafetyLevelReadOnly:
 		fmt.Printf("%*s(No modifications allowed)\n", w, "")
 	case config.SafetyLevelReadWriteMine:

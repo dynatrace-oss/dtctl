@@ -922,32 +922,65 @@ aliases:
 
 // TestConfig_GetEffectiveSafetyLevel_LocalClampsToGlobal verifies that a local
 // .dtctl.yaml cannot escalate its safety level beyond what the global config
-// permits for the same context name.
+// permits for the token-ref it borrows. The clamp is keyed by token-ref, the
+// same binding GetToken enforces, so it holds even when the local context is
+// named differently from the global one.
 func TestConfig_GetEffectiveSafetyLevel_LocalClampsToGlobal(t *testing.T) {
 	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
 	cases := []struct {
-		name        string
-		globalLevel string
-		localLevel  string
-		wantLevel   SafetyLevel
+		name         string
+		globalLevel  string
+		localCtxName string
+		localRef     string
+		localLevel   string
+		wantLevel    SafetyLevel
 	}{
 		{
-			name:        "escalation blocked",
-			globalLevel: "readonly",
-			localLevel:  "dangerously-unrestricted",
-			wantLevel:   SafetyLevelReadOnly,
+			name:         "escalation blocked",
+			globalLevel:  "readonly",
+			localCtxName: "myctx",
+			localRef:     "prod-token",
+			localLevel:   "dangerously-unrestricted",
+			wantLevel:    SafetyLevelReadOnly,
 		},
 		{
-			name:        "local stricter than global is kept",
-			globalLevel: "dangerously-unrestricted",
-			localLevel:  "readonly",
-			wantLevel:   SafetyLevelReadOnly,
+			// The reviewer's case: the local config satisfies the origin
+			// binding (same token-ref, same host) but renames the context.
+			// Keying the clamp by context name let this escalate.
+			name:         "escalation blocked when context name differs",
+			globalLevel:  "readonly",
+			localCtxName: "project-local",
+			localRef:     "prod-token",
+			localLevel:   "dangerously-unrestricted",
+			wantLevel:    SafetyLevelReadOnly,
 		},
 		{
-			name:        "no global match means no clamp",
-			globalLevel: "",
-			localLevel:  "dangerously-unrestricted",
-			wantLevel:   SafetyLevelDangerouslyUnrestricted,
+			name:         "local stricter than global is kept",
+			globalLevel:  "dangerously-unrestricted",
+			localCtxName: "myctx",
+			localRef:     "prod-token",
+			localLevel:   "readonly",
+			wantLevel:    SafetyLevelReadOnly,
+		},
+		{
+			// An omitted global safety-level still clamps: it resolves to the
+			// readwrite-all default, not to "unbounded".
+			name:         "omitted global level clamps to the default",
+			globalLevel:  "",
+			localCtxName: "myctx",
+			localRef:     "prod-token",
+			localLevel:   "dangerously-unrestricted",
+			wantLevel:    SafetyLevelReadWriteAll,
+		},
+		{
+			// An unbound token-ref has no trust anchor, so it gets no more
+			// than the default. GetToken refuses it as well.
+			name:         "unbound token-ref clamps to the default",
+			globalLevel:  "readonly",
+			localCtxName: "myctx",
+			localRef:     "unbound-token",
+			localLevel:   "dangerously-unrestricted",
+			wantLevel:    SafetyLevelReadWriteAll,
 		},
 	}
 
@@ -962,29 +995,17 @@ func TestConfig_GetEffectiveSafetyLevel_LocalClampsToGlobal(t *testing.T) {
 				t.Fatalf("mkdir: %v", err)
 			}
 
-			// Build global config — only add a context when globalLevel is set.
-			var globalCfg string
-			if tc.globalLevel != "" {
-				globalCfg = `apiVersion: v1
+			globalCfg := `apiVersion: v1
 kind: Config
 current-context: myctx
 contexts:
   - name: myctx
     context:
       environment: https://global.dt.com
-      safety-level: ` + tc.globalLevel + `
+      token-ref: prod-token
 `
-			} else {
-				// No matching context for the local context name.
-				globalCfg = `apiVersion: v1
-kind: Config
-current-context: other-ctx
-contexts:
-  - name: other-ctx
-    context:
-      environment: https://global.dt.com
-      safety-level: readwrite-all
-`
+			if tc.globalLevel != "" {
+				globalCfg += "      safety-level: " + tc.globalLevel + "\n"
 			}
 			if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
 				t.Fatalf("write global config: %v", err)
@@ -996,11 +1017,12 @@ contexts:
 
 			localCfg := `apiVersion: v1
 kind: Config
-current-context: myctx
+current-context: ` + tc.localCtxName + `
 contexts:
-  - name: myctx
+  - name: ` + tc.localCtxName + `
     context:
-      environment: https://local.dt.com
+      environment: https://global.dt.com
+      token-ref: ` + tc.localRef + `
       safety-level: ` + tc.localLevel + `
 `
 			if err := os.WriteFile(filepath.Join(projectDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
@@ -1023,6 +1045,151 @@ contexts:
 				t.Errorf("GetEffectiveSafetyLevel() = %q, want %q", got, tc.wantLevel)
 			}
 		})
+	}
+}
+
+// TestBuildGlobalBindings_SharedTokenRefTakesStrictestLevelAndAllHosts pins the
+// multi-binding case: when several global contexts share one token-ref, the
+// clamp ceiling must not depend on YAML ordering, and every bound host must
+// stay acceptable to the origin check.
+func TestBuildGlobalBindings_SharedTokenRefTakesStrictestLevelAndAllHosts(t *testing.T) {
+	// NOT parallel: XDG_CONFIG_HOME is process-global.
+	for _, order := range []struct {
+		name  string
+		first string
+	}{
+		{name: "permissive context first", first: "readwrite-all"},
+		{name: "restrictive context first", first: "readonly"},
+	} {
+		t.Run(order.name, func(t *testing.T) {
+			second := "readonly"
+			if order.first == "readonly" {
+				second = "readwrite-all"
+			}
+
+			xdgDir := filepath.Join(t.TempDir(), "xdg")
+			globalDir := filepath.Join(xdgDir, "dtctl")
+			if err := os.MkdirAll(globalDir, 0700); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			globalCfg := `apiVersion: v1
+kind: Config
+current-context: a
+contexts:
+  - name: a
+    context:
+      environment: https://one.dt.com
+      token-ref: shared
+      safety-level: ` + order.first + `
+  - name: b
+    context:
+      environment: https://two.dt.com
+      token-ref: shared
+      safety-level: ` + second + `
+`
+			if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+				t.Fatalf("write global config: %v", err)
+			}
+			t.Setenv("XDG_CONFIG_HOME", xdgDir)
+			xdg.Reload()
+			defer xdg.Reload()
+
+			binding, ok := buildGlobalBindings()["shared"]
+			if !ok {
+				t.Fatal("token-ref \"shared\" has no binding")
+			}
+			if binding.level != SafetyLevelReadOnly {
+				t.Errorf("level = %q, want %q (strictest of the two)", binding.level, SafetyLevelReadOnly)
+			}
+			for _, host := range []string{"one.dt.com", "two.dt.com"} {
+				if !binding.allows(host) {
+					t.Errorf("allows(%q) = false, want true; hosts = %v", host, binding.hosts)
+				}
+			}
+		})
+	}
+}
+
+// TestGetToken_UnboundLocalTokenRefIsRefused is the premise the "unbound
+// token-ref" clamp case relies on: such a context cannot reach an API at all.
+func TestGetToken_UnboundLocalTokenRefIsRefused(t *testing.T) {
+	cfg := newLocalConfig(t, "https://abc.apps.dynatrace.com", "unbound-token",
+		map[string]string{"other-token": "abc.apps.dynatrace.com"})
+
+	if _, err := cfg.GetToken("unbound-token"); err == nil {
+		t.Fatal("GetToken() succeeded for an unbound token-ref, want an error")
+	} else if !strings.Contains(err.Error(), "not bound to any environment") {
+		t.Errorf("GetToken() error = %v, want a not-bound error", err)
+	}
+}
+
+// TestConfig_GetEffectiveSafetyLevel_ClampFollowsContextOverride verifies the
+// clamp is resolved from the context in effect, not from the one named in the
+// local file at load time — --context / DTCTL_CONTEXT rewrite CurrentContext
+// after Load().
+func TestConfig_GetEffectiveSafetyLevel_ClampFollowsContextOverride(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	xdgDir := filepath.Join(tmpDir, "xdg")
+	globalDir := filepath.Join(xdgDir, "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	globalCfg := `apiVersion: v1
+kind: Config
+current-context: safe
+contexts:
+  - name: safe
+    context:
+      environment: https://global.dt.com
+      token-ref: prod-token
+      safety-level: readonly
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+	xdg.Reload()
+	defer xdg.Reload()
+
+	// The first context carries no token-ref; the override target borrows the
+	// globally bound one and tries to escalate.
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: unbound
+contexts:
+  - name: unbound
+    context:
+      environment: https://global.dt.com
+      safety-level: readwrite-all
+  - name: escalated
+    context:
+      environment: https://global.dt.com
+      token-ref: prod-token
+      safety-level: dangerously-unrestricted
+`
+	if err := os.WriteFile(filepath.Join(projectDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	cfg.CurrentContext = "escalated"
+	if got := cfg.GetEffectiveSafetyLevel(); got != SafetyLevelReadOnly {
+		t.Errorf("GetEffectiveSafetyLevel() after override = %q, want %q", got, SafetyLevelReadOnly)
 	}
 }
 

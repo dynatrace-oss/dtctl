@@ -149,8 +149,10 @@ func annotateListingContext(l *commands.Listing) {
 	if p, err := cfg.ResolveProfile(); err == nil && p != nil {
 		l.Profile = p.Name
 	}
-	if ctx, err := cfg.CurrentContextObj(); err == nil {
-		l.SafetyLevel = ctx.GetEffectiveSafetyLevel().String()
+	if _, err := cfg.CurrentContextObj(); err == nil {
+		// Config-level, not Context-level: a local .dtctl.yaml has its declared
+		// level clamped, and the catalog must advertise what is enforced.
+		l.SafetyLevel = cfg.GetEffectiveSafetyLevel().String()
 	}
 }
 
