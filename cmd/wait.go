@@ -185,7 +185,11 @@ Examples:
 		waiter := wait.NewQueryWaiter(executor, waitConfig)
 
 		// Execute wait
-		result, err := waiter.Wait(cmd.Context())
+		waitCtx := cmd.Context()
+		if waitCtx == nil {
+			waitCtx = context.Background()
+		}
+		result, err := waiter.Wait(waitCtx)
 		if err != nil && err != context.DeadlineExceeded {
 			return fmt.Errorf("wait failed: %w", err)
 		}

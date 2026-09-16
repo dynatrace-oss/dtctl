@@ -15,6 +15,10 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
+// ErrTooManyQueued is returned when a request is rejected because the queue
+// depth would exceed MaxQueued. The caller should retry after a short delay.
+var ErrTooManyQueued = errors.New("engine: too many queued requests")
+
 // engineSlot is the single-execution semaphore: only one invocation runs at a time.
 var engineSlot = make(chan struct{}, 1)
 
@@ -108,8 +112,9 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 		return nil, err
 	}
 	// Apply the duration budget. The timeout context is threaded into the
-	// command tree (via RunOptions.Context) so long-running loops that observe
-	// cmd.Context() are cancelled when the budget elapses.
+	// command tree via RunOptions.Context. Commands that call cmd.Context()
+	// will observe this deadline; commands that use context.Background()
+	// directly are not bounded by it.
 	timeoutCtx, cancelTimeout := context.WithTimeout(ctx, limits.MaxDuration)
 	defer cancelTimeout()
 
@@ -119,7 +124,7 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 	engineQueued.Add(1)
 	if engineQueued.Load() > int64(limits.MaxQueued) {
 		engineQueued.Add(-1)
-		return nil, errors.New("engine: too many queued requests")
+		return nil, ErrTooManyQueued
 	}
 	select {
 	case engineSlot <- struct{}{}:
@@ -172,6 +177,12 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 		BlockedCommands: unsupportedCommands,
 		Context:         timeoutCtx,
 	})
+
+	if stdout.truncated || stderr.truncated {
+		// Best-effort: write a note so the caller can surface truncation even
+		// if it only checks stderr or doesn't inspect the Truncated field.
+		_, _ = fmt.Fprintln(stderr, "[dtctl: output truncated at limit]")
+	}
 
 	return &Result{
 		ExitCode:  code,

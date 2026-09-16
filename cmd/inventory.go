@@ -101,7 +101,11 @@ Examples:
 		}
 
 		// Cancel cleanly on Ctrl+C: discovery aborts, nothing is half-reported.
-		ctx, cancel := context.WithCancel(cmd.Context())
+		cmdCtx := cmd.Context()
+		if cmdCtx == nil {
+			cmdCtx = context.Background()
+		}
+		ctx, cancel := context.WithCancel(cmdCtx)
 		defer cancel()
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
