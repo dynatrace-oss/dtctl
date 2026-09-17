@@ -128,7 +128,7 @@ func TestSLOLifecycle(t *testing.T) {
 						continue
 					}
 
-					if pollResp.EvaluationResults != nil && len(pollResp.EvaluationResults) > 0 {
+					if len(pollResp.EvaluationResults) > 0 {
 						t.Logf("✓ Evaluation completed after %d attempts", attempt)
 						for _, result := range pollResp.EvaluationResults {
 							t.Logf("  - Criteria: %s, Status: %s", result.Criteria, result.Status)
