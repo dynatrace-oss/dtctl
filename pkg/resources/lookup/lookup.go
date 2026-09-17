@@ -111,7 +111,7 @@ func (r *UploadResponse) CheckRecordCount() (warning string, err error) {
 	}
 
 	if r.Records == 0 {
-		return "", fmt.Errorf("none of the %d uploaded records were stored: the parse pattern matched no line. Pass an explicit --parse-pattern matching the input format", r.InputRecords)
+		return "", fmt.Errorf("none of the %d uploaded records were stored: the parse pattern matched no line; check the input format or adjust --parse-pattern", r.InputRecords)
 	}
 
 	return fmt.Sprintf("only %d of %d records were stored; %d line(s) did not match the parse pattern", r.Records, r.InputRecords, r.InputRecords-accounted), nil
