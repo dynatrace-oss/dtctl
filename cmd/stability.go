@@ -224,14 +224,25 @@ func configForArgs(args []string) *config.Config {
 	return cfg
 }
 
+// surfaceConfig is configForArgs with an empty config substituted for "no
+// usable config", for the two resolvers whose inputs also come from the
+// environment. Without the substitution a machine with no config file at all —
+// a fresh install, a container, CI — would silently ignore DTCTL_DEVELOPMENT
+// and DTCTL_MIN_STABILITY, since both are read through a Config. The legacy
+// DTCTL_EXPERIMENTAL_* variables never had that dependency, so honoring only
+// them would also make the deprecated spelling the more reliable one.
+func surfaceConfig(args []string) *config.Config {
+	if cfg := configForArgs(args); cfg != nil {
+		return cfg
+	}
+	return config.NewConfig()
+}
+
 // resolveDevelopmentFeatures returns the development features this invocation
 // has opted into, plus whether a disabled development command may explain
-// itself. An unparseable config yields the empty set, which is the closed state.
+// itself.
 func resolveDevelopmentFeatures(args []string) (map[string]bool, bool) {
-	cfg := configForArgs(args)
-	if cfg == nil {
-		return legacyDevelopmentFeatures(nil), false
-	}
+	cfg := surfaceConfig(args)
 	return legacyDevelopmentFeatures(cfg.EnabledDevelopmentFeatures()),
 		developmentSignposting(cfg)
 }
@@ -244,13 +255,10 @@ func resolveDevelopmentFeatures(args []string) (map[string]bool, bool) {
 // pipeline runs at all, because a server has to start outside the
 // per-invocation lock. Everything inside the pipeline uses the resolved set.
 func DevelopmentFeatureEnabled(feature string) bool {
-	// os.Args rather than nil: this runs before cobra parses anything, and a
-	// caller who pointed --config at another file means it here too.
-	var argv []string
-	if len(os.Args) > 1 {
-		argv = os.Args[1:]
-	}
-	enabled, _ := resolveDevelopmentFeatures(argv)
+	// No args: main's dispatch requires `serve` to be argv[1], so no --config
+	// can precede it, and this is also reachable from a library caller inside a
+	// test binary, whose os.Args holds -test.* flags rather than CLI argv.
+	enabled, _ := resolveDevelopmentFeatures(nil)
 	return stability.Enabled(feature, enabled)
 }
 
@@ -326,10 +334,7 @@ func developmentSignposting(cfg *config.Config) bool {
 // the floor exists to constrain.
 func resolveStabilityPolicy(args []string, devEnabled map[string]bool) (stability.Policy, error) {
 	granted := stability.DefaultRegistry().EnabledPaths(devEnabled)
-	cfg := configForArgs(args)
-	if cfg == nil {
-		return stability.Policy{Development: granted}, nil
-	}
+	cfg := surfaceConfig(args)
 	floor, err := cfg.ResolveMinStability()
 	if err != nil {
 		return stability.Policy{}, err

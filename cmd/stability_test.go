@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -360,5 +361,36 @@ func TestLegacyExperimentalEnvVarsStillEnableTheirFeature(t *testing.T) {
 	enabled = legacyDevelopmentFeatures(map[string]bool{accountDevelopmentFeature: true})
 	if !enabled[accountDevelopmentFeature] {
 		t.Error("an unset legacy variable turned off a current opt-in")
+	}
+}
+
+// TestEnvironmentOptInSurvivesAMissingConfig pins the case CI caught and a
+// developer machine cannot: with no loadable config file at all — a fresh
+// install, a container, a CI runner — the environment must still be able to
+// switch a development feature on and to set the floor.
+//
+// Both are read through a Config, so a resolver that gave up when the file was
+// missing silently ignored DTCTL_DEVELOPMENT and DTCTL_MIN_STABILITY while the
+// deprecated DTCTL_EXPERIMENTAL_* variables (plain os.Getenv) kept working —
+// making the spelling we want to retire the only reliable one.
+func TestEnvironmentOptInSurvivesAMissingConfig(t *testing.T) {
+	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "absent.yaml"))
+
+	t.Setenv(config.DevelopmentEnvVar, "serve")
+	enabled, signpost := resolveDevelopmentFeatures(nil)
+	if !stability.Enabled("serve", enabled) {
+		t.Error("an environment opt-in was dropped because no config file exists")
+	}
+	if !signpost {
+		t.Error("a caller who set DTCTL_DEVELOPMENT was not treated as knowing the mechanism")
+	}
+
+	t.Setenv(config.MinStabilityEnvVar, "stable")
+	policy, err := resolveStabilityPolicy(nil, enabled)
+	if err != nil {
+		t.Fatalf("resolveStabilityPolicy: %v", err)
+	}
+	if policy.EffectiveFloor() != stability.Stable {
+		t.Errorf("floor = %q, want stable", policy.EffectiveFloor())
 	}
 }
