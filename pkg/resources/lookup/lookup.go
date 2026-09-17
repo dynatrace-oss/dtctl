@@ -2,7 +2,6 @@ package lookup
 
 import (
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,6 +82,39 @@ type UploadResponse struct {
 	SkippedRecords      int   `json:"skippedRecords"`
 	DiscardedDuplicates int   `json:"discardedDuplicates"`
 	Records             int   `json:"records"`
+
+	// InputRecords is the number of data records dtctl sent, filled in
+	// client-side (the API does not return it). It is the baseline the
+	// server-side counts above are checked against.
+	InputRecords int `json:"inputRecords,omitempty"`
+	// ParsePattern is the DPL pattern the content was uploaded with, filled
+	// in client-side so callers can report the auto-detected one.
+	ParsePattern string `json:"parsePattern,omitempty"`
+}
+
+// CheckRecordCount compares the server-side record counts against the number
+// of records dtctl uploaded. The upload API answers 2xx even when the parse
+// pattern matched nothing, so a near-total parse failure otherwise looks like
+// a successful create (issue #471).
+//
+// It returns a warning for a partial loss and an error when nothing at all was
+// stored. Both are empty when InputRecords is unknown or everything is
+// accounted for.
+func (r *UploadResponse) CheckRecordCount() (warning string, err error) {
+	if r.InputRecords <= 0 {
+		return "", nil
+	}
+
+	accounted := r.Records + r.DiscardedDuplicates
+	if accounted >= r.InputRecords {
+		return "", nil
+	}
+
+	if r.Records == 0 {
+		return "", fmt.Errorf("none of the %d uploaded records were stored: the parse pattern matched no line. Pass an explicit --parse-pattern matching the input format", r.InputRecords)
+	}
+
+	return fmt.Sprintf("only %d of %d records were stored; %d line(s) did not match the parse pattern", r.Records, r.InputRecords, r.InputRecords-accounted), nil
 }
 
 // DeleteRequest represents a request to delete a lookup table
@@ -326,13 +358,22 @@ func (h *Handler) Create(req CreateRequest) (*UploadResponse, error) {
 	}
 
 	// Auto-detect parse pattern for CSV if not specified
+	var inputRecords int
 	if req.ParsePattern == "" {
-		pattern, skipped, err := DetectCSVPattern(dataContent)
+		prepared, err := PrepareCSV(dataContent)
 		if err != nil {
 			return nil, fmt.Errorf("failed to detect CSV pattern: %w", err)
 		}
-		req.ParsePattern = pattern
-		req.SkippedRecords = skipped
+		req.ParsePattern = prepared.Pattern
+		req.SkippedRecords = prepared.SkippedRecords
+		// PrepareCSV rewrites quoted or ragged CSV so the pattern above can
+		// actually match it; for well-formed input Content is the original.
+		dataContent = prepared.Content
+		inputRecords = prepared.DataRecords
+	} else {
+		// With a caller-supplied pattern dtctl does not know the format, so
+		// the line count is the only baseline available.
+		inputRecords = max(countDataRecords(dataContent)-req.SkippedRecords, 0)
 	}
 
 	// Set defaults
@@ -407,6 +448,8 @@ func (h *Handler) Create(req CreateRequest) (*UploadResponse, error) {
 	if err := json.Unmarshal(resp.Body(), &uploadResp); err != nil {
 		return nil, fmt.Errorf("failed to parse upload response: %w", err)
 	}
+	uploadResp.InputRecords = inputRecords
+	uploadResp.ParsePattern = req.ParsePattern
 
 	return &uploadResp, nil
 }
@@ -490,52 +533,6 @@ func ValidatePath(path string) error {
 	}
 
 	return nil
-}
-
-// utf8BOM is the UTF-8 byte order mark that some editors (notably Excel on
-// Windows/macOS) prepend when saving CSV files. The DPL parser used by the
-// lookup upload API rejects the BOM as invalid input, so it must be stripped
-// before auto-detecting the parse pattern; otherwise the BOM ends up inside
-// the first column name and produces an unparseable pattern.
-var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
-
-// DetectCSVPattern auto-detects a DPL parse pattern from CSV data by reading
-// the header row and emitting one LD field per column. A leading UTF-8 BOM is
-// stripped so it is not embedded in the first column name. CRLF line endings
-// are handled transparently by encoding/csv.
-func DetectCSVPattern(data []byte) (pattern string, skippedRecords int, err error) {
-	data = bytes.TrimPrefix(data, utf8BOM)
-	reader := csv.NewReader(bytes.NewReader(data))
-
-	// Read header row
-	headers, err := reader.Read()
-	if err != nil {
-		return "", 0, fmt.Errorf("failed to read CSV headers: %w", err)
-	}
-
-	if len(headers) == 0 {
-		return "", 0, fmt.Errorf("CSV file has no columns")
-	}
-
-	// Generate DPL pattern: LD:col1 ',' LD:col2 ',' ...
-	var parts []string
-	for i, header := range headers {
-		header = strings.TrimSpace(header)
-		if header == "" {
-			header = fmt.Sprintf("column_%d", i+1)
-		}
-
-		part := fmt.Sprintf("LD:%s", header)
-		if i < len(headers)-1 {
-			part += " ','"
-		}
-		parts = append(parts, part)
-	}
-
-	pattern = strings.Join(parts, " ")
-	skippedRecords = 1 // Skip header row
-
-	return pattern, skippedRecords, nil
 }
 
 // handleUploadError formats upload errors with user-friendly messages

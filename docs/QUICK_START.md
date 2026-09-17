@@ -1713,9 +1713,38 @@ dtctl create lookup -f error_codes.csv \
 
 # Output:
 # ✓ Created lookup table: /lookups/production/error_codes
-#   Records: 150
-#   File Size: 12,458 bytes
-#   Discarded Duplicates: 0
+#   Records: 150 of 150 uploaded
+#   Pattern Matches: 150
+#   File Size: 12458 bytes (12458 uploaded)
+```
+
+The record count is checked against the input: `create lookup` warns when rows were
+dropped and fails with a non-zero exit code when the parse pattern matched nothing,
+instead of reporting a successful create for an empty table.
+
+Auto-detection handles the CSV details that a naive pattern gets wrong:
+
+- **Empty cells** — the generated pattern uses `LD*` (zero or more characters) per
+  column. A bare `LD` requires at least one character, so every row with an empty
+  cell would be dropped server-side without an error.
+- **Quoted cells containing the delimiter** — `"gamma, inc"` cannot be expressed in a
+  comma-delimited pattern, so the CSV is re-emitted with a separator that occurs in
+  no cell (tab, or U+001F) and the pattern matches that instead.
+- **Column names with spaces, dashes or dots** — quoted in the pattern
+  (`LD*:"full name"`), which DPL requires.
+- **UTF-8 BOM, CRLF line endings, and rows with trailing cells omitted.**
+
+Cells containing a line break, and rows with more cells than the header, are
+reported as errors — DPL parses line by line, so neither can be expressed as a
+pattern. Use `--parse-pattern` for such input.
+
+Use `--dry-run` to see the detected pattern before uploading:
+
+```bash
+dtctl create lookup -f error_codes.csv --path /lookups/test/codes \
+  --lookup-field code --dry-run
+# Parse Pattern: LD*:code ',' LD*:message ',' LD*:severity (auto-detected)
+# Records: 4
 ```
 
 **Example CSV file** (`error_codes.csv`):
@@ -1749,7 +1778,10 @@ dtctl create lookup -f data.tsv \
 ```
 
 **Parse Pattern Syntax:**
-- `LD:columnName` - Define a column
+- `LD:columnName` - Define a column (requires at least one character)
+- `LD*:columnName` - Define a column that may be empty — use this unless every row
+  is guaranteed to have a value, otherwise rows with an empty cell are silently dropped
+- `LD*:"column name"` - Column names that are not plain identifiers must be quoted
 - `','` - Comma separator (single quotes required)
 - `'\t'` - Tab separator
 - `'|'` - Pipe separator

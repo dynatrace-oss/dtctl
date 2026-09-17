@@ -118,7 +118,7 @@ func TestCreate_StripsBOMFromAutoDetectedPattern(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	want := "LD:code ',' LD:description"
+	want := "LD*:code ',' LD*:description"
 	if captured.ParsePattern != want {
 		t.Errorf("parsePattern = %q, want %q", captured.ParsePattern, want)
 	}
