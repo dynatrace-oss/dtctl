@@ -94,3 +94,25 @@ func TestSettingsForbiddenWithoutSchemaIDOmitsCondition(t *testing.T) {
 		t.Errorf("suggested a condition with no schema to condition on: %q", joined)
 	}
 }
+
+// A body captured from a live Settings API 403 (writing to a schema that needs
+// an internal permission). The platform's envelope must parse, and
+// this particular denial is the scope gate rather than the policy gate — which
+// is why "check the scope gate first" comes before the policy statement.
+func TestSettingsForbiddenParsesLiveServerBody(t *testing.T) {
+	const live = `{"error":{"code":403,"message":"write access to builtin:event-trigger.rule not allowed without settings:internal.event-trigger.rule:write token scope"}}`
+
+	err := SettingsForbidden(SettingsDenial{
+		Operation:  "create settings object",
+		Permission: "settings:objects:write",
+		SchemaID:   "builtin:event-trigger.rule",
+		Body:       live,
+	})
+
+	if !strings.Contains(err.Error(), "write access to builtin:event-trigger.rule not allowed without settings:internal.event-trigger.rule:write token scope") {
+		t.Errorf("live 403 body not surfaced verbatim: %q", err.Error())
+	}
+	if err.Suggestions[1] != "Check the scope gate first: re-run the same command with --check-scopes" {
+		t.Errorf("scope check is not the first actionable suggestion: %q", err.Suggestions[1])
+	}
+}
