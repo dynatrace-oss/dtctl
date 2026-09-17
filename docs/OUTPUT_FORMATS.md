@@ -1,0 +1,288 @@
+<!-- Migrated from the standalone docs site; SME to verify against the current dtctl binary. -->
+
+# Output Formats
+
+dtctl supports multiple output formats to suit different workflows, from
+human-readable tables for interactive use to structured JSON for scripting and
+AI agents.
+
+## Table (Default)
+
+The default output format is a compact, human-readable table:
+
+```bash
+dtctl get workflows
+```
+
+```
+ID            NAME                     STATE    TRIGGER     LAST RUN
+wf-abc123     Daily Health Check       enabled  Schedule    2025-01-15 08:00
+wf-def456     Incident Remediation     enabled  Event       2025-01-15 12:34
+wf-ghi789     Weekly Report            enabled  Schedule    2025-01-13 06:00
+```
+
+## JSON
+
+Output as JSON for scripting and piping to tools like `jq`:
+
+```bash
+dtctl get workflow wf-123 -o json
+
+# Pipe to jq for field extraction
+dtctl get workflows -o json | jq '.[].name'
+```
+
+## YAML
+
+Output as YAML, useful for round-tripping with `dtctl apply`:
+
+```bash
+dtctl get workflow wf-123 -o yaml
+```
+
+## Wide
+
+The wide format adds additional columns that are hidden in the default table view:
+
+```bash
+dtctl get workflows -o wide
+```
+
+```
+ID            NAME                     STATE    TRIGGER     OWNER            LAST RUN            LAST STATUS
+wf-abc123     Daily Health Check       enabled  Schedule    user@example.com 2025-01-15 08:00    SUCCESS
+wf-def456     Incident Remediation     enabled  Event       user@example.com 2025-01-15 12:34    FAILED
+```
+
+## Describe
+
+The `describe` command renders a vertical key-value view with full detail by default:
+
+```bash
+dtctl describe workflow wf-123
+```
+
+```
+ID:          wf-abc123
+Name:        Daily Health Check
+State:       enabled
+Trigger:     Schedule (0 8 * * *)
+Owner:       user@example.com
+Created:     2025-01-01 10:00:00
+Modified:    2025-01-14 15:30:00
+Tasks:       3
+```
+
+All `describe` subcommands support the `-o` / `--output` flag to get structured output:
+
+```bash
+# JSON output for scripting
+dtctl describe workflow wf-123 -o json
+
+# YAML output for round-tripping
+dtctl describe slo my-slo -o yaml
+
+# Agent mode envelope
+dtctl describe dashboard my-dash -A
+```
+
+## CSV
+
+Export as CSV for spreadsheets and data pipelines:
+
+```bash
+# Export workflows to a CSV file
+dtctl get workflows -o csv > workflows.csv
+
+# Export DQL query results as CSV
+dtctl query 'fetch logs | filter status == "ERROR" | limit 100' -o csv > errors.csv
+```
+
+## JSON Lines and Parquet (large query exports)
+
+For `dtctl query`, two additional formats are tailored to large result exports:
+
+```bash
+# JSON Lines: one compact JSON object per line (newline-delimited JSON).
+# Serialised one record at a time and read natively by most local data tooling.
+dtctl query 'fetch logs | limit 1000' -o jsonl > logs.jsonl
+
+# Parquet: a columnar binary file, ideal for downstream analytics tooling.
+# Pair with a raised --max-result-records when exporting large populations.
+dtctl query 'fetch logs' --max-result-records 100000 -o parquet > logs.parquet
+```
+
+Notes:
+
+- **`-o jsonl`** has no schema and appends one object per line, so it tolerates
+  rows with differing fields. Each record is encoded as it is written rather than
+  building the whole result into a single buffer.
+- **`-o parquet`** derives its column schema from the DQL column types (it
+  requests type information automatically). Nested or variant columns that do
+  not map cleanly to a columnar type are stored as a JSON-encoded string column
+  rather than being dropped. An empty result still produces a valid Parquet
+  file (never a zero-byte file): it carries the DQL schema when types are known,
+  otherwise a single placeholder column so the file stays readable by mainstream
+  tooling (a column-less file is rejected by DuckDB, pyarrow, and pandas).
+- **Parquet files also carry the DQL types in the file footer**, under the
+  key-value metadata key `dtctl.dql.types` (a JSON object mapping column name to
+  DQL type, e.g. `{"status.code":"long","content":"string"}`). This lets a reader
+  recover type information the physical schema alone loses -- a Grail `long` is
+  stored as `INT64`, but Grail's own JSON serialiser emits it as a quoted string,
+  so a consumer reproducing Grail's wire form needs the declared type to know
+  which columns to stringify. The footer records **every** declared column,
+  including ones that were null in every row (Grail omits null fields from
+  records, so such a column has no physical column in the file). Read it with
+  DuckDB's `parquet_kv_metadata()` or any Parquet footer reader.
+
+## Column types (`--include-types`)
+
+Pass `--include-types` to surface the DQL per-column type information the query
+API returns. In `json` and `yaml` output it appears as a top-level `types` key
+alongside `records`, preserving the API's shape (`indexRange` + `mappings`):
+
+```bash
+dtctl query 'fetch logs | limit 1' -o json --include-types
+# {
+#   "records": [ { "content": "...", "loglevel": "INFO", "status.code": "200" } ],
+#   "types": [
+#     {
+#       "indexRange": [0, 0],
+#       "mappings": {
+#         "content":     { "type": "string" },
+#         "loglevel":    { "type": "string" },
+#         "status.code": { "type": "long" }
+#       }
+#     }
+#   ]
+# }
+```
+
+Notes:
+
+- **Only with an explicit flag.** The block is emitted only when you pass
+  `--include-types` yourself. `--typed` and Parquet output request the same
+  metadata internally to do their work, but that does not add the `types` key.
+- **`json`/`yaml` only.** `jsonl` (one record per line) and `csv` (tabular) have
+  no place for a document-level sibling, so the block is not emitted there.
+- Note the distinction from `--typed` below: `--include-types` reports the
+  declared type while leaving values in their wire form (so a `long` still reads
+  as `"200"`), whereas `--typed` uses the same metadata to rewrite the values.
+
+## Numeric typing (`--typed`)
+
+The Grail query API deliberately serialises integer-valued columns (`long`,
+`duration`) as JSON **strings** to preserve full int64 precision for
+JavaScript/TypeScript consumers. dtctl's `json`, `yaml`, and `jsonl` output
+faithfully passes that through, so a `count()` reads as `"42"` (a string):
+
+```bash
+dtctl query 'fetch logs | summarize c = count()' -o json
+# [ { "c": "42" } ]
+```
+
+Pass `--typed` to cast scalar columns to their native types using the DQL type
+metadata -- `long`/`duration` become JSON numbers, `boolean` becomes a real
+boolean -- so the output is ready for `jq`, pandas, or DuckDB without a
+`tonumber` step:
+
+```bash
+dtctl query 'fetch logs | summarize c = count()' -o json --typed
+# [ { "c": 42 } ]
+```
+
+Notes:
+
+- **Opt-in by design.** The default output stays faithful to the API's wire
+  encoding. `--typed` implies `--include-types` so the type metadata is
+  available.
+- **Precision-safe in dtctl.** A `long` is emitted as its full decimal digits,
+  unquoted and lossless (never routed through a float). The only precision risk
+  is in a downstream consumer that parses JSON numbers as 64-bit floats (browser
+  `JSON.parse`, older `jq`) -- which is exactly why it is opt-in.
+- **Timestamps stay strings.** JSON/YAML have no native date type, so `timestamp`
+  columns keep their portable RFC3339 string form. `string`, `ip`, `timeframe`,
+  and nested record/array columns are left unchanged.
+- Values that do not cleanly parse to their declared type (including non-finite
+  doubles such as `"NaN"`/`"Infinity"`, which JSON cannot represent) are left as
+  strings rather than failing the output.
+
+## Plain Mode
+
+The `--plain` flag disables colors, progress indicators, and interactive prompts. This is useful for piping output or running in non-interactive environments:
+
+```bash
+dtctl get workflows --plain
+```
+
+Color output follows the [no-color.org](https://no-color.org/) standard:
+
+- `--plain` flag disables color
+- `NO_COLOR` environment variable disables color
+- Non-TTY output (piped) disables color automatically
+- `FORCE_COLOR=1` overrides TTY detection to force color on
+
+## Command Catalog
+
+dtctl can describe its own commands in machine-readable form:
+
+```bash
+# Minimal overview: verbs, resources, subcommands (defaults to TOON, ideal for AI agent bootstrap)
+dtctl commands
+
+# Brief catalog: adds mutating status, access levels, flag types, and scopes
+dtctl commands --brief -o json
+
+# Full command catalog: descriptions, flag defaults, and global flags
+dtctl commands --full -o json
+
+# Human-readable how-to guide in Markdown
+dtctl commands howto
+```
+
+Unlike other commands, `dtctl commands` defaults to TOON (the most compact format) rather than the table format; pass `-o json` or `-o yaml` to override.
+
+## Agent Mode
+
+The `--agent` (or `-A`) flag wraps all output in a structured JSON envelope designed for AI agent consumption:
+
+```bash
+dtctl get workflows --agent
+```
+
+```json
+{
+  "ok": true,
+  "result": [...],
+  "context": {
+    "verb": "get",
+    "resource": "workflow",
+    "suggestions": [...]
+  }
+}
+```
+
+Agent mode is auto-detected when running inside AI agent environments (GitHub Copilot, Claude Code, Cursor, OpenCode, and others). To opt out of auto-detection:
+
+```bash
+dtctl get workflows --no-agent
+```
+
+Agent mode implies `--plain`: no colors and no interactive prompts. See [AGENT_MODE.md](AGENT_MODE.md) for full details.
+
+## Pagination
+
+List commands support server-side pagination with the `--chunk-size` flag:
+
+```bash
+# Fetch in chunks of 200
+dtctl get workflows --chunk-size 200
+
+# Default chunk size is 500
+dtctl get workflows
+
+# Disable chunking (fetch all at once)
+dtctl get workflows --chunk-size=0
+```
+
+All pages are fetched automatically and combined into a single result set.
