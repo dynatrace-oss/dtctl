@@ -182,7 +182,7 @@ preferences:
 
 Set `DT_ENVIRONMENT_URL` (or edit the file directly) to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**:
 
-- `${VAR}` references are expanded for the `environment` URL only — the resolved URL must be a bare origin on a Dynatrace host (`*.dynatrace.com` / `*.dynatracelabs.com`, https, no path/query/fragment), so expansion cannot append anything to the destination
+- `${VAR}` references are expanded for the `environment` URL only, at load — the resolved URL must be a bare origin on a Dynatrace host (`*.dynatrace.com` / `*.dynatracelabs.com`, https, no path/query/fragment), so expansion cannot append anything to the destination. Editing the file with a `dtctl config` command keeps the `${VAR}` reference rather than writing your expansion into it
 - inline tokens are rejected — the credential comes from the OS keyring
 - `token-ref` must name a context in your **global** config that binds the *same* environment host, otherwise the token does not resolve
 - `safety-level` is clamped to the level that global context declares, so a project file cannot grant itself more than you did
@@ -195,16 +195,16 @@ Set `DT_ENVIRONMENT_URL` (or edit the file directly) to your Dynatrace environme
 
 #### Developer workflow
 
-Create the global binding once per machine. Run it **outside** the project
-directory: config writes target the local `.dtctl.yaml` whenever one is
-discovered, which is not the file you want here.
+Create the global binding once per machine, with `--global`. Config writes
+target the local `.dtctl.yaml` whenever one is discovered, so without the flag
+both commands land in the project file and the binding it needs never exists.
 
 ```bash
-# One-time per machine, from your home directory
-dtctl config set-context my-environment \
+# One-time per machine; --global works from inside the project too
+dtctl config set-context my-environment --global \
   --environment "https://abc12345.apps.dynatrace.com" \
   --token-ref my-token
-dtctl config set-credentials my-token --token dt0c01.xxx
+dtctl config set-credentials my-token --global --token dt0c01.xxx
 
 # Commit .dtctl.yaml; each developer runs dtctl normally
 cd my-project/

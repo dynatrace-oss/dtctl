@@ -23,11 +23,15 @@ Security note: auto-discovered `.dtctl.yaml` files are treated as untrusted
 apply — see `Config.IsLocal()`:
 
 1. **Env-var expansion limited to the environment URL.** `${VAR}` references
-   are expanded only for a context's `environment`, and only through
-   `Config.ResolvedEnvironment` so the origin check, the client, and anything
-   displayed all resolve the same value. Every other field is left as-is; use
-   `--config` or `DTCTL_CONFIG` for a trusted config where expansion runs
-   everywhere.
+   are expanded only for a context's `environment`, and only once, at load
+   (`Config.resolveLocalEnvironments`), so every reader of
+   `Context.Environment` — the origin check, the client, `doctor`, the
+   live-debugger handlers, spill's tenant id — sees the same resolved value
+   without having to remember to resolve. `SaveTo` writes the unexpanded
+   reference back (`Config.restoreRawEnvironments`) so a load-modify-save cycle
+   does not bake one developer's expansion into a committed file. Every other
+   field is left as-is; use `--config` or `DTCTL_CONFIG` for a trusted config
+   where expansion runs everywhere.
 2. **No inline tokens.** A local config may reference a `token-ref` but not
    define its value; credentials must come from the keyring / file store.
 3. **Origin binding.** The environment URL in the local context must resolve to
@@ -56,6 +60,13 @@ either.
 
 Code-execution keys (aliases, apply hooks) are loaded for round-tripping but
 **never honored**.
+
+Write target: config-management commands write the same file they read (see
+`saveConfig`), so once a `.dtctl.yaml` is discovered it captures writes too.
+Because restrictions 2–4 mean a local config can only work *alongside* a global
+binding, `config set-context` and `config set-credentials` take `--global` to
+write to `DefaultConfigPath()` regardless of discovery; without it, the two
+commands that create the binding would land in the file that needs it.
 
 ## Schema (v1)
 

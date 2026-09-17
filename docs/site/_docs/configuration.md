@@ -127,19 +127,21 @@ preferences:
 
 Set `DT_ENVIRONMENT_URL` (or edit the file directly) to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**:
 
-- `${VAR}` references are expanded for the `environment` URL only — the resolved URL must be a bare origin on a Dynatrace host (`*.dynatrace.com` / `*.dynatracelabs.com`, https, no path/query/fragment), so expansion cannot append anything to the destination
+- `${VAR}` references are expanded for the `environment` URL only, at load — the resolved URL must be a bare origin on a Dynatrace host (`*.dynatrace.com` / `*.dynatracelabs.com`, https, no path/query/fragment), so expansion cannot append anything to the destination. Editing the file with a `dtctl config` command keeps the `${VAR}` reference rather than writing your expansion into it
 - inline tokens are rejected — the credential comes from the OS keyring
 - `token-ref` must name a context in your **global** config that binds the *same* environment host, otherwise the token does not resolve
 - `safety-level` is clamped to the level that global context declares
 
-Create the global binding once, from **outside** the project directory (config
-writes target the local `.dtctl.yaml` whenever one is discovered):
+Create the global binding once, with `--global`. Config writes target the local
+`.dtctl.yaml` whenever one is discovered, so without the flag both commands
+below would land in the project file and the binding it needs would never
+exist:
 
 ```bash
-dtctl config set-context my-environment \
+dtctl config set-context my-environment --global \
   --environment "https://your-environment.apps.dynatrace.com" \
   --token-ref my-token
-dtctl config set-credentials my-token --token dt0c01.xxx
+dtctl config set-credentials my-token --global --token dt0c01.xxx
 ```
 
 > **A credential store is required.** A local `.dtctl.yaml` resolves its
