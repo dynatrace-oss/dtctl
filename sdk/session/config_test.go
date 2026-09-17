@@ -2994,16 +2994,210 @@ func TestGetToken_LocalConfigEnvVarCannotRedirectOrigin(t *testing.T) {
 // TestResolvedEnvironment_OnlyExpandsForLocalConfigs pins the asymmetry that
 // caused the regression: expansion is a local-config affordance, and a trusted
 // config's value is returned untouched (LoadFrom already expanded it).
-func TestResolvedEnvironment_OnlyExpandsForLocalConfigs(t *testing.T) {
+func TestResolveLocalEnvironments_AdoptsOnlyValidOrigins(t *testing.T) {
 	t.Setenv("DT_TEST_ENVIRONMENT_URL", "https://abc12345.apps.dynatrace.com")
+	t.Setenv("PLANTED_SECRET", "secret-val")
 
+	// A non-local config is never expanded at all.
 	global := NewConfig()
-	if got := global.ResolvedEnvironment("${DT_TEST_ENVIRONMENT_URL}"); got != "${DT_TEST_ENVIRONMENT_URL}" {
-		t.Errorf("ResolvedEnvironment() on a non-local config = %q, want it untouched", got)
+	global.Contexts = []NamedContext{{Name: "g", Context: Context{Environment: "${DT_TEST_ENVIRONMENT_URL}"}}}
+	global.resolveLocalEnvironments()
+	if got := global.Contexts[0].Context.Environment; got != "${DT_TEST_ENVIRONMENT_URL}" {
+		t.Errorf("non-local environment = %q, want it untouched", got)
 	}
 
-	local := newLocalConfig(t, "${DT_TEST_ENVIRONMENT_URL}", "ref", nil)
-	if got := local.ResolvedEnvironment("${DT_TEST_ENVIRONMENT_URL}"); got != "https://abc12345.apps.dynatrace.com" {
-		t.Errorf("ResolvedEnvironment() on a local config = %q, want it expanded", got)
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "valid bare origin is adopted",
+			raw:  "${DT_TEST_ENVIRONMENT_URL}",
+			want: "https://abc12345.apps.dynatrace.com",
+		},
+		{
+			// The expanded form must exist nowhere: readers that do not
+			// validate (doctor HEADs the URL as written) would otherwise ship
+			// the secret to the attacker's host.
+			name: "secret smuggled into a path is not adopted",
+			raw:  "https://abc12345.apps.dynatrace.com/$PLANTED_SECRET",
+			want: "https://abc12345.apps.dynatrace.com/$PLANTED_SECRET",
+		},
+		{
+			name: "secret smuggled into a hostname is not adopted",
+			raw:  "https://$PLANTED_SECRET.apps.dynatrace.com",
+			want: "https://$PLANTED_SECRET.apps.dynatrace.com",
+		},
+		{
+			name: "foreign host is not adopted",
+			raw:  "https://evil.example/$PLANTED_SECRET",
+			want: "https://evil.example/$PLANTED_SECRET",
+		},
+		{
+			name: "unset variable is not adopted",
+			raw:  "${DT_TEST_UNSET_URL}",
+			want: "${DT_TEST_UNSET_URL}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := newLocalConfig(t, tt.raw, "ref", nil)
+			if got := cfg.Contexts[0].Context.Environment; got != tt.want {
+				t.Errorf("environment = %q, want %q", got, tt.want)
+			}
+			unresolved := tt.raw == tt.want
+			if got := cfg.EnvironmentUnresolved("default"); got != unresolved {
+				t.Errorf("EnvironmentUnresolved() = %v, want %v", got, unresolved)
+			}
+		})
+	}
+}
+
+// localConfigWithEnvVarURL writes a global config binding token-ref "prod" to
+// abc12345.apps.dynatrace.com and a local .dtctl.yaml that names the same host
+// through ${DT_TEST_ENVIRONMENT_URL} — the shape `dtctl config init` writes.
+// It chdirs into the project dir and returns it.
+func localConfigWithEnvVarURL(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	globalDir := filepath.Join(tmpDir, "xdg", "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	globalCfg := `apiVersion: v1
+kind: Config
+current-context: prod
+contexts:
+  - name: prod
+    context:
+      environment: https://abc12345.apps.dynatrace.com
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+	// Registered before t.Setenv so it runs *after* the env var is restored;
+	// reloading while it still points at the temp dir caches a path that
+	// t.TempDir is about to delete.
+	t.Cleanup(xdg.Reload)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
+	xdg.Reload()
+
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local
+contexts:
+  - name: local
+    context:
+      environment: ${DT_TEST_ENVIRONMENT_URL}
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+	t.Setenv("DT_TEST_ENVIRONMENT_URL", "https://abc12345.apps.dynatrace.com")
+
+	origWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	return tmpDir
+}
+
+// TestLoad_LocalEnvironmentIsResolvedForPlainReaders pins that Load resolves a
+// local ${VAR} environment in place. Most readers of an environment URL take
+// Context.Environment directly (doctor's URL and connectivity checks, the
+// live-debugger handlers, spill's tenant id, account environment detection);
+// resolving only at selected call sites left those reporting the literal
+// "${DT_TEST_ENVIRONMENT_URL}".
+func TestLoad_LocalEnvironmentIsResolvedForPlainReaders(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	localConfigWithEnvVarURL(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	const want = "https://abc12345.apps.dynatrace.com"
+	if got := cfg.Contexts[0].Context.Environment; got != want {
+		t.Errorf("Contexts[0].Context.Environment = %q, want %q", got, want)
+	}
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		t.Fatalf("CurrentContextObj() error: %v", err)
+	}
+	if got := ctx.Environment; got != want {
+		t.Errorf("CurrentContextObj().Environment = %q, want %q", got, want)
+	}
+	// The raw reference is kept so SaveTo can write it back unexpanded.
+	if got := cfg.rawEnvironments["local"]; got != "${DT_TEST_ENVIRONMENT_URL}" {
+		t.Errorf("rawEnvironments[\"local\"] = %q, want the raw reference", got)
+	}
+}
+
+// TestSaveTo_PreservesLocalEnvironmentTemplate verifies that editing a
+// committed .dtctl.yaml does not bake the editing developer's expansion into
+// it. Any config-management command (ctx use, config set, alias add, login)
+// load-modify-saves the discovered file, so resolving at load must not leak
+// into the write path.
+func TestSaveTo_PreservesLocalEnvironmentTemplate(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := localConfigWithEnvVarURL(t)
+	path := filepath.Join(tmpDir, LocalConfigName)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	// An unrelated mutation, as `dtctl config set output json` would make.
+	cfg.Preferences.Output = "json"
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo() error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(data), "${DT_TEST_ENVIRONMENT_URL}") {
+		t.Errorf("SaveTo() dropped the env-var reference; file is:\n%s", data)
+	}
+	if strings.Contains(string(data), "abc12345.apps.dynatrace.com") {
+		t.Errorf("SaveTo() baked the expansion into the file; file is:\n%s", data)
+	}
+}
+
+// TestSaveTo_KeepsExplicitEnvironmentOverride verifies the other half: an
+// environment changed after load (config set-context --environment) is written
+// as given rather than reverted to the template it replaced.
+func TestSaveTo_KeepsExplicitEnvironmentOverride(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := localConfigWithEnvVarURL(t)
+	path := filepath.Join(tmpDir, LocalConfigName)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	const explicit = "https://zzz99999.apps.dynatrace.com"
+	cfg.Contexts[0].Context.Environment = explicit
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo() error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(data), explicit) {
+		t.Errorf("SaveTo() lost the explicit environment; file is:\n%s", data)
+	}
+	if strings.Contains(string(data), "${DT_TEST_ENVIRONMENT_URL}") {
+		t.Errorf("SaveTo() reverted an explicit environment to the template; file is:\n%s", data)
 	}
 }

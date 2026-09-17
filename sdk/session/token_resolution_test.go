@@ -309,6 +309,8 @@ func newLocalConfig(t *testing.T, environment, tokenRef string, trustedOrigins m
 		t.Fatalf("newLocalConfig: %v", err)
 	}
 	cfg.markLocal(tmpFile)
+	// Mirror Load: a local config's environment is resolved once at load.
+	cfg.resolveLocalEnvironments()
 	if trustedOrigins != nil {
 		cfg.globalBindings = make(map[string]globalBinding, len(trustedOrigins))
 		for ref, host := range trustedOrigins {

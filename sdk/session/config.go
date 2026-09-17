@@ -56,6 +56,14 @@ type Config struct {
 	// token-ref rather than context name because that is the binding a local
 	// config actually borrows — it is free to rename its context.
 	globalBindings map[string]globalBinding
+	// rawEnvironments maps context name to the environment URL as written in an
+	// auto-discovered local config, for every context whose URL carries a '$' —
+	// whether or not the reference was adopted. SaveTo writes these back so
+	// editing a committed .dtctl.yaml does not bake the editing developer's
+	// expansion into it, and EnvironmentUnresolved compares against them to
+	// tell an unadopted reference from a literal URL. See
+	// resolveLocalEnvironments, restoreRawEnvironments.
+	rawEnvironments map[string]string
 	// inlineOnly is set by SealInlineCredentials to restrict token resolution to
 	// the inline Tokens list. When true, GetToken never consults the keyring,
 	// file store, or OAuth machinery — only the values carried in the struct.
@@ -313,6 +321,10 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 		cfg.markLocal(localConfig)
+		// The environment URL is the one local value that may name its
+		// destination through ${VAR}; resolve it once here so every consumer
+		// sees a real URL. See resolveLocalEnvironments.
+		cfg.resolveLocalEnvironments()
 		return cfg, nil
 	}
 
@@ -668,7 +680,7 @@ func (c *Config) SaveTo(path string) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := yaml.Marshal(c)
+	data, err := yaml.Marshal(c.restoreRawEnvironments())
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -744,7 +756,7 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 		// the global config binding for this token-ref. This prevents a rogue
 		// .dtctl.yaml from redirecting stored credentials to a foreign host.
 		if ctx, err := c.CurrentContextObj(); err == nil && ctx.TokenRef == tokenRef {
-			localHost := urls.Host(c.ResolvedEnvironment(ctx.Environment))
+			localHost := urls.Host(ctx.Environment)
 			if binding, ok := c.globalBindings[tokenRef]; ok {
 				if !binding.allows(localHost) {
 					return "", fmt.Errorf(
@@ -992,24 +1004,131 @@ func (c *Config) EffectiveSafetyLevelFor(ctx *Context) SafetyLevel {
 	return ceiling
 }
 
-// ResolvedEnvironment returns an environment URL with ${VAR} references
-// expanded when this config was auto-discovered, and verbatim otherwise.
+// resolveLocalEnvironments expands ${VAR} references in the environment URL of
+// every context of an auto-discovered local config — but only adopts an
+// expansion that yields a bare Dynatrace origin. The unexpanded value is
+// recorded so SaveTo can write it back.
 //
 // A committed .dtctl.yaml is allowed to name its destination through the
-// environment so one file can serve several developers and CI, so every
-// consumer of a local environment URL must resolve it through here: the
-// origin-binding check in GetToken, the client in NewClientFromConfig, and
-// anything that displays it. Resolving in only some of those places is how a
-// documented setup ends up rejected as a host mismatch against "".
+// environment so one file can serve several developers and CI. Resolving once
+// at load rather than at each read is what keeps that promise: `dtctl doctor`,
+// the live-debugger handlers, spill's tenant id, account-environment detection
+// and every other reader of Context.Environment see a real URL without each
+// having to remember to resolve one. Resolving in only some places is how a
+// documented setup ends up reporting "cannot reach ${DT_ENVIRONMENT_URL}".
 //
-// Expansion stays safe because the resolved URL must still pass
-// urls.IsDynatraceEnvironmentOrigin — an allowlisted https host and nothing
-// else — so a rogue file cannot use it to carry an unrelated secret anywhere.
-func (c *Config) ResolvedEnvironment(environment string) string {
+// Two conditions gate adoption, and together they are what make resolving this
+// early safe — not every reader validates its destination, doctor's
+// reachability check HEADs the URL as written:
+//
+//   - the value must be a *whole-value* reference ("${DT_ENVIRONMENT_URL}",
+//     the shape `config init` writes), never a reference embedded in
+//     surrounding text. Interpolating into the middle of a URL is how a value
+//     that is not a URL gets carried somewhere as one:
+//     "https://$SECRET.apps.dynatrace.com" expands to a perfectly valid
+//     Dynatrace origin whose hostname is the victim's secret, and merely
+//     resolving it would hand that secret to a DNS resolver.
+//   - what it expands to must be a bare Dynatrace origin.
+//
+// A value failing either check keeps the literal it was written as, so the
+// expanded form exists nowhere: not in the struct, not in a request, not in an
+// error message. NewClientFromConfig re-checks the origin rule, so a rejected
+// value cannot reach an API either.
+//
+// The environment is the only local value resolved at all: expansion of
+// aliases, hooks and inline token values stays off entirely.
+func (c *Config) resolveLocalEnvironments() {
 	if !c.IsLocal() {
-		return environment
+		return
 	}
-	return os.ExpandEnv(environment)
+	for i := range c.Contexts {
+		raw := c.Contexts[i].Context.Environment
+		if !strings.ContainsRune(raw, '$') {
+			continue
+		}
+		if c.rawEnvironments == nil {
+			c.rawEnvironments = make(map[string]string)
+		}
+		c.rawEnvironments[c.Contexts[i].Name] = raw
+		if !isWholeValueEnvRef(raw) {
+			continue
+		}
+		resolved := os.ExpandEnv(raw)
+		if urls.IsDynatraceEnvironmentOrigin(resolved) != nil {
+			continue
+		}
+		c.Contexts[i].Context.Environment = resolved
+	}
+}
+
+// isWholeValueEnvRef reports whether s is exactly one environment-variable
+// reference — "${VAR}" or "$VAR" — and nothing else. A reference with anything
+// around it interpolates a value into a position that gives it a meaning it
+// was never checked for; see resolveLocalEnvironments.
+func isWholeValueEnvRef(s string) bool {
+	name, ok := strings.CutPrefix(s, "$")
+	if !ok {
+		return false
+	}
+	if braced, ok := strings.CutPrefix(name, "{"); ok {
+		name, ok = strings.CutSuffix(braced, "}")
+		if !ok {
+			return false
+		}
+	}
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		isAlnum := r == '_' ||
+			(r >= '0' && r <= '9') ||
+			(r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z')
+		if !isAlnum {
+			return false
+		}
+	}
+	return true
+}
+
+// EnvironmentUnresolved reports whether the named local context declares its
+// environment through a ${VAR} reference that did not resolve to a usable
+// Dynatrace origin — the variable is unset, or what it expanded to was
+// rejected. Such a context still holds the literal reference.
+func (c *Config) EnvironmentUnresolved(contextName string) bool {
+	raw, ok := c.rawEnvironments[contextName]
+	if !ok {
+		return false
+	}
+	nc, err := c.GetContext(contextName)
+	if err != nil {
+		return false
+	}
+	return nc.Context.Environment == raw
+}
+
+// restoreRawEnvironments returns a copy of c with every resolved local
+// environment URL written back as the ${VAR} reference it came from, so a
+// load-modify-save cycle does not silently bake one developer's expansion into
+// a committed .dtctl.yaml. A context whose environment was changed since load
+// (e.g. `config set-context --environment`) keeps the new value.
+func (c *Config) restoreRawEnvironments() *Config {
+	if len(c.rawEnvironments) == 0 {
+		return c
+	}
+	out := *c
+	out.Contexts = make([]NamedContext, len(c.Contexts))
+	copy(out.Contexts, c.Contexts)
+	for i := range out.Contexts {
+		raw, ok := c.rawEnvironments[out.Contexts[i].Name]
+		if !ok {
+			continue
+		}
+		if out.Contexts[i].Context.Environment == os.ExpandEnv(raw) {
+			out.Contexts[i].Context.Environment = raw
+		}
+	}
+	return &out
 }
 
 // GetPreApplyHook returns the effective pre-apply hook command.

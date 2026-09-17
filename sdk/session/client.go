@@ -71,11 +71,25 @@ func NewClientFromConfig(cfg *Config, opts ...ClientOption) (*Client, error) {
 	// Auto-discovered local configs must target a bare Dynatrace environment
 	// origin: https, an allowlisted host, and no userinfo, path, query or
 	// fragment. That prevents a rogue .dtctl.yaml from sending tokens to an
-	// arbitrary or non-TLS destination, and it is what makes the ${VAR}
-	// expansion below safe — expansion can fill in the destination but cannot
-	// append anything to it. Inline tokens remain unsupported regardless.
-	envURL := cfg.ResolvedEnvironment(ctx.Environment)
+	// arbitrary or non-TLS destination, and it is the same rule Load applies
+	// before adopting a ${VAR} environment (Config.resolveLocalEnvironments) —
+	// re-checked here because the value may also come from a hand-built config.
+	// Inline tokens remain unsupported regardless.
+	envURL := ctx.Environment
 	if cfg.IsLocal() {
+		// A ${VAR} environment that Load did not resolve is still the literal
+		// reference, which the origin check can only describe as a malformed
+		// URL. Report the reference instead — an unset variable is the first
+		// thing a developer hits with a freshly cloned .dtctl.yaml.
+		if cfg.EnvironmentUnresolved(cfg.CurrentContext) {
+			return nil, fmt.Errorf(
+				"local config %q: context %q has environment %q, which did not resolve to a Dynatrace "+
+					"environment URL — the environment must be a literal URL, or a single variable "+
+					"reference holding the whole URL "+
+					"(e.g. environment: ${DT_ENVIRONMENT_URL} with "+
+					"DT_ENVIRONMENT_URL=https://abc12345.apps.dynatrace.com)",
+				cfg.LocalConfigPath(), cfg.CurrentContext, envURL)
+		}
 		if err := urls.IsDynatraceEnvironmentOrigin(envURL); err != nil {
 			return nil, fmt.Errorf(
 				"local config %q: %w — use --config or DTCTL_CONFIG",

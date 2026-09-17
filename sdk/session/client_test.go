@@ -898,3 +898,22 @@ func TestNewClientFromConfig_LocalConfigDomainAllowlist(t *testing.T) {
 		})
 	}
 }
+
+// TestNewClientFromConfig_LocalUnresolvedEnvVarNamesTheReference verifies that
+// a .dtctl.yaml whose environment did not resolve is reported in terms of the
+// reference the file actually contains. An unresolved value stays literal, and
+// the origin check can only describe that as a malformed URL — useless to a
+// developer who has just cloned a repo and not exported the variable yet.
+func TestNewClientFromConfig_LocalUnresolvedEnvVarNamesTheReference(t *testing.T) {
+	cfg := newLocalConfig(t, "${DT_TEST_UNSET_ENVIRONMENT_URL}", "some-ref", nil)
+
+	_, err := NewClientFromConfig(cfg)
+	if err == nil {
+		t.Fatal("NewClientFromConfig() succeeded with an unset environment variable, want error")
+	}
+	for _, want := range []string{"DT_TEST_UNSET_ENVIRONMENT_URL", "did not resolve"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("NewClientFromConfig() error = %q, want it to contain %q", err.Error(), want)
+		}
+	}
+}
