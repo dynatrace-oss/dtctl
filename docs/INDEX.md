@@ -37,6 +37,7 @@
 | current-context |
 | delete |
 | delete-context |
+| delete-credentials |
 | describe |
 | describe-context |
 | export |

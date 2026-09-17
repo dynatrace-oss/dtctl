@@ -178,7 +178,8 @@ var localResources = map[string]bool{
 	// config / context management
 	"current-context": true, "delete-context": true, "describe-context": true,
 	"get-contexts": true, "use-context": true, "set-context": true,
-	"set-credentials": true, "migrate-tokens": true, "init": true,
+	"set-credentials": true, "delete-credentials": true,
+	"migrate-tokens": true, "init": true,
 	"view": true, "current": true, "set": true,
 	// ctx aliases
 	"describe": true, "delete": true, "token": true, "discover-account": true,

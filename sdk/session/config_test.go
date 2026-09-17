@@ -26,6 +26,17 @@ func (m *mockKeyring) Get(n string) (string, error) {
 	return v, nil
 }
 
+// refusingKeyring is available but rejects every delete, simulating a locked or
+// otherwise uncooperative keyring.
+type refusingKeyring struct{}
+
+func (r *refusingKeyring) Available() bool { return true }
+func (r *refusingKeyring) Get(string) (string, error) {
+	return "", fmt.Errorf("keyring locked")
+}
+func (r *refusingKeyring) Set(string, string) error { return fmt.Errorf("keyring locked") }
+func (r *refusingKeyring) Delete(string) error      { return fmt.Errorf("keyring locked") }
+
 // unavailableKeyring simulates an environment without OS keyring (headless/WSL).
 type unavailableKeyring struct{}
 
@@ -3199,5 +3210,156 @@ func TestSaveTo_KeepsExplicitEnvironmentOverride(t *testing.T) {
 	}
 	if strings.Contains(string(data), "${DT_TEST_ENVIRONMENT_URL}") {
 		t.Errorf("SaveTo() reverted an explicit environment to the template; file is:\n%s", data)
+	}
+}
+
+func TestConfig_DeleteToken_ClearsEntireFanOut(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	// The plain platform token, the per-environment OAuth caches, and the scope
+	// companion each hold live material and must all be cleared.
+	kr.data["incident-token"] = "platform-secret"
+	kr.data["oauth:prod:incident-token"] = `{"refresh_token":"prod-refresh"}`
+	kr.data["oauth:prod:incident-token:scopes"] = "storage:logs:read"
+	kr.data["oauth:dev:incident-token"] = `{"refresh_token":"dev-refresh"}`
+	kr.data["oauth:hard:incident-token"] = `{"refresh_token":"hard-refresh"}`
+	// An unrelated credential must survive: teardown is scoped to one token ref.
+	kr.data["other-token"] = "keep-me"
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "incident-token"}, {Name: "other-token"}}
+
+	if err := cfg.deleteTokenWithKeyring("incident-token", kr, NewOAuthFileStoreWithDir(t.TempDir())); err != nil {
+		t.Fatalf("deleteTokenWithKeyring() error = %v", err)
+	}
+
+	for key := range kr.data {
+		if strings.Contains(key, "incident-token") {
+			t.Errorf("keyring entry %q still exists after DeleteToken", key)
+		}
+	}
+	if got := kr.data["other-token"]; got != "keep-me" {
+		t.Errorf("unrelated credential = %q, want %q", got, "keep-me")
+	}
+
+	if len(cfg.Tokens) != 1 || cfg.Tokens[0].Name != "other-token" {
+		t.Errorf("config tokens = %+v, want only other-token", cfg.Tokens)
+	}
+}
+
+func TestConfig_DeleteToken_ClearsFileStore(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	fileStore := NewOAuthFileStoreWithDir(dir)
+
+	// Both backends are swept regardless of which one is active, because
+	// GetToken reads from either: a credential written to the file store and
+	// deleted only from the keyring would still resolve afterwards.
+	keys := []string{"file-cred", "oauth:prod:file-cred", "oauth:prod:file-cred:scopes"}
+	for _, key := range keys {
+		if err := fileStore.SetToken(key, `{"refresh_token":"stale"}`); err != nil {
+			t.Fatalf("seeding %q: %v", key, err)
+		}
+	}
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "file-cred"}}
+
+	if err := cfg.deleteTokenWithKeyring("file-cred", &unavailableKeyring{}, fileStore); err != nil {
+		t.Fatalf("deleteTokenWithKeyring() error = %v", err)
+	}
+
+	for _, key := range keys {
+		if _, err := fileStore.GetToken(key); err == nil {
+			t.Errorf("file-store entry %q still exists after DeleteToken", key)
+		}
+	}
+}
+
+func TestConfig_DeleteToken_SweepsEnvironmentsWithoutAContext(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	for _, key := range []string{"oauth:prod:orphan", "oauth:dev:orphan", "oauth:hard:orphan"} {
+		kr.data[key] = `{"refresh_token":"stale"}`
+	}
+
+	// No context references "orphan" — the credential's context may already be
+	// gone, or may never have existed. The sweep must still be complete, which
+	// it is because oauthKeyringNames enumerates prod/dev/hard unconditionally
+	// and oauthEnvironmentFromURL cannot return anything outside that set. This
+	// is why deletion imposes no ordering against context removal.
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "orphan"}}
+
+	if err := cfg.deleteTokenWithKeyring("orphan", kr, NewOAuthFileStoreWithDir(t.TempDir())); err != nil {
+		t.Fatalf("deleteTokenWithKeyring() error = %v", err)
+	}
+
+	if len(kr.data) != 0 {
+		t.Errorf("keyring still holds %v after DeleteToken with no context present", kr.data)
+	}
+}
+
+func TestConfig_DeleteToken_SweepsLegacyOAuthEntry(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	// Pre-environment format written by older dtctl versions. GetToken no
+	// longer resolves it, but it still holds a refresh token, so teardown must
+	// remove it rather than leave an unreachable secret on the machine.
+	kr.data["oauth:legacy-cred"] = `{"refresh_token":"ancient"}`
+	kr.data["oauth:legacy-cred:scopes"] = "storage:logs:read"
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "legacy-cred"}}
+
+	if err := cfg.deleteTokenWithKeyring("legacy-cred", kr, NewOAuthFileStoreWithDir(t.TempDir())); err != nil {
+		t.Fatalf("deleteTokenWithKeyring() error = %v", err)
+	}
+
+	if len(kr.data) != 0 {
+		t.Errorf("legacy OAuth entries survived DeleteToken: %v", kr.data)
+	}
+}
+
+func TestConfig_DeleteToken_IsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	// A credential that is already gone is not an error, so a teardown step can
+	// be retried (or run twice) without failing the caller.
+	if err := cfg.deleteTokenWithKeyring("never-existed", newMockKeyring(), NewOAuthFileStoreWithDir(t.TempDir())); err != nil {
+		t.Errorf("DeleteToken() for missing credential = %v, want nil", err)
+	}
+}
+
+func TestConfig_DeleteToken_KeepsConfigEntryWhenStoreFails(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "stuck-cred"}}
+
+	// A keyring that reports itself available but refuses deletes: the error must
+	// surface, and the config entry must survive so the delete stays retryable
+	// by name rather than leaving an unreachable secret behind.
+	if err := cfg.deleteTokenWithKeyring("stuck-cred", &refusingKeyring{}, NewOAuthFileStoreWithDir(t.TempDir())); err == nil {
+		t.Fatal("DeleteToken() error = nil, want error when the keyring refuses the delete")
+	}
+
+	if len(cfg.Tokens) != 1 || cfg.Tokens[0].Name != "stuck-cred" {
+		t.Errorf("config tokens = %+v, want stuck-cred retained for retry", cfg.Tokens)
+	}
+}
+
+func TestConfig_DeleteToken_RejectsEmptyName(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	// An empty name would otherwise expand into the bare "oauth:<env>:" prefixes.
+	if err := cfg.deleteTokenWithKeyring("", newMockKeyring(), nil); err == nil {
+		t.Error("DeleteToken(\"\") error = nil, want error")
 	}
 }

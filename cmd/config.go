@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -349,6 +350,106 @@ var configSetCredentialsCmd = &cobra.Command{
 	},
 }
 
+// configDeleteCredentialsCmd removes a stored credential
+var configDeleteCredentialsCmd = &cobra.Command{
+	Use:     "delete-credentials <name>",
+	Aliases: []string{"rm-credentials"},
+	Short:   "Delete stored credentials",
+	Long: `Delete stored credentials.
+
+Removes the credential from the OS keyring (or the file-based token store) and
+drops its entry from the config file, including every cached OAuth access and
+refresh token derived from it.
+
+This is the supported way to remove a credential — it is what an automated
+teardown step should call. Do not use OS keychain tooling ('security' on macOS,
+'secret-tool' on Linux, 'cmdkey' on Windows) to remove or inspect dtctl
+credentials: those commands reach far beyond dtctl's own entries, and their
+read verbs print secret material.
+
+To confirm a credential is gone, run 'dtctl auth status', which reports whether
+a token is present without printing it.
+
+Examples:
+  # Remove a credential
+  dtctl config delete-credentials incident-token
+
+  # Remove a context and its credential in one step
+  dtctl config delete-context incident --delete-credentials
+
+  # Check what a teardown script would remove, without removing it
+  dtctl config delete-credentials incident-token --dry-run
+`,
+	Args: cobra.ExactArgs(1),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		cfg, err := loadConfigRaw()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		var names []string
+		for _, nt := range cfg.Tokens {
+			names = append(names, nt.Name)
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return deleteCredentials(args[0])
+	},
+}
+
+// deleteCredentials removes a stored credential and every cached derivative.
+func deleteCredentials(name string) error {
+	// loadRawConfig, not loadConfigRaw: this command rewrites the config file,
+	// and the expanding loader would resolve every ${VAR} in it and save the
+	// resolved values back — writing a *different* credential's secret into the
+	// file in plaintext. See CONFIG_CONTRACT.md, "Write rules".
+	cfg, err := loadRawConfig()
+	if err != nil {
+		return err
+	}
+
+	// Collected before the delete: a context naming this credential is worth
+	// flagging, but not worth refusing over. A credential may legitimately be
+	// removed while a context still points at it (the context is simply
+	// unusable until a new one is stored), and refusing would push callers back
+	// to the OS keychain tooling this command exists to replace.
+	var referencedBy []string
+	for _, nc := range cfg.Contexts {
+		if nc.Context.TokenRef == name {
+			referencedBy = append(referencedBy, nc.Name)
+		}
+	}
+
+	// Honored here even though the rest of the config surface ignores it: this
+	// command is meant to be called from teardown scripts, and a --dry-run that
+	// silently destroys a credential is the worst kind of surprise.
+	if dryRun {
+		fmt.Printf("Dry run: would delete credentials %q\n", name)
+		if len(referencedBy) > 0 {
+			fmt.Printf("Referenced by context(s): %s\n", strings.Join(referencedBy, ", "))
+		}
+		return nil
+	}
+
+	if err := cfg.DeleteToken(name); err != nil {
+		return fmt.Errorf("failed to delete credentials %q: %w", name, err)
+	}
+
+	if err := saveConfig(cfg); err != nil {
+		return err
+	}
+
+	output.PrintSuccess("Credentials %q deleted", name)
+	if len(referencedBy) > 0 {
+		output.PrintWarning("Context(s) %s still reference %q; store a new credential or delete the context",
+			strings.Join(referencedBy, ", "), name)
+	}
+	return nil
+}
+
 // configSetCmd sets a configuration value
 var configSetCmd = &cobra.Command{
 	Use:   "set <key> <value>",
@@ -455,19 +556,21 @@ var configDeleteContextCmd = &cobra.Command{
 If the deleted context is the current context, the current-context will be cleared.
 You will need to use 'dtctl config use-context' to set a new current context.
 
-Note: This does not delete the associated credentials. Use 'dtctl config set-credentials'
-to manage credentials separately.
+By default the credential the context references is left in place, because a
+token ref can be shared between contexts. Pass --delete-credentials to remove
+it as well, or remove it separately with 'dtctl config delete-credentials'.
 
 Examples:
-  # Delete a context
+  # Delete a context, keeping its credential
   dtctl config delete-context old-env
 
-  # Delete the staging context
-  dtctl config delete-context staging
+  # Delete a context and the credential it references
+  dtctl config delete-context staging --delete-credentials
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return deleteContext(args[0])
+		deleteCredential, _ := cmd.Flags().GetBool("delete-credentials")
+		return deleteContext(args[0], deleteCredential)
 	},
 }
 
@@ -482,6 +585,7 @@ func init() {
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configSetContextCmd)
 	configCmd.AddCommand(configSetCredentialsCmd)
+	configCmd.AddCommand(configDeleteCredentialsCmd)
 	configCmd.AddCommand(configMigrateTokensCmd)
 	configCmd.AddCommand(configDescribeContextCmd)
 	configCmd.AddCommand(configDeleteContextCmd)
@@ -502,4 +606,8 @@ func init() {
 	// Flags for set-credentials
 	configSetCredentialsCmd.Flags().String("token", "", "API token")
 	configSetCredentialsCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
+
+	// Flags for delete-context
+	configDeleteContextCmd.Flags().Bool("delete-credentials", false,
+		"also delete the credential the context references (leaves it in place otherwise)")
 }

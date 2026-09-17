@@ -32,6 +32,24 @@ dtctl config set-credentials my-token \
   --token "dt0s16.XXXXXXXX.YYYYYYYY"
 ```
 
+### Removing Credentials
+
+```bash
+# Remove a credential
+dtctl config delete-credentials my-token
+
+# Remove a context and the credential it references, in one step
+dtctl config delete-context my-env --delete-credentials
+```
+
+These clear every entry the credential occupies -- the stored token plus each
+cached OAuth token and scope record derived from it. A direct OS keychain delete
+removes only one of those and leaves usable token material behind, so never use
+`security` (macOS), `secret-tool` (Linux), or `cmdkey` (Windows) on dtctl
+credentials. To confirm removal, run `dtctl auth status`, which reports whether
+a token is present without printing it; do not verify by reading the secret
+back.
+
 ### Creating a Platform Token
 
 1. Go to [https://myaccount.dynatrace.com/platformTokens](https://myaccount.dynatrace.com/platformTokens) (Account Management > **My platform tokens**)

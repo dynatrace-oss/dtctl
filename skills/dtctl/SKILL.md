@@ -154,6 +154,23 @@ Gotchas: set `davis.enabled: false` on data tiles; `makeTimeseries` for log/span
 - Destructive ops may be blocked by safety level — switch with `dtctl config use-context <name>`, or raise the level when creating the context.
 - Prefer `get`/`describe` first; `--mine` scopes to resources you own; `--plain` for all machine consumption.
 
+## Credentials & teardown
+
+Credentials are dtctl's business: read and remove them only through dtctl.
+
+```bash
+dtctl config delete-context <name> --delete-credentials  # context + its credential
+dtctl config delete-credentials <token-ref>              # credential alone (shared, or context already gone)
+dtctl auth status --plain                                # presence check — never prints the token
+```
+
+**Never invoke OS keychain tooling** — `security` (macOS), `secret-tool`
+(Linux), `cmdkey` (Windows) — for any purpose, cleanup included. Their delete
+verbs miss most of what a credential occupies; their read verbs print secrets,
+and `security dump-keychain` covers *every* keychain on the machine, not just
+dtctl's. **Never verify a deletion by reading the secret back** — a teardown
+step that prints a token has leaked exactly what it was told to destroy.
+
 ## More
 
 [troubleshooting](references/troubleshooting.md) · [multi-tenant config](references/config-management.md) · [DQL](references/DQL-reference.md) · [notebooks](references/resources/notebooks.md) · [extensions](references/resources/extensions.md) · `dtctl --help`, `dtctl <command> --help`

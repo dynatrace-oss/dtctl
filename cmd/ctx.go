@@ -190,7 +190,8 @@ var ctxDeleteCmd = &cobra.Command{
 		return names, cobra.ShellCompDirectiveNoFileComp
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return deleteContext(args[0])
+		deleteCredential, _ := cmd.Flags().GetBool("delete-credentials")
+		return deleteContext(args[0], deleteCredential)
 	},
 }
 
@@ -389,16 +390,27 @@ func setContext(name, environment, tokenRef, safetyLevel, description, profile s
 	return nil
 }
 
-// deleteContext deletes a named context (shared logic)
-func deleteContext(name string) error {
-	cfg, err := loadConfigRaw()
+// deleteContext deletes a named context (shared logic).
+//
+// deleteCredential also removes the credential the context references. It is
+// opt-in because a token ref can be shared between contexts, but the default
+// leaves a usable credential behind, so that case is called out explicitly —
+// a silently orphaned token is what sends callers to the OS keychain tooling.
+func deleteContext(name string, deleteCredential bool) error {
+	// loadRawConfig, not loadConfigRaw: this command rewrites the config file,
+	// and the expanding loader would resolve every ${VAR} in it and save the
+	// resolved values back — writing credentials into the file in plaintext.
+	// See CONFIG_CONTRACT.md, "Write rules".
+	cfg, err := loadRawConfig()
 	if err != nil {
 		return err
 	}
 
+	var tokenRef string
 	found := false
 	for _, nc := range cfg.Contexts {
 		if nc.Name == name {
+			tokenRef = nc.Context.TokenRef
 			found = true
 			break
 		}
@@ -406,6 +418,36 @@ func deleteContext(name string) error {
 
 	if !found {
 		return fmt.Errorf("context %q not found", name)
+	}
+
+	// Validated ahead of the dry-run return so a preview reports the same
+	// refusal the real run would, rather than promising a deletion that fails.
+	if deleteCredential && tokenRef != "" {
+		sharedWith := 0
+		for _, nc := range cfg.Contexts {
+			if nc.Name != name && nc.Context.TokenRef == tokenRef {
+				sharedWith++
+			}
+		}
+		if sharedWith > 0 {
+			return fmt.Errorf("credential %q is shared with %d other context(s); "+
+				"delete those first, or run 'dtctl config delete-credentials %s' to remove it for all of them",
+				tokenRef, sharedWith, tokenRef)
+		}
+	}
+
+	if dryRun {
+		fmt.Printf("Dry run: would delete context %q\n", name)
+		if deleteCredential && tokenRef != "" {
+			fmt.Printf("Would also delete credentials %q\n", tokenRef)
+		}
+		return nil
+	}
+
+	if deleteCredential && tokenRef != "" {
+		if err := cfg.DeleteToken(tokenRef); err != nil {
+			return fmt.Errorf("failed to delete credential %q: %w", tokenRef, err)
+		}
 	}
 
 	if err := cfg.DeleteContext(name); err != nil {
@@ -422,6 +464,15 @@ func deleteContext(name string) error {
 	}
 
 	output.PrintSuccess("Context %q deleted", name)
+
+	switch {
+	case tokenRef == "":
+		// Nothing was referenced, so nothing can be left behind.
+	case deleteCredential:
+		output.PrintSuccess("Credentials %q deleted", tokenRef)
+	default:
+		output.PrintInfo("Credentials %q were kept. Remove them with 'dtctl config delete-credentials %s'.", tokenRef, tokenRef)
+	}
 	return nil
 }
 
@@ -433,6 +484,10 @@ func init() {
 	ctxCmd.AddCommand(ctxDescribeCmd)
 	ctxCmd.AddCommand(ctxSetCmd)
 	ctxCmd.AddCommand(ctxDeleteCmd)
+
+	// Flags for ctx delete
+	ctxDeleteCmd.Flags().Bool("delete-credentials", false,
+		"also delete the credential the context references (leaves it in place otherwise)")
 
 	// Flags for ctx set
 	ctxSetCmd.Flags().String("environment", "", "environment URL")

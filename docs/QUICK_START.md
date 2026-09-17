@@ -132,7 +132,17 @@ dtctl config current-context
 
 # Delete a context you no longer need
 dtctl config delete-context old-env
+
+# Delete a context and the credential it references
+dtctl config delete-context old-env --delete-credentials
+
+# Delete a credential on its own (shared, or context already gone)
+dtctl config delete-credentials old-token
 ```
+
+> Remove credentials only with these commands — they clear every entry a
+> credential occupies, which a direct OS keychain delete does not. Never use
+> `security`, `secret-tool`, or `cmdkey` on dtctl credentials.
 
 ### One-Time Context Override
 

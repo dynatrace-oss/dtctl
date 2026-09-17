@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1252,6 +1253,81 @@ func (c *Config) setTokenWithKeyring(name, token string, kr keyringBackend, file
 		Name:  name,
 		Token: token,
 	})
+	return nil
+}
+
+// DeleteToken removes a credential and every cached derivative of it.
+//
+// A credential is not a single secret. One token ref fans out into the plain
+// keyring entry, a cached OAuth entry per environment, a scope companion for
+// each of those, and file-store copies of all of them. Teardown must clear the
+// whole fan-out: anything missed is live token material outliving the
+// credential the caller asked to remove.
+//
+// Deletion is idempotent — a credential that is already gone is not an error,
+// so callers can safely retry — but a store that refuses a delete is reported,
+// so no caller ever announces a credential as removed while it still exists.
+func (c *Config) DeleteToken(name string) error {
+	return c.deleteTokenWithKeyring(name, nil, nil)
+}
+
+// deleteTokenWithKeyring is the testable core of DeleteToken; accepts an
+// explicit keyringBackend and OAuthFileStore so tests avoid the OS keyring.
+//
+// The sweep does not depend on the config still holding the credential's
+// context: oauthKeyringNames enumerates prod/dev/hard unconditionally, and
+// oauthEnvironmentFromURL can only ever return one of those three (or ""), so
+// a context can only name an entry the unconditional list already covers.
+func (c *Config) deleteTokenWithKeyring(name string, kr keyringBackend, fileStore *OAuthFileStore) error {
+	if name == "" {
+		return fmt.Errorf("credential name must not be empty")
+	}
+	if kr == nil {
+		kr = newOSKeyring()
+	}
+	if fileStore == nil {
+		fileStore = NewOAuthFileStore()
+	}
+
+	// Every key this credential can occupy: the plain platform/API token entry,
+	// each per-environment OAuth cache entry, and each entry's scope companion.
+	// The pre-environment legacy form (oauth:<tokenRef>) is swept too: GetToken
+	// no longer resolves it, but an entry written by an older dtctl still holds
+	// a refresh token, and an unreachable secret is still a secret.
+	keys := []string{name, OAuthTokenPrefix + name, OAuthTokenPrefix + name + scopeCompanionSuffix}
+	for _, oauthKey := range c.oauthKeyringNames(name) {
+		keys = append(keys, oauthKey, oauthKey+scopeCompanionSuffix)
+	}
+
+	// Both backends are swept for every key regardless of which one is active:
+	// GetToken reads from either, so a credential written under one backend and
+	// deleted under the other would still resolve afterwards.
+	var errs []error
+	keyringAvailable := kr.Available()
+	for _, key := range keys {
+		if keyringAvailable {
+			if err := kr.Delete(key); err != nil {
+				errs = append(errs, fmt.Errorf("keyring entry %q: %w", key, err))
+			}
+		}
+		if err := fileStore.DeleteToken(key); err != nil {
+			errs = append(errs, fmt.Errorf("token file for %q: %w", key, err))
+		}
+	}
+
+	// Drop the config entry only once the secret stores are clear: while the
+	// entry is still there, a partially failed delete remains retryable by name.
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	for i, nt := range c.Tokens {
+		if nt.Name == name {
+			c.Tokens = append(c.Tokens[:i], c.Tokens[i+1:]...)
+			break
+		}
+	}
+
 	return nil
 }
 

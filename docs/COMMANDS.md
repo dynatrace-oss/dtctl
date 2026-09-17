@@ -53,6 +53,7 @@ _read-only | access: read_
 | --- | --- |
 | current-context | _(none declared)_ |
 | delete-context | _(none declared)_ |
+| delete-credentials | _(none declared)_ |
 | describe-context | _(none declared)_ |
 | get-contexts | _(none declared)_ |
 | init | _(none declared)_ |

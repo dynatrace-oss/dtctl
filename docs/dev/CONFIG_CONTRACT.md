@@ -121,6 +121,21 @@ string. Management commands that rewrite the file must load with
   `DTCTL_TOKEN_STORAGE=file`) → inline `token` value in the config file.
 - `DTCTL_DISABLE_KEYRING` (any non-empty value) disables the keyring;
   `DTCTL_TOKEN_STORAGE=file` forces the file store.
+- **Deletion must clear the whole fan-out.** One token ref occupies the plain
+  entry, an OAuth entry per environment, a `:scopes` companion for each, the
+  pre-environment legacy `oauth:<tokenRef>` form, and file-store copies of all
+  of them. `Config.DeleteToken` sweeps that set across both backends; anything
+  narrower leaves live token material behind, including material `GetToken` can
+  no longer resolve but an attacker with the file could still read.
+  Deletion imposes no ordering against context removal: `oauthKeyringNames`
+  enumerates `prod`/`dev`/`hard` unconditionally and `oauthEnvironmentFromURL`
+  returns nothing outside that set, so a context never names an entry the
+  unconditional sweep would miss.
+- **No consumer shells out to OS keychain tooling.** `security`, `secret-tool`,
+  and `cmdkey` reach past dtctl's own entries, and their read verbs print
+  secrets, so they must not appear in code, docs, or the shipped skill. Presence
+  is checked with `dtctl auth status`, which reports it without printing the
+  token.
 - **macOS keychain UX**: keychain access is granted per binary, so each
   consumer (dtctl and every plugin) triggers its own one-time
   keychain-access prompt on first credential read. Expected behavior —

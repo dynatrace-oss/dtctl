@@ -102,7 +102,12 @@ dtctl config use-context <name>
 dtctl config current-context
 dtctl config describe-context <name>
 dtctl config delete-context <name>
+dtctl config delete-context <name> --delete-credentials   # also remove the credential it references
 dtctl config view
+
+# Credential management (OS keyring, or file store where no keyring exists)
+dtctl config set-credentials <ref> --token <token>
+dtctl config delete-credentials <ref>
 
 # Quick context switching (shortcuts without the "config" prefix)
 dtctl ctx                          # List contexts
@@ -111,6 +116,7 @@ dtctl ctx current                  # Show current context name
 dtctl ctx describe <name>          # Show details of a context
 dtctl ctx set <name> --environment <url> [--token-ref <ref>]  # Create/update a context and switch to it
 dtctl ctx delete <name>            # Delete a context
+dtctl ctx delete <name> --delete-credentials  # Delete a context and its credential
 dtctl ctx token [<name>]           # Print the resolved token for a context
 
 # Credentials
