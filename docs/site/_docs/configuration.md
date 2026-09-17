@@ -118,16 +118,16 @@ current-context: my-environment
 contexts:
   - name: my-environment
     context:
-      environment: https://your-environment.apps.dynatrace.com
+      environment: ${DT_ENVIRONMENT_URL}
       token-ref: my-token
       safety-level: readwrite-all
 preferences:
   output: table
 ```
 
-Set `environment` to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**:
+Set `DT_ENVIRONMENT_URL` (or edit the file directly) to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**:
 
-- environment variable references (`${VAR}`) are not expanded
+- `${VAR}` references are expanded for the `environment` URL only — the resolved URL is validated as a Dynatrace host (`*.dynatrace.com` / `*.dynatracelabs.com`, https only)
 - inline tokens are rejected — the credential comes from the OS keyring
 - `token-ref` must name a context in your **global** config that binds the *same* environment host, otherwise the token does not resolve
 - `safety-level` is clamped to the level that global context declares
