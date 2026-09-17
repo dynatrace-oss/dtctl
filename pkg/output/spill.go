@@ -329,9 +329,27 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 // the byte count is a faithful proxy for the tokens the agent would otherwise
 // receive (50 KB of JSON ≠ 50 KB of toon). table/wide/chart-style formats are
 // measured as json because that is what agent mode actually emits.
+//
+// Nothing is kept: bytes go to io.Discard and only the count is returned. The
+// JSON measurement — the one every agent-mode query pays, since json is the
+// agent display encoding — streams element by element (streamJSONArray) rather
+// than handing the whole slice to json.Encoder, whose indenting buffers the
+// entire serialised result twice over. That transient buffer, not the column
+// statistics or the row sample, was what made a spilling query peak higher than
+// a non-spilling one (#467).
 func MeasureSerializedBytes(records interface{}, format string) (int64, string) {
 	enc := NormalizeMeasureEncoding(format)
 	counter := &countingWriter{w: io.Discard}
+	if enc == "json" {
+		handled, err := streamJSONArray(counter, records, "", jsonIndent)
+		if handled && err == nil {
+			return counter.n, enc
+		}
+		// Unstreamable shape, or an element that failed to marshal partway
+		// through: drop the partial count and measure the whole value the way it
+		// will actually be printed.
+		counter.n = 0
+	}
 	p := NewPrinterWithOpts(PrinterOptions{Format: enc, Writer: counter})
 	_ = p.PrintList(records)
 	return counter.n, enc

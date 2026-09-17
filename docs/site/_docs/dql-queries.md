@@ -152,6 +152,12 @@ dtctl query "fetch logs" --spill=auto --spill-threshold 100KB  # size that trigg
   Windows), partitioned by context, written atomically with `0700`/`0600`
   permissions and pruned after a 24h TTL. On a read-only filesystem the command
   degrades to a summary without a path rather than dumping rows.
+- **What spill bounds:** the *context window*, not process memory. The rows are
+  decoded into memory before the decision is made, so spilling a huge result
+  still costs the memory that result occupies — spilling adds only bounded
+  overhead on top (the column stats, the row sample, and one record at a time
+  while writing). Reach for `--max-result-records`, `| fields`, or `| limit` if
+  the constraint is RSS rather than tokens.
 - **`--spill-to` vs `> file`:** shell redirection (`-o csv > out.csv`) writes the
   raw bytes; `--spill-to` writes the file *and* returns the summary/manifest in
   its place. Use redirection when you want the bytes, `--spill-to` when you want
