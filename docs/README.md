@@ -11,7 +11,7 @@ Reference documentation for [`dtctl`](https://github.com/dynatrace-oss/dtctl), t
 ### Cross-cutting guides
 
 - **[QUICK_START.md](QUICK_START.md)**: Install, authenticate, and run your first commands
-- **[INSTALLATION.md](INSTALLATION.md)**: All install methods, build from source, shell completion
+- **[INSTALLATION.md](INSTALLATION.md)**: All install methods, build from source, shell completion (Windows-specific details in **[WINDOWS.md](WINDOWS.md)**)
 - **[CONFIGURATION.md](CONFIGURATION.md)**: Contexts, credentials, safety levels, apply hooks, aliases
 - **[COMMANDS.md](COMMANDS.md)**: Generated reference of every verb and the resources it operates on
 - **[TOKEN_SCOPES.md](TOKEN_SCOPES.md)**: API token scopes each resource requires, by safety level

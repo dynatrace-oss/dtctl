@@ -158,6 +158,8 @@ Credentials are stored securely in **Windows Credential Manager** (viewable via 
 
 ### Set Up Your First Environment
 
+For the full configuration reference (contexts, credentials, safety levels, aliases, profiles), see **[CONFIGURATION.md](CONFIGURATION.md)**. The example below shows the Windows/PowerShell specifics.
+
 ```powershell
 # OAuth login (recommended -- opens browser)
 dtctl auth login --context my-env --environment "https://abc12345.apps.dynatrace.com"
