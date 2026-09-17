@@ -198,6 +198,8 @@ var localResources = map[string]bool{
 	"set-credentials": true, "delete-credentials": true,
 	"migrate-tokens": true, "init": true,
 	"view": true, "current": true, "set": true,
+	// development-feature opt-in listing (reads the binary's own registry)
+	"list-development": true,
 	// ctx aliases
 	"describe": true, "delete": true, "token": true, "discover-account": true,
 	// auth (local token storage / introspection)

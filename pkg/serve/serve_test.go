@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dynatrace-oss/dtctl/pkg/engine"
+	"github.com/dynatrace-oss/dtctl/sdk/session"
 )
 
 // newDynatraceMock is a minimal fake Dynatrace environment for handler tests.
@@ -246,33 +247,42 @@ func TestUnknownProtocolFails(t *testing.T) {
 	require.Contains(t, err.Error(), "http", "the error must list what is available")
 }
 
-// TestExperimentalGate: server mode is opt-in. The gate reads the environment
-// the same way the account surface does, so operators learn one convention.
-func TestExperimentalGate(t *testing.T) {
+// TestDevelopmentGate: server mode is opt-in. It is a development-tier
+// feature, so the gate reads the one DTCTL_DEVELOPMENT list that every such
+// feature shares rather than a per-feature variable.
+func TestDevelopmentGate(t *testing.T) {
 	for _, c := range []struct {
 		value string
 		want  bool
 	}{
-		{"", false}, {"0", false}, {"false", false}, {"no", false}, {"off", false},
-		{"OFF", false}, {" false ", false},
-		{"1", true}, {"true", true}, {"yes", true}, {"on", true}, {"anything", true},
+		{"", false}, {"account", false}, {"serve-http", false},
+		{"serve", true}, {"account,serve", true}, {" SERVE ", true},
+		{"development.serve", true},
+		// The sentinel enables every registered feature at once, which is what
+		// dtctl's own test and development builds use.
+		{session.DevelopmentAll, true},
 	} {
-		t.Setenv(ExperimentalEnvVar, c.value)
-		require.Equalf(t, c.want, Experimental(), "%s=%q", ExperimentalEnvVar, c.value)
+		t.Setenv(session.DevelopmentEnvVar, c.value)
+		require.Equalf(t, c.want, Enabled(), "%s=%q", session.DevelopmentEnvVar, c.value)
 	}
 
 	// Unset is off — the released-build default.
-	t.Setenv(ExperimentalEnvVar, "")
-	require.NoError(t, os.Unsetenv(ExperimentalEnvVar))
-	require.False(t, Experimental())
+	t.Setenv(session.DevelopmentEnvVar, "")
+	require.NoError(t, os.Unsetenv(session.DevelopmentEnvVar))
+	require.False(t, Enabled())
+
+	// The retired per-feature variable is still honored as a deprecated alias,
+	// so an existing deployment does not break on upgrade.
+	t.Setenv("DTCTL_EXPERIMENTAL_SERVE", "1")
+	require.True(t, Enabled(), "the legacy opt-in must keep working for one release")
 }
 
-// TestExperimentalGateHidesCommand builds the real binary and checks the gate
-// end to end: the wiring lives in main (both the dispatch and the registration),
-// which no unit test in this package can reach. Without the opt-in, `serve` must
-// be an ordinary unknown command — not hidden-but-runnable, and not advertised
-// in help or the command catalog.
-func TestExperimentalGateHidesCommand(t *testing.T) {
+// TestDevelopmentGateHidesCommand builds the real binary and checks the gate
+// end to end: the wiring lives in main (both the dispatch and the
+// registration), which no unit test in this package can reach. Without the
+// opt-in, `serve` must be an ordinary unknown command — not
+// hidden-but-runnable, and not advertised in help or the command catalog.
+func TestDevelopmentGateHidesCommand(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the dtctl binary; skipped in -short mode")
 	}
@@ -286,26 +296,47 @@ func TestExperimentalGateHidesCommand(t *testing.T) {
 	out, err := build.CombinedOutput()
 	require.NoError(t, err, "build failed: %s", out)
 
+	// A naive caller's environment: both the current and the legacy opt-in
+	// absent entirely, not merely empty. The distinction matters — setting
+	// DTCTL_DEVELOPMENT at all is what tells dtctl the caller knows the
+	// mechanism, which switches on the explanation asserted further down.
+	base := []string{}
+	for _, kv := range os.Environ() {
+		switch {
+		case strings.HasPrefix(kv, session.DevelopmentEnvVar+"="),
+			strings.HasPrefix(kv, "DTCTL_EXPERIMENTAL_SERVE="):
+			continue
+		}
+		base = append(base, kv)
+	}
 	run := func(env []string, args ...string) (int, string) {
 		c := exec.Command(exe, args...)
-		c.Env = append(os.Environ(), env...)
+		c.Env = append(append([]string(nil), base...), env...)
 		combined, _ := c.CombinedOutput()
 		return c.ProcessState.ExitCode(), string(combined)
 	}
 
-	off := []string{ExperimentalEnvVar + "="}
-	code, output := run(off, "serve", "http", "--addr", "127.0.0.1:0")
+	code, output := run(nil, "serve", "http", "--addr", "127.0.0.1:0")
 	require.NotZero(t, code, "serve must not run without the opt-in")
-	require.Contains(t, output, `unknown command "serve"`)
+	require.Contains(t, output, `unknown command "serve"`,
+		"a caller who has never heard of the mechanism must not learn the feature exists")
 
 	// Matched as a command entry ("  serve   Run dtctl as a server"), so the
 	// assertion does not trip over unrelated prose containing "server".
-	_, output = run(off, "--help")
+	_, output = run(nil, "--help")
 	require.NotRegexp(t, `(?m)^\s+serve\s`, output,
 		"an off-by-default surface must not be advertised in help")
 
+	// A caller who has set DTCTL_DEVELOPMENT — even to an off value — is
+	// evidently mid-setup, and for them silence is the unhelpful answer. They
+	// get the feature named and the opt-in spelled out.
+	code, output = run([]string{session.DevelopmentEnvVar + "="}, "serve", "http")
+	require.NotZero(t, code, "serve still must not run")
+	require.Contains(t, output, "development feature")
+	require.Contains(t, output, "development."+DevelopmentFeature)
+
 	// With the opt-in the command exists again; bare `serve` is discovery.
-	code, output = run([]string{ExperimentalEnvVar + "=1"}, "serve")
+	code, output = run([]string{session.DevelopmentEnvVar + "=" + DevelopmentFeature}, "serve")
 	require.Zero(t, code, "bare serve prints help and exits 0: %s", output)
 	require.Contains(t, output, "http")
 }

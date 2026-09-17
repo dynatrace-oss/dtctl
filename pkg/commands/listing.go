@@ -17,6 +17,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/plugin"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/version"
 )
 
@@ -24,7 +25,10 @@ import (
 // v2 adds per-verb `access`, per-(verb,resource) `required_scopes_by_resource`,
 // per-verb `required_scopes` (DQL verbs), and a top-level `resource_scopes`
 // canonical table.
-const SchemaVersion = 2
+// v3 adds the stability axis: per-verb and per-flag `stability` /
+// `stability_since`, per-verb `deprecated`, and the top-level `min_stability` /
+// `stability_exceptions` that describe the active floor.
+const SchemaVersion = 3
 
 // Listing is the top-level output of `dtctl commands`.
 type Listing struct {
@@ -40,10 +44,20 @@ type Listing struct {
 	// SafetyLevel is the effective safety level of the active context, the
 	// orthogonal permission axis. Surfaced alongside Profile so both active
 	// constraints are visible at once.
-	SafetyLevel string            `json:"safety_level,omitempty" yaml:"safety_level,omitempty"`
-	GlobalFlags map[string]*Flag  `json:"global_flags,omitempty" yaml:"global_flags,omitempty"`
-	Verbs       map[string]*Verb  `json:"verbs" yaml:"verbs"`
-	Aliases     map[string]string `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
+	SafetyLevel string `json:"safety_level,omitempty" yaml:"safety_level,omitempty"`
+	// MinStability is the active stability floor: the weakest contract a command
+	// or flag may offer and still be usable here. Surfaced so an agent can tell
+	// "this command does not exist" from "this command exists but is below the
+	// floor this deployment accepts". Omitted when nothing is filtered.
+	MinStability string `json:"min_stability,omitempty" yaml:"min_stability,omitempty"`
+	// StabilityExceptions are the individual commands and flags admitted below
+	// the floor, each rendered as it is written in config ("query --spill").
+	// Without them a reader of min_stability could not explain why a
+	// below-floor command is present in the tree.
+	StabilityExceptions []string          `json:"stability_exceptions,omitempty" yaml:"stability_exceptions,omitempty"`
+	GlobalFlags         map[string]*Flag  `json:"global_flags,omitempty" yaml:"global_flags,omitempty"`
+	Verbs               map[string]*Verb  `json:"verbs" yaml:"verbs"`
+	Aliases             map[string]string `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
 	// ResourceScopes is the canonical (resource, access) → scopes table. Agents
 	// can derive any command's required scopes from this table plus each verb's
 	// access, which is what --brief relies on.
@@ -65,6 +79,16 @@ type Verb struct {
 	SafetyOp    string   `json:"safety_operation,omitempty" yaml:"safety_operation,omitempty"`
 	Access      string   `json:"access,omitempty" yaml:"access,omitempty"`
 	Resources   []string `json:"resources,omitempty" yaml:"resources,omitempty"`
+	// Stability is the effective stability tier (the weakest along the path from
+	// root), omitted when it is the default `stable`. An agent that reads no
+	// `stability` key is looking at surface it may safely automate against.
+	Stability string `json:"stability,omitempty" yaml:"stability,omitempty"`
+	// StabilitySince is the dtctl version at which the command entered that
+	// tier, so a caller can judge how long it has sat there.
+	StabilitySince string `json:"stability_since,omitempty" yaml:"stability_since,omitempty"`
+	// Deprecated carries the scheduled-removal note for a still-stable command
+	// ("since 0.40.0, remove in 1.0.0, use `get workflows`").
+	Deprecated string `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 	// RequiredScopes is the scope list for verbs whose scopes are not
 	// per-resource (e.g. `query`/`verify`/`wait`, which read Grail via DQL).
 	RequiredScopes []string `json:"required_scopes,omitempty" yaml:"required_scopes,omitempty"`
@@ -83,6 +107,13 @@ type Flag struct {
 	Default     string `json:"default,omitempty" yaml:"default,omitempty"`
 	Required    bool   `json:"required,omitempty" yaml:"required,omitempty"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	// Stability is the flag's own declared tier, omitted when it is the default
+	// `stable`. A flag may make a weaker promise than its command — that is how
+	// a new idea ships without inventing a new command — so the tier is carried
+	// per flag rather than inherited from the verb.
+	Stability string `json:"stability,omitempty" yaml:"stability,omitempty"`
+	// StabilitySince is the dtctl version at which the flag entered that tier.
+	StabilitySince string `json:"stability_since,omitempty" yaml:"stability_since,omitempty"`
 }
 
 // TimeFormats describes the time input formats dtctl accepts.
@@ -267,6 +298,7 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 		verb := &Verb{
 			Description: cmd.Short,
 		}
+		annotateStability(verb, cmd)
 
 		// Determine mutating status
 		if safetyOp, ok := MutatingVerbs[name]; ok {
@@ -312,6 +344,7 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 					subVerb := &Verb{
 						Description: sub.Short,
 					}
+					annotateStability(subVerb, sub)
 					if safetyOp, ok := MutatingVerbs[name]; ok {
 						subVerb.Mutating = true
 						subVerb.SafetyOp = safetyOp
@@ -325,9 +358,9 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 						if ns.Hidden || ns.Name() == "help" {
 							continue
 						}
-						nestedNames[ns.Name()] = &Verb{
-							Description: ns.Short,
-						}
+						nested := &Verb{Description: ns.Short}
+						annotateStability(nested, ns)
+						nestedNames[ns.Name()] = nested
 					}
 					if len(nestedNames) > 0 {
 						subVerb.Subcommands = nestedNames
@@ -460,6 +493,11 @@ func collectLocalFlags(cmd *cobra.Command) map[string]*Flag {
 			}
 		}
 
+		if lvl := stability.OfFlag(cmd, f.Name); lvl != stability.Default {
+			fl.Stability = string(lvl)
+			fl.StabilitySince = stability.SinceFlag(cmd, f.Name)
+		}
+
 		flags[key] = fl
 	})
 	return flags
@@ -500,8 +538,8 @@ func flagTypeName(f *pflag.Flag) string {
 }
 
 // Minimal is an ultra-compact overview of the command tree: just verbs, their
-// resources, and nested subcommands. It carries no descriptions, flags, scopes,
-// or mutating status. It is the default `dtctl commands` output — a quick map of
+// resources, their stability, and nested subcommands. It carries no
+// descriptions, flags, scopes, or mutating status. It is the default `dtctl commands` output — a quick map of
 // what exists, since most verb-noun commands are self-explanatory. Use --brief
 // or --full for progressively more detail.
 type Minimal struct {
@@ -512,15 +550,25 @@ type Minimal struct {
 	// Profile and SafetyLevel advertise the active command profile and effective
 	// safety level (the two constraints shaping the surface), so agents see them
 	// even in the minimal overview. Omitted when unconstrained.
-	Profile     string                  `json:"profile,omitempty" yaml:"profile,omitempty"`
-	SafetyLevel string                  `json:"safety_level,omitempty" yaml:"safety_level,omitempty"`
-	Verbs       map[string]*MinimalVerb `json:"verbs" yaml:"verbs"`
-	Aliases     map[string]string       `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
+	Profile     string `json:"profile,omitempty" yaml:"profile,omitempty"`
+	SafetyLevel string `json:"safety_level,omitempty" yaml:"safety_level,omitempty"`
+	// MinStability and StabilityExceptions advertise the third constraint, the
+	// stability floor, for the same reason: an agent bootstrapping from the
+	// compact catalog must be able to tell "this command does not exist" from
+	// "this command is below the contract this deployment accepts".
+	MinStability        string                  `json:"min_stability,omitempty" yaml:"min_stability,omitempty"`
+	StabilityExceptions []string                `json:"stability_exceptions,omitempty" yaml:"stability_exceptions,omitempty"`
+	Verbs               map[string]*MinimalVerb `json:"verbs" yaml:"verbs"`
+	Aliases             map[string]string       `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
 }
 
 // MinimalVerb is a verb reduced to its resources and nested subcommands.
 type MinimalVerb struct {
-	Resources   []string                `json:"resources,omitempty" yaml:"resources,omitempty"`
+	Resources []string `json:"resources,omitempty" yaml:"resources,omitempty"`
+	// Stability is carried even here: this is the documented agent bootstrap
+	// path, and "may change in any release" is not something an agent should
+	// have to discover by having its automation break. Omitted for `stable`.
+	Stability   string                  `json:"stability,omitempty" yaml:"stability,omitempty"`
 	Subcommands map[string]*MinimalVerb `json:"subcommands,omitempty" yaml:"subcommands,omitempty"`
 }
 
@@ -528,14 +576,16 @@ type MinimalVerb struct {
 // listing is not modified.
 func NewMinimal(l *Listing) *Minimal {
 	m := &Minimal{
-		SchemaVersion: l.SchemaVersion,
-		Tool:          l.Tool,
-		Version:       l.Version,
-		CommandModel:  l.CommandModel,
-		Profile:       l.Profile,
-		SafetyLevel:   l.SafetyLevel,
-		Verbs:         make(map[string]*MinimalVerb, len(l.Verbs)),
-		Aliases:       l.Aliases,
+		SchemaVersion:       l.SchemaVersion,
+		Tool:                l.Tool,
+		Version:             l.Version,
+		CommandModel:        l.CommandModel,
+		Profile:             l.Profile,
+		SafetyLevel:         l.SafetyLevel,
+		MinStability:        l.MinStability,
+		StabilityExceptions: l.StabilityExceptions,
+		Verbs:               make(map[string]*MinimalVerb, len(l.Verbs)),
+		Aliases:             l.Aliases,
 	}
 	for name, v := range l.Verbs {
 		m.Verbs[name] = newMinimalVerb(name, v)
@@ -545,7 +595,10 @@ func NewMinimal(l *Listing) *Minimal {
 
 // newMinimalVerb strips a verb down to its resources and nested subcommands.
 func newMinimalVerb(verb string, v *Verb) *MinimalVerb {
-	mv := &MinimalVerb{Resources: advertisedResources(verb, v.Resources)}
+	mv := &MinimalVerb{
+		Resources: advertisedResources(verb, v.Resources),
+		Stability: v.Stability,
+	}
 	if len(v.Subcommands) > 0 {
 		mv.Subcommands = make(map[string]*MinimalVerb, len(v.Subcommands))
 		for name, sub := range v.Subcommands {
@@ -566,8 +619,13 @@ func NewBrief(l *Listing) *Listing {
 		CommandModel:  l.CommandModel,
 		Profile:       l.Profile,
 		SafetyLevel:   l.SafetyLevel,
-		Verbs:         make(map[string]*Verb, len(l.Verbs)),
-		Aliases:       l.Aliases,
+		// The floor and its exceptions are three short strings; dropping them
+		// from the brief catalog would hide a constraint the agent is subject
+		// to on the very path it is told to bootstrap from.
+		MinStability:        l.MinStability,
+		StabilityExceptions: l.StabilityExceptions,
+		Verbs:               make(map[string]*Verb, len(l.Verbs)),
+		Aliases:             l.Aliases,
 		// Retain patterns/antipatterns: they are the primary grounding agents
 		// rely on after bootstrapping with `dtctl commands --brief -o json`, and
 		// cost only a handful of tokens. Dropping them here would make the
@@ -589,6 +647,10 @@ func NewBrief(l *Listing) *Listing {
 			Resources: advertisedResources(name, verb.Resources),
 			// DQL scopes are not derivable from resource_scopes, so retain them.
 			RequiredScopes: verb.RequiredScopes,
+			// Retained for the same reason as mutating status: an agent always
+			// needs to know it before acting.
+			Stability:  verb.Stability,
+			Deprecated: verb.Deprecated,
 		}
 
 		// Simplify flags: just type, drop description/default
@@ -612,6 +674,8 @@ func NewBrief(l *Listing) *Listing {
 					Access:         sub.Access,
 					Resources:      sub.Resources,
 					RequiredScopes: sub.RequiredScopes,
+					Stability:      sub.Stability,
+					Deprecated:     sub.Deprecated,
 				}
 				if sub.Flags != nil {
 					bs.Flags = make(map[string]*Flag, len(sub.Flags))
@@ -622,7 +686,10 @@ func NewBrief(l *Listing) *Listing {
 				if sub.Subcommands != nil {
 					bs.Subcommands = make(map[string]*Verb, len(sub.Subcommands))
 					for nestedName, nested := range sub.Subcommands {
-						bs.Subcommands[nestedName] = &Verb{Mutating: nested.Mutating}
+						bs.Subcommands[nestedName] = &Verb{
+							Mutating:  nested.Mutating,
+							Stability: nested.Stability,
+						}
 					}
 				}
 				bv.Subcommands[subName] = bs
@@ -818,5 +885,19 @@ func WriteValue(w io.Writer, v any, format string) error {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(v)
+	}
+}
+
+// annotateStability copies a command's effective stability tier and deprecation
+// note onto its catalog entry. The default tier is left empty rather than
+// written out as "stable": a machine consumer should be able to treat the
+// presence of the key as "read the guarantee before automating this".
+func annotateStability(verb *Verb, cmd *cobra.Command) {
+	if lvl := stability.Effective(cmd); lvl != stability.Default {
+		verb.Stability = string(lvl)
+		verb.StabilitySince = stability.Since(cmd)
+	}
+	if d, ok := stability.DeprecationOf(cmd); ok {
+		verb.Deprecated = d.Note()
 	}
 }

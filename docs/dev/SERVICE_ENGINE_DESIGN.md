@@ -1,7 +1,7 @@
 # dtctl as a Service — Engine Design
 
-**Status:** Implemented; `dtctl serve` is experimental and gated behind
-`DTCTL_EXPERIMENTAL_SERVE` (see [Maturity](#maturity))
+**Status:** Implemented; `dtctl serve` is a development-tier feature, registered
+only when opted in (see [Maturity](#maturity))
 **Created:** 2026-08-13
 **Audience:** anyone changing `cmd/`, adding a command, or reading a user-supplied file.
 
@@ -310,12 +310,13 @@ both tags exist.
 `pkg/engine` is the stable half: a Go caller opts into it at compile time, and
 the isolation rules above are enforced by guard tests.
 
-`dtctl serve` is **experimental** and registered only when
-`DTCTL_EXPERIMENTAL_SERVE` is set (the `DTCTL_EXPERIMENTAL_ACCOUNT` convention;
-`serve.Experimental()` and the gate in `main`). Without it the command does not
-exist — no help entry, no catalog entry, an ordinary "unknown command". The gate
-comes off when the items below are settled, because each one changes what an
-operator can rely on:
+`dtctl serve` is **development-tier** (see [STABILITY.md](../STABILITY.md)) and
+registered only when opted into — `dtctl config set development.serve on` or
+`DTCTL_DEVELOPMENT=serve`; `serve.Enabled()` and the gate in `main`. Without it
+the command does not exist — no help entry, no catalog entry, an ordinary
+"unknown command". It graduates to a badged `experimental` command when the
+items below are settled, because each one changes what an operator can rely
+on:
 
 - **Per-request deadline, with a caveat.** `engine.Limits.MaxDuration`
   (`DefaultLimits`: 5 min) wraps the request in a `context.WithTimeout`

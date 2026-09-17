@@ -158,29 +158,15 @@ func extractContextOverride(args []string) string {
 // for the full command tree, and a non-nil error only when a referenced profile
 // name does not exist.
 func resolveActiveProfile(args []string) (*config.Profile, error) {
-	// Session-backed invocations resolve against the synthetic config: no
-	// user-defined profiles and no context binding, but DTCTL_PROFILE (set per
-	// request via RunOptions.Env) still selects a built-in preset.
-	if runSession != nil {
-		return runSession.syntheticConfig().ResolveProfile()
-	}
-
-	var (
-		cfg *config.Config
-		err error
-	)
-	if cfgPath := extractFlagValue(args, "config"); cfgPath != "" {
-		cfg, err = config.LoadFrom(cfgPath)
-	} else {
-		cfg, err = config.Load()
-	}
-	if err != nil {
-		// No usable config → full command tree. The real command will surface
-		// any config error later with proper context.
+	// No usable config → full command tree. The real command will surface any
+	// config error later with proper context. Session-backed invocations
+	// resolve against the synthetic config: no user-defined profiles and no
+	// context binding, but DTCTL_PROFILE (set per request via RunOptions.Env)
+	// still selects a built-in preset. See configForArgs in stability.go, which
+	// the stability floor shares.
+	cfg := configForArgs(args)
+	if cfg == nil {
 		return nil, nil
-	}
-	if ctxOverride := extractContextOverride(args); ctxOverride != "" {
-		cfg.CurrentContext = ctxOverride
 	}
 	return cfg.ResolveProfile()
 }

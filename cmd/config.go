@@ -300,14 +300,7 @@ Examples:
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		environment, _ := cmd.Flags().GetString("environment")
-		tokenRef, _ := cmd.Flags().GetString("token-ref")
-		safetyLevel, _ := cmd.Flags().GetString("safety-level")
-		description, _ := cmd.Flags().GetString("description")
-		profile, _ := cmd.Flags().GetString("profile")
-		global, _ := cmd.Flags().GetBool("global")
-
-		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile, global)
+		return setContext(args[0], contextSettingsFromFlags(cmd))
 	},
 }
 
@@ -459,7 +452,11 @@ var configSetCmd = &cobra.Command{
 	Long: `Set a configuration value such as preferences.
 
 Supported keys:
-  - preferences.editor: Set the default editor for edit commands`,
+  - preferences.editor: Set the default editor for edit commands
+  - development.<feature>: Enable or disable a development-tier feature
+    (value: on/off). Development features are unfinished, carry no stability
+    guarantees, and are not registered at all until enabled. Run
+    'dtctl config list-development' to see them.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
@@ -471,9 +468,13 @@ Supported keys:
 			cfg = config.NewConfig()
 		}
 
-		switch key {
-		case "preferences.editor":
+		switch {
+		case key == "preferences.editor":
 			cfg.Preferences.Editor = value
+		case strings.HasPrefix(key, "development."):
+			if err := setDevelopmentKey(cfg, key, value); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown configuration key %q", key)
 		}
@@ -591,19 +592,14 @@ func init() {
 	configCmd.AddCommand(configMigrateTokensCmd)
 	configCmd.AddCommand(configDescribeContextCmd)
 	configCmd.AddCommand(configDeleteContextCmd)
+	configCmd.AddCommand(configListDevelopmentCmd)
 
 	// Flags for init
 	configInitCmd.Flags().String("context", "", "context name to use in template (default: my-environment)")
 	configInitCmd.Flags().Bool("force", false, "overwrite existing .dtctl.yaml")
 
 	// Flags for set-context
-	configSetContextCmd.Flags().String("environment", "", "environment URL")
-	configSetContextCmd.Flags().String("token-ref", "", "token reference name")
-	configSetContextCmd.Flags().String("safety-level", "", "safety level (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
-	configSetContextCmd.Flags().String("description", "", "human-readable description for this context")
-	configSetContextCmd.Flags().String("profile", "", "command profile to bind (restricts the visible command surface; e.g. query, investigate, full)")
-	_ = configSetContextCmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
-	configSetContextCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
+	addContextFlags(configSetContextCmd)
 
 	// Flags for set-credentials
 	configSetCredentialsCmd.Flags().String("token", "", "API token")

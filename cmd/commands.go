@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var (
@@ -138,9 +139,15 @@ func commandsFormat(cmd *cobra.Command) string {
 	return "toon"
 }
 
-// annotateListingContext fills in the active command profile and effective
-// safety level. Best-effort: any config error leaves the fields empty, which
-// renders as the full surface at default safety.
+// annotateListingContext fills in the three active constraints: the command
+// profile (which commands exist here), the effective safety level (what they
+// may do), and the stability floor with its exceptions (what is promised about
+// their shape). Best-effort: any config error leaves the fields empty, which
+// renders as the full surface at default safety and the default floor.
+//
+// All three are surfaced together because a catalog that showed only one would
+// let an agent misread the other two. A command missing from the tree means
+// something different under a profile than under a floor, and the fix differs.
 func annotateListingContext(l *commands.Listing) {
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -153,6 +160,14 @@ func annotateListingContext(l *commands.Listing) {
 		// Config-level, not Context-level: a local .dtctl.yaml has its declared
 		// level clamped, and the catalog must advertise what is enforced.
 		l.SafetyLevel = cfg.GetEffectiveSafetyLevel().String()
+	}
+	if floor, err := cfg.ResolveMinStability(); err == nil {
+		l.MinStability = floor.String()
+	}
+	// Rendered from the parsed form rather than echoed from config, so the
+	// catalog cannot advertise an exception that the floor stage rejected.
+	if parsed, err := stability.ParseExceptions(cfg.StabilityExceptions()); err == nil {
+		l.StabilityExceptions = stability.Policy{Exceptions: parsed}.ExceptionStrings()
 	}
 }
 

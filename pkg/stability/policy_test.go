@@ -1,0 +1,156 @@
+package stability
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+)
+
+func TestParseExceptions(t *testing.T) {
+	got, err := ParseExceptions([]string{"ingest", "query --spill", "  get workflows  "})
+	if err != nil {
+		t.Fatalf("ParseExceptions: %v", err)
+	}
+	want := []Exception{
+		{Command: "ingest"},
+		{Command: "query", Flag: "spill"},
+		{Command: "get workflows"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d exceptions (%v), want %d", len(got), got, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("exception %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestParseExceptionsRejectsMalformedEntries(t *testing.T) {
+	// A typo in an exception would otherwise silently tighten the surface and
+	// produce a confusing block much later, far from its cause.
+	cases := map[string]string{
+		"two flags":         "query --spill --raw",
+		"command last":      "query --spill workflows",
+		"flag with no path": "--spill",
+	}
+	for name, entry := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseExceptions([]string{entry}); err == nil {
+				t.Errorf("ParseExceptions(%q) succeeded; want an error", entry)
+			}
+		})
+	}
+}
+
+func TestPolicyDefaultFloorAdmitsExperimental(t *testing.T) {
+	var p Policy // unset floor
+	if got := p.EffectiveFloor(); got != Experimental {
+		t.Errorf("default floor = %q, want experimental: humans and interactive "+
+			"agents should keep getting new (badged) surface", got)
+	}
+	if !p.AllowsCommand("ingest", Experimental) {
+		t.Error("the default floor must admit experimental commands")
+	}
+	if p.AllowsCommand("account", Development) {
+		t.Error("the default floor must not admit development commands")
+	}
+}
+
+func TestPolicyFloorBlocksAndExceptionsAdmit(t *testing.T) {
+	p := Policy{
+		Floor: Stable,
+		Exceptions: []Exception{
+			{Command: "ingest"},
+			{Command: "query", Flag: "spill"},
+		},
+	}
+
+	if p.AllowsCommand("translate", Experimental) {
+		t.Error("a stable floor must block an unlisted experimental command")
+	}
+	if !p.AllowsCommand("ingest", Experimental) {
+		t.Error("an exception must admit the command it names")
+	}
+	if !p.AllowsFlag("query", "spill", Experimental) {
+		t.Error("a flag exception must admit the flag it names")
+	}
+	// The narrow grant is the whole point: naming a command must not
+	// blanket-admit experimental flags added to it in a later release.
+	if p.AllowsFlag("ingest", "wait", Experimental) {
+		t.Error("a command exception must not admit the command's experimental flags")
+	}
+	if p.AllowsFlag("query", "raw", Experimental) {
+		t.Error("a flag exception must not spill onto sibling flags")
+	}
+}
+
+func TestPolicyRestrictsIsFalseAtTheWeakestFloor(t *testing.T) {
+	// A floor that cannot block anything lets the caller skip the tree walk
+	// entirely, which is what keeps today's default path free.
+	if (Policy{Floor: Development}).Restricts() {
+		t.Error("a development floor blocks nothing and must report no restriction")
+	}
+	if !(Policy{Floor: Stable}).Restricts() {
+		t.Error("a stable floor restricts")
+	}
+}
+
+func TestRegisterDeclaresEvenWhenDisabled(t *testing.T) {
+	r := &Registry{features: map[string]string{}}
+	r.Declare("account", "account")
+
+	// A disabled feature must still be nameable: Cobra cannot attach an error
+	// to a command that was never added to the tree, so the unknown-command
+	// path has nothing else to consult.
+	if path, ok := r.Path("account"); !ok || path != "account" {
+		t.Errorf("Path(account) = %q,%v; want \"account\",true", path, ok)
+	}
+	// The dotted config form resolves to the same feature.
+	if _, ok := r.Path("development.account"); !ok {
+		t.Error("the config-style dotted key must resolve to the same feature")
+	}
+	if feature, ok := r.FeatureForCommand("account login"); !ok || feature != "account" {
+		t.Errorf("FeatureForCommand(account login) = %q,%v; want \"account\",true", feature, ok)
+	}
+	// Segment matching, not string prefix: an unrelated "accounting" command
+	// must not resolve to the "account" feature.
+	if _, ok := r.FeatureForCommand("accounting report"); ok {
+		t.Error("FeatureForCommand matched a partial segment")
+	}
+}
+
+func TestRegisterAttachesOnlyWhenEnabled(t *testing.T) {
+	parent := &cobra.Command{Use: "dtctl"}
+	child := &cobra.Command{Use: "account"}
+
+	if Register(parent, child, "account", nil) {
+		t.Error("Register attached a disabled feature")
+	}
+	if len(parent.Commands()) != 0 {
+		t.Error("a disabled development command must not be on the tree at all")
+	}
+	if Of(child) != Development {
+		t.Error("Register must mark the command development-tier regardless")
+	}
+
+	if !Register(parent, child, "account", map[string]bool{"all": true}) {
+		t.Error("the \"all\" sentinel must enable every registered feature")
+	}
+	if len(parent.Commands()) != 1 {
+		t.Error("an enabled development command must be attached")
+	}
+}
+
+func TestExceptionStringRoundTrips(t *testing.T) {
+	for _, entry := range []string{"ingest", "query --spill", "get workflows --raw"} {
+		parsed, err := ParseExceptions([]string{entry})
+		if err != nil {
+			t.Fatalf("ParseExceptions(%q): %v", entry, err)
+		}
+		if got := parsed[0].String(); got != strings.TrimSpace(entry) {
+			t.Errorf("round trip of %q produced %q", entry, got)
+		}
+	}
+}
