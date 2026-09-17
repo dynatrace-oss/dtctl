@@ -253,3 +253,82 @@ func containsStr(s, substr string) bool {
 	}
 	return false
 }
+
+func TestIsDynatraceEnvironmentOrigin(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr string
+	}{
+		{name: "bare origin", url: "https://abc12345.apps.dynatrace.com"},
+		{name: "trailing slash is bare", url: "https://abc12345.apps.dynatrace.com/"},
+		{name: "explicit port", url: "https://abc12345.apps.dynatrace.com:443"},
+		{
+			name:    "path rejected",
+			url:     "https://abc12345.apps.dynatrace.com/platform",
+			wantErr: "no path",
+		},
+		{
+			// The residual this check exists for: an expanded ${VAR} riding
+			// along in the path of an otherwise allowlisted host.
+			name:    "secret smuggled in path rejected",
+			url:     "https://abc12345.apps.dynatrace.com/AKIAIOSFODNN7EXAMPLE",
+			wantErr: "no path",
+		},
+		{
+			name:    "query rejected",
+			url:     "https://abc12345.apps.dynatrace.com?x=1",
+			wantErr: "query",
+		},
+		{
+			name:    "fragment rejected",
+			url:     "https://abc12345.apps.dynatrace.com#x",
+			wantErr: "fragment",
+		},
+		{
+			name:    "credentials rejected",
+			url:     "https://user:pass@abc12345.apps.dynatrace.com",
+			wantErr: "credentials",
+		},
+		{
+			name:    "foreign host still rejected",
+			url:     "https://evil.example.com",
+			wantErr: "dynatrace.com",
+		},
+		{
+			name:    "http still rejected",
+			url:     "http://abc12345.apps.dynatrace.com",
+			wantErr: "https",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := IsDynatraceEnvironmentOrigin(tt.url)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("IsDynatraceEnvironmentOrigin(%q) unexpected error: %v", tt.url, err)
+				}
+				return
+			}
+			if err == nil {
+				t.Errorf("IsDynatraceEnvironmentOrigin(%q) = nil, want error containing %q", tt.url, tt.wantErr)
+			} else if !containsStr(err.Error(), tt.wantErr) {
+				t.Errorf("IsDynatraceEnvironmentOrigin(%q) error %q does not contain %q", tt.url, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestIsDynatraceEnvironmentOrigin_RedactsCredentials guards against the
+// validator echoing a password from the rejected URL into an error string that
+// callers print and log.
+func TestIsDynatraceEnvironmentOrigin_RedactsCredentials(t *testing.T) {
+	err := IsDynatraceEnvironmentOrigin("https://user:sup3rs3cret@abc12345.apps.dynatrace.com")
+	if err == nil {
+		t.Fatal("IsDynatraceEnvironmentOrigin() = nil, want error")
+	}
+	if containsStr(err.Error(), "sup3rs3cret") {
+		t.Errorf("error leaks the password: %q", err.Error())
+	}
+}

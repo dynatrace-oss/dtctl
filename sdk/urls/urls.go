@@ -185,3 +185,36 @@ func IsDynatraceEnvironmentURL(environmentURL string) error {
 	}
 	return nil
 }
+
+// IsDynatraceEnvironmentOrigin returns an error if environmentURL is not a
+// bare Dynatrace environment origin: a valid https Dynatrace host (see
+// IsDynatraceEnvironmentURL) carrying nothing else — no userinfo, path, query
+// or fragment.
+//
+// A Dynatrace SaaS environment URL is always a bare origin; dtctl appends the
+// API path itself. Requiring that shape on auto-discovered local configs is
+// what keeps ${VAR} expansion safe there: expansion can only fill in the
+// destination, never smuggle an unrelated host secret out in a path or query
+// (e.g. "https://<bound-tenant>.apps.dynatrace.com/$AWS_SECRET_ACCESS_KEY").
+func IsDynatraceEnvironmentOrigin(environmentURL string) error {
+	if err := IsDynatraceEnvironmentURL(environmentURL); err != nil {
+		return err
+	}
+	u, err := url.Parse(environmentURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.User != nil {
+		return fmt.Errorf("URL must not embed credentials (got %q)", u.Redacted())
+	}
+	if u.RawQuery != "" {
+		return fmt.Errorf("URL must not carry a query string (got %q)", u.RawQuery)
+	}
+	if u.Fragment != "" {
+		return fmt.Errorf("URL must not carry a fragment (got %q)", u.Fragment)
+	}
+	if p := strings.Trim(u.Path, "/"); p != "" {
+		return fmt.Errorf("URL must be a bare environment origin with no path (got %q)", u.Path)
+	}
+	return nil
+}

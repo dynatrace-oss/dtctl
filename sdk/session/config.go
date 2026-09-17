@@ -744,7 +744,7 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 		// the global config binding for this token-ref. This prevents a rogue
 		// .dtctl.yaml from redirecting stored credentials to a foreign host.
 		if ctx, err := c.CurrentContextObj(); err == nil && ctx.TokenRef == tokenRef {
-			localHost := urls.Host(ctx.Environment)
+			localHost := urls.Host(c.ResolvedEnvironment(ctx.Environment))
 			if binding, ok := c.globalBindings[tokenRef]; ok {
 				if !binding.allows(localHost) {
 					return "", fmt.Errorf(
@@ -969,6 +969,15 @@ func (c *Config) GetEffectiveSafetyLevel() SafetyLevel {
 	if err != nil {
 		return DefaultSafetyLevel
 	}
+	return c.EffectiveSafetyLevelFor(ctx)
+}
+
+// EffectiveSafetyLevelFor reports the level actually enforced for ctx, which
+// for a local config is its declared level clamped to the global binding of
+// its token-ref. Callers that display a level for a context other than the
+// current one (e.g. `dtctl ctx list`) use this so what is shown is what is
+// enforced; GetEffectiveSafetyLevel is the current-context shorthand.
+func (c *Config) EffectiveSafetyLevelFor(ctx *Context) SafetyLevel {
 	localLevel := ctx.GetEffectiveSafetyLevel()
 	if !c.IsLocal() {
 		return localLevel
@@ -981,6 +990,26 @@ func (c *Config) GetEffectiveSafetyLevel() SafetyLevel {
 		return localLevel
 	}
 	return ceiling
+}
+
+// ResolvedEnvironment returns an environment URL with ${VAR} references
+// expanded when this config was auto-discovered, and verbatim otherwise.
+//
+// A committed .dtctl.yaml is allowed to name its destination through the
+// environment so one file can serve several developers and CI, so every
+// consumer of a local environment URL must resolve it through here: the
+// origin-binding check in GetToken, the client in NewClientFromConfig, and
+// anything that displays it. Resolving in only some of those places is how a
+// documented setup ends up rejected as a host mismatch against "".
+//
+// Expansion stays safe because the resolved URL must still pass
+// urls.IsDynatraceEnvironmentOrigin — an allowlisted https host and nothing
+// else — so a rogue file cannot use it to carry an unrelated secret anywhere.
+func (c *Config) ResolvedEnvironment(environment string) string {
+	if !c.IsLocal() {
+		return environment
+	}
+	return os.ExpandEnv(environment)
 }
 
 // GetPreApplyHook returns the effective pre-apply hook command.

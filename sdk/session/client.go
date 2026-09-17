@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -69,25 +68,18 @@ func NewClientFromConfig(cfg *Config, opts ...ClientOption) (*Client, error) {
 		return nil, err
 	}
 
-	// Auto-discovered local configs must target a Dynatrace environment URL
-	// with no credentials, query, or fragment embedded. This prevents a rogue
-	// .dtctl.yaml from sending tokens to an arbitrary or non-TLS destination.
-	// Environment URLs may contain ${VAR} references; they are expanded here
-	// before validation so the Dynatrace URL check applies to the resolved host.
-	// Inline tokens remain unsupported regardless.
-	envURL := ctx.Environment
+	// Auto-discovered local configs must target a bare Dynatrace environment
+	// origin: https, an allowlisted host, and no userinfo, path, query or
+	// fragment. That prevents a rogue .dtctl.yaml from sending tokens to an
+	// arbitrary or non-TLS destination, and it is what makes the ${VAR}
+	// expansion below safe — expansion can fill in the destination but cannot
+	// append anything to it. Inline tokens remain unsupported regardless.
+	envURL := cfg.ResolvedEnvironment(ctx.Environment)
 	if cfg.IsLocal() {
-		envURL = os.ExpandEnv(ctx.Environment)
-		if err := urls.IsDynatraceEnvironmentURL(envURL); err != nil {
+		if err := urls.IsDynatraceEnvironmentOrigin(envURL); err != nil {
 			return nil, fmt.Errorf(
 				"local config %q: %w — use --config or DTCTL_CONFIG",
 				cfg.LocalConfigPath(), err)
-		}
-		u, _ := url.Parse(envURL)
-		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			return nil, fmt.Errorf(
-				"local config %q requires a destination URL with no embedded credentials, query, or fragment (got %q) — use --config or DTCTL_CONFIG",
-				cfg.LocalConfigPath(), envURL)
 		}
 	}
 

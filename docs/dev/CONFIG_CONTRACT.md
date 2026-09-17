@@ -22,8 +22,12 @@ Security note: auto-discovered `.dtctl.yaml` files are treated as untrusted
 (the classic "checked-out repo / shared directory" scenario). Five restrictions
 apply — see `Config.IsLocal()`:
 
-1. **No env-var expansion.** `$VAR` references are left as-is; use `--config`
-   or `DTCTL_CONFIG` to load a trusted config where expansion runs.
+1. **Env-var expansion limited to the environment URL.** `${VAR}` references
+   are expanded only for a context's `environment`, and only through
+   `Config.ResolvedEnvironment` so the origin check, the client, and anything
+   displayed all resolve the same value. Every other field is left as-is; use
+   `--config` or `DTCTL_CONFIG` for a trusted config where expansion runs
+   everywhere.
 2. **No inline tokens.** A local config may reference a `token-ref` but not
    define its value; credentials must come from the keyring / file store.
 3. **Origin binding.** The environment URL in the local context must resolve to
@@ -33,9 +37,12 @@ apply — see `Config.IsLocal()`:
    `min(local, global)` so a local file cannot grant itself more than the owner
    of the borrowed credential granted. A `token-ref` with no global binding is
    clamped to `DefaultSafetyLevel`.
-5. **Destination allowlist.** `NewClientFromConfig` requires the environment URL
-   to be https, on a `.dynatrace.com` / `.dynatracelabs.com` host, with no
-   embedded credentials, query, or fragment (`sdk/session/client.go`).
+5. **Destination allowlist.** `NewClientFromConfig` requires the resolved
+   environment URL to be a *bare origin* — https, a `.dynatrace.com` /
+   `.dynatracelabs.com` host, and no userinfo, path, query or fragment
+   (`urls.IsDynatraceEnvironmentOrigin`). The bare-origin shape is what keeps
+   restriction 1 safe: expansion can fill in the destination but cannot append
+   to it, so an unrelated host secret cannot ride out in a path or query.
 
 Restrictions 3 and 4 share one lookup, `buildGlobalBindings()`, keyed by
 `token-ref` — *not* by context name, since a local config is free to rename its

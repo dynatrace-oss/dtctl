@@ -2890,3 +2890,120 @@ contexts:
 		t.Error("IgnoredEnvRefs() = true; explicit config should not set this flag")
 	}
 }
+
+// writeOriginBindingFixture sets up the documented per-project layout: a global
+// config binding tokenRef to globalEnv, and an auto-discovered .dtctl.yaml in
+// the (chdir'd) working directory whose environment is localEnv. It returns the
+// loaded local config.
+func writeOriginBindingFixture(t *testing.T, tokenRef, globalEnv, localEnv string) *Config {
+	t.Helper()
+	// NOT parallel-safe: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := t.TempDir()
+
+	globalDir := filepath.Join(tmpDir, "xdg", "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	globalCfg := fmt.Sprintf(`apiVersion: v1
+kind: Config
+current-context: global
+contexts:
+  - name: global
+    context:
+      environment: %s
+      token-ref: %s
+`, globalEnv, tokenRef)
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
+	xdg.Reload()
+	t.Cleanup(xdg.Reload)
+
+	localCfg := fmt.Sprintf(`apiVersion: v1
+kind: Config
+current-context: local
+contexts:
+  - name: local
+    context:
+      environment: %q
+      token-ref: %s
+`, localEnv, tokenRef)
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.IsLocal() {
+		t.Fatal("fixture did not produce a local config")
+	}
+	return cfg
+}
+
+// TestGetToken_LocalConfigEnvVarEnvironmentSatisfiesOriginBinding covers the
+// workflow `dtctl config init` generates and QUICK_START.md documents: a
+// committed .dtctl.yaml names its environment through ${VAR}, and the token-ref
+// is bound to that same host in the global config.
+//
+// Regression test: the origin-binding check used to compare the *unexpanded*
+// literal, so the resolved host came out empty and the documented setup failed
+// with `redirects token ... to ""` even though the hosts matched.
+func TestGetToken_LocalConfigEnvVarEnvironmentSatisfiesOriginBinding(t *testing.T) {
+	const host = "https://abc12345.apps.dynatrace.com"
+	t.Setenv("DT_TEST_ENVIRONMENT_URL", host)
+
+	cfg := writeOriginBindingFixture(t, "dev-oauth", host, "${DT_TEST_ENVIRONMENT_URL}")
+
+	_, err := cfg.GetToken("dev-oauth")
+	// No credential is stored, so "not found" is the expected outcome; what
+	// must not happen is rejection on origin grounds.
+	if err != nil && (strings.Contains(err.Error(), "redirects token") ||
+		strings.Contains(err.Error(), "not bound")) {
+		t.Errorf("GetToken() rejected the documented ${VAR} setup: %v", err)
+	}
+}
+
+// TestGetToken_LocalConfigEnvVarCannotRedirectOrigin is the other half: making
+// the environment an env-var reference must not become a way around the origin
+// binding when the expansion resolves to a different host.
+func TestGetToken_LocalConfigEnvVarCannotRedirectOrigin(t *testing.T) {
+	t.Setenv("DT_TEST_ENVIRONMENT_URL", "https://zzz99999.apps.dynatrace.com")
+
+	cfg := writeOriginBindingFixture(t, "dev-oauth",
+		"https://abc12345.apps.dynatrace.com", "${DT_TEST_ENVIRONMENT_URL}")
+
+	_, err := cfg.GetToken("dev-oauth")
+	if err == nil || !strings.Contains(err.Error(), "redirects token") {
+		t.Fatalf("GetToken() error = %v, want rejection for redirecting the token", err)
+	}
+	if !strings.Contains(err.Error(), "zzz99999.apps.dynatrace.com") {
+		t.Errorf("error should name the resolved host it refused, got: %v", err)
+	}
+}
+
+// TestResolvedEnvironment_OnlyExpandsForLocalConfigs pins the asymmetry that
+// caused the regression: expansion is a local-config affordance, and a trusted
+// config's value is returned untouched (LoadFrom already expanded it).
+func TestResolvedEnvironment_OnlyExpandsForLocalConfigs(t *testing.T) {
+	t.Setenv("DT_TEST_ENVIRONMENT_URL", "https://abc12345.apps.dynatrace.com")
+
+	global := NewConfig()
+	if got := global.ResolvedEnvironment("${DT_TEST_ENVIRONMENT_URL}"); got != "${DT_TEST_ENVIRONMENT_URL}" {
+		t.Errorf("ResolvedEnvironment() on a non-local config = %q, want it untouched", got)
+	}
+
+	local := newLocalConfig(t, "${DT_TEST_ENVIRONMENT_URL}", "ref", nil)
+	if got := local.ResolvedEnvironment("${DT_TEST_ENVIRONMENT_URL}"); got != "https://abc12345.apps.dynatrace.com" {
+		t.Errorf("ResolvedEnvironment() on a local config = %q, want it expanded", got)
+	}
+}

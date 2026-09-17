@@ -206,11 +206,14 @@ func listContexts() error {
 		if nc.Name == cfg.CurrentContext {
 			current = "*"
 		}
+		// Show what is resolved and enforced, not what the file happens to
+		// say: a local .dtctl.yaml may name its environment through ${VAR}
+		// and has its declared safety level clamped to the global binding.
 		items = append(items, ContextListItem{
 			Current:     current,
 			Name:        nc.Name,
-			Environment: nc.Context.Environment,
-			SafetyLevel: nc.Context.SafetyLevel.String(),
+			Environment: cfg.ResolvedEnvironment(nc.Context.Environment),
+			SafetyLevel: cfg.EffectiveSafetyLevelFor(&nc.Context).String(),
 			Profile:     nc.Context.Profile,
 			Description: nc.Context.Description,
 		})
@@ -274,17 +277,13 @@ func describeContext(name string) error {
 		currentMark = " (current)"
 	}
 
-	// For the current context the enforced level may be clamped below what the
-	// file declares (a local .dtctl.yaml cannot exceed its global binding), so
-	// report the clamped one. Other contexts are described as written.
-	level := found.Context.GetEffectiveSafetyLevel()
-	if isCurrent {
-		level = cfg.GetEffectiveSafetyLevel()
-	}
+	// Report the enforced level, which for a local .dtctl.yaml is clamped to
+	// the global binding of its token-ref rather than what the file declares.
+	level := cfg.EffectiveSafetyLevelFor(&found.Context)
 
 	const w = 14
 	output.DescribeKV("Name:", w, "%s%s", found.Name, currentMark)
-	output.DescribeKV("Environment:", w, "%s", found.Context.Environment)
+	output.DescribeKV("Environment:", w, "%s", cfg.ResolvedEnvironment(found.Context.Environment))
 	output.DescribeKV("Token-Ref:", w, "%s", found.Context.TokenRef)
 	output.DescribeKV("Safety Level:", w, "%s", level)
 

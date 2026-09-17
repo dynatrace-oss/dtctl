@@ -127,7 +127,7 @@ preferences:
 
 Set `DT_ENVIRONMENT_URL` (or edit the file directly) to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**:
 
-- `${VAR}` references are expanded for the `environment` URL only — the resolved URL is validated as a Dynatrace host (`*.dynatrace.com` / `*.dynatracelabs.com`, https only)
+- `${VAR}` references are expanded for the `environment` URL only — the resolved URL must be a bare origin on a Dynatrace host (`*.dynatrace.com` / `*.dynatracelabs.com`, https, no path/query/fragment), so expansion cannot append anything to the destination
 - inline tokens are rejected — the credential comes from the OS keyring
 - `token-ref` must name a context in your **global** config that binds the *same* environment host, otherwise the token does not resolve
 - `safety-level` is clamped to the level that global context declares
