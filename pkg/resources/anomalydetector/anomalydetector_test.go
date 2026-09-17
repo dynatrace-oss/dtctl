@@ -473,7 +473,7 @@ func TestCreate_StatusMapping(t *testing.T) {
 			})
 			defer server.Close()
 
-			data := []byte(`{"title":"x","analyzer":{"name":"dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer"},"eventTemplate":{"event.type":"PERFORMANCE_EVENT"}}`)
+			data := []byte(`{"title":"Status Mapping Detector","analyzer":{"name":"dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer"},"eventTemplate":{"event.type":"PERFORMANCE_EVENT"}}`)
 			_, err := h.Create(data)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("Create() error = %v, want to contain %q", err, tc.wantErr)
@@ -541,7 +541,7 @@ func TestUpdate_StatusMapping(t *testing.T) {
 			})
 			defer server.Close()
 
-			data := []byte(`{"title":"x","analyzer":{"name":"dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer"},"eventTemplate":{"event.type":"PERFORMANCE_EVENT"}}`)
+			data := []byte(`{"title":"Status Mapping Detector","analyzer":{"name":"dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer"},"eventTemplate":{"event.type":"PERFORMANCE_EVENT"}}`)
 			_, err := h.Update("obj-1", data)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("Update() error = %v, want to contain %q", err, tc.wantErr)
@@ -1312,7 +1312,7 @@ func TestGetOutput_ConsumableByUpdate(t *testing.T) {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 
-	value, err := toAPIValue(data)
+	value, err := toAPIValue(data, "")
 	if err != nil {
 		t.Fatalf("toAPIValue rejected get output: %v\n---\n%s", err, data)
 	}

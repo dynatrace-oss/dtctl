@@ -695,6 +695,11 @@ func (a *Applier) dryRun(resourceType ResourceType, data []byte, opts ApplyOptio
 		return a.dryRunExtensionConfig(doc)
 	}
 
+	// Anomaly detectors are validated against the schema server-side
+	if resourceType == ResourceAnomalyDetector {
+		return a.dryRunAnomalyDetector(data)
+	}
+
 	// For other resources, return basic info
 	id, _ := doc["id"].(string)
 	name, _ := doc["name"].(string)

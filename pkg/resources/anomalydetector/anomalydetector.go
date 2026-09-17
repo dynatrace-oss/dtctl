@@ -15,16 +15,35 @@ const (
 	SchemaID    = "builtin:davis.anomaly-detectors"
 	Scope       = "environment"
 	SettingsAPI = "/platform/classic/environment-api/v2/settings/objects"
+
+	// defaultSource is stamped on detectors whose definition omits "source".
+	defaultSource = "dtctl"
 )
 
 // Handler handles anomaly detector resources.
 type Handler struct {
 	client *client.Client
+
+	// defaultActor is used for executionSettings.actor when a definition omits
+	// it. Callers that know the authenticated identity set it via
+	// WithDefaultActor; it stays empty otherwise so the handler never issues an
+	// identity lookup of its own.
+	defaultActor string
 }
 
 // NewHandler creates a new anomaly detector handler.
 func NewHandler(c *client.Client) *Handler {
 	return &Handler{client: c}
+}
+
+// WithDefaultActor sets the UUID used for executionSettings.actor when the
+// definition being created omits it. Some environments reject a detector
+// without an actor ("executionSettings.actor: Must not be null"), others
+// substitute the caller's identity server-side; filling it in with the
+// authenticated identity makes the same definition work on both (issue #369).
+func (h *Handler) WithDefaultActor(actor string) *Handler {
+	h.defaultActor = actor
+	return h
 }
 
 // AnomalyDetector represents a custom anomaly detector (builtin:davis.anomaly-detectors).
@@ -444,9 +463,9 @@ func ExtractTitle(data []byte) string {
 // Create creates a new anomaly detector from JSON data.
 // Accepts both flattened format and raw Settings API format.
 func (h *Handler) Create(data []byte) (*AnomalyDetector, error) {
-	apiBody, err := toAPIFormat(data)
+	apiBody, err := h.PrepareCreateBody(data)
 	if err != nil {
-		return nil, fmt.Errorf("invalid anomaly detector definition: %w", err)
+		return nil, err
 	}
 
 	// POST expects an array
@@ -459,7 +478,7 @@ func (h *Handler) Create(data []byte) (*AnomalyDetector, error) {
 	if resp.IsError() {
 		switch resp.StatusCode() {
 		case 400:
-			return nil, fmt.Errorf("invalid anomaly detector: %s", resp.String())
+			return nil, settingsValidationError(resp.Body())
 		case 403:
 			return nil, fmt.Errorf("access denied to create anomaly detector")
 		case 404:
@@ -492,9 +511,9 @@ func (h *Handler) Update(objectID string, data []byte) (*AnomalyDetector, error)
 	}
 
 	// Parse the update data
-	value, err := toAPIValue(data)
+	value, err := h.prepareUpdateValue(data, existing)
 	if err != nil {
-		return nil, fmt.Errorf("invalid anomaly detector definition: %w", err)
+		return nil, err
 	}
 
 	body := map[string]any{"value": value}
@@ -509,7 +528,7 @@ func (h *Handler) Update(objectID string, data []byte) (*AnomalyDetector, error)
 	if resp.IsError() {
 		switch resp.StatusCode() {
 		case 400:
-			return nil, fmt.Errorf("invalid anomaly detector: %s", resp.String())
+			return nil, settingsValidationError(resp.Body())
 		case 403:
 			return nil, fmt.Errorf("access denied to update anomaly detector %q", objectID)
 		case 404:
@@ -544,26 +563,27 @@ func (h *Handler) Delete(objectID string) error {
 }
 
 // toAPIFormat converts input data (flattened or raw Settings format) into the
-// Settings API create body: {schemaId, scope, value}.
-func toAPIFormat(data []byte) (map[string]any, error) {
+// Settings API create body: {schemaId, scope, value}. Schema defaults are
+// filled in and the result is validated locally before it is worth a round trip.
+func toAPIFormat(data []byte, defaultActor string) (map[string]any, error) {
+	value, err := toAPIValue(data, defaultActor)
+	if err != nil {
+		return nil, err
+	}
+
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 
-	// Raw Settings format: has schemaId
+	// Raw Settings format: preserve the envelope the caller wrote (it may carry
+	// objectId / schemaVersion) and swap in the normalized value.
 	if schema, ok := raw["schemaId"].(string); ok && schema == SchemaID {
-		// Already in API format
 		if _, ok := raw["scope"]; !ok {
 			raw["scope"] = Scope
 		}
+		raw["value"] = value
 		return raw, nil
-	}
-
-	// Flattened format: convert to API format
-	value, err := flattenedToAPIValue(raw)
-	if err != nil {
-		return nil, err
 	}
 
 	return map[string]any{
@@ -573,23 +593,61 @@ func toAPIFormat(data []byte) (map[string]any, error) {
 	}, nil
 }
 
-// toAPIValue extracts just the value portion suitable for PUT updates.
-func toAPIValue(data []byte) (map[string]any, error) {
+// toAPIValue extracts the value portion suitable for PUT updates, with schema
+// defaults applied and local validation run.
+func toAPIValue(data []byte, defaultActor string) (map[string]any, error) {
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 
-	// If it has "schemaId", extract the "value" field
+	var value map[string]any
 	if _, ok := raw["schemaId"]; ok {
-		if v, ok := raw["value"].(map[string]any); ok {
-			return v, nil
+		// Raw Settings format
+		v, ok := raw["value"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("raw Settings format missing 'value' field")
 		}
-		return nil, fmt.Errorf("raw Settings format missing 'value' field")
+		value = v
+	} else {
+		// Flattened format: convert to API value
+		v, err := flattenedToAPIValue(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid anomaly detector definition: %w", err)
+		}
+		value = v
 	}
 
-	// Flattened format: convert to API value
-	return flattenedToAPIValue(raw)
+	normalizeValue(value, defaultActor)
+	if err := validateValue(value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// prepareUpdateValue builds the value for a PUT. An update replaces the whole
+// value, so a definition that omits executionSettings.actor would otherwise
+// silently drop the identity the detector already runs as — keep the existing
+// actor in that case, and only fall back to the handler default.
+func (h *Handler) prepareUpdateValue(data []byte, existing *AnomalyDetector) (map[string]any, error) {
+	actor := h.defaultActor
+	if existing != nil {
+		if es, ok := existing.Value["executionSettings"].(map[string]any); ok {
+			if current, _ := es["actor"].(string); current != "" {
+				actor = current
+			}
+		}
+	}
+	return toAPIValue(data, actor)
+}
+
+// settingsValidationError turns a Settings API 400 body into an error that
+// names the offending fields instead of echoing the whole payload back.
+func settingsValidationError(body []byte) error {
+	if detail := describeSettingsError(body); detail != "" {
+		return fmt.Errorf("%s", detail)
+	}
+	return fmt.Errorf("invalid anomaly detector: %s", body)
 }
 
 // flattenedToAPIValue converts the human-friendly YAML format into the API's value shape.
@@ -619,7 +677,7 @@ func flattenedToAPIValue(raw map[string]any) (map[string]any, error) {
 	// Source defaults to "dtctl" when omitted
 	source, _ := raw["source"].(string)
 	if source == "" {
-		source = "dtctl"
+		source = defaultSource
 	}
 	value["source"] = source
 

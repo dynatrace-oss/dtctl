@@ -120,6 +120,7 @@ eventTemplate:
 | `analyzer.name` | Detection algorithm (see Analyzer Types below) |
 | `analyzer.input` | Key-value pairs for the analyzer configuration |
 | `eventTemplate` | Key-value pairs defining the triggered Davis event |
+| `executionSettings.actor` | UUID of the identity whose permissions the detector query runs with (defaults to the authenticated user) |
 
 ### Analyzer Types
 
@@ -167,6 +168,45 @@ value:
       - key: event.name
         value: "High CPU detected"
 ```
+
+### Validation and Schema Defaults
+
+The `builtin:davis.anomaly-detectors` schema declares several fields non-nullable
+*without* a server-side default, so a definition that simply omits them is
+rejected with `Must not be null` on a field the author never wrote. dtctl fills
+them in from the schema defaults before sending the request:
+
+| Field | Filled with |
+|-------|-------------|
+| `description` | `""` |
+| `enabled` | `true` |
+| `source` | `"dtctl"` |
+| `analyzer.input` | `[]` |
+| `eventTemplate.properties` | `[]` |
+| `executionSettings` | `{}` |
+| `executionSettings.actor` | the authenticated identity (`dtctl auth whoami --id-only`) |
+
+An `actor` you set yourself always wins, and updating an existing detector keeps
+the actor it already runs as when the definition omits one.
+
+`--dry-run` validates the definition against the schema in the environment
+without persisting anything, and prints the exact payload that would be sent:
+
+```bash
+dtctl create anomaly-detector -f detector.yaml --dry-run
+dtctl apply -f detector.yaml --dry-run
+```
+
+A definition the environment rejects fails the dry run and names the offending
+fields:
+
+```text
+invalid anomaly detector:
+  - analyzer: Parameter 'threshold' must be provided.
+```
+
+If validation cannot be performed (no reachable environment, missing scope), the
+dry run reports `schema validation skipped` and falls back to local checks only.
 
 ## Editing an Anomaly Detector
 

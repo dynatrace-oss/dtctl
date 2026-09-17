@@ -2,6 +2,7 @@ package apply
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
@@ -16,7 +17,7 @@ func (a *Applier) applyAnomalyDetector(data []byte) (ApplyResult, error) {
 		return nil, fmt.Errorf("failed to parse anomaly detector JSON: %w", err)
 	}
 
-	handler := anomalydetector.NewHandler(a.client)
+	handler := anomalydetector.NewHandler(a.client).WithDefaultActor(a.currentUserID)
 
 	// Extract object ID (present in raw Settings format or if user includes it)
 	objectID, _ := raw["objectId"].(string)
@@ -76,5 +77,68 @@ func (a *Applier) applyAnomalyDetector(data []byte) (ApplyResult, error) {
 			ID:           result.ObjectID,
 			Name:         result.Title,
 		},
+	}, nil
+}
+
+// dryRunAnomalyDetector reports what an apply would do to an anomaly detector
+// and whether the definition is actually accepted. It runs the same local
+// normalization as apply and then asks the Settings API to validate the payload
+// without persisting it, so a dry run no longer reports success for a
+// definition the live call rejects (issue #369).
+func (a *Applier) dryRunAnomalyDetector(data []byte) (ApplyResult, error) {
+	handler := anomalydetector.NewHandler(a.client).WithDefaultActor(a.currentUserID)
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse anomaly detector JSON: %w", err)
+	}
+
+	objectID, _ := raw["objectId"].(string)
+	if objectID == "" {
+		objectID, _ = raw["objectid"].(string)
+	}
+
+	title := anomalydetector.ExtractTitle(data)
+	var warnings []string
+
+	// Resolve create vs update the same way applyAnomalyDetector does.
+	if objectID == "" && title != "" {
+		existing, err := handler.FindByExactTitle(title)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("could not check for an existing anomaly detector named %q: %v", title, err))
+		} else if existing != nil {
+			objectID = existing.ObjectID
+		}
+	}
+
+	action := ActionCreated
+	var validationErr error
+	if objectID == "" {
+		validationErr = handler.ValidateCreate(data)
+	} else {
+		action = ActionUpdated
+		validationErr = handler.ValidateUpdate(objectID, data)
+	}
+
+	// A payload the server rejects fails the dry run; an unreachable or
+	// unauthorized validation endpoint only downgrades its confidence.
+	var unavailable *anomalydetector.ValidationUnavailableError
+	switch {
+	case validationErr == nil:
+	case errors.As(validationErr, &unavailable):
+		warnings = append(warnings, fmt.Sprintf("schema validation skipped: %v", unavailable.Err))
+	default:
+		return nil, validationErr
+	}
+
+	return &DryRunResult{
+		ApplyResultBase: ApplyResultBase{
+			Action:       action,
+			ResourceType: "anomaly_detector",
+			ID:           objectID,
+			Name:         title,
+		},
+		Scope:           anomalydetector.Scope,
+		ValidationWarns: warnings,
 	}, nil
 }
