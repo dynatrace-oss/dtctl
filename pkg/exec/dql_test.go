@@ -17,6 +17,8 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
+
+	"gopkg.in/yaml.v3"
 )
 
 // mappingsByName collapses the flattened column-type mappings into a name→type
@@ -2527,6 +2529,33 @@ func TestDQLExecutor_OutputFormats_Integration(t *testing.T) {
 		}
 		if len(groups) != 1 || groups[0].Mappings["count"].Type != "long" {
 			t.Errorf("unexpected types block: %s", raw)
+		}
+	})
+
+	t.Run("EmitTypes preserves API field names in yaml", func(t *testing.T) {
+		out := captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "fetch logs",
+				DQLExecuteOptions{OutputFormat: "yaml", IncludeTypes: true, EmitTypes: true}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		var doc map[string]interface{}
+		if err := yaml.Unmarshal(out, &doc); err != nil {
+			t.Fatalf("output is not valid YAML: %v - %s", err, out)
+		}
+		groups, ok := doc["types"].([]interface{})
+		if !ok || len(groups) != 1 {
+			t.Fatalf("expected one type group, got: %#v", doc["types"])
+		}
+		group, ok := groups[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("type group is not a mapping: %#v", groups[0])
+		}
+		if _, ok := group["indexRange"]; !ok {
+			t.Errorf("expected API field name indexRange, got: %s", out)
+		}
+		if _, ok := group["indexrange"]; ok {
+			t.Errorf("unexpected lowercased field name indexrange: %s", out)
 		}
 	})
 
