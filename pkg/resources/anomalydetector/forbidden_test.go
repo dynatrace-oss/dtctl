@@ -18,7 +18,7 @@ import (
 func TestForbiddenIsTypedAndSurfacesReason(t *testing.T) {
 	const body = `{"error":{"code":403,"message":"No permission to access settings object."}}`
 
-	detector := []byte(`{"title":"x","analyzer":{"name":"dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer"},"eventTemplate":{"event.type":"PERFORMANCE_EVENT"}}`)
+	detector := []byte(`{"title":"Forbidden Test Detector","analyzer":{"name":"dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer"},"eventTemplate":{"event.type":"PERFORMANCE_EVENT"}}`)
 
 	tests := []struct {
 		name       string
@@ -76,7 +76,7 @@ func TestForbiddenIsTypedAndSurfacesReason(t *testing.T) {
 
 			var diagErr *diagnostic.Error
 			if !errors.As(err, &diagErr) {
-				t.Fatalf("error = %T, want *diagnostic.Error", err)
+				t.Fatalf("error = %T (%v), want *diagnostic.Error", err, err)
 			}
 			if diagErr.StatusCode != 403 {
 				t.Errorf("StatusCode = %d, want 403", diagErr.StatusCode)

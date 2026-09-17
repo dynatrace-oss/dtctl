@@ -80,7 +80,7 @@ func TestForbiddenIsTypedAndSurfacesReason(t *testing.T) {
 
 			var diagErr *diagnostic.Error
 			if !errors.As(err, &diagErr) {
-				t.Fatalf("error = %T, want *diagnostic.Error", err)
+				t.Fatalf("error = %T (%v), want *diagnostic.Error", err, err)
 			}
 			if diagErr.StatusCode != 403 {
 				t.Errorf("StatusCode = %d, want 403", diagErr.StatusCode)
