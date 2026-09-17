@@ -1,6 +1,8 @@
 # Installing dtctl on Windows
 
-This guide covers everything you need to get dtctl running on Windows, including installation, configuration, shell completion, and tips for working with PowerShell.
+This guide covers the Windows-specific details of running dtctl: PowerShell install and tips, shell completion, `cmd.exe`/WSL, and troubleshooting.
+
+> For the general, cross-platform installation reference (all platforms, binary downloads, updating, uninstalling), see **[INSTALLATION.md](INSTALLATION.md)**.
 
 ## Quick Install (PowerShell)
 
@@ -94,24 +96,11 @@ If the `Select-String` command prints a matching line, the download is intact.
 
 ## Building from Source
 
-Requires **Go 1.24+** and **Git**.
+See **[INSTALLATION.md](INSTALLATION.md)** for build-from-source instructions (requires Go and Git). On Windows the build output is `bin\dtctl.exe`:
 
 ```powershell
-git clone https://github.com/dynatrace-oss/dtctl.git
-cd dtctl
 go build -o bin\dtctl.exe .
-
-# Verify
 .\bin\dtctl.exe version
-```
-
-To install to your Go bin directory:
-
-```powershell
-go install .
-
-# Verify (ensure $env:GOPATH\bin is in your PATH)
-dtctl version
 ```
 
 ## Shell Completion
