@@ -57,6 +57,7 @@ _read-only | access: read_
 | describe-context | _(none declared)_ |
 | get-contexts | _(none declared)_ |
 | init | _(none declared)_ |
+| list-development | _(none declared)_ |
 | migrate-tokens | _(none declared)_ |
 | set | _(none declared)_ |
 | set-context | _(none declared)_ |
