@@ -83,6 +83,7 @@ Error codes are stable identifiers that agents can match on programmatically:
 | `spill_file_wrong_context` | The spill file belongs to another context or tenant | Switch context, or re-query here |
 | `inspect_unknown_field` | `--fields` named a column the file doesn't have | Use `dtctl inspect <path> --schema` |
 | `inspect_bad_flags` | Incompatible `dtctl inspect` flags | Pick one row-access primitive per call |
+| `jq_shape_mismatch` | A `--jq` filter addressed a key its input doesn't have | Read the keys named in `message`; don't read it as an empty result |
 | `error` | Unclassified failure | Read `message`; treat as non-retryable |
 
 `dtctl query` additionally passes the DQL API's own error type through as the code
@@ -143,9 +144,49 @@ sample-based figures can't be misread as population truth.
 > The inline `kind: "records"` envelope is emitted on the spill-aware path
 > whenever agent mode emits JSON — including under `--spill=never`, which forces
 > every row inline regardless of size but still as a `kind: "records"` envelope
-> (never a human table). The byte-oriented encodings (`-o csv/yaml`) and `--jq`
-> transforms keep their requested shape and fall through to the plain
-> `{ "records": …, "metadata": … }` output.
+> (never a human table). The byte-oriented encodings (`-o csv/yaml`) keep their
+> requested shape and fall through to the plain
+> `{ "records": …, "metadata": … }` output. A `--jq` transform keeps the
+> envelope and replaces `result` with the filter's output (see below).
+
+#### Narrowing the result: `--jq`
+
+`--jq '<program>'` post-processes the result **payload** and keeps the envelope:
+`ok`, `error`, `context`, and `metadata` stay exactly where they are without the
+flag, and `result` carries whatever the filter emitted. The filter therefore
+never sees `ok`/`result`/`context` itself — on `query` its input is
+`{ "records": [...], "metadata": {...} }`, and on every other command it is that
+command's own result payload:
+
+```console
+# right: the filter runs on the payload
+$ dtctl query 'fetch logs | limit 2' --agent --jq '.records[].timestamp'
+{"ok":true,"result":["2026-09-17T13:50:47Z","2026-09-17T13:50:29Z"],
+ "context":{"total":2,"verb":"query","resource":"logs"},"metadata":{...}}
+
+# wrong: .result is a field of the envelope, not of the filter input
+$ dtctl query 'fetch logs | limit 2' --agent --jq '.result.records'
+{"ok":false,"result":null,"error":{"code":"jq_shape_mismatch","message":
+ "--jq filter \".result.records\" resolved to null: the filter input is an object
+  with keys [metadata, records]. ...","suggestions":[...]}}
+```
+
+That second call is an **error** (exit code 1), not an empty result. jq answers a
+missing key with `null`, which is indistinguishable from "this query matched
+nothing" once it reaches a consumer — so a filter that resolves to `null` fails
+with `jq_shape_mismatch` and names the keys the input actually has. A filter that
+*selected* nothing (`empty`, or a `select(...)` no row satisfies) is a genuine
+empty answer and returns `[]`, so the two stay distinguishable. When in doubt,
+`--jq 'keys'` prints the shape the filter is running against.
+
+Non-structured formats (`-o table/csv/...`) are auto-promoted to `json` when
+`--jq` is given; `-o toon` encodes the filtered result as a TOON string inside
+the envelope, and any other format the envelope cannot carry falls back to JSON
+with a `context.warnings` entry saying so. On a
+[spilled result](dql-queries#spilling-large-results-to-a-file) `--jq` is *not*
+applied to the rows on disk — the envelope carries a warning saying so, and
+[`dtctl inspect <path> --jq`](command-reference#inspect-commands) is the filter
+that runs over the file.
 
 #### Dense rows: `-o toon`
 

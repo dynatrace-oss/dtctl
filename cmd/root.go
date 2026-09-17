@@ -738,6 +738,18 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// output.JQError — a --jq filter that addressed the wrong object shape. The
+	// stable code lets an agent tell "you asked wrongly" from "no data", which a
+	// null result could not.
+	var jqErr *output.JQError
+	if errors.As(err, &jqErr) {
+		return &output.ErrorDetail{
+			Code:        jqErr.Code,
+			Message:     jqErr.Message,
+			Suggestions: jqErr.Suggestions,
+		}
+	}
+
 	// inspect.Error — `dtctl inspect` carries a stable envelope code (spill_file_*,
 	// inspect_bad_flags, inspect_unknown_field) plus actionable suggestions.
 	var inspectErr *inspect.Error
@@ -1079,7 +1091,6 @@ func NewPrinter() output.Printer {
 		Writer:    os.Stdout,
 		PlainMode: plainMode,
 		JQFilter:  jqFilter,
-		AgentMode: agentMode,
 	})
 }
 
@@ -1435,7 +1446,7 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (searches .dtctl.yaml upward, then $XDG_CONFIG_HOME/dtctl/config)")
 	rootCmd.PersistentFlags().StringVar(&contextName, "context", "", "use a specific context for this invocation (env: DTCTL_CONTEXT; never persisted)")
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "table", "output format: json|yaml|csv|toon|table|wide")
-	rootCmd.PersistentFlags().StringVar(&jqFilter, "jq", "", "jq filter expression for structured output (json|yaml|toon); non-structured formats are auto-promoted to json")
+	rootCmd.PersistentFlags().StringVar(&jqFilter, "jq", "", "jq filter expression for structured output (json|yaml|toon); applied to the result payload, not the --agent envelope (on query: '.records', not '.result.records'); non-structured formats are auto-promoted to json")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode (full HTTP request/response logging, equivalent to -vv)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")

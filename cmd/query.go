@@ -443,7 +443,6 @@ Examples:
 				Width:      width,
 				Height:     height,
 				Fullscreen: fullscreen,
-				AgentMode:  agentMode,
 			}
 
 			printer := output.NewPrinterWithOpts(printerOpts)

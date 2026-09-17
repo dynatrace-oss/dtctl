@@ -236,15 +236,17 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 // choice the caller already made that the envelope cannot carry:
 //   - a byte-oriented display encoding (-o csv/yaml/chart): a caller asking for
 //     those wants the bytes, not an envelope wrapping them.
-//   - a --jq transform: agent-mode jq already owns the output shape.
+//   - a --jq transform: printResults owns that shape via printAgentJQ, which
+//     wraps the filter output in this same envelope (#413).
 //
 // Outside agent mode an inline result is always a fall-through (a human wants the
 // table/CSV, not an envelope).
 func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, measured int64, encoding string, opts DQLExecuteOptions) (output.Response, bool, error) {
-	// A --jq transform reshapes the result into something this envelope cannot
-	// describe, so it keeps its requested shape and falls through. So do the
-	// raw byte-oriented encodings (csv/yaml): an agent asking for those wants
-	// the bytes, not an envelope wrapping them.
+	// A --jq transform reshapes the result into something this kind:"records"
+	// envelope cannot describe, so it falls through to printResults, which wraps
+	// the filter output in the same {ok, result, context} envelope (#413). So do
+	// the raw byte-oriented encodings (csv/yaml): an agent asking for those
+	// wants the bytes, not an envelope wrapping them.
 	if !opts.AgentMode || opts.JQFilter != "" {
 		return output.Response{}, false, nil
 	}

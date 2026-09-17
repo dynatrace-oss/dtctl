@@ -2953,3 +2953,188 @@ func TestLookbackAdvice(t *testing.T) {
 		}
 	}
 }
+
+// TestPrintResults_AgentJQ_KeepsEnvelope covers #413: `query --agent --jq` used
+// to emit a bare {result, metadata} object, so a consumer had no `ok` field to
+// test and could not tell success from failure. The envelope now survives the
+// filter, and the filter still sees the result payload ({records, metadata?}).
+func TestPrintResults_AgentJQ_KeepsEnvelope(t *testing.T) {
+	e := &DQLExecutor{}
+	records := []map[string]interface{}{
+		{"display_id": "P-1"},
+		{"display_id": "P-2"},
+	}
+	result := &DQLQueryResponse{Records: records}
+	opts := DQLExecuteOptions{
+		OutputFormat: "json",
+		AgentMode:    true,
+		JQFilter:     ".records",
+	}
+
+	var printErr error
+	out := captureStdout(t, func() {
+		printErr = e.printResults("fetch dt.davis.problems", result, opts)
+	})
+	if printErr != nil {
+		t.Fatalf("printResults: %v", printErr)
+	}
+
+	var resp struct {
+		OK      bool `json:"ok"`
+		Result  []map[string]interface{}
+		Context *output.ResponseContext `json:"context"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if !resp.OK {
+		t.Errorf("ok = false, want true; output: %s", out)
+	}
+	if len(resp.Result) != 2 || resp.Result[0]["display_id"] != "P-1" {
+		t.Errorf("result = %#v, want the two filtered records", resp.Result)
+	}
+	if resp.Context == nil || resp.Context.Verb != "query" {
+		t.Errorf("context = %#v, want verb=query", resp.Context)
+	}
+	if resp.Context != nil && (resp.Context.Total == nil || *resp.Context.Total != 2) {
+		t.Errorf("context.total = %v, want 2", resp.Context.Total)
+	}
+}
+
+// TestPrintResults_AgentJQ_WrongShapeErrors is the false-negative the issue was
+// filed for: a filter written against the envelope (".result.records") must fail
+// loudly rather than print a confident null.
+func TestPrintResults_AgentJQ_WrongShapeErrors(t *testing.T) {
+	e := &DQLExecutor{}
+	result := &DQLQueryResponse{Records: []map[string]interface{}{{"display_id": "P-1"}}}
+	opts := DQLExecuteOptions{
+		OutputFormat: "json",
+		AgentMode:    true,
+		JQFilter:     ".result.records",
+	}
+
+	var printErr error
+	out := captureStdout(t, func() {
+		printErr = e.printResults("fetch dt.davis.problems", result, opts)
+	})
+	if printErr == nil {
+		t.Fatalf("printResults returned nil error; stdout was: %s", out)
+	}
+
+	var jqErr *output.JQError
+	if !errors.As(printErr, &jqErr) {
+		t.Fatalf("err = %T (%v), want *output.JQError", printErr, printErr)
+	}
+	if !strings.Contains(jqErr.Message, "[records]") {
+		t.Errorf("message does not name the payload keys: %q", jqErr.Message)
+	}
+	if len(out) != 0 {
+		t.Errorf("nothing should be printed on a filter error, got: %s", out)
+	}
+}
+
+// TestPrintResults_AgentJQ_EmptyResultYieldsEmptyList keeps the counterpart
+// honest: a query that genuinely matched no rows still filters cleanly, and
+// `.records` answers [] rather than the null that would be indistinguishable
+// from the shape mismatch above.
+func TestPrintResults_AgentJQ_EmptyResultYieldsEmptyList(t *testing.T) {
+	e := &DQLExecutor{}
+	result := &DQLQueryResponse{Result: &DQLResult{Records: nil}}
+	opts := DQLExecuteOptions{
+		OutputFormat: "json",
+		AgentMode:    true,
+		JQFilter:     ".records",
+	}
+
+	var printErr error
+	out := captureStdout(t, func() {
+		printErr = e.printResults("fetch logs | limit 0", result, opts)
+	})
+	if printErr != nil {
+		t.Fatalf("printResults: %v", printErr)
+	}
+
+	var resp struct {
+		OK     bool          `json:"ok"`
+		Result []interface{} `json:"result"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if !resp.OK {
+		t.Errorf("ok = false, want true; output: %s", out)
+	}
+	if resp.Result == nil || len(resp.Result) != 0 {
+		t.Errorf("result = %#v, want an empty list", resp.Result)
+	}
+}
+
+// TestPrintResults_AgentJQ_MetadataIsReachableAndPreserved pins both halves of
+// how --metadata behaves under --jq: it is inside the filter's input (so
+// `.metadata` reaches it) *and* kept as the envelope's metadata sibling, where
+// the unfiltered envelope puts it — so a filter that narrows to `.records`
+// doesn't silently drop it.
+func TestPrintResults_AgentJQ_MetadataIsReachableAndPreserved(t *testing.T) {
+	e := &DQLExecutor{}
+	result := &DQLQueryResponse{
+		Records: []map[string]interface{}{{"host": "web-01"}},
+		Metadata: &DQLMetadata{Grail: &GrailMetadata{
+			ExecutionTimeMilliseconds: 42,
+		}},
+	}
+	opts := DQLExecuteOptions{
+		OutputFormat:   "json",
+		AgentMode:      true,
+		JQFilter:       ".metadata",
+		MetadataFields: []string{"executionTimeMilliseconds"},
+	}
+
+	var printErr error
+	out := captureStdout(t, func() {
+		printErr = e.printResults("fetch logs", result, opts)
+	})
+	if printErr != nil {
+		t.Fatalf("printResults: %v", printErr)
+	}
+
+	var resp struct {
+		Result   map[string]interface{} `json:"result"`
+		Metadata map[string]interface{} `json:"metadata"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	// The filter ran on the payload's metadata.
+	if resp.Result["executionTimeMilliseconds"] != float64(42) {
+		t.Errorf("result = %#v, want the filtered metadata object", resp.Result)
+	}
+	// And the envelope still carries it as a sibling of result.
+	if resp.Metadata["executionTimeMilliseconds"] != float64(42) {
+		t.Errorf("envelope metadata = %#v, want it preserved", resp.Metadata)
+	}
+}
+
+// TestPrintResults_JQ_EmptyResultIsNotAShapeMismatch guards the plain (non-agent)
+// --jq path: a query that matched no rows must still render `records` as an empty
+// array, or the filter would see null and be rejected as a shape mismatch (#413).
+func TestPrintResults_JQ_EmptyResultIsNotAShapeMismatch(t *testing.T) {
+	e := &DQLExecutor{}
+	result := &DQLQueryResponse{Result: &DQLResult{Records: nil}}
+	opts := DQLExecuteOptions{OutputFormat: "json", JQFilter: ".records"}
+
+	var printErr error
+	out := captureStdout(t, func() {
+		printErr = e.printResults("fetch logs | limit 0", result, opts)
+	})
+	if printErr != nil {
+		t.Fatalf("printResults: %v", printErr)
+	}
+
+	var got []interface{}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Fatalf("out = %#v, want an empty list", got)
+	}
+}

@@ -122,6 +122,7 @@ type AgentPrinter struct {
 	ctx          *ResponseContext
 	resultFormat string // "json" (default) or "toon"
 	jqFilter     string
+	metadata     interface{}
 }
 
 // NewAgentPrinter creates an AgentPrinter that writes envelope-wrapped JSON to writer.
@@ -167,9 +168,10 @@ func (p *AgentPrinter) Print(data interface{}) error {
 		return err
 	}
 	resp := Response{
-		OK:      true,
-		Result:  result,
-		Context: p.ctx,
+		OK:       true,
+		Result:   result,
+		Context:  p.ctx,
+		Metadata: p.metadata,
 	}
 	return EncodeEnvelope(p.writer, resp)
 }
@@ -211,6 +213,14 @@ func (p *AgentPrinter) PrintList(data interface{}) error {
 // SetJQFilter applies a jq transform to the result before envelope encoding.
 func (p *AgentPrinter) SetJQFilter(filter string) {
 	p.jqFilter = filter
+}
+
+// SetMetadata sets the envelope's metadata sibling (Grail query metadata). It
+// keeps metadata reachable next to `result` even when a --jq filter narrowed the
+// payload down to the rows, which is how the unfiltered query envelope presents
+// it. Nil (the default) omits the field.
+func (p *AgentPrinter) SetMetadata(meta interface{}) {
+	p.metadata = meta
 }
 
 // SetTotal sets the total item count in the response context.

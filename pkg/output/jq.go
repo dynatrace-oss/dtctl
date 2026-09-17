@@ -2,9 +2,27 @@ package output
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/itchyny/gojq"
 )
+
+// JQShapeMismatchCode is the envelope error code for a well-formed --jq filter
+// that addressed a key its input does not have. It is stable so an agent can
+// branch on it rather than pattern-matching the message.
+const JQShapeMismatchCode = "jq_shape_mismatch"
+
+// JQError is a --jq failure that carries a stable envelope code and
+// self-correcting suggestions, so agent mode can surface both verbatim instead
+// of classifying a bare message.
+type JQError struct {
+	Code        string
+	Message     string
+	Suggestions []string
+}
+
+func (e *JQError) Error() string { return e.Message }
 
 // IsStructuredOutputFormat reports whether a format can represent arbitrary
 // JSON values emitted by jq.
@@ -27,6 +45,17 @@ func NormalizeJQOutputFormat(format string) string {
 
 // ApplyJQ transforms input using the provided jq filter.
 // If filter is empty, input is returned unchanged.
+//
+// Two outcomes have to stay distinguishable to a machine consumer, because jq
+// spells both of them `null` and a caller that cannot tell them apart reads a
+// wrong filter as a verified negative:
+//
+//   - The filter selected nothing — `empty`, or a `select(...)` no element
+//     satisfies. That is a genuine empty selection, and it returns an empty
+//     list: the natural zero of the multi-output case.
+//   - The filter addressed a key the input does not have. That is a shape
+//     mismatch, and it returns an error naming the keys the input actually
+//     carries, so the mistake is self-correcting without a second round trip.
 func ApplyJQ(filter string, input interface{}) (interface{}, error) {
 	if filter == "" {
 		return input, nil
@@ -61,11 +90,77 @@ func ApplyJQ(filter string, input interface{}) (interface{}, error) {
 
 	switch len(results) {
 	case 0:
-		return nil, nil
+		return []interface{}{}, nil
 	case 1:
+		if results[0] == nil {
+			return nil, jqShapeMismatch(filter, generic)
+		}
 		return results[0], nil
 	default:
 		return results, nil
+	}
+}
+
+// jqShapeMismatch builds the error for a filter that resolved to null. The
+// message names the keys the input actually has, and when the filter reaches for
+// `.result` on an input that has no such key it calls out the specific confusion
+// behind that mistake: --jq runs on the result payload, never on the agent
+// envelope that wraps it.
+func jqShapeMismatch(filter string, input interface{}) error {
+	suggestions := []string{
+		"inspect the filter input first: --jq 'keys'",
+		"drop --jq to see the whole object",
+	}
+	if strings.Contains(filter, ".result") && !hasJQKey(input, "result") {
+		suggestions = append([]string{
+			"--jq applies to the result payload, not to the --agent envelope that wraps it: drop the leading '.result' and filter on the keys above (on query: '.records', not '.result.records')",
+		}, suggestions...)
+	}
+	return &JQError{
+		Code: JQShapeMismatchCode,
+		Message: fmt.Sprintf(
+			"--jq filter %q resolved to null: %s. That is a shape mismatch, not an empty result — a filter that selects nothing returns []",
+			filter, describeJQInput(input)),
+		Suggestions: suggestions,
+	}
+}
+
+// hasJQKey reports whether input is an object carrying key.
+func hasJQKey(input interface{}, key string) bool {
+	obj, ok := input.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, ok = obj[key]
+	return ok
+}
+
+// describeJQInput renders the shape of a filter's input in one clause, naming
+// an object's keys so a wrong path can be corrected from the error alone.
+func describeJQInput(input interface{}) string {
+	switch v := input.(type) {
+	case map[string]interface{}:
+		if len(v) == 0 {
+			return "the filter input is an empty object"
+		}
+		keys := make([]string, 0, len(v))
+		for k := range v {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return "the filter input is an object with keys [" + strings.Join(keys, ", ") + "]"
+	case []interface{}:
+		return fmt.Sprintf("the filter input is an array of %d element(s)", len(v))
+	case nil:
+		return "the filter input is null"
+	case string:
+		return "the filter input is a string"
+	case bool:
+		return "the filter input is a boolean"
+	case float64:
+		return "the filter input is a number"
+	default:
+		return fmt.Sprintf("the filter input is of type %T", v)
 	}
 }
 
