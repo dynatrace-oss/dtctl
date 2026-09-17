@@ -250,6 +250,22 @@ func TestBuildWorkflowExecutionRequest_RejectsInvalidWorkflowInput(t *testing.T)
 	}
 }
 
+func TestExecWorkflowInputFlagSurvivesFlagReset(t *testing.T) {
+	// resetFlagSet restores defaults via flag.Value.Set(DefValue); for
+	// singleUseStringValue that must go through Reset, or the flag is marked
+	// as already provided and every real --input is rejected.
+	cmd := newExecWorkflowRunCmdForTest()
+	resetFlagSet(cmd.Flags())
+
+	if err := cmd.ParseFlags([]string{"--input", `{"matcher":"Control-M"}`}); err != nil {
+		t.Fatalf("ParseFlags() after resetFlagSet error = %v", err)
+	}
+	got, _ := cmd.Flags().GetString("input")
+	if got != `{"matcher":"Control-M"}` {
+		t.Fatalf("expected --input value to be retained, got %q", got)
+	}
+}
+
 func TestExecWorkflowParamsFlagHiddenFromUsage(t *testing.T) {
 	usage := newExecWorkflowRunCmdForTest().UsageString()
 	if strings.Contains(usage, "--params") {

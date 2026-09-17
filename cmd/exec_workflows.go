@@ -46,6 +46,15 @@ func (v *singleUseStringValue) Set(value string) error {
 	return nil
 }
 
+// Reset clears the "already provided" marker. The per-invocation flag reset
+// (resetFlagSet) restores flags by calling Reset when a Value implements it;
+// routing the reset through Set(DefValue) would trip the single-use guard
+// before the real parse even starts.
+func (v *singleUseStringValue) Reset() {
+	v.set = false
+	*v.value = ""
+}
+
 func (v *singleUseStringValue) String() string {
 	if v.value == nil {
 		return ""

@@ -79,7 +79,9 @@ func CreateTempFile(t *testing.T, content string, pattern string) string {
 func ResetCommandFlags(cmd *cobra.Command) {
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
 		flag.Changed = false
-		if sv, ok := flag.Value.(pflag.SliceValue); ok {
+		if rv, ok := flag.Value.(interface{ Reset() }); ok {
+			rv.Reset()
+		} else if sv, ok := flag.Value.(pflag.SliceValue); ok {
 			// SliceValue.Set appends rather than replaces; use Replace to restore the
 			// declared default. StringArray stores DefValue as JSON; other slice types
 			// fall back to nil (empty) if the format doesn't parse.
