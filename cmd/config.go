@@ -52,6 +52,45 @@ func saveConfig(cfg *config.Config) error {
 	return cfg.Save()
 }
 
+// loadConfigForWrite loads the file a config-management command should modify.
+// With global=true that is always the user-level config, so a discovered
+// .dtctl.yaml cannot capture a write that was meant to create the global
+// binding a local config depends on; otherwise it reads what loadConfigRaw
+// would. The global read skips expansion so a ${VAR} in the global file
+// survives the round-trip too.
+func loadConfigForWrite(global bool) (*config.Config, error) {
+	if global {
+		return config.LoadFromWithoutExpansion(config.DefaultConfigPath())
+	}
+	return loadConfigRaw()
+}
+
+// saveConfigForWrite mirrors loadConfigForWrite so a load-modify-save cycle
+// round-trips a single file.
+func saveConfigForWrite(cfg *config.Config, global bool) error {
+	if global {
+		return cfg.Save()
+	}
+	return saveConfig(cfg)
+}
+
+// warnLocalWriteTarget tells the user when a config write just landed in an
+// auto-discovered .dtctl.yaml. Such a file cannot hold credentials and only
+// resolves one through a context in the global config that binds the same
+// environment, so a write meant to set up access has to go to the global
+// config — which is what --global is for.
+func warnLocalWriteTarget(what string) {
+	if cfgFile != "" || os.Getenv(config.EnvConfig) != "" {
+		return
+	}
+	local := config.FindLocalConfig()
+	if local == "" {
+		return
+	}
+	output.PrintWarning("%s written to the local config %s, not your global config", what, local)
+	output.PrintHint("A local .dtctl.yaml cannot hold credentials; it resolves one through a global context that binds the same environment. Re-run with --global to write there.")
+}
+
 // configCmd represents the config command
 var configCmd = &cobra.Command{
 	Use:   "config",
@@ -95,6 +134,10 @@ In an auto-discovered .dtctl.yaml the environment URL supports ${VAR_NAME}
 expansion (e.g. ${DT_ENVIRONMENT_URL}); it is validated as a Dynatrace host
 at runtime. Inline tokens are rejected — use 'token-ref' pointing to a context
 in your global config. For CI, point DTCTL_CONFIG at a trusted file instead.
+
+Note that once a .dtctl.yaml exists, config writes target it rather than your
+global config. Pass --global to 'config set-context' / 'config set-credentials'
+to create the global binding this file needs.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Check if .dtctl.yaml already exists
@@ -124,8 +167,14 @@ in your global config. For CI, point DTCTL_CONFIG at a trusted file instead.
 
 		output.PrintSuccess("Created %s", configPath)
 		output.PrintInfo("\nSet DT_ENVIRONMENT_URL to your Dynatrace environment URL (or edit the file directly).")
-		output.PrintInfo("'token-ref' must match a context in your global config that binds the same environment.")
-		output.PrintInfo("Create that binding with 'dtctl config set-context' and 'dtctl config set-credentials'.")
+		output.PrintInfo("'token-ref' must match a context in your GLOBAL config that binds the same environment.")
+		output.PrintInfo("Create that binding with --global, or the writes land in this file instead:")
+		// Print the names the template actually used, so the commands can be
+		// pasted as-is (--context is optional and the token-ref is fixed).
+		name, tokenRef := template.Contexts[0].Name, template.Contexts[0].Context.TokenRef
+		output.PrintInfo("  dtctl config set-context %s --global \\", name)
+		output.PrintInfo("    --environment \"$DT_ENVIRONMENT_URL\" --token-ref %s", tokenRef)
+		output.PrintInfo("  dtctl config set-credentials %s --global --token dt0c01.xxx", tokenRef)
 		return nil
 	},
 }
@@ -255,8 +304,9 @@ Examples:
 		safetyLevel, _ := cmd.Flags().GetString("safety-level")
 		description, _ := cmd.Flags().GetString("description")
 		profile, _ := cmd.Flags().GetString("profile")
+		global, _ := cmd.Flags().GetBool("global")
 
-		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile)
+		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile, global)
 	},
 }
 
@@ -268,12 +318,13 @@ var configSetCredentialsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		token, _ := cmd.Flags().GetString("token")
+		global, _ := cmd.Flags().GetBool("global")
 
 		if token == "" {
 			return fmt.Errorf("--token is required")
 		}
 
-		cfg, err := loadConfigRaw()
+		cfg, err := loadConfigForWrite(global)
 		if err != nil {
 			cfg = config.NewConfig()
 		}
@@ -282,7 +333,7 @@ var configSetCredentialsCmd = &cobra.Command{
 			return err
 		}
 
-		if err := saveConfig(cfg); err != nil {
+		if err := saveConfigForWrite(cfg, global); err != nil {
 			return err
 		}
 
@@ -290,6 +341,9 @@ var configSetCredentialsCmd = &cobra.Command{
 			output.PrintSuccess("Credentials %q stored securely in %s", name, config.KeyringBackend())
 		} else {
 			output.PrintWarning("Credentials %q set (stored in plaintext, keyring not available)", name)
+		}
+		if !global {
+			warnLocalWriteTarget(fmt.Sprintf("Credential reference %q", name))
 		}
 		return nil
 	},
@@ -443,7 +497,9 @@ func init() {
 	configSetContextCmd.Flags().String("description", "", "human-readable description for this context")
 	configSetContextCmd.Flags().String("profile", "", "command profile to bind (restricts the visible command surface; e.g. query, investigate, full)")
 	_ = configSetContextCmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
+	configSetContextCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
 
 	// Flags for set-credentials
 	configSetCredentialsCmd.Flags().String("token", "", "API token")
+	configSetCredentialsCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
 }

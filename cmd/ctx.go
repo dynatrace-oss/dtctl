@@ -163,8 +163,9 @@ Examples:
 		safetyLevel, _ := cmd.Flags().GetString("safety-level")
 		description, _ := cmd.Flags().GetString("description")
 		profile, _ := cmd.Flags().GetString("profile")
+		global, _ := cmd.Flags().GetBool("global")
 
-		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile)
+		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile, global)
 	},
 }
 
@@ -212,7 +213,7 @@ func listContexts() error {
 		items = append(items, ContextListItem{
 			Current:     current,
 			Name:        nc.Name,
-			Environment: cfg.ResolvedEnvironment(nc.Context.Environment),
+			Environment: nc.Context.Environment,
 			SafetyLevel: cfg.EffectiveSafetyLevelFor(&nc.Context).String(),
 			Profile:     nc.Context.Profile,
 			Description: nc.Context.Description,
@@ -283,7 +284,7 @@ func describeContext(name string) error {
 
 	const w = 14
 	output.DescribeKV("Name:", w, "%s%s", found.Name, currentMark)
-	output.DescribeKV("Environment:", w, "%s", cfg.ResolvedEnvironment(found.Context.Environment))
+	output.DescribeKV("Environment:", w, "%s", found.Context.Environment)
 	output.DescribeKV("Token-Ref:", w, "%s", found.Context.TokenRef)
 	output.DescribeKV("Safety Level:", w, "%s", level)
 
@@ -311,8 +312,8 @@ func describeContext(name string) error {
 }
 
 // setContext creates or updates a named context (shared logic)
-func setContext(name, environment, tokenRef, safetyLevel, description, profile string) error {
-	cfg, err := loadConfigRaw()
+func setContext(name, environment, tokenRef, safetyLevel, description, profile string, global bool) error {
+	cfg, err := loadConfigForWrite(global)
 	if err != nil {
 		cfg = config.NewConfig()
 	}
@@ -373,7 +374,7 @@ func setContext(name, environment, tokenRef, safetyLevel, description, profile s
 	// expectation is that the named context becomes current afterward.
 	cfg.CurrentContext = name
 
-	if err := saveConfig(cfg); err != nil {
+	if err := saveConfigForWrite(cfg, global); err != nil {
 		return err
 	}
 
@@ -381,6 +382,9 @@ func setContext(name, environment, tokenRef, safetyLevel, description, profile s
 		output.PrintSuccess("Context %q updated and set as current", name)
 	} else {
 		output.PrintSuccess("Context %q created and set as current", name)
+	}
+	if !global {
+		warnLocalWriteTarget(fmt.Sprintf("Context %q", name))
 	}
 	return nil
 }
@@ -436,5 +440,6 @@ func init() {
 	ctxSetCmd.Flags().String("safety-level", "", "safety level (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
 	ctxSetCmd.Flags().String("description", "", "human-readable description for this context")
 	ctxSetCmd.Flags().String("profile", "", "command profile to bind (restricts the visible command surface; e.g. query, investigate, full)")
+	ctxSetCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
 	_ = ctxSetCmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
 }
