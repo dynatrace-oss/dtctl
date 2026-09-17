@@ -99,6 +99,15 @@ type MetricSource struct {
 	ResourceType                   string   `json:"resourceType"`
 	AutoDiscoveryEnabled           bool     `json:"autoDiscoveryEnabled"`
 	AutodiscoveryExcludeMetricType []string `json:"autodiscoveryExcludeMetricType,omitempty"`
+	Metrics                        []Metric `json:"metrics,omitempty"`
+}
+
+// Metric is a single Cloud Monitoring metric collected for a resource type,
+// used when auto-discovery is off or to add metrics beyond the recommended set.
+type Metric struct {
+	Name         string   `json:"name"`
+	MetricLabels []string `json:"metricLabels,omitempty"`
+	Type         string   `json:"type,omitempty"`
 }
 
 type Credential struct {

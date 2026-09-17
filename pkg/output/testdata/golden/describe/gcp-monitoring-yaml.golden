@@ -23,7 +23,20 @@ value:
     observabilityscopesenabled: false
     smartscapeconfiguration:
       enabled: false
-    resources: []
+    resources:
+      - resourcetype: pubsub_topic
+        autodiscoveryenabled: false
+        autodiscoveryexcludemetrictype: []
+        metrics:
+          - name: pubsub.googleapis.com/topic/send_request_count
+            metriclabels:
+              - response_class
+            type: CUSTOM
+      - resourcetype: gce_instance
+        autodiscoveryenabled: true
+        autodiscoveryexcludemetrictype:
+          - compute.googleapis.com/instance/disk/*
+        metrics: []
   featuresets:
     - default
 description: Production GCP monitoring

@@ -1516,6 +1516,24 @@ func describeGCPMonitoringConfigFixture() gcpmonitoringconfig.GCPMonitoringConfi
 						ServiceAccount: "sa-monitor@project-id.iam.gserviceaccount.com",
 					},
 				},
+				Resources: []gcpmonitoringconfig.MetricSource{
+					{
+						ResourceType:         "pubsub_topic",
+						AutoDiscoveryEnabled: false,
+						Metrics: []gcpmonitoringconfig.Metric{
+							{
+								Name:         "pubsub.googleapis.com/topic/send_request_count",
+								MetricLabels: []string{"response_class"},
+								Type:         "CUSTOM",
+							},
+						},
+					},
+					{
+						ResourceType:                   "gce_instance",
+						AutoDiscoveryEnabled:           true,
+						AutodiscoveryExcludeMetricType: []string{"compute.googleapis.com/instance/disk/*"},
+					},
+				},
 			},
 			FeatureSets: []string{"default"},
 		},
