@@ -18,7 +18,11 @@ func TestApplyRunEnvironment_ScrubAndRestore(t *testing.T) {
 	t.Setenv("DTCTL_CONFIG", "/host/config.yaml")
 	t.Setenv("DTCTL_PROFILE", "host-profile")
 	t.Setenv(config.EnvTokenStorage, "file")
-	os.Unsetenv("DTCTL_DISABLE_KEYRING")
+	// This case asserts how applyRunEnvironment treats an *unset* keyring guard,
+	// so clear the TestMain default. Going through t.Setenv first registers the
+	// restore, keeping the unset from leaking into the rest of the test binary.
+	t.Setenv(config.EnvDisableKeyring, "")
+	os.Unsetenv(config.EnvDisableKeyring)
 
 	cleanup, err := applyRunEnvironment(RunOptions{
 		Session: &Session{EnvironmentURL: "https://x.example.invalid", Token: "t"},
