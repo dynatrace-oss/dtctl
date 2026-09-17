@@ -184,12 +184,7 @@ Examples:
 		executor := NewDQLExecutorFromConfig(cfg, c)
 		waiter := wait.NewQueryWaiter(executor, waitConfig)
 
-		// Execute wait
-		waitCtx := cmd.Context()
-		if waitCtx == nil {
-			waitCtx = context.Background()
-		}
-		result, err := waiter.Wait(waitCtx)
+		result, err := waiter.Wait(cmdContext(cmd))
 		if err != nil && err != context.DeadlineExceeded {
 			return fmt.Errorf("wait failed: %w", err)
 		}

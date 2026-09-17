@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/dynatrace-oss/dtctl/pkg/engine"
 )
 
 // newDynatraceMock is a minimal fake Dynatrace environment for handler tests.
@@ -50,7 +48,7 @@ func postExecute(t *testing.T, srv *httptest.Server, body string) (*http.Respons
 
 func TestHandler_Execute(t *testing.T) {
 	dt := newDynatraceMock(t)
-	srv := httptest.NewServer(Handler(10<<20, engine.DefaultLimits()))
+	srv := httptest.NewServer(Handler(10 << 20))
 	t.Cleanup(srv.Close)
 
 	resp, body := postExecute(t, srv,
@@ -65,7 +63,7 @@ func TestHandler_Execute(t *testing.T) {
 
 func TestHandler_FilesRoundTrip(t *testing.T) {
 	dt := newDynatraceMock(t)
-	srv := httptest.NewServer(Handler(10<<20, engine.DefaultLimits()))
+	srv := httptest.NewServer(Handler(10 << 20))
 	t.Cleanup(srv.Close)
 
 	req, err := json.Marshal(executeRequest{
@@ -91,7 +89,7 @@ func TestHandler_FilesRoundTrip(t *testing.T) {
 // on a local shell. HTTP error statuses are reserved for requests that never
 // ran.
 func TestHandler_CommandFailureIsHTTP200(t *testing.T) {
-	srv := httptest.NewServer(Handler(10<<20, engine.DefaultLimits()))
+	srv := httptest.NewServer(Handler(10 << 20))
 	t.Cleanup(srv.Close)
 
 	resp, body := postExecute(t, srv,
@@ -105,7 +103,7 @@ func TestHandler_CommandFailureIsHTTP200(t *testing.T) {
 }
 
 func TestHandler_RequestErrors(t *testing.T) {
-	srv := httptest.NewServer(Handler(1024, engine.DefaultLimits()))
+	srv := httptest.NewServer(Handler(1024))
 	t.Cleanup(srv.Close)
 
 	t.Run("invalid JSON", func(t *testing.T) {
@@ -135,7 +133,7 @@ func TestHandler_RequestErrors(t *testing.T) {
 }
 
 func TestHandler_Healthz(t *testing.T) {
-	srv := httptest.NewServer(Handler(1024, engine.DefaultLimits()))
+	srv := httptest.NewServer(Handler(1024))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Get(srv.URL + "/healthz")

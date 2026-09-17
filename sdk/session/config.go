@@ -416,15 +416,12 @@ func (c *Config) LocalConfigPath() string { return c.localPath }
 // runtime. See markLocal.
 func (c *Config) IgnoredExecKeys() bool { return c.ignoredExecKeys }
 
-// hasEnvRefs reports whether any key config value contains a literal '$'
+// hasEnvRefs reports whether inline token values contain a literal '$'
 // character — a sign that the author intended env-var expansion that was
-// skipped because the config was auto-discovered (untrusted).
+// skipped because the config was auto-discovered (untrusted). Environment
+// URLs are excluded: they support ${VAR} expansion via os.ExpandEnv in
+// NewClientFromConfig (after URL validation), so no warning is needed.
 func (c *Config) hasEnvRefs() bool {
-	for _, nc := range c.Contexts {
-		if strings.ContainsRune(nc.Context.Environment, '$') {
-			return true
-		}
-	}
 	for _, nt := range c.Tokens {
 		if strings.ContainsRune(nt.Token, '$') {
 			return true

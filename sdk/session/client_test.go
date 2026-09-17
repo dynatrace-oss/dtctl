@@ -823,6 +823,35 @@ func TestReadRequestBodyForDebug_NilGetBodyReader(t *testing.T) {
 	}
 }
 
+// TestNewClientFromConfig_LocalConfigEnvVarExpansion verifies that
+// ${VAR} references in the environment URL of a local config are expanded
+// by NewClientFromConfig before the Dynatrace URL validation runs.
+func TestNewClientFromConfig_LocalConfigEnvVarExpansion(t *testing.T) {
+	t.Setenv(EnvDisableKeyring, "1")
+
+	t.Run("valid Dynatrace URL via env var", func(t *testing.T) {
+		t.Setenv("DT_ENV_URL", "https://abc12345.apps.dynatrace.com")
+		cfg := newLocalConfig(t, "${DT_ENV_URL}", "some-ref", nil)
+		// Token resolution fails (no real keyring), but the URL check must pass.
+		_, err := NewClientFromConfig(cfg)
+		if err != nil && contains(err.Error(), "dynatrace") {
+			t.Errorf("URL check failed for valid Dynatrace URL via env var: %v", err)
+		}
+	})
+
+	t.Run("non-Dynatrace URL via env var rejected", func(t *testing.T) {
+		t.Setenv("DT_ENV_URL", "https://evil.example.com")
+		cfg := newLocalConfig(t, "${DT_ENV_URL}", "some-ref", nil)
+		_, err := NewClientFromConfig(cfg)
+		if err == nil {
+			t.Fatal("NewClientFromConfig() succeeded for non-Dynatrace URL via env var, want error")
+		}
+		if !contains(err.Error(), "dynatrace") {
+			t.Errorf("error = %q, want it to mention dynatrace", err.Error())
+		}
+	})
+}
+
 // TestNewClientFromConfig_LocalConfigDomainAllowlist verifies that
 // NewClientFromConfig rejects local configs targeting non-Dynatrace hosts.
 // The guard fires before token resolution so no real token is needed.

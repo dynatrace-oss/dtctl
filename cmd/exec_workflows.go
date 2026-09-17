@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -175,11 +174,7 @@ func execWorkflowWait(cmd *cobra.Command, executor *exec.WorkflowExecutor, execu
 		Timeout:      timeout,
 	}
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return executor.WaitForCompletion(ctx, executionID, opts)
+	return executor.WaitForCompletion(cmdContext(cmd), executionID, opts)
 }
 
 // execWorkflowShowResults prints per-task results in human-readable format.

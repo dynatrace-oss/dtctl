@@ -134,10 +134,11 @@ func TestConfigInitCmd(t *testing.T) {
 				t.Errorf("Context name = %q, want %q", cfg.Contexts[0].Name, tt.wantContext)
 			}
 
-			// Template must not embed env-var references — auto-discovered local configs do not expand them.
+			// Template uses env-var syntax for the URL; it is expanded at runtime
+			// by NewClientFromConfig (after Dynatrace URL validation).
 			env := cfg.Contexts[0].Context.Environment
-			if env == "${DT_ENVIRONMENT_URL}" || env == "$DT_ENVIRONMENT_URL" {
-				t.Errorf("Environment = %q: local config template must not use env-var syntax", env)
+			if env == "" {
+				t.Error("Environment must not be empty")
 			}
 
 			// Template must not include inline tokens — auto-discovered local configs reject them.
@@ -193,12 +194,9 @@ func TestCreateLocalConfigTemplate(t *testing.T) {
 				t.Errorf("Context name = %q, want %q", ctx.Name, tt.wantContext)
 			}
 
-			// Must be a literal placeholder URL, not an env-var reference.
+			// Template uses env-var syntax; runtime expansion is handled by NewClientFromConfig.
 			if ctx.Context.Environment == "" {
 				t.Error("Environment must not be empty")
-			}
-			if ctx.Context.Environment == "${DT_ENVIRONMENT_URL}" || ctx.Context.Environment == "$DT_ENVIRONMENT_URL" {
-				t.Errorf("Environment = %q: template must not use env-var syntax (not expanded for local configs)", ctx.Context.Environment)
 			}
 
 			if ctx.Context.TokenRef != "my-token" {
@@ -242,8 +240,9 @@ func TestConfigInitCmd_Integration(t *testing.T) {
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
-	// Load via the explicit (trusted) path — no env-var expansion is needed because
-	// the template now uses a literal placeholder URL and carries no inline tokens.
+	// Load via the explicit (trusted) path — the template uses ${DT_ENVIRONMENT_URL},
+	// which is expanded when loading from a trusted path.
+	t.Setenv("DT_ENVIRONMENT_URL", "https://test.dynatrace.com")
 	cfg, err := config.LoadFrom(filepath.Join(tmpDir, config.LocalConfigName))
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)

@@ -72,17 +72,22 @@ func NewClientFromConfig(cfg *Config, opts ...ClientOption) (*Client, error) {
 	// Auto-discovered local configs must target a Dynatrace environment URL
 	// with no credentials, query, or fragment embedded. This prevents a rogue
 	// .dtctl.yaml from sending tokens to an arbitrary or non-TLS destination.
+	// Environment URLs may contain ${VAR} references; they are expanded here
+	// before validation so the Dynatrace URL check applies to the resolved host.
+	// Inline tokens remain unsupported regardless.
+	envURL := ctx.Environment
 	if cfg.IsLocal() {
-		if err := urls.IsDynatraceEnvironmentURL(ctx.Environment); err != nil {
+		envURL = os.ExpandEnv(ctx.Environment)
+		if err := urls.IsDynatraceEnvironmentURL(envURL); err != nil {
 			return nil, fmt.Errorf(
 				"local config %q: %w — use --config or DTCTL_CONFIG",
 				cfg.LocalConfigPath(), err)
 		}
-		u, _ := url.Parse(ctx.Environment)
+		u, _ := url.Parse(envURL)
 		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 			return nil, fmt.Errorf(
 				"local config %q requires a destination URL with no embedded credentials, query, or fragment (got %q) — use --config or DTCTL_CONFIG",
-				cfg.LocalConfigPath(), ctx.Environment)
+				cfg.LocalConfigPath(), envURL)
 		}
 	}
 
@@ -92,16 +97,16 @@ func NewClientFromConfig(cfg *Config, opts ...ClientOption) (*Client, error) {
 		return nil, err
 	}
 
-	c, err := NewClient(ctx.Environment, token, opts...)
+	c, err := NewClient(envURL, token, opts...)
 	if err != nil {
 		return nil, err
 	}
 	// OAuth access tokens are short-lived JWTs; a long-running invocation
 	// (watch, workflow polling) outlives them. Re-resolve on 401 so the
 	// session survives token expiry instead of surfacing "JWT token expired".
-	environment, tokenRef := ctx.Environment, ctx.TokenRef
+	tokenRef := ctx.TokenRef
 	c.EnableTokenRefresh(func(rejected string) (string, error) {
-		return RefreshedTokenForContext(cfg, environment, tokenRef, rejected)
+		return RefreshedTokenForContext(cfg, envURL, tokenRef, rejected)
 	})
 	return c, nil
 }

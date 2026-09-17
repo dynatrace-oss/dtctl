@@ -91,10 +91,10 @@ Examples:
   # Create .dtctl.yaml with a specific context pre-set
   dtctl config init --context production
 
-An auto-discovered .dtctl.yaml is untrusted: ${VAR_NAME} references are not
-expanded and inline tokens are rejected. Its 'token-ref' must name a credential
-already bound to the same environment in your global config. Point DTCTL_CONFIG
-at a trusted file instead when you need expansion or inline tokens (e.g. in CI).
+In an auto-discovered .dtctl.yaml the environment URL supports ${VAR_NAME}
+expansion (e.g. ${DT_ENVIRONMENT_URL}); it is validated as a Dynatrace host
+at runtime. Inline tokens are rejected — use 'token-ref' pointing to a context
+in your global config. For CI, point DTCTL_CONFIG at a trusted file instead.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Check if .dtctl.yaml already exists
@@ -123,10 +123,9 @@ at a trusted file instead when you need expansion or inline tokens (e.g. in CI).
 		}
 
 		output.PrintSuccess("Created %s", configPath)
-		output.PrintInfo("\nEdit this file and set 'environment' to your Dynatrace environment URL.")
+		output.PrintInfo("\nSet DT_ENVIRONMENT_URL to your Dynatrace environment URL (or edit the file directly).")
 		output.PrintInfo("'token-ref' must match a context in your global config that binds the same environment.")
-		output.PrintInfo("Create that binding from outside this directory with 'dtctl config set-context' and")
-		output.PrintInfo("'dtctl config set-credentials', or set DTCTL_CONFIG to a trusted file for CI.")
+		output.PrintInfo("Create that binding with 'dtctl config set-context' and 'dtctl config set-credentials'.")
 		return nil
 	},
 }
@@ -137,8 +136,8 @@ func createLocalConfigTemplate(contextName string) *config.Config {
 		contextName = "my-environment"
 	}
 
-	// Auto-discovered local configs do not expand env vars and reject inline tokens.
-	// Leave environment as a recognisable placeholder; tokens must come from the keyring.
+	// Inline tokens are rejected in local configs; the environment URL supports
+	// ${VAR} expansion (expanded and validated at runtime in NewClientFromConfig).
 	return &config.Config{
 		APIVersion:     "dtctl.io/v1",
 		Kind:           "Config",
@@ -147,7 +146,7 @@ func createLocalConfigTemplate(contextName string) *config.Config {
 			{
 				Name: contextName,
 				Context: config.Context{
-					Environment: "https://your-environment.apps.dynatrace.com",
+					Environment: "${DT_ENVIRONMENT_URL}",
 					TokenRef:    "my-token",
 					SafetyLevel: config.SafetyLevelReadWriteAll,
 					Description: "Project environment",

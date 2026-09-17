@@ -60,6 +60,15 @@ var (
 	tracingRootCtx context.Context
 )
 
+// cmdContext returns cmd.Context() if set, or context.Background() as a
+// fallback for test callers that invoke RunE without ExecuteContext.
+func cmdContext(cmd *cobra.Command) context.Context {
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
 // rootCmd represents the base command
 var rootCmd = &cobra.Command{
 	Use:           "dtctl",

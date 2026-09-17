@@ -46,8 +46,6 @@ type executeResponse struct {
 	// Files is the complete final state of the request's virtual filesystem.
 	Files      map[string]string `json:"files,omitempty"`
 	DurationMs int64             `json:"durationMs"`
-	// Truncated is true when stdout or stderr was cut at the output cap.
-	Truncated bool `json:"truncated,omitempty"`
 }
 
 type errorResponse struct {
@@ -60,8 +58,7 @@ type errorResponse struct {
 //	GET  /healthz    — liveness probe
 //
 // maxRequestBytes bounds the request body (virtual files travel inline).
-// limits controls queue depth, duration, and output caps for each execution.
-func Handler(maxRequestBytes int64, limits engine.Limits) http.Handler {
+func Handler(maxRequestBytes int64) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -96,7 +93,7 @@ func Handler(maxRequestBytes int64, limits engine.Limits) http.Handler {
 		}
 
 		start := time.Now()
-		res, err := engine.ExecuteWithLimits(r.Context(), engine.Request{
+		res, err := engine.Execute(r.Context(), engine.Request{
 			Command:        req.Command,
 			Argv:           req.Argv,
 			EnvironmentURL: req.EnvironmentURL,
@@ -108,16 +105,8 @@ func Handler(maxRequestBytes int64, limits engine.Limits) http.Handler {
 			// Env is intentionally not exposed over HTTP: arbitrary variables
 			// reach proxies, exporters, and other process-level behavior.
 			// Embedding hosts that need it use engine.Request.Env directly.
-		}, limits)
+		})
 		if err != nil {
-			if errors.Is(err, engine.ErrTooManyQueued) {
-				// The server is saturated — the request is valid but cannot be
-				// served right now. 429 lets clients distinguish this from a
-				// malformed request (400) and retry automatically.
-				w.Header().Set("Retry-After", "1")
-				writeError(w, http.StatusTooManyRequests, err.Error())
-				return
-			}
 			// The request never ran: malformed shape or cancelled while queued.
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -134,7 +123,6 @@ func Handler(maxRequestBytes int64, limits engine.Limits) http.Handler {
 			Stderr:     string(res.Stderr),
 			Files:      outFiles,
 			DurationMs: time.Since(start).Milliseconds(),
-			Truncated:  res.Truncated,
 		})
 	})
 	return mux
@@ -146,12 +134,11 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	_ = json.NewEncoder(w).Encode(errorResponse{Error: msg})
 }
 
-// ServeOptions holds timeout and engine configuration for the HTTP server.
+// ServeOptions holds timeout configuration for the HTTP server.
 type ServeOptions struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
-	Limits       engine.Limits
 }
 
 // newServer builds an *http.Server without starting it — extracted for testability.
@@ -173,7 +160,6 @@ func newHTTPCommand() *cobra.Command {
 		maxRequestBytes int64
 		opts            ServeOptions
 	)
-	opts.Limits = engine.DefaultLimits()
 	c := &cobra.Command{
 		Use:   "http",
 		Short: "Serve the dtctl execute API over HTTP (reference implementation)",
@@ -221,12 +207,6 @@ exposing it, or embed pkg/engine directly.`,
 		"time allowed to write the response (set high enough for slow commands)")
 	c.Flags().DurationVar(&opts.IdleTimeout, "idle-timeout", 2*time.Minute,
 		"maximum time to wait for the next request on a keep-alive connection")
-	c.Flags().IntVar(&opts.Limits.MaxQueued, "max-queued",
-		engine.DefaultLimits().MaxQueued,
-		"maximum number of requests allowed to queue (waiting + running); excess returns 429")
-	c.Flags().DurationVar(&opts.Limits.MaxDuration, "max-duration",
-		engine.DefaultLimits().MaxDuration,
-		"maximum wall-clock time allowed for a single request execution")
 	return c
 }
 
@@ -237,7 +217,7 @@ func runHTTP(ctx context.Context, addr string, maxRequestBytes int64, opts Serve
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := newServer(addr, Handler(maxRequestBytes, opts.Limits), opts)
+	server := newServer(addr, Handler(maxRequestBytes), opts)
 
 	errc := make(chan error, 1)
 	go func() {

@@ -27,22 +27,17 @@ type Capabilities struct {
 	// spilled file and the path returned to the caller are both host state, so
 	// an embedded invocation returns its rows inline instead.
 	HostDiskSpill bool
-	// LongRunningStreams allows commands that can run indefinitely: --watch on
-	// get subcommands and --follow on logs. The service engine leaves this
-	// false so a streaming request cannot hold the execution slot forever.
-	LongRunningStreams bool
 }
 
 // AllCapabilities is the CLI default: everything granted.
 func AllCapabilities() Capabilities {
 	return Capabilities{
-		PluginDispatch:     true,
-		ShellAliases:       true,
-		ApplyHooks:         true,
-		Editor:             true,
-		BrowserOpen:        true,
-		HostDiskSpill:      true,
-		LongRunningStreams: true,
+		PluginDispatch: true,
+		ShellAliases:   true,
+		ApplyHooks:     true,
+		Editor:         true,
+		BrowserOpen:    true,
+		HostDiskSpill:  true,
 	}
 }
 
