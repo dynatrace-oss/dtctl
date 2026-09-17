@@ -160,7 +160,7 @@ markdownlint-fix:
 # Generate reference docs from dtctl's own command catalog.
 # Builds the binary, dumps `dtctl commands --full -o json`, and feeds it to
 # scripts/gen-docs/gen_all.py, which writes docs/resources/*.md,
-# docs/COMMANDS.md, docs/TOKEN_SCOPES.md, and docs/INDEX.md.
+# docs/COMMANDS.md, docs/TOKEN_SCOPES.md, and the coverage report scripts/gen-docs/INDEX.md.
 # In docs/resources/*.md only the generator-managed block (the three tables:
 # Supported operations, Flags, Required token scopes, wrapped in
 # <!-- GENERATED:<resource>:start/end --> markers) is derived from the catalog;
@@ -175,7 +175,7 @@ docs-generate: build
 	trap 'rm -rf "$$tmpdir"' EXIT && \
 	./bin/dtctl commands --full -o json > "$$tmpdir/commands-full.json" && \
 	python3 scripts/gen-docs/gen_all.py "$$tmpdir/commands-full.json" docs && \
-	echo "Wrote docs/resources/*.md, docs/COMMANDS.md, docs/TOKEN_SCOPES.md, docs/INDEX.md"
+	echo "Wrote docs/resources/*.md, docs/COMMANDS.md, docs/TOKEN_SCOPES.md, and scripts/gen-docs/INDEX.md"
 
 # Release (using goreleaser)
 release:

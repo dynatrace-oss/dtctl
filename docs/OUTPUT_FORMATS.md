@@ -222,53 +222,13 @@ Color output follows the [no-color.org](https://no-color.org/) standard:
 - Non-TTY output (piped) disables color automatically
 - `FORCE_COLOR=1` overrides TTY detection to force color on
 
-## Command Catalog
+## Command catalog
 
-dtctl can describe its own commands in machine-readable form:
+`dtctl commands` prints dtctl's own command catalog in machine-readable form. Unlike other commands it defaults to **TOON** (the most compact format); pass `-o json` or `-o yaml` to override. See **[AGENT_MODE.md](AGENT_MODE.md)** for the catalog's `--brief`/`--full` levels and how agents use it.
 
-```bash
-# Minimal overview: verbs, resources, subcommands (defaults to TOON, ideal for AI agent bootstrap)
-dtctl commands
+## Agent mode
 
-# Brief catalog: adds mutating status, access levels, flag types, and scopes
-dtctl commands --brief -o json
-
-# Full command catalog: descriptions, flag defaults, and global flags
-dtctl commands --full -o json
-
-# Human-readable how-to guide in Markdown
-dtctl commands howto
-```
-
-Unlike other commands, `dtctl commands` defaults to TOON (the most compact format) rather than the table format; pass `-o json` or `-o yaml` to override.
-
-## Agent Mode
-
-The `--agent` (or `-A`) flag wraps all output in a structured JSON envelope designed for AI agent consumption:
-
-```bash
-dtctl get workflows --agent
-```
-
-```json
-{
-  "ok": true,
-  "result": [...],
-  "context": {
-    "verb": "get",
-    "resource": "workflow",
-    "suggestions": [...]
-  }
-}
-```
-
-Agent mode is auto-detected when running inside AI agent environments (GitHub Copilot, Claude Code, Cursor, OpenCode, and others). To opt out of auto-detection:
-
-```bash
-dtctl get workflows --no-agent
-```
-
-Agent mode implies `--plain`: no colors and no interactive prompts. See [AGENT_MODE.md](AGENT_MODE.md) for full details.
+The `--agent` (or `-A`) flag wraps output in a structured JSON envelope for AI agents (`{ ok, result, context }`) and implies `--plain`. It is auto-detected in agent environments; opt out with `--no-agent`. See **[AGENT_MODE.md](AGENT_MODE.md)** for the envelope contract, error codes, and auto-detection.
 
 ## Pagination
 
