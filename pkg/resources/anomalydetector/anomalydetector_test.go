@@ -248,7 +248,8 @@ func TestGet_StatusMapping(t *testing.T) {
 		wantErr string
 	}{
 		{status: 404, wantErr: "not found"},
-		{status: 403, wantErr: "access denied"},
+		// 403 now surfaces the server's reason instead of swallowing it (#476).
+		{status: 403, wantErr: "get anomaly detector \"obj-1\" (HTTP 403): error"},
 		{status: 500, wantErr: "failed to get anomaly detector: status 500"},
 	}
 	for _, tc := range tests {
@@ -460,7 +461,7 @@ func TestCreate_StatusMapping(t *testing.T) {
 		wantErr string
 	}{
 		{status: 400, wantErr: "invalid anomaly detector"},
-		{status: 403, wantErr: "access denied"},
+		{status: 403, wantErr: "create anomaly detector (HTTP 403): boom"},
 		{status: 404, wantErr: fmt.Sprintf("schema %q not found", SchemaID)},
 		{status: 500, wantErr: "failed to create anomaly detector: status 500"},
 	}
@@ -520,7 +521,7 @@ func TestUpdate_StatusMapping(t *testing.T) {
 		wantErr string
 	}{
 		{status: 400, wantErr: "invalid anomaly detector"},
-		{status: 403, wantErr: "access denied"},
+		{status: 403, wantErr: "update anomaly detector \"obj-1\" (HTTP 403): boom"},
 		{status: 404, wantErr: "not found"},
 		{status: 409, wantErr: "version conflict"},
 		{status: 412, wantErr: "version conflict"},
@@ -574,7 +575,7 @@ func TestDelete_StatusMapping(t *testing.T) {
 		status  int
 		wantErr string
 	}{
-		{status: 403, wantErr: "access denied"},
+		{status: 403, wantErr: "delete anomaly detector \"obj-1\" (HTTP 403): boom"},
 		{status: 404, wantErr: "not found"},
 		{status: 500, wantErr: "failed to delete anomaly detector: status 500"},
 	}

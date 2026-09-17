@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 )
 
 const (
@@ -107,6 +108,15 @@ func (h *Handler) Get(id string) (*AzureConnection, error) {
 		return nil, err
 	}
 	if resp.IsError() {
+		if resp.StatusCode() == 403 {
+			return nil, diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+				Operation:      fmt.Sprintf("get azure_connection %q", id),
+				Permission:     "settings:objects:read",
+				SchemaID:       SchemaID,
+				Body:           resp.String(),
+				ExistingObject: true,
+			})
+		}
 		return nil, fmt.Errorf("failed to get azure_connection: %s", resp.String())
 	}
 
@@ -137,6 +147,14 @@ func (h *Handler) List() ([]AzureConnection, error) {
 			return nil, err
 		}
 		if resp.IsError() {
+			if resp.StatusCode() == 403 {
+				return nil, diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+					Operation:  "list azure_connections",
+					Permission: "settings:objects:read",
+					SchemaID:   SchemaID,
+					Body:       resp.String(),
+				})
+			}
 			return nil, fmt.Errorf("failed to list azure_connections: %s", resp.String())
 		}
 
@@ -161,6 +179,15 @@ func (h *Handler) Delete(id string) error {
 		return err
 	}
 	if resp.IsError() {
+		if resp.StatusCode() == 403 {
+			return diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+				Operation:      fmt.Sprintf("delete azure_connection %q", id),
+				Permission:     "settings:objects:write",
+				SchemaID:       SchemaID,
+				Body:           resp.String(),
+				ExistingObject: true,
+			})
+		}
 		return fmt.Errorf("failed to delete azure_connection: status %d: %s", resp.StatusCode(), resp.String())
 	}
 	return nil
@@ -241,7 +268,12 @@ func (h *Handler) Create(req AzureConnectionCreate) (*AzureConnection, error) {
 		case 400:
 			return nil, fmt.Errorf("invalid azure_connection: %s", resp.String())
 		case 403:
-			return nil, fmt.Errorf("access denied to create azure_connection")
+			return nil, diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+				Operation:  "create azure_connection",
+				Permission: "settings:objects:write",
+				SchemaID:   req.SchemaID,
+				Body:       resp.String(),
+			})
 		case 404:
 			return nil, fmt.Errorf("schema %q not found", req.SchemaID)
 		case 409:
@@ -295,7 +327,13 @@ func (h *Handler) Update(objectID string, value Value) (*AzureConnection, error)
 		case 400:
 			return nil, fmt.Errorf("invalid azure_connection: %s", resp.String())
 		case 403:
-			return nil, fmt.Errorf("access denied to update azure_connection %q", objectID)
+			return nil, diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+				Operation:      fmt.Sprintf("update azure_connection %q", objectID),
+				Permission:     "settings:objects:write",
+				SchemaID:       SchemaID,
+				Body:           resp.String(),
+				ExistingObject: true,
+			})
 		case 404:
 			return nil, fmt.Errorf("azure_connection %q not found", objectID)
 		case 409, 412:

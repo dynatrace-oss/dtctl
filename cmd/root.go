@@ -867,6 +867,24 @@ func isTokenRefreshError(err error) bool {
 		strings.Contains(msg, "token expired and refresh failed")
 }
 
+// isPermissionDenied reports whether err is a typed 403. Callers that fall back
+// from one lookup to another use it to stop: a denial is not an absence, and
+// reporting "not found" for a 403 both misleads the user and throws away the
+// permission diagnostics the handler attached.
+func isPermissionDenied(err error) bool {
+	var diagErr *diagnostic.Error
+	if errors.As(err, &diagErr) {
+		return diagErr.StatusCode == 403
+	}
+
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == 403
+	}
+
+	return false
+}
+
 // isURLRelatedError returns true if the error could plausibly be caused by
 // using the wrong environment URL (e.g., 403, 401, connectivity errors).
 func isURLRelatedError(err error) bool {

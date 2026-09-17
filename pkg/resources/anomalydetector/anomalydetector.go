@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 )
 
 const (
@@ -326,6 +327,14 @@ func (h *Handler) List(opts ListOptions) ([]AnomalyDetector, error) {
 			return nil, fmt.Errorf("failed to list anomaly detectors: %w", err)
 		}
 		if resp.IsError() {
+			if resp.StatusCode() == 403 {
+				return nil, diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+					Operation:  "list anomaly detectors",
+					Permission: "settings:objects:read",
+					SchemaID:   SchemaID,
+					Body:       resp.String(),
+				})
+			}
 			return nil, fmt.Errorf("failed to list anomaly detectors: status %d: %s", resp.StatusCode(), resp.String())
 		}
 
@@ -372,7 +381,13 @@ func (h *Handler) Get(objectID string) (*AnomalyDetector, error) {
 		case 404:
 			return nil, fmt.Errorf("anomaly detector %q not found", objectID)
 		case 403:
-			return nil, fmt.Errorf("access denied to anomaly detector %q", objectID)
+			return nil, diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+				Operation:      fmt.Sprintf("get anomaly detector %q", objectID),
+				Permission:     "settings:objects:read",
+				SchemaID:       SchemaID,
+				Body:           resp.String(),
+				ExistingObject: true,
+			})
 		default:
 			return nil, fmt.Errorf("failed to get anomaly detector: status %d: %s", resp.StatusCode(), resp.String())
 		}
@@ -480,7 +495,12 @@ func (h *Handler) Create(data []byte) (*AnomalyDetector, error) {
 		case 400:
 			return nil, settingsValidationError(resp.Body())
 		case 403:
-			return nil, fmt.Errorf("access denied to create anomaly detector")
+			return nil, diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+				Operation:  "create anomaly detector",
+				Permission: "settings:objects:write",
+				SchemaID:   SchemaID,
+				Body:       resp.String(),
+			})
 		case 404:
 			return nil, fmt.Errorf("schema %q not found", SchemaID)
 		default:
@@ -530,7 +550,13 @@ func (h *Handler) Update(objectID string, data []byte) (*AnomalyDetector, error)
 		case 400:
 			return nil, settingsValidationError(resp.Body())
 		case 403:
-			return nil, fmt.Errorf("access denied to update anomaly detector %q", objectID)
+			return nil, diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+				Operation:      fmt.Sprintf("update anomaly detector %q", objectID),
+				Permission:     "settings:objects:write",
+				SchemaID:       SchemaID,
+				Body:           resp.String(),
+				ExistingObject: true,
+			})
 		case 404:
 			return nil, fmt.Errorf("anomaly detector %q not found", objectID)
 		case 409, 412:
@@ -552,7 +578,13 @@ func (h *Handler) Delete(objectID string) error {
 	if resp.IsError() {
 		switch resp.StatusCode() {
 		case 403:
-			return fmt.Errorf("access denied to delete anomaly detector %q", objectID)
+			return diagnostic.SettingsForbidden(diagnostic.SettingsDenial{
+				Operation:      fmt.Sprintf("delete anomaly detector %q", objectID),
+				Permission:     "settings:objects:write",
+				SchemaID:       SchemaID,
+				Body:           resp.String(),
+				ExistingObject: true,
+			})
 		case 404:
 			return fmt.Errorf("anomaly detector %q not found", objectID)
 		default:
