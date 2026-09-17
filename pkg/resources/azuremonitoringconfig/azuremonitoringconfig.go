@@ -2,6 +2,7 @@ package azuremonitoringconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -9,6 +10,11 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
+
+// ErrNotFound reports that no monitoring configuration matches the name. It
+// separates "absent" from "the lookup itself failed", which apply needs to
+// decide between create and abort.
+var ErrNotFound = errors.New("monitoring config not found")
 
 const (
 	ExtensionName      = "com.dynatrace.extension.da-azure"
@@ -315,7 +321,7 @@ func (h *Handler) FindByName(name string) (*AzureMonitoringConfig, error) {
 			return &items[i], nil
 		}
 	}
-	return nil, fmt.Errorf("azure monitoring config with description %q not found", name)
+	return nil, fmt.Errorf("azure monitoring config with description %q: %w", name, ErrNotFound)
 }
 
 // Create creates a new Azure monitoring config

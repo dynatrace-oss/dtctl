@@ -31,9 +31,11 @@ func (a *Applier) applyAnomalyDetector(data []byte) (ApplyResult, error) {
 		if title != "" {
 			existing, err := handler.FindByExactTitle(title)
 			if err != nil {
-				// Log warning but proceed to try create
-				stderrWarn(nil, "Failed to lookup existing anomaly detector by title: %v", err)
-			} else if existing != nil {
+				// A failed lookup says nothing about whether the detector exists.
+				// Creating anyway adds a second detector with the same title.
+				return nil, nameLookupError("anomaly detector", title, err)
+			}
+			if existing != nil {
 				objectID = existing.ObjectID
 				stderrWarn(nil, "Found existing anomaly detector %q (ID: %s), switching to update mode", title, objectID)
 			}
@@ -105,8 +107,11 @@ func (a *Applier) dryRunAnomalyDetector(data []byte) (ApplyResult, error) {
 	if objectID == "" && title != "" {
 		existing, err := handler.FindByExactTitle(title)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("could not check for an existing anomaly detector named %q: %v", title, err))
-		} else if existing != nil {
+			// The dry run resolves create vs update exactly as apply does, so it
+			// cannot report a create that the apply behind it would refuse.
+			return nil, nameLookupError("anomaly detector", title, err)
+		}
+		if existing != nil {
 			objectID = existing.ObjectID
 		}
 	}
