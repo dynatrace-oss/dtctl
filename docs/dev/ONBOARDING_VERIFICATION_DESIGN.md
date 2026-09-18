@@ -584,6 +584,37 @@ telemetry is not implicated.
   age and could never reach `stale` — the state the feature exists to surface. That is exactly
   the defect `TimeField` fixes for `spans` and `rum`, and a custom definition can reintroduce
   it; it is now visible in the evidence instead of presenting as a clean verdict.
+- **D22 — A scan-capped stream is re-probed with sampling, and a sampled miss is still not an
+  absence.** The scan cap was the dominant source of `unknown` on a large tenant, and it lands
+  on exactly the signals an operator came to check. `samplingRatio` is the only lever that
+  reduces the *scan* rather than the result: measured on `dre`, the scoped 15-minute logs
+  probe fell from **341 GB to 0.92 GB** at 1-in-1000 while landing within **1.5%** of the true
+  count, turning an `unknown` into a real `live`. Four properties make it safe to lean on, and
+  each is a guarded rule rather than an assumption:
+  - *A hit is conclusive at any ratio*, because sampling only ever drops records. So the
+    ladder walks **most-aggressive-first and stops at the first hit** — it does not converge
+    on precision, which would cost ~10x per extra rung for no change in verdict
+    (`TestSampledProbeStopsAtFirstConclusiveRung`).
+  - *A miss is a bound, not an absence.* A sampled zero stays `unknown` and reports the
+    population it can rule out (~3x the ratio, at 95%). This is strictly better evidence than
+    the truncation it replaces, which covers an unspecified slice of the window and supports
+    no bound at all (`TestSampledZeroIsNeverEmpty`).
+  - *The ratio is divided out of the data, never copied from the request.* Grail refuses to
+    sample `events`, `bizevents` and `security.events`, and rounds every ratio down to a power
+    of ten — reporting both as a warning on a **200**, with a full unsampled result. Trusting
+    the requested ratio would have overstated a refused object's volume by that entire factor,
+    so the probe sums `dt.system.sampling_ratio` and the runner reads `metadata.sampled`
+    (`TestSampledCountIgnoresRequestedRatio`, `TestSamplingRefusalIsNotRetried`).
+  - *A sampled `takeMax` is biased old by about `window / sampled_records`* — measured at 91s
+    for 11 records over 15m, and under a second for 676. A `stale` verdict the bias alone could
+    explain is therefore withheld as `unknown`, because inventing an ingest outage is the most
+    expensive wrong answer this command can give (`TestSampledStaleInsideTheBiasIsUnknown`).
+
+  The error sampling introduces shrinks with volume, and the cap only binds on high volume, so
+  the two failure modes barely overlap: the signals sampling is imprecise about are the ones
+  that never needed it. The *applicability* probe behind `n/a` is deliberately never sampled —
+  a sampled miss there would manufacture the strongest claim the feature makes. `--no-sample`
+  restores the plain `unknown` for a caller who prefers no answer to an approximate one.
 
 ## Open questions — with recommendations
 

@@ -182,6 +182,16 @@ type Signal struct {
 	// evidence prose so a caller can tell "dtctl could not afford to look"
 	// from "the probe failed", and act on the scan cap specifically.
 	Truncation TruncationCause `json:"truncation,omitempty" yaml:"truncation,omitempty"`
+	// SamplingRatio is the effective ratio behind Records when the exhaustive
+	// probe did not fit under the scan cap and a sampled one answered instead:
+	// 1 record in SamplingRatio was read. It is the flag that makes Records an
+	// extrapolation and LastSeen a lower bound on freshness rather than the
+	// fact of the matter. 0 means the probe was exhaustive.
+	SamplingRatio int64 `json:"samplingRatio,omitempty" yaml:"samplingRatio,omitempty"`
+	// RecordsSampled is how many records the sample itself matched — the
+	// number both the extrapolation and the freshness bias rest on, and the
+	// one a reader needs to judge how much to trust either.
+	RecordsSampled int64 `json:"recordsSampled,omitempty" yaml:"recordsSampled,omitempty"`
 }
 
 // StateSummary counts signals by state.

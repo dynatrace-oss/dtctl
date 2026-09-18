@@ -49,6 +49,11 @@ func TestSignalCountRendering(t *testing.T) {
 		{inventory.Signal{State: inventory.SignalEmpty}, "0"},
 		// n/a has no count to report: the probe was never asked.
 		{inventory.Signal{State: inventory.SignalNotApplicable}, "—"},
+		// A sampled volume is an extrapolation from a fraction of the records.
+		// The table is what gets compared between runs, so an unmarked
+		// estimate invites a few percent of sampling noise to be read as a
+		// change in ingest.
+		{inventory.Signal{State: inventory.SignalLive, Records: 9688000, SamplingRatio: 1000, RecordsSampled: 9688}, "~9688000"},
 	} {
 		if got := signalCount(tc.sig); got != tc.want {
 			t.Errorf("signalCount(%+v) = %q, want %q", tc.sig, got, tc.want)
@@ -161,5 +166,35 @@ func TestArrivalsUsageErrorsPrecedeClientSetup(t *testing.T) {
 	// cobra would preempt RunE and the message above could never be produced.
 	if _, marked := flags.Lookup("scope").Annotations[cobra.BashCompOneRequiredFlag]; marked {
 		t.Error("--scope must not be MarkFlagRequired: it shadows the error that explains why a scope is needed")
+	}
+}
+
+// TestSampledSignalsAreCalledOutToAgents: an agent that diffed a sampled
+// volume between two runs would manufacture ingest changes out of sampling
+// noise, so the envelope has to say which signals are estimates.
+func TestSampledSignalsAreCalledOutToAgents(t *testing.T) {
+	inv := &inventory.Inventory{
+		Window:  &inventory.ArrivalWindow{Since: "now()-15m", ScanLimitGBytes: 25},
+		Summary: &inventory.StateSummary{Live: 1},
+		Signals: []inventory.Signal{
+			{Name: "logs", State: inventory.SignalLive, Records: 9688000, SamplingRatio: 1000, RecordsSampled: 9688},
+			{Name: "spans", State: inventory.SignalLive, Records: 12},
+		},
+	}
+	joined := strings.Join(inventorySuggestions(inv), "\n")
+	if !strings.Contains(joined, "logs") || !strings.Contains(joined, "extrapolation") {
+		t.Errorf("suggestions should name the sampled signal and call its volume an extrapolation:\n%s", joined)
+	}
+	if strings.Contains(joined, "spans") {
+		t.Errorf("spans was counted exhaustively and must not be flagged as sampled:\n%s", joined)
+	}
+}
+
+// TestNoSampleFlagExists guards the opt-out: the sampled fallback trades
+// precision for an answer, and a caller who would rather have "unknown" than
+// an approximation needs a way to say so.
+func TestNoSampleFlagExists(t *testing.T) {
+	if inventoryArrivalsCmd.Flags().Lookup("no-sample") == nil {
+		t.Error("--no-sample missing: sampled verdicts must be refusable")
 	}
 }

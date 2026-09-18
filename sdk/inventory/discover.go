@@ -27,6 +27,14 @@ type RunResult struct {
 	// data does not carry comes back as "undefined" — that is how a probe can
 	// tell "this dimension does not exist here" from "it exists and is empty".
 	ColumnTypes map[string]string
+	// Sampled reports that the environment actually applied sampling to this
+	// result. It is deliberately not a copy of what the query asked for:
+	// Grail refuses to sample some data objects (events, bizevents,
+	// security.events) and rounds every ratio down to a power of ten, and it
+	// reports both as a warning on a 200 rather than an error. A probe that
+	// assumed its requested ratio had been honoured would extrapolate a
+	// refused object's count by that whole factor.
+	Sampled bool
 }
 
 // TypeUndefined is the DQL type of a column the query referenced but the
@@ -94,6 +102,13 @@ type DiscoverOptions struct {
 	// SDK never enforces it — that is the Runner's job — and 0 means the
 	// Runner did not say, in which case the evidence stays unquantified.
 	ScanLimitGBytes float64
+	// DisableSampling turns off the sampled retry that a scan-capped stream
+	// probe otherwise falls back to (see sampling.go). The retry never weakens
+	// a verdict it could have reached exhaustively — it only runs where the
+	// alternative is no verdict at all — but it does make the surviving
+	// numbers estimates, and a caller that would rather have "unknown" than an
+	// approximation can say so.
+	DisableSampling bool
 }
 
 type budgetRunner struct {

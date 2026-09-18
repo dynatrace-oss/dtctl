@@ -16,6 +16,14 @@ type mockResponse struct {
 	// it to tell a field the data does not have ("undefined") from one that
 	// exists and is simply empty.
 	types map[string]string
+	// cause mirrors the limit that cut a result short. It matters
+	// independently of truncated because only a scan cap is worth retrying
+	// with sampling.
+	cause TruncationCause
+	// sampled mirrors the response flag saying the environment really did
+	// sample, which several data objects refuse to do while still answering
+	// 200.
+	sampled bool
 }
 
 type mockRunner struct {
@@ -30,7 +38,7 @@ func (m *mockRunner) RunQuery(_ context.Context, dql string) (*RunResult, error)
 			if r.err != nil {
 				return nil, r.err
 			}
-			return &RunResult{Records: r.records, Seconds: 0.1, Truncated: r.truncated, ColumnTypes: r.types}, nil
+			return &RunResult{Records: r.records, Seconds: 0.1, Truncated: r.truncated, TruncationCause: r.cause, ColumnTypes: r.types, Sampled: r.sampled}, nil
 		}
 	}
 	return &RunResult{Seconds: 0.1}, nil // default: empty result

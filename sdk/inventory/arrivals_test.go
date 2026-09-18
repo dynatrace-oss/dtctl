@@ -792,3 +792,343 @@ func TestWindowLabelReadsAsProse(t *testing.T) {
 		t.Errorf("windowLabel should pass through an absolute timeframe, got %q", got)
 	}
 }
+
+// --- Sampled recovery from the scan cap -------------------------------------
+
+// cappedLogs makes the exhaustive logs probe hit the scan cap, which is the
+// only condition the sampled fallback is meant to rescue.
+func cappedLogs() mockResponse {
+	return mockResponse{
+		match: "fetch logs, from:now()-15m | filter", truncated: true, cause: TruncationScanLimit,
+	}
+}
+
+// sampledRung is a response for one rung of the ladder. population is what
+// sum(dt.system.sampling_ratio) returns, which is what the extrapolation must
+// be read from.
+func sampledRung(ratio int64, matched, population int64, lastSeen string) mockResponse {
+	return mockResponse{
+		match:   fmt.Sprintf("samplingRatio:%d", ratio),
+		sampled: true,
+		records: []map[string]interface{}{
+			rec("matched", matched, "population", population, "last_seen", lastSeen),
+		},
+	}
+}
+
+func sampledCalls(runner *mockRunner) []string {
+	var out []string
+	for _, c := range runner.calls {
+		if strings.Contains(c, "samplingRatio:") {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func discoverWith(t *testing.T, runner *mockRunner, opts DiscoverOptions) *Inventory {
+	t.Helper()
+	inv, err := Discover(context.Background(), runner, windowDefs(), opts)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	return inv
+}
+
+// TestSampledProbeRescuesCappedSignal is the whole point of the fallback: a
+// signal the cap made unanswerable gets a real verdict, for a scan small
+// enough that the cap never comes into it.
+func TestSampledProbeRescuesCappedSignal(t *testing.T) {
+	runner := windowRunner()
+	runner.responses = append([]mockResponse{
+		cappedLogs(),
+		// 9688 sampled records at 1-in-1000 → about 9.7M in the window.
+		sampledRung(100000, 96, 9600000, fixedNow.Add(-30*time.Second).Format(time.RFC3339)),
+		sampledRung(10000, 968, 9680000, fixedNow.Add(-20*time.Second).Format(time.RFC3339)),
+	}, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, windowOpts()), "logs")
+	if logs.State != SignalLive {
+		t.Fatalf("sampled hit → %q, want live: sampling only ever drops records, so a match still proves arrival (evidence: %s)", logs.State, logs.Evidence)
+	}
+	if logs.Truncation != "" {
+		t.Errorf("Truncation = %q, want empty: the signal was resolved, so it must not still read as capped", logs.Truncation)
+	}
+	if logs.Records != 9600000 || logs.SamplingRatio != 100000 || logs.RecordsSampled != 96 {
+		t.Errorf("records/ratio/sampled = %d/%d/%d, want 9600000/100000/96", logs.Records, logs.SamplingRatio, logs.RecordsSampled)
+	}
+	for _, want := range []string{"1-in-100k", "extrapolate to about", "biased"} {
+		if !strings.Contains(logs.Evidence, want) {
+			t.Errorf("evidence %q missing %q: a sampled verdict has to disclose that it is sampled", logs.Evidence, want)
+		}
+	}
+}
+
+// TestSampledProbeStopsAtFirstConclusiveRung pins the cost model. A hit is
+// conclusive at any ratio, so the walk must not keep descending "for
+// accuracy" — each further rung scans about ten times as much.
+func TestSampledProbeStopsAtFirstConclusiveRung(t *testing.T) {
+	runner := windowRunner()
+	runner.responses = append([]mockResponse{
+		cappedLogs(),
+		sampledRung(100000, 96, 9600000, fixedNow.Format(time.RFC3339)),
+		sampledRung(10000, 968, 9680000, fixedNow.Format(time.RFC3339)),
+		sampledRung(1000, 9688, 9688000, fixedNow.Format(time.RFC3339)),
+	}, runner.responses...)
+
+	discoverWith(t, runner, windowOpts())
+	if got := sampledCalls(runner); len(got) != 1 {
+		t.Errorf("ran %d sampled probes, want 1: the first rung already answered, and every rung below it costs ~10x more\n%v", len(got), got)
+	}
+}
+
+// TestThinSampleDescendsForATrustworthyAge is the "reduce until it is good
+// enough" half, and it is about freshness rather than about the count: a
+// handful of sampled records puts takeMax far behind the truth, which is what
+// would flip a live signal to stale.
+func TestThinSampleDescendsForATrustworthyAge(t *testing.T) {
+	runner := windowRunner()
+	runner.responses = append([]mockResponse{
+		cappedLogs(),
+		// Two records is a hit, but 15m/2 of freshness bias is useless.
+		sampledRung(100000, 2, 200000, fixedNow.Add(-time.Minute).Format(time.RFC3339)),
+		sampledRung(10000, 40, 400000, fixedNow.Add(-10*time.Second).Format(time.RFC3339)),
+	}, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, windowOpts()), "logs")
+	if logs.RecordsSampled != 40 || logs.SamplingRatio != 10000 {
+		t.Errorf("settled on %d records at 1-in-%d, want the thicker 40 at 1-in-10000", logs.RecordsSampled, logs.SamplingRatio)
+	}
+	if got := len(sampledCalls(runner)); got != 2 {
+		t.Errorf("ran %d sampled probes, want 2: one to find the signal, one to make its age trustworthy", got)
+	}
+}
+
+// TestThinSampleSurvivesACappedNextRung: descending for precision must not be
+// able to lose an answer that was already conclusive.
+func TestThinSampleSurvivesACappedNextRung(t *testing.T) {
+	runner := windowRunner()
+	thin := sampledRung(100000, 2, 200000, fixedNow.Format(time.RFC3339))
+	capped := sampledRung(10000, 0, 0, "")
+	capped.truncated = true
+	capped.cause = TruncationScanLimit
+	runner.responses = append([]mockResponse{cappedLogs(), thin, capped}, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, windowOpts()), "logs")
+	if logs.State != SignalLive || logs.RecordsSampled != 2 {
+		t.Errorf("state/sampled = %q/%d, want live/2: the thin rung had already proven arrival (evidence: %s)", logs.State, logs.RecordsSampled, logs.Evidence)
+	}
+}
+
+// TestSampledZeroIsNeverEmpty is the guard on the failure this package exists
+// to prevent. A sampled miss is a bound, not an absence — reporting it as
+// "empty" would blame a source for a question that was only partly asked.
+func TestSampledZeroIsNeverEmpty(t *testing.T) {
+	runner := windowRunner()
+	rungs := []mockResponse{cappedLogs()}
+	for _, r := range samplingLadder {
+		rungs = append(rungs, sampledRung(r, 0, 0, ""))
+	}
+	runner.responses = append(rungs, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, windowOpts()), "logs")
+	if logs.State != SignalUnknown {
+		t.Fatalf("sampled zero → %q, want unknown: not finding a match in 1-in-10 of the window is not absence", logs.State)
+	}
+	// The bound must come from the *least* aggressive rung reached, since that
+	// is the tightest one.
+	if !strings.Contains(logs.Evidence, "1-in-10 matched nothing") || !strings.Contains(logs.Evidence, "under ~30 records") {
+		t.Errorf("evidence %q should quantify what the miss rules out at the tightest rung", logs.Evidence)
+	}
+	if strings.Contains(logs.Evidence, "absent") {
+		t.Errorf("evidence %q must not read as an absence claim", logs.Evidence)
+	}
+}
+
+// TestSamplingRefusalIsNotRetried: Grail declines to sample several data
+// objects and says so in a warning on a 200, returning the full unsampled
+// result. Walking the rest of the ladder would re-run the same capped query
+// four more times.
+func TestSamplingRefusalIsNotRetried(t *testing.T) {
+	runner := windowRunner()
+	refused := sampledRung(100000, 500, 500, "")
+	refused.sampled = false
+	runner.responses = append([]mockResponse{cappedLogs(), refused}, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, windowOpts()), "logs")
+	if logs.State != SignalUnknown || logs.Truncation != TruncationScanLimit {
+		t.Errorf("state/truncation = %q/%q, want unknown/scan_limit", logs.State, logs.Truncation)
+	}
+	if logs.SamplingRatio != 0 || logs.Records != 0 {
+		t.Errorf("ratio/records = %d/%d, want 0/0: nothing was sampled, so there is nothing to extrapolate", logs.SamplingRatio, logs.Records)
+	}
+	if !strings.Contains(logs.Evidence, "does not support sampling") {
+		t.Errorf("evidence %q should say why the fallback did not apply", logs.Evidence)
+	}
+	if got := len(sampledCalls(runner)); got != 1 {
+		t.Errorf("ran %d sampled probes, want 1: a refusal applies to every rung", got)
+	}
+}
+
+// TestSampledCountIgnoresRequestedRatio is the other half of the refusal
+// hazard, and the reason the probe asks for sum(dt.system.sampling_ratio) at
+// all: Grail also rounds a ratio down silently, so the requested ratio is not
+// a safe multiplier even when sampling did happen.
+func TestSampledCountIgnoresRequestedRatio(t *testing.T) {
+	runner := windowRunner()
+	// Asked for 1-in-100000; the engine actually sampled 1-in-100.
+	rounded := sampledRung(100000, 50, 5000, fixedNow.Format(time.RFC3339))
+	runner.responses = append([]mockResponse{cappedLogs(), rounded, sampledRung(10000, 60, 6000, fixedNow.Format(time.RFC3339))}, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, windowOpts()), "logs")
+	if logs.Records != 5000 || logs.SamplingRatio != 100 {
+		t.Errorf("records/ratio = %d/%d, want 5000/100 read from the data; the requested 100000 would overstate by 1000x",
+			logs.Records, logs.SamplingRatio)
+	}
+}
+
+// TestSampledStaleInsideTheBiasIsUnknown: a sampled last-seen is biased old,
+// so a stale verdict that the bias alone could explain is a false ingest
+// outage. During onboarding verification that is the most expensive wrong
+// answer available, so the probe declines to make it.
+func TestSampledStaleInsideTheBiasIsUnknown(t *testing.T) {
+	opts := windowOpts()
+	opts.StaleAfter = 2 * time.Minute
+	runner := windowRunner()
+	// 5 sampled records over 15m → ~3m of bias, and a measured age of 3m is
+	// past the threshold by less than that.
+	runner.responses = append([]mockResponse{
+		cappedLogs(),
+		sampledRung(100000, 5, 500000, fixedNow.Add(-3*time.Minute).Format(time.RFC3339)),
+		sampledRung(10000, 6, 600000, fixedNow.Add(-3*time.Minute).Format(time.RFC3339)),
+		sampledRung(1000, 7, 700000, fixedNow.Add(-3*time.Minute).Format(time.RFC3339)),
+		sampledRung(100, 8, 800000, fixedNow.Add(-3*time.Minute).Format(time.RFC3339)),
+		sampledRung(10, 9, 900000, fixedNow.Add(-3*time.Minute).Format(time.RFC3339)),
+	}, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, opts), "logs")
+	if logs.State != SignalUnknown {
+		t.Fatalf("state = %q, want unknown: %s of sampling bias can fully explain a %s age against a 2m threshold",
+			logs.State, "~1m40s", "3m")
+	}
+	if !strings.Contains(logs.Evidence, "cannot be told apart") {
+		t.Errorf("evidence %q should say the two states are indistinguishable here", logs.Evidence)
+	}
+}
+
+// TestSampledStaleBeyondTheBiasIsStale is the converse: a signal that really
+// did stop must still be reported, or the fallback would have traded one blind
+// spot for another.
+func TestSampledStaleBeyondTheBiasIsStale(t *testing.T) {
+	opts := windowOpts()
+	opts.StaleAfter = 2 * time.Minute
+	runner := windowRunner()
+	// 300 sampled records → 3s of bias, nowhere near enough to explain a 9m age.
+	runner.responses = append([]mockResponse{
+		cappedLogs(),
+		sampledRung(100000, 300, 30000000, fixedNow.Add(-9*time.Minute).Format(time.RFC3339)),
+	}, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, opts), "logs")
+	if logs.State != SignalStale {
+		t.Errorf("state = %q, want stale: a 9m age survives 3s of bias (evidence: %s)", logs.State, logs.Evidence)
+	}
+}
+
+// TestNoSampleKeepsTheCappedVerdict: a caller who would rather have no answer
+// than an approximate one can say so, and then no sampled query runs at all.
+func TestNoSampleKeepsTheCappedVerdict(t *testing.T) {
+	opts := windowOpts()
+	opts.DisableSampling = true
+	runner := windowRunner()
+	runner.responses = append([]mockResponse{
+		cappedLogs(), sampledRung(100000, 96, 9600000, fixedNow.Format(time.RFC3339)),
+	}, runner.responses...)
+
+	logs := signalByName(t, discoverWith(t, runner, opts), "logs")
+	if logs.State != SignalUnknown || logs.Truncation != TruncationScanLimit {
+		t.Errorf("state/truncation = %q/%q, want unknown/scan_limit", logs.State, logs.Truncation)
+	}
+	if got := sampledCalls(runner); len(got) != 0 {
+		t.Errorf("ran %d sampled probes with --no-sample: %v", len(got), got)
+	}
+}
+
+// TestOnlyTheScanCapIsWorthSampling: a result cap or a timeout would survive
+// the retry unchanged, so spending a query to rediscover that is pure cost.
+func TestOnlyTheScanCapIsWorthSampling(t *testing.T) {
+	for _, cause := range []TruncationCause{TruncationResultLimit, TruncationTimeout, TruncationConsumption, ""} {
+		t.Run(string(cause), func(t *testing.T) {
+			runner := windowRunner()
+			capped := cappedLogs()
+			capped.cause = cause
+			runner.responses = append([]mockResponse{
+				capped, sampledRung(100000, 96, 9600000, fixedNow.Format(time.RFC3339)),
+			}, runner.responses...)
+
+			logs := signalByName(t, discoverWith(t, runner, windowOpts()), "logs")
+			if logs.State != SignalUnknown {
+				t.Errorf("state = %q, want unknown", logs.State)
+			}
+			if got := sampledCalls(runner); len(got) != 0 {
+				t.Errorf("sampled a %q truncation, which sampling cannot fix: %v", cause, got)
+			}
+		})
+	}
+}
+
+// TestSampledProbeKeepsTheScopeAndTimeField guards the probe text itself: a
+// sampled rung that quietly dropped the scope would count the whole stream and
+// report it as the scope's arrival.
+func TestSampledProbeKeepsTheScopeAndTimeField(t *testing.T) {
+	runner := windowRunner()
+	// spans carries a non-default TimeField, which the sampled probe must use.
+	runner.responses = append([]mockResponse{{
+		match: "fetch spans, from:now()-15m | filter", truncated: true, cause: TruncationScanLimit,
+	}}, runner.responses...)
+
+	discoverWith(t, runner, windowOpts())
+	calls := sampledCalls(runner)
+	if len(calls) == 0 {
+		t.Fatal("no sampled probe ran")
+	}
+	for _, want := range []string{`k8s.namespace.name == "payments"`, "takeMax(start_time)", "sum(dt.system.sampling_ratio)", "from:now()-15m"} {
+		if !strings.Contains(calls[0], want) {
+			t.Errorf("sampled probe %q missing %q", calls[0], want)
+		}
+	}
+}
+
+func TestSamplingBiasAndWindowDuration(t *testing.T) {
+	if got := windowDuration("now()-15m"); got != 15*time.Minute {
+		t.Errorf("windowDuration = %s, want 15m", got)
+	}
+	// An expression that is not the normalized form yields no window rather
+	// than a wrong one, which disables the bias arithmetic instead of
+	// corrupting it.
+	if got := windowDuration("-15m"); got != 0 {
+		t.Errorf("windowDuration(%q) = %s, want 0", "-15m", got)
+	}
+	// The measured law: ~window/matched. 11 records over 15m came back 91s
+	// behind the truth on a live tenant.
+	if got := samplingBias(15*time.Minute, 11); got < 80*time.Second || got > 90*time.Second {
+		t.Errorf("samplingBias(15m, 11) = %s, want ~82s (measured 91s of real drift)", got)
+	}
+	if got := samplingBias(15*time.Minute, 0); got != 0 {
+		t.Errorf("samplingBias with no records = %s, want 0", got)
+	}
+}
+
+func TestFormatCount(t *testing.T) {
+	for _, tc := range []struct {
+		in   int64
+		want string
+	}{
+		{96, "96"}, {9688, "9688"}, {30000, "30k"}, {100000, "100k"},
+		{9688000, "9.7M"}, {5000000, "5M"}, {5103785000, "5.1B"},
+	} {
+		if got := formatCount(tc.in); got != tc.want {
+			t.Errorf("formatCount(%d) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

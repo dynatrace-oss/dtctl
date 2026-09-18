@@ -46,6 +46,14 @@ that would scan more than --scan-limit-gbytes (default 25) is stopped before it
 can count, and logs and spans are the first to hit it. That is a dtctl limit,
 not a finding about your data — the run says so explicitly and names the cap.
 
+Rather than give up there, a capped stream is re-probed with DQL sampling, which
+reduces the scan itself and not merely the result. Sampling only ever drops
+records, so a sampled match still proves data is arriving; what it costs is
+precision, so the volume becomes an estimate and last-seen a lower bound, and
+both are labelled as such. A sampled probe that matches nothing stays 'unknown'
+and reports the population it can rule out — it is never read as absence. Pass
+--no-sample to skip the fallback and take the plain 'unknown' instead.
+
 --scope is required. An unscoped windowed count is the single most expensive query
 available, and the unscoped question is already answered for free, without a window,
 by plain 'dtctl inventory'. ('--scope true' is legal DQL and will be honoured — it is
@@ -115,6 +123,7 @@ Examples:
 		}
 
 		scanLimitGB, _ := cmd.Flags().GetFloat64("scan-limit-gbytes")
+		noSample, _ := cmd.Flags().GetBool("no-sample")
 		runner := newInventoryRunner(cmd, cfg, c)
 		ctx, cancel := inventoryCancelContext(cmd)
 		defer cancel()
@@ -129,6 +138,7 @@ Examples:
 			StaleAfter:      staleAfter,
 			Signals:         signals,
 			ScanLimitGBytes: scanLimitGB,
+			DisableSampling: noSample,
 		})
 		if err != nil {
 			return err
@@ -185,6 +195,15 @@ func scanCappedSignals(inv *inventory.Inventory) []string {
 	return out
 }
 
+// signalNames lists signals by name, for a prose callout.
+func signalNames(sigs []inventory.Signal) []string {
+	out := make([]string, 0, len(sigs))
+	for _, s := range sigs {
+		out = append(out, s.Name)
+	}
+	return out
+}
+
 // scanLimitOf reports the cap the run used, for the warning above.
 func scanLimitOf(inv *inventory.Inventory) float64 {
 	if inv.Window != nil {
@@ -217,6 +236,10 @@ func inventorySuggestions(inv *inventory.Inventory) []string {
 	if capped := scanCappedSignals(inv); len(capped) > 0 {
 		out = append(out, fmt.Sprintf("%s hit the %g GB scan cap, so dtctl could not count them — this says nothing about whether that data is arriving; raise --scan-limit-gbytes or narrow --since, and never report these as missing",
 			strings.Join(capped, ", "), scanLimitOf(inv)))
+	}
+	if sampled := sampledSignals(inv); len(sampled) > 0 {
+		out = append(out, fmt.Sprintf("%s exceeded the scan cap and were probed on a sample: their arrival is proven, but records is an extrapolation (see samplingRatio/recordsSampled) and lastSeen is a lower bound — do not diff these volumes between runs as if they were counts",
+			strings.Join(signalNames(sampled), ", ")))
 	}
 	if inv.Summary != nil && inv.Summary.Unknown > 0 {
 		out = append(out, "Unknown signals got no verdict: re-run with a narrower --since or a raised --scan-limit-gbytes rather than treating them as absent")
@@ -313,6 +336,19 @@ func printInventorySignalsHuman(inv *inventory.Inventory) {
 		fmt.Println("  This is a dtctl limit, not a verdict about your data. Raise --scan-limit-gbytes or narrow --since.")
 	}
 
+	// Sampled signals resolved *because* of the cap, so this sits with the
+	// cap note rather than in the evidence block: a reader who takes the
+	// volume column at face value needs to know before they read it.
+	if sampled := sampledSignals(inv); len(sampled) > 0 {
+		fmt.Printf("\nSampling: %s exceeded the %g GB cap, so %s probed on a sample.\n",
+			strings.Join(signalNames(sampled), ", "), scanLimitOf(inv),
+			map[bool]string{true: "it was", false: "they were"}[len(sampled) == 1])
+		for _, sig := range sampled {
+			fmt.Printf("  %s — 1-in-%d, %d sampled records; volume is an estimate and last seen is a lower bound.\n",
+				sig.Name, sig.SamplingRatio, sig.RecordsSampled)
+		}
+	}
+
 	var evidence []inventory.Signal
 	for _, sig := range inv.Signals {
 		if sig.Evidence != "" {
@@ -367,9 +403,26 @@ func signalCount(sig inventory.Signal) string {
 		sig.State == inventory.SignalUnknown ||
 		sig.State == inventory.SignalNotApplicable:
 		return "—"
+	case sig.SamplingRatio > 0:
+		// A sampled volume is an extrapolation from a fraction of the records,
+		// so it is marked here as well as in the evidence: the table is what
+		// most readers will compare between runs, and an unmarked estimate
+		// invites a swing of a few percent to be read as a change in ingest.
+		return "~" + strconv.FormatInt(sig.Records, 10)
 	default:
 		return strconv.FormatInt(sig.Records, 10)
 	}
+}
+
+// sampledSignals names the signals whose verdict rests on a sampled probe.
+func sampledSignals(inv *inventory.Inventory) []inventory.Signal {
+	var out []inventory.Signal
+	for _, sig := range inv.Signals {
+		if sig.SamplingRatio > 0 {
+			out = append(out, sig)
+		}
+	}
+	return out
 }
 
 func signalLastSeen(sig inventory.Signal) string {
@@ -396,4 +449,5 @@ func init() {
 	inventoryArrivalsCmd.Flags().StringSlice("signals", nil, "Restrict probing to these signals (default: all signal streams and metric families)")
 	inventoryArrivalsCmd.Flags().StringSlice("require", nil, "Exit non-zero unless every named signal is live (10 = not live, 11 = no verdict)")
 	inventoryArrivalsCmd.Flags().Duration("stale-after", 0, "Age past which a matched signal is stale rather than live (default max(2m, window/3))")
+	inventoryArrivalsCmd.Flags().Bool("no-sample", false, "Do not fall back to sampled probing when a signal exceeds the scan cap; report it as unknown instead")
 }
