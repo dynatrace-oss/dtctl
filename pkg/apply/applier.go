@@ -651,15 +651,23 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 	// See https://github.com/dynatrace-oss/dtctl/issues/509
 	if valueMap, ok := raw["value"].(map[string]interface{}); ok {
 		valueType, _ := valueMap["type"].(string)
-		switch valueType {
-		case azureconnection.TypeFederatedIdentityCredential, azureconnection.TypeClientSecret:
-			return ResourceAzureConnection, false, nil
-		case gcpconnection.TypeServiceAccountImpersonation:
-			return ResourceGCPConnection, false, nil
-		case awsconnection.TypeRoleBased:
-			// dtctl has no AWS connection applier: an AWS connection is a plain
-			// Settings object, and the settings path updates it by objectId.
-			return ResourceSettings, false, nil
+		// The hyperscaler connection schemas are discriminated unions: the value
+		// carries "type" *and* a sub-object named after it. Requiring both is
+		// what keeps this fallback from claiming a foreign settings object whose
+		// value merely happens to have a "type" of, say, "clientSecret" — the
+		// connection appliers re-marshal the value through their own struct and
+		// would silently drop every field that struct does not model.
+		if _, hasDiscriminant := valueMap[valueType]; hasDiscriminant {
+			switch valueType {
+			case azureconnection.TypeFederatedIdentityCredential, azureconnection.TypeClientSecret:
+				return ResourceAzureConnection, false, nil
+			case gcpconnection.TypeServiceAccountImpersonation:
+				return ResourceGCPConnection, false, nil
+			case awsconnection.TypeRoleBased:
+				// dtctl has no AWS connection applier: an AWS connection is a plain
+				// Settings object, and the settings path updates it by objectId.
+				return ResourceSettings, false, nil
+			}
 		}
 	}
 

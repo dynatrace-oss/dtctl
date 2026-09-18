@@ -251,13 +251,13 @@ func TestApply_LegacyConnectionExport_DetectedAsConnection(t *testing.T) {
 		},
 		{
 			name:             "azure",
-			payload:          `{"objectId":"azure-conn-legacy","value":{"name":"my-azure-conn","type":"federatedIdentityCredential"},"name":"my-azure-conn","type":"federatedIdentityCredential"}`,
+			payload:          `{"objectId":"azure-conn-legacy","value":{"name":"my-azure-conn","type":"federatedIdentityCredential","federatedIdentityCredential":{"applicationId":"00000000-0000-0000-0000-000000000001","directoryId":"00000000-0000-0000-0000-000000000002","consumers":["SVC:com.dynatrace.da"]}},"name":"my-azure-conn","type":"federatedIdentityCredential"}`,
 			wantResourceType: ResourceAzureConnection,
 			wantID:           "azure-conn-legacy",
 		},
 		{
 			name:             "gcp",
-			payload:          `{"objectId":"gcp-conn-legacy","value":{"name":"my-gcp-conn","type":"serviceAccountImpersonation"},"name":"my-gcp-conn","type":"serviceAccountImpersonation"}`,
+			payload:          `{"objectId":"gcp-conn-legacy","value":{"name":"my-gcp-conn","type":"serviceAccountImpersonation","serviceAccountImpersonation":{"serviceAccountId":"sa@example.invalid","consumers":["SVC:com.dynatrace.da"]}},"name":"my-gcp-conn","type":"serviceAccountImpersonation"}`,
 			wantResourceType: ResourceGCPConnection,
 			wantID:           "gcp-conn-legacy",
 		},
@@ -349,5 +349,50 @@ func TestApply_LegacyAWSConnectionExport_Updates(t *testing.T) {
 	}
 	if got := resultAction(t, results[0]); got != ActionUpdated {
 		t.Errorf("action = %q, want %q", got, ActionUpdated)
+	}
+}
+
+// The legacy-export fallback keys off the authentication type in the value, and
+// "clientSecret" is a generic enough name that another schema could carry it.
+// The hyperscaler connection schemas are discriminated unions — the value holds
+// "type" *and* a sub-object named after it — so the fallback demands both. It
+// has to: the connection appliers re-marshal the value through their own struct
+// and PUT the result, which would strip every field a foreign schema has and
+// azureconnection.Value does not model.
+func TestDetectResourceType_ForeignValueTypeIsNotAConnection(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload string
+		want    ResourceType
+	}{
+		{
+			// No sub-object named after the type: not a connection.
+			name:    "clientSecret without discriminant",
+			payload: `{"objectId":"foreign-obj","value":{"type":"clientSecret","tokenUrl":"https://example.invalid/token","name":"some-integration"},"type":"clientSecret"}`,
+			want:    ResourceDocument,
+		},
+		{
+			name:    "serviceAccountImpersonation without discriminant",
+			payload: `{"objectId":"foreign-obj","value":{"type":"serviceAccountImpersonation","audience":"x"},"type":"serviceAccountImpersonation"}`,
+			want:    ResourceDocument,
+		},
+		{
+			// A real legacy export does carry the sub-object.
+			name:    "clientSecret with discriminant",
+			payload: `{"objectId":"azure-obj","value":{"name":"c","type":"clientSecret","clientSecret":{"applicationId":"a","directoryId":"d","consumers":["SVC:com.dynatrace.da"]}},"type":"clientSecret"}`,
+			want:    ResourceAzureConnection,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, err := detectResourceType([]byte(tc.payload))
+			if err != nil {
+				t.Fatalf("detectResourceType() error = %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("resource type = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
