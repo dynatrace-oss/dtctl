@@ -97,22 +97,23 @@ type Value struct {
 }
 
 type AWSConfig struct {
-	UseIngestEnrichmentConfig   *bool                     `json:"useIngestEnrichmentConfig,omitempty" yaml:"useIngestEnrichmentConfig,omitempty"`
-	DeploymentRegion            string                    `json:"deploymentRegion,omitempty"`
-	Credentials                 []Credential              `json:"credentials"`
-	RegionFiltering             []string                  `json:"regionFiltering"`
-	TagFiltering                []TagFilter               `json:"tagFiltering"`
-	TagEnrichment               []string                  `json:"tagEnrichment"`
-	DtLabelsEnrichment          map[string]DtLabelMapping `json:"dtLabelsEnrichment,omitempty"`
-	SmartscapeConfiguration     FlagConfig                `json:"smartscapeConfiguration"`
-	MetricsConfiguration        RegionalFlagConfig        `json:"metricsConfiguration"`
-	CloudWatchLogsConfiguration RegionalFlagConfig        `json:"cloudWatchLogsConfiguration"`
-	Namespaces                  []CustomNamespace         `json:"namespaces"`
-	ConfigurationMode           string                    `json:"configurationMode,omitempty"`
-	DeploymentMode              string                    `json:"deploymentMode,omitempty"`
-	DeploymentScope             string                    `json:"deploymentScope,omitempty"`
-	ManualDeploymentStatus      string                    `json:"manualDeploymentStatus,omitempty"`
-	AutomatedDeploymentStatus   string                    `json:"automatedDeploymentStatus,omitempty"`
+	UseIngestEnrichmentConfig          *bool                     `json:"useIngestEnrichmentConfig,omitempty" yaml:"useIngestEnrichmentConfig,omitempty"`
+	IngestEnrichmentMigrationProcessed *bool                     `json:"ingestEnrichmentMigrationProcessed,omitempty" yaml:"ingestEnrichmentMigrationProcessed,omitempty"`
+	DeploymentRegion                   string                    `json:"deploymentRegion,omitempty"`
+	Credentials                        []Credential              `json:"credentials"`
+	RegionFiltering                    []string                  `json:"regionFiltering"`
+	TagFiltering                       []TagFilter               `json:"tagFiltering"`
+	TagEnrichment                      []string                  `json:"tagEnrichment"`
+	DtLabelsEnrichment                 map[string]DtLabelMapping `json:"dtLabelsEnrichment,omitempty"`
+	SmartscapeConfiguration            FlagConfig                `json:"smartscapeConfiguration"`
+	MetricsConfiguration               RegionalFlagConfig        `json:"metricsConfiguration"`
+	CloudWatchLogsConfiguration        RegionalFlagConfig        `json:"cloudWatchLogsConfiguration"`
+	Namespaces                         []CustomNamespace         `json:"namespaces"`
+	ConfigurationMode                  string                    `json:"configurationMode,omitempty"`
+	DeploymentMode                     string                    `json:"deploymentMode,omitempty"`
+	DeploymentScope                    string                    `json:"deploymentScope,omitempty"`
+	ManualDeploymentStatus             string                    `json:"manualDeploymentStatus,omitempty"`
+	AutomatedDeploymentStatus          string                    `json:"automatedDeploymentStatus,omitempty"`
 }
 
 type Credential struct {

@@ -41,8 +41,18 @@ Supported resources:
 	RunE: requireSubcommand,
 }
 
-func centralEnrichmentIntent(enabled bool) *bool {
-	if !enabled {
+// centralEnrichmentIntent maps the --central-enrichment flag onto the value
+// sent as useIngestEnrichmentConfig. That property is nullable in the extension
+// schema, so nil ("let the backend choose") must stay distinguishable from an
+// explicit false ("keep legacy enrichment").
+//
+// While the flag is hidden and defaults to false, an untouched flag means the
+// caller has no opinion and the field is omitted. Once centralEnrichmentDefault
+// flips to true at customer release the value is always sent explicitly, so
+// --central-enrichment=false remains a working opt-out instead of silently
+// falling back to the backend default.
+func centralEnrichmentIntent(cmd *cobra.Command, enabled bool) *bool {
+	if !centralEnrichmentDefault && !cmd.Flags().Changed("central-enrichment") {
 		return nil
 	}
 	return &enabled

@@ -124,7 +124,8 @@ Examples:
 		}
 
 		payload := buildAWSMonitoringConfig(
-			createAWSMonitoringConfigName, version, credential, regions, featureSets, createAWSMonitoringConfigCentral)
+			createAWSMonitoringConfigName, version, credential, regions, featureSets,
+			centralEnrichmentIntent(cmd, createAWSMonitoringConfigCentral))
 
 		body, err := json.Marshal(payload)
 		if err != nil {
@@ -143,7 +144,7 @@ Examples:
 }
 
 func buildAWSMonitoringConfig(name, version string, credential awsmonitoringconfig.Credential,
-	regions, featureSets []string, central bool) awsmonitoringconfig.AWSMonitoringConfig {
+	regions, featureSets []string, central *bool) awsmonitoringconfig.AWSMonitoringConfig {
 	return awsmonitoringconfig.AWSMonitoringConfig{
 		Scope: awsmonitoringconfig.DefaultScope,
 		Value: awsmonitoringconfig.Value{
@@ -153,7 +154,7 @@ func buildAWSMonitoringConfig(name, version string, credential awsmonitoringconf
 			ActivationContext: awsmonitoringconfig.DefaultActivationContext,
 			FeatureSets:       featureSets,
 			Aws: awsmonitoringconfig.AWSConfig{
-				UseIngestEnrichmentConfig: centralEnrichmentIntent(central),
+				UseIngestEnrichmentConfig: central,
 				DeploymentRegion:          regions[0],
 				Credentials:               []awsmonitoringconfig.Credential{credential},
 				RegionFiltering:           regions,

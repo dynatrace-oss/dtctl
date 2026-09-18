@@ -39,16 +39,47 @@ func TestCloudMonitoringCentralEnrichmentFlagsAreHiddenAndDisabledByDefault(t *t
 }
 
 func TestCentralEnrichmentIntent(t *testing.T) {
-	if centralEnrichmentIntent(false) != nil {
-		t.Error("disabled central enrichment must be omitted from the request")
+	newCmd := func() *cobra.Command {
+		cmd := &cobra.Command{Use: "monitoring"}
+		var target bool
+		addCentralEnrichmentFlag(cmd, &target)
+		return cmd
 	}
-	intent := centralEnrichmentIntent(true)
-	if intent == nil || !*intent {
-		t.Error("enabled central enrichment must be sent as true")
-	}
+
+	t.Run("untouched flag is omitted", func(t *testing.T) {
+		if intent := centralEnrichmentIntent(newCmd(), centralEnrichmentDefault); intent != nil {
+			t.Errorf("intent = %v, want nil so the backend keeps its own default", *intent)
+		}
+	})
+
+	t.Run("explicit true is sent", func(t *testing.T) {
+		cmd := newCmd()
+		if err := cmd.Flags().Set("central-enrichment", "true"); err != nil {
+			t.Fatalf("Set() error = %v", err)
+		}
+		intent := centralEnrichmentIntent(cmd, true)
+		if intent == nil || !*intent {
+			t.Errorf("intent = %v, want true", intent)
+		}
+	})
+
+	// The rollout switch documented in create.go flips the default to true. An
+	// explicit --central-enrichment=false has to stay a working opt-out at that
+	// point, which it only does if "false" is distinguishable from "unset".
+	t.Run("explicit false is sent", func(t *testing.T) {
+		cmd := newCmd()
+		if err := cmd.Flags().Set("central-enrichment", "false"); err != nil {
+			t.Fatalf("Set() error = %v", err)
+		}
+		intent := centralEnrichmentIntent(cmd, false)
+		if intent == nil || *intent {
+			t.Errorf("intent = %v, want false", intent)
+		}
+	})
 }
 
 func TestCloudMonitoringCreatePayloadCentralIntent(t *testing.T) {
+	central := true
 	for _, test := range []struct {
 		name    string
 		central bool
@@ -57,31 +88,31 @@ func TestCloudMonitoringCreatePayloadCentralIntent(t *testing.T) {
 		{
 			name: "aws legacy default",
 			payload: buildAWSMonitoringConfig("aws", "1", awsmonitoringconfig.Credential{},
-				[]string{"eu-central-1"}, nil, false),
+				[]string{"eu-central-1"}, nil, nil),
 		},
 		{
 			name:    "aws central",
 			central: true,
 			payload: buildAWSMonitoringConfig("aws", "1", awsmonitoringconfig.Credential{},
-				[]string{"eu-central-1"}, nil, true),
+				[]string{"eu-central-1"}, nil, &central),
 		},
 		{
 			name:    "azure legacy default",
-			payload: buildAzureMonitoringConfig("azure", "1", azuremonitoringconfig.Credential{}, nil, nil, false),
+			payload: buildAzureMonitoringConfig("azure", "1", azuremonitoringconfig.Credential{}, nil, nil, nil),
 		},
 		{
 			name:    "azure central",
 			central: true,
-			payload: buildAzureMonitoringConfig("azure", "1", azuremonitoringconfig.Credential{}, nil, nil, true),
+			payload: buildAzureMonitoringConfig("azure", "1", azuremonitoringconfig.Credential{}, nil, nil, &central),
 		},
 		{
 			name:    "gcp legacy default",
-			payload: buildGCPMonitoringConfig("gcp", "1", gcpmonitoringconfig.Credential{}, nil, nil, false),
+			payload: buildGCPMonitoringConfig("gcp", "1", gcpmonitoringconfig.Credential{}, nil, nil, nil),
 		},
 		{
 			name:    "gcp central",
 			central: true,
-			payload: buildGCPMonitoringConfig("gcp", "1", gcpmonitoringconfig.Credential{}, nil, nil, true),
+			payload: buildGCPMonitoringConfig("gcp", "1", gcpmonitoringconfig.Credential{}, nil, nil, &central),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

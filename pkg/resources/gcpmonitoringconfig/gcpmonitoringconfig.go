@@ -78,19 +78,20 @@ type Value struct {
 }
 
 type GoogleCloudConfig struct {
-	UseIngestEnrichmentConfig  *bool                     `json:"useIngestEnrichmentConfig,omitempty" yaml:"useIngestEnrichmentConfig,omitempty"`
-	Credentials                []Credential              `json:"credentials"`
-	LocationFiltering          []string                  `json:"locationFiltering,omitempty"`
-	ProjectFiltering           []string                  `json:"projectFiltering,omitempty"`
-	FolderFiltering            []string                  `json:"folderFiltering,omitempty"`
-	TagFiltering               []TagFilter               `json:"tagFiltering,omitempty"`
-	LabelFiltering             []TagFilter               `json:"labelFiltering,omitempty"`
-	TagEnrichment              []string                  `json:"tagEnrichment,omitempty"`
-	LabelEnrichment            []string                  `json:"labelEnrichment,omitempty"`
-	DtLabelsEnrichment         map[string]DtLabelMapping `json:"dtLabelsEnrichment,omitempty" yaml:"dtLabelsEnrichment,omitempty"`
-	ObservabilityScopesEnabled bool                      `json:"observabilityScopesEnabled,omitempty"`
-	SmartscapeConfiguration    FlagConfig                `json:"smartscapeConfiguration,omitempty"`
-	Resources                  []MetricSource            `json:"resources,omitempty"`
+	UseIngestEnrichmentConfig          *bool                     `json:"useIngestEnrichmentConfig,omitempty" yaml:"useIngestEnrichmentConfig,omitempty"`
+	IngestEnrichmentMigrationProcessed *bool                     `json:"ingestEnrichmentMigrationProcessed,omitempty" yaml:"ingestEnrichmentMigrationProcessed,omitempty"`
+	Credentials                        []Credential              `json:"credentials"`
+	LocationFiltering                  []string                  `json:"locationFiltering,omitempty"`
+	ProjectFiltering                   []string                  `json:"projectFiltering,omitempty"`
+	FolderFiltering                    []string                  `json:"folderFiltering,omitempty"`
+	TagFiltering                       []TagFilter               `json:"tagFiltering,omitempty"`
+	LabelFiltering                     []TagFilter               `json:"labelFiltering,omitempty"`
+	TagEnrichment                      []string                  `json:"tagEnrichment,omitempty"`
+	LabelEnrichment                    []string                  `json:"labelEnrichment,omitempty"`
+	DtLabelsEnrichment                 map[string]DtLabelMapping `json:"dtLabelsEnrichment,omitempty" yaml:"dtLabelsEnrichment,omitempty"`
+	ObservabilityScopesEnabled         bool                      `json:"observabilityScopesEnabled,omitempty"`
+	SmartscapeConfiguration            FlagConfig                `json:"smartscapeConfiguration,omitempty"`
+	Resources                          []MetricSource            `json:"resources,omitempty"`
 }
 
 type TagFilter struct {

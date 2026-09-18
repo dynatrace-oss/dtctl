@@ -161,7 +161,8 @@ Examples:
 		}
 
 		payload := buildAzureMonitoringConfig(
-			createAzureMonitoringConfigName, version, credential, locations, featureSets, createAzureMonitoringConfigCentral)
+			createAzureMonitoringConfigName, version, credential, locations, featureSets,
+			centralEnrichmentIntent(cmd, createAzureMonitoringConfigCentral))
 
 		body, err := json.Marshal(payload)
 		if err != nil {
@@ -180,7 +181,7 @@ Examples:
 }
 
 func buildAzureMonitoringConfig(name, version string, credential azuremonitoringconfig.Credential,
-	locations, featureSets []string, central bool) azuremonitoringconfig.AzureMonitoringConfig {
+	locations, featureSets []string, central *bool) azuremonitoringconfig.AzureMonitoringConfig {
 	return azuremonitoringconfig.AzureMonitoringConfig{
 		Scope: "integration-azure",
 		Value: azuremonitoringconfig.Value{
@@ -188,7 +189,7 @@ func buildAzureMonitoringConfig(name, version string, credential azuremonitoring
 			Description: name,
 			Version:     version,
 			Azure: azuremonitoringconfig.AzureConfig{
-				UseIngestEnrichmentConfig: centralEnrichmentIntent(central),
+				UseIngestEnrichmentConfig: central,
 				DeploymentScope:           "SUBSCRIPTION",
 				ConfigurationMode:         "ADVANCED",
 				DeploymentMode:            "AUTOMATED",

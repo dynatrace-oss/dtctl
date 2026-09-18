@@ -180,7 +180,8 @@ Examples:
 		}
 
 		payload := buildGCPMonitoringConfig(
-			createGCPMonitoringConfigName, version, credential, locations, featureSets, createGCPMonitoringConfigCentral)
+			createGCPMonitoringConfigName, version, credential, locations, featureSets,
+			centralEnrichmentIntent(cmd, createGCPMonitoringConfigCentral))
 
 		body, err := json.Marshal(payload)
 		if err != nil {
@@ -199,7 +200,7 @@ Examples:
 }
 
 func buildGCPMonitoringConfig(name, version string, credential gcpmonitoringconfig.Credential,
-	locations, featureSets []string, central bool) gcpmonitoringconfig.GCPMonitoringConfig {
+	locations, featureSets []string, central *bool) gcpmonitoringconfig.GCPMonitoringConfig {
 	return gcpmonitoringconfig.GCPMonitoringConfig{
 		Scope: "integration-gcp",
 		Value: gcpmonitoringconfig.Value{
@@ -207,7 +208,7 @@ func buildGCPMonitoringConfig(name, version string, credential gcpmonitoringconf
 			Description: name,
 			Version:     version,
 			GoogleCloud: gcpmonitoringconfig.GoogleCloudConfig{
-				UseIngestEnrichmentConfig:  centralEnrichmentIntent(central),
+				UseIngestEnrichmentConfig:  central,
 				Credentials:                []gcpmonitoringconfig.Credential{credential},
 				LocationFiltering:          locations,
 				ProjectFiltering:           []string{},

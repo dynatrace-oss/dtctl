@@ -641,6 +641,35 @@ func TestApply_UnsupportedResourceType(t *testing.T) {
 	}
 }
 
+// decodeCloudSection pulls value.<cloudField> out of a monitoring-config
+// request body. It reports failures with t.Errorf rather than t.Fatalf: this
+// runs on the httptest server goroutine, where runtime.Goexit would abandon the
+// response and surface as an unrelated client-side EOF. Type assertions are
+// checked for the same reason — a panic here takes down the whole test binary.
+func decodeCloudSection(t *testing.T, w http.ResponseWriter, r *http.Request, cloudField string) (map[string]any, bool) {
+	t.Helper()
+
+	var body map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		t.Errorf("decode request: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return nil, false
+	}
+	value, ok := body["value"].(map[string]any)
+	if !ok {
+		t.Errorf("request body has no value object: %#v", body)
+		w.WriteHeader(http.StatusInternalServerError)
+		return nil, false
+	}
+	cloud, ok := value[cloudField].(map[string]any)
+	if !ok {
+		t.Errorf("request body has no value.%s object: %#v", cloudField, value)
+		w.WriteHeader(http.StatusInternalServerError)
+		return nil, false
+	}
+	return cloud, true
+}
+
 // --- Apply: AWS Monitoring Config (create, no objectId) ---
 
 func TestApply_AWSMonitoringConfig_PreservesCentralIntent(t *testing.T) {
@@ -652,13 +681,18 @@ func TestApply_AWSMonitoringConfig_PreservesCentralIntent(t *testing.T) {
 			case http.MethodGet:
 				_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}})
 			case http.MethodPost:
-				var body map[string]any
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Fatalf("decode request: %v", err)
+				aws, ok := decodeCloudSection(t, w, r, "aws")
+				if !ok {
+					return
 				}
-				aws := body["value"].(map[string]any)["aws"].(map[string]any)
-				if aws["useIngestEnrichmentConfig"] != true || aws["futureLegacyEnrichment"] == nil {
-					t.Errorf("central or unknown fields were not preserved: %#v", aws)
+				// Both enrichment properties are modificationPolicy NEVER in the
+				// extension schema, so they have to survive the struct round-trip
+				// verbatim rather than be dropped or rewritten.
+				if aws["useIngestEnrichmentConfig"] != true {
+					t.Errorf("central intent was not preserved: %#v", aws)
+				}
+				if aws["ingestEnrichmentMigrationProcessed"] != true {
+					t.Errorf("migration marker was not preserved: %#v", aws)
 				}
 				w.WriteHeader(http.StatusCreated)
 				_ = json.NewEncoder(w).Encode(map[string]any{"objectId": "aws-new-1", "code": 201})
@@ -671,7 +705,7 @@ func TestApply_AWSMonitoringConfig_PreservesCentralIntent(t *testing.T) {
 	defer srv.Close()
 
 	a := NewApplier(c)
-	data := `{"scope":"integration-aws","value":{"description":"My AWS Config","version":"1.0.0","aws":{"useIngestEnrichmentConfig":true,"futureLegacyEnrichment":["keep"]}}}`
+	data := `{"scope":"integration-aws","value":{"description":"My AWS Config","version":"1.0.0","aws":{"useIngestEnrichmentConfig":true,"ingestEnrichmentMigrationProcessed":true}}}`
 	results, err := a.Apply([]byte(data), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() AWSMonitoringConfig error = %v", err)
@@ -708,13 +742,15 @@ func TestApply_AzureMonitoringConfig_Create(t *testing.T) {
 					"totalCount": 0,
 				})
 			case http.MethodPost:
-				var body map[string]any
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Fatalf("decode request: %v", err)
+				azure, ok := decodeCloudSection(t, w, r, "azure")
+				if !ok {
+					return
 				}
-				azure := body["value"].(map[string]any)["azure"].(map[string]any)
-				if azure["useIngestEnrichmentConfig"] != true || azure["futureLegacyEnrichment"] == nil {
-					t.Errorf("central or unknown fields were not preserved: %#v", azure)
+				if azure["useIngestEnrichmentConfig"] != true {
+					t.Errorf("central intent was not preserved: %#v", azure)
+				}
+				if azure["ingestEnrichmentMigrationProcessed"] != false {
+					t.Errorf("migration marker was not preserved: %#v", azure)
 				}
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -733,7 +769,7 @@ func TestApply_AzureMonitoringConfig_Create(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	azMonJSON := `{"scope":"integration-azure","value":{"description":"My Azure Config","azure":{"useIngestEnrichmentConfig":true,"futureLegacyEnrichment":["keep"]}}}`
+	azMonJSON := `{"scope":"integration-azure","value":{"description":"My Azure Config","azure":{"useIngestEnrichmentConfig":true,"ingestEnrichmentMigrationProcessed":false}}}`
 	results, err := a.Apply([]byte(azMonJSON), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() AzureMonitoringConfig error = %v", err)
@@ -832,11 +868,10 @@ func TestApply_GCPMonitoringConfig_Create(t *testing.T) {
 					"items": []interface{}{}, "totalCount": 0,
 				})
 			case http.MethodPost:
-				var body map[string]any
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					t.Fatalf("decode request: %v", err)
+				gcp, ok := decodeCloudSection(t, w, r, "googleCloud")
+				if !ok {
+					return
 				}
-				gcp := body["value"].(map[string]any)["googleCloud"].(map[string]any)
 				if gcp["useIngestEnrichmentConfig"] != true || gcp["dtLabelsEnrichment"] == nil {
 					t.Errorf("central or dtLabels fields were not preserved: %#v", gcp)
 				}

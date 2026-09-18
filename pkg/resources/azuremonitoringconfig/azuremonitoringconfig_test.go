@@ -271,3 +271,34 @@ func TestCentralEnrichmentModeJSON(t *testing.T) {
 		})
 	}
 }
+
+// Both enrichment properties are nullable and modificationPolicy NEVER in the
+// extension schema: an update must echo the stored value back unchanged. That
+// only works if an explicit false survives the round trip instead of being
+// elided like a zero value, which is why these are *bool and not bool.
+func TestEnrichmentNeverFieldsRoundTripExplicitFalse(t *testing.T) {
+	no := false
+	encoded, err := json.Marshal(AzureConfig{
+		UseIngestEnrichmentConfig:          &no,
+		IngestEnrichmentMigrationProcessed: &no,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	for _, want := range []string{`"useIngestEnrichmentConfig":false`, `"ingestEnrichmentMigrationProcessed":false`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("encoded config %s does not contain %s", encoded, want)
+		}
+	}
+
+	var decoded AzureConfig
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.UseIngestEnrichmentConfig == nil || *decoded.UseIngestEnrichmentConfig {
+		t.Errorf("useIngestEnrichmentConfig = %v, want false", decoded.UseIngestEnrichmentConfig)
+	}
+	if decoded.IngestEnrichmentMigrationProcessed == nil || *decoded.IngestEnrichmentMigrationProcessed {
+		t.Errorf("ingestEnrichmentMigrationProcessed = %v, want false", decoded.IngestEnrichmentMigrationProcessed)
+	}
+}

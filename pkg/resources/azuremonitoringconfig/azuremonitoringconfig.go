@@ -81,16 +81,17 @@ type Value struct {
 }
 
 type AzureConfig struct {
-	UseIngestEnrichmentConfig *bool             `json:"useIngestEnrichmentConfig,omitempty" yaml:"useIngestEnrichmentConfig,omitempty"`
-	DeploymentScope           string            `json:"deploymentScope,omitempty"`
-	SubscriptionFilteringMode string            `json:"subscriptionFilteringMode,omitempty"`
-	Credentials               []Credential      `json:"credentials"`
-	LocationFiltering         []string          `json:"locationFiltering,omitempty"`
-	ConfigurationMode         string            `json:"configurationMode,omitempty"`
-	DeploymentMode            string            `json:"deploymentMode,omitempty"`
-	TagFiltering              []TagFilter       `json:"tagFiltering,omitempty"`
-	TagEnrichment             []string          `json:"tagEnrichment,omitempty"`
-	DtLabelsEnrichment        map[string]Labels `json:"dtLabelsEnrichment,omitempty"`
+	UseIngestEnrichmentConfig          *bool             `json:"useIngestEnrichmentConfig,omitempty" yaml:"useIngestEnrichmentConfig,omitempty"`
+	IngestEnrichmentMigrationProcessed *bool             `json:"ingestEnrichmentMigrationProcessed,omitempty" yaml:"ingestEnrichmentMigrationProcessed,omitempty"`
+	DeploymentScope                    string            `json:"deploymentScope,omitempty"`
+	SubscriptionFilteringMode          string            `json:"subscriptionFilteringMode,omitempty"`
+	Credentials                        []Credential      `json:"credentials"`
+	LocationFiltering                  []string          `json:"locationFiltering,omitempty"`
+	ConfigurationMode                  string            `json:"configurationMode,omitempty"`
+	DeploymentMode                     string            `json:"deploymentMode,omitempty"`
+	TagFiltering                       []TagFilter       `json:"tagFiltering,omitempty"`
+	TagEnrichment                      []string          `json:"tagEnrichment,omitempty"`
+	DtLabelsEnrichment                 map[string]Labels `json:"dtLabelsEnrichment,omitempty"`
 }
 
 type TagFilter struct {
