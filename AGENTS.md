@@ -125,7 +125,14 @@ surface is a broken promise, not a cleanup.**
 The manifest also lists the root command's persistent flags under a synthetic
 `(global)` group. A flag that appears nowhere in the file would be stable by
 omission — the one tier nobody chose — so `--agent`, `--dry-run`, `--jq` and the
-rest are on the record too.
+rest are on the record too, and the floor enforces them: it checks the
+persistent flags a command *inherits*, on the command the caller typed, since
+`rootCmd`'s `RunE` never runs for `dtctl get workflows --dry-run`.
+
+One consequence is worth knowing before you reach for `MarkFlag` on a global
+flag: cobra hands every subcommand the same `pflag.Flag` pointer the root
+declared, so a global flag has exactly one tier for the whole tree. There is no
+such thing as demoting `--dry-run` on `get` but not on `apply`.
 
 Enforcement is a four-stage pipeline that only ever *narrows* the surface, so
 "which axis wins" has a structural answer:
@@ -146,7 +153,17 @@ A flag can be correct, shipped, and still not `stable`: if dtctl-contrib's
 the additive-only promise is one dtctl cannot keep. Those demotions live in
 `cmd/stability_pre_1_0.go` (the `pre10Since` constant and its rationale) and are
 enumerated with their driving document in
-`test/stability/pre_1_0_marks_test.go`.
+`test/stability/pre_1_0_marks_test.go`. An accepted document counts even before
+its PR merges — demoting early costs a badge, demoting late means having shipped
+`stable` on a flag we already knew would break.
+
+The line to apply: **demote when 1.0 removes or renames the flag, or changes
+what a currently-valid invocation does. Do not demote when 1.0 only turns input
+dtctl already ignores into an error.** `--state RUNNING` means the same thing
+before and after stricter enum validation; only `--state RUNNIG` changes, from a
+silently wrong answer into a useful message. Withdrawing the stable contract to
+warn about a typo costs every correct caller and protects none of them. The
+spared rows carry their reason in `pre10RejectUnusableInputSpared`.
 
 That list is a test and not a comment for a reason: `stability.MarkFlag` is a
 silent no-op when the flag it names does not exist, so renaming a flag in `cmd/`
@@ -163,6 +180,12 @@ of `--directoryId`/`--applicationId`/`--clientSecret`, so at a stable floor
 the floor just hid. Demote the *command* there — a `stability_blocked` error
 that names the exception which would admit it beats a dead end. The split is
 pinned by `pre10DemotedCommands` / `pre10SurvivingCommands` in the same test.
+
+The other reason to mark the command is that the break lives in no flag at all:
+`exec workflow` starts waiting by default and `logs workflow-execution` reshapes
+its whole agent-mode output, so there is nothing narrower to annotate. Note that
+the manifest reports a flag's *effective* tier, so demoting a command shows up
+on every flag underneath it.
 
 ## Adding a Resource
 

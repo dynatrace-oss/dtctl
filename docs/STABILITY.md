@@ -19,7 +19,10 @@ merely scheduled for removal. It is recorded on the same line.
 The `(global)` group at the top is not a command. It is the root command's
 persistent flags — the ones every command accepts. They are listed because a
 flag that appears nowhere in this file is stable by omission, which is the one
-tier nobody chose deliberately.
+tier nobody chose deliberately. The floor applies to them on whichever command
+you type, and their tier is necessarily tree-wide: cobra gives every subcommand
+the same flag the root declared, so a global flag cannot be stable on one
+command and experimental on another.
 
 ## Choosing what this environment accepts
 
@@ -87,7 +90,7 @@ request's decision and not the host process's. See
 
 ## Summary
 
-- commands: 268 stable, 13 experimental, 11 development
+- commands: 266 stable, 15 experimental, 11 development
 - global flags (accepted on every command): 12
 - entries below (commands + flags): 834
 
@@ -500,7 +503,7 @@ exec analyzer                        stable
   --query                            stable
   --timeout                          experimental  since 0.39.0
   --validate                         stable
-  --wait                             stable
+  --wait                             experimental  since 0.39.0
 exec copilot                         stable
   --context                          experimental  since 0.39.0
   --file                             stable
@@ -526,12 +529,12 @@ exec preview-processor               stable
   --file                             stable
 exec slo                             stable
   --timeout                          experimental  since 0.39.0
-exec workflow                        stable
-  --input                            stable
-  --params                           stable
-  --show-results                     stable
-  --timeout                          stable
-  --wait                             stable
+exec workflow                        experimental  since 0.39.0
+  --input                            experimental
+  --params                           experimental
+  --show-results                     experimental
+  --timeout                          experimental
+  --wait                             experimental
 find                                 stable
 find intents                         stable
   --data                             stable
@@ -665,7 +668,7 @@ get workflows                        stable
   --interval                         stable
   --limit                            stable
   --mine                             stable
-  --trigger                          stable
+  --trigger                          experimental  since 0.39.0
   --type                             stable
   --watch                            stable
   --watch-only                       stable
@@ -708,11 +711,11 @@ inventory arrivals                   experimental
   --since                            experimental
   --stale-after                      experimental
 logs                                 stable
-logs workflow-execution              stable
-  --all                              stable
+logs workflow-execution              experimental  since 0.39.0
+  --all                              experimental
   --follow                           experimental  since 0.39.0
-  --task                             stable
-  --tasks                            stable
+  --task                             experimental
+  --tasks                            experimental
 open                                 stable
 open intent                          stable
   --browser                          stable

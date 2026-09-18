@@ -84,6 +84,23 @@ var pre10Demotions = []pre10Demotion{
 	{"exec copilot", "--context", "unshadow-global-flags"},
 	{"verify openpipeline-matcher", "--context", "unshadow-global-flags"},
 	{"wait query", "--verbose", "unshadow-global-flags"},
+
+	// The three documents below are accepted but not yet merged. They are
+	// pre-empted anyway: the cost of demoting early is a badge and an
+	// exception entry, the cost of demoting late is having shipped `stable` on
+	// a flag we already knew would break.
+
+	// breaking-changes/exec-wait-default.md — exec commands wait for the run.
+	// Only this one loses something a caller can type: `--wait=false` is valid
+	// today and has no successor.
+	{"exec analyzer", "--wait", "exec-wait-default"},
+
+	// breaking-changes/reject-unusable-input.md — the only row of that
+	// document that removes a flag dtctl actually has. (Its other removal row,
+	// `-y`/`--force` on a command with no prompt, matches nothing today.) The
+	// rest reject input dtctl already ignores; see
+	// pre10RejectUnusableInputSpared.
+	{"get workflows", "--trigger", "reject-unusable-input"},
 }
 
 // TestPre10DemotionsAreInEffect asserts every audited flag really carries the
@@ -118,8 +135,13 @@ func TestPre10StableExclusionsStayStable(t *testing.T) {
 		// short-flag-f.md: not a confirmation flag, no short form.
 		"restore trash --force": "not a confirmation flag",
 		// timeout-duration.md: already a duration.
-		"exec workflow --timeout": "already a duration",
-		"wait query --timeout":    "already a duration",
+		//
+		// `exec workflow --timeout` belongs in this list on its own merits and
+		// is deliberately absent: exec-wait-default.md demoted the whole
+		// command, and the manifest reports a flag's *effective* tier, so every
+		// flag on an experimental command reads experimental. Asserting stable
+		// here would assert that `exec workflow` is stable, which it is not.
+		"wait query --timeout": "already a duration",
 		// timeout-duration.md: the name states the unit.
 		"query --fetch-timeout-seconds": "unit is in the name",
 		// timeout-duration.md changes this flag's declared type from string to
@@ -147,6 +169,60 @@ func TestPre10StableExclusionsStayStable(t *testing.T) {
 		}
 		if got != "stable" {
 			t.Errorf("%s: is %q, want %q — the breaking change spares it (%s)", key, got, "stable", why)
+		}
+	}
+}
+
+// pre10RejectUnusableInputSpared records the rows of
+// breaking-changes/reject-unusable-input.md that did *not* cause a demotion,
+// with the reason, so the decision is reviewable instead of looking like an
+// oversight.
+//
+// The line drawn across the whole audit: demote when 1.0 removes or renames a
+// flag, or changes what a currently-valid invocation does. Do not demote when
+// 1.0 only turns input dtctl already ignores into an error. `--state RUNNING`
+// means the same thing before and after; only `--state RUNNIG` changes, from a
+// silently wrong answer to a message naming the permitted values. Withdrawing
+// the stable contract to warn about a typo costs every correct caller and
+// protects none of them.
+//
+// Three further rows have nothing to mark at all:
+//
+//   - the unused positional (`find intents <name>`) is an argument, not a flag;
+//   - `--dry-run` on `get`/`describe`/`query` is a *global* flag, and a global
+//     flag's tier is necessarily global — cobra hands every subcommand the same
+//     pflag.Flag pointer the root declared, so there is no per-command
+//     annotation to make. Demoting it would also block `apply --dry-run`, which
+//     the document keeps;
+//   - the empty-value rule spans every string flag in dtctl, and its one known
+//     concrete case (`--task ""`) the document itself files as bug #494.
+//
+// The confirmation-flag row has no target: every current `-y`/`--force` guards
+// a real prompt.
+var pre10RejectUnusableInputSpared = map[string]string{
+	"get workflows --type":              "only an unknown value changes, from a wrong answer to an error",
+	"get workflow-executions --state":   "only an unknown value changes",
+	"get workflow-executions --trigger": "only an unknown value changes; unlike the workflows filter, the server applies this one",
+	"get intents --app":                 "only the already-ignored combination with an id changes",
+	"apply --set":                       "only an unused variable changes; every key the template reads keeps working",
+	"query --set":                       "only an unused variable changes",
+}
+
+// TestPre10RejectUnusableInputSparedStayStable pins that reasoning. Without it
+// the natural next edit is a blanket demotion of everything the document
+// mentions, which would take `--set` off the stable contract on fourteen
+// commands to guard against a malformed key.
+func TestPre10RejectUnusableInputSparedStayStable(t *testing.T) {
+	levels := manifestFlagLevels(t, cmd.StabilityManifest())
+
+	for key, why := range pre10RejectUnusableInputSpared {
+		got, ok := levels[key]
+		if !ok {
+			t.Errorf("%s: not on the command tree; this exclusion no longer describes anything", key)
+			continue
+		}
+		if got != "stable" {
+			t.Errorf("%s: is %q, want stable — %s", key, got, why)
 		}
 	}
 }
@@ -208,6 +284,12 @@ var pre10DemotedCommands = map[string]string{
 	"update azure monitoring": "needs one of --locationFiltering/--featureSets",
 	"update gcp connection":   "--serviceAccountId is required",
 	"update gcp monitoring":   "needs one of --locationFiltering/--featureSets",
+
+	// The other reason to demote a command: the break is not in any flag but
+	// in what the command does with no flags at all, so there is nothing
+	// narrower to mark.
+	"exec workflow":           "exec-wait-default.md flips the default to waiting, silently",
+	"logs workflow-execution": "agent-output-envelope.md reshapes its entire output",
 }
 
 // pre10SurvivingCommands are commands that keep a usable stable invocation even
@@ -226,7 +308,6 @@ var pre10SurvivingCommands = map[string]string{
 	"wait query":              "--verbose only adds progress output",
 	"exec copilot":            "--context only adds conversation context",
 	"restore workflow":        "--force only skips a prompt",
-	"logs workflow-execution": "--follow only streams",
 	"exec analyzer":           "--timeout has a default",
 	"exec slo":                "--timeout has a default",
 }
@@ -261,21 +342,20 @@ func TestPre10CommandDemotionsMatchTheAudit(t *testing.T) {
 	}
 }
 
-// TestGlobalFlagsAreAllStable pins the global flag group to stable, because
-// nothing yet enforces a weaker promise there.
+// TestGlobalFlagsAreAllStable pins the global flag group to stable — now as a
+// statement about the flags, not about a gap in the enforcement.
 //
-// The manifest lists the root command's persistent flags so they are on the
-// record, but the floor does not police them: blockBelowFloorFlags walks
-// visitOwnFlags, which skips flags inherited from an ancestor, and installs its
-// guard on the command that *declared* the flag. For a global flag that is
-// rootCmd, whose RunE never runs for `dtctl get workflows --dry-run`. Marking a
-// global flag experimental today would therefore badge it in help and list it
-// here while leaving every subcommand free to accept it — a promise weaker on
-// paper than in practice, which is the wrong direction to be wrong in.
+// The floor does police global flags: applyStabilityFloor checks the persistent
+// flags a command inherits, on the command a caller actually typed, because
+// rootCmd's RunE never runs for `dtctl get workflows --dry-run`. So a demotion
+// here would take effect, which is exactly why none is written.
 //
-// So: before demoting a global flag, teach the floor to check inherited
-// persistent flags on the command actually being invoked. Then delete this
-// test's expectation for that flag.
+// The one accepted change that touches this group — reject-unusable-input.md
+// rejecting `--dry-run` on `get`/`describe`/`query` — cannot be expressed as a
+// tier. Cobra gives every subcommand the same pflag.Flag pointer the root
+// declared, so a global flag has one tier for the whole tree; demoting
+// `--dry-run` would withdraw `apply --dry-run`, which that document keeps.
+// A per-command refusal is the command's job, not the floor's.
 func TestGlobalFlagsAreAllStable(t *testing.T) {
 	levels := manifestFlagLevels(t, cmd.StabilityManifest())
 
