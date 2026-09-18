@@ -186,3 +186,10 @@ func init() {
 	stability.MarkFlag(enableAzureMonitoringCmd, "directoryId", stability.Experimental, pre10Since)
 	stability.MarkFlag(enableAzureMonitoringCmd, "applicationId", stability.Experimental, pre10Since)
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(enableAzureProviderCmd)
+	stability.MarkStable(enableAzureMonitoringCmd)
+}

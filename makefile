@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check docs-generate docs-check stability-manifest
+.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check docs-generate docs-check stability-manifest stability-compat
 
 # --match "v*" is load-bearing: sdk/ is a second module in this repo and every
 # release tag is mirrored to sdk/vX.Y.Z at the same commit. Without the filter
@@ -89,6 +89,14 @@ stability-manifest:
 	@echo "Generating docs/STABILITY.md..."
 	@go test ./test/stability/ -update
 	@echo "Wrote docs/STABILITY.md. Review with: git diff docs/STABILITY.md"
+
+# Refuse a change that withdraws stable surface. The freshness gate above only
+# proves the manifest matches the tree, so a deleted stable flag passes it once
+# the manifest is regenerated; this compares against another ref instead.
+# Override the ref locally with: make stability-compat STABILITY_BASE=v0.39.0
+STABILITY_BASE ?= origin/main
+stability-compat:
+	@python3 scripts/stability/check_compat.py --base $(STABILITY_BASE)
 
 # Run all tests (unit + integration)
 test-all: test-unit test-integration

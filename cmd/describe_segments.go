@@ -12,6 +12,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeSegmentCmd shows detailed info about a segment
@@ -105,4 +106,10 @@ func printSegmentDescribeTable(w io.Writer, seg *segment.FilterSegment) {
 		fmt.Fprintln(w)
 		output.FprintDescribeKV(w, "Operations:", kw, "%s", strings.Join(seg.AllowedOperations, ", "))
 	}
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeSegmentCmd)
 }

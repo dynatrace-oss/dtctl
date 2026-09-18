@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // isBuiltinCommand returns true if name matches any registered Cobra command.
@@ -191,4 +192,15 @@ func init() {
 	aliasExportCmd.Flags().StringP("file", "f", "", "output file path")
 	aliasImportCmd.Flags().StringP("file", "f", "", "input file path")
 	aliasImportCmd.Flags().Bool("overwrite", false, "overwrite existing aliases")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(aliasCmd)
+	stability.MarkStable(aliasDeleteCmd)
+	stability.MarkStable(aliasExportCmd)
+	stability.MarkStable(aliasImportCmd)
+	stability.MarkStable(aliasListCmd)
+	stability.MarkStable(aliasSetCmd)
 }

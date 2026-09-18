@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeAnalyzerCmd shows details of a Davis analyzer, including its resolved
@@ -184,4 +185,10 @@ func filterFields(fields []analyzer.SchemaField, required bool) []analyzer.Schem
 
 func init() {
 	describeAnalyzerCmd.Flags().Bool("doc", false, "print the analyzer's markdown documentation")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeAnalyzerCmd)
 }

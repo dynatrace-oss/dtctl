@@ -384,3 +384,11 @@ func parseExecTime(s string, endOfDay bool) (string, error) {
 	}
 	return t.UTC().Format(time.RFC3339), nil
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(deleteWorkflowCmd)
+	stability.MarkStable(getWorkflowExecutionsCmd)
+	stability.MarkStable(getWorkflowsCmd)
+}

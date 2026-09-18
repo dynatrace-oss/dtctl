@@ -5,6 +5,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // execFunctionCmd executes an app function or ad-hoc code
@@ -105,4 +106,10 @@ func init() {
 	execFunctionCmd.Flags().String("code", "", "JavaScript code to execute (for ad-hoc execution)")
 	execFunctionCmd.Flags().StringP("file", "f", "", "read JavaScript code from file (for ad-hoc execution)")
 	execFunctionCmd.Flags().Bool("defer", false, "defer execution (async, for resumable functions)")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(execFunctionCmd)
 }

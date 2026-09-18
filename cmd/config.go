@@ -10,6 +10,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // loadConfigRaw loads configuration respecting the --config flag but WITHOUT applying
@@ -608,4 +609,22 @@ func init() {
 	// Flags for delete-context
 	configDeleteContextCmd.Flags().Bool("delete-credentials", false,
 		"also delete the credential the context references (leaves it in place otherwise)")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(configCmd)
+	stability.MarkStable(configCurrentContextCmd)
+	stability.MarkStable(configDeleteContextCmd)
+	stability.MarkStable(configDeleteCredentialsCmd)
+	stability.MarkStable(configDescribeContextCmd)
+	stability.MarkStable(configGetContextsCmd)
+	stability.MarkStable(configInitCmd)
+	stability.MarkStable(configMigrateTokensCmd)
+	stability.MarkStable(configSetCmd)
+	stability.MarkStable(configSetContextCmd)
+	stability.MarkStable(configSetCredentialsCmd)
+	stability.MarkStable(configUseContextCmd)
+	stability.MarkStable(configViewCmd)
 }

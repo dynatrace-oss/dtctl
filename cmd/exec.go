@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // execCmd represents the exec command
@@ -52,4 +54,10 @@ func init() {
 	execCmd.AddCommand(execSLOCmd)
 	execCmd.AddCommand(execPreviewProcessorCmd)
 	execCmd.AddCommand(execAPICmd)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(execCmd)
 }

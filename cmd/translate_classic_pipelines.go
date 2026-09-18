@@ -9,6 +9,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/classicpipelinestranslate"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // translateClassicPipelinesCmd translates a Classic pipeline into an
@@ -133,4 +134,10 @@ func init() {
 	translateClassicPipelinesCmd.Flags().Bool("include-sample-data", true, "Include processor sample data in the translation")
 	translateClassicPipelinesCmd.Flags().Bool("skip-disabled-rules", false, "Skip disabled rules during translation")
 	translateClassicPipelinesCmd.Flags().Bool("skip-builtin-processing-rules", true, "Skip built-in processing rules during translation")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(translateClassicPipelinesCmd)
 }

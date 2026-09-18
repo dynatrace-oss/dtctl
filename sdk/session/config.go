@@ -174,7 +174,11 @@ type Context struct {
 	// "query --decode-snapshots"). They parameterize the floor for a named target rather
 	// than lowering it for everything.
 	StabilityExceptions []string `yaml:"stability-exceptions,omitempty" table:"-"`
-	Hooks               Hooks    `yaml:"hooks,omitempty"`
+	// NoDeprecated makes this context refuse deprecated commands and flags, as
+	// if the removal release had already happened. Orthogonal to the floor:
+	// see NoDeprecatedEnvVar, which overrides this field in either direction.
+	NoDeprecated bool  `yaml:"no-deprecated,omitempty" table:"-"`
+	Hooks        Hooks `yaml:"hooks,omitempty"`
 	// Spill overrides the global spill settings for this context (D15). Nil
 	// fields inherit the global spill config.
 	Spill *SpillConfig `yaml:"spill,omitempty"`

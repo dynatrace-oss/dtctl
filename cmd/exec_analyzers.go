@@ -139,3 +139,9 @@ func init() {
 	// (contrib breaking-changes/timeout-duration.md).
 	stability.MarkFlag(execAnalyzerCmd, "timeout", stability.Experimental, pre10Since)
 }
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(execAnalyzerCmd)
+}

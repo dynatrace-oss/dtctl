@@ -15,6 +15,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var (
@@ -937,4 +938,15 @@ func init() {
 
 	// Flags for logout
 	authLogoutCmd.Flags().Bool("remove-context", false, "also remove the context configuration")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(authCmd)
+	stability.MarkStable(authLoginCmd)
+	stability.MarkStable(authLogoutCmd)
+	stability.MarkStable(authRefreshCmd)
+	stability.MarkStable(authStatusCmd)
+	stability.MarkStable(authWhoamiCmd)
 }

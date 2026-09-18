@@ -86,11 +86,11 @@ func TestPolicyFloorBlocksAndExceptionsAdmit(t *testing.T) {
 	// its command is, so it stands or falls with the command. Otherwise
 	// admitting `ingest` would mean enumerating every flag it has, and a flag
 	// added later would silently break the caller that did.
-	if !p.AllowsFlag("ingest", "wait", Experimental, Default) {
+	if !p.AllowsFlag("ingest", "wait", Experimental, Undeclared) {
 		t.Error("a command exception must admit the flags that only inherit its level")
 	}
 	// ... and only for the command it names.
-	if p.AllowsFlag("translate", "wait", Experimental, Default) {
+	if p.AllowsFlag("translate", "wait", Experimental, Undeclared) {
 		t.Error("inheritance must not admit a flag on a command that has no exception")
 	}
 	if p.AllowsFlag("query", "raw", Experimental, Experimental) {

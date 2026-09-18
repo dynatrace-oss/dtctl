@@ -8,6 +8,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // printDocumentDetails prints common document metadata using bold labels.
@@ -228,4 +229,13 @@ Examples:
 		enrichAgent(printer, "describe", "trash")
 		return printer.Print(doc)
 	},
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeDashboardCmd)
+	stability.MarkStable(describeDocumentCmd)
+	stability.MarkStable(describeNotebookCmd)
+	stability.MarkStable(describeTrashCmd)
 }

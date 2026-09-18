@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/watch"
 )
 
@@ -162,4 +163,10 @@ func init() {
 	getCmd.AddCommand(getEnvironmentCmd)
 	getCmd.AddCommand(getLicenseCmd)
 	getCmd.AddCommand(getLicenseSettingsCmd)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getCmd)
 }

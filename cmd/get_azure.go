@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 type azureConnectionTableRow struct {
@@ -186,4 +187,14 @@ func init() {
 	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigCmd)
 	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigLocationsCmd)
 	getAzureProviderCmd.AddCommand(getAzureMonitoringConfigFeatureSetsCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getAzureProviderCmd)
+	stability.MarkStable(getAzureConnectionCmd)
+	stability.MarkStable(getAzureMonitoringConfigCmd)
+	stability.MarkStable(getAzureMonitoringConfigFeatureSetsCmd)
+	stability.MarkStable(getAzureMonitoringConfigLocationsCmd)
 }

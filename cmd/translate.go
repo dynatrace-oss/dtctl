@@ -1,6 +1,10 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
+)
 
 var translateCmd = &cobra.Command{
 	Use:   "translate",
@@ -16,4 +20,10 @@ func init() {
 	rootCmd.AddCommand(translateCmd)
 	translateCmd.AddCommand(translateLqlToDqlCmd)
 	translateCmd.AddCommand(translateClassicPipelinesCmd)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(translateCmd)
 }

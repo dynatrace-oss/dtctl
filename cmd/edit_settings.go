@@ -13,6 +13,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 )
 
@@ -159,4 +160,10 @@ Examples:
 func init() {
 	editSettingCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
 	editSettingCmd.Flags().Bool("validate-only", false, "validate the edited value against the API without saving")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(editSettingCmd)
 }

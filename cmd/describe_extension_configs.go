@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeExtensionConfigCmd shows detailed info about an extension monitoring configuration
@@ -92,4 +93,10 @@ Examples:
 func init() {
 	describeExtensionConfigCmd.Flags().String("config-id", "", "Monitoring configuration ID (required)")
 	_ = describeExtensionConfigCmd.MarkFlagRequired("config-id")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeExtensionConfigCmd)
 }

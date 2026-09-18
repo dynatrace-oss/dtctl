@@ -10,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeAnomalyDetectorCmd shows details of an anomaly detector
@@ -212,4 +213,10 @@ func printAnomalyDetectorRecentProblems(c *client.Client, ad *anomalydetector.An
 		fmt.Printf("  %-16s  %-8s  %-20s  %s\n", displayID, status, start, category)
 	}
 	fmt.Printf("  (%d problems in the last 7 days)\n", len(records))
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeAnomalyDetectorCmd)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
@@ -443,4 +444,12 @@ func init() {
 	createDashboardCmd.Flags().String("id", "", "custom ID for the dashboard (auto-generated if not provided)")
 	createDashboardCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	_ = createDashboardCmd.MarkFlagRequired("file")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(createDashboardCmd)
+	stability.MarkStable(createDocumentCmd)
+	stability.MarkStable(createNotebookCmd)
 }

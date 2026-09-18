@@ -309,3 +309,11 @@ func init() {
 	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("name")
 	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("credentials")
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(createAzureProviderCmd)
+	stability.MarkStable(createAzureConnectionCmd)
+	stability.MarkStable(createAzureMonitoringConfigCmd)
+}

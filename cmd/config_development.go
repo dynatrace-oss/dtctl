@@ -158,3 +158,9 @@ func developmentRows(features []string, enabled map[string]bool) []developmentRo
 	}
 	return rows
 }
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(configListDevelopmentCmd)
+}

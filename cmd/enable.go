@@ -1,6 +1,10 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
+)
 
 var enableCmd = &cobra.Command{
 	Use:   "enable",
@@ -28,4 +32,10 @@ Available resources:
 
 func init() {
 	rootCmd.AddCommand(enableCmd)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(enableCmd)
 }

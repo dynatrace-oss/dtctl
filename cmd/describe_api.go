@@ -13,6 +13,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeAPICmd projects one API's specification.
@@ -458,4 +459,10 @@ func init() {
 	describeAPICmd.Flags().String("operation", "", "show one operation in full, addressed as 'METHOD /path'")
 	describeAPICmd.Flags().Bool("raw", false, "emit the unprojected specification document")
 	addSpillFlags(describeAPICmd)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeAPICmd)
 }

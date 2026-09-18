@@ -253,3 +253,10 @@ func init() {
 	waitQueryCmd.Flags().String("locale", "", "query locale (e.g., 'en_US', 'de_DE')")
 	waitQueryCmd.Flags().String("timezone", "", "query timezone (e.g., 'UTC', 'Europe/Paris')")
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(waitCmd)
+	stability.MarkStable(waitQueryCmd)
+}

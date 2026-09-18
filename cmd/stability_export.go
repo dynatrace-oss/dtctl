@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
@@ -21,6 +23,26 @@ func StabilityManifest() string {
 // StabilityManifest.
 func StabilityLint() []error {
 	return withCompleteCommandTree(func() []error { return stability.Lint(rootCmd) })
+}
+
+// StabilityUndeclaredCommands returns the paths of commands that declare no
+// stability tier at all, across the complete command tree.
+//
+// StabilityLint reports these too, among its other findings. This exists so the
+// CI gate can fail on *just* this rule with a message about this rule: it is
+// the one a new command trips by omission rather than by a mistake, and its
+// author needs to be told that silence is not stable rather than handed a list
+// of unrelated lint categories.
+func StabilityUndeclaredCommands() []string {
+	return withCompleteCommandTree(func() []string {
+		var undeclared []string
+		stability.Walk(rootCmd, func(c *cobra.Command) {
+			if !stability.Declared(c) && stability.DeclarationRequired(c, rootCmd) {
+				undeclared = append(undeclared, stability.Path(c, rootCmd))
+			}
+		})
+		return undeclared
+	})
 }
 
 // withCompleteCommandTree registers every development feature, runs fn, and

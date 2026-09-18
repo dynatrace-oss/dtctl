@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/settings"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeSettingsCmd shows detailed info about a settings object
@@ -171,4 +172,11 @@ Examples:
 		enrichAgent(printer, "describe", "settings-schema")
 		return printer.Print(schema)
 	},
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeSettingsCmd)
+	stability.MarkStable(describeSettingsSchemaCmd)
 }

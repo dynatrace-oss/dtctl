@@ -19,6 +19,19 @@ const MinStabilityEnvVar = "DTCTL_MIN_STABILITY"
 // The value "all" enables every registered feature.
 const DevelopmentEnvVar = "DTCTL_DEVELOPMENT"
 
+// NoDeprecatedEnvVar makes dtctl behave as if every deprecated command and flag
+// had already been removed.
+//
+// It exists so that a caller can find out *before* the removal release whether
+// they still depend on something scheduled to go. A deprecation warning is easy
+// to miss in a log; a failing pipeline is not. The same idea as Python's
+// `-W error::DeprecationWarning`.
+//
+// Deliberately not a stability tier: a deprecated command is still stable in
+// shape, merely scheduled for removal, so folding it into the ordered axis
+// would make it read as a demotion. This is a separate, orthogonal filter.
+const NoDeprecatedEnvVar = "DTCTL_NO_DEPRECATED"
+
 // DevelopmentAll is the sentinel that enables every registered development
 // feature at once. Convenient for dtctl's own test and development builds.
 const DevelopmentAll = "all"
@@ -43,13 +56,31 @@ const (
 	StabilityExperimental StabilityLevel = "experimental"
 	// StabilityStable means the invocation *and* output contract are
 	// additive-only; removal or incompatible change requires a deprecation
-	// cycle. This is the default for anything not explicitly marked.
+	// cycle. It is never implied: a command is stable only because someone
+	// declared it so.
 	StabilityStable StabilityLevel = "stable"
 
-	// DefaultStabilityLevel is the level of a command carrying no annotation.
-	// Stable is the only default that costs nothing for the existing surface
-	// and correctly describes how we already treat it.
+	// DefaultStabilityLevel is the rank the empty level takes when a declared
+	// level is combined with an absent one. It is the *strongest*, so that an
+	// absent declaration contributes nothing to Weakest and a child simply
+	// inherits its parent -- "no opinion", not "stable".
+	//
+	// Do not read this as the tier of an unannotated command. A command that
+	// declares nothing resolves to FallbackStabilityLevel; see
+	// stability.Effective.
 	DefaultStabilityLevel = StabilityStable
+
+	// FallbackStabilityLevel is what a command resolves to when neither it nor
+	// any ancestor declares a tier.
+	//
+	// Experimental, never stable. Stable is a promise, and a promise nobody
+	// made is not one dtctl should keep: a command added without a tier would
+	// otherwise ship an additive-only guarantee on its first day purely
+	// because its author forgot. The build refuses an undeclared command
+	// (stability.Lint), so this value is the second line of defence -- and it
+	// fails safe, because experimental still runs under the default floor and
+	// is only refused where a caller pinned stable.
+	FallbackStabilityLevel = StabilityExperimental
 
 	// DefaultMinStability is the floor when a context sets none. Experimental
 	// rather than stable so humans and interactive agents keep getting new
@@ -225,6 +256,42 @@ func (c *Config) enabledDevelopmentFeatures(envValue string) map[string]bool {
 func (c *Config) DevelopmentEnvSet() bool {
 	_, ok := os.LookupEnv(DevelopmentEnvVar)
 	return ok
+}
+
+// NoDeprecated reports whether this context refuses deprecated surface, using
+// the precedence
+//
+//	DTCTL_NO_DEPRECATED env  >  context no-deprecated  >  off
+//
+// The environment wins in *both* directions, unlike the floor where an empty
+// value falls through: a pipeline turning the mode on for one run is the
+// motivating case, and the inverse -- one run that needs the deprecated
+// command it is in the middle of migrating off -- has to be expressible
+// without editing the config it shares with every other run.
+//
+// Unlike a bad floor, a misread value here cannot widen anything, so there is
+// no error return: the mode only ever removes surface.
+func (c *Config) NoDeprecated() bool {
+	if v, ok := os.LookupEnv(NoDeprecatedEnvVar); ok {
+		return truthyEnvValue(v)
+	}
+	ctx, err := c.CurrentContextObj()
+	if err != nil {
+		return false
+	}
+	return ctx.NoDeprecated
+}
+
+// truthyEnvValue reads a boolean environment variable, using the same off-value
+// vocabulary as a development feature key so the two cannot disagree about what
+// "off" looks like.
+func truthyEnvValue(v string) bool {
+	switch strings.TrimSpace(strings.ToLower(v)) {
+	case "", "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 // SetDevelopmentFeature turns a development feature on or off in the config's

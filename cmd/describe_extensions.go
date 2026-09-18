@@ -9,6 +9,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // extensionDescription is a rich struct for JSON/YAML output of describe extension.
@@ -440,4 +441,10 @@ func init() {
 	describeExtensionCmd.Flags().String("assets", "", "Comma-separated asset types to show from the extension package. Supported: alert_templates, smartscape")
 	describeExtensionCmd.Flags().Bool("full", false, "Show complete file content for each asset (use with --assets)")
 	describeExtensionCmd.Flags().Bool("feature-set-metrics", false, "Show metrics available in each feature set")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeExtensionCmd)
 }

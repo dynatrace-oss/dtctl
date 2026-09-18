@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -380,6 +381,148 @@ func applyStabilityFloor(root *cobra.Command, p stability.Policy) {
 		}
 		blockBelowFloorFlags(cmd, root, path, p, floor)
 	})
+}
+
+// DeprecatedError reports that a deprecated command or flag was invoked by a
+// caller who asked to be shown the world without it (DTCTL_NO_DEPRECATED).
+//
+// It is not a StabilityError. A deprecated command is still stable in shape,
+// and conflating the two would tell a caller their contract had been weakened
+// when in fact it is scheduled for removal on a published date -- a different
+// problem with a different fix.
+type DeprecatedError struct {
+	// Command is the space-joined command path relative to root.
+	Command string
+	// Flag is the flag name without dashes, or "" when the whole command is
+	// deprecated.
+	Flag string
+	// Note is the deprecation clause, rendered by stability.Deprecation.Note
+	// for a command and taken from pflag for a flag, so the wording here is the
+	// same wording help and the manifest use.
+	Note string
+}
+
+func (e *DeprecatedError) target() string {
+	if e.Flag == "" {
+		return fmt.Sprintf("command %q", e.Command)
+	}
+	return fmt.Sprintf("flag --%s of command %q", e.Flag, e.Command)
+}
+
+// Headline states the block, shared with the agent-mode ErrorDetail.
+//
+// Reason first, then the target and its note. The note is rendered by whoever
+// owns the deprecation -- stability.Deprecation.Note for a command, pflag's own
+// message for a flag -- so the wording matches help and the manifest, and the
+// clause order avoids the "is deprecated ... deprecated since" stutter that
+// putting the reason last produces.
+func (e *DeprecatedError) Headline() string {
+	const lead = "this context accepts no deprecated surface"
+	if e.Note == "" {
+		return fmt.Sprintf("%s: %s", lead, e.target())
+	}
+	return fmt.Sprintf("%s: %s, %s", lead, e.target(), e.Note)
+}
+
+// Suggestions tell the caller what to do about it. Unsetting the variable is
+// listed last on purpose: the caller set it precisely to be told this, so the
+// useful answer is the replacement, not a way to silence the finding.
+func (e *DeprecatedError) Suggestions() []string {
+	return []string{
+		"migrate off it before the removal release; the deprecation note names the replacement where there is one",
+		fmt.Sprintf("to see the deprecated surface again, unset %s", config.NoDeprecatedEnvVar),
+	}
+}
+
+func (e *DeprecatedError) Error() string { return e.Headline() }
+
+// applyNoDeprecated masks every deprecated command and flag, so the tree looks
+// the way it will after the removal release.
+//
+// A fifth narrowing stage rather than a variation on the floor: it answers "is
+// this scheduled to go?", not "is this contract strong enough?". Like every
+// other stage it can only remove, so it composes with the rest without any
+// precedence rule.
+func applyNoDeprecated(root *cobra.Command) {
+	walkCommands(root, func(cmd *cobra.Command) {
+		if cmd == root {
+			return
+		}
+		path := commandPathRelative(cmd, root)
+		if d, ok := stability.DeprecationOf(cmd); ok {
+			maskDeprecated(cmd, &DeprecatedError{Command: path, Note: d.Note()})
+			return
+		}
+		// pflag already carries a deprecation message per flag, and cobra
+		// hides such flags from help on its own; what it does not do is refuse
+		// them, which is the whole point here.
+		deprecated := map[string]string{}
+		visitOwnFlags(cmd, func(f *pflag.Flag) {
+			if f.Deprecated == "" {
+				return
+			}
+			deprecated[f.Name] = f.Deprecated
+			f.Hidden = true
+		})
+		guardDeprecatedFlags(cmd, path, deprecated)
+	})
+}
+
+// guardDeprecatedFlags refuses a deprecated flag that was actually passed,
+// wrapping the command's body the same way blockBelowFloorFlags does. Only a
+// flag the caller *used* fails: hiding it from help is enough for one nobody
+// asked for, and failing on its mere existence would refuse most of the CLI.
+func guardDeprecatedFlags(cmd *cobra.Command, path string, deprecated map[string]string) {
+	if len(deprecated) == 0 || cmd.DisableFlagParsing {
+		return
+	}
+	orig := cmd.RunE
+	if orig == nil {
+		if cmd.Run == nil {
+			return
+		}
+		run := cmd.Run
+		orig = func(c *cobra.Command, args []string) error { run(c, args); return nil }
+		cmd.Run = nil
+	}
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		// Sorted so a command with several deprecated flags always reports the
+		// same one, making the error reproducible.
+		for _, name := range sortedStringKeys(deprecated) {
+			if f := c.Flags().Lookup(name); f != nil && f.Changed {
+				return &DeprecatedError{
+					Command: path, Flag: name, Note: "deprecated: " + deprecated[name],
+				}
+			}
+		}
+		return orig(c, args)
+	}
+}
+
+// sortedStringKeys returns a string map's keys in lexical order.
+func sortedStringKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// maskDeprecated hides a deprecated command and replaces its body with a guard
+// returning blocked.
+//
+// Unlike maskBelowFloor this installs the guard even on a non-runnable group
+// command. A command below the floor has its runnable children masked in their
+// own right, so printing the group's help is honest; a deprecated *group* is
+// scheduled to go as a whole, and answering `dtctl <group>` with help listing
+// subcommands this mode has already removed would be a dead end.
+func maskDeprecated(cmd *cobra.Command, blocked *DeprecatedError) {
+	cmd.Hidden = true
+	cmd.Args = cobra.ArbitraryArgs
+	cmd.DisableFlagParsing = true
+	cmd.Run = nil
+	cmd.RunE = func(*cobra.Command, []string) error { return blocked }
 }
 
 // maskBelowFloor hides a command and replaces its body with a guard returning

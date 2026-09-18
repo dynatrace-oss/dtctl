@@ -882,3 +882,9 @@ func metadataFieldCompletion(_ *cobra.Command, _ []string, toComplete string) ([
 
 	return suggestions, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 }
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(queryCmd)
+}

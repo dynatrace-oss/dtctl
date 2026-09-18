@@ -206,3 +206,10 @@ func init() {
 	commandsCmd.AddCommand(howtoCmd)
 	rootCmd.AddCommand(commandsCmd)
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(commandsCmd)
+	stability.MarkStable(howtoCmd)
+}

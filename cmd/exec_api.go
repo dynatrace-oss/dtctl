@@ -17,6 +17,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
@@ -34,6 +35,10 @@ import (
 // the tool. This one resolves what the request actually does from the API's own
 // specification and gates it through the same safety checker as every native
 // mutating command.
+// Hidden, but reachable, so it declares a tier like anything else. Stable
+// records today's behaviour rather than changing it here: `exec api` is the
+// documented escape hatch and demoting it is a separate decision (AGENTS.md
+// says nothing should be built on it, which is an argument for experimental).
 var execAPICmd = &cobra.Command{
 	Use:    "api <path>",
 	Short:  "Send a request to a platform API endpoint (escape hatch)",
@@ -497,4 +502,8 @@ func init() {
 		"request body: inline, @file, or @- for stdin (requires an explicit -X)")
 	execAPICmd.Flags().StringArrayP("header", "H", nil,
 		"extra request header, 'Name: value' (repeatable)")
+}
+
+func init() {
+	stability.MarkStable(execAPICmd)
 }

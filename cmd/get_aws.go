@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 type awsConnectionTableRow struct {
@@ -161,4 +162,13 @@ func init() {
 	getAWSProviderCmd.AddCommand(getAWSMonitoringConfigCmd)
 	getAWSProviderCmd.AddCommand(getAWSMonitoringConfigRegionsCmd)
 	getAWSProviderCmd.AddCommand(getAWSMonitoringConfigFeatureSetsCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getAWSConnectionCmd)
+	stability.MarkStable(getAWSMonitoringConfigCmd)
+	stability.MarkStable(getAWSMonitoringConfigFeatureSetsCmd)
+	stability.MarkStable(getAWSMonitoringConfigRegionsCmd)
 }

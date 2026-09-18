@@ -1,6 +1,10 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
+)
 
 var getAWSProviderCmd = &cobra.Command{
 	Use:   "aws",
@@ -18,4 +22,11 @@ func init() {
 	getCmd.AddCommand(getAWSProviderCmd)
 	getCmd.AddCommand(getGCPProviderCmd)
 	attachPreviewNotice(getGCPProviderCmd, "GCP")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getAWSProviderCmd)
+	stability.MarkStable(getGCPProviderCmd)
 }

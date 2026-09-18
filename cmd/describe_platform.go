@@ -5,6 +5,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/platform"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // usePlatformDescribeTextView reports whether to render the human-readable KV
@@ -95,4 +96,11 @@ Examples:
 		enrichAgent(printer, "describe", "license")
 		return printer.Print(lic)
 	},
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeEnvironmentCmd)
+	stability.MarkStable(describeLicenseCmd)
 }

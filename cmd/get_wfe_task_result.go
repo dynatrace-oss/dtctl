@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getWfeTaskResultCmd retrieves the structured return value of a workflow execution task
@@ -53,4 +54,10 @@ func init() {
 	if err := getWfeTaskResultCmd.MarkFlagRequired("task"); err != nil {
 		panic(err)
 	}
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getWfeTaskResultCmd)
 }

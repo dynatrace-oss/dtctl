@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/hub"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getHubExtensionsCmd retrieves Hub catalog extensions
@@ -112,4 +113,11 @@ Examples:
 
 func init() {
 	getHubExtensionsCmd.Flags().String("filter", "", "Filter by name, ID, or description (case-insensitive substring)")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getHubExtensionReleasesCmd)
+	stability.MarkStable(getHubExtensionsCmd)
 }

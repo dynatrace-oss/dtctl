@@ -179,3 +179,10 @@ func init() {
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(enableGCPMonitoringCmd, "serviceAccountId", stability.Experimental, pre10Since)
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(enableGCPProviderCmd)
+	stability.MarkStable(enableGCPMonitoringCmd)
+}

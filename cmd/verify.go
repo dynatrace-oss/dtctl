@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // isSupportedVerifyOutputFormat reports whether the given output format is
@@ -64,4 +66,10 @@ func init() {
 	rootCmd.AddCommand(verifyCmd)
 	verifyCmd.AddCommand(verifyOpenPipelineMatcherCmd)
 	verifyCmd.AddCommand(verifyOpenPipelineDQLProcessorCmd)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(verifyCmd)
 }

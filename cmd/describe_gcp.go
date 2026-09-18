@@ -12,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var describeGCPConnectionCmd = &cobra.Command{
@@ -212,4 +213,11 @@ func printGCPMonitoringConfigStatus(c *client.Client, configID string) {
 func init() {
 	describeGCPProviderCmd.AddCommand(describeGCPConnectionCmd)
 	describeGCPProviderCmd.AddCommand(describeGCPMonitoringConfigCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeGCPConnectionCmd)
+	stability.MarkStable(describeGCPMonitoringConfigCmd)
 }
