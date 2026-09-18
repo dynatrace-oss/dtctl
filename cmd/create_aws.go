@@ -63,6 +63,13 @@ Examples:
 			},
 		}
 
+		if dryRun {
+			fmt.Printf("Dry run: would create AWS connection\n")
+			fmt.Printf("Name: %s\n", createAWSConnectionName)
+			fmt.Printf("Role ARN: %s\n", createAWSConnectionRoleArn)
+			return nil
+		}
+
 		created, err := handler.Create(awsconnection.AWSConnectionCreate{Value: value})
 		if err != nil {
 			return err
@@ -130,6 +137,15 @@ Examples:
 		body, err := json.Marshal(payload)
 		if err != nil {
 			return fmt.Errorf("failed to prepare request payload: %w", err)
+		}
+
+		if dryRun {
+			fmt.Printf("Dry run: would create AWS monitoring config (disabled)\n")
+			fmt.Printf("Name: %s\n", createAWSMonitoringConfigName)
+			fmt.Printf("Version: %s\n", version)
+			fmt.Printf("Regions: %s\n", strings.Join(regions, ","))
+			fmt.Printf("Feature sets: %d\n", len(featureSets))
+			return nil
 		}
 
 		created, err := monitoringHandler.Create(body)

@@ -58,6 +58,13 @@ Examples:
 			},
 		}
 
+		if dryRun {
+			fmt.Printf("Dry run: would create GCP connection\n")
+			fmt.Printf("Name: %s\n", createGCPConnectionName)
+			fmt.Printf("Service account: %s\n", createGCPConnectionServiceAccountID)
+			return nil
+		}
+
 		created, err := handler.Create(gcpconnection.GCPConnectionCreate{Value: value})
 		if err != nil {
 			printGCPPrincipalHint(handler, createGCPConnectionServiceAccountID)
@@ -186,6 +193,15 @@ Examples:
 		body, err := json.Marshal(payload)
 		if err != nil {
 			return fmt.Errorf("failed to prepare request payload: %w", err)
+		}
+
+		if dryRun {
+			fmt.Printf("Dry run: would create GCP monitoring config (disabled)\n")
+			fmt.Printf("Name: %s\n", createGCPMonitoringConfigName)
+			fmt.Printf("Version: %s\n", version)
+			fmt.Printf("Locations: %d\n", len(locations))
+			fmt.Printf("Feature sets: %d\n", len(featureSets))
+			return nil
 		}
 
 		created, err := monitoringHandler.Create(body)

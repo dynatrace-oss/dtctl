@@ -101,6 +101,12 @@ Examples:
 			}
 		}
 
+		if dryRun {
+			fmt.Printf("Dry run: would create Azure connection\n")
+			fmt.Printf("Name: %s\n", createAzureConnectionName)
+			return nil
+		}
+
 		created, err := handler.Create(azureconnection.AzureConnectionCreate{Value: value})
 		if err != nil {
 			return err
@@ -167,6 +173,15 @@ Examples:
 		body, err := json.Marshal(payload)
 		if err != nil {
 			return fmt.Errorf("failed to prepare request payload: %w", err)
+		}
+
+		if dryRun {
+			fmt.Printf("Dry run: would create Azure monitoring config (disabled)\n")
+			fmt.Printf("Name: %s\n", createAzureMonitoringConfigName)
+			fmt.Printf("Version: %s\n", version)
+			fmt.Printf("Locations: %d\n", len(locations))
+			fmt.Printf("Feature sets: %d\n", len(featureSets))
+			return nil
 		}
 
 		created, err := monitoringHandler.Create(body)
