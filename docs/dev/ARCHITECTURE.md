@@ -595,7 +595,7 @@ require (
 ```makefile
 .PHONY: all build clean test generate install
 
-VERSION ?= $(shell git describe --tags --always --dirty)
+VERSION ?= $(shell git describe --tags --match "v*" --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
 DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 

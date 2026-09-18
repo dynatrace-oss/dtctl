@@ -1,6 +1,11 @@
 .PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check docs-generate docs-check stability-manifest
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+# --match "v*" is load-bearing: sdk/ is a second module in this repo and every
+# release tag is mirrored to sdk/vX.Y.Z at the same commit. Without the filter
+# `git describe` picks the sdk/ tag and local builds report a version like
+# "sdk/v0.38.0-55-gd4c6dd8". Release builds are unaffected (GoReleaser sets the
+# version from the release tag), so this only ever showed up in make/go install.
+VERSION ?= $(shell git describe --tags --match "v*" --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
