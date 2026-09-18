@@ -480,8 +480,17 @@ func applyStabilityBadges(root *cobra.Command) {
 			return
 		}
 		cmd.Short = badge + " " + cmd.Short
-		if note != "" {
-			cmd.Long = strings.TrimRight(cmd.Long, "\n") + "\n\n" + badge + " " + note
+		if note == "" {
+			return
+		}
+		// A command with no Long has the badged Short as its only prose, so
+		// the guarantee has to follow that rather than a blank line: Cobra
+		// prints Long verbatim, and a leading "\n\n" would open the help text
+		// with two empty lines.
+		if base := strings.TrimRight(cmd.Long, "\n"); base == "" {
+			cmd.Long = cmd.Short + "\n\n" + badge + " " + note
+		} else {
+			cmd.Long = base + "\n\n" + badge + " " + note
 		}
 	})
 }

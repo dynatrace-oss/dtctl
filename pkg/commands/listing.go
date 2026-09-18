@@ -79,6 +79,14 @@ type Verb struct {
 	SafetyOp    string   `json:"safety_operation,omitempty" yaml:"safety_operation,omitempty"`
 	Access      string   `json:"access,omitempty" yaml:"access,omitempty"`
 	Resources   []string `json:"resources,omitempty" yaml:"resources,omitempty"`
+	// ResourceStability maps a resource to its tier, for the resources whose
+	// tier is not the default `stable`. Resources are rendered as a bare name
+	// list to keep the catalog compact, so there is nowhere on the resource
+	// itself to carry a contract — yet `get breakpoints` being experimental is
+	// exactly what an agent must not learn by having its automation break.
+	// Omitted entirely when every resource under the verb is stable, which is
+	// the overwhelming majority, so the common case costs nothing.
+	ResourceStability map[string]string `json:"resource_stability,omitempty" yaml:"resource_stability,omitempty"`
 	// Stability is the effective stability tier (the weakest along the path from
 	// root), omitted when it is the default `stable`. An agent that reads no
 	// `stability` key is looking at surface it may safely automate against.
@@ -193,6 +201,27 @@ func advertisedResources(verb string, resources []string) []string {
 			continue
 		}
 		out = append(out, r)
+	}
+	return out
+}
+
+// stabilityOfAdvertised narrows a verb's resource-stability map to the
+// resources the caller is actually shown. Without the narrowing, an
+// unadvertised resource would keep a tier entry after being filtered out of
+// the name list, advertising the very command the filter exists to hide.
+// Returns nil when nothing is left, so the field is omitted rather than empty.
+func stabilityOfAdvertised(verb string, v *Verb) map[string]string {
+	if len(v.ResourceStability) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(v.ResourceStability))
+	for _, r := range advertisedResources(verb, v.Resources) {
+		if lvl, ok := v.ResourceStability[r]; ok {
+			out[r] = lvl
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
@@ -313,6 +342,7 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 		subs := cmd.Commands()
 		if len(subs) > 0 {
 			var resources []string
+			var resourceStability map[string]string
 			subcommands := make(map[string]*Verb)
 			hasResources := false
 
@@ -377,11 +407,18 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 					// Treat as a resource
 					resources = append(resources, subName)
 					hasResources = true
+					if lvl := stability.Effective(sub); lvl != stability.Default {
+						if resourceStability == nil {
+							resourceStability = map[string]string{}
+						}
+						resourceStability[subName] = string(lvl)
+					}
 				}
 			}
 
 			if hasResources {
 				verb.Resources = resources
+				verb.ResourceStability = resourceStability
 			}
 			if len(subcommands) > 0 {
 				verb.Subcommands = subcommands
@@ -568,8 +605,12 @@ type MinimalVerb struct {
 	// Stability is carried even here: this is the documented agent bootstrap
 	// path, and "may change in any release" is not something an agent should
 	// have to discover by having its automation break. Omitted for `stable`.
-	Stability   string                  `json:"stability,omitempty" yaml:"stability,omitempty"`
-	Subcommands map[string]*MinimalVerb `json:"subcommands,omitempty" yaml:"subcommands,omitempty"`
+	Stability string `json:"stability,omitempty" yaml:"stability,omitempty"`
+	// ResourceStability is carried here for the same reason as Stability: a
+	// resource-style command (`get breakpoints`) has no other slot in which to
+	// state its contract.
+	ResourceStability map[string]string       `json:"resource_stability,omitempty" yaml:"resource_stability,omitempty"`
+	Subcommands       map[string]*MinimalVerb `json:"subcommands,omitempty" yaml:"subcommands,omitempty"`
 }
 
 // NewMinimal returns an ultra-compact overview of the command tree. The original
@@ -596,8 +637,9 @@ func NewMinimal(l *Listing) *Minimal {
 // newMinimalVerb strips a verb down to its resources and nested subcommands.
 func newMinimalVerb(verb string, v *Verb) *MinimalVerb {
 	mv := &MinimalVerb{
-		Resources: advertisedResources(verb, v.Resources),
-		Stability: v.Stability,
+		Resources:         advertisedResources(verb, v.Resources),
+		Stability:         v.Stability,
+		ResourceStability: stabilityOfAdvertised(verb, v),
 	}
 	if len(v.Subcommands) > 0 {
 		mv.Subcommands = make(map[string]*MinimalVerb, len(v.Subcommands))
@@ -645,6 +687,8 @@ func NewBrief(l *Listing) *Listing {
 			Mutating:  verb.Mutating,
 			Access:    verb.Access,
 			Resources: advertisedResources(name, verb.Resources),
+			// Retained for the same reason as the verb's own Stability below.
+			ResourceStability: stabilityOfAdvertised(name, verb),
 			// DQL scopes are not derivable from resource_scopes, so retain them.
 			RequiredScopes: verb.RequiredScopes,
 			// Retained for the same reason as mutating status: an agent always
@@ -657,7 +701,11 @@ func NewBrief(l *Listing) *Listing {
 		if verb.Flags != nil {
 			bv.Flags = make(map[string]*Flag, len(verb.Flags))
 			for k, f := range verb.Flags {
-				bf := &Flag{Type: f.Type}
+				// Stability survives the strip for the same reason mutating
+				// status does: it is a constraint on whether the agent may act,
+				// not a description it can do without. StabilitySince does not
+				// — that is history, and history is what --full is for.
+				bf := &Flag{Type: f.Type, Stability: f.Stability}
 				if f.Required {
 					bf.Description = "(required)"
 				}
@@ -670,17 +718,18 @@ func NewBrief(l *Listing) *Listing {
 			bv.Subcommands = make(map[string]*Verb, len(verb.Subcommands))
 			for subName, sub := range verb.Subcommands {
 				bs := &Verb{
-					Mutating:       sub.Mutating,
-					Access:         sub.Access,
-					Resources:      sub.Resources,
-					RequiredScopes: sub.RequiredScopes,
-					Stability:      sub.Stability,
-					Deprecated:     sub.Deprecated,
+					Mutating:          sub.Mutating,
+					Access:            sub.Access,
+					Resources:         sub.Resources,
+					ResourceStability: sub.ResourceStability,
+					RequiredScopes:    sub.RequiredScopes,
+					Stability:         sub.Stability,
+					Deprecated:        sub.Deprecated,
 				}
 				if sub.Flags != nil {
 					bs.Flags = make(map[string]*Flag, len(sub.Flags))
 					for k, f := range sub.Flags {
-						bs.Flags[k] = &Flag{Type: f.Type}
+						bs.Flags[k] = &Flag{Type: f.Type, Stability: f.Stability}
 					}
 				}
 				if sub.Subcommands != nil {
