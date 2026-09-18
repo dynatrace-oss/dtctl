@@ -731,17 +731,34 @@ that compose on a context:
 Set **both** on a context to express, e.g., "this agent only sees `query`/Davis
 analyzers **and** can never mutate."
 
-Two further axes exist when dtctl is not a local terminal process -- they belong to
-the *environment* it runs in, not to your configuration, and they matter because
-an agent has to tell all four blocks apart:
+A third axis is configurable on a context too: the
+**[stability floor](STABILITY.md#choosing-what-this-environment-accepts)** asks
+"which commands *carry a contract* here?" and removes anything whose invocation
+and output dtctl does not promise to keep. It answers a different question again
+-- not permission, not topic, but *how durable* the surface is -- so automation
+that must keep working across releases pins it even when the profile and the
+safety level are already set:
+
+```bash
+dtctl config set-context prod-agent --min-stability stable
+```
+
+Three further axes exist when dtctl is not a local terminal process -- they
+belong to the *environment* it runs in, not to your configuration, and they
+matter because an agent has to tell every block apart:
 
 | Axis | Question | Chosen by | Agent code (see [AGENT_MODE.md](AGENT_MODE.md#error-responses)) |
 |---|---|---|---|
 | Safety level | "What may this command *do*?" | context, `--safety-level`, or the request | `safety_blocked` |
 | Profile | "Which commands *exist* for this caller?" | `DTCTL_PROFILE`, context, or the request | `profile_blocked` |
+| Stability floor | "Which commands *carry a contract* here?" | `DTCTL_MIN_STABILITY`, context, or the request | `stability_blocked` |
+| Deprecated surface | "Would this still work after the next removal?" | `DTCTL_NO_DEPRECATED`, context, or the request | `deprecated_surface` |
 | Environment | "Which commands *make sense* here at all?" | the embedding environment -- server mode removes host-only commands (`config`, `ctx`, `auth`, …) | `unsupported_in_service` |
 | Capability | "Which *host abilities* may this process use?" | the embedding host -- plugins, aliases, hooks, editors, and browser opens are all off for embedded callers | `capability_disabled` |
 
 The environment and capability axes are not configurable from a context: a service
-sets them once for its whole process, and they compose with whatever profile and
-safety level a request carries.
+sets them once for its whole process, and they compose with whatever profile,
+floor and safety level a request carries. See
+[Stability](STABILITY.md) for what each tier promises, how to admit a single
+below-floor entry without lowering the floor, and what `DTCTL_NO_DEPRECATED`
+does.

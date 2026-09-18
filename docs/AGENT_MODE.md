@@ -70,6 +70,9 @@ Error codes are stable identifiers that agents can match on programmatically:
 | `timeout` | The operation timed out client-side | Narrow the request (timeframe, limit) and retry |
 | `safety_blocked` | The context's [safety level](CONFIGURATION.md#safety-levels) forbids this operation | Don't retry; ask a human to widen the level |
 | `profile_blocked` | The active [command profile](CONFIGURATION.md#command-profiles) doesn't expose this command | Re-read `dtctl commands` and pick a supported path |
+| `stability_blocked` | The command or a flag you used offers a weaker contract than the context's [stability floor](STABILITY.md#choosing-what-this-environment-accepts) accepts | Don't retry; use a `stable` alternative, or ask a human to admit this entry |
+| `deprecated_surface` | The command or flag is deprecated and this context refuses deprecated surface ([`DTCTL_NO_DEPRECATED`](STABILITY.md#finding-out-early-what-a-removal-will-break)) | Don't retry; migrate to the replacement named in `suggestions` |
+| `development_disabled` | A `development`-tier feature that nobody enabled here | Don't retry; it needs `dtctl config set development.<feature> on` |
 | `unsupported_in_service` | Host-only command, unavailable in server mode | Don't retry; the suggestion says why |
 | `capability_disabled` | A host ability (plugin, alias, hook, editor, browser) isn't granted | Don't retry; use an in-process alternative |
 | `hook_rejected` | A pre-apply hook rejected the resource | Fix the resource, or apply with `--no-hooks` |
@@ -82,6 +85,8 @@ Error codes are stable identifiers that agents can match on programmatically:
 | `spill_file_wrong_context` | The spill file belongs to another context or tenant | Switch context, or re-query here |
 | `inspect_unknown_field` | `--fields` named a column the file doesn't have | Use `dtctl inspect <path> --schema` |
 | `inspect_bad_flags` | Incompatible `dtctl inspect` flags | Pick one row-access primitive per call |
+| `api_index_unavailable` | The environment publishes no machine-readable API index | Stop probing for specifications; use the native commands |
+| `api_spec_unavailable` | A listed API's specification could not be read | Don't retry; `dtctl get apis` still names the API |
 | `error` | Unclassified failure | Read `message`; treat as non-retryable |
 
 `dtctl query` additionally passes the DQL API's own error type through as the code
