@@ -34,6 +34,7 @@
 
 | Unmapped key |
 | --- |
+| arrivals |
 | classic-pipelines |
 | current |
 | current-context |

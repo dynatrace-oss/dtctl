@@ -386,6 +386,10 @@ Probe the environment: which data, entity types, and capabilities exist here
 
 _read-only | access: read_
 
+| Resource | Required scopes |
+| --- | --- |
+| arrivals | `storage:logs:read`, `storage:events:read`, `storage:metrics:read`, `storage:spans:read`, `storage:bizevents:read`, `storage:entities:read`, `storage:smartscape:read`, `storage:system:read`, `storage:security.events:read` |
+
 
 ## logs
 
