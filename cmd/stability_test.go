@@ -401,3 +401,60 @@ func TestEnvironmentOptInSurvivesAMissingConfig(t *testing.T) {
 		t.Errorf("floor = %q, want stable", policy.EffectiveFloor())
 	}
 }
+
+// TestStabilityFloorBlocksBelowFloorGlobalFlags covers a flag declared once on
+// the root and usable on every command.
+//
+// This is the case the floor used to miss entirely. blockBelowFloorFlags walked
+// only visitOwnFlags, which skips inherited persistent flags, so a marked
+// global flag was badged in help and listed in the manifest while every
+// subcommand went on accepting it — a promise weaker on paper than in practice.
+func TestStabilityFloorBlocksBelowFloorGlobalFlags(t *testing.T) {
+	root := newFloorTree()
+	root.PersistentFlags().Bool("spill-global", false, "")
+	root.PersistentFlags().String("jq", "", "")
+	stability.MarkFlag(root, "spill-global", stability.Experimental, "0.38.0")
+
+	applyStabilityFloor(root, stability.Policy{Floor: stability.Stable})
+
+	// A stable global flag is untouched on a stable command.
+	if err := runTree(t, root, "query", "fetch logs", "--jq", ".records"); err != nil {
+		t.Fatalf("a stable global flag was blocked: %v", err)
+	}
+
+	// The experimental global flag is refused on a subcommand, which is the
+	// only place a caller can type it.
+	err := runTree(t, root, "query", "fetch logs", "--spill-global")
+	var blocked *StabilityError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("an experimental global flag was accepted under a stable floor: %v", err)
+	}
+	if blocked.Flag != "spill-global" || blocked.Command != "query" {
+		t.Errorf("the block should name the flag and the command a caller typed, got %+v", blocked)
+	}
+}
+
+// TestStabilityExceptionAdmitsAGlobalFlag checks a global flag can be admitted
+// one command at a time, so accepting `--spill-global` on `query` does not
+// hand it to every other command as well.
+func TestStabilityExceptionAdmitsAGlobalFlag(t *testing.T) {
+	root := newFloorTree()
+	root.PersistentFlags().Bool("spill-global", false, "")
+	stability.MarkFlag(root, "spill-global", stability.Experimental, "0.38.0")
+
+	applyStabilityFloor(root, stability.Policy{
+		Floor:      stability.Stable,
+		Exceptions: []stability.Exception{{Command: "query", Flag: "spill-global"}},
+	})
+
+	if err := runTree(t, root, "query", "fetch logs", "--spill-global"); err != nil {
+		t.Errorf("the named global-flag exception was still blocked: %v", err)
+	}
+
+	// `logs` did not get an exception, so it still refuses the flag.
+	err := runTree(t, root, "ingest", "logs", "--spill-global")
+	var blocked *StabilityError
+	if !errors.As(err, &blocked) {
+		t.Errorf("a global-flag exception on one command spilled onto another: %v", err)
+	}
+}

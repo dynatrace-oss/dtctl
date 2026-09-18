@@ -34,7 +34,10 @@ merely scheduled for removal. It is recorded on the same line.
 The ` + "`(global)`" + ` group at the top is not a command. It is the root command's
 persistent flags — the ones every command accepts. They are listed because a
 flag that appears nowhere in this file is stable by omission, which is the one
-tier nobody chose deliberately.
+tier nobody chose deliberately. The floor applies to them on whichever command
+you type, and their tier is necessarily tree-wide: cobra gives every subcommand
+the same flag the root declared, so a global flag cannot be stable on one
+command and experimental on another.
 
 ## Choosing what this environment accepts
 

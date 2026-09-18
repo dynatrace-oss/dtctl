@@ -10,6 +10,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
+	"github.com/dynatrace-oss/dtctl/sdk/session"
 )
 
 // This file is the enforcement half of the stability axis; pkg/stability holds
@@ -407,13 +408,24 @@ func blockBelowFloorFlags(cmd, root *cobra.Command, path string, p stability.Pol
 		return // flags are the command's own business; nothing to check
 	}
 	blocked := make(map[string]stability.Level)
-	visitOwnFlags(cmd, func(f *pflag.Flag) {
-		lvl := stability.EffectiveFlag(cmd, f.Name)
-		if p.AllowsFlag(path, f.Name, lvl, stability.OfFlag(cmd, f.Name)) {
+	consider := func(f *pflag.Flag, own stability.Level) {
+		lvl := session.Weakest(stability.Effective(cmd), own)
+		if p.AllowsFlag(path, f.Name, lvl, own) {
 			return
 		}
 		blocked[f.Name] = lvl
 		f.Hidden = true
+	}
+	visitOwnFlags(cmd, func(f *pflag.Flag) {
+		consider(f, stability.OfFlag(cmd, f.Name))
+	})
+	// Global flags are declared once on the root and usable on every command,
+	// so the command being invoked is the only place a floor can refuse one.
+	// Checking them on the declaring command instead would police nothing: the
+	// guard below hangs off this command's RunE, and rootCmd's RunE never runs
+	// for a subcommand.
+	visitInheritedFlags(cmd, func(f *pflag.Flag) {
+		consider(f, stability.OfFlagValue(f))
 	})
 	if len(blocked) == 0 {
 		return
@@ -439,6 +451,29 @@ func blockBelowFloorFlags(cmd, root *cobra.Command, path string, p stability.Pol
 			}
 		}
 		return orig(c, args)
+	}
+}
+
+// visitInheritedFlags invokes fn for each persistent flag an ancestor declares
+// and this command does not shadow — the global flags, from the perspective of
+// the command a caller actually typed.
+//
+// Like visitOwnFlags it walks the ancestors by hand rather than calling cobra's
+// InheritedFlags(), which would merge every parent's persistent flags
+// permanently into this command's own flag set. These stages run on every
+// invocation, so that merge would be a global side effect of rendering help.
+func visitInheritedFlags(cmd *cobra.Command, fn func(*pflag.Flag)) {
+	seen := map[string]bool{}
+	cmd.Flags().VisitAll(func(f *pflag.Flag) { seen[f.Name] = true })
+
+	for parent := cmd.Parent(); parent != nil; parent = parent.Parent() {
+		parent.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+			if seen[f.Name] {
+				return // shadowed by this command, or by a nearer ancestor
+			}
+			seen[f.Name] = true
+			fn(f)
+		})
 	}
 }
 

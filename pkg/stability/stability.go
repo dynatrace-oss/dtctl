@@ -236,6 +236,20 @@ func OfFlag(cmd *cobra.Command, name string) Level {
 	return flagLevel(f.Annotations)
 }
 
+// OfFlagValue returns a flag's own declared level from the flag itself, for
+// callers that already hold it.
+//
+// OfFlag cannot serve a global flag: before cobra merges persistent flags,
+// cmd.Flags() on a subcommand does not see them, so the lookup returns
+// Default. Walking ancestors by hand and reading the flag directly is the only
+// way to ask about a global flag without triggering that merge.
+func OfFlagValue(f *pflag.Flag) Level {
+	if f == nil {
+		return Default
+	}
+	return flagLevel(f.Annotations)
+}
+
 // EffectiveFlag returns a flag's stability as callers experience it: the weakest
 // of the flag's own level and its command's effective level.
 func EffectiveFlag(cmd *cobra.Command, name string) Level {
