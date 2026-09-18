@@ -302,8 +302,14 @@ func printInventorySignalsHuman(inv *inventory.Inventory) {
 	// the signals they came to check. Say so above the evidence block rather
 	// than leaving it to be inferred from a per-signal line.
 	if capped := scanCappedSignals(inv); len(capped) > 0 {
-		fmt.Printf("\nScan cap: %s could not be counted — each scans more than the %g GB cap over this window.\n",
-			strings.Join(capped, ", "), scanLimitOf(inv))
+		// "each scans" reads wrong for a single signal, and one is the common
+		// case under --signals.
+		verb := "each scans"
+		if len(capped) == 1 {
+			verb = "it scans"
+		}
+		fmt.Printf("\nScan cap: %s could not be counted — %s more than the %g GB cap over this window.\n",
+			strings.Join(capped, ", "), verb, scanLimitOf(inv))
 		fmt.Println("  This is a dtctl limit, not a verdict about your data. Raise --scan-limit-gbytes or narrow --since.")
 	}
 
