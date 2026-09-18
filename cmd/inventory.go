@@ -41,7 +41,9 @@ for dashboards, workflows, SLOs, and the rest, use 'dtctl get <resource>'.
 Discovery is read-only and budgeted: it runs a small battery of DQL queries
 (data-object catalog, buckets, entity census, metric catalog when needed,
 plus any probe-shaped definitions) and stops with a partial inventory rather
-than overrunning the budget. Nothing is persisted.
+than overrunning the budget. --budget-seconds is a hard bound, not a
+tally: a query that would overrun it is cut off and whatever it would have
+answered is reported as unknown. Nothing is persisted.
 
 The capability set is customizable. dtctl ships a built-in, structural-only
 set; --definitions merges your own definitions over it (see
@@ -282,7 +284,7 @@ func addInventoryDiscoveryFlags(cmd *cobra.Command) {
 	cmd.Flags().StringArray("definitions", nil, "Capability-definitions file merged over the built-in set (repeatable, later files win)")
 	cmd.Flags().Bool("no-builtin-definitions", false, "Start from an empty capability set instead of the built-in one")
 	cmd.Flags().Int("budget-queries", 100, "Discovery budget: max queries")
-	cmd.Flags().Float64("budget-seconds", 300, "Discovery budget: max cumulative query seconds")
+	cmd.Flags().Float64("budget-seconds", 300, "Discovery budget: max cumulative query seconds — a query that would overrun it is cut off")
 	cmd.Flags().Float64("scan-limit-gbytes", 25, "Scan cap applied to every discovery probe")
 }
 

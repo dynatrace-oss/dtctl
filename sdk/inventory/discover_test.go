@@ -2,9 +2,11 @@ package inventory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 type mockResponse struct {
@@ -527,5 +529,95 @@ func TestDiscoverRejectsInvalidDefinitions(t *testing.T) {
 	}
 	if len(runner.calls) != 0 {
 		t.Errorf("no query must run on invalid definitions, got %d", len(runner.calls))
+	}
+}
+
+// slowRunner blocks on one query until its context ends — the shape that
+// actually broke this: a metric catalog that runs for half a minute on a large
+// tenant while the budget says 20 seconds.
+type slowRunner struct {
+	*mockRunner
+	slowMatch string
+	slowFor   time.Duration
+}
+
+func (s *slowRunner) RunQuery(ctx context.Context, dql string) (*RunResult, error) {
+	if !strings.Contains(dql, s.slowMatch) {
+		return s.mockRunner.RunQuery(ctx, dql)
+	}
+	s.mockRunner.calls = append(s.mockRunner.calls, dql)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(s.slowFor):
+		return &RunResult{Seconds: s.slowFor.Seconds()}, nil
+	}
+}
+
+func TestDiscoverSecondsBudgetCutsSlowQuery(t *testing.T) {
+	runner := &slowRunner{mockRunner: testRunner(), slowMatch: "metrics ", slowFor: 30 * time.Second}
+	// The three fast queries debit 0.1s each (mockRunner), leaving ~0.7s for a
+	// metric catalog that would run for 30. Debiting after the fact would let
+	// it run to completion; the budget has to cut it.
+	start := time.Now()
+	inv, err := Discover(context.Background(), runner, testDefs(), DiscoverOptions{BudgetSeconds: 1})
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("discovery took %v with a 1s budget — the slow query was not cut", elapsed)
+	}
+	// Cut, not crashed: the fact source it would have filled degrades to
+	// unknown, and everything already discovered keeps its verdict.
+	wantUnknown := map[string]string{
+		"k8s-metrics": "metric catalog unavailable",
+		"genai":       "budget exhausted",
+		"rap":         "budget exhausted",
+	}
+	if len(inv.Unknown) != len(wantUnknown) {
+		t.Fatalf("Unknown = %v, want %d entries", inv.Unknown, len(wantUnknown))
+	}
+	for _, u := range inv.Unknown {
+		if want, ok := wantUnknown[u.Name]; !ok || !strings.Contains(u.Evidence, want) {
+			t.Errorf("unknown entry %+v, want reason %q", u, wantUnknown[u.Name])
+		}
+	}
+	if len(inv.DataObjects) == 0 || len(inv.EntityTypes) == 0 {
+		t.Errorf("facts discovered before the cut were lost: %+v", inv)
+	}
+	// The partial state is on the record, and the cut query is charged what it
+	// spent rather than silently omitted.
+	found := false
+	for _, n := range inv.Notes {
+		if strings.Contains(n, "budget exhausted") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("missing budget-exhausted note: %v", inv.Notes)
+	}
+	if inv.Discovery.Queries != 4 {
+		t.Errorf("report.Queries = %d, want 4 (the cut query was still issued)", inv.Discovery.Queries)
+	}
+	if inv.Discovery.Seconds <= 0.3 {
+		t.Errorf("report.Seconds = %v, want the cut query's own time included", inv.Discovery.Seconds)
+	}
+}
+
+func TestDiscoverCallerCancellationIsNotABudgetStop(t *testing.T) {
+	runner := &slowRunner{mockRunner: testRunner(), slowMatch: "metrics ", slowFor: 30 * time.Second}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(200*time.Millisecond, cancel)
+	// A generous budget: only the caller's abort can end this run, and an
+	// aborted run yields no inventory rather than a partial one dressed up as
+	// a verdict.
+	inv, err := Discover(ctx, runner, testDefs(), DiscoverOptions{BudgetSeconds: 300})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Discover() error = %v, want context.Canceled", err)
+	}
+	if inv != nil {
+		t.Errorf("cancelled run returned an inventory: %+v", inv)
 	}
 }
