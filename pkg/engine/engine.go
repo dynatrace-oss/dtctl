@@ -21,6 +21,13 @@ var engineSlot = make(chan struct{}, 1)
 // engineQueued tracks how many requests are currently waiting for or holding the slot.
 var engineQueued atomic.Int64
 
+// ErrTooManyQueued is returned by Execute/ExecuteWithLimits when admission
+// control sheds a request because MaxQueued is already at capacity. Callers
+// that expose the engine over a transport (e.g. pkg/serve) should map this to
+// a "server busy" status (HTTP 503) rather than a client error, and a caller
+// this happens to may retry with backoff.
+var ErrTooManyQueued = errors.New("engine: too many queued requests")
+
 // Request is one dtctl invocation for one tenant.
 type Request struct {
 	// Command is the command line exactly as a user would type it after
@@ -107,6 +114,15 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 	if err := req.validate(); err != nil {
 		return nil, err
 	}
+	if limits.MaxFileBytes > 0 {
+		var total int64
+		for _, data := range req.Files {
+			total += int64(len(data))
+		}
+		if total > limits.MaxFileBytes {
+			return nil, fmt.Errorf("engine: request files total %d bytes, exceeds MaxFileBytes (%d)", total, limits.MaxFileBytes)
+		}
+	}
 	// Apply the duration budget. The timeout context is threaded into the
 	// command tree (via RunOptions.Context) so long-running loops that observe
 	// cmd.Context() are cancelled when the budget elapses.
@@ -119,7 +135,7 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 	engineQueued.Add(1)
 	if engineQueued.Load() > int64(limits.MaxQueued) {
 		engineQueued.Add(-1)
-		return nil, errors.New("engine: too many queued requests")
+		return nil, ErrTooManyQueued
 	}
 	select {
 	case engineSlot <- struct{}{}:

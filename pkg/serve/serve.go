@@ -21,10 +21,14 @@ import (
 )
 
 // ExperimentalEnvVar gates the `dtctl serve` command surface. Server mode is
-// still taking shape — the request/response contract, the one-invocation-at-a-
-// time concurrency model, and the absence of per-request deadlines are all
-// subject to change — so released builds do not expose it unless the operator
-// opts in. Set it to a truthy value to register the command.
+// still taking shape — the request/response contract and the
+// one-invocation-at-a-time concurrency model are subject to change — so
+// released builds do not expose it unless the operator opts in. Set it to a
+// truthy value to register the command.
+//
+// pkg/engine now enforces per-request admission control and a duration
+// budget (see engine.Limits, engine.DefaultLimits); what remains open is
+// documented in docs/dev/SERVICE_ENGINE_DESIGN.md's "Known limitations".
 //
 // The gate covers the *command* only. pkg/engine stays importable: embedding it
 // is a deliberate Go API choice made at compile time, not a surface an end user

@@ -317,26 +317,40 @@ exist — no help entry, no catalog entry, an ordinary "unknown command". The ga
 comes off when the items below are settled, because each one changes what an
 operator can rely on:
 
-- **No per-request deadline.** A started execution cannot be interrupted, and it
-  holds the single invocation slot. One `wait` with a long timeout, or a `query`
-  against a slow environment, stalls every queued request behind it.
-- **No admission control.** Requests queue on the invocation mutex without a
-  bound; there is no "server busy" answer and no way to shed load.
-- **Unbounded commands are still reachable.** `query --live` never returns on
-  its own. Deciding whether the service surface excludes such commands (as it
-  excludes `inspect`) or the transport imposes deadlines is the open half of the
-  question below.
+- **Per-request deadline, with a caveat.** `engine.Limits.MaxDuration`
+  (`DefaultLimits`: 5 min) wraps the request in a `context.WithTimeout`
+  threaded into the command tree via `RunOptions.Context` /
+  `rootCmd.ExecuteContext`, and most commands cancel cooperatively via
+  `cmd.Context()`. But cancellation is opt-in per command body: one that never
+  checks its context, or issues an HTTP call on a context of its own, still
+  runs to completion and holds the single invocation slot regardless of the
+  budget. `cmd/query.go`'s DQL execution is the tracked exception today (see
+  its own comments); auditing the rest of the tree for the same gap is not
+  done.
+- **Admission control exists, coarsely.** `engine.Limits.MaxQueued`
+  (default 4) bounds how many requests may wait for the slot;
+  `engine.ErrTooManyQueued` is the "server busy" answer, mapped to HTTP 503 by
+  `serve http`. The bound is process-global (a package-level counter), not
+  per engine instance or caller, so two independent callers sharing a process
+  share one queue depth.
+- **Streaming commands are refused, not made safe.** `--watch` (`get`),
+  `--follow` (`logs`), and `--live` (`query`) are blocked outright via the
+  `LongRunningStreams` capability (`capability_disabled`) rather than
+  supported through a different response shape — they would need a streaming
+  transport, which `POST /v1/execute` (buffers the whole output) does not
+  offer. This closes off the "unbounded command reachable" gap for these
+  three flags specifically; it does not audit the full command tree for other
+  potentially-unbounded operations.
 - **Per-invocation tracing cost.** `tracing.Init`/shutdown runs per invocation
   with a 5s flush budget; in a long-lived server that belongs at process scope.
 
 ## Open questions
 
 - **Instance-per-request via WASM.** A spike measured 20–47 ms per-instance
-  overhead, which would remove the serialization constraint and give hard
-  per-request deadlines. Not pursued yet; the current model is
+  overhead, which would remove the serialization constraint and give hard,
+  host-enforced per-request deadlines (rather than the cooperative
+  `cmd.Context()` cancellation above). Not pursued yet; the current model is
   process/instance-level scaling.
-- **Cancellation.** The context gates the *start* of an execution only. Hard
-  deadlines need a process or WASM boundary.
-- **Streaming.** `POST /v1/execute` buffers the whole output. Long-running
-  commands (`--watch`, `logs -f`) are unavailable in the service surface; a
-  streaming endpoint would need a different response shape.
+- **Per-engine-instance admission state.** Moving `engineSlot`/`engineQueued`
+  off package globals and onto an engine value would let independent callers
+  (e.g. multiple tenants in one process) each get their own queue depth.

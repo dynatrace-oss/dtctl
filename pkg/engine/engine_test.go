@@ -424,3 +424,62 @@ func TestExecute_WatchIsRefused(t *testing.T) {
 		"watch in service mode must return capability_disabled envelope, got: %s", res.Stdout,
 	)
 }
+
+// TestExecute_QueryLiveIsRefused: `query --live` is just as unbounded as
+// `get --watch` (it loops until interrupted), so it must be refused by the
+// same LongRunningStreams gate. Regression test for the gap where --live
+// reached RunLive's infinite loop unchecked and held the single engine slot
+// forever (see doc.go's "Cancellation" section).
+func TestExecute_QueryLiveIsRefused(t *testing.T) {
+	res, err := engine.Execute(context.Background(), engine.Request{
+		Command:        `query "fetch logs" --live --agent`,
+		EnvironmentURL: "https://x.example.invalid",
+		Token:          "t",
+	})
+	require.NoError(t, err)
+	require.NotZero(t, res.ExitCode)
+	require.True(t,
+		strings.Contains(string(res.Stdout), `"capability_disabled"`),
+		"query --live in service mode must return capability_disabled envelope, got: %s", res.Stdout,
+	)
+}
+
+// TestExecute_PartialLimitsAreNormalized: a Limits value with only some
+// fields set must not silently misbehave on the fields left at Go's zero
+// value (MaxQueued=0 would reject every request; MaxDuration=0 would cancel
+// every request before it starts).
+func TestExecute_PartialLimitsAreNormalized(t *testing.T) {
+	env := newMockEnv(t)
+
+	cases := []engine.Limits{
+		{},
+		{MaxDuration: time.Hour},
+		{MaxOutputBytes: 1 << 20},
+	}
+	for _, lim := range cases {
+		res, err := engine.ExecuteWithLimits(context.Background(), engine.Request{
+			Command: "get buckets --plain", EnvironmentURL: env.URL, Token: "t",
+		}, lim)
+		require.NoError(t, err, "limits %+v", lim)
+		require.Zero(t, res.ExitCode, "limits %+v", lim)
+		require.NotEmpty(t, res.Stdout, "limits %+v: a zero-value field must fall back to DefaultLimits, not silently reject or empty the run", lim)
+	}
+}
+
+// TestExecute_MaxFileBytesRejectsOversizedRequest: Request.Files exceeding
+// MaxFileBytes must be rejected before the command runs (and before
+// consuming an admission-control slot), not silently accepted.
+func TestExecute_MaxFileBytesRejectsOversizedRequest(t *testing.T) {
+	lim := engine.DefaultLimits()
+	lim.MaxFileBytes = 10
+
+	res, err := engine.ExecuteWithLimits(context.Background(), engine.Request{
+		Command:        "get workflows --agent",
+		EnvironmentURL: "https://x.example.invalid",
+		Token:          "t",
+		Files:          map[string][]byte{"big.yaml": make([]byte, 11)},
+	}, lim)
+
+	require.Error(t, err)
+	require.Nil(t, res)
+}

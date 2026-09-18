@@ -408,6 +408,9 @@ Examples:
 
 		// Handle live mode
 		if live {
+			if !caps.LongRunningStreams {
+				return &CapabilityError{Feature: "live mode"}
+			}
 			// Warn about flags that are not meaningfully applicable in live mode
 			if len(metadataFields) > 0 {
 				output.PrintWarning("--metadata is ignored in live mode (metadata is not displayed during live updates)")

@@ -115,7 +115,8 @@ curl -s http://127.0.0.1:7211/v1/execute \
   "files": {
     "workflow.yaml": "id: wf-abc123\ntitle: Daily Health Check\ntasks: {}\n"
   },
-  "durationMs": 412
+  "durationMs": 412,
+  "truncated": false
 }
 ```
 
@@ -124,6 +125,11 @@ files you sent plus anything the command wrote. That is how writebacks survive a
 stateless request: `apply --write-id` stamps the generated id into
 `workflow.yaml`, and you read the stamped file straight out of the response and
 persist it wherever your source of truth lives.
+
+`truncated` is `true` when stdout or stderr was cut at the engine's
+`MaxOutputBytes` budget; the field is omitted (falsy) otherwise. A truncated
+result is still valid up to the cap — a large `get` listing, say — but
+incomplete, so check it before assuming `stdout`/`stderr` are the whole story.
 
 ### A failed command is still HTTP 200
 
@@ -136,9 +142,11 @@ that **never ran**:
 | `400` | malformed JSON body, or a request shape dtctl cannot run (no command, missing `environmentUrl` or `token`, unparsable command string) |
 | `405` | anything other than `POST` on `/v1/execute` |
 | `413` | request body exceeds `--max-request-bytes` |
+| `503` | the server is shedding load: `MaxQueued` requests are already waiting for the execution slot. Retry with backoff |
+| `504` | the request's `MaxDuration` budget (or the caller's own context) elapsed before or while queued |
 
 So `200` means "dtctl ran your command line"; check `exitCode` for whether the
-command succeeded.
+command succeeded, and `truncated` for whether its output is complete.
 
 ## The output is the CLI's output
 
@@ -200,8 +208,10 @@ Server mode is deliberately not a perfect mirror of the local CLI:
   proxies, exporters, and other process-level behavior. Embedding hosts that
   genuinely need them use `engine.Request.Env`
   [in-process](#embedding-pkgengine-instead).
-- **Output is buffered**, so long-running commands (`--watch`, `logs -f`) do not
-  fit the request/response shape.
+- **Output is buffered**, so long-running commands don't fit the
+  request/response shape: `--watch` (`get`), `--follow` (`logs`), and
+  `--live` (`query`) are refused outright with `capability_disabled` rather
+  than silently hanging the request.
 
 ## One request at a time
 
@@ -210,10 +220,16 @@ server handles one dtctl command at a time per process. This is what makes the
 rest of the model safe — swapping the process's streams, environment, and
 filesystem per request would be indefensible under concurrency.
 
-Scale with **more processes or more instances**, never more goroutines. A
-request's context gates the *start* of an execution — a request cancelled while
-queued never runs — but a run already in flight cannot be killed. Deployments
-that need hard per-request deadlines put the server behind a process boundary.
+Scale with **more processes or more instances**, never more goroutines. Two
+budgets bound one request: `MaxQueued` caps how many requests may wait for the
+slot (past that, the server answers 503 rather than growing the queue
+unbounded), and `MaxDuration` (5 minutes by default) cancels the request's
+context if it's still queued or running when the budget elapses. Cancellation
+is cooperative — most commands observe it via `cmd.Context()`, but a command
+that doesn't check its context, or that issues its own request with a
+different one, still runs to completion regardless of the budget. Deployments
+that need a hard, host-enforced deadline put the server behind a process
+boundary.
 
 ## Security
 

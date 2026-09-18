@@ -46,6 +46,9 @@ type executeResponse struct {
 	// Files is the complete final state of the request's virtual filesystem.
 	Files      map[string]string `json:"files,omitempty"`
 	DurationMs int64             `json:"durationMs"`
+	// Truncated is true when stdout or stderr was cut at the engine's
+	// MaxOutputBytes; see engine.Result.Truncated.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 type errorResponse struct {
@@ -107,8 +110,18 @@ func Handler(maxRequestBytes int64) http.Handler {
 			// Embedding hosts that need it use engine.Request.Env directly.
 		})
 		if err != nil {
-			// The request never ran: malformed shape or cancelled while queued.
-			writeError(w, http.StatusBadRequest, err.Error())
+			// The request never ran. Distinguish *why* so a client can react
+			// correctly: a malformed request is the caller's fault (400), but
+			// admission shedding or a budget/client timeout is transient and
+			// worth a retry with backoff (503/504), not a request rewrite.
+			switch {
+			case errors.Is(err, engine.ErrTooManyQueued):
+				writeError(w, http.StatusServiceUnavailable, err.Error())
+			case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+				writeError(w, http.StatusGatewayTimeout, err.Error())
+			default:
+				writeError(w, http.StatusBadRequest, err.Error())
+			}
 			return
 		}
 
@@ -123,6 +136,7 @@ func Handler(maxRequestBytes int64) http.Handler {
 			Stderr:     string(res.Stderr),
 			Files:      outFiles,
 			DurationMs: time.Since(start).Milliseconds(),
+			Truncated:  res.Truncated,
 		})
 	})
 	return mux
@@ -211,8 +225,10 @@ exposing it, or embed pkg/engine directly.`,
 }
 
 // runHTTP serves until the context is cancelled or SIGINT/SIGTERM arrives,
-// then shuts down gracefully, letting an in-flight execution finish (a started
-// run cannot be interrupted — see the pkg/engine cancellation notes).
+// then shuts down gracefully: server.Shutdown waits for in-flight handlers to
+// return rather than cancelling their request context, so an execution
+// already running when shutdown starts is left to finish or hit its own
+// MaxDuration budget — see the pkg/engine cancellation notes.
 func runHTTP(ctx context.Context, addr string, maxRequestBytes int64, opts ServeOptions) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()

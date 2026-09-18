@@ -121,8 +121,13 @@ Examples:
 					return printer.Print(result)
 				}
 
-				// Wait before next poll with exponential backoff
-				time.Sleep(pollInterval)
+				// Wait before next poll with exponential backoff, but stay
+				// responsive to cancellation instead of blocking through it.
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("timeout waiting for SLO evaluation to complete")
+				case <-time.After(pollInterval):
+				}
 				if pollInterval < maxPollInterval {
 					pollInterval *= 2
 					if pollInterval > maxPollInterval {
