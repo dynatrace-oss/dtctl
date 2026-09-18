@@ -72,11 +72,20 @@ commands that create the binding would land in the file that needs it.
 
 YAML document. Top-level keys: `apiVersion`, `kind`, `current-context`,
 `contexts` (list of `{name, context}`), `tokens` (list of `{name, token}`),
-`preferences`, `aliases`, `spill`. Per-context keys: `environment`,
-`token-ref`, `safety-level` (`readonly` | `readwrite-mine` | `readwrite-all` |
-`dangerously-unrestricted`; empty means `readwrite-all`), `description`,
-`hooks`, `spill`. The Go structs in `sdk/session/config.go` are the schema's
-source of truth; `testdata/contract/v1-full.yaml` exercises every field.
+`preferences`, `aliases`, `spill`, `query-limits`. Per-context keys:
+`environment`, `token-ref`, `safety-level` (`readonly` | `readwrite-mine` |
+`readwrite-all` | `dangerously-unrestricted`; empty means `readwrite-all`),
+`description`, `hooks`, `spill`, `query-limits`. The Go structs in
+`sdk/session/config.go` are the schema's source of truth;
+`testdata/contract/v1-full.yaml` exercises every field.
+
+`query-limits` keys: `scan-limit-gbytes`, `max-result-records`,
+`max-result-bytes`, `sampling-ratio`. Like `spill`, the per-context block
+overrides the top-level one **per field**, and an unset (zero) field means
+"defer to the next layer" — so a reader that ignores the block behaves exactly
+as one that never knew about it. Values must be non-negative; the merge
+therefore only tightens, and lifting a configured limit is a command-line
+decision (`--no-query-limits`), not a config one.
 
 Semantics both binaries must share: `safety-level` (a `readonly` context means
 the same thing everywhere) and token resolution order (see below).

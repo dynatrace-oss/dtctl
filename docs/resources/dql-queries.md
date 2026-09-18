@@ -36,6 +36,7 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 | `--max-result-records` | Maximum number of result records |
 | `--max-result-bytes` | Maximum result payload size in bytes |
 | `--default-scan-limit-gbytes` | Cap on how much data Grail scans (GB) |
+| `--no-query-limits` | Ignore the context's configured query limits for this invocation (see [Configuration](../CONFIGURATION.md#query-limits)) |
 | `--metadata`, `-M` | Include execution metadata (bare = all, or `=field1,field2`) |
 | `--include-types` | Include DQL column type information |
 | `--include-contributions` | Include Grail bucket contribution information |
@@ -153,7 +154,14 @@ Large dataset downloads:
 ```bash
 dtctl query "fetch logs" --max-result-records 100000
 dtctl query "fetch logs" --default-scan-limit-gbytes 500
+
+# Ignore limits configured for the context (see CONFIGURATION.md#query-limits)
+dtctl query "fetch logs" --no-query-limits
 ```
+
+These caps can also be set once per context in the config file instead of being
+passed on every invocation -- see
+[Query Limits](../CONFIGURATION.md#query-limits).
 
 Filter segments at query time (AND-combined when multiple are given):
 
