@@ -383,7 +383,7 @@ _read-only | access: read_
 
 ## inventory
 
-Probe the environment: which data, entity types, and capabilities exist here
+[Experimental] Probe the environment: which data, entity types, and capabilities exist here
 
 _read-only | access: read_
 

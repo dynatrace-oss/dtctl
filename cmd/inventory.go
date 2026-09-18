@@ -17,6 +17,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 	"github.com/dynatrace-oss/dtctl/sdk/inventory"
 )
@@ -341,6 +342,20 @@ func inventoryCancelContext(cmd *cobra.Command) (context.Context, context.Cancel
 
 func init() {
 	rootCmd.AddCommand(inventoryCmd)
+	// The whole inventory surface is experimental. Both commands report a
+	// *judgement* about an environment — which capabilities count as present,
+	// what evidence is enough to call one absent, which signals an arrival
+	// verdict covers and when a scope is "stale" rather than "empty" — and
+	// those judgements are still being calibrated against real onboardings.
+	// The shape that carries them (the capability set, the signal list, the
+	// verdict vocabulary) will move with them, so it is not something to wire
+	// a pipeline to yet. `--require` makes that concrete: it turns a verdict
+	// into an exit code, and the verdict is the part still settling.
+	//
+	// Marked on the subtree root, so `inventory arrivals` inherits it —
+	// stability.Effective takes the weakest level along the path. Promoting
+	// this line promotes the subcommands with it; check them before you do.
+	stability.Mark(inventoryCmd, stability.Experimental, "0.39.0")
 	addInventoryDiscoveryFlags(inventoryCmd)
 	inventoryCmd.AddCommand(inventoryArrivalsCmd)
 }

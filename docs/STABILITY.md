@@ -79,7 +79,7 @@ request's decision and not the host process's. See
 
 ## Summary
 
-- commands: 275 stable, 6 experimental, 11 development
+- commands: 273 stable, 8 experimental, 11 development
 - entries below (commands + flags): 821
 
 ## Surface
@@ -667,24 +667,24 @@ inspect                              stable
   --spill-to                         stable
   --stats                            stable
   --tail                             stable
-inventory                            stable
-  --budget-queries                   stable
-  --budget-seconds                   stable
-  --definitions                      stable
-  --no-builtin-definitions           stable
-  --scan-limit-gbytes                stable
-inventory arrivals                   stable
-  --budget-queries                   stable
-  --budget-seconds                   stable
-  --definitions                      stable
-  --no-builtin-definitions           stable
-  --no-sample                        stable
-  --require                          stable
-  --scan-limit-gbytes                stable
-  --scope                            stable
-  --signals                          stable
-  --since                            stable
-  --stale-after                      stable
+inventory                            experimental  since 0.39.0
+  --budget-queries                   experimental
+  --budget-seconds                   experimental
+  --definitions                      experimental
+  --no-builtin-definitions           experimental
+  --scan-limit-gbytes                experimental
+inventory arrivals                   experimental
+  --budget-queries                   experimental
+  --budget-seconds                   experimental
+  --definitions                      experimental
+  --no-builtin-definitions           experimental
+  --no-sample                        experimental
+  --require                          experimental
+  --scan-limit-gbytes                experimental
+  --scope                            experimental
+  --signals                          experimental
+  --since                            experimental
+  --stale-after                      experimental
 logs                                 stable
 logs workflow-execution              stable
   --all                              stable
