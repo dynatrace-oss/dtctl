@@ -132,8 +132,12 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 	// Admission: bound queue depth and acquire the execution slot in a
 	// context-aware way so cancelled requests (including timed-out ones) do
 	// not block behind a long queue.
-	engineQueued.Add(1)
-	if engineQueued.Load() > int64(limits.MaxQueued) {
+	// Add's return value is the count *after* this request's increment, so
+	// concurrent arrivals each see their own consistent snapshot. A separate
+	// Load() here would race: a request that was admissible at increment time
+	// could read a counter a later arrival had already bumped further, and
+	// reject itself for a slot that was in fact still available.
+	if engineQueued.Add(1) > int64(limits.MaxQueued) {
 		engineQueued.Add(-1)
 		return nil, ErrTooManyQueued
 	}
