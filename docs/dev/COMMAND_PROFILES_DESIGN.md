@@ -9,7 +9,7 @@
 > resolution live in `cmd/profile.go` (wired into `execute()` in `cmd/root.go`).
 > Context binding is in `cmd/ctx.go` / `cmd/config.go`; catalog metadata in
 > `pkg/commands/listing.go` + `cmd/commands.go`. User docs:
-> `docs/site/_docs/command-profiles.md`. Telemetry (open question 1) is deferred.
+> `docs/CONFIGURATION.md` (Command Profiles). Telemetry (open question 1) is deferred.
 
 ## Overview
 

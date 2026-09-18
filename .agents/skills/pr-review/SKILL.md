@@ -138,24 +138,23 @@ Is the change properly documented for users and contributors?
 - **docs/TOKEN_SCOPES.md**: New scopes documented if the feature requires additional API permissions
 
 **Required for new resources:**
-- **Resource-specific doc page** in `docs/` or `docs/site/_docs/`
-- **Command reference** updated in `docs/site/_docs/command-reference.md`
+- **Resource-specific doc page** in `docs/resources/`, with a `PLAN` entry in `scripts/gen-docs/gen_all.py` so the generator owns its tables
+- **Command reference**: regenerated, not hand-edited — `make docs-generate` rewrites `docs/COMMANDS.md`
 
 **Required for new AI agent support:**
 - `README.md`, `docs/QUICK_START.md`, `docs/dev/API_DESIGN.md`, `docs/dev/IMPLEMENTATION_STATUS.md` (all four)
 
-### 6. GitHub Pages
+### 6. Documentation checks
 
-If the change adds a new user-facing feature, is the documentation site updated?
-
-The site lives in `docs/site/` and deploys via GitHub Actions on pushes to main that touch `docs/site/**`.
+There is no documentation website: `docs/site/` is retired and holds only
+redirect stubs that keep previously published URLs resolving to `docs/`. A PR
+that adds a page under `docs/site/_docs/` is wrong.
 
 **Check:**
-- **New doc page**: Does the feature need a page in `docs/site/_docs/`? Use YAML frontmatter with `title`, `layout: docs`.
-- **Navigation**: Is the new page added to `docs/site/_includes/docs-nav.html` in the correct section (Getting Started / Resources / Reference)?
-- **Landing page**: Does `docs/site/index.md` need updating? (e.g., new resource in the feature table, new capability mentioned)
-- **Existing pages**: Are related pages updated to mention the new feature? (e.g., a new output format should appear on the output-formats page)
-- **Links**: All links work, relative paths are correct, no broken references.
+- **Generated blocks untouched by hand**: no edits inside `<!-- GENERATED:x:start/end -->`. If the catalog changed, `make docs-generate` was run and its output committed.
+- **New resource mapped**: a new catalog resource appears in `scripts/gen-docs/INDEX.md` under a page, not in the unmapped list.
+- **Prose verified**: `make docs-check` passes — every documented `dtctl ...` resolves and every flag exists. CI runs this, but a reviewer should confirm new examples were actually run, not invented.
+- **Links**: relative links resolve and anchors exist (`make docs-check` covers this).
 
 ### 7. PR Description
 

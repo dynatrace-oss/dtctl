@@ -1,13 +1,16 @@
+# The dtctl documentation site is retired. The canonical docs live in docs/ in
+# this repository; everything that remains here is a redirect stub, so that
+# links published before the move -- docs.dynatrace.com, `dtctl help`, blog
+# posts, bookmarks -- keep resolving instead of 404ing.
+#
+# Do not add content here. `make docs-check` fails on any page under _docs/
+# that is not a redirect stub.
 title: dtctl
 description: "Your Dynatrace platform, one command away."
 url: "https://dynatrace-oss.github.io"
 baseurl: "/dtctl"
-remote_theme: pages-themes/midnight@v0.2.0
 
-plugins:
-  - jekyll-remote-theme
-
-# Collections for documentation pages
+# The permalink is the contract: /dtctl/docs/<slug>/ must keep resolving.
 collections:
   docs:
     output: true
@@ -18,10 +21,7 @@ defaults:
       path: "_docs"
       type: "docs"
     values:
-      layout: "docs"
+      layout: "redirect"
 
-# Exclude dev files
 exclude:
-  - Gemfile
-  - Gemfile.lock
   - README.md
