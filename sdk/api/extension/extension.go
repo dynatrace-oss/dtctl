@@ -333,7 +333,9 @@ func (h *Handler) GetActiveVersion(ctx context.Context, extensionName string) (s
 }
 
 // ActivateVersion sets the active version of an extension via the environment-configuration
-// endpoint. It is safe to call even if the version is already active.
+// endpoint. PUT creates the environment configuration when the extension has never been
+// activated as well as updating an existing one (verified against a live environment), and
+// is safe to call when the version is already active.
 func (h *Handler) ActivateVersion(ctx context.Context, extensionName, version string) (*ExtensionEnvironmentConfig, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(map[string]string{"version": version}).

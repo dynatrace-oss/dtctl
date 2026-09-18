@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -28,8 +29,11 @@ Exactly one of --version, --latest, or --hub-latest must be provided:
                     already present) and then activate it.
 
 When --with-configurations is set, every existing monitoring configuration for
-the extension is re-PUT against the API after version activation, causing the
-API to validate each configuration against the new version's schema.
+the extension is rewritten to reference the target version, causing the API to
+validate each configuration against that version's schema. On an upgrade the
+configurations are migrated after activation; on a downgrade they are migrated
+before it, because the API refuses to activate an older version while a
+configuration still references a newer one.
 
 Examples:
   # Activate a specific installed version
@@ -67,7 +71,7 @@ One of --latest or --hub-latest must be provided to select the target version:
   --hub-latest  Install the newest Hub release (if not present) and activate it.
 
 When --with-configurations is set, each extension's monitoring configurations
-are re-PUT after version activation to validate them against the new schema.
+are migrated to the activated version to validate them against its schema.
 
 Failures for individual extensions are reported but do not abort the bulk run;
 the command exits non-zero if any extension could not be upgraded.
@@ -85,12 +89,32 @@ Examples:
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		all, _ := cmd.Flags().GetBool("all")
+		withConfigs, _ := cmd.Flags().GetBool("with-configurations")
+		hubLatest, _ := cmd.Flags().GetBool("hub-latest")
+		latest, _ := cmd.Flags().GetBool("latest")
+
+		// Validate every flag before authenticating or touching the API, so that
+		// an invalid invocation fails the same way with and without --dry-run.
 		if !all {
 			return fmt.Errorf("--all is required to prevent accidental bulk mutations; run with --all to confirm")
 		}
+		// Same version-source rules as for a single extension, sans --version.
+		if !latest && !hubLatest {
+			return fmt.Errorf("one of --latest or --hub-latest is required")
+		}
+		if latest && hubLatest {
+			return fmt.Errorf("--latest and --hub-latest are mutually exclusive")
+		}
 
 		if dryRun {
-			fmt.Println("Dry run: would upgrade all installed extensions")
+			if hubLatest {
+				fmt.Println("Dry run: would install the latest Hub release of every installed extension and activate it")
+			} else {
+				fmt.Println("Dry run: would activate the highest installed version of every installed extension")
+			}
+			if withConfigs {
+				fmt.Println("Dry run: would migrate every monitoring configuration to the activated version")
+			}
 			return nil
 		}
 
@@ -108,18 +132,6 @@ Examples:
 		if len(list.Items) == 0 {
 			output.PrintInfo("No extensions installed.")
 			return nil
-		}
-
-		withConfigs, _ := cmd.Flags().GetBool("with-configurations")
-		hubLatest, _ := cmd.Flags().GetBool("hub-latest")
-		latest, _ := cmd.Flags().GetBool("latest")
-
-		// Validate flags (same rules as for a single extension, sans --version)
-		if !latest && !hubLatest {
-			return fmt.Errorf("one of --latest or --hub-latest is required")
-		}
-		if latest && hubLatest {
-			return fmt.Errorf("--latest and --hub-latest are mutually exclusive")
 		}
 
 		var (
@@ -148,8 +160,9 @@ Examples:
 	},
 }
 
-// runUpdateOneExtension is the RunE body for updateExtensionCmd, also reused by
-// the bulk command.
+// runUpdateOneExtension is the RunE body for updateExtensionCmd. It validates the
+// version-source flags, then delegates the actual work to resolveAndActivate, which
+// the bulk command shares.
 func runUpdateOneExtension(cmd *cobra.Command, name string) error {
 	version, _ := cmd.Flags().GetString("version")
 	latest, _ := cmd.Flags().GetBool("latest")
@@ -238,17 +251,28 @@ func resolveAndActivate(handler *extension.Handler, name, version string, latest
 		}
 	}
 
-	// Step 2 (downgrade path): when --with-configurations and the target version
-	// is lower than the current active version, the API refuses to activate
-	// because monitoring configs reference the higher version. Update configs to
-	// the target version first so the activation succeeds.
+	// Step 2: decide when to migrate monitoring configurations, based on the
+	// version that is active *before* activation. On a downgrade the API refuses
+	// to activate while configs still reference the higher version, so they must
+	// be migrated first; on an upgrade (or a first activation) they are migrated
+	// afterwards, once the new schema is live.
+	migrateConfigsFirst := false
 	if withConfigs {
 		currentActive, err := handler.GetActiveVersion(name)
-		if err == nil && extension.SemverGreater(currentActive, version) {
-			// Downgrade: configs must be updated before activation.
-			if cfgErr := refreshMonitoringConfigurations(handler, name, version); cfgErr != nil {
-				return "", fmt.Errorf("update monitoring configurations before downgrade: %w", cfgErr)
-			}
+		switch {
+		case err != nil:
+			// The direction is unknown. Migrate after activation (the upgrade
+			// path) rather than skipping the migration altogether, so
+			// --with-configurations never silently does nothing.
+			output.PrintWarning("could not determine the active version of %q (%v); monitoring configurations will be migrated after activation", name, err)
+		case extension.SemverGreater(currentActive, version):
+			migrateConfigsFirst = true
+		}
+	}
+
+	if migrateConfigsFirst {
+		if cfgErr := refreshMonitoringConfigurations(handler, name, version); cfgErr != nil {
+			return "", fmt.Errorf("update monitoring configurations before downgrade: %w", cfgErr)
 		}
 	}
 
@@ -257,19 +281,19 @@ func resolveAndActivate(handler *extension.Handler, name, version string, latest
 		return "", fmt.Errorf("activate %q version %s: %w", name, version, err)
 	}
 
-	// Step 4 (upgrade path): update configs after activation.
-	if withConfigs {
-		currentActive, err := handler.GetActiveVersion(name)
-		if err == nil && !extension.SemverGreater(currentActive, version) {
-			// Upgrade or same version: configs updated after activation.
-			if cfgErr := refreshMonitoringConfigurations(handler, name, version); cfgErr != nil {
-				output.PrintWarning("version activated but monitoring configuration refresh failed: %v", cfgErr)
-			}
+	// Step 4 (upgrade path): migrate configs now that the new version is active.
+	if withConfigs && !migrateConfigsFirst {
+		if cfgErr := refreshMonitoringConfigurations(handler, name, version); cfgErr != nil {
+			output.PrintWarning("version activated but monitoring configuration refresh failed: %v", cfgErr)
 		}
 	}
 
 	return version, nil
 }
+
+// monitoringConfigPageSize is the API's maximum monitoring-configuration page
+// size, used to page through *all* configurations of an extension.
+const monitoringConfigPageSize = 100
 
 // refreshMonitoringConfigurations re-PUTs every monitoring configuration for the
 // given extension, updating the "version" field inside each config's value to
@@ -277,7 +301,11 @@ func resolveAndActivate(handler *extension.Handler, name, version string, latest
 // active version's schema. Per-config errors are aggregated and returned as a
 // single error; the caller decides whether to treat this as fatal.
 func refreshMonitoringConfigurations(handler *extension.Handler, extensionName, newVersion string) error {
-	configs, err := handler.ListMonitoringConfigurations(extensionName, "", 0)
+	// A page size must be passed explicitly: with chunkSize 0 the SDK returns
+	// only the first page, which would silently leave every configuration beyond
+	// it referencing the old version. 100 is the API's maximum page size, and the
+	// SDK follows the page keys from there.
+	configs, err := handler.ListMonitoringConfigurations(extensionName, "", monitoringConfigPageSize)
 	if err != nil {
 		return fmt.Errorf("list monitoring configurations: %w", err)
 	}
@@ -309,21 +337,9 @@ func refreshMonitoringConfigurations(handler *extension.Handler, extensionName, 
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("%d configuration(s) failed to refresh:\n%s", len(errs), joinErrors(errs))
+		return fmt.Errorf("%d configuration(s) failed to refresh:\n%s", len(errs), strings.Join(errs, "\n"))
 	}
 	return nil
-}
-
-// joinErrors concatenates error strings with newlines.
-func joinErrors(errs []string) string {
-	result := ""
-	for i, e := range errs {
-		if i > 0 {
-			result += "\n"
-		}
-		result += e
-	}
-	return result
 }
 
 func init() {

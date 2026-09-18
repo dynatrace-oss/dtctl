@@ -1648,7 +1648,7 @@ func TestSemverGreater(t *testing.T) {
 	for _, tt := range tests {
 		got := SemverGreater(tt.a, tt.b)
 		if got != tt.want {
-			t.Errorf("semverGreater(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			t.Errorf("SemverGreater(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
 		}
 	}
 }
