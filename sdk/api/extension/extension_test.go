@@ -283,3 +283,71 @@ func TestDeleteMonitoringConfiguration(t *testing.T) {
 		t.Fatalf("DeleteMonitoringConfiguration() error: %v", err)
 	}
 }
+
+func TestActivateVersion(t *testing.T) {
+	const extName = "com.dynatrace.extension.host"
+	const version = "1.2.3"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/extensions/v2/extensions/"+extName+"/environment-configuration",
+		func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPut:
+				var body map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if body["version"] != version {
+					w.WriteHeader(http.StatusBadRequest)
+					fmt.Fprintf(w, `{"error":{"code":400,"message":"unexpected version %q"}}`, body["version"])
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(ExtensionEnvironmentConfig{Version: version})
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.ActivateVersion(context.Background(), extName, version)
+	if err != nil {
+		t.Fatalf("ActivateVersion() error: %v", err)
+	}
+	if result.Version != version {
+		t.Errorf("Version = %q, want %q", result.Version, version)
+	}
+}
+
+func TestActivateVersion_NotFound(t *testing.T) {
+	const extName = "com.dynatrace.extension.missing"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/extensions/v2/extensions/"+extName+"/environment-configuration",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprintf(w, `{"error":{"code":404,"message":"Extension not found"}}`)
+		})
+
+	h := NewHandler(newTestClient(t, mux))
+	_, err := h.ActivateVersion(context.Background(), extName, "1.0.0")
+	if err == nil {
+		t.Fatal("ActivateVersion() expected error for 404, got nil")
+	}
+}
+
+func TestActivateVersion_Forbidden(t *testing.T) {
+	const extName = "com.dynatrace.extension.restricted"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/extensions/v2/extensions/"+extName+"/environment-configuration",
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprintf(w, `{"error":{"code":403,"message":"Forbidden"}}`)
+		})
+
+	h := NewHandler(newTestClient(t, mux))
+	_, err := h.ActivateVersion(context.Background(), extName, "1.0.0")
+	if err == nil {
+		t.Fatal("ActivateVersion() expected error for 403, got nil")
+	}
+}

@@ -3,6 +3,8 @@ package extension
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -313,6 +315,79 @@ func (h *Handler) InstallFromHub(extensionName, version string) (*ExtensionVersi
 		return nil, err
 	}
 	return fromSDKExtensionVersion(v), nil
+}
+
+// ActivateVersion activates a specific version as the environment-wide active version.
+func (h *Handler) ActivateVersion(extensionName, version string) (*ExtensionEnvironmentConfig, error) {
+	return h.sdk.ActivateVersion(context.Background(), extensionName, version)
+}
+
+// GetActiveVersion returns the currently active version of the extension,
+// or an empty string if no version is active (no environment configuration).
+func (h *Handler) GetActiveVersion(extensionName string) (string, error) {
+	return h.sdk.GetActiveVersion(context.Background(), extensionName)
+}
+
+// LatestInstalledVersion returns the highest semantic version among the versions
+// already uploaded to the environment for the given extension.
+func (h *Handler) LatestInstalledVersion(extensionName string) (string, error) {
+	list, err := h.Get(extensionName)
+	if err != nil {
+		return "", err
+	}
+	if len(list.Items) == 0 {
+		return "", fmt.Errorf("no versions found for extension %q", extensionName)
+	}
+	best := list.Items[0].Version
+	for _, v := range list.Items[1:] {
+		if SemverGreater(v.Version, best) {
+			best = v.Version
+		}
+	}
+	return best, nil
+}
+
+// SemverGreater reports whether version a is greater than version b using
+// dot-separated integer comparison. Malformed segments are treated as zero.
+// Exported so cmd packages can use the canonical copy without duplication.
+func SemverGreater(a, b string) bool {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	// Pad to the same length
+	for len(aParts) < len(bParts) {
+		aParts = append(aParts, "0")
+	}
+	for len(bParts) < len(aParts) {
+		bParts = append(bParts, "0")
+	}
+	for i := range aParts {
+		ai := semverSegment(aParts[i])
+		bi := semverSegment(bParts[i])
+		if ai != bi {
+			return ai > bi
+		}
+	}
+	return false
+}
+
+// semverSegment parses a single version segment as an integer, ignoring any
+// pre-release suffixes (e.g., "1-beta" → 1). Returns 0 on parse failure.
+func semverSegment(s string) int {
+	// Strip any pre-release suffix (first '-' or '+')
+	for i, c := range s {
+		if c == '-' || c == '+' {
+			s = s[:i]
+			break
+		}
+	}
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // DeleteMonitoringConfiguration deletes a monitoring configuration for an extension

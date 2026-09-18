@@ -103,6 +103,69 @@ dtctl create extension --hub-extension com.dynatrace.extension.host-monitoring -
 
 > **Required scope**: `extensions:definitions:write`
 
+## Activating and Upgrading Versions
+
+Uploading or installing a version does not make it active. `dtctl update extension`
+sets the environment-wide active version. Exactly one version source is required:
+
+```bash
+# Activate a specific version that is already uploaded to the environment
+dtctl update extension com.dynatrace.extension.host-monitoring --version 1.2.3
+
+# Activate the highest version already installed in the environment
+dtctl update extension com.dynatrace.extension.host-monitoring --latest
+
+# Install the newest Hub release (if not already present), then activate it
+dtctl update extension com.dynatrace.extension.host-monitoring --hub-latest
+
+# Preview without applying
+dtctl update extension com.dynatrace.extension.host-monitoring --latest --dry-run
+```
+
+`--latest` compares the installed versions itself and picks the highest; it never
+contacts the Hub. Use `--hub-latest` to pick up a release that is not installed yet.
+
+### Migrating Monitoring Configurations
+
+Each monitoring configuration records the extension version it was written for. Add
+`--with-configurations` to rewrite every configuration for the extension to the
+version being activated, so the API re-validates each one against that version's
+schema:
+
+```bash
+dtctl update extension com.dynatrace.extension.host-monitoring --hub-latest --with-configurations
+```
+
+Ordering is handled automatically: on an upgrade the configurations are migrated
+after activation, and on a downgrade before it, because the API refuses to activate
+an older version while a configuration still references a newer one. Only the
+`version` field is rewritten - every other field in a configuration is preserved.
+
+Because this writes monitoring configurations, it also needs
+`extensions:configurations:write`, which `--check-scopes` does not yet report for
+this command (it checks the scopes of the `extension` resource only).
+
+### Upgrading Every Extension
+
+`dtctl update extensions` applies the same resolution to every installed extension.
+`--all` is required, to prevent an accidental bulk mutation:
+
+```bash
+# Activate the highest installed version of every extension
+dtctl update extensions --all --latest
+
+# Take the newest Hub release for every extension and migrate their configurations
+dtctl update extensions --all --hub-latest --with-configurations
+
+# Preview without applying
+dtctl update extensions --all --latest --dry-run
+```
+
+A failure on one extension is reported and the run continues; the command exits
+non-zero if any extension could not be upgraded.
+
+> **Required scope**: `extensions:definitions:write`
+
 ## Monitoring Configurations
 
 Monitoring configurations define how an extension collects data for a specific scope (e.g., a host or host group).
