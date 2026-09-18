@@ -86,6 +86,13 @@ func TestDryRunReport_AgentOutputIsAnEnvelope(t *testing.T) {
 
 	// The human text is preserved verbatim, so nothing the prose says is lost.
 	require.Equal(t, "Dry run: would create bucket\nDisplay Name: My Bucket", resp.Result.Message)
+
+	// And it goes out compact, like every other envelope on a non-terminal
+	// stdout. Print() routes through output.EncodeEnvelope for exactly this: a
+	// local encoder with SetIndent would have spent a third more tokens on
+	// whitespace for the audience the envelope exists to serve.
+	require.NotContains(t, out, "\n  ", "a piped envelope must be compact, not indented")
+	require.Equal(t, 1, strings.Count(out, "\n"), "compact JSON is one line plus its terminator")
 }
 
 func TestDryRunReport_InvalidPayloadIsDropped(t *testing.T) {

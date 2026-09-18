@@ -107,9 +107,12 @@ func (r *dryRunReport) Print() error {
 		plan.Details = r.details
 	}
 	plan.Payload = r.payload
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(output.Response{
+	// EncodeEnvelope, not a local encoder: it is the one place that decides an
+	// envelope's wire form, and it pretty-prints only for a human running --agent
+	// at a terminal. A dry run piped to an agent must be compact like every other
+	// envelope dtctl emits — indenting it would spend a third more tokens on
+	// whitespace, for the one audience this rendering exists to serve.
+	return output.EncodeEnvelope(os.Stdout, output.Response{
 		OK:      true,
 		Result:  plan,
 		Context: &output.ResponseContext{Verb: verb, Resource: resource},
