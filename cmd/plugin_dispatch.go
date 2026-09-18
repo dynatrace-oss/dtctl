@@ -119,7 +119,7 @@ func builtinCommandNames() map[string]bool {
 }
 
 // credentialEnvVars are the environment variables dtctl itself names as token
-// carriers (docs/site/_docs/ai-agent-mode.md, `dtctl config init`'s
+// carriers (docs/AGENT_MODE.md, `dtctl config init`'s
 // ${DT_API_TOKEN} scaffold, and `dtctl account login`/`account status` for the
 // account token). They are stripped from a plugin's environment: plugins
 // resolve credentials themselves through the sdk (the same config file and

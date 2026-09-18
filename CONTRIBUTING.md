@@ -426,46 +426,37 @@ All pull requests must pass:
 
 ## Documentation Guidelines
 
-### Go Template Variables in Code Examples
+Documentation lives in `docs/` and is read on GitHub. It is plain CommonMark --
+there is no Jekyll and no Liquid templating, so Go template examples like
+`{{ .env }}` need no escaping.
 
-Documentation published to GitHub Pages uses Jekyll with Liquid templating. Since dtctl uses Go template syntax (`{{ .variable }}`), which has identical delimiters to Liquid, template variables in code examples must be escaped.
+### What is generated and what is not
 
-**Problem**: Go template variables in markdown code examples are interpreted by Jekyll's Liquid engine and get stripped from published HTML.
+`docs/resources/*.md`, `docs/COMMANDS.md`, and `docs/TOKEN_SCOPES.md` contain
+`<!-- GENERATED:x:start/end -->` blocks derived from `dtctl commands --full`.
+Never hand-edit inside those markers -- run `make docs-generate` and commit the
+result. Everything outside them (overviews, examples, notes) is yours to write.
 
-**Original markdown**:
+### Check your prose against the binary
+
 ```bash
-dtctl query "fetch logs | filter environment == '{{ .env }}' | limit {{ .n }}" \
-  --set env=production --set n=50
+make docs-check
 ```
 
-**Published HTML** (broken):
-```
-dtctl query "fetch logs | filter environment == '' | limit " \
-  --set env=production --set n=50
-```
+This resolves every `dtctl ...` example in the docs to a real command path and
+diffs its flags against that command's own `--help`, then checks relative links
+and anchors. It runs on every PR that touches `docs/**`. If a doc deliberately
+shows a command the CLI rejects ("these commands have been removed"), mark it
+with `<!-- prose-check:ignore -->`.
 
-**Solution**: Wrap code blocks containing Go template variables with Jekyll `{% raw %}...{% endraw %}` tags.
+### The retired documentation site
 
-**Fixed markdown**:
-```markdown
-{% raw %}
-```bash
-dtctl query "fetch logs | filter environment == '{{ .env }}' | limit {{ .n }}" \
-  --set env=production --set n=50
-```
-{% endraw %}
-```
-
-### When to Use `{% raw %}` Tags
-
-- ✅ **DO wrap** any code block with `{{ .variable }}` or similar Go template syntax
-- ✅ **DO wrap** YAML examples with Go templates (`{{ .env }}`, `{{ .db_password }}`, etc.)
-- ❌ **DON'T wrap** Jekyll Liquid syntax (e.g., `{{ '/docs/path' | relative_url }}`) — this should work as-is
-- ❌ **DON'T wrap** non-template content — plain code blocks don't need wrapping
-
-### CI Validation
-
-A GitHub Actions workflow (`lint-docs-templates.yml`) automatically checks all PRs for unescaped Go template variables in `docs/site/_docs/` markdown files. Fix any violations by wrapping the code block with the pattern above.
+`docs/site/` was a Jekyll site published to GitHub Pages. It is retired: the
+pages there are now redirect stubs that keep old URLs (including ones published
+on docs.dynatrace.com) resolving to `docs/`. Do not add content to
+`docs/site/` -- `make docs-check` fails on any page there that is not a stub.
+To add or change documentation, edit `docs/` and, if the page is new, add a
+redirect stub only if an old published URL needs to point at it.
 
 ## Getting Help
 

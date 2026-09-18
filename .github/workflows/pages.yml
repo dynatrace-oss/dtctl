@@ -1,8 +1,18 @@
+# docs/site/ is the retired documentation site: redirect stubs only, kept so
+# that URLs published before the docs moved into docs/ keep resolving. The
+# canonical docs live in docs/ and are not built here.
 name: Deploy GitHub Pages
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'docs/site/**'
+      - '.github/workflows/pages.yml'
+
+  # Build (but do not deploy) on PRs, so a broken site config is caught before
+  # it reaches main -- the deploy path only ever runs post-merge.
+  pull_request:
     paths:
       - 'docs/site/**'
       - '.github/workflows/pages.yml'
@@ -30,7 +40,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Needs pages: write, which fork PRs never get -- and a PR only needs the
+      # build to prove the site still compiles.
       - name: Setup Pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5
 
       - name: Build with Jekyll
@@ -39,11 +52,23 @@ jobs:
           source: docs/site
           destination: ./_site
 
+      - name: Check every page is a redirect
+        run: |
+          missing=$(grep -RL 'http-equiv="refresh"' ./_site --include='*.html' || true)
+          if [ -n "$missing" ]; then
+            echo "::error::These built pages are not redirects. docs/site/ is retired -- put the content in docs/ instead:"
+            echo "$missing"
+            exit 1
+          fi
+          echo "All $(find ./_site -name '*.html' | wc -l) built pages redirect to docs/."
+
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
 
   deploy:
     name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

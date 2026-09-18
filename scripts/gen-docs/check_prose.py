@@ -8,12 +8,14 @@ live: a docs migration shipped `dtctl apply --diff` (the flag is `--show-diff`),
 a `DTCTL_ENVIRONMENT` variable that does not exist, and five relative links
 missing their `.md`.
 
-Two checks, both cheap:
+Three checks, all cheap:
 
-  commands  every ``dtctl <...>`` in the docs resolves to a real command path,
-            and every long flag on it is accepted by that command's own --help.
-  links     every relative markdown link resolves on disk, and every `#anchor`
-            matches a heading in the target file.
+  commands   every ``dtctl <...>`` in the docs resolves to a real command path,
+             and every long flag on it is accepted by that command's own --help.
+  links      every relative markdown link resolves on disk, and every `#anchor`
+             matches a heading in the target file.
+  redirects  every page of the retired docs/site/ is still a redirect stub, and
+             still points at a repo doc that exists.
 
 Usage:  check_prose.py <path-to-dtctl-binary> [docs-dir]
 Exit 0 when clean, 1 with a per-finding report otherwise.
@@ -30,10 +32,16 @@ import sys
 
 # docs/dev/ is design documentation: it describes commands that were proposed,
 # renamed, or rejected, so "the binary disagrees" is its normal state and not a
-# defect. docs/site/ is Jekyll -- its links are extensionless permalinks that
-# resolve at build time, so only the command check applies there.
-COMMAND_SKIP = ("dev",)
+# defect. docs/site/ is the retired Jekyll site, now redirect stubs only; it has
+# its own check (see check_redirects) and no prose to validate.
+COMMAND_SKIP = ("dev", "site")
 LINK_SKIP = ("dev", "site")
+
+# The retired site under docs/site/_docs/ must stay redirect-only. Two pages of
+# the same documentation, both hand-edited, is exactly the drift that put wrong
+# flags on docs.dynatrace.com for months.
+SITE_DOCS = pathlib.Path("site/_docs")
+REDIRECT_PREFIX = "https://github.com/dynatrace-oss/dtctl/blob/main/"
 
 # A long flag. Case-sensitive on purpose: a few flags are camelCase
 # (`--serviceAccountId`, `--hostPatterns`), and a lowercase-only pattern would
@@ -297,6 +305,42 @@ def check_links(docs: pathlib.Path) -> list[str]:
     return findings
 
 
+def check_redirects(docs: pathlib.Path, repo: pathlib.Path) -> list[str]:
+    """Every page of the retired site is a redirect stub to a file that exists.
+
+    This is what keeps the site from growing a second copy of the docs again,
+    and it turns a renamed doc into a CI failure instead of a dead redirect
+    that nobody notices until a user reports it.
+    """
+    findings = []
+    site = docs / SITE_DOCS
+    if not site.is_dir():
+        return findings
+    for path in sorted(site.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        fm = re.match(r"\A---\n(.*?)\n---\n*\Z", text, re.S)
+        if not fm:
+            findings.append(
+                f"{path}: not a redirect stub -- the site is retired, so this "
+                f"page must contain only front matter with a redirect_to "
+                f"(put the content in docs/ instead)")
+            continue
+        target = re.search(r"^redirect_to:\s*(\S+)\s*$", fm.group(1), re.M)
+        if not target:
+            findings.append(f"{path}: redirect stub has no redirect_to")
+            continue
+        url = target.group(1)
+        if not url.startswith(REDIRECT_PREFIX):
+            findings.append(f"{path}: redirect_to is not a repo doc: {url}")
+            continue
+        rel = url[len(REDIRECT_PREFIX):].split("#")[0]
+        if not (repo / rel).exists():
+            findings.append(
+                f"{path}: redirect_to points at a file that does not "
+                f"exist: {rel}")
+    return findings
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
@@ -307,7 +351,9 @@ def main() -> int:
         print(f"no such docs directory: {docs}")
         return 2
 
-    findings = check_commands(docs, Probe(binary), verbs(binary)) + check_links(docs)
+    findings = (check_commands(docs, Probe(binary), verbs(binary))
+                + check_links(docs)
+                + check_redirects(docs, docs.parent))
     if findings:
         print()
         print("❌ Documentation prose disagrees with the CLI.")
@@ -322,7 +368,8 @@ def main() -> int:
         print(f"{len(findings)} problem(s) found.")
         return 1
 
-    print("✅ Documentation prose matches the CLI (commands, flags, links, anchors).")
+    print("✅ Documentation prose matches the CLI (commands, flags, links, "
+          "anchors, site redirects).")
     return 0
 
 
