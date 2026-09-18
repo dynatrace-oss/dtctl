@@ -115,12 +115,19 @@ def resource_managed_body(title: str, stems: list[str], catalog: dict,
     out.append(gen_docs.md_table(
         ["Operation", "Resource", "Command syntax", "Description", "Mutating", "Access"], rows))
 
-    # Flags: verb-level only (catalog has no per-resource flags)
+    # Flags: the catalog carries flags for verbs only, never per resource
+    # (issue #500), so this section can describe what is generatable and must
+    # point at --help for the rest. It must not claim the resource has no flags
+    # of its own: most of them do (`get dashboards --mine`, `delete bucket
+    # --confirm`, `logs workflow-execution --follow`), and asserting their
+    # absence sends a reader away from flags that exist.
     out.append("\n## Flags\n")
     out.append("These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, "
                "`--context`, `--jq`, `-v`, and more). Some verbs add their own flags "
                "(`apply`, `diff`, `query`, `inventory`); see the verb in "
-               "**[COMMANDS.md](../COMMANDS.md)**. No flags are specific to this resource.\n")
+               "**[COMMANDS.md](../COMMANDS.md)**. Individual commands may take further "
+               "flags of their own \u2014 run `dtctl <verb> <resource> --help` for the "
+               "authoritative list.\n")
 
     # Required token scopes, unioned across matching resource_scopes keys
     out.append("\n## Required token scopes\n")

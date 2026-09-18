@@ -21,7 +21,7 @@ Lookup tables let you enrich DQL query results by mapping key values to addition
 
 ## Flags
 
-These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, and more). Some verbs add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb in **[COMMANDS.md](../COMMANDS.md)**. No flags are specific to this resource.
+These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, and more). Some verbs add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb in **[COMMANDS.md](../COMMANDS.md)**. Individual commands may take further flags of their own — run `dtctl <verb> <resource> --help` for the authoritative list.
 
 
 ## Required token scopes
