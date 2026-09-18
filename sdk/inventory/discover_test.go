@@ -621,3 +621,81 @@ func TestDiscoverCallerCancellationIsNotABudgetStop(t *testing.T) {
 		t.Errorf("cancelled run returned an inventory: %+v", inv)
 	}
 }
+
+func metricCatalogCall(calls []string) string {
+	for _, c := range calls {
+		if strings.HasPrefix(c, "metrics ") {
+			return c
+		}
+	}
+	return ""
+}
+
+func TestMetricCatalogPushesDefinitionGlobsIntoTheQuery(t *testing.T) {
+	runner := testRunner()
+	defs := map[string]*CapabilityDef{
+		"k8s-metrics":  {MetricKey: "dt.kubernetes.*"},
+		"host-metrics": {MetricKey: "dt.host.*"},
+		// A second definition on the same glob must not widen the filter.
+		"hosts-again": {MetricKey: "dt.host.*"},
+		// Non-metric shapes contribute nothing to it.
+		"spans": {DataObject: "spans"},
+	}
+	if _, err := Discover(context.Background(), runner, defs, DiscoverOptions{}); err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	got := metricCatalogCall(runner.calls)
+	want := `metrics from:now()-2h | filter matchesValue(metric.key, "dt.host.*") or matchesValue(metric.key, "dt.kubernetes.*") | summarize c = count(), by:{metric.key} | limit 10000`
+	if got != want {
+		t.Errorf("metric catalog query:\n got %s\nwant %s", got, want)
+	}
+}
+
+// An untranslatable glob must widen the read, never narrow it: a filter that
+// approximated path.Match's character classes could drop a key that matches
+// and turn a live metric family into a fabricated absence.
+func TestMetricCatalogFallsBackForUntranslatableGlobs(t *testing.T) {
+	for name, glob := range map[string]string{
+		"character class": "dt.[hk]ost.*",
+		"single-char":     "dt.hos?.*",
+		"match-all":       "*",
+		"quoted":          `dt."host".*`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			runner := testRunner()
+			defs := map[string]*CapabilityDef{
+				"k8s-metrics": {MetricKey: "dt.kubernetes.*"},
+				"odd":         {MetricKey: glob},
+			}
+			if _, err := Discover(context.Background(), runner, defs, DiscoverOptions{}); err != nil {
+				t.Fatalf("Discover() error: %v", err)
+			}
+			got := metricCatalogCall(runner.calls)
+			want := "metrics from:now()-2h | summarize c = count(), by:{metric.key} | limit 10000"
+			if got != want {
+				t.Errorf("metric catalog query:\n got %s\nwant %s", got, want)
+			}
+		})
+	}
+}
+
+// The filter changes which keys come back, never which verdict they produce.
+func TestMetricCatalogVerdictsSurviveTheFilter(t *testing.T) {
+	runner := testRunner()
+	inv, err := Discover(context.Background(), runner, testDefs(), DiscoverOptions{})
+	if err != nil {
+		t.Fatalf("Discover() error: %v", err)
+	}
+	present := false
+	for _, c := range inv.Capabilities {
+		if c == "k8s-metrics" {
+			present = true
+		}
+	}
+	if !present {
+		t.Errorf("k8s-metrics not present: capabilities=%v unknown=%v absent=%v", inv.Capabilities, inv.Unknown, inv.Absent)
+	}
+	if !strings.Contains(metricCatalogCall(runner.calls), `matchesValue(metric.key, "dt.kubernetes.*")`) {
+		t.Errorf("filter did not carry the evaluated glob: %s", metricCatalogCall(runner.calls))
+	}
+}
