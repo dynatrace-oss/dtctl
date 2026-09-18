@@ -9,7 +9,8 @@ integrates with the broader
 collection.
 
 For install commands (`npx skills add`, `dtctl skills install`, manual copy),
-see the "AI Agent Skills" section of the [README](../README.md).
+see the "AI Agent Skills" section of the [README](../README.md). Check what is
+installed with `dtctl skills status`, and remove it with `dtctl skills uninstall`.
 
 ## What is a skill?
 

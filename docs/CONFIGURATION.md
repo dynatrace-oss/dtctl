@@ -178,6 +178,14 @@ untrusted-working-directory threat model above. Point it only at a config you
 trust, and prefer scoping it to the session (e.g. exported by the harness or a
 per-repo setup script) rather than your global shell profile.
 
+### View the resolved configuration
+
+To display the effective configuration after all files and overrides are merged:
+
+```bash
+dtctl config view
+```
+
 ## Safety Levels
 
 Safety levels provide **client-side** protection against accidental destructive operations:
