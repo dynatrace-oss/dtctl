@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -77,7 +78,10 @@ type DiscoverOptions struct {
 	// DQL) and pass through into the inventory.
 	Segments []SegmentInfo
 	// Budget is mandatory, not advisory: discovery stops with a partial
-	// inventory rather than overrunning.
+	// inventory rather than overrunning. BudgetSeconds bounds each query by
+	// the budget still unspent when it is issued, so a single slow query
+	// cannot overrun the budget — it is cut off at it and its capabilities
+	// degrade to unknown.
 	BudgetQueries int     // 0 = 100
 	BudgetSeconds float64 // 0 = 300
 
@@ -138,12 +142,31 @@ func (b *budgetRunner) run(ctx context.Context, dql string) (*RunResult, error) 
 		b.skipped = true
 		return nil, errBudgetExhausted
 	}
-	res, err := b.runner.RunQuery(ctx, dql)
+	// The budget has to bound the query, not just the decision to issue it:
+	// debiting it afterwards lets one slow query overrun by its whole
+	// duration, which is how a 20s budget produced a 60s run (and, under an
+	// outer wall, a SIGKILL with no inventory at all).
+	qctx, cancel := context.WithTimeout(ctx, time.Duration(b.seconds*float64(time.Second)))
+	defer cancel()
+	start := time.Now()
+	res, err := b.runner.RunQuery(qctx, dql)
 	b.report.Queries++
 	b.queries--
 	if res != nil {
 		b.report.Seconds += res.Seconds
 		b.seconds -= res.Seconds
+	}
+	// Cut at the budget: the query is charged what it actually spent and the
+	// budget closes, so the caller degrades this fact source to unknown the
+	// same way it would for any other refusal. A cancelled parent is the
+	// caller's abort, not a budget stop, and keeps propagating.
+	if err != nil && ctx.Err() == nil && errors.Is(qctx.Err(), context.DeadlineExceeded) {
+		if res == nil {
+			b.report.Seconds += time.Since(start).Seconds()
+		}
+		b.seconds = 0
+		b.skipped = true
+		return nil, errBudgetExhausted
 	}
 	return res, err
 }
@@ -542,6 +565,11 @@ func (b *budgetRunner) dataObjectCatalog(ctx context.Context) (fetchable, queryO
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, nil, nil, false, ctx.Err()
+		}
+		// A budget stop is not a schema mismatch: retrying the flat list would
+		// only spend a query to be refused again.
+		if errors.Is(err, errBudgetExhausted) {
+			return nil, nil, nil, false, err
 		}
 		// Environments without usable_with fall back to the flat list.
 		names, truncated, ferr := b.stringColumn(ctx, "fetch dt.system.data_objects | fields name | sort name asc | limit 5000", "name")

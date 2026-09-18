@@ -307,6 +307,8 @@ dtctl inventory --scan-limit-gbytes 25   # scan cap applied to every probe (defa
 
 The default battery is 4 queries: data-object catalog, buckets, entity census, and the metric catalog (only when a `metricKey` definition needs it). Probe-shaped definitions cost one query each. A consumption receipt (`discovery: {queries, seconds}`) is attached to every inventory.
 
+`--budget-seconds` is a hard bound, not a running tally: a query is issued with the budget still unspent as its deadline, so a single slow query is cut off at the budget instead of overrunning it. Whatever it would have answered degrades to `unknown` with its evidence, exactly like any other skipped check. Callers running `inventory` under an outer timeout should still leave headroom -- client setup and the segment fetch happen before the first query and are not part of the query budget.
+
 ### For AI agents
 
 In agent mode (auto-detected, see [Auto-Detection](#auto-detection) above), the inventory arrives in the structured JSON envelope with suggestions attached -- sample a listed data object, cite absence evidence instead of re-probing. Absent and unknown capabilities are structured `{name, evidence}` pairs:
