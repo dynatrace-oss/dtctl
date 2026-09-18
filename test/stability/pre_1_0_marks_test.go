@@ -191,6 +191,76 @@ func manifestFlagLevels(t *testing.T, manifest string) map[string]string {
 	return levels
 }
 
+// pre10DemotedCommands are the commands the audit demoted whole, because every
+// path through them requires a flag an accepted breaking change takes away.
+//
+// A flag-level mark is the right tool when a usable stable invocation survives
+// it — `create azure connection --type federatedIdentityCredential` still works
+// with the three clientSecret flags hidden. It is the wrong tool here: with the
+// flags hidden, `dtctl update azure connection --help` offers only `--name`,
+// and every invocation then fails with "at least one of --directoryId,
+// --applicationId, or --clientSecret is required" — three flags the floor just
+// removed from the help. Demoting the command turns that dead end into a
+// `stability_blocked` error that names the exception which would admit it.
+var pre10DemotedCommands = map[string]string{
+	"update aws connection":   "--roleArn is required",
+	"update azure connection": "needs one of --directoryId/--applicationId/--clientSecret",
+	"update azure monitoring": "needs one of --locationFiltering/--featureSets",
+	"update gcp connection":   "--serviceAccountId is required",
+	"update gcp monitoring":   "needs one of --locationFiltering/--featureSets",
+}
+
+// pre10SurvivingCommands are commands that keep a usable stable invocation even
+// with their demoted flags hidden, so they stay stable on purpose. Pinning them
+// stops a well-meaning blanket demotion of everything the cloud rename touches.
+var pre10SurvivingCommands = map[string]string{
+	"create aws connection":   "--roleArn is optional",
+	"create azure connection": "the federatedIdentityCredential path needs none of them",
+	"create gcp connection":   "--serviceAccountId is optional",
+	"create aws monitoring":   "--regions is not renamed",
+	"update aws monitoring":   "--regions satisfies the one-of",
+	"enable aws monitoring":   "--roleArn is optional",
+	"enable azure monitoring": "the credential flags are optional",
+	"enable gcp monitoring":   "--serviceAccountId is optional",
+	"diff":                    "--format replaces the removed -o",
+	"wait query":              "--verbose only adds progress output",
+	"exec copilot":            "--context only adds conversation context",
+	"restore workflow":        "--force only skips a prompt",
+	"logs workflow-execution": "--follow only streams",
+	"exec analyzer":           "--timeout has a default",
+	"exec slo":                "--timeout has a default",
+}
+
+// TestPre10CommandDemotionsMatchTheAudit asserts the command-level split: a
+// command is demoted exactly when no stable invocation survives.
+func TestPre10CommandDemotionsMatchTheAudit(t *testing.T) {
+	levels := manifestCommandLevels(t, cmd.StabilityManifest())
+
+	for path, why := range pre10DemotedCommands {
+		got, ok := levels[path]
+		if !ok {
+			t.Errorf("%s: not on the command tree", path)
+			continue
+		}
+		if got != "experimental" {
+			t.Errorf("%s: is %q, want experimental — %s, so a stable floor leaves it unusable",
+				path, got, why)
+		}
+	}
+
+	for path, why := range pre10SurvivingCommands {
+		got, ok := levels[path]
+		if !ok {
+			t.Errorf("%s: not on the command tree", path)
+			continue
+		}
+		if got != "stable" {
+			t.Errorf("%s: is %q, want stable — %s, so demoting the whole command "+
+				"withdraws more than the breaking change does", path, got, why)
+		}
+	}
+}
+
 // TestGlobalFlagsAreAllStable pins the global flag group to stable, because
 // nothing yet enforces a weaker promise there.
 //
@@ -224,4 +294,27 @@ func TestGlobalFlagsAreAllStable(t *testing.T) {
 	if found == 0 {
 		t.Fatal("manifest lists no (global) flags; the group is missing from the generator")
 	}
+}
+
+// manifestCommandLevels maps a command path to the tier the manifest reports.
+func manifestCommandLevels(t *testing.T, manifest string) map[string]string {
+	t.Helper()
+
+	_, surface, found := strings.Cut(manifest, "## Surface")
+	if !found {
+		t.Fatal("manifest has no Surface section")
+	}
+
+	levels := map[string]string{}
+	for _, line := range strings.Split(surface, "\n") {
+		m := manifestRow.FindStringSubmatch(line)
+		if m == nil || m[1] != "" {
+			continue // blank indent means a command line; indented means a flag
+		}
+		levels[m[2]] = m[3]
+	}
+	if len(levels) == 0 {
+		t.Fatal("parsed no commands out of the manifest Surface section")
+	}
+	return levels
 }

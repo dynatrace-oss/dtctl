@@ -87,7 +87,7 @@ request's decision and not the host process's. See
 
 ## Summary
 
-- commands: 273 stable, 8 experimental, 11 development
+- commands: 268 stable, 13 experimental, 11 development
 - global flags (accepted on every command): 12
 - entries below (commands + flags): 834
 
@@ -827,27 +827,27 @@ unshare notebook                     stable
   --user                             stable
 update                               stable
 update aws                           stable
-update aws connection                stable
-  --name                             stable
+update aws connection                experimental  since 0.39.0
+  --name                             experimental
   --roleArn                          experimental  since 0.39.0
 update aws monitoring                stable
   --featureSets                      experimental  since 0.39.0
   --name                             stable
   --regions                          stable
 update azure                         stable
-update azure connection              stable
+update azure connection              experimental  since 0.39.0
   --aplicationID                     experimental  since 0.39.0
   --applicationID                    experimental  since 0.39.0
   --applicationId                    experimental  since 0.39.0
   --clientSecret                     experimental  since 0.39.0
   --directoryID                      experimental  since 0.39.0
   --directoryId                      experimental  since 0.39.0
-  --name                             stable
-update azure monitoring              stable
+  --name                             experimental
+update azure monitoring              experimental  since 0.39.0
   --featureSets                      experimental  since 0.39.0
   --featuresets                      experimental  since 0.39.0
   --locationFiltering                experimental  since 0.39.0
-  --name                             stable
+  --name                             experimental
 update breakpoint                    experimental  since 0.39.0
   --condition                        experimental
   --enabled                          experimental
@@ -875,15 +875,15 @@ update extensions                    stable
   --latest                           stable
   --with-configurations              stable
 update gcp                           stable
-update gcp connection                stable
-  --name                             stable
+update gcp connection                experimental  since 0.39.0
+  --name                             experimental
   --serviceAccountId                 experimental  since 0.39.0
   --serviceaccountid                 experimental  since 0.39.0
-update gcp monitoring                stable
+update gcp monitoring                experimental  since 0.39.0
   --featureSets                      experimental  since 0.39.0
   --featuresets                      experimental  since 0.39.0
   --locationFiltering                experimental  since 0.39.0
-  --name                             stable
+  --name                             experimental
 verify                               stable
 verify analyzer                      stable
   --file                             stable

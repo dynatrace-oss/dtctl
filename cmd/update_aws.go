@@ -191,6 +191,12 @@ func init() {
 
 	updateAWSConnectionCmd.Flags().StringVar(&updateAWSConnectionName, "name", "", "AWS connection name (used when ID argument is not provided)")
 	updateAWSConnectionCmd.Flags().StringVar(&updateAWSConnectionRoleArn, "roleArn", "", "AWS IAM role ARN (required)")
+	// Every path through this command needs a flag the rename takes away
+	// (--roleArn is required), so at a stable floor it has no usable
+	// invocation left. Marking the command says that plainly instead of
+	// hiding the flags and then failing on a "required" flag help no
+	// longer lists.
+	stability.Mark(updateAWSConnectionCmd, stability.Experimental, pre10Since)
 	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(updateAWSConnectionCmd, "roleArn", stability.Experimental, pre10Since)

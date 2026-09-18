@@ -154,6 +154,16 @@ would drop its mark and quietly re-promise something 1.0 removes. When a
 breaking change lands, delete the flag's entry along with its mark — the test
 fails if the flag is gone but the entry stays.
 
+**Mark the flag, or the command?** Ask whether a usable stable invocation
+survives with the flag hidden. `create azure connection` keeps one (the
+`federatedIdentityCredential` path needs none of the renamed credential flags),
+so the flag mark is right. `update azure connection` does not: it requires one
+of `--directoryId`/`--applicationId`/`--clientSecret`, so at a stable floor
+`--help` offers only `--name` and every invocation fails demanding three flags
+the floor just hid. Demote the *command* there — a `stability_blocked` error
+that names the exception which would admit it beats a dead end. The split is
+pinned by `pre10DemotedCommands` / `pre10SurvivingCommands` in the same test.
+
 ## Adding a Resource
 
 1. **SDK layer** (`sdk/api/<name>/`): Create typed API wrapper with CRUD functions using `httpclient.Client`. No file I/O, no display logic.

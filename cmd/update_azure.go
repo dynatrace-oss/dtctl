@@ -227,6 +227,12 @@ func init() {
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "applicationID", "", "Alias for --applicationId")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionApplicationID, "aplicationID", "", "Compatibility alias for typo --aplicationID")
 	updateAzureConnectionCmd.Flags().StringVar(&updateAzureConnectionClientSecret, "clientSecret", "", "Client secret value (clientSecret type only); prefer passing via env var to keep out of shell history (note: expanded value can still be visible in process arguments)")
+	// Every path through this command needs a flag the rename takes away
+	// (every one of --directoryId, --applicationId and --clientSecret), so at a stable floor it has no usable
+	// invocation left. Marking the command says that plainly instead of
+	// hiding the flags and then failing on a "required" flag help no
+	// longer lists.
+	stability.Mark(updateAzureConnectionCmd, stability.Experimental, pre10Since)
 	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(updateAzureConnectionCmd, "directoryId", stability.Experimental, pre10Since)
@@ -240,6 +246,12 @@ func init() {
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
+	// Every path through this command needs a flag the rename takes away
+	// (both --locationFiltering and --featureSets), so at a stable floor it has no usable
+	// invocation left. Marking the command says that plainly instead of
+	// hiding the flags and then failing on a "required" flag help no
+	// longer lists.
+	stability.Mark(updateAzureMonitoringConfigCmd, stability.Experimental, pre10Since)
 	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(updateAzureMonitoringConfigCmd, "locationFiltering", stability.Experimental, pre10Since)
