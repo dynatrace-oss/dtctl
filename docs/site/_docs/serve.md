@@ -63,6 +63,11 @@ dtctl serve http --addr 0.0.0.0:8080 --max-request-bytes 33554432
 |------|---------|---------|
 | `--addr` | `127.0.0.1:7211` | listen address |
 | `--max-request-bytes` | `10485760` (10 MiB) | maximum request body size (virtual files travel inline) |
+| `--read-timeout` | `30s` | time allowed to read the full request including body |
+| `--write-timeout` | `6m` | time allowed to write the response; must exceed `--max-duration`, since the write deadline is set when the request header is read and so covers execution *and* the response write |
+| `--idle-timeout` | `2m` | maximum time to wait for the next request on a keep-alive connection |
+| `--max-queued` | `4` | maximum number of requests allowed to queue (waiting + running); excess returns `503` |
+| `--max-duration` | `5m` | maximum wall-clock time allowed for a single request; threaded into `cmd.Context()` so cooperating commands stop when it elapses (see [One request at a time](#one-request-at-a-time)) |
 
 | Endpoint | Purpose |
 |----------|---------|

@@ -61,7 +61,8 @@ type errorResponse struct {
 //	GET  /healthz    — liveness probe
 //
 // maxRequestBytes bounds the request body (virtual files travel inline).
-func Handler(maxRequestBytes int64) http.Handler {
+// limits controls queue depth, duration, and output caps for each execution.
+func Handler(maxRequestBytes int64, limits engine.Limits) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -96,7 +97,7 @@ func Handler(maxRequestBytes int64) http.Handler {
 		}
 
 		start := time.Now()
-		res, err := engine.Execute(r.Context(), engine.Request{
+		res, err := engine.ExecuteWithLimits(r.Context(), engine.Request{
 			Command:        req.Command,
 			Argv:           req.Argv,
 			EnvironmentURL: req.EnvironmentURL,
@@ -108,7 +109,7 @@ func Handler(maxRequestBytes int64) http.Handler {
 			// Env is intentionally not exposed over HTTP: arbitrary variables
 			// reach proxies, exporters, and other process-level behavior.
 			// Embedding hosts that need it use engine.Request.Env directly.
-		})
+		}, limits)
 		if err != nil {
 			// The request never ran. Distinguish *why* so a client can react
 			// correctly: a malformed request is the caller's fault (400), but
@@ -148,11 +149,12 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	_ = json.NewEncoder(w).Encode(errorResponse{Error: msg})
 }
 
-// ServeOptions holds timeout configuration for the HTTP server.
+// ServeOptions holds timeout and engine configuration for the HTTP server.
 type ServeOptions struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration
+	Limits       engine.Limits
 }
 
 // newServer builds an *http.Server without starting it — extracted for testability.
@@ -174,6 +176,7 @@ func newHTTPCommand() *cobra.Command {
 		maxRequestBytes int64
 		opts            ServeOptions
 	)
+	opts.Limits = engine.DefaultLimits()
 	c := &cobra.Command{
 		Use:   "http",
 		Short: "Serve the dtctl execute API over HTTP (reference implementation)",
@@ -209,6 +212,17 @@ exposing it, or embed pkg/engine directly.`,
 				// lifetime and deadlock every request.
 				return errors.New("serve must be invoked directly as `dtctl serve http [flags]`, with no arguments before it")
 			}
+			if opts.WriteTimeout > 0 && opts.WriteTimeout <= opts.Limits.MaxDuration {
+				// http.Server sets the write deadline when the request header
+				// is read, so it covers handler execution *and* the response
+				// write. A --write-timeout at or below --max-duration cuts the
+				// response off right as (or before) the command's own budget
+				// would end, so the caller never sees a result.
+				return fmt.Errorf(
+					"--write-timeout (%s) must be greater than --max-duration (%s), "+
+						"or the response is cut off before a slow command can reply",
+					opts.WriteTimeout, opts.Limits.MaxDuration)
+			}
 			return runHTTP(command.Context(), addr, maxRequestBytes, opts)
 		},
 	}
@@ -217,10 +231,20 @@ exposing it, or embed pkg/engine directly.`,
 		"maximum request body size in bytes (virtual files travel inline)")
 	c.Flags().DurationVar(&opts.ReadTimeout, "read-timeout", 30*time.Second,
 		"time allowed to read the full request including body")
-	c.Flags().DurationVar(&opts.WriteTimeout, "write-timeout", 5*time.Minute,
-		"time allowed to write the response (set high enough for slow commands)")
+	// Must exceed --max-duration's default (5m): the write deadline is set
+	// when the request header is read, so it covers execution *and* the
+	// response write — a command that runs the full budget still needs time
+	// to write its result afterwards.
+	c.Flags().DurationVar(&opts.WriteTimeout, "write-timeout", 6*time.Minute,
+		"time allowed to write the response (set higher than --max-duration so slow commands can still reply)")
 	c.Flags().DurationVar(&opts.IdleTimeout, "idle-timeout", 2*time.Minute,
 		"maximum time to wait for the next request on a keep-alive connection")
+	c.Flags().IntVar(&opts.Limits.MaxQueued, "max-queued",
+		engine.DefaultLimits().MaxQueued,
+		"maximum number of requests allowed to queue (waiting + running); excess returns 503")
+	c.Flags().DurationVar(&opts.Limits.MaxDuration, "max-duration",
+		engine.DefaultLimits().MaxDuration,
+		"maximum wall-clock time allowed for a single request execution")
 	return c
 }
 
@@ -233,7 +257,7 @@ func runHTTP(ctx context.Context, addr string, maxRequestBytes int64, opts Serve
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	server := newServer(addr, Handler(maxRequestBytes), opts)
+	server := newServer(addr, Handler(maxRequestBytes, opts.Limits), opts)
 
 	errc := make(chan error, 1)
 	go func() {

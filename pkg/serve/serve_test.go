@@ -3,6 +3,7 @@ package serve
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,9 +11,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/pkg/engine"
 )
 
 // newDynatraceMock is a minimal fake Dynatrace environment for handler tests.
@@ -48,7 +52,7 @@ func postExecute(t *testing.T, srv *httptest.Server, body string) (*http.Respons
 
 func TestHandler_Execute(t *testing.T) {
 	dt := newDynatraceMock(t)
-	srv := httptest.NewServer(Handler(10 << 20))
+	srv := httptest.NewServer(Handler(10<<20, engine.DefaultLimits()))
 	t.Cleanup(srv.Close)
 
 	resp, body := postExecute(t, srv,
@@ -63,7 +67,7 @@ func TestHandler_Execute(t *testing.T) {
 
 func TestHandler_FilesRoundTrip(t *testing.T) {
 	dt := newDynatraceMock(t)
-	srv := httptest.NewServer(Handler(10 << 20))
+	srv := httptest.NewServer(Handler(10<<20, engine.DefaultLimits()))
 	t.Cleanup(srv.Close)
 
 	req, err := json.Marshal(executeRequest{
@@ -89,7 +93,7 @@ func TestHandler_FilesRoundTrip(t *testing.T) {
 // on a local shell. HTTP error statuses are reserved for requests that never
 // ran.
 func TestHandler_CommandFailureIsHTTP200(t *testing.T) {
-	srv := httptest.NewServer(Handler(10 << 20))
+	srv := httptest.NewServer(Handler(10<<20, engine.DefaultLimits()))
 	t.Cleanup(srv.Close)
 
 	resp, body := postExecute(t, srv,
@@ -103,7 +107,7 @@ func TestHandler_CommandFailureIsHTTP200(t *testing.T) {
 }
 
 func TestHandler_RequestErrors(t *testing.T) {
-	srv := httptest.NewServer(Handler(1024))
+	srv := httptest.NewServer(Handler(1024, engine.DefaultLimits()))
 	t.Cleanup(srv.Close)
 
 	t.Run("invalid JSON", func(t *testing.T) {
@@ -133,7 +137,7 @@ func TestHandler_RequestErrors(t *testing.T) {
 }
 
 func TestHandler_Healthz(t *testing.T) {
-	srv := httptest.NewServer(Handler(1024))
+	srv := httptest.NewServer(Handler(1024, engine.DefaultLimits()))
 	t.Cleanup(srv.Close)
 
 	resp, err := http.Get(srv.URL + "/healthz")
@@ -156,6 +160,61 @@ func TestNewCommand_Registered(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, httpCmd.Flags().Lookup("addr"))
 	require.NotNil(t, httpCmd.Flags().Lookup("max-request-bytes"))
+	require.NotNil(t, httpCmd.Flags().Lookup("max-queued"))
+	require.NotNil(t, httpCmd.Flags().Lookup("max-duration"))
+}
+
+// TestHandler_503WhenQueueFull: a low --max-queued must shed excess requests
+// with 503 rather than let the queue grow unbounded.
+func TestHandler_503WhenQueueFull(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"buckets":[]}`))
+	}))
+	t.Cleanup(slow.Close)
+
+	limits := engine.DefaultLimits()
+	limits.MaxQueued = 1
+	srv := httptest.NewServer(Handler(10<<20, limits))
+	t.Cleanup(srv.Close)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		postExecute(t, srv, fmt.Sprintf(
+			`{"command":"get buckets","environmentUrl":%q,"token":"t"}`, slow.URL))
+	}()
+	<-entered // the first request now holds the single admitted slot
+
+	resp, _ := postExecute(t, srv, fmt.Sprintf(
+		`{"command":"get buckets","environmentUrl":%q,"token":"t"}`, slow.URL))
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	close(release)
+	wg.Wait()
+}
+
+// TestHTTPCommand_WriteTimeoutMustExceedMaxDuration: http.Server sets the
+// write deadline when the request header is read, so it covers execution and
+// the response write. --write-timeout at or below --max-duration would cut a
+// slow-but-successful command's response off before the client sees it.
+func TestHTTPCommand_WriteTimeoutMustExceedMaxDuration(t *testing.T) {
+	c := NewCommand()
+	c.SetOut(&bytes.Buffer{})
+	c.SetErr(&bytes.Buffer{})
+	c.SetArgs([]string{"http", "--write-timeout=1m", "--max-duration=1m"})
+	err := c.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "--write-timeout")
+	require.Contains(t, err.Error(), "--max-duration")
 }
 
 // TestBareServePrintsHelp: naming the protocol is mandatory, and omitting it is
