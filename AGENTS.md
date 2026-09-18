@@ -128,6 +128,17 @@ the answer is a declaration.
 Hidden commands are **not** exempt. Hiding removes a command from help, not from
 the tree: `dtctl exec dql` still runs, so it still carries a contract.
 
+**Pre-1.0, the tier carries the contract and the version number does not.**
+release-please runs with `bump-minor-pre-major`, so a break ships as a minor
+bump and semver's 0.x clause would let anything change at any time — which would
+make every `stable` badge worthless. dtctl carves the tier out of that policy:
+`stable` is additive-only from the release that declared it, whatever the version
+does next, and the only exit is a deprecation whose removal lands **at least two
+minor releases** later, so there is always a release that both warns and works.
+`stability.Lint` fails the build on a shorter window or an incomplete record.
+The policy is user-facing in the manifest header ("What `stable` promises before
+1.0"); `pkg/stability/manifest.go` is where you edit it.
+
 *Flags* are the deliberate exception — an unannotated flag inherits its
 command's tier. Requiring every flag on an experimental command to repeat the
 annotation would be pure noise, and a flag's silence cannot manufacture a
