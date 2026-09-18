@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/dynatrace-oss/dtctl/pkg/wait"
 )
@@ -236,6 +237,9 @@ func init() {
 	// Output control flags
 	waitQueryCmd.Flags().BoolP("quiet", "q", false, "suppress progress messages")
 	waitQueryCmd.Flags().BoolP("verbose", "v", false, "show detailed progress")
+	// Renamed or removed in 1.0 because it hides a global flag
+	// (contrib breaking-changes/unshadow-global-flags.md).
+	stability.MarkFlag(waitQueryCmd, "verbose", stability.Experimental, pre10Since)
 
 	// Query execution flags (inherited from query command)
 	waitQueryCmd.Flags().Int64("max-result-records", 0, "maximum number of result records")

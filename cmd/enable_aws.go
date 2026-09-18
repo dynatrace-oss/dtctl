@@ -10,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var (
@@ -159,4 +160,7 @@ func init() {
 
 	enableAWSMonitoringCmd.Flags().StringVar(&enableAWSMonitoringName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	enableAWSMonitoringCmd.Flags().StringVar(&enableAWSMonitoringRoleArn, "roleArn", "", "AWS IAM role ARN to set on the linked connection (optional)")
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(enableAWSMonitoringCmd, "roleArn", stability.Experimental, pre10Since)
 }

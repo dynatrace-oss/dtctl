@@ -31,6 +31,11 @@ silent break.
 Deprecation is not a tier: a deprecated command is still stable in shape and is
 merely scheduled for removal. It is recorded on the same line.
 
+The ` + "`(global)`" + ` group at the top is not a command. It is the root command's
+persistent flags — the ones every command accepts. They are listed because a
+flag that appears nowhere in this file is stable by omission, which is the one
+tier nobody chose deliberately.
+
 ## Choosing what this environment accepts
 
 The **stability floor** is the weakest contract a command or flag may offer and
@@ -120,14 +125,23 @@ func Manifest(root *cobra.Command) string {
 	b.WriteString(ManifestHeader)
 
 	counts := map[Level]int{}
+	globals := 0
 	for _, e := range entries {
-		if e.flag == "" {
+		switch {
+		case e.path == globalFlagPath:
+			// The global group is not a command, and counting its header line
+			// as one would overstate the command surface by exactly one.
+			if e.flag != "" {
+				globals++
+			}
+		case e.flag == "":
 			counts[e.level]++
 		}
 	}
 	b.WriteString("## Summary\n\n")
 	b.WriteString(fmt.Sprintf("- commands: %d stable, %d experimental, %d development\n",
 		counts[Stable], counts[Experimental], counts[Development]))
+	b.WriteString(fmt.Sprintf("- global flags (accepted on every command): %d\n", globals))
 	b.WriteString(fmt.Sprintf("- entries below (commands + flags): %d\n\n", len(entries)))
 
 	b.WriteString("## Surface\n\n")
@@ -190,7 +204,14 @@ func collect(root *cobra.Command) []entry {
 	Walk(root, func(cmd *cobra.Command) {
 		path := Path(cmd, root)
 		if path == "" {
-			return // the root command itself carries no contract
+			// The root command carries no contract of its own, but its
+			// persistent flags do: --agent, --dry-run, --jq and the rest are
+			// usable on every command, and until they were listed here they
+			// were stable purely by omission — the one tier nobody chose. They
+			// are grouped under a synthetic path so that the group sorts ahead
+			// of the commands and reads as what it is.
+			entries = append(entries, globalFlagEntries(cmd)...)
+			return
 		}
 		if cmd.Hidden && Of(cmd) == Default {
 			// Hidden-and-unmarked commands are internal plumbing (e.g. the
@@ -229,6 +250,38 @@ func collect(root *cobra.Command) []entry {
 			return entries[i].flag == ""
 		}
 		return entries[i].flag < entries[j].flag
+	})
+	return entries
+}
+
+// globalFlagPath is the synthetic command path the root command's persistent
+// flags are listed under. The parentheses keep it out of the namespace of real
+// commands and sort it ahead of them.
+const globalFlagPath = "(global)"
+
+// globalFlagEntries renders the root command's persistent flags — the flags
+// every command accepts.
+//
+// The group itself is stable: dtctl promises that a global flag keeps working
+// on every command. An individual flag may still promise less, and
+// session.Weakest in collect already lets a flag be weaker than the surface it
+// hangs off, so nothing special is needed to demote one.
+func globalFlagEntries(root *cobra.Command) []entry {
+	entries := []entry{{path: globalFlagPath, level: Stable}}
+
+	visitFlags(root, func(f flagInfo) {
+		if f.name == "help" {
+			// cobra synthesises --help lazily, so whether it exists here
+			// depends on whether anything has asked for usage yet. Listing it
+			// would make the manifest depend on call order.
+			return
+		}
+		entries = append(entries, entry{
+			path:  globalFlagPath,
+			flag:  f.name,
+			level: f.level,
+			since: f.since,
+		})
 	})
 	return entries
 }

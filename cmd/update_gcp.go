@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var (
@@ -187,9 +188,18 @@ func init() {
 	updateGCPConnectionCmd.Flags().StringVar(&updateGCPConnectionName, "name", "", "GCP connection name (used when ID argument is not provided)")
 	updateGCPConnectionCmd.Flags().StringVar(&updateGCPConnectionServiceAccountID, "serviceAccountId", "", "Service account email to set")
 	updateGCPConnectionCmd.Flags().StringVar(&updateGCPConnectionServiceAccountID, "serviceaccountid", "", "Alias for --serviceAccountId")
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(updateGCPConnectionCmd, "serviceAccountId", stability.Experimental, pre10Since)
+	stability.MarkFlag(updateGCPConnectionCmd, "serviceaccountid", stability.Experimental, pre10Since)
 
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(updateGCPMonitoringConfigCmd, "locationFiltering", stability.Experimental, pre10Since)
+	stability.MarkFlag(updateGCPMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
+	stability.MarkFlag(updateGCPMonitoringConfigCmd, "featuresets", stability.Experimental, pre10Since)
 }

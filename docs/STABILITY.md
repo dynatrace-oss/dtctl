@@ -16,6 +16,11 @@ silent break.
 Deprecation is not a tier: a deprecated command is still stable in shape and is
 merely scheduled for removal. It is recorded on the same line.
 
+The `(global)` group at the top is not a command. It is the root command's
+persistent flags — the ones every command accepts. They are listed because a
+flag that appears nowhere in this file is stable by omission, which is the one
+tier nobody chose deliberately.
+
 ## Choosing what this environment accepts
 
 The **stability floor** is the weakest contract a command or flag may offer and
@@ -83,11 +88,25 @@ request's decision and not the host process's. See
 ## Summary
 
 - commands: 273 stable, 8 experimental, 11 development
-- entries below (commands + flags): 821
+- global flags (accepted on every command): 12
+- entries below (commands + flags): 834
 
 ## Surface
 
 ```
+(global)                             stable
+  --agent                            stable
+  --check-scopes                     stable
+  --chunk-size                       stable
+  --config                           stable
+  --context                          stable
+  --debug                            stable
+  --dry-run                          stable
+  --jq                               stable
+  --no-agent                         stable
+  --output                           stable
+  --plain                            stable
+  --verbose                          stable
 account                              development  (opt-in key: account)
 account create                       development
 account create token                 development
@@ -190,27 +209,27 @@ create anomaly-detector              stable
 create aws                           stable
 create aws connection                stable
   --name                             stable
-  --roleArn                          stable
+  --roleArn                          experimental  since 0.39.0
 create aws monitoring                stable
   --central-enrichment               stable
   --credentials                      stable
-  --featureSets                      stable
+  --featureSets                      experimental  since 0.39.0
   --name                             stable
   --regions                          stable
 create azure                         stable
 create azure connection              stable
-  --applicationId                    stable
-  --clientSecret                     stable
-  --directoryId                      stable
+  --applicationId                    experimental  since 0.39.0
+  --clientSecret                     experimental  since 0.39.0
+  --directoryId                      experimental  since 0.39.0
   --issuer                           stable
   --name                             stable
   --type                             stable
 create azure monitoring              stable
   --central-enrichment               stable
   --credentials                      stable
-  --featureSets                      stable
-  --featuresets                      stable
-  --locationFiltering                stable
+  --featureSets                      experimental  since 0.39.0
+  --featuresets                      experimental  since 0.39.0
+  --locationFiltering                experimental  since 0.39.0
   --name                             stable
 create breakpoint                    experimental  since 0.39.0
   --filters                          experimental
@@ -246,14 +265,14 @@ create extension                     stable
 create gcp                           stable
 create gcp connection                stable
   --name                             stable
-  --serviceAccountId                 stable
-  --serviceaccountid                 stable
+  --serviceAccountId                 experimental  since 0.39.0
+  --serviceaccountid                 experimental  since 0.39.0
 create gcp monitoring                stable
   --central-enrichment               stable
   --credentials                      stable
-  --featureSets                      stable
-  --featuresets                      stable
-  --locationFiltering                stable
+  --featureSets                      experimental  since 0.39.0
+  --featuresets                      experimental  since 0.39.0
+  --locationFiltering                experimental  since 0.39.0
   --name                             stable
 create lookup                        stable
   --description                      stable
@@ -404,12 +423,12 @@ describe workflow                    stable
 describe workflow-execution          stable
 diff                                 stable
   --color                            stable
-  --context                          stable
+  --context                          experimental  since 0.39.0
   --file                             stable
   --format                           stable
   --ignore-metadata                  stable
   --ignore-order                     stable
-  --output                           stable
+  --output                           experimental  since 0.39.0
   --quiet                            stable
   --semantic                         stable
   --side-by-side                     stable
@@ -464,26 +483,26 @@ enable                               stable
 enable aws                           stable
 enable aws monitoring                stable
   --name                             stable
-  --roleArn                          stable
+  --roleArn                          experimental  since 0.39.0
 enable azure                         stable
 enable azure monitoring              stable
-  --applicationId                    stable
-  --directoryId                      stable
+  --applicationId                    experimental  since 0.39.0
+  --directoryId                      experimental  since 0.39.0
   --name                             stable
 enable gcp                           stable
 enable gcp monitoring                stable
   --name                             stable
-  --serviceAccountId                 stable
+  --serviceAccountId                 experimental  since 0.39.0
 exec                                 stable
 exec analyzer                        stable
   --file                             stable
   --input                            stable
   --query                            stable
-  --timeout                          stable
+  --timeout                          experimental  since 0.39.0
   --validate                         stable
   --wait                             stable
 exec copilot                         stable
-  --context                          stable
+  --context                          experimental  since 0.39.0
   --file                             stable
   --instruction                      stable
   --no-docs                          stable
@@ -506,7 +525,7 @@ exec preview-processor               stable
   --config-id                        stable
   --file                             stable
 exec slo                             stable
-  --timeout                          stable
+  --timeout                          experimental  since 0.39.0
 exec workflow                        stable
   --input                            stable
   --params                           stable
@@ -691,7 +710,7 @@ inventory arrivals                   experimental
 logs                                 stable
 logs workflow-execution              stable
   --all                              stable
-  --follow                           stable
+  --follow                           experimental  since 0.39.0
   --task                             stable
   --tasks                            stable
 open                                 stable
@@ -738,16 +757,16 @@ query                                stable
   --width                            stable
 restore                              stable
 restore dashboard                    stable
-  --force                            stable
+  --force                            experimental  since 0.39.0
 restore document                     stable
-  --force                            stable
+  --force                            experimental  since 0.39.0
 restore notebook                     stable
-  --force                            stable
+  --force                            experimental  since 0.39.0
 restore trash                        stable
   --force                            stable
   --new-name                         stable
 restore workflow                     stable
-  --force                            stable
+  --force                            experimental  since 0.39.0
 serve                                development  (opt-in key: serve)
 serve http                           development
   --addr                             development
@@ -810,24 +829,24 @@ update                               stable
 update aws                           stable
 update aws connection                stable
   --name                             stable
-  --roleArn                          stable
+  --roleArn                          experimental  since 0.39.0
 update aws monitoring                stable
-  --featureSets                      stable
+  --featureSets                      experimental  since 0.39.0
   --name                             stable
   --regions                          stable
 update azure                         stable
 update azure connection              stable
-  --aplicationID                     stable
-  --applicationID                    stable
-  --applicationId                    stable
-  --clientSecret                     stable
-  --directoryID                      stable
-  --directoryId                      stable
+  --aplicationID                     experimental  since 0.39.0
+  --applicationID                    experimental  since 0.39.0
+  --applicationId                    experimental  since 0.39.0
+  --clientSecret                     experimental  since 0.39.0
+  --directoryID                      experimental  since 0.39.0
+  --directoryId                      experimental  since 0.39.0
   --name                             stable
 update azure monitoring              stable
-  --featureSets                      stable
-  --featuresets                      stable
-  --locationFiltering                stable
+  --featureSets                      experimental  since 0.39.0
+  --featuresets                      experimental  since 0.39.0
+  --locationFiltering                experimental  since 0.39.0
   --name                             stable
 update breakpoint                    experimental  since 0.39.0
   --condition                        experimental
@@ -858,12 +877,12 @@ update extensions                    stable
 update gcp                           stable
 update gcp connection                stable
   --name                             stable
-  --serviceAccountId                 stable
-  --serviceaccountid                 stable
+  --serviceAccountId                 experimental  since 0.39.0
+  --serviceaccountid                 experimental  since 0.39.0
 update gcp monitoring                stable
-  --featureSets                      stable
-  --featuresets                      stable
-  --locationFiltering                stable
+  --featureSets                      experimental  since 0.39.0
+  --featuresets                      experimental  since 0.39.0
+  --locationFiltering                experimental  since 0.39.0
   --name                             stable
 verify                               stable
 verify analyzer                      stable
@@ -875,7 +894,7 @@ verify openpipeline-dql-processor    stable
   --file                             stable
 verify openpipeline-matcher          stable
   --config-id                        stable
-  --context                          stable
+  --context                          experimental  since 0.39.0
   --file                             stable
 verify query                         stable
   --canonical                        stable
@@ -908,5 +927,5 @@ wait query                           stable
   --set                              stable
   --timeout                          stable
   --timezone                         stable
-  --verbose                          stable
+  --verbose                          experimental  since 0.39.0
 ```

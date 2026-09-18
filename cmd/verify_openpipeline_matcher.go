@@ -9,6 +9,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherverify"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
@@ -158,5 +159,8 @@ func readVerifyExpressionFromFile(path string) (string, error) {
 func init() {
 	verifyOpenPipelineMatcherCmd.Flags().StringP("file", "f", "", `read the matcher from a file ("-" for stdin)`)
 	verifyOpenPipelineMatcherCmd.Flags().String("context", "", `stage context, e.g. "processing" or "ROUTING_RULE"`)
+	// Renamed or removed in 1.0 because it hides a global flag
+	// (contrib breaking-changes/unshadow-global-flags.md).
+	stability.MarkFlag(verifyOpenPipelineMatcherCmd, "context", stability.Experimental, pre10Since)
 	verifyOpenPipelineMatcherCmd.Flags().String("config-id", "", `configuration scope, e.g. "logs"`)
 }

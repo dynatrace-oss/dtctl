@@ -122,6 +122,11 @@ make stability-manifest   # writes docs/STABILITY.md; review the diff
 `go test ./test/stability/` gates it. **A line that disappears from the stable
 surface is a broken promise, not a cleanup.**
 
+The manifest also lists the root command's persistent flags under a synthetic
+`(global)` group. A flag that appears nowhere in the file would be stable by
+omission — the one tier nobody chose — so `--agent`, `--dry-run`, `--jq` and the
+rest are on the record too.
+
 Enforcement is a four-stage pipeline that only ever *narrows* the surface, so
 "which axis wins" has a structural answer:
 
@@ -133,6 +138,21 @@ Enforcement is a four-stage pipeline that only ever *narrows* the surface, so
 No later stage can re-add what an earlier one removed. In particular a
 `stability-exceptions` entry cannot resurrect an unregistered development
 command. *Guard*: `go test ./cmd/ -run TestStability`
+
+### Flags an accepted breaking change already targets
+
+A flag can be correct, shipped, and still not `stable`: if dtctl-contrib's
+`breaking-changes/` folder has an accepted document that renames or removes it,
+the additive-only promise is one dtctl cannot keep. Those demotions live in
+`cmd/stability_pre_1_0.go` (the `pre10Since` constant and its rationale) and are
+enumerated with their driving document in
+`test/stability/pre_1_0_marks_test.go`.
+
+That list is a test and not a comment for a reason: `stability.MarkFlag` is a
+silent no-op when the flag it names does not exist, so renaming a flag in `cmd/`
+would drop its mark and quietly re-promise something 1.0 removes. When a
+breaking change lands, delete the flag's entry along with its mark — the test
+fails if the flag is gone but the entry stays.
 
 ## Adding a Resource
 

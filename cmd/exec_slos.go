@@ -9,6 +9,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // execSLOCmd evaluates an SLO
@@ -142,4 +143,7 @@ Examples:
 func init() {
 	// SLO flags
 	execSLOCmd.Flags().Int("timeout", 30, "timeout in seconds when polling for evaluation results")
+	// Becomes a duration flag in 1.0; a bare integer errors
+	// (contrib breaking-changes/timeout-duration.md).
+	stability.MarkFlag(execSLOCmd, "timeout", stability.Experimental, pre10Since)
 }

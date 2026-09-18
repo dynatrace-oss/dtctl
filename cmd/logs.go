@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var taskName string
@@ -215,6 +216,8 @@ func init() {
 	logsCmd.AddCommand(logsWorkflowExecutionCmd)
 	logsWorkflowExecutionCmd.Flags().StringVarP(&taskName, "task", "t", "", "Get logs for a specific task")
 	logsWorkflowExecutionCmd.Flags().BoolVarP(&followLogs, "follow", "f", false, "Follow logs in real-time until execution completes")
+	// -f is reserved for --file in 1.0 (contrib breaking-changes/short-flag-f.md).
+	stability.MarkFlag(logsWorkflowExecutionCmd, "follow", stability.Experimental, pre10Since)
 	logsWorkflowExecutionCmd.Flags().BoolVarP(&allTaskLogs, "all", "a", false, "Get all logs (workflow execution log + all task logs)")
 	logsWorkflowExecutionCmd.Flags().BoolVar(&tasksOnlyLogs, "tasks", false, "Get task logs only (all tasks with headers)")
 }

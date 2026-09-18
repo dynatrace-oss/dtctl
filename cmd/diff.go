@@ -10,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/diff"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
@@ -69,6 +70,10 @@ func init() {
 	diffCmd.Flags().Int("context", 3, "Number of context lines")
 	diffCmd.Flags().Bool("color", true, "Colorize output")
 	diffCmd.Flags().StringP("output", "o", "", "Output format (overrides --format): json-patch, semantic")
+	// Renamed or removed in 1.0 because it hides a global flag
+	// (contrib breaking-changes/unshadow-global-flags.md).
+	stability.MarkFlag(diffCmd, "context", stability.Experimental, pre10Since)
+	stability.MarkFlag(diffCmd, "output", stability.Experimental, pre10Since)
 }
 
 const (
