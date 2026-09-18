@@ -10,10 +10,16 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/edgeconnect"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/schedulingrule"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
@@ -71,6 +77,26 @@ func (c *CleanupTracker) TrackExtensionConfig(extensionName, configID string) {
 		ID:            configID,
 		Name:          fmt.Sprintf("%s/%s", extensionName, configID),
 		ExtensionName: extensionName,
+	})
+}
+
+// TrackCloudMonitoringConfig adds a hyperscaler monitoring configuration for
+// cleanup. cloud is "aws", "azure" or "gcp" — the resource types are distinct
+// because each cloud has its own extension and its own handler.
+func (c *CleanupTracker) TrackCloudMonitoringConfig(cloud, configID, name string) {
+	c.resources = append(c.resources, Resource{
+		Type: cloud + "-monitoring-config",
+		ID:   configID,
+		Name: name,
+	})
+}
+
+// TrackCloudConnection adds a hyperscaler connection (credential) for cleanup.
+func (c *CleanupTracker) TrackCloudConnection(cloud, objectID, name string) {
+	c.resources = append(c.resources, Resource{
+		Type: cloud + "-connection",
+		ID:   objectID,
+		Name: name,
 	})
 }
 
@@ -241,6 +267,48 @@ func (c *CleanupTracker) deleteResource(resource Resource) error {
 		}
 		return err
 
+	case "aws-monitoring-config":
+		err := awsmonitoringconfig.NewHandler(c.client).Delete(resource.ID)
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
+	case "azure-monitoring-config":
+		err := azuremonitoringconfig.NewHandler(c.client).Delete(resource.ID)
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
+	case "gcp-monitoring-config":
+		err := gcpmonitoringconfig.NewHandler(c.client).Delete(resource.ID)
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
+	case "aws-connection":
+		err := awsconnection.NewHandler(c.client).Delete(resource.ID)
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
+	case "azure-connection":
+		err := azureconnection.NewHandler(c.client).Delete(resource.ID)
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
+	case "gcp-connection":
+		err := gcpconnection.NewHandler(c.client).Delete(resource.ID)
+		if err != nil && isNotFoundError(err) {
+			return nil
+		}
+		return err
+
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource.Type)
 	}
@@ -367,6 +435,42 @@ func (c *CleanupTracker) verifyDeletion(resource Resource) error {
 			return nil
 		}
 		return fmt.Errorf("anomaly detector %s still exists after deletion", resource.ID)
+
+	case "aws-monitoring-config":
+		if _, err := awsmonitoringconfig.NewHandler(c.client).Get(resource.ID); err != nil {
+			return nil
+		}
+		return fmt.Errorf("aws monitoring config %s still exists after deletion", resource.ID)
+
+	case "azure-monitoring-config":
+		if _, err := azuremonitoringconfig.NewHandler(c.client).Get(resource.ID); err != nil {
+			return nil
+		}
+		return fmt.Errorf("azure monitoring config %s still exists after deletion", resource.ID)
+
+	case "gcp-monitoring-config":
+		if _, err := gcpmonitoringconfig.NewHandler(c.client).Get(resource.ID); err != nil {
+			return nil
+		}
+		return fmt.Errorf("gcp monitoring config %s still exists after deletion", resource.ID)
+
+	case "aws-connection":
+		if _, err := awsconnection.NewHandler(c.client).Get(resource.ID); err != nil {
+			return nil
+		}
+		return fmt.Errorf("aws connection %s still exists after deletion", resource.ID)
+
+	case "azure-connection":
+		if _, err := azureconnection.NewHandler(c.client).Get(resource.ID); err != nil {
+			return nil
+		}
+		return fmt.Errorf("azure connection %s still exists after deletion", resource.ID)
+
+	case "gcp-connection":
+		if _, err := gcpconnection.NewHandler(c.client).Get(resource.ID); err != nil {
+			return nil
+		}
+		return fmt.Errorf("gcp connection %s still exists after deletion", resource.ID)
 
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource.Type)
