@@ -510,6 +510,8 @@ _mutating | access: write | safety: OperationUpdate_
 | --- | --- |
 | breakpoint | `dev-obs:breakpoints:set` |
 | document | `document:documents:write` |
+| extension | `extensions:definitions:write` |
+| extensions | `extensions:definitions:write` |
 
 Subcommands:
 
