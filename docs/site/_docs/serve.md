@@ -43,6 +43,7 @@ it is a compile-time choice rather than something an operator can trip over.
 protocol is mandatory, so no single one is the silent default and future
 protocols land beside `http` rather than competing with an incumbent.
 
+<!-- prose-check:ignore 4 -->
 ```bash
 dtctl serve          # prints help: which protocols this build can speak (exit 0)
 dtctl serve http     # JSON over HTTP

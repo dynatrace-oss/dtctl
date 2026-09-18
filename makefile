@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check docs-generate
+.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check docs-generate docs-check
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -176,6 +176,15 @@ docs-generate: build
 	./bin/dtctl commands --full -o json > "$$tmpdir/commands-full.json" && \
 	python3 scripts/gen-docs/gen_all.py "$$tmpdir/commands-full.json" docs && \
 	echo "Wrote docs/resources/*.md, docs/COMMANDS.md, docs/TOKEN_SCOPES.md, and scripts/gen-docs/INDEX.md"
+
+# Validate the hand-authored half of the docs against the real CLI.
+# docs-generate only guarantees the <!-- GENERATED --> blocks; the prose around
+# them (overviews, examples, notes, cross-links) drifts silently. This resolves
+# every `dtctl ...` in docs/ to a real command path, checks its long flags
+# against that command's own --help, and resolves every relative link and
+# #anchor. Needs python3 and the built binary; no auth and no network.
+docs-check: build
+	@python3 scripts/gen-docs/check_prose.py ./bin/dtctl docs
 
 # Release (using goreleaser)
 release:

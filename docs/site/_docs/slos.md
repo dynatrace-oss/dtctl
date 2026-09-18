@@ -37,9 +37,13 @@ Dynatrace provides built-in SLO templates for common use cases. Use them as a st
 # List available SLO templates
 dtctl get slo-templates
 
-# Create an SLO from a template (interactive — prompts for required fields)
-dtctl create slo --from-template
+# Inspect one, then use it as the starting point for your own definition
+dtctl get slo-template <template-id> -o yaml > my-slo.yaml
+dtctl create slo -f my-slo.yaml
 ```
+
+Templates are read-only starting points: there is no `--from-template` flag,
+so you write the definition to a file, edit it, and create from that file.
 
 ## Creating and Applying SLOs
 
@@ -104,13 +108,11 @@ Timeframe:      last 7 days
 
 ## Watch Mode
 
-Monitor SLOs in real time:
-
-```bash
-dtctl get slos --watch
-```
-
-Press `Ctrl+C` to stop watching.
+Not supported for SLOs. `--watch` is only registered on `get workflows`,
+`get scheduling-rules`, and the document types (`get dashboards`,
+`get notebooks`, `get documents`, `get trash`) — see
+[Workflows]({{ '/docs/workflows/' | relative_url }}). To poll SLOs, loop over
+`dtctl get slos -o json` yourself.
 
 ## Deleting an SLO
 

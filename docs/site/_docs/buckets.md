@@ -38,11 +38,12 @@ dtctl apply -f bucket.yaml
 
 ## Watch Mode
 
-Monitor bucket status changes in real time:
-
-```bash
-dtctl get buckets --watch
-```
+Not supported for buckets. `--watch` is only registered on `get workflows`,
+`get scheduling-rules`, and the document types (`get dashboards`,
+`get notebooks`, `get documents`, `get trash`) — see
+[Workflows]({{ '/docs/workflows/' | relative_url }}). A bucket's status settles
+within a minute or two of `apply`, so re-running `dtctl get buckets` is usually
+enough.
 
 ## Deleting Buckets
 

@@ -220,13 +220,10 @@ This fetches the detector, converts it to the flattened YAML format, opens it in
 
 ## Watch Mode
 
-Monitor anomaly detectors in real time:
-
-```bash
-dtctl get anomaly-detectors --watch
-```
-
-Press `Ctrl+C` to stop watching.
+Not supported for anomaly detectors. `--watch` is only registered on
+`get workflows`, `get scheduling-rules`, and the document types
+(`get dashboards`, `get notebooks`, `get documents`, `get trash`) — see
+[Workflows]({{ '/docs/workflows/' | relative_url }}).
 
 ## Deleting an Anomaly Detector
 

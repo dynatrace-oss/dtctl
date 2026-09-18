@@ -75,6 +75,7 @@ The full generated verb-and-resource matrix is in **[COMMANDS.md](COMMANDS.md)**
 
 OpenPipeline processes and routes observability data. As of September 2025, OpenPipeline configurations have been migrated from the direct API to the Settings API v2 for better access control and configuration management.
 
+<!-- prose-check:ignore -->
 **Important:** The direct OpenPipeline commands (`dtctl get openpipelines`, `dtctl describe openpipeline`) have been removed. Use the Settings API instead to manage OpenPipeline configurations.
 
 ### View pipeline configurations via the Settings API

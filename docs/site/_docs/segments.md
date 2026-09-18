@@ -130,13 +130,10 @@ dtctl query "fetch logs | limit 10" --segment my-k8s-segment
 
 ## Watch Mode
 
-Monitor segments in real time:
-
-```bash
-dtctl get segments --watch
-```
-
-Press `Ctrl+C` to stop watching.
+Not supported for segments. `--watch` is only registered on `get workflows`,
+`get scheduling-rules`, and the document types (`get dashboards`,
+`get notebooks`, `get documents`, `get trash`) — see
+[Workflows]({{ '/docs/workflows/' | relative_url }}).
 
 ## Deleting a Segment
 

@@ -104,10 +104,11 @@ Monitoring configurations define how an extension collects data -- which endpoin
 
 ```bash
 # List all monitoring configs for an extension
-dtctl get extension-configs --extension com.dynatrace.extension.postgres
+# (the extension name is a positional, not a flag)
+dtctl get extension-configs com.dynatrace.extension.postgres
 
 # Using the alias
-dtctl get ext-configs --extension com.dynatrace.extension.postgres
+dtctl get ext-configs com.dynatrace.extension.postgres
 
 # Describe a specific monitoring config
 dtctl describe extension-config <config-id>
@@ -139,22 +140,29 @@ postgresql:
 ```
 {% endraw %}
 
+There is no `create extension-config`. `apply extension-config` covers both
+create and update: it creates when the file has no `objectId`, updates when it
+does. The extension name is a positional.
+
 ```bash
-dtctl create extension-config -f postgres-monitoring.yaml \
-  --extension com.dynatrace.extension.postgres
+dtctl apply extension-config com.dynatrace.extension.postgres \
+  -f postgres-monitoring.yaml
 ```
 
 ### Applying with Options
 
 ```bash
-# Apply with scope
-dtctl apply -f postgres-monitoring.yaml --scope HOST_GROUP-ABC123
+# Apply with scope (overrides the scope set in the file)
+dtctl apply extension-config com.dynatrace.extension.postgres \
+  -f postgres-monitoring.yaml --scope HOST_GROUP-ABC123
 
 # Dry-run to validate
-dtctl apply -f postgres-monitoring.yaml --dry-run
+dtctl apply extension-config com.dynatrace.extension.postgres \
+  -f postgres-monitoring.yaml --dry-run
 
 # Use template variables for environment-specific values
-dtctl apply -f postgres-monitoring.yaml \
+dtctl apply extension-config com.dynatrace.extension.postgres \
+  -f postgres-monitoring.yaml \
   --set db_password=secret123 \
   --set env=production
 ```
@@ -207,8 +215,8 @@ postgresql:
 
 ```bash
 # Deploy to staging
-dtctl create extension-config -f extension-template.yaml \
-  --extension com.dynatrace.extension.postgres \
+dtctl apply extension-config com.dynatrace.extension.postgres \
+  -f extension-template.yaml \
   --set env=staging \
   --set host_group=HOST_GROUP-STAGING \
   --set db_host=db-staging.internal \
@@ -216,8 +224,8 @@ dtctl create extension-config -f extension-template.yaml \
 
 # Deploy to production
 dtctl ctx use production
-dtctl create extension-config -f extension-template.yaml \
-  --extension com.dynatrace.extension.postgres \
+dtctl apply extension-config com.dynatrace.extension.postgres \
+  -f extension-template.yaml \
   --set env=production \
   --set host_group=HOST_GROUP-PROD \
   --set db_host=db-prod-01.internal \

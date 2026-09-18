@@ -111,8 +111,8 @@ Trigger a workflow execution on demand:
 # Fire and forget
 dtctl exec workflow workflow-123
 
-# Pass parameters and wait for completion
-dtctl exec workflow workflow-123 --params env=prod --wait
+# Pass input and wait for completion (--input takes a JSON object)
+dtctl exec workflow workflow-123 --input '{"env":"prod"}' --wait
 
 # Wait and display task results when finished
 dtctl exec workflow workflow-123 --wait --show-results

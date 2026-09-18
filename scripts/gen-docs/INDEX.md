@@ -25,6 +25,7 @@
 | `resources/api-discovery.md` | API Discovery | api | generated |
 | `resources/platform-tokens.md` | Platform Tokens | platform-token, account-token, token | generated |
 | `resources/users-groups.md` | Users & Groups | user, group | generated |
+| `resources/environment-license.md` | Environment & License | environment, license, license-settings | generated |
 
 
 ## Catalog resource keys not mapped to any file
@@ -43,14 +44,11 @@
 | delete-credentials |
 | describe |
 | describe-context |
-| environment |
 | export |
 | get-contexts |
 | import |
 | init |
 | install |
-| license |
-| license-settings |
 | list |
 | login |
 | logout |

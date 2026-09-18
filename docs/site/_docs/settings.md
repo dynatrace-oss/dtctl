@@ -13,8 +13,8 @@ Schemas define the structure and validation rules for settings objects. List ava
 # List all settings schemas
 dtctl get settings-schemas
 
-# Filter schemas by name
-dtctl get settings-schemas --name "openpipeline"
+# Narrow the list (the command takes an exact schema ID, not a name filter)
+dtctl get settings-schemas | grep openpipeline
 
 # Describe a specific schema to see its fields and constraints
 dtctl describe settings-schema builtin:openpipeline.logs.pipelines
@@ -136,7 +136,7 @@ A typical workflow for configuring OpenPipeline via the Settings API:
 
 1. **Discover schemas** -- list available OpenPipeline schemas to find the one you need:
    ```bash
-   dtctl get settings-schemas --name "openpipeline"
+   dtctl get settings-schemas | grep openpipeline
    ```
 
 2. **Inspect the schema** -- understand required fields and constraints:
@@ -201,6 +201,7 @@ dtctl create settings -f pipeline-template.yaml \
 
 ## Migration from OpenPipeline Commands
 
+<!-- prose-check:ignore -->
 > **Note:** Direct OpenPipeline commands (`dtctl get openpipeline`, etc.) have been removed. All OpenPipeline configuration is now managed through the Settings API using the `builtin:openpipeline.*` schemas. This provides a consistent interface and supports features like dry-run, template variables, and multi-environment deployment.
 
 ## Required Scopes

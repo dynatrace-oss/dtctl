@@ -11,7 +11,7 @@ The current Live Debugger flow in `dtctl` supports:
 - configuring workspace filters with `dtctl update breakpoint --filters ...`
 - creating breakpoints with `dtctl create breakpoint File.java:line`
 - listing breakpoints with `dtctl get breakpoints`
-- describing breakpoint status with `dtctl describe <id|filename:line>`
+- describing breakpoint status with `dtctl describe breakpoint <id|filename:line>`
 - updating breakpoints with `dtctl update breakpoint ...`
 - deleting breakpoints with `dtctl delete breakpoint ...`
 - fetching snapshots for a breakpoint with `dtctl get snapshots <breakpoint> --decode-snapshots`
@@ -134,11 +134,11 @@ dtctl get breakpoints -o yaml
 Inspect the current status of a breakpoint by ID or source location:
 
 ```bash
-dtctl describe dtctl-rule-123
+dtctl describe breakpoint dtctl-rule-123
 ```
 
 ```bash
-dtctl describe OrderController.java:306
+dtctl describe breakpoint OrderController.java:306
 ```
 
 The command uses `GetRuleStatusBreakdown` and summarizes:
@@ -154,8 +154,8 @@ The command uses `GetRuleStatusBreakdown` and summarizes:
 Structured output is supported:
 
 ```bash
-dtctl describe OrderController.java:306 -o json
-dtctl describe OrderController.java:306 -o yaml
+dtctl describe breakpoint OrderController.java:306 -o json
+dtctl describe breakpoint OrderController.java:306 -o yaml
 ```
 
 ## 5. Update breakpoints
@@ -310,7 +310,7 @@ dtctl create breakpoint OrderController.java:306
 dtctl get breakpoints
 
 # Inspect status
-dtctl describe OrderController.java:306
+dtctl describe breakpoint OrderController.java:306
 
 # Update condition
 dtctl update breakpoint OrderController.java:306 --condition "orderId != null"
