@@ -305,7 +305,7 @@ dtctl inventory --budget-seconds 300     # max cumulative query seconds (default
 dtctl inventory --scan-limit-gbytes 25   # scan cap applied to every probe (default 25)
 ```
 
-The default battery is 4 queries: data-object catalog, buckets, entity census, and the metric catalog (only when a `metricKey` definition needs it). Probe-shaped definitions cost one query each. A consumption receipt (`discovery: {queries, seconds}`) is attached to every inventory.
+The default battery is 4 queries: data-object catalog, buckets, entity census, and the metric catalog (only when a `metricKey` definition needs it, and filtered to the globs those definitions actually use -- a `metricKey` pattern with `?` or `[a-z]` character classes cannot be pushed into the query, so it falls back to reading the whole catalog). Probe-shaped definitions cost one query each. A consumption receipt (`discovery: {queries, seconds}`) is attached to every inventory.
 
 `--budget-seconds` is a hard bound, not a running tally: a query is issued with the budget still unspent as its deadline, so a single slow query is cut off at the budget instead of overrunning it. Whatever it would have answered degrades to `unknown` with its evidence, exactly like any other skipped check. Callers running `inventory` under an outer timeout should still leave headroom -- client setup and the segment fetch happen before the first query and are not part of the query budget.
 
