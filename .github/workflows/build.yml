@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# No job here writes to the repo, so the default token stays read-only.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build Binaries

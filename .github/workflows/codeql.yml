@@ -1,0 +1,52 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 4 * * 1'  # Mondays at 04:23 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze Go
+    runs-on: ubuntu-latest
+
+    permissions:
+      security-events: write  # required to upload the results
+      contents: read
+
+    steps:
+      # Actions in this workflow are pinned by commit SHA (OpenSSF Scorecard:
+      # Pinned-Dependencies); the trailing comment records the tag it came from.
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.26.6'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e429ea58a9912cadc53f8132ad35562b54de1b30 # v3.38.1
+        with:
+          languages: go
+          build-mode: manual
+
+      # Built manually rather than via autobuild so that sdk/ -- a separate
+      # module the root build never reaches -- is extracted too.
+      - name: Build
+        run: |
+          go build ./...
+          (cd sdk && go build ./...)
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@e429ea58a9912cadc53f8132ad35562b54de1b30 # v3.38.1
+        with:
+          category: /language:go

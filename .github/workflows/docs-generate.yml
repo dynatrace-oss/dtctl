@@ -20,6 +20,10 @@ on:
       - 'makefile'
       - '.github/workflows/docs-generate.yml'
 
+# No job here writes to the repo, so the default token stays read-only.
+permissions:
+  contents: read
+
 jobs:
   check-generated-docs:
     runs-on: ubuntu-latest
