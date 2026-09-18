@@ -13,6 +13,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getDashboardsCmd retrieves dashboards
@@ -723,4 +724,17 @@ func init() {
 	deleteDocumentCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
 	deleteTrashCmd.Flags().Bool("permanent", false, "Permanently delete (required)")
 	deleteTrashCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(deleteDashboardCmd)
+	stability.MarkStable(deleteDocumentCmd)
+	stability.MarkStable(deleteNotebookCmd)
+	stability.MarkStable(deleteTrashCmd)
+	stability.MarkStable(getDashboardsCmd)
+	stability.MarkStable(getDocumentsCmd)
+	stability.MarkStable(getNotebooksCmd)
+	stability.MarkStable(getTrashCmd)
 }

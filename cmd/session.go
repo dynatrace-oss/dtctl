@@ -56,6 +56,15 @@ type Session struct {
 	// flags added to already-allowed stable commands in a later release, which
 	// is almost never what a service intended.
 	StabilityExceptions []string
+	// NoDeprecated makes this invocation refuse every deprecated command and
+	// flag, as if the removal release had already happened. It is how a host
+	// finds out it still depends on something scheduled to go while that is
+	// still a test failure rather than an outage.
+	//
+	// Orthogonal to MinStability: a deprecated command is stable in shape and
+	// passes any floor, it merely has a removal date. Off by default, because
+	// a host that has not asked to be broken early should not be.
+	NoDeprecated bool
 }
 
 // SessionDefaultMinStability is the floor a session-backed invocation gets
@@ -154,6 +163,7 @@ func (s *Session) syntheticConfig() *config.Config {
 				// floor this deployment accepts".
 				MinStability:        floor,
 				StabilityExceptions: s.StabilityExceptions,
+				NoDeprecated:        s.NoDeprecated,
 			},
 		}},
 		Tokens: []config.NamedToken{{
@@ -205,6 +215,11 @@ var sessionScrubbedEnvVars = []string{
 	"FORCE_COLOR", "NO_COLOR", "DTCTL_SPILL", "DTCTL_SPILL_DIR",
 	"DTCTL_TOKEN_STORAGE",
 	config.MinStabilityEnvVar, config.DevelopmentEnvVar,
+	// Scrubbed for the same reason as the floor: whether a request sees
+	// deprecated surface is the request's decision. Left unscrubbed, a host
+	// that had set it for its own CLI use would break every tenant's request
+	// the moment one of them used a dated command.
+	config.NoDeprecatedEnvVar,
 	"DTCTL_EXPERIMENTAL_ACCOUNT", "DTCTL_EXPERIMENTAL_SERVE",
 }
 

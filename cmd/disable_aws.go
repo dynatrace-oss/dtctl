@@ -9,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var disableAWSMonitoringName string
@@ -104,4 +105,11 @@ func init() {
 	disableAWSProviderCmd.AddCommand(disableAWSMonitoringCmd)
 
 	disableAWSMonitoringCmd.Flags().StringVar(&disableAWSMonitoringName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(disableAWSProviderCmd)
+	stability.MarkStable(disableAWSMonitoringCmd)
 }

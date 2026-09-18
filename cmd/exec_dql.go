@@ -7,9 +7,12 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // execDQLCmd executes a DQL query (DEPRECATED)
+// A hidden alias for `query`, hidden from help but not from callers, so it
+// declares the same contract `query` does.
 var execDQLCmd = &cobra.Command{
 	Use:    "dql [query]",
 	Short:  "Execute a DQL query (DEPRECATED: use 'dtctl query')",
@@ -58,4 +61,8 @@ Examples:
 func init() {
 	// DQL flags
 	execDQLCmd.Flags().StringP("file", "f", "", "read query from file")
+}
+
+func init() {
+	stability.MarkStable(execDQLCmd)
 }

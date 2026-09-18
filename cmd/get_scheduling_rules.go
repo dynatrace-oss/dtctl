@@ -9,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/schedulingrule"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getSchedulingRulesCmd retrieves scheduling rules
@@ -197,4 +198,11 @@ func init() {
 	getSchedulingRulesCmd.Flags().Int64("limit", 0, "Maximum number of scheduling rules to return (0 = unlimited)")
 	addWatchFlags(getSchedulingRulesCmd)
 	deleteSchedulingRuleCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(deleteSchedulingRuleCmd)
+	stability.MarkStable(getSchedulingRulesCmd)
 }

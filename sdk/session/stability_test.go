@@ -134,3 +134,43 @@ func TestStabilityExceptionsComeFromTheContext(t *testing.T) {
 		t.Errorf("StabilityExceptions() = %v", got)
 	}
 }
+
+func TestNoDeprecatedPrecedence(t *testing.T) {
+	cfg := NewConfig()
+	cfg.SetContext("prod", "https://env.example.com", "tok")
+	cfg.CurrentContext = "prod"
+
+	if cfg.NoDeprecated() {
+		t.Error("the mode must be off unless someone asks for it: a caller who " +
+			"has not opted in should not be broken early")
+	}
+
+	// The context can make it durable, for a deployment that wants every run
+	// held to the post-removal surface.
+	// Set on the slice element, not through CurrentContextObj: that accessor
+	// returns a pointer into a range copy, so a write through it is lost.
+	cfg.Contexts[0].Context.NoDeprecated = true
+	if !cfg.NoDeprecated() {
+		t.Error("the context field did not enable the mode")
+	}
+
+	// The environment wins in both directions. Turning it on for one run is the
+	// motivating case; turning it off for one run matters just as much, because
+	// the run that still needs the deprecated command is the run in the middle
+	// of migrating off it -- and it must not have to edit a shared config.
+	t.Setenv(NoDeprecatedEnvVar, "0")
+	if cfg.NoDeprecated() {
+		t.Error("an explicit off-value in the environment did not override the context")
+	}
+	t.Setenv(NoDeprecatedEnvVar, "1")
+	if !cfg.NoDeprecated() {
+		t.Error("the environment did not enable the mode")
+	}
+
+	// Present but empty reads as off, matching the vocabulary a development
+	// feature key uses, so the two cannot disagree about what "off" looks like.
+	t.Setenv(NoDeprecatedEnvVar, "")
+	if cfg.NoDeprecated() {
+		t.Error("an empty value enabled the mode")
+	}
+}

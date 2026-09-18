@@ -9,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var deleteGCPConnectionCmd = &cobra.Command{
@@ -76,4 +77,11 @@ var deleteGCPMonitoringConfigCmd = &cobra.Command{
 func init() {
 	deleteGCPProviderCmd.AddCommand(deleteGCPConnectionCmd)
 	deleteGCPProviderCmd.AddCommand(deleteGCPMonitoringConfigCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(deleteGCPConnectionCmd)
+	stability.MarkStable(deleteGCPMonitoringConfigCmd)
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/inspect"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // statsAllColumns is the NoOptDefVal for --stats: a bare `--stats` (no value)
@@ -357,4 +358,10 @@ func inspectResourceFromSidecar(sc *output.SidecarManifest) string {
 		}
 	}
 	return ""
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(inspectCmd)
 }

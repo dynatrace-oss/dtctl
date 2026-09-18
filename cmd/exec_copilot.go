@@ -301,3 +301,12 @@ func init() {
 	execCopilotDocSearchCmd.Flags().StringSlice("collections", []string{}, "document collections to search (e.g., notebooks,dashboards)")
 	execCopilotDocSearchCmd.Flags().StringSlice("exclude", []string{}, "document IDs to exclude from results")
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(execCopilotCmd)
+	stability.MarkStable(execCopilotDocSearchCmd)
+	stability.MarkStable(execCopilotDql2NlCmd)
+	stability.MarkStable(execCopilotNl2DqlCmd)
+}

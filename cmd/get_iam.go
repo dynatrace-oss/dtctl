@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/iam"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getUsersCmd retrieves IAM users
@@ -94,4 +95,11 @@ func init() {
 	// IAM flags
 	getUsersCmd.Flags().String("filter", "", "Filter users by email or name (partial match)")
 	getGroupsCmd.Flags().String("filter", "", "Filter groups by name (partial match)")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getGroupsCmd)
+	stability.MarkStable(getUsersCmd)
 }

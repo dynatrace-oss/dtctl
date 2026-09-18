@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var downloadCmd = &cobra.Command{
@@ -59,4 +60,11 @@ func init() {
 	rootCmd.AddCommand(downloadCmd)
 	downloadCmd.AddCommand(downloadExtensionCmd)
 	downloadExtensionCmd.Flags().String("version", "", "Extension version to download")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(downloadCmd)
+	stability.MarkStable(downloadExtensionCmd)
 }

@@ -39,11 +39,20 @@ const (
 	Experimental = session.StabilityExperimental
 	Stable       = session.StabilityStable
 
-	// Default is the level of anything carrying no annotation.
-	Default = session.DefaultStabilityLevel
+	// Undeclared is the absence of a declaration -- the node states nothing
+	// about its own contract. It is not a tier and never renders as one.
+	//
+	// For a *flag* it means inheritance: the flag stands or falls with its
+	// command. For a *command* it is an error the build rejects, and at
+	// runtime it resolves to Fallback rather than to a promise nobody made.
+	Undeclared = session.StabilityLevel("")
+
+	// Fallback is what an undeclared command resolves to. See
+	// session.FallbackStabilityLevel for why it is not stable.
+	Fallback = session.FallbackStabilityLevel
 
 	// DefaultFloor is the stability floor when a context sets none. It is
-	// deliberately NOT Default: the floor admits experimental surface so humans
+	// deliberately NOT Stable: the floor admits experimental surface so humans
 	// and interactive agents keep getting new commands (badged), while the
 	// platform service and CI pin stable.
 	DefaultFloor = session.DefaultMinStability
@@ -106,11 +115,13 @@ func (d Deprecation) Note() string {
 // which it entered that level and is required for any level below stable, so
 // tier expiry has something to measure.
 //
-// Marking a command Stable is a no-op on the annotations: stable is the
-// default, and writing it explicitly would make the manifest noisier without
-// changing any behaviour.
+// Stable is recorded like any other level. It used to be a no-op here, on the
+// reasoning that stable was the default and writing it down only added noise.
+// That had it backwards: it made the strongest promise dtctl offers the one
+// tier nobody had to choose, so a command shipped it by omission. Every
+// command now declares, and Lint fails the build for one that does not.
 func Mark(cmd *cobra.Command, level Level, since string) {
-	if cmd == nil || level == Stable || level == "" {
+	if cmd == nil || level == Undeclared {
 		return
 	}
 	setAnnotation(cmd, AnnotationLevel, string(level))
@@ -172,14 +183,15 @@ func Deprecate(cmd *cobra.Command, d Deprecation) {
 }
 
 // Of returns a command's own declared level, ignoring its ancestors. Absence of
-// an annotation means Default (stable).
+// an annotation is Undeclared -- the command states nothing, which is not the
+// same as stating stable. See Effective for what that resolves to.
 func Of(cmd *cobra.Command) Level {
 	if cmd == nil {
-		return Default
+		return Undeclared
 	}
 	lvl := Level(cmd.Annotations[AnnotationLevel])
 	if !lvl.IsValid() || lvl == "" {
-		return Default
+		return Undeclared
 	}
 	return lvl
 }
@@ -219,19 +231,71 @@ func DeprecationOf(cmd *cobra.Command) (Deprecation, bool) {
 // the weakest level along the path from root down to the command. A stable
 // subcommand under an experimental verb is stable in name only.
 func Effective(cmd *cobra.Command) Level {
-	lvl := Default
+	lvl := Stable
 	for c := cmd; c != nil; c = c.Parent() {
-		lvl = session.Weakest(lvl, Of(c))
+		own := Of(c)
+		if own == Undeclared {
+			// The root is not a command and carries no contract of its own,
+			// so its silence is correct rather than an omission.
+			if c.Parent() == nil {
+				continue
+			}
+			// Nothing here declared anything. Fall back instead of inheriting
+			// the strongest promise by default.
+			own = Fallback
+		}
+		lvl = session.Weakest(lvl, own)
 	}
 	return lvl
 }
 
+// MarkStable declares a command stable: its invocation and output contract are
+// additive-only from here on.
+//
+// It takes no since-version. Since drives tier expiry -- how long a feature has
+// sat below stable before it must be promoted or dropped -- and stable is the
+// terminus, so there is nothing left to measure. It would also be a fiction for
+// the surface that predates this declaration, which has been stable for many
+// releases and not since the one that wrote the annotation down.
+func MarkStable(cmd *cobra.Command) { Mark(cmd, Stable, "") }
+
+// Declared reports whether a command states a tier of its own.
+func Declared(cmd *cobra.Command) bool { return Of(cmd) != Undeclared }
+
+// DeclarationRequired reports whether a command must declare a tier of its own
+// for the build to pass.
+//
+// Two exemptions, both because the command is already outside the promised
+// surface rather than silently inside it:
+//
+//   - An ancestor declared a level below stable. That is one explicit demotion
+//     covering a subtree -- `account` marked development speaks for every
+//     `account *` -- not an omission, and making each child repeat it would
+//     turn a single reviewed decision into eight.
+//
+// Hidden commands are *not* exempt. Hiding a command removes it from help, not
+// from the tree: `dtctl exec dql` still runs, so something still has to decide
+// whether a stable floor accepts it. Leaving that to the fallback would demote
+// three working commands as a side effect of a docs decision.
+func DeclarationRequired(cmd *cobra.Command, root *cobra.Command) bool {
+	if cmd == nil || cmd == root || Path(cmd, root) == "" {
+		return false
+	}
+	for a := cmd.Parent(); a != nil; a = a.Parent() {
+		if lvl := Of(a); lvl != Undeclared && lvl != Stable {
+			return false
+		}
+	}
+	return true
+}
+
 // OfFlag returns a flag's own declared level, ignoring its command. Absence of
-// an annotation means Default.
+// an annotation is Undeclared, which for a flag means it inherits its
+// command's level.
 func OfFlag(cmd *cobra.Command, name string) Level {
 	f := cmd.Flags().Lookup(name)
 	if f == nil {
-		return Default
+		return Undeclared
 	}
 	return flagLevel(f.Annotations)
 }
@@ -241,11 +305,12 @@ func OfFlag(cmd *cobra.Command, name string) Level {
 //
 // OfFlag cannot serve a global flag: before cobra merges persistent flags,
 // cmd.Flags() on a subcommand does not see them, so the lookup returns
-// Default. Walking ancestors by hand and reading the flag directly is the only
-// way to ask about a global flag without triggering that merge.
+// Undeclared -- indistinguishable from a global flag that simply inherits.
+// Walking ancestors by hand and reading the flag directly is the only way to
+// ask about a global flag without triggering that merge.
 func OfFlagValue(f *pflag.Flag) Level {
 	if f == nil {
-		return Default
+		return Undeclared
 	}
 	return flagLevel(f.Annotations)
 }
@@ -269,11 +334,11 @@ func SinceFlag(cmd *cobra.Command, name string) string {
 func flagLevel(annotations map[string][]string) Level {
 	vals := annotations[AnnotationLevel]
 	if len(vals) == 0 {
-		return Default
+		return Undeclared
 	}
 	lvl := Level(vals[0])
 	if !lvl.IsValid() || lvl == "" {
-		return Default
+		return Undeclared
 	}
 	return lvl
 }
@@ -308,8 +373,9 @@ func Badge(level Level) string {
 func Guarantee(level Level) string {
 	switch level {
 	case Development:
-		return "Development features are unfinished, carry no stability guarantees, " +
-			"and may change or be removed without notice."
+		return "Development features are unfinished, carry no guarantees of any " +
+			"kind -- including the backend's, which may not be deployed on this " +
+			"environment at all -- and may change or be removed without notice."
 	case Experimental:
 		return "Experimental commands and flags may change or be removed in any " +
 			"release and are not covered by dtctl's stability guarantees."
@@ -356,6 +422,19 @@ func Lint(root *cobra.Command) []error {
 			return
 		}
 		own := Of(cmd)
+
+		// Every command states its own tier. Stable is the strongest promise
+		// dtctl makes, and it used to be what a command got for saying
+		// nothing -- so a command shipped an additive-only contract because
+		// nobody chose otherwise. Declaring is now the author's job, and this
+		// is where forgetting costs a red build instead of a promise.
+		if own == Undeclared && DeclarationRequired(cmd, root) {
+			problems = append(problems, fmt.Errorf(
+				"%s: declares no stability tier; add stability.MarkStable(cmd) if "+
+					"its invocation and output contract are additive-only from now on, "+
+					"or stability.Mark(cmd, stability.Experimental, \"<version>\") if not "+
+					"(it resolves to %s until then)", path, Fallback))
+		}
 
 		// A level below stable must say when it got there, or expiry has
 		// nothing to measure. Development is exempt: it is unreleased by

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/skills"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 )
 
@@ -511,4 +512,13 @@ func resolveAgent(forFlag string) (skills.Agent, error) {
 	}
 
 	return agent, nil
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(skillsCmd)
+	stability.MarkStable(skillsInstallCmd)
+	stability.MarkStable(skillsStatusCmd)
+	stability.MarkStable(skillsUninstallCmd)
 }

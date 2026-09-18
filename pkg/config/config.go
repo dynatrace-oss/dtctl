@@ -128,6 +128,7 @@ const (
 
 	MinStabilityEnvVar = session.MinStabilityEnvVar
 	DevelopmentEnvVar  = session.DevelopmentEnvVar
+	NoDeprecatedEnvVar = session.NoDeprecatedEnvVar
 	DevelopmentAll     = session.DevelopmentAll
 )
 

@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 )
 
@@ -161,4 +162,11 @@ Examples:
 func init() {
 	editAzureMonitoringCmd.Flags().StringP("format", "", "yaml", "edit format (yaml|json)")
 	editAzureMonitoringCmd.Flags().StringVar(&editAzureMonitoringName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(editAzureProviderCmd)
+	stability.MarkStable(editAzureMonitoringCmd)
 }

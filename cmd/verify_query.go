@@ -9,6 +9,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
 
@@ -397,4 +398,10 @@ func init() {
 	verifyQueryCmd.Flags().Bool("fail-on-warn", false, "exit with non-zero status on warnings (useful for CI/CD)")
 	verifyQueryCmd.Flags().String("client-context", "", `optional caller context included in the dt-client-context request header
 useful for AI agents or scripts to declare their intent (e.g. "root-cause-analysis")`)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(verifyQueryCmd)
 }

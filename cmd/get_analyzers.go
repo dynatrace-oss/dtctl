@@ -5,6 +5,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/copilot"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getAnalyzersCmd retrieves Davis analyzers
@@ -89,4 +90,11 @@ Examples:
 func init() {
 	// Analyzer flags
 	getAnalyzersCmd.Flags().String("filter", "", "Filter analyzers (e.g., \"name contains 'forecast'\")")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getAnalyzersCmd)
+	stability.MarkStable(getCopilotSkillsCmd)
 }

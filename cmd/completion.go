@@ -4,6 +4,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // completionCmd represents the completion command
@@ -59,4 +61,10 @@ Note:
 
 func init() {
 	rootCmd.AddCommand(completionCmd)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(completionCmd)
 }

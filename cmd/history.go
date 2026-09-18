@@ -8,6 +8,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // historyCmd represents the history command
@@ -249,4 +250,14 @@ func init() {
 	historyCmd.AddCommand(historyDashboardCmd)
 	historyCmd.AddCommand(historyNotebookCmd)
 	historyCmd.AddCommand(historyDocumentCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(historyCmd)
+	stability.MarkStable(historyDashboardCmd)
+	stability.MarkStable(historyDocumentCmd)
+	stability.MarkStable(historyNotebookCmd)
+	stability.MarkStable(historyWorkflowCmd)
 }

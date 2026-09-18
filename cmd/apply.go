@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
@@ -381,4 +382,10 @@ func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyRes
 		ids = append(ids, e.Error())
 	}
 	return fmt.Errorf("%d documents failed to share: %s", len(errs), strings.Join(ids, "; "))
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(applyCmd)
 }

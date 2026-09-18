@@ -11,7 +11,19 @@ silent break.
 |---|---|
 | `stable` | Invocation and output contract are additive-only. Removal or an incompatible change requires a deprecation cycle. |
 | `experimental` | May change or be removed in any release. Not covered by dtctl's stability guarantees. |
-| `development` | Unfinished, no guarantees. Not registered unless opted in via `dtctl config set development.<feature> on`. |
+| `development` | Unfinished, no guarantees — of any kind, including the backend's. Not registered unless opted in via `dtctl config set development.<feature> on`. |
+
+A tier describes the whole path, not just dtctl's side of it. A `development`
+command commonly targets an unreleased or feature-flagged API, so it may return
+404, 403 or 500 on an environment where the feature is simply not deployed —
+and dtctl does **not** translate that into "not available here". Read a failure
+from a development command as "this does not work yet", not as a bug report.
+
+Stable is never implied. Every command declares its tier where it is built and
+the build fails on one that does not; a command that somehow reaches runtime
+undeclared resolves to `experimental`, never to `stable`.
+The strongest promise dtctl makes is not one a command can acquire by nobody
+having thought about it.
 
 Deprecation is not a tier: a deprecated command is still stable in shape and is
 merely scheduled for removal. It is recorded on the same line.
@@ -60,6 +72,34 @@ dtctl config set development.serve on         # persistent
 DTCTL_DEVELOPMENT=serve dtctl serve http      # one process
 ```
 
+## Finding out early what a removal will break
+
+`DTCTL_NO_DEPRECATED=1` makes dtctl behave as if every deprecated command
+and flag had already been removed. A deprecation warning in a log is
+easy to miss; a failing pipeline is not. Run a CI job with it set and it fails
+now, while that is a fixable build, rather than on the day the removal release
+lands:
+
+```bash
+# Set it once for a whole pipeline, not per command: the point is to find out
+# which of a hundred invocations still depends on dated surface.
+export DTCTL_NO_DEPRECATED=1
+./scripts/nightly-report.sh
+# error: this context accepts no deprecated surface: flag --params of command
+#        "exec workflow", deprecated: ... use --input instead.
+```
+
+Orthogonal to the floor, and not a tier: a deprecated command is still stable
+in shape and satisfies any floor, it merely has a removal date. No floor and no
+exception will bring it back — only a migration will.
+
+The mode is off unless asked for and can be made durable per context
+(`no-deprecated: true`). The environment variable overrides the context
+in *both* directions, so the one run that is still mid-migration can set
+`DTCTL_NO_DEPRECATED=0` without editing a config it shares with every
+other run. Embedded callers use `engine.Request.NoDeprecated`; the
+variable is scrubbed from a session-backed run, like the floor is.
+
 ### Embedded and service callers
 
 When dtctl is embedded (`pkg/engine`, `cmd.Session`) the floor is a
@@ -90,9 +130,9 @@ request's decision and not the host process's. See
 
 ## Summary
 
-- commands: 266 stable, 15 experimental, 11 development
+- commands: 269 stable, 15 experimental, 11 development
 - global flags (accepted on every command): 12
-- entries below (commands + flags): 834
+- entries below (commands + flags): 841
 
 ## Surface
 
@@ -504,6 +544,10 @@ exec analyzer                        stable
   --timeout                          experimental  since 0.39.0
   --validate                         stable
   --wait                             experimental  since 0.39.0
+exec api                             stable
+  --data                             stable
+  --header                           stable
+  --method                           stable
 exec copilot                         stable
   --context                          experimental  since 0.39.0
   --file                             stable
@@ -516,6 +560,8 @@ exec copilot document-search         stable
 exec copilot dql2nl                  stable
   --file                             stable
 exec copilot nl2dql                  stable
+  --file                             stable
+exec dql                             stable
   --file                             stable
 exec function                        stable
   --code                             stable
@@ -887,6 +933,7 @@ update gcp monitoring                experimental  since 0.39.0
   --featuresets                      experimental  since 0.39.0
   --locationFiltering                experimental  since 0.39.0
   --name                             experimental
+update settings                      stable
 verify                               stable
 verify analyzer                      stable
   --file                             stable

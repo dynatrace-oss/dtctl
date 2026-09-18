@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 type gcpConnectionTableRow struct {
@@ -203,4 +204,14 @@ func init() {
 	getGCPProviderCmd.AddCommand(getGCPMonitoringConfigCmd)
 	getGCPProviderCmd.AddCommand(getGCPMonitoringConfigLocationsCmd)
 	getGCPProviderCmd.AddCommand(getGCPMonitoringConfigFeatureSetsCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getGCPConnectionCmd)
+	stability.MarkStable(getGCPConnectionPrincipalCmd)
+	stability.MarkStable(getGCPMonitoringConfigCmd)
+	stability.MarkStable(getGCPMonitoringConfigFeatureSetsCmd)
+	stability.MarkStable(getGCPMonitoringConfigLocationsCmd)
 }

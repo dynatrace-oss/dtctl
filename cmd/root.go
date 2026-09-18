@@ -227,6 +227,21 @@ func executeArgs(argv []string) int {
 	applyStabilityBadges(rootCmd)
 	// --- End stability floor ---
 
+	// --- Stage 5: deprecated surface ---
+	// Show the caller the world as it will be after the removal release, so a
+	// pipeline can find out it still depends on something scheduled to go
+	// while that is a build failure rather than an outage. Orthogonal to the
+	// floor -- a deprecated command is stable in shape, merely dated -- but
+	// implemented as another narrowing stage so it composes without any
+	// precedence rule. Last, because it is the only stage the caller turns on
+	// to *find* problems rather than to avoid them.
+	// surfaceConfig, not LoadConfig: this is a surface decision like the four
+	// stages above it, and must not depend on credentials resolving.
+	if surfaceConfig(spanArgs).NoDeprecated() {
+		applyNoDeprecated(rootCmd)
+	}
+	// --- End deprecated surface ---
+
 	// Initialise OpenTelemetry tracing. Done after alias resolution so that
 	// the span name reflects the actual command (not a pre-alias invocation).
 	// The root span covers the entire invocation; shutdown flushes buffered
@@ -689,6 +704,19 @@ func errorToDetail(err error) *output.ErrorDetail {
 	// caller who had already shown they know the mechanism. Never produced in
 	// agent mode (see developmentSignposting), so this case exists for the
 	// --plain structured path only.
+	// DeprecatedError — deprecated surface was used under DTCTL_NO_DEPRECATED.
+	// Its own code rather than stability_blocked: the caller's contract has not
+	// been weakened, it has a removal date, and the fix is a migration rather
+	// than an exception or a lower floor.
+	var deprecatedErr *DeprecatedError
+	if errors.As(err, &deprecatedErr) {
+		return &output.ErrorDetail{
+			Code:        "deprecated_surface",
+			Message:     deprecatedErr.Headline(),
+			Suggestions: deprecatedErr.Suggestions(),
+		}
+	}
+
 	var devErr *DevelopmentError
 	if errors.As(err, &devErr) {
 		return &output.ErrorDetail{
@@ -1043,6 +1071,11 @@ func exitCodeForError(err error) int {
 
 	var developmentErr *DevelopmentError
 	if errors.As(err, &developmentErr) {
+		return client.ExitUsageError
+	}
+
+	var deprecatedUse *DeprecatedError
+	if errors.As(err, &deprecatedUse) {
 		return client.ExitUsageError
 	}
 

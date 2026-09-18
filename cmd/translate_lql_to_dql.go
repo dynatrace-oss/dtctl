@@ -8,6 +8,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherlqltodql"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var translateLqlToDqlCmd = &cobra.Command{
@@ -98,4 +99,10 @@ Examples:
 
 func init() {
 	translateLqlToDqlCmd.Flags().StringP("file", "f", "", `Read the LQL expression from a file ("-" for stdin)`)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(translateLqlToDqlCmd)
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // launchEditor opens path in the user's editor, resolving $EDITOR, then the
@@ -92,4 +94,10 @@ func init() {
 	editCmd.AddCommand(editGCPProviderCmd)
 	editGCPProviderCmd.AddCommand(editGCPMonitoringCmd)
 	attachPreviewNotice(editGCPProviderCmd, "GCP")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(editCmd)
 }

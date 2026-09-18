@@ -452,3 +452,14 @@ func init() {
 	restoreTrashCmd.Flags().Bool("force", false, "Restore even if name conflicts exist")
 	restoreTrashCmd.Flags().String("new-name", "", "Restore with a new name")
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(restoreCmd)
+	stability.MarkStable(restoreDashboardCmd)
+	stability.MarkStable(restoreDocumentCmd)
+	stability.MarkStable(restoreNotebookCmd)
+	stability.MarkStable(restoreTrashCmd)
+	stability.MarkStable(restoreWorkflowCmd)
+}

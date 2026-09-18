@@ -267,3 +267,10 @@ func init() {
 	stability.MarkFlag(createAWSMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
 	addCentralEnrichmentFlag(createAWSMonitoringConfigCmd, &createAWSMonitoringConfigCentral)
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(createAWSConnectionCmd)
+	stability.MarkStable(createAWSMonitoringConfigCmd)
+}

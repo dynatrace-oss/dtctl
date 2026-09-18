@@ -225,3 +225,56 @@ func TestExecute_InvalidStabilityInputIsRejected(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "engine:")
 }
+
+// TestExecute_NoDeprecatedIsPerRequestAndDoesNotLeak pins the fifth narrowing
+// stage as request state.
+//
+// The leak is the real risk here, not the refusal: the stage mutates the shared
+// command tree (Hidden, Args, DisableFlagParsing, RunE) exactly as the floor
+// does, so a request that switched it on must not leave `exec workflow
+// --params` refused for the next tenant that did not ask.
+func TestExecute_NoDeprecatedIsPerRequestAndDoesNotLeak(t *testing.T) {
+	const deprecatedCode = `"code":"deprecated_surface"`
+	// A deprecated flag rather than a deprecated command, because dtctl has no
+	// deprecated command today. `--params` on `exec workflow` is the one entry
+	// the manifest carries; when it is finally removed, replace it with
+	// whatever else is deprecated then (or delete this test with the stage).
+	const cmdline = `exec workflow wf-1 --params a=b --agent`
+
+	req := engine.Request{
+		Command:        cmdline,
+		EnvironmentURL: unroutable,
+		Token:          "t",
+		// Experimental, because `exec workflow` was itself demoted in the
+		// pre-1.0 audit (contrib #17 flips its default to waiting), so a
+		// stable floor would block it at stage 3 and stage 4 would never run.
+		// The two stages composing that way is correct -- it just makes this a
+		// bad place to observe stage 4.
+		MinStability: "experimental",
+		NoDeprecated: true,
+	}
+	res, err := engine.Execute(context.Background(), req)
+	require.NoError(t, err)
+	require.NotZero(t, res.ExitCode)
+	require.Contains(t, string(res.Stdout), deprecatedCode)
+	// Not the floor's error: at this floor nothing is below it, so the only
+	// thing that can refuse the invocation is the deprecation -- and the two
+	// are different problems with different fixes. A stability block says the
+	// contract is too weak for this deployment; this says it has a removal
+	// date, and no floor or exception brings it back.
+	require.NotContains(t, string(res.Stdout), blockedCode)
+
+	req.NoDeprecated = false
+	res, err = engine.Execute(context.Background(), req)
+	require.NoError(t, err)
+	require.NotContains(t, string(res.Stdout), deprecatedCode,
+		"the previous request's refusal survived into one that did not ask for it")
+
+	// And the host's own environment cannot decide it either — scrubbed like
+	// the floor, because which surface a tenant sees is the request's call.
+	t.Setenv(config.NoDeprecatedEnvVar, "1")
+	res, err = engine.Execute(context.Background(), req)
+	require.NoError(t, err)
+	require.NotContains(t, string(res.Stdout), deprecatedCode,
+		"DTCTL_NO_DEPRECATED from the host process reached a request")
+}

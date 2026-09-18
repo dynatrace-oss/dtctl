@@ -12,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var describeAWSConnectionCmd = &cobra.Command{
@@ -212,4 +213,11 @@ func printAWSMonitoringConfigStatus(c *client.Client, configID string) {
 func init() {
 	describeAWSProviderCmd.AddCommand(describeAWSConnectionCmd)
 	describeAWSProviderCmd.AddCommand(describeAWSMonitoringConfigCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeAWSConnectionCmd)
+	stability.MarkStable(describeAWSMonitoringConfigCmd)
 }

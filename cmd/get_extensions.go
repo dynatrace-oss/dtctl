@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getExtensionsCmd retrieves Extensions 2.0 extensions
@@ -119,4 +120,11 @@ func init() {
 	// Extension config flags
 	getExtensionConfigsCmd.Flags().String("config-id", "", "Get a specific monitoring configuration by ID")
 	getExtensionConfigsCmd.Flags().String("version", "", "Filter configs by extension version")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getExtensionConfigsCmd)
+	stability.MarkStable(getExtensionsCmd)
 }

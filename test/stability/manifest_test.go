@@ -75,6 +75,33 @@ func TestDeclarationsAreConsistent(t *testing.T) {
 	}
 }
 
+// TestEveryCommandDeclaresItsTier is the gate behind "stable is explicit, not
+// implicit".
+//
+// Stable is the strongest promise dtctl makes -- additive-only, removal only
+// through a deprecation cycle -- and it used to be what a command got for
+// saying nothing. That made the default promise the one nobody chose: a
+// command shipped an additive-only contract because its author had not thought
+// about the question, and by the time anyone noticed, callers had already built
+// on it.
+//
+// So the tier is now written down at every command, and this test is what makes
+// "written down" mean something. An undeclared command resolves to
+// experimental at runtime (session.FallbackStabilityLevel), which fails safe
+// but is nobody's intent either; the fix is a declaration, not a fallback.
+func TestEveryCommandDeclaresItsTier(t *testing.T) {
+	undeclared := cmd.StabilityUndeclaredCommands()
+	if len(undeclared) == 0 {
+		return
+	}
+	t.Errorf("%d command(s) declare no stability tier: %s\n\n"+
+		"Add stability.MarkStable(cmd) where the command is built if its "+
+		"invocation and output contract are additive-only from now on, or "+
+		"stability.Mark(cmd, stability.Experimental, \"<version>\") if not. "+
+		"Stable is never implied -- see AGENTS.md \"Stability Tiers\".",
+		len(undeclared), strings.Join(undeclared, ", "))
+}
+
 // firstDiff returns a short description of the first differing line, or "" when
 // the two strings match. A whole-file diff of a 250-command manifest is
 // unreadable in test output; the first divergence is what a maintainer needs.

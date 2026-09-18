@@ -9,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // shareCmd represents the share command
@@ -344,4 +345,17 @@ func formatRecipients(recipients []document.SsoEntity) string {
 		parts = append(parts, fmt.Sprintf("%s:%s", r.Type, r.ID))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(shareCmd)
+	stability.MarkStable(shareDashboardCmd)
+	stability.MarkStable(shareDocumentCmd)
+	stability.MarkStable(shareNotebookCmd)
+	stability.MarkStable(unshareCmd)
+	stability.MarkStable(unshareDashboardCmd)
+	stability.MarkStable(unshareDocumentCmd)
+	stability.MarkStable(unshareNotebookCmd)
 }

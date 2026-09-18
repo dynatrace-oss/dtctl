@@ -32,6 +32,7 @@ func newFloorTree() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(*cobra.Command, []string) error { return nil },
 	}
+	stability.MarkStable(query)
 	query.Flags().Bool("spill", false, "spill results to a file")
 	query.Flags().String("timeframe", "", "query timeframe")
 	stability.MarkFlag(query, "spill", stability.Experimental, "0.38.0")

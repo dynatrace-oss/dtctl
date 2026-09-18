@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
@@ -169,4 +170,10 @@ func init() {
 	updateDocumentCmd.Flags().Bool("dry-run", false, "preview the update without applying it")
 	updateDocumentCmd.Flags().Bool("show-diff", false, "show a diff of the change")
 	_ = updateDocumentCmd.MarkFlagRequired("file")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(updateDocumentCmd)
 }

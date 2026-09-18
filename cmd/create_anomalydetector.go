@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
@@ -165,4 +166,10 @@ func init() {
 	createAnomalyDetectorCmd.Flags().StringP("file", "f", "", "file containing anomaly detector definition (required)")
 	createAnomalyDetectorCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	_ = createAnomalyDetectorCmd.MarkFlagRequired("file")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(createAnomalyDetectorCmd)
 }

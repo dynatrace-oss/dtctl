@@ -9,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // forceDelete skips confirmation prompts for delete and restore commands
@@ -163,4 +164,15 @@ func init() {
 
 	deleteAzureProviderCmd.AddCommand(deleteAzureConnectionCmd)
 	deleteAzureProviderCmd.AddCommand(deleteAzureMonitoringConfigCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(deleteCmd)
+	stability.MarkStable(deleteAWSProviderCmd)
+	stability.MarkStable(deleteAzureProviderCmd)
+	stability.MarkStable(deleteAzureConnectionCmd)
+	stability.MarkStable(deleteAzureMonitoringConfigCmd)
+	stability.MarkStable(deleteGCPProviderCmd)
 }

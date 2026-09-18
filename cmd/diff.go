@@ -310,3 +310,9 @@ func normalizeResourceType(resourceType string) string {
 		return resourceType
 	}
 }
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(diffCmd)
+}

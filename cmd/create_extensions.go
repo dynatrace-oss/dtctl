@@ -9,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
@@ -133,4 +134,10 @@ func init() {
 	createExtensionCmd.Flags().StringP("file", "f", "", "path to the extension zip file (for custom extension upload)")
 	createExtensionCmd.Flags().String("hub-extension", "", "Hub extension catalog ID to install (e.g. com.dynatrace.extension.host-monitoring)")
 	createExtensionCmd.Flags().String("version", "", "version to install (only for --hub-extension; defaults to latest)")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(createExtensionCmd)
 }

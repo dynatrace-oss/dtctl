@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
@@ -110,4 +111,10 @@ func init() {
 	findIntentsCmd.Flags().StringVar(&findIntentsData, "data", "", "data as comma-separated key=value pairs")
 	findIntentsCmd.Flags().StringVar(&findIntentsDataFile, "data-file", "", "JSON file containing data (use - for stdin)")
 	findIntentsCmd.Flags().IntVar(&findIntentsLimit, "limit", 0, "limit number of results (0 for unlimited)")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(findIntentsCmd)
 }

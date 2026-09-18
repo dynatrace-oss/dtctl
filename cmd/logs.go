@@ -229,3 +229,9 @@ func init() {
 	// flag to hang that on — the contract is the command's.
 	stability.Mark(logsWorkflowExecutionCmd, stability.Experimental, pre10Since)
 }
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(logsCmd)
+}

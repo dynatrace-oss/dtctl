@@ -7,6 +7,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getAPIsCmd lists the APIs the environment publishes specifications for.
@@ -99,4 +100,10 @@ func warnUnreadableSpecs(ap *output.AgentPrinter, rows []resapi.APIInfo) {
 func init() {
 	getAPIsCmd.Flags().Bool("uncovered", false, "only APIs with no native dtctl command")
 	getAPIsCmd.Flags().Bool("ops-count", false, "fetch every specification to fill in operation counts and categories (one request per API)")
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getAPIsCmd)
 }

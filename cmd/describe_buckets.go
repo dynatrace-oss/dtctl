@@ -5,6 +5,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/bucket"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeBucketCmd shows detailed info about a bucket
@@ -62,4 +63,10 @@ Examples:
 		enrichAgent(printer, "describe", "bucket")
 		return printer.Print(b)
 	},
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeBucketCmd)
 }

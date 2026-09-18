@@ -12,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 )
 
@@ -507,4 +508,12 @@ func init() {
 		// rather than after the user has already written their changes.
 		c.PreRunE = func(cmd *cobra.Command, _ []string) error { return validateSnapshotFlags(cmd) }
 	}
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(editDashboardCmd)
+	stability.MarkStable(editDocumentCmd)
+	stability.MarkStable(editNotebookCmd)
 }

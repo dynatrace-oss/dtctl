@@ -10,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // updateExtensionCmd activates a version of an Extensions 2.0 extension as the
@@ -374,4 +375,11 @@ func init() {
 	updateExtensionsCmd.Flags().Bool("latest", false, "activate the highest installed version for each extension")
 	updateExtensionsCmd.Flags().Bool("hub-latest", false, "install the latest Hub release for each extension and activate it")
 	updateExtensionsCmd.Flags().Bool("with-configurations", false, "re-validate monitoring configurations against the new version after activation")
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(updateExtensionCmd)
+	stability.MarkStable(updateExtensionsCmd)
 }

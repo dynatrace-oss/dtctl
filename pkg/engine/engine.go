@@ -80,6 +80,14 @@ type Request struct {
 	// floor, there is no environment variable for exceptions — this field is
 	// the only way to express them in engine mode.
 	StabilityExceptions []string
+	// NoDeprecated makes this request refuse every deprecated command and
+	// flag, as if the removal release had already happened — so a host can
+	// find out in its own test suite that it still depends on something
+	// scheduled to go, rather than on the day it is removed.
+	//
+	// Not a stability level: a deprecated command is stable in shape and
+	// satisfies any floor, it merely has a removal date. Off by default.
+	NoDeprecated bool
 
 	// Files is the request's virtual filesystem: every file argument
 	// (`-f x.yaml`, `--data-file`, ...) resolves against it, and files the
@@ -215,6 +223,7 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 			// happens to carry (which Session scrubs for exactly that reason).
 			MinStability:        config.StabilityLevel(req.MinStability),
 			StabilityExceptions: req.StabilityExceptions,
+			NoDeprecated:        req.NoDeprecated,
 		},
 		Env:             env,
 		FS:              files,

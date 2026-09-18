@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/platform"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getEnvironmentCmd retrieves environment information
@@ -103,4 +104,12 @@ Examples:
 		enrichAgent(printer, "get", "license")
 		return printer.Print(lic)
 	},
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(getEnvironmentCmd)
+	stability.MarkStable(getLicenseCmd)
+	stability.MarkStable(getLicenseSettingsCmd)
 }

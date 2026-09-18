@@ -7,6 +7,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/dqlprocessorverify"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // verifyOpenPipelineDQLProcessorCmd validates a DQL processor script against
@@ -115,4 +116,10 @@ Examples:
 func init() {
 	verifyOpenPipelineDQLProcessorCmd.Flags().StringP("file", "f", "", `read the DQL script from a file ("-" for stdin)`)
 	verifyOpenPipelineDQLProcessorCmd.Flags().String("config-id", "", `configuration scope, e.g. "logs"`)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(verifyOpenPipelineDQLProcessorCmd)
 }

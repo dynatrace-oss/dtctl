@@ -408,7 +408,7 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 					// Treat as a resource
 					resources = append(resources, subName)
 					hasResources = true
-					if lvl := stability.Effective(sub); lvl != stability.Default {
+					if lvl := stability.Effective(sub); lvl != stability.Stable {
 						if resourceStability == nil {
 							resourceStability = map[string]string{}
 						}
@@ -531,7 +531,7 @@ func collectLocalFlags(cmd *cobra.Command) map[string]*Flag {
 			}
 		}
 
-		if lvl := stability.OfFlag(cmd, f.Name); lvl != stability.Default {
+		if lvl := stability.OfFlag(cmd, f.Name); lvl != stability.Undeclared {
 			fl.Stability = string(lvl)
 			fl.StabilitySince = stability.SinceFlag(cmd, f.Name)
 		}
@@ -943,7 +943,7 @@ func WriteValue(w io.Writer, v any, format string) error {
 // written out as "stable": a machine consumer should be able to treat the
 // presence of the key as "read the guarantee before automating this".
 func annotateStability(verb *Verb, cmd *cobra.Command) {
-	if lvl := stability.Effective(cmd); lvl != stability.Default {
+	if lvl := stability.Effective(cmd); lvl != stability.Stable {
 		verb.Stability = string(lvl)
 		verb.StabilitySince = stability.Since(cmd)
 	}

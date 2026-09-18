@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/plugin"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // pluginCmd groups plugin management. dtctl follows the kubectl exec
@@ -56,4 +57,11 @@ var pluginListCmd = &cobra.Command{
 func init() {
 	pluginCmd.AddCommand(pluginListCmd)
 	rootCmd.AddCommand(pluginCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(pluginCmd)
+	stability.MarkStable(pluginListCmd)
 }

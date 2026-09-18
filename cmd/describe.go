@@ -12,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeCmd represents the describe command
@@ -339,4 +340,15 @@ func init() {
 	describeCmd.AddCommand(describeAPICmd)
 	describeCmd.AddCommand(describeEnvironmentCmd)
 	describeCmd.AddCommand(describeLicenseCmd)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeCmd)
+	stability.MarkStable(describeAWSProviderCmd)
+	stability.MarkStable(describeAzureProviderCmd)
+	stability.MarkStable(describeAzureConnectionCmd)
+	stability.MarkStable(describeAzureMonitoringConfigCmd)
+	stability.MarkStable(describeGCPProviderCmd)
 }

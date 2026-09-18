@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // getLookupsCmd retrieves lookup tables
@@ -163,4 +164,11 @@ func printLookupNotifications(c *client.Client, notifications []exec.QueryNotifi
 	}
 	executor := exec.NewDQLExecutor(c)
 	executor.PrintNotifications(notifications)
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(deleteLookupCmd)
+	stability.MarkStable(getLookupsCmd)
 }

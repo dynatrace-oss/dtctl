@@ -9,6 +9,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/previewprocessor"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // execPreviewProcessorCmd executes a processor definition against sample
@@ -88,4 +89,10 @@ Examples:
 func init() {
 	execPreviewProcessorCmd.Flags().StringP("file", "f", "", `read the processor definition body from a file ("-" for stdin); required`)
 	execPreviewProcessorCmd.Flags().String("config-id", "", `configuration scope, e.g. "logs"`)
+}
+
+// Declared stable: the invocation and output contract of this command is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(execPreviewProcessorCmd)
 }

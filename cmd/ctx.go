@@ -582,3 +582,14 @@ func completeStabilityLevels(*cobra.Command, []string, string) ([]string, cobra.
 		string(config.StabilityExperimental),
 	}, cobra.ShellCompDirectiveNoFileComp
 }
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(ctxCmd)
+	stability.MarkStable(ctxCurrentCmd)
+	stability.MarkStable(ctxDeleteCmd)
+	stability.MarkStable(ctxDescribeCmd)
+	stability.MarkStable(ctxSetCmd)
+	stability.MarkStable(ctxTokenCmd)
+}

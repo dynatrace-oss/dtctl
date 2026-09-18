@@ -11,6 +11,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // describeWorkflowCmd shows detailed info about a workflow
@@ -268,4 +269,11 @@ Examples:
 		enrichAgent(printer, "describe", "workflow-execution")
 		return printer.Print(exec)
 	},
+}
+
+// Declared stable: the invocation and output contract of these commands is
+// additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
+func init() {
+	stability.MarkStable(describeWorkflowCmd)
+	stability.MarkStable(describeWorkflowExecutionCmd)
 }

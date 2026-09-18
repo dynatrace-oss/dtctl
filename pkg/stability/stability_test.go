@@ -15,6 +15,7 @@ func newTree() (root, stable, experimental, nested *cobra.Command) {
 	root = &cobra.Command{Use: "dtctl"}
 
 	stable = &cobra.Command{Use: "query", RunE: func(*cobra.Command, []string) error { return nil }}
+	MarkStable(stable)
 	stable.Flags().String("timeframe", "", "")
 	stable.Flags().Bool("spill", false, "")
 	MarkFlag(stable, "spill", Experimental, "0.38.0")
@@ -39,8 +40,10 @@ func TestLevelOrdering(t *testing.T) {
 	if !Development.AtLeast(Development) {
 		t.Error("a level must satisfy its own floor")
 	}
-	// The empty level means unset and must read as the default, so an
-	// unannotated command is never accidentally the weakest thing in the tree.
+	// The empty level means "no opinion" and must rank as the strongest, so
+	// that combining it with a declared level leaves that level untouched --
+	// how an unannotated flag inherits its command. The *command* fallback is
+	// a separate rule and lives in Effective.
 	if got := Level("").Rank(); got != Stable.Rank() {
 		t.Errorf("unset level ranks %d, want stable's %d", got, Stable.Rank())
 	}
@@ -60,8 +63,9 @@ func TestEffectiveTakesTheWeakestAncestor(t *testing.T) {
 	if got := Effective(nested); got != Experimental {
 		t.Errorf("Effective(ingest logs) = %q, want experimental (inherited)", got)
 	}
-	if got := Of(nested); got != Stable {
-		t.Errorf("Of(ingest logs) = %q, want stable (its own declaration)", got)
+	if got := Of(nested); got != Undeclared {
+		t.Errorf("Of(ingest logs) = %q, want undeclared: it states nothing of its "+
+			"own and is experimental only by inheritance", got)
 	}
 }
 
@@ -83,12 +87,31 @@ func TestEffectiveFlagIsCappedByItsCommand(t *testing.T) {
 	}
 }
 
-func TestMarkStableIsANoOp(t *testing.T) {
-	cmd := &cobra.Command{Use: "get"}
-	Mark(cmd, Stable, "0.38.0")
-	if len(cmd.Annotations) != 0 {
-		t.Errorf("marking stable wrote annotations %v; stable is the default and "+
-			"writing it would only make the manifest noisier", cmd.Annotations)
+// TestStableIsRecordedNotAssumed pins the change that made stable a choice: it
+// is written down like any other level, and a command that writes nothing down
+// is not stable.
+func TestStableIsRecordedNotAssumed(t *testing.T) {
+	declared := &cobra.Command{Use: "get"}
+	MarkStable(declared)
+	if got := declared.Annotations[AnnotationLevel]; got != string(Stable) {
+		t.Errorf("MarkStable recorded %q, want %q; stable has to be on the record, "+
+			"or it is a promise nobody made", got, Stable)
+	}
+	if got := declared.Annotations[AnnotationSince]; got != "" {
+		t.Errorf("MarkStable wrote a since-version (%q); since measures how long a "+
+			"feature has sat below stable, and stable is the terminus", got)
+	}
+
+	// The reason the default flipped: silence must not buy the strongest
+	// promise dtctl makes.
+	root := &cobra.Command{Use: "dtctl"}
+	silent := &cobra.Command{Use: "segments"}
+	root.AddCommand(silent)
+	if got := Effective(silent); got != Fallback {
+		t.Errorf("Effective(undeclared) = %q, want %q", got, Fallback)
+	}
+	if Effective(silent) == Stable {
+		t.Error("an undeclared command resolved to stable; omission must never promise")
 	}
 }
 
