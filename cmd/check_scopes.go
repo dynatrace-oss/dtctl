@@ -110,7 +110,7 @@ func scopePreflight(c *cobra.Command, args []string) (skip bool, err error) {
 	verb, resource := verbResource(c)
 
 	if checkScopes {
-		required, req := requiredScopesFor(verb, resource)
+		required, req := scopesForInvocation(c, verb, resource)
 		if req == scopeRequirementPerCall {
 			// --check-scopes is explicit and terminal: the command body does not run
 			// afterwards, so resolving the requirement from the environment's own
@@ -158,7 +158,7 @@ func scopePreflight(c *cobra.Command, args []string) (skip bool, err error) {
 	// requirement would have to be resolved over the network on every single
 	// invocation, which is not a price a preflight may charge — `exec api` reports
 	// the platform's own 403, with the declared scope, when it happens.
-	required, req := requiredScopesFor(verb, resource)
+	required, req := scopesForInvocation(c, verb, resource)
 	if req != scopeRequirementKnown {
 		return false, nil
 	}
@@ -220,6 +220,100 @@ const (
 // call — from the environment's specification — or honestly reported as unknown.
 var perCallScopeCommands = map[string]bool{
 	"exec api": true,
+}
+
+// flagScopeRequirements are scopes that a flag adds to its command's catalog
+// requirement, keyed by `<verb> <resource>` and then by flag name.
+//
+// The catalog keys scopes by (verb, resource), so it cannot express "this flag
+// reaches a second API". `get documents --admin-access` lists documents as their
+// effective owner, which needs `document:documents:admin` on top of the read
+// scope every `get documents` needs; declaring that scope on the `document`
+// resource instead would demand it from every plain `get documents` too, which
+// does not use it.
+//
+// Only list a scope here when the flag makes it a certainty. A green verdict for
+// a call that then fails is the bug this table fixes, but the reverse — a scope
+// demanded for an invocation that does not need it — is worse than no entry at
+// all: the agent-mode auto-preflight refuses mutating commands on a missing
+// required scope, so a speculative entry turns a working command into a blocked
+// one.
+var flagScopeRequirements = map[string]map[string][]string{
+	// Documents, dashboards and notebooks are the same API; the flag is declared
+	// on each of the three leaves, so the requirement is too.
+	"get documents":  {"admin-access": {"document:documents:admin"}},
+	"get dashboards": {"admin-access": {"document:documents:admin"}},
+	"get notebooks":  {"admin-access": {"document:documents:admin"}},
+
+	// Activating a version touches extension *definitions*;
+	// --with-configurations additionally reads every monitoring configuration of
+	// the extension and writes each one back against the new version's schema.
+	"update extension": {"with-configurations": {
+		"extensions:configurations:read", "extensions:configurations:write",
+	}},
+	"update extensions": {"with-configurations": {
+		"extensions:configurations:read", "extensions:configurations:write",
+	}},
+}
+
+// scopesForInvocation is requiredScopesFor plus the scopes that the flags set on
+// this particular invocation contribute. It is what both callers want: the
+// requirement of the command line in front of us, not of the command in general.
+func scopesForInvocation(c *cobra.Command, verb, resource string) ([]string, scopeRequirement) {
+	required, req := requiredScopesFor(verb, resource)
+	extra := flagContributedScopes(c, verb, resource)
+	if len(extra) == 0 || req != scopeRequirementKnown {
+		// Augmenting anything but a known requirement would invent one: a per-call
+		// command's scopes come from the endpoint it resolves, and a command the
+		// catalog gives no scopes for is either local or a catalog bug — neither is
+		// fixed by attributing the whole requirement to a flag. A table entry on
+		// such a command is caught by TestFlagScopeRequirementsAreWellFormed.
+		return required, req
+	}
+	return unionScopes(required, extra), scopeRequirementKnown
+}
+
+// flagContributedScopes returns the scopes contributed by the flags actually in
+// effect on this invocation. A flag that is registered but off contributes
+// nothing, so `--admin-access=false` is the same as omitting it.
+func flagContributedScopes(c *cobra.Command, verb, resource string) []string {
+	byFlag, ok := flagScopeRequirements[strings.TrimSpace(verb+" "+resource)]
+	if !ok {
+		return nil
+	}
+	var extra []string
+	for name, scopes := range byFlag {
+		f := c.Flags().Lookup(name)
+		if f == nil {
+			continue
+		}
+		if f.Value.Type() == "bool" {
+			if on, err := c.Flags().GetBool(name); err != nil || !on {
+				continue
+			}
+		} else if !f.Changed || f.Value.String() == "" {
+			continue
+		}
+		extra = append(extra, scopes...)
+	}
+	return extra
+}
+
+// unionScopes merges scope lists, dropping duplicates and keeping the result
+// sorted so a verdict does not depend on Go's map iteration order.
+func unionScopes(lists ...[]string) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, l := range lists {
+		for _, s := range l {
+			if !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // requiredScopesFor looks up a command's required scopes from the catalog (the

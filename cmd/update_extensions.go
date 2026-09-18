@@ -107,15 +107,22 @@ Examples:
 		}
 
 		if dryRun {
+			report := newDryRunReport(cmd).Detail("all", "true")
 			if hubLatest {
-				fmt.Println("Dry run: would install the latest Hub release of every installed extension and activate it")
+				report.
+					Linef("Dry run: would install the latest Hub release of every installed extension and activate it").
+					Detail("version_source", "hub-latest")
 			} else {
-				fmt.Println("Dry run: would activate the highest installed version of every installed extension")
+				report.
+					Linef("Dry run: would activate the highest installed version of every installed extension").
+					Detail("version_source", "latest")
 			}
 			if withConfigs {
-				fmt.Println("Dry run: would migrate every monitoring configuration to the activated version")
+				report.
+					Linef("Dry run: would migrate every monitoring configuration to the activated version").
+					Detail("with_configurations", "true")
 			}
-			return nil
+			return report.Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationUpdate)
@@ -188,15 +195,25 @@ func runUpdateOneExtension(cmd *cobra.Command, name string) error {
 	}
 
 	if dryRun {
+		report := newDryRunReport(cmd).Detail("extension", "%s", name)
 		switch {
 		case version != "":
-			fmt.Printf("Dry run: would activate extension %q version %s\n", name, version)
+			report.
+				Linef("Dry run: would activate extension %q version %s", name, version).
+				Detail("version", "%s", version)
 		case latest:
-			fmt.Printf("Dry run: would activate the highest installed version of %q\n", name)
+			report.
+				Linef("Dry run: would activate the highest installed version of %q", name).
+				Detail("version_source", "latest")
 		case hubLatest:
-			fmt.Printf("Dry run: would install the latest Hub release of %q and activate it\n", name)
+			report.
+				Linef("Dry run: would install the latest Hub release of %q and activate it", name).
+				Detail("version_source", "hub-latest")
 		}
-		return nil
+		if withConfigs {
+			report.Detail("with_configurations", "true")
+		}
+		return report.Print()
 	}
 
 	_, c, err := SetupWithSafety(safety.OperationUpdate)

@@ -75,12 +75,13 @@ Examples:
 
 		// Handle dry-run
 		if dryRun {
-			fmt.Printf("Dry run: would create EdgeConnect\n")
-			fmt.Printf("Name: %s\n", req.Name)
+			report := newDryRunReport(cmd).
+				Linef("Dry run: would create EdgeConnect").
+				Field("Name", "%s", req.Name)
 			if len(req.HostPatterns) > 0 {
-				fmt.Printf("Host Patterns: %s\n", strings.Join(req.HostPatterns, ", "))
+				report.Field("Host Patterns", "%s", strings.Join(req.HostPatterns, ", "))
 			}
-			return nil
+			return report.Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationCreate)

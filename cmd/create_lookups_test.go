@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,11 @@ func TestCreateLookupDryRun_ReportsAutoDetectedPattern(t *testing.T) {
 		t.Fatalf("write CSV: %v", err)
 	}
 	setCreateLookupFlags(t, file)
+
+	// The assertions below are about the human rendering, so the mode is pinned:
+	// dry-run output is enveloped in agent mode, and another test in this package
+	// leaves agentMode set.
+	withAgentMode(t, false)
 
 	originalDryRun := dryRun
 	t.Cleanup(func() { dryRun = originalDryRun })
@@ -85,5 +91,49 @@ func TestCreateLookupDryRun_RejectsUnparseableCSV(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "line 2 has 3 fields") {
 		t.Errorf("error = %q, want it to mention the offending line", err)
+	}
+}
+
+// TestCreateLookupDryRun_AgentModeEmitsEnvelope covers the same call site in
+// agent mode: the plan must arrive as JSON on stdout, because that is the stream
+// an agent decodes and an error from this command has always been enveloped.
+func TestCreateLookupDryRun_AgentModeEmitsEnvelope(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "t.csv")
+	if err := os.WriteFile(file, []byte("id,name\n1,alpha\n"), 0o600); err != nil {
+		t.Fatalf("write CSV: %v", err)
+	}
+	setCreateLookupFlags(t, file)
+	withAgentMode(t, true)
+
+	originalDryRun := dryRun
+	t.Cleanup(func() { dryRun = originalDryRun })
+	dryRun = true
+
+	out := captureStdout(t, func() {
+		if err := createLookupCmd.RunE(createLookupCmd, nil); err != nil {
+			t.Fatalf("RunE() error = %v", err)
+		}
+	})
+
+	var resp struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			DryRun  bool              `json:"dry_run"`
+			Verb    string            `json:"verb"`
+			Details map[string]string `json:"details"`
+			Message string            `json:"message"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("agent-mode dry run is not valid JSON: %v\n%s", err, out)
+	}
+	if !resp.OK || !resp.Result.DryRun || resp.Result.Verb != "create" {
+		t.Errorf("unexpected envelope: %+v", resp.Result)
+	}
+	if got := resp.Result.Details["lookup_field"]; got != "id" {
+		t.Errorf("details[lookup_field] = %q, want \"id\"", got)
+	}
+	if !strings.Contains(resp.Result.Message, "Dry run: would create lookup table") {
+		t.Errorf("message lost the human text: %q", resp.Result.Message)
 	}
 }

@@ -64,11 +64,13 @@ Examples:
 
 		// Handle dry-run
 		if dryRun {
-			fmt.Printf("Dry run: would create SLO\n")
-			fmt.Println("---")
-			fmt.Println(string(jsonData))
-			fmt.Println("---")
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would create SLO").
+				Linef("---").
+				Linef("%s", string(jsonData)).
+				Linef("---").
+				Payload(jsonData).
+				Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationCreate)

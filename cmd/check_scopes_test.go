@@ -314,3 +314,103 @@ func TestScopePreflight_DisabledIsNoOp(t *testing.T) {
 	require.False(t, skip)
 	require.NoError(t, preErr)
 }
+
+// withFlagSet sets a flag on one of rootCmd's real commands for the duration of
+// a test and restores it afterwards. rootCmd is shared package state, so a flag
+// left set here would silently change the requirement every later test resolves.
+func withFlagSet(t *testing.T, cmd *cobra.Command, name, value string) {
+	t.Helper()
+	f := cmd.Flags().Lookup(name)
+	require.NotNil(t, f, "flag %q is not registered on %q", name, cmd.CommandPath())
+	origValue, origChanged := f.Value.String(), f.Changed
+	require.NoError(t, cmd.Flags().Set(name, value))
+	t.Cleanup(func() {
+		require.NoError(t, f.Value.Set(origValue))
+		f.Changed = origChanged
+	})
+}
+
+func TestScopesForInvocation_FlagAddsScope(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"get", "dashboards"})
+	require.NoError(t, err)
+
+	base, req := scopesForInvocation(cmd, "get", "dashboards")
+	require.Equal(t, scopeRequirementKnown, req)
+	require.NotContains(t, base, "document:documents:admin",
+		"a plain get dashboards does not use admin access")
+
+	// --admin-access lists documents as their effective owner. Without
+	// document:documents:admin the API answers 403 "Insufficient permissions to
+	// request admin-access", so the scope is a certainty whenever the flag is set.
+	withFlagSet(t, cmd, "admin-access", "true")
+	got, req := scopesForInvocation(cmd, "get", "dashboards")
+	require.Equal(t, scopeRequirementKnown, req)
+	require.Contains(t, got, "document:documents:admin")
+	require.Subset(t, got, base, "flag scopes are additive, not a replacement")
+}
+
+func TestScopesForInvocation_FlagOffAddsNothing(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"get", "dashboards"})
+	require.NoError(t, err)
+	base, _ := scopesForInvocation(cmd, "get", "dashboards")
+
+	// An explicit --admin-access=false is a set flag that is nonetheless off; it
+	// must be treated like omitting it.
+	withFlagSet(t, cmd, "admin-access", "false")
+	got, _ := scopesForInvocation(cmd, "get", "dashboards")
+	require.Equal(t, base, got)
+}
+
+func TestScopesForInvocation_UnlistedCommandIsUnchanged(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"delete", "workflow"})
+	require.NoError(t, err)
+	got, req := scopesForInvocation(cmd, "delete", "workflow")
+	want, wantReq := requiredScopesFor("delete", "workflow")
+	require.Equal(t, want, got)
+	require.Equal(t, wantReq, req)
+}
+
+func TestScopePreflight_FlagScopeReachesTheVerdict(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"get", "dashboards"})
+	require.NoError(t, err)
+
+	// A token with the read scope only is sufficient for get dashboards...
+	withScopeState(t, true, true, "json", []string{"document:documents:read"}, true)
+	out := captureScopeStdout(t, func() {
+		skip, preErr := scopePreflight(cmd, nil)
+		require.True(t, skip)
+		require.NoError(t, preErr)
+	})
+	require.Contains(t, out, `"status": "ok"`)
+
+	// ...and insufficient for the same command with --admin-access.
+	withFlagSet(t, cmd, "admin-access", "true")
+	skip, preErr := scopePreflight(cmd, nil)
+	require.False(t, skip)
+	var scopeErr *ScopeError
+	require.ErrorAs(t, preErr, &scopeErr)
+	require.Equal(t, []string{"document:documents:admin"}, scopeErr.Missing)
+}
+
+func TestFlagScopeRequirementsAreWellFormed(t *testing.T) {
+	for key, byFlag := range flagScopeRequirements {
+		path := strings.Fields(key)
+		cmd, _, err := rootCmd.Find(path)
+		require.NoError(t, err, "key %q does not resolve to a command", key)
+		require.Equal(t, "dtctl "+key, cmd.CommandPath(),
+			"key %q must name the leaf command exactly, not an alias or a parent", key)
+
+		// scopesForInvocation only augments a catalog-known requirement, so an
+		// entry on a command without one would be silently dropped.
+		verb, resource := verbResource(cmd)
+		_, req := requiredScopesFor(verb, resource)
+		require.Equal(t, scopeRequirementKnown, req,
+			"%q has no catalog scopes, so a flag scope on it would never be reported", key)
+
+		for name, scopes := range byFlag {
+			require.NotNil(t, cmd.Flags().Lookup(name),
+				"%q has no flag %q — the flag was renamed or removed", key, name)
+			require.NotEmpty(t, scopes, "%q flag %q lists no scopes", key, name)
+		}
+	}
+}

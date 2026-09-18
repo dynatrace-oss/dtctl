@@ -112,8 +112,10 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would update Azure connection %s\n", existing.ObjectID)
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would update Azure connection %s", existing.ObjectID).
+				Detail("object_id", "%s", existing.ObjectID).
+				Print()
 		}
 
 		updated, err := handler.Update(existing.ObjectID, value)
@@ -193,10 +195,12 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would update Azure monitoring config %s\n", existing.ObjectID)
-			fmt.Printf("Locations: %d\n", len(value.Azure.LocationFiltering))
-			fmt.Printf("Feature sets: %d\n", len(value.FeatureSets))
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would update Azure monitoring config %s", existing.ObjectID).
+				Detail("object_id", "%s", existing.ObjectID).
+				Field("Locations", "%d", len(value.Azure.LocationFiltering)).
+				Field("Feature sets", "%d", len(value.FeatureSets)).
+				Print()
 		}
 
 		updated, err := handler.Update(existing.ObjectID, body)

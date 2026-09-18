@@ -65,11 +65,13 @@ Examples:
 
 		// Handle dry-run
 		if dryRun {
-			fmt.Println("Dry run: would create workflow")
-			fmt.Println("---")
-			fmt.Println(string(jsonData))
-			fmt.Println("---")
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would create workflow").
+				Linef("---").
+				Linef("%s", string(jsonData)).
+				Linef("---").
+				Payload(jsonData).
+				Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationCreate)

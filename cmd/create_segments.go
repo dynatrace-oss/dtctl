@@ -55,18 +55,21 @@ Examples:
 				return fmt.Errorf("failed to parse segment definition: %w", err)
 			}
 
-			fmt.Println("Dry run: would create segment")
+			report := newDryRunReport(cmd).Linef("Dry run: would create segment")
 			if name, ok := seg["name"].(string); ok && name != "" {
-				fmt.Printf("  Name: %s\n", name)
+				report.Linef("  Name: %s", name).Detail("name", "%s", name)
 			}
 			if desc, ok := seg["description"].(string); ok && desc != "" {
-				fmt.Printf("  Description: %s\n", desc)
+				report.Linef("  Description: %s", desc).Detail("description", "%s", desc)
 			}
 			if includes, ok := seg["includes"].([]interface{}); ok {
-				fmt.Printf("  Includes: %d rule(s)\n", len(includes))
+				report.Linef("  Includes: %d rule(s)", len(includes)).Detail("includes", "%d", len(includes))
 			}
-			fmt.Println("\nSegment definition parsed successfully")
-			return nil
+			return report.
+				Linef("").
+				Linef("Segment definition parsed successfully").
+				Payload(jsonData).
+				Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationCreate)

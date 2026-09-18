@@ -64,10 +64,11 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would create AWS connection\n")
-			fmt.Printf("Name: %s\n", createAWSConnectionName)
-			fmt.Printf("Role ARN: %s\n", createAWSConnectionRoleArn)
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would create AWS connection").
+				Field("Name", "%s", createAWSConnectionName).
+				Field("Role ARN", "%s", createAWSConnectionRoleArn).
+				Print()
 		}
 
 		created, err := handler.Create(awsconnection.AWSConnectionCreate{Value: value})
@@ -140,12 +141,13 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would create AWS monitoring config (disabled)\n")
-			fmt.Printf("Name: %s\n", createAWSMonitoringConfigName)
-			fmt.Printf("Version: %s\n", version)
-			fmt.Printf("Regions: %s\n", strings.Join(regions, ","))
-			fmt.Printf("Feature sets: %d\n", len(featureSets))
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would create AWS monitoring config (disabled)").
+				Field("Name", "%s", createAWSMonitoringConfigName).
+				Field("Version", "%s", version).
+				Field("Regions", "%s", strings.Join(regions, ",")).
+				Field("Feature sets", "%d", len(featureSets)).
+				Print()
 		}
 
 		created, err := monitoringHandler.Create(body)

@@ -396,12 +396,12 @@ Examples:
 		return names, cobra.ShellCompDirectiveNoFileComp
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return deleteCredentials(args[0])
+		return deleteCredentials(cmd, args[0])
 	},
 }
 
 // deleteCredentials removes a stored credential and every cached derivative.
-func deleteCredentials(name string) error {
+func deleteCredentials(cmd *cobra.Command, name string) error {
 	// loadRawConfig, not loadConfigRaw: this command rewrites the config file,
 	// and the expanding loader would resolve every ${VAR} in it and save the
 	// resolved values back — writing a *different* credential's secret into the
@@ -427,11 +427,13 @@ func deleteCredentials(name string) error {
 	// command is meant to be called from teardown scripts, and a --dry-run that
 	// silently destroys a credential is the worst kind of surprise.
 	if dryRun {
-		fmt.Printf("Dry run: would delete credentials %q\n", name)
+		report := newDryRunReport(cmd).
+			Linef("Dry run: would delete credentials %q", name).
+			Detail("credentials", "%s", name)
 		if len(referencedBy) > 0 {
-			fmt.Printf("Referenced by context(s): %s\n", strings.Join(referencedBy, ", "))
+			report.Field("Referenced by context(s)", "%s", strings.Join(referencedBy, ", "))
 		}
-		return nil
+		return report.Print()
 	}
 
 	if err := cfg.DeleteToken(name); err != nil {
@@ -570,7 +572,7 @@ Examples:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		deleteCredential, _ := cmd.Flags().GetBool("delete-credentials")
-		return deleteContext(args[0], deleteCredential)
+		return deleteContext(cmd, args[0], deleteCredential)
 	},
 }
 

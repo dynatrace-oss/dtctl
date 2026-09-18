@@ -103,20 +103,26 @@ Examples:
 
 		// Handle dry-run
 		if dryRun {
+			report := newDryRunReport(cmd)
 			if isUpdate {
-				fmt.Println("Dry run: would update extension monitoring configuration")
-				fmt.Printf("Config ID: %s\n", configID)
+				report.
+					Linef("Dry run: would update extension monitoring configuration").
+					Field("Config ID", "%s", configID)
 			} else {
-				fmt.Println("Dry run: would create extension monitoring configuration")
+				report.Linef("Dry run: would create extension monitoring configuration")
 			}
-			fmt.Printf("Extension: %s\n", extensionName)
+			report.Field("Extension", "%s", extensionName)
 			if config.Scope != "" {
-				fmt.Printf("Scope:     %s\n", config.Scope)
+				// Padded to align with the line above it, so the field is recorded
+				// separately rather than reformatting what a human sees.
+				report.Linef("Scope:     %s", config.Scope).Detail("scope", "%s", config.Scope)
 			}
-			fmt.Println("---")
-			fmt.Println(string(jsonData))
-			fmt.Println("---")
-			return nil
+			return report.
+				Linef("---").
+				Linef("%s", string(jsonData)).
+				Linef("---").
+				Payload(jsonData).
+				Print()
 		}
 
 		// Determine if this is a create or update
