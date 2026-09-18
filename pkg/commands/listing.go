@@ -120,6 +120,7 @@ var MutatingVerbs = map[string]string{
 // cross-references this map against the real command tree to detect drift.
 var ResourceAliases = map[string]string{
 	"wf":   "workflows",
+	"sr":   "scheduling-rules",
 	"dash": "dashboards",
 	"db":   "dashboards",
 	"nb":   "notebooks",

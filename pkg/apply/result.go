@@ -30,6 +30,11 @@ type WorkflowApplyResult struct {
 	ApplyResultBase `yaml:",inline"`
 }
 
+// SchedulingRuleApplyResult is the result of applying a scheduling rule resource.
+type SchedulingRuleApplyResult struct {
+	ApplyResultBase `yaml:",inline"`
+}
+
 // DashboardApplyResult is the result of applying a dashboard resource.
 type DashboardApplyResult struct {
 	ApplyResultBase `yaml:",inline"`

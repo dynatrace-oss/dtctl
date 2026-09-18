@@ -12,10 +12,11 @@ import (
 // preserving: login must request exactly the same scopes as before. Update this
 // table only with an intentional, reviewed change to login behavior.
 var baselineScopes = map[config.SafetyLevel][]string{
-	config.SafetyLevelReadOnly: { // 40 scopes
+	config.SafetyLevelReadOnly: { // 41 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
+		"automation:rules:read",
 		"document:documents:read",
 		"document:direct-shares:read",
 		"document:trash.documents:read",
@@ -54,10 +55,11 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"hub:catalog:read",
 		"openpipeline:configurations:read",
 	},
-	config.SafetyLevelReadWriteMine: { // 53 scopes
+	config.SafetyLevelReadWriteMine: { // 55 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
+		"automation:rules:read",
 		"document:documents:read",
 		"document:direct-shares:read",
 		"document:trash.documents:read",
@@ -96,6 +98,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"document:trash.documents:restore",
 		"automation:workflows:write",
 		"automation:workflows:run",
+		"automation:rules:write",
 		"slo:slos:write",
 		"settings:objects:write",
 		"extensions:definitions:write",
@@ -109,10 +112,11 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"email:emails:send",
 		"dev-obs:breakpoints:set",
 	},
-	config.SafetyLevelReadWriteAll: { // 72 scopes
+	config.SafetyLevelReadWriteAll: { // 74 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
+		"automation:rules:read",
 		"document:documents:read",
 		"document:direct-shares:read",
 		"document:trash.documents:read",
@@ -157,6 +161,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"document:trash.documents:restore",
 		"automation:workflows:write",
 		"automation:workflows:run",
+		"automation:rules:write",
 		"slo:slos:write",
 		"settings:objects:write",
 		"extensions:definitions:write",
@@ -183,10 +188,11 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"app-engine:edge-connects:write",
 		"notification:notifications:write",
 	},
-	config.SafetyLevelDangerouslyUnrestricted: { // 80 scopes
+	config.SafetyLevelDangerouslyUnrestricted: { // 82 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
+		"automation:rules:read",
 		"document:documents:read",
 		"document:environment-shares:read",
 		"document:trash.documents:read",
@@ -231,6 +237,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"document:trash.documents:delete",
 		"automation:workflows:write",
 		"automation:workflows:run",
+		"automation:rules:write",
 		"slo:slos:write",
 		"settings:objects:write",
 		"extensions:definitions:write",

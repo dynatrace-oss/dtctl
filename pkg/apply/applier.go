@@ -158,6 +158,7 @@ type ResourceType string
 
 const (
 	ResourceWorkflow              ResourceType = "workflow"
+	ResourceSchedulingRule        ResourceType = "scheduling-rule"
 	ResourceDashboard             ResourceType = "dashboard"
 	ResourceNotebook              ResourceType = "notebook"
 	ResourceSLO                   ResourceType = "slo"
@@ -343,6 +344,8 @@ func (a *Applier) applySingle(resourceType ResourceType, jsonData []byte, opts A
 	switch resourceType {
 	case ResourceWorkflow:
 		result, err = a.applyWorkflow(jsonData, opts)
+	case ResourceSchedulingRule:
+		result, err = a.applySchedulingRule(jsonData, opts)
 	case ResourceDashboard:
 		result, err = a.applyDocument(jsonData, "dashboard", opts)
 	case ResourceNotebook:
@@ -528,6 +531,15 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 	// Workflows have a "tasks" field; "trigger" may be absent for manual triggers
 	if _, hasTasks := raw["tasks"]; hasTasks {
 		return ResourceWorkflow, false, nil
+	}
+
+	// Scheduling rules are identified by their mandatory ruleType discriminator,
+	// which is unique to this resource and names the body field that follows.
+	if rt, ok := raw["ruleType"].(string); ok {
+		switch rt {
+		case "rrule", "grouping", "fixed_offset", "relative_offset":
+			return ResourceSchedulingRule, false, nil
+		}
 	}
 
 	// Documents have "metadata" or "content" at root level
