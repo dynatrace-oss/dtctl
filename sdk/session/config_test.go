@@ -3363,3 +3363,94 @@ func TestConfig_DeleteToken_RejectsEmptyName(t *testing.T) {
 		t.Error("DeleteToken(\"\") error = nil, want error")
 	}
 }
+
+func TestConfig_EffectiveQueryLimits(t *testing.T) {
+	// No block anywhere: every field stays zero so callers fall through to the
+	// server defaults, i.e. the pre-feature behavior.
+	cfg := &Config{CurrentContext: "dev", Contexts: []NamedContext{{Name: "dev"}}}
+	if got := cfg.EffectiveQueryLimits(); !got.IsZero() {
+		t.Errorf("empty config = %+v, want zero", got)
+	}
+
+	// Global only.
+	cfg.QueryLimits = QueryLimits{ScanLimitGbytes: 500, MaxResultRecords: 5000}
+	got := cfg.EffectiveQueryLimits()
+	if got.ScanLimitGbytes != 500 || got.MaxResultRecords != 5000 {
+		t.Errorf("global = %+v, want scan 500 / records 5000", got)
+	}
+
+	// Context overrides one field; the rest must be inherited, not reset.
+	cfg.Contexts[0].Context.QueryLimits = &QueryLimits{ScanLimitGbytes: 50}
+	got = cfg.EffectiveQueryLimits()
+	if got.ScanLimitGbytes != 50 {
+		t.Errorf("context override scan = %g, want 50", got.ScanLimitGbytes)
+	}
+	if got.MaxResultRecords != 5000 {
+		t.Errorf("inherited records = %d, want 5000", got.MaxResultRecords)
+	}
+
+	// A context that sets a zero field does not clear the global value: zero
+	// means "unset" throughout the chain.
+	cfg.Contexts[0].Context.QueryLimits = &QueryLimits{MaxResultBytes: 1024}
+	got = cfg.EffectiveQueryLimits()
+	if got.ScanLimitGbytes != 500 || got.MaxResultBytes != 1024 {
+		t.Errorf("partial override = %+v, want scan 500 / bytes 1024", got)
+	}
+}
+
+// With no usable current context, the global block still applies rather than
+// erroring out — `dtctl query` against an explicit --environment has no context.
+func TestConfig_EffectiveQueryLimits_NoCurrentContext(t *testing.T) {
+	cfg := &Config{QueryLimits: QueryLimits{ScanLimitGbytes: 500}}
+	if got := cfg.EffectiveQueryLimits(); got.ScanLimitGbytes != 500 {
+		t.Errorf("no current context = %+v, want scan 500", got)
+	}
+
+	cfg.CurrentContext = "missing"
+	if got := cfg.EffectiveQueryLimits(); got.ScanLimitGbytes != 500 {
+		t.Errorf("unknown current context = %+v, want scan 500", got)
+	}
+}
+
+// The block must survive a save/load cycle with its documented key spellings,
+// since plugins read the file directly.
+func TestConfig_QueryLimitsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	cfg := NewConfig()
+	cfg.QueryLimits = QueryLimits{ScanLimitGbytes: 500, MaxResultRecords: 5000}
+	cfg.SetContext("prod", "https://abc.example.invalid", "prod-token")
+	cfg.CurrentContext = "prod"
+	for i := range cfg.Contexts {
+		if cfg.Contexts[i].Name == "prod" {
+			cfg.Contexts[i].Context.QueryLimits = &QueryLimits{SamplingRatio: 100}
+		}
+	}
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"query-limits:", "scan-limit-gbytes: 500", "max-result-records: 5000", "sampling-ratio: 100"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("saved config missing %q:\n%s", want, raw)
+		}
+	}
+
+	loaded, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if loaded.QueryLimits != cfg.QueryLimits {
+		t.Errorf("global round-trip = %+v, want %+v", loaded.QueryLimits, cfg.QueryLimits)
+	}
+	ctx, err := loaded.CurrentContextObj()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx.QueryLimits == nil || ctx.QueryLimits.SamplingRatio != 100 {
+		t.Errorf("context round-trip = %+v, want sampling 100", ctx.QueryLimits)
+	}
+}

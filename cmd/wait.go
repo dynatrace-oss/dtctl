@@ -141,10 +141,7 @@ Examples:
 		}
 
 		// Get query execution options (reuse flags from query command)
-		maxResultRecords, _ := cmd.Flags().GetInt64("max-result-records")
-		maxResultBytes, _ := cmd.Flags().GetInt64("max-result-bytes")
-		defaultScanLimitGbytes, _ := cmd.Flags().GetFloat64("default-scan-limit-gbytes")
-		defaultSamplingRatio, _ := cmd.Flags().GetFloat64("default-sampling-ratio")
+		queryLimits := resolveQueryLimits(cmd, cfg)
 		fetchTimeoutSeconds, _ := cmd.Flags().GetInt32("fetch-timeout-seconds")
 		defaultTimeframeStart, _ := cmd.Flags().GetString("default-timeframe-start")
 		defaultTimeframeEnd, _ := cmd.Flags().GetString("default-timeframe-end")
@@ -153,10 +150,10 @@ Examples:
 
 		queryOpts := exec.DQLExecuteOptions{
 			OutputFormat:           outputFormat,
-			MaxResultRecords:       maxResultRecords,
-			MaxResultBytes:         maxResultBytes,
-			DefaultScanLimitGbytes: defaultScanLimitGbytes,
-			DefaultSamplingRatio:   defaultSamplingRatio,
+			MaxResultRecords:       queryLimits.MaxResultRecords,
+			MaxResultBytes:         queryLimits.MaxResultBytes,
+			DefaultScanLimitGbytes: queryLimits.ScanLimitGbytes,
+			DefaultSamplingRatio:   queryLimits.SamplingRatio,
 			FetchTimeoutSeconds:    fetchTimeoutSeconds,
 			DefaultTimeframeStart:  defaultTimeframeStart,
 			DefaultTimeframeEnd:    defaultTimeframeEnd,
@@ -242,6 +239,7 @@ func init() {
 	waitQueryCmd.Flags().Int64("max-result-bytes", 0, "maximum result size in bytes")
 	waitQueryCmd.Flags().Float64("default-scan-limit-gbytes", 0, "scan limit in gigabytes")
 	waitQueryCmd.Flags().Float64("default-sampling-ratio", 0, "default sampling ratio")
+	addQueryLimitFlags(waitQueryCmd)
 	waitQueryCmd.Flags().Int32("fetch-timeout-seconds", 0, "time limit for fetching data in seconds")
 	waitQueryCmd.Flags().String("default-timeframe-start", "", "query timeframe start (ISO-8601/RFC3339)")
 	waitQueryCmd.Flags().String("default-timeframe-end", "", "query timeframe end (ISO-8601/RFC3339)")

@@ -375,6 +375,67 @@ built-in default**. A user-chosen `dir` (or `DTCTL_SPILL_DIR` / `--spill-to`) is
 written outside the managed cache and opts out of its TTL pruning and per-context
 partitioning — you own that file's lifetime.
 
+## Query Limits
+
+Every query dtctl runs can carry per-query caps — the same knobs `dtctl query`
+exposes as flags. Setting them in the config makes them apply to *every* query
+in a context, including generated ones, scripts, and agent-driven runs, which a
+flag you have to remember to type does not.
+
+```yaml
+# ~/.config/dtctl/config
+query-limits:                 # global defaults
+  scan-limit-gbytes: 500      # cap the data scanned (PARTIAL result beyond it)
+  max-result-records: 5000    # cap returned records (0 = server default, ~1000)
+  max-result-bytes: 10485760  # cap result size in bytes
+  sampling-ratio: 0           # DQL sampling on log/span fetches (0 = off)
+
+contexts:
+  - name: production
+    context:
+      environment: https://abc12345.apps.dynatrace.com
+      token-ref: production
+      query-limits:
+        scan-limit-gbytes: 50   # tighter ceiling here; other limits inherited
+  - name: sandbox
+    context:
+      environment: https://sandbox.apps.dynatrace.com
+      token-ref: sandbox
+      # no query-limits block: inherits the global defaults
+```
+
+Precedence (highest wins): **flag → context config → global config → server
+default**. The per-context block overrides the global one **per field**, so a
+context can tighten one limit without restating the others.
+
+A limit is only ever applied when it is set: a config without a `query-limits`
+block behaves exactly as it did before the section existed, and an explicit
+`--default-scan-limit-gbytes 0` still means "use the server default" rather than
+inheriting the configured ceiling.
+
+To ignore the configured limits for a single invocation:
+
+```bash
+dtctl query 'fetch logs, from:now()-30d | summarize count()' --no-query-limits
+```
+
+`--no-query-limits` drops the config layers only — limit flags you pass on the
+same command line still apply, so `--no-query-limits --max-result-records 42`
+means "ignore the config, use 42".
+
+Two caveats worth knowing:
+
+- **`scan-limit-gbytes` is a brake, not a filter.** Exceeding it returns a
+  PARTIAL result rather than an error. dtctl says so on every affected query
+  (and, with `-v`, names the configured limits it applied), but a script that
+  ignores the warning will read a truncated answer as a complete one.
+- **`sampling-ratio` makes results approximate** for every query in the context,
+  not just the wide ones — counts come back extrapolated. Prefer setting it per
+  query unless approximate answers are what the whole context is for.
+
+Limits apply to `dtctl query` and `dtctl wait query`. `dtctl inventory` keeps its
+own discovery cap (`--scan-limit-gbytes`, default 25).
+
 ## Command Aliases
 
 Create shortcuts for frequently used commands.

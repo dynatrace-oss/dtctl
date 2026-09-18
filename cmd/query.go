@@ -227,13 +227,12 @@ Examples:
 		height, _ := cmd.Flags().GetInt("height")
 		fullscreen, _ := cmd.Flags().GetBool("fullscreen")
 
-		// Get query limit options
-		maxResultRecords, _ := cmd.Flags().GetInt64("max-result-records")
-		maxResultBytes, _ := cmd.Flags().GetInt64("max-result-bytes")
-		defaultScanLimitGbytes, _ := cmd.Flags().GetFloat64("default-scan-limit-gbytes")
+		// Query limits resolve flag -> context config -> global config -> server
+		// default, so a context-level ceiling also covers invocations that never
+		// passed the flags. See resolveQueryLimits.
+		queryLimits := resolveQueryLimits(cmd, cfg)
 
 		// Get query execution options
-		defaultSamplingRatio, _ := cmd.Flags().GetFloat64("default-sampling-ratio")
 		fetchTimeoutSeconds, _ := cmd.Flags().GetInt32("fetch-timeout-seconds")
 		enablePreview, _ := cmd.Flags().GetBool("enable-preview")
 		noProgress, _ := cmd.Flags().GetBool("no-progress")
@@ -379,10 +378,10 @@ Examples:
 			Width:                        width,
 			Height:                       height,
 			Fullscreen:                   fullscreen,
-			MaxResultRecords:             maxResultRecords,
-			MaxResultBytes:               maxResultBytes,
-			DefaultScanLimitGbytes:       defaultScanLimitGbytes,
-			DefaultSamplingRatio:         defaultSamplingRatio,
+			MaxResultRecords:             queryLimits.MaxResultRecords,
+			MaxResultBytes:               queryLimits.MaxResultBytes,
+			DefaultScanLimitGbytes:       queryLimits.ScanLimitGbytes,
+			DefaultSamplingRatio:         queryLimits.SamplingRatio,
 			FetchTimeoutSeconds:          fetchTimeoutSeconds,
 			EnablePreview:                enablePreview,
 			EnforceQueryConsumptionLimit: enforceQueryConsumptionLimit,
@@ -747,6 +746,7 @@ func init() {
 	queryCmd.Flags().Int64("max-result-records", 0, "maximum number of result records to return (0 = use default, typically 1000)")
 	queryCmd.Flags().Int64("max-result-bytes", 0, "maximum result size in bytes (0 = use default)")
 	queryCmd.Flags().Float64("default-scan-limit-gbytes", 0, "scan limit in gigabytes (0 = use default)")
+	addQueryLimitFlags(queryCmd)
 
 	// Query execution flags
 	queryCmd.Flags().Float64("default-sampling-ratio", 0, "default sampling ratio (0 = use default, normalized to power of 10 <= 100000)")

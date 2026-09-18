@@ -119,7 +119,14 @@ dtctl query "fetch logs" --max-result-bytes 52428800
 
 # Control how much data Grail scans (in GB)
 dtctl query "fetch logs" --default-scan-limit-gbytes 500
+
+# Ignore the limits configured for the context (see Configuration -> Query Limits)
+dtctl query "fetch logs" --no-query-limits
 ```
+
+These caps can also be set once per context in the config file rather than
+passed on every invocation — see
+[Query Limits](configuration#query-limits).
 
 ## Spilling Large Results to a File
 
@@ -402,6 +409,7 @@ dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --fullscreen  # use ful
 | `--max-result-records` | Maximum number of result records |
 | `--max-result-bytes` | Maximum result payload size in bytes |
 | `--default-scan-limit-gbytes` | Cap on how much data Grail scans (GB) |
+| `--no-query-limits` | Ignore the context's configured [query limits](configuration#query-limits) for this invocation |
 | `--metadata`, `-M` | Include execution metadata (bare = all, or `=field1,field2`) |
 | `--include-types` | Include DQL column type information |
 | `--include-contributions` | Include Grail bucket contribution information |
