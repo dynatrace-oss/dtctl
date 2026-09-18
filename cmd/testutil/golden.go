@@ -86,3 +86,9 @@ func AssertGoldenStripped(t *testing.T, name string, actual string) {
 	t.Helper()
 	AssertGolden(t, name, StripANSI(actual))
 }
+
+// UpdateGolden reports whether the test run was started with -update. Tests
+// that maintain a checked-in artifact outside testdata/golden (the stability
+// manifest at docs/STABILITY.md) use it to share one regeneration switch with
+// the golden files.
+func UpdateGolden() bool { return *update }

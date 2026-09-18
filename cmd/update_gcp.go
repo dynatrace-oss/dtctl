@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var (
@@ -187,9 +188,30 @@ func init() {
 	updateGCPConnectionCmd.Flags().StringVar(&updateGCPConnectionName, "name", "", "GCP connection name (used when ID argument is not provided)")
 	updateGCPConnectionCmd.Flags().StringVar(&updateGCPConnectionServiceAccountID, "serviceAccountId", "", "Service account email to set")
 	updateGCPConnectionCmd.Flags().StringVar(&updateGCPConnectionServiceAccountID, "serviceaccountid", "", "Alias for --serviceAccountId")
+	// Every path through this command needs a flag the rename takes away
+	// (--serviceAccountId is required), so at a stable floor it has no usable
+	// invocation left. Marking the command says that plainly instead of
+	// hiding the flags and then failing on a "required" flag help no
+	// longer lists.
+	stability.Mark(updateGCPConnectionCmd, stability.Experimental, pre10Since)
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(updateGCPConnectionCmd, "serviceAccountId", stability.Experimental, pre10Since)
+	stability.MarkFlag(updateGCPConnectionCmd, "serviceaccountid", stability.Experimental, pre10Since)
 
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
+	// Every path through this command needs a flag the rename takes away
+	// (both --locationFiltering and --featureSets), so at a stable floor it has no usable
+	// invocation left. Marking the command says that plainly instead of
+	// hiding the flags and then failing on a "required" flag help no
+	// longer lists.
+	stability.Mark(updateGCPMonitoringConfigCmd, stability.Experimental, pre10Since)
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(updateGCPMonitoringConfigCmd, "locationFiltering", stability.Experimental, pre10Since)
+	stability.MarkFlag(updateGCPMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
+	stability.MarkFlag(updateGCPMonitoringConfigCmd, "featuresets", stability.Experimental, pre10Since)
 }

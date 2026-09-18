@@ -14,6 +14,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // workflowFilter holds the workflow ID filter for executions
@@ -347,6 +348,10 @@ func init() {
 	getWorkflowsCmd.Flags().String("filter", "", "Search workflows by title")
 	getWorkflowsCmd.Flags().String("type", "", "Filter by workflow type: standard or simple")
 	getWorkflowsCmd.Flags().String("trigger", "", "Filter by trigger type: Manual, Schedule, Event")
+	// Removed in 1.0 — the server never applied it (contrib
+	// breaking-changes/reject-unusable-input.md). Note this is only the
+	// workflows filter; `get workflow-executions --trigger` does work and stays.
+	stability.MarkFlag(getWorkflowsCmd, "trigger", stability.Experimental, pre10Since)
 	getWorkflowsCmd.Flags().Int64("limit", 0, "Maximum number of workflows to return (0 = unlimited)")
 
 	deleteWorkflowCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")

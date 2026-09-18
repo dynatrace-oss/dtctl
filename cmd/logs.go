@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var taskName string
@@ -215,6 +216,16 @@ func init() {
 	logsCmd.AddCommand(logsWorkflowExecutionCmd)
 	logsWorkflowExecutionCmd.Flags().StringVarP(&taskName, "task", "t", "", "Get logs for a specific task")
 	logsWorkflowExecutionCmd.Flags().BoolVarP(&followLogs, "follow", "f", false, "Follow logs in real-time until execution completes")
+	// -f is reserved for --file in 1.0 (contrib breaking-changes/short-flag-f.md).
+	stability.MarkFlag(logsWorkflowExecutionCmd, "follow", stability.Experimental, pre10Since)
 	logsWorkflowExecutionCmd.Flags().BoolVarP(&allTaskLogs, "all", "a", false, "Get all logs (workflow execution log + all task logs)")
 	logsWorkflowExecutionCmd.Flags().BoolVar(&tasksOnlyLogs, "tasks", false, "Get task logs only (all tasks with headers)")
+
+	// In 1.0 this command's output is reshaped, not extended (contrib
+	// breaking-changes/agent-output-envelope.md): agent mode wraps the log in
+	// the standard envelope with --tasks/--all under result.tasks, --follow -A
+	// becomes a usage error, and the plain-mode "No logs available." notice
+	// moves to stderr. Nothing a caller parses today survives, and there is no
+	// flag to hang that on — the contract is the command's.
+	stability.Mark(logsWorkflowExecutionCmd, stability.Experimental, pre10Since)
 }

@@ -64,7 +64,11 @@ func TestSetContextGlobalWritesGlobalConfig(t *testing.T) {
 		t.Fatalf("read local config: %v", err)
 	}
 
-	if err := setContext("my-environment", "https://abc12345.apps.dynatrace.com", "my-token", "", "", "", true); err != nil {
+	if err := setContext("my-environment", contextSettings{
+		environment: "https://abc12345.apps.dynatrace.com",
+		tokenRef:    "my-token",
+		global:      true,
+	}); err != nil {
 		t.Fatalf("setContext(global=true) error: %v", err)
 	}
 
@@ -94,7 +98,10 @@ func TestSetContextWithoutGlobalWritesLocalConfig(t *testing.T) {
 	projectDir, globalPath := chdirWithLocalConfig(t)
 	localPath := filepath.Join(projectDir, config.LocalConfigName)
 
-	if err := setContext("my-environment", "https://abc12345.apps.dynatrace.com", "my-token", "", "", "", false); err != nil {
+	if err := setContext("my-environment", contextSettings{
+		environment: "https://abc12345.apps.dynatrace.com",
+		tokenRef:    "my-token",
+	}); err != nil {
 		t.Fatalf("setContext(global=false) error: %v", err)
 	}
 

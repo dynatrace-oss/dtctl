@@ -9,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/analyzer"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // execAnalyzerCmd executes a Davis analyzer
@@ -130,5 +131,11 @@ func init() {
 	addAnalyzerInputFlags(execAnalyzerCmd)
 	execAnalyzerCmd.Flags().Bool("validate", false, "validate input without executing")
 	execAnalyzerCmd.Flags().Bool("wait", true, "wait for analyzer execution to complete")
+	// Waiting becomes unconditional in 1.0, so --wait=false — valid today —
+	// stops working (contrib breaking-changes/exec-wait-default.md).
+	stability.MarkFlag(execAnalyzerCmd, "wait", stability.Experimental, pre10Since)
 	execAnalyzerCmd.Flags().Int("timeout", 300, "timeout in seconds when waiting for completion")
+	// Becomes a duration flag in 1.0; a bare integer errors
+	// (contrib breaking-changes/timeout-duration.md).
+	stability.MarkFlag(execAnalyzerCmd, "timeout", stability.Experimental, pre10Since)
 }

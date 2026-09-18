@@ -16,11 +16,8 @@ import (
 var describeBreakpointCmd = &cobra.Command{
 	Use:     "breakpoint <id|filename:line>",
 	Aliases: []string{"breakpoints", "bp"},
-	Short:   "Show status details for Live Debugger breakpoint(s) (experimental)",
+	Short:   "Show status details for Live Debugger breakpoint(s)",
 	Long: `Show detailed status information for a Live Debugger breakpoint.
-
-Note: Live Debugger support is experimental. The underlying APIs and query
-behavior may change in future releases.
 
 Examples:
   # Describe a breakpoint by mutable rule ID

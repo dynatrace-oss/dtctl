@@ -11,6 +11,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var (
@@ -174,4 +175,7 @@ func init() {
 
 	enableGCPMonitoringCmd.Flags().StringVar(&enableGCPMonitoringName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	enableGCPMonitoringCmd.Flags().StringVar(&enableGCPMonitoringServiceAccountID, "serviceAccountId", "", "Service account email to set on the linked connection (optional)")
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(enableGCPMonitoringCmd, "serviceAccountId", stability.Experimental, pre10Since)
 }

@@ -27,7 +27,7 @@ pkg/
   ├── exec/      # DQL query execution
   ├── vfs/       # Virtual-filesystem seam: user-supplied file paths resolve against the host disk (CLI) or per-request virtual files (engine)
   ├── engine/    # Embeddable service engine: one dtctl command line per request — multi-tenant session, virtual files, CLI-identical output
-  └── serve/     # `dtctl serve <protocol>` — reference servers over pkg/engine, one subcommand per protocol (`serve http` today; wired in main, outside the invocation lock). Experimental: registered only when DTCTL_EXPERIMENTAL_SERVE is set
+  └── serve/     # `dtctl serve <protocol>` — reference servers over pkg/engine, one subcommand per protocol (`serve http` today; wired in main, outside the invocation lock). Development-tier: registered only when opted in (`dtctl config set development.serve on`)
 sdk/            # Separate Go module (github.com/dynatrace-oss/dtctl/sdk)
   ├── session/     # The session layer (docs/dev/CONFIG_CONTRACT.md): config model + load/save, credential stores, OAuth flow/refresh + cross-process lock, client-from-context with parameterized User-Agent, safety semantics
   ├── api/         # Typed API wrappers (one package per Dynatrace API surface)
@@ -86,6 +86,107 @@ When adding a new AI agent to the skills system, update **all** of the following
 
 > Releases are automated by release-please from conventional commits — do not hand-edit a changelog. Just make sure the commit/PR title is a proper conventional commit (e.g. `feat: detect <agent> sessions`).
 
+## Stability Tiers
+
+Every command and flag carries a **stability tier** — what dtctl promises about
+its shape over time. It is a third axis, orthogonal to the safety level ("what
+may this command do?") and the command profile ("which commands exist here?").
+Full design: dtctl-contrib `dev/STABILITY_TIERS_DESIGN.md`. Reference and the
+current inventory: [docs/STABILITY.md](docs/STABILITY.md).
+
+| Tier | Promise | Visibility |
+|---|---|---|
+| `stable` (default) | Additive-only; removal needs a deprecation cycle | normal |
+| `experimental` | May change or be removed in any release | registered, badged |
+| `development` | Unfinished, no guarantees | **not registered** until opted in |
+
+**Stable is the default**, so an ordinary new command needs no annotation.
+Declare a weaker promise where the command is built:
+
+```go
+stability.Mark(ingestCmd, stability.Experimental, "0.39.0")  // since-version required
+stability.MarkFlag(queryCmd, "spill", stability.Experimental, "0.39.0")
+addDevelopmentCommand(rootCmd, accountCmd, "account")        // top-level, in cmd/
+cmd.AddDevelopmentCommand(serve.NewCommand(), "serve")       // wired from main
+```
+
+A flag may be **weaker** than its command (an experimental flag on a stable
+command is how a new idea ships without a new command) but never stronger.
+
+After changing any of this, regenerate the checked-in manifest:
+
+```bash
+make stability-manifest   # writes docs/STABILITY.md; review the diff
+```
+
+`go test ./test/stability/` gates it. **A line that disappears from the stable
+surface is a broken promise, not a cleanup.**
+
+The manifest also lists the root command's persistent flags under a synthetic
+`(global)` group. A flag that appears nowhere in the file would be stable by
+omission — the one tier nobody chose — so `--agent`, `--dry-run`, `--jq` and the
+rest are on the record too, and the floor enforces them: it checks the
+persistent flags a command *inherits*, on the command the caller typed, since
+`rootCmd`'s `RunE` never runs for `dtctl get workflows --dry-run`.
+
+One consequence is worth knowing before you reach for `MarkFlag` on a global
+flag: cobra hands every subcommand the same `pflag.Flag` pointer the root
+declared, so a global flag has exactly one tier for the whole tree. There is no
+such thing as demoting `--dry-run` on `get` but not on `apply`.
+
+Enforcement is a four-stage pipeline that only ever *narrows* the surface, so
+"which axis wins" has a structural answer:
+
+1. registration — development opt-in (`applyDevelopmentRegistration`)
+2. profile mask — topical allowlist (`applyProfile`)
+3. stability floor — contract filter (`applyStabilityFloor`)
+4. safety level — permission check (`pkg/safety`, per operation)
+
+No later stage can re-add what an earlier one removed. In particular a
+`stability-exceptions` entry cannot resurrect an unregistered development
+command. *Guard*: `go test ./cmd/ -run TestStability`
+
+### Flags an accepted breaking change already targets
+
+A flag can be correct, shipped, and still not `stable`: if dtctl-contrib's
+`breaking-changes/` folder has an accepted document that renames or removes it,
+the additive-only promise is one dtctl cannot keep. Those demotions live in
+`cmd/stability_pre_1_0.go` (the `pre10Since` constant and its rationale) and are
+enumerated with their driving document in
+`test/stability/pre_1_0_marks_test.go`. An accepted document counts even before
+its PR merges — demoting early costs a badge, demoting late means having shipped
+`stable` on a flag we already knew would break.
+
+The line to apply: **demote when 1.0 removes or renames the flag, or changes
+what a currently-valid invocation does. Do not demote when 1.0 only turns input
+dtctl already ignores into an error.** `--state RUNNING` means the same thing
+before and after stricter enum validation; only `--state RUNNIG` changes, from a
+silently wrong answer into a useful message. Withdrawing the stable contract to
+warn about a typo costs every correct caller and protects none of them. The
+spared rows carry their reason in `pre10RejectUnusableInputSpared`.
+
+That list is a test and not a comment for a reason: `stability.MarkFlag` is a
+silent no-op when the flag it names does not exist, so renaming a flag in `cmd/`
+would drop its mark and quietly re-promise something 1.0 removes. When a
+breaking change lands, delete the flag's entry along with its mark — the test
+fails if the flag is gone but the entry stays.
+
+**Mark the flag, or the command?** Ask whether a usable stable invocation
+survives with the flag hidden. `create azure connection` keeps one (the
+`federatedIdentityCredential` path needs none of the renamed credential flags),
+so the flag mark is right. `update azure connection` does not: it requires one
+of `--directoryId`/`--applicationId`/`--clientSecret`, so at a stable floor
+`--help` offers only `--name` and every invocation fails demanding three flags
+the floor just hid. Demote the *command* there — a `stability_blocked` error
+that names the exception which would admit it beats a dead end. The split is
+pinned by `pre10DemotedCommands` / `pre10SurvivingCommands` in the same test.
+
+The other reason to mark the command is that the break lives in no flag at all:
+`exec workflow` starts waiting by default and `logs workflow-execution` reshapes
+its whole agent-mode output, so there is nothing narrower to annotate. Note that
+the manifest reports a flag's *effective* tier, so demoting a command shows up
+on every flag underneath it.
+
 ## Adding a Resource
 
 1. **SDK layer** (`sdk/api/<name>/`): Create typed API wrapper with CRUD functions using `httpclient.Client`. No file I/O, no display logic.
@@ -93,6 +194,9 @@ When adding a new AI agent to the skills system, update **all** of the following
 3. **Commands**: Add to `cmd/get.go`, `cmd/describe.go`, etc. Mutating verbs need a safety check; `-f`/`--file` flags go through `vfs`; no `os.Exit`, no ungated subprocess.
 4. Register in resolver
 5. Add tests: `sdk/api/<name>/*_test.go` (SDK unit tests) + `test/e2e/<name>_test.go` (E2E)
+5b. **Declare the stability tier** if the command is not yet stable, then run
+   `make stability-manifest` (see [Stability Tiers](#stability-tiers)). A new
+   command with no annotation is a *stable* promise — make that deliberate.
 6. **Claim the coverage**: add the API's base path to `nativeCoverage` in `pkg/resources/api/coverage.go`, so `dtctl get apis` stops listing it as uncovered and `dtctl exec api` points callers at the new command. `Command` must be what a user would actually type (`dtctl query`, not `dtctl get query`). *Guard*: `go test ./cmd/ -run TestNativeCoverageNamesRealCommands`
 
 **SDK handler signature** (in `sdk/api/<name>/`):
@@ -493,6 +597,7 @@ if r.URL.Query().Get("nextPageKey") != "" {
 - **Architecture**: [docs/dev/ARCHITECTURE.md](docs/dev/ARCHITECTURE.md)
 - **Status**: [docs/dev/IMPLEMENTATION_STATUS.md](docs/dev/IMPLEMENTATION_STATUS.md)
 - **Embedding/service model**: [docs/dev/SERVICE_ENGINE_DESIGN.md](docs/dev/SERVICE_ENGINE_DESIGN.md)
+- **Stability tiers**: [docs/STABILITY.md](docs/STABILITY.md) (generated inventory + tier reference)
 - **API discovery + passthrough**: [docs/dev/GENERIC_API_ACCESS.md](docs/dev/GENERIC_API_ACCESS.md)
 - **Future Work**: [docs/dev/FUTURE_FEATURES.md](docs/dev/FUTURE_FEATURES.md)
 

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dynatrace-oss/dtctl/pkg/engine"
+	"github.com/dynatrace-oss/dtctl/sdk/session"
 )
 
 // newDynatraceMock is a minimal fake Dynatrace environment for handler tests.
@@ -136,6 +137,68 @@ func TestHandler_RequestErrors(t *testing.T) {
 	})
 }
 
+// TestHandler_StabilityFloorOverTheWire: the floor and its exceptions have to
+// be expressible in the protocol, or an HTTP client is stuck with the default
+// and every experimental command looks like it does not exist. The exception
+// form is the one to reach for — it widens the surface to what the operator
+// tested, not to whatever joins the tier next release.
+func TestHandler_StabilityFloorOverTheWire(t *testing.T) {
+	srv := httptest.NewServer(Handler(10<<20, engine.DefaultLimits()))
+	t.Cleanup(srv.Close)
+
+	const tenant = `"environmentUrl":"https://x.example.invalid","token":"t"`
+
+	decode := func(t *testing.T, body []byte) executeResponse {
+		t.Helper()
+		var out executeResponse
+		require.NoError(t, json.Unmarshal(body, &out))
+		return out
+	}
+
+	t.Run("default floor blocks the experimental tier", func(t *testing.T) {
+		resp, body := postExecute(t, srv, `{"command":"inventory --agent",`+tenant+`}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		out := decode(t, body)
+		require.NotZero(t, out.ExitCode)
+		require.Contains(t, out.Stdout, `"code":"stability_blocked"`)
+	})
+
+	t.Run("exception admits exactly what it names", func(t *testing.T) {
+		resp, body := postExecute(t, srv,
+			`{"command":"inventory --agent","stabilityExceptions":["inventory"],`+tenant+`}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NotContains(t, decode(t, body).Stdout, `"code":"stability_blocked"`)
+
+		resp, body = postExecute(t, srv,
+			`{"command":"get breakpoints --agent","stabilityExceptions":["inventory"],`+tenant+`}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Contains(t, decode(t, body).Stdout, `"code":"stability_blocked"`)
+	})
+
+	t.Run("lowering the floor grants the tier", func(t *testing.T) {
+		resp, body := postExecute(t, srv,
+			`{"command":"inventory --agent","minStability":"experimental",`+tenant+`}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NotContains(t, decode(t, body).Stdout, `"code":"stability_blocked"`)
+	})
+
+	// A request that never ran answers 4xx, not an exit code — a typo in the
+	// floor must not read as "that command is unavailable".
+	t.Run("a bad floor is a request error", func(t *testing.T) {
+		resp, body := postExecute(t, srv,
+			`{"command":"get buckets","minStability":"beta",`+tenant+`}`)
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Contains(t, string(body), "invalid minimum stability")
+	})
+
+	t.Run("development is not a floor value", func(t *testing.T) {
+		resp, body := postExecute(t, srv,
+			`{"command":"get buckets","minStability":"development",`+tenant+`}`)
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Contains(t, string(body), "not reachable from a request")
+	})
+}
+
 func TestHandler_Healthz(t *testing.T) {
 	srv := httptest.NewServer(Handler(1024, engine.DefaultLimits()))
 	t.Cleanup(srv.Close)
@@ -246,33 +309,42 @@ func TestUnknownProtocolFails(t *testing.T) {
 	require.Contains(t, err.Error(), "http", "the error must list what is available")
 }
 
-// TestExperimentalGate: server mode is opt-in. The gate reads the environment
-// the same way the account surface does, so operators learn one convention.
-func TestExperimentalGate(t *testing.T) {
+// TestDevelopmentGate: server mode is opt-in. It is a development-tier
+// feature, so the gate reads the one DTCTL_DEVELOPMENT list that every such
+// feature shares rather than a per-feature variable.
+func TestDevelopmentGate(t *testing.T) {
 	for _, c := range []struct {
 		value string
 		want  bool
 	}{
-		{"", false}, {"0", false}, {"false", false}, {"no", false}, {"off", false},
-		{"OFF", false}, {" false ", false},
-		{"1", true}, {"true", true}, {"yes", true}, {"on", true}, {"anything", true},
+		{"", false}, {"account", false}, {"serve-http", false},
+		{"serve", true}, {"account,serve", true}, {" SERVE ", true},
+		{"development.serve", true},
+		// The sentinel enables every registered feature at once, which is what
+		// dtctl's own test and development builds use.
+		{session.DevelopmentAll, true},
 	} {
-		t.Setenv(ExperimentalEnvVar, c.value)
-		require.Equalf(t, c.want, Experimental(), "%s=%q", ExperimentalEnvVar, c.value)
+		t.Setenv(session.DevelopmentEnvVar, c.value)
+		require.Equalf(t, c.want, Enabled(), "%s=%q", session.DevelopmentEnvVar, c.value)
 	}
 
 	// Unset is off — the released-build default.
-	t.Setenv(ExperimentalEnvVar, "")
-	require.NoError(t, os.Unsetenv(ExperimentalEnvVar))
-	require.False(t, Experimental())
+	t.Setenv(session.DevelopmentEnvVar, "")
+	require.NoError(t, os.Unsetenv(session.DevelopmentEnvVar))
+	require.False(t, Enabled())
+
+	// The retired per-feature variable is still honored as a deprecated alias,
+	// so an existing deployment does not break on upgrade.
+	t.Setenv("DTCTL_EXPERIMENTAL_SERVE", "1")
+	require.True(t, Enabled(), "the legacy opt-in must keep working for one release")
 }
 
-// TestExperimentalGateHidesCommand builds the real binary and checks the gate
-// end to end: the wiring lives in main (both the dispatch and the registration),
-// which no unit test in this package can reach. Without the opt-in, `serve` must
-// be an ordinary unknown command — not hidden-but-runnable, and not advertised
-// in help or the command catalog.
-func TestExperimentalGateHidesCommand(t *testing.T) {
+// TestDevelopmentGateHidesCommand builds the real binary and checks the gate
+// end to end: the wiring lives in main (both the dispatch and the
+// registration), which no unit test in this package can reach. Without the
+// opt-in, `serve` must be an ordinary unknown command — not
+// hidden-but-runnable, and not advertised in help or the command catalog.
+func TestDevelopmentGateHidesCommand(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the dtctl binary; skipped in -short mode")
 	}
@@ -286,26 +358,47 @@ func TestExperimentalGateHidesCommand(t *testing.T) {
 	out, err := build.CombinedOutput()
 	require.NoError(t, err, "build failed: %s", out)
 
+	// A naive caller's environment: both the current and the legacy opt-in
+	// absent entirely, not merely empty. The distinction matters — setting
+	// DTCTL_DEVELOPMENT at all is what tells dtctl the caller knows the
+	// mechanism, which switches on the explanation asserted further down.
+	base := []string{}
+	for _, kv := range os.Environ() {
+		switch {
+		case strings.HasPrefix(kv, session.DevelopmentEnvVar+"="),
+			strings.HasPrefix(kv, "DTCTL_EXPERIMENTAL_SERVE="):
+			continue
+		}
+		base = append(base, kv)
+	}
 	run := func(env []string, args ...string) (int, string) {
 		c := exec.Command(exe, args...)
-		c.Env = append(os.Environ(), env...)
+		c.Env = append(append([]string(nil), base...), env...)
 		combined, _ := c.CombinedOutput()
 		return c.ProcessState.ExitCode(), string(combined)
 	}
 
-	off := []string{ExperimentalEnvVar + "="}
-	code, output := run(off, "serve", "http", "--addr", "127.0.0.1:0")
+	code, output := run(nil, "serve", "http", "--addr", "127.0.0.1:0")
 	require.NotZero(t, code, "serve must not run without the opt-in")
-	require.Contains(t, output, `unknown command "serve"`)
+	require.Contains(t, output, `unknown command "serve"`,
+		"a caller who has never heard of the mechanism must not learn the feature exists")
 
 	// Matched as a command entry ("  serve   Run dtctl as a server"), so the
 	// assertion does not trip over unrelated prose containing "server".
-	_, output = run(off, "--help")
+	_, output = run(nil, "--help")
 	require.NotRegexp(t, `(?m)^\s+serve\s`, output,
 		"an off-by-default surface must not be advertised in help")
 
+	// A caller who has set DTCTL_DEVELOPMENT — even to an off value — is
+	// evidently mid-setup, and for them silence is the unhelpful answer. They
+	// get the feature named and the opt-in spelled out.
+	code, output = run([]string{session.DevelopmentEnvVar + "="}, "serve", "http")
+	require.NotZero(t, code, "serve still must not run")
+	require.Contains(t, output, "development feature")
+	require.Contains(t, output, "development."+DevelopmentFeature)
+
 	// With the opt-in the command exists again; bare `serve` is discovery.
-	code, output = run([]string{ExperimentalEnvVar + "=1"}, "serve")
+	code, output = run([]string{session.DevelopmentEnvVar + "=" + DevelopmentFeature}, "serve")
 	require.Zero(t, code, "bare serve prints help and exits 0: %s", output)
 	require.Contains(t, output, "http")
 }

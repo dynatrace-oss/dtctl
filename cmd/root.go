@@ -116,6 +116,16 @@ func AddCommand(c *cobra.Command) {
 // excluded) and returns an exit code. Callers go through Run, which provides
 // serialization and the pristine-tree guarantee.
 func executeArgs(argv []string) int {
+	// --- Stage 1: development-feature registration ---
+	// Attach the development-tier commands this invocation opted into and
+	// detach the rest, before anything else walks the tree. Registration
+	// (rather than hiding) is what makes an un-opted-in development feature
+	// unreachable by accident: `dtctl <it>` is an unknown command like any
+	// other, and it is absent from help, completion and the catalog.
+	devEnabled, devSignpost := resolveDevelopmentFeatures(argv)
+	applyDevelopmentRegistration(devEnabled)
+	// --- End development-feature registration ---
+
 	// Setup enhanced error handling after all subcommands are registered
 	setupErrorHandlers(rootCmd)
 
@@ -199,6 +209,24 @@ func executeArgs(argv []string) int {
 	applyBlockedCommands(rootCmd, runBlocked)
 	// --- End blocked-command filter ---
 
+	// --- Stage 3: stability floor ---
+	// Mask every command and flag whose contract is weaker than the floor this
+	// context accepts, unless an exception names it. Runs after the profile and
+	// blocked-command masks so all three compose and none can widen what an
+	// earlier one narrowed. A misspelled exception is a hard error rather than
+	// a silent skip: it would otherwise tighten the surface and produce a
+	// confusing block much later.
+	policy, stabErr := resolveStabilityPolicy(spanArgs, devEnabled)
+	if stabErr != nil {
+		output.PrintHumanError("%s", stabErr)
+		return client.ExitUsageError
+	}
+	applyStabilityFloor(rootCmd, policy)
+	// Badge what survived, so a caller reading help is told the guarantee
+	// rather than left to infer it from the tier's name.
+	applyStabilityBadges(rootCmd)
+	// --- End stability floor ---
+
 	// Initialise OpenTelemetry tracing. Done after alias resolution so that
 	// the span name reflects the actual command (not a pre-alias invocation).
 	// The root span covers the entire invocation; shutdown flushes buffered
@@ -249,7 +277,15 @@ func executeArgs(argv []string) int {
 			if code, handled := tryPluginDispatch(spanArgs); handled {
 				return code
 			}
-			err = enhanceCommandError(rootCmd, err)
+			// A disabled development feature explains itself only to a caller
+			// who has already demonstrated knowledge of the mechanism, and
+			// never in agent mode. Everyone else gets the ordinary unknown
+			// command answer — see developmentSignposting.
+			if devErr := developmentHint(errStr, devSignpost); devErr != nil {
+				err = devErr
+			} else {
+				err = enhanceCommandError(rootCmd, err)
+			}
 		}
 
 		// Enhance unknown flag errors with suggestions
@@ -283,7 +319,9 @@ func executeArgs(argv []string) int {
 		if !structuredError {
 			var maskedProfile *ProfileError
 			var maskedUnsupported *UnsupportedCommandError
-			if errors.As(err, &maskedProfile) || errors.As(err, &maskedUnsupported) {
+			var maskedStability *StabilityError
+			if errors.As(err, &maskedProfile) || errors.As(err, &maskedUnsupported) ||
+				errors.As(err, &maskedStability) {
 				structuredError = hasRawFlag(spanArgs, "--agent") ||
 					hasShortFlagLetter(spanArgs, 'A') ||
 					hasRawFlag(spanArgs, "--plain")
@@ -634,6 +672,32 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// StabilityError — command or flag below the active stability floor. A third
+	// code alongside profile_blocked and safety_blocked, because the three are
+	// different axes and a caller resolves them differently: a topical surface
+	// change, a permission grant, and an accepted contract risk.
+	var stabilityErr *StabilityError
+	if errors.As(err, &stabilityErr) {
+		return &output.ErrorDetail{
+			Code:        "stability_blocked",
+			Message:     stabilityErr.Headline(),
+			Suggestions: stabilityErr.Suggestions(),
+		}
+	}
+
+	// DevelopmentError — an un-opted-in development feature was invoked by a
+	// caller who had already shown they know the mechanism. Never produced in
+	// agent mode (see developmentSignposting), so this case exists for the
+	// --plain structured path only.
+	var devErr *DevelopmentError
+	if errors.As(err, &devErr) {
+		return &output.ErrorDetail{
+			Code:        "development_disabled",
+			Message:     devErr.Headline(),
+			Suggestions: devErr.Suggestions(),
+		}
+	}
+
 	// UnsupportedCommandError — command removed from the surface by the
 	// embedding caller (e.g. host-oriented commands inside the service engine).
 	var unsupportedErr *UnsupportedCommandError
@@ -969,6 +1033,16 @@ func exitCodeForError(err error) int {
 
 	var unsupportedErr *UnsupportedCommandError
 	if errors.As(err, &unsupportedErr) {
+		return client.ExitUsageError
+	}
+
+	var stabilityErr *StabilityError
+	if errors.As(err, &stabilityErr) {
+		return client.ExitUsageError
+	}
+
+	var developmentErr *DevelopmentError
+	if errors.As(err, &developmentErr) {
 		return client.ExitUsageError
 	}
 

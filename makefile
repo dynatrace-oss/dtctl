@@ -1,4 +1,4 @@
-.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check docs-generate docs-check
+.PHONY: all build clean test test-unit test-integration test-all test-coverage test-update-golden install lint lint-strict fmt markdownlint markdownlint-fix security-scan check release release-snapshot test-sdk vet-sdk lint-sdk sdk-check-deps sdk-check-imports sdk-check docs-generate docs-check stability-manifest
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -68,13 +68,22 @@ test-integration:
 		echo "See .integrationtests.env.example for setup instructions."; \
 		exit 1; \
 	fi; \
-	go test -v -race -count=1 -tags integration ./test/e2e/...
+	go test -v -race -count=1 -tags integration ./test/integration/... ./test/e2e/...
 
 # Regenerate golden files (run after intentional output changes)
 test-update-golden:
 	@echo "Updating golden files..."
 	@go test ./... -update
-	@echo "Golden files updated. Review changes with: git diff pkg/output/testdata/"
+	@echo "Golden files updated. Review changes with: git diff pkg/output/testdata/ docs/STABILITY.md"
+
+# Regenerate the checked-in stability manifest (docs/STABILITY.md) from the live
+# command tree. The same test that writes it also gates it in CI, so a contract
+# change that is not regenerated fails the build. Review the diff: a line that
+# disappeared from the stable surface is a broken promise, not a cleanup.
+stability-manifest:
+	@echo "Generating docs/STABILITY.md..."
+	@go test ./test/stability/ -update
+	@echo "Wrote docs/STABILITY.md. Review with: git diff docs/STABILITY.md"
 
 # Run all tests (unit + integration)
 test-all: test-unit test-integration

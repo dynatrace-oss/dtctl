@@ -16,7 +16,7 @@ import (
 
 var getSnapshotsCmd = &cobra.Command{
 	Use:   "snapshots <breakpoint>",
-	Short: "Get Live Debugger snapshots for a breakpoint (experimental)",
+	Short: "Get Live Debugger snapshots for a breakpoint",
 	Long: `Fetch application snapshots captured by a Live Debugger breakpoint.
 
 BREAKPOINT can be specified as:
@@ -27,10 +27,7 @@ The command looks up the breakpoint's internal DQL ID, then executes:
   fetch application.snapshots | filter breakpoint.id == toUid("<id>")
 
 Use --decode-snapshots to decode snapshot payloads (same as dtctl query).
-Use -o json / -o yaml for structured output.
-
-Note: Live Debugger support is experimental. The underlying APIs and query
-behavior may change in future releases.`,
+Use -o json / -o yaml for structured output.`,
 	Example: `  # Get snapshots for a breakpoint by location
   dtctl get snapshots OrderController.java:306
 
@@ -164,9 +161,11 @@ behavior may change in future releases.`,
 }
 
 func init() {
+	markLiveDebuggerExperimental(getSnapshotsCmd)
+
 	getSnapshotsCmd.Flags().Int("limit", 0, "maximum number of snapshots to return (0 = no limit)")
 
-	getSnapshotsCmd.Flags().String("decode-snapshots", "", `(experimental) decode Live Debugger snapshot payloads in query results
+	getSnapshotsCmd.Flags().String("decode-snapshots", "", `decode Live Debugger snapshot payloads in query results
 bare --decode-snapshots simplifies variant wrappers to plain values;
 --decode-snapshots=full preserves the full decoded tree with type annotations`)
 	getSnapshotsCmd.Flags().Lookup("decode-snapshots").NoOptDefVal = "simplified"

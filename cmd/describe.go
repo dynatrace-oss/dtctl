@@ -313,6 +313,7 @@ func init() {
 	describeCmd.AddCommand(describeWorkflowCmd)
 	describeCmd.AddCommand(describeSchedulingRuleCmd)
 	describeCmd.AddCommand(describeBreakpointCmd)
+	markLiveDebuggerExperimental(describeBreakpointCmd)
 	describeCmd.AddCommand(describeWorkflowExecutionCmd)
 	describeCmd.AddCommand(describeDashboardCmd)
 	describeCmd.AddCommand(describeNotebookCmd)

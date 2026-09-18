@@ -13,6 +13,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	workflowpkg "github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // execWorkflowResult is the structured response for agent mode.
@@ -355,4 +356,10 @@ func registerWorkflowExecFlags(cmd *cobra.Command) {
 
 func init() {
 	registerWorkflowExecFlags(execWorkflowCmd)
+
+	// In 1.0 this command waits for the execution by default (contrib
+	// breaking-changes/exec-wait-default.md). The break is the default, so no
+	// flag carries it: `dtctl exec workflow <id>` returns after the run instead
+	// of after the trigger, and it does so without an error to notice.
+	stability.Mark(execWorkflowCmd, stability.Experimental, pre10Since)
 }

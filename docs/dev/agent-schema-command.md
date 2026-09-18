@@ -231,13 +231,16 @@ The following shows the exhaustive `--full` output, which describes dtctl's verb
 - **`required_scopes_by_resource`** — per verb, a map of resource name → the OAuth/IAM scopes that verb needs for that resource (full mode only). Lets an agent determine the scopes a command needs **before** running it, avoiding mid-task 403s.
 - **`required_scopes`** — per verb, a flat scope list for verbs whose scopes are not per-resource (`query`/`verify`/`wait`, which read Grail via DQL).
 - **`resource_scopes`** — top-level canonical `(resource → {read, write, delete, run})` table. Single source of truth: `pkg/auth.GetScopesForSafetyLevel` (what login requests) is composed from the same table, and a test enforces that every per-command scope is grantable by a safety level.
+- **`stability`** — per verb and per flag, the stability tier (`experimental` or `development`; omitted for `stable`, the default). Tells an agent whether a command's shape is promised to hold across releases before it writes an automation around it. See [STABILITY.md](../STABILITY.md).
+- **`deprecated`** — per verb, the deprecation note (since-version, planned removal, replacement) when one is declared.
+- **`min_stability`** / **`stability_exceptions`** — top-level. The stability floor this invocation is subject to, plus the individual commands and flags admitted below it. Present in every detail tier, so an agent can distinguish "this command does not exist" from "this command is below the contract this deployment accepts".
 - **`time_formats`** — in the JSON schema (not just in `howto`) so agents consuming the structured output have this without a second call.
 
-Since these scope fields were added, `schema_version` is `2`. See [TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for the human-facing scope reference.
+Since the stability fields were added, `schema_version` is `3` (scope fields made it `2`). See [TOKEN_SCOPES.md](../TOKEN_SCOPES.md) for the human-facing scope reference.
 
 ### Default overview (minimal)
 
-The bare `dtctl commands` (no `--brief`/`--full`) emits a **minimal overview**: just the verbs, the resources each operates on, and any nested subcommands. It deliberately omits descriptions, flags, `mutating`/`access`/`safety_operation` status, scopes, `global_flags`, `time_formats`, and `patterns`/`antipatterns`. This is the leanest possible map of "what can dtctl do", meant as the first bootstrap call for an agent. Combined with the TOON default format, the overview is roughly ~4KB — small enough to drop into a system prompt. Agents that need risk/scope metadata step up to `--brief`; agents that need full descriptions and flag documentation step up to `--full`.
+The bare `dtctl commands` (no `--brief`/`--full`) emits a **minimal overview**: just the verbs, the resources each operates on, their stability tier, and any nested subcommands. It deliberately omits descriptions, flags, `mutating`/`access`/`safety_operation` status, scopes, `global_flags`, `time_formats`, and `patterns`/`antipatterns`. This is the leanest possible map of "what can dtctl do", meant as the first bootstrap call for an agent. Combined with the TOON default format, the overview is roughly ~4KB — small enough to drop into a system prompt. Agents that need risk/scope metadata step up to `--brief`; agents that need full descriptions and flag documentation step up to `--full`.
 
 ### Full mode
 

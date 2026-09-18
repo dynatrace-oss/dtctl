@@ -4,18 +4,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// accountExperimentalEnvVar gates the still-in-development platform "account"
-// command surface (account login/status/token). The command is only registered
-// on the root tree when this is set to a truthy value, so released builds hide
-// it entirely (an invocation yields the normal "unknown command" error). Remove
-// the gate — and this env var — once the account surface is GA.
-const accountExperimentalEnvVar = "DTCTL_EXPERIMENTAL_ACCOUNT"
-
-// accountExperimentalEnabled reports whether the experimental account command
-// surface should be registered.
-func accountExperimentalEnabled() bool {
-	return ExperimentalEnabled(accountExperimentalEnvVar)
-}
+// accountDevelopmentFeature is the opt-in key for the still-unfinished platform
+// "account" command surface (account login/status/token). Enable it with
+// `dtctl config set development.account on` or DTCTL_DEVELOPMENT=account.
+const accountDevelopmentFeature = "account"
 
 var accountCmd = &cobra.Command{
 	Use:   "account",
@@ -25,13 +17,11 @@ var accountCmd = &cobra.Command{
 }
 
 func init() {
-	// Account administration is still under development; keep it out of released
-	// builds unless explicitly opted in via DTCTL_EXPERIMENTAL_ACCOUNT. Skipping
-	// registration (rather than hiding) means end users get a plain "unknown
-	// command" and the feature's existence is not surfaced in help or the
-	// `dtctl commands` catalog. See docs — remove this gate when account is GA.
-	if !accountExperimentalEnabled() {
-		return
-	}
-	rootCmd.AddCommand(accountCmd)
+	// Account administration is unfinished, so it is a development-tier
+	// feature: declared here (so a block message can name it) but attached to
+	// the tree only when the opt-in is on. Without it, `dtctl account` is an
+	// unknown command and the surface is absent from help, completion and the
+	// `dtctl commands` catalog. Promote it to stable — dropping this call and
+	// using rootCmd.AddCommand — when the account surface is finished.
+	addDevelopmentCommand(rootCmd, accountCmd, accountDevelopmentFeature)
 }

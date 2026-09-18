@@ -60,7 +60,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `commands` - Machine-readable command catalog (JSON/YAML, `--brief`, resource filter, `howto` subcommand)
 - [x] `skills` - AI agent skill file management (install, uninstall, status for Claude, Codex, Copilot, Cursor, Kiro, Junie, OpenCode, OpenClaw; cross-client via `--cross-client`)
 - [x] `plugin` - kubectl-style exec plugins: unknown commands dispatch to `dtctl-<name>` binaries on PATH (`plugin list`, catalog integration; see [PLUGIN_CONVENTIONS.md](PLUGIN_CONVENTIONS.md))
-- [x] `serve` (experimental, gated behind `DTCTL_EXPERIMENTAL_SERVE`) - Run dtctl as a server instead of a one-shot CLI, one subcommand per protocol: `serve http` (`POST /v1/execute`, `GET /healthz`, `--addr` default `127.0.0.1:7211`). Reference implementation over `pkg/engine`; see [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)
+- [x] `serve` (development-tier, opt in with `dtctl config set development.serve on`) - Run dtctl as a server instead of a one-shot CLI, one subcommand per protocol: `serve http` (`POST /v1/execute`, `GET /healthz`, `--addr` default `127.0.0.1:7211`). Reference implementation over `pkg/engine`; see [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)
 
 ### Resources
 

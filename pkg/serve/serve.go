@@ -20,11 +20,12 @@ import (
 	"github.com/dynatrace-oss/dtctl/cmd"
 )
 
-// ExperimentalEnvVar gates the `dtctl serve` command surface. Server mode is
-// still taking shape — the request/response contract and the
-// one-invocation-at-a-time concurrency model are subject to change — so
-// released builds do not expose it unless the operator opts in. Set it to a
-// truthy value to register the command.
+// DevelopmentFeature is the stability opt-in key for the `dtctl serve` command
+// surface. Server mode is still taking shape — the request/response contract
+// and the one-invocation-at-a-time concurrency model are subject to change —
+// so it is a development-tier feature: released builds do not register the
+// command unless the operator opts in with `dtctl config set development.serve
+// on` or DTCTL_DEVELOPMENT=serve.
 //
 // pkg/engine now enforces per-request admission control and a duration
 // budget (see engine.Limits, engine.DefaultLimits); what remains open is
@@ -32,12 +33,17 @@ import (
 //
 // The gate covers the *command* only. pkg/engine stays importable: embedding it
 // is a deliberate Go API choice made at compile time, not a surface an end user
-// can stumble into. Remove this gate — and the env var — when serve is GA.
-const ExperimentalEnvVar = "DTCTL_EXPERIMENTAL_SERVE"
+// can stumble into. Promote serve out of the development tier when its
+// contract settles.
+const DevelopmentFeature = "serve"
 
-// Experimental reports whether the `dtctl serve` command surface is enabled.
-func Experimental() bool {
-	return cmd.ExperimentalEnabled(ExperimentalEnvVar)
+// Enabled reports whether the `dtctl serve` command surface is opted into.
+//
+// main needs this *before* the command pipeline runs, because a server must
+// start outside the per-invocation lock (see Run). Inside the pipeline the
+// registration stage makes the same decision for the tree.
+func Enabled() bool {
+	return cmd.DevelopmentFeatureEnabled(DevelopmentFeature)
 }
 
 // Run executes `dtctl serve ...` standalone with the given arguments
@@ -51,6 +57,12 @@ func Run(argv []string) int {
 	// below cannot be parented): requests naming "serve" then get the
 	// signposted "unsupported in service" block instead of a generic unknown
 	// command, and the RunActive guard keeps it inert if ever dispatched.
+	//
+	// Deliberately ungated, unlike the registration in main: the server is
+	// already running in this process, so serve's existence is not something a
+	// request could learn here that it did not already know. Gating it would
+	// instead make a request that names "serve" — without repeating the opt-in
+	// in its own environment — fall back to a generic unknown command.
 	cmd.AddCommand(NewCommand())
 
 	// Hang the standalone instance off a synthetic "dtctl" root so usage lines

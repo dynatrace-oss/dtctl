@@ -14,7 +14,7 @@ import (
 var createBreakpointCmd = &cobra.Command{
 	Use:     "breakpoint <filename:line>",
 	Aliases: []string{"breakpoints", "bp"},
-	Short:   "Create a Live Debugger breakpoint (experimental)",
+	Short:   "Create a Live Debugger breakpoint",
 	Long: `Create a Live Debugger breakpoint in the current workspace.
 
 A breakpoint can only be created in a workspace that has filters configured.
@@ -25,9 +25,6 @@ persist, so once set you can create more breakpoints without repeating them.
 Because filters are workspace-scoped, changing them with --filters also re-scopes
 every existing breakpoint in the workspace. When active breakpoints would be
 affected you are asked to confirm; pass --yes (-y) to skip the prompt.
-
-Note: Live Debugger support is experimental. The underlying APIs and query
-behavior may change in future releases.
 
 Examples:
   # Create a breakpoint (workspace must already have filters)
@@ -179,6 +176,8 @@ func extractCreatedBreakpointStableID(resp map[string]interface{}) string {
 }
 
 func init() {
+	markLiveDebuggerExperimental(createBreakpointCmd)
+
 	createBreakpointCmd.Flags().String("filters", "", "workspace filters to set before creating the breakpoint (comma-separated key:value pairs)")
 	createBreakpointCmd.Flags().BoolP("yes", "y", false, "skip the confirmation prompt when changing workspace filters affects existing breakpoints")
 }

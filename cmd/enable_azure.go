@@ -10,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var (
@@ -180,4 +181,8 @@ func init() {
 	enableAzureMonitoringCmd.Flags().StringVar(&enableAzureMonitoringName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	enableAzureMonitoringCmd.Flags().StringVar(&enableAzureMonitoringDirectoryID, "directoryId", "", "Directory (tenant) ID to set on the linked connection (optional)")
 	enableAzureMonitoringCmd.Flags().StringVar(&enableAzureMonitoringApplicationID, "applicationId", "", "Application (client) ID to set on the linked connection (optional)")
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(enableAzureMonitoringCmd, "directoryId", stability.Experimental, pre10Since)
+	stability.MarkFlag(enableAzureMonitoringCmd, "applicationId", stability.Experimental, pre10Since)
 }

@@ -158,14 +158,29 @@ func reportOptionsError(opts RunOptions, err error) {
 
 // pristineCommandState is the subset of cobra.Command that dtctl mutates
 // between construction and execution. applyProfile overwrites RunE/Run/Args/
-// Hidden/DisableFlagParsing to mask commands, and installScopePreflight wraps
-// RunE; restoring these fields returns a command to its as-registered state.
+// Hidden/DisableFlagParsing to mask commands, installScopePreflight wraps RunE,
+// applyStabilityFloor hides below-floor flags, and applyStabilityBadges
+// rewrites Short/Long and flag usage strings; restoring these fields returns a
+// command to its as-registered state.
 type pristineCommandState struct {
 	runE               func(*cobra.Command, []string) error
 	run                func(*cobra.Command, []string)
 	args               cobra.PositionalArgs
 	hidden             bool
 	disableFlagParsing bool
+	short              string
+	long               string
+	// flags is the as-registered hidden state and usage string of every flag,
+	// keyed by flag name. Flag *values* are reset separately (resetFlagSet);
+	// these two are help-surface properties that the stability stages rewrite.
+	flags map[string]pristineFlagState
+}
+
+// pristineFlagState is the subset of pflag.Flag that the stability stages
+// mutate: the help surface, not the value.
+type pristineFlagState struct {
+	hidden bool
+	usage  string
 }
 
 var (
@@ -174,12 +189,21 @@ var (
 )
 
 func capturePristineState(c *cobra.Command) pristineCommandState {
+	flags := make(map[string]pristineFlagState)
+	capture := func(f *pflag.Flag) {
+		flags[f.Name] = pristineFlagState{hidden: f.Hidden, usage: f.Usage}
+	}
+	c.Flags().VisitAll(capture)
+	c.PersistentFlags().VisitAll(capture)
 	return pristineCommandState{
 		runE:               c.RunE,
 		run:                c.Run,
 		args:               c.Args,
 		hidden:             c.Hidden,
 		disableFlagParsing: c.DisableFlagParsing,
+		short:              c.Short,
+		long:               c.Long,
+		flags:              flags,
 	}
 }
 
@@ -193,11 +217,11 @@ func capturePristineState(c *cobra.Command) pristineCommandState {
 func restorePristineTree() {
 	pristineOnce.Do(func() {
 		pristineTree = make(map[*cobra.Command]pristineCommandState)
-		walkCommands(rootCmd, func(c *cobra.Command) {
+		walkPristineRoots(func(c *cobra.Command) {
 			pristineTree[c] = capturePristineState(c)
 		})
 	})
-	walkCommands(rootCmd, func(c *cobra.Command) {
+	walkPristineRoots(func(c *cobra.Command) {
 		state, ok := pristineTree[c]
 		if !ok {
 			// A command registered after the first run (not a pattern dtctl
@@ -210,6 +234,10 @@ func restorePristineTree() {
 		c.Args = state.args
 		c.Hidden = state.hidden
 		c.DisableFlagParsing = state.disableFlagParsing
+		c.Short = state.short
+		c.Long = state.long
+		restoreFlagHelp(c.Flags(), state.flags)
+		restoreFlagHelp(c.PersistentFlags(), state.flags)
 		// No command sets IO writers at registration time, so pristine means
 		// nil: cobra then resolves os.Stdout/os.Stderr dynamically at print
 		// time. A caller-bound writer (tests do this) must not outlive its
@@ -223,6 +251,36 @@ func restorePristineTree() {
 	// Color decisions are cached per process but depend on per-run inputs
 	// (--plain, NO_COLOR, TTY-ness of the current stdout).
 	output.ResetColorCache()
+}
+
+// walkPristineRoots invokes fn for every command dtctl may execute: the root
+// tree, plus each declared development-tier subtree.
+//
+// The development subtrees must be visited explicitly because they are attached
+// and detached per invocation (applyDevelopmentRegistration). Were they only
+// reached through the root, a feature enabled for the first time on invocation
+// N would have its already-mutated state — a stability badge, a profile mask —
+// captured as its pristine one on invocation N+1.
+func walkPristineRoots(fn func(*cobra.Command)) {
+	walkCommands(rootCmd, fn)
+	for _, dc := range developmentCommands {
+		if !hasSubcommand(dc.parent, dc.cmd) {
+			walkCommands(dc.cmd, fn)
+		}
+	}
+}
+
+// restoreFlagHelp returns every flag's help-surface properties to their
+// as-registered values. A flag absent from the snapshot was declared after the
+// first run; leaving it alone is correct, since its current state is its
+// pristine one.
+func restoreFlagHelp(fs *pflag.FlagSet, snapshot map[string]pristineFlagState) {
+	fs.VisitAll(func(f *pflag.Flag) {
+		if state, ok := snapshot[f.Name]; ok {
+			f.Hidden = state.hidden
+			f.Usage = state.usage
+		}
+	})
 }
 
 // resetFlagSet returns every flag in fs to its declared default. Mirrors

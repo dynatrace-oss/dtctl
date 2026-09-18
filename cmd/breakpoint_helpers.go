@@ -15,7 +15,31 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/livedebugger"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
+
+// liveDebuggerSince is the dtctl version at which the Live Debugger surface
+// entered the experimental tier. One constant rather than six literals, so a
+// promotion cannot half-land.
+const liveDebuggerSince = "0.39.0"
+
+// markLiveDebuggerExperimental declares one Live Debugger command
+// `experimental`, and carries the reason for the whole family.
+//
+// The surface is driven by the Live Debugger API, whose breakpoint and
+// snapshot payload shapes are still moving, and dtctl's own decoding of those
+// payloads (pkg/proto/livedebugger) is derived from them — so the CLI cannot
+// promise a shape it does not control. `query --decode-snapshots` is marked as
+// a flag rather than a command for the same reason: `query` itself is stable,
+// only the decoding is not.
+//
+// Every command calls this for itself, next to where it is declared: the tier
+// is an annotation on the command, not an entry in a table that has to be kept
+// in step with one. Promote the family when the Live Debugger API's payload
+// contract is settled.
+func markLiveDebuggerExperimental(cmd *cobra.Command) {
+	stability.Mark(cmd, stability.Experimental, liveDebuggerSince)
+}
 
 type liveDebuggerDeps struct {
 	loadConfig             func() (*config.Config, error)

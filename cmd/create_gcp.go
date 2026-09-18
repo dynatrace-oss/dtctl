@@ -10,6 +10,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 var (
@@ -251,12 +252,21 @@ func init() {
 	createGCPConnectionCmd.Flags().StringVar(&createGCPConnectionName, "name", "", "GCP connection name (required)")
 	createGCPConnectionCmd.Flags().StringVar(&createGCPConnectionServiceAccountID, "serviceAccountId", "", "Customer service account email (optional; can be set later with update)")
 	createGCPConnectionCmd.Flags().StringVar(&createGCPConnectionServiceAccountID, "serviceaccountid", "", "Alias for --serviceAccountId")
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(createGCPConnectionCmd, "serviceAccountId", stability.Experimental, pre10Since)
+	stability.MarkFlag(createGCPConnectionCmd, "serviceaccountid", stability.Experimental, pre10Since)
 
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigName, "name", "", "Monitoring config name/description (required)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigCredentials, "credentials", "", "GCP connection name or ID (required)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations (default: all from schema)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets (default: all *_essential from schema)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
+	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
+	// the spelling aliases are removed outright.
+	stability.MarkFlag(createGCPMonitoringConfigCmd, "locationFiltering", stability.Experimental, pre10Since)
+	stability.MarkFlag(createGCPMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
+	stability.MarkFlag(createGCPMonitoringConfigCmd, "featuresets", stability.Experimental, pre10Since)
 	addCentralEnrichmentFlag(createGCPMonitoringConfigCmd, &createGCPMonitoringConfigCentral)
 	_ = createGCPMonitoringConfigCmd.MarkFlagRequired("name")
 	_ = createGCPMonitoringConfigCmd.MarkFlagRequired("credentials")

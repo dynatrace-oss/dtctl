@@ -31,6 +31,9 @@ type executeRequest struct {
 	Token          string `json:"token"`
 	SafetyLevel    string `json:"safetyLevel,omitempty"`
 	Profile        string `json:"profile,omitempty"`
+	// Omitted means the engine default floor (`stable`), not the CLI's.
+	MinStability        string   `json:"minStability,omitempty"`
+	StabilityExceptions []string `json:"stabilityExceptions,omitempty"`
 
 	Files map[string]string `json:"files,omitempty"`
 	Stdin string            `json:"stdin,omitempty"`
@@ -104,8 +107,11 @@ func Handler(maxRequestBytes int64, limits engine.Limits) http.Handler {
 			Token:          req.Token,
 			SafetyLevel:    req.SafetyLevel,
 			Profile:        req.Profile,
-			Files:          files,
-			Stdin:          stdin,
+
+			MinStability:        req.MinStability,
+			StabilityExceptions: req.StabilityExceptions,
+			Files:               files,
+			Stdin:               stdin,
 			// Env is intentionally not exposed over HTTP: arbitrary variables
 			// reach proxies, exporters, and other process-level behavior.
 			// Embedding hosts that need it use engine.Request.Env directly.
@@ -188,13 +194,18 @@ tenant and returns the CLI-identical output.
      "environmentUrl": "https://abc12345.apps.dynatrace.com",
      "token": "dt0s16....",
      "safetyLevel": "readonly",
+     "stabilityExceptions": ["inventory"],
      "files": {"x.yaml": "..."}}
   -> {"exitCode": 0, "stdout": "...", "stderr": "...", "files": {...}}
 
   GET /healthz -> {"status":"ok"}
 
 Each request brings its own environment URL and token; the local dtctl config,
-keyring, and credential environment variables are never read. File arguments
+keyring, and credential environment variables are never read. The same applies
+to the surface a request sees: "minStability" defaults to "stable" (stricter
+than the CLI, which has a human to read an [Experimental] badge), widened per
+request via "minStability" or the narrower "stabilityExceptions", and never by
+DTCTL_MIN_STABILITY or DTCTL_DEVELOPMENT in this server's environment. File arguments
 resolve against the request's "files", and files written back (e.g. by
 apply --write-id) are returned in the response. Requests execute one at a time
 per process.

@@ -15,7 +15,7 @@ import (
 
 var getBreakpointsCmd = &cobra.Command{
 	Use:   "breakpoints",
-	Short: "List all breakpoints in the current workspace (experimental)",
+	Short: "List all breakpoints in the current workspace",
 	RunE:  runGetBreakpoints,
 }
 
@@ -150,6 +150,7 @@ func init() {
 	getCmd.AddCommand(getSettingsCmd)
 	getCmd.AddCommand(getBreakpointsCmd)
 	getCmd.AddCommand(getSnapshotsCmd)
+	markLiveDebuggerExperimental(getBreakpointsCmd)
 	getCmd.AddCommand(getExtensionsCmd)
 	getCmd.AddCommand(getExtensionConfigsCmd)
 	getCmd.AddCommand(getDocumentsCmd)

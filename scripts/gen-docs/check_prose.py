@@ -257,11 +257,22 @@ def check_commands(docs: pathlib.Path, probe: Probe, known_verbs: set[str]) -> l
                 continue
 
             known = help_.flags | global_flags | ALWAYS_VALID_FLAGS
-            for flag in re.findall(rf"(?<![\w-]){FLAG}", text):
-                if flag not in known:
-                    findings.append(
-                        f"{path}:{line_no}: `dtctl {' '.join(resolved)}` "
-                        f"has no flag {flag}")
+            # Scan token by token rather than the raw line, and skip any token
+            # that still carries whitespace: shlex has already stripped its
+            # quotes, so a `--flag` inside it is part of an argument *value* --
+            # `--stability-exception 'query --decode-snapshots'`, a DQL string,
+            # a JSON body -- and not a flag this command is being passed.
+            # Checking it against the outer command's help is a false positive.
+            # The `=` split keeps `--input='{"a": 1}'` checkable on its name.
+            for token in tokens:
+                name = token.partition("=")[0]
+                if any(c.isspace() for c in name):
+                    continue
+                for flag in re.findall(rf"(?<![\w-]){FLAG}", name):
+                    if flag not in known:
+                        findings.append(
+                            f"{path}:{line_no}: `dtctl {' '.join(resolved)}` "
+                            f"has no flag {flag}")
     return findings
 
 
