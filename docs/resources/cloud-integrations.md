@@ -2,6 +2,8 @@
 
 # Cloud Integrations
 
+[dtctl docs](../README.md) / [Resources](README.md) / Cloud Integrations
+
 <!-- Verified against the dtctl binary on 2026-09-18. Hand-authored: the aws/azure/gcp commands are nested subcommands (verb -> provider -> noun) that `commands --full` does not yet expose, so these tables are NOT generated. Re-verify when the cloud command surface changes; move into GENERATED markers once `commands --full` exposes resource_details (per code-owner review). -->
 
 ## Overview

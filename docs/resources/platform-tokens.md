@@ -2,6 +2,8 @@
 
 # Platform Tokens
 
+[dtctl docs](../README.md) / [Resources](README.md) / Platform Tokens
+
 Platform tokens (`dt0s16.*`) authenticate against the Dynatrace platform. dtctl manages them through the **account** command group via the Account Management API, so these commands operate at the account level (not a single environment) and require account authentication (`dtctl account login`).
 
 > **Experimental.** The `account` command group is still in development and gated behind `DTCTL_EXPERIMENTAL_ACCOUNT`. Set `DTCTL_EXPERIMENTAL_ACCOUNT=1` to enable it; without this variable the `account` commands are not registered and the CLI reports `unknown command`.

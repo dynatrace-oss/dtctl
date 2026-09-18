@@ -2,6 +2,8 @@
 
 # DQL Queries
 
+[dtctl docs](../README.md) / [Resources](README.md) / DQL Queries
+
 <!-- NOTE: DQL is the `query`/`exec` verb, not a CRUD resource - author prose + examples; no per-resource ops to generate. -->
 
 ## Overview
