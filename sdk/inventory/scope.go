@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -82,9 +83,26 @@ func scopeFields(scope string) []string {
 		if strings.HasPrefix(strings.TrimLeft(masked[loc[1]:], " \t"), "(") {
 			continue
 		}
+		// The unit of a numeric literal is not a field. `now()-5m` and
+		// `1.5s` both start their identifier match mid-literal, at the "m"
+		// and the "s", because a bare identifier cannot begin with a digit —
+		// so the character before the match decides it. Durations are
+		// ordinary in a scope (`duration > 1.5s`), and the phantom field they
+		// produced was not harmless: it put a nonsense name in the n/a
+		// evidence the user reads, and it made every metric dimension probe
+		// (which needs a verdict on every field) fall back to unknown.
+		if loc[0] > 0 && isNumericTail(masked[loc[0]-1]) {
+			continue
+		}
 		add(tok)
 	}
 	return out
+}
+
+// isNumericTail reports whether c is a character that can only precede an
+// identifier match as part of a numeric literal.
+func isNumericTail(c byte) bool {
+	return c >= '0' && c <= '9' || c == '.'
 }
 
 // blankOut replaces every match with spaces of the same length, so byte
@@ -190,10 +208,23 @@ func windowLabel(since string) string {
 }
 
 // notApplicableEvidenceMetric phrases a metric family's n/a verdict. Here the
-// claim is genuinely structural: a timeseries by:{} dimension is resolved
-// against the metric definition, so a dimension the metric does not declare
-// comes back typed "undefined" regardless of what was ingested in the window.
-func notApplicableEvidenceMetric(what string, fields []string) string {
-	return "not asked: " + fieldSubject(fields) + " is not a dimension of " + what +
-		", so this signal structurally cannot carry this scope — an empty result here is a property of the question, not of the data"
+// per-key claim is genuinely structural: a timeseries by:{} dimension is
+// resolved against the metric definition, so a dimension the metric does not
+// declare comes back typed "undefined" regardless of what was ingested in the
+// window.
+//
+// Structural per key is not structural per family, though. The probe samples at
+// most metricApplicabilitySampleSize keys, and a family need not be homogeneous
+// — dt.kubernetes.* spans node- and container-level keys that do not share a
+// dimension set. So the family-wide phrasing is earned only when every key was
+// asked; otherwise the line says how many were, which is the same discipline
+// the stream wording already applies to its window.
+func notApplicableEvidenceMetric(family string, probed, total int, exhaustive bool, fields []string) string {
+	subject := "not asked: " + fieldSubject(fields) + " is not a dimension of "
+	if exhaustive {
+		return subject + fmt.Sprintf("any of the %d %s matching %s", total, plural(total, "key"), family) +
+			", so this signal structurally cannot carry this scope — an empty result here is a property of the question, not of the data"
+	}
+	return subject + fmt.Sprintf("any of the %d %s sampled from %s (%d in the family)", probed, plural(probed, "key"), family, total) +
+		", so an empty result for those keys is a property of the question, not of the data — the rest of the family was not asked"
 }

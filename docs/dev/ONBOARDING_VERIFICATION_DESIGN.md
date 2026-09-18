@@ -558,6 +558,32 @@ telemetry is not implicated.
   a read timeout have different remedies, and on a high-volume tenant the scan cap is the
   binding constraint on the feature's headline use case. The cause is carried structurally
   on `Signal.Truncation`, and the cap in force is reported on the window.
+- **D18 — D16 extended: a metric family's `n/a` is only *structural per key*, and the
+  wording now says which.** The dimension probe samples at most
+  `metricApplicabilitySampleSize` keys, and a family need not be homogeneous —
+  `dt.kubernetes.*` spans node- and container-level keys with different dimension sets.
+  Measured on a live tenant: `cloud.aws.*` holds **44** keys and `dt.host.*` **49**, of which
+  **3** were probed, yet the evidence read "this signal structurally cannot carry this scope".
+  That is the same sampled-to-absolute leap D16 removed from the stream wording, one level
+  down. The verdict stays `n/a` — degrading it to `unknown` would erase the state's whole
+  point — but the line now names the sample and the family size, and the `--require` message
+  says "were not found on" rather than "do not exist on".
+- **D19 — Evidence may only name a remedy the CLI accepts.** A sampled metric family's
+  `unknown` advised "probe a specific key with `--signals`", but `--signals` selects
+  capability names, so following it returned `unknown signal dt.kubernetes.container.cpu_usage`.
+  It now names the `dtctl query 'timeseries …'` that actually settles the key. Guarded by
+  `TestMetricSampleAdviceIsRunnable`.
+- **D20 — Usage is validated before the client is built, and `--scope` is not
+  `MarkFlagRequired`.** Cobra's required-flag check runs ahead of `RunE`, so marking the flag
+  made `required flag(s) "scope" not set` the message every user saw and left the one
+  explaining *why* a scope is mandatory unreachable. Likewise a mistyped `--since` or signal
+  name is a typo, not an environment problem: resolving credentials first reported it as an
+  auth failure on any machine without a usable context.
+- **D21 — A matched signal with no event time says so.** `takeMax` over a field a stream does
+  not carry yields an *undefined column, not an error*, so the signal reported `live` with no
+  age and could never reach `stale` — the state the feature exists to surface. That is exactly
+  the defect `TimeField` fixes for `spans` and `rum`, and a custom definition can reintroduce
+  it; it is now visible in the evidence instead of presenting as a clean verdict.
 
 ## Open questions — with recommendations
 

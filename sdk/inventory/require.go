@@ -98,9 +98,15 @@ func CheckRequired(inv *Inventory, require []string) RequireVerdict {
 	// gate asks a question of it that has no answer. Saying so beats both
 	// passing silently and failing as if the telemetry were missing.
 	if len(v.NotApplicable) > 0 {
+		// "Not found on them", not "do not exist on them": a stream's n/a is
+		// sampled over the window and a metric family's may be sampled over
+		// the family, so each signal's own evidence line is what states how
+		// far the claim reaches. The gate's verdict does not change — it will
+		// not pass as written either way — but it must not restate a sampled
+		// observation as a certainty.
 		v.Messages = append(v.Messages,
 			"required signals cannot carry this scope: "+strings.Join(v.NotApplicable, ", ")+
-				" — none of the scope's fields exist on them, so this gate can never pass; drop them from the required set or widen the scope")
+				" — the scope's fields were not found on them, so this gate will not pass as written; see their evidence, then drop them from the required set or widen the scope")
 	}
 	if len(v.Unknown) > 0 {
 		v.Messages = append(v.Messages,

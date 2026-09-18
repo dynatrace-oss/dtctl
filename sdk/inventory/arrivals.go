@@ -182,7 +182,7 @@ func (b *budgetRunner) probeStreamSignal(ctx context.Context, name string, def *
 		sig.State, sig.Evidence = emptyState(def.DataObject, cov)
 		return sig, nil
 	}
-	applyFreshness(&sig, lastSeen, now, opts.StaleAfter)
+	applyFreshness(&sig, lastSeen, timeField, now, opts.StaleAfter)
 	return sig, nil
 }
 
@@ -315,7 +315,7 @@ func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *
 			// A hit settles the family: at least one of its metrics is
 			// arriving for this scope.
 			sig.Datapoints = points
-			applyFreshness(&sig, lastSeen, now, opts.StaleAfter)
+			applyFreshness(&sig, lastSeen, "", now, opts.StaleAfter)
 			return sig, nil
 		}
 	}
@@ -330,7 +330,16 @@ func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *
 	}
 	if app == applicabilityNo {
 		sig.State = SignalNotApplicable
-		sig.Evidence = notApplicableEvidenceMetric(fmt.Sprintf("any of the %d keys probed from %s", probed, def.MetricKey), fields)
+		// The structural claim ("this family cannot carry this scope") is only
+		// earned when every key in the family was asked. The dimension probe
+		// samples at most metricApplicabilitySampleSize of them, and a family
+		// need not be homogeneous — dt.kubernetes.* spans node- and
+		// container-level keys with different dimensions — so a sampled
+		// verdict says what it checked and no more. n/a is still the right
+		// state to report: it is what the checked keys say, and degrading it
+		// to unknown would erase the distinction this state exists to draw.
+		sig.Evidence = notApplicableEvidenceMetric(def.MetricKey, probed, len(matching),
+			probed >= len(matching) && !facts.metricsTruncated, fields)
 		return sig, nil
 	}
 
@@ -338,8 +347,11 @@ func (b *budgetRunner) probeMetricSignal(ctx context.Context, name string, def *
 	// only if the catalog it came from was complete.
 	if len(sample) < len(matching) || facts.metricsTruncated {
 		sig.State = SignalUnknown
-		sig.Evidence = fmt.Sprintf("not evaluated: no datapoints from %d of %d keys matching %s, which is a sample, not the family — probe a specific key with --signals to settle it",
-			len(sample), len(matching), def.MetricKey)
+		// --signals selects capability names, not metric keys, so telling the
+		// reader to pass one here produced an "unknown signal" error. Point at
+		// the query that actually settles it instead.
+		sig.Evidence = fmt.Sprintf("not evaluated: no datapoints from %d of %d keys matching %s, which is a sample, not the family — settle it on the key you care about with: dtctl query 'timeseries count(<key>), from:%s, filter: %s'",
+			len(sample), len(matching), def.MetricKey, opts.Since, opts.Scope)
 		return sig, nil
 	}
 	sig.State = SignalEmpty
@@ -534,9 +546,21 @@ func plural(n int, word string) string {
 // applyFreshness turns a last-seen timestamp into live-or-stale. An
 // unparseable timestamp downgrades to live-without-age rather than inventing a
 // staleness verdict from a value we did not understand.
-func applyFreshness(sig *Signal, lastSeen string, now time.Time, staleAfter time.Duration) {
+//
+// timeField names the record field the timestamp was read from, for the
+// evidence when it yields nothing; "" for a metric family, whose event time
+// comes from the timeseries frame rather than a field.
+func applyFreshness(sig *Signal, lastSeen, timeField string, now time.Time, staleAfter time.Duration) {
 	sig.State = SignalLive
 	if lastSeen == "" {
+		// Records matched but carried no event time, so this signal can only
+		// ever report live — never stale, the one state the whole feature
+		// exists to surface. That is exactly the defect a wrong TimeField
+		// produces (takeMax over a field the stream lacks yields an undefined
+		// column, not an error), and it has to be visible rather than
+		// presented as a clean "live".
+		sig.Evidence = "matched records, but " + freshnessSource(timeField) +
+			" returned no event time, so age could not be computed and this signal cannot be reported stale"
 		return
 	}
 	sig.LastSeen = lastSeen
@@ -558,6 +582,15 @@ func applyFreshness(sig *Signal, lastSeen string, now time.Time, staleAfter time
 		sig.Evidence = fmt.Sprintf("data arrived in this window but stopped %s ago (stale after %s)",
 			roundDuration(age), roundDuration(staleAfter))
 	}
+}
+
+// freshnessSource names where a signal's event time was read from, for the
+// evidence when it comes back empty.
+func freshnessSource(timeField string) string {
+	if timeField == "" {
+		return "the timeseries frame"
+	}
+	return "takeMax(" + timeField + ")"
 }
 
 // summarizeSeries totals the datapoints of a timeseries result and derives the

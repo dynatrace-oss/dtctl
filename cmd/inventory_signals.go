@@ -66,17 +66,21 @@ Examples:
       --signals logs --require logs
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, c, err := SetupClient()
-		if err != nil {
-			return err
-		}
-
+		// Usage is validated before the client is set up: a mistyped --since
+		// or signal name is the user's typo, and reporting it as an auth
+		// failure on a machine that happens to have no token sends them to
+		// fix the wrong thing.
 		scope, _ := cmd.Flags().GetString("scope")
 		since, _ := cmd.Flags().GetString("since")
 		signals, _ := cmd.Flags().GetStringSlice("signals")
 		require, _ := cmd.Flags().GetStringSlice("require")
 		staleAfterFlag, _ := cmd.Flags().GetDuration("stale-after")
 
+		// Not MarkFlagRequired: cobra's "required flag(s) \"scope\" not set"
+		// would preempt this message, and the whole point of requiring a scope
+		// is the reason behind it — an unscoped windowed count is the most
+		// expensive query in the battery, and plain 'dtctl inventory' already
+		// answers the unscoped question for free.
 		if strings.TrimSpace(scope) == "" {
 			return fmt.Errorf("--scope is required: see 'dtctl inventory arrivals --help' for why an unscoped window is not offered")
 		}
@@ -103,6 +107,11 @@ Examples:
 		}
 		if windowLen > time.Hour {
 			fmt.Fprintf(os.Stderr, "warning: a %s window makes each probe scan proportionally more; probes cut short by the scan cap report as unknown, not absent — narrow --since if that happens\n", roundWindow(windowLen))
+		}
+
+		cfg, c, err := SetupClient()
+		if err != nil {
+			return err
 		}
 
 		scanLimitGB, _ := cmd.Flags().GetFloat64("scan-limit-gbytes")
@@ -165,8 +174,6 @@ func exitForRequiredSignals(inv *inventory.Inventory, require []string) error {
 	return nil
 }
 
-// inventorySuggestions tailors agent-mode guidance to what the run actually
-// found, so the advice is about this result rather than generic.
 // scanCappedSignals names the signals whose probe was stopped by the scan cap.
 func scanCappedSignals(inv *inventory.Inventory) []string {
 	var out []string
@@ -186,6 +193,8 @@ func scanLimitOf(inv *inventory.Inventory) float64 {
 	return 0
 }
 
+// inventorySuggestions tailors agent-mode guidance to what the run actually
+// found, so the advice is about this result rather than generic.
 func inventorySuggestions(inv *inventory.Inventory) []string {
 	if inv == nil || inv.Window == nil {
 		return []string{
@@ -305,6 +314,7 @@ func printInventorySignalsHuman(inv *inventory.Inventory) {
 		}
 	}
 	if len(evidence) > 0 {
+		fmt.Println()
 		output.DescribeSection("Evidence (what was checked)")
 		for _, sig := range evidence {
 			fmt.Printf("  %s — %s\n", sig.Name, sig.Evidence)
@@ -380,5 +390,4 @@ func init() {
 	inventoryArrivalsCmd.Flags().StringSlice("signals", nil, "Restrict probing to these signals (default: all signal streams and metric families)")
 	inventoryArrivalsCmd.Flags().StringSlice("require", nil, "Exit non-zero unless every named signal is live (10 = not live, 11 = no verdict)")
 	inventoryArrivalsCmd.Flags().Duration("stale-after", 0, "Age past which a matched signal is stale rather than live (default max(2m, window/3))")
-	_ = inventoryArrivalsCmd.MarkFlagRequired("scope")
 }

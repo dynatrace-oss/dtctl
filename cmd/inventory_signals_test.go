@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/sdk/inventory"
 )
 
@@ -91,5 +93,73 @@ func TestStateRankOrdersNotApplicableAfterData(t *testing.T) {
 	}
 	if stateRank(string(inventory.SignalUnknown)) <= stateRank(string(inventory.SignalNotApplicable)) {
 		t.Error("unknown should rank last")
+	}
+}
+
+// TestArrivalsUsageErrorsPrecedeClientSetup pins two things that only a real
+// invocation can show.
+//
+// First, the --scope error has to be the explanatory one. MarkFlagRequired used
+// to shadow it: cobra rejected the call with `required flag(s) "scope" not set`
+// before RunE ran, so the message explaining *why* an unscoped window is not
+// offered — the whole reason the flag is mandatory — was unreachable in the one
+// case that triggers it.
+//
+// Second, every usage check has to run before SetupClient. A mistyped --since
+// or signal name is the user's typo; resolving credentials first meant that on
+// a machine with no usable context the typo surfaced as an auth failure and
+// sent the reader to fix the wrong thing. These cases all reach their error
+// without a client, which is what makes them safe to run here at all.
+func TestArrivalsUsageErrorsPrecedeClientSetup(t *testing.T) {
+	flags := inventoryArrivalsCmd.Flags()
+	t.Cleanup(func() {
+		for _, name := range []string{"scope", "since", "signals"} {
+			f := flags.Lookup(name)
+			_ = flags.Set(name, f.DefValue)
+			f.Changed = false
+		}
+	})
+
+	for _, tc := range []struct {
+		name string
+		set  map[string]string
+		want string
+	}{
+		{
+			name: "omitted scope explains itself",
+			set:  map[string]string{"scope": ""},
+			want: "--scope is required: see 'dtctl inventory arrivals --help'",
+		},
+		{
+			name: "bad window is a usage error, not an auth error",
+			set:  map[string]string{"scope": `a == "b"`, "since": "5x"},
+			want: "invalid window 5x",
+		},
+		{
+			name: "unknown signal name is rejected before any probe",
+			set:  map[string]string{"scope": `a == "b"`, "since": "15m", "signals": "logz"},
+			want: "unknown signal logz",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.set {
+				if err := flags.Set(k, v); err != nil {
+					t.Fatalf("set %s=%q: %v", k, v, err)
+				}
+			}
+			err := inventoryArrivalsCmd.RunE(inventoryArrivalsCmd, nil)
+			if err == nil {
+				t.Fatal("expected a usage error before the client is built")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+
+	// The guard for the regression itself: with the flag marked required,
+	// cobra would preempt RunE and the message above could never be produced.
+	if _, marked := flags.Lookup("scope").Annotations[cobra.BashCompOneRequiredFlag]; marked {
+		t.Error("--scope must not be MarkFlagRequired: it shadows the error that explains why a scope is needed")
 	}
 }

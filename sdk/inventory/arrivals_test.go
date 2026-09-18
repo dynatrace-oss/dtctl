@@ -335,7 +335,7 @@ func TestAllZeroTripwire(t *testing.T) {
 	if allZeroTripwire(withNoData) == "" {
 		t.Error("a tenant-wide-empty stream must not suppress the tripwire")
 	}
-	withNA := append(withNoData, Signal{Name: "rum", State: SignalNotApplicable})
+	withNA := append(append([]Signal{}, withNoData...), Signal{Name: "rum", State: SignalNotApplicable})
 	if allZeroTripwire(withNA) == "" {
 		t.Error("an inapplicable signal must not suppress the tripwire")
 	}
@@ -408,11 +408,56 @@ func TestScopeFields(t *testing.T) {
 		{`true`, nil},
 		{`status == "ERROR" or status == "WARN"`, []string{"status"}},
 		{``, nil},
+		// A duration literal's unit is not a field. The identifier match
+		// starts mid-literal (at the "m" of "5m", the "s" of "1.5s") because a
+		// bare identifier cannot begin with a digit, and the phantom field
+		// that produced reached the user twice: named in the n/a evidence, and
+		// forcing every metric dimension probe — which needs a verdict on
+		// every field — down to unknown.
+		{`timestamp > now()-5m and service.name == "x"`, []string{"timestamp", "service.name"}},
+		{`duration > 1.5s`, []string{"duration"}},
 	} {
 		got := scopeFields(tc.scope)
 		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
 			t.Errorf("scopeFields(%q) = %v, want %v", tc.scope, got, tc.want)
 		}
+	}
+}
+
+// TestMatchedWithoutEventTimeSaysSo covers the failure a wrong TimeField
+// produces: takeMax over a field the stream does not carry yields an undefined
+// column rather than an error, so the signal reports "live" with no age and can
+// never reach "stale" — the one state this feature exists to surface. Silence
+// there would present a broken probe as a clean verdict.
+func TestMatchedWithoutEventTimeSaysSo(t *testing.T) {
+	var sig Signal
+	applyFreshness(&sig, "", "timestamp", time.Now(), 2*time.Minute)
+	if sig.State != SignalLive {
+		t.Errorf("state = %q, want live: records did match", sig.State)
+	}
+	if sig.AgeSeconds != 0 || sig.LastSeen != "" {
+		t.Errorf("no event time must not invent an age: %+v", sig)
+	}
+	for _, want := range []string{"takeMax(timestamp)", "cannot be reported stale"} {
+		if !strings.Contains(sig.Evidence, want) {
+			t.Errorf("evidence %q should mention %q", sig.Evidence, want)
+		}
+	}
+
+	// A metric family reads its event time from the timeseries frame, not a
+	// record field, so the evidence must not name a field that does not exist.
+	var metric Signal
+	applyFreshness(&metric, "", "", time.Now(), 2*time.Minute)
+	if !strings.Contains(metric.Evidence, "the timeseries frame") {
+		t.Errorf("metric evidence should name the frame, got %q", metric.Evidence)
+	}
+
+	// The normal path stays clean: a live signal carries no evidence, so the
+	// human renderer's evidence block keeps listing only what needs explaining.
+	var live Signal
+	applyFreshness(&live, time.Now().UTC().Format(time.RFC3339), "timestamp", time.Now(), 2*time.Minute)
+	if live.Evidence != "" {
+		t.Errorf("a live signal with an age needs no evidence, got %q", live.Evidence)
 	}
 }
 
@@ -681,12 +726,59 @@ func TestNotApplicableClaimStrength(t *testing.T) {
 		t.Errorf("stream n/a must not claim a structural absence, got %q", stream)
 	}
 
-	metric := notApplicableEvidenceMetric("any of the 3 keys probed from dt.kubernetes.*", fields)
+	// Every key in the family was asked, so the family-wide structural claim
+	// is earned.
+	metric := notApplicableEvidenceMetric("dt.kubernetes.*", 3, 3, true, fields)
 	if !strings.Contains(metric, "structurally") || !strings.Contains(metric, "not a dimension") {
 		t.Errorf("metric n/a may and should claim a structural absence, got %q", metric)
 	}
 	if strings.Contains(metric, "widen --since") {
 		t.Errorf("metric n/a needs no wider window to be sound, got %q", metric)
+	}
+
+	// Sampled: 3 keys of 46 were asked. "undefined" is still structural for
+	// those three, but a family need not be homogeneous, so the line must not
+	// generalise to the family it did not probe.
+	sampled := notApplicableEvidenceMetric("dt.process.*", 3, 46, false, fields)
+	if strings.Contains(sampled, "structurally cannot carry this scope") {
+		t.Errorf("a 3-of-46 sample must not claim the whole family, got %q", sampled)
+	}
+	for _, want := range []string{"3 keys sampled", "46 in the family", "the rest of the family was not asked"} {
+		if !strings.Contains(sampled, want) {
+			t.Errorf("sampled metric n/a must say what it checked (%q), got %q", want, sampled)
+		}
+	}
+}
+
+// TestMetricSampleAdviceIsRunnable guards a defect the live runs surfaced: the
+// sampled-family "unknown" evidence used to tell the reader to "probe a
+// specific key with --signals", but --signals only accepts capability names, so
+// following the advice returned "unknown signal <metric key>". Evidence that
+// names a remedy has to name one the CLI accepts.
+func TestMetricSampleAdviceIsRunnable(t *testing.T) {
+	// More keys than metricKeySampleSize, so the value probes cover a sample
+	// rather than the family and the verdict has to be "unknown".
+	keys := make([]string, 0, metricKeySampleSize+2)
+	for i := 0; i < metricKeySampleSize+2; i++ {
+		keys = append(keys, fmt.Sprintf("dt.process.k%02d", i))
+	}
+	facts := discoveredFacts{metricsOK: true, metricKeys: keys}
+	// Every probe reports no datapoints, and the dimension probe cannot settle
+	// applicability, so the family lands on the sampled "unknown".
+	// Every probe returns an empty result, so no key reports datapoints and the
+	// dimension probe (no ColumnTypes) cannot settle applicability either.
+	b := &budgetRunner{runner: &mockRunner{}, report: &Report{}, queries: 100, seconds: 100}
+	opts := DiscoverOptions{Since: "now()-15m", Scope: `k8s.namespace.name == "x"`}
+	sig, err := b.probeMetricSignal(context.Background(), "process-metrics",
+		&CapabilityDef{MetricKey: "dt.process.*"}, facts, opts, []string{"k8s.namespace.name"}, time.Now())
+	if err != nil {
+		t.Fatalf("probeMetricSignal: %v", err)
+	}
+	if strings.Contains(sig.Evidence, "--signals") {
+		t.Errorf("--signals takes capability names, not metric keys, so it cannot be the remedy here: %q", sig.Evidence)
+	}
+	if !strings.Contains(sig.Evidence, "dtctl query") {
+		t.Errorf("evidence should name a runnable remedy, got %q", sig.Evidence)
 	}
 }
 
