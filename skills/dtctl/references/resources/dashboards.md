@@ -263,6 +263,18 @@ Check that:
 - Time series queries use `makeTimeseries` (not `summarize`) for charts
 - Fields used in `coloring.colorRules` are numeric — `toLong()` and `round()` serialize as quoted strings in DQL JSON output, causing threshold comparators to fail silently (white tile, no error). Use integer arithmetic directly instead: `passing * 100 / total` rather than `toLong(round(passing * 100.0 / total))`
 
+## Cost of Tile Queries
+
+Tiles re-execute on every refresh and every viewer load, so a tile query's scan cost is billed repeatedly, not once. For each `type: data` tile:
+
+- Bound the timeframe inline (`from:now()-2h`) and add a `scanLimitGBytes:` ceiling on billable `fetch`.
+- Prefer `timeseries` on a metric over `fetch logs | makeTimeseries` — metric queries don't bill scanned bytes.
+- Add `samplingRatio:` on log/span windows wider than a day, and extrapolate counts with `sum(dt.system.sampling_ratio)`.
+- Turn off auto-refresh on tiles that must scan a lot; each refresh re-bills the scan.
+- Verify the cost shape before `apply`: run the exact tile query through `dtctl query '<dql>' --include-contributions --metadata=contributions` and check whether the result came back PARTIAL or sampled.
+
+See "Scan Cost (billable fetch)" in [../DQL-reference.md](../DQL-reference.md) for the knobs.
+
 ## DQL Patterns for Dashboard Tiles
 
 ### Named parameters are required for optional args

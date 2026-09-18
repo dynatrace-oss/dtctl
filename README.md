@@ -1,6 +1,6 @@
 # dtctl
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dynatrace-oss/dynatrace-ai-agent-instrumentation-examples/badge)](https://scorecard.dev/viewer/?uri=github.com/dynatrace-oss/dtctl)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dynatrace-oss/dtctl/badge)](https://scorecard.dev/viewer/?uri=github.com/dynatrace-oss/dtctl)
 
 [![Release](https://img.shields.io/github/v/release/dynatrace-oss/dtctl?style=flat-square)](https://github.com/dynatrace-oss/dtctl/releases/latest)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/dynatrace-oss/dtctl/build.yml?branch=main&style=flat-square)](https://github.com/dynatrace-oss/dtctl/actions)
@@ -24,7 +24,7 @@ dtctl exec copilot nl2dql "error logs from last hour"
 
 > **Early Development**: This project is in active development. If you encounter any bugs or issues, please [file a GitHub issue](https://github.com/dynatrace-oss/dtctl/issues/new). Contributions and feedback are welcome!
 
-**[Documentation](https://dynatrace-oss.github.io/dtctl/)** · **[Installation](https://dynatrace-oss.github.io/dtctl/docs/installation/)** · **[Quick Start](https://dynatrace-oss.github.io/dtctl/docs/quick-start/)** · **[Command Reference](https://dynatrace-oss.github.io/dtctl/docs/command-reference/)**
+**[Documentation](docs/README.md)** · **[Installation](docs/INSTALLATION.md)** · **[Quick Start](docs/QUICK_START.md)** · **[Command Reference](docs/COMMANDS.md)**
 
 ---
 
@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.sh
 irm https://raw.githubusercontent.com/dynatrace-oss/dtctl/main/install.ps1 | iex
 ```
 
-Binary downloads, building from source, shell completion setup, and more in the **[Installation Guide](https://dynatrace-oss.github.io/dtctl/docs/installation/)**.
+Binary downloads, building from source, shell completion setup, and more in the **[Installation Guide](docs/INSTALLATION.md)**.
 
 ## Authenticate
 
@@ -57,7 +57,7 @@ dtctl auth login --context my-env --environment "https://abc12345.apps.dynatrace
 dtctl doctor
 ```
 
-Token-based authentication and multi-environment configuration are covered in the **[Quick Start](https://dynatrace-oss.github.io/dtctl/docs/quick-start/)**.
+Token-based authentication and multi-environment configuration are covered in the **[Quick Start](docs/QUICK_START.md)**.
 
 ## Why dtctl?
 
@@ -95,7 +95,7 @@ Token-based authentication and multi-environment configuration are covered in th
 | Platform Tokens | account create/list/delete token (`dt0s16.*` via Account Management API) |
 | API Discovery | get apis (with `--uncovered`), describe api (operation index, one operation in full, raw spec) |
 
-See the **[Command Reference](https://dynatrace-oss.github.io/dtctl/docs/command-reference/)** for the full list of verbs, flags, resource types, and aliases.
+See the **[Command Reference](docs/COMMANDS.md)** for the full list of verbs, flags, resource types, and aliases.
 
 ## AI Agent Skills
 
@@ -114,7 +114,7 @@ dtctl skills install --global     # User-wide installation
 cp -r skills/dtctl ~/.agents/skills/   # Cross-client (any agent)
 ```
 
-Compatible with GitHub Copilot, Claude Code, OpenAI Codex CLI, Cursor, Kiro, Junie, OpenCode, OpenClaw, and other [Agent Skills](https://agentskills.io)-compatible tools. See the **[AI Agent Mode docs](https://dynatrace-oss.github.io/dtctl/docs/ai-agent-mode/)** for details on the structured JSON envelope and agent auto-detection.
+Compatible with GitHub Copilot, Claude Code, OpenAI Codex CLI, Cursor, Kiro, Junie, OpenCode, OpenClaw, and other [Agent Skills](https://agentskills.io)-compatible tools. See the **[AI Agent Mode docs](docs/AGENT_MODE.md)** for details on the structured JSON envelope and agent auto-detection.
 
 ### Dynatrace domain skills
 
@@ -128,7 +128,7 @@ These skills provide the domain context (e.g., how to write DQL queries, which m
 
 ## Running as a Service
 
-`dtctl serve http` exposes the CLI over HTTP for AI agents and automation. It is **experimental**: set `DTCTL_EXPERIMENTAL_SERVE=1` to enable the command, and expect the contract to change. One request executes one dtctl command line for one tenant (`POST /v1/execute`) and returns the exact output the CLI would have printed. Each request brings its own environment URL and token, file arguments resolve against per-request virtual files, and host-only commands are unavailable. Go callers can embed `pkg/engine` directly instead. It is a reference implementation with no authentication of its own — see [Server Mode](https://dynatrace-oss.github.io/dtctl/docs/serve/) before exposing it beyond localhost.
+`dtctl serve http` exposes the CLI over HTTP for AI agents and automation. It is **experimental**: set `DTCTL_EXPERIMENTAL_SERVE=1` to enable the command, and expect the contract to change. One request executes one dtctl command line for one tenant (`POST /v1/execute`) and returns the exact output the CLI would have printed. Each request brings its own environment URL and token, file arguments resolve against per-request virtual files, and host-only commands are unavailable. Go callers can embed `pkg/engine` directly instead. It is a reference implementation with no authentication of its own — see [Server Mode](docs/SERVE.md) before exposing it beyond localhost.
 
 ## Observability
 
@@ -136,18 +136,18 @@ dtctl supports W3C Trace Context propagation and OTLP span export via the OpenTe
 
 ## Documentation
 
-Full documentation is available at **[dynatrace-oss.github.io/dtctl](https://dynatrace-oss.github.io/dtctl/)**:
+Full documentation lives in the repo's **[docs/](docs/README.md)** directory:
 
-- [Installation](https://dynatrace-oss.github.io/dtctl/docs/installation/): Homebrew, shell script, binary download, build from source, shell completion
-- [Quick Start](https://dynatrace-oss.github.io/dtctl/docs/quick-start/): Authentication, first commands, common patterns
-- [Configuration](https://dynatrace-oss.github.io/dtctl/docs/configuration/): Contexts, credentials, safety levels, aliases
-- [Command Reference](https://dynatrace-oss.github.io/dtctl/docs/command-reference/): All verbs, flags, resource types, and examples
-- [Output Formats](https://dynatrace-oss.github.io/dtctl/docs/output-formats/): Table, JSON, YAML, CSV, charts
-- [AI Agent Mode](https://dynatrace-oss.github.io/dtctl/docs/ai-agent-mode/): Structured envelope, auto-detection, agent skill
-- [Token Scopes](https://dynatrace-oss.github.io/dtctl/docs/token-scopes/): Required API token scopes per safety level
-- [Server Mode](https://dynatrace-oss.github.io/dtctl/docs/serve/): Running dtctl as a server, the execute API, and embedding `pkg/engine`
+- [Installation](docs/INSTALLATION.md): Homebrew, shell script, binary download, build from source, shell completion
+- [Quick Start](docs/QUICK_START.md): Authentication, first commands, common patterns
+- [Configuration](docs/CONFIGURATION.md): Contexts, credentials, safety levels, aliases
+- [Command Reference](docs/COMMANDS.md): All verbs, flags, resource types, and examples
+- [Output Formats](docs/OUTPUT_FORMATS.md): Table, JSON, YAML, CSV, charts
+- [AI Agent Mode](docs/AGENT_MODE.md): Structured envelope, auto-detection, agent skill
+- [Token Scopes](docs/TOKEN_SCOPES.md): Required API token scopes per safety level
+- [Server Mode](docs/SERVE.md): Running dtctl as a server, the execute API, and embedding `pkg/engine`
 
-Resource-specific guides: [API Discovery](https://dynatrace-oss.github.io/dtctl/docs/api-discovery/) · [DQL Queries](https://dynatrace-oss.github.io/dtctl/docs/dql-queries/) · [Workflows](https://dynatrace-oss.github.io/dtctl/docs/workflows/) · [Dashboards](https://dynatrace-oss.github.io/dtctl/docs/dashboards/) · [SLOs](https://dynatrace-oss.github.io/dtctl/docs/slos/) · [Settings](https://dynatrace-oss.github.io/dtctl/docs/settings/) · [Extensions](https://dynatrace-oss.github.io/dtctl/docs/extensions/) · [Analyzers](https://dynatrace-oss.github.io/dtctl/docs/analyzers/) · [CoPilot](https://dynatrace-oss.github.io/dtctl/docs/copilot/) · [and more...](https://dynatrace-oss.github.io/dtctl/docs/quick-start/)
+Resource-specific guides: [API Discovery](docs/resources/api-discovery.md) · [DQL Queries](docs/resources/dql-queries.md) · [Workflows](docs/resources/workflows.md) · [Dashboards](docs/resources/dashboards-notebooks.md) · [SLOs](docs/resources/slos.md) · [Settings](docs/resources/settings-api.md) · [Extensions](docs/resources/extensions.md) · [Analyzers](docs/resources/analyzers.md) · [CoPilot](docs/resources/copilot.md) · [and more...](docs/QUICK_START.md)
 
 ## Contributing
 

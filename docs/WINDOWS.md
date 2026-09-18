@@ -1,6 +1,8 @@
 # Installing dtctl on Windows
 
-This guide covers everything you need to get dtctl running on Windows, including installation, configuration, shell completion, and tips for working with PowerShell.
+This guide covers the Windows-specific details of running dtctl: PowerShell install and tips, shell completion, `cmd.exe`/WSL, and troubleshooting.
+
+> For the general, cross-platform installation reference (all platforms, binary downloads, updating, uninstalling), see **[INSTALLATION.md](INSTALLATION.md)**.
 
 ## Quick Install (PowerShell)
 
@@ -94,24 +96,11 @@ If the `Select-String` command prints a matching line, the download is intact.
 
 ## Building from Source
 
-Requires **Go 1.24+** and **Git**.
+See **[INSTALLATION.md](INSTALLATION.md)** for build-from-source instructions (requires Go and Git). On Windows the build output is `bin\dtctl.exe`:
 
 ```powershell
-git clone https://github.com/dynatrace-oss/dtctl.git
-cd dtctl
 go build -o bin\dtctl.exe .
-
-# Verify
 .\bin\dtctl.exe version
-```
-
-To install to your Go bin directory:
-
-```powershell
-go install .
-
-# Verify (ensure $env:GOPATH\bin is in your PATH)
-dtctl version
 ```
 
 ## Shell Completion
@@ -168,6 +157,8 @@ dtctl stores configuration and credentials under `%LOCALAPPDATA%\dtctl`:
 Credentials are stored securely in **Windows Credential Manager** (viewable via Control Panel > Credential Manager > Windows Credentials).
 
 ### Set Up Your First Environment
+
+For the full configuration reference (contexts, credentials, safety levels, aliases, profiles), see **[CONFIGURATION.md](CONFIGURATION.md)**. The example below shows the Windows/PowerShell specifics.
 
 ```powershell
 # OAuth login (recommended -- opens browser)
@@ -286,7 +277,7 @@ This is 5.1-specific: on PowerShell 7.3+ the backslashes are passed through lite
 
 When results look suspicious, `-vv` shows the exact query dtctl sent — always check there first.
 
-See the [DQL Queries](QUICK_START.md#powershell-quoting-issues-and-solutions) section in the Quick Start guide for more examples.
+See [DQL Queries](resources/dql-queries.md#windows-powershell-quoting) for more examples.
 
 ### Line Continuation
 
@@ -321,15 +312,20 @@ $workflows | Where-Object { $_.title -like "*daily*" }
 
 ### Environment Variables
 
-Set environment variables for dtctl in PowerShell:
+The environment URL lives in a context, not in an environment variable. Select a
+context (and point at a config file) like this:
 
 ```powershell
 # Temporary (current session)
-$env:DTCTL_ENVIRONMENT = "https://abc12345.apps.dynatrace.com"
+$env:DTCTL_CONTEXT = "my-env"
 
 # Persistent (current user)
-[Environment]::SetEnvironmentVariable('DTCTL_ENVIRONMENT', 'https://abc12345.apps.dynatrace.com', 'User')
+[Environment]::SetEnvironmentVariable('DTCTL_CONTEXT', 'my-env', 'User')
 ```
+
+Other variables dtctl reads: `DTCTL_CONFIG` (explicit config path), `DTCTL_TOKEN`
+(token, supplied out of band), `DTCTL_OUTPUT`, `DTCTL_PROFILE`, and the spill
+settings. See **[CONFIGURATION.md](CONFIGURATION.md)** for the full list.
 
 ## Windows Terminal and cmd.exe
 

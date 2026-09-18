@@ -38,6 +38,8 @@ dtctl wait query "fetch spans | filter test_id='test-123'" --for=count=1 --timeo
 dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --plain
 ```
 
+Billable `fetch` (logs, events, bizevents, spans) bills by bytes scanned and dashboard tiles re-bill on every refresh — read "Scan Cost" in `references/DQL-reference.md` before emitting DQL, and treat a PARTIAL or sampled result as incomplete.
+
 dtctl not installed/working? See [references/troubleshooting.md](references/troubleshooting.md).
 
 ## Resources & verbs
