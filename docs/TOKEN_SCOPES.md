@@ -314,6 +314,8 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | edgeconnect | `app-engine:edge-connects:delete` |
 | lookup | `storage:files:delete` |
 | notebook | `document:documents:delete` |
+| scheduling-rule | `automation:rules:read` |
+| scheduling-rule | `automation:rules:write` |
 | segment | `storage:filter-segments:delete` |
 | trash | `document:trash.documents:delete` |
 
@@ -363,6 +365,7 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | openpipeline-dql-processor | `openpipeline:configurations:read` |
 | openpipeline-matcher | `openpipeline:configurations:read` |
 | preview-processor | `openpipeline:configurations:read` |
+| scheduling-rule | `automation:rules:read` |
 | sdk-version | `app-engine:apps:run` |
 | segment | `storage:filter-segments:read` |
 | setting | `app-settings:objects:read` |
@@ -409,6 +412,7 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | lookup | `storage:files:write` |
 | notebook | `document:documents:write` |
 | notification | `notification:notifications:write` |
+| scheduling-rule | `automation:rules:write` |
 | segment | `storage:filter-segments:write` |
 | setting | `settings:objects:write` |
 | slo | `slo:slos:write` |

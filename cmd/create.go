@@ -4,6 +4,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	// Change both values when Cluster direct central create is customer-released.
+	centralEnrichmentDefault = false
+	centralEnrichmentHidden  = true
+)
+
 // createCmd represents the create command
 var createCmd = &cobra.Command{
 	Use:   "create",
@@ -19,7 +25,8 @@ apply is idempotent (creates if new, updates if existing).
 Supported resources:
   workflows (wf)          dashboards (dash, db)     notebooks (nb)
   slos                    settings                  buckets (bkt)
-  edgeconnect (ec)        lookup-tables (lu)        extensions (ext)`,
+  edgeconnect (ec)        lookup-tables (lu)        extensions (ext)
+  scheduling-rules (sr)`,
 	Example: `  # Create a workflow from a YAML file
   dtctl create workflow -f workflow.yaml
 
@@ -34,9 +41,34 @@ Supported resources:
 	RunE: requireSubcommand,
 }
 
+// centralEnrichmentIntent maps the --central-enrichment flag onto the value
+// sent as useIngestEnrichmentConfig. That property is nullable in the extension
+// schema, so nil ("let the backend choose") must stay distinguishable from an
+// explicit false ("keep legacy enrichment").
+//
+// While the flag is hidden and defaults to false, an untouched flag means the
+// caller has no opinion and the field is omitted. Once centralEnrichmentDefault
+// flips to true at customer release the value is always sent explicitly, so
+// --central-enrichment=false remains a working opt-out instead of silently
+// falling back to the backend default.
+func centralEnrichmentIntent(cmd *cobra.Command, enabled bool) *bool {
+	if !centralEnrichmentDefault && !cmd.Flags().Changed("central-enrichment") {
+		return nil
+	}
+	return &enabled
+}
+
+func addCentralEnrichmentFlag(command *cobra.Command, target *bool) {
+	command.Flags().BoolVar(target, "central-enrichment", centralEnrichmentDefault, "Use central enrichment configuration")
+	if centralEnrichmentHidden {
+		_ = command.Flags().MarkHidden("central-enrichment")
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(createCmd)
 	createCmd.AddCommand(createWorkflowCmd)
+	createCmd.AddCommand(createSchedulingRuleCmd)
 	createCmd.AddCommand(createNotebookCmd)
 	createCmd.AddCommand(createDashboardCmd)
 	createCmd.AddCommand(createDocumentCmd)

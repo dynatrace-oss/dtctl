@@ -43,6 +43,10 @@ const (
 // so errors.Is works across both names).
 var ErrOAuthSessionRevoked = session.ErrOAuthSessionRevoked
 
+// ErrNoRefreshToken mirrors session.ErrNoRefreshToken (same value, so
+// errors.Is works across both names).
+var ErrNoRefreshToken = session.ErrNoRefreshToken
+
 func NewTokenManager(oauthConfig *OAuthConfig) (*TokenManager, error) {
 	return session.NewTokenManager(oauthConfig)
 }

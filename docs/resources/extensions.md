@@ -19,6 +19,8 @@ See [Extensions](../EXTENSIONS.md) for the full guide to managing extensions, ex
 | describe | extension | `dtctl describe extension` | Show details of a specific resource | no | read |
 | download | extension | `dtctl download extension` | Download raw resource artifacts | no | read |
 | get | extensions | `dtctl get extensions` | Display one or many resources | no | read |
+| update | extension | `dtctl update extension` | Update resources | yes | write |
+| update | extensions | `dtctl update extensions` | Update resources | yes | write |
 | apply | extension-config | `dtctl apply extension-config` | Apply a configuration to create or update resources | yes | write |
 | describe | extension-config | `dtctl describe extension-config` | Show details of a specific resource | no | read |
 | get | extension-configs | `dtctl get extension-configs` | Display one or many resources | no | read |

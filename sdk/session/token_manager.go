@@ -15,6 +15,12 @@ import (
 // cache and fall back to a non-OAuth credential where available.
 var ErrOAuthSessionRevoked = errors.New("OAuth session revoked")
 
+// ErrNoRefreshToken indicates the stored token set carries no refresh token, so
+// it cannot be renewed in place. A client credentials token is the expected
+// case (RFC 6749 section 4.4.3 issues none); the caller must mint a new token
+// instead of refreshing.
+var ErrNoRefreshToken = errors.New("no refresh token available")
+
 const (
 	// OAuthTokenPrefix is prepended to OAuth token names in keyring
 	OAuthTokenPrefix = "oauth:"
@@ -252,7 +258,7 @@ func (tm *TokenManager) refreshTokenLocked(tokenName string) (*TokenSet, error) 
 	}
 
 	if stored.RefreshToken == "" {
-		return nil, fmt.Errorf("no refresh token available")
+		return nil, ErrNoRefreshToken
 	}
 
 	// Refresh the token

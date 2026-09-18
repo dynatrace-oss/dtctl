@@ -140,6 +140,7 @@ func init() {
 
 	// Resource delete subcommands (command definitions live in get_*.go files)
 	deleteCmd.AddCommand(deleteWorkflowCmd)
+	deleteCmd.AddCommand(deleteSchedulingRuleCmd)
 	deleteCmd.AddCommand(deleteDashboardCmd)
 	deleteCmd.AddCommand(deleteNotebookCmd)
 	deleteCmd.AddCommand(deleteTrashCmd)

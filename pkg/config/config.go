@@ -22,6 +22,7 @@ type (
 	ContextOptions = session.ContextOptions
 	Hooks          = session.Hooks
 	SpillConfig    = session.SpillConfig
+	QueryLimits    = session.QueryLimits
 	SafetyLevel    = session.SafetyLevel
 	AliasEntry     = session.AliasEntry
 	AliasFile      = session.AliasFile

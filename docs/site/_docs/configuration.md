@@ -19,6 +19,53 @@ Tokens are stored securely in your OS keyring. To log out:
 dtctl auth logout
 ```
 
+### Non-Interactive OAuth (CI/CD)
+
+Pipelines have no browser and no user, so the interactive login cannot complete
+there. Supplying an OAuth client ID and secret switches `auth login` to the
+client credentials grant, which needs neither:
+
+```bash
+export DTCTL_CLIENT_ID="dt0s02.EXAMPLE"
+export DTCTL_CLIENT_SECRET="dt0s02.EXAMPLE.SECRET"
+export DTCTL_ACCOUNT_URN="urn:dtaccount:00000000-0000-0000-0000-000000000000"
+export DTCTL_TOKEN_STORAGE=file   # no keyring on a build agent
+
+dtctl auth login \
+  --context ci \
+  --environment "https://abc12345.apps.dynatrace.com" \
+  --safety-level readonly
+```
+
+Prefer the environment variables over the equivalent `--client-id`,
+`--client-secret` and `--account-urn` flags: command line arguments are visible
+to every other process on the machine.
+
+`--safety-level` restricts dtctl itself, on the client side; it does not narrow
+the token. By default the token carries whatever scopes the OAuth client was
+granted, so pass `--scopes` to request a narrower set — or provision the OAuth
+client with only the scopes the pipeline needs:
+
+```bash
+dtctl auth login --context ci \
+  --environment "https://abc12345.apps.dynatrace.com" \
+  --scopes storage:logs:read,storage:buckets:read
+```
+
+The token endpoint may return fewer scopes than requested, so `auth login`
+prints the scopes the token actually carries. `dtctl auth status` shows them
+again later.
+
+This grant authenticates the application itself rather than a user, so no
+refresh token is issued ([RFC 6749 §4.4.3](https://www.rfc-editor.org/rfc/rfc6749#section-4.4.3)).
+A client that holds its own credentials does not need one -- run `dtctl auth
+login` again to obtain a fresh access token when the current one expires. With
+no refresh token stored there is nothing to renew in place, so `dtctl auth
+refresh` fails and points back at `auth login`.
+
+`--timeout` (default `5m`) bounds the token request, so a stalled token
+endpoint fails the pipeline step instead of holding the runner.
+
 ### Token-Based Auth
 
 For CI/CD or headless environments, use a platform API token:
@@ -374,6 +421,70 @@ Precedence (highest wins): **flag → environment → context config → global 
 built-in default**. A user-chosen `dir` (or `DTCTL_SPILL_DIR` / `--spill-to`) is
 written outside the managed cache and opts out of its TTL pruning and per-context
 partitioning — you own that file's lifetime.
+
+## Query Limits
+
+Every query dtctl runs can carry per-query caps — the same knobs `dtctl query`
+exposes as flags. Setting them in the config makes them apply to *every* query
+in a context, including generated ones, scripts, and agent-driven runs, which a
+flag you have to remember to type does not.
+
+```yaml
+# ~/.config/dtctl/config
+query-limits:                 # global defaults
+  scan-limit-gbytes: 500      # cap the data scanned (PARTIAL result beyond it)
+  max-result-records: 5000    # cap returned records (0 = server default, ~1000)
+  max-result-bytes: 10485760  # cap result size in bytes
+  sampling-ratio: 0           # DQL sampling on log/span fetches (0 = off)
+
+contexts:
+  - name: production
+    context:
+      environment: https://abc12345.apps.dynatrace.com
+      token-ref: production
+      query-limits:
+        scan-limit-gbytes: 50   # tighter ceiling here; other limits inherited
+  - name: sandbox
+    context:
+      environment: https://sandbox.apps.dynatrace.com
+      token-ref: sandbox
+      # no query-limits block: inherits the global defaults
+```
+
+Precedence (highest wins): **flag → context config → global config → server
+default**. The per-context block overrides the global one **per field**, so a
+context can tighten one limit without restating the others.
+
+A limit is only ever applied when it is set: a config without a `query-limits`
+block behaves exactly as it did before the section existed, and an explicit
+`--default-scan-limit-gbytes 0` still means "use the server default" rather than
+inheriting the configured ceiling.
+
+Because zero means "defer to the next layer" at every config layer, the merge
+only ever tightens: a context can lower a global ceiling but cannot lift one,
+and a negative value is rejected rather than silently ignored. Lifting a
+configured limit is a command-line decision:
+
+```bash
+dtctl query 'fetch logs, from:now()-30d | summarize count()' --no-query-limits
+```
+
+`--no-query-limits` drops the config layers only — limit flags you pass on the
+same command line still apply, so `--no-query-limits --max-result-records 42`
+means "ignore the config, use 42".
+
+Two caveats worth knowing:
+
+- **`scan-limit-gbytes` is a brake, not a filter.** Exceeding it returns a
+  PARTIAL result rather than an error. dtctl says so on every affected query
+  (and, with `-v`, names the configured limits it applied), but a script that
+  ignores the warning will read a truncated answer as a complete one.
+- **`sampling-ratio` makes results approximate** for every query in the context,
+  not just the wide ones — counts come back extrapolated. Prefer setting it per
+  query unless approximate answers are what the whole context is for.
+
+Limits apply to `dtctl query` and `dtctl wait query`. `dtctl inventory` keeps its
+own discovery cap (`--scan-limit-gbytes`, default 25).
 
 ## Command Aliases
 

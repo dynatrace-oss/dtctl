@@ -14,6 +14,10 @@ func extractApplyBase(result apply.ApplyResult) *apply.ApplyResultBase {
 		return &r.ApplyResultBase
 	case apply.WorkflowApplyResult:
 		return &r.ApplyResultBase
+	case *apply.SchedulingRuleApplyResult:
+		return &r.ApplyResultBase
+	case apply.SchedulingRuleApplyResult:
+		return &r.ApplyResultBase
 	case *apply.DashboardApplyResult:
 		return &r.ApplyResultBase
 	case apply.DashboardApplyResult:
@@ -49,6 +53,14 @@ func extractApplyBase(result apply.ApplyResult) *apply.ApplyResultBase {
 	case *apply.ExtensionConfigApplyResult:
 		return &r.ApplyResultBase
 	case apply.ExtensionConfigApplyResult:
+		return &r.ApplyResultBase
+	case *apply.SegmentApplyResult:
+		return &r.ApplyResultBase
+	case apply.SegmentApplyResult:
+		return &r.ApplyResultBase
+	case *apply.AnomalyDetectorApplyResult:
+		return &r.ApplyResultBase
+	case apply.AnomalyDetectorApplyResult:
 		return &r.ApplyResultBase
 	default:
 		return nil

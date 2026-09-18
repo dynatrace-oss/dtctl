@@ -70,6 +70,12 @@ func TestContract_LoadFullFixture(t *testing.T) {
 	if cfg.Spill.TTL != "24h" {
 		t.Errorf("spill.ttl = %q", cfg.Spill.TTL)
 	}
+	if cfg.QueryLimits.ScanLimitGbytes != 500 || cfg.QueryLimits.MaxResultRecords != 5000 {
+		t.Errorf("query-limits not parsed: %+v", cfg.QueryLimits)
+	}
+	if dev.QueryLimits == nil || dev.QueryLimits.ScanLimitGbytes != 50 {
+		t.Errorf("dev query-limits override not parsed: %+v", dev.QueryLimits)
+	}
 }
 
 func TestContract_LoadMinimalFixture(t *testing.T) {

@@ -202,6 +202,11 @@ func TestTokenManagerRefreshTokenNoRefreshToken(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected no refresh token error")
 	}
+	// Callers branch on this to tell "cannot be renewed in place" apart from a
+	// transient refresh failure, so it has to stay matchable.
+	if !errors.Is(err, ErrNoRefreshToken) {
+		t.Fatalf("expected ErrNoRefreshToken, got %v", err)
+	}
 }
 
 func TestTokenManagerRefreshTokenAdditionalBranches(t *testing.T) {

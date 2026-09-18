@@ -286,6 +286,121 @@ func (f *OAuthFlow) RefreshToken(refreshToken string) (*TokenSet, error) {
 	return &tokens, nil
 }
 
+// ClientCredentials performs an OAuth 2.0 client credentials grant (RFC 6749
+// section 4.4) against the configured token endpoint.
+//
+// Unlike Start, this grant involves no user, no browser and no redirect, which
+// makes it the grant to use from CI/CD pipelines and other headless automation
+// where an interactive login is impossible.
+//
+// ctx bounds the token request; when it carries no deadline the default HTTP
+// client's own timeout still applies.
+//
+// resource is sent as an RFC 8707 resource indicator; Dynatrace expects the
+// account URN (urn:dtaccount:<uuid>). It may be empty, in which case no
+// resource indicator is sent at all and the audience of the returned token is
+// whatever the token endpoint defaults to — it is not narrowed to
+// f.config.EnvironmentURL the way an interactive token is (buildAuthURL sends
+// the environment URL as the resource). Pass the account URN to get a
+// predictable audience. scopes may be empty to accept the client's default
+// grant.
+//
+// Per RFC 6749 section 4.4.3 the response carries no refresh token: a client
+// that holds its own credentials can simply request another access token. The
+// returned TokenSet therefore has an empty RefreshToken.
+func (f *OAuthFlow) ClientCredentials(ctx context.Context, clientID, clientSecret, resource string, scopes []string) (*TokenSet, error) {
+	if clientID == "" {
+		return nil, fmt.Errorf("client credentials grant requires a client ID")
+	}
+	if clientSecret == "" {
+		return nil, fmt.Errorf("client credentials grant requires a client secret")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	data := url.Values{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
+	}
+	if resource != "" {
+		data.Set("resource", resource)
+	}
+	if len(scopes) > 0 {
+		data.Set("scope", strings.Join(scopes, " "))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", f.config.TokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	httpDo := f.httpDo
+	if httpDo == nil {
+		httpDo = defaultOAuthHTTPDo
+	}
+
+	resp, err := httpDo(req)
+	if err != nil {
+		return nil, fmt.Errorf("client credentials request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		// The request body carries the client secret, so redact it in case the
+		// token endpoint echoes the submitted parameters back in its error.
+		return nil, fmt.Errorf("client credentials grant failed: %s - %s",
+			resp.Status, redactSecret(string(body), clientSecret))
+	}
+
+	var tokens TokenSet
+	if err := json.NewDecoder(resp.Body).Decode(&tokens); err != nil {
+		return nil, fmt.Errorf("failed to decode token response: %w", err)
+	}
+
+	if tokens.AccessToken == "" {
+		return nil, fmt.Errorf("token endpoint returned no access token")
+	}
+
+	tokens.ExpiresAt = time.Now().Add(time.Duration(tokens.ExpiresIn) * time.Second)
+
+	return &tokens, nil
+}
+
+// redactSecret removes every encoding of secret that a token endpoint might
+// plausibly echo back in an error body. Matching is literal, so each encoding
+// has to be replaced explicitly: for a Dynatrace client secret (dt0s02. plus
+// alphanumerics and dots) all three forms below are identical, but a secret
+// containing characters that percent- or JSON-escape would otherwise survive
+// the raw replacement.
+func redactSecret(body, secret string) string {
+	if secret == "" {
+		return body
+	}
+	const marker = "<redacted>"
+	for _, encoded := range []string{secret, url.QueryEscape(secret), jsonEscape(secret)} {
+		if encoded == "" {
+			continue
+		}
+		body = strings.ReplaceAll(body, encoded, marker)
+	}
+	return body
+}
+
+// jsonEscape returns secret as it would appear inside a JSON string literal,
+// without the surrounding quotes.
+func jsonEscape(secret string) string {
+	encoded, err := json.Marshal(secret)
+	if err != nil || len(encoded) < 2 {
+		return ""
+	}
+	return string(encoded[1 : len(encoded)-1])
+}
+
 func (f *OAuthFlow) GetUserInfo(accessToken string) (*OAuthUserInfo, error) {
 	req, err := http.NewRequest("GET", f.config.UserInfoURL, nil)
 	if err != nil {

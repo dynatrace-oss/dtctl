@@ -19,6 +19,8 @@ contexts:
       spill:
         mode: auto
         threshold: 50KB
+      query-limits:
+        scan-limit-gbytes: 50
       future-context-field: keep-me-too
   - name: prod
     context:
@@ -43,3 +45,8 @@ spill:
   format: jsonl
   threshold: 50KB
   ttl: 24h
+query-limits:
+  scan-limit-gbytes: 500
+  max-result-records: 5000
+  max-result-bytes: 10485760
+  sampling-ratio: 100

@@ -57,6 +57,7 @@ making it easy to deploy the same resource across multiple environments.
 
 Supported resource types:
   - Workflows (automation)
+  - Scheduling rules (automation)
   - Dashboards
   - Notebooks
   - Documents of any type (launchpad, custom app documents, e.g. acme:config)

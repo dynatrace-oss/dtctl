@@ -27,6 +27,9 @@ type Config struct {
 	// Spill holds the global result-spill settings (D15). Per-context overrides
 	// live on Context.Spill.
 	Spill SpillConfig `yaml:"spill,omitempty"`
+	// QueryLimits holds the global per-query execution caps. Per-context
+	// overrides live on Context.QueryLimits.
+	QueryLimits QueryLimits `yaml:"query-limits,omitempty"`
 	// Profiles is the set of named command profiles (default-deny allowlists of
 	// commands). A profile is selected via DTCTL_PROFILE or a context binding;
 	// see profile.go and docs/dev/COMMAND_PROFILES_DESIGN.md.
@@ -162,6 +165,9 @@ type Context struct {
 	// Spill overrides the global spill settings for this context (D15). Nil
 	// fields inherit the global spill config.
 	Spill *SpillConfig `yaml:"spill,omitempty"`
+	// QueryLimits overrides the global query limits for this context. Unset
+	// fields inherit the global query-limits block.
+	QueryLimits *QueryLimits `yaml:"query-limits,omitempty"`
 }
 
 // SpillConfig holds the result-spill settings (D15). Threshold and TTL are kept
@@ -199,6 +205,85 @@ func (c *Config) EffectiveSpillConfig() SpillConfig {
 		if ov.TTL != "" {
 			merged.TTL = ov.TTL
 		}
+	}
+	return merged
+}
+
+// QueryLimits holds per-query execution caps for DQL-executing commands. They
+// are the config-file layer of the same knobs `dtctl query` exposes as flags:
+// an unset (zero) field inherits from the next layer in the precedence chain
+// (flag -> context-config -> global-config -> server default), so a config that
+// omits the block behaves exactly as before it existed.
+//
+// The point of the config layer is that a ceiling you have to remember to pass
+// is not a ceiling: `--default-scan-limit-gbytes 500` protects only the
+// invocations someone typed it on, whereas a context-level value also covers
+// generated queries, scripts, and agent-driven runs.
+type QueryLimits struct {
+	// ScanLimitGbytes caps the data scanned. Exceeding it returns a PARTIAL
+	// result rather than an error, so callers must read the notifications.
+	ScanLimitGbytes float64 `yaml:"scan-limit-gbytes,omitempty"`
+	// MaxResultRecords caps returned records (0 = server default, typically 1000).
+	MaxResultRecords int64 `yaml:"max-result-records,omitempty"`
+	// MaxResultBytes caps the result size in bytes.
+	MaxResultBytes int64 `yaml:"max-result-bytes,omitempty"`
+	// SamplingRatio applies DQL sampling to log/span fetches, trading exactness
+	// for scan volume. Results become extrapolated; dtctl flags this on every
+	// affected query.
+	SamplingRatio float64 `yaml:"sampling-ratio,omitempty"`
+}
+
+// IsZero reports whether no limit is set at all.
+func (q QueryLimits) IsZero() bool {
+	return q == QueryLimits{}
+}
+
+// Validate rejects negative limits. Only a positive value is ever sent to the
+// server (see pkg/exec), so a negative one would be dropped silently — leaving
+// the caller believing a ceiling is in force when none is. For a cap whose
+// whole purpose is to hold without being re-checked per invocation, that
+// failure mode is worse than refusing to start.
+func (q QueryLimits) Validate() error {
+	for _, f := range []struct {
+		key string
+		val float64
+	}{
+		{"scan-limit-gbytes", q.ScanLimitGbytes},
+		{"max-result-records", float64(q.MaxResultRecords)},
+		{"max-result-bytes", float64(q.MaxResultBytes)},
+		{"sampling-ratio", q.SamplingRatio},
+	} {
+		if f.val < 0 {
+			return fmt.Errorf("query-limits.%s must not be negative (got %g); omit it or use 0 to defer to the next layer", f.key, f.val)
+		}
+	}
+	return nil
+}
+
+// EffectiveQueryLimits merges the global query-limits block with the current
+// context's override (context wins per field, mirroring EffectiveSpillConfig).
+// The flag layer is applied by the caller on top of this base.
+//
+// Merging is per field rather than whole-block so a context can tighten one
+// knob (say a smaller scan ceiling) without having to restate the others.
+func (c *Config) EffectiveQueryLimits() QueryLimits {
+	merged := c.QueryLimits
+	ctx, err := c.CurrentContextObj()
+	if err != nil || ctx.QueryLimits == nil {
+		return merged
+	}
+	ov := ctx.QueryLimits
+	if ov.ScanLimitGbytes != 0 {
+		merged.ScanLimitGbytes = ov.ScanLimitGbytes
+	}
+	if ov.MaxResultRecords != 0 {
+		merged.MaxResultRecords = ov.MaxResultRecords
+	}
+	if ov.MaxResultBytes != 0 {
+		merged.MaxResultBytes = ov.MaxResultBytes
+	}
+	if ov.SamplingRatio != 0 {
+		merged.SamplingRatio = ov.SamplingRatio
 	}
 	return merged
 }

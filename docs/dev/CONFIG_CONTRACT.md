@@ -72,11 +72,20 @@ commands that create the binding would land in the file that needs it.
 
 YAML document. Top-level keys: `apiVersion`, `kind`, `current-context`,
 `contexts` (list of `{name, context}`), `tokens` (list of `{name, token}`),
-`preferences`, `aliases`, `spill`. Per-context keys: `environment`,
-`token-ref`, `safety-level` (`readonly` | `readwrite-mine` | `readwrite-all` |
-`dangerously-unrestricted`; empty means `readwrite-all`), `description`,
-`hooks`, `spill`. The Go structs in `sdk/session/config.go` are the schema's
-source of truth; `testdata/contract/v1-full.yaml` exercises every field.
+`preferences`, `aliases`, `spill`, `query-limits`. Per-context keys:
+`environment`, `token-ref`, `safety-level` (`readonly` | `readwrite-mine` |
+`readwrite-all` | `dangerously-unrestricted`; empty means `readwrite-all`),
+`description`, `hooks`, `spill`, `query-limits`. The Go structs in
+`sdk/session/config.go` are the schema's source of truth;
+`testdata/contract/v1-full.yaml` exercises every field.
+
+`query-limits` keys: `scan-limit-gbytes`, `max-result-records`,
+`max-result-bytes`, `sampling-ratio`. Like `spill`, the per-context block
+overrides the top-level one **per field**, and an unset (zero) field means
+"defer to the next layer" — so a reader that ignores the block behaves exactly
+as one that never knew about it. Values must be non-negative; the merge
+therefore only tightens, and lifting a configured limit is a command-line
+decision (`--no-query-limits`), not a config one.
 
 Semantics both binaries must share: `safety-level` (a `readonly` context means
 the same thing everywhere) and token resolution order (see below).
@@ -163,6 +172,9 @@ string. Management commands that rewrite the file must load with
 | `DTCTL_OUTPUT` | Default output format when `-o/--output` is not given (dtctl only). |
 | `DTCTL_DISABLE_KEYRING` | Disable the OS keyring (any non-empty value). |
 | `DTCTL_TOKEN_STORAGE` | `file` forces the file-based OAuth store. |
+| `DTCTL_CLIENT_ID` | OAuth client ID; supplying it with `DTCTL_CLIENT_SECRET` switches `auth login` to the client credentials grant. Flag `--client-id` wins over it. |
+| `DTCTL_CLIENT_SECRET` | OAuth client secret for that grant. Preferred over `--client-secret`, which is visible in the process table. |
+| `DTCTL_ACCOUNT_URN` | Account URN sent as the RFC 8707 resource indicator by the client credentials grant. Flag `--account-urn` wins over it. |
 
 **Sanctioned bypass: `cmd.Session`.** An embedded invocation can carry its own
 environment and token, and then none of this contract applies to it: no config
