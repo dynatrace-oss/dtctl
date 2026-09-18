@@ -241,3 +241,64 @@ func TestListPaginationStitchesPages(t *testing.T) {
 		t.Fatalf("got %d calls / %d items, want 3/3", calls, len(items))
 	}
 }
+
+func TestCentralEnrichmentModeJSON(t *testing.T) {
+	legacy := false
+	central := true
+	for _, test := range []struct {
+		name string
+		mode *bool
+	}{
+		{name: "omitted"},
+		{name: "legacy", mode: &legacy},
+		{name: "central", mode: &central},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			encoded, err := json.Marshal(AzureConfig{UseIngestEnrichmentConfig: test.mode})
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			var decoded AzureConfig
+			if err := json.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v", err)
+			}
+			if (decoded.UseIngestEnrichmentConfig != nil) != (test.mode != nil) {
+				t.Fatalf("mode presence did not survive round trip: %s", encoded)
+			}
+			if test.mode != nil && *decoded.UseIngestEnrichmentConfig != *test.mode {
+				t.Errorf("mode = %v, want %v", *decoded.UseIngestEnrichmentConfig, *test.mode)
+			}
+		})
+	}
+}
+
+// Both enrichment properties are nullable and modificationPolicy NEVER in the
+// extension schema: an update must echo the stored value back unchanged. That
+// only works if an explicit false survives the round trip instead of being
+// elided like a zero value, which is why these are *bool and not bool.
+func TestEnrichmentNeverFieldsRoundTripExplicitFalse(t *testing.T) {
+	no := false
+	encoded, err := json.Marshal(AzureConfig{
+		UseIngestEnrichmentConfig:          &no,
+		IngestEnrichmentMigrationProcessed: &no,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	for _, want := range []string{`"useIngestEnrichmentConfig":false`, `"ingestEnrichmentMigrationProcessed":false`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("encoded config %s does not contain %s", encoded, want)
+		}
+	}
+
+	var decoded AzureConfig
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.UseIngestEnrichmentConfig == nil || *decoded.UseIngestEnrichmentConfig {
+		t.Errorf("useIngestEnrichmentConfig = %v, want false", decoded.UseIngestEnrichmentConfig)
+	}
+	if decoded.IngestEnrichmentMigrationProcessed == nil || *decoded.IngestEnrichmentMigrationProcessed {
+		t.Errorf("ingestEnrichmentMigrationProcessed = %v, want false", decoded.IngestEnrichmentMigrationProcessed)
+	}
+}

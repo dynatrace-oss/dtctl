@@ -163,3 +163,60 @@ func TestListPaginationStitchesPages(t *testing.T) {
 		t.Fatalf("got %d calls / %d items, want 3/3", calls, len(items))
 	}
 }
+
+func TestCentralEnrichmentAndDtLabelsJSON(t *testing.T) {
+	central := true
+	config := GoogleCloudConfig{
+		UseIngestEnrichmentConfig: &central,
+		DtLabelsEnrichment: map[string]DtLabelMapping{
+			"dt.cost.product": {LabelKey: "product"},
+		},
+	}
+
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	var decoded GoogleCloudConfig
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.UseIngestEnrichmentConfig == nil || !*decoded.UseIngestEnrichmentConfig {
+		t.Fatalf("central mode did not survive round trip: %s", encoded)
+	}
+	mapping, ok := decoded.DtLabelsEnrichment["dt.cost.product"]
+	if !ok || mapping.LabelKey != "product" {
+		t.Fatalf("dtLabelsEnrichment did not survive round trip: %#v", decoded.DtLabelsEnrichment)
+	}
+}
+
+// Both enrichment properties are nullable and modificationPolicy NEVER in the
+// extension schema: an update must echo the stored value back unchanged. That
+// only works if an explicit false survives the round trip instead of being
+// elided like a zero value, which is why these are *bool and not bool.
+func TestEnrichmentNeverFieldsRoundTripExplicitFalse(t *testing.T) {
+	no := false
+	encoded, err := json.Marshal(GoogleCloudConfig{
+		UseIngestEnrichmentConfig:          &no,
+		IngestEnrichmentMigrationProcessed: &no,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	for _, want := range []string{`"useIngestEnrichmentConfig":false`, `"ingestEnrichmentMigrationProcessed":false`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("encoded config %s does not contain %s", encoded, want)
+		}
+	}
+
+	var decoded GoogleCloudConfig
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.UseIngestEnrichmentConfig == nil || *decoded.UseIngestEnrichmentConfig {
+		t.Errorf("useIngestEnrichmentConfig = %v, want false", decoded.UseIngestEnrichmentConfig)
+	}
+	if decoded.IngestEnrichmentMigrationProcessed == nil || *decoded.IngestEnrichmentMigrationProcessed {
+		t.Errorf("ingestEnrichmentMigrationProcessed = %v, want false", decoded.IngestEnrichmentMigrationProcessed)
+	}
+}

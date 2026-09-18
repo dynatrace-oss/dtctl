@@ -641,6 +641,80 @@ func TestApply_UnsupportedResourceType(t *testing.T) {
 	}
 }
 
+// decodeCloudSection pulls value.<cloudField> out of a monitoring-config
+// request body. It reports failures with t.Errorf rather than t.Fatalf: this
+// runs on the httptest server goroutine, where runtime.Goexit would abandon the
+// response and surface as an unrelated client-side EOF. Type assertions are
+// checked for the same reason — a panic here takes down the whole test binary.
+func decodeCloudSection(t *testing.T, w http.ResponseWriter, r *http.Request, cloudField string) (map[string]any, bool) {
+	t.Helper()
+
+	var body map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		t.Errorf("decode request: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return nil, false
+	}
+	value, ok := body["value"].(map[string]any)
+	if !ok {
+		t.Errorf("request body has no value object: %#v", body)
+		w.WriteHeader(http.StatusInternalServerError)
+		return nil, false
+	}
+	cloud, ok := value[cloudField].(map[string]any)
+	if !ok {
+		t.Errorf("request body has no value.%s object: %#v", cloudField, value)
+		w.WriteHeader(http.StatusInternalServerError)
+		return nil, false
+	}
+	return cloud, true
+}
+
+// --- Apply: AWS Monitoring Config (create, no objectId) ---
+
+func TestApply_AWSMonitoringConfig_PreservesCentralIntent(t *testing.T) {
+	const monitoringBase = "/platform/extensions/v2/extensions/com.dynatrace.extension.da-aws/monitoring-configurations"
+
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		monitoringBase: func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}})
+			case http.MethodPost:
+				aws, ok := decodeCloudSection(t, w, r, "aws")
+				if !ok {
+					return
+				}
+				// Both enrichment properties are modificationPolicy NEVER in the
+				// extension schema, so they have to survive the struct round-trip
+				// verbatim rather than be dropped or rewritten.
+				if aws["useIngestEnrichmentConfig"] != true {
+					t.Errorf("central intent was not preserved: %#v", aws)
+				}
+				if aws["ingestEnrichmentMigrationProcessed"] != true {
+					t.Errorf("migration marker was not preserved: %#v", aws)
+				}
+				w.WriteHeader(http.StatusCreated)
+				_ = json.NewEncoder(w).Encode(map[string]any{"objectId": "aws-new-1", "code": 201})
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	a := NewApplier(c)
+	data := `{"scope":"integration-aws","value":{"description":"My AWS Config","version":"1.0.0","aws":{"useIngestEnrichmentConfig":true,"ingestEnrichmentMigrationProcessed":true}}}`
+	results, err := a.Apply([]byte(data), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() AWSMonitoringConfig error = %v", err)
+	}
+	if len(results) != 1 || results[0].(*MonitoringConfigApplyResult).Action != ActionCreated {
+		t.Fatalf("Apply() results = %#v, want one created result", results)
+	}
+}
+
 // --- Apply: Azure Monitoring Config (create, no objectId) ---
 
 func TestApply_AzureMonitoringConfig_Create(t *testing.T) {
@@ -668,6 +742,16 @@ func TestApply_AzureMonitoringConfig_Create(t *testing.T) {
 					"totalCount": 0,
 				})
 			case http.MethodPost:
+				azure, ok := decodeCloudSection(t, w, r, "azure")
+				if !ok {
+					return
+				}
+				if azure["useIngestEnrichmentConfig"] != true {
+					t.Errorf("central intent was not preserved: %#v", azure)
+				}
+				if azure["ingestEnrichmentMigrationProcessed"] != false {
+					t.Errorf("migration marker was not preserved: %#v", azure)
+				}
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"objectId": "mc-new-1",
@@ -685,7 +769,7 @@ func TestApply_AzureMonitoringConfig_Create(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	azMonJSON := `{"scope":"integration-azure","value":{"description":"My Azure Config","subscriptionId":"sub-1","tenantId":"tenant-1","credentials":"cred-1"}}`
+	azMonJSON := `{"scope":"integration-azure","value":{"description":"My Azure Config","azure":{"useIngestEnrichmentConfig":true,"ingestEnrichmentMigrationProcessed":false}}}`
 	results, err := a.Apply([]byte(azMonJSON), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() AzureMonitoringConfig error = %v", err)
@@ -784,6 +868,13 @@ func TestApply_GCPMonitoringConfig_Create(t *testing.T) {
 					"items": []interface{}{}, "totalCount": 0,
 				})
 			case http.MethodPost:
+				gcp, ok := decodeCloudSection(t, w, r, "googleCloud")
+				if !ok {
+					return
+				}
+				if gcp["useIngestEnrichmentConfig"] != true || gcp["dtLabelsEnrichment"] == nil {
+					t.Errorf("central or dtLabels fields were not preserved: %#v", gcp)
+				}
 				w.WriteHeader(http.StatusOK)
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"objectId": "gmc-new-1",
@@ -799,7 +890,7 @@ func TestApply_GCPMonitoringConfig_Create(t *testing.T) {
 	defer srv.Close()
 	a := NewApplier(c)
 
-	gcpMonJSON := `{"scope":"integration-gcp","value":{"description":"My GCP Config","projectId":"my-proj","serviceAccountKey":"{}"}}`
+	gcpMonJSON := `{"scope":"integration-gcp","value":{"description":"My GCP Config","googleCloud":{"useIngestEnrichmentConfig":true,"dtLabelsEnrichment":{"dt.cost.product":{"labelKey":"product"}}}}}`
 	results, err := a.Apply([]byte(gcpMonJSON), ApplyOptions{})
 	if err != nil {
 		t.Fatalf("Apply() GCPMonitoringConfig error = %v", err)

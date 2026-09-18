@@ -111,6 +111,11 @@ Examples:
 			return fmt.Errorf("unsupported azure connection type %q", value.Type)
 		}
 
+		if dryRun {
+			fmt.Printf("Dry run: would update Azure connection %s\n", existing.ObjectID)
+			return nil
+		}
+
 		updated, err := handler.Update(existing.ObjectID, value)
 		if err != nil {
 			return err
@@ -185,6 +190,13 @@ Examples:
 		body, err := json.Marshal(payload)
 		if err != nil {
 			return fmt.Errorf("failed to prepare request payload: %w", err)
+		}
+
+		if dryRun {
+			fmt.Printf("Dry run: would update Azure monitoring config %s\n", existing.ObjectID)
+			fmt.Printf("Locations: %d\n", len(value.Azure.LocationFiltering))
+			fmt.Printf("Feature sets: %d\n", len(value.FeatureSets))
+			return nil
 		}
 
 		updated, err := handler.Update(existing.ObjectID, body)
