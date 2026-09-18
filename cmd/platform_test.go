@@ -247,7 +247,11 @@ func TestUsePlatformDescribeTextView(t *testing.T) {
 	}
 
 	t.Run("agent mode forces structured view", func(t *testing.T) {
+		// Restored: agentMode is package state, and leaving it on leaks into
+		// every test that runs after this one in the package.
+		prev := agentMode
 		agentMode = true
+		t.Cleanup(func() { agentMode = prev })
 		outputFormat = "table"
 		if got := usePlatformDescribeTextView(); got {
 			t.Fatalf("usePlatformDescribeTextView() = %v, want false when agent mode enabled", got)

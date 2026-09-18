@@ -374,6 +374,13 @@ func TestLegacyExperimentalEnvVarsStillEnableTheirFeature(t *testing.T) {
 // deprecated DTCTL_EXPERIMENTAL_* variables (plain os.Getenv) kept working —
 // making the spelling we want to retire the only reliable one.
 func TestEnvironmentOptInSurvivesAMissingConfig(t *testing.T) {
+	// Signposting is off in agent mode unconditionally, so this test has to
+	// state which mode it is asserting about rather than inherit whatever the
+	// previously-run test left in the package variable.
+	prev := agentMode
+	agentMode = false
+	t.Cleanup(func() { agentMode = prev })
+
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "absent.yaml"))
 
 	t.Setenv(config.DevelopmentEnvVar, "serve")
