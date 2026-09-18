@@ -251,7 +251,9 @@ This keeps conversion centralized in the handler. No changes needed in `cmd/` fi
 - Add a new section "Filter Format Conversion" explaining the DQL ↔ AST auto-conversion.
 - Note that users always write DQL, dtctl handles conversion transparently.
 
-**`docs/site/_docs/segments.md`**:
+**`docs/site/_docs/segments.md`** (that page now lives at
+[../resources/filter-segments.md](../resources/filter-segments.md) -- `docs/site/`
+is retired and holds only redirect stubs):
 - No changes needed to YAML examples (they already show DQL, which is correct).
 - Add a brief note under the `filter` field description: "dtctl automatically converts DQL filter expressions to the API's internal format."
 
@@ -282,7 +284,7 @@ make test                                     # Full suite
 | `pkg/resources/segment/segment_test.go` | Update mock servers to validate AST in requests and return AST in responses |
 | `test/integration/fixtures.go` | Fix `==` → `=` in three segment fixtures |
 | `docs/dev/SEGMENTS_DESIGN.md` | Add filter format conversion section |
-| `docs/site/_docs/segments.md` | Add note about auto-conversion |
+| `docs/site/_docs/segments.md` (now `docs/resources/filter-segments.md`) | Add note about auto-conversion |
 
 ### NOT Changed (by design)
 
