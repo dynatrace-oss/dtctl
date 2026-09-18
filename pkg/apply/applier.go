@@ -712,6 +712,22 @@ func (a *Applier) dryRun(resourceType ResourceType, data []byte, opts ApplyOptio
 		return a.dryRunAnomalyDetector(data)
 	}
 
+	// Cloud resources resolve create vs update from "objectId" plus a lookup of
+	// the live list by name, so each has its own dry run that repeats exactly
+	// that resolution. See https://github.com/dynatrace-oss/dtctl/issues/509
+	switch resourceType {
+	case ResourceAWSMonitoringConfig:
+		return a.dryRunAWSMonitoringConfig(data)
+	case ResourceAzureMonitoringConfig:
+		return a.dryRunAzureMonitoringConfig(data)
+	case ResourceGCPMonitoringConfig:
+		return a.dryRunGCPMonitoringConfig(data)
+	case ResourceAzureConnection:
+		return a.dryRunAzureConnection(doc)
+	case ResourceGCPConnection:
+		return a.dryRunGCPConnection(doc)
+	}
+
 	// For other resources, return basic info
 	id, _ := doc["id"].(string)
 	name, _ := doc["name"].(string)
@@ -719,15 +735,13 @@ func (a *Applier) dryRun(resourceType ResourceType, data []byte, opts ApplyOptio
 		name, _ = doc["title"].(string)
 	}
 
-	// Settings objects never carry an "id" field — they use "objectId" (camelCase)
-	// or "objectid" (lowercase). Check those fields so that dry-run agrees with
-	// actual apply for settings resources.
-	// See https://github.com/dynatrace-oss/dtctl/issues/256
-	if id == "" && resourceType == ResourceSettings {
-		id, _ = doc["objectId"].(string)
-		if id == "" {
-			id, _ = doc["objectid"].(string)
-		}
+	// Settings-style objects never carry an "id" field — they use "objectId"
+	// (camelCase) or "objectid" (lowercase). Read those so that dry-run agrees
+	// with actual apply for every resource that identifies itself that way, not
+	// just for the "settings" type.
+	// See https://github.com/dynatrace-oss/dtctl/issues/256 and /issues/509
+	if id == "" {
+		id = objectIDFromDoc(doc)
 	}
 
 	action := ActionCreated // assume create unless we can prove otherwise
@@ -743,6 +757,37 @@ func (a *Applier) dryRun(resourceType ResourceType, data []byte, opts ApplyOptio
 			Name:         name,
 		},
 	}, nil
+}
+
+// objectIDFromDoc reads the settings-style object id out of a decoded payload.
+// The field is spelled "objectId" by the API and "objectid" by a YAML
+// round-trip, and neither is ever an "id".
+func objectIDFromDoc(doc map[string]interface{}) string {
+	if id, _ := doc["objectId"].(string); id != "" {
+		return id
+	}
+	id, _ := doc["objectid"].(string)
+	return id
+}
+
+// monitoringConfigDryRun builds the dry-run result for a cloud monitoring
+// config once its apply path's create-vs-update resolution has run: a resolved
+// objectID means the apply issues a PUT.
+func monitoringConfigDryRun(resourceType, objectID, description, scope string, warnings []string) *DryRunResult {
+	action := ActionCreated
+	if objectID != "" {
+		action = ActionUpdated
+	}
+	return &DryRunResult{
+		ApplyResultBase: ApplyResultBase{
+			Action:       action,
+			ResourceType: resourceType,
+			ID:           objectID,
+			Name:         description,
+			Warnings:     warnings,
+		},
+		Scope: scope,
+	}
 }
 
 // capitalize capitalizes the first letter of a string

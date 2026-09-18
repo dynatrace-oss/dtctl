@@ -183,7 +183,7 @@ func TestApply_LookupNetworkError_DoesNotCreate(t *testing.T) {
 // A dry run resolves create vs update through the same lookup. Reporting
 // "would create" for a lookup the real apply refuses is its own bug class.
 func TestApply_DryRun_LookupError_Fails(t *testing.T) {
-	tc := lookupCases()[4] // dashboard: the only dry-run path with a lookup
+	tc := lookupCases()[4] // dashboard: the only lookupCases entry with a dry-run lookup
 	creates := 0
 	a, closeSrv := newLookupApplier(t, tc, http.StatusForbidden, &creates)
 	defer closeSrv()
@@ -216,16 +216,18 @@ func TestDryRunAnomalyDetector_TitleLookupError_Fails(t *testing.T) {
 	}
 }
 
-// The cloud appliers resolve create vs update by searching a list for a name.
-// A list that fails is not an empty list.
-func TestApply_CloudNameLookupError_DoesNotCreate(t *testing.T) {
+// cloudNameLookupCase describes one cloud resource whose create-vs-update
+// decision comes from searching a list for a name.
+type cloudNameLookupCase struct {
+	name     string
+	listPath string
+	payload  string
+	wantErr  string
+}
+
+func cloudNameLookupCases() []cloudNameLookupCase {
 	const settingsPath = "/platform/classic/environment-api/v2/settings/objects"
-	cases := []struct {
-		name     string
-		listPath string
-		payload  string
-		wantErr  string
-	}{
+	return []cloudNameLookupCase{
 		{
 			name:     "aws_monitoring_config",
 			listPath: "/platform/extensions/v2/extensions/com.dynatrace.extension.da-aws/monitoring-configurations",
@@ -257,28 +259,40 @@ func TestApply_CloudNameLookupError_DoesNotCreate(t *testing.T) {
 			wantErr:  `failed to check GCP connection "my-gcp-conn" existence`,
 		},
 	}
+}
 
-	for _, tc := range cases {
+// newCloudNameLookupApplier fails the name lookup with a 500 and counts the
+// create calls that a correct applier never makes.
+func newCloudNameLookupApplier(t *testing.T, tc cloudNameLookupCase, creates *int) (*Applier, func()) {
+	t.Helper()
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		tc.listPath: func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				*creates++
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[{"objectId":"obj-new"}]`))
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, `{"error":{"code":500,"message":"lookup failed"}}`)
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	return NewApplier(c), srv.Close
+}
+
+// The cloud appliers resolve create vs update by searching a list for a name.
+// A list that fails is not an empty list.
+func TestApply_CloudNameLookupError_DoesNotCreate(t *testing.T) {
+	for _, tc := range cloudNameLookupCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			creates := 0
-			srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
-				tc.listPath: func(w http.ResponseWriter, r *http.Request) {
-					if r.Method == http.MethodPost {
-						creates++
-						w.Header().Set("Content-Type", "application/json")
-						w.Write([]byte(`[{"objectId":"obj-new"}]`))
-						return
-					}
-					w.WriteHeader(http.StatusInternalServerError)
-					fmt.Fprint(w, `{"error":{"code":500,"message":"lookup failed"}}`)
-				},
-				"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusUnauthorized)
-				},
-			})
-			defer srv.Close()
+			a, closeSrv := newCloudNameLookupApplier(t, tc, &creates)
+			defer closeSrv()
 
-			_, err := NewApplier(c).Apply([]byte(tc.payload), ApplyOptions{})
+			_, err := a.Apply([]byte(tc.payload), ApplyOptions{})
 			if err == nil {
 				t.Fatal("Apply() error = nil, want the failed name lookup to stop apply")
 			}
@@ -287,6 +301,30 @@ func TestApply_CloudNameLookupError_DoesNotCreate(t *testing.T) {
 			}
 			if creates != 0 {
 				t.Errorf("create calls = %d, want 0: a failed lookup created a duplicate", creates)
+			}
+		})
+	}
+}
+
+// A dry run of a cloud resource resolves create vs update through the very
+// same name lookup (#509), so a failed lookup must fail the dry run instead of
+// reporting the create the apply behind it would refuse.
+func TestApply_CloudNameLookupError_FailsDryRun(t *testing.T) {
+	for _, tc := range cloudNameLookupCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			creates := 0
+			a, closeSrv := newCloudNameLookupApplier(t, tc, &creates)
+			defer closeSrv()
+
+			_, err := a.Apply([]byte(tc.payload), ApplyOptions{DryRun: true})
+			if err == nil {
+				t.Fatal("Apply(dry-run) error = nil, want the same failed lookup that stops the real apply")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error = %v, want it to contain %q", err, tc.wantErr)
+			}
+			if creates != 0 {
+				t.Errorf("create calls = %d, want 0: a dry run writes nothing", creates)
 			}
 		})
 	}
