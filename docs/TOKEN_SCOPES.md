@@ -335,6 +335,7 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | dashboard | `document:documents:read` |
 | document | `document:documents:read` |
 | edgeconnect | `app-engine:edge-connects:read` |
+| environment | `app-engine:apps:run` |
 | extension | `extensions:definitions:read` |
 | extension-config | `extensions:configurations:read` |
 | function | `app-engine:apps:run` |
@@ -344,6 +345,8 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | hub-extension | `hub:catalog:read` |
 | hub-extension-release | `hub:catalog:read` |
 | intent | `app-engine:apps:run` |
+| license | `app-engine:apps:run` |
+| license-settings | `app-engine:apps:run` |
 | lookup | `storage:files:read` |
 | lql-to-dql | `openpipeline:configurations:read` |
 | notebook | `document:documents:read` |
