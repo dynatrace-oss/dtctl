@@ -77,6 +77,23 @@ smartscapeNodes PROCESS             -- Preferred: query processes (dt.entity.pro
 timeseries avg(dt.host.cpu.usage)   -- Metrics (NOT fetch metrics)
 ```
 
+## Scan Cost (billable fetch)
+
+`fetch logs/events/bizevents/spans/security.events` bills by bytes scanned; `timeseries` on a metric does not. Prefer a metric when one exists. For general optimization guidance (command order, filter pushdown, cardinality, timeframe sizing) see [`dt-dql-essentials/references/optimization.md`](https://github.com/Dynatrace/dynatrace-for-ai/blob/main/skills/dt-dql-essentials/references/optimization.md); the dtctl-specific knobs are below.
+
+```dql
+fetch logs, from:now()-2h, scanLimitGBytes:50      -- hard ceiling on bytes read
+fetch logs, from:now()-7d, samplingRatio:1000      -- scan ~1/1000 of the data
+```
+
+- Always bound the timeframe inline (`from:`) — the tile/notebook timeframe is not a substitute in a saved query.
+- `scanLimitGBytes:` is a brake, not a filter: exceeding it returns a PARTIAL result, not an error.
+- `samplingRatio:` (power of 10, max 100000) trades exactness for scan volume on wide log/span windows. Extrapolate counts with `sum(dt.system.sampling_ratio)`, not `count()`.
+- Same knobs as dtctl flags when the query text is fixed: `--default-scan-limit-gbytes`, `--default-sampling-ratio`. `--include-contributions --metadata=contributions` reports per-bucket scan contribution — use it to find the heavy buckets, then restrict with `bucket:{"<bucket>"}`. `--default-scan-limit-gbytes -1` is unlimited.
+- Filter on the raw field (`filter loglevel == "ERROR"`), not on a transform of it (`filter lower(loglevel) == "error"`) — the latter defeats index pushdown and scans far more.
+- A PARTIAL or sampled result is not a complete answer. When Grail reports one, dtctl names the applicable reduction — a hint on stderr for humans, envelope `warnings`/`suggestions` in `--agent` mode. Act on it rather than reading the rows as final.
+- `limit N | summarize` vs `summarize | limit N` is a **semantic** choice (partial sample vs full aggregate), not a cost anti-pattern. Pick by intent.
+
 ## Essential Patterns
 
 ### Filter and select
