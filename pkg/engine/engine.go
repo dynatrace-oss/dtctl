@@ -12,6 +12,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/cmd"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
@@ -54,6 +55,29 @@ type Request struct {
 	// the visible command surface for this request. Empty is the full
 	// (service-supported) surface.
 	Profile string
+	// MinStability is the stability floor for this request: the weakest
+	// contract a command or flag may offer and still be reachable
+	// (stable | experimental). `development` is rejected — that tier is gated
+	// at registration, a stage earlier than the floor, and a request has no
+	// opt-in for it.
+	//
+	// Empty selects cmd.SessionDefaultMinStability — `stable`. That is
+	// stricter than the interactive CLI's default, and deliberately so: a
+	// request is unattended automation, nobody reads the `[Experimental]`
+	// badge on its behalf, and an experimental command's shape can change
+	// under a caller that pinned no dtctl version. Ask for `experimental`
+	// explicitly when the host is prepared to re-test on upgrade.
+	MinStability string
+	// StabilityExceptions admit individual below-floor commands and flags,
+	// each written as a command path optionally suffixed with one flag
+	// ("get breakpoints", "query --decode-snapshots").
+	//
+	// Prefer this to lowering MinStability: it keeps the request's widened
+	// surface to what the host has actually tested, instead of also picking up
+	// whatever lands in the experimental tier in the next release. Unlike the
+	// floor, there is no environment variable for exceptions — this field is
+	// the only way to express them in engine mode.
+	StabilityExceptions []string
 
 	// Files is the request's virtual filesystem: every file argument
 	// (`-f x.yaml`, `--data-file`, ...) resolves against it, and files the
@@ -183,6 +207,12 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 			EnvironmentURL: req.EnvironmentURL,
 			Token:          req.Token,
 			SafetyLevel:    config.SafetyLevel(req.SafetyLevel),
+			// Passed as typed fields rather than through env: the floor decides
+			// which commands exist for this request, so it must come from the
+			// request and not from whatever DTCTL_MIN_STABILITY the host process
+			// happens to carry (which Session scrubs for exactly that reason).
+			MinStability:        config.StabilityLevel(req.MinStability),
+			StabilityExceptions: req.StabilityExceptions,
 		},
 		Env:             env,
 		FS:              files,
@@ -243,6 +273,20 @@ func (r *Request) validate() error {
 		if !valid {
 			return fmt.Errorf("engine: invalid safety level %q", r.SafetyLevel)
 		}
+	}
+	if r.MinStability != "" {
+		level, err := config.ParseStabilityLevel(r.MinStability)
+		if err != nil || level == config.StabilityDevelopment {
+			return fmt.Errorf("engine: invalid minimum stability %q; valid levels are "+
+				"experimental, stable (development surface is not reachable from a request)",
+				r.MinStability)
+		}
+	}
+	// Rejected, not ignored: an exception the engine silently dropped would
+	// look like the command is simply gone, and the host would have no way to
+	// tell a typo from a tier it misjudged.
+	if _, err := stability.ParseExceptions(r.StabilityExceptions); err != nil {
+		return fmt.Errorf("engine: %w", err)
 	}
 	return nil
 }

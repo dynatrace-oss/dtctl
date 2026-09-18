@@ -137,6 +137,68 @@ func TestHandler_RequestErrors(t *testing.T) {
 	})
 }
 
+// TestHandler_StabilityFloorOverTheWire: the floor and its exceptions have to
+// be expressible in the protocol, or an HTTP client is stuck with the default
+// and every experimental command looks like it does not exist. The exception
+// form is the one to reach for — it widens the surface to what the operator
+// tested, not to whatever joins the tier next release.
+func TestHandler_StabilityFloorOverTheWire(t *testing.T) {
+	srv := httptest.NewServer(Handler(10<<20, engine.DefaultLimits()))
+	t.Cleanup(srv.Close)
+
+	const tenant = `"environmentUrl":"https://x.example.invalid","token":"t"`
+
+	decode := func(t *testing.T, body []byte) executeResponse {
+		t.Helper()
+		var out executeResponse
+		require.NoError(t, json.Unmarshal(body, &out))
+		return out
+	}
+
+	t.Run("default floor blocks the experimental tier", func(t *testing.T) {
+		resp, body := postExecute(t, srv, `{"command":"inventory --agent",`+tenant+`}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		out := decode(t, body)
+		require.NotZero(t, out.ExitCode)
+		require.Contains(t, out.Stdout, `"code":"stability_blocked"`)
+	})
+
+	t.Run("exception admits exactly what it names", func(t *testing.T) {
+		resp, body := postExecute(t, srv,
+			`{"command":"inventory --agent","stabilityExceptions":["inventory"],`+tenant+`}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NotContains(t, decode(t, body).Stdout, `"code":"stability_blocked"`)
+
+		resp, body = postExecute(t, srv,
+			`{"command":"get breakpoints --agent","stabilityExceptions":["inventory"],`+tenant+`}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Contains(t, decode(t, body).Stdout, `"code":"stability_blocked"`)
+	})
+
+	t.Run("lowering the floor grants the tier", func(t *testing.T) {
+		resp, body := postExecute(t, srv,
+			`{"command":"inventory --agent","minStability":"experimental",`+tenant+`}`)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NotContains(t, decode(t, body).Stdout, `"code":"stability_blocked"`)
+	})
+
+	// A request that never ran answers 4xx, not an exit code — a typo in the
+	// floor must not read as "that command is unavailable".
+	t.Run("a bad floor is a request error", func(t *testing.T) {
+		resp, body := postExecute(t, srv,
+			`{"command":"get buckets","minStability":"beta",`+tenant+`}`)
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Contains(t, string(body), "invalid minimum stability")
+	})
+
+	t.Run("development is not a floor value", func(t *testing.T) {
+		resp, body := postExecute(t, srv,
+			`{"command":"get buckets","minStability":"development",`+tenant+`}`)
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Contains(t, string(body), "not reachable from a request")
+	})
+}
+
 func TestHandler_Healthz(t *testing.T) {
 	srv := httptest.NewServer(Handler(1024, engine.DefaultLimits()))
 	t.Cleanup(srv.Close)

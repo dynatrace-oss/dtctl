@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
@@ -30,7 +31,35 @@ type Session struct {
 	// (readonly | readwrite-mine | readwrite-all | dangerously-unrestricted).
 	// Empty selects the dtctl default (readwrite-all).
 	SafetyLevel config.SafetyLevel
+	// MinStability is the stability floor for this invocation: the weakest
+	// contract a command or flag may offer and still be reachable
+	// (stable | experimental). `development` is rejected — that tier is gated
+	// at registration, a stage earlier than the floor, and a session has no
+	// opt-in for it.
+	//
+	// Empty selects SessionDefaultMinStability — `stable`, which is *stricter*
+	// than the CLI's default. The difference is deliberate: the CLI's default
+	// admits experimental surface because a human or interactive agent reads
+	// the `[Experimental]` badge and decides. An embedded caller reads no
+	// badge, and a service request is unattended automation by construction —
+	// precisely what "may change in any release" is a warning to. A host that
+	// wants the wider surface asks for it in this field.
+	MinStability config.StabilityLevel
+	// StabilityExceptions admit individual below-floor commands and flags,
+	// each written as a command path optionally suffixed with one flag
+	// ("get breakpoints", "query --decode-snapshots").
+	//
+	// This is the field a host reaches for rather than lowering the floor: a
+	// floor of `experimental` grants the entire experimental surface, including
+	// flags added to already-allowed stable commands in a later release, which
+	// is almost never what a service intended.
+	StabilityExceptions []string
 }
+
+// SessionDefaultMinStability is the floor a session-backed invocation gets
+// when it names none. See Session.MinStability for why it is stricter than the
+// CLI default.
+const SessionDefaultMinStability = config.StabilityStable
 
 // sessionContextName names the synthesized context. It appears in
 // safety-check messages ("Context 'session' does not allow ...").
@@ -69,6 +98,26 @@ func (s *Session) validate() error {
 			return fmt.Errorf("session: invalid safety level %q", s.SafetyLevel)
 		}
 	}
+	// Rejected rather than silently defaulted: for a floor, falling back would
+	// *widen* the surface the caller asked to restrict.
+	//
+	// `development` is refused alongside the outright typos, and the message
+	// says so rather than leaving it out of the valid list: that tier is gated
+	// at registration, one stage earlier than the floor, and a session offers
+	// no opt-in for that stage (see sessionScrubbedEnvVars). Accepting it would
+	// return an `experimental`-sized surface to a caller who believed it had
+	// asked for more.
+	if s.MinStability != "" {
+		level, err := config.ParseStabilityLevel(string(s.MinStability))
+		if err != nil || level == config.StabilityDevelopment {
+			return fmt.Errorf("session: invalid minimum stability %q; valid levels are "+
+				"experimental, stable (development surface is not reachable from a session)",
+				s.MinStability)
+		}
+	}
+	if _, err := stability.ParseExceptions(s.StabilityExceptions); err != nil {
+		return fmt.Errorf("session: %w", err)
+	}
 	return nil
 }
 
@@ -81,6 +130,10 @@ func (s *Session) syntheticConfig() *config.Config {
 	if level == "" {
 		level = config.DefaultSafetyLevel
 	}
+	floor := s.MinStability
+	if floor == "" {
+		floor = SessionDefaultMinStability
+	}
 	tokenRef := newSessionTokenRef()
 	cfg := &config.Config{
 		APIVersion:     config.CurrentAPIVersion,
@@ -92,6 +145,13 @@ func (s *Session) syntheticConfig() *config.Config {
 				Environment: s.EnvironmentURL,
 				TokenRef:    tokenRef,
 				SafetyLevel: level,
+				// The floor is materialized on the context rather than left to
+				// the resolver's default, so a session-backed run states its
+				// contract explicitly — `dtctl commands` then reports it, and
+				// an embedded agent can tell "does not exist" from "below the
+				// floor this deployment accepts".
+				MinStability:        floor,
+				StabilityExceptions: s.StabilityExceptions,
 			},
 		}},
 		Tokens: []config.NamedToken{{
@@ -126,11 +186,24 @@ var runSession *Session
 // (or redirect it) behind the HostDiskSpill capability's back.
 // DTCTL_TOKEN_STORAGE selects the credential backend (keyring vs. file); a
 // request must never reach any host credential store, so this is scrubbed too.
+//
+// DTCTL_MIN_STABILITY and DTCTL_DEVELOPMENT (with the deprecated
+// DTCTL_EXPERIMENTAL_* aliases) are scrubbed for the same reason as
+// DTCTL_PROFILE: they shape which commands exist for the invocation, and that
+// is the request's decision, not the host process's. Without the scrub a
+// variable the host set for its own CLI use would silently widen or narrow
+// every tenant's surface, and DTCTL_DEVELOPMENT could register unfinished
+// commands into a request that never asked for them. The floor and its
+// exceptions are per-request fields on Session instead; there is deliberately
+// no request field for development features — a service does not expose
+// surface that carries no contract at all.
 var sessionScrubbedEnvVars = []string{
 	"DTCTL_TOKEN", "DT_API_TOKEN", "DTCTL_ACCOUNT_TOKEN",
 	"DTCTL_CONFIG", "DTCTL_CONTEXT", "DTCTL_PROFILE", "DTCTL_OUTPUT",
 	"FORCE_COLOR", "NO_COLOR", "DTCTL_SPILL", "DTCTL_SPILL_DIR",
 	"DTCTL_TOKEN_STORAGE",
+	config.MinStabilityEnvVar, config.DevelopmentEnvVar,
+	"DTCTL_EXPERIMENTAL_ACCOUNT", "DTCTL_EXPERIMENTAL_SERVE",
 }
 
 // applyRunEnvironment installs the invocation's session and environment

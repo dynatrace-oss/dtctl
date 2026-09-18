@@ -52,8 +52,8 @@ for everything. Each entry is one audited risk acceptance:
 
 ` + "```bash" + `
 dtctl config set-context prod-agent --min-stability stable \
-  --stability-exception 'ingest' \
-  --stability-exception 'query --spill'
+  --stability-exception 'inventory' \
+  --stability-exception 'query --decode-snapshots'
 ` + "```" + `
 
 Development-tier features are enabled individually and never by a floor:
@@ -63,6 +63,27 @@ dtctl config list-development                 # what this build carries
 dtctl config set development.serve on         # persistent
 DTCTL_DEVELOPMENT=serve dtctl serve http      # one process
 ` + "```" + `
+
+### Embedded and service callers
+
+When dtctl is embedded (` + "`pkg/engine`" + `, ` + "`cmd.Session`" + `) the floor is a
+per-request field, and it defaults to ` + "`stable`" + ` rather than
+` + "`experimental`" + `. A request is unattended automation: nobody reads the
+` + "`[Experimental]`" + ` badge on its behalf. Widen it deliberately, and prefer
+naming the individual commands the host has tested over granting the whole tier:
+
+` + "```go" + `
+engine.Request{
+    Command:             "inventory --agent",
+    MinStability:        "",                      // stable, the safe default
+    StabilityExceptions: []string{"inventory"},   // just this one, audited
+}
+` + "```" + `
+
+Environment variables do not reach a session-backed run: ` + "`DTCTL_MIN_STABILITY`" + `
+and ` + "`DTCTL_DEVELOPMENT`" + ` are scrubbed, because which commands exist is the
+request's decision and not the host process's. See
+` + "`docs/dev/SERVICE_ENGINE_DESIGN.md`" + `.
 
 > **Versioning caveat.** ` + "`release-please-config.json`" + ` sets
 > ` + "`bump-minor-pre-major`" + `, so pre-1.0 a breaking change currently ships as a

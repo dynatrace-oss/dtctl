@@ -31,6 +31,9 @@ type executeRequest struct {
 	Token          string `json:"token"`
 	SafetyLevel    string `json:"safetyLevel,omitempty"`
 	Profile        string `json:"profile,omitempty"`
+	// Omitted means the engine default floor (`stable`), not the CLI's.
+	MinStability        string   `json:"minStability,omitempty"`
+	StabilityExceptions []string `json:"stabilityExceptions,omitempty"`
 
 	Files map[string]string `json:"files,omitempty"`
 	Stdin string            `json:"stdin,omitempty"`
@@ -104,8 +107,11 @@ func Handler(maxRequestBytes int64, limits engine.Limits) http.Handler {
 			Token:          req.Token,
 			SafetyLevel:    req.SafetyLevel,
 			Profile:        req.Profile,
-			Files:          files,
-			Stdin:          stdin,
+
+			MinStability:        req.MinStability,
+			StabilityExceptions: req.StabilityExceptions,
+			Files:               files,
+			Stdin:               stdin,
 			// Env is intentionally not exposed over HTTP: arbitrary variables
 			// reach proxies, exporters, and other process-level behavior.
 			// Embedding hosts that need it use engine.Request.Env directly.

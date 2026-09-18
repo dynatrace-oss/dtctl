@@ -98,7 +98,7 @@ Consequences to internalize before "optimizing" this:
   dispatches `serve` before the command pipeline, and why `dtctl serve http`
   refuses to run when `cmd.RunActive()` reports an invocation in progress.
 
-### Restriction has four independent axes
+### Restriction has five independent axes
 
 Do not conflate these; each answers a different question.
 
@@ -106,12 +106,45 @@ Do not conflate these; each answers a different question.
 |---|---|---|---|
 | Safety level | What may this command *do* to the tenant? | `pkg/safety` checks | `safety_blocked` |
 | Profile | Which commands *exist* for this caller? | `applyProfile` mask | `profile_blocked` |
+| Stability floor | Which commands *carry a contract* here? | `pkg/stability` mask | `stability_blocked` |
 | Environment | Which commands *make sense* here at all? | `BlockedCommands` mask | `unsupported_in_service` |
 | Capability | Which *host abilities* may this process use? | `cmd.Capabilities` gates | `capability_disabled` |
 
-The masks compose — profile and environment both apply to a run. The
+The masks compose — profile, stability and environment all apply to a run. The
 environment mask additionally guards non-runnable parents, so a blocked
 `config` cannot answer with its own help text and exit 0.
+
+#### The stability floor defaults *stricter* in the engine
+
+`Request.MinStability` defaults to `stable`, not to the CLI's `experimental`
+(`cmd.SessionDefaultMinStability`). The middle tier exists so that a human — or
+an interactive agent showing the human a `[Experimental]` badge — can knowingly
+use surface that may change in any minor release. A request has nobody to show
+the badge to: it is unattended automation, usually against a dtctl version the
+caller did not pin. Defaulting it into the experimental tier would let a minor
+upgrade change a shape the caller's own API had already promised onward.
+
+Two per-request fields widen it, and the second is almost always the right one:
+
+- `MinStability: "experimental"` grants the whole tier, including commands and
+  flags that join it in a later release.
+- `StabilityExceptions: []string{"inventory", "query --decode-snapshots"}`
+  grants exactly what the host has tested. There is no environment variable for
+  exceptions, so this field is the only way to express them in engine mode.
+
+`development` is rejected as a floor value. That tier is gated at
+*registration* — a stage earlier than the floor — and a session offers no
+opt-in for it, so accepting the value would return an `experimental`-sized
+surface to a caller who believed it had asked for more.
+
+`DTCTL_MIN_STABILITY` and `DTCTL_DEVELOPMENT` are in `sessionScrubbedEnvVars`
+for the same reason `DTCTL_PROFILE` is: they decide which commands exist, and
+that is the request's decision, not the host process's. A host that exported
+either one for its own CLI use must not thereby reshape every tenant's surface.
+
+An embedded agent discovers its own floor from `dtctl commands`, which reports
+`min_stability` and omits everything below it — so a block reads as "not
+available to you here", not as "this command does not exist".
 
 ## Rules for contributors
 

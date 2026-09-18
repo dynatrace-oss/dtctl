@@ -88,6 +88,97 @@ func TestSessionSyntheticConfig(t *testing.T) {
 	require.Equal(t, "tok", token)
 }
 
+// TestSessionSyntheticConfigCarriesStability: the floor is materialized on the
+// synthesized context rather than left to the resolver's default, so a
+// session-backed run states its stability contract the same way it states its
+// safety level — and `dtctl commands` can report it back.
+func TestSessionSyntheticConfigCarriesStability(t *testing.T) {
+	t.Run("empty floor selects the session default, not the CLI default", func(t *testing.T) {
+		ctx, err := (&Session{EnvironmentURL: "https://x.example.invalid", Token: "tok"}).
+			syntheticConfig().CurrentContextObj()
+		require.NoError(t, err)
+		require.Equal(t, SessionDefaultMinStability, ctx.MinStability)
+		require.Equal(t, config.StabilityStable, ctx.MinStability,
+			"an unattended caller reads no [Experimental] badge, so it gets the strict floor")
+		require.NotEqual(t, config.DefaultMinStability, ctx.MinStability,
+			"the divergence from the interactive default is the point of this field")
+	})
+
+	t.Run("explicit floor and exceptions reach the context", func(t *testing.T) {
+		ctx, err := (&Session{
+			EnvironmentURL:      "https://x.example.invalid",
+			Token:               "tok",
+			MinStability:        config.StabilityExperimental,
+			StabilityExceptions: []string{"query --decode-snapshots"},
+		}).syntheticConfig().CurrentContextObj()
+		require.NoError(t, err)
+		require.Equal(t, config.StabilityExperimental, ctx.MinStability)
+		require.Equal(t, []string{"query --decode-snapshots"}, ctx.StabilityExceptions)
+	})
+}
+
+// TestSessionValidatesStability: a floor or exception the caller got wrong
+// fails the request instead of being dropped. Silently ignoring either one
+// widens the surface the host meant to restrict — the opposite of the
+// mistake's intent.
+func TestSessionValidatesStability(t *testing.T) {
+	base := func() *Session {
+		return &Session{EnvironmentURL: "https://x.example.invalid", Token: "tok"}
+	}
+
+	s := base()
+	s.MinStability = "beta"
+	require.ErrorContains(t, s.validate(), "session:")
+
+	// The development tier is not a floor value: there is no way to reach that
+	// surface from a session, by design.
+	s = base()
+	s.MinStability = "development"
+	require.ErrorContains(t, s.validate(), "session:")
+
+	s = base()
+	s.StabilityExceptions = []string{"query --decode-snapshots --extra"}
+	require.ErrorContains(t, s.validate(), "session:")
+
+	s = base()
+	s.MinStability = config.StabilityExperimental
+	s.StabilityExceptions = []string{"get breakpoints", "query --decode-snapshots"}
+	require.NoError(t, s.validate())
+}
+
+// TestSessionScrubsSurfaceShapingEnvVars: which commands exist for a request
+// is the request's decision. A host process that set DTCTL_MIN_STABILITY or
+// DTCTL_DEVELOPMENT for its own CLI use must not thereby reshape every
+// tenant's surface — including registering development commands into requests
+// that never asked for them.
+func TestSessionScrubsSurfaceShapingEnvVars(t *testing.T) {
+	surfaceShaping := []string{
+		config.MinStabilityEnvVar,
+		config.DevelopmentEnvVar,
+		"DTCTL_EXPERIMENTAL_ACCOUNT",
+		"DTCTL_EXPERIMENTAL_SERVE",
+	}
+	for _, key := range surfaceShaping {
+		t.Setenv(key, "host-value")
+	}
+
+	cleanup, err := applyRunEnvironment(RunOptions{
+		Session: &Session{EnvironmentURL: "https://x.example.invalid", Token: "t"},
+	})
+	require.NoError(t, err)
+
+	for _, key := range surfaceShaping {
+		_, present := os.LookupEnv(key)
+		require.False(t, present, "%s must not survive into a session-backed run", key)
+	}
+
+	cleanup()
+
+	for _, key := range surfaceShaping {
+		require.Equal(t, "host-value", os.Getenv(key), "%s must be restored for the host", key)
+	}
+}
+
 // sessionMockEnv is a fake Dynatrace environment that records the
 // Authorization header and whether any mutating request arrived.
 type sessionMockEnv struct {
