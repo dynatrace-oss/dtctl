@@ -99,3 +99,32 @@ func (a *Applier) applyAWSMonitoringConfig(data []byte) (ApplyResult, error) {
 		Scope: config.Scope,
 	}, nil
 }
+
+// dryRunAWSMonitoringConfig reports what an apply would do to an AWS
+// monitoring configuration. It repeats applyAWSMonitoringConfig's
+// create-vs-update resolution — the payload's objectId first, then a lookup of
+// the live list by description — so that the dry run cannot promise a create
+// for a configuration the apply behind it overwrites (issue #509).
+func (a *Applier) dryRunAWSMonitoringConfig(data []byte) (ApplyResult, error) {
+	var config awsmonitoringconfig.AWSMonitoringConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse AWS monitoring config JSON: %w", err)
+	}
+
+	objectID := config.ObjectID
+	var warnings []string
+
+	if objectID == "" && config.Value.Description != "" {
+		handler := awsmonitoringconfig.NewHandler(a.client)
+		existing, err := handler.FindByName(config.Value.Description)
+		if err != nil && !errors.Is(err, awsmonitoringconfig.ErrNotFound) {
+			return nil, nameLookupError("AWS monitoring config", config.Value.Description, err)
+		}
+		if existing != nil {
+			stderrWarn(&warnings, "Found existing AWS monitoring config %q with ID: %s", config.Value.Description, existing.ObjectID)
+			objectID = existing.ObjectID
+		}
+	}
+
+	return monitoringConfigDryRun("aws_monitoring_config", objectID, config.Value.Description, config.Scope, warnings), nil
+}

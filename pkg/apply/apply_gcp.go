@@ -9,6 +9,55 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpmonitoringconfig"
 )
 
+// gcpConnectionItem holds the envelope fields a GCP connection payload carries
+// around its value. Parsing lives in one place so that apply and dry run
+// resolve the same object from the same document (issue #509).
+type gcpConnectionItem struct {
+	objectID string
+	schemaID string
+	scope    string
+	value    gcpconnection.Value
+}
+
+// parseGCPConnectionItem reads one GCP connection payload. Both the API
+// spelling ("objectId", "schemaId") and the YAML round-trip spelling
+// ("objectid", "schemaid") are accepted; an absent scope defaults to
+// "environment" and an absent type to serviceAccountImpersonation, the
+// defaults the apply path assumes.
+func parseGCPConnectionItem(item map[string]interface{}) (gcpConnectionItem, error) {
+	parsed := gcpConnectionItem{
+		objectID: objectIDFromDoc(item),
+	}
+
+	parsed.schemaID, _ = item["schemaId"].(string)
+	if parsed.schemaID == "" {
+		parsed.schemaID, _ = item["schemaid"].(string)
+	}
+
+	parsed.scope, _ = item["scope"].(string)
+	if parsed.scope == "" {
+		parsed.scope = "environment"
+	}
+
+	valueMap, ok := item["value"].(map[string]interface{})
+	if !ok {
+		return parsed, fmt.Errorf("GCP connection missing 'value' field")
+	}
+
+	valueJSON, err := json.Marshal(valueMap)
+	if err != nil {
+		return parsed, fmt.Errorf("failed to marshal value: %w", err)
+	}
+	if err := json.Unmarshal(valueJSON, &parsed.value); err != nil {
+		return parsed, fmt.Errorf("failed to unmarshal value: %w", err)
+	}
+	if parsed.value.Type == "" {
+		parsed.value.Type = gcpconnection.TypeServiceAccountImpersonation
+	}
+
+	return parsed, nil
+}
+
 // applyGCPConnection applies GCP connection configuration
 func (a *Applier) applyGCPConnection(data []byte) ([]ApplyResult, error) {
 	var items []map[string]interface{}
@@ -26,38 +75,11 @@ func (a *Applier) applyGCPConnection(data []byte) ([]ApplyResult, error) {
 	var results []ApplyResult
 	var resultWarnings []string
 	for _, item := range items {
-		objectID, _ := item["objectId"].(string)
-		if objectID == "" {
-			objectID, _ = item["objectid"].(string)
-		}
-
-		schemaID, _ := item["schemaId"].(string)
-		if schemaID == "" {
-			schemaID, _ = item["schemaid"].(string)
-		}
-
-		scope, _ := item["scope"].(string)
-		if scope == "" {
-			scope = "environment"
-		}
-
-		valueMap, ok := item["value"].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("GCP connection missing 'value' field")
-		}
-
-		valueJSON, err := json.Marshal(valueMap)
+		parsed, err := parseGCPConnectionItem(item)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal value: %w", err)
+			return nil, err
 		}
-
-		var value gcpconnection.Value
-		if err := json.Unmarshal(valueJSON, &value); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal value: %w", err)
-		}
-		if value.Type == "" {
-			value.Type = "serviceAccountImpersonation"
-		}
+		objectID, schemaID, scope, value := parsed.objectID, parsed.schemaID, parsed.scope, parsed.value
 
 		if objectID == "" {
 			existing, err := handler.FindByNameAndType(value.Name, value.Type)
@@ -208,4 +230,69 @@ func (a *Applier) applyGCPMonitoringConfig(data []byte) (ApplyResult, error) {
 		},
 		Scope: config.Scope,
 	}, nil
+}
+
+// dryRunGCPConnection reports what an apply would do to a GCP connection,
+// resolving create vs update exactly as applyGCPConnection does: the payload's
+// objectId first, then a search of the live list by name and type (issue #509).
+func (a *Applier) dryRunGCPConnection(item map[string]interface{}) (ApplyResult, error) {
+	parsed, err := parseGCPConnectionItem(item)
+	if err != nil {
+		return nil, err
+	}
+
+	objectID := parsed.objectID
+
+	if objectID == "" {
+		handler := gcpconnection.NewHandler(a.client)
+		existing, err := handler.FindByNameAndType(parsed.value.Name, parsed.value.Type)
+		if err != nil {
+			return nil, nameLookupError("GCP connection", parsed.value.Name, err)
+		}
+		if existing != nil {
+			objectID = existing.ObjectID
+		}
+	}
+
+	action := ActionCreated
+	if objectID != "" {
+		action = ActionUpdated
+	}
+
+	return &DryRunResult{
+		ApplyResultBase: ApplyResultBase{
+			Action:       action,
+			ResourceType: "gcp_connection",
+			ID:           objectID,
+			Name:         parsed.value.Name,
+		},
+		Scope: parsed.scope,
+	}, nil
+}
+
+// dryRunGCPMonitoringConfig reports what an apply would do to a GCP monitoring
+// configuration, resolving create vs update exactly as
+// applyGCPMonitoringConfig does (issue #509).
+func (a *Applier) dryRunGCPMonitoringConfig(data []byte) (ApplyResult, error) {
+	var config gcpmonitoringconfig.GCPMonitoringConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse GCP monitoring config JSON: %w", err)
+	}
+
+	objectID := config.ObjectID
+	var warnings []string
+
+	if objectID == "" && config.Value.Description != "" {
+		handler := gcpmonitoringconfig.NewHandler(a.client)
+		existing, err := handler.FindByName(config.Value.Description)
+		if err != nil && !errors.Is(err, gcpmonitoringconfig.ErrNotFound) {
+			return nil, nameLookupError("GCP monitoring config", config.Value.Description, err)
+		}
+		if existing != nil {
+			stderrWarn(&warnings, "Found existing GCP monitoring config %q with ID: %s", config.Value.Description, existing.ObjectID)
+			objectID = existing.ObjectID
+		}
+	}
+
+	return monitoringConfigDryRun("gcp_monitoring_config", objectID, config.Value.Description, config.Scope, warnings), nil
 }

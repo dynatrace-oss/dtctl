@@ -13,6 +13,52 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azuremonitoringconfig"
 )
 
+// azureConnectionItem holds the envelope fields an Azure connection payload
+// carries around its value. Parsing lives in one place so that apply and dry
+// run resolve the same object from the same document (issue #509).
+type azureConnectionItem struct {
+	objectID string
+	schemaID string
+	scope    string
+	value    azureconnection.Value
+}
+
+// parseAzureConnectionItem reads one Azure connection payload. Both the API
+// spelling ("objectId", "schemaId") and the YAML round-trip spelling
+// ("objectid", "schemaid") are accepted, and an absent scope defaults to
+// "environment" exactly as the apply path assumes.
+func parseAzureConnectionItem(item map[string]interface{}) (azureConnectionItem, error) {
+	parsed := azureConnectionItem{
+		objectID: objectIDFromDoc(item),
+	}
+
+	parsed.schemaID, _ = item["schemaId"].(string)
+	if parsed.schemaID == "" {
+		parsed.schemaID, _ = item["schemaid"].(string)
+	}
+
+	parsed.scope, _ = item["scope"].(string)
+	if parsed.scope == "" {
+		parsed.scope = "environment"
+	}
+
+	valueMap, ok := item["value"].(map[string]interface{})
+	if !ok {
+		return parsed, fmt.Errorf("azure connection missing 'value' field")
+	}
+
+	// Convert valueMap to Value struct
+	valueJSON, err := json.Marshal(valueMap)
+	if err != nil {
+		return parsed, fmt.Errorf("failed to marshal value: %w", err)
+	}
+	if err := json.Unmarshal(valueJSON, &parsed.value); err != nil {
+		return parsed, fmt.Errorf("failed to unmarshal value: %w", err)
+	}
+
+	return parsed, nil
+}
+
 // applyAzureConnection applies Azure connection (credential)
 func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 	// Azure connection input might be a single object or a list of setting objects
@@ -34,40 +80,14 @@ func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 	var results []ApplyResult
 	var resultWarnings []string
 	for _, item := range items {
-		objectID, _ := item["objectId"].(string)
-		if objectID == "" {
-			objectID, _ = item["objectid"].(string)
-		}
-
-		schemaID, _ := item["schemaId"].(string)
-		if schemaID == "" {
-			schemaID, _ = item["schemaid"].(string)
-		}
-
-		scope, _ := item["scope"].(string)
-
-		if scope == "" {
-			scope = "environment"
-		}
-
-		valueMap, ok := item["value"].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("azure connection missing 'value' field")
-		}
-
-		// Convert valueMap to Value struct
-		valueJSON, err := json.Marshal(valueMap)
+		parsed, err := parseAzureConnectionItem(item)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal value: %w", err)
+			return nil, err
 		}
-
-		var value azureconnection.Value
-		if err := json.Unmarshal(valueJSON, &value); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal value: %w", err)
-		}
+		objectID, schemaID, scope, value := parsed.objectID, parsed.schemaID, parsed.scope, parsed.value
 
 		// Auto-lookup for Federated Credentials if ObjectID is missing
-		if objectID == "" && value.Type == "federatedIdentityCredential" {
+		if objectID == "" && value.Type == azureconnection.TypeFederatedIdentityCredential {
 			existing, err := handler.FindByNameAndType(value.Name, value.Type)
 			if err != nil {
 				return nil, nameLookupError("Azure connection", value.Name, err)
@@ -331,4 +351,73 @@ func printFederatedErrorSnippet(baseURL, objectID, clientID, issuerOverride stri
 	// Use format validated by user: "{'key': 'value'}"
 	fmt.Fprintf(os.Stderr, "az ad app federated-credential create --id %q --parameters \"{'name': 'fd-Federated-Credential', 'issuer': '%s', 'subject': 'dt:connection-id/%s', 'audiences': ['%s/svc-id/com.dynatrace.da']}\"\n", clientID, issuer, objectID, host)
 	fmt.Fprintln(os.Stderr)
+}
+
+// dryRunAzureConnection reports what an apply would do to an Azure connection.
+// It repeats applyAzureConnection's create-vs-update resolution: the payload's
+// objectId first, then — for federated credentials, the only type apply looks
+// up — a search of the live list by name and type (issue #509).
+func (a *Applier) dryRunAzureConnection(item map[string]interface{}) (ApplyResult, error) {
+	parsed, err := parseAzureConnectionItem(item)
+	if err != nil {
+		return nil, err
+	}
+
+	objectID := parsed.objectID
+	var warnings []string
+
+	if objectID == "" && parsed.value.Type == azureconnection.TypeFederatedIdentityCredential {
+		handler := azureconnection.NewHandler(a.client)
+		existing, err := handler.FindByNameAndType(parsed.value.Name, parsed.value.Type)
+		if err != nil {
+			return nil, nameLookupError("Azure connection", parsed.value.Name, err)
+		}
+		if existing != nil {
+			stderrWarn(&warnings, "Found existing Federated Credential connection %q (ID: %s), switching to update mode", parsed.value.Name, existing.ObjectID)
+			objectID = existing.ObjectID
+		}
+	}
+
+	action := ActionCreated
+	if objectID != "" {
+		action = ActionUpdated
+	}
+
+	return &DryRunResult{
+		ApplyResultBase: ApplyResultBase{
+			Action:       action,
+			ResourceType: "azure_connection",
+			ID:           objectID,
+			Name:         parsed.value.Name,
+			Warnings:     warnings,
+		},
+		Scope: parsed.scope,
+	}, nil
+}
+
+// dryRunAzureMonitoringConfig reports what an apply would do to an Azure
+// monitoring configuration, resolving create vs update exactly as
+// applyAzureMonitoringConfig does (issue #509).
+func (a *Applier) dryRunAzureMonitoringConfig(data []byte) (ApplyResult, error) {
+	var config azuremonitoringconfig.AzureMonitoringConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse Azure monitoring config JSON: %w", err)
+	}
+
+	objectID := config.ObjectID
+	var warnings []string
+
+	if objectID == "" && config.Value.Description != "" {
+		handler := azuremonitoringconfig.NewHandler(a.client)
+		existing, err := handler.FindByName(config.Value.Description)
+		if err != nil && !errors.Is(err, azuremonitoringconfig.ErrNotFound) {
+			return nil, nameLookupError("Azure monitoring config", config.Value.Description, err)
+		}
+		if existing != nil {
+			stderrWarn(&warnings, "Found existing Azure monitoring config %q with ID: %s", config.Value.Description, existing.ObjectID)
+			objectID = existing.ObjectID
+		}
+	}
+
+	return monitoringConfigDryRun("azure_monitoring_config", objectID, config.Value.Description, config.Scope, warnings), nil
 }
