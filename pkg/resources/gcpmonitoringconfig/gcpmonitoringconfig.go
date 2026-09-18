@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -199,7 +200,7 @@ func (h *Handler) ListAvailableLocations() ([]Location, error) {
 	}
 
 	var schema ExtensionSchemaResponse
-	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, latestVersion)
+	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, url.PathEscape(latestVersion))
 	resp, err := h.client.HTTP().R().SetResult(&schema).Get(schemaEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch extension schema: %w", err)
@@ -233,7 +234,7 @@ func (h *Handler) ListAvailableFeatureSets() ([]FeatureSet, error) {
 	}
 
 	var schema ExtensionSchemaResponse
-	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, latestVersion)
+	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, url.PathEscape(latestVersion))
 	resp, err := h.client.HTTP().R().SetResult(&schema).Get(schemaEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch extension schema: %w", err)

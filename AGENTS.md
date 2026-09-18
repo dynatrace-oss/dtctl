@@ -245,6 +245,21 @@ func (h *Handler) Get(id string) (*Resource, error)
 func (h *Handler) List(opts ListOptions) ([]Resource, error)
 ```
 
+**Every value interpolated into a request path goes through `url.PathEscape`.**
+
+```go
+Delete(fmt.Sprintf("/platform/slo/v1/slos/%s", url.PathEscape(id)))
+```
+
+An id arrives from a command line or an applied file. Spliced in raw, one
+containing `/`, `?` or `#` addresses a *different* resource and the request
+succeeds against it — `delete slo "<id>#x"` reported success while deleting
+`<id>`, because net/http drops the fragment before sending. `url.PathEscape`
+keeps `:` intact, so `%s:execute`-style action suffixes still work.
+`httpclient.CheckRequestPath` refuses an unescaped path at run time and
+`test/requestpath` catches the omission at build time, but neither is a reason
+to leave it out.
+
 **CLI handler** (in `pkg/resources/<name>/`): imports SDK types (often via type alias) and wraps with file I/O, display fields, etc.
 
 ## Generic API Access

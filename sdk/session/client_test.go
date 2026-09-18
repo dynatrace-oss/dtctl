@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-resty/resty/v2"
 )
 
 func TestNew(t *testing.T) {
@@ -139,9 +141,18 @@ func TestIsRetryable(t *testing.T) {
 		t.Error("isRetryable() should return false for 200 response")
 	}
 
-	// Test with error - should retry
-	if !isRetryable(nil, http.ErrServerClosed) {
-		t.Error("isRetryable() should return true for error")
+	// A transport error still carries a response: resty builds one around the
+	// request before calling the transport, and only leaves RawResponse nil. That
+	// is the case worth retrying.
+	if !isRetryable(&resty.Response{Request: resp.Request}, http.ErrServerClosed) {
+		t.Error("isRetryable() should return true for a transport error")
+	}
+
+	// No response at all means the request never left the process -- resty
+	// returns (nil, err) from a before-request middleware. Retrying cannot change
+	// the outcome, and resty dereferences the nil response to prepare the retry.
+	if isRetryable(nil, http.ErrServerClosed) {
+		t.Error("isRetryable() should return false when the request was never sent")
 	}
 }
 
