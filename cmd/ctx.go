@@ -191,7 +191,7 @@ var ctxDeleteCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		deleteCredential, _ := cmd.Flags().GetBool("delete-credentials")
-		return deleteContext(args[0], deleteCredential)
+		return deleteContext(cmd, args[0], deleteCredential)
 	},
 }
 
@@ -396,7 +396,7 @@ func setContext(name, environment, tokenRef, safetyLevel, description, profile s
 // opt-in because a token ref can be shared between contexts, but the default
 // leaves a usable credential behind, so that case is called out explicitly —
 // a silently orphaned token is what sends callers to the OS keychain tooling.
-func deleteContext(name string, deleteCredential bool) error {
+func deleteContext(cmd *cobra.Command, name string, deleteCredential bool) error {
 	// loadRawConfig, not loadConfigRaw: this command rewrites the config file,
 	// and the expanding loader would resolve every ${VAR} in it and save the
 	// resolved values back — writing credentials into the file in plaintext.
@@ -437,11 +437,15 @@ func deleteContext(name string, deleteCredential bool) error {
 	}
 
 	if dryRun {
-		fmt.Printf("Dry run: would delete context %q\n", name)
+		report := newDryRunReport(cmd).
+			Linef("Dry run: would delete context %q", name).
+			Detail("context", "%s", name)
 		if deleteCredential && tokenRef != "" {
-			fmt.Printf("Would also delete credentials %q\n", tokenRef)
+			report.
+				Linef("Would also delete credentials %q", tokenRef).
+				Detail("credentials", "%s", tokenRef)
 		}
-		return nil
+		return report.Print()
 	}
 
 	if deleteCredential && tokenRef != "" {

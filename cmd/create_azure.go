@@ -102,9 +102,10 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would create Azure connection\n")
-			fmt.Printf("Name: %s\n", createAzureConnectionName)
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would create Azure connection").
+				Field("Name", "%s", createAzureConnectionName).
+				Print()
 		}
 
 		created, err := handler.Create(azureconnection.AzureConnectionCreate{Value: value})
@@ -176,12 +177,13 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would create Azure monitoring config (disabled)\n")
-			fmt.Printf("Name: %s\n", createAzureMonitoringConfigName)
-			fmt.Printf("Version: %s\n", version)
-			fmt.Printf("Locations: %d\n", len(locations))
-			fmt.Printf("Feature sets: %d\n", len(featureSets))
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would create Azure monitoring config (disabled)").
+				Field("Name", "%s", createAzureMonitoringConfigName).
+				Field("Version", "%s", version).
+				Field("Locations", "%d", len(locations)).
+				Field("Feature sets", "%d", len(featureSets)).
+				Print()
 		}
 
 		created, err := monitoringHandler.Create(body)

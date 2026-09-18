@@ -79,14 +79,15 @@ Examples:
 
 		// Handle dry-run
 		if dryRun {
-			fmt.Printf("Dry run: would create bucket\n")
-			fmt.Printf("Name: %s\n", req.BucketName)
-			fmt.Printf("Table: %s\n", req.Table)
-			fmt.Printf("Retention: %d days\n", req.RetentionDays)
+			report := newDryRunReport(cmd).
+				Linef("Dry run: would create bucket").
+				Field("Name", "%s", req.BucketName).
+				Field("Table", "%s", req.Table).
+				Field("Retention", "%d days", req.RetentionDays)
 			if req.DisplayName != "" {
-				fmt.Printf("Display Name: %s\n", req.DisplayName)
+				report.Field("Display Name", "%s", req.DisplayName)
 			}
-			return nil
+			return report.Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationCreate)

@@ -78,9 +78,11 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would update AWS connection %s\n", existing.ObjectID)
-			fmt.Printf("Role ARN: %s\n", updateAWSConnectionRoleArn)
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would update AWS connection %s", existing.ObjectID).
+				Detail("object_id", "%s", existing.ObjectID).
+				Field("Role ARN", "%s", updateAWSConnectionRoleArn).
+				Print()
 		}
 
 		updated, err := handler.Update(existing.ObjectID, value)
@@ -164,10 +166,12 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would update AWS monitoring config %s\n", existing.ObjectID)
-			fmt.Printf("Regions: %s\n", strings.Join(value.Aws.RegionFiltering, ","))
-			fmt.Printf("Feature sets: %d\n", len(value.FeatureSets))
-			return nil
+			return newDryRunReport(cmd).
+				Linef("Dry run: would update AWS monitoring config %s", existing.ObjectID).
+				Detail("object_id", "%s", existing.ObjectID).
+				Field("Regions", "%s", strings.Join(value.Aws.RegionFiltering, ",")).
+				Field("Feature sets", "%d", len(value.FeatureSets)).
+				Print()
 		}
 
 		updated, err := handler.Update(existing.ObjectID, body)

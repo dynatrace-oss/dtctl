@@ -67,12 +67,16 @@ Examples:
 		}
 
 		if dryRun {
-			fmt.Printf("Dry run: would share document %q with %d recipient(s) (%s access)\n",
-				documentID, len(recipients), access)
+			report := newDryRunReport(cmd).
+				Linef("Dry run: would share document %q with %d recipient(s) (%s access)",
+					documentID, len(recipients), access).
+				Detail("document", "%s", documentID).
+				Detail("access", "%s", access).
+				Detail("recipients", "%d", len(recipients))
 			for _, r := range recipients {
-				fmt.Printf("  - %s: %s\n", r.Type, r.ID)
+				report.Linef("  - %s: %s", r.Type, r.ID)
 			}
-			return nil
+			return report.Print()
 		}
 
 		cfg, c, err := SetupClient()
@@ -179,13 +183,17 @@ Examples:
 		}
 
 		if dryRun {
+			report := newDryRunReport(cmd).Detail("document", "%s", documentID)
 			if all {
-				fmt.Printf("Dry run: would remove all shares from document %q\n", documentID)
+				report.Linef("Dry run: would remove all shares from document %q", documentID)
 			} else {
-				fmt.Printf("Dry run: would remove %d user(s) and %d group(s) from document %q shares\n",
-					len(users), len(groups), documentID)
+				report.
+					Linef("Dry run: would remove %d user(s) and %d group(s) from document %q shares",
+						len(users), len(groups), documentID).
+					Detail("users", "%d", len(users)).
+					Detail("groups", "%d", len(groups))
 			}
-			return nil
+			return report.Print()
 		}
 
 		cfg, c, err := SetupClient()

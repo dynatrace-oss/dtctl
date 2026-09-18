@@ -121,32 +121,34 @@ Examples:
 
 		// Handle dry-run
 		if dryRun {
-			fmt.Printf("Dry run: would create lookup table\n")
-			fmt.Printf("Path: %s\n", req.FilePath)
-			fmt.Printf("Lookup Field: %s\n", req.LookupField)
+			report := newDryRunReport(cmd).
+				Linef("Dry run: would create lookup table").
+				Field("Path", "%s", req.FilePath).
+				Field("Lookup Field", "%s", req.LookupField)
 			if req.DisplayName != "" {
-				fmt.Printf("Display Name: %s\n", req.DisplayName)
+				report.Field("Display Name", "%s", req.DisplayName)
 			}
 			if req.Description != "" {
-				fmt.Printf("Description: %s\n", req.Description)
+				report.Field("Description", "%s", req.Description)
 			}
 			if req.ParsePattern != "" {
-				fmt.Printf("Parse Pattern: %s\n", req.ParsePattern)
-				fmt.Printf("File Size: %d bytes\n", len(fileData))
-				return nil
+				return report.
+					Field("Parse Pattern", "%s", req.ParsePattern).
+					Field("File Size", "%d bytes", len(fileData)).
+					Print()
 			}
 
 			prepared, err := lookup.PrepareCSV(fileData)
 			if err != nil {
 				return fmt.Errorf("failed to detect CSV pattern: %w", err)
 			}
-			fmt.Printf("Parse Pattern: %s (auto-detected)\n", prepared.Pattern)
-			fmt.Printf("Records: %d\n", prepared.DataRecords)
+			report.
+				Field("Parse Pattern", "%s (auto-detected)", prepared.Pattern).
+				Field("Records", "%d", prepared.DataRecords)
 			if prepared.Normalized {
-				fmt.Printf("Note: CSV will be re-emitted with %s separators (quoted cells, padded rows or CRLF line endings)\n", prepared.Delimiter)
+				report.Linef("Note: CSV will be re-emitted with %s separators (quoted cells, padded rows or CRLF line endings)", prepared.Delimiter)
 			}
-			fmt.Printf("File Size: %d bytes\n", len(prepared.Content))
-			return nil
+			return report.Field("File Size", "%d bytes", len(prepared.Content)).Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationCreate)

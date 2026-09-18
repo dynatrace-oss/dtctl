@@ -249,7 +249,7 @@ func TestConfigDeleteCredentialsCmd(t *testing.T) {
 	// Deleting a credential a context still names must succeed: the context is
 	// simply unusable until a new credential is stored. Refusing would leave
 	// the caller with no supported way to remove the secret.
-	if err := deleteCredentials("dev-token"); err != nil {
+	if err := deleteCredentials(mustFindCmd("config", "delete-credentials"), "dev-token"); err != nil {
 		t.Fatalf("deleteCredentials() error = %v", err)
 	}
 
@@ -283,7 +283,7 @@ func TestConfigDeleteCredentialsCmd_Idempotent(t *testing.T) {
 	}
 
 	// A teardown step must be safe to re-run after a partial or repeated cleanup.
-	if err := deleteCredentials("never-stored"); err != nil {
+	if err := deleteCredentials(mustFindCmd("config", "delete-credentials"), "never-stored"); err != nil {
 		t.Errorf("deleteCredentials() for missing credential = %v, want nil", err)
 	}
 }
@@ -304,7 +304,7 @@ func TestDeleteContext_DeleteCredentials(t *testing.T) {
 		t.Fatalf("failed to save config: %v", err)
 	}
 
-	if err := deleteContext("incident", true); err != nil {
+	if err := deleteContext(mustFindCmd("config", "delete-context"), "incident", true); err != nil {
 		t.Fatalf("deleteContext() error = %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestDeleteContext_KeepsCredentialByDefault(t *testing.T) {
 		t.Fatalf("failed to save config: %v", err)
 	}
 
-	if err := deleteContext("incident", false); err != nil {
+	if err := deleteContext(mustFindCmd("config", "delete-context"), "incident", false); err != nil {
 		t.Fatalf("deleteContext() error = %v", err)
 	}
 
@@ -369,7 +369,7 @@ func TestDeleteContext_RefusesSharedCredential(t *testing.T) {
 	}
 
 	// Deleting one context must not silently break the other.
-	err := deleteContext("incident", true)
+	err := deleteContext(mustFindCmd("config", "delete-context"), "incident", true)
 	if err == nil {
 		t.Fatal("deleteContext() error = nil, want refusal for a shared credential")
 	}
@@ -435,8 +435,8 @@ tokens:
 		name string
 		run  func() error
 	}{
-		{"delete-credentials", func() error { return deleteCredentials("doomed-token") }},
-		{"delete-context --delete-credentials", func() error { return deleteContext("doomed", true) }},
+		{"delete-credentials", func() error { return deleteCredentials(mustFindCmd("config", "delete-credentials"), "doomed-token") }},
+		{"delete-context --delete-credentials", func() error { return deleteContext(mustFindCmd("config", "delete-context"), "doomed", true) }},
 	}
 
 	for _, tc := range cases {
@@ -497,8 +497,8 @@ func TestCredentialTeardownHonorsDryRun(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"delete-credentials", func() error { return deleteCredentials("keep-token") }},
-		{"delete-context", func() error { return deleteContext("keep-ctx", true) }},
+		{"delete-credentials", func() error { return deleteCredentials(mustFindCmd("config", "delete-credentials"), "keep-token") }},
+		{"delete-context", func() error { return deleteContext(mustFindCmd("config", "delete-context"), "keep-ctx", true) }},
 	}
 
 	for _, tc := range cases {
@@ -573,7 +573,19 @@ func TestDryRunPreviewMatchesRealRun(t *testing.T) {
 	dryRun = true
 	defer func() { dryRun = false }()
 
-	if err := deleteContext("a", true); err == nil {
+	if err := deleteContext(mustFindCmd("config", "delete-context"), "a", true); err == nil {
 		t.Error("dry run reported success for a shared credential the real run refuses")
 	}
+}
+
+// mustFindCmd resolves a real command out of the command tree. The delete
+// helpers take the *cobra.Command they were invoked from, because a dry run
+// reads the verb and resource for its envelope off it; a test must therefore
+// hand them the same command production does, not a synthetic one.
+func mustFindCmd(path ...string) *cobra.Command {
+	c, _, err := rootCmd.Find(path)
+	if err != nil {
+		panic(err)
+	}
+	return c
 }

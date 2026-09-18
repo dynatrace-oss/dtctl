@@ -59,13 +59,13 @@ Examples:
 		}
 
 		if file != "" {
-			return runUploadExtension(file)
+			return runUploadExtension(cmd, file)
 		}
-		return runInstallHubExtension(hubExtension, version)
+		return runInstallHubExtension(cmd, hubExtension, version)
 	},
 }
 
-func runUploadExtension(file string) error {
+func runUploadExtension(cmd *cobra.Command, file string) error {
 	// Read the zip file
 	zipData, err := vfs.ReadFile(file)
 	if err != nil {
@@ -73,8 +73,11 @@ func runUploadExtension(file string) error {
 	}
 
 	if dryRun {
-		fmt.Printf("Dry run: would upload extension from %s (%d bytes)\n", file, len(zipData))
-		return nil
+		return newDryRunReport(cmd).
+			Linef("Dry run: would upload extension from %s (%d bytes)", file, len(zipData)).
+			Detail("file", "%s", file).
+			Detail("size_bytes", "%d", len(zipData)).
+			Print()
 	}
 
 	_, c, err := SetupWithSafety(safety.OperationCreate)
@@ -94,14 +97,19 @@ func runUploadExtension(file string) error {
 	return nil
 }
 
-func runInstallHubExtension(extensionID, version string) error {
+func runInstallHubExtension(cmd *cobra.Command, extensionID, version string) error {
 	if dryRun {
+		report := newDryRunReport(cmd).Detail("extension", "%s", extensionID)
 		if version != "" {
-			fmt.Printf("Dry run: would install Hub extension %q version %s\n", extensionID, version)
+			report.
+				Linef("Dry run: would install Hub extension %q version %s", extensionID, version).
+				Detail("version", "%s", version)
 		} else {
-			fmt.Printf("Dry run: would install Hub extension %q (latest version)\n", extensionID)
+			report.
+				Linef("Dry run: would install Hub extension %q (latest version)", extensionID).
+				Detail("version", "latest")
 		}
-		return nil
+		return report.Print()
 	}
 
 	_, c, err := SetupWithSafety(safety.OperationCreate)
