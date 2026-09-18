@@ -104,6 +104,33 @@ dtctl ctx delete old-env          # Delete a context
 dtctl ctx token prod              # Print the resolved token for a context (defaults to current)
 ```
 
+### Delete Contexts and Credentials
+
+Deleting a context leaves the credential it referenced in place, so removing
+both is two decisions:
+
+```bash
+# Delete a context, keep the credential
+dtctl config delete-context old-env
+
+# Delete a context and the credential it references
+dtctl config delete-context old-env --delete-credentials
+
+# Delete a credential on its own (shared, or context already gone)
+dtctl config delete-credentials old-token
+```
+
+`delete-context --delete-credentials` refuses as a no-op when the credential is
+shared with other contexts, and the error names the command that removes it for
+all of them. `delete-credentials` on its own always deletes, warning if a
+context still points at the now-missing credential. Both honor `--dry-run`.
+
+> Remove credentials only with these commands — they clear every entry a
+> credential occupies, which a direct OS keychain delete does not. Never use
+> `security`, `secret-tool`, or `cmdkey` on dtctl credentials. To confirm a
+> credential is gone, use `dtctl auth status`, which reports presence without
+> printing the token.
+
 ### One-Time Context Override
 
 Run a single command against a different context without switching:

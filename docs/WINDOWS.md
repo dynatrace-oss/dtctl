@@ -277,7 +277,7 @@ This is 5.1-specific: on PowerShell 7.3+ the backslashes are passed through lite
 
 When results look suspicious, `-vv` shows the exact query dtctl sent — always check there first.
 
-See the [DQL Queries](QUICK_START.md#powershell-quoting-issues-and-solutions) section in the Quick Start guide for more examples.
+See [DQL Queries](resources/dql-queries.md#windows-powershell-quoting) for more examples.
 
 ### Line Continuation
 
@@ -312,15 +312,20 @@ $workflows | Where-Object { $_.title -like "*daily*" }
 
 ### Environment Variables
 
-Set environment variables for dtctl in PowerShell:
+The environment URL lives in a context, not in an environment variable. Select a
+context (and point at a config file) like this:
 
 ```powershell
 # Temporary (current session)
-$env:DTCTL_ENVIRONMENT = "https://abc12345.apps.dynatrace.com"
+$env:DTCTL_CONTEXT = "my-env"
 
 # Persistent (current user)
-[Environment]::SetEnvironmentVariable('DTCTL_ENVIRONMENT', 'https://abc12345.apps.dynatrace.com', 'User')
+[Environment]::SetEnvironmentVariable('DTCTL_CONTEXT', 'my-env', 'User')
 ```
+
+Other variables dtctl reads: `DTCTL_CONFIG` (explicit config path), `DTCTL_TOKEN`
+(token, supplied out of band), `DTCTL_OUTPUT`, `DTCTL_PROFILE`, and the spill
+settings. See **[CONFIGURATION.md](CONFIGURATION.md)** for the full list.
 
 ## Windows Terminal and cmd.exe
 

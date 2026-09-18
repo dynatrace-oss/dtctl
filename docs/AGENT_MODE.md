@@ -351,10 +351,10 @@ dtctl apply -f workflow.yaml --dry-run
 
 ### Diff
 
-Use `--diff` to see what would change before applying:
+Use `--show-diff` to see what would change when updating an existing resource:
 
 ```bash
-dtctl apply -f workflow.yaml --diff
+dtctl apply -f workflow.yaml --show-diff
 ```
 
 ### Verbose output
@@ -367,13 +367,19 @@ dtctl get workflows -v --agent
 
 ### Environment variables
 
-Configure dtctl without interactive commands:
+Point dtctl at a prepared config and supply the token out of band, so an agent
+never runs an interactive login:
 
 ```bash
-export DTCTL_ENVIRONMENT="https://abc12345.apps.dynatrace.com"
+export DTCTL_CONFIG="$PWD/.dtctl.yaml"   # explicit config file (also trusts its hooks)
+export DTCTL_CONTEXT="prod"              # pick a context for this invocation
 export DTCTL_TOKEN="dt0s16.XXXXXXXX.YYYYYYYY"
 dtctl get workflows --agent
 ```
+
+The environment URL comes from the context, not from the environment. There is
+no `DTCTL_ENVIRONMENT`; create the context once with `dtctl config set-context`
+(see [Configuration](CONFIGURATION.md)) and select it with `DTCTL_CONTEXT`.
 
 ### Pipeline commands
 

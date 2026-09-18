@@ -8,7 +8,7 @@
 
 ## Overview
 
-dtctl provides a powerful interface for executing Dynatrace Query Language (DQL) queries directly from your terminal. Run ad-hoc queries inline, load them from files, use template variables, and stream live results. Large results can spill to a local file with a compact summary returned in their place, and `dtctl inspect` reads a spilled file's rows locally without re-querying Grail. `dtctl wait query` polls a query until a record-count condition is met, and `dtctl verify query` validates syntax without executing. See [Filter Segments](filter-segments) for applying segments at query time.
+dtctl provides a powerful interface for executing Dynatrace Query Language (DQL) queries directly from your terminal. Run ad-hoc queries inline, load them from files, use template variables, and stream live results. Large results can spill to a local file with a compact summary returned in their place, and `dtctl inspect` reads a spilled file's rows locally without re-querying Grail. `dtctl wait query` polls a query until a record-count condition is met, and `dtctl verify query` validates syntax without executing. See [Filter Segments](filter-segments.md) for applying segments at query time.
 
 ## Supported operations
 
@@ -43,7 +43,7 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 | `--width` / `--height` / `--fullscreen` | Terminal chart dimensions (chart output formats) |
 | `--decode-snapshots` | Decode Live Debugger snapshot payloads (see [Live Debugger](../LIVE_DEBUGGER.md)) |
 | `--spill*` | Spill large results to a file (see Output below) |
-| `-S` / `--segment`, `-V` / `--segment-var`, `--segments-file` | Apply filter segments (see [Filter Segments](filter-segments)) |
+| `-S` / `--segment`, `-V` / `--segment-var`, `--segments-file` | Apply filter segments (see [Filter Segments](filter-segments.md)) |
 | `--live` / `--interval` | Live mode with periodic refresh |
 | `--set` | Set a template variable (`key=value`) |
 | `-f` / `--file` | Read the query from a file (`-` for stdin) |
@@ -229,7 +229,7 @@ fetch logs
 '@ | dtctl query
 ```
 
-A here-string is a string value, not a redirection like a bash heredoc, so `dtctl query @'...'@` still goes through argument parsing. `dtctl query -f - @'...'@` is rejected, because `-f -` points at stdin while the query sits in the arguments. See the Windows quoting notes in the dtctl repository docs for more detail.
+A here-string is a string value, not a redirection like a bash heredoc, so `dtctl query @'...'@` still goes through argument parsing. `dtctl query -f - @'...'@` is rejected, because `-f -` points at stdin while the query sits in the arguments. See [Quoting](../WINDOWS.md#quoting) in the Windows guide for the per-version breakdown.
 
 ### Filter segment variables
 
