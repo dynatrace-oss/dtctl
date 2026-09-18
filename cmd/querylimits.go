@@ -32,13 +32,20 @@ func addQueryLimitFlags(cmd *cobra.Command) {
 // Flags().Changed rather than against the flag values.
 //
 // --no-query-limits drops the config layers but keeps explicit flags, so it
-// means "ignore what the config says", not "ignore what I just typed".
-func resolveQueryLimits(cmd *cobra.Command, cfg *config.Config) config.QueryLimits {
+// means "ignore what the config says", not "ignore what I just typed". It is
+// also the only way to loosen a configured limit: zero means "inherit" at every
+// config layer, so a context can tighten a global ceiling but never lift it.
+func resolveQueryLimits(cmd *cobra.Command, cfg *config.Config) (config.QueryLimits, error) {
 	var base config.QueryLimits
 	// A nil config (embedded invocation, or a command run without a usable
 	// context) resolves against the server defaults; flags still apply.
 	if cfg != nil && !queryLimitsDisabled(cmd) {
 		base = cfg.EffectiveQueryLimits()
+		// Validate the merged block, so the error names the value actually in
+		// effect rather than whichever layer happened to spell it.
+		if err := base.Validate(); err != nil {
+			return config.QueryLimits{}, err
+		}
 	}
 
 	lim := base
@@ -76,7 +83,7 @@ func resolveQueryLimits(cmd *cobra.Command, cfg *config.Config) config.QueryLimi
 		output.PrintInfo("applying query limits from config: %s (use --%s to ignore them)",
 			describeQueryLimits(fromConfig), noQueryLimitsFlag)
 	}
-	return lim
+	return lim, nil
 }
 
 // queryLimitsDisabled reports whether this invocation opted out of the

@@ -418,7 +418,10 @@ block behaves exactly as it did before the section existed, and an explicit
 `--default-scan-limit-gbytes 0` still means "use the server default" rather than
 inheriting the configured ceiling.
 
-To ignore the configured limits for a single invocation:
+Because zero means "defer to the next layer" at every config layer, the merge
+only ever tightens: a context can lower a global ceiling but cannot lift one,
+and a negative value is rejected rather than silently ignored. Lifting a
+configured limit is a command-line decision:
 
 ```bash
 dtctl query 'fetch logs, from:now()-30d | summarize count()' --no-query-limits

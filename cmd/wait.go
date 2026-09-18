@@ -141,7 +141,10 @@ Examples:
 		}
 
 		// Get query execution options (reuse flags from query command)
-		queryLimits := resolveQueryLimits(cmd, cfg)
+		queryLimits, err := resolveQueryLimits(cmd, cfg)
+		if err != nil {
+			return err
+		}
 		fetchTimeoutSeconds, _ := cmd.Flags().GetInt32("fetch-timeout-seconds")
 		defaultTimeframeStart, _ := cmd.Flags().GetString("default-timeframe-start")
 		defaultTimeframeEnd, _ := cmd.Flags().GetString("default-timeframe-end")

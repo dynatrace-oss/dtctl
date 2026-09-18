@@ -238,6 +238,28 @@ func (q QueryLimits) IsZero() bool {
 	return q == QueryLimits{}
 }
 
+// Validate rejects negative limits. Only a positive value is ever sent to the
+// server (see pkg/exec), so a negative one would be dropped silently — leaving
+// the caller believing a ceiling is in force when none is. For a cap whose
+// whole purpose is to hold without being re-checked per invocation, that
+// failure mode is worse than refusing to start.
+func (q QueryLimits) Validate() error {
+	for _, f := range []struct {
+		key string
+		val float64
+	}{
+		{"scan-limit-gbytes", q.ScanLimitGbytes},
+		{"max-result-records", float64(q.MaxResultRecords)},
+		{"max-result-bytes", float64(q.MaxResultBytes)},
+		{"sampling-ratio", q.SamplingRatio},
+	} {
+		if f.val < 0 {
+			return fmt.Errorf("query-limits.%s must not be negative (got %g); omit it or use 0 to defer to the next layer", f.key, f.val)
+		}
+	}
+	return nil
+}
+
 // EffectiveQueryLimits merges the global query-limits block with the current
 // context's override (context wins per field, mirroring EffectiveSpillConfig).
 // The flag layer is applied by the caller on top of this base.

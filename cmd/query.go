@@ -230,7 +230,10 @@ Examples:
 		// Query limits resolve flag -> context config -> global config -> server
 		// default, so a context-level ceiling also covers invocations that never
 		// passed the flags. See resolveQueryLimits.
-		queryLimits := resolveQueryLimits(cmd, cfg)
+		queryLimits, err := resolveQueryLimits(cmd, cfg)
+		if err != nil {
+			return err
+		}
 
 		// Get query execution options
 		fetchTimeoutSeconds, _ := cmd.Flags().GetInt32("fetch-timeout-seconds")

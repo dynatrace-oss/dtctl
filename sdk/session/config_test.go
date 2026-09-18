@@ -3454,3 +3454,28 @@ func TestConfig_QueryLimitsRoundTrip(t *testing.T) {
 		t.Errorf("context round-trip = %+v, want sampling 100", ctx.QueryLimits)
 	}
 }
+
+func TestQueryLimits_Validate(t *testing.T) {
+	if err := (QueryLimits{ScanLimitGbytes: 500, MaxResultRecords: 5000, MaxResultBytes: 1024, SamplingRatio: 100}).Validate(); err != nil {
+		t.Errorf("valid block: error = %v, want nil", err)
+	}
+	// Zero everywhere is the "defer to the next layer" case, not an error.
+	if err := (QueryLimits{}).Validate(); err != nil {
+		t.Errorf("empty block: error = %v, want nil", err)
+	}
+	for name, lim := range map[string]QueryLimits{
+		"scan-limit-gbytes":  {ScanLimitGbytes: -1},
+		"max-result-records": {MaxResultRecords: -1},
+		"max-result-bytes":   {MaxResultBytes: -1},
+		"sampling-ratio":     {SamplingRatio: -0.5},
+	} {
+		err := lim.Validate()
+		if err == nil {
+			t.Errorf("negative %s: error = nil, want rejection", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("negative %s: error = %q, want it to name the key", name, err)
+		}
+	}
+}

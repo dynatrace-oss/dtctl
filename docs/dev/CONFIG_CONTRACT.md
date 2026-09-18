@@ -83,7 +83,9 @@ YAML document. Top-level keys: `apiVersion`, `kind`, `current-context`,
 `max-result-bytes`, `sampling-ratio`. Like `spill`, the per-context block
 overrides the top-level one **per field**, and an unset (zero) field means
 "defer to the next layer" — so a reader that ignores the block behaves exactly
-as one that never knew about it.
+as one that never knew about it. Values must be non-negative; the merge
+therefore only tightens, and lifting a configured limit is a command-line
+decision (`--no-query-limits`), not a config one.
 
 Semantics both binaries must share: `safety-level` (a `readonly` context means
 the same thing everywhere) and token resolution order (see below).

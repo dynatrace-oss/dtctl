@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -32,14 +33,25 @@ func configWithLimits(global config.QueryLimits, ctxOverride *config.QueryLimits
 	}
 }
 
+// mustResolve fails the test if resolution errors; every case below uses a
+// valid block, so an error is always a bug in the code under test.
+func mustResolve(t *testing.T, cmd *cobra.Command, cfg *config.Config) config.QueryLimits {
+	t.Helper()
+	lim, err := resolveQueryLimits(cmd, cfg)
+	if err != nil {
+		t.Fatalf("resolveQueryLimits: unexpected error: %v", err)
+	}
+	return lim
+}
+
 func TestResolveQueryLimits_NoConfigIsServerDefault(t *testing.T) {
-	got := resolveQueryLimits(newQueryLimitsTestCmd(), &config.Config{})
+	got := mustResolve(t, newQueryLimitsTestCmd(), &config.Config{})
 	if !got.IsZero() {
 		t.Errorf("empty config = %+v, want all zero (server defaults)", got)
 	}
 
 	// A nil config must not panic: embedded invocations have no config at all.
-	if got := resolveQueryLimits(newQueryLimitsTestCmd(), nil); !got.IsZero() {
+	if got := mustResolve(t, newQueryLimitsTestCmd(), nil); !got.IsZero() {
 		t.Errorf("nil config = %+v, want all zero", got)
 	}
 }
@@ -47,7 +59,7 @@ func TestResolveQueryLimits_NoConfigIsServerDefault(t *testing.T) {
 func TestResolveQueryLimits_GlobalConfigApplies(t *testing.T) {
 	cfg := configWithLimits(config.QueryLimits{ScanLimitGbytes: 500, MaxResultRecords: 5000}, nil)
 
-	got := resolveQueryLimits(newQueryLimitsTestCmd(), cfg)
+	got := mustResolve(t, newQueryLimitsTestCmd(), cfg)
 	if got.ScanLimitGbytes != 500 {
 		t.Errorf("scan limit = %g, want 500", got.ScanLimitGbytes)
 	}
@@ -67,7 +79,7 @@ func TestResolveQueryLimits_ContextBeatsGlobalPerField(t *testing.T) {
 		&config.QueryLimits{ScanLimitGbytes: 50},
 	)
 
-	got := resolveQueryLimits(newQueryLimitsTestCmd(), cfg)
+	got := mustResolve(t, newQueryLimitsTestCmd(), cfg)
 	if got.ScanLimitGbytes != 50 {
 		t.Errorf("scan limit = %g, want 50 (context override)", got.ScanLimitGbytes)
 	}
@@ -81,7 +93,7 @@ func TestResolveQueryLimits_FlagBeatsConfig(t *testing.T) {
 
 	c := newQueryLimitsTestCmd()
 	_ = c.Flags().Set("default-scan-limit-gbytes", "10")
-	if got := resolveQueryLimits(c, cfg); got.ScanLimitGbytes != 10 {
+	if got := mustResolve(t, c, cfg); got.ScanLimitGbytes != 10 {
 		t.Errorf("scan limit = %g, want 10 (flag wins)", got.ScanLimitGbytes)
 	}
 }
@@ -93,7 +105,7 @@ func TestResolveQueryLimits_ExplicitZeroFlagMeansServerDefault(t *testing.T) {
 
 	c := newQueryLimitsTestCmd()
 	_ = c.Flags().Set("default-scan-limit-gbytes", "0")
-	got := resolveQueryLimits(c, cfg)
+	got := mustResolve(t, c, cfg)
 	if got.ScanLimitGbytes != 0 {
 		t.Errorf("scan limit = %g, want 0 (explicit flag beats config)", got.ScanLimitGbytes)
 	}
@@ -107,7 +119,7 @@ func TestResolveQueryLimits_NoQueryLimitsDropsConfigButKeepsFlags(t *testing.T) 
 
 	c := newQueryLimitsTestCmd()
 	_ = c.Flags().Set(noQueryLimitsFlag, "true")
-	if got := resolveQueryLimits(c, cfg); !got.IsZero() {
+	if got := mustResolve(t, c, cfg); !got.IsZero() {
 		t.Errorf("--no-query-limits = %+v, want all zero", got)
 	}
 
@@ -115,7 +127,7 @@ func TestResolveQueryLimits_NoQueryLimitsDropsConfigButKeepsFlags(t *testing.T) 
 	c = newQueryLimitsTestCmd()
 	_ = c.Flags().Set(noQueryLimitsFlag, "true")
 	_ = c.Flags().Set("max-result-records", "42")
-	got := resolveQueryLimits(c, cfg)
+	got := mustResolve(t, c, cfg)
 	if got.MaxResultRecords != 42 {
 		t.Errorf("max records = %d, want 42 (explicit flag survives the opt-out)", got.MaxResultRecords)
 	}
@@ -131,7 +143,7 @@ func TestResolveQueryLimits_CommandWithoutOptOutFlag(t *testing.T) {
 	c.Flags().Int64("max-result-records", 0, "")
 
 	cfg := configWithLimits(config.QueryLimits{MaxResultRecords: 100}, nil)
-	if got := resolveQueryLimits(c, cfg); got.MaxResultRecords != 100 {
+	if got := mustResolve(t, c, cfg); got.MaxResultRecords != 100 {
 		t.Errorf("max records = %d, want 100", got.MaxResultRecords)
 	}
 }
@@ -151,5 +163,45 @@ func TestQueryLimitFlagsRegistered(t *testing.T) {
 		if c.Flags().Lookup(noQueryLimitsFlag) == nil {
 			t.Errorf("%s: --%s not registered", c.CommandPath(), noQueryLimitsFlag)
 		}
+	}
+}
+
+// A negative limit never reaches the server (pkg/exec only forwards positive
+// values), so accepting one would report a ceiling that is not in force.
+func TestResolveQueryLimits_NegativeConfigIsRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		lim  config.QueryLimits
+		want string
+	}{
+		{"scan", config.QueryLimits{ScanLimitGbytes: -1}, "query-limits.scan-limit-gbytes"},
+		{"records", config.QueryLimits{MaxResultRecords: -1}, "query-limits.max-result-records"},
+		{"bytes", config.QueryLimits{MaxResultBytes: -1}, "query-limits.max-result-bytes"},
+		{"sampling", config.QueryLimits{SamplingRatio: -1}, "query-limits.sampling-ratio"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := resolveQueryLimits(newQueryLimitsTestCmd(), configWithLimits(tc.lim, nil))
+			if err == nil {
+				t.Fatalf("negative %s: error = nil, want rejection", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to name %q", err, tc.want)
+			}
+		})
+	}
+
+	// A bad value in a context override is caught the same way...
+	_, err := resolveQueryLimits(newQueryLimitsTestCmd(),
+		configWithLimits(config.QueryLimits{ScanLimitGbytes: 500}, &config.QueryLimits{ScanLimitGbytes: -2}))
+	if err == nil {
+		t.Error("negative context override: error = nil, want rejection")
+	}
+
+	// ...but --no-query-limits drops the config layers entirely, so an
+	// unusable block must not brick the escape hatch out of it.
+	c := newQueryLimitsTestCmd()
+	_ = c.Flags().Set(noQueryLimitsFlag, "true")
+	if _, err := resolveQueryLimits(c, configWithLimits(config.QueryLimits{ScanLimitGbytes: -1}, nil)); err != nil {
+		t.Errorf("--no-query-limits with a bad config: error = %v, want nil", err)
 	}
 }
