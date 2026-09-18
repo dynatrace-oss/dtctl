@@ -471,3 +471,6 @@ command group can be added without breaking the schema above.
 5. **Catalog metadata + `--agent` envelope** -- surface `profile` + `safety_level`.
 6. **Docs** -- user-facing page under `docs/site/_docs/`, cross-linked with
    `context-safety-levels.md` and `ai-agent-mode.md`.
+   (As shipped: the page is the "Command Profiles" section of
+   [../CONFIGURATION.md](../CONFIGURATION.md#command-profiles) -- `docs/site/` is
+   retired and holds only redirect stubs.)
