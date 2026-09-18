@@ -24,13 +24,17 @@ per-request deadlines are all still subject to change, so a released build does
 not expose the command until you ask for it:
 
 ```bash
-export DTCTL_EXPERIMENTAL_SERVE=1
-dtctl serve http
+dtctl config set development.serve on     # persistent
+DTCTL_DEVELOPMENT=serve dtctl serve http  # one process
 ```
 
-Without the variable, `dtctl serve` is an ordinary unknown command — it does not
-appear in `--help` or in the `dtctl commands` catalog. This mirrors
-`DTCTL_EXPERIMENTAL_ACCOUNT`. The gate covers the *command* only:
+Without the opt-in, `dtctl serve` is an ordinary unknown command — it does not
+appear in `--help` or in the `dtctl commands` catalog. That is the
+`development` tier's defining property; see [the stability
+manifest](STABILITY.md) for what each tier promises, and
+`dtctl config list-development` for every feature this build carries.
+(`DTCTL_EXPERIMENTAL_SERVE=1` still works as a deprecated alias, as does
+`DTCTL_EXPERIMENTAL_ACCOUNT` for `account`.) The gate covers the *command* only:
 [`pkg/engine`](#embedding-pkgengine-instead) is importable Go API, and embedding
 it is a compile-time choice rather than something an operator can trip over.
 
@@ -105,6 +109,8 @@ curl -s http://127.0.0.1:7211/v1/execute \
 | `token` | authenticates every API call of this request. Required |
 | `safetyLevel` | bounds mutating operations: `readonly`, `readwrite-mine`, `readwrite-all`, `dangerously-unrestricted`. Omitted means dtctl's default (`readwrite-all`) |
 | `profile` | a built-in [command profile](CONFIGURATION.md#command-profiles) (e.g. `query`) that reduces the visible command surface for this request |
+| `minStability` | the weakest [stability tier](STABILITY.md) this request accepts: `experimental` or `stable`. Omitted means `stable` — stricter than the CLI's default, because nobody reads an `[Experimental]` badge on a request's behalf |
+| `stabilityExceptions` | commands or flags admitted below the floor, each one an audited risk acceptance (e.g. `inventory`, `query --decode-snapshots`). Naming a command also admits the flags that are below the floor only because that command is; it does not admit its subcommands |
 | `files` | the request's virtual filesystem: name → file content |
 | `stdin` | standard input for commands that read it (`-f -`) |
 
