@@ -16,6 +16,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
@@ -778,10 +779,15 @@ analysisTimeframe,contributions,metrics`)
 	queryCmd.Flags().Lookup("metadata").NoOptDefVal = "all"
 
 	// Snapshot decode flag
-	queryCmd.Flags().String("decode-snapshots", "", `(experimental) decode Live Debugger snapshot payloads in query results
+	queryCmd.Flags().String("decode-snapshots", "", `decode Live Debugger snapshot payloads in query results
 bare --decode-snapshots simplifies variant wrappers to plain values;
 --decode-snapshots=full preserves the full decoded tree with type annotations`)
 	queryCmd.Flags().Lookup("decode-snapshots").NoOptDefVal = "simplified"
+	// The flag is weaker than the command that carries it: `query` is stable,
+	// but this decodes Live Debugger snapshot payloads (see
+	// markLiveDebuggerExperimental). Marking the flag rather than the command
+	// is exactly the case a per-flag tier exists for.
+	stability.MarkFlag(queryCmd, "decode-snapshots", stability.Experimental, liveDebuggerSince)
 
 	// Filter segment flags
 	queryCmd.Flags().StringArrayP("segment", "S", nil, `filter segment ID or name (repeatable, max 10, AND-combined)

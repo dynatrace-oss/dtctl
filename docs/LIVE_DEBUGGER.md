@@ -1,6 +1,11 @@
 # Live Debugger Guide
 
-> **Experimental:** Live Debugger support in `dtctl` is experimental. The underlying APIs and query behavior may change in future releases without notice.
+> **Experimental:** every Live Debugger command, and `dtctl query --decode-snapshots`,
+> is declared [`experimental`](STABILITY.md): the underlying APIs and snapshot payload
+> shapes may change in any release, so these are not safe for unattended automation.
+> They are registered and usable by default. A context that pins
+> `min-stability: stable` withholds them until it names one in
+> `stability-exceptions` (e.g. `dtctl config set-context prod --stability-exception 'get breakpoints'`).
 
 This guide explains how to use Dynatrace Live Debugger features from `dtctl`.
 

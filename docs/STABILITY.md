@@ -58,8 +58,8 @@ DTCTL_DEVELOPMENT=serve dtctl serve http      # one process
 
 ## Summary
 
-- commands: 268 stable, 0 experimental, 11 development
-- entries below (commands + flags): 766
+- commands: 275 stable, 6 experimental, 11 development
+- entries below (commands + flags): 821
 
 ## Surface
 
@@ -110,9 +110,13 @@ apply extension-config               stable
   --set                              stable
 auth                                 stable
 auth login                           stable
+  --account-urn                      stable
+  --client-id                        stable
+  --client-secret                    stable
   --context                          stable
   --environment                      stable
   --safety-level                     stable
+  --scopes                           stable
   --timeout                          stable
   --token-name                       stable
 auth logout                          stable
@@ -131,6 +135,8 @@ completion                           stable
 config                               stable
 config current-context               stable
 config delete-context                stable
+  --delete-credentials               stable
+config delete-credentials            stable
 config describe-context              stable
 config get-contexts                  stable
 config init                          stable
@@ -142,12 +148,14 @@ config set                           stable
 config set-context                   stable
   --description                      stable
   --environment                      stable
+  --global                           stable
   --min-stability                    stable
   --profile                          stable
   --safety-level                     stable
   --stability-exception              stable
   --token-ref                        stable
 config set-credentials               stable
+  --global                           stable
   --token                            stable
 config use-context                   stable
 config view                          stable
@@ -160,6 +168,7 @@ create aws connection                stable
   --name                             stable
   --roleArn                          stable
 create aws monitoring                stable
+  --central-enrichment               stable
   --credentials                      stable
   --featureSets                      stable
   --name                             stable
@@ -173,14 +182,15 @@ create azure connection              stable
   --name                             stable
   --type                             stable
 create azure monitoring              stable
+  --central-enrichment               stable
   --credentials                      stable
   --featureSets                      stable
   --featuresets                      stable
   --locationFiltering                stable
   --name                             stable
-create breakpoint                    stable
-  --filters                          stable
-  --yes                              stable
+create breakpoint                    experimental  since 0.39.0
+  --filters                          experimental
+  --yes                              experimental
 create bucket                        stable
   --display-name                     stable
   --file                             stable
@@ -215,6 +225,7 @@ create gcp connection                stable
   --serviceAccountId                 stable
   --serviceaccountid                 stable
 create gcp monitoring                stable
+  --central-enrichment               stable
   --credentials                      stable
   --featureSets                      stable
   --featuresets                      stable
@@ -236,6 +247,9 @@ create notebook                      stable
   --id                               stable
   --name                             stable
   --set                              stable
+create scheduling-rule               stable
+  --file                             stable
+  --set                              stable
 create segment                       stable
   --file                             stable
 create settings                      stable
@@ -253,10 +267,12 @@ create workflow                      stable
 ctx                                  stable
 ctx current                          stable
 ctx delete                           stable
+  --delete-credentials               stable
 ctx describe                         stable
 ctx set                              stable
   --description                      stable
   --environment                      stable
+  --global                           stable
   --min-stability                    stable
   --profile                          stable
   --safety-level                     stable
@@ -274,9 +290,9 @@ delete aws monitoring                stable
 delete azure                         stable
 delete azure connection              stable
 delete azure monitoring              stable
-delete breakpoint                    stable
-  --all                              stable
-  --yes                              stable
+delete breakpoint                    experimental  since 0.39.0
+  --all                              experimental
+  --yes                              experimental
 delete bucket                        stable
   --confirm                          stable
   --yes                              stable
@@ -294,6 +310,8 @@ delete lookup                        stable
 delete notebook                      stable
   --yes                              stable
 delete notification                  stable
+  --yes                              stable
+delete scheduling-rule               stable
   --yes                              stable
 delete segment                       stable
   --confirm                          stable
@@ -325,11 +343,12 @@ describe aws monitoring              stable
 describe azure                       stable
 describe azure connection            stable
 describe azure monitoring            stable
-describe breakpoint                  stable
+describe breakpoint                  experimental  since 0.39.0
 describe bucket                      stable
 describe dashboard                   stable
 describe document                    stable
 describe edgeconnect                 stable
+describe environment                 stable
 describe extension                   stable
   --active-gate-groups               stable
   --assets                           stable
@@ -347,8 +366,10 @@ describe gcp monitoring              stable
 describe group                       stable
 describe hub-extensions              stable
 describe intent                      stable
+describe license                     stable
 describe lookup                      stable
 describe notebook                    stable
+describe scheduling-rule             stable
 describe segment                     stable
 describe settings                    stable
 describe settings-schema             stable
@@ -492,7 +513,7 @@ get azure connections                stable
 get azure monitoring                 stable
 get azure monitoring-feature-sets    stable
 get azure monitoring-locations       stable
-get breakpoints                      stable
+get breakpoints                      experimental  since 0.39.0
 get buckets                          stable
 get copilot-skills                   stable
 get dashboards                       stable
@@ -518,6 +539,7 @@ get documents                        stable
   --watch                            stable
   --watch-only                       stable
 get edgeconnects                     stable
+get environment                      stable
 get extension-configs                stable
   --config-id                        stable
   --version                          stable
@@ -538,6 +560,8 @@ get hub-extensions                   stable
   --filter                           stable
 get intents                          stable
   --app                              stable
+get license                          stable
+get license-settings                 stable
 get lookups                          stable
 get notebooks                        stable
   --add-fields                       stable
@@ -551,6 +575,11 @@ get notebooks                        stable
   --watch-only                       stable
 get notifications                    stable
   --type                             stable
+get scheduling-rules                 stable
+  --interval                         stable
+  --limit                            stable
+  --watch                            stable
+  --watch-only                       stable
 get sdk-versions                     stable
 get segments                         stable
 get settings                         stable
@@ -561,14 +590,14 @@ get slo-templates                    stable
   --filter                           stable
 get slos                             stable
   --filter                           stable
-get snapshots                        stable
-  --decode-snapshots                 stable
-  --default-timeframe-end            stable
-  --default-timeframe-start          stable
-  --limit                            stable
-  --max-result-records               stable
-  --metadata                         stable
-  --no-progress                      stable
+get snapshots                        experimental  since 0.39.0
+  --decode-snapshots                 experimental
+  --default-timeframe-end            experimental
+  --default-timeframe-start          experimental
+  --limit                            experimental
+  --max-result-records               experimental
+  --metadata                         experimental
+  --no-progress                      experimental
 get trash                            stable
   --deleted-after                    stable
   --deleted-before                   stable
@@ -623,6 +652,18 @@ inventory                            stable
   --definitions                      stable
   --no-builtin-definitions           stable
   --scan-limit-gbytes                stable
+inventory arrivals                   stable
+  --budget-queries                   stable
+  --budget-seconds                   stable
+  --definitions                      stable
+  --no-builtin-definitions           stable
+  --no-sample                        stable
+  --require                          stable
+  --scan-limit-gbytes                stable
+  --scope                            stable
+  --signals                          stable
+  --since                            stable
+  --stale-after                      stable
 logs                                 stable
 logs workflow-execution              stable
   --all                              stable
@@ -638,7 +679,7 @@ plugin                               stable
 plugin list                          stable
 query                                stable
   --client-context                   stable
-  --decode-snapshots                 stable
+  --decode-snapshots                 experimental  since 0.39.0
   --default-sampling-ratio           stable
   --default-scan-limit-gbytes        stable
   --default-timeframe-end            stable
@@ -659,6 +700,7 @@ query                                stable
   --max-result-records               stable
   --metadata                         stable
   --no-progress                      stable
+  --no-query-limits                  stable
   --segment                          stable
   --segment-var                      stable
   --segments-file                    stable
@@ -686,6 +728,8 @@ serve                                development  (opt-in key: serve)
 serve http                           development
   --addr                             development
   --idle-timeout                     development
+  --max-duration                     development
+  --max-queued                       development
   --max-request-bytes                development
   --read-timeout                     development
   --write-timeout                    development
@@ -761,12 +805,12 @@ update azure monitoring              stable
   --featuresets                      stable
   --locationFiltering                stable
   --name                             stable
-update breakpoint                    stable
-  --condition                        stable
-  --enabled                          stable
-  --filters                          stable
-  --log-message                      stable
-  --yes                              stable
+update breakpoint                    experimental  since 0.39.0
+  --condition                        experimental
+  --enabled                          experimental
+  --filters                          experimental
+  --log-message                      experimental
+  --yes                              experimental
 update document                      stable
   --create-snapshot                  stable
   --dry-run                          stable
@@ -777,6 +821,16 @@ update document                      stable
   --show-diff                        stable
   --snapshot-description             stable
   --type                             stable
+update extension                     stable
+  --hub-latest                       stable
+  --latest                           stable
+  --version                          stable
+  --with-configurations              stable
+update extensions                    stable
+  --all                              stable
+  --hub-latest                       stable
+  --latest                           stable
+  --with-configurations              stable
 update gcp                           stable
 update gcp connection                stable
   --name                             stable
@@ -825,6 +879,7 @@ wait query                           stable
   --max-result-bytes                 stable
   --max-result-records               stable
   --min-interval                     stable
+  --no-query-limits                  stable
   --quiet                            stable
   --set                              stable
   --timeout                          stable

@@ -68,7 +68,7 @@ test-integration:
 		echo "See .integrationtests.env.example for setup instructions."; \
 		exit 1; \
 	fi; \
-	go test -v -race -count=1 -tags integration ./test/e2e/...
+	go test -v -race -count=1 -tags integration ./test/integration/... ./test/e2e/...
 
 # Regenerate golden files (run after intentional output changes)
 test-update-golden:

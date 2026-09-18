@@ -31,11 +31,8 @@ func defaultBreakpointDeleteOps() breakpointDeleteOps {
 var deleteBreakpointCmd = &cobra.Command{
 	Use:     "breakpoint <id|filename:line>",
 	Aliases: []string{"breakpoints", "bp"},
-	Short:   "Delete Live Debugger breakpoint(s) (experimental)",
+	Short:   "Delete Live Debugger breakpoint(s)",
 	Long: `Delete Live Debugger breakpoints by mutable rule ID or by source location.
-
-Note: Live Debugger support is experimental. The underlying APIs and query
-behavior may change in future releases.
 
 Examples:
   # Delete a single breakpoint by ID
@@ -306,6 +303,8 @@ func formatBreakpointLocation(row breakpointRow) string {
 
 func init() {
 	deleteCmd.AddCommand(deleteBreakpointCmd)
+	markLiveDebuggerExperimental(deleteBreakpointCmd)
+
 	deleteBreakpointCmd.Flags().Bool("all", false, "Delete all breakpoints in the current workspace")
 	deleteBreakpointCmd.Flags().BoolP("yes", "y", false, "Skip confirmation prompt")
 }

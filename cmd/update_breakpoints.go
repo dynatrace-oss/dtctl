@@ -24,7 +24,7 @@ const (
 var updateBreakpointCmd = &cobra.Command{
 	Use:     "breakpoint [<id|filename:line>]",
 	Aliases: []string{"breakpoints", "bp"},
-	Short:   "Update Live Debugger breakpoints and workspace filters (experimental)",
+	Short:   "Update Live Debugger breakpoints and workspace filters",
 	Long: `Update Live Debugger breakpoints by mutable rule ID or source location,
 or update workspace filters for the current project.
 
@@ -46,9 +46,6 @@ Condition expressions (--condition):
     "'bbb' in a"
 
   Docs: https://docs.dynatrace.com/docs/shortlink/do-breakpoints#breakpoint-conditions
-
-Note: Live Debugger support is experimental. The underlying APIs and query
-behavior may change in future releases.
 
 Examples:
   # Add or update a condition
@@ -618,6 +615,8 @@ func getOptionalBoolFlag(cmd *cobra.Command, flagName string, trailingArgs []str
 
 func init() {
 	updateCmd.AddCommand(updateBreakpointCmd)
+	markLiveDebuggerExperimental(updateBreakpointCmd)
+
 	updateBreakpointCmd.Flags().String("condition", "", `Condition expression (e.g. "a==1 && b!='bbb'", "'val' in arr", "x>0 && y<=10")`)
 	updateBreakpointCmd.Flags().String("log-message", "", `Log message template with {variable} placeholders (e.g. "Hit on {frame.filename}:{frame.line} value={newTodoRecord.title}")`)
 	updateBreakpointCmd.Flags().String("enabled", "", "Enable or disable the breakpoint")
