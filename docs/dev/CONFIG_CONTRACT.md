@@ -163,6 +163,9 @@ string. Management commands that rewrite the file must load with
 | `DTCTL_OUTPUT` | Default output format when `-o/--output` is not given (dtctl only). |
 | `DTCTL_DISABLE_KEYRING` | Disable the OS keyring (any non-empty value). |
 | `DTCTL_TOKEN_STORAGE` | `file` forces the file-based OAuth store. |
+| `DTCTL_CLIENT_ID` | OAuth client ID; supplying it with `DTCTL_CLIENT_SECRET` switches `auth login` to the client credentials grant. Flag `--client-id` wins over it. |
+| `DTCTL_CLIENT_SECRET` | OAuth client secret for that grant. Preferred over `--client-secret`, which is visible in the process table. |
+| `DTCTL_ACCOUNT_URN` | Account URN sent as the RFC 8707 resource indicator by the client credentials grant. Flag `--account-urn` wins over it. |
 
 **Sanctioned bypass: `cmd.Session`.** An embedded invocation can carry its own
 environment and token, and then none of this contract applies to it: no config

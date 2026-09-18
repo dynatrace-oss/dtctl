@@ -20,6 +20,64 @@ dtctl auth logout
 
 Check your current auth state with `dtctl auth status`, and force a token refresh with `dtctl auth refresh`.
 
+### Non-Interactive OAuth (CI/CD)
+
+Pipelines have no browser and no user, so the interactive login cannot complete
+there. Supplying an OAuth client ID and secret switches `auth login` to the
+OAuth 2.0 client credentials grant
+([RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4)), which
+needs neither:
+
+```bash
+export DTCTL_CLIENT_ID="dt0s02.EXAMPLE"
+export DTCTL_CLIENT_SECRET="dt0s02.EXAMPLE.SECRET"
+export DTCTL_ACCOUNT_URN="urn:dtaccount:00000000-0000-0000-0000-000000000000"
+export DTCTL_TOKEN_STORAGE=file   # no keyring on a build agent
+
+dtctl auth login \
+  --context ci \
+  --environment "https://abc12345.apps.dynatrace.com" \
+  --scopes storage:logs:read
+```
+
+Prefer the environment variables over the equivalent `--client-id`,
+`--client-secret` and `--account-urn` flags: command line arguments are visible
+to every other process on the machine. Supplying only one half of the
+credential pair — or an account URN or `--scopes` with no pair at all — is a
+usage error rather than a silent fallback to the browser flow, which on a runner
+would look like an unexplained hang.
+
+This is a different credential type from the platform token below: the client
+credentials grant needs an OAuth client (`dt0s02.` client ID **and** secret),
+not a `dt0s16.` platform token.
+
+How it differs from the interactive flow:
+
+- **No user identity.** The grant authenticates the application, not a person,
+  so the userinfo lookup is skipped and `dtctl auth whoami` has nothing to
+  report.
+- **`--safety-level` does not narrow the token.** It gates dtctl on the client
+  side. Without `--scopes` the token carries every scope the OAuth client was
+  granted, so `auth login` warns and prints the scopes the token actually came
+  back with. Pass `--scopes`, or provision the OAuth client with only the
+  scopes the pipeline needs.
+- **No refresh token**, per
+  [RFC 6749 §4.4.3](https://www.rfc-editor.org/rfc/rfc6749#section-4.4.3) — a
+  client holding its own credentials can just ask for another access token. So
+  `dtctl auth refresh` cannot renew it and says so; re-run `dtctl auth login`
+  instead.
+- **`DTCTL_ACCOUNT_URN` is sent as an
+  [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707) resource indicator.**
+  Omitting it sends no indicator at all, so the audience is whatever the token
+  endpoint defaults to, rather than being bound to one environment the way an
+  interactive token is.
+- **`--timeout` (default `5m`) bounds the token request**, so a stalled token
+  endpoint fails the pipeline step instead of holding the runner.
+
+`DTCTL_TOKEN_STORAGE=file` is normally required alongside the credentials,
+since build agents rarely have a keyring — see
+[Credential storage](#credential-storage).
+
 ### Token-Based Auth
 
 For CI/CD or headless environments, use a platform API token:
