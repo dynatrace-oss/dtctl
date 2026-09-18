@@ -498,6 +498,15 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | analyzer | `davis:analyzers:read` |
 | anomaly-detector | `settings:objects:read` |
 | app | `app-engine:apps:run` |
+| arrivals | `storage:bizevents:read` |
+| arrivals | `storage:entities:read` |
+| arrivals | `storage:events:read` |
+| arrivals | `storage:logs:read` |
+| arrivals | `storage:metrics:read` |
+| arrivals | `storage:security.events:read` |
+| arrivals | `storage:smartscape:read` |
+| arrivals | `storage:spans:read` |
+| arrivals | `storage:system:read` |
 | aws | `extensions:configurations:read` |
 | aws | `settings:objects:read` |
 | azure | `extensions:configurations:read` |
@@ -509,6 +518,7 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | dashboard | `document:documents:read` |
 | document | `document:documents:read` |
 | edgeconnect | `app-engine:edge-connects:read` |
+| environment | `app-engine:apps:run` |
 | extension | `extensions:definitions:read` |
 | extension-config | `extensions:configurations:read` |
 | function | `app-engine:apps:run` |
@@ -518,6 +528,8 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | hub-extension | `hub:catalog:read` |
 | hub-extension-release | `hub:catalog:read` |
 | intent | `app-engine:apps:run` |
+| license | `app-engine:apps:run` |
+| license-settings | `app-engine:apps:run` |
 | lookup | `storage:files:read` |
 | lql-to-dql | `openpipeline:configurations:read` |
 | notebook | `document:documents:read` |

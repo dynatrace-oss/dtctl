@@ -32,6 +32,7 @@
 
 | Unmapped key |
 | --- |
+| arrivals |
 | classic-pipelines |
 | current |
 | current-context |
@@ -40,11 +41,14 @@
 | delete-credentials |
 | describe |
 | describe-context |
+| environment |
 | export |
 | get-contexts |
 | import |
 | init |
 | install |
+| license |
+| license-settings |
 | list |
 | login |
 | logout |

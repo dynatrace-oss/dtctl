@@ -161,12 +161,14 @@ _read-only | access: read_
 | dashboard | `document:documents:read` |
 | document | `document:documents:read` |
 | edgeconnect | `app-engine:edge-connects:read` |
+| environment | `app-engine:apps:run` |
 | extension | `extensions:definitions:read` |
 | extension-config | `extensions:configurations:read` |
 | function | `app-engine:apps:run` |
 | group | `iam:groups:read` |
 | hub-extensions | `hub:catalog:read` |
 | intent | `app-engine:apps:run` |
+| license | `app-engine:apps:run` |
 | lookup | `storage:files:read` |
 | notebook | `document:documents:read` |
 | segment | `storage:filter-segments:read` |
@@ -318,6 +320,7 @@ _read-only | access: read_
 | dashboards | `document:documents:read` |
 | documents | `document:documents:read` |
 | edgeconnects | `app-engine:edge-connects:read` |
+| environment | `app-engine:apps:run` |
 | extension-configs | `extensions:configurations:read` |
 | extensions | `extensions:definitions:read` |
 | functions | `app-engine:apps:run` |
@@ -325,6 +328,8 @@ _read-only | access: read_
 | hub-extension-releases | `hub:catalog:read` |
 | hub-extensions | `hub:catalog:read` |
 | intents | `app-engine:apps:run` |
+| license | `app-engine:apps:run` |
+| license-settings | `app-engine:apps:run` |
 | lookups | `storage:files:read` |
 | notebooks | `document:documents:read` |
 | notifications | `notification:notifications:read` |
@@ -376,6 +381,10 @@ _read-only | access: read_
 Probe the environment: which data, entity types, and capabilities exist here
 
 _read-only | access: read_
+
+| Resource | Required scopes |
+| --- | --- |
+| arrivals | `storage:logs:read`, `storage:events:read`, `storage:metrics:read`, `storage:spans:read`, `storage:bizevents:read`, `storage:entities:read`, `storage:smartscape:read`, `storage:system:read`, `storage:security.events:read` |
 
 
 ## logs
