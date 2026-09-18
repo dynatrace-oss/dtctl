@@ -121,12 +121,47 @@ and `DTCTL_DEVELOPMENT` are scrubbed, because which commands exist is the
 request's decision and not the host process's. See
 `docs/dev/SERVICE_ENGINE_DESIGN.md`.
 
-> **Versioning caveat.** `release-please-config.json` sets
-> `bump-minor-pre-major`, so pre-1.0 a breaking change currently ships as a
-> minor bump. The `stable` tier is only as strong as the carve-out that
-> exempts it from that policy — see the design doc's "Versioning policy"
-> section. Until that is written down, treat this file as the inventory, not
-> yet as the guarantee.
+## What `stable` promises before 1.0
+
+dtctl is pre-1.0, and `release-please-config.json` sets
+`bump-minor-pre-major`: a breaking change ships as a minor bump, and semver's
+own 0.x clause says anything may change at any time. Read literally, that would
+make every badge in this file worthless on the day it shipped. So the promise is
+carved out of the version policy rather than derived from it.
+
+**The tier carries the contract, not the version number.** A `stable`
+command's invocation and output are additive-only from the release that declared
+it, whatever the version number does next. dtctl does not get to break a
+`stable` command in 0.40.0 on the grounds that 0.x permits it.
+
+**A removal needs a deprecation cycle, and the deprecation record is the
+signal.** A minor bump cannot be read as "safe" here, so the warning cannot come
+from the version number. It comes from the surface instead:
+
+- The removal is announced by deprecating the command or flag, naming the
+  version that deprecated it and the version it will disappear in.
+- That removal version is at least **two minor releases** after the deprecating
+  one, so there is always a release you can run that both warns and still works.
+- `DTCTL_NO_DEPRECATED=1` turns the warning into a failing build on demand,
+  and this file records every deprecation. Together they are what replaces
+  "watch the major version".
+
+`stability.Lint` enforces the window, so a deprecation that skips it fails the
+build rather than a review.
+
+**Surface that a known breaking change already targets is not `stable`.**
+This is what keeps the promise honest without a major version available: when an
+accepted breaking-change document renames or removes a flag, the flag is
+declared `experimental` *now*, ahead of the break, rather than carrying a
+`stable` badge dtctl already knows it cannot keep. Most of the
+`experimental` entries below are there for that reason and no other.
+
+**`experimental` and `development` are not covered.** They may
+change in any release, patch releases included. That is the whole distinction.
+
+**1.0 adds to this policy, it does not replace it.** Semver then applies on its
+own terms: a removal from the stable surface needs a major bump *as well as* the
+deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 ## Summary
 

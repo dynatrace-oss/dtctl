@@ -6,10 +6,11 @@
 // three are filters in series, and every one of them can only *narrow* the
 // surface:
 //
-//  1. registration      development opt-in     before the tree exists
-//  2. profile mask      topical allowlist      startup, shapes the tree
-//  3. stability floor   contract filter        startup, shapes the tree
-//  4. safety level      permission check       runtime, per operation
+//  1. registration       development opt-in     before the tree exists
+//  2. profile mask       topical allowlist      startup, shapes the tree
+//  3. stability floor    contract filter        startup, shapes the tree
+//  4. deprecated surface removal preview        startup, shapes the tree
+//  5. safety level       permission check       runtime, per operation
 //
 // Levels are declared on the command as Cobra annotations rather than in a
 // central table, so they travel with the command and cannot drift from it —
@@ -21,6 +22,7 @@ package stability
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -448,6 +450,15 @@ func Lint(root *cobra.Command) []error {
 				"%s: declared %s without a development feature key", path, own))
 		}
 
+		// A deprecation is the only exit from stable, and below 1.0 it is also
+		// the *only* signal a caller gets: bump-minor-pre-major means the
+		// version number cannot say "this release breaks you". So the record
+		// has to be complete and the window has to be real -- see the manifest
+		// header, "What `stable` promises before 1.0".
+		if d, ok := DeprecationOf(cmd); ok {
+			problems = append(problems, deprecationProblems(path, d)...)
+		}
+
 		effective := Effective(cmd)
 		visitFlags(cmd, func(f flagInfo) {
 			// Only an *explicit* declaration can be inconsistent. An
@@ -466,6 +477,69 @@ func Lint(root *cobra.Command) []error {
 		})
 	})
 	return problems
+}
+
+// deprecationWindowMinors is how many minor releases must separate a
+// deprecation from its removal. Two, so that there is always a release a caller
+// can run which both warns and still works: one that only warned in the release
+// it was removed in would be a break with extra steps.
+const deprecationWindowMinors = 2
+
+// deprecationProblems reports a deprecation record that cannot be acted on.
+func deprecationProblems(path string, d Deprecation) []error {
+	var problems []error
+	if d.Since == "" {
+		problems = append(problems, fmt.Errorf(
+			"%s: deprecated without a since-version; a caller cannot tell how long "+
+				"the removal has been announced", path))
+	}
+	if d.RemoveIn == "" {
+		problems = append(problems, fmt.Errorf(
+			"%s: deprecated without a remove-in version; below 1.0 the version number "+
+				"cannot announce the removal, so the schedule is the only notice there is", path))
+	}
+	if d.Since == "" || d.RemoveIn == "" {
+		return problems
+	}
+
+	since, sinceOK := parseMinor(d.Since)
+	removeIn, removeOK := parseMinor(d.RemoveIn)
+	if !sinceOK || !removeOK {
+		problems = append(problems, fmt.Errorf(
+			"%s: deprecation versions must be X.Y.Z (got since %q, remove-in %q)",
+			path, d.Since, d.RemoveIn))
+		return problems
+	}
+	if removeIn < since+deprecationWindowMinors {
+		problems = append(problems, fmt.Errorf(
+			"%s: deprecated in %s but scheduled for removal in %s; a removal comes at least "+
+				"%d minor releases after the deprecation, so a caller has a release that both "+
+				"warns and works", path, d.Since, d.RemoveIn, deprecationWindowMinors))
+	}
+	return problems
+}
+
+// parseMinor reduces X.Y.Z to a comparable minor ordinal. Only pre-1.0
+// arithmetic is needed today; a major bump makes the ordinal jump, which is
+// correct -- a removal across a major boundary is always far enough away.
+func parseMinor(v string) (int, bool) {
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, false
+	}
+	return major*1000 + minor, true
 }
 
 // flagInfo is what a flag declares about itself.
