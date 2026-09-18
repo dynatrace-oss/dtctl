@@ -14,3 +14,12 @@ updates:
     labels:
       - deps
       - sdk
+  # Actions are pinned by commit SHA, which nothing updates by hand -- without
+  # this entry the pins silently rot. Dependabot rewrites both the SHA and the
+  # trailing version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
