@@ -73,15 +73,27 @@ func TestPolicyFloorBlocksAndExceptionsAdmit(t *testing.T) {
 	if !p.AllowsCommand("ingest", Experimental) {
 		t.Error("an exception must admit the command it names")
 	}
-	if !p.AllowsFlag("query", "spill", Experimental) {
+	if !p.AllowsFlag("query", "spill", Experimental, Experimental) {
 		t.Error("a flag exception must admit the flag it names")
 	}
 	// The narrow grant is the whole point: naming a command must not
-	// blanket-admit experimental flags added to it in a later release.
-	if p.AllowsFlag("ingest", "wait", Experimental) {
-		t.Error("a command exception must not admit the command's experimental flags")
+	// blanket-admit a flag that declares its *own* weaker contract — there the
+	// flag is the risk being accepted, not the command.
+	if p.AllowsFlag("ingest", "wait", Experimental, Experimental) {
+		t.Error("a command exception must not admit a flag with its own experimental mark")
 	}
-	if p.AllowsFlag("query", "raw", Experimental) {
+	// A flag that declares nothing of its own is below the floor only because
+	// its command is, so it stands or falls with the command. Otherwise
+	// admitting `ingest` would mean enumerating every flag it has, and a flag
+	// added later would silently break the caller that did.
+	if !p.AllowsFlag("ingest", "wait", Experimental, Default) {
+		t.Error("a command exception must admit the flags that only inherit its level")
+	}
+	// ... and only for the command it names.
+	if p.AllowsFlag("translate", "wait", Experimental, Default) {
+		t.Error("inheritance must not admit a flag on a command that has no exception")
+	}
+	if p.AllowsFlag("query", "raw", Experimental, Experimental) {
 		t.Error("a flag exception must not spill onto sibling flags")
 	}
 }

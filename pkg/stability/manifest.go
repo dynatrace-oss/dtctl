@@ -48,7 +48,10 @@ DTCTL_MIN_STABILITY=stable dtctl get workflows
 ` + "```" + `
 
 A single below-floor command or flag can be admitted without lowering the floor
-for everything. Each entry is one audited risk acceptance:
+for everything. Each entry is one audited risk acceptance. Naming a command
+also admits the flags that are below the floor only because that command is;
+a flag with a weaker contract of its own needs its own entry, because there
+the flag — not the command — is the risk being accepted:
 
 ` + "```bash" + `
 dtctl config set-context prod-agent --min-stability stable \

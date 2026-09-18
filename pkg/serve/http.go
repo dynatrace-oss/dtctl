@@ -194,13 +194,18 @@ tenant and returns the CLI-identical output.
      "environmentUrl": "https://abc12345.apps.dynatrace.com",
      "token": "dt0s16....",
      "safetyLevel": "readonly",
+     "stabilityExceptions": ["inventory"],
      "files": {"x.yaml": "..."}}
   -> {"exitCode": 0, "stdout": "...", "stderr": "...", "files": {...}}
 
   GET /healthz -> {"status":"ok"}
 
 Each request brings its own environment URL and token; the local dtctl config,
-keyring, and credential environment variables are never read. File arguments
+keyring, and credential environment variables are never read. The same applies
+to the surface a request sees: "minStability" defaults to "stable" (stricter
+than the CLI, which has a human to read an [Experimental] badge), widened per
+request via "minStability" or the narrower "stabilityExceptions", and never by
+DTCTL_MIN_STABILITY or DTCTL_DEVELOPMENT in this server's environment. File arguments
 resolve against the request's "files", and files written back (e.g. by
 apply --write-id) are returned in the response. Requests execute one at a time
 per process.

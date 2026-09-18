@@ -409,7 +409,7 @@ func blockBelowFloorFlags(cmd, root *cobra.Command, path string, p stability.Pol
 	blocked := make(map[string]stability.Level)
 	visitOwnFlags(cmd, func(f *pflag.Flag) {
 		lvl := stability.EffectiveFlag(cmd, f.Name)
-		if p.AllowsFlag(path, f.Name, lvl) {
+		if p.AllowsFlag(path, f.Name, lvl, stability.OfFlag(cmd, f.Name)) {
 			return
 		}
 		blocked[f.Name] = lvl

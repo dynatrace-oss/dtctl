@@ -99,7 +99,7 @@ func RunDtctl(t *testing.T, exe, cfgPath string, extraEnv map[string]string, arg
 	}
 
 	cli := exec.Command(exe, args...)
-	cli.Env = scrubbedCLIEnviron(environ)
+	cli.Env = ScrubbedCLIEnviron(environ)
 	var stdout, stderr bytes.Buffer
 	cli.Stdout, cli.Stderr = &stdout, &stderr
 	runErr := cli.Run()
@@ -113,14 +113,14 @@ func RunDtctl(t *testing.T, exe, cfgPath string, extraEnv map[string]string, arg
 	return code, stdout.String(), stderr.String()
 }
 
-// scrubbedCLIEnviron drops every variable that could change the reachable
+// ScrubbedCLIEnviron drops every variable that could change the reachable
 // surface or the output shape, then applies the test's own.
 //
 // The agent markers matter most: dtctl auto-detects an AI agent from the
 // environment, and in agent mode it wraps everything in a JSON envelope. Left
 // in place, whether a help assertion sees plain text would depend on who ran
 // the suite.
-func scrubbedCLIEnviron(extra map[string]string) []string {
+func ScrubbedCLIEnviron(extra map[string]string) []string {
 	agentVars := map[string]bool{
 		"CLAUDECODE": true, "CLAUDE_CODE": true, "AI_AGENT": true, "CODEX": true,
 		"CURSOR_AGENT": true, "COPILOT_CLI": true, "GITHUB_COPILOT": true,

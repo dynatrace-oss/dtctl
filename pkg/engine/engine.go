@@ -70,7 +70,9 @@ type Request struct {
 	MinStability string
 	// StabilityExceptions admit individual below-floor commands and flags,
 	// each written as a command path optionally suffixed with one flag
-	// ("get breakpoints", "query --decode-snapshots").
+	// ("get breakpoints", "query --decode-snapshots"). Naming a command also
+	// admits the flags that are below the floor only because that command is;
+	// a flag with a weaker contract of its own needs its own entry.
 	//
 	// Prefer this to lowering MinStability: it keeps the request's widened
 	// surface to what the host has actually tested, instead of also picking up

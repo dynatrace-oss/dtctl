@@ -21,7 +21,9 @@ type Policy struct {
 	// usable. The empty value means the default floor.
 	Floor Level
 	// Exceptions are targets admitted below the floor. Each is a command path,
-	// optionally suffixed with one flag: "ingest", "query --spill".
+	// optionally suffixed with one flag: "inventory",
+	// "query --decode-snapshots". A command entry also admits the flags that
+	// are below the floor only because that command is — see AllowsFlag.
 	Exceptions []Exception
 	// Development are the command paths whose development-tier opt-in has
 	// already been given, subtree-inclusive. They are implicit exceptions, not
@@ -122,9 +124,10 @@ func (p Policy) RequiredFor(command, flag string) Level {
 		if e.Command != command {
 			continue
 		}
-		// A command-target exception admits the command itself. It does not
-		// blanket-admit the command's experimental flags — those need their own
-		// entry, which is the whole point of per-flag granularity.
+		// Exact match only: a command-target exception admits the command, a
+		// flag-target exception admits that flag. AllowsFlag adds the one case
+		// this cannot see — a flag that is below the floor purely by
+		// inheritance.
 		if e.Flag == flag {
 			return Development
 		}
@@ -138,10 +141,30 @@ func (p Policy) AllowsCommand(path string, lvl Level) bool {
 	return lvl.AtLeast(p.RequiredFor(path, ""))
 }
 
-// AllowsFlag reports whether a flag on the command at `path` with effective
-// level `lvl` is usable under this policy.
-func (p Policy) AllowsFlag(path, flag string, lvl Level) bool {
-	return lvl.AtLeast(p.RequiredFor(path, flag))
+// AllowsFlag reports whether a flag on the command at `path` is usable under
+// this policy. `effective` is the flag's level as callers experience it
+// (including what it inherits from its command); `own` is the level the flag
+// declares for itself.
+func (p Policy) AllowsFlag(path, flag string, effective, own Level) bool {
+	if effective.AtLeast(p.RequiredFor(path, flag)) {
+		return true
+	}
+	// The flag declares nothing weaker of its own, so it is below the floor
+	// only because its command is — and then it stands or falls with the
+	// command. Requiring a separate entry would mean an exception for
+	// `inventory` had to enumerate all five of its flags, and a flag added in
+	// a later release would silently break the caller that did: the opposite of
+	// what an audited, explicit grant is for.
+	//
+	// A flag with its own weaker mark (`query --decode-snapshots` on a stable
+	// `query`) still needs its own entry. There the flag is the risk being
+	// accepted, not the command, which is the whole point of per-flag
+	// granularity.
+	if own == Default {
+		// own == Default means effective is exactly the command's level.
+		return p.AllowsCommand(path, effective)
+	}
+	return false
 }
 
 // Restricts reports whether the policy can block anything at all. A policy at
