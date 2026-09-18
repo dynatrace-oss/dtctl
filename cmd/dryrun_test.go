@@ -129,9 +129,9 @@ var dryRunStdoutAllowlist = map[string]string{
 	// exec api renders an aligned key-value preview through output.DescribeKV
 	// (bold labels, fixed column width), which dryRunReport's line model does not
 	// express. It is also the one command that must never become an integration
-	// target (AGENTS.md, "Generic API Access"), so it is tracked in issue #508
+	// target (AGENTS.md, "Generic API Access"), so it is tracked in issue #514
 	// rather than reshaped here.
-	"exec_api.go": "aligned DescribeKV preview; tracked in #508",
+	"exec_api.go": "aligned DescribeKV preview; tracked in #514",
 }
 
 // TestDryRunBranchesDoNotPrintToStdout guards the invariant this replaced: a
