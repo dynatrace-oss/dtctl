@@ -6,9 +6,12 @@ package integration
 import (
 	"encoding/json"
 	"fmt"
+	"testing"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 )
@@ -604,5 +607,65 @@ func SegmentFixtureComplexFilter(prefix string) []byte {
 	}
 
 	data, _ := json.Marshal(seg)
+	return data
+}
+
+// AWSMonitoringConfigFixture returns a minimal AWS monitoring configuration in
+// the disabled state, shaped the way `dtctl create aws monitoring` shapes it
+// (see buildAWSMonitoringConfig in cmd/create_aws.go).
+//
+// credential must come from a connection that already exists in the
+// environment: the extension validates the account id behind the connection's
+// role ARN, so a synthetic credential is rejected.
+func AWSMonitoringConfigFixture(prefix, version string, credential awsmonitoringconfig.Credential) awsmonitoringconfig.AWSMonitoringConfig {
+	regions := []string{"us-east-1"}
+	return awsmonitoringconfig.AWSMonitoringConfig{
+		Scope: awsmonitoringconfig.DefaultScope,
+		Value: awsmonitoringconfig.Value{
+			Enabled:           false,
+			Description:       fmt.Sprintf("%s-aws-monitoring", prefix),
+			Version:           version,
+			ActivationContext: awsmonitoringconfig.DefaultActivationContext,
+			FeatureSets:       []string{"EC2_essential"},
+			Aws: awsmonitoringconfig.AWSConfig{
+				DeploymentRegion:        regions[0],
+				Credentials:             []awsmonitoringconfig.Credential{credential},
+				RegionFiltering:         regions,
+				TagFiltering:            []awsmonitoringconfig.TagFilter{},
+				TagEnrichment:           []string{},
+				Namespaces:              []awsmonitoringconfig.CustomNamespace{},
+				ConfigurationMode:       "QUICK_START",
+				DeploymentMode:          "AUTOMATED",
+				DeploymentScope:         "SINGLE_ACCOUNT",
+				SmartscapeConfiguration: awsmonitoringconfig.FlagConfig{Enabled: true},
+				MetricsConfiguration:    awsmonitoringconfig.RegionalFlagConfig{Enabled: true, Regions: regions},
+			},
+		},
+	}
+}
+
+// AWSConnectionFixture returns an AWS connection creation request. The role ARN
+// is deliberately empty: dtctl supports creating a connection first and
+// patching the ARN once the IAM role exists with the connection's objectId as
+// sts:ExternalId, and any non-empty ARN is validated by a real sts:AssumeRole.
+func AWSConnectionFixture(prefix string) awsconnection.AWSConnectionCreate {
+	return awsconnection.AWSConnectionCreate{
+		Value: awsconnection.Value{
+			Name: fmt.Sprintf("%s-aws-connection", prefix),
+			Type: awsconnection.TypeRoleBased,
+			AwsRoleBasedAuthentication: &awsconnection.AwsRoleBasedAuthenticationConfig{
+				Consumers: []string{awsconnection.DefaultConsumer},
+			},
+		},
+	}
+}
+
+// ToJSONBytes marshals v, failing the test instead of returning an error.
+func ToJSONBytes(t *testing.T, v any) []byte {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("failed to marshal fixture: %v", err)
+	}
 	return data
 }
