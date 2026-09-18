@@ -76,7 +76,7 @@ title: Home
 dtctl get workflows
 
 # Run a DQL query
-dtctl query "fetch logs | filter status='ERROR' | limit 10"
+dtctl query 'fetch logs | filter status == "ERROR" | limit 10'
 
 # Apply configuration from a YAML file with template variables
 dtctl apply -f workflow.yaml --set env=prod

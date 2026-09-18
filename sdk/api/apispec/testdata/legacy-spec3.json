@@ -1,0 +1,25 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Legacy Example API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/platform/classic/example-api/v2"
+    }
+  ],
+  "paths": {
+    "/things": {
+      "get": {
+        "operationId": "listThings",
+        "summary": "List things",
+        "responses": {
+          "200": {
+            "description": "Things"
+          }
+        }
+      }
+    }
+  }
+}

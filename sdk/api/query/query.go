@@ -112,14 +112,14 @@ type Result struct {
 type ColumnTypes struct {
 	// IndexRange is the [start, end] record index range (inclusive) that these
 	// mappings apply to.
-	IndexRange []int `json:"indexRange"`
+	IndexRange []int `json:"indexRange" yaml:"indexRange"`
 	// Mappings maps a column name to its DQL type descriptor.
-	Mappings map[string]ColumnType `json:"mappings"`
+	Mappings map[string]ColumnType `json:"mappings" yaml:"mappings"`
 }
 
 // ColumnType is the DQL type descriptor for a single column, e.g. {"type": "long"}.
 type ColumnType struct {
-	Type string `json:"type"`
+	Type string `json:"type" yaml:"type"`
 }
 
 // MetricInfo describes a single metric referenced in a timeseries query result.

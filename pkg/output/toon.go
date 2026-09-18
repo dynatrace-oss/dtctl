@@ -53,6 +53,18 @@ func (p *ToonPrinter) marshal(obj interface{}) error {
 	return err
 }
 
+// MarshalTOON encodes v as a TOON string using the same options as the TOON
+// printer and the agent envelope's `-o toon` path, so every TOON payload dtctl
+// emits comes out of one encoder. Exported for callers outside this package
+// that embed a TOON-encoded payload inside the agent envelope (pkg/exec).
+func MarshalTOON(v interface{}) (string, error) {
+	generic, err := toGeneric(v)
+	if err != nil {
+		return "", err
+	}
+	return toon.MarshalString(generic, toon.WithLengthMarkers(true))
+}
+
 // toGeneric converts a typed Go value to an untyped representation
 // (map[string]any / []any / primitives) by round-tripping through
 // encoding/json. This ensures json struct tags are respected while

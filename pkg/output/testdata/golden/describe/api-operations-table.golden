@@ -1,0 +1,6 @@
+OPERATION                  SUMMARY                            SCOPE                  
+GET /widgets               List all widgets.                  widget:widgets:read    
+POST /widgets              Create a widget.                   widget:widgets:write   
+POST /widgets:search       Search widgets.                    widget:widgets:read    
+PUT /widgets/{id}          Replace a widget.                                         
+GET /widgets/{id}/legacy   Fetch the legacy representation.   widget:widgets:read    

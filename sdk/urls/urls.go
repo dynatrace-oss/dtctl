@@ -1,6 +1,7 @@
 package urls
 
 import (
+	"fmt"
 	"net/url"
 	"strings"
 )
@@ -153,4 +154,67 @@ func fixDomain(rawURL, oldSuffix, newSuffix string) string {
 		return rawURL
 	}
 	return rawURL[:idx] + newSuffix + rawURL[idx+len(oldSuffix):]
+}
+
+// Host returns the lowercase hostname of an environment URL, or "" if the URL
+// cannot be parsed. Used to compare canonical origins across config entries.
+func Host(environmentURL string) string {
+	u, err := url.Parse(environmentURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+// IsDynatraceEnvironmentURL returns an error if environmentURL is not a valid
+// Dynatrace environment URL. A valid URL must use https and have a hostname
+// that is a subdomain of dynatrace.com or dynatracelabs.com. This is enforced
+// on auto-discovered local configs to prevent credential exfiltration to
+// attacker-controlled hosts.
+func IsDynatraceEnvironmentURL(environmentURL string) error {
+	u, err := url.Parse(environmentURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if strings.ToLower(u.Scheme) != "https" {
+		return fmt.Errorf("URL must use https (got %q)", u.Scheme)
+	}
+	host := strings.ToLower(u.Hostname())
+	if !strings.HasSuffix(host, ".dynatrace.com") && !strings.HasSuffix(host, ".dynatracelabs.com") {
+		return fmt.Errorf("URL must target a dynatrace.com or dynatracelabs.com host (got %q)", host)
+	}
+	return nil
+}
+
+// IsDynatraceEnvironmentOrigin returns an error if environmentURL is not a
+// bare Dynatrace environment origin: a valid https Dynatrace host (see
+// IsDynatraceEnvironmentURL) carrying nothing else — no userinfo, path, query
+// or fragment.
+//
+// A Dynatrace SaaS environment URL is always a bare origin; dtctl appends the
+// API path itself. Requiring that shape on auto-discovered local configs is
+// what keeps ${VAR} expansion safe there: expansion can only fill in the
+// destination, never smuggle an unrelated host secret out in a path or query
+// (e.g. "https://<bound-tenant>.apps.dynatrace.com/$AWS_SECRET_ACCESS_KEY").
+func IsDynatraceEnvironmentOrigin(environmentURL string) error {
+	if err := IsDynatraceEnvironmentURL(environmentURL); err != nil {
+		return err
+	}
+	u, err := url.Parse(environmentURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.User != nil {
+		return fmt.Errorf("URL must not embed credentials (got %q)", u.Redacted())
+	}
+	if u.RawQuery != "" {
+		return fmt.Errorf("URL must not carry a query string (got %q)", u.RawQuery)
+	}
+	if u.Fragment != "" {
+		return fmt.Errorf("URL must not carry a fragment (got %q)", u.Fragment)
+	}
+	if p := strings.Trim(u.Path, "/"); p != "" {
+		return fmt.Errorf("URL must be a bare environment origin with no path (got %q)", u.Path)
+	}
+	return nil
 }

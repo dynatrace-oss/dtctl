@@ -163,8 +163,9 @@ Examples:
 		safetyLevel, _ := cmd.Flags().GetString("safety-level")
 		description, _ := cmd.Flags().GetString("description")
 		profile, _ := cmd.Flags().GetString("profile")
+		global, _ := cmd.Flags().GetBool("global")
 
-		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile)
+		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile, global)
 	},
 }
 
@@ -189,7 +190,8 @@ var ctxDeleteCmd = &cobra.Command{
 		return names, cobra.ShellCompDirectiveNoFileComp
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return deleteContext(args[0])
+		deleteCredential, _ := cmd.Flags().GetBool("delete-credentials")
+		return deleteContext(args[0], deleteCredential)
 	},
 }
 
@@ -206,11 +208,14 @@ func listContexts() error {
 		if nc.Name == cfg.CurrentContext {
 			current = "*"
 		}
+		// Show what is resolved and enforced, not what the file happens to
+		// say: a local .dtctl.yaml may name its environment through ${VAR}
+		// and has its declared safety level clamped to the global binding.
 		items = append(items, ContextListItem{
 			Current:     current,
 			Name:        nc.Name,
 			Environment: nc.Context.Environment,
-			SafetyLevel: nc.Context.SafetyLevel.String(),
+			SafetyLevel: cfg.EffectiveSafetyLevelFor(&nc.Context).String(),
 			Profile:     nc.Context.Profile,
 			Description: nc.Context.Description,
 		})
@@ -274,13 +279,17 @@ func describeContext(name string) error {
 		currentMark = " (current)"
 	}
 
+	// Report the enforced level, which for a local .dtctl.yaml is clamped to
+	// the global binding of its token-ref rather than what the file declares.
+	level := cfg.EffectiveSafetyLevelFor(&found.Context)
+
 	const w = 14
 	output.DescribeKV("Name:", w, "%s%s", found.Name, currentMark)
 	output.DescribeKV("Environment:", w, "%s", found.Context.Environment)
 	output.DescribeKV("Token-Ref:", w, "%s", found.Context.TokenRef)
-	output.DescribeKV("Safety Level:", w, "%s", found.Context.GetEffectiveSafetyLevel())
+	output.DescribeKV("Safety Level:", w, "%s", level)
 
-	switch found.Context.GetEffectiveSafetyLevel() {
+	switch level {
 	case config.SafetyLevelReadOnly:
 		fmt.Printf("%*s(No modifications allowed)\n", w, "")
 	case config.SafetyLevelReadWriteMine:
@@ -304,8 +313,8 @@ func describeContext(name string) error {
 }
 
 // setContext creates or updates a named context (shared logic)
-func setContext(name, environment, tokenRef, safetyLevel, description, profile string) error {
-	cfg, err := loadConfigRaw()
+func setContext(name, environment, tokenRef, safetyLevel, description, profile string, global bool) error {
+	cfg, err := loadConfigForWrite(global)
 	if err != nil {
 		cfg = config.NewConfig()
 	}
@@ -366,7 +375,7 @@ func setContext(name, environment, tokenRef, safetyLevel, description, profile s
 	// expectation is that the named context becomes current afterward.
 	cfg.CurrentContext = name
 
-	if err := saveConfig(cfg); err != nil {
+	if err := saveConfigForWrite(cfg, global); err != nil {
 		return err
 	}
 
@@ -375,19 +384,33 @@ func setContext(name, environment, tokenRef, safetyLevel, description, profile s
 	} else {
 		output.PrintSuccess("Context %q created and set as current", name)
 	}
+	if !global {
+		warnLocalWriteTarget(fmt.Sprintf("Context %q", name))
+	}
 	return nil
 }
 
-// deleteContext deletes a named context (shared logic)
-func deleteContext(name string) error {
-	cfg, err := loadConfigRaw()
+// deleteContext deletes a named context (shared logic).
+//
+// deleteCredential also removes the credential the context references. It is
+// opt-in because a token ref can be shared between contexts, but the default
+// leaves a usable credential behind, so that case is called out explicitly —
+// a silently orphaned token is what sends callers to the OS keychain tooling.
+func deleteContext(name string, deleteCredential bool) error {
+	// loadRawConfig, not loadConfigRaw: this command rewrites the config file,
+	// and the expanding loader would resolve every ${VAR} in it and save the
+	// resolved values back — writing credentials into the file in plaintext.
+	// See CONFIG_CONTRACT.md, "Write rules".
+	cfg, err := loadRawConfig()
 	if err != nil {
 		return err
 	}
 
+	var tokenRef string
 	found := false
 	for _, nc := range cfg.Contexts {
 		if nc.Name == name {
+			tokenRef = nc.Context.TokenRef
 			found = true
 			break
 		}
@@ -395,6 +418,36 @@ func deleteContext(name string) error {
 
 	if !found {
 		return fmt.Errorf("context %q not found", name)
+	}
+
+	// Validated ahead of the dry-run return so a preview reports the same
+	// refusal the real run would, rather than promising a deletion that fails.
+	if deleteCredential && tokenRef != "" {
+		sharedWith := 0
+		for _, nc := range cfg.Contexts {
+			if nc.Name != name && nc.Context.TokenRef == tokenRef {
+				sharedWith++
+			}
+		}
+		if sharedWith > 0 {
+			return fmt.Errorf("credential %q is shared with %d other context(s); "+
+				"delete those first, or run 'dtctl config delete-credentials %s' to remove it for all of them",
+				tokenRef, sharedWith, tokenRef)
+		}
+	}
+
+	if dryRun {
+		fmt.Printf("Dry run: would delete context %q\n", name)
+		if deleteCredential && tokenRef != "" {
+			fmt.Printf("Would also delete credentials %q\n", tokenRef)
+		}
+		return nil
+	}
+
+	if deleteCredential && tokenRef != "" {
+		if err := cfg.DeleteToken(tokenRef); err != nil {
+			return fmt.Errorf("failed to delete credential %q: %w", tokenRef, err)
+		}
 	}
 
 	if err := cfg.DeleteContext(name); err != nil {
@@ -411,6 +464,15 @@ func deleteContext(name string) error {
 	}
 
 	output.PrintSuccess("Context %q deleted", name)
+
+	switch {
+	case tokenRef == "":
+		// Nothing was referenced, so nothing can be left behind.
+	case deleteCredential:
+		output.PrintSuccess("Credentials %q deleted", tokenRef)
+	default:
+		output.PrintInfo("Credentials %q were kept. Remove them with 'dtctl config delete-credentials %s'.", tokenRef, tokenRef)
+	}
 	return nil
 }
 
@@ -423,11 +485,16 @@ func init() {
 	ctxCmd.AddCommand(ctxSetCmd)
 	ctxCmd.AddCommand(ctxDeleteCmd)
 
+	// Flags for ctx delete
+	ctxDeleteCmd.Flags().Bool("delete-credentials", false,
+		"also delete the credential the context references (leaves it in place otherwise)")
+
 	// Flags for ctx set
 	ctxSetCmd.Flags().String("environment", "", "environment URL")
 	ctxSetCmd.Flags().String("token-ref", "", "token reference name")
 	ctxSetCmd.Flags().String("safety-level", "", "safety level (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
 	ctxSetCmd.Flags().String("description", "", "human-readable description for this context")
 	ctxSetCmd.Flags().String("profile", "", "command profile to bind (restricts the visible command surface; e.g. query, investigate, full)")
+	ctxSetCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
 	_ = ctxSetCmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
 }

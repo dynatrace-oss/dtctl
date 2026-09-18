@@ -267,7 +267,16 @@ Agent mode is auto-detected when running inside AI agent environments (GitHub Co
 dtctl get workflows --no-agent
 ```
 
-Agent mode implies `--plain` -- no colors and no interactive prompts. See [AI Agent Mode](ai-agent-mode) for full details.
+Agent mode implies `--plain` -- no colors and no interactive prompts.
+
+Inside the envelope only two payload encodings exist: `json` (the default) and
+`toon`. Pass `-o toon` to encode the rows densely while keeping the envelope --
+worth it for wide results with short values, and close to worthless for results
+dominated by long text. Any other `-o` value falls back to JSON and records a
+warning in `context.warnings`, so a format the envelope cannot carry is never
+silently swapped for one it can.
+
+See [AI Agent Mode](ai-agent-mode) for full details.
 
 ## Pagination
 

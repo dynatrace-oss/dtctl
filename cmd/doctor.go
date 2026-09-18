@@ -116,7 +116,8 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 		return results
 	}
 
-	safetyLevel := ctx.GetEffectiveSafetyLevel().String()
+	// Config-level: reports the clamped level a local config actually gets.
+	safetyLevel := cfg.GetEffectiveSafetyLevel().String()
 	results = append(results, checkResult{
 		Name:   "Current context",
 		Status: "ok",

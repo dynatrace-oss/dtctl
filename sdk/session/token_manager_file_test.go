@@ -289,3 +289,88 @@ func TestTokenManager_SaveToken_KeyringTooLarge(t *testing.T) {
 		t.Errorf("RefreshToken = %q, want %q", stored.RefreshToken, tokens.RefreshToken)
 	}
 }
+
+// TestFileStorageBypass_BypassesKeyringWhenEnvVarSet verifies that when
+// fileStoreAvailable returns true (DTCTL_TOKEN_STORAGE=file), save and load
+// operations use file storage exclusively and never read from or write to the
+// keyring. DeleteToken additionally performs a best-effort keyring cleanup so
+// that a previously-stored keyring token does not linger after logout.
+func TestFileStorageBypass_BypassesKeyringWhenEnvVarSet(t *testing.T) {
+	t.Parallel()
+	files := make(map[string]string)
+
+	oauthCfg := OAuthConfigForEnvironment(EnvironmentProd, DefaultSafetyLevel, nil)
+	tm, err := NewTokenManager(oauthCfg)
+	if err != nil {
+		t.Fatalf("NewTokenManager() error: %v", err)
+	}
+
+	var keyringWritten, keyringRead bool
+	tm.deps.keyringAvailable = func() bool { return true }
+	tm.deps.setToken = func(_ *TokenStore, _, _ string) error {
+		keyringWritten = true
+		return fmt.Errorf("should not be called")
+	}
+	tm.deps.getToken = func(_ *TokenStore, _ string) (string, error) {
+		keyringRead = true
+		return "", fmt.Errorf("should not be called")
+	}
+	// deleteToken is called for best-effort cleanup during DeleteToken; allow it.
+	tm.deps.deleteToken = func(_ *TokenStore, _ string) error { return nil }
+	// Simulate DTCTL_TOKEN_STORAGE=file: file is the primary backend.
+	tm.deps.fileStoreAvailable = func() bool { return true }
+	tm.deps.fileSetToken = func(name, val string) error { files[name] = val; return nil }
+	tm.deps.fileGetToken = func(name string) (string, error) {
+		v, ok := files[name]
+		if !ok {
+			return "", fmt.Errorf("not found")
+		}
+		return v, nil
+	}
+	tm.deps.fileDeleteToken = func(name string) error { delete(files, name); return nil }
+
+	stored := &StoredToken{
+		Name: "my-token",
+		TokenSet: TokenSet{
+			AccessToken:  "access",
+			RefreshToken: "refresh",
+			ExpiresAt:    time.Now().Add(1 * time.Hour),
+		},
+	}
+
+	if err := tm.saveToken("my-token", stored); err != nil {
+		t.Fatalf("saveToken() error: %v", err)
+	}
+	if keyringWritten {
+		t.Error("saveToken wrote to keyring despite fileStoreAvailable=true")
+	}
+
+	key := tm.getKeyringName("my-token")
+	if _, ok := files[key]; !ok {
+		t.Error("saveToken did not write to file store")
+	}
+
+	got, err := tm.loadToken("my-token")
+	if err != nil {
+		t.Fatalf("loadToken() error: %v", err)
+	}
+	if got.AccessToken != stored.AccessToken {
+		t.Errorf("loadToken AccessToken = %q, want %q", got.AccessToken, stored.AccessToken)
+	}
+	if keyringRead {
+		t.Error("loadToken read from keyring despite fileStoreAvailable=true")
+	}
+
+	if err := tm.DeleteToken("my-token"); err != nil {
+		t.Fatalf("DeleteToken() error: %v", err)
+	}
+	if _, ok := files[key]; ok {
+		t.Error("DeleteToken did not remove from file store")
+	}
+	if keyringWritten {
+		t.Error("DeleteToken wrote to keyring despite fileStoreAvailable=true")
+	}
+	if keyringRead {
+		t.Error("DeleteToken read from keyring despite fileStoreAvailable=true")
+	}
+}

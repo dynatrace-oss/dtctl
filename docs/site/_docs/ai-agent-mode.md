@@ -83,6 +83,7 @@ Error codes are stable identifiers that agents can match on programmatically:
 | `spill_file_wrong_context` | The spill file belongs to another context or tenant | Switch context, or re-query here |
 | `inspect_unknown_field` | `--fields` named a column the file doesn't have | Use `dtctl inspect <path> --schema` |
 | `inspect_bad_flags` | Incompatible `dtctl inspect` flags | Pick one row-access primitive per call |
+| `jq_shape_mismatch` | A `--jq` filter addressed a key its input doesn't have | Read the keys named in `message`; don't read it as an empty result |
 | `error` | Unclassified failure | Read `message`; treat as non-retryable |
 
 `dtctl query` additionally passes the DQL API's own error type through as the code
@@ -143,9 +144,114 @@ sample-based figures can't be misread as population truth.
 > The inline `kind: "records"` envelope is emitted on the spill-aware path
 > whenever agent mode emits JSON — including under `--spill=never`, which forces
 > every row inline regardless of size but still as a `kind: "records"` envelope
-> (never a human table). Explicit non-JSON output (`-o toon/csv/yaml`) and `--jq`
-> transforms keep their requested shape and fall through to the plain
-> `{ "records": …, "metadata": … }` output.
+> (never a human table). The byte-oriented encodings (`-o csv/yaml`) keep their
+> requested shape and fall through to the plain
+> `{ "records": …, "metadata": … }` output. A `--jq` transform keeps the
+> envelope and replaces `result` with the filter's output (see below).
+
+#### Narrowing the result: `--jq`
+
+`--jq '<program>'` post-processes the result **payload** and keeps the envelope:
+`ok`, `error`, `context`, and `metadata` stay exactly where they are without the
+flag, and `result` carries whatever the filter emitted. The filter therefore
+never sees `ok`/`result`/`context` itself — on `query` its input is
+`{ "records": [...], "metadata": {...} }`, and on every other command it is that
+command's own result payload:
+
+```console
+# right: the filter runs on the payload
+$ dtctl query 'fetch logs | limit 2' --agent --jq '.records[].timestamp'
+{"ok":true,"result":["2026-09-17T13:50:47Z","2026-09-17T13:50:29Z"],
+ "context":{"total":2,"verb":"query","resource":"logs"},"metadata":{...}}
+
+# wrong: .result is a field of the envelope, not of the filter input
+$ dtctl query 'fetch logs | limit 2' --agent --jq '.result.records'
+{"ok":false,"result":null,"error":{"code":"jq_shape_mismatch","message":
+ "--jq filter \".result.records\" resolved to null: the filter input is an object
+  with keys [metadata, records]. ...","suggestions":[...]}}
+```
+
+That second call is an **error** (exit code 1), not an empty result. jq answers a
+missing key with `null`, which is indistinguishable from "this query matched
+nothing" once it reaches a consumer — so a filter that resolves to `null` fails
+with `jq_shape_mismatch` and names the keys the input actually has. A filter that
+*selected* nothing (`empty`, or a `select(...)` no row satisfies) is a genuine
+empty answer and returns `[]`, so the two stay distinguishable. When in doubt,
+`--jq 'keys'` prints the shape the filter is running against.
+
+Non-structured formats (`-o table/csv/...`) are auto-promoted to `json` when
+`--jq` is given; `-o toon` encodes the filtered result as a TOON string inside
+the envelope, and any other format the envelope cannot carry falls back to JSON
+with a `context.warnings` entry saying so. On a
+[spilled result](dql-queries#spilling-large-results-to-a-file) `--jq` is *not*
+applied to the rows on disk — the envelope carries a warning saying so, and
+[`dtctl inspect <path> --jq`](command-reference#inspect-commands) is the filter
+that runs over the file.
+
+#### Dense rows: `-o toon`
+
+`-o toon` keeps the envelope and encodes the rows inside it, so the contract does
+not change with result size — the same flags give you a `kind: "records"`
+envelope below the spill threshold and a `kind: "result-file"` envelope above it,
+and `ok`, `error.code` and `context` (heavy-scan warnings, suggestions) are
+present either way. The rows arrive as a TOON string under `result.records`, with
+`result.encoding` naming the codec:
+
+```json
+{
+  "ok": true,
+  "envelope_version": 1,
+  "result": {
+    "kind": "records",
+    "encoding": "toon",
+    "records": "[#2]{host.name,loglevel}:\n  host-a,INFO\n  host-b,ERROR"
+  },
+  "context": { "verb": "query", "resource": "logs", "total": 2, "decided": "inline" }
+}
+```
+
+Branch on `result.encoding`: absent means `result.records` is a native JSON array,
+`"toon"` means it is a string to decode. TOON is worth it for **wide results with
+short values**, where folding the repeated keys into one header saves around 15%
+of the tokens of the JSON envelope. It saves very little on results dominated by
+long prose fields (a log `content` column), and it is *larger* than JSON on
+heterogeneous nested results, where there is no uniform key set to fold. It is
+not a blanket win — measure before reaching for it.
+
+Inside the envelope only `json` and `toon` are supported. Any other `-o` value
+(`csv`, `yaml`, `table`, …) on a command that emits the envelope falls back to
+JSON and says so in `context.warnings` rather than silently pretending the format
+was honoured.
+
+## Exit Codes
+
+The cheapest agent-readable channel is the exit status: it costs **zero tokens**,
+so when all you need is a yes/no gate, read it and discard stdout rather than
+parsing an envelope to reach the same verdict. In [server mode]({{ '/docs/serve/' | relative_url }})
+the same value comes back as the `exitCode` field, so a gate written against it
+ports unchanged.
+
+| Command | Code | Meaning |
+|---|---|---|
+| `dtctl verify query` / `verify analyzer` | 0 | valid |
+| | 1 | invalid (or warnings with `--fail-on-warn`) |
+| | 2 | authentication/permission error |
+| | 3 | network/server error |
+| `dtctl diff` | 0 | no differences |
+| | 1 | differences found |
+| | 2 | error |
+| `dtctl wait` | 0 | condition met |
+| | 1 | timed out |
+| | 2 | max attempts exceeded |
+| | 3 | other failure |
+
+> **`ok` is not the verdict.** `ok: true` means the command *ran* — it reached the
+> API and produced an answer. It does not mean the answer was the one you were
+> gating on. A command that successfully determines "these two resources differ"
+> exits non-zero while still reporting `ok: true`, because nothing went wrong.
+> Gate on the exit status (or on the specific verdict field in `result`), never on
+> `ok`. Reserve `ok: false` and `error.code` for *failures* — auth, network, a
+> malformed query.
 
 ## Auto-Detection
 

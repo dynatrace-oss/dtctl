@@ -375,8 +375,10 @@ func TestBuildSpillResponse_InlineFallThroughCases(t *testing.T) {
 	}{
 		// Not agent mode: a human inline result must stay a fall-through (table/CSV).
 		{"non-agent", DQLExecuteOptions{Spill: base}, "json"},
-		// Non-JSON display encoding: wrapping would discard the requested format.
-		{"toon-encoding", DQLExecuteOptions{AgentMode: true, Spill: base}, "toon"},
+		// Byte-oriented encodings: an agent asking for csv/yaml wants the bytes,
+		// not an envelope wrapping them.
+		{"csv-encoding", DQLExecuteOptions{AgentMode: true, Spill: base}, "csv"},
+		{"yaml-encoding", DQLExecuteOptions{AgentMode: true, Spill: base}, "yaml"},
 		// --jq owns the output shape in agent mode.
 		{"jq-set", DQLExecuteOptions{AgentMode: true, JQFilter: ".[]", Spill: base}, "json"},
 	}
@@ -390,6 +392,53 @@ func TestBuildSpillResponse_InlineFallThroughCases(t *testing.T) {
 				t.Errorf("%s: expected fall-through (handled=false), got an envelope", c.name)
 			}
 		})
+	}
+}
+
+// TestBuildSpillResponse_InlineTOONKeepsEnvelope pins the contract that made
+// `-o toon` size-dependent before: below the spill threshold the rows now come
+// back inside the envelope as an encoded string, so `ok`/`error.code`/`context`
+// are present on both sides of the threshold rather than only above it.
+func TestBuildSpillResponse_InlineTOONKeepsEnvelope(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := sampleResult(false)
+	opts := DQLExecuteOptions{
+		AgentMode: true,
+		Spill:     SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+
+	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "toon", opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !handled {
+		t.Fatal("agent mode + -o toon should emit an envelope, not fall through")
+	}
+	if !resp.OK {
+		t.Error("envelope should report ok=true")
+	}
+	enc, ok := resp.Result.(*output.InlineRecordsEncoded)
+	if !ok {
+		t.Fatalf("result = %T, want *InlineRecordsEncoded", resp.Result)
+	}
+	if enc.Kind != output.KindRecords {
+		t.Errorf("kind = %q, want %q", enc.Kind, output.KindRecords)
+	}
+	if enc.Encoding != "toon" {
+		t.Errorf("encoding = %q, want toon", enc.Encoding)
+	}
+	if enc.Records == "" {
+		t.Error("records should carry the TOON-encoded rows")
+	}
+	// The payload must be the rows, not a Go-syntax dump of them.
+	if strings.Contains(enc.Records, "map[") {
+		t.Errorf("records looks like a Go fmt dump, not TOON: %q", enc.Records)
+	}
+	if resp.Context == nil || resp.Context.Decided != "inline" {
+		t.Errorf("decided = %+v, want inline", resp.Context)
+	}
+	if resp.Context.MeasuredEncoding != "toon" {
+		t.Errorf("measured_encoding = %q, want toon", resp.Context.MeasuredEncoding)
 	}
 }
 

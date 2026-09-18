@@ -1,0 +1,5 @@
+blockTime: "2031-01-01T00:00:00Z"
+createTime: "2025-03-13T13:11:04Z"
+environmentId: abc12345
+state: ACTIVE
+type: INTERNAL

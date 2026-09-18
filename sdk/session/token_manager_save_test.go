@@ -189,6 +189,32 @@ func TestSaveToken_PreservesAccessTokenUnderSizeLimit(t *testing.T) {
 	}
 }
 
+// TestIsKeyringFallbackErr verifies that only persistent, non-transient write
+// failures trigger the file-storage fallback. Windows-specific cases are in
+// token_manager_windows_test.go.
+func TestIsKeyringFallbackErr(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "macOS too big", err: fmt.Errorf("data passed to Set was too big"), want: true},
+		{name: "macOS exit status 44", err: fmt.Errorf("failed to store token in keyring: exit status 44"), want: true},
+		{name: "macOS exit status 161", err: fmt.Errorf("failed to store token in keyring: exit status 161"), want: true},
+		{name: "transient: keyring locked", err: fmt.Errorf("keyring is locked"), want: false},
+		{name: "transient: network error", err: fmt.Errorf("connection refused"), want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isKeyringFallbackErr(tc.err); got != tc.want {
+				t.Errorf("isKeyringFallbackErr() = %v, want %v (err: %v)", got, tc.want, tc.err)
+			}
+		})
+	}
+}
+
 // TestSaveToken_FallsBackToFileOnKeyringWriteDenied covers the macOS
 // "exit status 44" case: unsigned CGO_ENABLED=0 binaries on macOS Ventura+
 // cannot create new keychain items. All keyring encodings fail, so saveToken

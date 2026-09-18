@@ -465,6 +465,78 @@ func TestMutatingVerbsMatchSafetyCheckerUsage(t *testing.T) {
 	}
 }
 
+// TestMutatingVerbFilesPerformSafetyChecks asserts the direction
+// TestMutatingVerbsMatchSafetyCheckerUsage does not: that every command file
+// belonging to a verb the catalog declares *mutating* actually performs a safety
+// check when it builds a client.
+//
+// The forward assertion ("every verb with safety checks is in MutatingVerbs")
+// cannot catch a whole verb family that declares itself mutating and then never
+// checks. That is exactly what happened to `exec`: the catalog advertised
+// `exec: OperationCreate` while every subcommand called SetupClient(), so a
+// readonly context did not block `dtctl exec function --code '…'` — ad-hoc
+// JavaScript that can POST or DELETE anywhere the token reaches.
+func TestMutatingVerbFilesPerformSafetyChecks(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	require.NoError(t, err)
+
+	// Building a client is the observable signal that a file talks to the
+	// platform. The signal must include the *safe* helpers too: listing only the
+	// ungated ones would make the test vacuous the moment a file is fixed, and
+	// would not notice a later regression that reintroduces ungated access
+	// alongside a gated sibling in the same file.
+	clientCtors := []string{
+		"SetupClient()", "Setup()", "SetupWithSafety", "NewClientFromConfig(",
+	}
+	// SetupWithSafetyAndPrinter contains SetupWithSafety, so both are covered.
+	safetyCalls := []string{"NewSafetyChecker", "SetupWithSafety"}
+
+	containsAny := func(s string, needles []string) bool {
+		for _, n := range needles {
+			if strings.Contains(s, n) {
+				return true
+			}
+		}
+		return false
+	}
+
+	checked := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		// Map the file to a verb by exact convention: <verb>.go or <verb>_<rest>.go.
+		// Prefix matching alone would misattribute e.g. "execute_x.go" to "exec".
+		stem := strings.TrimSuffix(name, ".go")
+		verb := strings.SplitN(stem, "_", 2)[0]
+		if _, mutating := commands.MutatingVerbs[verb]; !mutating {
+			continue
+		}
+
+		data, err := os.ReadFile(name)
+		require.NoError(t, err)
+		content := string(data)
+
+		if !containsAny(content, clientCtors) {
+			continue // no platform access in this file
+		}
+		checked++
+		require.True(t, containsAny(content, safetyCalls),
+			"%s belongs to the mutating verb %q and builds a platform client, but performs no "+
+				"safety check (NewSafetyChecker or SetupWithSafety). Every command under a "+
+				"mutating verb must gate on the safety level — see AGENTS.md 'CRITICAL: Safety Checks'.",
+			name, verb)
+	}
+
+	// Guard the guard: if the file-naming convention ever changes, this test must
+	// fail loudly rather than silently passing over an empty set.
+	require.Greater(t, checked, 20,
+		"expected to inspect many mutating-verb command files; found only %d — the "+
+			"<verb>_<resource>.go naming convention may have changed", checked)
+}
+
 // TestResourceAliasesMatchCobraAliases walks the real Cobra command tree and
 // collects all resource-level Aliases defined on subcommands. It then verifies
 // that commands.ResourceAliases contains these aliases (or a documented subset).

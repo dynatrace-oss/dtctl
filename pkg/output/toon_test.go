@@ -334,3 +334,55 @@ func TestAgentPrinter_NilDataStaysNil(t *testing.T) {
 		t.Errorf("expected null result for nil data, got %v", m["result"])
 	}
 }
+
+// TestAgentPrinter_SetResultFormatUnsupported verifies that a format the
+// envelope cannot carry (csv/yaml/table) still produces native JSON, but says
+// so in context.warnings instead of downgrading silently.
+func TestAgentPrinter_SetResultFormatUnsupported(t *testing.T) {
+	for _, format := range []string{"csv", "yaml", "table", "wide", "parquet"} {
+		t.Run(format, func(t *testing.T) {
+			var buf bytes.Buffer
+			ctx := &ResponseContext{Verb: "get", Resource: "workflow"}
+			p := NewAgentPrinter(&buf, ctx)
+			p.SetResultFormat(format)
+
+			if err := p.PrintList([]map[string]string{{"id": "1"}}); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+
+			var resp Response
+			if err := json.Unmarshal(buf.Bytes(), &resp); err != nil {
+				t.Fatalf("envelope is not valid JSON: %v", err)
+			}
+			if _, isString := resp.Result.(string); isString {
+				t.Fatal("result should fall back to native JSON, not an encoded string")
+			}
+			if resp.Context == nil || len(resp.Context.Warnings) == 0 {
+				t.Fatalf("expected a warning naming the unsupported format, got %+v", resp.Context)
+			}
+			if !strings.Contains(resp.Context.Warnings[0], format) {
+				t.Errorf("warning should name the requested format %q, got %q", format, resp.Context.Warnings[0])
+			}
+		})
+	}
+}
+
+// TestAgentPrinter_SetResultFormatEmptyIsSilent verifies that an unset format
+// is not treated as an unsupported choice.
+func TestAgentPrinter_SetResultFormatEmptyIsSilent(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := &ResponseContext{Verb: "get", Resource: "workflow"}
+	p := NewAgentPrinter(&buf, ctx)
+	p.SetResultFormat("")
+
+	if err := p.PrintList([]map[string]string{{"id": "1"}}); err != nil {
+		t.Fatalf("PrintList failed: %v", err)
+	}
+	var resp Response
+	if err := json.Unmarshal(buf.Bytes(), &resp); err != nil {
+		t.Fatalf("envelope is not valid JSON: %v", err)
+	}
+	if resp.Context != nil && len(resp.Context.Warnings) > 0 {
+		t.Errorf("empty format should not warn, got %v", resp.Context.Warnings)
+	}
+}

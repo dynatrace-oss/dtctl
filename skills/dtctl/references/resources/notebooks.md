@@ -34,6 +34,9 @@ dtctl get notebook <id> -o yaml --plain > notebook.yaml
 # Create new (omit id field) or update existing (include id field)
 dtctl apply -f notebook.yaml --plain
 
+# Keep the current content as a restorable snapshot before overwriting it
+dtctl apply -f notebook.yaml --create-snapshot --plain
+
 # Delete
 dtctl delete notebook <id> --plain
 ```

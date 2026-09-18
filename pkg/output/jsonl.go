@@ -32,7 +32,7 @@ func (p *JSONLPrinter) Print(obj interface{}) error {
 // is written as a single line (mirroring the single-object case).
 func (p *JSONLPrinter) PrintList(obj interface{}) error {
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 

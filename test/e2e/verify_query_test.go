@@ -655,11 +655,12 @@ func TestQueryVerify_ExitCodes(t *testing.T) {
 			exitCode := 0
 			if err != nil {
 				// API error
-				if strings.Contains(err.Error(), "status 401") || strings.Contains(err.Error(), "status 403") {
+				switch {
+				case strings.Contains(err.Error(), "status 401") || strings.Contains(err.Error(), "status 403"):
 					exitCode = 2
-				} else if strings.Contains(err.Error(), "status 5") || strings.Contains(err.Error(), "timeout") {
+				case strings.Contains(err.Error(), "status 5") || strings.Contains(err.Error(), "timeout"):
 					exitCode = 3
-				} else {
+				default:
 					exitCode = 1
 				}
 			} else if result != nil {

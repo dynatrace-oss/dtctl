@@ -37,6 +37,10 @@ func (a *Applier) applySLO(data []byte) (ApplyResult, error) {
 	// Check if SLO exists
 	existing, err := handler.Get(id)
 	if err != nil {
+		if lookupErr := lookupError("SLO", id, err); lookupErr != nil {
+			return nil, lookupErr
+		}
+
 		// SLO doesn't exist, create it
 		result, err := handler.Create(data)
 		if err != nil {

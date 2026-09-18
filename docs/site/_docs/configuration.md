@@ -32,6 +32,24 @@ dtctl config set-credentials my-token \
   --token "dt0s16.XXXXXXXX.YYYYYYYY"
 ```
 
+### Removing Credentials
+
+```bash
+# Remove a credential
+dtctl config delete-credentials my-token
+
+# Remove a context and the credential it references, in one step
+dtctl config delete-context my-env --delete-credentials
+```
+
+These clear every entry the credential occupies -- the stored token plus each
+cached OAuth token and scope record derived from it. A direct OS keychain delete
+removes only one of those and leaves usable token material behind, so never use
+`security` (macOS), `secret-tool` (Linux), or `cmdkey` (Windows) on dtctl
+credentials. To confirm removal, run `dtctl auth status`, which reports whether
+a token is present without printing it; do not verify by reading the secret
+back.
+
 ### Creating a Platform Token
 
 1. Go to [https://myaccount.dynatrace.com/platformTokens](https://myaccount.dynatrace.com/platformTokens) (Account Management > **My platform tokens**)
@@ -109,24 +127,48 @@ Create a `.dtctl.yaml` in your project root for team or CI/CD configuration:
 dtctl config init
 ```
 
-This generates a template with environment variable placeholders:
+This generates a template you fill in:
 
 ```yaml
 apiVersion: dtctl.io/v1
 kind: Config
-current-context: production
+current-context: my-environment
 contexts:
-  - name: production
+  - name: my-environment
     context:
       environment: ${DT_ENVIRONMENT_URL}
       token-ref: my-token
       safety-level: readwrite-all
-tokens:
-  - name: my-token
-    token: ${DT_API_TOKEN}
+preferences:
+  output: table
 ```
 
-Commit the file to version control without secrets -- each developer or CI system provides values via environment variables.
+Set `DT_ENVIRONMENT_URL` (or edit the file directly) to your Dynatrace environment URL. Because `.dtctl.yaml` is auto-discovered from the working directory, it is treated as **untrusted**:
+
+- `${VAR}` references are expanded for the `environment` URL only, at load — the resolved URL must be a bare origin on a Dynatrace host (`*.dynatrace.com` / `*.dynatracelabs.com`, https, no path/query/fragment), so expansion cannot append anything to the destination. Editing the file with a `dtctl config` command keeps the `${VAR}` reference rather than writing your expansion into it
+- inline tokens are rejected — the credential comes from the OS keyring
+- `token-ref` must name a context in your **global** config that binds the *same* environment host, otherwise the token does not resolve
+- `safety-level` is clamped to the level that global context declares
+
+Create the global binding once, with `--global`. Config writes target the local
+`.dtctl.yaml` whenever one is discovered, so without the flag both commands
+below would land in the project file and the binding it needs would never
+exist:
+
+```bash
+dtctl config set-context my-environment --global \
+  --environment "https://your-environment.apps.dynatrace.com" \
+  --token-ref my-token
+dtctl config set-credentials my-token --global --token dt0c01.xxx
+```
+
+> **A credential store is required.** A local `.dtctl.yaml` resolves its
+> credential from the OS keyring (or, for OAuth, the file-based token store).
+> If no keyring is available, `dtctl config set-credentials` falls back to
+> writing an API token inline into the global config, which a local config is
+> not permitted to read — use `DTCTL_CONFIG` on those machines.
+
+Commit the file to version control. For CI, use `DTCTL_CONFIG` to point at a trusted config file where env-var expansion and inline tokens work — see [Trusting a prepared workspace with `DTCTL_CONFIG`](#trusting-a-prepared-workspace-with-dtctl_config) below.
 
 ### Config Search Order
 
@@ -143,9 +185,9 @@ Commit the file to version control without secrets -- each developer or CI syste
 > warning to stderr when it does. These code-execution keys are honored **only**
 > from the global config (`~/.config/dtctl/config`) or a config you point at
 > explicitly with `--config` or `DTCTL_CONFIG`. A local config may still define
-> contexts, tokens, and other preferences. As an additional safeguard, an alias
-> can never shadow a built-in command (e.g. `get`, `apply`, `version`)
-> regardless of where it is defined.
+> contexts and other preferences, but not inline tokens. As an additional
+> safeguard, an alias can never shadow a built-in command (e.g. `get`, `apply`,
+> `version`) regardless of where it is defined.
 
 #### Trusting a prepared workspace with `DTCTL_CONFIG`
 

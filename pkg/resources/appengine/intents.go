@@ -143,9 +143,17 @@ func (h *IntentHandler) GenerateIntentURL(appID, intentID string, payload map[st
 
 	// Construct URL
 	intentURL := fmt.Sprintf("%s/ui/intent/%s/%s#%s",
-		baseURL, appID, intentID, url.QueryEscape(string(jsonPayload)))
+		baseURL, appID, intentID, escapeFragment(string(jsonPayload)))
 
 	return intentURL, nil
+}
+
+// escapeFragment percent-encodes a string for use in a URL fragment (RFC 3986).
+// url.QueryEscape is wrong here: it maps spaces to "+" (form encoding), but a
+// fragment treats "+" as a literal plus. QueryEscape already emits "%2B" for a
+// real "+", so replacing its space marker is exact and not a heuristic. (#439)
+func escapeFragment(s string) string {
+	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }
 
 // extractIntentsFromManifest extracts intents from an app manifest

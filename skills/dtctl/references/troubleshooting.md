@@ -35,6 +35,34 @@ dtctl auth status --plain
 
 **Note:** Always use `--token "$TOKEN"` directly. Stdin piping does not work reliably and stores corrupted values in the keychain.
 
+## Teardown
+
+To remove a context and the credential it created, in one step:
+
+```bash
+dtctl config delete-context "<name>" --delete-credentials
+```
+
+Separately, when the credential is shared between contexts or the context is
+already gone:
+
+```bash
+dtctl config delete-credentials "<token-ref>"
+```
+
+To confirm the credential is gone, use `dtctl auth status` — it reports whether
+a token is present without printing it:
+
+```bash
+dtctl auth status --plain --context "<name>"   # errors once the context is deleted
+```
+
+Never verify a deletion by reading secrets back: the OS keychain read verbs
+print token material into the transcript, which is the opposite of what a
+cleanup step is for. `dtctl auth status` and the delete command's own success
+output are the only confirmation needed — do not go to the credential store
+directly.
+
 ## Common Issues
 
 ### PARSE_ERROR_SINGLE_QUOTES / query filter returns nothing
@@ -47,7 +75,7 @@ DQL string literals require **double** quotes. Two frequent traps:
 Use double quotes for the value and pick a shell wrapper that preserves them:
 
 ```bash
-# bash/zsh + PowerShell: single-quote the whole query
+# bash/zsh: single-quote the whole query
 dtctl query 'fetch logs | filter status == "ERROR"'
 ```
 ```cmd
@@ -55,13 +83,20 @@ dtctl query 'fetch logs | filter status == "ERROR"'
 dtctl query "fetch logs | filter status == \"ERROR\""
 ```
 ```powershell
-# PowerShell here-string (no escaping headaches)
-dtctl query -f - -o json @'
+# PowerShell: pipe a here-string to stdin. Do NOT pass it as an argument
+# (`dtctl query @'...'@`) — Windows PowerShell 5.1 strips the inner quotes,
+# which produces the silent zero-row case above. Never `-f - @'...'@`: that
+# waits on stdin and looks like a hang.
+@'
 fetch logs | filter status == "ERROR"
-'@
+'@ | dtctl query -o json
 ```
 
 Quote-free everywhere: put the DQL in a file and run `dtctl query -f query.dql`.
+
+If a Windows user reports empty results, have them re-run with `-vv` and compare
+the `BODY:` query against what they typed — missing quotes confirm the shell,
+not the query, is at fault.
 
 ### 401/403 Authentication Errors
 ```bash
@@ -92,11 +127,23 @@ Safety levels are client-side protections: `readonly`, `readwrite-mine`, `readwr
 ### dtctl Not Found
 Ensure binary is on PATH. Check `~/bin/dtctl` or `/usr/local/bin/dtctl`.
 
-### Corrupted Keychain Entry (macOS)
+### Corrupted Credential Entry
+Re-store the credential; `set-credentials` overwrites the existing entry and
+clears any cached OAuth tokens derived from it.
+
 ```bash
-security delete-generic-password -s "dtctl" -a "<token-ref>"
 dtctl config set-credentials "<token-ref>" --token "$TOKEN"
 ```
+
+If it still fails, remove the credential outright and store it again:
+
+```bash
+dtctl config delete-credentials "<token-ref>"
+dtctl config set-credentials "<token-ref>" --token "$TOKEN"
+```
+
+Repair the entry with dtctl, never with OS keychain tooling — see
+[Teardown](#teardown) above for why.
 
 ## Debugging
 

@@ -1552,6 +1552,59 @@ func TestAgentJQ_BadFilterYieldsErrorEnvelope(t *testing.T) {
 	}
 }
 
+// TestAgentJQ_WrongShapeYieldsShapeMismatchEnvelope covers #413 at the envelope
+// layer: a well-formed filter that addresses a key the payload doesn't have must
+// come back as ok=false with the stable jq_shape_mismatch code and the payload's
+// real keys in the message — not as a confident null with exit code 0.
+func TestAgentJQ_WrongShapeYieldsShapeMismatchEnvelope(t *testing.T) {
+	origOutput := outputFormat
+	origJQ := jqFilter
+	origAgent := agentMode
+	origPlain := plainMode
+	defer func() {
+		outputFormat = origOutput
+		jqFilter = origJQ
+		agentMode = origAgent
+		plainMode = origPlain
+	}()
+
+	outputFormat = "json"
+	jqFilter = ".result.records"
+	agentMode = true
+	plainMode = true
+
+	var buf bytes.Buffer
+	withCapturedStdout(t, &buf, func() {
+		printer := NewPrinter()
+		err := printer.Print(map[string]interface{}{"records": []interface{}{}, "metadata": nil})
+		if err == nil {
+			t.Fatal("expected a shape-mismatch error for .result.records")
+		}
+		detail := errorToDetail(err)
+		if printErr := output.PrintError(os.Stdout, detail); printErr != nil {
+			t.Fatalf("failed to print error envelope: %v", printErr)
+		}
+	})
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
+	if ok, _ := resp["ok"].(bool); ok {
+		t.Fatalf("expected ok=false response, got: %v", resp)
+	}
+	errObj, _ := resp["error"].(map[string]interface{})
+	if errObj == nil {
+		t.Fatalf("expected error object in response, got: %v", resp)
+	}
+	if code, _ := errObj["code"].(string); code != output.JQShapeMismatchCode {
+		t.Errorf("code = %q, want %q", code, output.JQShapeMismatchCode)
+	}
+	if msg, _ := errObj["message"].(string); !strings.Contains(msg, "[metadata, records]") {
+		t.Errorf("message does not name the payload keys: %q", msg)
+	}
+}
+
 func withCapturedStdout(t *testing.T, buf *bytes.Buffer, fn func()) {
 	t.Helper()
 

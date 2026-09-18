@@ -16,6 +16,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	sdkauth "github.com/dynatrace-oss/dtctl/sdk/auth"
+	"github.com/dynatrace-oss/dtctl/sdk/urls"
 )
 
 // defaultUserAgentProduct identifies clients whose builder did not set an
@@ -67,22 +68,51 @@ func NewClientFromConfig(cfg *Config, opts ...ClientOption) (*Client, error) {
 		return nil, err
 	}
 
+	// Auto-discovered local configs must target a bare Dynatrace environment
+	// origin: https, an allowlisted host, and no userinfo, path, query or
+	// fragment. That prevents a rogue .dtctl.yaml from sending tokens to an
+	// arbitrary or non-TLS destination, and it is the same rule Load applies
+	// before adopting a ${VAR} environment (Config.resolveLocalEnvironments) —
+	// re-checked here because the value may also come from a hand-built config.
+	// Inline tokens remain unsupported regardless.
+	envURL := ctx.Environment
+	if cfg.IsLocal() {
+		// A ${VAR} environment that Load did not resolve is still the literal
+		// reference, which the origin check can only describe as a malformed
+		// URL. Report the reference instead — an unset variable is the first
+		// thing a developer hits with a freshly cloned .dtctl.yaml.
+		if cfg.EnvironmentUnresolved(cfg.CurrentContext) {
+			return nil, fmt.Errorf(
+				"local config %q: context %q has environment %q, which did not resolve to a Dynatrace "+
+					"environment URL — the environment must be a literal URL, or a single variable "+
+					"reference holding the whole URL "+
+					"(e.g. environment: ${DT_ENVIRONMENT_URL} with "+
+					"DT_ENVIRONMENT_URL=https://abc12345.apps.dynatrace.com)",
+				cfg.LocalConfigPath(), cfg.CurrentContext, envURL)
+		}
+		if err := urls.IsDynatraceEnvironmentOrigin(envURL); err != nil {
+			return nil, fmt.Errorf(
+				"local config %q: %w — use --config or DTCTL_CONFIG",
+				cfg.LocalConfigPath(), err)
+		}
+	}
+
 	// Use OAuth-aware token retrieval (supports both OAuth and API tokens)
 	token, err := GetTokenWithOAuthSupport(cfg, ctx.TokenRef)
 	if err != nil {
 		return nil, err
 	}
 
-	c, err := NewClient(ctx.Environment, token, opts...)
+	c, err := NewClient(envURL, token, opts...)
 	if err != nil {
 		return nil, err
 	}
 	// OAuth access tokens are short-lived JWTs; a long-running invocation
 	// (watch, workflow polling) outlives them. Re-resolve on 401 so the
 	// session survives token expiry instead of surfacing "JWT token expired".
-	environment, tokenRef := ctx.Environment, ctx.TokenRef
+	tokenRef := ctx.TokenRef
 	c.EnableTokenRefresh(func(rejected string) (string, error) {
-		return RefreshedTokenForContext(cfg, environment, tokenRef, rejected)
+		return RefreshedTokenForContext(cfg, envURL, tokenRef, rejected)
 	})
 	return c, nil
 }

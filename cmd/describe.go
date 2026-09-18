@@ -33,7 +33,8 @@ Supported resources:
   users                   groups                     lookup-tables (lu)
   trash                   azure connection           azure monitoring
   extensions (ext)        extension-configs (extcfg) hub-extensions
-  analyzers (az)`,
+  analyzers (az)          api                        environment
+  license`,
 	Example: `  # Describe a workflow to see its trigger and task details
   dtctl describe workflow my-workflow
 
@@ -333,4 +334,7 @@ func init() {
 	describeCmd.AddCommand(describeAnomalyDetectorCmd)
 	describeCmd.AddCommand(describeHubExtensionCmd)
 	describeCmd.AddCommand(describeAnalyzerCmd)
+	describeCmd.AddCommand(describeAPICmd)
+	describeCmd.AddCommand(describeEnvironmentCmd)
+	describeCmd.AddCommand(describeLicenseCmd)
 }

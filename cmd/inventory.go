@@ -87,7 +87,8 @@ an instrumentation change or an ingest — use 'dtctl inventory arrivals'.
 			segNote = fmt.Sprintf("segment discovery failed: %v — the segment list is unknown, not empty", serr)
 		}
 
-		ctx, cancel := inventoryCancelContext()
+		// Cancel cleanly on Ctrl+C: discovery aborts, nothing is half-reported.
+		ctx, cancel := inventoryCancelContext(cmd)
 		defer cancel()
 
 		budgetQueries, budgetSeconds := inventoryBudget(cmd)
@@ -310,9 +311,11 @@ func newInventoryRunner(cmd *cobra.Command, cfg *config.Config, c *client.Client
 }
 
 // inventoryCancelContext cancels discovery cleanly on Ctrl+C, so a run aborts
-// rather than half-reporting.
-func inventoryCancelContext() (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
+// rather than half-reporting. It parents on the invocation's context so an
+// in-process caller (`dtctl serve`) cancelling a request still aborts the run;
+// rooting it at context.Background() would make discovery outlive the request.
+func inventoryCancelContext(cmd *cobra.Command) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(cmdContext(cmd))
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {

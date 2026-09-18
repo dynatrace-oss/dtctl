@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
 )
 
 // checkScopes is the --check-scopes persistent flag: resolve the command's
@@ -99,7 +101,7 @@ func installScopePreflight(cmd *cobra.Command) {
 // not run, and an error to abort with. The preflight is intentionally resilient:
 // any failure to determine scopes degrades to "proceed" rather than blocking a
 // command, so it can never turn a working command into a broken one.
-func scopePreflight(c *cobra.Command, _ []string) (skip bool, err error) {
+func scopePreflight(c *cobra.Command, args []string) (skip bool, err error) {
 	// Only do work when explicitly requested or when auto-preflighting in agent mode.
 	if !checkScopes && !agentMode {
 		return false, nil
@@ -108,8 +110,18 @@ func scopePreflight(c *cobra.Command, _ []string) (skip bool, err error) {
 	verb, resource := verbResource(c)
 
 	if checkScopes {
-		required, hasReq := requiredScopesFor(verb, resource)
-		result := computeScopeVerdict(verb, resource, required, hasReq)
+		required, req := requiredScopesFor(verb, resource)
+		if req == scopeRequirementPerCall {
+			// --check-scopes is explicit and terminal: the command body does not run
+			// afterwards, so resolving the requirement from the environment's own
+			// specification spends one round trip the caller asked for. The agent-mode
+			// auto-preflight below deliberately does not do this — it runs ahead of
+			// every command and must stay free.
+			if scopes, ok := resolvePerCallScopes(c, args); ok {
+				required, req = scopes, scopeRequirementKnown
+			}
+		}
+		result := computeScopeVerdict(verb, resource, required, req)
 		// In agent mode the verdict must use the same envelope contract as every
 		// other command: an insufficient verdict reuses the ScopeError path (so it
 		// renders as an `insufficient_scope` error envelope with exit 5, identical
@@ -142,8 +154,12 @@ func scopePreflight(c *cobra.Command, _ []string) (skip bool, err error) {
 	if _, mutating := commands.MutatingVerbs[verb]; !mutating {
 		return false, nil
 	}
-	required, hasReq := requiredScopesFor(verb, resource)
-	if !hasReq {
+	// Only a catalog-known requirement can prove a command will fail. A per-call
+	// requirement would have to be resolved over the network on every single
+	// invocation, which is not a price a preflight may charge — `exec api` reports
+	// the platform's own 403, with the declared scope, when it happens.
+	required, req := requiredScopesFor(verb, resource)
+	if req != scopeRequirementKnown {
 		return false, nil
 	}
 	granted, known := grantedScopesFunc()
@@ -178,24 +194,84 @@ func verbResource(c *cobra.Command) (verb, resource string) {
 	return verb, resource
 }
 
+// scopeRequirement is what the catalog can say about a command's scopes.
+//
+// The two-way answer this replaced could not tell "needs no scope" apart from
+// "cannot say", so it reported both as ok — and an ok verdict for a command
+// nothing was checked against is worse than no verdict at all.
+type scopeRequirement int
+
+const (
+	// scopeRequirementNone: the command touches no platform API (ctx, commands).
+	scopeRequirementNone scopeRequirement = iota
+	// scopeRequirementKnown: the catalog names the scopes.
+	scopeRequirementKnown
+	// scopeRequirementPerCall: the scopes are a property of the invocation, not of
+	// the command, so the catalog cannot hold them.
+	scopeRequirementPerCall
+)
+
+// perCallScopeCommands are `<verb> <resource>` leaves whose required scopes
+// depend on their arguments.
+//
+// `exec api` is the only one: it can reach any endpoint the environment
+// publishes, and each declares its own scope. Listing a union of every scope in
+// the catalog would be both wrong and useless, so the requirement is resolved per
+// call — from the environment's specification — or honestly reported as unknown.
+var perCallScopeCommands = map[string]bool{
+	"exec api": true,
+}
+
 // requiredScopesFor looks up a command's required scopes from the catalog (the
-// single source of truth). Returns (scopes, true) when a scope requirement is
-// known, or (nil, false) for local/no-scope commands.
-func requiredScopesFor(verb, resource string) ([]string, bool) {
+// single source of truth), and reports what kind of answer that is.
+func requiredScopesFor(verb, resource string) ([]string, scopeRequirement) {
+	if perCallScopeCommands[verb+" "+resource] {
+		return nil, scopeRequirementPerCall
+	}
 	listing := commands.Build(rootCmd)
 	v, ok := listing.Verbs[verb]
 	if !ok {
-		return nil, false
+		return nil, scopeRequirementNone
 	}
 	if resource != "" {
 		if s, ok := v.RequiredScopesByResource[resource]; ok && len(s) > 0 {
-			return s, true
+			return s, scopeRequirementKnown
 		}
 	}
 	if len(v.RequiredScopes) > 0 { // DQL verbs (query/verify/wait)
-		return v.RequiredScopes, true
+		return v.RequiredScopes, scopeRequirementKnown
 	}
-	return nil, false
+	return nil, scopeRequirementNone
+}
+
+// resolvePerCallScopes resolves the scopes this specific invocation needs, for a
+// command whose requirement is per-call.
+//
+// It returns false whenever the answer is not certain — an unreadable
+// specification, a path that matches no operation, or an operation that declares
+// no scope. The verdict then stays "unknown", because a preflight that guesses is
+// the one failure mode worse than a preflight that abstains.
+func resolvePerCallScopes(c *cobra.Command, args []string) ([]string, bool) {
+	// `exec api` is the only per-call command; a second one would add a case here.
+	if c.Name() != "api" || c.Parent() == nil || c.Parent().Name() != "exec" || len(args) == 0 {
+		return nil, false
+	}
+
+	method, _ := c.Flags().GetString("method")
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	_, client, err := SetupClient()
+	if err != nil {
+		return nil, false
+	}
+	_, op := resapi.NewHandler(client).ResolveForRequest(method, args[0])
+	if op == nil || len(op.Scopes) == 0 {
+		return nil, false
+	}
+	return op.Scopes, true
 }
 
 // grantedScopesFunc reads the active token's granted scopes. Overridable in tests.
@@ -222,16 +298,31 @@ func grantedScopes() (scopes []string, known bool) {
 }
 
 // computeScopeVerdict builds the verdict for the explicit --check-scopes path.
-func computeScopeVerdict(verb, resource string, required []string, hasReq bool) ScopeCheckResult {
+func computeScopeVerdict(verb, resource string, required []string, req scopeRequirement) ScopeCheckResult {
 	res := ScopeCheckResult{
 		Verb:           verb,
 		Resource:       resource,
 		RequiredScopes: required,
 	}
-	if !hasReq {
+	switch req {
+	case scopeRequirementNone:
 		// No platform scopes required (local command); nothing to check.
 		res.Status = scopeStatusOK
 		res.RequiredScopes = []string{}
+		return res
+	case scopeRequirementPerCall:
+		// Resolution was not attempted or did not succeed. Reporting ok here would
+		// assure the caller about a check that never happened — and this is exactly
+		// the command where a false assurance is most expensive, since it can reach
+		// any endpoint the environment publishes.
+		res.Status = scopeStatusUnknown
+		res.RequiredScopes = []string{}
+		res.Suggestions = []string{
+			"this command's required scopes depend on the endpoint it calls, so they are " +
+				"not knowable in advance",
+			"dtctl describe api <name> --operation '<METHOD> <path>'  -- the scope the " +
+				"specification declares for that endpoint",
+		}
 		return res
 	}
 
@@ -298,6 +389,18 @@ func printScopeVerdictHuman(r ScopeCheckResult) {
 	}
 	fmt.Printf("Scope check for %q:\n", target)
 	if len(r.RequiredScopes) == 0 {
+		// An empty requirement means two different things, and the status is what
+		// separates them: nothing is needed, or nothing could be determined. Printing
+		// "no platform scopes required" for the latter would turn an abstention into
+		// a claim.
+		if r.Status == scopeStatusUnknown {
+			fmt.Println("  required: unknown")
+			fmt.Println("  status:   unknown — dtctl could not determine what this call needs")
+			for _, s := range r.Suggestions {
+				fmt.Printf("    - %s\n", s)
+			}
+			return
+		}
 		fmt.Println("  no platform scopes required")
 		return
 	}

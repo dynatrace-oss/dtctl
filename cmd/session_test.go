@@ -17,7 +17,12 @@ func TestApplyRunEnvironment_ScrubAndRestore(t *testing.T) {
 	t.Setenv("DTCTL_TOKEN", "host-secret")
 	t.Setenv("DTCTL_CONFIG", "/host/config.yaml")
 	t.Setenv("DTCTL_PROFILE", "host-profile")
-	os.Unsetenv("DTCTL_DISABLE_KEYRING")
+	t.Setenv(config.EnvTokenStorage, "file")
+	// This case asserts how applyRunEnvironment treats an *unset* keyring guard,
+	// so clear the TestMain default. Going through t.Setenv first registers the
+	// restore, keeping the unset from leaking into the rest of the test binary.
+	t.Setenv(config.EnvDisableKeyring, "")
+	os.Unsetenv(config.EnvDisableKeyring)
 
 	cleanup, err := applyRunEnvironment(RunOptions{
 		Session: &Session{EnvironmentURL: "https://x.example.invalid", Token: "t"},
@@ -30,6 +35,8 @@ func TestApplyRunEnvironment_ScrubAndRestore(t *testing.T) {
 	require.False(t, present, "session run must scrub host credential env")
 	_, present = os.LookupEnv("DTCTL_CONFIG")
 	require.False(t, present, "session run must scrub host config selection")
+	_, present = os.LookupEnv(config.EnvTokenStorage)
+	require.False(t, present, "session run must scrub DTCTL_TOKEN_STORAGE to prevent credential backend selection")
 	require.Equal(t, "query", os.Getenv("DTCTL_PROFILE"))
 	require.Equal(t, "1", os.Getenv(config.EnvDisableKeyring))
 	require.NotNil(t, runSession)
@@ -39,9 +46,18 @@ func TestApplyRunEnvironment_ScrubAndRestore(t *testing.T) {
 	require.Equal(t, "host-secret", os.Getenv("DTCTL_TOKEN"))
 	require.Equal(t, "/host/config.yaml", os.Getenv("DTCTL_CONFIG"))
 	require.Equal(t, "host-profile", os.Getenv("DTCTL_PROFILE"))
+	require.Equal(t, "file", os.Getenv(config.EnvTokenStorage), "cleanup must restore DTCTL_TOKEN_STORAGE")
 	_, present = os.LookupEnv(config.EnvDisableKeyring)
 	require.False(t, present, "cleanup must restore prior unset-ness")
 	require.Nil(t, runSession)
+}
+
+// TestSessionSyntheticConfigIsSealed verifies that a synthetic session config
+// is sealed so host credential stores cannot shadow the inline token.
+func TestSessionSyntheticConfigIsSealed(t *testing.T) {
+	s := &Session{EnvironmentURL: "https://x.example.invalid", Token: "tok"}
+	cfg := s.syntheticConfig()
+	require.True(t, cfg.InlineCredentialsOnly(), "synthetic session config must be sealed")
 }
 
 func TestRunWithSession_ValidationErrors(t *testing.T) {

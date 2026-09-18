@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -103,39 +104,45 @@ func TestVerbResource(t *testing.T) {
 }
 
 func TestRequiredScopesFor(t *testing.T) {
-	got, ok := requiredScopesFor("delete", "workflow")
-	require.True(t, ok)
+	got, req := requiredScopesFor("delete", "workflow")
+	require.Equal(t, scopeRequirementKnown, req)
 	require.Equal(t, []string{"automation:workflows:write"}, got)
 
-	got, ok = requiredScopesFor("get", "workflows")
-	require.True(t, ok)
+	got, req = requiredScopesFor("get", "workflows")
+	require.Equal(t, scopeRequirementKnown, req)
 	require.Equal(t, []string{"automation:workflows:read"}, got)
 
 	// DQL verbs carry flat scopes at the verb level.
-	got, ok = requiredScopesFor("query", "")
-	require.True(t, ok)
+	got, req = requiredScopesFor("query", "")
+	require.Equal(t, scopeRequirementKnown, req)
 	require.Contains(t, got, "storage:logs:read")
 
-	got, ok = requiredScopesFor("wait", "query")
-	require.True(t, ok)
+	got, req = requiredScopesFor("wait", "query")
+	require.Equal(t, scopeRequirementKnown, req)
 	require.Contains(t, got, "storage:logs:read")
 
 	// Local commands have no scope requirement.
-	_, ok = requiredScopesFor("ctx", "set")
-	require.False(t, ok)
+	_, req = requiredScopesFor("ctx", "set")
+	require.Equal(t, scopeRequirementNone, req)
+
+	// `exec api` can reach any endpoint the environment publishes, each declaring
+	// its own scope, so the catalog cannot hold the answer. This must be a distinct
+	// verdict from "needs nothing" — see TestComputeScopeVerdict.
+	_, req = requiredScopesFor("exec", "api")
+	require.Equal(t, scopeRequirementPerCall, req)
 }
 
 func TestComputeScopeVerdict(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		withScopeState(t, true, false, "json", []string{"automation:workflows:write", "x"}, true)
-		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, true)
+		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, scopeRequirementKnown)
 		require.Equal(t, scopeStatusOK, r.Status)
 		require.Empty(t, r.MissingScopes)
 	})
 
 	t.Run("insufficient", func(t *testing.T) {
 		withScopeState(t, true, false, "json", []string{"automation:workflows:read"}, true)
-		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, true)
+		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, scopeRequirementKnown)
 		require.Equal(t, scopeStatusInsufficient, r.Status)
 		require.Equal(t, []string{"automation:workflows:write"}, r.MissingScopes)
 		require.NotEmpty(t, r.Suggestions)
@@ -143,7 +150,7 @@ func TestComputeScopeVerdict(t *testing.T) {
 
 	t.Run("unknown", func(t *testing.T) {
 		withScopeState(t, true, false, "json", nil, false)
-		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, true)
+		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, scopeRequirementKnown)
 		require.Equal(t, scopeStatusUnknown, r.Status)
 		require.Empty(t, r.GrantedScopes)
 		require.NotEmpty(t, r.Suggestions)
@@ -151,9 +158,23 @@ func TestComputeScopeVerdict(t *testing.T) {
 
 	t.Run("no scopes required", func(t *testing.T) {
 		withScopeState(t, true, false, "json", nil, false)
-		r := computeScopeVerdict("ctx", "set", nil, false)
+		r := computeScopeVerdict("ctx", "set", nil, scopeRequirementNone)
 		require.Equal(t, scopeStatusOK, r.Status)
 		require.Empty(t, r.RequiredScopes)
+	})
+
+	// A per-call requirement must not borrow the "no scopes required" verdict. The
+	// two are indistinguishable to a caller reading `status: ok` — and for the one
+	// command that can reach any endpoint the environment publishes, an ok verdict
+	// that checked nothing is an assurance dtctl has no basis to give.
+	t.Run("per-call requirement is unknown, never ok", func(t *testing.T) {
+		withScopeState(t, true, false, "json", []string{"automation:workflows:write"}, true)
+		r := computeScopeVerdict("exec", "api", nil, scopeRequirementPerCall)
+		require.Equal(t, scopeStatusUnknown, r.Status,
+			"a check that did not happen must not report ok")
+		require.Empty(t, r.RequiredScopes)
+		require.NotEmpty(t, r.Suggestions, "an unknown verdict must say how to find the answer")
+		require.Contains(t, strings.Join(r.Suggestions, "\n"), "describe api")
 	})
 }
 

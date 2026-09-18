@@ -2,6 +2,7 @@ package apply
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/awsmonitoringconfig"
@@ -26,7 +27,10 @@ func (a *Applier) applyAWSMonitoringConfig(data []byte) (ApplyResult, error) {
 
 	if objectID == "" && config.Value.Description != "" {
 		existing, err := handler.FindByName(config.Value.Description)
-		if err == nil && existing != nil {
+		if err != nil && !errors.Is(err, awsmonitoringconfig.ErrNotFound) {
+			return nil, nameLookupError("AWS monitoring config", config.Value.Description, err)
+		}
+		if existing != nil {
 			stderrWarn(&warnings, "Found existing AWS monitoring config %q with ID: %s", config.Value.Description, existing.ObjectID)
 			objectID = existing.ObjectID
 			config.ObjectID = objectID

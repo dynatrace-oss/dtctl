@@ -138,6 +138,33 @@ var hiddenCommands = map[string]bool{
 	"version":    true, // utility, not an operational command
 }
 
+// unadvertisedResources are `<verb> <resource>` leaves that are hidden on the
+// command line but still documented in the full catalog.
+//
+// The two states cobra offers — visible or hidden — are both wrong for an escape
+// hatch. Visible puts it in --help and in the compact catalogs an agent
+// bootstraps from, next to the native commands it must not replace. Hidden makes
+// it undiscoverable, which pushes a caller who genuinely needs it toward
+// something worse (an ad-hoc AppEngine function with a bearer token). So it is
+// omitted from `--brief`/minimal and present in `--full`: findable by a caller
+// who goes looking, invisible to one who is browsing.
+var unadvertisedResources = map[string]bool{
+	"exec api": true,
+}
+
+// advertisedResources drops the unadvertised leaves of a verb, for the catalog
+// projections that are meant to be browsed rather than searched.
+func advertisedResources(verb string, resources []string) []string {
+	var out []string
+	for _, r := range resources {
+		if unadvertisedResources[verb+" "+r] {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // patterns are recommended usage patterns for AI agents.
 var defaultPatterns = []string{
 	"Use 'dtctl apply -f' for idempotent resource management",
@@ -147,17 +174,26 @@ var defaultPatterns = []string{
 	"Use '--agent' for JSON output with operational metadata",
 	"Use 'dtctl wait' in CI/CD to poll for conditions",
 	"Always specify '--context' in automation scripts",
+	"Discover the APIs an environment publishes with 'dtctl get apis'; 'dtctl describe api <name> --operation \"<METHOD> <path>\"' gives the parameters, body schema, and required scope",
 	"Query Smartscape topology nodes with: dtctl query 'smartscapeNodes \"<TYPE>\" | limit 50'",
 	"Discover all Smartscape node types in the tenant with: dtctl query 'smartscapeNodes \"*\" | dedup type | fields type'",
 }
 
 // antipatterns are common mistakes agents should avoid.
+//
+// Two of these name 'exec api', which unadvertisedResources keeps out of the
+// resource lists. That is deliberate and not a contradiction: the resource list
+// is where an escape hatch tempts a caller away from a native command, whereas an
+// antipattern carries the constraint along with the name — the only form in which
+// it should be discovered.
 var defaultAntipatterns = []string{
 	"Don't use 'dtctl create' followed by 'dtctl edit' — use 'dtctl apply -f' instead",
 	"Don't parse table output — use '-o json' or '--agent'",
 	"Don't hardcode resource IDs — use 'dtctl get' to discover them",
 	"Don't skip 'dtctl diff' before 'dtctl apply' in production contexts",
 	"Don't guess Smartscape node type IDs — run 'smartscapeNodes \"*\" | dedup type | fields type' first to enumerate valid types",
+	"Don't call a platform API by writing JavaScript for 'dtctl exec function --code' — use 'dtctl exec api <path>', which derives what the request does from the API's specification and gates it like any mutating command",
+	"Don't reach for 'dtctl exec api' when a native command exists, and don't script against it — it is an escape hatch for APIs dtctl doesn't wrap, and repeated use means that API wants a dedicated command",
 }
 
 var defaultTimeFormats = &TimeFormats{
@@ -248,7 +284,13 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 			hasResources := false
 
 			for _, sub := range subs {
-				if sub.Hidden || sub.Name() == "help" {
+				if sub.Name() == "help" {
+					continue
+				}
+				// A hidden leaf is normally absent from the catalog too. An
+				// unadvertised one is the exception: the full catalog is the only
+				// place it is documented.
+				if sub.Hidden && !unadvertisedResources[name+" "+sub.Name()] {
 					continue
 				}
 
@@ -495,18 +537,18 @@ func NewMinimal(l *Listing) *Minimal {
 		Aliases:       l.Aliases,
 	}
 	for name, v := range l.Verbs {
-		m.Verbs[name] = newMinimalVerb(v)
+		m.Verbs[name] = newMinimalVerb(name, v)
 	}
 	return m
 }
 
 // newMinimalVerb strips a verb down to its resources and nested subcommands.
-func newMinimalVerb(v *Verb) *MinimalVerb {
-	mv := &MinimalVerb{Resources: v.Resources}
+func newMinimalVerb(verb string, v *Verb) *MinimalVerb {
+	mv := &MinimalVerb{Resources: advertisedResources(verb, v.Resources)}
 	if len(v.Subcommands) > 0 {
 		mv.Subcommands = make(map[string]*MinimalVerb, len(v.Subcommands))
 		for name, sub := range v.Subcommands {
-			mv.Subcommands[name] = newMinimalVerb(sub)
+			mv.Subcommands[name] = newMinimalVerb(verb+" "+name, sub)
 		}
 	}
 	return mv
@@ -543,7 +585,7 @@ func NewBrief(l *Listing) *Listing {
 		bv := &Verb{
 			Mutating:  verb.Mutating,
 			Access:    verb.Access,
-			Resources: verb.Resources,
+			Resources: advertisedResources(name, verb.Resources),
 			// DQL scopes are not derivable from resource_scopes, so retain them.
 			RequiredScopes: verb.RequiredScopes,
 		}

@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -281,4 +283,203 @@ func TestExecute_ConcurrentRequests(t *testing.T) {
 		require.Zero(t, res.ExitCode, "request %d failed: %s", i, res.Stderr)
 		require.Contains(t, string(res.Stdout), "engine_bucket", "request %d", i)
 	}
+}
+
+// newSlowMockEnv creates a mock server that blocks each request until the
+// returned release channel is closed, and counts requests in mu/reqCount.
+type slowMockEnv struct {
+	*httptest.Server
+	mu       sync.Mutex
+	reqCount int
+	release  chan struct{}
+	entered  chan struct{}
+}
+
+func newSlowMockEnv(t *testing.T) *slowMockEnv {
+	t.Helper()
+	m := &slowMockEnv{
+		release: make(chan struct{}),
+		entered: make(chan struct{}, 1),
+	}
+	m.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m.mu.Lock()
+		m.reqCount++
+		m.mu.Unlock()
+		select {
+		case m.entered <- struct{}{}:
+		default:
+		}
+		<-m.release
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"buckets":[]}`))
+	}))
+	t.Cleanup(m.Server.Close)
+	return m
+}
+
+// TestExecute_CancelledWhileQueuedNeverRuns: hold the slot with a slow goroutine,
+// cancel a second request's context, assert it returns context.Canceled and the
+// server saw only one request.
+func TestExecute_CancelledWhileQueuedNeverRuns(t *testing.T) {
+	m := newSlowMockEnv(t)
+
+	lim := engine.DefaultLimits()
+	lim.MaxQueued = 2
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		engine.ExecuteWithLimits(context.Background(), engine.Request{
+			Command: "get buckets --plain", EnvironmentURL: m.URL, Token: "t",
+		}, lim)
+	}()
+
+	// Wait until the first request holds the slot.
+	<-m.entered
+
+	// Pre-cancelled context: the queued request must not run.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := engine.ExecuteWithLimits(ctx, engine.Request{
+		Command: "get buckets --plain", EnvironmentURL: m.URL, Token: "t",
+	}, lim)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, res)
+
+	close(m.release)
+	wg.Wait()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	require.Equal(t, 1, m.reqCount, "cancelled request must not reach the server")
+}
+
+// TestExecute_DurationBudgetCancelsExecution: MaxDuration elapses while the
+// request is waiting for the slot; it must return within ~200ms.
+func TestExecute_DurationBudgetCancelsExecution(t *testing.T) {
+	m := newSlowMockEnv(t)
+
+	lim := engine.DefaultLimits()
+	lim.MaxQueued = 2
+	// Second request uses a 100ms budget; the slot is held by the first goroutine
+	// for as long as needed, so the budget fires while queued.
+	shortLim := lim
+	shortLim.MaxDuration = 100 * time.Millisecond
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		engine.ExecuteWithLimits(context.Background(), engine.Request{
+			Command: "get buckets --plain", EnvironmentURL: m.URL, Token: "t",
+		}, lim)
+	}()
+	<-m.entered
+
+	start := time.Now()
+	_, err := engine.ExecuteWithLimits(context.Background(), engine.Request{
+		Command: "get buckets --plain", EnvironmentURL: m.URL, Token: "t",
+	}, shortLim)
+	elapsed := time.Since(start)
+
+	close(m.release)
+	wg.Wait()
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Less(t, elapsed, 200*time.Millisecond, "execution must abort within the budget")
+}
+
+// TestExecute_OutputIsCapped: a MaxOutputBytes well below the command's real
+// output causes Result.Truncated and len(Stdout) <= cap.
+func TestExecute_OutputIsCapped(t *testing.T) {
+	env := newMockEnv(t)
+
+	lim := engine.DefaultLimits()
+	lim.MaxOutputBytes = 10
+
+	res, err := engine.ExecuteWithLimits(context.Background(), engine.Request{
+		Command: "get buckets --plain", EnvironmentURL: env.URL, Token: "t",
+	}, lim)
+
+	require.NoError(t, err)
+	require.True(t, res.Truncated, "output exceeding cap must be flagged as truncated")
+	require.LessOrEqual(t, len(res.Stdout), 10, "stdout must not exceed the cap")
+}
+
+// TestExecute_WatchIsRefused: --watch returns a capability_disabled error in
+// engine mode (zero Capabilities, LongRunningStreams=false).
+func TestExecute_WatchIsRefused(t *testing.T) {
+	res, err := engine.Execute(context.Background(), engine.Request{
+		Command:        "get workflows --watch --agent",
+		EnvironmentURL: "https://x.example.invalid",
+		Token:          "t",
+	})
+	require.NoError(t, err)
+	require.NotZero(t, res.ExitCode)
+	require.True(t,
+		strings.Contains(string(res.Stdout), `"capability_disabled"`),
+		"watch in service mode must return capability_disabled envelope, got: %s", res.Stdout,
+	)
+}
+
+// TestExecute_QueryLiveIsRefused: `query --live` is just as unbounded as
+// `get --watch` (it loops until interrupted), so it must be refused by the
+// same LongRunningStreams gate. Regression test for the gap where --live
+// reached RunLive's infinite loop unchecked and held the single engine slot
+// forever (see doc.go's "Cancellation" section).
+func TestExecute_QueryLiveIsRefused(t *testing.T) {
+	res, err := engine.Execute(context.Background(), engine.Request{
+		Command:        `query "fetch logs" --live --agent`,
+		EnvironmentURL: "https://x.example.invalid",
+		Token:          "t",
+	})
+	require.NoError(t, err)
+	require.NotZero(t, res.ExitCode)
+	require.True(t,
+		strings.Contains(string(res.Stdout), `"capability_disabled"`),
+		"query --live in service mode must return capability_disabled envelope, got: %s", res.Stdout,
+	)
+}
+
+// TestExecute_PartialLimitsAreNormalized: a Limits value with only some
+// fields set must not silently misbehave on the fields left at Go's zero
+// value (MaxQueued=0 would reject every request; MaxDuration=0 would cancel
+// every request before it starts).
+func TestExecute_PartialLimitsAreNormalized(t *testing.T) {
+	env := newMockEnv(t)
+
+	cases := []engine.Limits{
+		{},
+		{MaxDuration: time.Hour},
+		{MaxOutputBytes: 1 << 20},
+	}
+	for _, lim := range cases {
+		res, err := engine.ExecuteWithLimits(context.Background(), engine.Request{
+			Command: "get buckets --plain", EnvironmentURL: env.URL, Token: "t",
+		}, lim)
+		require.NoError(t, err, "limits %+v", lim)
+		require.Zero(t, res.ExitCode, "limits %+v", lim)
+		require.NotEmpty(t, res.Stdout, "limits %+v: a zero-value field must fall back to DefaultLimits, not silently reject or empty the run", lim)
+	}
+}
+
+// TestExecute_MaxFileBytesRejectsOversizedRequest: Request.Files exceeding
+// MaxFileBytes must be rejected before the command runs (and before
+// consuming an admission-control slot), not silently accepted.
+func TestExecute_MaxFileBytesRejectsOversizedRequest(t *testing.T) {
+	lim := engine.DefaultLimits()
+	lim.MaxFileBytes = 10
+
+	res, err := engine.ExecuteWithLimits(context.Background(), engine.Request{
+		Command:        "get workflows --agent",
+		EnvironmentURL: "https://x.example.invalid",
+		Token:          "t",
+		Files:          map[string][]byte{"big.yaml": make([]byte, 11)},
+	}, lim)
+
+	require.Error(t, err)
+	require.Nil(t, res)
 }

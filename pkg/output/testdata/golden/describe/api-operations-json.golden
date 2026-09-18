@@ -1,0 +1,27 @@
+[
+  {
+    "operation": "GET /widgets",
+    "summary": "List all widgets.",
+    "scope": "widget:widgets:read"
+  },
+  {
+    "operation": "POST /widgets",
+    "summary": "Create a widget.",
+    "scope": "widget:widgets:write"
+  },
+  {
+    "operation": "POST /widgets:search",
+    "summary": "Search widgets.",
+    "scope": "widget:widgets:read"
+  },
+  {
+    "operation": "PUT /widgets/{id}",
+    "summary": "Replace a widget."
+  },
+  {
+    "operation": "GET /widgets/{id}/legacy",
+    "summary": "Fetch the legacy representation.",
+    "scope": "widget:widgets:read",
+    "deprecated": true
+  }
+]

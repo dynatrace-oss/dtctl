@@ -52,16 +52,24 @@ echo 'fetch logs | limit 5' | dtctl query
 
 ### PowerShell Quoting
 
-On Windows PowerShell, use here-strings to avoid escaping issues:
+On Windows PowerShell, **pipe** a here-string into dtctl. Passing the query as an
+argument loses the double quotes DQL needs on Windows PowerShell 5.1, which
+silently returns zero records:
 
 ```powershell
-# PowerShell here-string
-dtctl query @'
+# PowerShell here-string piped to stdin
+@'
 fetch logs
 | filter loglevel == "ERROR"
 | limit 10
-'@
+'@ | dtctl query
 ```
+
+A here-string is a string value, not a redirection like a bash heredoc, so
+`dtctl query @'...'@` still goes through argument parsing — and
+`dtctl query -f - @'...'@` is rejected, because `-f -` points at stdin while the
+query sits in the arguments. See
+[Windows: Quoting](https://github.com/dynatrace-oss/dtctl/blob/main/docs/WINDOWS.md#quoting).
 
 ## Template Queries
 
@@ -144,6 +152,12 @@ dtctl query "fetch logs" --spill=auto --spill-threshold 100KB  # size that trigg
   Windows), partitioned by context, written atomically with `0700`/`0600`
   permissions and pruned after a 24h TTL. On a read-only filesystem the command
   degrades to a summary without a path rather than dumping rows.
+- **What spill bounds:** the *context window*, not process memory. The rows are
+  decoded into memory before the decision is made, so spilling a huge result
+  still costs the memory that result occupies — spilling adds only bounded
+  overhead on top (the column stats, the row sample, and one record at a time
+  while writing). Reach for `--max-result-records`, `| fields`, or `| limit` if
+  the constraint is RSS rather than tokens.
 - **`--spill-to` vs `> file`:** shell redirection (`-o csv > out.csv`) writes the
   raw bytes; `--spill-to` writes the file *and* returns the summary/manifest in
   its place. Use redirection when you want the bytes, `--spill-to` when you want
@@ -406,7 +420,7 @@ Stream query results at a regular interval:
 
 ```bash
 # Re-run every 5 seconds
-dtctl query "fetch logs | filter loglevel == 'ERROR' | sort timestamp desc | limit 10" \
+dtctl query 'fetch logs | filter loglevel == "ERROR" | sort timestamp desc | limit 10' \
   --live --interval 5s
 ```
 
@@ -424,7 +438,7 @@ before making assertions.
 dtctl wait query "fetch spans | filter test_id == 'test-123'" --for=count=1
 
 # Wait for any error logs, up to 2 minutes
-dtctl wait query "fetch logs | filter status == 'ERROR'" --for=any --timeout 2m
+dtctl wait query 'fetch logs | filter status == "ERROR"' --for=any --timeout 2m
 
 # Template variables and file-based queries work here too
 dtctl wait query -f query.dql --set test_id=my-test --for=count-gte=1

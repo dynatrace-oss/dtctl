@@ -1,0 +1,8 @@
+- key: AUTOMATION
+  value: "true"
+- key: AI_FUNCTIONS
+  value: "true"
+- key: LIVE_DEBUGGING
+  value: "true"
+- key: CONTAINER_APPLICATION_MONITORING
+  value: "false"

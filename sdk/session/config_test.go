@@ -26,6 +26,17 @@ func (m *mockKeyring) Get(n string) (string, error) {
 	return v, nil
 }
 
+// refusingKeyring is available but rejects every delete, simulating a locked or
+// otherwise uncooperative keyring.
+type refusingKeyring struct{}
+
+func (r *refusingKeyring) Available() bool { return true }
+func (r *refusingKeyring) Get(string) (string, error) {
+	return "", fmt.Errorf("keyring locked")
+}
+func (r *refusingKeyring) Set(string, string) error { return fmt.Errorf("keyring locked") }
+func (r *refusingKeyring) Delete(string) error      { return fmt.Errorf("keyring locked") }
+
 // unavailableKeyring simulates an environment without OS keyring (headless/WSL).
 type unavailableKeyring struct{}
 
@@ -917,6 +928,279 @@ aliases:
 	wantPath, _ := filepath.EvalSymlinks(localConfigPath)
 	if gotPath != wantPath {
 		t.Errorf("LocalConfigPath() = %q, want %q", gotPath, wantPath)
+	}
+}
+
+// TestConfig_GetEffectiveSafetyLevel_LocalClampsToGlobal verifies that a local
+// .dtctl.yaml cannot escalate its safety level beyond what the global config
+// permits for the token-ref it borrows. The clamp is keyed by token-ref, the
+// same binding GetToken enforces, so it holds even when the local context is
+// named differently from the global one.
+func TestConfig_GetEffectiveSafetyLevel_LocalClampsToGlobal(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	cases := []struct {
+		name         string
+		globalLevel  string
+		localCtxName string
+		localRef     string
+		localLevel   string
+		wantLevel    SafetyLevel
+	}{
+		{
+			name:         "escalation blocked",
+			globalLevel:  "readonly",
+			localCtxName: "myctx",
+			localRef:     "prod-token",
+			localLevel:   "dangerously-unrestricted",
+			wantLevel:    SafetyLevelReadOnly,
+		},
+		{
+			// The reviewer's case: the local config satisfies the origin
+			// binding (same token-ref, same host) but renames the context.
+			// Keying the clamp by context name let this escalate.
+			name:         "escalation blocked when context name differs",
+			globalLevel:  "readonly",
+			localCtxName: "project-local",
+			localRef:     "prod-token",
+			localLevel:   "dangerously-unrestricted",
+			wantLevel:    SafetyLevelReadOnly,
+		},
+		{
+			name:         "local stricter than global is kept",
+			globalLevel:  "dangerously-unrestricted",
+			localCtxName: "myctx",
+			localRef:     "prod-token",
+			localLevel:   "readonly",
+			wantLevel:    SafetyLevelReadOnly,
+		},
+		{
+			// An omitted global safety-level still clamps: it resolves to the
+			// readwrite-all default, not to "unbounded".
+			name:         "omitted global level clamps to the default",
+			globalLevel:  "",
+			localCtxName: "myctx",
+			localRef:     "prod-token",
+			localLevel:   "dangerously-unrestricted",
+			wantLevel:    SafetyLevelReadWriteAll,
+		},
+		{
+			// An unbound token-ref has no trust anchor, so it gets no more
+			// than the default. GetToken refuses it as well.
+			name:         "unbound token-ref clamps to the default",
+			globalLevel:  "readonly",
+			localCtxName: "myctx",
+			localRef:     "unbound-token",
+			localLevel:   "dangerously-unrestricted",
+			wantLevel:    SafetyLevelReadWriteAll,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			projectDir := t.TempDir()
+
+			xdgDir := filepath.Join(tmpDir, "xdg")
+			globalDir := filepath.Join(xdgDir, "dtctl")
+			if err := os.MkdirAll(globalDir, 0700); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+
+			globalCfg := `apiVersion: v1
+kind: Config
+current-context: myctx
+contexts:
+  - name: myctx
+    context:
+      environment: https://global.dt.com
+      token-ref: prod-token
+`
+			if tc.globalLevel != "" {
+				globalCfg += "      safety-level: " + tc.globalLevel + "\n"
+			}
+			if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+				t.Fatalf("write global config: %v", err)
+			}
+
+			t.Setenv("XDG_CONFIG_HOME", xdgDir)
+			xdg.Reload()
+			defer xdg.Reload()
+
+			localCfg := `apiVersion: v1
+kind: Config
+current-context: ` + tc.localCtxName + `
+contexts:
+  - name: ` + tc.localCtxName + `
+    context:
+      environment: https://global.dt.com
+      token-ref: ` + tc.localRef + `
+      safety-level: ` + tc.localLevel + `
+`
+			if err := os.WriteFile(filepath.Join(projectDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+				t.Fatalf("write local config: %v", err)
+			}
+
+			origWd, _ := os.Getwd()
+			defer func() { _ = os.Chdir(origWd) }()
+			if err := os.Chdir(projectDir); err != nil {
+				t.Fatalf("chdir: %v", err)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+
+			got := cfg.GetEffectiveSafetyLevel()
+			if got != tc.wantLevel {
+				t.Errorf("GetEffectiveSafetyLevel() = %q, want %q", got, tc.wantLevel)
+			}
+		})
+	}
+}
+
+// TestBuildGlobalBindings_SharedTokenRefTakesStrictestLevelAndAllHosts pins the
+// multi-binding case: when several global contexts share one token-ref, the
+// clamp ceiling must not depend on YAML ordering, and every bound host must
+// stay acceptable to the origin check.
+func TestBuildGlobalBindings_SharedTokenRefTakesStrictestLevelAndAllHosts(t *testing.T) {
+	// NOT parallel: XDG_CONFIG_HOME is process-global.
+	for _, order := range []struct {
+		name  string
+		first string
+	}{
+		{name: "permissive context first", first: "readwrite-all"},
+		{name: "restrictive context first", first: "readonly"},
+	} {
+		t.Run(order.name, func(t *testing.T) {
+			second := "readonly"
+			if order.first == "readonly" {
+				second = "readwrite-all"
+			}
+
+			xdgDir := filepath.Join(t.TempDir(), "xdg")
+			globalDir := filepath.Join(xdgDir, "dtctl")
+			if err := os.MkdirAll(globalDir, 0700); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			globalCfg := `apiVersion: v1
+kind: Config
+current-context: a
+contexts:
+  - name: a
+    context:
+      environment: https://one.dt.com
+      token-ref: shared
+      safety-level: ` + order.first + `
+  - name: b
+    context:
+      environment: https://two.dt.com
+      token-ref: shared
+      safety-level: ` + second + `
+`
+			if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+				t.Fatalf("write global config: %v", err)
+			}
+			t.Setenv("XDG_CONFIG_HOME", xdgDir)
+			xdg.Reload()
+			defer xdg.Reload()
+
+			binding, ok := buildGlobalBindings()["shared"]
+			if !ok {
+				t.Fatal("token-ref \"shared\" has no binding")
+			}
+			if binding.level != SafetyLevelReadOnly {
+				t.Errorf("level = %q, want %q (strictest of the two)", binding.level, SafetyLevelReadOnly)
+			}
+			for _, host := range []string{"one.dt.com", "two.dt.com"} {
+				if !binding.allows(host) {
+					t.Errorf("allows(%q) = false, want true; hosts = %v", host, binding.hosts)
+				}
+			}
+		})
+	}
+}
+
+// TestGetToken_UnboundLocalTokenRefIsRefused is the premise the "unbound
+// token-ref" clamp case relies on: such a context cannot reach an API at all.
+func TestGetToken_UnboundLocalTokenRefIsRefused(t *testing.T) {
+	cfg := newLocalConfig(t, "https://abc.apps.dynatrace.com", "unbound-token",
+		map[string]string{"other-token": "abc.apps.dynatrace.com"})
+
+	if _, err := cfg.GetToken("unbound-token"); err == nil {
+		t.Fatal("GetToken() succeeded for an unbound token-ref, want an error")
+	} else if !strings.Contains(err.Error(), "not bound to any environment") {
+		t.Errorf("GetToken() error = %v, want a not-bound error", err)
+	}
+}
+
+// TestConfig_GetEffectiveSafetyLevel_ClampFollowsContextOverride verifies the
+// clamp is resolved from the context in effect, not from the one named in the
+// local file at load time — --context / DTCTL_CONTEXT rewrite CurrentContext
+// after Load().
+func TestConfig_GetEffectiveSafetyLevel_ClampFollowsContextOverride(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := t.TempDir()
+	projectDir := t.TempDir()
+
+	xdgDir := filepath.Join(tmpDir, "xdg")
+	globalDir := filepath.Join(xdgDir, "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	globalCfg := `apiVersion: v1
+kind: Config
+current-context: safe
+contexts:
+  - name: safe
+    context:
+      environment: https://global.dt.com
+      token-ref: prod-token
+      safety-level: readonly
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+	xdg.Reload()
+	defer xdg.Reload()
+
+	// The first context carries no token-ref; the override target borrows the
+	// globally bound one and tries to escalate.
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: unbound
+contexts:
+  - name: unbound
+    context:
+      environment: https://global.dt.com
+      safety-level: readwrite-all
+  - name: escalated
+    context:
+      environment: https://global.dt.com
+      token-ref: prod-token
+      safety-level: dangerously-unrestricted
+`
+	if err := os.WriteFile(filepath.Join(projectDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	cfg.CurrentContext = "escalated"
+	if got := cfg.GetEffectiveSafetyLevel(); got != SafetyLevelReadOnly {
+		t.Errorf("GetEffectiveSafetyLevel() after override = %q, want %q", got, SafetyLevelReadOnly)
 	}
 }
 
@@ -2360,4 +2644,722 @@ func contextNames(contexts []NamedContext) []string {
 		names[i] = nc.Name
 	}
 	return names
+}
+
+// TestLoad_LocalConfigDoesNotExpandEnv verifies that env-var references in
+// auto-discovered local configs are left unexpanded (H1-1/H1-2 hardening).
+func TestLoad_LocalConfigDoesNotExpandEnv(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global.
+	t.Setenv("PLANTED_SECRET", "secret-val")
+
+	tmpDir := t.TempDir()
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local-ctx
+contexts:
+  - name: local-ctx
+    context:
+      environment: https://evil.example/$PLANTED_SECRET
+      token-ref: tok
+tokens:
+  - name: tok
+    token: $PLANTED_SECRET
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		t.Fatalf("CurrentContextObj: %v", err)
+	}
+	if !strings.Contains(ctx.Environment, "$PLANTED_SECRET") {
+		t.Errorf("Environment = %q; want literal $PLANTED_SECRET (not expanded)", ctx.Environment)
+	}
+	if !strings.Contains(cfg.Tokens[0].Token, "$PLANTED_SECRET") {
+		t.Errorf("Token = %q; want literal $PLANTED_SECRET (not expanded)", cfg.Tokens[0].Token)
+	}
+	if !cfg.IgnoredEnvRefs() {
+		t.Error("IgnoredEnvRefs() = false; want true")
+	}
+}
+
+// TestGetToken_LocalConfigIgnoresInlineToken verifies that an inline token
+// defined in an auto-discovered local config is rejected (H1-4 hardening).
+func TestGetToken_LocalConfigIgnoresInlineToken(t *testing.T) {
+	// NOT parallel: os.Chdir is process-global.
+	tmpDir := t.TempDir()
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local-ctx
+contexts:
+  - name: local-ctx
+    context:
+      environment: https://abc.apps.dynatrace.com
+      token-ref: my-token
+tokens:
+  - name: my-token
+    token: dt0s08.SECRETTOKEN
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	_, err = cfg.GetToken("my-token")
+	if err == nil {
+		t.Fatal("GetToken() returned nil error; want error about inline token")
+	}
+	if !strings.Contains(err.Error(), "inline token") {
+		t.Errorf("GetToken() error = %q; want message about inline token", err.Error())
+	}
+}
+
+// TestGetToken_LocalConfigRejectsForeignOrigin verifies that a local config
+// cannot redirect a stored credential to a different host (H1-5 hardening).
+func TestGetToken_LocalConfigRejectsForeignOrigin(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := t.TempDir()
+
+	// Global config: token-ref "prod" bound to abc.apps.dynatrace.com.
+	globalDir := filepath.Join(tmpDir, "xdg", "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	globalCfg := `apiVersion: v1
+kind: Config
+current-context: prod
+contexts:
+  - name: prod
+    context:
+      environment: https://abc.apps.dynatrace.com
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
+	xdg.Reload()
+	defer xdg.Reload()
+
+	// Local config: same token-ref "prod" but pointing at evil.example.
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local
+contexts:
+  - name: local
+    context:
+      environment: https://evil.example
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	_, err = cfg.GetToken("prod")
+	if err == nil {
+		t.Fatal("GetToken() returned nil error; want error about foreign origin")
+	}
+	if !strings.Contains(err.Error(), "redirects token") && !strings.Contains(err.Error(), "foreign") && !strings.Contains(err.Error(), "evil.example") {
+		t.Errorf("GetToken() error = %q; want message about origin mismatch", err.Error())
+	}
+}
+
+// TestGetToken_LocalConfigMatchingOriginStillResolves verifies that a local
+// config pointing to the same host as the global binding is not rejected by
+// the origin check (H1-5 hardening — the happy path).
+func TestGetToken_LocalConfigMatchingOriginStillResolves(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := t.TempDir()
+
+	// Global config: token-ref "prod" bound to abc.apps.dynatrace.com.
+	globalDir := filepath.Join(tmpDir, "xdg", "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	globalCfg := `apiVersion: v1
+kind: Config
+current-context: prod
+contexts:
+  - name: prod
+    context:
+      environment: https://abc.apps.dynatrace.com
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
+	xdg.Reload()
+	defer xdg.Reload()
+
+	// Local config: same token-ref "prod" pointing at the SAME host.
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local
+contexts:
+  - name: local
+    context:
+      environment: https://abc.apps.dynatrace.com
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origWd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	_, err = cfg.GetToken("prod")
+	// Origin check passes; the error (if any) should be about the token not
+	// being found in the keyring or file store — not about origin binding.
+	if err != nil {
+		if strings.Contains(err.Error(), "redirects token") || strings.Contains(err.Error(), "not bound") {
+			t.Errorf("GetToken() returned origin error %q; origin should have been accepted", err.Error())
+		}
+		// Any other error (keyring unavailable, token not found) is expected.
+	}
+}
+
+// TestLoadFrom_ExplicitConfigStillExpandsEnv verifies that a config loaded via
+// DTCTL_CONFIG still has env-var expansion applied (only auto-discovered local
+// configs skip expansion — H1-1 hardening).
+func TestLoadFrom_ExplicitConfigStillExpandsEnv(t *testing.T) {
+	t.Setenv("DT_TEST_ENV_URL", "https://explicit.apps.dynatrace.com")
+
+	tmpDir := t.TempDir()
+	cfgContent := `apiVersion: v1
+kind: Config
+current-context: explicit
+contexts:
+  - name: explicit
+    context:
+      environment: $DT_TEST_ENV_URL
+      token-ref: tok
+`
+	cfgPath := filepath.Join(tmpDir, "explicit-config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Setenv(EnvConfig, cfgPath)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		t.Fatalf("CurrentContextObj: %v", err)
+	}
+	if ctx.Environment != "https://explicit.apps.dynatrace.com" {
+		t.Errorf("Environment = %q; want expanded value", ctx.Environment)
+	}
+	if cfg.IgnoredEnvRefs() {
+		t.Error("IgnoredEnvRefs() = true; explicit config should not set this flag")
+	}
+}
+
+// writeOriginBindingFixture sets up the documented per-project layout: a global
+// config binding tokenRef to globalEnv, and an auto-discovered .dtctl.yaml in
+// the (chdir'd) working directory whose environment is localEnv. It returns the
+// loaded local config.
+func writeOriginBindingFixture(t *testing.T, tokenRef, globalEnv, localEnv string) *Config {
+	t.Helper()
+	// NOT parallel-safe: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := t.TempDir()
+
+	globalDir := filepath.Join(tmpDir, "xdg", "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	globalCfg := fmt.Sprintf(`apiVersion: v1
+kind: Config
+current-context: global
+contexts:
+  - name: global
+    context:
+      environment: %s
+      token-ref: %s
+`, globalEnv, tokenRef)
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
+	xdg.Reload()
+	t.Cleanup(xdg.Reload)
+
+	localCfg := fmt.Sprintf(`apiVersion: v1
+kind: Config
+current-context: local
+contexts:
+  - name: local
+    context:
+      environment: %q
+      token-ref: %s
+`, localEnv, tokenRef)
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+
+	origWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.IsLocal() {
+		t.Fatal("fixture did not produce a local config")
+	}
+	return cfg
+}
+
+// TestGetToken_LocalConfigEnvVarEnvironmentSatisfiesOriginBinding covers the
+// workflow `dtctl config init` generates and QUICK_START.md documents: a
+// committed .dtctl.yaml names its environment through ${VAR}, and the token-ref
+// is bound to that same host in the global config.
+//
+// Regression test: the origin-binding check used to compare the *unexpanded*
+// literal, so the resolved host came out empty and the documented setup failed
+// with `redirects token ... to ""` even though the hosts matched.
+func TestGetToken_LocalConfigEnvVarEnvironmentSatisfiesOriginBinding(t *testing.T) {
+	const host = "https://abc12345.apps.dynatrace.com"
+	t.Setenv("DT_TEST_ENVIRONMENT_URL", host)
+
+	cfg := writeOriginBindingFixture(t, "dev-oauth", host, "${DT_TEST_ENVIRONMENT_URL}")
+
+	_, err := cfg.GetToken("dev-oauth")
+	// No credential is stored, so "not found" is the expected outcome; what
+	// must not happen is rejection on origin grounds.
+	if err != nil && (strings.Contains(err.Error(), "redirects token") ||
+		strings.Contains(err.Error(), "not bound")) {
+		t.Errorf("GetToken() rejected the documented ${VAR} setup: %v", err)
+	}
+}
+
+// TestGetToken_LocalConfigEnvVarCannotRedirectOrigin is the other half: making
+// the environment an env-var reference must not become a way around the origin
+// binding when the expansion resolves to a different host.
+func TestGetToken_LocalConfigEnvVarCannotRedirectOrigin(t *testing.T) {
+	t.Setenv("DT_TEST_ENVIRONMENT_URL", "https://zzz99999.apps.dynatrace.com")
+
+	cfg := writeOriginBindingFixture(t, "dev-oauth",
+		"https://abc12345.apps.dynatrace.com", "${DT_TEST_ENVIRONMENT_URL}")
+
+	_, err := cfg.GetToken("dev-oauth")
+	if err == nil || !strings.Contains(err.Error(), "redirects token") {
+		t.Fatalf("GetToken() error = %v, want rejection for redirecting the token", err)
+	}
+	if !strings.Contains(err.Error(), "zzz99999.apps.dynatrace.com") {
+		t.Errorf("error should name the resolved host it refused, got: %v", err)
+	}
+}
+
+// TestResolvedEnvironment_OnlyExpandsForLocalConfigs pins the asymmetry that
+// caused the regression: expansion is a local-config affordance, and a trusted
+// config's value is returned untouched (LoadFrom already expanded it).
+func TestResolveLocalEnvironments_AdoptsOnlyValidOrigins(t *testing.T) {
+	t.Setenv("DT_TEST_ENVIRONMENT_URL", "https://abc12345.apps.dynatrace.com")
+	t.Setenv("PLANTED_SECRET", "secret-val")
+
+	// A non-local config is never expanded at all.
+	global := NewConfig()
+	global.Contexts = []NamedContext{{Name: "g", Context: Context{Environment: "${DT_TEST_ENVIRONMENT_URL}"}}}
+	global.resolveLocalEnvironments()
+	if got := global.Contexts[0].Context.Environment; got != "${DT_TEST_ENVIRONMENT_URL}" {
+		t.Errorf("non-local environment = %q, want it untouched", got)
+	}
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "valid bare origin is adopted",
+			raw:  "${DT_TEST_ENVIRONMENT_URL}",
+			want: "https://abc12345.apps.dynatrace.com",
+		},
+		{
+			// The expanded form must exist nowhere: readers that do not
+			// validate (doctor HEADs the URL as written) would otherwise ship
+			// the secret to the attacker's host.
+			name: "secret smuggled into a path is not adopted",
+			raw:  "https://abc12345.apps.dynatrace.com/$PLANTED_SECRET",
+			want: "https://abc12345.apps.dynatrace.com/$PLANTED_SECRET",
+		},
+		{
+			name: "secret smuggled into a hostname is not adopted",
+			raw:  "https://$PLANTED_SECRET.apps.dynatrace.com",
+			want: "https://$PLANTED_SECRET.apps.dynatrace.com",
+		},
+		{
+			name: "foreign host is not adopted",
+			raw:  "https://evil.example/$PLANTED_SECRET",
+			want: "https://evil.example/$PLANTED_SECRET",
+		},
+		{
+			name: "unset variable is not adopted",
+			raw:  "${DT_TEST_UNSET_URL}",
+			want: "${DT_TEST_UNSET_URL}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := newLocalConfig(t, tt.raw, "ref", nil)
+			if got := cfg.Contexts[0].Context.Environment; got != tt.want {
+				t.Errorf("environment = %q, want %q", got, tt.want)
+			}
+			unresolved := tt.raw == tt.want
+			if got := cfg.EnvironmentUnresolved("default"); got != unresolved {
+				t.Errorf("EnvironmentUnresolved() = %v, want %v", got, unresolved)
+			}
+		})
+	}
+}
+
+// localConfigWithEnvVarURL writes a global config binding token-ref "prod" to
+// abc12345.apps.dynatrace.com and a local .dtctl.yaml that names the same host
+// through ${DT_TEST_ENVIRONMENT_URL} — the shape `dtctl config init` writes.
+// It chdirs into the project dir and returns it.
+func localConfigWithEnvVarURL(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+
+	globalDir := filepath.Join(tmpDir, "xdg", "dtctl")
+	if err := os.MkdirAll(globalDir, 0700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	globalCfg := `apiVersion: v1
+kind: Config
+current-context: prod
+contexts:
+  - name: prod
+    context:
+      environment: https://abc12345.apps.dynatrace.com
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(globalDir, "config"), []byte(globalCfg), 0600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+	// Registered before t.Setenv so it runs *after* the env var is restored;
+	// reloading while it still points at the temp dir caches a path that
+	// t.TempDir is about to delete.
+	t.Cleanup(xdg.Reload)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "xdg"))
+	xdg.Reload()
+
+	localCfg := `apiVersion: v1
+kind: Config
+current-context: local
+contexts:
+  - name: local
+    context:
+      environment: ${DT_TEST_ENVIRONMENT_URL}
+      token-ref: prod
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, LocalConfigName), []byte(localCfg), 0600); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+	t.Setenv("DT_TEST_ENVIRONMENT_URL", "https://abc12345.apps.dynatrace.com")
+
+	origWd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	return tmpDir
+}
+
+// TestLoad_LocalEnvironmentIsResolvedForPlainReaders pins that Load resolves a
+// local ${VAR} environment in place. Most readers of an environment URL take
+// Context.Environment directly (doctor's URL and connectivity checks, the
+// live-debugger handlers, spill's tenant id, account environment detection);
+// resolving only at selected call sites left those reporting the literal
+// "${DT_TEST_ENVIRONMENT_URL}".
+func TestLoad_LocalEnvironmentIsResolvedForPlainReaders(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	localConfigWithEnvVarURL(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	const want = "https://abc12345.apps.dynatrace.com"
+	if got := cfg.Contexts[0].Context.Environment; got != want {
+		t.Errorf("Contexts[0].Context.Environment = %q, want %q", got, want)
+	}
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		t.Fatalf("CurrentContextObj() error: %v", err)
+	}
+	if got := ctx.Environment; got != want {
+		t.Errorf("CurrentContextObj().Environment = %q, want %q", got, want)
+	}
+	// The raw reference is kept so SaveTo can write it back unexpanded.
+	if got := cfg.rawEnvironments["local"]; got != "${DT_TEST_ENVIRONMENT_URL}" {
+		t.Errorf("rawEnvironments[\"local\"] = %q, want the raw reference", got)
+	}
+}
+
+// TestSaveTo_PreservesLocalEnvironmentTemplate verifies that editing a
+// committed .dtctl.yaml does not bake the editing developer's expansion into
+// it. Any config-management command (ctx use, config set, alias add, login)
+// load-modify-saves the discovered file, so resolving at load must not leak
+// into the write path.
+func TestSaveTo_PreservesLocalEnvironmentTemplate(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := localConfigWithEnvVarURL(t)
+	path := filepath.Join(tmpDir, LocalConfigName)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	// An unrelated mutation, as `dtctl config set output json` would make.
+	cfg.Preferences.Output = "json"
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo() error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(data), "${DT_TEST_ENVIRONMENT_URL}") {
+		t.Errorf("SaveTo() dropped the env-var reference; file is:\n%s", data)
+	}
+	if strings.Contains(string(data), "abc12345.apps.dynatrace.com") {
+		t.Errorf("SaveTo() baked the expansion into the file; file is:\n%s", data)
+	}
+}
+
+// TestSaveTo_KeepsExplicitEnvironmentOverride verifies the other half: an
+// environment changed after load (config set-context --environment) is written
+// as given rather than reverted to the template it replaced.
+func TestSaveTo_KeepsExplicitEnvironmentOverride(t *testing.T) {
+	// NOT parallel: os.Chdir and XDG_CONFIG_HOME are process-global.
+	tmpDir := localConfigWithEnvVarURL(t)
+	path := filepath.Join(tmpDir, LocalConfigName)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	const explicit = "https://zzz99999.apps.dynatrace.com"
+	cfg.Contexts[0].Context.Environment = explicit
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo() error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(data), explicit) {
+		t.Errorf("SaveTo() lost the explicit environment; file is:\n%s", data)
+	}
+	if strings.Contains(string(data), "${DT_TEST_ENVIRONMENT_URL}") {
+		t.Errorf("SaveTo() reverted an explicit environment to the template; file is:\n%s", data)
+	}
+}
+
+func TestConfig_DeleteToken_ClearsEntireFanOut(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	// The plain platform token, the per-environment OAuth caches, and the scope
+	// companion each hold live material and must all be cleared.
+	kr.data["incident-token"] = "platform-secret"
+	kr.data["oauth:prod:incident-token"] = `{"refresh_token":"prod-refresh"}`
+	kr.data["oauth:prod:incident-token:scopes"] = "storage:logs:read"
+	kr.data["oauth:dev:incident-token"] = `{"refresh_token":"dev-refresh"}`
+	kr.data["oauth:hard:incident-token"] = `{"refresh_token":"hard-refresh"}`
+	// An unrelated credential must survive: teardown is scoped to one token ref.
+	kr.data["other-token"] = "keep-me"
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "incident-token"}, {Name: "other-token"}}
+
+	if err := cfg.deleteTokenWithKeyring("incident-token", kr, NewOAuthFileStoreWithDir(t.TempDir())); err != nil {
+		t.Fatalf("deleteTokenWithKeyring() error = %v", err)
+	}
+
+	for key := range kr.data {
+		if strings.Contains(key, "incident-token") {
+			t.Errorf("keyring entry %q still exists after DeleteToken", key)
+		}
+	}
+	if got := kr.data["other-token"]; got != "keep-me" {
+		t.Errorf("unrelated credential = %q, want %q", got, "keep-me")
+	}
+
+	if len(cfg.Tokens) != 1 || cfg.Tokens[0].Name != "other-token" {
+		t.Errorf("config tokens = %+v, want only other-token", cfg.Tokens)
+	}
+}
+
+func TestConfig_DeleteToken_ClearsFileStore(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	fileStore := NewOAuthFileStoreWithDir(dir)
+
+	// Both backends are swept regardless of which one is active, because
+	// GetToken reads from either: a credential written to the file store and
+	// deleted only from the keyring would still resolve afterwards.
+	keys := []string{"file-cred", "oauth:prod:file-cred", "oauth:prod:file-cred:scopes"}
+	for _, key := range keys {
+		if err := fileStore.SetToken(key, `{"refresh_token":"stale"}`); err != nil {
+			t.Fatalf("seeding %q: %v", key, err)
+		}
+	}
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "file-cred"}}
+
+	if err := cfg.deleteTokenWithKeyring("file-cred", &unavailableKeyring{}, fileStore); err != nil {
+		t.Fatalf("deleteTokenWithKeyring() error = %v", err)
+	}
+
+	for _, key := range keys {
+		if _, err := fileStore.GetToken(key); err == nil {
+			t.Errorf("file-store entry %q still exists after DeleteToken", key)
+		}
+	}
+}
+
+func TestConfig_DeleteToken_SweepsEnvironmentsWithoutAContext(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	for _, key := range []string{"oauth:prod:orphan", "oauth:dev:orphan", "oauth:hard:orphan"} {
+		kr.data[key] = `{"refresh_token":"stale"}`
+	}
+
+	// No context references "orphan" — the credential's context may already be
+	// gone, or may never have existed. The sweep must still be complete, which
+	// it is because oauthKeyringNames enumerates prod/dev/hard unconditionally
+	// and oauthEnvironmentFromURL cannot return anything outside that set. This
+	// is why deletion imposes no ordering against context removal.
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "orphan"}}
+
+	if err := cfg.deleteTokenWithKeyring("orphan", kr, NewOAuthFileStoreWithDir(t.TempDir())); err != nil {
+		t.Fatalf("deleteTokenWithKeyring() error = %v", err)
+	}
+
+	if len(kr.data) != 0 {
+		t.Errorf("keyring still holds %v after DeleteToken with no context present", kr.data)
+	}
+}
+
+func TestConfig_DeleteToken_SweepsLegacyOAuthEntry(t *testing.T) {
+	t.Parallel()
+
+	kr := newMockKeyring()
+	// Pre-environment format written by older dtctl versions. GetToken no
+	// longer resolves it, but it still holds a refresh token, so teardown must
+	// remove it rather than leave an unreachable secret on the machine.
+	kr.data["oauth:legacy-cred"] = `{"refresh_token":"ancient"}`
+	kr.data["oauth:legacy-cred:scopes"] = "storage:logs:read"
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "legacy-cred"}}
+
+	if err := cfg.deleteTokenWithKeyring("legacy-cred", kr, NewOAuthFileStoreWithDir(t.TempDir())); err != nil {
+		t.Fatalf("deleteTokenWithKeyring() error = %v", err)
+	}
+
+	if len(kr.data) != 0 {
+		t.Errorf("legacy OAuth entries survived DeleteToken: %v", kr.data)
+	}
+}
+
+func TestConfig_DeleteToken_IsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	// A credential that is already gone is not an error, so a teardown step can
+	// be retried (or run twice) without failing the caller.
+	if err := cfg.deleteTokenWithKeyring("never-existed", newMockKeyring(), NewOAuthFileStoreWithDir(t.TempDir())); err != nil {
+		t.Errorf("DeleteToken() for missing credential = %v, want nil", err)
+	}
+}
+
+func TestConfig_DeleteToken_KeepsConfigEntryWhenStoreFails(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "stuck-cred"}}
+
+	// A keyring that reports itself available but refuses deletes: the error must
+	// surface, and the config entry must survive so the delete stays retryable
+	// by name rather than leaving an unreachable secret behind.
+	if err := cfg.deleteTokenWithKeyring("stuck-cred", &refusingKeyring{}, NewOAuthFileStoreWithDir(t.TempDir())); err == nil {
+		t.Fatal("DeleteToken() error = nil, want error when the keyring refuses the delete")
+	}
+
+	if len(cfg.Tokens) != 1 || cfg.Tokens[0].Name != "stuck-cred" {
+		t.Errorf("config tokens = %+v, want stuck-cred retained for retry", cfg.Tokens)
+	}
+}
+
+func TestConfig_DeleteToken_RejectsEmptyName(t *testing.T) {
+	t.Parallel()
+
+	cfg := NewConfig()
+	// An empty name would otherwise expand into the bare "oauth:<env>:" prefixes.
+	if err := cfg.deleteTokenWithKeyring("", newMockKeyring(), nil); err == nil {
+		t.Error("DeleteToken(\"\") error = nil, want error")
+	}
 }

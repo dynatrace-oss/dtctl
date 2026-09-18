@@ -2,6 +2,7 @@ package apply
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
@@ -60,7 +61,10 @@ func (a *Applier) applyGCPConnection(data []byte) ([]ApplyResult, error) {
 
 		if objectID == "" {
 			existing, err := handler.FindByNameAndType(value.Name, value.Type)
-			if err == nil && existing != nil {
+			if err != nil {
+				return nil, nameLookupError("GCP connection", value.Name, err)
+			}
+			if existing != nil {
 				objectID = existing.ObjectID
 			}
 		}
@@ -133,7 +137,10 @@ func (a *Applier) applyGCPMonitoringConfig(data []byte) (ApplyResult, error) {
 
 	if objectID == "" && config.Value.Description != "" {
 		existing, err := handler.FindByName(config.Value.Description)
-		if err == nil && existing != nil {
+		if err != nil && !errors.Is(err, gcpmonitoringconfig.ErrNotFound) {
+			return nil, nameLookupError("GCP monitoring config", config.Value.Description, err)
+		}
+		if existing != nil {
 			stderrWarn(&warnings, "Found existing GCP monitoring config %q with ID: %s", config.Value.Description, existing.ObjectID)
 			objectID = existing.ObjectID
 			config.ObjectID = objectID

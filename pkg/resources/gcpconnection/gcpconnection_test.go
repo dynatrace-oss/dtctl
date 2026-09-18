@@ -179,7 +179,8 @@ func TestHandlerCreateUpdateStatusMapping(t *testing.T) {
 			wantErr string
 		}{
 			{status: 400, wantErr: "invalid gcp_connection"},
-			{status: 403, wantErr: "access denied to create gcp_connection"},
+			// 403 now surfaces the server's reason instead of swallowing it (#476).
+			{status: 403, wantErr: "create gcp_connection (HTTP 403): boom"},
 			{status: 404, wantErr: fmt.Sprintf("schema %q not found", SchemaID)},
 			{status: 409, wantErr: "already exists"},
 			{status: 500, wantErr: "failed to create gcp_connection: status 500"},
@@ -208,7 +209,7 @@ func TestHandlerCreateUpdateStatusMapping(t *testing.T) {
 			wantErr string
 		}{
 			{status: 400, wantErr: "invalid gcp_connection"},
-			{status: 403, wantErr: "access denied to update gcp_connection"},
+			{status: 403, wantErr: "update gcp_connection \"obj-1\" (HTTP 403): boom"},
 			{status: 404, wantErr: "gcp_connection \"obj-1\" not found"},
 			{status: 409, wantErr: "version conflict"},
 			{status: 412, wantErr: "version conflict"},

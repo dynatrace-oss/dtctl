@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -490,4 +491,142 @@ func TestAnomalyDetectorApplyIdempotent(t *testing.T) {
 	}
 
 	t.Logf("Apply idempotency verified: title %q appears exactly %d time(s)", expectedTitle, count)
+}
+
+// TestAnomalyDetectorMinimalDefinition covers issue #369: a definition that
+// omits the fields the schema declares non-nullable but defaults (description,
+// source, executionSettings) was rejected with "Must not be null" on a field
+// the author never wrote. dtctl now fills those defaults in.
+func TestAnomalyDetectorMinimalDefinition(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := anomalydetector.NewHandler(env.Client)
+
+	title := env.TestPrefix + "-minimal-detector"
+	minimal, err := json.Marshal(map[string]interface{}{
+		"title":   title,
+		"enabled": false,
+		"analyzer": map[string]interface{}{
+			"name": "dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer",
+			"input": map[string]interface{}{
+				"query":              "timeseries avg_cpu=avg(dt.host.cpu.usage), interval:5m",
+				"threshold":          "95",
+				"alertCondition":     "ABOVE",
+				"violatingSamples":   "3",
+				"slidingWindow":      "5",
+				"dealertingSamples":  "5",
+				"alertOnMissingData": "false",
+			},
+		},
+		"eventTemplate": map[string]interface{}{
+			"event.type": "CUSTOM_ALERT",
+			"event.name": title + " alert",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal minimal definition: %v", err)
+	}
+
+	created, err := handler.Create(minimal)
+	if err != nil {
+		t.Fatalf("Create() with a minimal definition failed: %v", err)
+	}
+	env.Cleanup.Track("anomalydetector", created.ObjectID, created.Title)
+	t.Logf("Created detector from a minimal definition: %s (ObjectID: %s)", created.Title, created.ObjectID)
+
+	retrieved, err := handler.Get(created.ObjectID)
+	if err != nil {
+		t.Fatalf("Failed to get anomaly detector: %v", err)
+	}
+	if retrieved.Description != "" {
+		t.Errorf("Description = %q, want the schema default (empty)", retrieved.Description)
+	}
+	if retrieved.Source != "dtctl" {
+		t.Errorf("Source = %q, want %q", retrieved.Source, "dtctl")
+	}
+	if _, ok := retrieved.Value["executionSettings"]; !ok {
+		t.Errorf("executionSettings missing from the stored object: %v", retrieved.Value)
+	}
+}
+
+// TestAnomalyDetectorValidateOnly checks the validation the --dry-run paths rely
+// on: the environment's own verdict, with nothing persisted either way.
+func TestAnomalyDetectorValidateOnly(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := anomalydetector.NewHandler(env.Client)
+
+	t.Run("valid definition passes and persists nothing", func(t *testing.T) {
+		data := integration.AnomalyDetectorFixture(env.TestPrefix)
+		if err := handler.ValidateCreate(data); err != nil {
+			t.Fatalf("ValidateCreate() error = %v, want the fixture to validate", err)
+		}
+
+		title := anomalydetector.ExtractTitle(data)
+		existing, err := handler.FindByExactTitle(title)
+		if err != nil {
+			t.Fatalf("FindByExactTitle() error = %v", err)
+		}
+		if existing != nil {
+			env.Cleanup.Track("anomalydetector", existing.ObjectID, existing.Title)
+			t.Fatalf("validateOnly persisted %q (ObjectID: %s)", existing.Title, existing.ObjectID)
+		}
+	})
+
+	t.Run("incomplete analyzer is rejected", func(t *testing.T) {
+		// The analyzer name is valid but its required input fields are absent —
+		// only the environment's analyzer validator knows that.
+		data, err := json.Marshal(map[string]interface{}{
+			"title":       env.TestPrefix + "-incomplete-analyzer",
+			"description": "Integration test - incomplete analyzer",
+			"enabled":     false,
+			"analyzer": map[string]interface{}{
+				"name": "dt.statistics.ui.anomaly_detection.StaticThresholdAnomalyDetectionAnalyzer",
+			},
+			"eventTemplate": map[string]interface{}{
+				"event.type": "CUSTOM_ALERT",
+				"event.name": env.TestPrefix + " incomplete analyzer alert",
+			},
+		})
+		if err != nil {
+			t.Fatalf("failed to marshal definition: %v", err)
+		}
+
+		err = handler.ValidateCreate(data)
+		if err == nil {
+			t.Fatal("ValidateCreate() error = nil, want the incomplete analyzer to be rejected")
+		}
+		var unavailable *anomalydetector.ValidationUnavailableError
+		if errors.As(err, &unavailable) {
+			t.Fatalf("ValidateCreate() error = %v, want a rejection rather than an unavailable verdict", err)
+		}
+		if !strings.Contains(err.Error(), "invalid anomaly detector") {
+			t.Errorf("error = %v, want a field-oriented validation error", err)
+		}
+		t.Logf("Rejected as expected: %v", err)
+	})
+
+	t.Run("update of an existing detector validates", func(t *testing.T) {
+		created, err := handler.Create(integration.AnomalyDetectorFixture(env.TestPrefix + "-upd"))
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		env.Cleanup.Track("anomalydetector", created.ObjectID, created.Title)
+
+		modified := integration.AnomalyDetectorFixtureModified(env.TestPrefix + "-upd")
+		if err := handler.ValidateUpdate(created.ObjectID, modified); err != nil {
+			t.Fatalf("ValidateUpdate() error = %v, want the modified fixture to validate", err)
+		}
+
+		// Validation must not have applied the change.
+		retrieved, err := handler.Get(created.ObjectID)
+		if err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+		if retrieved.Title != created.Title {
+			t.Errorf("Title = %q, want %q — validateOnly must not persist", retrieved.Title, created.Title)
+		}
+	})
 }

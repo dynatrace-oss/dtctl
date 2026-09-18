@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -30,9 +32,23 @@ type Session struct {
 	SafetyLevel config.SafetyLevel
 }
 
-// sessionContextName names the synthesized context and token. It appears in
+// sessionContextName names the synthesized context. It appears in
 // safety-check messages ("Context 'session' does not allow ...").
 const sessionContextName = "session"
+
+// newSessionTokenRef generates a per-invocation unpredictable token reference
+// name ("session-<16 hex chars>"). A fixed name like "session" would let a
+// host-local credential file entry (e.g. oauth:*:session) shadow the inline
+// token even after the keyring is disabled.
+func newSessionTokenRef() string {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		// crypto/rand failure is exceedingly unlikely; fall back to a fixed
+		// suffix that is still distinct from the old constant "session".
+		return "session-fallback"
+	}
+	return "session-" + hex.EncodeToString(buf[:])
+}
 
 func (s *Session) validate() error {
 	if s.EnvironmentURL == "" {
@@ -65,7 +81,8 @@ func (s *Session) syntheticConfig() *config.Config {
 	if level == "" {
 		level = config.DefaultSafetyLevel
 	}
-	return &config.Config{
+	tokenRef := newSessionTokenRef()
+	cfg := &config.Config{
 		APIVersion:     config.CurrentAPIVersion,
 		Kind:           "Config",
 		CurrentContext: sessionContextName,
@@ -73,15 +90,19 @@ func (s *Session) syntheticConfig() *config.Config {
 			Name: sessionContextName,
 			Context: config.Context{
 				Environment: s.EnvironmentURL,
-				TokenRef:    sessionContextName,
+				TokenRef:    tokenRef,
 				SafetyLevel: level,
 			},
 		}},
 		Tokens: []config.NamedToken{{
-			Name:  sessionContextName,
+			Name:  tokenRef,
 			Token: s.Token,
 		}},
 	}
+	// The inline token must win unconditionally; no host credential store should
+	// be consulted for a synthetic session config.
+	cfg.SealInlineCredentials()
+	return cfg
 }
 
 // runSession holds the active invocation's session override. Guarded by runMu
@@ -103,10 +124,13 @@ var runSession *Session
 // response, NO_COLOR is scrubbed alongside it so colour resolves from the
 // invocation alone, and DTCTL_SPILL/DTCTL_SPILL_DIR would re-enable spilling
 // (or redirect it) behind the HostDiskSpill capability's back.
+// DTCTL_TOKEN_STORAGE selects the credential backend (keyring vs. file); a
+// request must never reach any host credential store, so this is scrubbed too.
 var sessionScrubbedEnvVars = []string{
 	"DTCTL_TOKEN", "DT_API_TOKEN", "DTCTL_ACCOUNT_TOKEN",
 	"DTCTL_CONFIG", "DTCTL_CONTEXT", "DTCTL_PROFILE", "DTCTL_OUTPUT",
 	"FORCE_COLOR", "NO_COLOR", "DTCTL_SPILL", "DTCTL_SPILL_DIR",
+	"DTCTL_TOKEN_STORAGE",
 }
 
 // applyRunEnvironment installs the invocation's session and environment

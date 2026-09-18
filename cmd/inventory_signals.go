@@ -107,7 +107,7 @@ Examples:
 
 		scanLimitGB, _ := cmd.Flags().GetFloat64("scan-limit-gbytes")
 		runner := newInventoryRunner(cmd, cfg, c)
-		ctx, cancel := inventoryCancelContext()
+		ctx, cancel := inventoryCancelContext(cmd)
 		defer cancel()
 
 		budgetQueries, budgetSeconds := inventoryBudget(cmd)

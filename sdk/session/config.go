@@ -2,9 +2,11 @@ package session
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/adrg/xdg"
@@ -40,6 +42,47 @@ type Config struct {
 	// are never honored at runtime — alias resolution and hook execution check
 	// IsLocal() and skip them. See markLocal, GetPreApplyHook, resolveAlias.
 	ignoredExecKeys bool
+	// ignoredEnvRefs is true when key config values (environment URLs, inline
+	// token values) in an auto-discovered local config contain literal '$'
+	// characters that were not expanded because expansion is skipped for
+	// untrusted local configs. The caller can surface a warning so the user
+	// knows to use --config / DTCTL_CONFIG if they intended expansion.
+	ignoredEnvRefs bool
+	// globalBindings maps token-ref names to what the global config records for
+	// them: the canonical hostname of the associated environment and that
+	// context's effective safety level. When IsLocal() is true, GetToken checks
+	// the host so a rogue local config cannot redirect stored credentials to an
+	// attacker-controlled host, and GetEffectiveSafetyLevel clamps to the level
+	// so it cannot escalate past what the credential's owner permits. Keyed by
+	// token-ref rather than context name because that is the binding a local
+	// config actually borrows — it is free to rename its context.
+	globalBindings map[string]globalBinding
+	// rawEnvironments maps context name to the environment URL as written in an
+	// auto-discovered local config, for every context whose URL carries a '$' —
+	// whether or not the reference was adopted. SaveTo writes these back so
+	// editing a committed .dtctl.yaml does not bake the editing developer's
+	// expansion into it, and EnvironmentUnresolved compares against them to
+	// tell an unadopted reference from a literal URL. See
+	// resolveLocalEnvironments, restoreRawEnvironments.
+	rawEnvironments map[string]string
+	// inlineOnly is set by SealInlineCredentials to restrict token resolution to
+	// the inline Tokens list. When true, GetToken never consults the keyring,
+	// file store, or OAuth machinery — only the values carried in the struct.
+	inlineOnly bool
+}
+
+// SealInlineCredentials marks this config as inline-only: token resolution will
+// consult only c.Tokens and never touch the keyring, file store, or OAuth
+// machinery. Call this on synthetic session configs to prevent host credential
+// stores from overriding request-supplied tokens.
+func (c *Config) SealInlineCredentials() {
+	c.inlineOnly = true
+}
+
+// InlineCredentialsOnly reports whether the config has been sealed via
+// SealInlineCredentials.
+func (c *Config) InlineCredentialsOnly() bool {
+	return c.inlineOnly
 }
 
 // NamedContext holds a context with its name
@@ -272,11 +315,17 @@ func Load() (*Config, error) {
 	// Check for local config first
 	localConfig := FindLocalConfig()
 	if localConfig != "" {
-		cfg, err := LoadFrom(localConfig)
+		// Auto-discovered local configs are untrusted: skip env-var expansion so a
+		// malicious .dtctl.yaml cannot inject host secrets into its own values.
+		cfg, err := loadFrom(localConfig, false)
 		if err != nil {
 			return nil, err
 		}
 		cfg.markLocal(localConfig)
+		// The environment URL is the one local value that may name its
+		// destination through ${VAR}; resolve it once here so every consumer
+		// sees a real URL. See resolveLocalEnvironments.
+		cfg.resolveLocalEnvironments()
 		return cfg, nil
 	}
 
@@ -295,6 +344,57 @@ func Load() (*Config, error) {
 func (c *Config) markLocal(path string) {
 	c.localPath = path
 	c.ignoredExecKeys = c.hasExecKeys()
+	c.ignoredEnvRefs = c.hasEnvRefs()
+	c.globalBindings = buildGlobalBindings()
+}
+
+// globalBinding is what the global config records for one token-ref: the hosts
+// its credential belongs to and the safety level its owner granted. Several
+// global contexts may share a token-ref, so both fields accumulate across them:
+// every bound host is accepted, and the level is the most restrictive one
+// granted, so YAML ordering cannot widen either.
+type globalBinding struct {
+	hosts []string
+	level SafetyLevel
+}
+
+// allows reports whether host is one of the hosts this token-ref is bound to.
+func (b globalBinding) allows(host string) bool {
+	return slices.Contains(b.hosts, host)
+}
+
+// buildGlobalBindings loads the global config (best-effort, ignoring errors)
+// and returns the token-ref→binding map. GetToken uses the host to reject a
+// local config that redirects a credential elsewhere; GetEffectiveSafetyLevel
+// uses the level to clamp one that tries to escalate. Single disk read shared
+// by both concerns.
+func buildGlobalBindings() map[string]globalBinding {
+	globalCfg, err := LoadFrom(DefaultConfigPath())
+	if err != nil {
+		return nil
+	}
+	bindings := make(map[string]globalBinding)
+	for _, nc := range globalCfg.Contexts {
+		ref := nc.Context.TokenRef
+		host := urls.Host(nc.Context.Environment)
+		if ref == "" || host == "" {
+			continue
+		}
+		level := nc.Context.GetEffectiveSafetyLevel()
+		b, seen := bindings[ref]
+		if !seen {
+			bindings[ref] = globalBinding{hosts: []string{host}, level: level}
+			continue
+		}
+		if !b.allows(host) {
+			b.hosts = append(b.hosts, host)
+		}
+		if safetyLevelRank(level) < safetyLevelRank(b.level) {
+			b.level = level
+		}
+		bindings[ref] = b
+	}
+	return bindings
 }
 
 // hasExecKeys reports whether the config defines any code-execution key:
@@ -328,6 +428,25 @@ func (c *Config) LocalConfigPath() string { return c.localPath }
 // are present in the auto-discovered local config and are therefore ignored at
 // runtime. See markLocal.
 func (c *Config) IgnoredExecKeys() bool { return c.ignoredExecKeys }
+
+// hasEnvRefs reports whether inline token values contain a literal '$'
+// character — a sign that the author intended env-var expansion that was
+// skipped because the config was auto-discovered (untrusted). Environment
+// URLs are excluded: they support ${VAR} expansion via os.ExpandEnv in
+// NewClientFromConfig (after URL validation), so no warning is needed.
+func (c *Config) hasEnvRefs() bool {
+	for _, nt := range c.Tokens {
+		if strings.ContainsRune(nt.Token, '$') {
+			return true
+		}
+	}
+	return false
+}
+
+// IgnoredEnvRefs reports whether key config values in the auto-discovered local
+// config contained unexpanded env-var references (literal '$' characters).
+// When true the caller should warn the user to use --config or DTCTL_CONFIG.
+func (c *Config) IgnoredEnvRefs() bool { return c.ignoredEnvRefs }
 
 // LoadFrom loads the configuration from a specific path
 func LoadFrom(path string) (*Config, error) {
@@ -562,7 +681,7 @@ func (c *Config) SaveTo(path string) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := yaml.Marshal(c)
+	data, err := yaml.Marshal(c.restoreRawEnvironments())
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -606,9 +725,55 @@ func (c *Config) GetContext(name string) (*NamedContext, error) {
 // GetToken retrieves a token by reference name.
 // It first tries the OS keyring (checking both regular and OAuth tokens),
 // then file-based OAuth token storage, then falls back to the config file.
+// When DTCTL_TOKEN_STORAGE=file is set, keyring is skipped entirely.
 func (c *Config) GetToken(tokenRef string) (string, error) {
-	// Try keyring first
-	if IsKeyringAvailable() {
+	// Sealed configs must only use inline tokens — no keyring, file store, or
+	// OAuth lookup. This prevents host credential stores from overriding a
+	// synthetic session's request-supplied token.
+	if c.inlineOnly {
+		for _, nt := range c.Tokens {
+			if nt.Name == tokenRef {
+				if nt.Token != "" {
+					return nt.Token, nil
+				}
+			}
+		}
+		return "", fmt.Errorf("token %q not found in sealed config", tokenRef)
+	}
+
+	// Local configs must not carry inline token values: an attacker-controlled
+	// .dtctl.yaml could define an arbitrary token and point at an arbitrary host.
+	// Use --config or DTCTL_CONFIG to supply inline tokens from a trusted path.
+	if c.IsLocal() {
+		for _, nt := range c.Tokens {
+			if nt.Name == tokenRef && nt.Token != "" {
+				return "", fmt.Errorf(
+					"local config %q defines inline token %q; inline tokens are not allowed in auto-discovered local configs — use --config or DTCTL_CONFIG",
+					c.localPath, tokenRef)
+			}
+		}
+
+		// Verify that the local context's environment points to the same host as
+		// the global config binding for this token-ref. This prevents a rogue
+		// .dtctl.yaml from redirecting stored credentials to a foreign host.
+		if ctx, err := c.CurrentContextObj(); err == nil && ctx.TokenRef == tokenRef {
+			localHost := urls.Host(ctx.Environment)
+			if binding, ok := c.globalBindings[tokenRef]; ok {
+				if !binding.allows(localHost) {
+					return "", fmt.Errorf(
+						"local config %q redirects token %q from trusted host(s) %s to %q — use --config or DTCTL_CONFIG",
+						c.localPath, tokenRef, strings.Join(binding.hosts, ", "), localHost)
+				}
+			} else {
+				return "", fmt.Errorf(
+					"local config %q uses token-ref %q which is not bound to any environment in the global config — use --config or DTCTL_CONFIG",
+					c.localPath, tokenRef)
+			}
+		}
+	}
+
+	// Try keyring first (skipped when file storage is explicitly requested)
+	if IsKeyringAvailable() && !IsFileTokenStorage() {
 		ts := NewTokenStore()
 
 		// First check for OAuth token.
@@ -784,6 +949,189 @@ func (c *Context) GetEffectiveSafetyLevel() SafetyLevel {
 	return c.SafetyLevel
 }
 
+// safetyLevelRank returns a permissiveness rank (lower = more restrictive).
+// Empty string is treated as DefaultSafetyLevel (readwrite-all, rank 2).
+func safetyLevelRank(l SafetyLevel) int {
+	switch l {
+	case SafetyLevelReadOnly:
+		return 0
+	case SafetyLevelReadWriteMine:
+		return 1
+	case SafetyLevelDangerouslyUnrestricted:
+		return 3
+	default: // SafetyLevelReadWriteAll, "", or unknown
+		return 2
+	}
+}
+
+// GetEffectiveSafetyLevel returns the effective safety level for the current
+// context. For non-local configs this is identical to ctx.GetEffectiveSafetyLevel().
+// For auto-discovered local configs (IsLocal()), the level is clamped to
+// min(local, global) so a rogue .dtctl.yaml cannot escalate beyond what the
+// owner of the borrowed credential permits. The global level is looked up by
+// the context's token-ref — the same binding GetToken enforces — so renaming the
+// local context does not shed the clamp, and resolving it here rather than at
+// load time keeps it correct under --context / DTCTL_CONTEXT overrides.
+//
+// A token-ref with no global binding has no trust anchor at all, so it is
+// clamped to DefaultSafetyLevel rather than left free. Such a context cannot
+// reach an API either way (GetToken refuses to resolve it), so this costs
+// nothing and keeps the guarantee independent of token resolution.
+func (c *Config) GetEffectiveSafetyLevel() SafetyLevel {
+	ctx, err := c.CurrentContextObj()
+	if err != nil {
+		return DefaultSafetyLevel
+	}
+	return c.EffectiveSafetyLevelFor(ctx)
+}
+
+// EffectiveSafetyLevelFor reports the level actually enforced for ctx, which
+// for a local config is its declared level clamped to the global binding of
+// its token-ref. Callers that display a level for a context other than the
+// current one (e.g. `dtctl ctx list`) use this so what is shown is what is
+// enforced; GetEffectiveSafetyLevel is the current-context shorthand.
+func (c *Config) EffectiveSafetyLevelFor(ctx *Context) SafetyLevel {
+	localLevel := ctx.GetEffectiveSafetyLevel()
+	if !c.IsLocal() {
+		return localLevel
+	}
+	ceiling := DefaultSafetyLevel
+	if binding, ok := c.globalBindings[ctx.TokenRef]; ok {
+		ceiling = binding.level
+	}
+	if safetyLevelRank(localLevel) <= safetyLevelRank(ceiling) {
+		return localLevel
+	}
+	return ceiling
+}
+
+// resolveLocalEnvironments expands ${VAR} references in the environment URL of
+// every context of an auto-discovered local config — but only adopts an
+// expansion that yields a bare Dynatrace origin. The unexpanded value is
+// recorded so SaveTo can write it back.
+//
+// A committed .dtctl.yaml is allowed to name its destination through the
+// environment so one file can serve several developers and CI. Resolving once
+// at load rather than at each read is what keeps that promise: `dtctl doctor`,
+// the live-debugger handlers, spill's tenant id, account-environment detection
+// and every other reader of Context.Environment see a real URL without each
+// having to remember to resolve one. Resolving in only some places is how a
+// documented setup ends up reporting "cannot reach ${DT_ENVIRONMENT_URL}".
+//
+// Two conditions gate adoption, and together they are what make resolving this
+// early safe — not every reader validates its destination, doctor's
+// reachability check HEADs the URL as written:
+//
+//   - the value must be a *whole-value* reference ("${DT_ENVIRONMENT_URL}",
+//     the shape `config init` writes), never a reference embedded in
+//     surrounding text. Interpolating into the middle of a URL is how a value
+//     that is not a URL gets carried somewhere as one:
+//     "https://$SECRET.apps.dynatrace.com" expands to a perfectly valid
+//     Dynatrace origin whose hostname is the victim's secret, and merely
+//     resolving it would hand that secret to a DNS resolver.
+//   - what it expands to must be a bare Dynatrace origin.
+//
+// A value failing either check keeps the literal it was written as, so the
+// expanded form exists nowhere: not in the struct, not in a request, not in an
+// error message. NewClientFromConfig re-checks the origin rule, so a rejected
+// value cannot reach an API either.
+//
+// The environment is the only local value resolved at all: expansion of
+// aliases, hooks and inline token values stays off entirely.
+func (c *Config) resolveLocalEnvironments() {
+	if !c.IsLocal() {
+		return
+	}
+	for i := range c.Contexts {
+		raw := c.Contexts[i].Context.Environment
+		if !strings.ContainsRune(raw, '$') {
+			continue
+		}
+		if c.rawEnvironments == nil {
+			c.rawEnvironments = make(map[string]string)
+		}
+		c.rawEnvironments[c.Contexts[i].Name] = raw
+		if !isWholeValueEnvRef(raw) {
+			continue
+		}
+		resolved := os.ExpandEnv(raw)
+		if urls.IsDynatraceEnvironmentOrigin(resolved) != nil {
+			continue
+		}
+		c.Contexts[i].Context.Environment = resolved
+	}
+}
+
+// isWholeValueEnvRef reports whether s is exactly one environment-variable
+// reference — "${VAR}" or "$VAR" — and nothing else. A reference with anything
+// around it interpolates a value into a position that gives it a meaning it
+// was never checked for; see resolveLocalEnvironments.
+func isWholeValueEnvRef(s string) bool {
+	name, ok := strings.CutPrefix(s, "$")
+	if !ok {
+		return false
+	}
+	if braced, ok := strings.CutPrefix(name, "{"); ok {
+		name, ok = strings.CutSuffix(braced, "}")
+		if !ok {
+			return false
+		}
+	}
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		isAlnum := r == '_' ||
+			(r >= '0' && r <= '9') ||
+			(r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z')
+		if !isAlnum {
+			return false
+		}
+	}
+	return true
+}
+
+// EnvironmentUnresolved reports whether the named local context declares its
+// environment through a ${VAR} reference that did not resolve to a usable
+// Dynatrace origin — the variable is unset, or what it expanded to was
+// rejected. Such a context still holds the literal reference.
+func (c *Config) EnvironmentUnresolved(contextName string) bool {
+	raw, ok := c.rawEnvironments[contextName]
+	if !ok {
+		return false
+	}
+	nc, err := c.GetContext(contextName)
+	if err != nil {
+		return false
+	}
+	return nc.Context.Environment == raw
+}
+
+// restoreRawEnvironments returns a copy of c with every resolved local
+// environment URL written back as the ${VAR} reference it came from, so a
+// load-modify-save cycle does not silently bake one developer's expansion into
+// a committed .dtctl.yaml. A context whose environment was changed since load
+// (e.g. `config set-context --environment`) keeps the new value.
+func (c *Config) restoreRawEnvironments() *Config {
+	if len(c.rawEnvironments) == 0 {
+		return c
+	}
+	out := *c
+	out.Contexts = make([]NamedContext, len(c.Contexts))
+	copy(out.Contexts, c.Contexts)
+	for i := range out.Contexts {
+		raw, ok := c.rawEnvironments[out.Contexts[i].Name]
+		if !ok {
+			continue
+		}
+		if out.Contexts[i].Context.Environment == os.ExpandEnv(raw) {
+			out.Contexts[i].Context.Environment = raw
+		}
+	}
+	return &out
+}
+
 // GetPreApplyHook returns the effective pre-apply hook command.
 // Per-context hooks take precedence over global (preferences) hooks.
 // The special value "none" explicitly disables the global hook for a context.
@@ -905,6 +1253,81 @@ func (c *Config) setTokenWithKeyring(name, token string, kr keyringBackend, file
 		Name:  name,
 		Token: token,
 	})
+	return nil
+}
+
+// DeleteToken removes a credential and every cached derivative of it.
+//
+// A credential is not a single secret. One token ref fans out into the plain
+// keyring entry, a cached OAuth entry per environment, a scope companion for
+// each of those, and file-store copies of all of them. Teardown must clear the
+// whole fan-out: anything missed is live token material outliving the
+// credential the caller asked to remove.
+//
+// Deletion is idempotent — a credential that is already gone is not an error,
+// so callers can safely retry — but a store that refuses a delete is reported,
+// so no caller ever announces a credential as removed while it still exists.
+func (c *Config) DeleteToken(name string) error {
+	return c.deleteTokenWithKeyring(name, nil, nil)
+}
+
+// deleteTokenWithKeyring is the testable core of DeleteToken; accepts an
+// explicit keyringBackend and OAuthFileStore so tests avoid the OS keyring.
+//
+// The sweep does not depend on the config still holding the credential's
+// context: oauthKeyringNames enumerates prod/dev/hard unconditionally, and
+// oauthEnvironmentFromURL can only ever return one of those three (or ""), so
+// a context can only name an entry the unconditional list already covers.
+func (c *Config) deleteTokenWithKeyring(name string, kr keyringBackend, fileStore *OAuthFileStore) error {
+	if name == "" {
+		return fmt.Errorf("credential name must not be empty")
+	}
+	if kr == nil {
+		kr = newOSKeyring()
+	}
+	if fileStore == nil {
+		fileStore = NewOAuthFileStore()
+	}
+
+	// Every key this credential can occupy: the plain platform/API token entry,
+	// each per-environment OAuth cache entry, and each entry's scope companion.
+	// The pre-environment legacy form (oauth:<tokenRef>) is swept too: GetToken
+	// no longer resolves it, but an entry written by an older dtctl still holds
+	// a refresh token, and an unreachable secret is still a secret.
+	keys := []string{name, OAuthTokenPrefix + name, OAuthTokenPrefix + name + scopeCompanionSuffix}
+	for _, oauthKey := range c.oauthKeyringNames(name) {
+		keys = append(keys, oauthKey, oauthKey+scopeCompanionSuffix)
+	}
+
+	// Both backends are swept for every key regardless of which one is active:
+	// GetToken reads from either, so a credential written under one backend and
+	// deleted under the other would still resolve afterwards.
+	var errs []error
+	keyringAvailable := kr.Available()
+	for _, key := range keys {
+		if keyringAvailable {
+			if err := kr.Delete(key); err != nil {
+				errs = append(errs, fmt.Errorf("keyring entry %q: %w", key, err))
+			}
+		}
+		if err := fileStore.DeleteToken(key); err != nil {
+			errs = append(errs, fmt.Errorf("token file for %q: %w", key, err))
+		}
+	}
+
+	// Drop the config entry only once the secret stores are clear: while the
+	// entry is still there, a partially failed delete remains retryable by name.
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	for i, nt := range c.Tokens {
+		if nt.Name == name {
+			c.Tokens = append(c.Tokens[:i], c.Tokens[i+1:]...)
+			break
+		}
+	}
+
 	return nil
 }
 

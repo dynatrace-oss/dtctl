@@ -2,7 +2,6 @@ package output
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 
@@ -20,7 +19,6 @@ type PrinterOptions struct {
 	Format     string
 	Writer     io.Writer
 	PlainMode  bool
-	AgentMode  bool
 	JQFilter   string
 	Width      int  // Chart width (0 = default)
 	Height     int  // Chart height (0 = default)
@@ -72,21 +70,11 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 		width, height = GetFullscreenDimensions()
 	}
 
-	effectiveJQFilter := opts.JQFilter
-	if effectiveJQFilter != "" && opts.AgentMode {
-		// In agent mode we have to print the metadata as well
-		// The jq filter is transformed in a way that it returns the result as {"result": <filtered>, "metadata": .metadata}
-		effectiveJQFilter = fmt.Sprintf(
-			`. as $root | {result: ([$root | %s] | if length == 0 then null elif length == 1 then .[0] else . end), metadata: $root.metadata}`,
-			effectiveJQFilter,
-		)
-	}
-
 	switch format {
 	case "json":
-		return &JSONPrinter{writer: writer, jqFilter: effectiveJQFilter}
+		return &JSONPrinter{writer: writer, jqFilter: opts.JQFilter}
 	case "yaml", "yml":
-		return &YAMLPrinter{writer: writer, jqFilter: effectiveJQFilter}
+		return &YAMLPrinter{writer: writer, jqFilter: opts.JQFilter}
 	case "csv":
 		return &CSVPrinter{writer: writer}
 	case "jsonl":
@@ -94,7 +82,7 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 	case "parquet":
 		return &ParquetPrinter{writer: writer, types: opts.Types}
 	case "toon":
-		return &ToonPrinter{writer: writer, jqFilter: effectiveJQFilter}
+		return &ToonPrinter{writer: writer, jqFilter: opts.JQFilter}
 	case "chart":
 		if width > 0 || height > 0 {
 			return NewChartPrinterWithSize(writer, width, height)

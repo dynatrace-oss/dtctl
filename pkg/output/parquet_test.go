@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/parquet-go/parquet-go"
+	"github.com/parquet-go/parquet-go/format"
 )
 
 // readParquet reads all rows of a parquet byte buffer back into maps for
@@ -400,7 +401,10 @@ func TestParquetPrinter_Timestamp(t *testing.T) {
 		t.Fatalf("open parquet: %v", err)
 	}
 	col, ok := f.Schema().Lookup("ts")
-	if !ok || col.Node.Type().LogicalType() == nil || col.Node.Type().LogicalType().Timestamp == nil {
+	if !ok || col.Node.Type().LogicalType() == nil {
+		t.Fatalf("ts column has no logical type: %+v", col)
+	}
+	if _, isTS := col.Node.Type().LogicalType().Value.(*format.TimestampType); !isTS {
 		t.Fatalf("ts column is not a TIMESTAMP logical type: %+v", col)
 	}
 

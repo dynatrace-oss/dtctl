@@ -91,6 +91,10 @@ This document tracks the current implementation status of dtctl. For future plan
 | intent | ✅ | ✅ | - | - | - | - |
 | segment | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | anomaly-detector | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| api | ✅ | ✅ | - | - | - | - |
+| environment | ✅ | ✅ | - | - | - | - |
+| license | ✅ | ✅ | - | - | - | - |
+| license-settings | ✅ | - | - | - | - | - |
 
 #### Account Management
 
@@ -136,6 +140,20 @@ This document tracks the current implementation status of dtctl. For future plan
 | copilot | - | ✅ | - | - | - | - | - | - |
 | segment | - | - | - | - | - | - | - | ✅ |
 | anomaly-detector | - | - | - | - | - | - | - | - |
+| api | - | ✅ | - | - | - | - | - | - |
+
+### Generic API Access Features
+- [x] List the APIs an environment publishes specifications for: `dtctl get apis` (mirrors the environment's own API index — dtctl adds and filters nothing)
+- [x] DTCTL column names the native command that already wraps an API; `--uncovered` filters to the gap
+- [x] Operation counts and categories on demand: `--ops-count` (one request per API)
+- [x] Operation index for one API: `dtctl describe api <name|base-path>`
+- [x] One operation in full (parameters, request body, responses, scopes, ready-to-run invocation): `--operation 'METHOD /path'`
+- [x] Unprojected specification: `--raw` (spills to a file in agent mode, gated on the `HostDiskSpill` capability)
+- [x] Governed HTTP passthrough (unadvertised escape hatch): `dtctl exec api <path> [-X] [-d] [-H] [--dry-run]`
+- [x] Safety operation derived from the API's published specification, not from the HTTP method; unresolved requests gate as `OperationDelete`
+- [x] Curated escalation for irreversible endpoints, so the passthrough never gates looser than the command it shadows
+- [x] Per-call scope verdict in `--check-scopes`, resolved from the specification when asked explicitly
+- [x] Design doc: [GENERIC_API_ACCESS.md](GENERIC_API_ACCESS.md)
 
 ### Watch Mode Features
 - [x] Watch all `get` commands: `dtctl get workflows --watch`
@@ -354,7 +372,7 @@ This document tracks the current implementation status of dtctl. For future plan
 ## Future Planned Features 🔮
 
 See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for the complete implementation plan including:
-- Platform Management (environment info, license)
+- ~~Platform Management (environment info, license)~~ → Implemented (`environment`, `license`, `license-settings`)
 - State Management for Apps
 - ~~Grail Filter Segments~~ → Implemented (see `segment` resource)
 - Grail Fieldsets

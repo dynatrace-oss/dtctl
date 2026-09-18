@@ -2,6 +2,7 @@ package gcpmonitoringconfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -9,6 +10,11 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
+
+// ErrNotFound reports that no monitoring configuration matches the name. It
+// separates "absent" from "the lookup itself failed", which apply needs to
+// decide between create and abort.
+var ErrNotFound = errors.New("monitoring config not found")
 
 const (
 	ExtensionName      = "com.dynatrace.extension.da-gcp"
@@ -99,6 +105,15 @@ type MetricSource struct {
 	ResourceType                   string   `json:"resourceType"`
 	AutoDiscoveryEnabled           bool     `json:"autoDiscoveryEnabled"`
 	AutodiscoveryExcludeMetricType []string `json:"autodiscoveryExcludeMetricType,omitempty"`
+	Metrics                        []Metric `json:"metrics,omitempty"`
+}
+
+// Metric is a single Cloud Monitoring metric collected for a resource type,
+// used when auto-discovery is off or to add metrics beyond the recommended set.
+type Metric struct {
+	Name         string   `json:"name"`
+	MetricLabels []string `json:"metricLabels,omitempty"`
+	Type         string   `json:"type,omitempty"`
 }
 
 type Credential struct {
@@ -312,7 +327,7 @@ func (h *Handler) FindByName(name string) (*GCPMonitoringConfig, error) {
 			return &items[i], nil
 		}
 	}
-	return nil, fmt.Errorf("GCP monitoring config with description %q not found", name)
+	return nil, fmt.Errorf("GCP monitoring config with description %q: %w", name, ErrNotFound)
 }
 
 func (h *Handler) Create(data []byte) (*GCPMonitoringConfig, error) {

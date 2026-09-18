@@ -49,6 +49,10 @@ func (a *Applier) applyWorkflow(data []byte, opts ApplyOptions) (ApplyResult, er
 	// Check if workflow exists
 	existing, err := handler.Get(id)
 	if err != nil {
+		if lookupErr := lookupError("workflow", id, err); lookupErr != nil {
+			return nil, lookupErr
+		}
+
 		// Workflow doesn't exist, create it
 		// Safety check for create operation
 		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/slo"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
 // execSLOCmd evaluates an SLO
@@ -38,7 +39,10 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sloID := args[0]
 
-		_, c, err := SetupClient()
+		// SLO evaluation is a read-shaped POST: it computes a result and persists
+		// nothing (the API declares a :read scope), so gating it as a create would
+		// wrongly block it in a readonly context.
+		_, c, err := SetupWithSafety(safety.OperationRead)
 		if err != nil {
 			return err
 		}
@@ -81,7 +85,7 @@ Examples:
 		// Poll for results with exponential backoff
 		fmt.Printf("Polling for evaluation results...\n")
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+		ctx, cancel := context.WithTimeout(cmdContext(cmd), time.Duration(timeoutSeconds)*time.Second)
 		defer cancel()
 
 		pollInterval := 2 * time.Second
@@ -117,8 +121,13 @@ Examples:
 					return printer.Print(result)
 				}
 
-				// Wait before next poll with exponential backoff
-				time.Sleep(pollInterval)
+				// Wait before next poll with exponential backoff, but stay
+				// responsive to cancellation instead of blocking through it.
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("timeout waiting for SLO evaluation to complete")
+				case <-time.After(pollInterval):
+				}
 				if pollInterval < maxPollInterval {
 					pollInterval *= 2
 					if pollInterval > maxPollInterval {

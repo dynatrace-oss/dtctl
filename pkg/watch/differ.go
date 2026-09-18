@@ -77,7 +77,7 @@ func extractID(item interface{}) string {
 	}
 
 	v := reflect.ValueOf(item)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -158,10 +158,10 @@ func detectChangedField(prev, current interface{}) (string, interface{}, interfa
 	prevVal := reflect.ValueOf(prev)
 	currVal := reflect.ValueOf(current)
 
-	if prevVal.Kind() == reflect.Ptr {
+	if prevVal.Kind() == reflect.Pointer {
 		prevVal = prevVal.Elem()
 	}
-	if currVal.Kind() == reflect.Ptr {
+	if currVal.Kind() == reflect.Pointer {
 		currVal = currVal.Elem()
 	}
 

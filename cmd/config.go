@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -52,6 +53,45 @@ func saveConfig(cfg *config.Config) error {
 	return cfg.Save()
 }
 
+// loadConfigForWrite loads the file a config-management command should modify.
+// With global=true that is always the user-level config, so a discovered
+// .dtctl.yaml cannot capture a write that was meant to create the global
+// binding a local config depends on; otherwise it reads what loadConfigRaw
+// would. The global read skips expansion so a ${VAR} in the global file
+// survives the round-trip too.
+func loadConfigForWrite(global bool) (*config.Config, error) {
+	if global {
+		return config.LoadFromWithoutExpansion(config.DefaultConfigPath())
+	}
+	return loadConfigRaw()
+}
+
+// saveConfigForWrite mirrors loadConfigForWrite so a load-modify-save cycle
+// round-trips a single file.
+func saveConfigForWrite(cfg *config.Config, global bool) error {
+	if global {
+		return cfg.Save()
+	}
+	return saveConfig(cfg)
+}
+
+// warnLocalWriteTarget tells the user when a config write just landed in an
+// auto-discovered .dtctl.yaml. Such a file cannot hold credentials and only
+// resolves one through a context in the global config that binds the same
+// environment, so a write meant to set up access has to go to the global
+// config — which is what --global is for.
+func warnLocalWriteTarget(what string) {
+	if cfgFile != "" || os.Getenv(config.EnvConfig) != "" {
+		return
+	}
+	local := config.FindLocalConfig()
+	if local == "" {
+		return
+	}
+	output.PrintWarning("%s written to the local config %s, not your global config", what, local)
+	output.PrintHint("A local .dtctl.yaml cannot hold credentials; it resolves one through a global context that binds the same environment. Re-run with --global to write there.")
+}
+
 // configCmd represents the config command
 var configCmd = &cobra.Command{
 	Use:   "config",
@@ -91,7 +131,14 @@ Examples:
   # Create .dtctl.yaml with a specific context pre-set
   dtctl config init --context production
 
-Environment variables can be used in the config file using ${VAR_NAME} syntax.
+In an auto-discovered .dtctl.yaml the environment URL supports ${VAR_NAME}
+expansion (e.g. ${DT_ENVIRONMENT_URL}); it is validated as a Dynatrace host
+at runtime. Inline tokens are rejected — use 'token-ref' pointing to a context
+in your global config. For CI, point DTCTL_CONFIG at a trusted file instead.
+
+Note that once a .dtctl.yaml exists, config writes target it rather than your
+global config. Pass --global to 'config set-context' / 'config set-credentials'
+to create the global binding this file needs.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Check if .dtctl.yaml already exists
@@ -120,8 +167,15 @@ Environment variables can be used in the config file using ${VAR_NAME} syntax.
 		}
 
 		output.PrintSuccess("Created %s", configPath)
-		output.PrintInfo("\nEdit this file to configure your project-local settings.")
-		output.PrintInfo("Environment variables can be used with ${VAR_NAME} syntax.")
+		output.PrintInfo("\nSet DT_ENVIRONMENT_URL to your Dynatrace environment URL (or edit the file directly).")
+		output.PrintInfo("'token-ref' must match a context in your GLOBAL config that binds the same environment.")
+		output.PrintInfo("Create that binding with --global, or the writes land in this file instead:")
+		// Print the names the template actually used, so the commands can be
+		// pasted as-is (--context is optional and the token-ref is fixed).
+		name, tokenRef := template.Contexts[0].Name, template.Contexts[0].Context.TokenRef
+		output.PrintInfo("  dtctl config set-context %s --global \\", name)
+		output.PrintInfo("    --environment \"$DT_ENVIRONMENT_URL\" --token-ref %s", tokenRef)
+		output.PrintInfo("  dtctl config set-credentials %s --global --token dt0c01.xxx", tokenRef)
 		return nil
 	},
 }
@@ -132,6 +186,8 @@ func createLocalConfigTemplate(contextName string) *config.Config {
 		contextName = "my-environment"
 	}
 
+	// Inline tokens are rejected in local configs; the environment URL supports
+	// ${VAR} expansion (expanded and validated at runtime in NewClientFromConfig).
 	return &config.Config{
 		APIVersion:     "dtctl.io/v1",
 		Kind:           "Config",
@@ -145,12 +201,6 @@ func createLocalConfigTemplate(contextName string) *config.Config {
 					SafetyLevel: config.SafetyLevelReadWriteAll,
 					Description: "Project environment",
 				},
-			},
-		},
-		Tokens: []config.NamedToken{
-			{
-				Name:  "my-token",
-				Token: "${DT_API_TOKEN}",
 			},
 		},
 		Preferences: config.Preferences{
@@ -255,8 +305,9 @@ Examples:
 		safetyLevel, _ := cmd.Flags().GetString("safety-level")
 		description, _ := cmd.Flags().GetString("description")
 		profile, _ := cmd.Flags().GetString("profile")
+		global, _ := cmd.Flags().GetBool("global")
 
-		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile)
+		return setContext(args[0], environment, tokenRef, safetyLevel, description, profile, global)
 	},
 }
 
@@ -268,12 +319,13 @@ var configSetCredentialsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		token, _ := cmd.Flags().GetString("token")
+		global, _ := cmd.Flags().GetBool("global")
 
 		if token == "" {
 			return fmt.Errorf("--token is required")
 		}
 
-		cfg, err := loadConfigRaw()
+		cfg, err := loadConfigForWrite(global)
 		if err != nil {
 			cfg = config.NewConfig()
 		}
@@ -282,7 +334,7 @@ var configSetCredentialsCmd = &cobra.Command{
 			return err
 		}
 
-		if err := saveConfig(cfg); err != nil {
+		if err := saveConfigForWrite(cfg, global); err != nil {
 			return err
 		}
 
@@ -291,8 +343,111 @@ var configSetCredentialsCmd = &cobra.Command{
 		} else {
 			output.PrintWarning("Credentials %q set (stored in plaintext, keyring not available)", name)
 		}
+		if !global {
+			warnLocalWriteTarget(fmt.Sprintf("Credential reference %q", name))
+		}
 		return nil
 	},
+}
+
+// configDeleteCredentialsCmd removes a stored credential
+var configDeleteCredentialsCmd = &cobra.Command{
+	Use:     "delete-credentials <name>",
+	Aliases: []string{"rm-credentials"},
+	Short:   "Delete stored credentials",
+	Long: `Delete stored credentials.
+
+Removes the credential from the OS keyring (or the file-based token store) and
+drops its entry from the config file, including every cached OAuth access and
+refresh token derived from it.
+
+This is the supported way to remove a credential — it is what an automated
+teardown step should call. Do not use OS keychain tooling ('security' on macOS,
+'secret-tool' on Linux, 'cmdkey' on Windows) to remove or inspect dtctl
+credentials: those commands reach far beyond dtctl's own entries, and their
+read verbs print secret material.
+
+To confirm a credential is gone, run 'dtctl auth status', which reports whether
+a token is present without printing it.
+
+Examples:
+  # Remove a credential
+  dtctl config delete-credentials incident-token
+
+  # Remove a context and its credential in one step
+  dtctl config delete-context incident --delete-credentials
+
+  # Check what a teardown script would remove, without removing it
+  dtctl config delete-credentials incident-token --dry-run
+`,
+	Args: cobra.ExactArgs(1),
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) != 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		cfg, err := loadConfigRaw()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		var names []string
+		for _, nt := range cfg.Tokens {
+			names = append(names, nt.Name)
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return deleteCredentials(args[0])
+	},
+}
+
+// deleteCredentials removes a stored credential and every cached derivative.
+func deleteCredentials(name string) error {
+	// loadRawConfig, not loadConfigRaw: this command rewrites the config file,
+	// and the expanding loader would resolve every ${VAR} in it and save the
+	// resolved values back — writing a *different* credential's secret into the
+	// file in plaintext. See CONFIG_CONTRACT.md, "Write rules".
+	cfg, err := loadRawConfig()
+	if err != nil {
+		return err
+	}
+
+	// Collected before the delete: a context naming this credential is worth
+	// flagging, but not worth refusing over. A credential may legitimately be
+	// removed while a context still points at it (the context is simply
+	// unusable until a new one is stored), and refusing would push callers back
+	// to the OS keychain tooling this command exists to replace.
+	var referencedBy []string
+	for _, nc := range cfg.Contexts {
+		if nc.Context.TokenRef == name {
+			referencedBy = append(referencedBy, nc.Name)
+		}
+	}
+
+	// Honored here even though the rest of the config surface ignores it: this
+	// command is meant to be called from teardown scripts, and a --dry-run that
+	// silently destroys a credential is the worst kind of surprise.
+	if dryRun {
+		fmt.Printf("Dry run: would delete credentials %q\n", name)
+		if len(referencedBy) > 0 {
+			fmt.Printf("Referenced by context(s): %s\n", strings.Join(referencedBy, ", "))
+		}
+		return nil
+	}
+
+	if err := cfg.DeleteToken(name); err != nil {
+		return fmt.Errorf("failed to delete credentials %q: %w", name, err)
+	}
+
+	if err := saveConfig(cfg); err != nil {
+		return err
+	}
+
+	output.PrintSuccess("Credentials %q deleted", name)
+	if len(referencedBy) > 0 {
+		output.PrintWarning("Context(s) %s still reference %q; store a new credential or delete the context",
+			strings.Join(referencedBy, ", "), name)
+	}
+	return nil
 }
 
 // configSetCmd sets a configuration value
@@ -401,19 +556,21 @@ var configDeleteContextCmd = &cobra.Command{
 If the deleted context is the current context, the current-context will be cleared.
 You will need to use 'dtctl config use-context' to set a new current context.
 
-Note: This does not delete the associated credentials. Use 'dtctl config set-credentials'
-to manage credentials separately.
+By default the credential the context references is left in place, because a
+token ref can be shared between contexts. Pass --delete-credentials to remove
+it as well, or remove it separately with 'dtctl config delete-credentials'.
 
 Examples:
-  # Delete a context
+  # Delete a context, keeping its credential
   dtctl config delete-context old-env
 
-  # Delete the staging context
-  dtctl config delete-context staging
+  # Delete a context and the credential it references
+  dtctl config delete-context staging --delete-credentials
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return deleteContext(args[0])
+		deleteCredential, _ := cmd.Flags().GetBool("delete-credentials")
+		return deleteContext(args[0], deleteCredential)
 	},
 }
 
@@ -428,6 +585,7 @@ func init() {
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configSetContextCmd)
 	configCmd.AddCommand(configSetCredentialsCmd)
+	configCmd.AddCommand(configDeleteCredentialsCmd)
 	configCmd.AddCommand(configMigrateTokensCmd)
 	configCmd.AddCommand(configDescribeContextCmd)
 	configCmd.AddCommand(configDeleteContextCmd)
@@ -443,7 +601,13 @@ func init() {
 	configSetContextCmd.Flags().String("description", "", "human-readable description for this context")
 	configSetContextCmd.Flags().String("profile", "", "command profile to bind (restricts the visible command surface; e.g. query, investigate, full)")
 	_ = configSetContextCmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
+	configSetContextCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
 
 	// Flags for set-credentials
 	configSetCredentialsCmd.Flags().String("token", "", "API token")
+	configSetCredentialsCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
+
+	// Flags for delete-context
+	configDeleteContextCmd.Flags().Bool("delete-credentials", false,
+		"also delete the credential the context references (leaves it in place otherwise)")
 }

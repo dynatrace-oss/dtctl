@@ -1,5 +1,7 @@
 # dtctl
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dynatrace-oss/dynatrace-ai-agent-instrumentation-examples/badge)](https://scorecard.dev/viewer/?uri=github.com/dynatrace-oss/dtctl)
+
 [![Release](https://img.shields.io/github/v/release/dynatrace-oss/dtctl?style=flat-square)](https://github.com/dynatrace-oss/dtctl/releases/latest)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/dynatrace-oss/dtctl/build.yml?branch=main&style=flat-square)](https://github.com/dynatrace-oss/dtctl/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/dynatrace-oss/dtctl?style=flat-square)](https://goreportcard.com/report/github.com/dynatrace-oss/dtctl)
@@ -91,6 +93,7 @@ Token-based authentication and multi-environment configuration are covered in th
 | Users & Groups | get, describe |
 | Live Debugger | breakpoints, workspace filters, snapshot decoding |
 | Platform Tokens | account create/list/delete token (`dt0s16.*` via Account Management API) |
+| API Discovery | get apis (with `--uncovered`), describe api (operation index, one operation in full, raw spec) |
 
 See the **[Command Reference](https://dynatrace-oss.github.io/dtctl/docs/command-reference/)** for the full list of verbs, flags, resource types, and aliases.
 
@@ -144,7 +147,7 @@ Full documentation is available at **[dynatrace-oss.github.io/dtctl](https://dyn
 - [Token Scopes](https://dynatrace-oss.github.io/dtctl/docs/token-scopes/): Required API token scopes per safety level
 - [Server Mode](https://dynatrace-oss.github.io/dtctl/docs/serve/): Running dtctl as a server, the execute API, and embedding `pkg/engine`
 
-Resource-specific guides: [DQL Queries](https://dynatrace-oss.github.io/dtctl/docs/dql-queries/) · [Workflows](https://dynatrace-oss.github.io/dtctl/docs/workflows/) · [Dashboards](https://dynatrace-oss.github.io/dtctl/docs/dashboards/) · [SLOs](https://dynatrace-oss.github.io/dtctl/docs/slos/) · [Settings](https://dynatrace-oss.github.io/dtctl/docs/settings/) · [Extensions](https://dynatrace-oss.github.io/dtctl/docs/extensions/) · [Analyzers](https://dynatrace-oss.github.io/dtctl/docs/analyzers/) · [CoPilot](https://dynatrace-oss.github.io/dtctl/docs/copilot/) · [and more...](https://dynatrace-oss.github.io/dtctl/docs/quick-start/)
+Resource-specific guides: [API Discovery](https://dynatrace-oss.github.io/dtctl/docs/api-discovery/) · [DQL Queries](https://dynatrace-oss.github.io/dtctl/docs/dql-queries/) · [Workflows](https://dynatrace-oss.github.io/dtctl/docs/workflows/) · [Dashboards](https://dynatrace-oss.github.io/dtctl/docs/dashboards/) · [SLOs](https://dynatrace-oss.github.io/dtctl/docs/slos/) · [Settings](https://dynatrace-oss.github.io/dtctl/docs/settings/) · [Extensions](https://dynatrace-oss.github.io/dtctl/docs/extensions/) · [Analyzers](https://dynatrace-oss.github.io/dtctl/docs/analyzers/) · [CoPilot](https://dynatrace-oss.github.io/dtctl/docs/copilot/) · [and more...](https://dynatrace-oss.github.io/dtctl/docs/quick-start/)
 
 ## Contributing
 

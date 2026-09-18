@@ -47,12 +47,20 @@ preserves them:
 
 | Shell | Command |
 |-------|---------|
-| bash/zsh, PowerShell | `dtctl query 'fetch logs \| filter status == "ERROR"'` (single-quote the query) |
+| bash/zsh | `dtctl query 'fetch logs \| filter status == "ERROR"'` (single-quote the query) |
 | cmd.exe | `dtctl query "fetch logs \| filter status == \"ERROR\""` (escape inner quotes) |
-| any (quote-free) | `dtctl query -f query.dql` or pipe/stdin with `dtctl query -f -` |
+| PowerShell | `@'` / `fetch logs \| filter status == "ERROR"` / `'@ \| dtctl query` (pipe a here-string) |
+| any (quote-free) | `dtctl query -f query.dql`, or pipe into `dtctl query` |
 
 When generating a `dtctl query` command for a user, **prefer the single-quoted
 wrapper** (or `-f`) so the double-quoted DQL values survive intact.
+
+On Windows, do **not** generate the quoted-argument form: Windows PowerShell 5.1
+strips double quotes from arguments to native executables, turning
+`status == "ERROR"` into `status == ERROR` — valid DQL that silently matches
+nothing. Generate the piped here-string or `-f query.dql` instead. Never
+generate `dtctl query -f - @'...'@`: `-f -` reads stdin while the here-string
+goes to argv, so the command blocks on an idle terminal.
 
 ## Data Sources
 

@@ -68,7 +68,7 @@ dtctl exec copilot nl2dql "find hosts with high CPU" -o json
 
 ```bash
 # Explain a DQL query in plain English
-dtctl exec copilot dql2nl "fetch logs | filter status='ERROR' | limit 10"
+dtctl exec copilot dql2nl 'fetch logs | filter status == "ERROR" | limit 10'
 
 # Read the query from a file
 dtctl exec copilot dql2nl -f query.dql

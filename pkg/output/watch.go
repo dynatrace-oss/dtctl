@@ -141,7 +141,7 @@ func (p *WatchPrinter) printWithPrefix(resource interface{}, prefix string, colo
 func (p *WatchPrinter) printTableRow(resource interface{}, prefix string, color string, tablePrinter *TablePrinter) error {
 	// Format the resource as a table row string
 	v := reflect.ValueOf(resource)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 

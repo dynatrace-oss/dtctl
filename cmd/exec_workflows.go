@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	workflowpkg "github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/pkg/safety"
 )
 
 // execWorkflowResult is the structured response for agent mode.
@@ -93,7 +93,9 @@ var execWorkflowCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		workflowID := args[0]
 
-		_, c, err := SetupClient()
+		// Triggering a workflow runs actions that create and modify resources, so
+		// it is gated as a create — the `exec` verb's declared operation.
+		_, c, err := SetupWithSafety(safety.OperationCreate)
 		if err != nil {
 			return err
 		}
@@ -172,7 +174,7 @@ func execWorkflowWait(cmd *cobra.Command, executor *exec.WorkflowExecutor, execu
 		Timeout:      timeout,
 	}
 
-	return executor.WaitForCompletion(context.Background(), executionID, opts)
+	return executor.WaitForCompletion(cmdContext(cmd), executionID, opts)
 }
 
 // execWorkflowShowResults prints per-task results in human-readable format.

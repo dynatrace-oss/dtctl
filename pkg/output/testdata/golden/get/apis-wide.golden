@@ -1,0 +1,5 @@
+NAME               BASE PATH               CATEGORY    OPS   DTCTL    EXTERNAL   
+Widget Service     /platform/widget/v1     Widgets     14    widget   false      
+Sprocket Service   /platform/sprocket/v1   Sprockets   3              false      
+Cog Service        /platform/cog/v1                                   false      
+Elsewhere API                                                         true       

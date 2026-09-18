@@ -21,8 +21,17 @@ var createLookupCmd = &cobra.Command{
 The lookup table is stored in Grail Resource Store and can be loaded in DQL queries
 for data enrichment.
 
-For CSV files, column headers are auto-detected and a DPL parse pattern is generated automatically.
-For non-CSV formats, use --parse-pattern to specify a custom Dynatrace Pattern Language pattern.
+For CSV files, column headers are auto-detected and a DPL parse pattern is generated
+automatically: one LD* matcher per column, so cells may be empty. Quoted cells that
+contain the delimiter, CRLF line endings and rows with trailing cells omitted are
+normalized before upload. Use --dry-run to see the detected pattern.
+
+For non-CSV formats, use --parse-pattern to specify a custom Dynatrace Pattern Language
+pattern. Note that a bare LD matcher requires at least one character: use LD* for
+columns that can be empty, otherwise those rows are dropped without an error.
+
+After the upload, the number of stored records is compared against the input: dtctl
+warns when records were dropped and fails when the pattern matched nothing.
 
 Examples:
   # Create from CSV (auto-detect headers)
@@ -41,7 +50,8 @@ Examples:
   dtctl create lookup -f data.txt \
     --path /lookups/custom/data \
     --lookup-field id \
-    --parse-pattern "LD:id '|' LD:name '|' LD:value"
+    --parse-pattern "LD*:id '|' LD*:name '|' LD*:value" \
+    --skip-records 1
 
   # Create from manifest
   dtctl create lookup -f lookup-manifest.yaml
@@ -122,10 +132,20 @@ Examples:
 			}
 			if req.ParsePattern != "" {
 				fmt.Printf("Parse Pattern: %s\n", req.ParsePattern)
-			} else {
-				fmt.Printf("Parse Pattern: (auto-detect from CSV)\n")
+				fmt.Printf("File Size: %d bytes\n", len(fileData))
+				return nil
 			}
-			fmt.Printf("File Size: %d bytes\n", len(fileData))
+
+			prepared, err := lookup.PrepareCSV(fileData)
+			if err != nil {
+				return fmt.Errorf("failed to detect CSV pattern: %w", err)
+			}
+			fmt.Printf("Parse Pattern: %s (auto-detected)\n", prepared.Pattern)
+			fmt.Printf("Records: %d\n", prepared.DataRecords)
+			if prepared.Normalized {
+				fmt.Printf("Note: CSV will be re-emitted with %s separators (quoted cells, padded rows or CRLF line endings)\n", prepared.Delimiter)
+			}
+			fmt.Printf("File Size: %d bytes\n", len(prepared.Content))
 			return nil
 		}
 
@@ -141,13 +161,33 @@ Examples:
 			return fmt.Errorf("failed to create lookup table: %w", err)
 		}
 
-		output.PrintSuccess("Lookup table %q created", path)
-		output.PrintInfo("  Records: %d", result.Records)
-		output.PrintInfo("  File Size: %d bytes", result.FileSize)
+		// The upload API answers 2xx even when the parse pattern matched
+		// nothing, so the counts have to be reconciled with the input before
+		// this can be called a success (#471).
+		warning, countErr := result.CheckRecordCount()
+
+		if countErr == nil {
+			output.PrintSuccess("Lookup table %q created", path)
+		} else {
+			output.PrintWarning("Lookup table %q created but no records were stored", path)
+		}
+		if result.InputRecords > 0 {
+			output.PrintInfo("  Records: %d of %d uploaded", result.Records, result.InputRecords)
+		} else {
+			output.PrintInfo("  Records: %d", result.Records)
+		}
+		output.PrintInfo("  Pattern Matches: %d", result.PatternMatches)
+		output.PrintInfo("  File Size: %d bytes (%d uploaded)", result.FileSize, result.UploadedBytes)
 		if result.DiscardedDuplicates > 0 {
 			output.PrintInfo("  Note: %d duplicate records were discarded", result.DiscardedDuplicates)
 		}
-		return nil
+		if warning != "" {
+			output.PrintWarning("%s", warning)
+		}
+		if warning != "" || countErr != nil {
+			output.PrintHint("Parse pattern used: %s", result.ParsePattern)
+		}
+		return countErr
 	},
 }
 

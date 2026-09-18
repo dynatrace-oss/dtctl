@@ -22,7 +22,29 @@
       ],
       "smartscapeConfiguration": {
         "enabled": false
-      }
+      },
+      "resources": [
+        {
+          "resourceType": "pubsub_topic",
+          "autoDiscoveryEnabled": false,
+          "metrics": [
+            {
+              "name": "pubsub.googleapis.com/topic/send_request_count",
+              "metricLabels": [
+                "response_class"
+              ],
+              "type": "CUSTOM"
+            }
+          ]
+        },
+        {
+          "resourceType": "gce_instance",
+          "autoDiscoveryEnabled": true,
+          "autodiscoveryExcludeMetricType": [
+            "compute.googleapis.com/instance/disk/*"
+          ]
+        }
+      ]
     },
     "featureSets": [
       "default"

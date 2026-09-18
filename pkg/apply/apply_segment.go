@@ -43,8 +43,9 @@ func (a *Applier) applySegment(data []byte) (ApplyResult, error) {
 	if err != nil {
 		// Only fall through to create if the error is a 404 (not found).
 		// Other errors (network, 500, 403) should be surfaced immediately.
+		// segment wraps its own sentinel, so the shared helper cannot see it.
 		if !segment.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to check segment existence: %w", err)
+			return nil, nameLookupError("segment", uid, err)
 		}
 
 		// Segment doesn't exist, create it

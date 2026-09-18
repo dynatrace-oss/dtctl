@@ -21,13 +21,23 @@ dtctl get lookup /lookups/production/error_codes
 
 ## Creating Lookup Tables
 
-Create a lookup table from a CSV file. dtctl auto-detects column types from the data:
+Create a lookup table from a CSV file. dtctl auto-detects the columns from the header
+row and generates the DPL parse pattern for them — including empty cells, quoted cells
+containing the delimiter, and column names that need quoting:
 
 ```bash
 dtctl create lookup -f error_codes.csv \
   --path /lookups/production/error_codes \
   --lookup-field code
+
+# Detected pattern, without uploading anything
+dtctl create lookup -f error_codes.csv \
+  --path /lookups/production/error_codes \
+  --lookup-field code --dry-run
 ```
+
+After the upload, the stored record count is checked against the input: dtctl warns
+when rows were dropped and exits non-zero when the pattern matched nothing.
 
 ### Example CSV Format
 
@@ -48,14 +58,19 @@ For non-CSV formats, specify a custom parse pattern:
 dtctl create lookup -f data.txt \
   --path /lookups/production/service_map \
   --lookup-field service_id \
-  --parse-pattern "pipe"
+  --parse-pattern "LD*:service_id '|' LD*:name" \
+  --skip-records 1
 
 # Tab-delimited file
 dtctl create lookup -f data.tsv \
   --path /lookups/production/regions \
   --lookup-field region_code \
-  --parse-pattern "tab"
+  --parse-pattern "LD*:region_code '\t' LD*:region_name" \
+  --skip-records 1
 ```
+
+`LD*` matches a column that may be empty; a bare `LD` requires at least one character,
+so rows with an empty cell would be dropped without an error.
 
 ## Updating Lookup Tables
 

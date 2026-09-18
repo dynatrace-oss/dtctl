@@ -35,9 +35,22 @@
 // instances, not more goroutines; the design's WASM phase gives each request
 // its own instance at 20-47ms overhead.
 //
+// Admission and resource limits: ExecuteWithLimits (which Execute calls with
+// DefaultLimits) bounds how many requests may queue for the single execution
+// slot (MaxQueued, ErrTooManyQueued once exceeded), how long a request may
+// occupy it (MaxDuration, applied as a context.WithTimeout threaded into the
+// command tree via RunOptions.Context), and how much stdout/stderr a command
+// may produce (MaxOutputBytes; excess is dropped and Result.Truncated is
+// set). A zero-value Limits field falls back to DefaultLimits.
+//
 // Cancellation: the context gates the start of an execution (a request
-// cancelled while queued never runs). A run already started cannot be killed
-// mid-flight — in-process code cannot be preempted safely. Deployments that
-// need hard per-request deadlines put the engine behind a process boundary or
-// use the WASM instance model, where the host enforces the deadline.
+// cancelled while queued never runs). Once running, a command that observes
+// cmd.Context() (most of the command tree does — see cmd/run.go) is
+// cancelled cooperatively when the caller's context or MaxDuration budget is
+// done. A command that never checks its context, or issues a request with
+// a context of its own, still runs to completion; cmd/query.go's DQL
+// execution is the one tracked exception (see its own comments). Streaming
+// commands (--watch, --follow, query --live) are refused outright in service
+// mode via the LongRunningStreams capability, so they cannot hold the slot
+// indefinitely in the first place.
 package engine

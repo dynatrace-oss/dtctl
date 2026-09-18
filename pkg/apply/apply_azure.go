@@ -2,6 +2,7 @@ package apply
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -69,9 +70,9 @@ func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 		if objectID == "" && value.Type == "federatedIdentityCredential" {
 			existing, err := handler.FindByNameAndType(value.Name, value.Type)
 			if err != nil {
-				// Log warning but proceed to try create
-				stderrWarn(&resultWarnings, "Failed to lookup existing connection: %v", err)
-			} else if existing != nil {
+				return nil, nameLookupError("Azure connection", value.Name, err)
+			}
+			if existing != nil {
 				objectID = existing.ObjectID
 				stderrWarn(&resultWarnings, "Found existing Federated Credential connection %q (ID: %s), switching to update mode", value.Name, objectID)
 			}
@@ -181,7 +182,10 @@ func (a *Applier) applyAzureMonitoringConfig(data []byte) (ApplyResult, error) {
 	// Lookup by name if ID is missing (Feature 1: naming convention lookup)
 	if objectID == "" && config.Value.Description != "" {
 		existing, err := handler.FindByName(config.Value.Description)
-		if err == nil && existing != nil {
+		if err != nil && !errors.Is(err, azuremonitoringconfig.ErrNotFound) {
+			return nil, nameLookupError("Azure monitoring config", config.Value.Description, err)
+		}
+		if existing != nil {
 			stderrWarn(&warnings, "Found existing Azure monitoring config %q with ID: %s", config.Value.Description, existing.ObjectID)
 			objectID = existing.ObjectID
 			config.ObjectID = objectID // Set ID for update

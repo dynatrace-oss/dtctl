@@ -22,7 +22,7 @@ func (p *CSVPrinter) Print(obj interface{}) error {
 // PrintList prints a list of objects as CSV
 func (p *CSVPrinter) PrintList(obj interface{}) error {
 	v := reflect.ValueOf(obj)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -53,7 +53,7 @@ func (p *CSVPrinter) writeRecords(v reflect.Value, writer *csv.Writer) error {
 
 	// Handle slice of structs
 	first := v.Index(0)
-	if first.Kind() == reflect.Ptr {
+	if first.Kind() == reflect.Pointer {
 		first = first.Elem()
 	}
 
@@ -134,7 +134,7 @@ func (p *CSVPrinter) printMaps(v reflect.Value, writer *csv.Writer) error {
 // printStructs prints a slice of structs as CSV
 func (p *CSVPrinter) printStructs(v reflect.Value, writer *csv.Writer) error {
 	first := v.Index(0)
-	if first.Kind() == reflect.Ptr {
+	if first.Kind() == reflect.Pointer {
 		first = first.Elem()
 	}
 
@@ -153,7 +153,7 @@ func (p *CSVPrinter) printStructs(v reflect.Value, writer *csv.Writer) error {
 	// Write rows
 	for i := 0; i < v.Len(); i++ {
 		elem := v.Index(i)
-		if elem.Kind() == reflect.Ptr {
+		if elem.Kind() == reflect.Pointer {
 			elem = elem.Elem()
 		}
 
@@ -183,7 +183,7 @@ func formatCSVValue(val interface{}) string {
 	v := reflect.ValueOf(val)
 
 	// Handle pointers
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return ""
 		}

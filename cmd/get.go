@@ -39,7 +39,8 @@ Supported resources:
   lookup-tables (lu)      trash                     workflow-executions (wfe)
   wfe-task-result         extensions (ext)          extension-configs (extcfg)
   documents (doc)         anomaly-detectors (ad)    hub-extensions
-  hub-extension-releases
+  hub-extension-releases  apis                      environment
+  license                 license-settings
 
 Use 'dtctl get <resource> --help' for resource-specific options.`,
 	Example: `  # List all workflows
@@ -67,6 +68,9 @@ func executeWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher, printer
 	watchMode, _ := cmd.Flags().GetBool("watch")
 	if !watchMode {
 		return nil
+	}
+	if !caps.LongRunningStreams {
+		return &CapabilityError{Feature: "watch mode"}
 	}
 
 	interval, _ := cmd.Flags().GetDuration("interval")
@@ -97,7 +101,7 @@ func executeWithWatch(cmd *cobra.Command, fetcher watch.ResourceFetcher, printer
 		ShowInitial: !watchOnly,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
@@ -152,4 +156,8 @@ func init() {
 	getCmd.AddCommand(getAnomalyDetectorsCmd)
 	getCmd.AddCommand(getHubExtensionsCmd)
 	getCmd.AddCommand(getHubExtensionReleasesCmd)
+	getCmd.AddCommand(getAPIsCmd)
+	getCmd.AddCommand(getEnvironmentCmd)
+	getCmd.AddCommand(getLicenseCmd)
+	getCmd.AddCommand(getLicenseSettingsCmd)
 }

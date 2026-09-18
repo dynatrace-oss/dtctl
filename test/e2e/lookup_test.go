@@ -528,7 +528,134 @@ func TestLookupCreate_BOMPrefixedCSV(t *testing.T) {
 	}
 }
 
-func keysOf(m map[string]interface{}) []string {
+// TestLookupCreate_EmptyCellsAndQuotedDelimiters is a regression test for
+// issue #471. The auto-detected pattern used a bare LD per column, which
+// requires at least one character, so every row with an empty cell failed to
+// match and was dropped server-side without an error; quoted cells containing
+// the delimiter were split across columns. This uploads a CSV with both
+// against the live API and asserts that every row is stored with its values
+// intact.
+func TestLookupCreate_EmptyCellsAndQuotedDelimiters(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := lookup.NewHandler(env.Client)
+	lookupPath := fmt.Sprintf("/lookups/dtctl_test/%s/empty_cells", env.TestPrefix)
+
+	// Row 1 has a trailing empty cell, row 3 a quoted cell containing the
+	// delimiter, row 4 an empty cell in the middle — the shape from the issue.
+	csvData := []byte("id,name,owner\r\n" +
+		"1,alpha,\r\n" +
+		"2,beta,team-b\r\n" +
+		"3,\"gamma, inc\",team-c\r\n" +
+		"4,,team-d\r\n")
+
+	req := lookup.CreateRequest{
+		FilePath:    lookupPath,
+		LookupField: "id",
+		DataContent: csvData,
+		DisplayName: fmt.Sprintf("Empty Cells Test %s", env.TestPrefix),
+	}
+
+	uploadResp, err := handler.Create(req)
+	if err != nil {
+		t.Fatalf("Create() failed: %v", err)
+	}
+	env.Cleanup.Track("lookup", lookupPath, req.DisplayName)
+
+	if uploadResp.Records != 4 {
+		t.Errorf("Records = %d, want 4 (no row may be dropped)", uploadResp.Records)
+	}
+	if uploadResp.InputRecords != 4 {
+		t.Errorf("InputRecords = %d, want 4", uploadResp.InputRecords)
+	}
+	warning, err := uploadResp.CheckRecordCount()
+	if err != nil || warning != "" {
+		t.Errorf("CheckRecordCount() = (%q, %v), want no complaint", warning, err)
+	}
+	t.Logf("✓ Stored %d of %d records with pattern %s",
+		uploadResp.Records, uploadResp.InputRecords, uploadResp.ParsePattern)
+
+	if err := waitForLookupQueryable(t, handler, lookupPath, 30*time.Second); err != nil {
+		t.Fatalf("Lookup did not become queryable: %v", err)
+	}
+
+	dataResult, err := handler.GetData(lookupPath, 0)
+	if err != nil {
+		t.Fatalf("GetData() failed: %v", err)
+	}
+	if len(dataResult.Records) != 4 {
+		t.Fatalf("data row count = %d, want 4", len(dataResult.Records))
+	}
+
+	byID := make(map[string]map[string]interface{}, len(dataResult.Records))
+	for _, record := range dataResult.Records {
+		id, _ := record["id"].(string)
+		byID[id] = record
+	}
+	for _, want := range []struct{ id, name, owner string }{
+		{"1", "alpha", ""},
+		{"2", "beta", "team-b"},
+		{"3", "gamma, inc", "team-c"}, // delimiter inside a quoted cell
+		{"4", "", "team-d"},
+	} {
+		record, ok := byID[want.id]
+		if !ok {
+			t.Errorf("record id=%s missing; got ids %v", want.id, keysOf(byID))
+			continue
+		}
+		if name, _ := record["name"].(string); name != want.name {
+			t.Errorf("id=%s name = %q, want %q", want.id, name, want.name)
+		}
+		if owner, _ := record["owner"].(string); owner != want.owner {
+			t.Errorf("id=%s owner = %q, want %q", want.id, owner, want.owner)
+		}
+	}
+}
+
+// TestLookupCreate_DetectsUnmatchedPattern is the other half of #471: the
+// upload API answers 2xx even when the pattern matched nothing, so dtctl has
+// to reconcile the counts itself. A bare LD against data with empty cells is
+// exactly the pattern that used to be generated.
+func TestLookupCreate_DetectsUnmatchedPattern(t *testing.T) {
+	env := integration.SetupIntegration(t)
+	defer env.Cleanup.Cleanup(t)
+
+	handler := lookup.NewHandler(env.Client)
+	lookupPath := fmt.Sprintf("/lookups/dtctl_test/%s/unmatched", env.TestPrefix)
+
+	req := lookup.CreateRequest{
+		FilePath:    lookupPath,
+		LookupField: "id",
+		DataContent: []byte("id,name,owner\n1,alpha,\n2,beta,\n3,gamma,\n"),
+		// Every row has an empty trailing cell, so a bare LD matches none.
+		ParsePattern:   "LD:id ',' LD:name ',' LD:owner",
+		SkippedRecords: 1,
+		DisplayName:    fmt.Sprintf("Unmatched Test %s", env.TestPrefix),
+	}
+
+	uploadResp, err := handler.Create(req)
+	if err != nil {
+		t.Fatalf("Create() failed: %v", err)
+	}
+	env.Cleanup.Track("lookup", lookupPath, req.DisplayName)
+
+	if uploadResp.Records != 0 {
+		t.Fatalf("Records = %d, want 0 — a bare LD cannot match a trailing empty cell", uploadResp.Records)
+	}
+	if uploadResp.InputRecords != 3 {
+		t.Errorf("InputRecords = %d, want 3", uploadResp.InputRecords)
+	}
+
+	warning, err := uploadResp.CheckRecordCount()
+	if err == nil {
+		t.Errorf("CheckRecordCount() error = nil, want a failure for 0 stored records (warning=%q)", warning)
+	} else {
+		t.Logf("✓ Empty upload reported as a failure: %v", err)
+	}
+}
+
+func keysOf[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

@@ -17,9 +17,32 @@ name: Release
 # Note: release-please creates the tag with GITHUB_TOKEN, which would not trigger
 # `on: push: tags` workflows anyway — that is why GoReleaser runs as a gated job
 # in this same workflow rather than in a separate tag-triggered one.
+#
+# sdk/ is a second Go module in this repo, and Go resolves it by the tag
+# `sdk/vX.Y.Z`. release-please only manages the root package, so the tag-sdk job
+# below mirrors each release tag into the sdk namespace at the same commit. That
+# is what makes the root module's `require github.com/dynatrace-oss/dtctl/sdk`
+# resolvable for anyone importing e.g. pkg/engine — the local `replace` in go.mod
+# is ignored downstream. verify-consumable then proves it from outside the repo.
+#
+# RECOVERY: tag-sdk only runs on the dispatch that creates the release, because
+# that is the only run where release_created is true. If it fails then (transient
+# API error), simply re-dispatching will NOT retry it — the release already exists,
+# so release_created is false and the job is skipped, leaving a published release
+# whose sdk tag is missing and which therefore cannot be imported. Re-dispatch with
+# the `retag_sdk` input set to that release tag to create the sdk tag and re-verify.
 
 on:
   workflow_dispatch:
+    inputs:
+      retag_sdk:
+        description: >-
+          Recovery only: release tag (e.g. v0.38.0) whose sdk/ tag is missing because
+          the Tag SDK Module job failed after the release was created. Leave empty for
+          a normal release.
+        required: false
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -42,6 +65,91 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  tag-sdk:
+    name: Tag SDK Module
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' || inputs.retag_sdk != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Mirror the release tag into the sdk/ namespace
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.retag_sdk || needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          # TAG can come from a hand-typed recovery input, and a Go module tag is
+          # effectively permanent once the proxy observes it. Reject anything that is
+          # not a release tag rather than minting a ref nobody can retract.
+          # Hyphens are disallowed inside the prerelease on purpose: that is what
+          # rejects a Go pseudo-version (v0.0.0-00010101000000-000000000000) while
+          # still accepting a release candidate (v0.36.0-rc.1). Kept in a variable
+          # because an inline =~ pattern is parsed differently by other shells.
+          release_tag_re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+          if [[ ! "$TAG" =~ $release_tag_re ]]; then
+            echo "::error::Refusing to tag: '$TAG' is not a release tag (vX.Y.Z[-rc.N])."
+            exit 1
+          fi
+          # Resolve the commit release-please tagged, rather than trusting HEAD.
+          # /commits/<ref> dereferences to a commit whether the tag is lightweight
+          # or annotated; Go needs the tag to point at the commit either way.
+          sha=$(gh api "repos/$REPO/commits/$TAG" --jq '.sha')
+          echo "Release $TAG is at $sha"
+          if gh api "repos/$REPO/git/ref/tags/sdk/$TAG" >/dev/null 2>&1; then
+            echo "sdk/$TAG already exists — nothing to do."
+            exit 0
+          fi
+          gh api "repos/$REPO/git/refs" \
+            -f "ref=refs/tags/sdk/$TAG" \
+            -f "sha=$sha" >/dev/null
+          echo "Created sdk/$TAG at $sha"
+
+  verify-consumable:
+    name: Verify Module Is Importable
+    needs: [release-please, tag-sdk]
+    if: ${{ needs.release-please.outputs.release_created == 'true' || inputs.retag_sdk != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+
+      - name: Import pkg/engine from a module outside this repo
+        env:
+          TAG: ${{ inputs.retag_sdk || needs.release-please.outputs.tag_name }}
+          # Fetch dtctl itself straight from GitHub: the tags were created seconds
+          # ago, so neither the module proxy nor the checksum database has
+          # observed them yet. Everything else still goes through the proxy.
+          GOPRIVATE: github.com/dynatrace-oss/dtctl
+          GOFLAGS: -mod=mod
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/consumer"
+          mkdir -p "$work"
+          cd "$work"
+          go mod init example.invalid/consumer
+          cat > main.go <<'EOF'
+          package main
+
+          import (
+          	"fmt"
+
+          	"github.com/dynatrace-oss/dtctl/pkg/engine"
+          )
+
+          func main() {
+          	fmt.Println(len(engine.UnsupportedCommands()))
+          }
+          EOF
+          # Fails if go.mod's sdk require does not name a real sdk/vX.Y.Z tag —
+          # the local `replace` that makes in-repo builds work is ignored here.
+          go get "github.com/dynatrace-oss/dtctl@$TAG"
+          go build ./...
+          echo "pkg/engine is importable from an external module at $TAG"
+
   goreleaser:
     name: GoReleaser
     needs: release-please
@@ -60,7 +168,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3

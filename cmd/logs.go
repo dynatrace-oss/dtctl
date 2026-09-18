@@ -72,7 +72,10 @@ Examples:
 		handler := workflow.NewExecutionHandler(c)
 
 		if followLogs {
-			return followExecutionLogs(handler, executionID, taskName, allTaskLogs, tasksOnlyLogs)
+			if !caps.LongRunningStreams {
+				return &CapabilityError{Feature: "log following"}
+			}
+			return followExecutionLogs(cmd.Context(), handler, executionID, taskName, allTaskLogs, tasksOnlyLogs)
 		}
 
 		var logs string
@@ -114,9 +117,9 @@ Examples:
 }
 
 // followExecutionLogs streams logs in real-time until the execution completes
-func followExecutionLogs(handler *workflow.ExecutionHandler, executionID, task string, allLogs, tasksOnly bool) error {
-	// Set up signal handling for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
+func followExecutionLogs(parentCtx context.Context, handler *workflow.ExecutionHandler, executionID, task string, allLogs, tasksOnly bool) error {
+	// Compose with SIGINT/SIGTERM for graceful shutdown.
+	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
@@ -189,7 +192,11 @@ func followExecutionLogs(handler *workflow.ExecutionHandler, executionID, task s
 			return nil
 		}
 
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 }
 

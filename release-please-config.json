@@ -12,6 +12,10 @@
         {
           "type": "generic",
           "path": "pkg/version/version.go"
+        },
+        {
+          "type": "generic",
+          "path": "go.mod"
         }
       ]
     }

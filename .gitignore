@@ -53,3 +53,7 @@ snapshot.json
 # Nix / direnv local caches
 result
 result-*
+
+# Python (scripts/gen-docs)
+__pycache__/
+*.pyc

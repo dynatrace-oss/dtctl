@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 
-	toon "github.com/toon-format/toon-go"
 	"golang.org/x/term"
 )
 
@@ -123,6 +122,7 @@ type AgentPrinter struct {
 	ctx          *ResponseContext
 	resultFormat string // "json" (default) or "toon"
 	jqFilter     string
+	metadata     interface{}
 }
 
 // NewAgentPrinter creates an AgentPrinter that writes envelope-wrapped JSON to writer.
@@ -136,17 +136,23 @@ func NewAgentPrinter(writer io.Writer, ctx *ResponseContext) *AgentPrinter {
 }
 
 // SetResultFormat controls how the result field is encoded inside the agent
-// envelope. Supported values are "toon" and "json" (default). Any other
-// value is treated as "json" (i.e. the result is embedded as a native JSON
-// value in the envelope).
+// envelope. Supported values are "toon" and "json" (default). Any other value
+// falls back to "json" — the result must be a valid native JSON value inside
+// the envelope — and records a warning on the response context, so an agent
+// that passed `-o csv` learns its format was not honoured instead of silently
+// receiving JSON that looks like it was what it asked for.
 func (p *AgentPrinter) SetResultFormat(format string) {
 	switch format {
 	case "toon", "json":
 		p.resultFormat = format
+	case "":
+		// Not an explicit choice; keep the default without warning.
 	default:
-		// Unknown format — fall back to json so the result is always
-		// a valid native JSON value inside the envelope.
 		p.resultFormat = "json"
+		p.addWarning(fmt.Sprintf(
+			"-o %s is not supported inside the agent envelope; the result was encoded as JSON (agent mode supports json and toon)",
+			format,
+		))
 	}
 }
 
@@ -162,9 +168,10 @@ func (p *AgentPrinter) Print(data interface{}) error {
 		return err
 	}
 	resp := Response{
-		OK:      true,
-		Result:  result,
-		Context: p.ctx,
+		OK:       true,
+		Result:   result,
+		Context:  p.ctx,
+		Metadata: p.metadata,
 	}
 	return EncodeEnvelope(p.writer, resp)
 }
@@ -183,16 +190,10 @@ func (p *AgentPrinter) encodeResult(data interface{}) (interface{}, error) {
 		return data, nil
 	}
 
-	generic, err := toGeneric(data)
+	encoded, err := MarshalTOON(data)
 	if err != nil {
-		p.addWarning(fmt.Sprintf("TOON encoding failed (toGeneric): %v; fell back to JSON", err))
-		return data, nil // fall back to raw data on conversion error
-	}
-
-	encoded, err := toon.MarshalString(generic, toon.WithLengthMarkers(true))
-	if err != nil {
-		p.addWarning(fmt.Sprintf("TOON encoding failed (marshal): %v; fell back to JSON", err))
-		return data, nil // fall back to raw data on marshal error
+		p.addWarning(fmt.Sprintf("TOON encoding failed: %v; fell back to JSON", err))
+		return data, nil // fall back to raw data on encoding error
 	}
 
 	return encoded, nil
@@ -212,6 +213,14 @@ func (p *AgentPrinter) PrintList(data interface{}) error {
 // SetJQFilter applies a jq transform to the result before envelope encoding.
 func (p *AgentPrinter) SetJQFilter(filter string) {
 	p.jqFilter = filter
+}
+
+// SetMetadata sets the envelope's metadata sibling (Grail query metadata). It
+// keeps metadata reachable next to `result` even when a --jq filter narrowed the
+// payload down to the rows, which is how the unfiltered query envelope presents
+// it. Nil (the default) omits the field.
+func (p *AgentPrinter) SetMetadata(meta interface{}) {
+	p.metadata = meta
 }
 
 // SetTotal sets the total item count in the response context.

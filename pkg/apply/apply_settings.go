@@ -79,6 +79,10 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 	// Check if settings object exists
 	_, err := handler.Get(objectID)
 	if err != nil {
+		if lookupErr := lookupError("settings object", objectID, err); lookupErr != nil {
+			return nil, lookupErr
+		}
+
 		// Doesn't exist - try to create it
 		if schemaID == "" {
 			return nil, fmt.Errorf("schemaId is required to create a settings object (objectId %q not found)", objectID)

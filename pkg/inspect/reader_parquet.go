@@ -56,8 +56,10 @@ func newParquetReader(f *os.File, path, query string) (*parquetReader, error) {
 	tsMult := make(map[int]int64)
 	for i, p := range cols {
 		if leaf, ok := pf.Schema().Lookup(p...); ok {
-			if lt := leaf.Node.Type().LogicalType(); lt != nil && lt.Timestamp != nil {
-				tsMult[i] = nsMultiplier(lt.Timestamp.Unit)
+			if lt := leaf.Node.Type().LogicalType(); lt != nil {
+				if ts, ok := lt.Value.(*format.TimestampType); ok {
+					tsMult[i] = nsMultiplier(ts.Unit)
+				}
 			}
 		}
 	}
@@ -207,12 +209,8 @@ func (r *parquetReader) Close() error {
 // stored value to nanoseconds. The `-o parquet` writer always uses nanoseconds;
 // the others are handled for files written by other tooling.
 func nsMultiplier(unit format.TimeUnit) int64 {
-	switch {
-	case unit.Millis != nil:
-		return int64(time.Millisecond)
-	case unit.Micros != nil:
-		return int64(time.Microsecond)
-	default: // Nanos (and the writer's default)
+	if unit.Value == nil { // Nanos (and the writer's default)
 		return 1
 	}
+	return int64(unit.Value.Duration())
 }

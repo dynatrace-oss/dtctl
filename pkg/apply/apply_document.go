@@ -104,14 +104,20 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 	// Check if document exists
 	metadata, err := handler.GetMetadata(id)
 	if err != nil {
+		// A nil lookupErr means the document is genuinely absent (404). Anything
+		// else leaves existence unknown and must not reach create.
+		lookupErr := lookupError(docType, id, err)
+
 		// Update semantics: do not silently create a document that does not exist.
 		if opts.RequireExisting {
-			// Distinguish a genuine 404 from transient/auth/other failures so the
-			// "create it instead" hint isn't shown for errors that aren't a 404.
-			if document.IsNotFound(err) {
+			if lookupErr == nil {
 				return nil, fmt.Errorf("%s %q not found (use 'dtctl create document' to create it)", docType, id)
 			}
 			return nil, fmt.Errorf("cannot verify %s %q for update: %w", docType, id, err)
+		}
+
+		if lookupErr != nil {
+			return nil, lookupErr
 		}
 
 		// Document doesn't exist, create it
@@ -179,11 +185,13 @@ func (a *Applier) applyDocument(data []byte, docType string, opts ApplyOptions) 
 
 	// Update the existing document (including metadata/labels if provided).
 	result, err := handler.UpdateDocument(id, metadata.Version, document.UpdateRequest{
-		Content:     contentData,
-		ContentType: "application/json",
-		Name:        name,
-		Description: description,
-		Labels:      labels,
+		Content:             contentData,
+		ContentType:         "application/json",
+		Name:                name,
+		Description:         description,
+		Labels:              labels,
+		CreateSnapshot:      opts.CreateSnapshot,
+		SnapshotDescription: opts.SnapshotDescription,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to apply %s: %w", docType, err)
@@ -448,7 +456,13 @@ func (a *Applier) dryRunDocument(docType string, doc map[string]interface{}) (Ap
 	if id != "" {
 		handler := document.NewHandler(a.client)
 		metadata, err := handler.GetMetadata(id)
-		if err == nil {
+		if err != nil {
+			// Same rule as apply: only a 404 means create. Otherwise the dry run
+			// would promise a create that the apply behind it refuses.
+			if lookupErr := lookupError(docType, id, err); lookupErr != nil {
+				return nil, lookupErr
+			}
+		} else {
 			action = ActionUpdated
 			existingName = metadata.Name
 		}

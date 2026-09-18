@@ -993,8 +993,8 @@ func TestApply_Segment_GetServerError_NoFallthrough(t *testing.T) {
 	if err == nil {
 		t.Fatal("Apply() should have returned an error for server error, got nil")
 	}
-	// The error should mention "failed to check segment existence", not fall through to create
-	expected := "failed to check segment existence"
+	// The error should name the failed existence check, not fall through to create
+	expected := `failed to check segment "seg-uid-001" existence`
 	if !stringContains(err.Error(), expected) {
 		t.Errorf("expected error containing %q, got: %v", expected, err)
 	}

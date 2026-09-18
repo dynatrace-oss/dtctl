@@ -807,10 +807,18 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		meta = extractQueryMetadata(result)
 	}
 
+	// Agent mode + --jq: emit the ordinary agent envelope with the filter output
+	// in `result`, so `ok` and `context` stay machine-checkable exactly as they
+	// are without --jq (#413). The query path used to rewrite the filter into a
+	// bare {result, metadata} object instead, which dropped `ok` — the one field
+	// a consumer could have used to tell success from failure.
+	if opts.AgentMode && opts.JQFilter != "" {
+		return e.printAgentJQ(query, result, records, meta, effectiveFormat, opts)
+	}
+
 	printer := output.NewPrinterWithOpts(output.PrinterOptions{
 		Format:     effectiveFormat,
 		JQFilter:   opts.JQFilter,
-		AgentMode:  opts.AgentMode,
 		Width:      opts.Width,
 		Height:     opts.Height,
 		Fullscreen: opts.Fullscreen,
@@ -872,7 +880,10 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		if len(records) > 0 {
 			out["records"] = records
 		} else if result.Result != nil {
-			out["records"] = result.Result.Records
+			// An empty result is still a result: emit an empty array rather than
+			// the nil slice's `null`, which --jq could not tell apart from a
+			// filter that addressed the wrong key (#413).
+			out["records"] = []map[string]interface{}{}
 		}
 		if meta != nil {
 			out["metadata"] = output.MetadataToMap(meta, opts.MetadataFields)
@@ -891,6 +902,54 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		}
 		return printer.Print(result)
 	}
+}
+
+// printAgentJQ emits an agent envelope whose result is the --jq output.
+//
+// The filter input is the result payload — {records, metadata?, types?} — which
+// is both the shape the flag was requested with (#272: --jq '.records[].timestamp')
+// and the same "the filter sees the payload, not the envelope" rule every other
+// command follows. `records` is always present, even when empty, so --jq '.records'
+// on an empty result yields [] rather than the null that a missing key would give.
+func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, records []map[string]interface{}, meta *output.QueryMetadata, effectiveFormat string, opts DQLExecuteOptions) error {
+	if records == nil {
+		records = []map[string]interface{}{}
+	}
+	payload := map[string]interface{}{"records": records}
+	if meta != nil {
+		payload["metadata"] = output.MetadataToMap(meta, opts.MetadataFields)
+	}
+	if opts.EmitTypes {
+		if types := result.GetTypes(); len(types) > 0 {
+			payload["types"] = types
+		}
+	}
+
+	warnings, suggestions := notificationAdvice(result.GetNotifications())
+	scanWarnings, scanSuggestions := heavyScanAdvice(result)
+	warnings = append(warnings, scanWarnings...)
+	suggestions = append(suggestions, scanSuggestions...)
+	suggestions = append(suggestions, windowAdvice(query, records, opts)...)
+	suggestions = append(suggestions, lookbackAdvice(query)...)
+
+	total := len(records)
+	ctx := &output.ResponseContext{
+		Verb:        "query",
+		Resource:    resourceFromQuery(query),
+		Total:       &total,
+		Warnings:    warnings,
+		Suggestions: suggestions,
+	}
+
+	ap := output.NewAgentPrinter(os.Stdout, ctx)
+	ap.SetJQFilter(opts.JQFilter)
+	// Keep metadata next to `result` as the unfiltered envelope does, so a
+	// filter that narrows down to the rows doesn't silently drop it.
+	ap.SetMetadata(envelopeMetadata(result, opts))
+	// -o toon asked for a token-efficient encoding of the filtered result; keep
+	// it. Any other non-JSON format the envelope can't carry warns for itself.
+	ap.SetResultFormat(effectiveFormat)
+	return ap.Print(payload)
 }
 
 // columnTypeMappings flattens the DQL per-column type info from the response
