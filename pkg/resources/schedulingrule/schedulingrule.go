@@ -3,7 +3,6 @@ package schedulingrule
 
 import (
 	"context"
-	"errors"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	sdkschedulingrule "github.com/dynatrace-oss/dtctl/sdk/api/schedulingrule"
@@ -138,10 +137,4 @@ func (h *Handler) Update(id string, data []byte) (*SchedulingRule, error) {
 // Delete deletes a scheduling rule.
 func (h *Handler) Delete(id string) error {
 	return h.sdk.Delete(context.Background(), id)
-}
-
-// IsNotFound reports whether err indicates the scheduling rule does not exist
-// (HTTP 404), as opposed to a transient, auth, or other failure.
-func IsNotFound(err error) bool {
-	return errors.Is(err, httpclient.ErrNotFound)
 }

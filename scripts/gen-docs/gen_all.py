@@ -31,7 +31,9 @@ import gen_docs  # reuse the proven core (md_table, matrix, token scopes)
 
 # planned file -> (Title, [singular resource stems], authored_only, note)
 PLAN = {
-    "workflows":            ("Workflows", ["workflow", "workflow-execution", "wfe-task-result"], False, ""),
+    "workflows":            ("Workflows", ["workflow", "workflow-execution", "wfe-task-result",
+                                          "scheduling-rule"], False,
+                             "scheduling rules live on the same Automation API and are documented here."),
     "dql-queries":          ("DQL Queries", [], True,
                              "DQL is the `query`/`exec` verb, not a CRUD resource - author prose + examples; no per-resource ops to generate."),
     "dashboards-notebooks": ("Dashboards & Notebooks", ["dashboard", "notebook"], False, ""),

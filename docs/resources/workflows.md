@@ -13,6 +13,10 @@ Dynatrace Automation workflows let you orchestrate multi-step processes, from sc
 
 | Operation | Resource | Command syntax | Description | Mutating | Access |
 | --- | --- | --- | --- | --- | --- |
+| create | scheduling-rule | `dtctl create scheduling-rule` | Create resources from files | yes | write |
+| delete | scheduling-rule | `dtctl delete scheduling-rule` | Delete resources | yes | delete |
+| describe | scheduling-rule | `dtctl describe scheduling-rule` | Show details of a specific resource | no | read |
+| get | scheduling-rules | `dtctl get scheduling-rules` | Display one or many resources | no | read |
 | get | wfe-task-result | `dtctl get wfe-task-result` | Display one or many resources | no | read |
 | create | workflow | `dtctl create workflow` | Create resources from files | yes | write |
 | delete | workflow | `dtctl delete workflow` | Delete resources | yes | delete |
@@ -36,9 +40,10 @@ These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--con
 
 | Safety level | Scopes |
 | --- | --- |
-| read | `automation:workflows:read` |
+| delete | `automation:rules:read`, `automation:rules:write` |
+| read | `automation:rules:read`, `automation:workflows:read` |
 | run | `automation:workflows:run` |
-| write | `automation:workflows:write` |
+| write | `automation:rules:write`, `automation:workflows:write` |
 <!-- GENERATED:workflows:end -->
 
 ## Output

@@ -63,7 +63,10 @@ func useSchedulingRuleDescribeTextView() bool {
 
 // printSchedulingRuleDescribeTable renders a scheduling rule in human-readable describe format.
 func printSchedulingRuleDescribeTable(w io.Writer, rule *schedulingrule.SchedulingRule) {
-	const kw = 18
+	// Wide enough that the longest static label ("Business Calendar:", 18
+	// chars) still gets padding — FprintDescribeKV clamps to a single space
+	// once the label reaches the width, which knocks that row out of column.
+	const kw = 20
 	output.FprintDescribeKV(w, "ID:", kw, "%s", rule.ID)
 	output.FprintDescribeKV(w, "Title:", kw, "%s", rule.Title)
 	if rule.Description != "" {

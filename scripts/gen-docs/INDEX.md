@@ -4,7 +4,7 @@
 
 | File | Title | Catalog stems | Mode |
 | --- | --- | --- | --- |
-| `resources/workflows.md` | Workflows | workflow, workflow-execution, wfe-task-result | generated |
+| `resources/workflows.md` | Workflows | workflow, workflow-execution, wfe-task-result, scheduling-rule | generated |
 | `resources/dql-queries.md` | DQL Queries | - | authored |
 | `resources/dashboards-notebooks.md` | Dashboards & Notebooks | dashboard, notebook | generated |
 | `resources/slos.md` | SLOs | slo, slo-template | generated |
@@ -60,7 +60,6 @@
 | preview-processor |
 | query |
 | refresh |
-| scheduling-rule |
 | sdk-version |
 | set |
 | set-context |

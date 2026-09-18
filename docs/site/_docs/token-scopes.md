@@ -140,7 +140,7 @@ storage:fieldsets:write
 |---|---|
 | List / Get / Describe | `automation:rules:read` |
 | Create / Update / Apply | `automation:rules:write` |
-| Delete | `automation:rules:write` |
+| Delete | `automation:rules:write`, `automation:rules:read` |
 
 ### Documents and Dashboards
 
