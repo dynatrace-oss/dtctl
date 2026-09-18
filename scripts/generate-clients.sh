@@ -10,7 +10,7 @@ echo "Generating API clients from OpenAPI specifications..."
 # Check if oapi-codegen is installed
 if ! command -v oapi-codegen &> /dev/null; then
     echo "oapi-codegen not found. Installing..."
-    go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
+    go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@v1.16.3
 fi
 
 mkdir -p "$OUTPUT_DIR"

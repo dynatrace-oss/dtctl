@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# No job here writes to the repo, so the default token stays read-only.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
@@ -21,7 +25,7 @@ jobs:
 
       - name: Check goimports formatting
         run: |
-          go install golang.org/x/tools/cmd/goimports@latest
+          go install golang.org/x/tools/cmd/goimports@v0.50.0
           goimports_output=$(goimports -local github.com/dynatrace-oss -l .)
           if [ -n "$goimports_output" ]; then
             echo "The following files are not properly formatted:"

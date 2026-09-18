@@ -11,6 +11,10 @@ on:
 env:
   COVERAGE_THRESHOLD: 50
 
+# No job here writes to the repo, so the default token stays read-only.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test

@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# No job here writes to the repo, so the default token stays read-only.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
