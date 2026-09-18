@@ -12,6 +12,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/hook"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/anomalydetector"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/awsconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/azureconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/gcpconnection"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
@@ -638,6 +639,27 @@ func detectResourceType(data []byte) (ResourceType, bool, error) {
 				}
 				return ResourceSettings, false, nil
 			}
+		}
+	}
+
+	// A cloud connection exported before the field projection was fixed carries
+	// only objectId and value — the Settings API list used to strip schemaId and
+	// scope — which leaves the authentication type in the value as the
+	// document's only marker. Without this, the flattened "type" field sends
+	// such a file down the generic document path and an apply creates a document
+	// named after the auth type instead of updating the connection.
+	// See https://github.com/dynatrace-oss/dtctl/issues/509
+	if valueMap, ok := raw["value"].(map[string]interface{}); ok {
+		valueType, _ := valueMap["type"].(string)
+		switch valueType {
+		case azureconnection.TypeFederatedIdentityCredential, azureconnection.TypeClientSecret:
+			return ResourceAzureConnection, false, nil
+		case gcpconnection.TypeServiceAccountImpersonation:
+			return ResourceGCPConnection, false, nil
+		case awsconnection.TypeRoleBased:
+			// dtctl has no AWS connection applier: an AWS connection is a plain
+			// Settings object, and the settings path updates it by objectId.
+			return ResourceSettings, false, nil
 		}
 	}
 

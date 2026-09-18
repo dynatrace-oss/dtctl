@@ -87,7 +87,7 @@ func (a *Applier) applyAzureConnection(data []byte) ([]ApplyResult, error) {
 		objectID, schemaID, scope, value := parsed.objectID, parsed.schemaID, parsed.scope, parsed.value
 
 		// Auto-lookup for Federated Credentials if ObjectID is missing
-		if objectID == "" && value.Type == "federatedIdentityCredential" {
+		if objectID == "" && value.Type == azureconnection.TypeFederatedIdentityCredential {
 			existing, err := handler.FindByNameAndType(value.Name, value.Type)
 			if err != nil {
 				return nil, nameLookupError("Azure connection", value.Name, err)
@@ -366,7 +366,7 @@ func (a *Applier) dryRunAzureConnection(item map[string]interface{}) (ApplyResul
 	objectID := parsed.objectID
 	var warnings []string
 
-	if objectID == "" && parsed.value.Type == "federatedIdentityCredential" {
+	if objectID == "" && parsed.value.Type == azureconnection.TypeFederatedIdentityCredential {
 		handler := azureconnection.NewHandler(a.client)
 		existing, err := handler.FindByNameAndType(parsed.value.Name, parsed.value.Type)
 		if err != nil {

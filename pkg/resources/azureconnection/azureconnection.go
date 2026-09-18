@@ -12,6 +12,16 @@ import (
 const (
 	SchemaID    = "builtin:hyperscaler-authentication.connections.azure"
 	SettingsAPI = "/platform/classic/environment-api/v2/settings/objects"
+
+	// listFields is the field projection a re-appliable export needs. The
+	// Settings API list defaults to objectId + value only, which strips the
+	// schemaId and scope that apply reads to tell a connection document from a
+	// custom document. See https://github.com/dynatrace-oss/dtctl/issues/509
+	listFields = "objectId,schemaId,schemaVersion,scope,value"
+
+	// The authentication types the Azure connection schema accepts.
+	TypeFederatedIdentityCredential = "federatedIdentityCredential"
+	TypeClientSecret                = "clientSecret"
 )
 
 // TokenIssuerForHost returns the Dynatrace token issuer URL for a given tenant host.
@@ -139,7 +149,7 @@ func (h *Handler) List() ([]AzureConnection, error) {
 			Style:        client.PaginationSettingsAPI,
 			PageKeyParam: "nextPageKey",
 			NextPageKey:  nextPageKey,
-			Filters:      map[string]string{"schemaIds": SchemaID},
+			Filters:      map[string]string{"schemaIds": SchemaID, "fields": listFields},
 		}.Apply(req)
 
 		resp, err := req.Get(SettingsAPI)

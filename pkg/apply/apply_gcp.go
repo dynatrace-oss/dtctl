@@ -22,7 +22,7 @@ type gcpConnectionItem struct {
 // parseGCPConnectionItem reads one GCP connection payload. Both the API
 // spelling ("objectId", "schemaId") and the YAML round-trip spelling
 // ("objectid", "schemaid") are accepted; an absent scope defaults to
-// "environment" and an absent type to "serviceAccountImpersonation", the
+// "environment" and an absent type to serviceAccountImpersonation, the
 // defaults the apply path assumes.
 func parseGCPConnectionItem(item map[string]interface{}) (gcpConnectionItem, error) {
 	parsed := gcpConnectionItem{
@@ -52,7 +52,7 @@ func parseGCPConnectionItem(item map[string]interface{}) (gcpConnectionItem, err
 		return parsed, fmt.Errorf("failed to unmarshal value: %w", err)
 	}
 	if parsed.value.Type == "" {
-		parsed.value.Type = "serviceAccountImpersonation"
+		parsed.value.Type = gcpconnection.TypeServiceAccountImpersonation
 	}
 
 	return parsed, nil

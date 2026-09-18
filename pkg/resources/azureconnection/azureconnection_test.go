@@ -312,15 +312,22 @@ func TestListPaginationStitchesPages(t *testing.T) {
 	calls := 0
 	h, server := newHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("nextPageKey") != "" {
-			for _, p := range []string{"pageSize", "schemaIds", "scopes"} {
+			for _, p := range []string{"pageSize", "schemaIds", "scopes", "fields"} {
 				if r.URL.Query().Get(p) != "" {
 					w.WriteHeader(http.StatusBadRequest)
 					fmt.Fprintf(w, `{"error":{"code":400,"message":"%s must not be combined with nextPageKey"}}`, p)
 					return
 				}
 			}
-		} else if r.URL.Query().Get("schemaIds") != SchemaID {
-			t.Errorf("expected schemaIds=%q on first page, got %q", SchemaID, r.URL.Query().Get("schemaIds"))
+		} else {
+			if got := r.URL.Query().Get("schemaIds"); got != SchemaID {
+				t.Errorf("expected schemaIds=%q on first page, got %q", SchemaID, got)
+			}
+			// Without the projection the list returns objectId + value only,
+			// and the export loses the schemaId/scope apply needs (#509).
+			if got := r.URL.Query().Get("fields"); got != listFields {
+				t.Errorf("expected fields=%q on first page, got %q", listFields, got)
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(pages[calls])

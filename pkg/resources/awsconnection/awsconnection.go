@@ -18,6 +18,12 @@ const (
 	SchemaID    = "builtin:hyperscaler-authentication.connections.aws"
 	SettingsAPI = "/platform/classic/environment-api/v2/settings/objects"
 
+	// listFields is the field projection a re-appliable export needs. The
+	// Settings API list defaults to objectId + value only, which strips the
+	// schemaId and scope that apply reads to tell a connection document from a
+	// custom document. See https://github.com/dynatrace-oss/dtctl/issues/509
+	listFields = "objectId,schemaId,schemaVersion,scope,value"
+
 	// TypeRoleBased is the only auth type currently supported by dtctl.
 	TypeRoleBased = "awsRoleBasedAuthentication"
 
@@ -150,7 +156,7 @@ func (h *Handler) listBySchema(schemaID string) ([]AWSConnection, error) {
 			Style:        client.PaginationSettingsAPI,
 			PageKeyParam: "nextPageKey",
 			NextPageKey:  nextPageKey,
-			Filters:      map[string]string{"schemaIds": schemaID},
+			Filters:      map[string]string{"schemaIds": schemaID, "fields": listFields},
 		}.Apply(req)
 
 		resp, err := req.Get(SettingsAPI)

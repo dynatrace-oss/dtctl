@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -227,5 +228,126 @@ func TestApply_CloudDryRun_NoNameMatch_ReportsCreated(t *testing.T) {
 				t.Errorf("name = %q, want %q", dr.Name, tc.wantName)
 			}
 		})
+	}
+}
+
+// A cloud connection exported before the field projection was fixed carries
+// only objectId and value — the Settings API list used to strip schemaId and
+// scope — so the flattened "type" field sent the file down the generic document
+// path. Dry run then reported a create of a document named after the
+// authentication type, and a real apply created one.
+func TestApply_LegacyConnectionExport_DetectedAsConnection(t *testing.T) {
+	cases := []struct {
+		name             string
+		payload          string
+		wantResourceType ResourceType
+		wantID           string
+	}{
+		{
+			name:             "aws",
+			payload:          `{"objectId":"aws-conn-legacy","value":{"name":"my-aws-conn","type":"awsRoleBasedAuthentication","awsRoleBasedAuthentication":{"roleArn":"arn:aws:iam::123456789012:role/Dynatrace","consumers":["SVC:com.dynatrace.da"]}},"name":"my-aws-conn","type":"awsRoleBasedAuthentication","roleArn":"arn:aws:iam::123456789012:role/Dynatrace"}`,
+			wantResourceType: ResourceSettings,
+			wantID:           "aws-conn-legacy",
+		},
+		{
+			name:             "azure",
+			payload:          `{"objectId":"azure-conn-legacy","value":{"name":"my-azure-conn","type":"federatedIdentityCredential"},"name":"my-azure-conn","type":"federatedIdentityCredential"}`,
+			wantResourceType: ResourceAzureConnection,
+			wantID:           "azure-conn-legacy",
+		},
+		{
+			name:             "gcp",
+			payload:          `{"objectId":"gcp-conn-legacy","value":{"name":"my-gcp-conn","type":"serviceAccountImpersonation"},"name":"my-gcp-conn","type":"serviceAccountImpersonation"}`,
+			wantResourceType: ResourceGCPConnection,
+			wantID:           "gcp-conn-legacy",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, isArray, err := detectResourceType([]byte(tc.payload))
+			if err != nil {
+				t.Fatalf("detectResourceType() error = %v", err)
+			}
+			if isArray {
+				t.Error("isArray = true, want false")
+			}
+			if got != tc.wantResourceType {
+				t.Errorf("resource type = %q, want %q (bug #509: read as a document named after the auth type)", got, tc.wantResourceType)
+			}
+
+			srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+				"/platform/document/v1/documents": func(w http.ResponseWriter, r *http.Request) {
+					t.Errorf("dry run reached the documents API — the export was read as a document")
+					w.WriteHeader(http.StatusInternalServerError)
+				},
+				"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusUnauthorized)
+				},
+			})
+			defer srv.Close()
+
+			dr := cloudDryRun(t, NewApplier(c), tc.payload)
+			if dr.Action != ActionUpdated {
+				t.Errorf("action = %q, want %q", dr.Action, ActionUpdated)
+			}
+			if dr.ID != tc.wantID {
+				t.Errorf("id = %q, want %q", dr.ID, tc.wantID)
+			}
+			if dr.ResourceType != string(tc.wantResourceType) {
+				t.Errorf("resourceType = %q, want %q", dr.ResourceType, tc.wantResourceType)
+			}
+		})
+	}
+}
+
+// The apply behind that dry run must update the connection through the Settings
+// API, not create a document.
+func TestApply_LegacyAWSConnectionExport_Updates(t *testing.T) {
+	const objectPath = "/platform/classic/environment-api/v2/settings/objects/aws-conn-legacy"
+	putCalled := false
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		objectPath: func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.Method {
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"objectId":      "aws-conn-legacy",
+					"schemaId":      "builtin:hyperscaler-authentication.connections.aws",
+					"schemaVersion": "1",
+					"scope":         "environment",
+					"value":         map[string]interface{}{"name": "my-aws-conn", "type": "awsRoleBasedAuthentication"},
+				})
+			case http.MethodPut:
+				putCalled = true
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				t.Errorf("unexpected %s on the settings object path", r.Method)
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		},
+		"/platform/document/v1/documents": func(w http.ResponseWriter, r *http.Request) {
+			t.Error("apply created a document instead of updating the AWS connection")
+			w.WriteHeader(http.StatusInternalServerError)
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+
+	payload := `{"objectId":"aws-conn-legacy","value":{"name":"my-aws-conn","type":"awsRoleBasedAuthentication","awsRoleBasedAuthentication":{"roleArn":"arn:aws:iam::123456789012:role/Dynatrace","consumers":["SVC:com.dynatrace.da"]}},"name":"my-aws-conn","type":"awsRoleBasedAuthentication"}`
+	results, err := NewApplier(c).Apply([]byte(payload), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if !putCalled {
+		t.Error("no PUT was issued: the AWS connection was not updated")
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	if got := resultAction(t, results[0]); got != ActionUpdated {
+		t.Errorf("action = %q, want %q", got, ActionUpdated)
 	}
 }
