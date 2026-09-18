@@ -51,7 +51,8 @@ type Listing struct {
 	// floor this deployment accepts". Omitted when nothing is filtered.
 	MinStability string `json:"min_stability,omitempty" yaml:"min_stability,omitempty"`
 	// StabilityExceptions are the individual commands and flags admitted below
-	// the floor, each rendered as it is written in config ("query --spill").
+	// the floor, each rendered as it is written in config
+	// ("query --decode-snapshots").
 	// Without them a reader of min_stability could not explain why a
 	// below-floor command is present in the tree.
 	StabilityExceptions []string          `json:"stability_exceptions,omitempty" yaml:"stability_exceptions,omitempty"`

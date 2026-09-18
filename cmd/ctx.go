@@ -363,7 +363,7 @@ func addContextFlags(cmd *cobra.Command) {
 	cmd.Flags().String("description", "", "human-readable description for this context")
 	cmd.Flags().String("profile", "", "command profile to bind (restricts the visible command surface; e.g. query, investigate, full)")
 	cmd.Flags().String("min-stability", "", "stability floor: weakest contract a command or flag may offer here (stable, experimental)")
-	cmd.Flags().StringArray("stability-exception", nil, "admit one below-floor command or flag (repeatable; e.g. 'ingest' or 'query --spill')")
+	cmd.Flags().StringArray("stability-exception", nil, "admit one below-floor command or flag (repeatable; e.g. 'inventory' or 'query --decode-snapshots')")
 	cmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
 	_ = cmd.RegisterFlagCompletionFunc("profile", completeProfileNames)
 	_ = cmd.RegisterFlagCompletionFunc("min-stability", completeStabilityLevels)

@@ -171,7 +171,7 @@ type Context struct {
 	MinStability StabilityLevel `yaml:"min-stability,omitempty" table:"MIN-STABILITY,wide"`
 	// StabilityExceptions are narrow, audited opt-ins below the floor, each a
 	// command path optionally suffixed with one flag ("ingest",
-	// "query --spill"). They parameterize the floor for a named target rather
+	// "query --decode-snapshots"). They parameterize the floor for a named target rather
 	// than lowering it for everything.
 	StabilityExceptions []string `yaml:"stability-exceptions,omitempty" table:"-"`
 	Hooks               Hooks    `yaml:"hooks,omitempty"`
@@ -994,7 +994,7 @@ type ContextOptions struct {
 	// command or flag may offer and still be usable. See StabilityLevel.
 	MinStability StabilityLevel
 	// StabilityExceptions are individual commands and flags admitted below the
-	// floor ("ingest", "query --spill"). A nil slice leaves the existing list
+	// floor ("inventory", "query --decode-snapshots"). A nil slice leaves the existing list
 	// untouched; an empty non-nil slice clears it, which is how a caller
 	// withdraws every exception at once.
 	StabilityExceptions []string

@@ -89,7 +89,7 @@ func ParseExceptions(entries []string) ([]Exception, error) {
 		if len(cmdParts) == 0 {
 			return nil, fmt.Errorf(
 				"stability exception %q names a flag without a command; "+
-					"write e.g. \"query --spill\"", raw)
+					"write e.g. \"query --decode-snapshots\"", raw)
 		}
 		out = append(out, Exception{Command: strings.Join(cmdParts, " "), Flag: flag})
 	}

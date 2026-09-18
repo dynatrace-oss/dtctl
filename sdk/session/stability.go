@@ -163,7 +163,7 @@ func (c *Config) resolveMinStability(envValue string) (StabilityLevel, error) {
 
 // StabilityExceptions returns the current context's per-command and per-flag
 // exceptions to the floor. Each entry is a command path, optionally suffixed
-// with a single flag ("ingest", "query --spill").
+// with a single flag ("inventory", "query --decode-snapshots").
 //
 // Exceptions live on the context rather than in a profile deliberately: a
 // profile that named a tier would be encoding another axis's intent, and
