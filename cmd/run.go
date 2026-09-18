@@ -231,7 +231,11 @@ func restorePristineTree() {
 func resetFlagSet(fs *pflag.FlagSet) {
 	fs.VisitAll(func(flag *pflag.Flag) {
 		flag.Changed = false
-		if sv, ok := flag.Value.(pflag.SliceValue); ok {
+		if rv, ok := flag.Value.(interface{ Reset() }); ok {
+			// Values with their own reset semantics (e.g. singleUseStringValue,
+			// for which Set(DefValue) would wrongly mark the flag as used).
+			rv.Reset()
+		} else if sv, ok := flag.Value.(pflag.SliceValue); ok {
 			// SliceValue.Set appends rather than replaces; use Replace to
 			// restore the declared default. StringArray stores DefValue as
 			// JSON; other slice types fall back to nil (empty) if the format
