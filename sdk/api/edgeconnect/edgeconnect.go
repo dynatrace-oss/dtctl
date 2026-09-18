@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -74,7 +75,7 @@ func (h *Handler) List(ctx context.Context) (*EdgeConnectList, error) {
 // Get gets a specific EdgeConnect by ID.
 func (h *Handler) Get(ctx context.Context, edgeConnectID string) (*EdgeConnect, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", edgeConnectID))
+		Get(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", url.PathEscape(edgeConnectID)))
 	if err != nil {
 		return nil, fmt.Errorf("get edge connect: %w", err)
 	}
@@ -114,7 +115,7 @@ func (h *Handler) Create(ctx context.Context, req EdgeConnect) (*EdgeConnect, er
 func (h *Handler) Update(ctx context.Context, edgeConnectID string, req EdgeConnect) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
-		Put(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", edgeConnectID))
+		Put(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", url.PathEscape(edgeConnectID)))
 	if err != nil {
 		return fmt.Errorf("update edge connect: %w", err)
 	}
@@ -128,7 +129,7 @@ func (h *Handler) Update(ctx context.Context, edgeConnectID string, req EdgeConn
 // Delete deletes an EdgeConnect.
 func (h *Handler) Delete(ctx context.Context, edgeConnectID string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", edgeConnectID))
+		Delete(fmt.Sprintf("/platform/app-engine/edge-connect/v1/edge-connects/%s", url.PathEscape(edgeConnectID)))
 	if err != nil {
 		return fmt.Errorf("delete edge connect: %w", err)
 	}

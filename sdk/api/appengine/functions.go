@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/go-resty/resty/v2"
 
@@ -80,8 +81,8 @@ type SDKVersionsResponse struct {
 
 // InvokeFunction invokes an app function
 func (h *FunctionHandler) InvokeFunction(ctx context.Context, req *FunctionInvokeRequest) (*FunctionInvokeResponse, error) {
-	url := fmt.Sprintf("/platform/app-engine/app-functions/v1/apps/%s/api/%s",
-		req.AppID, req.FunctionName)
+	reqPath := fmt.Sprintf("/platform/app-engine/app-functions/v1/apps/%s/api/%s",
+		url.PathEscape(req.AppID), url.PathEscape(req.FunctionName))
 
 	httpReq := h.client.HTTP().R().SetContext(ctx)
 
@@ -98,15 +99,15 @@ func (h *FunctionHandler) InvokeFunction(ctx context.Context, req *FunctionInvok
 
 	switch req.Method {
 	case "GET":
-		resp, err = httpReq.Get(url)
+		resp, err = httpReq.Get(reqPath)
 	case "POST":
-		resp, err = httpReq.Post(url)
+		resp, err = httpReq.Post(reqPath)
 	case "PUT":
-		resp, err = httpReq.Put(url)
+		resp, err = httpReq.Put(reqPath)
 	case "PATCH":
-		resp, err = httpReq.Patch(url)
+		resp, err = httpReq.Patch(reqPath)
 	case "DELETE":
-		resp, err = httpReq.Delete(url)
+		resp, err = httpReq.Delete(reqPath)
 	default:
 		return nil, fmt.Errorf("unsupported HTTP method: %s", req.Method)
 	}

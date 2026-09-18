@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"slices"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -82,7 +83,7 @@ func (h *Handler) ListApps(ctx context.Context) (*AppList, error) {
 func (h *Handler) GetApp(ctx context.Context, appID string) (*App, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("add-fields", "isBuiltin,manifest,resourceStatus.subResourceTypes").
-		Get(fmt.Sprintf("/platform/app-engine/registry/v1/apps/%s", appID))
+		Get(fmt.Sprintf("/platform/app-engine/registry/v1/apps/%s", url.PathEscape(appID)))
 
 	if err != nil {
 		return nil, fmt.Errorf("get app %q: %w", appID, err)
@@ -102,7 +103,7 @@ func (h *Handler) GetApp(ctx context.Context, appID string) (*App, error) {
 // DeleteApp uninstalls an app
 func (h *Handler) DeleteApp(ctx context.Context, appID string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("/platform/app-engine/registry/v1/apps/%s", appID))
+		Delete(fmt.Sprintf("/platform/app-engine/registry/v1/apps/%s", url.PathEscape(appID)))
 
 	if err != nil {
 		return fmt.Errorf("delete app %q: %w", appID, err)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -293,7 +294,7 @@ func (h *Handler) fetchLatestSchema() (*ExtensionSchemaResponse, error) {
 		return nil, fmt.Errorf("failed to determine latest extension version: %w", err)
 	}
 	var schema ExtensionSchemaResponse
-	endpoint := fmt.Sprintf(ExtensionSchemaAPI, latest)
+	endpoint := fmt.Sprintf(ExtensionSchemaAPI, url.PathEscape(latest))
 	resp, err := h.client.HTTP().R().SetResult(&schema).Get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch extension schema: %w", err)

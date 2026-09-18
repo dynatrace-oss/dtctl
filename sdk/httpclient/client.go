@@ -106,7 +106,7 @@ func New(baseURL string, opts ...Option) (*Client, error) {
 	}
 
 	c := &Client{
-		http:    resty.New(),
+		http:    GuardRequestPaths(resty.New()),
 		baseURL: baseURL,
 		logger:  noopLogger{},
 	}
@@ -161,6 +161,15 @@ func New(baseURL string, opts ...Option) (*Client, error) {
 func isRetryable(r *resty.Response, err error) bool {
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return false
+		}
+		// A nil response means the request never left the process: resty's own
+		// parseRequestURL, or the request-path guard, rejected it before a transport
+		// was involved. Retrying cannot change that outcome -- and resty consults
+		// the retry conditions even for an error it has marked non-retryable, then
+		// dereferences the nil response while preparing the retry, so answering
+		// "yes" here is a panic rather than a wasted attempt.
+		if r == nil || r.Request == nil {
 			return false
 		}
 		return true

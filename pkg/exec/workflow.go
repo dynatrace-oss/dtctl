@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -54,7 +55,7 @@ func (e *WorkflowExecutor) Execute(workflowID string, req WorkflowExecutionReque
 	}
 
 	resp, err := httpReq.
-		Post(fmt.Sprintf("/platform/automation/v1/workflows/%s/run", workflowID))
+		Post(fmt.Sprintf("/platform/automation/v1/workflows/%s/run", url.PathEscape(workflowID)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute workflow: %w", err)
@@ -110,7 +111,7 @@ func (e *WorkflowExecutor) GetStatus(executionID string) (*ExecutionStatus, erro
 
 	resp, err := e.client.HTTP().R().
 		SetResult(&result).
-		Get(fmt.Sprintf("/platform/automation/v1/executions/%s", executionID))
+		Get(fmt.Sprintf("/platform/automation/v1/executions/%s", url.PathEscape(executionID)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution status: %w", err)

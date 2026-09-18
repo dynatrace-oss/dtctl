@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -53,7 +54,7 @@ type PlatformTokenCreate struct {
 }
 
 func (h *Handler) basePath() string {
-	return fmt.Sprintf("/iam/v1/accounts/%s/platform-tokens", h.accountUUID)
+	return fmt.Sprintf("/iam/v1/accounts/%s/platform-tokens", url.PathEscape(h.accountUUID))
 }
 
 const listPageSize = 100

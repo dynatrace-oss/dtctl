@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -76,7 +77,7 @@ func (h *Handler) ListEventNotifications(ctx context.Context, notificationType s
 // GetEventNotification gets a specific event notification by ID.
 func (h *Handler) GetEventNotification(ctx context.Context, id string) (*EventNotification, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/notification/v2/event-notifications/%s", id))
+		Get(fmt.Sprintf("/platform/notification/v2/event-notifications/%s", url.PathEscape(id)))
 	if err != nil {
 		return nil, fmt.Errorf("get event notification: %w", err)
 	}
@@ -116,7 +117,7 @@ func (h *Handler) CreateEventNotification(ctx context.Context, data []byte) (*Ev
 // DeleteEventNotification deletes an event notification.
 func (h *Handler) DeleteEventNotification(ctx context.Context, id string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("/platform/notification/v2/event-notifications/%s", id))
+		Delete(fmt.Sprintf("/platform/notification/v2/event-notifications/%s", url.PathEscape(id)))
 	if err != nil {
 		return fmt.Errorf("delete event notification: %w", err)
 	}
@@ -157,7 +158,7 @@ func (h *Handler) ListResourceNotifications(ctx context.Context, notificationTyp
 // GetResourceNotification gets a specific resource notification by ID.
 func (h *Handler) GetResourceNotification(ctx context.Context, id string) (*ResourceNotification, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/notification/v2/resource-notifications/%s", id))
+		Get(fmt.Sprintf("/platform/notification/v2/resource-notifications/%s", url.PathEscape(id)))
 	if err != nil {
 		return nil, fmt.Errorf("get resource notification: %w", err)
 	}
@@ -176,7 +177,7 @@ func (h *Handler) GetResourceNotification(ctx context.Context, id string) (*Reso
 // DeleteResourceNotification deletes a resource notification.
 func (h *Handler) DeleteResourceNotification(ctx context.Context, id string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("/platform/notification/v2/resource-notifications/%s", id))
+		Delete(fmt.Sprintf("/platform/notification/v2/resource-notifications/%s", url.PathEscape(id)))
 	if err != nil {
 		return fmt.Errorf("delete resource notification: %w", err)
 	}

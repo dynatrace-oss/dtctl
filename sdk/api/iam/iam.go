@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -84,7 +85,7 @@ func (h *Handler) ListUsers(ctx context.Context, partialString string, uuids []s
 
 		req.SetQueryParamsFromValues(params)
 
-		resp, err := req.Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/users", envID))
+		resp, err := req.Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/users", url.PathEscape(envID)))
 		if err != nil {
 			return nil, fmt.Errorf("list users: %w", err)
 		}
@@ -124,7 +125,7 @@ func (h *Handler) GetUser(ctx context.Context, uuid string) (*User, error) {
 	}
 
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/users/%s", envID, uuid))
+		Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/users/%s", url.PathEscape(envID), url.PathEscape(uuid)))
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
@@ -170,7 +171,7 @@ func (h *Handler) ListGroups(ctx context.Context, partialGroupName string, uuids
 
 		req.SetQueryParamsFromValues(params)
 
-		resp, err := req.Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/groups", envID))
+		resp, err := req.Get(fmt.Sprintf("/platform/iam/v1/organizational-levels/environment/%s/groups", url.PathEscape(envID)))
 		if err != nil {
 			return nil, fmt.Errorf("list groups: %w", err)
 		}

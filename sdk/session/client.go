@@ -16,6 +16,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	sdkauth "github.com/dynatrace-oss/dtctl/sdk/auth"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 	"github.com/dynatrace-oss/dtctl/sdk/urls"
 )
 
@@ -156,7 +157,7 @@ func NewClient(baseURL, token string, opts ...ClientOption) (*Client, error) {
 		userAgent += aiSuffix
 	}
 
-	httpClient := resty.New().
+	httpClient := httpclient.GuardRequestPaths(resty.New()).
 		SetLogger(&noopRestyLogger{}).
 		SetBaseURL(baseURL).
 		SetAuthScheme("Bearer").
@@ -182,6 +183,15 @@ func isRetryable(r *resty.Response, err error) bool {
 		// Don't retry on context cancellation — retrying is pointless when the context
 		// is already done (covers both user-initiated cancellation and deadline exceeded).
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return false
+		}
+		// A nil response means the request never left the process: resty's own
+		// parseRequestURL, or the request-path guard, rejected it before a transport
+		// was involved. Retrying cannot change that outcome -- and resty consults
+		// the retry conditions even for an error it has marked non-retryable, then
+		// dereferences the nil response while preparing the retry, so answering
+		// "yes" here is a panic rather than a wasted attempt.
+		if r == nil || r.Request == nil {
 			return false
 		}
 		return true
