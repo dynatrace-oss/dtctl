@@ -2,7 +2,7 @@
 
 # Cloud Integrations
 
-<!-- SME: hand-authored against the binary. The aws/azure/gcp commands are nested subcommands (verb -> provider -> noun) that the generator does not capture, so these tables are NOT generated. Verify against the binary when the cloud command surface changes. -->
+<!-- Verified against the dtctl binary on 2026-09-18. Hand-authored: the aws/azure/gcp commands are nested subcommands (verb -> provider -> noun) that `commands --full` does not yet expose, so these tables are NOT generated. Re-verify when the cloud command surface changes; move into GENERATED markers once `commands --full` exposes resource_details (per code-owner review). -->
 
 ## Overview
 

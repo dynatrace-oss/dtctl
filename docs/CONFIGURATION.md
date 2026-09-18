@@ -18,6 +18,8 @@ Tokens are stored securely in your OS keyring. To log out:
 dtctl auth logout
 ```
 
+Check your current auth state with `dtctl auth status`, and force a token refresh with `dtctl auth refresh`.
+
 ### Token-Based Auth
 
 For CI/CD or headless environments, use a platform API token:
@@ -49,6 +51,16 @@ dtctl auth whoami
 ```
 
 Use `dtctl auth whoami -o json` for machine-readable output, or `--id-only` to get just the user ID.
+
+### Credential storage
+
+OAuth and platform tokens are stored in your OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service), never in plain text.
+
+On **Linux and WSL**, gnome-keyring can start with only a transient session collection and no persistent login collection. When `dtctl auth login` detects a missing collection (`failed to unlock correct collection`), it connects to the D-Bus Secret Service, creates a persistent collection with the `default` alias, and triggers an OS password prompt if required (polling for up to two minutes). If automatic creation fails, the error message suggests alternatives such as token-based auth. `dtctl doctor` includes a keyring check that reports backend status.
+
+Some keyring backends impose a per-item size limit, and a large OAuth response (many scopes or large JWTs) can exceed it. dtctl falls back automatically: it stores the full token set when it fits, drops the largest JWT fields when it does not, and in the worst case keeps only the refresh token and fetches a fresh access token on the next command. `dtctl auth login` therefore succeeds even when a size limit is reached, and tokens stay keyring-backed.
+
+If you see `failed to save token to keyring: ... data passed to Set was too big`, a size limit was hit; dtctl falls back to compact storage automatically. Re-run `dtctl auth login --context <name> --environment <url>` if the error persists.
 
 ## Multiple Environments
 
