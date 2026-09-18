@@ -21,6 +21,7 @@ Each resource type has its own page under [`resources/`](resources/), pairing ge
 - [Davis CoPilot](resources/copilot.md)
 - [Documents & Trash](resources/documents.md)
 - [EdgeConnect](resources/edgeconnect.md)
+- [Environment & License](resources/environment-license.md)
 - [Extensions](resources/extensions.md)
 - [Filter Segments](resources/filter-segments.md)
 - [Grail Buckets](resources/grail-buckets.md)

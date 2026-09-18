@@ -8,7 +8,8 @@ catalog (`dtctl commands --full -o json`) or run `dtctl <verb> <resource> --help
 
 ## Watch Mode
 
-All `get` commands support watch mode for real-time monitoring:
+Watch mode is available on `get workflows`, `get scheduling-rules`, and the
+document types (`get dashboards`, `get notebooks`, `get documents`, `get trash`):
 
 ```bash
 dtctl get workflows --watch                    # Watch all

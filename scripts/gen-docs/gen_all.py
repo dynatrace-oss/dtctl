@@ -59,6 +59,8 @@ PLAN = {
     "platform-tokens":      ("Platform Tokens", ["platform-token", "account-token", "token"], False,
                              "verify: may have no resource_scopes entry in the catalog."),
     "users-groups":         ("Users & Groups", ["user", "group"], False, ""),
+    "environment-license":  ("Environment & License", ["environment", "license", "license-settings"], False,
+                             "read-only platform management surface; license-settings has no describe form."),
 }
 
 

@@ -286,26 +286,35 @@ gcloud projects add-iam-policy-binding <project-id> \
 ```bash
 dtctl update gcp connection \
   --name "my-gcp-connection" \
-  --projectId <project-id> \
-  --serviceAccountEmail "dynatrace-monitoring@<project-id>.iam.gserviceaccount.com"
+  --serviceAccountId "dynatrace-monitoring@<project-id>.iam.gserviceaccount.com"
 ```
+
+The service account email is the only mutable field; the project is implied by
+the account. Use the connection ID as a positional instead of `--name` if you
+have it.
 
 ### Step 4: Create a Monitoring Configuration
 
 ```bash
-# Create a monitoring config linked to the connection (created in disabled state)
+# Create a monitoring config linked to the connection (created in disabled state).
+# --credentials takes the connection name or ID; both flags are required.
 dtctl create gcp monitoring-config \
-  --connection "my-gcp-connection"
+  --name "my-gcp-monitoring" \
+  --credentials "my-gcp-connection"
 ```
+
+Without `--locationFiltering` / `--featureSets` the config defaults to every
+location and every `*_essential` feature set in the extension schema.
 
 > **Note:** Monitoring configurations are created in a **disabled** state. Use `dtctl enable gcp monitoring` in the final step to activate them.
 
 ### Step 5: Discover Locations and Feature Sets
 
 ```bash
-# List available GCP regions and services for monitoring
-dtctl get gcp locations --connection "my-gcp-connection"
-dtctl get gcp feature-sets --connection "my-gcp-connection"
+# List available GCP regions and services for monitoring.
+# Both read the latest extension schema, so they take no connection.
+dtctl get gcp monitoring-locations
+dtctl get gcp monitoring-feature-sets
 ```
 
 ### Step 6: Update and Delete
@@ -313,14 +322,14 @@ dtctl get gcp feature-sets --connection "my-gcp-connection"
 ```bash
 # Update monitoring scope
 dtctl update gcp monitoring-config <config-id> \
-  --locations us-central1,europe-west1 \
-  --feature-sets compute,gke
+  --locationFiltering "us-central1,europe-west1" \
+  --featureSets "compute_engine_essential,cloud_run_essential"
 
 # Delete a monitoring config
 dtctl delete gcp monitoring-config <config-id>
 
-# Delete the connection
-dtctl delete gcp connection --name "my-gcp-connection"
+# Delete the connection (takes an ID or a name as a positional)
+dtctl delete gcp connection "my-gcp-connection"
 ```
 
 ### Step 7: Enable the Monitoring Configuration
@@ -343,7 +352,7 @@ dtctl also provides basic management commands for Dynatrace EdgeConnect instance
 dtctl get edgeconnects
 
 # Create a new EdgeConnect
-dtctl create edgeconnect --name "my-edge" --hostPatterns "*.internal.example.com"
+dtctl create edgeconnect --name "my-edge" --host-patterns "*.internal.example.com"
 
 # Delete an EdgeConnect
 dtctl delete edgeconnect edge-123

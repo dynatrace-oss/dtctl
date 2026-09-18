@@ -6,10 +6,7 @@ on:
       - 'cmd/**'
       - 'pkg/**'
       - 'scripts/gen-docs/**'
-      - 'docs/resources/**'
-      - 'docs/README.md'
-      - 'docs/COMMANDS.md'
-      - 'docs/TOKEN_SCOPES.md'
+      - 'docs/**'
       - 'makefile'
       - '.github/workflows/docs-generate.yml'
   push:
@@ -19,10 +16,7 @@ on:
       - 'cmd/**'
       - 'pkg/**'
       - 'scripts/gen-docs/**'
-      - 'docs/resources/**'
-      - 'docs/README.md'
-      - 'docs/COMMANDS.md'
-      - 'docs/TOKEN_SCOPES.md'
+      - 'docs/**'
       - 'makefile'
       - '.github/workflows/docs-generate.yml'
 
@@ -63,3 +57,22 @@ jobs:
             exit 1
           fi
           echo "✅ Generated reference docs are up to date."
+
+  # The job above only guards the <!-- GENERATED --> blocks. This one guards
+  # everything around them: the overviews, examples, notes, and cross-links
+  # that people write by hand and that no generator will ever correct.
+  check-docs-prose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Check docs prose against the real CLI
+        run: make docs-check

@@ -52,10 +52,17 @@ dtctl [verb] [resource-type] [resource-name] [flags]
 --dry-run             Print what would be done without doing it
 -A, --agent           Agent output mode (structured JSON envelope)
 --no-agent            Disable auto-detected agent mode
--w, --watch           Watch for changes
---interval duration   Watch/live polling interval (default: 2s)
---watch-only          Only show changes, skip initial state
 --chunk-size int      Page size for API requests (default: 500, 0=no pagination)
+```
+
+`--watch`, `--interval`, and `--watch-only` are **not** global. They are
+registered only on `get workflows`, `get scheduling-rules`, `get dashboards`,
+`get notebooks`, `get documents`, and `get trash`:
+
+```
+-w, --watch           Watch for changes
+--interval duration   Watch polling interval (default: 2s, minimum 1s)
+--watch-only          Only show changes, skip initial state
 ```
 
 ## Resource Types
@@ -71,12 +78,12 @@ dtctl supports both singular and plural resource names, plus short aliases.
 | `notebooks` | `notebook`, `nb` | get, describe, create, edit, delete, apply, share, unshare, history, restore, diff, watch |
 | `documents` | `document`, `doc` | get, describe, create, apply, update, edit, delete, history, restore |
 | `trash` | — | get, describe, restore, delete |
-| `slos` | `slo` | get, describe, create, delete, apply, exec (evaluate), watch |
+| `slos` | `slo` | get, describe, create, delete, apply, exec (evaluate) |
 | `slo-templates` | `slo-template` | get, describe |
 | `settings-schemas` | `settings-schema` | get, describe |
 | `settings` | — | get, create, update, delete |
-| `buckets` | `bucket` | get, describe, create, delete, apply, watch |
-| `segments` | `segment`, `seg`, `filter-segments`, `filter-segment` | get, describe, create, edit, delete, apply, watch |
+| `buckets` | `bucket` | get, describe, create, delete, apply |
+| `segments` | `segment`, `seg`, `filter-segments`, `filter-segment` | get, describe, create, edit, delete, apply |
 | `lookups` | `lookup` | get, describe, create, delete |
 | `extensions` | `extension`, `ext`, `exts` | get, describe |
 | `extension-configs` | `extension-config`, `ext-configs`, `ext-config` | get, describe, apply |
@@ -87,7 +94,7 @@ dtctl supports both singular and plural resource names, plus short aliases.
 | `intents` | `intent` | get, describe, find, open |
 | `analyzers` | `analyzer` | get, exec |
 | `copilot-skills` | — | get |
-| `notifications` | `notification` | get, describe, delete, watch |
+| `notifications` | `notification` | get, describe, delete |
 | `edgeconnects` | `edgeconnect`, `ec` | get, describe, create, delete, apply |
 | `breakpoints` | `breakpoint` | get, describe, create, update, delete |
 | `apis` | `api` | get, describe ([API Discovery]({{ '/docs/api-discovery/' | relative_url }})) |
@@ -272,7 +279,7 @@ dtctl wait query 'fetch logs | filter status == "ERROR"' --for=any --timeout 2m
 ```bash
 # Workflows
 dtctl exec workflow <id-or-name> --wait --show-results
-dtctl exec workflow <id> --params env=prod,severity=high
+dtctl exec workflow <id> --input '{"env":"prod","severity":"high"}'
 
 # SLO evaluation
 dtctl exec slo <id>
@@ -401,7 +408,8 @@ model.
 
 ### Watch Mode
 
-All `get` commands support watch mode for real-time monitoring:
+Watch mode is available on `get workflows`, `get scheduling-rules`, and the
+document types (`get dashboards`, `get notebooks`, `get documents`, `get trash`):
 
 ```bash
 dtctl get workflows --watch                    # Watch all

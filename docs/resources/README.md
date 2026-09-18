@@ -14,6 +14,7 @@ Per-resource reference for [`dtctl`](https://github.com/dynatrace-oss/dtctl). Ea
 - [Davis CoPilot](copilot.md)
 - [Documents & Trash](documents.md)
 - [EdgeConnect](edgeconnect.md)
+- [Environment & License](environment-license.md)
 - [Extensions](extensions.md)
 - [Filter Segments](filter-segments.md)
 - [Grail Buckets](grail-buckets.md)
