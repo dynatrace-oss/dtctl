@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
@@ -53,4 +54,35 @@ func withCompleteCommandTree[T any](fn func() T) T {
 	applyDevelopmentRegistration(map[string]bool{config.DevelopmentAll: true})
 	defer applyDevelopmentRegistration(nil)
 	return fn()
+}
+
+// StabilitySinceVersions returns every version named by a stability-since
+// declaration in the complete command tree, mapped to the commands and flags
+// that name it.
+//
+// A since-version is a promise about a *release*: "experimental as of 0.39.0"
+// tells a caller which version withdrew the guarantee. The declarations are
+// written before that release exists, so they are the one part of the manifest
+// that can be falsified by the release itself simply being numbered
+// differently. Exported so test/stability can check them against the version
+// the next release will carry.
+func StabilitySinceVersions() map[string][]string {
+	return withCompleteCommandTree(func() map[string][]string {
+		out := map[string][]string{}
+		stability.Walk(rootCmd, func(c *cobra.Command) {
+			path := stability.Path(c, rootCmd)
+			if since := stability.Since(c); since != "" {
+				out[since] = append(out[since], path)
+			}
+			c.LocalFlags().VisitAll(func(f *pflag.Flag) {
+				if c.InheritedFlags().Lookup(f.Name) != nil {
+					return
+				}
+				if since := stability.SinceFlag(c, f.Name); since != "" {
+					out[since] = append(out[since], path+" --"+f.Name)
+				}
+			})
+		})
+		return out
+	})
 }

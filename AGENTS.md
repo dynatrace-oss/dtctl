@@ -204,6 +204,12 @@ silently wrong answer into a useful message. Withdrawing the stable contract to
 warn about a typo costs every correct caller and protects none of them. The
 spared rows carry their reason in `pre10RejectUnusableInputSpared`.
 
+A since-version is the one part of the manifest the release itself can falsify:
+`experimental since 0.39.0` is a claim about a version that does not exist yet.
+`TestSinceVersionsNameThisReleaseOrTheNextOne` holds every declaration to this
+release or the next one, so a differently-numbered release fails on
+release-please's own version-bump PR rather than after the tag exists.
+
 That list is a test and not a comment for a reason: `stability.MarkFlag` is a
 silent no-op when the flag it names does not exist, so renaming a flag in `cmd/`
 would drop its mark and quietly re-promise something 1.0 removes. When a
