@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -54,6 +55,11 @@ Examples:
     --parse-pattern "LD*:id '|' LD*:name '|' LD*:value" \
     --skip-records 1
 
+  # Create from stdin
+  generate-codes | dtctl create lookup -f - \
+    --path /lookups/grail/pm/error_codes \
+    --lookup-field code
+
   # Create from manifest
   dtctl create lookup -f lookup-manifest.yaml
 
@@ -76,8 +82,10 @@ Examples:
 			return fmt.Errorf("--file is required")
 		}
 
-		// Read file
-		fileData, err := vfs.ReadFile(file)
+		if file == "-" && isTerminal(os.Stdin) {
+			return fmt.Errorf("--file - reads the lookup data from stdin, but stdin is a terminal: pipe the data in or pass a file path")
+		}
+		fileData, err := vfs.ReadFileOrStdin(file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -196,7 +204,7 @@ Examples:
 
 func init() {
 	// Lookup flags
-	createLookupCmd.Flags().StringP("file", "f", "", "path to data file or manifest (required)")
+	createLookupCmd.Flags().StringP("file", "f", "", "path to data file or manifest, or - for stdin (required)")
 	createLookupCmd.Flags().String("path", "", "lookup file path (e.g., /lookups/grail/pm/error_codes)")
 	createLookupCmd.Flags().String("lookup-field", "", "name of the lookup key field")
 	createLookupCmd.Flags().String("display-name", "", "display name for the lookup table")

@@ -8,6 +8,45 @@ import (
 	"testing"
 )
 
+// TestCreateLookupDryRun_FileDashReadsStdin covers #493: "-f -" must read the
+// piped data, even when a file named "-" exists in the working directory.
+func TestCreateLookupDryRun_FileDashReadsStdin(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "-"), []byte("id\n1\n2\n3\n4\n5\n"), 0o600); err != nil {
+		t.Fatalf("write decoy file: %v", err)
+	}
+	t.Chdir(dir)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	if _, err := w.WriteString("id,name\n1,alpha\n"); err != nil {
+		t.Fatalf("write stdin: %v", err)
+	}
+	_ = w.Close()
+	originalStdin := os.Stdin
+	t.Cleanup(func() { os.Stdin = originalStdin })
+	os.Stdin = r
+
+	setCreateLookupFlags(t, "-")
+	withAgentMode(t, false)
+
+	originalDryRun := dryRun
+	t.Cleanup(func() { dryRun = originalDryRun })
+	dryRun = true
+
+	out := captureStdout(t, func() {
+		if err := createLookupCmd.RunE(createLookupCmd, nil); err != nil {
+			t.Fatalf("RunE() error = %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Records: 1") {
+		t.Errorf("output does not describe the piped data (1 record):\n%s", out)
+	}
+}
+
 // setCreateLookupFlags points the shared command at a file and resets the
 // flags afterwards, since the cobra command is a package-level singleton.
 func setCreateLookupFlags(t *testing.T, file string) {
