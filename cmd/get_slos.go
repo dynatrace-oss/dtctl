@@ -140,6 +140,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "SLO", s.Name, sloID)
+		}
+
 		// Confirm deletion unless --force or --plain
 		if !forceDelete && !plainMode {
 			if !prompt.ConfirmDeletion("SLO", s.Name, sloID) {

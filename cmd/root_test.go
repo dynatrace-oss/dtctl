@@ -568,7 +568,7 @@ func TestEnhanceFlagError(t *testing.T) {
 			}
 
 			// Verify our global flags are in the list
-			expectedFlags := []string{"config", "context", "output", "verbose", "dry-run", "plain", "chunk-size"}
+			expectedFlags := []string{"config", "context", "output", "verbose", "plain", "chunk-size"}
 			for _, expectedFlag := range expectedFlags {
 				found := false
 				for _, flag := range flags {

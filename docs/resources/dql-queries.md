@@ -21,7 +21,7 @@ dtctl provides a powerful interface for executing Dynatrace Query Language (DQL)
 
 ## Flags
 
-Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, ...). `query` additionally takes a large set of query-tuning flags:
+Resource commands take dtctl's **global flags** (`-o/--output`, `--context`, `--jq`, `-v`, ...). `query` additionally takes a large set of query-tuning flags:
 
 | Flag | Purpose |
 | --- | --- |

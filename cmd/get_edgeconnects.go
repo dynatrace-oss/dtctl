@@ -87,6 +87,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "EdgeConnect", ec.Name, ecID)
+		}
+
 		// Confirm deletion unless --force or --plain
 		if !forceDelete && !plainMode {
 			if !prompt.ConfirmDeletion("EdgeConnect", ec.Name, ecID) {

@@ -118,6 +118,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "app", app.Name, appID)
+		}
+
 		// Confirm deletion unless --force or --plain
 		if !forceDelete && !plainMode {
 			if !prompt.ConfirmDeletion("app", app.Name, appID) {

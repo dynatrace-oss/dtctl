@@ -110,6 +110,10 @@ Examples:
 			displayName = uid
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "segment", displayName, uid)
+		}
+
 		confirmFlag, _ := cmd.Flags().GetString("confirm")
 		if !forceDelete && !plainMode {
 			if confirmFlag != "" {

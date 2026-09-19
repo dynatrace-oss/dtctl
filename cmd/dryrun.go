@@ -134,3 +134,102 @@ func detailKey(label string) string {
 	}
 	return b.String()
 }
+
+// deleteDryRun is the dry-run branch of a delete command: it names the object
+// the command would delete. name may be empty when the ID is all there is.
+func deleteDryRun(cmd *cobra.Command, kind, name, id string) error {
+	report := newDryRunReport(cmd)
+	if name == "" || name == id {
+		report.Linef("Dry run: would delete %s %q", kind, id)
+	} else {
+		report.Linef("Dry run: would delete %s %q (%s)", kind, name, id).Detail("name", "%s", name)
+	}
+	return report.Detail("id", "%s", id).Print()
+}
+
+// dryRunCommands are the commands that implement --dry-run: they resolve the
+// target, print what they would do and send no mutating request. The flag is
+// registered on these commands only, so every other command rejects it as an
+// unknown flag instead of ignoring it and doing the real work (#477).
+//
+// apply and update document define their own --dry-run flag.
+var dryRunCommands = []*cobra.Command{
+	accountCreateTokenCmd,
+	accountDeleteTokenCmd,
+	applyExtensionConfigCmd,
+	configDeleteContextCmd,
+	configDeleteCredentialsCmd,
+	createAnomalyDetectorCmd,
+	createAWSConnectionCmd,
+	createAWSMonitoringConfigCmd,
+	createAzureConnectionCmd,
+	createAzureMonitoringConfigCmd,
+	createBreakpointCmd,
+	createBucketCmd,
+	createDashboardCmd,
+	createDocumentCmd,
+	createEdgeConnectCmd,
+	createExtensionCmd,
+	createGCPConnectionCmd,
+	createGCPMonitoringConfigCmd,
+	createLookupCmd,
+	createNotebookCmd,
+	createSchedulingRuleCmd,
+	createSegmentCmd,
+	createSettingsCmd,
+	createSLOCmd,
+	createWorkflowCmd,
+	ctxDeleteCmd,
+	deleteAnomalyDetectorCmd,
+	deleteAppCmd,
+	deleteAWSConnectionCmd,
+	deleteAWSMonitoringConfigCmd,
+	deleteAzureConnectionCmd,
+	deleteAzureMonitoringConfigCmd,
+	deleteBreakpointCmd,
+	deleteBucketCmd,
+	deleteDashboardCmd,
+	deleteDocumentCmd,
+	deleteEdgeConnectCmd,
+	deleteGCPConnectionCmd,
+	deleteGCPMonitoringConfigCmd,
+	deleteLookupCmd,
+	deleteNotebookCmd,
+	deleteNotificationCmd,
+	deleteSchedulingRuleCmd,
+	deleteSegmentCmd,
+	deleteSettingsCmd,
+	deleteSLOCmd,
+	deleteTrashCmd,
+	deleteWorkflowCmd,
+	disableAWSMonitoringCmd,
+	disableAzureMonitoringCmd,
+	disableGCPMonitoringCmd,
+	enableAWSMonitoringCmd,
+	enableAzureMonitoringCmd,
+	enableGCPMonitoringCmd,
+	execAPICmd,
+	queryCmd,
+	restoreDashboardCmd,
+	restoreDocumentCmd,
+	restoreNotebookCmd,
+	restoreTrashCmd,
+	restoreWorkflowCmd,
+	shareDocumentCmd,
+	unshareDocumentCmd,
+	updateAWSConnectionCmd,
+	updateAWSMonitoringConfigCmd,
+	updateAzureConnectionCmd,
+	updateAzureMonitoringConfigCmd,
+	updateBreakpointCmd,
+	updateExtensionCmd,
+	updateExtensionsCmd,
+	updateGCPConnectionCmd,
+	updateGCPMonitoringConfigCmd,
+}
+
+func init() {
+	for _, c := range dryRunCommands {
+		c.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
+	}
+}

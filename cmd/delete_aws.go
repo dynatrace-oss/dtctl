@@ -34,6 +34,10 @@ var deleteAWSConnectionCmd = &cobra.Command{
 			output.PrintInfo("Resolved name %q to ID %s", identifier, objectID)
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "AWS connection", identifier, objectID)
+		}
+
 		if err := handler.Delete(objectID); err != nil {
 			return fmt.Errorf("failed to delete AWS connection %q: %w", objectID, err)
 		}
@@ -63,6 +67,10 @@ var deleteAWSMonitoringConfigCmd = &cobra.Command{
 		if err == nil {
 			objectID = item.ObjectID
 			output.PrintInfo("Resolved name %q to ID %s", identifier, objectID)
+		}
+
+		if dryRun {
+			return deleteDryRun(cmd, "AWS monitoring config", identifier, objectID)
 		}
 
 		if err := handler.Delete(objectID); err != nil {

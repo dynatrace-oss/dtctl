@@ -733,6 +733,8 @@ Use `--dry-run` to preview mutating operations without making changes:
 dtctl apply -f workflow.yaml --dry-run
 ```
 
+`--dry-run` is not a global flag. The `create`, `update`, `delete`, `restore` and `apply` commands and `exec api` accept it. A command that has no dry run, such as `exec workflow`, rejects the flag with a usage error (exit code 2) and does nothing.
+
 ### Diff
 
 Use `--show-diff` to see what would change when updating an existing resource:

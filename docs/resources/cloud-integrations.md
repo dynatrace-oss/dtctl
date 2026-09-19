@@ -64,7 +64,7 @@ There is no dedicated `aws`/`azure`/`gcp` resource type in the command catalog. 
 
 ## Flags
 
-Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, ...). Cloud-integration commands add their own noun-specific flags, such as `--name`, `--regions`, `--featureSets`, `--credentials`, `--roleArn` (AWS), `--type`, `--directoryId`, `--applicationId`, `--clientSecret`, `--locationFiltering` (Azure), and `--serviceAccountId` (GCP connections), plus `--credentials`, `--locationFiltering`, and `--featureSets` (GCP monitoring). See the examples below for their usage in context.
+Resource commands take dtctl's **global flags** (`-o/--output`, `--context`, `--jq`, `-v`, ...). Cloud-integration commands add their own noun-specific flags, such as `--name`, `--regions`, `--featureSets`, `--credentials`, `--roleArn` (AWS), `--type`, `--directoryId`, `--applicationId`, `--clientSecret`, `--locationFiltering` (Azure), and `--serviceAccountId` (GCP connections), plus `--credentials`, `--locationFiltering`, and `--featureSets` (GCP monitoring). See the examples below for their usage in context.
 
 ## Required token scopes
 

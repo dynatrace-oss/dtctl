@@ -307,6 +307,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "workflow", wf.Title, workflowID)
+		}
+
 		// Confirm deletion unless --force or --plain
 		if !forceDelete && !plainMode {
 			if !prompt.ConfirmDeletion("workflow", wf.Title, workflowID) {

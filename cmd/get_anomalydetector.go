@@ -125,6 +125,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "anomaly detector", ad.Title, ad.ObjectID)
+		}
+
 		// Confirm deletion unless --yes or --plain
 		if !forceDelete && !plainMode {
 			if !prompt.ConfirmDeletion("anomaly detector", ad.Title, ad.ObjectID) {

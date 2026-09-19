@@ -419,7 +419,7 @@ func collectSubcommands(cmd *cobra.Command) []string {
 }
 
 var (
-	unknownFlagRe = regexp.MustCompile(`unknown (?:shorthand )?flag: ['-]*(\w+)['-]*`)
+	unknownFlagRe = regexp.MustCompile(`unknown (?:shorthand )?flag: '?-*(\w[\w-]*)`)
 	unknownCmdRe  = regexp.MustCompile(`unknown command "(\w+)"`)
 )
 
@@ -466,6 +466,9 @@ func adviseFlag(cmd *cobra.Command, flag string) *suggest.FlagError {
 	case cmd.Name() == "query" && flag == "query":
 		return &suggest.FlagError{Flag: flag,
 			Message: "unknown flag --query — pass the DQL text as the positional argument: dtctl query 'fetch ...'"}
+	case flag == "dry-run":
+		return &suggest.FlagError{Flag: flag,
+			Message: fmt.Sprintf("unknown flag --dry-run — '%s' has no dry run; to check a file or query without running it, use 'dtctl verify'", cmd.CommandPath())}
 	}
 	return nil
 }
@@ -1747,7 +1750,6 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().StringVar(&jqFilter, "jq", "", "jq filter expression for structured output (json|yaml|toon); applied to the result payload, not the --agent envelope (on query: '.records', not '.result.records'); non-structured formats are auto-promoted to json")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode (full HTTP request/response logging, equivalent to -vv)")
-	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
 	rootCmd.PersistentFlags().BoolVar(&plainMode, "plain", false, "plain output for machine processing (no colors, no interactive prompts)")
 	rootCmd.PersistentFlags().BoolVarP(&agentMode, "agent", "A", false, "agent output mode: wrap output in a structured JSON envelope with metadata")
 	rootCmd.PersistentFlags().BoolVar(&noAgent, "no-agent", false, "disable auto-detected agent mode")

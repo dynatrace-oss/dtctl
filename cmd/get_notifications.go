@@ -103,6 +103,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "notification", n.NotificationType, notifID)
+		}
+
 		// Confirm deletion unless --force or --plain
 		if !forceDelete && !plainMode {
 			if !prompt.ConfirmDeletion("notification", n.NotificationType, notifID) {

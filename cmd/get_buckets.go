@@ -91,6 +91,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "bucket", "", bucketName)
+		}
+
 		// Handle confirmation for data deletion
 		confirmFlag, _ := cmd.Flags().GetString("confirm")
 		if !forceDelete && !plainMode {

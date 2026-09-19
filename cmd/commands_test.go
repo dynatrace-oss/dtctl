@@ -326,7 +326,7 @@ func TestCommandsCmd_GlobalFlags(t *testing.T) {
 	require.NotNil(t, listing.GlobalFlags)
 	require.Contains(t, listing.GlobalFlags, "--output")
 	require.Contains(t, listing.GlobalFlags, "--agent")
-	require.Contains(t, listing.GlobalFlags, "--dry-run")
+	require.NotContains(t, listing.GlobalFlags, "--dry-run")
 	require.Contains(t, listing.GlobalFlags, "--context")
 	require.Contains(t, listing.GlobalFlags, "--plain")
 	require.Contains(t, listing.GlobalFlags, "--chunk-size")

@@ -1,0 +1,100 @@
+package cmd
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+)
+
+// TestDryRunIsRejectedWhereNotImplemented covers #477: --dry-run used to be a
+// global flag, so a command that ignored it did the real work. A command that
+// does not implement it must now reject it as an unknown flag.
+func TestDryRunIsRejectedWhereNotImplemented(t *testing.T) {
+	for _, args := range [][]string{
+		{"exec", "workflow", "wf-1", "--dry-run"},
+		{"exec", "function", "app/fn", "--dry-run"},
+		{"get", "slos", "--dry-run"},
+	} {
+		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
+			t.Cleanup(func() { rootCmd.SetArgs(nil) })
+			rootCmd.SetArgs(args)
+
+			err := rootCmd.Execute()
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "unknown flag --dry-run")
+			require.Equal(t, client.ExitUsageError, exitCodeForError(err))
+		})
+	}
+}
+
+// TestDeleteDryRunSendsNoMutatingRequest runs delete commands with --dry-run
+// against a mock environment whose writes fail, and asserts on the traffic.
+func TestDeleteDryRunSendsNoMutatingRequest(t *testing.T) {
+	srv := newCloudMockServer(t)
+
+	cases := []struct {
+		name string
+		cmd  *cobra.Command
+		args []string
+	}{
+		{"delete aws connection", deleteAWSConnectionCmd, []string{mockAWSConnectionName}},
+		{"delete aws monitoring", deleteAWSMonitoringConfigCmd, []string{mockAWSConfigName}},
+		{"delete azure connection", deleteAzureConnectionCmd, []string{mockAzureConnectionName}},
+		{"delete azure monitoring", deleteAzureMonitoringConfigCmd, []string{mockAzureConfigName}},
+		{"delete gcp connection", deleteGCPConnectionCmd, []string{mockGCPConnectionName}},
+		{"delete gcp monitoring", deleteGCPMonitoringConfigCmd, []string{mockGCPConfigName}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setupPlatformCmdTest(t, srv.Server, "json")
+			origDryRun := dryRun
+			t.Cleanup(func() { dryRun = origDryRun })
+			dryRun = true
+			srv.reset()
+
+			var runErr error
+			out := capturePlatformStdout(t, func() {
+				runErr = tc.cmd.RunE(tc.cmd, tc.args)
+			})
+
+			require.NoError(t, runErr, "output:\n%s", out)
+			require.Contains(t, out, "Dry run: would delete")
+			require.Empty(t, srv.mutatingCalls())
+		})
+	}
+}
+
+func TestDeleteSLODryRunSendsNoMutatingRequest(t *testing.T) {
+	var mutating []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutating = append(mutating, r.Method+" "+r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "slo-1", "name": "Availability", "version": "3"})
+	}))
+	t.Cleanup(srv.Close)
+	setupPlatformCmdTest(t, srv, "json")
+	origDryRun := dryRun
+	t.Cleanup(func() { dryRun = origDryRun })
+	dryRun = true
+
+	var runErr error
+	out := capturePlatformStdout(t, func() {
+		runErr = deleteSLOCmd.RunE(deleteSLOCmd, []string{"slo-1"})
+	})
+
+	require.NoError(t, runErr, "output:\n%s", out)
+	require.Contains(t, out, `Dry run: would delete SLO "Availability" (slo-1)`)
+	require.Empty(t, mutating)
+}

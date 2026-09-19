@@ -20,7 +20,6 @@ func TestGlobalFlags(t *testing.T) {
 		{"context", ""},
 		{"output", "table"},
 		{"verbose", "0"},
-		{"dry-run", "false"},
 		{"plain", "false"},
 		{"chunk-size", "500"},
 	}
@@ -367,12 +366,6 @@ func TestFlagParsing(t *testing.T) {
 			args:     []string{"-v"},
 			flagName: "verbose",
 			wantVal:  "1",
-		},
-		{
-			name:     "dry-run flag",
-			args:     []string{"--dry-run"},
-			flagName: "dry-run",
-			wantVal:  "true",
 		},
 	}
 

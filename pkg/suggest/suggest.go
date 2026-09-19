@@ -173,7 +173,7 @@ func (e *CommandError) Error() string {
 // and returns an enhanced error with suggestions
 func ParseFlagError(errMsg string, availableFlags []string) error {
 	// Match patterns like "unknown flag: --ownr" or "unknown shorthand flag: 'x'"
-	unknownFlagRe := regexp.MustCompile(`unknown (?:shorthand )?flag: ['-]*(\w+)['-]*`)
+	unknownFlagRe := regexp.MustCompile(`unknown (?:shorthand )?flag: '?-*(\w[\w-]*)`)
 	matches := unknownFlagRe.FindStringSubmatch(errMsg)
 
 	if len(matches) < 2 {

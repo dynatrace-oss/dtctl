@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -80,6 +81,10 @@ Examples:
 		ownership := safety.DetermineOwnership(wf.Owner, currentUserID)
 		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return newDryRunReport(cmd).Linef("Dry run: would restore workflow %q to version %d", wf.Title, version).Print()
 		}
 
 		// Confirm restore unless --force or --plain
@@ -163,6 +168,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return newDryRunReport(cmd).Linef("Dry run: would restore dashboard %q from snapshot %d", metadata.Name, version).Print()
+		}
+
 		// Confirm restore unless --force or --plain
 		if !forceDelete && !plainMode {
 			confirmMsg := fmt.Sprintf("Restore dashboard %q from snapshot %d?", metadata.Name, version)
@@ -242,6 +251,10 @@ Examples:
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
 		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return newDryRunReport(cmd).Linef("Dry run: would restore notebook %q from snapshot %d", metadata.Name, version).Print()
 		}
 
 		// Confirm restore unless --force or --plain
@@ -327,6 +340,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return newDryRunReport(cmd).Linef("Dry run: would restore document %q (%s) from snapshot %d", metadata.Name, metadata.Type, version).Print()
+		}
+
 		// Confirm restore unless --force or --plain
 		if !forceDelete && !plainMode {
 			confirmMsg := fmt.Sprintf("Restore document %q (%s) from snapshot %d?", metadata.Name, metadata.Type, version)
@@ -385,6 +402,13 @@ Examples:
 		opts := document.RestoreOptions{
 			Force:   forceRestore,
 			NewName: newName,
+		}
+
+		if dryRun {
+			return newDryRunReport(cmd).
+				Linef("Dry run: would restore %d document(s) from trash: %s", len(args), strings.Join(args, ", ")).
+				Detail("ids", "%s", strings.Join(args, ",")).
+				Print()
 		}
 
 		// Restore each document

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -290,6 +291,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "dashboard", metadata.Name, dashboardID)
+		}
+
 		// Confirm deletion unless --force or --plain
 		if !forceDelete && !plainMode {
 			if !prompt.ConfirmDeletion("dashboard", metadata.Name, dashboardID) {
@@ -359,6 +364,10 @@ Examples:
 			return err
 		}
 
+		if dryRun {
+			return deleteDryRun(cmd, "notebook", metadata.Name, notebookID)
+		}
+
 		// Confirm deletion unless --force or --plain
 		if !forceDelete && !plainMode {
 			if !prompt.ConfirmDeletion("notebook", metadata.Name, notebookID) {
@@ -409,6 +418,13 @@ Examples:
 		}
 
 		handler := document.NewTrashHandler(c)
+
+		if dryRun {
+			return newDryRunReport(cmd).
+				Linef("Dry run: would permanently delete %d document(s) from trash: %s", len(args), strings.Join(args, ", ")).
+				Detail("ids", "%s", strings.Join(args, ",")).
+				Print()
+		}
 
 		// Confirm deletion unless --force or --plain or deleting multiple
 		if !forceDelete && !plainMode {
@@ -619,6 +635,10 @@ Examples:
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
 		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return deleteDryRun(cmd, metadata.Type, metadata.Name, documentID)
 		}
 
 		// Confirm deletion unless --force or --plain
