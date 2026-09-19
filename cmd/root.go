@@ -602,6 +602,24 @@ func dqlErrorAdvice(e *sdkquery.QueryError) []string {
 	return s
 }
 
+// queryStateErrorDetail maps a query state error to its envelope code.
+func queryStateErrorDetail(err error, state string) *output.ErrorDetail {
+	detail := &output.ErrorDetail{Message: err.Error()}
+	switch state {
+	case sdkquery.StateFailed:
+		detail.Code = "query_failed"
+	case sdkquery.StateCancelled:
+		detail.Code = "query_cancelled"
+	case sdkquery.StateResultGone:
+		detail.Code = "result_expired"
+		detail.Suggestions = []string{"the query is valid but its result expired: run the same query again"}
+	default:
+		detail.Code = "unknown_query_state"
+		detail.Suggestions = []string{"upgrade dtctl: this Grail version reports a query state that this dtctl does not know"}
+	}
+	return detail
+}
+
 // errorToDetail converts any error into a structured ErrorDetail for agent/plain mode output.
 // It uses errors.As to extract rich context from typed errors when available.
 func errorToDetail(err error) *output.ErrorDetail {
@@ -775,6 +793,13 @@ func errorToDetail(err error) *output.ErrorDetail {
 			StatusCode:  queryErr.StatusCode,
 			Suggestions: dqlErrorAdvice(queryErr),
 		}
+	}
+
+	// sdkquery.StateError — the query ended in a state other than SUCCEEDED.
+	// The code tells an agent whether a verbatim retry can help.
+	var stateErr *sdkquery.StateError
+	if errors.As(err, &stateErr) {
+		return queryStateErrorDetail(err, stateErr.State)
 	}
 
 	// suggest.CommandError — unknown command with "did you mean?" suggestions

@@ -68,6 +68,10 @@ Error codes are stable identifiers that agents can match on programmatically:
 | `rate_limited` | Too many requests (HTTP 429) | Back off, then retry |
 | `server_error` | Dynatrace-side failure (HTTP 5xx) | Retry with backoff; escalate if persistent |
 | `timeout` | The operation timed out client-side | Narrow the request (timeframe, limit) and retry |
+| `query_failed` | The query ended in state `FAILED` | Don't retry unchanged; fix the query |
+| `query_cancelled` | The query was cancelled on the server | Retry if the cancellation was not intended |
+| `result_expired` | The query result expired before it was fetched (`RESULT_GONE`) | Run the same query again |
+| `unknown_query_state` | The query reported a state this dtctl does not know | Upgrade dtctl |
 | `safety_blocked` | The context's [safety level](CONFIGURATION.md#safety-levels) forbids this operation | Don't retry; ask a human to widen the level |
 | `profile_blocked` | The active [command profile](CONFIGURATION.md#command-profiles) doesn't expose this command | Re-read `dtctl commands` and pick a supported path |
 | `stability_blocked` | The command or a flag you used offers a weaker contract than the context's [stability floor](STABILITY.md#choosing-what-this-environment-accepts) accepts | Don't retry; use a `stable` alternative, or ask a human to admit this entry |

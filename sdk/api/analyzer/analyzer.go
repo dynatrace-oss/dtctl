@@ -230,6 +230,10 @@ const (
 
 // ExecuteAndWait runs an analyzer and waits for completion.
 // The context can be used to cancel a long-running poll (e.g. on SIGINT).
+//
+// Only COMPLETED is a success; ABORTED and FAILED are errors. Any other status
+// that comes with a request token is polled, because a status added to the API
+// later is more likely in flight than terminal.
 func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[string]interface{}, maxWaitSeconds int) (*ExecuteResult, error) {
 	// Start execution with initial timeout
 	result, err := h.Execute(ctx, name, input, defaultInitialTimeout)
@@ -237,14 +241,18 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 		return nil, err
 	}
 
-	// If already completed, return
-	if result.Result != nil && result.Result.ExecutionStatus == "COMPLETED" {
+	status := executionStatus(result)
+	if status == "COMPLETED" {
 		return result, nil
 	}
-
-	// Poll for completion if we have a request token
+	if err := failedStatusError(status); err != nil {
+		return result, err
+	}
 	if result.RequestToken == "" {
-		return result, nil
+		if status == "" {
+			return result, fmt.Errorf("analyzer returned neither a result nor a request token")
+		}
+		return result, fmt.Errorf("analyzer execution ended with unrecognized status %q: your dtctl may predate this analyzer API, try upgrading", status)
 	}
 
 	startTime := time.Now()
@@ -252,6 +260,9 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 
 	for {
 		if time.Since(startTime) > maxDuration {
+			if status != "" && status != "RUNNING" {
+				return nil, fmt.Errorf("analyzer execution timed out after %d seconds in unrecognized status %q: your dtctl may predate this analyzer API, try upgrading", maxWaitSeconds, status)
+			}
 			return nil, fmt.Errorf("analyzer execution timed out after %d seconds", maxWaitSeconds)
 		}
 
@@ -266,19 +277,12 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 			return nil, err
 		}
 
-		if pollResult.Result != nil {
-			switch pollResult.Result.ExecutionStatus {
-			case "COMPLETED":
-				return pollResult, nil
-			case "ABORTED":
-				return pollResult, fmt.Errorf("analyzer execution was aborted")
-			case "FAILED":
-				return pollResult, fmt.Errorf("analyzer execution failed")
-			case "RUNNING":
-				// continue polling
-			default:
-				return pollResult, fmt.Errorf("analyzer execution ended with unexpected status %q", pollResult.Result.ExecutionStatus)
-			}
+		status = executionStatus(pollResult)
+		if status == "COMPLETED" {
+			return pollResult, nil
+		}
+		if err := failedStatusError(status); err != nil {
+			return pollResult, err
 		}
 
 		select {
@@ -286,6 +290,27 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 			return nil, ctx.Err()
 		case <-time.After(defaultPollInterval):
 		}
+	}
+}
+
+// executionStatus returns the execution status of r, or "" when r has no
+// result yet.
+func executionStatus(r *ExecuteResult) string {
+	if r.Result == nil {
+		return ""
+	}
+	return r.Result.ExecutionStatus
+}
+
+// failedStatusError returns the error for a failed execution status, or nil.
+func failedStatusError(status string) error {
+	switch status {
+	case "ABORTED":
+		return fmt.Errorf("analyzer execution was aborted")
+	case "FAILED":
+		return fmt.Errorf("analyzer execution failed")
+	default:
+		return nil
 	}
 }
 
