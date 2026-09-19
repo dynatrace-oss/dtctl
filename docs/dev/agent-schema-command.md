@@ -225,7 +225,8 @@ The following shows the exhaustive `--full` output, which describes dtctl's verb
 ### Key schema fields
 
 - **`schema_version`** — integer, incremented on breaking changes to the schema structure. Lets consumers detect incompatibilities without parsing the entire document.
-- **`mutating`** — boolean per verb. Derived from dtctl's safety system (`OperationCreate`, `OperationUpdate`, `OperationDelete`). Agents can use this to assess risk before running a command.
+- **`mutating`** — boolean per verb and per subcommand at every depth: `true` means the command changes tenant state and the safety checker gates it. Derived from dtctl's safety system (`OperationCreate`, `OperationUpdate`, `OperationDelete`). Agents can use this to assess risk before running a command. It says nothing about local state: `auth logout` or `skills install` write local files and are not `mutating`.
+- **`resource_flags`** — per verb (and per nested subcommand), a map of resource name → the names of that resource's own flags, such as `"dashboards": ["--mine", "--name", ...]` (full mode only). Names only, to keep the catalog small; `dtctl <verb> <resource> --help` gives types and descriptions.
 - **`safety_operation`** — the safety operation type for mutating commands. Maps directly to dtctl's 4-tier safety levels (a command blocked at `readonly` will have `safety_operation` set; a read-only verb won't).
 - **`access`** — per verb, the access level (`read`/`write`/`delete`/`run`) derived from the verb and its safety operation. Combined with the top-level `resource_scopes` table, an agent can compute any command's required scopes.
 - **`required_scopes_by_resource`** — per verb, a map of resource name → the OAuth/IAM scopes that verb needs for that resource (full mode only). Lets an agent determine the scopes a command needs **before** running it, avoiding mid-task 403s.
