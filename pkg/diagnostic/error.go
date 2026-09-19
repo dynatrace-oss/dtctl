@@ -1,10 +1,12 @@
 package diagnostic
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // Error represents an enhanced diagnostic error with contextual help
@@ -63,16 +65,7 @@ func (e *Error) Unwrap() error {
 
 // ExitCode returns the appropriate exit code for this error
 func (e *Error) ExitCode() int {
-	switch e.StatusCode {
-	case 401:
-		return client.ExitAuthError
-	case 403:
-		return client.ExitPermissionError
-	case 404:
-		return client.ExitNotFoundError
-	default:
-		return client.ExitError
-	}
+	return client.ExitCodeForStatus(e.StatusCode)
 }
 
 // Wrap wraps an error with diagnostic information
@@ -86,8 +79,8 @@ func Wrap(err error, operation string) *Error {
 		Err:       err,
 	}
 
-	// Extract status code if it's an APIError
-	if apiErr, ok := err.(*client.APIError); ok {
+	var apiErr *httpclient.APIError
+	if errors.As(err, &apiErr) {
 		de.StatusCode = apiErr.StatusCode
 		de.Message = apiErr.Message
 		if apiErr.Details != "" {
@@ -96,7 +89,7 @@ func Wrap(err error, operation string) *Error {
 	}
 
 	// Add suggestions based on status code
-	de.Suggestions = suggestionsForStatusCode(de.StatusCode)
+	de.Suggestions = SuggestionsForStatusCode(de.StatusCode)
 
 	return de
 }
@@ -110,8 +103,10 @@ func WrapWithMessage(err error, operation string, message string) *Error {
 	return de
 }
 
-// suggestionsForStatusCode returns troubleshooting suggestions based on HTTP status code
-func suggestionsForStatusCode(statusCode int) []string {
+// SuggestionsForStatusCode returns troubleshooting suggestions for an HTTP status
+// code. Exported so the agent envelope can carry the same advice for a bare SDK
+// HTTP failure that a diagnostic.Error carries for a wrapped one.
+func SuggestionsForStatusCode(statusCode int) []string {
 	switch statusCode {
 	case 401:
 		return []string{
@@ -189,7 +184,7 @@ func (e *Error) WithRequestID(requestID string) *Error {
 func (e *Error) WithStatusCode(statusCode int) *Error {
 	e.StatusCode = statusCode
 	if len(e.Suggestions) == 0 {
-		e.Suggestions = suggestionsForStatusCode(statusCode)
+		e.Suggestions = SuggestionsForStatusCode(statusCode)
 	}
 	return e
 }

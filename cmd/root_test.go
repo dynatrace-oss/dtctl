@@ -20,9 +20,11 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // TestBuildSpanName verifies that buildSpanName correctly extracts the verb and
@@ -884,38 +886,120 @@ func TestErrorToDetail_DiagnosticErrorStatusCodes(t *testing.T) {
 }
 
 func TestErrorToDetail_APIError(t *testing.T) {
-	err := &client.APIError{
-		StatusCode: 404,
-		Message:    "not found",
-		Details:    "workflow does not exist",
-	}
+	err := httpclient.NewAPIError(404, "not found", "workflow does not exist")
 
 	detail := errorToDetail(err)
 
 	if detail.Code != "not_found" {
 		t.Errorf("Code = %q, want %q", detail.Code, "not_found")
 	}
-	if detail.Message != "not found - workflow does not exist" {
-		t.Errorf("Message = %q, want %q", detail.Message, "not found - workflow does not exist")
+	if want := "API error (404): not found - workflow does not exist"; detail.Message != want {
+		t.Errorf("Message = %q, want %q", detail.Message, want)
 	}
 	if detail.StatusCode != 404 {
 		t.Errorf("StatusCode = %d, want %d", detail.StatusCode, 404)
 	}
 }
 
-func TestErrorToDetail_APIErrorWithoutDetails(t *testing.T) {
-	err := &client.APIError{
-		StatusCode: 500,
-		Message:    "internal server error",
+// TestSDKHTTPErrorIsTyped covers #498: an SDK HTTP error, wrapped by a
+// handler with %w, must keep its documented code, status and exit code.
+func TestSDKHTTPErrorIsTyped(t *testing.T) {
+	tests := []struct {
+		status   int
+		wantCode string
+		wantExit int
+	}{
+		{401, "auth_required", client.ExitAuthError},
+		{403, "permission_denied", client.ExitPermissionError},
+		{404, "not_found", client.ExitNotFoundError},
 	}
+	for _, tt := range tests {
+		t.Run(tt.wantCode, func(t *testing.T) {
+			err := fmt.Errorf("failed to get dashboard: %w",
+				httpclient.NewAPIError(tt.status, "Configuration not found", ""))
+
+			detail := errorToDetail(err)
+			if detail.Code != tt.wantCode {
+				t.Errorf("Code = %q, want %q", detail.Code, tt.wantCode)
+			}
+			if detail.StatusCode != tt.status {
+				t.Errorf("StatusCode = %d, want %d", detail.StatusCode, tt.status)
+			}
+			if !strings.HasPrefix(detail.Message, "failed to get dashboard: ") {
+				t.Errorf("Message = %q, want the handler context kept", detail.Message)
+			}
+			if got := exitCodeForError(err); got != tt.wantExit {
+				t.Errorf("exitCodeForError() = %d, want %d", got, tt.wantExit)
+			}
+		})
+	}
+}
+
+// TestAPIIndexErrorsKeepTheirOwnExitCode pins the ordering exitCodeForError
+// shares with errorToDetail: RegistryUnavailableError and SpecUnavailableError
+// wrap an APIError but classify themselves, so the wrapped status must not
+// decide the exit code. Answering "no API index here" with exit 4 would tell a
+// script the API it asked about does not exist.
+func TestAPIIndexErrorsKeepTheirOwnExitCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode string
+		wantExit int
+	}{
+		{
+			name: "unpublished index is not a missing resource",
+			err: &resapi.RegistryUnavailableError{
+				Path:       "/platform/metadata/v1/swagger-ui.json",
+				StatusCode: 404,
+				Err:        httpclient.NewAPIError(404, "Not Found", ""),
+			},
+			wantCode: "api_index_unavailable",
+			wantExit: client.ExitError,
+		},
+		{
+			name: "refused index is about the credential",
+			err: &resapi.RegistryUnavailableError{
+				Path:       "/platform/metadata/v1/swagger-ui.json",
+				StatusCode: 403,
+				Err:        httpclient.NewAPIError(403, "Forbidden", ""),
+			},
+			wantCode: "permission_denied",
+			wantExit: client.ExitPermissionError,
+		},
+		{
+			name: "unreadable specification is not a missing resource",
+			err: &resapi.SpecUnavailableError{
+				DocPath:    "/platform/widget/v1/openapi.yaml",
+				StatusCode: 404,
+				Err:        httpclient.NewAPIError(404, "Not Found", ""),
+			},
+			wantCode: "api_spec_unavailable",
+			wantExit: client.ExitError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := errorToDetail(tt.err).Code; got != tt.wantCode {
+				t.Errorf("Code = %q, want %q", got, tt.wantCode)
+			}
+			if got := exitCodeForError(tt.err); got != tt.wantExit {
+				t.Errorf("exitCodeForError() = %d, want %d", got, tt.wantExit)
+			}
+		})
+	}
+}
+
+func TestErrorToDetail_APIErrorWithoutDetails(t *testing.T) {
+	err := httpclient.NewAPIError(500, "internal server error", "")
 
 	detail := errorToDetail(err)
 
 	if detail.Code != "server_error" {
 		t.Errorf("Code = %q, want %q", detail.Code, "server_error")
 	}
-	if detail.Message != "internal server error" {
-		t.Errorf("Message = %q, want %q", detail.Message, "internal server error")
+	if want := "API error (500): internal server error"; detail.Message != want {
+		t.Errorf("Message = %q, want %q", detail.Message, want)
 	}
 }
 
@@ -1040,8 +1124,8 @@ func TestErrorToDetail_WrappedDiagnosticError(t *testing.T) {
 }
 
 func TestErrorToDetail_DiagnosticPrecedesAPIError(t *testing.T) {
-	// diagnostic.Error wraps a client.APIError — diagnostic should take precedence
-	apiErr := &client.APIError{StatusCode: 404, Message: "not found"}
+	// diagnostic.Error wraps an httpclient.APIError — diagnostic should take precedence
+	apiErr := httpclient.NewAPIError(404, "not found", "")
 	diagErr := diagnostic.Wrap(apiErr, "get workflows")
 
 	detail := errorToDetail(diagErr)
@@ -1153,7 +1237,7 @@ func TestExitCodeForError_DiagnosticError(t *testing.T) {
 }
 
 func TestExitCodeForError_APIError(t *testing.T) {
-	err := &client.APIError{StatusCode: 404, Message: "not found"}
+	err := httpclient.NewAPIError(404, "not found", "")
 	got := exitCodeForError(err)
 	if got != client.ExitNotFoundError {
 		t.Errorf("exitCodeForError() = %d, want %d", got, client.ExitNotFoundError)
@@ -1207,12 +1291,12 @@ func TestIsURLRelatedError(t *testing.T) {
 		},
 		{
 			name: "API error 403",
-			err:  &client.APIError{StatusCode: 403, Message: "forbidden"},
+			err:  httpclient.NewAPIError(403, "forbidden", ""),
 			want: true,
 		},
 		{
 			name: "API error 500 not URL-related",
-			err:  &client.APIError{StatusCode: 500, Message: "server error"},
+			err:  httpclient.NewAPIError(500, "server error", ""),
 			want: false,
 		},
 		{

@@ -5,42 +5,7 @@ import (
 	"testing"
 )
 
-func TestAPIError_Error(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      *APIError
-		expected string
-	}{
-		{
-			name: "with details",
-			err: &APIError{
-				StatusCode: 404,
-				Message:    "Not Found",
-				Details:    "Resource does not exist",
-			},
-			expected: "API error (404): Not Found - Resource does not exist",
-		},
-		{
-			name: "without details",
-			err: &APIError{
-				StatusCode: 500,
-				Message:    "Internal Server Error",
-				Details:    "",
-			},
-			expected: "API error (500): Internal Server Error",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.err.Error(); got != tt.expected {
-				t.Errorf("APIError.Error() = %v, want %v", got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestAPIError_ExitCode(t *testing.T) {
+func TestExitCodeForStatus(t *testing.T) {
 	tests := []struct {
 		name       string
 		statusCode int
@@ -56,30 +21,10 @@ func TestAPIError_ExitCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := &APIError{StatusCode: tt.statusCode, Message: "test"}
-			if got := err.ExitCode(); got != tt.want {
-				t.Errorf("APIError.ExitCode() = %v, want %v", got, tt.want)
+			if got := ExitCodeForStatus(tt.statusCode); got != tt.want {
+				t.Errorf("ExitCodeForStatus(%d) = %v, want %v", tt.statusCode, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestNewAPIError(t *testing.T) {
-	err := NewAPIError(404, "Not Found", "Resource missing")
-
-	apiErr, ok := err.(*APIError)
-	if !ok {
-		t.Fatal("NewAPIError() did not return *APIError")
-	}
-
-	if apiErr.StatusCode != 404 {
-		t.Errorf("StatusCode = %v, want 404", apiErr.StatusCode)
-	}
-	if apiErr.Message != "Not Found" {
-		t.Errorf("Message = %v, want 'Not Found'", apiErr.Message)
-	}
-	if apiErr.Details != "Resource missing" {
-		t.Errorf("Details = %v, want 'Resource missing'", apiErr.Details)
 	}
 }
 

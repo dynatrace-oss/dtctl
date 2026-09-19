@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 func TestError_Error(t *testing.T) {
@@ -147,12 +148,8 @@ func TestWrap(t *testing.T) {
 			wantStatusCode: 0,
 		},
 		{
-			name: "APIError extracts status code",
-			err: &client.APIError{
-				StatusCode: 404,
-				Message:    "not found",
-				Details:    "workflow does not exist",
-			},
+			name:           "APIError extracts status code",
+			err:            httpclient.NewAPIError(404, "not found", "workflow does not exist"),
 			operation:      "get workflows",
 			wantOperation:  "get workflows",
 			wantStatusCode: 404,
@@ -189,7 +186,7 @@ func TestWrap(t *testing.T) {
 
 			// Should have suggestions if status code warrants it
 			if tt.wantStatusCode > 0 {
-				expectedSuggestions := suggestionsForStatusCode(tt.wantStatusCode)
+				expectedSuggestions := SuggestionsForStatusCode(tt.wantStatusCode)
 				if len(expectedSuggestions) > 0 && len(got.Suggestions) == 0 {
 					t.Errorf("Expected suggestions for status code %d, got none", tt.wantStatusCode)
 				}
@@ -279,10 +276,10 @@ func TestSuggestionsForStatusCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := suggestionsForStatusCode(tt.statusCode)
+			got := SuggestionsForStatusCode(tt.statusCode)
 
 			if len(got) < tt.wantCount {
-				t.Errorf("suggestionsForStatusCode(%d) returned %d suggestions, want at least %d",
+				t.Errorf("SuggestionsForStatusCode(%d) returned %d suggestions, want at least %d",
 					tt.statusCode, len(got), tt.wantCount)
 			}
 
@@ -293,7 +290,7 @@ func TestSuggestionsForStatusCode(t *testing.T) {
 					found = true
 				}
 				if !found {
-					t.Errorf("suggestionsForStatusCode(%d) suggestions don't contain %q\ngot: %v",
+					t.Errorf("SuggestionsForStatusCode(%d) suggestions don't contain %q\ngot: %v",
 						tt.statusCode, tt.wantContains, got)
 				}
 			}
@@ -366,7 +363,7 @@ func TestError_Unwrap(t *testing.T) {
 
 func TestError_ChainedWrapping(t *testing.T) {
 	// Test that errors.Is and errors.As work with our wrapped errors
-	originalErr := &client.APIError{StatusCode: 404, Message: "not found"}
+	originalErr := httpclient.NewAPIError(404, "not found", "")
 	wrappedErr := Wrap(originalErr, "get workflow")
 
 	// Should be able to unwrap to find the original error
@@ -374,7 +371,7 @@ func TestError_ChainedWrapping(t *testing.T) {
 		t.Error("errors.Is should find the original error")
 	}
 
-	var apiErr *client.APIError
+	var apiErr *httpclient.APIError
 	if !errors.As(wrappedErr, &apiErr) {
 		t.Error("errors.As should extract APIError from wrapped error")
 	}

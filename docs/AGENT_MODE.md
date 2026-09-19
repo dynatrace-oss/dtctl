@@ -140,6 +140,23 @@ advice rather than a rewrite, because the fix depends on whether the field is a
 metric. A hint is only given when the pattern clearly matches; the suggested
 command carries only the query, so re-add any flags you used.
 
+### Exit codes
+
+The process exit code is the same verdict at lower resolution, for shell callers
+that do not parse the envelope:
+
+| Exit | Meaning | Codes that produce it |
+|---|---|---|
+| `0` | Success | -- |
+| `1` | General failure | every code not listed below |
+| `2` | Usage error | `unknown_command`, `profile_blocked`, `stability_blocked`, `deprecated_surface`, `development_disabled`, `unsupported_in_service`, and `validation_error` for an empty flag value |
+| `3` | Not authenticated (HTTP 401) | `auth_required` |
+| `4` | Resource does not exist (HTTP 404) | `not_found` |
+| `5` | Not allowed (HTTP 403) | `permission_denied`, `insufficient_scope` |
+
+Branch on `code` wherever you can. An exit code cannot tell `safety_blocked`
+apart from a network failure, and a new code arrives without a new exit code.
+
 ### Query results: the `result.kind` discriminator
 
 In agent mode, `dtctl query` results are self-describing: the `result` payload
