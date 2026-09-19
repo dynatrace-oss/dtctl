@@ -92,7 +92,7 @@ Examples:
 
 func init() {
 	describeExtensionConfigCmd.Flags().String("config-id", "", "Monitoring configuration ID (required)")
-	_ = describeExtensionConfigCmd.MarkFlagRequired("config-id")
+	markFlagRequiredNonEmpty(describeExtensionConfigCmd, "config-id")
 }
 
 // Declared stable: the invocation and output contract of this command is

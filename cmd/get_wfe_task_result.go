@@ -51,9 +51,7 @@ task (e.g. the object from a JavaScript task's default export function).`,
 
 func init() {
 	getWfeTaskResultCmd.Flags().StringP("task", "t", "", "Task name to retrieve the result for (required)")
-	if err := getWfeTaskResultCmd.MarkFlagRequired("task"); err != nil {
-		panic(err)
-	}
+	markFlagRequiredNonEmpty(getWfeTaskResultCmd, "task")
 }
 
 // Declared stable: the invocation and output contract of this command is

@@ -169,7 +169,7 @@ func init() {
 	updateDocumentCmd.Flags().String("snapshot-description", "", "description for the snapshot created by --create-snapshot (max 128 characters)")
 	updateDocumentCmd.Flags().Bool("dry-run", false, "preview the update without applying it")
 	updateDocumentCmd.Flags().Bool("show-diff", false, "show a diff of the change")
-	_ = updateDocumentCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(updateDocumentCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of this command is

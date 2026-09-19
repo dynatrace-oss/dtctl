@@ -14,13 +14,13 @@ func TestCreateSchedulingRuleFlagValidation(t *testing.T) {
 		{
 			name:    "missing --file flag",
 			args:    []string{"create", "scheduling-rule"},
-			wantErr: "--file is required",
+			wantErr: `required flag(s) "file" not set`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = createSchedulingRuleCmd.Flags().Set("file", "")
+			resetFlagSet(createSchedulingRuleCmd.Flags())
 
 			rootCmd.SetArgs(tt.args)
 			err := rootCmd.Execute()

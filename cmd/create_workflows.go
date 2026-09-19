@@ -99,7 +99,7 @@ func init() {
 	// Workflow flags
 	createWorkflowCmd.Flags().StringP("file", "f", "", "file containing workflow definition (required)")
 	createWorkflowCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	_ = createWorkflowCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(createWorkflowCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of this command is

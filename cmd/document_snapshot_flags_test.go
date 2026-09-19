@@ -165,8 +165,7 @@ func TestSnapshotFlagsValidatedBeforeIO(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Cleanup(func() {
 				rootCmd.SetArgs(nil)
-				_ = tt.cmd.Flags().Set("snapshot-description", "")
-				_ = tt.cmd.Flags().Set("file", "")
+				resetFlagSet(tt.cmd.Flags())
 			})
 
 			rootCmd.SetArgs(tt.args)

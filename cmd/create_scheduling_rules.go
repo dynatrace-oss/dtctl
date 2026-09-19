@@ -111,7 +111,7 @@ Examples:
 func init() {
 	createSchedulingRuleCmd.Flags().StringP("file", "f", "", "file containing scheduling rule definition (required)")
 	createSchedulingRuleCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	_ = createSchedulingRuleCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(createSchedulingRuleCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of this command is

@@ -201,7 +201,7 @@ func TestCreateSchedulingRuleDryRunAgentEnvelope(t *testing.T) {
 	if err := createSchedulingRuleCmd.Flags().Set("file", ruleFile); err != nil {
 		t.Fatalf("set --file: %v", err)
 	}
-	t.Cleanup(func() { _ = createSchedulingRuleCmd.Flags().Set("file", "") })
+	t.Cleanup(func() { resetFlagSet(createSchedulingRuleCmd.Flags()) })
 
 	out, _ := captureSchedulingRuleOutput(t, func() {
 		if err := createSchedulingRuleCmd.RunE(createSchedulingRuleCmd, nil); err != nil {
@@ -230,7 +230,7 @@ func TestCreateSchedulingRuleAgentEnvelope(t *testing.T) {
 	if err := createSchedulingRuleCmd.Flags().Set("file", ruleFile); err != nil {
 		t.Fatalf("set --file: %v", err)
 	}
-	t.Cleanup(func() { _ = createSchedulingRuleCmd.Flags().Set("file", "") })
+	t.Cleanup(func() { resetFlagSet(createSchedulingRuleCmd.Flags()) })
 
 	out, _ := captureSchedulingRuleOutput(t, func() {
 		if err := createSchedulingRuleCmd.RunE(createSchedulingRuleCmd, nil); err != nil {
