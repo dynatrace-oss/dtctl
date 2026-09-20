@@ -568,6 +568,15 @@ func isFailedState(state string) bool {
 
 // StateError reports a query that did not end in SUCCEEDED: a known failure
 // state, or a state dtctl does not recognize.
+//
+// What a live tenant actually does, probed against the Query API: it answers
+// RUNNING, NOT_STARTED and SUCCEEDED as states, and reports failures over HTTP
+// instead — 400 with a typed DQL error for a query it rejects, 410 QUERY_GONE
+// for a result that expired, was consumed, or was cancelled. A scan limit, a
+// fetch timeout and an oversized result all come back as a truncated success
+// rather than as a failure. FAILED and CANCELLED were never observed as
+// states, so the branches for them are the forward-compatible half of this
+// type: the states the API documents, handled in case they do appear.
 type StateError struct {
 	State string
 }
