@@ -21,12 +21,6 @@ func NewFunctionHandler(c *httpclient.Client) *FunctionHandler {
 	return &FunctionHandler{client: c}
 }
 
-// App Engine non-standard HTTP status codes.
-const (
-	statusJSError     = 540
-	statusSyntaxError = 541
-)
-
 // FunctionInvokeRequest represents a function invocation request
 type FunctionInvokeRequest struct {
 	Method       string            // HTTP method (GET, POST, PUT, PATCH, DELETE)
@@ -130,13 +124,11 @@ func (h *FunctionHandler) InvokeFunction(ctx context.Context, req *FunctionInvok
 		return nil, fmt.Errorf("invoke function: %w", err)
 	}
 
-	// Handle non-standard status codes from App Engine before CheckResponse
+	// A failure in the submitted code, reported before CheckResponse can read the
+	// non-standard status as an HTTP failure.
 	if resp.IsError() {
-		switch resp.StatusCode() {
-		case statusJSError:
-			return nil, httpclient.NewAPIError(statusJSError, "JavaScript error occurred", resp.String())
-		case statusSyntaxError:
-			return nil, httpclient.NewAPIError(statusSyntaxError, "runtime error occurred", resp.String())
+		if execErr := newExecutionError(resp.StatusCode(), resp.String()); execErr != nil {
+			return nil, execErr
 		}
 	}
 
@@ -206,13 +198,11 @@ func (h *FunctionHandler) ExecuteCode(ctx context.Context, sourceCode, payload s
 		return nil, fmt.Errorf("execute code: %w", err)
 	}
 
-	// Handle non-standard status codes from App Engine before CheckResponse
+	// A failure in the submitted code, reported before CheckResponse can read the
+	// non-standard status as an HTTP failure.
 	if resp.IsError() {
-		switch resp.StatusCode() {
-		case statusJSError:
-			return nil, httpclient.NewAPIError(statusJSError, "JavaScript error occurred", resp.String())
-		case statusSyntaxError:
-			return nil, httpclient.NewAPIError(statusSyntaxError, "runtime error occurred", resp.String())
+		if execErr := newExecutionError(resp.StatusCode(), resp.String()); execErr != nil {
+			return nil, execErr
 		}
 	}
 

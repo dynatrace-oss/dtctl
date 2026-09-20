@@ -23,6 +23,7 @@ import (
 	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
+	"github.com/dynatrace-oss/dtctl/sdk/api/appengine"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -1003,6 +1004,44 @@ func TestErrorToDetail_APIErrorWithoutDetails(t *testing.T) {
 	}
 }
 
+// TestErrorToDetail_FunctionExecutionError pins that a failure inside submitted
+// function code does not classify as server_error. App Engine reports it with
+// the non-standard status 540 or 541, and docs/AGENT_MODE.md tells an agent to
+// retry a server_error with backoff — which, for a deterministic bug in the
+// caller's own code, is an endless loop.
+func TestErrorToDetail_FunctionExecutionError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "javascript error",
+			err:  &appengine.ExecutionError{StatusCode: 540, Message: "JavaScript error occurred", Body: "ReferenceError: x is not defined"},
+		},
+		{
+			name: "runtime error",
+			err:  &appengine.ExecutionError{StatusCode: 541, Message: "runtime error occurred", Body: ""},
+		},
+		{
+			name: "wrapped by the caller",
+			err:  fmt.Errorf("execute code: %w", &appengine.ExecutionError{StatusCode: 540, Message: "JavaScript error occurred"}),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := errorToDetail(tt.err).Code; got != "function_error" {
+				t.Errorf("Code = %q, want %q", got, "function_error")
+			}
+			if got := errorToDetail(tt.err).StatusCode; got != 0 {
+				t.Errorf("StatusCode = %d, want 0 — 540 and 541 are not HTTP failures", got)
+			}
+			if got := exitCodeForError(tt.err); got != client.ExitError {
+				t.Errorf("exitCodeForError() = %d, want %d", got, client.ExitError)
+			}
+		})
+	}
+}
+
 func TestErrorToDetail_SafetyError(t *testing.T) {
 	err := &safety.SafetyError{
 		ContextName: "production",
@@ -1126,7 +1165,7 @@ func TestErrorToDetail_WrappedDiagnosticError(t *testing.T) {
 func TestErrorToDetail_DiagnosticPrecedesAPIError(t *testing.T) {
 	// diagnostic.Error wraps an httpclient.APIError — diagnostic should take precedence
 	apiErr := httpclient.NewAPIError(404, "not found", "")
-	diagErr := diagnostic.Wrap(apiErr, "get workflows")
+	diagErr := &diagnostic.Error{Operation: "get workflows", StatusCode: 404, Err: apiErr}
 
 	detail := errorToDetail(diagErr)
 

@@ -1,12 +1,10 @@
 package diagnostic
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
-	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // Error represents an enhanced diagnostic error with contextual help
@@ -66,41 +64,6 @@ func (e *Error) Unwrap() error {
 // ExitCode returns the appropriate exit code for this error
 func (e *Error) ExitCode() int {
 	return client.ExitCodeForStatus(e.StatusCode)
-}
-
-// Wrap wraps an error with diagnostic information
-func Wrap(err error, operation string) *Error {
-	if err == nil {
-		return nil
-	}
-
-	de := &Error{
-		Operation: operation,
-		Err:       err,
-	}
-
-	var apiErr *httpclient.APIError
-	if errors.As(err, &apiErr) {
-		de.StatusCode = apiErr.StatusCode
-		de.Message = apiErr.Message
-		if apiErr.Details != "" {
-			de.Message += " - " + apiErr.Details
-		}
-	}
-
-	// Add suggestions based on status code
-	de.Suggestions = SuggestionsForStatusCode(de.StatusCode)
-
-	return de
-}
-
-// WrapWithMessage wraps an error with a custom message
-func WrapWithMessage(err error, operation string, message string) *Error {
-	de := Wrap(err, operation)
-	if de != nil && message != "" {
-		de.Message = message
-	}
-	return de
 }
 
 // SuggestionsForStatusCode returns troubleshooting suggestions for an HTTP status

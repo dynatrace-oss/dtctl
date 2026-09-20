@@ -30,6 +30,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/tracing"
+	"github.com/dynatrace-oss/dtctl/sdk/api/appengine"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 	sdkauth "github.com/dynatrace-oss/dtctl/sdk/auth"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -934,6 +935,17 @@ func errorToDetail(err error) *output.ErrorDetail {
 			Code:        inspectErr.Code,
 			Message:     inspectErr.Message,
 			Suggestions: inspectErr.Suggestions,
+		}
+	}
+
+	// appengine.ExecutionError — the submitted function code failed. Not an HTTP
+	// failure: the request arrived and App Engine answered. Retrying it unchanged
+	// can only fail the same way.
+	var execErr *appengine.ExecutionError
+	if errors.As(err, &execErr) {
+		return &output.ErrorDetail{
+			Code:    "function_error",
+			Message: err.Error(),
 		}
 	}
 
