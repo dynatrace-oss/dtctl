@@ -2,11 +2,19 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+// errEmptyFlagValue is the parse failure an explicitly empty flag value
+// produces. pflag wraps it in a *pflag.InvalidValueError that carries the flag
+// itself, so enhanceFlagError identifies the case by type instead of matching
+// the rendered message — which %q-escapes a tab or a non-breaking space into
+// something no "is it blank" pattern recognizes.
+var errEmptyFlagValue = errors.New("must not be empty")
 
 // nonEmptyStringValue wraps a string flag so that an explicitly empty value
 // (--task "", or --task "$UNSET") fails the parse. Cobra's MarkFlagRequired
@@ -18,7 +26,7 @@ type nonEmptyStringValue struct {
 
 func (v *nonEmptyStringValue) Set(value string) error {
 	if strings.TrimSpace(value) == "" {
-		return errors.New("must not be empty")
+		return errEmptyFlagValue
 	}
 	return v.Value.Set(value)
 }
@@ -34,6 +42,14 @@ func (v *nonEmptyStringValue) Reset() {
 // a usage error.
 func rejectEmptyFlag(cmd *cobra.Command, name string) {
 	flag := cmd.Flags().Lookup(name)
+	if flag == nil {
+		// Persistent flags only join cmd.Flags() once cobra parses, so a
+		// global flag has to be looked up where it was declared.
+		flag = cmd.PersistentFlags().Lookup(name)
+	}
+	if flag == nil {
+		panic(fmt.Sprintf("rejectEmptyFlag: %s has no --%s flag", cmd.Name(), name))
+	}
 	flag.Value = &nonEmptyStringValue{Value: flag.Value, defValue: flag.DefValue}
 }
 
@@ -41,5 +57,7 @@ func rejectEmptyFlag(cmd *cobra.Command, name string) {
 // rejects an empty value for it.
 func markFlagRequiredNonEmpty(cmd *cobra.Command, name string) {
 	rejectEmptyFlag(cmd, name)
-	_ = cmd.MarkFlagRequired(name)
+	if err := cmd.MarkFlagRequired(name); err != nil {
+		panic(err)
+	}
 }

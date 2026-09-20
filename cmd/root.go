@@ -303,8 +303,14 @@ func executeArgs(argv []string) int {
 			}
 		}
 
-		// Enhance unknown flag errors with suggestions
-		if strings.Contains(errStr, "unknown flag") || strings.Contains(errStr, "unknown shorthand flag") {
+		// Enhance unknown flag errors with suggestions. A flag error the
+		// command's own FlagErrorFunc already typed is left alone: its message
+		// no longer matches cobra's raw wording, so re-running the enhancer
+		// would flatten *suggest.FlagError back to a plain error and cost the
+		// invocation its usage exit code.
+		var typedFlagErr *suggest.FlagError
+		if !errors.As(err, &typedFlagErr) &&
+			(strings.Contains(errStr, "unknown flag") || strings.Contains(errStr, "unknown shorthand flag")) {
 			err = enhanceFlagError(rootCmd, err)
 		}
 
@@ -403,9 +409,6 @@ func collectSubcommands(cmd *cobra.Command) []string {
 var (
 	unknownFlagRe = regexp.MustCompile(`unknown (?:shorthand )?flag: ['-]*(\w+)['-]*`)
 	unknownCmdRe  = regexp.MustCompile(`unknown command "(\w+)"`)
-	// cobra renders a flag value error as: invalid argument "" for "-t, --task"
-	// flag: must not be empty
-	emptyFlagRe = regexp.MustCompile(`invalid argument "\s*" for "(?:-\w, )?--([\w-]+)" flag: must not be empty`)
 )
 
 // enhanceFlagError adds suggestions to flag errors
@@ -425,11 +428,16 @@ func enhanceFlagError(cmd *cobra.Command, err error) error {
 
 	// An explicitly empty value for a flag that requires one (see
 	// rejectEmptyFlag). Typed like an unknown flag, so it exits with the usage
-	// code and reaches a machine caller as an envelope rather than as prose.
-	if m := emptyFlagRe.FindStringSubmatch(errStr); len(m) == 2 {
+	// code. pflag names the offending flag in the error it wraps around
+	// errEmptyFlagValue, so the flag comes from the error, not from the
+	// rendered message — which escapes a tab or a non-breaking space beyond
+	// recognition.
+	var invalidValue *pflag.InvalidValueError
+	if errors.As(err, &invalidValue) && errors.Is(err, errEmptyFlagValue) {
+		name := invalidValue.GetFlag().Name
 		return &suggest.FlagError{
-			Flag:    m[1],
-			Message: fmt.Sprintf("--%s was given an empty value; pass a value or leave the flag out", m[1]),
+			Flag:    name,
+			Message: fmt.Sprintf("--%s was given an empty value; pass a value or leave the flag out", name),
 		}
 	}
 
@@ -1609,6 +1617,13 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().BoolVar(&noAgent, "no-agent", false, "disable auto-detected agent mode")
 	rootCmd.PersistentFlags().BoolVar(&checkScopes, "check-scopes", false, "check the active token has the scopes this command requires, then exit without running it")
 	rootCmd.PersistentFlags().Int64Var(&chunkSize, "chunk-size", 500, "Paginate through all results in chunks of this size. 0 returns only the first page.")
+
+	// Both flags read as "absent" when empty, so `--context "$CTX"` with an
+	// unset CTX would silently run against the default context — the worst
+	// form of the bug rejectEmptyFlag exists for, since the command still
+	// succeeds, against the wrong tenant.
+	rejectEmptyFlag(rootCmd, "context")
+	rejectEmptyFlag(rootCmd, "config")
 
 	// Bind flags to viper
 	_ = viper.BindPFlag("context", rootCmd.PersistentFlags().Lookup("context"))
