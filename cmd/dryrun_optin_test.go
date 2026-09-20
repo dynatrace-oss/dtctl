@@ -35,6 +35,27 @@ func TestDryRunIsRejectedWhereNotImplemented(t *testing.T) {
 	}
 }
 
+// TestRejectedFlagExitsWithUsageCode covers the whole invocation, not just the
+// error value: the process exit code must be 2. A live run showed 1, because
+// the top-level handler re-ran the text-matching flag enhancer over an error a
+// subcommand had already typed, which flattened it back to a plain error.
+func TestRejectedFlagExitsWithUsageCode(t *testing.T) {
+	for _, args := range [][]string{
+		{"exec", "workflow", "wf-1", "--dry-run", "--plain"},
+		{"get", "dashboards", "--format", "json", "--plain"},
+	} {
+		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
+			out := captureStdout(t, func() {
+				require.Equal(t, client.ExitUsageError, Run(args, RunOptions{}))
+			})
+
+			// The parse failed before --plain reached its flag variable, so the
+			// envelope has to come from the raw arguments.
+			require.Contains(t, out, `"ok":false`)
+		})
+	}
+}
+
 // TestDeleteDryRunSendsNoMutatingRequest runs delete commands with --dry-run
 // against a mock environment whose writes fail, and asserts on the traffic.
 func TestDeleteDryRunSendsNoMutatingRequest(t *testing.T) {
