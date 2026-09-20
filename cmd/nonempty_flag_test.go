@@ -5,7 +5,21 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/client"
 )
+
+// TestEmptyFlagValueIsAUsageError covers the whole invocation: a live run
+// showed the rejection exiting 1 with cobra's raw wording, where a bad flag
+// value is a usage error (exit 2).
+func TestEmptyFlagValueIsAUsageError(t *testing.T) {
+	args := []string{"logs", "wfe", "exec-1", "--task", "", "--plain"}
+	t.Cleanup(func() { resetFlagSet(logsWorkflowExecutionCmd.Flags()) })
+
+	if code := Run(args, RunOptions{}); code != client.ExitUsageError {
+		t.Errorf("exit code = %d, want %d", code, client.ExitUsageError)
+	}
+}
 
 // TestEmptyFlagValueIsRejected covers #494: an explicitly empty value, as an
 // unset shell variable produces, must fail the parse instead of counting as
@@ -35,7 +49,10 @@ func TestEmptyFlagValueIsRejected(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an error for an empty flag value, got nil")
 			}
-			if !strings.Contains(err.Error(), "must not be empty") {
+			// Either cobra's own wording, or the usage error enhanceFlagError
+			// makes of it once the error handlers are installed.
+			if !strings.Contains(err.Error(), "must not be empty") &&
+				!strings.Contains(err.Error(), "empty value") {
 				t.Errorf("error = %q, want it to say the value must not be empty", err)
 			}
 		})

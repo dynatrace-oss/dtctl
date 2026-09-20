@@ -403,6 +403,9 @@ func collectSubcommands(cmd *cobra.Command) []string {
 var (
 	unknownFlagRe = regexp.MustCompile(`unknown (?:shorthand )?flag: ['-]*(\w+)['-]*`)
 	unknownCmdRe  = regexp.MustCompile(`unknown command "(\w+)"`)
+	// cobra renders a flag value error as: invalid argument "" for "-t, --task"
+	// flag: must not be empty
+	emptyFlagRe = regexp.MustCompile(`invalid argument "\s*" for "(?:-\w, )?--([\w-]+)" flag: must not be empty`)
 )
 
 // enhanceFlagError adds suggestions to flag errors
@@ -418,6 +421,16 @@ func enhanceFlagError(cmd *cobra.Command, err error) error {
 		}
 		flags := collectFlags(cmd)
 		return suggest.ParseFlagError(errStr, flags)
+	}
+
+	// An explicitly empty value for a flag that requires one (see
+	// rejectEmptyFlag). Typed like an unknown flag, so it exits with the usage
+	// code and reaches a machine caller as an envelope rather than as prose.
+	if m := emptyFlagRe.FindStringSubmatch(errStr); len(m) == 2 {
+		return &suggest.FlagError{
+			Flag:    m[1],
+			Message: fmt.Sprintf("--%s was given an empty value; pass a value or leave the flag out", m[1]),
+		}
 	}
 
 	return err
