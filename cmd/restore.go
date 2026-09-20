@@ -399,16 +399,16 @@ Examples:
 		forceRestore, _ := cmd.Flags().GetBool("force")
 		newName, _ := cmd.Flags().GetString("new-name")
 
-		opts := document.RestoreOptions{
-			Force:   forceRestore,
-			NewName: newName,
-		}
-
 		if dryRun {
 			return newDryRunReport(cmd).
 				Linef("Dry run: would restore %d document(s) from trash: %s", len(args), strings.Join(args, ", ")).
 				Detail("ids", "%s", strings.Join(args, ",")).
 				Print()
+		}
+
+		opts := document.RestoreOptions{
+			Force:   forceRestore,
+			NewName: newName,
 		}
 
 		// Restore each document

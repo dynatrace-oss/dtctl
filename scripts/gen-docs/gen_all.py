@@ -122,7 +122,7 @@ def resource_managed_body(title: str, stems: list[str], catalog: dict,
     # --confirm`, `logs workflow-execution --follow`), and asserting their
     # absence sends a reader away from flags that exist.
     out.append("\n## Flags\n")
-    out.append("These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, "
+    out.append("These commands take dtctl's **global flags** (`-o/--output`, "
                "`--context`, `--jq`, `-v`, and more). Some verbs add their own flags "
                "(`apply`, `diff`, `query`, `inventory`); see the verb in "
                "**[COMMANDS.md](../COMMANDS.md)**. Individual commands may take further "

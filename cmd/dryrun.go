@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 )
 
 // dryRunPlan is the agent-mode result of a dry run: the mutation the command
@@ -149,8 +151,17 @@ func deleteDryRun(cmd *cobra.Command, kind, name, id string) error {
 
 // dryRunCommands are the commands that implement --dry-run: they resolve the
 // target, print what they would do and send no mutating request. The flag is
-// registered on these commands only, so every other command rejects it as an
-// unknown flag instead of ignoring it and doing the real work (#477).
+// registered on these commands only, so every other command rejects it
+// instead of ignoring it and doing the real work (#477).
+//
+// Commands that share a RunE must appear together (share/unshare document and
+// their dashboard/notebook aliases run the same function, dry-run branch
+// included), or the same implementation would accept the flag under one name
+// and reject it under another. Guard: TestDryRunFlagFollowsSharedRunE.
+//
+// query is deliberately absent: it has no dry run, only a warning that the flag
+// is meaningless in live mode. `dtctl verify query` is the check-without-running
+// command for DQL.
 //
 // apply and update document define their own --dry-run flag.
 var dryRunCommands = []*cobra.Command{
@@ -209,14 +220,17 @@ var dryRunCommands = []*cobra.Command{
 	enableAzureMonitoringCmd,
 	enableGCPMonitoringCmd,
 	execAPICmd,
-	queryCmd,
 	restoreDashboardCmd,
 	restoreDocumentCmd,
 	restoreNotebookCmd,
 	restoreTrashCmd,
 	restoreWorkflowCmd,
+	shareDashboardCmd,
 	shareDocumentCmd,
+	shareNotebookCmd,
+	unshareDashboardCmd,
 	unshareDocumentCmd,
+	unshareNotebookCmd,
 	updateAWSConnectionCmd,
 	updateAWSMonitoringConfigCmd,
 	updateAzureConnectionCmd,
@@ -232,4 +246,46 @@ func init() {
 	for _, c := range dryRunCommands {
 		c.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
 	}
+
+	// A hidden root declaration, so that Cobra still knows --dry-run is a
+	// boolean when it appears *before* the subcommand. Command lookup strips
+	// flags without parsing them, and an undeclared `--dry-run` is assumed to
+	// take a value — which swallows the next word: `dtctl --dry-run delete
+	// workflow x` resolved to the command "workflow", and `dtctl --dry-run
+	// apply -f x.yaml` reported that the root has no dry run. Both spellings
+	// worked while the flag was global, so both must keep working.
+	//
+	// An opted-in command's own --dry-run shadows this one, so it is only ever
+	// parsed for a command that has no dry run — which is what
+	// rejectUnimplementedDryRun turns into the usage error. Hidden keeps it out
+	// of --help and out of the `commands` catalog's global flags.
+	rootCmd.PersistentFlags().Bool("dry-run", false, "print what would be done without doing it")
+	_ = rootCmd.PersistentFlags().MarkHidden("dry-run")
+	rootDryRunFlag = rootCmd.PersistentFlags().Lookup("dry-run")
+}
+
+// rootDryRunFlag is the hidden root declaration registered above. Held as a
+// variable rather than looked up through rootCmd, because rootCmd's
+// PersistentPreRunE calls the function that reads it.
+var rootDryRunFlag *pflag.Flag
+
+// dryRunUnavailableMessage is the one wording for "this command has no dry
+// run", whether the flag was rejected at parse time or at run time.
+func dryRunUnavailableMessage(cmd *cobra.Command) string {
+	return fmt.Sprintf(
+		"unknown flag --dry-run — '%s' has no dry run; to check a file or query without running it, use 'dtctl verify'",
+		cmd.CommandPath())
+}
+
+// rejectUnimplementedDryRun fails a command that was given --dry-run but does
+// not implement one. The flag reaches the root declaration only when the
+// command has none of its own, so its presence there *is* the error.
+func rejectUnimplementedDryRun(cmd *cobra.Command) error {
+	if rootDryRunFlag == nil || !rootDryRunFlag.Changed {
+		return nil
+	}
+	if own := cmd.Flags().Lookup("dry-run"); own != nil && own != rootDryRunFlag {
+		return nil
+	}
+	return &suggest.FlagError{Flag: "dry-run", Message: dryRunUnavailableMessage(cmd)}
 }

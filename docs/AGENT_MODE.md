@@ -733,7 +733,7 @@ Use `--dry-run` to preview mutating operations without making changes:
 dtctl apply -f workflow.yaml --dry-run
 ```
 
-`--dry-run` is not a global flag. The `create`, `update`, `delete`, `restore` and `apply` commands and `exec api` accept it. A command that has no dry run, such as `exec workflow`, rejects the flag with a usage error (exit code 2) and does nothing.
+`--dry-run` is not a global flag: each command that can preview its own mutation declares it. Most `apply`, `create`, `update`, `delete`, `restore`, `share`/`unshare` and `enable`/`disable` commands do, as does `exec api`; `dtctl <verb> <resource> --help` is the authoritative list. A command that has no dry run, such as `exec workflow` or `query`, rejects the flag with a usage error (exit code 2) and does nothing — for a DQL statement, `dtctl verify query` is the check-without-running command.
 
 ### Diff
 

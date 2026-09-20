@@ -169,18 +169,42 @@ func (e *CommandError) Error() string {
 	return sb.String()
 }
 
+var (
+	// unknownFlagRe matches "unknown flag: --ownr" and "unknown shorthand
+	// flag: 'x' in -x". The name class admits hyphens: stopping at the first
+	// one reported --dry-run as --dry.
+	unknownFlagRe = regexp.MustCompile(`unknown (?:shorthand )?flag: '?-*(\w[\w-]*)`)
+	// unknownCmdRe matches `unknown command "xyz" for "dtctl"`. Hyphens for the
+	// same reason: dtctl is full of delete-credentials, use-context and
+	// scheduling-rule, and a name that does not match loses its error's type,
+	// its exit code and its agent envelope.
+	unknownCmdRe = regexp.MustCompile(`unknown command "([\w-]+)"`)
+)
+
+// UnknownFlagName returns the flag name a Cobra flag error names, or "".
+func UnknownFlagName(errMsg string) string {
+	if m := unknownFlagRe.FindStringSubmatch(errMsg); len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
+
+// UnknownCommandName returns the command name a Cobra command error names, or "".
+func UnknownCommandName(errMsg string) string {
+	if m := unknownCmdRe.FindStringSubmatch(errMsg); len(m) == 2 {
+		return m[1]
+	}
+	return ""
+}
+
 // ParseFlagError extracts the flag name from a Cobra flag error message
 // and returns an enhanced error with suggestions
 func ParseFlagError(errMsg string, availableFlags []string) error {
-	// Match patterns like "unknown flag: --ownr" or "unknown shorthand flag: 'x'"
-	unknownFlagRe := regexp.MustCompile(`unknown (?:shorthand )?flag: '?-*(\w[\w-]*)`)
-	matches := unknownFlagRe.FindStringSubmatch(errMsg)
-
-	if len(matches) < 2 {
+	unknownFlag := UnknownFlagName(errMsg)
+	if unknownFlag == "" {
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	unknownFlag := matches[1]
 	suggestion := FindClosest(unknownFlag, availableFlags)
 
 	return &FlagError{
@@ -193,15 +217,11 @@ func ParseFlagError(errMsg string, availableFlags []string) error {
 // ParseCommandError extracts the command name from a Cobra command error
 // and returns an enhanced error with suggestions
 func ParseCommandError(errMsg string, availableCommands []string) error {
-	// Match patterns like "unknown command "xyz" for "dtctl""
-	unknownCmdRe := regexp.MustCompile(`unknown command "(\w+)"`)
-	matches := unknownCmdRe.FindStringSubmatch(errMsg)
-
-	if len(matches) < 2 {
+	unknownCmd := UnknownCommandName(errMsg)
+	if unknownCmd == "" {
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	unknownCmd := matches[1]
 	suggestions := FindClosestN(unknownCmd, availableCommands, 3)
 
 	var suggestion *Suggestion

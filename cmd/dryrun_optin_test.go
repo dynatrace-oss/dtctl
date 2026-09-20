@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -17,13 +18,23 @@ import (
 // global flag, so a command that ignored it did the real work. A command that
 // does not implement it must now reject it as an unknown flag.
 func TestDryRunIsRejectedWhereNotImplemented(t *testing.T) {
-	for _, args := range [][]string{
-		{"exec", "workflow", "wf-1", "--dry-run"},
-		{"exec", "function", "app/fn", "--dry-run"},
-		{"get", "slos", "--dry-run"},
+	for name, args := range map[string][]string{
+		"exec workflow":       {"exec", "workflow", "wf-1", "--dry-run"},
+		"exec function":       {"exec", "function", "app/fn", "--dry-run"},
+		"get slos":            {"get", "slos", "--dry-run"},
+		"query":               {"query", "fetch logs", "--dry-run"},
+		"before the verb":     {"--dry-run", "exec", "workflow", "wf-1"},
+		"before the resource": {"exec", "--dry-run", "workflow", "wf-1"},
 	} {
-		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
-			t.Cleanup(func() { rootCmd.SetArgs(nil) })
+		t.Run(name, func(t *testing.T) {
+			// The typed error comes from the per-command FlagErrorFunc, which
+			// only executeArgs installs. Without this the test passes or fails
+			// on whether some earlier test in the package happened to run an
+			// invocation.
+			setupErrorHandlers(rootCmd)
+			// SetArgs(nil) would send the next Execute() back to os.Args —
+			// the test binary's own flags.
+			t.Cleanup(func() { rootCmd.SetArgs([]string{}) })
 			rootCmd.SetArgs(args)
 
 			err := rootCmd.Execute()
@@ -32,6 +43,48 @@ func TestDryRunIsRejectedWhereNotImplemented(t *testing.T) {
 			require.Contains(t, err.Error(), "unknown flag --dry-run")
 			require.Equal(t, client.ExitUsageError, exitCodeForError(err))
 		})
+	}
+}
+
+// TestDryRunFlagFollowsSharedRunE pins that commands running the same function
+// agree on whether they take --dry-run. `share dashboard` is `share document`
+// down to the RunE pointer, dry-run branch included, so registering the flag on
+// one and not the other made the same implementation reject a flag it honors.
+func TestDryRunFlagFollowsSharedRunE(t *testing.T) {
+	// installScopePreflight wraps every RunE in one shared function literal,
+	// and reflect reports a closure by its code pointer — so on a tree an
+	// earlier test has executed, every command would look like the same
+	// implementation. Compare the as-registered functions instead.
+	restorePristineTree()
+
+	byImpl := map[uintptr][]*cobra.Command{}
+	var walk func(*cobra.Command)
+	walk = func(c *cobra.Command) {
+		if c.RunE != nil {
+			key := reflect.ValueOf(c.RunE).Pointer()
+			byImpl[key] = append(byImpl[key], c)
+		}
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(rootCmd)
+
+	hasOwnDryRun := func(c *cobra.Command) bool {
+		f := c.Flags().Lookup("dry-run")
+		return f != nil && f != rootDryRunFlag
+	}
+
+	for _, group := range byImpl {
+		if len(group) < 2 {
+			continue
+		}
+		want := hasOwnDryRun(group[0])
+		for _, c := range group[1:] {
+			require.Equalf(t, want, hasOwnDryRun(c),
+				"%q and %q share a RunE but disagree on --dry-run",
+				group[0].CommandPath(), c.CommandPath())
+		}
 	}
 }
 

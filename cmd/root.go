@@ -78,6 +78,9 @@ var rootCmd = &cobra.Command{
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := rejectUnimplementedDryRun(cmd); err != nil {
+			return err
+		}
 		return validateGlobalFlags()
 	},
 	Long: `dtctl is a kubectl-inspired CLI tool for managing Dynatrace platform resources.
@@ -418,19 +421,14 @@ func collectSubcommands(cmd *cobra.Command) []string {
 	return commands
 }
 
-var (
-	unknownFlagRe = regexp.MustCompile(`unknown (?:shorthand )?flag: '?-*(\w[\w-]*)`)
-	unknownCmdRe  = regexp.MustCompile(`unknown command "(\w+)"`)
-)
-
 // enhanceFlagError adds suggestions to flag errors
 func enhanceFlagError(cmd *cobra.Command, err error) error {
 	errStr := err.Error()
 
 	// Handle unknown flag errors
 	if strings.Contains(errStr, "unknown flag") || strings.Contains(errStr, "unknown shorthand flag") {
-		if m := unknownFlagRe.FindStringSubmatch(errStr); len(m) == 2 {
-			if fe := adviseFlag(cmd, m[1]); fe != nil {
+		if name := suggest.UnknownFlagName(errStr); name != "" {
+			if fe := adviseFlag(cmd, name); fe != nil {
 				return fe
 			}
 		}
@@ -467,8 +465,7 @@ func adviseFlag(cmd *cobra.Command, flag string) *suggest.FlagError {
 		return &suggest.FlagError{Flag: flag,
 			Message: "unknown flag --query — pass the DQL text as the positional argument: dtctl query 'fetch ...'"}
 	case flag == "dry-run":
-		return &suggest.FlagError{Flag: flag,
-			Message: fmt.Sprintf("unknown flag --dry-run — '%s' has no dry run; to check a file or query without running it, use 'dtctl verify'", cmd.CommandPath())}
+		return &suggest.FlagError{Flag: flag, Message: dryRunUnavailableMessage(cmd)}
 	}
 	return nil
 }
@@ -496,11 +493,11 @@ func enhanceCommandError(cmd *cobra.Command, err error) error {
 
 	// Handle unknown command errors
 	if strings.Contains(errStr, "unknown command") {
-		if m := unknownCmdRe.FindStringSubmatch(errStr); len(m) == 2 {
-			if syn, ok := verbSynonyms[m[1]]; ok {
+		if name := suggest.UnknownCommandName(errStr); name != "" {
+			if syn, ok := verbSynonyms[name]; ok {
 				return &suggest.CommandError{
-					Command:    m[1],
-					Message:    fmt.Sprintf("unknown command %q", m[1]),
+					Command:    name,
+					Message:    fmt.Sprintf("unknown command %q", name),
 					Suggestion: &suggest.Suggestion{Value: syn.verb},
 					UsageHint:  syn.hint,
 				}
