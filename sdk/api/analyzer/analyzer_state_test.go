@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -11,7 +12,12 @@ import (
 // FAILED in the execute response, which carries no request token, must be an
 // error and not a returned result.
 func TestExecuteAndWait_FailedExecuteStatusIsAnError(t *testing.T) {
-	for _, status := range []string{"ABORTED", "FAILED", "SOMETHING_NEW"} {
+	cases := map[string]string{
+		"ABORTED":       "analyzer execution was aborted",
+		"FAILED":        "analyzer execution failed",
+		"SOMETHING_NEW": `ended in status "SOMETHING_NEW" with no request token`,
+	}
+	for status, wantMsg := range cases {
 		t.Run(status, func(t *testing.T) {
 			mux := http.NewServeMux()
 			mux.HandleFunc("/platform/davis/analyzers/v1/analyzers/dt.test:execute", func(w http.ResponseWriter, r *http.Request) {
@@ -20,8 +26,14 @@ func TestExecuteAndWait_FailedExecuteStatusIsAnError(t *testing.T) {
 			})
 
 			h := NewHandler(newTestClient(t, mux))
-			if _, err := h.ExecuteAndWait(context.Background(), "dt.test", map[string]interface{}{}, 60); err == nil {
+			_, err := h.ExecuteAndWait(context.Background(), "dt.test", map[string]interface{}{}, 60)
+			if err == nil {
 				t.Fatalf("ExecuteAndWait() error = nil, want an error for status %s", status)
+			}
+			// Assert which branch fired: "some error" would also pass when the
+			// no-result branch reports a result that is in fact present.
+			if !strings.Contains(err.Error(), wantMsg) {
+				t.Errorf("ExecuteAndWait() error = %q, want it to contain %q", err, wantMsg)
 			}
 		})
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 )
 
 // WaitConfig configures the wait operation
@@ -256,7 +257,19 @@ func (w *QueryWaiter) Wait(ctx context.Context) (*Result, error) {
 // (request timeout) and 429 (too many requests) are the transient exceptions
 // and remain retryable. Non-QueryError failures (network blips, 5xx) are
 // treated as transient.
+//
+// A FAILED state is permanent for the same reason: the backend ran the query
+// and it failed, so the identical query will fail again. The other state
+// errors stay retryable on purpose — an expired result (HTTP 410) is fixed by
+// exactly the re-run this waiter is about to do, a server-side cancellation
+// says nothing about the query itself, and an unrecognized state that outlived
+// the poll deadline may still be running on the backend.
 func isPermanentQueryError(err error) bool {
+	var stateErr *exec.QueryStateError
+	if errors.As(err, &stateErr) {
+		return stateErr.State == sdkquery.StateFailed && !stateErr.TimedOut
+	}
+
 	var qErr *exec.QueryError
 	if !errors.As(err, &qErr) {
 		return false
