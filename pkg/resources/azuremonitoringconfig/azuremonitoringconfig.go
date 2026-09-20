@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // ErrNotFound reports that no monitoring configuration matches the name. It
@@ -182,7 +182,7 @@ func (h *Handler) ListAvailableLocations() ([]Location, error) {
 	}
 
 	var schema ExtensionSchemaResponse
-	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, url.PathEscape(latestVersion))
+	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, httpclient.PathSegment(latestVersion))
 	resp, err := h.client.HTTP().R().SetResult(&schema).Get(schemaEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch extension schema: %w", err)
@@ -217,7 +217,7 @@ func (h *Handler) ListAvailableFeatureSets() ([]FeatureSet, error) {
 	}
 
 	var schema ExtensionSchemaResponse
-	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, url.PathEscape(latestVersion))
+	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, httpclient.PathSegment(latestVersion))
 	resp, err := h.client.HTTP().R().SetResult(&schema).Get(schemaEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch extension schema: %w", err)

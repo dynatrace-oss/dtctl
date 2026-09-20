@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 func TestNewHandler(t *testing.T) {
@@ -249,7 +249,7 @@ func TestList_ActiveVersionEnrichment(t *testing.T) {
 
 		// Handle environment configuration requests
 		for extName, activeVer := range activeVersions {
-			envCfgPath := "/platform/extensions/v2/extensions/" + url.PathEscape(extName) + "/environment-configuration"
+			envCfgPath := "/platform/extensions/v2/extensions/" + httpclient.PathSegment(extName) + "/environment-configuration"
 			if r.URL.Path == envCfgPath {
 				json.NewEncoder(w).Encode(map[string]string{"version": activeVer})
 				return
@@ -1376,7 +1376,7 @@ func TestInstallFromHub(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := "/platform/extensions/v2/extensions/" + url.PathEscape(tt.extensionName)
+				expectedPath := "/platform/extensions/v2/extensions/" + httpclient.PathSegment(tt.extensionName)
 				if r.URL.Path != expectedPath {
 					t.Errorf("unexpected path: %s (expected %s)", r.URL.Path, expectedPath)
 					w.WriteHeader(http.StatusNotFound)

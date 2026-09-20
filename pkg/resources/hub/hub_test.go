@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // ---------------------------------------------------------------------------
@@ -289,7 +289,7 @@ func TestGetExtension_URLEscaping(t *testing.T) {
 	extID := "com.dynatrace.extension.host-monitoring"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		expectedPath := "/platform/hub/v1/catalog/extensions/" + url.PathEscape(extID)
+		expectedPath := "/platform/hub/v1/catalog/extensions/" + httpclient.PathSegment(extID)
 		if r.URL.RawPath != "" {
 			// When the path contains encoded characters, RawPath is set
 			if r.URL.RawPath != expectedPath {
@@ -320,7 +320,7 @@ func TestListExtensionReleases_URLEscaping(t *testing.T) {
 	extID := "com.dynatrace.extension.host-monitoring"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		expectedPath := "/platform/hub/v1/catalog/extensions/" + url.PathEscape(extID) + "/releases"
+		expectedPath := "/platform/hub/v1/catalog/extensions/" + httpclient.PathSegment(extID) + "/releases"
 		if r.URL.RawPath != "" {
 			if r.URL.RawPath != expectedPath {
 				t.Errorf("expected raw path %q, got %q", expectedPath, r.URL.RawPath)

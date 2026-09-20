@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -77,7 +76,7 @@ func (h *Handler) List(ctx context.Context) (*BucketList, error) {
 func (h *Handler) Get(ctx context.Context, bucketName string) (*Bucket, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("add-fields", "records,estimatedUncompressedBytes").
-		Get(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", url.PathEscape(bucketName)))
+		Get(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", httpclient.PathSegment(bucketName)))
 	if err != nil {
 		return nil, fmt.Errorf("get bucket: %w", err)
 	}
@@ -115,7 +114,7 @@ func (h *Handler) Update(ctx context.Context, bucketName string, version int, re
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(req).
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
-		Patch(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", url.PathEscape(bucketName)))
+		Patch(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", httpclient.PathSegment(bucketName)))
 	if err != nil {
 		return fmt.Errorf("update bucket: %w", err)
 	}
@@ -128,7 +127,7 @@ func (h *Handler) Update(ctx context.Context, bucketName string, version int, re
 // Delete deletes a bucket by name.
 func (h *Handler) Delete(ctx context.Context, bucketName string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", url.PathEscape(bucketName)))
+		Delete(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s", httpclient.PathSegment(bucketName)))
 	if err != nil {
 		return fmt.Errorf("delete bucket: %w", err)
 	}
@@ -141,7 +140,7 @@ func (h *Handler) Delete(ctx context.Context, bucketName string) error {
 // Truncate empties a bucket (removes all data).
 func (h *Handler) Truncate(ctx context.Context, bucketName string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Post(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s:truncate", url.PathEscape(bucketName)))
+		Post(fmt.Sprintf("/platform/storage/management/v1/bucket-definitions/%s:truncate", httpclient.PathSegment(bucketName)))
 	if err != nil {
 		return fmt.Errorf("truncate bucket: %w", err)
 	}

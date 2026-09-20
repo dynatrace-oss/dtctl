@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // IntentHandler handles App Engine intent operations
@@ -143,7 +144,7 @@ func (h *IntentHandler) GenerateIntentURL(appID, intentID string, payload map[st
 
 	// Construct URL
 	intentURL := fmt.Sprintf("%s/ui/intent/%s/%s#%s",
-		baseURL, url.PathEscape(appID), url.PathEscape(intentID), escapeFragment(string(jsonPayload)))
+		baseURL, httpclient.PathSegment(appID), httpclient.PathSegment(intentID), escapeFragment(string(jsonPayload)))
 
 	return intentURL, nil
 }

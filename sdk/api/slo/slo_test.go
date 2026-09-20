@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -212,7 +211,7 @@ func TestDelete_EscapesID(t *testing.T) {
 			if err := h.Delete(context.Background(), id, "1"); err != nil {
 				t.Fatalf("Delete() error: %v", err)
 			}
-			if want := "/platform/slo/v1/slos/" + url.PathEscape(id); gotPath != want {
+			if want := "/platform/slo/v1/slos/" + httpclient.PathSegment(id); gotPath != want {
 				t.Errorf("path = %q, want %q", gotPath, want)
 			}
 			if gotQuery != "optimistic-locking-version=1" {

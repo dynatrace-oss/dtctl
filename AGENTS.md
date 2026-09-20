@@ -262,20 +262,34 @@ func (h *Handler) Get(id string) (*Resource, error)
 func (h *Handler) List(opts ListOptions) ([]Resource, error)
 ```
 
-**Every value interpolated into a request path goes through `url.PathEscape`.**
+**Every value interpolated into a request path goes through `httpclient.PathSegment`.**
 
 ```go
-Delete(fmt.Sprintf("/platform/slo/v1/slos/%s", url.PathEscape(id)))
+Delete(fmt.Sprintf("/platform/slo/v1/slos/%s", httpclient.PathSegment(id)))
 ```
 
 An id arrives from a command line or an applied file. Spliced in raw, one
 containing `/`, `?` or `#` addresses a *different* resource and the request
 succeeds against it — `delete slo "<id>#x"` reported success while deleting
-`<id>`, because net/http drops the fragment before sending. `url.PathEscape`
-keeps `:` intact, so `%s:execute`-style action suffixes still work.
+`<id>`, because net/http drops the fragment before sending.
 `httpclient.CheckRequestPath` refuses an unescaped path at run time and
 `test/requestpath` catches the omission at build time, but neither is a reason
 to leave it out.
+
+**Not `url.PathEscape`.** It leaves `:` intact, and several collections spell an
+action as a suffix on the resource segment — `%s:execute`, `%s:poll`,
+`%s:truncate` — so an id carrying a colon names an *operation*: `describe
+analyzer "foo:poll"` polled `foo`. `PathSegment` is `url.PathEscape` plus the
+colon, and the suffix is unaffected because it is a literal in the format
+string, never an interpolated value. The build fails on a bare `url.PathEscape`
+in a request path for exactly this reason.
+
+**One value is a path by design**: a nested app function name, where
+`parseFullFunctionName` splits `app-id/a/b/c` at the first slash only, so the
+slashes in `a/b/c` are separators the server expects. `sdk/api/appengine`
+escapes it part by part with an unexported `escapeFunctionName`. A second such
+case is added to the `escapers` list in `test/requestpath`, next to the reason —
+never exempted by file.
 
 **CLI handler** (in `pkg/resources/<name>/`): imports SDK types (often via type alias) and wraps with file I/O, display fields, etc.
 

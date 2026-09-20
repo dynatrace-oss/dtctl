@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // WorkflowExecutor handles workflow execution
@@ -55,7 +55,7 @@ func (e *WorkflowExecutor) Execute(workflowID string, req WorkflowExecutionReque
 	}
 
 	resp, err := httpReq.
-		Post(fmt.Sprintf("/platform/automation/v1/workflows/%s/run", url.PathEscape(workflowID)))
+		Post(fmt.Sprintf("/platform/automation/v1/workflows/%s/run", httpclient.PathSegment(workflowID)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute workflow: %w", err)
@@ -111,7 +111,7 @@ func (e *WorkflowExecutor) GetStatus(executionID string) (*ExecutionStatus, erro
 
 	resp, err := e.client.HTTP().R().
 		SetResult(&result).
-		Get(fmt.Sprintf("/platform/automation/v1/executions/%s", url.PathEscape(executionID)))
+		Get(fmt.Sprintf("/platform/automation/v1/executions/%s", httpclient.PathSegment(executionID)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get execution status: %w", err)

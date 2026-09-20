@@ -4,7 +4,7 @@
 // httpclient.CheckRequestPath is the run-time half: it refuses a path that has
 // already been assembled wrong. This test is why the assembly stays right. It
 // reads every Go source file in both modules and requires that a value
-// interpolated into a request path is escaped as a single path segment, because
+// interpolated into a request path goes through httpclient.PathSegment, because
 // the failure it prevents is silent -- an id containing '/' or '?' simply names
 // something else, and the API answers about that something else.
 //
@@ -84,22 +84,31 @@ func TestEveryInterpolatedPathValueIsEscaped(t *testing.T) {
 		return nil
 	}))
 
-	require.Empty(t, offenders, "a %%s in a request path must be wrapped in url.PathEscape:\n%s\n\n"+
+	require.Empty(t, offenders, "a %%s in a request path must be wrapped in httpclient.PathSegment:\n%s\n\n"+
 		"An id reaches dtctl from a command line or an applied file. Interpolated raw, one "+
 		"containing '/', '?' or '#' addresses a different resource and the request succeeds "+
 		"against it -- see httpclient.CheckRequestPath.", strings.Join(offenders, "\n"))
 }
 
-// escapers are the calls that count as escaping one interpolated value.
+// escapers are the calls that count as escaping one interpolated value. Each is
+// matched as a substring, so "PathSegment(" covers the qualified
+// "httpclient.PathSegment(" too.
 //
-// url.PathEscape is the rule. escapeFunctionName is the single exception, and
-// it is named here rather than exempted by file so that adding another one is a
-// deliberate edit to this list: an app function name is a path by design --
-// parseFullFunctionName splits "app-id/a/b/c" at the first slash only, so the
-// slashes left in "a/b/c" are separators the server expects. PathEscape on the
-// whole name would spell "%2F" and address a function that does not exist, so
-// that one value is escaped part by part instead.
-var escapers = []string{"url.PathEscape(", "escapeFunctionName("}
+// httpclient.PathSegment is the rule, and url.PathEscape is deliberately absent:
+// PathSegment is PathEscape plus the colon, and a bare PathEscape is exactly the
+// gap it closes -- several collections spell an action as a suffix on the
+// resource segment ("/analyzers/%s:poll"), so an id carrying a colon names an
+// operation rather than a resource. A call site that reaches for PathEscape
+// fails here instead of reopening that hole quietly.
+//
+// escapeFunctionName is the single exception, and it is named here rather than
+// exempted by file so that adding another one is a deliberate edit to this list:
+// an app function name is a path by design -- parseFullFunctionName splits
+// "app-id/a/b/c" at the first slash only, so the slashes left in "a/b/c" are
+// separators the server expects. Escaping the whole name would spell them "%2F"
+// and address a function that does not exist, so that one value is escaped part
+// by part instead.
+var escapers = []string{"PathSegment(", "escapeFunctionName("}
 
 // countEscapers reports how many of a call's arguments are escaped.
 func countEscapers(args string) int {

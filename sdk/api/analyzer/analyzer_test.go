@@ -287,3 +287,48 @@ func TestPoll_Expired(t *testing.T) {
 		t.Fatal("Poll() expected error for 410 Gone")
 	}
 }
+
+// TestGet_ColonInNameDoesNotReachAnAction pins the gap that plain
+// url.PathEscape left open. The analyzer collection spells its actions as
+// suffixes on the resource segment -- ":execute", ":poll", ":cancel",
+// ":validate" -- and PathEscape keeps a colon intact, so an analyzer name
+// carrying one addressed an *operation* instead of a resource:
+//
+//	dtctl describe analyzer "foo:poll"  ->  GET /analyzers/foo:poll
+//
+// which polled the analyzer "foo" and reported the result as a lookup of the
+// name that was typed.
+func TestGet_ColonInNameDoesNotReachAnAction(t *testing.T) {
+	var gotPath string
+	h := NewHandler(newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.WriteHeader(http.StatusNotFound)
+	})))
+
+	_, _ = h.Get(context.Background(), "foo:poll")
+
+	const want = "/platform/davis/analyzers/v1/analyzers/foo%3Apoll"
+	if gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+	if gotPath == "/platform/davis/analyzers/v1/analyzers/foo:poll" {
+		t.Error("the request reached the poll action of a different analyzer")
+	}
+}
+
+// TestPoll_SuffixStillWorks is the other half: escaping the colon in the value
+// must not disturb the suffix, which is a literal in the format string.
+func TestPoll_SuffixStillWorks(t *testing.T) {
+	var gotPath string
+	h := NewHandler(newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.WriteHeader(http.StatusNotFound)
+	})))
+
+	_, _ = h.Poll(context.Background(), "dt.statistics.GenericForecastAnalyzer", "token", 1)
+
+	const want = "/platform/davis/analyzers/v1/analyzers/dt.statistics.GenericForecastAnalyzer:poll"
+	if gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+}

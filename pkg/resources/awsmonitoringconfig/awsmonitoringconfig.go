@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // ErrNotFound reports that no monitoring configuration matches the name. It
@@ -294,7 +294,7 @@ func (h *Handler) fetchLatestSchema() (*ExtensionSchemaResponse, error) {
 		return nil, fmt.Errorf("failed to determine latest extension version: %w", err)
 	}
 	var schema ExtensionSchemaResponse
-	endpoint := fmt.Sprintf(ExtensionSchemaAPI, url.PathEscape(latest))
+	endpoint := fmt.Sprintf(ExtensionSchemaAPI, httpclient.PathSegment(latest))
 	resp, err := h.client.HTTP().R().SetResult(&schema).Get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch extension schema: %w", err)

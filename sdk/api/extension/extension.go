@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -253,7 +252,7 @@ func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVers
 			NextPageKey:  nextPageKey,
 		}.QueryParams())
 
-		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
+		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s", httpclient.PathSegment(extensionName)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get extension: %w", err)
 		}
@@ -313,7 +312,7 @@ func (h *Handler) Get(ctx context.Context, extensionName string) (*ExtensionVers
 // if the extension has no active version (HTTP 404). Other errors are propagated.
 func (h *Handler) GetActiveVersion(ctx context.Context, extensionName string) (string, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environment-configuration", url.PathEscape(extensionName)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environment-configuration", httpclient.PathSegment(extensionName)))
 	if err != nil {
 		return "", err
 	}
@@ -339,7 +338,7 @@ func (h *Handler) GetActiveVersion(ctx context.Context, extensionName string) (s
 func (h *Handler) ActivateVersion(ctx context.Context, extensionName, version string) (*ExtensionEnvironmentConfig, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(map[string]string{"version": version}).
-		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environment-configuration", url.PathEscape(extensionName)))
+		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/environment-configuration", httpclient.PathSegment(extensionName)))
 	if err != nil {
 		return nil, fmt.Errorf("activate extension version: %w", err)
 	}
@@ -365,7 +364,7 @@ func (h *Handler) ActivateVersion(ctx context.Context, extensionName, version st
 // GetVersion gets details for a specific extension version
 func (h *Handler) GetVersion(ctx context.Context, extensionName, version string) (*ExtensionDetails, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", httpclient.PathSegment(extensionName), httpclient.PathSegment(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension version: %w", err)
 	}
@@ -393,7 +392,7 @@ func (h *Handler) GetVersion(ctx context.Context, extensionName, version string)
 // The version parameter is required by the Dynatrace Extensions 2.0 API.
 func (h *Handler) GetEnvironmentConfig(ctx context.Context, extensionName, version string) (*ExtensionEnvironmentConfig, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environment-configuration", url.PathEscape(extensionName), url.PathEscape(version)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/environment-configuration", httpclient.PathSegment(extensionName), httpclient.PathSegment(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get extension environment config: %w", err)
 	}
@@ -445,7 +444,7 @@ func (h *Handler) ListMonitoringConfigurations(ctx context.Context, extensionNam
 			Filters:       map[string]string{"version": version},
 		}.QueryParams())
 
-		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
+		resp, err := req.Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", httpclient.PathSegment(extensionName)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to list monitoring configurations: %w", err)
 		}
@@ -506,7 +505,7 @@ func (h *Handler) ListMonitoringConfigurations(ctx context.Context, extensionNam
 // GetMonitoringConfiguration gets a specific monitoring configuration
 func (h *Handler) GetMonitoringConfiguration(ctx context.Context, extensionName, configID string) (*MonitoringConfiguration, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", httpclient.PathSegment(extensionName), httpclient.PathSegment(configID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get monitoring configuration: %w", err)
 	}
@@ -542,7 +541,7 @@ type MonitoringConfigurationCreate struct {
 func (h *Handler) CreateMonitoringConfiguration(ctx context.Context, extensionName string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
-		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", url.PathEscape(extensionName)))
+		Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations", httpclient.PathSegment(extensionName)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create monitoring configuration: %w", err)
 	}
@@ -570,7 +569,7 @@ func (h *Handler) CreateMonitoringConfiguration(ctx context.Context, extensionNa
 func (h *Handler) UpdateMonitoringConfiguration(ctx context.Context, extensionName, configID string, body MonitoringConfigurationCreate) (*MonitoringConfiguration, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
-		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
+		Put(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", httpclient.PathSegment(extensionName), httpclient.PathSegment(configID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to update monitoring configuration: %w", err)
 	}
@@ -640,7 +639,7 @@ func (h *Handler) InstallFromHub(ctx context.Context, extensionName, version str
 		req.SetQueryParam("version", version)
 	}
 
-	resp, err := req.Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s", url.PathEscape(extensionName)))
+	resp, err := req.Post(fmt.Sprintf("/platform/extensions/v2/extensions/%s", httpclient.PathSegment(extensionName)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to install Hub extension %q: %w", extensionName, err)
 	}
@@ -674,7 +673,7 @@ func (h *Handler) InstallFromHub(ctx context.Context, extensionName, version str
 func (h *Handler) Download(ctx context.Context, extensionName, version string) ([]byte, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Accept", "application/octet-stream").
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", url.PathEscape(extensionName), url.PathEscape(version)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s", httpclient.PathSegment(extensionName), httpclient.PathSegment(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to download extension: %w", err)
 	}
@@ -700,7 +699,7 @@ func (h *Handler) Download(ctx context.Context, extensionName, version string) (
 // DeleteMonitoringConfiguration deletes a monitoring configuration for an extension
 func (h *Handler) DeleteMonitoringConfiguration(ctx context.Context, extensionName, configID string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", url.PathEscape(extensionName), url.PathEscape(configID)))
+		Delete(fmt.Sprintf("/platform/extensions/v2/extensions/%s/monitoring-configurations/%s", httpclient.PathSegment(extensionName), httpclient.PathSegment(configID)))
 	if err != nil {
 		return fmt.Errorf("failed to delete monitoring configuration: %w", err)
 	}
@@ -723,7 +722,7 @@ func (h *Handler) DeleteMonitoringConfiguration(ctx context.Context, extensionNa
 // extension version. The schema is an arbitrary JSON Schema document returned verbatim.
 func (h *Handler) GetMonitoringConfigurationSchema(ctx context.Context, extensionName, version string) (json.RawMessage, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/schema", url.PathEscape(extensionName), url.PathEscape(version)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/schema", httpclient.PathSegment(extensionName), httpclient.PathSegment(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get monitoring configuration schema: %w", err)
 	}
@@ -745,7 +744,7 @@ func (h *Handler) GetMonitoringConfigurationSchema(ctx context.Context, extensio
 // GetActiveGateGroups retrieves the active gate groups available for a specific extension version.
 func (h *Handler) GetActiveGateGroups(ctx context.Context, extensionName, version string) (*ActiveGateGroupList, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/active-gate-groups", url.PathEscape(extensionName), url.PathEscape(version)))
+		Get(fmt.Sprintf("/platform/extensions/v2/extensions/%s/%s/active-gate-groups", httpclient.PathSegment(extensionName), httpclient.PathSegment(version)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active gate groups: %w", err)
 	}

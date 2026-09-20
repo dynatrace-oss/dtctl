@@ -3,9 +3,10 @@ package anomalydetector
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // actorUUIDPattern mirrors the PATTERN constraint the schema puts on
@@ -249,7 +250,7 @@ func (h *Handler) ValidateUpdate(objectID string, data []byte) error {
 		SetQueryParam("validateOnly", "true").
 		SetHeader("If-Match", existing.SchemaVersion).
 		SetBody(map[string]any{"value": value}).
-		Put(fmt.Sprintf("%s/%s", SettingsAPI, url.PathEscape(objectID)))
+		Put(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(objectID)))
 	if err != nil {
 		return &ValidationUnavailableError{Err: err}
 	}
