@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/go-resty/resty/v2"
 
@@ -79,10 +80,24 @@ type SDKVersionsResponse struct {
 	Versions []SDKVersion `json:"versions"`
 }
 
+// escapeFunctionName escapes a function name for the "/api/" portion of an
+// invoke path. Unlike every other id dtctl interpolates, a function name is a
+// path by design: parseFullFunctionName splits "app-id/a/b/c" at the first
+// slash only, so "a/b/c" is the name and its slashes are real separators.
+// url.PathEscape on the whole name would turn them into "%2F" and address a
+// function that does not exist, so each part is escaped on its own.
+func escapeFunctionName(name string) string {
+	parts := strings.Split(name, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
+}
+
 // InvokeFunction invokes an app function
 func (h *FunctionHandler) InvokeFunction(ctx context.Context, req *FunctionInvokeRequest) (*FunctionInvokeResponse, error) {
 	reqPath := fmt.Sprintf("/platform/app-engine/app-functions/v1/apps/%s/api/%s",
-		url.PathEscape(req.AppID), url.PathEscape(req.FunctionName))
+		url.PathEscape(req.AppID), escapeFunctionName(req.FunctionName))
 
 	httpReq := h.client.HTTP().R().SetContext(ctx)
 

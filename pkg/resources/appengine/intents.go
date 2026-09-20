@@ -143,7 +143,7 @@ func (h *IntentHandler) GenerateIntentURL(appID, intentID string, payload map[st
 
 	// Construct URL
 	intentURL := fmt.Sprintf("%s/ui/intent/%s/%s#%s",
-		baseURL, appID, intentID, escapeFragment(string(jsonPayload)))
+		baseURL, url.PathEscape(appID), url.PathEscape(intentID), escapeFragment(string(jsonPayload)))
 
 	return intentURL, nil
 }

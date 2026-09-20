@@ -77,8 +77,7 @@ func TestEveryInterpolatedPathValueIsEscaped(t *testing.T) {
 			for j := i + 1; j < len(lines) && !strings.Contains(args, ")"); j++ {
 				args += lines[j]
 			}
-			if n := len(stringVerbs(format)); n > 0 &&
-				strings.Count(args, "url.PathEscape(") < n {
+			if n := len(stringVerbs(format)); n > 0 && countEscapers(args) < n {
 				offenders = append(offenders, rel+":"+strconv.Itoa(i+1)+": "+strings.TrimSpace(line))
 			}
 		}
@@ -89,6 +88,26 @@ func TestEveryInterpolatedPathValueIsEscaped(t *testing.T) {
 		"An id reaches dtctl from a command line or an applied file. Interpolated raw, one "+
 		"containing '/', '?' or '#' addresses a different resource and the request succeeds "+
 		"against it -- see httpclient.CheckRequestPath.", strings.Join(offenders, "\n"))
+}
+
+// escapers are the calls that count as escaping one interpolated value.
+//
+// url.PathEscape is the rule. escapeFunctionName is the single exception, and
+// it is named here rather than exempted by file so that adding another one is a
+// deliberate edit to this list: an app function name is a path by design --
+// parseFullFunctionName splits "app-id/a/b/c" at the first slash only, so the
+// slashes left in "a/b/c" are separators the server expects. PathEscape on the
+// whole name would spell "%2F" and address a function that does not exist, so
+// that one value is escaped part by part instead.
+var escapers = []string{"url.PathEscape(", "escapeFunctionName("}
+
+// countEscapers reports how many of a call's arguments are escaped.
+func countEscapers(args string) int {
+	n := 0
+	for _, e := range escapers {
+		n += strings.Count(args, e)
+	}
+	return n
 }
 
 // stringVerbs returns the %s verbs in a format string. %d and the rest cannot

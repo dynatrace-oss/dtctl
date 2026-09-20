@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -90,7 +91,7 @@ func (h *Handler) Get(ctx context.Context, uid string, addFields ...string) (*Fi
 			"add-fields": addFields,
 		})
 	}
-	resp, err := req.Get(fmt.Sprintf("%s/%s", basePath, uid))
+	resp, err := req.Get(fmt.Sprintf("%s/%s", basePath, url.PathEscape(uid)))
 	if err != nil {
 		return nil, fmt.Errorf("get segment: %w", err)
 	}
@@ -140,7 +141,7 @@ func (h *Handler) Update(ctx context.Context, uid string, version int, data []by
 		SetHeader("Content-Type", "application/json").
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
 		SetBody(data).
-		Patch(fmt.Sprintf("%s/%s", basePath, uid))
+		Patch(fmt.Sprintf("%s/%s", basePath, url.PathEscape(uid)))
 	if err != nil {
 		return fmt.Errorf("update segment: %w", err)
 	}
@@ -157,7 +158,7 @@ func (h *Handler) Update(ctx context.Context, uid string, version int, data []by
 // Delete deletes a filter segment by UID.
 func (h *Handler) Delete(ctx context.Context, uid string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("%s/%s", basePath, uid))
+		Delete(fmt.Sprintf("%s/%s", basePath, url.PathEscape(uid)))
 	if err != nil {
 		return fmt.Errorf("delete segment: %w", err)
 	}

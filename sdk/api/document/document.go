@@ -902,7 +902,7 @@ func (h *Handler) ListEnvironmentShares(ctx context.Context, documentID string) 
 
 	filterStr := ""
 	if documentID != "" {
-		filterStr = fmt.Sprintf("documentId=='%s'", documentID)
+		filterStr = fmt.Sprintf("documentId=='%s'", escapeFilterValue(documentID))
 	}
 
 	for {

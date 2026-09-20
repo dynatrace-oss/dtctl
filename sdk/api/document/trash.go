@@ -107,10 +107,10 @@ func (h *TrashHandler) List(ctx context.Context, opts TrashListOptions) ([]Trash
 	var conditions []string
 
 	if opts.Type != "" {
-		conditions = append(conditions, fmt.Sprintf("type=='%s'", opts.Type))
+		conditions = append(conditions, fmt.Sprintf("type=='%s'", escapeFilterValue(opts.Type)))
 	}
 	if opts.DeletedBy != "" {
-		conditions = append(conditions, fmt.Sprintf("deletionInfo.deletedBy=='%s'", opts.DeletedBy))
+		conditions = append(conditions, fmt.Sprintf("deletionInfo.deletedBy=='%s'", escapeFilterValue(opts.DeletedBy)))
 	}
 	if !opts.DeletedAfter.IsZero() {
 		conditions = append(conditions, fmt.Sprintf("deletionInfo.deletedTime>='%s'", opts.DeletedAfter.Format(time.RFC3339)))

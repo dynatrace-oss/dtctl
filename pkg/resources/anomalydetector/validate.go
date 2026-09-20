@@ -3,6 +3,7 @@ package anomalydetector
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -248,7 +249,7 @@ func (h *Handler) ValidateUpdate(objectID string, data []byte) error {
 		SetQueryParam("validateOnly", "true").
 		SetHeader("If-Match", existing.SchemaVersion).
 		SetBody(map[string]any{"value": value}).
-		Put(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
+		Put(fmt.Sprintf("%s/%s", SettingsAPI, url.PathEscape(objectID)))
 	if err != nil {
 		return &ValidationUnavailableError{Err: err}
 	}

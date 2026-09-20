@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -137,7 +138,7 @@ func (h *Handler) List(ctx context.Context, chunkSize, limit int64) (*Scheduling
 
 // Get retrieves a specific scheduling rule.
 func (h *Handler) Get(ctx context.Context, id string) (*SchedulingRule, error) {
-	resp, err := h.client.HTTP().R().SetContext(ctx).Get(fmt.Sprintf("%s/%s", basePath, id))
+	resp, err := h.client.HTTP().R().SetContext(ctx).Get(fmt.Sprintf("%s/%s", basePath, url.PathEscape(id)))
 	if err != nil {
 		return nil, fmt.Errorf("get scheduling rule: %w", err)
 	}
@@ -175,7 +176,7 @@ func (h *Handler) Update(ctx context.Context, id string, data []byte) (*Scheduli
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetBody(data).
-		Put(fmt.Sprintf("%s/%s", basePath, id))
+		Put(fmt.Sprintf("%s/%s", basePath, url.PathEscape(id)))
 	if err != nil {
 		return nil, fmt.Errorf("update scheduling rule: %w", err)
 	}
@@ -191,7 +192,7 @@ func (h *Handler) Update(ctx context.Context, id string, data []byte) (*Scheduli
 
 // Delete deletes a scheduling rule.
 func (h *Handler) Delete(ctx context.Context, id string) error {
-	resp, err := h.client.HTTP().R().SetContext(ctx).Delete(fmt.Sprintf("%s/%s", basePath, id))
+	resp, err := h.client.HTTP().R().SetContext(ctx).Delete(fmt.Sprintf("%s/%s", basePath, url.PathEscape(id)))
 	if err != nil {
 		return fmt.Errorf("delete scheduling rule: %w", err)
 	}
