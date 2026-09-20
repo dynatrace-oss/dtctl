@@ -446,6 +446,11 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 	if isFailedState(result.State) {
 		return result, &StateError{State: result.State}
 	}
+	// A response that declares no state at all is the pre-state synchronous
+	// shape GetRecords still supports — it carries the records directly.
+	if result.State == "" && result.RequestToken == "" {
+		return result, nil
+	}
 	if result.RequestToken == "" {
 		if isRunningState(result.State) {
 			return nil, fmt.Errorf("query is running but no request token provided")
@@ -453,7 +458,7 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 		return result, &StateError{State: result.State}
 	}
 
-	// Surface the initial RUNNING state (progress may already be non-zero).
+	// Surface the initial state (progress may already be non-zero).
 	emitUpdate(opts.OnUpdate, req.EnablePreview, result)
 
 	// Poll loop.
@@ -461,12 +466,10 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 	defer pollCancel()
 
 	tokenJustRefreshed := false
-	// unknownState is the last unrecognized state seen. It is polled like
-	// RUNNING, and reported if the poll deadline expires on it.
-	unknownState := ""
-	if !isRunningState(result.State) {
-		unknownState = result.State
-	}
+	// lastState is the state of the most recent response. A state that is
+	// neither terminal nor running is polled like RUNNING; lastState is what
+	// names it if the poll deadline expires first.
+	lastState := result.State
 
 	for {
 		select {
@@ -475,8 +478,8 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 				_ = h.Cancel(context.Background(), result.RequestToken)
 				return nil, ctx.Err()
 			}
-			if unknownState != "" {
-				return nil, &StateError{State: unknownState}
+			if !isRunningState(lastState) {
+				return nil, &StateError{State: lastState, TimedOut: true}
 			}
 			return nil, pollCtx.Err()
 		default:
@@ -502,8 +505,8 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 				_ = h.Cancel(context.Background(), result.RequestToken)
 				return nil, ctx.Err()
 			}
-			if pollCtx.Err() != nil && unknownState != "" {
-				return nil, &StateError{State: unknownState}
+			if pollCtx.Err() != nil && !isRunningState(lastState) {
+				return nil, &StateError{State: lastState, TimedOut: true}
 			}
 			// An expired or already consumed result is reported as HTTP 410
 			// (QUERY_GONE), not as a RESULT_GONE state — verified against a
@@ -517,28 +520,27 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 
 		tokenJustRefreshed = false // reset after success
 
-		// A Ctrl-C that races a completing poll must stay a cancellation, not
-		// turn into the CANCELLED state error below.
-		if ctx.Err() != nil {
-			_ = h.Cancel(context.Background(), result.RequestToken)
-			return nil, ctx.Err()
-		}
-
 		switch {
 		case pollResult.State == StateSucceeded:
 			return pollResult, nil
 		case isFailedState(pollResult.State):
+			// A Ctrl-C that races a completing poll must stay a cancellation,
+			// not turn into the CANCELLED state error. The query is already
+			// terminal, so there is nothing left to cancel on the backend.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return pollResult, &StateError{State: pollResult.State}
-		case isRunningState(pollResult.State):
-			unknownState = ""
-			emitUpdate(opts.OnUpdate, req.EnablePreview, pollResult)
 		default:
-			// The server may answer an unrecognized state at once instead of
-			// holding the poll, so wait before the next round trip.
-			unknownState = pollResult.State
-			select {
-			case <-pollCtx.Done():
-			case <-time.After(unknownStatePollInterval):
+			lastState = pollResult.State
+			emitUpdate(opts.OnUpdate, req.EnablePreview, pollResult)
+			if !isRunningState(lastState) {
+				// The server may answer an unrecognized state at once instead
+				// of holding the poll, so wait before the next round trip.
+				select {
+				case <-pollCtx.Done():
+				case <-time.After(unknownStatePollInterval):
+				}
 			}
 		}
 	}
@@ -579,6 +581,10 @@ func isFailedState(state string) bool {
 // type: the states the API documents, handled in case they do appear.
 type StateError struct {
 	State string
+	// TimedOut reports that the query never left State before the poll
+	// deadline expired. It may well still be running on the backend, so the
+	// message must not claim the state itself was terminal.
+	TimedOut bool
 }
 
 func (e *StateError) Error() string {
@@ -589,9 +595,11 @@ func (e *StateError) Error() string {
 		return "query was cancelled on the server"
 	case StateResultGone:
 		return "query result expired before it was fetched"
-	default:
-		return fmt.Sprintf("unrecognized query state %q: your dtctl may predate this Grail version, try upgrading", e.State)
 	}
+	if e.TimedOut {
+		return fmt.Sprintf("query was still in unrecognized state %q when the poll deadline expired", e.State)
+	}
+	return fmt.Sprintf("unrecognized query state %q", e.State)
 }
 
 // GetNotifications returns notifications from the response, checking both

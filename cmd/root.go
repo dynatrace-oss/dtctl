@@ -608,14 +608,19 @@ func queryStateErrorDetail(err error, state string) *output.ErrorDetail {
 	switch state {
 	case sdkquery.StateFailed:
 		detail.Code = "query_failed"
+		detail.Suggestions = []string{"the query itself failed: fix the query, re-running it unchanged will fail again"}
 	case sdkquery.StateCancelled:
 		detail.Code = "query_cancelled"
+		detail.Suggestions = []string{"the query was cancelled on the server: run it again if the cancellation was not intended"}
 	case sdkquery.StateResultGone:
 		detail.Code = "result_expired"
 		detail.Suggestions = []string{"the query is valid but its result expired: run the same query again"}
 	default:
 		detail.Code = "unknown_query_state"
-		detail.Suggestions = []string{"upgrade dtctl: this Grail version reports a query state that this dtctl does not know"}
+		detail.Suggestions = []string{
+			"upgrade dtctl: this Grail version reports a query state that this dtctl does not know",
+			"if the query was simply slow, running it again may still succeed",
+		}
 	}
 	return detail
 }

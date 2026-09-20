@@ -130,6 +130,25 @@ func TestExecuteAndPoll_CancelRacingCancelledPollIsCancellation(t *testing.T) {
 	}
 }
 
+// TestExecuteAndPoll_StatelessResponseIsDelivered pins the pre-state
+// synchronous shape that GetRecords still supports: a response that declares
+// no state at all carries the records directly and must not be rejected as an
+// unrecognized state.
+func TestExecuteAndPoll_StatelessResponseIsDelivered(t *testing.T) {
+	h, polls := stateServer(t, Response{Records: []map[string]interface{}{{"c": "1"}}}, Response{State: StateSucceeded})
+
+	result, err := h.ExecuteAndPoll(context.Background(), ExecuteRequest{Query: "fetch logs"}, nil)
+	if err != nil {
+		t.Fatalf("ExecuteAndPoll() error: %v", err)
+	}
+	if len(result.GetRecords()) != 1 {
+		t.Errorf("records = %d, want 1", len(result.GetRecords()))
+	}
+	if polls.Load() != 0 {
+		t.Errorf("polled %d times, want 0", polls.Load())
+	}
+}
+
 func assertStateError(t *testing.T, err error, state string) {
 	t.Helper()
 	var stateErr *StateError

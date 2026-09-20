@@ -242,17 +242,23 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 	}
 
 	status := executionStatus(result)
-	if status == "COMPLETED" {
+	if status == StatusCompleted {
 		return result, nil
 	}
 	if err := failedStatusError(status); err != nil {
 		return result, err
 	}
 	if result.RequestToken == "" {
-		if status == "" {
+		if result.Result == nil {
 			return result, fmt.Errorf("analyzer returned neither a result nor a request token")
 		}
-		return result, fmt.Errorf("analyzer execution ended with unrecognized status %q: your dtctl may predate this analyzer API, try upgrading", status)
+		if status == "" {
+			// A result with no executionStatus at all: the response carries
+			// everything there is, so hand it over rather than inventing a
+			// failure out of a missing field.
+			return result, nil
+		}
+		return result, fmt.Errorf("analyzer execution ended in status %q with no request token to poll", status)
 	}
 
 	startTime := time.Now()
@@ -260,8 +266,8 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 
 	for {
 		if time.Since(startTime) > maxDuration {
-			if status != "" && status != "RUNNING" {
-				return nil, fmt.Errorf("analyzer execution timed out after %d seconds in unrecognized status %q: your dtctl may predate this analyzer API, try upgrading", maxWaitSeconds, status)
+			if status != "" && status != StatusRunning {
+				return nil, fmt.Errorf("analyzer execution timed out after %d seconds, last status %q", maxWaitSeconds, status)
 			}
 			return nil, fmt.Errorf("analyzer execution timed out after %d seconds", maxWaitSeconds)
 		}
@@ -278,10 +284,15 @@ func (h *Handler) ExecuteAndWait(ctx context.Context, name string, input map[str
 		}
 
 		status = executionStatus(pollResult)
-		if status == "COMPLETED" {
+		if status == StatusCompleted {
 			return pollResult, nil
 		}
 		if err := failedStatusError(status); err != nil {
+			// A Ctrl-C that races a completing poll must stay a cancellation,
+			// not turn into an "aborted"/"failed" execution error.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return pollResult, err
 		}
 
@@ -302,12 +313,20 @@ func executionStatus(r *ExecuteResult) string {
 	return r.Result.ExecutionStatus
 }
 
+// Execution statuses reported by the analyzer API.
+const (
+	StatusCompleted = "COMPLETED"
+	StatusRunning   = "RUNNING"
+	StatusAborted   = "ABORTED"
+	StatusFailed    = "FAILED"
+)
+
 // failedStatusError returns the error for a failed execution status, or nil.
 func failedStatusError(status string) error {
 	switch status {
-	case "ABORTED":
+	case StatusAborted:
 		return fmt.Errorf("analyzer execution was aborted")
-	case "FAILED":
+	case StatusFailed:
 		return fmt.Errorf("analyzer execution failed")
 	default:
 		return nil

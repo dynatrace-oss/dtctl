@@ -47,3 +47,39 @@ func TestExecuteAndWait_UnknownStatusWithTokenIsPolled(t *testing.T) {
 		t.Errorf("ExecutionStatus = %q, want COMPLETED", result.Result.ExecutionStatus)
 	}
 }
+
+// TestExecuteAndWait_ResultWithoutStatusIsDelivered pins that a synchronous
+// response carrying a result but no executionStatus is handed over. It is not
+// "neither a result nor a request token", and inventing a failure out of a
+// missing field would drop data the caller already has.
+func TestExecuteAndWait_ResultWithoutStatusIsDelivered(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/davis/analyzers/v1/analyzers/dt.test:execute", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ExecuteResult{Result: &AnalyzerResult{ResultID: "res-1"}})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.ExecuteAndWait(context.Background(), "dt.test", map[string]interface{}{}, 60)
+	if err != nil {
+		t.Fatalf("ExecuteAndWait() error: %v", err)
+	}
+	if result.Result.ResultID != "res-1" {
+		t.Errorf("ResultID = %q, want res-1", result.Result.ResultID)
+	}
+}
+
+// TestExecuteAndWait_NoResultAndNoTokenIsAnError keeps the other half of that
+// branch honest: an empty envelope has nothing to return and nothing to poll.
+func TestExecuteAndWait_NoResultAndNoTokenIsAnError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/davis/analyzers/v1/analyzers/dt.test:execute", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(ExecuteResult{})
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	if _, err := h.ExecuteAndWait(context.Background(), "dt.test", map[string]interface{}{}, 60); err == nil {
+		t.Fatal("ExecuteAndWait() error = nil, want an error for an empty envelope")
+	}
+}
