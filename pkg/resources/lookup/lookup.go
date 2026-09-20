@@ -53,7 +53,9 @@ type CreateRequest struct {
 	Timezone       string
 	Locale         string
 	Overwrite      bool
-	DataContent    []byte
+	// DataContent is the payload to upload, and is required. Reading it from
+	// a file or from stdin is the caller's job: this package does no file I/O.
+	DataContent []byte
 }
 
 // UploadRequest represents the JSON request body for upload

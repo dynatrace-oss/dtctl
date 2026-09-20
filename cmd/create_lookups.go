@@ -82,19 +82,20 @@ Examples:
 			return fmt.Errorf("--file is required")
 		}
 
-		if file == "-" && isTerminal(os.Stdin) {
-			return fmt.Errorf("--file - reads the lookup data from stdin, but stdin is a terminal: pipe the data in or pass a file path")
-		}
-		fileData, err := vfs.ReadFileOrStdin(file)
+		fileData, err := readLookupInput(file, isTerminal(os.Stdin))
 		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
+			return err
 		}
 
 		// Check if it's a manifest (YAML/JSON with apiVersion/kind)
 		var manifest map[string]interface{}
 		if err := json.Unmarshal(fileData, &manifest); err == nil {
 			if _, hasKind := manifest["kind"]; hasKind {
-				// It's a manifest - handle via apply command
+				// It's a manifest - handle via apply command. `apply` reads a
+				// path, never stdin, so a piped manifest has to be saved first.
+				if file == "-" {
+					return fmt.Errorf("the piped input is a manifest -- save it to a file and run 'dtctl apply -f <file>'")
+				}
 				return fmt.Errorf("manifest files should be used with 'dtctl apply -f %s'", file)
 			}
 		}
@@ -200,6 +201,35 @@ Examples:
 		}
 		return countErr
 	},
+}
+
+// readLookupInput reads the lookup data named by --file: a user-supplied path
+// through the vfs seam, or "-" for the process stdin.
+//
+// stdinIsTerminal is a parameter rather than a probe inside this function so
+// the interactive case is testable without a pty -- the same shape
+// resolveQueryInput uses. On a terminal, reading would block until Ctrl+D and
+// then upload nothing, which reads as a hung CLI.
+//
+// Empty input is rejected here so the message names the source. Passed on, it
+// surfaces from the handler as "no data content specified", which blames the
+// caller for omitting data they did supply.
+func readLookupInput(file string, stdinIsTerminal bool) ([]byte, error) {
+	if file == "-" && stdinIsTerminal {
+		return nil, fmt.Errorf("--file - reads the lookup data from stdin, but stdin is a terminal -- nothing to read\n\nPipe the data in (generate-codes | dtctl create lookup -f - ...) or pass a file path (-f data.csv)")
+	}
+
+	data, err := vfs.ReadFileOrStdin(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+	if len(data) == 0 {
+		if file == "-" {
+			return nil, fmt.Errorf("no data arrived on stdin -- the producing command wrote nothing")
+		}
+		return nil, fmt.Errorf("%s is empty", file)
+	}
+	return data, nil
 }
 
 func init() {

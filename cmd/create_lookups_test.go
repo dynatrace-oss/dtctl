@@ -8,6 +8,30 @@ import (
 	"testing"
 )
 
+// withStdin replaces the process stdin with a pipe carrying content for one
+// test. vfs.ReadFileOrStdin reads the os.Stdin variable, so this is what a
+// shell pipe looks like from inside RunE.
+func withStdin(t *testing.T, content string) {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	if _, err := w.WriteString(content); err != nil {
+		t.Fatalf("write stdin: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdin writer: %v", err)
+	}
+	original := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = original
+		_ = r.Close()
+	})
+}
+
 // TestCreateLookupDryRun_FileDashReadsStdin covers #493: "-f -" must read the
 // piped data, even when a file named "-" exists in the working directory.
 func TestCreateLookupDryRun_FileDashReadsStdin(t *testing.T) {
@@ -17,18 +41,7 @@ func TestCreateLookupDryRun_FileDashReadsStdin(t *testing.T) {
 	}
 	t.Chdir(dir)
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-	if _, err := w.WriteString("id,name\n1,alpha\n"); err != nil {
-		t.Fatalf("write stdin: %v", err)
-	}
-	_ = w.Close()
-	originalStdin := os.Stdin
-	t.Cleanup(func() { os.Stdin = originalStdin })
-	os.Stdin = r
-
+	withStdin(t, "id,name\n1,alpha\n")
 	setCreateLookupFlags(t, "-")
 	withAgentMode(t, false)
 
@@ -44,6 +57,72 @@ func TestCreateLookupDryRun_FileDashReadsStdin(t *testing.T) {
 
 	if !strings.Contains(out, "Records: 1") {
 		t.Errorf("output does not describe the piped data (1 record):\n%s", out)
+	}
+}
+
+// TestReadLookupInput_StdinIsTerminal: "-f -" in an interactive shell has
+// nothing to read. io.ReadAll would block until Ctrl+D and then upload an empty
+// table, which reads as a hung CLI, so it must fail fast with guidance.
+func TestReadLookupInput_StdinIsTerminal(t *testing.T) {
+	_, err := readLookupInput("-", true)
+	if err == nil {
+		t.Fatal("expected an error when --file - is used on a terminal")
+	}
+	if !strings.Contains(err.Error(), "stdin is a terminal") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "-f data.csv") {
+		t.Fatalf("error is missing actionable guidance: %v", err)
+	}
+}
+
+// TestReadLookupInput_EmptyInput: an empty pipe or an empty file must name the
+// source instead of reaching the handler's "no data content specified".
+func TestReadLookupInput_EmptyInput(t *testing.T) {
+	t.Run("stdin", func(t *testing.T) {
+		withStdin(t, "")
+		_, err := readLookupInput("-", false)
+		if err == nil {
+			t.Fatal("expected an error for an empty pipe")
+		}
+		if !strings.Contains(err.Error(), "stdin") {
+			t.Fatalf("error does not name stdin: %v", err)
+		}
+	})
+
+	t.Run("file", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "empty.csv")
+		if err := os.WriteFile(file, nil, 0o600); err != nil {
+			t.Fatalf("write CSV: %v", err)
+		}
+		_, err := readLookupInput(file, false)
+		if err == nil {
+			t.Fatal("expected an error for an empty file")
+		}
+		if !strings.Contains(err.Error(), file) {
+			t.Fatalf("error does not name the file: %v", err)
+		}
+	})
+}
+
+// TestCreateLookupManifestOnStdin: a manifest piped in must not be answered
+// with "dtctl apply -f -". `apply` reads a path through the vfs seam and never
+// stdin, so that form would read a file literally named "-" -- and the piped
+// bytes are already consumed either way.
+func TestCreateLookupManifestOnStdin(t *testing.T) {
+	withStdin(t, `{"apiVersion":"v1","kind":"Dashboard"}`)
+	setCreateLookupFlags(t, "-")
+	withAgentMode(t, false)
+
+	err := createLookupCmd.RunE(createLookupCmd, nil)
+	if err == nil {
+		t.Fatal("expected an error for a manifest on stdin")
+	}
+	if strings.Contains(err.Error(), "apply -f -") {
+		t.Errorf("error suggests a form apply cannot read: %v", err)
+	}
+	if !strings.Contains(err.Error(), "save it to a file") {
+		t.Errorf("error is missing actionable guidance: %v", err)
 	}
 }
 
