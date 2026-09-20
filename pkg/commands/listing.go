@@ -353,7 +353,7 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 			hasResources := false
 
 			for _, sub := range subs {
-				if sub.Name() == "help" {
+				if sub.Name() == "help" || isHelpTopic(sub) {
 					continue
 				}
 				// A hidden leaf is normally absent from the catalog too. An
@@ -365,23 +365,9 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 
 				subName := sub.Name()
 
-				// Check if this subcommand itself has subcommands (nested, like exec copilot)
-				nestedSubs := sub.Commands()
-				hasNested := false
-				for _, ns := range nestedSubs {
-					if !ns.Hidden && ns.Name() != "help" {
-						hasNested = true
-						break
-					}
-				}
-
-				if hasNested {
+				if len(listedChildren(sub)) > 0 {
 					// Nested subcommand (e.g., exec copilot -> nl2dql, dql2nl, ...)
-					subVerb := buildNestedVerb(name, sub)
-					if scopes := auth.ScopesForResource(subName, auth.Access(subVerb.Access)); len(scopes) > 0 {
-						subVerb.RequiredScopes = append([]string(nil), scopes...)
-					}
-					subcommands[subName] = subVerb
+					subcommands[subName] = buildNestedVerb(name, sub)
 				} else {
 					// Treat as a resource
 					resources = append(resources, subName)
@@ -435,25 +421,19 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 // A leaf child lists its flags by name in the parent's resource_flags, like a
 // verb's resources do, instead of as full flag objects.
 func buildNestedVerb(verbName string, cmd *cobra.Command) *Verb {
-	v := newNestedNode(verbName, cmd.Short)
-	annotateStability(v, cmd)
+	v := newNestedNode(verbName, cmd)
 	if flags := collectLocalFlags(cmd); len(flags) > 0 {
 		v.Flags = flags
 	}
-	for _, child := range cmd.Commands() {
-		if child.Hidden || child.Name() == "help" {
-			continue
-		}
+	for _, child := range listedChildren(cmd) {
 		if v.Subcommands == nil {
 			v.Subcommands = make(map[string]*Verb)
 		}
-		if child.HasAvailableSubCommands() {
+		if len(listedChildren(child)) > 0 {
 			v.Subcommands[child.Name()] = buildNestedVerb(verbName, child)
 			continue
 		}
-		leaf := newNestedNode(verbName, child.Short)
-		annotateStability(leaf, child)
-		v.Subcommands[child.Name()] = leaf
+		v.Subcommands[child.Name()] = newNestedNode(verbName, child)
 		if names := flagNames(child); len(names) > 0 {
 			if v.ResourceFlags == nil {
 				v.ResourceFlags = make(map[string][]string)
@@ -465,14 +445,18 @@ func buildNestedVerb(verbName string, cmd *cobra.Command) *Verb {
 }
 
 // newNestedNode returns a subcommand entry that carries the verb's mutating
-// status and access level.
-func newNestedNode(verbName, description string) *Verb {
-	v := &Verb{Description: description}
+// status, access level and the scopes its name maps to.
+func newNestedNode(verbName string, cmd *cobra.Command) *Verb {
+	v := &Verb{Description: cmd.Short}
 	if safetyOp, ok := MutatingVerbs[verbName]; ok {
 		v.Mutating = true
 		v.SafetyOp = safetyOp
 	}
 	v.Access = string(auth.AccessForVerb(verbName, v.SafetyOp))
+	if scopes := auth.ScopesForResource(cmd.Name(), auth.Access(v.Access)); len(scopes) > 0 {
+		v.RequiredScopes = append([]string(nil), scopes...)
+	}
+	annotateStability(v, cmd)
 	return v
 }
 
@@ -480,6 +464,24 @@ func newNestedNode(verbName, description string) *Verb {
 // `token-scopes`): documentation with nothing to run and no subcommands.
 func isHelpTopic(cmd *cobra.Command) bool {
 	return !cmd.Runnable() && !cmd.HasSubCommands()
+}
+
+// listedChildren returns the subcommands of cmd that belong in the catalog:
+// visible, not cobra's generated `help`, and not a help topic.
+//
+// One predicate for every level. Asking the question two ways — a hand-rolled
+// loop at the verb level and cobra's HasAvailableSubCommands below it — let the
+// same command be a resource at one depth and a nested verb at another, and
+// left help topics in the catalog everywhere except the top.
+func listedChildren(cmd *cobra.Command) []*cobra.Command {
+	var out []*cobra.Command
+	for _, c := range cmd.Commands() {
+		if c.Hidden || c.Name() == "help" || isHelpTopic(c) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // flagNames returns the sorted keys of cmd's own flags, in the form the flags
@@ -534,16 +536,18 @@ func collectResourceScopes(verbs map[string]*Verb) map[string]auth.AccessScopes 
 			}
 		}
 	}
-	for _, verb := range verbs {
-		for _, r := range verb.Resources {
+	var addVerb func(v *Verb)
+	addVerb = func(v *Verb) {
+		for _, r := range v.Resources {
 			add(r)
 		}
-		for subName, sub := range verb.Subcommands {
+		for subName, sub := range v.Subcommands {
 			add(subName)
-			for _, r := range sub.Resources {
-				add(r)
-			}
+			addVerb(sub)
 		}
+	}
+	for _, verb := range verbs {
+		addVerb(verb)
 	}
 	if len(table) == 0 {
 		return nil
@@ -561,7 +565,7 @@ func collectResourceScopes(verbs map[string]*Verb) map[string]auth.AccessScopes 
 func collectLocalFlags(cmd *cobra.Command) map[string]*Flag {
 	flags := make(map[string]*Flag)
 	add := func(f *pflag.Flag) {
-		if f.Hidden || inheritedFlag(cmd, f.Name) {
+		if f.Hidden || inheritedFlag(cmd, f) {
 			return
 		}
 
@@ -595,12 +599,19 @@ func collectLocalFlags(cmd *cobra.Command) map[string]*Flag {
 	return flags
 }
 
-// inheritedFlag reports whether an ancestor of cmd declares name as a
-// persistent flag.
-func inheritedFlag(cmd *cobra.Command, name string) bool {
+// inheritedFlag reports whether f is an ancestor's persistent flag rather than
+// one cmd declares itself.
+//
+// The comparison is by identity, not by name: a command may redefine a name an
+// ancestor already uses persistently, and cobra then binds the command's own
+// flag (`dtctl diff --context` is an int line count, not the global string
+// context). Matching on the name alone would drop every such flag from the
+// catalog. Only the nearest ancestor that declares the name matters — that is
+// the one cobra would have merged in.
+func inheritedFlag(cmd *cobra.Command, f *pflag.Flag) bool {
 	for p := cmd.Parent(); p != nil; p = p.Parent() {
-		if p.PersistentFlags().Lookup(name) != nil {
-			return true
+		if pf := p.PersistentFlags().Lookup(f.Name); pf != nil {
+			return pf == f
 		}
 	}
 	return false
@@ -878,9 +889,13 @@ func containsResource(verb *Verb, name string) bool {
 			return true
 		}
 	}
-	// Check subcommands
-	for subName := range verb.Subcommands {
+	// Check subcommands, at any depth — the catalog nests as deeply as the
+	// command tree does (`get gcp connections principal`).
+	for subName, sub := range verb.Subcommands {
 		if subName == name || singularize(subName) == stem {
+			return true
+		}
+		if containsResource(sub, name) {
 			return true
 		}
 	}

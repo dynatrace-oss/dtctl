@@ -21,15 +21,15 @@ func newTestRoot() *cobra.Command {
 
 	// get verb with resources
 	get := &cobra.Command{Use: "get", Short: "List resources"}
-	get.AddCommand(&cobra.Command{Use: "workflows", Short: "List workflows", Aliases: []string{"wf"}})
-	get.AddCommand(&cobra.Command{Use: "dashboards", Short: "List dashboards", Aliases: []string{"dash", "db"}})
-	get.AddCommand(&cobra.Command{Use: "notebooks", Short: "List notebooks", Aliases: []string{"nb"}})
+	get.AddCommand(&cobra.Command{Use: "workflows", Short: "List workflows", Aliases: []string{"wf"}, Run: run})
+	get.AddCommand(&cobra.Command{Use: "dashboards", Short: "List dashboards", Aliases: []string{"dash", "db"}, Run: run})
+	get.AddCommand(&cobra.Command{Use: "notebooks", Short: "List notebooks", Aliases: []string{"nb"}, Run: run})
 	root.AddCommand(get)
 
 	// describe verb
 	describe := &cobra.Command{Use: "describe", Short: "Show details"}
-	describe.AddCommand(&cobra.Command{Use: "workflow", Short: "Describe workflow"})
-	describe.AddCommand(&cobra.Command{Use: "dashboard", Short: "Describe dashboard"})
+	describe.AddCommand(&cobra.Command{Use: "workflow", Short: "Describe workflow", Run: run})
+	describe.AddCommand(&cobra.Command{Use: "dashboard", Short: "Describe dashboard", Run: run})
 	root.AddCommand(describe)
 
 	// apply verb (mutating, with flags)
@@ -42,16 +42,16 @@ func newTestRoot() *cobra.Command {
 
 	// delete verb (mutating, with resources)
 	del := &cobra.Command{Use: "delete", Short: "Delete resources"}
-	del.AddCommand(&cobra.Command{Use: "workflow", Short: "Delete a workflow"})
-	del.AddCommand(&cobra.Command{Use: "dashboard", Short: "Delete a dashboard"})
+	del.AddCommand(&cobra.Command{Use: "workflow", Short: "Delete a workflow", Run: run})
+	del.AddCommand(&cobra.Command{Use: "dashboard", Short: "Delete a dashboard", Run: run})
 	root.AddCommand(del)
 
 	// exec verb (mutating, with nested subcommands)
 	exec := &cobra.Command{Use: "exec", Short: "Execute commands"}
-	exec.AddCommand(&cobra.Command{Use: "workflow", Short: "Run a workflow"})
+	exec.AddCommand(&cobra.Command{Use: "workflow", Short: "Run a workflow", Run: run})
 	copilot := &cobra.Command{Use: "copilot", Short: "Chat with copilot"}
-	copilot.AddCommand(&cobra.Command{Use: "nl2dql", Short: "NL to DQL"})
-	copilot.AddCommand(&cobra.Command{Use: "dql2nl", Short: "DQL to NL"})
+	copilot.AddCommand(&cobra.Command{Use: "nl2dql", Short: "NL to DQL", Run: run})
+	copilot.AddCommand(&cobra.Command{Use: "dql2nl", Short: "DQL to NL", Run: run})
 	exec.AddCommand(copilot)
 	root.AddCommand(exec)
 

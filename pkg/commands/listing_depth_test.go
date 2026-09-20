@@ -76,3 +76,31 @@ func TestBuild_ResourceFlagNames(t *testing.T) {
 	require.Equal(t, []string{"--mine", "-n/--name"}, listing.Verbs["get"].ResourceFlags["dashboards"])
 	require.Nil(t, NewBrief(listing).Verbs["get"].ResourceFlags, "--brief omits resource_flags")
 }
+
+// TestBuild_KeepsFlagsShadowingAGlobal covers the flags a command redefines
+// under a name the root already uses persistently. cobra binds the command's
+// own flag, so the catalog must describe that one — `dtctl diff --context` is a
+// line count, not the global context name.
+func TestBuild_KeepsFlagsShadowingAGlobal(t *testing.T) {
+	root := &cobra.Command{Use: "dtctl"}
+	root.PersistentFlags().String("context", "", "use a specific context")
+	root.PersistentFlags().Bool("dry-run", false, "print what would be done")
+
+	diff := &cobra.Command{Use: "diff", Short: "Diff", Run: run}
+	diff.Flags().Int("context", 3, "Number of context lines")
+	root.AddCommand(diff)
+
+	apply := &cobra.Command{Use: "apply", Short: "Apply", Run: run}
+	apply.Flags().Bool("dry-run", false, "preview changes without applying")
+	root.AddCommand(apply)
+
+	listing := Build(root)
+
+	require.Contains(t, listing.Verbs["diff"].Flags, "--context")
+	require.Equal(t, "integer", listing.Verbs["diff"].Flags["--context"].Type)
+	require.Contains(t, listing.Verbs["apply"].Flags, "--dry-run")
+
+	require.NotContains(t, listing.Verbs["diff"].Flags, "--dry-run",
+		"a global the command does not redefine stays in global_flags only")
+	require.Contains(t, listing.GlobalFlags, "--context")
+}
