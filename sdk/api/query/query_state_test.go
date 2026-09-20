@@ -53,6 +53,29 @@ func TestExecuteAndPoll_FailureStatesAreErrors(t *testing.T) {
 	}
 }
 
+// TestExecuteAndPoll_GoneResultIsRetryable pins what a live tenant actually
+// does: an expired or already consumed result comes back as HTTP 410
+// (QUERY_GONE), not as a RESULT_GONE state. It is the one failure that a
+// verbatim re-run fixes, so it must reach the caller as the retryable error.
+func TestExecuteAndPoll_GoneResultIsRetryable(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(Response{State: StateRunning, RequestToken: "tok"})
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusGone)
+		_, _ = w.Write([]byte(`{"error":{"message":"QUERY_GONE","details":{"errorType":"QUERY_GONE"}}}`))
+	})
+	h := NewHandler(newTestClient(t, mux))
+
+	_, err := h.ExecuteAndPoll(context.Background(), ExecuteRequest{Query: "fetch logs"}, nil)
+
+	assertStateError(t, err, StateResultGone)
+}
+
 func TestExecuteAndPoll_UnknownStateWithTokenIsPolled(t *testing.T) {
 	h, polls := stateServer(t, Response{State: "QUEUED", RequestToken: "tok"},
 		Response{State: "QUEUED", RequestToken: "tok"},

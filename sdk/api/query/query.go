@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -503,6 +504,13 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 			}
 			if pollCtx.Err() != nil && unknownState != "" {
 				return nil, &StateError{State: unknownState}
+			}
+			// An expired or already consumed result is reported as HTTP 410
+			// (QUERY_GONE), not as a RESULT_GONE state — verified against a
+			// live tenant. It is the one failure a caller can fix by simply
+			// running the query again, so it gets the retryable error.
+			if errors.As(pollErr, &apiErr) && apiErr.StatusCode == http.StatusGone {
+				return nil, &StateError{State: StateResultGone}
 			}
 			return nil, pollErr
 		}
