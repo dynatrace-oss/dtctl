@@ -405,9 +405,7 @@ cfg, err := LoadConfig()
 if err != nil { return err }
 
 // Safety check - REQUIRED
-checker, err := NewSafetyChecker(cfg)
-if err != nil { return err }
-if err := checker.CheckError(safety.OperationXXX, safety.OwnershipUnknown); err != nil {
+if err := CheckSafety(cfg, safety.OperationXXX, safety.OwnershipUnknown); err != nil {
     return err
 }
 
@@ -415,21 +413,47 @@ c, err := NewClientFromConfig(cfg)
 // ... proceed
 ```
 
+`SetupWithSafety(op)` is this pattern plus the client, for the common case where
+ownership is unknown. Either way the check goes through `CheckSafety` — **never
+call `checker.CheckError` from a command**. *Guard*: `go test ./cmd/ -run TestSafetyChecksGoThroughCheckSafety`
+
 **Operation types**: `OperationCreate`, `OperationUpdate`, `OperationDelete`, `OperationDeleteBucket`
 
-**Skip in dry-run**:
-```go
-if !dryRun {
-    checker, err := NewSafetyChecker(cfg)
-    // ... safety check
-}
-```
+### Dry runs are exempt, in one place
+
+`CheckSafety` returns nil under `--dry-run`, so a command needs **no** dry-run
+branch of its own around the check. A preview reads and writes nothing, so it is
+gated like a read, not like the mutation it describes — and `readonly` is
+precisely the context that wants a preview most: `dtctl get dashboard X` already
+succeeds there, so refusing the same GET under `delete --dry-run` would be
+inconsistent rather than safer.
+
+This used to be each command's own decision, and it split about evenly: `create
+bucket` previewed before checking, `create aws connection` checked first, for no
+reason either could state. Both spellings are gone. The exemption lives in
+`CheckSafety` and nowhere else.
+
+It is sound only because `--dry-run` is opt-in per command (`dryRunCommands` in
+`cmd/dryrun.go`): a command that reaches `CheckSafety` with `dryRun` set has a
+dry-run branch that returns before any write. Adding a command to
+`dryRunCommands` is what asserts that — so a command whose preview is not
+write-free does not belong on that list.
+
+*Guards*: `go test ./cmd/ -run TestDryRunNeedsNoSafetyLevel` (every cloud delete
+previews in a `readonly` context and sends no write) and
+`TestRealRunStillNeedsSafetyLevel` (the same command without the flag is still
+refused).
+
+`exec api` is the one command that consults the checker while `dryRun` is set:
+its preview *reports* the verdict ("Safety: BLOCKED in this context"), which is
+the opposite of acting on it.
 
 **Verification**:
 - [ ] Import `github.com/dynatrace-oss/dtctl/pkg/safety`
 - [ ] Check after `LoadConfig()`, before operations
 - [ ] Correct operation type
 - [ ] Test with `readonly` context (should block)
+- [ ] If the command takes `--dry-run`, its preview must send no write
 
 **Examples**: [cmd/edit.go](cmd/edit.go), [cmd/create.go](cmd/create.go), [cmd/apply.go](cmd/apply.go)
 

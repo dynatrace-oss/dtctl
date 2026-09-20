@@ -489,7 +489,10 @@ func TestMutatingVerbFilesPerformSafetyChecks(t *testing.T) {
 		"SetupClient()", "Setup()", "SetupWithSafety", "NewClientFromConfig(",
 	}
 	// SetupWithSafetyAndPrinter contains SetupWithSafety, so both are covered.
-	safetyCalls := []string{"NewSafetyChecker", "SetupWithSafety"}
+	// CheckSafety is the direct form: it is where the --dry-run exemption
+	// lives, so a command gates through it rather than through a checker of
+	// its own (TestSafetyChecksGoThroughCheckSafety).
+	safetyCalls := []string{"NewSafetyChecker", "SetupWithSafety", "CheckSafety("}
 
 	containsAny := func(s string, needles []string) bool {
 		for _, n := range needles {
@@ -525,7 +528,7 @@ func TestMutatingVerbFilesPerformSafetyChecks(t *testing.T) {
 		checked++
 		require.True(t, containsAny(content, safetyCalls),
 			"%s belongs to the mutating verb %q and builds a platform client, but performs no "+
-				"safety check (NewSafetyChecker or SetupWithSafety). Every command under a "+
+				"safety check (CheckSafety, SetupWithSafety or NewSafetyChecker). Every command under a "+
 				"mutating verb must gate on the safety level — see AGENTS.md 'CRITICAL: Safety Checks'.",
 			name, verb)
 	}

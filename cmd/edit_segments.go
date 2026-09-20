@@ -57,11 +57,7 @@ Examples:
 		ownership := safety.DetermineOwnership(seg.Owner, currentUserID)
 
 		// Safety check with actual ownership
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 

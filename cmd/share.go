@@ -100,13 +100,9 @@ Examples:
 		}
 
 		// Safety check with actual ownership - sharing modifies document permissions
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 
@@ -219,13 +215,9 @@ Examples:
 		}
 
 		// Safety check with actual ownership - unsharing modifies document permissions
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 

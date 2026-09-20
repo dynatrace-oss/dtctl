@@ -73,13 +73,9 @@ Examples:
 		}
 
 		// Safety check with actual ownership - restore modifies the workflow
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(wf.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 
@@ -158,13 +154,9 @@ Examples:
 		}
 
 		// Safety check with actual ownership - restore modifies the dashboard
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 
@@ -243,13 +235,9 @@ Examples:
 		}
 
 		// Safety check with actual ownership - restore modifies the notebook
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 
@@ -330,13 +318,9 @@ Examples:
 		}
 
 		// Safety check with actual ownership - restore modifies the document
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
 		}
 

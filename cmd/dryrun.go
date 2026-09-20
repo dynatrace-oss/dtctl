@@ -272,9 +272,33 @@ var rootDryRunFlag *pflag.Flag
 // dryRunUnavailableMessage is the one wording for "this command has no dry
 // run", whether the flag was rejected at parse time or at run time.
 func dryRunUnavailableMessage(cmd *cobra.Command) string {
-	return fmt.Sprintf(
-		"unknown flag --dry-run — '%s' has no dry run; to check a file or query without running it, use 'dtctl verify'",
-		cmd.CommandPath())
+	msg := fmt.Sprintf("unknown flag --dry-run — '%s' has no dry run", cmd.CommandPath())
+	if alt := verifyAlternativeFor(cmd); alt != "" {
+		msg += fmt.Sprintf("; to check it without running it, use '%s'", alt)
+	}
+	return msg
+}
+
+// verifyAlternativeFor names the `dtctl verify` subcommand that checks what
+// this command runs, or "" when none does.
+//
+// Every verify subcommand is named after the thing it checks, so the typed
+// command's own name is the lookup key: `query` and `exec analyzer` resolve to
+// `verify query` and `verify analyzer`, and a verify subcommand added later is
+// found without touching this function.
+//
+// The pointer is omitted rather than generalised because a wrong one costs the
+// caller a second failed command to discover it was wrong: `verify` has no
+// subcommand for a workflow or a login, so "use 'dtctl verify'" dead-ended
+// every caller it was written for.
+func verifyAlternativeFor(cmd *cobra.Command) string {
+	for _, sub := range verifyCmd.Commands() {
+		if sub == cmd || !sub.HasAlias(cmd.Name()) && sub.Name() != cmd.Name() {
+			continue
+		}
+		return sub.CommandPath()
+	}
+	return ""
 }
 
 // rejectUnimplementedDryRun fails a command that was given --dry-run but does

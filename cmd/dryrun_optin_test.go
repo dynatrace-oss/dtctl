@@ -172,3 +172,45 @@ func TestDeleteSLODryRunSendsNoMutatingRequest(t *testing.T) {
 	require.Contains(t, out, `Dry run: would delete SLO "Availability" (slo-1)`)
 	require.Empty(t, mutating)
 }
+
+// TestRejectionSuggestsVerifyOnlyWhenItExists pins that the rejection points at
+// a `dtctl verify` subcommand that is really there. The first wording sent
+// every command to "dtctl verify", which has nothing for a workflow or a login,
+// so the advice cost the caller a second failed command to disprove.
+func TestRejectionSuggestsVerifyOnlyWhenItExists(t *testing.T) {
+	restorePristineTree()
+
+	find := func(path ...string) *cobra.Command {
+		c, _, err := rootCmd.Find(path)
+		require.NoError(t, err)
+		require.Equal(t, path[len(path)-1], c.Name())
+		return c
+	}
+
+	for _, tc := range []struct {
+		name string
+		cmd  *cobra.Command
+		want string
+	}{
+		{"query has a verify", find("query"), "dtctl verify query"},
+		{"exec analyzer has a verify", find("exec", "analyzer"), "dtctl verify analyzer"},
+		{"exec workflow has none", find("exec", "workflow"), ""},
+		{"auth login has none", find("auth", "login"), ""},
+		{"verify query is not its own alternative", find("verify", "query"), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, verifyAlternativeFor(tc.cmd))
+
+			msg := dryRunUnavailableMessage(tc.cmd)
+			require.Contains(t, msg, "has no dry run")
+			// Assert on the suggestion clause, not on the string "dtctl
+			// verify": the command path of `verify query` contains it either
+			// way, and what matters is whether advice was appended at all.
+			if tc.want == "" {
+				require.NotContains(t, msg, "without running it")
+			} else {
+				require.Contains(t, msg, "use '"+tc.want+"'")
+			}
+		})
+	}
+}

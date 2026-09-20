@@ -1323,16 +1323,15 @@ func SetupClient() (*config.Config, *client.Client, error) {
 // check before the client is created. Use this for commands where ownership is unknown
 // (i.e., the resource doesn't need to be fetched first to determine the owner).
 // A Printer is not included because many mutating commands don't use one.
+//
+// Under --dry-run the check is skipped: see CheckSafety for why, and for the
+// invariant that makes it sound.
 func SetupWithSafety(op safety.Operation) (*config.Config, *client.Client, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, nil, err
 	}
-	checker, err := NewSafetyChecker(cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := checker.CheckError(op, safety.OwnershipUnknown); err != nil {
+	if err := CheckSafety(cfg, op, safety.OwnershipUnknown); err != nil {
 		return nil, nil, err
 	}
 	c, err := NewClientFromConfig(cfg)
@@ -1340,6 +1339,32 @@ func SetupWithSafety(op safety.Operation) (*config.Config, *client.Client, error
 		return nil, nil, err
 	}
 	return cfg, c, nil
+}
+
+// CheckSafety applies the context's safety level to a mutating operation --
+// and is the single place that exempts a dry run from it.
+//
+// A dry run reads to build its preview and writes nothing, so it is gated like
+// a read, not like the mutation it describes. Checking it would refuse the
+// preview in exactly the context that wants one most: `readonly` exists for
+// someone who wants to look without touching, and `dtctl get dashboard X`
+// already succeeds there, so refusing the same GET under `delete --dry-run`
+// would be inconsistent rather than safer.
+//
+// The exemption is sound only because --dry-run is opt-in per command
+// (dryRunCommands): a command that reaches this function with dryRun set has a
+// dry-run branch that returns before any write. TestDryRunNeedsNoSafetyLevel
+// holds that invariant by running every such command against a readonly
+// context and a mock environment whose writes fail.
+func CheckSafety(cfg *config.Config, op safety.Operation, ownership safety.ResourceOwnership) error {
+	if dryRun {
+		return nil
+	}
+	checker, err := NewSafetyChecker(cfg)
+	if err != nil {
+		return err
+	}
+	return checker.CheckError(op, ownership)
 }
 
 // SetupWithSafetyAndPrinter is SetupWithSafety plus a Printer, for mutating
@@ -1550,11 +1575,7 @@ func SetupAccountWithSafety(op safety.Operation) (*httpclient.Client, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	checker, err := NewSafetyChecker(cfg)
-	if err != nil {
-		return nil, "", err
-	}
-	if err := checker.CheckError(op, safety.OwnershipUnknown); err != nil {
+	if err := CheckSafety(cfg, op, safety.OwnershipUnknown); err != nil {
 		return nil, "", err
 	}
 	return setupAccountClient(cfg)

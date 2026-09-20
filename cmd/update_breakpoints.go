@@ -103,11 +103,7 @@ Examples:
 				return err
 			}
 
-			checker, err := NewSafetyChecker(cfg)
-			if err != nil {
-				return err
-			}
-			if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
+			if err := CheckSafety(cfg, safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
 				return err
 			}
 
@@ -201,11 +197,7 @@ Examples:
 			return err
 		}
 
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
-		if err := checker.CheckError(safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, safety.OwnershipUnknown); err != nil {
 			return err
 		}
 
