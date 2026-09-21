@@ -1,0 +1,24 @@
+version: 1
+enabled: true
+onboarding: future_changes
+approved_profile: default
+skip_drafts: true
+skip_bots: true
+
+conversation_aware:
+  capture: true
+  verify: true
+  pr_level: true
+  reply_trigger: false
+
+pr_review_learnings:
+  enabled: false
+  frequency: weekly
+
+large_pr_reviews:
+  enabled: false
+
+oversized_reviews:
+  acknowledged_projection:
+    enabled: false
+    excluded_paths: []
