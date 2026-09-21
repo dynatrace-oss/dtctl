@@ -332,17 +332,21 @@ func executeArgs(argv []string) int {
 		rootSpan.SetStatus(codes.Error, err.Error())
 		rootSpan.RecordError(err)
 
-		// Masked commands (profile mask, blocked-command filter) disable flag
-		// parsing so the guard is the only observable outcome — which also
-		// means --agent/--plain never reached the flag vars. Honor them from
-		// the raw argv so a machine caller still gets the structured envelope.
+		// Two failures leave --agent/--plain unread in the flag vars: masked
+		// commands (profile mask, blocked-command filter) disable flag parsing
+		// so the guard is the only observable outcome, and a flag error stops
+		// pflag before it reaches a mode flag given later on the line. Honor
+		// them from the raw argv so a machine caller still gets the structured
+		// envelope, wherever it put --agent.
 		structuredError := agentMode || plainMode
 		if !structuredError {
 			var maskedProfile *ProfileError
 			var maskedUnsupported *UnsupportedCommandError
 			var maskedStability *StabilityError
+			var unknownFlag *suggest.FlagError
 			if errors.As(err, &maskedProfile) || errors.As(err, &maskedUnsupported) ||
-				errors.As(err, &maskedStability) {
+				errors.As(err, &maskedStability) || errors.As(err, &unknownFlag) ||
+				errors.Is(err, errEmptyFlagValue) {
 				structuredError = hasRawFlag(spanArgs, "--agent") ||
 					hasShortFlagLetter(spanArgs, 'A') ||
 					hasRawFlag(spanArgs, "--plain")
@@ -427,18 +431,14 @@ func enhanceFlagError(cmd *cobra.Command, err error) error {
 	}
 
 	// An explicitly empty value for a flag that requires one (see
-	// rejectEmptyFlag). Typed like an unknown flag, so it exits with the usage
-	// code. pflag names the offending flag in the error it wraps around
-	// errEmptyFlagValue, so the flag comes from the error, not from the
+	// rejectEmptyFlag). pflag names the offending flag in the error it wraps
+	// around errEmptyFlagValue, so the flag comes from the error, not from the
 	// rendered message — which escapes a tab or a non-breaking space beyond
-	// recognition.
+	// recognition. The sentinel stays wrapped: it is what errorToDetail and
+	// exitCodeForError classify on.
 	var invalidValue *pflag.InvalidValueError
 	if errors.As(err, &invalidValue) && errors.Is(err, errEmptyFlagValue) {
-		name := invalidValue.GetFlag().Name
-		return &suggest.FlagError{
-			Flag:    name,
-			Message: fmt.Sprintf("--%s was given an empty value; pass a value or leave the flag out", name),
-		}
+		return fmt.Errorf("--%s %w; pass a value or leave the flag out", invalidValue.GetFlag().Name, errEmptyFlagValue)
 	}
 
 	return err
@@ -816,6 +816,16 @@ func errorToDetail(err error) *output.ErrorDetail {
 		return detail
 	}
 
+	// An empty value for a flag that needs one. The flag exists and is spelled
+	// right, so unknown_command's advice ("follow the did-you-mean") would
+	// mislead; the fix is in the caller's input.
+	if errors.Is(err, errEmptyFlagValue) {
+		return &output.ErrorDetail{
+			Code:    "validation_error",
+			Message: err.Error(),
+		}
+	}
+
 	// suggest.FlagError — unknown flag with "did you mean?" suggestion
 	var flagErr *suggest.FlagError
 	if errors.As(err, &flagErr) {
@@ -1107,6 +1117,10 @@ func exitCodeForError(err error) int {
 
 	var flagErr *suggest.FlagError
 	if errors.As(err, &flagErr) {
+		return client.ExitUsageError
+	}
+
+	if errors.Is(err, errEmptyFlagValue) {
 		return client.ExitUsageError
 	}
 

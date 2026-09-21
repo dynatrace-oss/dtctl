@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
-	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 )
 
 // TestEmptyFlagValueIsAUsageError covers the whole invocation: a live run
@@ -69,12 +70,11 @@ func TestEmptyFlagValueIsRejected(t *testing.T) {
 				t.Fatal("expected an error for an empty flag value, got nil")
 			}
 
-			var flagErr *suggest.FlagError
-			if !errors.As(err, &flagErr) {
-				t.Fatalf("error = %q (%T), want a *suggest.FlagError so the invocation exits with the usage code", err, err)
+			if !errors.Is(err, errEmptyFlagValue) {
+				t.Fatalf("error = %q (%T), want it to wrap errEmptyFlagValue so the invocation exits with the usage code", err, err)
 			}
-			if flagErr.Flag != tt.wantFlag {
-				t.Errorf("flag = %q, want %q", flagErr.Flag, tt.wantFlag)
+			if want := "--" + tt.wantFlag + " "; !strings.HasPrefix(err.Error(), want) {
+				t.Errorf("error = %q, want it to name the flag (prefix %q)", err, want)
 			}
 			if code := exitCodeForError(err); code != client.ExitUsageError {
 				t.Errorf("exit code = %d, want %d", code, client.ExitUsageError)
@@ -106,5 +106,51 @@ func TestUnknownFlagIsAUsageError(t *testing.T) {
 
 	if code := Run([]string{"--plain", "logs", "wfe", "exec-1", "--bogus"}, RunOptions{}); code != client.ExitUsageError {
 		t.Errorf("exit code = %d, want %d", code, client.ExitUsageError)
+	}
+}
+
+// TestFlagErrorEnvelope covers the agent side of a flag error. pflag stops at
+// the bad flag, so an --agent given after it never reaches the flag vars; the
+// envelope must not depend on where the caller put it. An empty value is a
+// validation_error: the flag exists, so unknown_command's did-you-mean advice
+// would send the caller looking for a flag it already spelled right.
+func TestFlagErrorEnvelope(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantCode string
+	}{
+		{"empty value, agent first", []string{"--agent", "logs", "wfe", "exec-1", "--task", ""}, "validation_error"},
+		{"empty value, agent last", []string{"logs", "wfe", "exec-1", "--task", "", "--agent"}, "validation_error"},
+		{"empty value, short agent last", []string{"logs", "wfe", "exec-1", "--task", "", "-A"}, "validation_error"},
+		{"unknown flag, agent last", []string{"logs", "wfe", "exec-1", "--bogus", "--agent"}, "unknown_command"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				resetFlagSet(logsWorkflowExecutionCmd.Flags())
+				resetFlagSet(rootCmd.PersistentFlags())
+			})
+
+			var code int
+			out := captureStdout(t, func() { code = Run(tt.args, RunOptions{}) })
+
+			if code != client.ExitUsageError {
+				t.Errorf("exit code = %d, want %d", code, client.ExitUsageError)
+			}
+			var resp struct {
+				OK    bool `json:"ok"`
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal([]byte(out), &resp); err != nil {
+				t.Fatalf("stdout is not an envelope: %v\n%s", err, out)
+			}
+			if resp.OK || resp.Error.Code != tt.wantCode {
+				t.Errorf("envelope ok=%v code=%q, want ok=false code=%q", resp.OK, resp.Error.Code, tt.wantCode)
+			}
+		})
 	}
 }
