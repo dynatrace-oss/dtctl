@@ -330,7 +330,7 @@ func init() {
 	applyCmd.Flags().String("share-environment", "", "share the applied notebook/dashboard with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")
 	applyCmd.Flags().Lookup("share-environment").NoOptDefVal = "read"
 
-	_ = applyCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(applyCmd, "file")
 }
 
 // validateShareEnvironmentValue rejects any --share-environment value outside

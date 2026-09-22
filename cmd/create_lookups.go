@@ -205,7 +205,7 @@ func init() {
 	createLookupCmd.Flags().Int("skip-records", 0, "number of records to skip (e.g., 1 for CSV headers)")
 	createLookupCmd.Flags().String("timezone", "UTC", "timezone for parsing time/date fields")
 	createLookupCmd.Flags().String("locale", "en_US", "locale for parsing locale-specific data")
-	_ = createLookupCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(createLookupCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of this command is

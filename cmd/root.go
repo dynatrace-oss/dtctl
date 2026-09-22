@@ -303,8 +303,14 @@ func executeArgs(argv []string) int {
 			}
 		}
 
-		// Enhance unknown flag errors with suggestions
-		if strings.Contains(errStr, "unknown flag") || strings.Contains(errStr, "unknown shorthand flag") {
+		// Enhance unknown flag errors with suggestions. A flag error the
+		// command's own FlagErrorFunc already typed is left alone: its message
+		// no longer matches cobra's raw wording, so re-running the enhancer
+		// would flatten *suggest.FlagError back to a plain error and cost the
+		// invocation its usage exit code.
+		var typedFlagErr *suggest.FlagError
+		if !errors.As(err, &typedFlagErr) &&
+			(strings.Contains(errStr, "unknown flag") || strings.Contains(errStr, "unknown shorthand flag")) {
 			err = enhanceFlagError(rootCmd, err)
 		}
 
@@ -326,17 +332,21 @@ func executeArgs(argv []string) int {
 		rootSpan.SetStatus(codes.Error, err.Error())
 		rootSpan.RecordError(err)
 
-		// Masked commands (profile mask, blocked-command filter) disable flag
-		// parsing so the guard is the only observable outcome — which also
-		// means --agent/--plain never reached the flag vars. Honor them from
-		// the raw argv so a machine caller still gets the structured envelope.
+		// Two failures leave --agent/--plain unread in the flag vars: masked
+		// commands (profile mask, blocked-command filter) disable flag parsing
+		// so the guard is the only observable outcome, and a flag error stops
+		// pflag before it reaches a mode flag given later on the line. Honor
+		// them from the raw argv so a machine caller still gets the structured
+		// envelope, wherever it put --agent.
 		structuredError := agentMode || plainMode
 		if !structuredError {
 			var maskedProfile *ProfileError
 			var maskedUnsupported *UnsupportedCommandError
 			var maskedStability *StabilityError
+			var unknownFlag *suggest.FlagError
 			if errors.As(err, &maskedProfile) || errors.As(err, &maskedUnsupported) ||
-				errors.As(err, &maskedStability) {
+				errors.As(err, &maskedStability) || errors.As(err, &unknownFlag) ||
+				errors.Is(err, errEmptyFlagValue) {
 				structuredError = hasRawFlag(spanArgs, "--agent") ||
 					hasShortFlagLetter(spanArgs, 'A') ||
 					hasRawFlag(spanArgs, "--plain")
@@ -418,6 +428,17 @@ func enhanceFlagError(cmd *cobra.Command, err error) error {
 		}
 		flags := collectFlags(cmd)
 		return suggest.ParseFlagError(errStr, flags)
+	}
+
+	// An explicitly empty value for a flag that requires one (see
+	// rejectEmptyFlag). pflag names the offending flag in the error it wraps
+	// around errEmptyFlagValue, so the flag comes from the error, not from the
+	// rendered message — which escapes a tab or a non-breaking space beyond
+	// recognition. The sentinel stays wrapped: it is what errorToDetail and
+	// exitCodeForError classify on.
+	var invalidValue *pflag.InvalidValueError
+	if errors.As(err, &invalidValue) && errors.Is(err, errEmptyFlagValue) {
+		return fmt.Errorf("--%s %w; pass a value or leave the flag out", invalidValue.GetFlag().Name, errEmptyFlagValue)
 	}
 
 	return err
@@ -795,6 +816,16 @@ func errorToDetail(err error) *output.ErrorDetail {
 		return detail
 	}
 
+	// An empty value for a flag that needs one. The flag exists and is spelled
+	// right, so unknown_command's advice ("follow the did-you-mean") would
+	// mislead; the fix is in the caller's input.
+	if errors.Is(err, errEmptyFlagValue) {
+		return &output.ErrorDetail{
+			Code:    "validation_error",
+			Message: err.Error(),
+		}
+	}
+
 	// suggest.FlagError — unknown flag with "did you mean?" suggestion
 	var flagErr *suggest.FlagError
 	if errors.As(err, &flagErr) {
@@ -1086,6 +1117,10 @@ func exitCodeForError(err error) int {
 
 	var flagErr *suggest.FlagError
 	if errors.As(err, &flagErr) {
+		return client.ExitUsageError
+	}
+
+	if errors.Is(err, errEmptyFlagValue) {
 		return client.ExitUsageError
 	}
 
@@ -1596,6 +1631,13 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().BoolVar(&noAgent, "no-agent", false, "disable auto-detected agent mode")
 	rootCmd.PersistentFlags().BoolVar(&checkScopes, "check-scopes", false, "check the active token has the scopes this command requires, then exit without running it")
 	rootCmd.PersistentFlags().Int64Var(&chunkSize, "chunk-size", 500, "Paginate through all results in chunks of this size. 0 returns only the first page.")
+
+	// Both flags read as "absent" when empty, so `--context "$CTX"` with an
+	// unset CTX would silently run against the default context — the worst
+	// form of the bug rejectEmptyFlag exists for, since the command still
+	// succeeds, against the wrong tenant.
+	rejectEmptyFlag(rootCmd, "context")
+	rejectEmptyFlag(rootCmd, "config")
 
 	// Bind flags to viper
 	_ = viper.BindPFlag("context", rootCmd.PersistentFlags().Lookup("context"))

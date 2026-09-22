@@ -306,8 +306,8 @@ func init() {
 	stability.MarkFlag(createAzureMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
 	stability.MarkFlag(createAzureMonitoringConfigCmd, "featuresets", stability.Experimental, pre10Since)
 	addCentralEnrichmentFlag(createAzureMonitoringConfigCmd, &createAzureMonitoringConfigCentral)
-	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("name")
-	_ = createAzureMonitoringConfigCmd.MarkFlagRequired("credentials")
+	markFlagRequiredNonEmpty(createAzureMonitoringConfigCmd, "name")
+	markFlagRequiredNonEmpty(createAzureMonitoringConfigCmd, "credentials")
 }
 
 // Declared stable: the invocation and output contract of these commands is

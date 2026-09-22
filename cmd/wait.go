@@ -220,7 +220,7 @@ func init() {
 
 	// Condition flag (required)
 	waitQueryCmd.Flags().String("for", "", "condition to wait for (required: count=N, count-gte=N, count-gt=N, count-lte=N, count-lt=N, any, none)")
-	_ = waitQueryCmd.MarkFlagRequired("for")
+	markFlagRequiredNonEmpty(waitQueryCmd, "for")
 
 	// Query input flags
 	waitQueryCmd.Flags().StringP("file", "f", "", "read query from file (use - for stdin)")

@@ -268,8 +268,8 @@ func init() {
 	stability.MarkFlag(createGCPMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
 	stability.MarkFlag(createGCPMonitoringConfigCmd, "featuresets", stability.Experimental, pre10Since)
 	addCentralEnrichmentFlag(createGCPMonitoringConfigCmd, &createGCPMonitoringConfigCentral)
-	_ = createGCPMonitoringConfigCmd.MarkFlagRequired("name")
-	_ = createGCPMonitoringConfigCmd.MarkFlagRequired("credentials")
+	markFlagRequiredNonEmpty(createGCPMonitoringConfigCmd, "name")
+	markFlagRequiredNonEmpty(createGCPMonitoringConfigCmd, "credentials")
 }
 
 // Declared stable: the invocation and output contract of these commands is

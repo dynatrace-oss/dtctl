@@ -139,9 +139,9 @@ func init() {
 	createSettingsCmd.Flags().String("scope", "", "scope for the settings object (required)")
 	createSettingsCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	createSettingsCmd.Flags().Bool("validate-only", false, "validate the settings object against the API without creating it")
-	_ = createSettingsCmd.MarkFlagRequired("file")
-	_ = createSettingsCmd.MarkFlagRequired("schema")
-	_ = createSettingsCmd.MarkFlagRequired("scope")
+	markFlagRequiredNonEmpty(createSettingsCmd, "file")
+	markFlagRequiredNonEmpty(createSettingsCmd, "schema")
+	markFlagRequiredNonEmpty(createSettingsCmd, "scope")
 }
 
 // Declared stable: the invocation and output contract of this command is

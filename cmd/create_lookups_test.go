@@ -23,11 +23,7 @@ func setCreateLookupFlags(t *testing.T, file string) {
 			t.Fatalf("set --%s: %v", name, err)
 		}
 	}
-	t.Cleanup(func() {
-		for name := range flags {
-			_ = createLookupCmd.Flags().Set(name, "")
-		}
-	})
+	t.Cleanup(func() { resetFlagSet(createLookupCmd.Flags()) })
 }
 
 // TestCreateLookupDryRun_ReportsAutoDetectedPattern covers the dry-run

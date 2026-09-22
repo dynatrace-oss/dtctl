@@ -98,7 +98,7 @@ func init() {
 	// SLO flags
 	createSLOCmd.Flags().StringP("file", "f", "", "file containing SLO definition (required)")
 	createSLOCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	_ = createSLOCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(createSLOCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of this command is

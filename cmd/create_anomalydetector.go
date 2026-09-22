@@ -165,7 +165,7 @@ func printDryRunAnomalyDetector(body map[string]any) {
 func init() {
 	createAnomalyDetectorCmd.Flags().StringP("file", "f", "", "file containing anomaly detector definition (required)")
 	createAnomalyDetectorCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	_ = createAnomalyDetectorCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(createAnomalyDetectorCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of this command is

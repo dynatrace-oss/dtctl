@@ -427,7 +427,7 @@ func init() {
 	createDocumentCmd.Flags().String("id", "", "custom ID for the document (auto-generated if not provided)")
 	createDocumentCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	createDocumentCmd.Flags().StringArray("label", []string{}, "classification label to attach (repeatable); falls back to labels in the payload")
-	_ = createDocumentCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(createDocumentCmd, "file")
 
 	// Notebook flags
 	createNotebookCmd.Flags().StringP("file", "f", "", "file containing notebook definition (required)")
@@ -435,7 +435,7 @@ func init() {
 	createNotebookCmd.Flags().String("description", "", "description for the notebook")
 	createNotebookCmd.Flags().String("id", "", "custom ID for the notebook (auto-generated if not provided)")
 	createNotebookCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	_ = createNotebookCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(createNotebookCmd, "file")
 
 	// Dashboard flags
 	createDashboardCmd.Flags().StringP("file", "f", "", "file containing dashboard definition (required)")
@@ -443,7 +443,7 @@ func init() {
 	createDashboardCmd.Flags().String("description", "", "description for the dashboard")
 	createDashboardCmd.Flags().String("id", "", "custom ID for the dashboard (auto-generated if not provided)")
 	createDashboardCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
-	_ = createDashboardCmd.MarkFlagRequired("file")
+	markFlagRequiredNonEmpty(createDashboardCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of these commands is

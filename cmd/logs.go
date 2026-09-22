@@ -215,6 +215,7 @@ func init() {
 	rootCmd.AddCommand(logsCmd)
 	logsCmd.AddCommand(logsWorkflowExecutionCmd)
 	logsWorkflowExecutionCmd.Flags().StringVarP(&taskName, "task", "t", "", "Get logs for a specific task")
+	rejectEmptyFlag(logsWorkflowExecutionCmd, "task")
 	logsWorkflowExecutionCmd.Flags().BoolVarP(&followLogs, "follow", "f", false, "Follow logs in real-time until execution completes")
 	// -f is reserved for --file in 1.0 (contrib breaking-changes/short-flag-f.md).
 	stability.MarkFlag(logsWorkflowExecutionCmd, "follow", stability.Experimental, pre10Since)
