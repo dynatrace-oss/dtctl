@@ -10,7 +10,9 @@
 
 **Your Dynatrace platform, one command away.**
 
-`dtctl` is a CLI for the Dynatrace platform. Manage workflows, dashboards, queries, and more from your terminal or let AI agents do it for you. Its predictable verb-noun syntax (inspired by `kubectl`) makes it easy for both humans and AI agents to operate.
+`dtctl` is a CLI for **Dynatrace SaaS**. Manage workflows, dashboards, queries, and more from your terminal or let AI agents do it for you. Its predictable verb-noun syntax (inspired by `kubectl`) makes it easy for both humans and AI agents to operate.
+
+> Looking for something else? [dtmgd](https://github.com/dynatrace-oss/dtmgd) covers Dynatrace Managed, and [dtwiz](https://github.com/dynatrace-oss/dtwiz) helps with Dynatrace setup and onboarding.
 
 ```bash
 dtctl get workflows                           # List all workflows
@@ -22,7 +24,7 @@ dtctl exec copilot nl2dql "error logs from last hour"
 
 ![dtctl dashboard workflow demo](docs/assets/dtctl-1.gif)
 
-> **Early Development**: This project is in active development. If you encounter any bugs or issues, please [file a GitHub issue](https://github.com/dynatrace-oss/dtctl/issues/new). Contributions and feedback are welcome!
+> **Active Development**: dtctl has stabilized considerably, but some commands and flags are still `experimental` or `development` tier (see [Stability](docs/STABILITY.md)). If you encounter any bugs or issues, please [file a GitHub issue](https://github.com/dynatrace-oss/dtctl/issues/new). Contributions and feedback are welcome!
 
 **[Documentation](docs/README.md)** · **[Installation](docs/INSTALLATION.md)** · **[Quick Start](docs/QUICK_START.md)** · **[Command Reference](docs/COMMANDS.md)**
 
