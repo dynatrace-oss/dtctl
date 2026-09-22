@@ -63,6 +63,14 @@ ERR001,Database connection timeout,critical,page-oncall
 ERR002,Rate limit exceeded,warning,notify-slack
 ```
 
+`-f -` reads the data from standard input, so a generated table does not have to be written to disk first:
+
+```bash
+generate-error-codes | dtctl create lookup -f - \
+  --path /lookups/production/error_codes \
+  --lookup-field code
+```
+
 For non-CSV formats, specify a custom parse pattern:
 
 ```bash

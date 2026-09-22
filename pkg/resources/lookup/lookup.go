@@ -4,16 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime/multipart"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // Handler handles lookup table resources
@@ -56,8 +53,9 @@ type CreateRequest struct {
 	Timezone       string
 	Locale         string
 	Overwrite      bool
-	DataSource     string // Path to data file or "-" for stdin
-	DataContent    []byte // Raw data content (if not from file)
+	// DataContent is the payload to upload, and is required. Reading it from
+	// a file or from stdin is the caller's job: this package does no file I/O.
+	DataContent []byte
 }
 
 // UploadRequest represents the JSON request body for upload
@@ -335,26 +333,9 @@ func (h *Handler) Create(req CreateRequest) (*UploadResponse, error) {
 		return nil, err
 	}
 
-	// Read data content
-	var dataContent []byte
-	var err error
-
-	switch {
-	case len(req.DataContent) > 0:
-		dataContent = req.DataContent
-	case req.DataSource != "":
-		if req.DataSource == "-" {
-			// Read from stdin
-			dataContent, err = io.ReadAll(os.Stdin)
-		} else {
-			// Read from file
-			dataContent, err = vfs.ReadFile(req.DataSource)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to read data: %w", err)
-		}
-	default:
-		return nil, fmt.Errorf("no data source specified")
+	dataContent := req.DataContent
+	if len(dataContent) == 0 {
+		return nil, fmt.Errorf("no data content specified")
 	}
 
 	// Auto-detect parse pattern for CSV if not specified

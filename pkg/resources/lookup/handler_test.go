@@ -143,16 +143,15 @@ func TestCreate_InvalidPath(t *testing.T) {
 	}
 }
 
-func TestCreate_NoDataSource(t *testing.T) {
+func TestCreate_NoDataContent(t *testing.T) {
 	h, cleanup := newLookupTestHandler(t, http.NewServeMux())
 	defer cleanup()
 
 	_, err := h.Create(CreateRequest{
 		FilePath: "/lookups/test.csv",
-		// No DataContent, no DataSource
 	})
 	if err == nil {
-		t.Fatal("expected error when no data source, got nil")
+		t.Fatal("expected error when no data content, got nil")
 	}
 }
 
