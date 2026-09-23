@@ -40,6 +40,10 @@ Examples:
 
   # Share with both users and groups
   dtctl share document my-dashboard-id --user user1 --group group1
+
+  # Share without notifying the recipients (sharing with a group notifies
+  # every member of the group by default)
+  dtctl share document my-dashboard-id --group group-sso-id --no-notify
 `,
 	Aliases: []string{"doc"},
 	Args:    cobra.ExactArgs(1),
@@ -48,6 +52,7 @@ Examples:
 		users, _ := cmd.Flags().GetStringArray("user")
 		groups, _ := cmd.Flags().GetStringArray("group")
 		access, _ := cmd.Flags().GetString("access")
+		noNotify, _ := cmd.Flags().GetBool("no-notify")
 
 		if len(users) == 0 && len(groups) == 0 {
 			return fmt.Errorf("at least one --user or --group is required")
@@ -73,7 +78,8 @@ Examples:
 					documentID, len(recipients), access).
 				Detail("document", "%s", documentID).
 				Detail("access", "%s", access).
-				Detail("recipients", "%d", len(recipients))
+				Detail("recipients", "%d", len(recipients)).
+				Detail("notify", "%t", !noNotify)
 			for _, r := range recipients {
 				report.Linef("  - %s: %s", r.Type, r.ID)
 			}
@@ -120,7 +126,8 @@ Examples:
 
 		if existingShare != nil {
 			// Add recipients to existing share
-			err = handler.AddDirectShareRecipients(existingShare.ID, recipients)
+			err = handler.AddDirectShareRecipientsWithOptions(existingShare.ID, recipients,
+				document.AddDirectShareRecipientsOptions{SuppressNotification: noNotify})
 			if err != nil {
 				return fmt.Errorf("failed to add recipients to share: %w", err)
 			}
@@ -129,9 +136,10 @@ Examples:
 		} else {
 			// Create new share
 			share, err := handler.CreateDirectShare(document.CreateDirectShareRequest{
-				DocumentID: documentID,
-				Access:     access,
-				Recipients: recipients,
+				DocumentID:           documentID,
+				Access:               access,
+				Recipients:           recipients,
+				SuppressNotification: noNotify,
 			})
 			if err != nil {
 				return fmt.Errorf("failed to create share: %w", err)
@@ -325,6 +333,7 @@ func init() {
 		cmd.Flags().StringArray("user", []string{}, "SSO user ID to share with (can be specified multiple times)")
 		cmd.Flags().StringArray("group", []string{}, "SSO group ID to share with (can be specified multiple times)")
 		cmd.Flags().String("access", "read", "access level: 'read' or 'read-write'")
+		cmd.Flags().Bool("no-notify", false, "do not notify recipients of the share (a group recipient notifies every member)")
 	}
 
 	// Unshare flags (apply to all unshare subcommands)
@@ -358,4 +367,8 @@ func init() {
 	stability.MarkStable(unshareDashboardCmd)
 	stability.MarkStable(unshareDocumentCmd)
 	stability.MarkStable(unshareNotebookCmd)
+
+	for _, cmd := range []*cobra.Command{shareDocumentCmd, shareNotebookCmd, shareDashboardCmd} {
+		stability.MarkFlag(cmd, "no-notify", stability.Experimental, "0.40.0")
+	}
 }
