@@ -265,6 +265,9 @@ type (
 	SnapshotModInfo               = sdkdocument.SnapshotModInfo
 )
 
+// AddDirectShareRecipientsOptions re-exports the SDK options for adding share recipients.
+type AddDirectShareRecipientsOptions = sdkdocument.AddDirectShareRecipientsOptions
+
 // Re-export SDK sentinel errors.
 var (
 	ErrShareConflict   = sdkdocument.ErrShareConflict
@@ -421,6 +424,12 @@ func (h *Handler) DeleteDirectShare(shareID string) error {
 // AddDirectShareRecipients adds recipients to a direct share.
 func (h *Handler) AddDirectShareRecipients(shareID string, recipients []SsoEntity) error {
 	return h.sdk.AddDirectShareRecipients(context.Background(), shareID, recipients)
+}
+
+// AddDirectShareRecipientsWithOptions adds recipients to a direct share, honoring opts.
+func (h *Handler) AddDirectShareRecipientsWithOptions(shareID string, recipients []SsoEntity,
+	opts AddDirectShareRecipientsOptions) error {
+	return h.sdk.AddDirectShareRecipientsWithOptions(context.Background(), shareID, recipients, opts)
 }
 
 // RemoveDirectShareRecipients removes recipients from a direct share.

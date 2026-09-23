@@ -609,13 +609,33 @@ type CreateDirectShareRequest struct {
 	DocumentID string      `json:"documentId"`
 	Access     string      `json:"access"` // "read" or "read-write"
 	Recipients []SsoEntity `json:"recipients"`
+
+	// SuppressNotification stops the API from notifying the recipients. It is
+	// sent as a query parameter, not in the body. The API notifies by default,
+	// and a group recipient means every member of the group.
+	SuppressNotification bool `json:"-"`
+}
+
+// AddDirectShareRecipientsOptions controls side effects of adding recipients.
+type AddDirectShareRecipientsOptions struct {
+	// SuppressNotification stops the API from notifying the added recipients.
+	SuppressNotification bool
+}
+
+// setSendNotification opts a direct-share request out of recipient
+// notifications. The API default (send-notification=true) is left implicit
+// otherwise, so callers that never ask get the server's behavior unchanged.
+func setSendNotification(req *resty.Request, suppress bool) {
+	if suppress {
+		req.SetQueryParam("send-notification", "false")
+	}
 }
 
 // CreateDirectShare creates a direct share for a document
 func (h *Handler) CreateDirectShare(ctx context.Context, req CreateDirectShareRequest) (*DirectShare, error) {
-	resp, err := h.client.HTTP().R().SetContext(ctx).
-		SetBody(req).
-		Post("/platform/document/v1/direct-shares")
+	r := h.client.HTTP().R().SetContext(ctx).SetBody(req)
+	setSendNotification(r, req.SuppressNotification)
+	resp, err := r.Post("/platform/document/v1/direct-shares")
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create direct share: %w", err)
@@ -708,13 +728,20 @@ func (h *Handler) DeleteDirectShare(ctx context.Context, shareID string) error {
 
 // AddDirectShareRecipients adds recipients to a direct share
 func (h *Handler) AddDirectShareRecipients(ctx context.Context, shareID string, recipients []SsoEntity) error {
+	return h.AddDirectShareRecipientsWithOptions(ctx, shareID, recipients, AddDirectShareRecipientsOptions{})
+}
+
+// AddDirectShareRecipientsWithOptions adds recipients to a direct share,
+// honoring opts (for example, suppressing recipient notifications).
+func (h *Handler) AddDirectShareRecipientsWithOptions(ctx context.Context, shareID string, recipients []SsoEntity,
+	opts AddDirectShareRecipientsOptions) error {
 	body := map[string]interface{}{
 		"recipients": recipients,
 	}
 
-	resp, err := h.client.HTTP().R().SetContext(ctx).
-		SetBody(body).
-		Post(fmt.Sprintf("/platform/document/v1/direct-shares/%s/recipients/add", url.PathEscape(shareID)))
+	r := h.client.HTTP().R().SetContext(ctx).SetBody(body)
+	setSendNotification(r, opts.SuppressNotification)
+	resp, err := r.Post(fmt.Sprintf("/platform/document/v1/direct-shares/%s/recipients/add", url.PathEscape(shareID)))
 
 	if err != nil {
 		return fmt.Errorf("failed to add recipients: %w", err)

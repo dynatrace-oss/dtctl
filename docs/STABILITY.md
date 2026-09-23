@@ -167,7 +167,7 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 - commands: 269 stable, 15 experimental, 11 development
 - global flags (accepted on every command): 12
-- entries below (commands + flags): 841
+- entries below (commands + flags): 844
 
 ## Surface
 
@@ -864,14 +864,17 @@ share                                stable
 share dashboard                      stable
   --access                           stable
   --group                            stable
+  --no-notify                        experimental  since 0.40.0
   --user                             stable
 share document                       stable
   --access                           stable
   --group                            stable
+  --no-notify                        experimental  since 0.40.0
   --user                             stable
 share notebook                       stable
   --access                           stable
   --group                            stable
+  --no-notify                        experimental  since 0.40.0
   --user                             stable
 skills                               stable
 skills install                       stable

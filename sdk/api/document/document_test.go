@@ -318,3 +318,60 @@ func TestDeleteEnvironmentShare(t *testing.T) {
 		t.Fatalf("DeleteEnvironmentShare() error: %v", err)
 	}
 }
+
+// TestDirectShareSendNotification pins the one lever the API offers against
+// notifying recipients: send-notification=false is sent only when asked for, on
+// both calls that add recipients, and the API default is otherwise left alone.
+func TestDirectShareSendNotification(t *testing.T) {
+	tests := []struct {
+		name     string
+		suppress bool
+		want     string
+	}{
+		{name: "default leaves the API default", suppress: false, want: ""},
+		{name: "suppress sends false", suppress: true, want: "false"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := map[string]string{}
+			mux := http.NewServeMux()
+			mux.HandleFunc("/platform/document/v1/direct-shares", func(w http.ResponseWriter, r *http.Request) {
+				got["create"] = r.URL.Query().Get("send-notification")
+				var body map[string]any
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				if _, leaked := body["SuppressNotification"]; leaked {
+					t.Error("SuppressNotification leaked into the request body")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"id":"share-1","documentId":"doc-123","access":["read"]}`))
+			})
+			mux.HandleFunc("/platform/document/v1/direct-shares/share-1/recipients/add", func(w http.ResponseWriter, r *http.Request) {
+				got["add"] = r.URL.Query().Get("send-notification")
+				w.WriteHeader(http.StatusNoContent)
+			})
+
+			h := NewHandler(newTestClient(t, mux))
+			recipients := []SsoEntity{{ID: "group-1", Type: "group"}}
+			if _, err := h.CreateDirectShare(context.Background(), CreateDirectShareRequest{
+				DocumentID:           "doc-123",
+				Access:               "read",
+				Recipients:           recipients,
+				SuppressNotification: tt.suppress,
+			}); err != nil {
+				t.Fatalf("CreateDirectShare() error: %v", err)
+			}
+			if err := h.AddDirectShareRecipientsWithOptions(context.Background(), "share-1", recipients,
+				AddDirectShareRecipientsOptions{SuppressNotification: tt.suppress}); err != nil {
+				t.Fatalf("AddDirectShareRecipientsWithOptions() error: %v", err)
+			}
+
+			for _, call := range []string{"create", "add"} {
+				if got[call] != tt.want {
+					t.Errorf("%s: send-notification = %q, want %q", call, got[call], tt.want)
+				}
+			}
+		})
+	}
+}
