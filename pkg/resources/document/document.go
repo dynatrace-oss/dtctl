@@ -251,22 +251,20 @@ func fromSDKSnapshotList(l *sdkdocument.SnapshotList) *SnapshotList {
 
 // Re-export SDK types that don't have table tags (pure data types).
 type (
-	DocumentMetadata              = sdkdocument.DocumentMetadata
-	DocumentList                  = sdkdocument.DocumentList
-	DocumentFilters               = sdkdocument.DocumentFilters
-	ModificationInfo              = sdkdocument.ModificationInfo
-	ShareInfo                     = sdkdocument.ShareInfo
-	UserContext                   = sdkdocument.UserContext
-	CreateRequest                 = sdkdocument.CreateRequest
-	UpdateRequest                 = sdkdocument.UpdateRequest
-	SsoEntity                     = sdkdocument.SsoEntity
-	CreateDirectShareRequest      = sdkdocument.CreateDirectShareRequest
-	CreateEnvironmentShareRequest = sdkdocument.CreateEnvironmentShareRequest
-	SnapshotModInfo               = sdkdocument.SnapshotModInfo
+	DocumentMetadata                = sdkdocument.DocumentMetadata
+	DocumentList                    = sdkdocument.DocumentList
+	DocumentFilters                 = sdkdocument.DocumentFilters
+	ModificationInfo                = sdkdocument.ModificationInfo
+	ShareInfo                       = sdkdocument.ShareInfo
+	UserContext                     = sdkdocument.UserContext
+	CreateRequest                   = sdkdocument.CreateRequest
+	UpdateRequest                   = sdkdocument.UpdateRequest
+	SsoEntity                       = sdkdocument.SsoEntity
+	CreateDirectShareRequest        = sdkdocument.CreateDirectShareRequest
+	AddDirectShareRecipientsOptions = sdkdocument.AddDirectShareRecipientsOptions
+	CreateEnvironmentShareRequest   = sdkdocument.CreateEnvironmentShareRequest
+	SnapshotModInfo                 = sdkdocument.SnapshotModInfo
 )
-
-// AddDirectShareRecipientsOptions re-exports the SDK options for adding share recipients.
-type AddDirectShareRecipientsOptions = sdkdocument.AddDirectShareRecipientsOptions
 
 // Re-export SDK sentinel errors.
 var (
