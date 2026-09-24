@@ -186,8 +186,8 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 ## Summary
 
 - commands: 269 stable, 15 experimental, 11 development
-- global flags (accepted on every command): 12
-- entries below (commands + flags): 927
+- global flags (accepted on every command): 11
+- entries below (commands + flags): 926
 
 ## Surface
 
@@ -199,7 +199,6 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
   --config                           stable
   --context                          stable
   --debug                            stable
-  --dry-run                          stable
   --jq                               stable
   --no-agent                         stable
   --output                           stable

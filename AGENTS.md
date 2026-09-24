@@ -185,15 +185,18 @@ weaker. CI runs it on every PR.
 
 The manifest also lists the root command's persistent flags under a synthetic
 `(global)` group. A flag that appears nowhere in the file would be stable by
-omission — the one tier nobody chose — so `--agent`, `--dry-run`, `--jq` and the
-rest are on the record too, and the floor enforces them: it checks the
-persistent flags a command *inherits*, on the command the caller typed, since
-`rootCmd`'s `RunE` never runs for `dtctl get workflows --dry-run`.
+omission — the one tier nobody chose — so `--agent`, `--jq` and the rest are on
+the record too, and the floor enforces them: it checks the persistent flags a
+command *inherits*, on the command the caller typed, since `rootCmd`'s `RunE`
+never runs for `dtctl get workflows --jq .`. A *hidden* persistent flag is left
+out of the group: the root's hidden `--dry-run` only lets cobra parse the flag
+ahead of the subcommand, and each command that implements a dry run declares
+its own.
 
 One consequence is worth knowing before you reach for `MarkFlag` on a global
 flag: cobra hands every subcommand the same `pflag.Flag` pointer the root
 declared, so a global flag has exactly one tier for the whole tree. There is no
-such thing as demoting `--dry-run` on `get` but not on `apply`.
+such thing as demoting `--jq` on `get` but not on `apply`.
 
 Enforcement is a five-stage pipeline that only ever *narrows* the surface, so
 "which axis wins" has a structural answer:

@@ -563,6 +563,7 @@ type flagInfo struct {
 	// annotation at all". The two resolve to the same level but mean different
 	// things to the lint.
 	declared bool
+	hidden   bool
 }
 
 // visitFlags invokes fn for each of a command's local (non-inherited) flags.
@@ -578,6 +579,7 @@ func visitFlags(cmd *cobra.Command, fn func(flagInfo)) {
 			level:    flagLevel(f.Annotations),
 			since:    flagSince(f.Annotations),
 			declared: len(f.Annotations[AnnotationLevel]) > 0,
+			hidden:   f.Hidden,
 		})
 	})
 }
