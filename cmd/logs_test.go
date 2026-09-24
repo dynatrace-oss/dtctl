@@ -22,7 +22,14 @@ import (
 // reports RUNNING for the first runningPolls state checks and SUCCESS after.
 func newTaskLogEnv(t *testing.T, step2Status int, runningPolls int32) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
-	var stateChecks atomic.Int32
+	return newRecoveringTaskLogEnv(t, step2Status, runningPolls, -1)
+}
+
+// newRecoveringTaskLogEnv is newTaskLogEnv whose step2 log fails only for its
+// first step2Failures fetches (-1: always) and then answers "step2 output".
+func newRecoveringTaskLogEnv(t *testing.T, step2Status int, runningPolls, step2Failures int32) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var stateChecks, step2Fetches atomic.Int32
 	now := time.Now().UTC().Format(time.RFC3339)
 	later := time.Now().Add(time.Second).UTC().Format(time.RFC3339)
 	const base = "/platform/automation/v1/executions/exec-1"
@@ -44,6 +51,10 @@ func newTaskLogEnv(t *testing.T, step2Status int, runningPolls int32) (*httptest
 		case base + "/tasks/step1/log":
 			fmt.Fprint(w, `"step1 output\n"`)
 		case base + "/tasks/step2/log":
+			if n := step2Fetches.Add(1); step2Failures >= 0 && n > step2Failures {
+				fmt.Fprint(w, `"step2 output\n"`)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(step2Status)
 			fmt.Fprint(w, `{"error":{"message":"step2 refused"}}`)
@@ -87,7 +98,7 @@ func TestLogsWorkflowExecution_TaskLogFailureFailsAfterPrinting(t *testing.T) {
 }
 
 func TestLogsWorkflowExecution_TaskLogFailureAgentEnvelope(t *testing.T) {
-	srv, _ := newTaskLogEnv(t, http.StatusInternalServerError, 0)
+	srv, _ := newTaskLogEnv(t, http.StatusForbidden, 0)
 
 	code, stdout, _ := runLogs(t, srv, "-A", "logs", "wfe", "exec-1", "--tasks")
 
@@ -131,4 +142,43 @@ func TestLogsWorkflowExecution_FollowWarnsAndKeepsStreaming(t *testing.T) {
 	require.Equal(t, 1, strings.Count(stderr, "Warning:"), "one warning per distinct failure, not per poll:\n%s", stderr)
 	require.Equal(t, client.ExitError, code, stdout)
 	require.Contains(t, stderr, "could not fetch the log of 1 of 2 tasks")
+}
+
+// A task log that failed on an earlier poll and is fetched later changes the
+// text in the middle. The stream cannot take back what it printed, so it prints
+// the changed task again, header first, instead of a misaligned tail.
+func TestLogsWorkflowExecution_FollowReprintsRecoveredTask(t *testing.T) {
+	orig := followPollInterval
+	followPollInterval = time.Millisecond
+	t.Cleanup(func() { followPollInterval = orig })
+	srv, _ := newRecoveringTaskLogEnv(t, http.StatusForbidden, 1, 1)
+
+	code, stdout, _ := runLogs(t, srv, "logs", "wfe", "exec-1", "--tasks", "--follow", "--no-agent")
+
+	require.Zero(t, code, stdout)
+	require.Contains(t, stdout, "=== Task: step2 [SUCCESS] ===\n(failed to fetch log:")
+	require.Contains(t, stdout, "=== Task: step2 [SUCCESS] ===\nstep2 output\n")
+	require.Equal(t, 1, strings.Count(stdout, "step1 output"), "unchanged tasks are not printed again:\n%s", stdout)
+}
+
+func TestNextFollowChunk(t *testing.T) {
+	const a = "=== Task: a [SUCCESS] ===\nA\n"
+	const failedB = "\n=== Task: b [RUNNING] ===\n(failed to fetch log: boom)\n"
+	const b = "\n=== Task: b [RUNNING] ===\nB\n"
+	tests := []struct {
+		name, printed, logs, want string
+	}{
+		{"first poll", "", a, a},
+		{"appended", a, a + b, b},
+		{"no change", a + b, a + b, ""},
+		{"shorter, still a prefix", a + b, a, ""},
+		{"task section replaced", a + failedB, a + b, "=== Task: b [RUNNING] ===\nB\n"},
+		{"first section replaced", "=== Task: a [RUNNING] ===\nx\n", a, a},
+		{"diverged in the first line", "=== Task: a", "xyz", "xyz"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, nextFollowChunk(tt.printed, tt.logs))
+		})
+	}
 }

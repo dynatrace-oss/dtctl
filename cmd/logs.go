@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -140,7 +141,7 @@ func followExecutionLogs(parentCtx context.Context, handler *workflow.ExecutionH
 		cancel()
 	}()
 
-	var lastLogLen int
+	var printed string
 	// A task log that cannot be fetched mid-stream is warned about, once per
 	// distinct failure, and the stream goes on: the fetch is retried on the
 	// next poll. Only the final fetch decides the exit code.
@@ -185,9 +186,9 @@ func followExecutionLogs(parentCtx context.Context, handler *workflow.ExecutionH
 		}
 
 		// Print only new content
-		if len(logs) > lastLogLen {
-			fmt.Print(logs[lastLogLen:])
-			lastLogLen = len(logs)
+		fmt.Print(nextFollowChunk(printed, logs))
+		if !strings.HasPrefix(printed, logs) {
+			printed = logs
 		}
 
 		// Check execution status
@@ -212,9 +213,7 @@ func followExecutionLogs(parentCtx context.Context, handler *workflow.ExecutionH
 			default:
 				logs, _ = handler.GetExecutionLog(executionID)
 			}
-			if len(logs) > lastLogLen {
-				fmt.Print(logs[lastLogLen:])
-			}
+			fmt.Print(nextFollowChunk(printed, logs))
 
 			fmt.Printf("\n--- Execution %s (state: %s) ---\n", exec.State, exec.State)
 
@@ -231,6 +230,27 @@ func followExecutionLogs(parentCtx context.Context, handler *workflow.ExecutionH
 		case <-time.After(followPollInterval):
 		}
 	}
+}
+
+// nextFollowChunk returns what --follow prints when the log text it already
+// printed is followed by a poll that returned logs. Usually logs extends
+// printed and the chunk is the new tail. When an earlier part changed instead
+// (a task log fetched after a failed poll, or a task whose state in its header
+// moved on), the stream cannot take back what it printed, so the chunk
+// restarts at the "=== " header of the section that changed. A poll that
+// returned less text than was printed, but nothing different, prints nothing.
+func nextFollowChunk(printed, logs string) string {
+	if strings.HasPrefix(logs, printed) {
+		return logs[len(printed):]
+	}
+	if strings.HasPrefix(printed, logs) {
+		return ""
+	}
+	diverged := 0
+	for diverged < len(printed) && diverged < len(logs) && printed[diverged] == logs[diverged] {
+		diverged++
+	}
+	return logs[strings.LastIndex(logs[:diverged], "\n=== ")+1:]
 }
 
 // isTerminalState checks if the execution state is terminal
