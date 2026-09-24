@@ -69,6 +69,48 @@ func agentResultFormat() (format string, byDefault bool) {
 	return outputFormat, false
 }
 
+// compactSince is the release that introduced --compact (#578). It is
+// experimental because it reshapes the rows a stable command returns.
+const compactSince = "0.40.0"
+
+// resolveQueryCompact decides whether query output is compacted (nulls omitted,
+// single-value columns hoisted into a `constant` map). Agent mode is
+// token-optimal by default, so it is on there and off otherwise; an explicit
+// --compact / --compact=false always wins. It applies only where the output has
+// a place for the constant map: the agent envelope (json/toon/auto, and the
+// table layouts agent mode renders as json) and plain json/yaml/toon/auto. An explicit
+// --compact on any other format returns a warning; the agent-mode default stays
+// silent there.
+func resolveQueryCompact(cmd *cobra.Command, agentMode bool, format string) (bool, string) {
+	compact := agentMode
+	explicit := cmd.Flags().Changed("compact")
+	if explicit {
+		compact, _ = cmd.Flags().GetBool("compact")
+	}
+	if !compact {
+		return false, ""
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "json", "yaml", "yml", "toon", "auto":
+		return true, ""
+	case "", "table", "wide":
+		if agentMode {
+			return true, ""
+		}
+	}
+	if explicit {
+		return false, fmt.Sprintf("--compact is ignored with -o %s (it applies to json, yaml and toon output)", displayFormatName(format))
+	}
+	return false, ""
+}
+
+func displayFormatName(format string) string {
+	if f := strings.TrimSpace(format); f != "" {
+		return f
+	}
+	return "table"
+}
+
 // queryCmd represents the query command
 var queryCmd = &cobra.Command{
 	Use:     "query [dql-string]",
@@ -374,6 +416,14 @@ Examples:
 
 		clientContext, _ := cmd.Flags().GetString("client-context")
 
+		// Resolved against the effective format, so the agent-mode -o auto
+		// default composes with the agent-mode --compact default.
+		queryFormat, autoByDefault := agentResultFormat()
+		compact, compactWarning := resolveQueryCompact(cmd, agentMode, queryFormat)
+		if compactWarning != "" {
+			output.PrintWarning("%s", compactWarning)
+		}
+
 		spillOpts, err := resolveSpillOptions(cmd, cfg)
 		if err != nil {
 			return err
@@ -385,8 +435,6 @@ Examples:
 		if spillOpts.Enabled() && spillWritesParquet(spillOpts) {
 			includeTypes = true
 		}
-
-		queryFormat, autoByDefault := agentResultFormat()
 
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:                 queryFormat,
@@ -408,6 +456,7 @@ Examples:
 			EmitTypes:                    emitTypes,
 			IncludeContributions:         includeContributions,
 			Typed:                        typed,
+			Compact:                      compact,
 			DefaultTimeframeStart:        defaultTimeframeStart,
 			DefaultTimeframeEnd:          defaultTimeframeEnd,
 			Locale:                       locale,
@@ -778,6 +827,9 @@ func init() {
 	queryCmd.Flags().Bool("include-types", false, "surface DQL per-column type info as a top-level \"types\" key (json/yaml output)")
 	queryCmd.Flags().Bool("include-contributions", false, "include bucket contribution information in query results")
 	queryCmd.Flags().Bool("typed", false, "cast scalar columns (long, double, duration, boolean) to native JSON/YAML types instead of the API's string encoding; opt-in, implies --include-types")
+	queryCmd.Flags().Bool("compact", false, `omit null values and print columns that hold one value in every row once, under "constant"
+(json/yaml/toon and the agent envelope; also collapses them in a spill summary). Default: on in agent mode`)
+	stability.MarkFlag(queryCmd, "compact", stability.Experimental, compactSince)
 
 	// Timeframe flags
 	queryCmd.Flags().String("default-timeframe-start", "", "query timeframe start timestamp (ISO-8601/RFC3339, e.g., '2022-04-20T12:10:04.123Z')")

@@ -347,6 +347,54 @@ dtctl query 'fetch logs | summarize c=count(), by:{loglevel}' -A
 }
 ```
 
+### Compacted rows: `constant`
+
+Agent mode compacts query rows by default (`--compact`, experimental): null
+values are omitted, and every column that holds the same value in every row is
+printed once, in a `constant` map that comes **before** `records`. Log and
+span rows are dominated by resource attributes shared across the whole result,
+so this is usually the larger part of the payload. Shown here with `-o json`:
+
+```json
+{
+  "ok": true,
+  "envelope_version": 1,
+  "result": {
+    "kind": "records",
+    "constant": { "k8s.cluster.name": "prod-eu", "service.name": "payment" },
+    "records": [ { "timestamp": "…", "span.name": "POST /pay", "duration": "812000" } ]
+  }
+}
+```
+
+**Reading it:** a row is `constant` merged with its entry in `records`; a key
+absent from both is null. `result.kind` stays `records`, `constant` is omitted
+when nothing is shared, and `context.total` still counts the rows.
+
+- It applies to the JSON envelope and to `-o toon`, where `constant` stays a
+  JSON map next to the encoded `records` string. TOON keeps a null in a column
+  that has values in other rows, so the rows still encode as one table; only
+  all-null columns are dropped there. `-o csv` and `--jq` get the
+  full rows (a `--jq` program always sees uncompacted records).
+- Under `-o auto`, which is also the agent-mode default for `query`, both
+  defaults apply together: the encoding is chosen from the compacted rows
+  (constant and all-null columns already removed), and `constant` stays a JSON map next to
+  the encoded `records` whichever encoding was picked. When auto picks `csv`,
+  partial nulls stay as empty cells so the rows remain one table; when it picks
+  `yaml`, nulls are dropped as in JSON.
+- `constant` needs at least two rows; a single row only loses its nulls.
+- The spill decision measures the compacted payload, since that is what reaches
+  the agent.
+- On a `result-file` / `summary-only` manifest the same columns collapse out of
+  the per-column profile: single-value columns go into `constant`, all-null
+  columns are listed by name in `null_columns`, and `sample_rows` drop both.
+  The spilled file and its sidecar manifest keep every row and column in full.
+- When compaction changed the result, `context.suggestions` says so once and
+  names the opt-out; when there was nothing to compact, it adds nothing.
+- **Opt out with `--compact=false`**, which restores the full rows (and the
+  full per-column profile in a manifest) exactly. Outside agent mode,
+  `--compact` opts in for plain `-o json`/`yaml`/`toon`.
+
 ## Auto-Detection
 
 dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on the presence of specific environment variables:
