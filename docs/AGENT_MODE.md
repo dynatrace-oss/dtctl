@@ -236,8 +236,8 @@ A few consequences worth knowing when you parse the output:
   or flag produces `{"ok": false, "error": {"code": "unknown_command", ...}}` on
   stdout and exits with the usage code (2) -- also when agent mode was
   auto-detected rather than requested with `-A`. Where dtctl can name the command
-  you most likely meant, `suggestions` carries it as a line that runs as-is, e.g.
-  `dtctl get dashbords` suggests `dtctl get dashboards`.
+  you most likely meant, `suggestions` carries it as a line that runs as-is: a
+  `get` with the misspelled resource `dashbords` suggests `dtctl get dashboards`.
 - **Query notifications live in the envelope, not on stderr.** Result-limit,
   scan-limit and timeout notices are in `context.warnings`, with the advice in
   `context.suggestions`. dtctl writes them to stderr only when there is no
