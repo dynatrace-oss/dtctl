@@ -146,6 +146,9 @@ Examples:
 
   # Include only selected metadata fields
   dtctl query "fetch logs | limit 10" --metadata=executionTimeMilliseconds,scannedRecords,scannedBytes
+
+  # Include only the metadata worth acting on (cost, sampling, default window)
+  dtctl query "fetch logs | limit 10" --metadata=minimal
   dtctl query "fetch logs | limit 10" -M=queryId,analysisTimeframe -o json
 
   # Apply a filter segment to narrow results
@@ -288,19 +291,9 @@ Examples:
 		locale, _ := cmd.Flags().GetString("locale")
 		timezone, _ := cmd.Flags().GetString("timezone")
 
-		// Get metadata option
-		metadataVal, _ := cmd.Flags().GetString("metadata")
-		// In agent mode, always include metadata unless explicitly disabled
-		if agentMode && !cmd.Flags().Changed("metadata") {
-			metadataVal = "all"
-		}
-		var metadataFields []string
-		if metadataVal != "" {
-			var err error
-			metadataFields, err = output.ParseMetadataFields(metadataVal)
-			if err != nil {
-				return err
-			}
+		metadataFields, metadataDefaulted, err := resolveMetadataFlag(cmd, agentMode)
+		if err != nil {
+			return err
 		}
 
 		// Get snapshot decode option
@@ -420,6 +413,8 @@ Examples:
 			Locale:                       locale,
 			Timezone:                     timezone,
 			MetadataFields:               metadataFields,
+			MetadataDefaulted:            metadataDefaulted,
+			Verbose:                      verbosity > 0,
 			Segments:                     segments,
 			ClientContext:                clientContext,
 			Spill:                        spillOpts,
@@ -795,6 +790,9 @@ func init() {
 	// Metadata flag
 	queryCmd.Flags().StringP("metadata", "M", "", `include query metadata in output (use = for field selection)
 bare --metadata or -M shows all fields; --metadata=field1,field2 selects specific fields
+--metadata=minimal keeps only execution time, scanned bytes/data points, sampled (when true),
+and analysisTimeframe (when the query named no window); it combines with field names.
+In agent mode the default is minimal; -M=all restores the full block
 available: executionTimeMilliseconds,scannedRecords,scannedBytes,scannedDataPoints,
 sampled,queryId,dqlVersion,query,canonicalQuery,timezone,locale,
 analysisTimeframe,contributions,metrics`)
@@ -862,6 +860,19 @@ default: never for a bare command, auto in agent mode`)
 	})
 }
 
+// resolveMetadataFlag reads --metadata. Agent mode is token-optimal by default:
+// without the flag it gets the minimal set (defaulted=true, so the envelope can
+// name the -M=all opt-out when that dropped something). An explicit value
+// always wins, and outside agent mode an absent flag means no metadata.
+func resolveMetadataFlag(cmd *cobra.Command, agentMode bool) (fields []string, defaulted bool, err error) {
+	if agentMode && !cmd.Flags().Changed("metadata") {
+		return []string{output.MetadataMinimal}, true, nil
+	}
+	val, _ := cmd.Flags().GetString("metadata")
+	fields, err = output.ParseMetadataFields(val)
+	return fields, false, err
+}
+
 // metadataFieldCompletion provides shell completion for --metadata flag values.
 // It supports comma-separated field selection: already-typed fields are excluded
 // from suggestions, and completions include the existing prefix so the shell
@@ -869,10 +880,11 @@ default: never for a bare command, auto in agent mode`)
 func metadataFieldCompletion(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	allFields := output.ValidMetadataFieldNames()
 
-	// If nothing typed yet, offer "all" plus individual field names
+	// If nothing typed yet, offer "all" and "minimal" plus individual field names
 	if toComplete == "" {
-		suggestions := make([]string, 0, len(allFields)+1)
+		suggestions := make([]string, 0, len(allFields)+2)
 		suggestions = append(suggestions, "all\tInclude all metadata fields")
+		suggestions = append(suggestions, output.MetadataMinimal+"\tInclude only cost and sampling fields worth acting on")
 		suggestions = append(suggestions, allFields...)
 		return suggestions, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 	}
@@ -891,9 +903,9 @@ func metadataFieldCompletion(_ *cobra.Command, _ []string, toComplete string) ([
 		selected[strings.TrimSpace(p)] = true
 	}
 
-	// Suggest unselected fields that match the current partial
+	// Suggest unselected fields (and the minimal selector) that match the current partial
 	var suggestions []string
-	for _, f := range allFields {
+	for _, f := range append([]string{output.MetadataMinimal}, allFields...) {
 		if selected[f] {
 			continue
 		}

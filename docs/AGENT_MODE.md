@@ -298,6 +298,55 @@ A finding is an observation about a sample or a window, not a catalog fact.
 100-record sample. A missing name with no close match therefore only adds a
 hedged note to `suggestions`, and the widen-the-window advice stays.
 
+### Query metadata
+
+In agent mode `dtctl query` adds the Grail query metadata as a top-level
+`metadata` key next to `result` and `context`. Agent mode defaults to
+`--metadata=minimal`, which keeps only what an agent acts on. The full block
+repeats the query text as `query` and `canonicalQuery` and adds `locale`,
+`timezone`, `dqlVersion` and `queryId`, and on small results it can be larger
+than the rows. Pass `-M=all` (or bare `-M`) to get it back exactly as before.
+Outside agent mode metadata stays off unless `-M` is given.
+
+The minimal set:
+
+| Field | Included |
+|---|---|
+| `executionTimeMilliseconds` | always |
+| `scannedBytes`, `scannedDataPoints` | when non-zero |
+| `sampled` | only when `true` (the result is approximate) |
+| `analysisTimeframe` | only when the query named no window, so the server picked the default one |
+| `contributions` | when requested with `--include-contributions` |
+
+It also drops the spill measurement details (`threshold_bytes`, `measured_bytes`,
+`measured_encoding`) from `context` on an inline result; they stay on a spilled or
+summary-only result, where they explain the decision, and come back with `-v`.
+`context.decided` is always present. When the default dropped something,
+`context.suggestions` carries one line naming `-M=all`; an explicit
+`-M=minimal` does not. Add field names to opt back into more,
+e.g. `--metadata=minimal,queryId`; `--metadata=` (empty) turns metadata off.
+
+```bash
+dtctl query 'fetch logs | summarize c=count(), by:{loglevel}' -A
+```
+
+```json
+{
+  "ok": true,
+  "envelope_version": 1,
+  "result": { "kind": "records", "records": [ { "c": "26", "loglevel": "ERROR" } ] },
+  "context": {
+    "verb": "query", "resource": "logs", "total": 1, "decided": "inline",
+    "suggestions": [ "# metadata trimmed by default; -M=all for the full block" ]
+  },
+  "metadata": {
+    "executionTimeMilliseconds": 132,
+    "scannedBytes": 623373940,
+    "analysisTimeframe": { "start": "2026-01-02T01:00:00Z", "end": "2026-01-02T03:00:00Z" }
+  }
+}
+```
+
 ## Auto-Detection
 
 dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on the presence of specific environment variables:

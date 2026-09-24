@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -201,6 +202,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
 	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
+	suggestions = append(suggestions, metadataDefaultAdvice(query, extractQueryMetadata(result), opts, false)...)
 
 	total := len(records)
 	ctx := &output.ResponseContext{
@@ -221,7 +223,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		EnvelopeVersion: output.EnvelopeVersion,
 		Result:          manifest,
 		Context:         ctx,
-		Metadata:        envelopeMetadata(result, opts),
+		Metadata:        envelopeMetadata(query, result, opts),
 	}
 	return resp, true, nil
 }
@@ -319,26 +321,32 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 
 	total := len(records)
 	ctx := &output.ResponseContext{
-		Verb:             "query",
-		Resource:         resourceFromQuery(query),
-		Total:            &total,
-		Decided:          "inline",
-		ThresholdBytes:   opts.Spill.Threshold,
-		MeasuredBytes:    measured,
-		MeasuredEncoding: encoding,
-		Warnings:         notifWarnings,
-		Suggestions:      notifSuggestions,
-		EmptyReason:      emptyReason,
+		Verb:        "query",
+		Resource:    resourceFromQuery(query),
+		Total:       &total,
+		Decided:     "inline",
+		Warnings:    notifWarnings,
+		Suggestions: notifSuggestions,
+		EmptyReason: emptyReason,
+	}
+	// The threshold/measured sizes explain a spill decision; on an inline result
+	// they are debugging detail, which --metadata=minimal leaves to -v (#577).
+	dropSpillDebug := output.IsMinimalFields(opts.MetadataFields) && !opts.Verbose
+	if !dropSpillDebug {
+		ctx.ThresholdBytes = opts.Spill.Threshold
+		ctx.MeasuredBytes = measured
+		ctx.MeasuredEncoding = encoding
 	}
 	if auto {
 		ctx.Format = encoding
 	}
+	ctx.Suggestions = append(ctx.Suggestions, metadataDefaultAdvice(query, extractQueryMetadata(result), opts, dropSpillDebug)...)
 	return output.Response{
 		OK:              true,
 		EnvelopeVersion: output.EnvelopeVersion,
 		Result:          res,
 		Context:         ctx,
-		Metadata:        envelopeMetadata(result, opts),
+		Metadata:        envelopeMetadata(query, result, opts),
 	}, true, nil
 }
 
@@ -346,10 +354,10 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 // envelope's top-level `metadata` key, honoring --metadata field selection. It
 // returns nil when metadata was not requested (MetadataFields empty) or the
 // response carried none, so the key is omitted rather than emitted empty. Agent
-// mode defaults --metadata to "all", so an agent gets the metadata by default
+// mode defaults --metadata to "minimal", so an agent gets the lean metadata
 // without asking for it; the same placement is used for inline and spilled
-// results.
-func envelopeMetadata(result *DQLQueryResponse, opts DQLExecuteOptions) interface{} {
+// results. --metadata=minimal is resolved against the response here.
+func envelopeMetadata(query string, result *DQLQueryResponse, opts DQLExecuteOptions) interface{} {
 	if len(opts.MetadataFields) == 0 {
 		return nil
 	}
@@ -357,7 +365,53 @@ func envelopeMetadata(result *DQLQueryResponse, opts DQLExecuteOptions) interfac
 	if meta == nil {
 		return nil
 	}
-	return output.MetadataToMap(meta, opts.MetadataFields)
+	return output.MetadataToMap(meta, resolveMetadataFields(query, meta, opts))
+}
+
+// resolveMetadataFields expands the --metadata=minimal selector into the
+// concrete fields worth reporting for this response (output.ExpandMetadataFields).
+// Any other selection is returned unchanged.
+func resolveMetadataFields(query string, meta *output.QueryMetadata, opts DQLExecuteOptions) []string {
+	return output.ExpandMetadataFields(meta, opts.MetadataFields, usesDefaultWindow(query, opts))
+}
+
+// windowParamRe matches a window parameter name. DQL parameter names are
+// case-insensitive and allow whitespace before the colon (`FROM :` is valid).
+var windowParamRe = regexp.MustCompile(`(?i)\b(?:from|to|timeframe)\s*:`)
+
+// metadataDefaultSuggestion names the opt-out from agent mode's default
+// --metadata=minimal. Kept short: it rides on most agent query results.
+const metadataDefaultSuggestion = "# metadata trimmed by default; -M=all for the full block"
+
+// metadataDefaultAdvice returns the opt-out suggestion when agent mode applied
+// --metadata=minimal by default and that actually dropped output: a metadata
+// field the response carried, or (droppedSpillDebug) the inline spill
+// measurements. An explicit -M=minimal asked for exactly this, so it gets none.
+func metadataDefaultAdvice(query string, meta *output.QueryMetadata, opts DQLExecuteOptions, droppedSpillDebug bool) []string {
+	if !opts.MetadataDefaulted || !output.IsMinimalFields(opts.MetadataFields) {
+		return nil
+	}
+	if droppedSpillDebug || output.MetadataOmitsFields(meta, resolveMetadataFields(query, meta, opts)) {
+		return []string{metadataDefaultSuggestion}
+	}
+	return nil
+}
+
+// usesDefaultWindow reports whether the query ran on the server's default
+// analysis window: neither the query text nor --default-timeframe-* named one.
+// Only then is the analysis timeframe news to the caller.
+func usesDefaultWindow(query string, opts DQLExecuteOptions) bool {
+	if opts.DefaultTimeframeStart != "" || opts.DefaultTimeframeEnd != "" {
+		return false
+	}
+	// Only DQL code can name a window: strings, backtick identifiers and
+	// comments are blanked first. A query the stripper cannot read is treated
+	// as windowless, so the timeframe is kept rather than wrongly dropped.
+	code, ok := stripDQLLiterals(query)
+	if !ok {
+		return true
+	}
+	return !windowParamRe.MatchString(code)
 }
 
 // resolveSpillTarget decides the format, destination path, and base dir for a
