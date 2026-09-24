@@ -105,10 +105,8 @@ func TestReadLookupInput_EmptyInput(t *testing.T) {
 	})
 }
 
-// TestCreateLookupManifestOnStdin: a manifest piped in must not be answered
-// with "dtctl apply -f -". `apply` reads a path through the vfs seam and never
-// stdin, so that form would read a file literally named "-" -- and the piped
-// bytes are already consumed either way.
+// TestCreateLookupManifestOnStdin: a manifest piped in is pointed at
+// "dtctl apply -f -", which reads stdin like every other --file flag (#563).
 func TestCreateLookupManifestOnStdin(t *testing.T) {
 	withStdin(t, `{"apiVersion":"v1","kind":"Dashboard"}`)
 	setCreateLookupFlags(t, "-")
@@ -118,10 +116,7 @@ func TestCreateLookupManifestOnStdin(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a manifest on stdin")
 	}
-	if strings.Contains(err.Error(), "apply -f -") {
-		t.Errorf("error suggests a form apply cannot read: %v", err)
-	}
-	if !strings.Contains(err.Error(), "save it to a file") {
+	if !strings.Contains(err.Error(), "dtctl apply -f -") {
 		t.Errorf("error is missing actionable guidance: %v", err)
 	}
 }

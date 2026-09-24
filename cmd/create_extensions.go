@@ -10,7 +10,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/extension"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createExtensionCmd installs an extension — either a custom zip upload or a Hub extension.
@@ -68,15 +67,15 @@ Examples:
 
 func runUploadExtension(cmd *cobra.Command, file string) error {
 	// Read the zip file
-	zipData, err := vfs.ReadFile(file)
+	zipData, err := readFileFlag("file", file)
 	if err != nil {
 		return fmt.Errorf("failed to read file %q: %w", file, err)
 	}
 
 	if dryRun {
 		return newDryRunReport(cmd).
-			Linef("Dry run: would upload extension from %s (%d bytes)", file, len(zipData)).
-			Detail("file", "%s", file).
+			Linef("Dry run: would upload extension from %s (%d bytes)", sourceName(file), len(zipData)).
+			Detail("file", "%s", sourceName(file)).
 			Detail("size_bytes", "%d", len(zipData)).
 			Print()
 	}
@@ -131,7 +130,7 @@ func runInstallHubExtension(cmd *cobra.Command, extensionID, version string) err
 }
 
 func init() {
-	createExtensionCmd.Flags().StringP("file", "f", "", "path to the extension zip file (for custom extension upload)")
+	createExtensionCmd.Flags().StringP("file", "f", "", "path to the extension zip file (for custom extension upload), or - for stdin")
 	createExtensionCmd.Flags().String("hub-extension", "", "Hub extension catalog ID to install (e.g. com.dynatrace.extension.host-monitoring)")
 	createExtensionCmd.Flags().String("version", "", "version to install (only for --hub-extension; defaults to latest)")
 }

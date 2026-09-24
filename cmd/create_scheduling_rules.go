@@ -11,7 +11,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createSchedulingRuleCmd creates a scheduling rule from a file
@@ -39,7 +38,7 @@ Examples:
 
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -109,7 +108,7 @@ Examples:
 }
 
 func init() {
-	createSchedulingRuleCmd.Flags().StringP("file", "f", "", "file containing scheduling rule definition (required)")
+	createSchedulingRuleCmd.Flags().StringP("file", "f", "", "file containing scheduling rule definition, or - for stdin (required)")
 	createSchedulingRuleCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	markFlagRequiredNonEmpty(createSchedulingRuleCmd, "file")
 }

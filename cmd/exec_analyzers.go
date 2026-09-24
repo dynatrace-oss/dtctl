@@ -96,7 +96,7 @@ Examples:
 // addAnalyzerInputFlags registers the input-source flags shared by
 // "exec analyzer" and "verify analyzer".
 func addAnalyzerInputFlags(cmd *cobra.Command) {
-	cmd.Flags().StringP("file", "f", "", "read input from JSON file")
+	cmd.Flags().StringP("file", "f", "", "read input from JSON file, or - for stdin")
 	cmd.Flags().String("input", "", "inline JSON input")
 	cmd.Flags().String("query", "", "DQL query shorthand (for timeseries analyzers)")
 }
@@ -111,7 +111,15 @@ func buildAnalyzerInput(cmd *cobra.Command) (map[string]interface{}, error) {
 
 	switch {
 	case inputFile != "":
-		return analyzer.ParseInputFromFile(inputFile)
+		content, err := readFileFlag("file", inputFile)
+		if err != nil {
+			return nil, err
+		}
+		var input map[string]interface{}
+		if err := json.Unmarshal(content, &input); err != nil {
+			return nil, fmt.Errorf("failed to parse input file: %w", err)
+		}
+		return input, nil
 	case inputJSON != "":
 		var input map[string]interface{}
 		if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {

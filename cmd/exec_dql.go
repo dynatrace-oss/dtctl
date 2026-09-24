@@ -46,7 +46,11 @@ Examples:
 		queryFile, _ := cmd.Flags().GetString("file")
 
 		if queryFile != "" {
-			return executor.ExecuteFromFile(queryFile, outputFormat)
+			data, err := readFileFlag("file", queryFile)
+			if err != nil {
+				return fmt.Errorf("failed to read file: %w", err)
+			}
+			return executor.Execute(string(data), outputFormat)
 		}
 
 		if len(args) == 0 {
@@ -60,7 +64,7 @@ Examples:
 
 func init() {
 	// DQL flags
-	execDQLCmd.Flags().StringP("file", "f", "", "read query from file")
+	execDQLCmd.Flags().StringP("file", "f", "", "read query from file, or - for stdin")
 }
 
 func init() {

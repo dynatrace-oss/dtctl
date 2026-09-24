@@ -13,7 +13,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createDocumentCmd creates a document of any type from a file
@@ -52,20 +51,26 @@ Examples:
 		// Determine the document type
 		docType, _ := cmd.Flags().GetString("type")
 
+		// Read the input once: with -f - it is stdin, which cannot be re-read
+		// by the shared helper after the type has been sniffed from it.
+		file, _ := cmd.Flags().GetString("file")
+		var fileData []byte
+		if file != "" {
+			var err error
+			fileData, err = readFileFlag("file", file)
+			if err != nil {
+				return fmt.Errorf("failed to read file: %w", err)
+			}
+		}
+
 		// If no --type flag, try to read from file payload
-		if docType == "" {
-			file, _ := cmd.Flags().GetString("file")
-			if file != "" {
-				fileData, err := vfs.ReadFile(file)
-				if err == nil {
-					jsonData, err := format.ValidateAndConvert(fileData)
-					if err == nil {
-						var doc map[string]interface{}
-						if err := json.Unmarshal(jsonData, &doc); err == nil {
-							if t, ok := doc["type"].(string); ok && t != "" {
-								docType = t
-							}
-						}
+		if docType == "" && fileData != nil {
+			jsonData, err := format.ValidateAndConvert(fileData)
+			if err == nil {
+				var doc map[string]interface{}
+				if err := json.Unmarshal(jsonData, &doc); err == nil {
+					if t, ok := doc["type"].(string); ok && t != "" {
+						docType = t
 					}
 				}
 			}
@@ -74,9 +79,11 @@ Examples:
 		if docType == "" {
 			return fmt.Errorf("document type is required: use --type flag or include a \"type\" field in the payload")
 		}
+		if file == "" {
+			return fmt.Errorf("--file is required")
+		}
 
-		// Delegate to the shared helper
-		return createDocumentRunE(docType)(cmd, args)
+		return createDocumentFromData(cmd, docType, fileData)
 	},
 }
 
@@ -153,148 +160,151 @@ func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) 
 		if file == "" {
 			return fmt.Errorf("--file is required")
 		}
-
-		name, _ := cmd.Flags().GetString("name")
-		description, _ := cmd.Flags().GetString("description")
-		id, _ := cmd.Flags().GetString("id")
-		setFlags, _ := cmd.Flags().GetStringArray("set")
-		labels, _ := cmd.Flags().GetStringArray("label")
-
-		// Read the file
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
+		return createDocumentFromData(cmd, docType, fileData)
+	}
+}
 
-		// Convert to JSON if needed
-		jsonData, err := format.ValidateAndConvert(fileData)
+// createDocumentFromData creates a document of docType from the already-read
+// --file input.
+func createDocumentFromData(cmd *cobra.Command, docType string, fileData []byte) error {
+	name, _ := cmd.Flags().GetString("name")
+	description, _ := cmd.Flags().GetString("description")
+	id, _ := cmd.Flags().GetString("id")
+	setFlags, _ := cmd.Flags().GetStringArray("set")
+	labels, _ := cmd.Flags().GetStringArray("label")
+
+	// Convert to JSON if needed
+	jsonData, err := format.ValidateAndConvert(fileData)
+	if err != nil {
+		return fmt.Errorf("invalid file format: %w", err)
+	}
+
+	// Apply template rendering if variables provided
+	if len(setFlags) > 0 {
+		templateVars, err := template.ParseSetFlags(setFlags)
 		if err != nil {
-			return fmt.Errorf("invalid file format: %w", err)
+			return fmt.Errorf("invalid --set flag: %w", err)
 		}
-
-		// Apply template rendering if variables provided
-		if len(setFlags) > 0 {
-			templateVars, err := template.ParseSetFlags(setFlags)
-			if err != nil {
-				return fmt.Errorf("invalid --set flag: %w", err)
-			}
-			rendered, err := template.RenderTemplate(string(jsonData), templateVars)
-			if err != nil {
-				return fmt.Errorf("template rendering failed: %w", err)
-			}
-			jsonData = []byte(rendered)
-		}
-
-		// Parse the document to extract content properly
-		var doc map[string]interface{}
-		if err := json.Unmarshal(jsonData, &doc); err != nil {
-			return fmt.Errorf("failed to parse %s JSON: %w", docType, err)
-		}
-
-		// Extract content, name, description using the same logic as apply
-		contentData, extractedName, extractedDesc, warnings := extractDocumentContent(doc, docType)
-
-		// Fall back to labels embedded in the payload (e.g. from 'get -o yaml')
-		// when none were supplied via --label.
-		if len(labels) == 0 {
-			labels = extractDocumentLabels(doc)
-		}
-
-		// Show validation warnings
-		for _, w := range warnings {
-			output.PrintWarning("%s", w)
-		}
-
-		// Use flag values if provided, otherwise use extracted values
-		if name == "" {
-			name = extractedName
-		}
-		if description == "" {
-			description = extractedDesc
-		}
-
-		// Extract ID from document if not provided via flag
-		if id == "" {
-			if docID, ok := doc["id"].(string); ok && docID != "" {
-				id = docID
-			}
-		}
-
-		// Default name if still empty
-		if name == "" {
-			name = fmt.Sprintf("Untitled %s", docType)
-		}
-
-		// Count tiles/sections for feedback
-		tileCount := countDocumentItems(contentData, docType)
-
-		// Handle dry-run
-		if dryRun {
-			output.PrintInfo("Dry run: would create %s", docType)
-			output.PrintInfo("  Name: %s", name)
-			if id != "" {
-				output.PrintInfo("  ID: %s", id)
-			}
-			if description != "" {
-				output.PrintInfo("  Description: %s", description)
-			}
-			if tileCount > 0 {
-				output.PrintInfo("  %s: %d", capitalize(itemName(docType)), tileCount)
-			}
-			if len(warnings) == 0 {
-				output.PrintInfo("\nDocument structure validated successfully")
-			}
-			return nil
-		}
-
-		_, c, err := SetupWithSafety(safety.OperationCreate)
+		rendered, err := template.RenderTemplate(string(jsonData), templateVars)
 		if err != nil {
-			return err
+			return fmt.Errorf("template rendering failed: %w", err)
 		}
+		jsonData = []byte(rendered)
+	}
 
-		handler := document.NewHandler(c)
+	// Parse the document to extract content properly
+	var doc map[string]interface{}
+	if err := json.Unmarshal(jsonData, &doc); err != nil {
+		return fmt.Errorf("failed to parse %s JSON: %w", docType, err)
+	}
 
-		result, err := handler.Create(document.CreateRequest{
-			ID:          id,
-			Name:        name,
-			Type:        docType,
-			Description: description,
-			Content:     contentData,
-			Labels:      labels,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create %s: %w", docType, err)
+	// Extract content, name, description using the same logic as apply
+	contentData, extractedName, extractedDesc, warnings := extractDocumentContent(doc, docType)
+
+	// Fall back to labels embedded in the payload (e.g. from 'get -o yaml')
+	// when none were supplied via --label.
+	if len(labels) == 0 {
+		labels = extractDocumentLabels(doc)
+	}
+
+	// Show validation warnings
+	for _, w := range warnings {
+		output.PrintWarning("%s", w)
+	}
+
+	// Use flag values if provided, otherwise use extracted values
+	if name == "" {
+		name = extractedName
+	}
+	if description == "" {
+		description = extractedDesc
+	}
+
+	// Extract ID from document if not provided via flag
+	if id == "" {
+		if docID, ok := doc["id"].(string); ok && docID != "" {
+			id = docID
 		}
+	}
 
-		// Use name from input if result doesn't have it
-		resultName := result.Name
-		if resultName == "" {
-			resultName = name
-		}
-		resultID := result.ID
-		if resultID == "" {
-			resultID = id
-			if resultID == "" {
-				resultID = "(ID not returned)"
-			}
-		}
+	// Default name if still empty
+	if name == "" {
+		name = fmt.Sprintf("Untitled %s", docType)
+	}
 
-		// Improved output formatting for better visibility
-		output.PrintSuccess("%s created", capitalize(docType))
-		output.PrintInfo("  Name: %s", resultName)
-		output.PrintInfo("  ID:   %s", resultID)
+	// Count tiles/sections for feedback
+	tileCount := countDocumentItems(contentData, docType)
+
+	// Handle dry-run
+	if dryRun {
+		output.PrintInfo("Dry run: would create %s", docType)
+		output.PrintInfo("  Name: %s", name)
+		if id != "" {
+			output.PrintInfo("  ID: %s", id)
+		}
+		if description != "" {
+			output.PrintInfo("  Description: %s", description)
+		}
 		if tileCount > 0 {
 			output.PrintInfo("  %s: %d", capitalize(itemName(docType)), tileCount)
 		}
-		// Only dashboards and notebooks have a known viewer app whose URL can be
-		// derived from the type. For custom document types the app ID is unknown
-		// (e.g. "acme:config" is not served by "dynatrace.acme:configs"), so print
-		// no URL rather than a broken guess.
-		if result.ID != "" && (docType == "dashboard" || docType == "notebook") {
-			output.PrintInfo("  URL:  %s/ui/apps/dynatrace.%ss/%s/%s", c.BaseURL(), docType, docType, result.ID)
+		if len(warnings) == 0 {
+			output.PrintInfo("\nDocument structure validated successfully")
 		}
 		return nil
 	}
+
+	_, c, err := SetupWithSafety(safety.OperationCreate)
+	if err != nil {
+		return err
+	}
+
+	handler := document.NewHandler(c)
+
+	result, err := handler.Create(document.CreateRequest{
+		ID:          id,
+		Name:        name,
+		Type:        docType,
+		Description: description,
+		Content:     contentData,
+		Labels:      labels,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create %s: %w", docType, err)
+	}
+
+	// Use name from input if result doesn't have it
+	resultName := result.Name
+	if resultName == "" {
+		resultName = name
+	}
+	resultID := result.ID
+	if resultID == "" {
+		resultID = id
+		if resultID == "" {
+			resultID = "(ID not returned)"
+		}
+	}
+
+	// Improved output formatting for better visibility
+	output.PrintSuccess("%s created", capitalize(docType))
+	output.PrintInfo("  Name: %s", resultName)
+	output.PrintInfo("  ID:   %s", resultID)
+	if tileCount > 0 {
+		output.PrintInfo("  %s: %d", capitalize(itemName(docType)), tileCount)
+	}
+	// Only dashboards and notebooks have a known viewer app whose URL can be
+	// derived from the type. For custom document types the app ID is unknown
+	// (e.g. "acme:config" is not served by "dynatrace.acme:configs"), so print
+	// no URL rather than a broken guess.
+	if result.ID != "" && (docType == "dashboard" || docType == "notebook") {
+		output.PrintInfo("  URL:  %s/ui/apps/dynatrace.%ss/%s/%s", c.BaseURL(), docType, docType, result.ID)
+	}
+	return nil
 }
 
 // extractDocumentContent extracts the content from a document, handling various input formats
@@ -420,7 +430,7 @@ func capitalize(s string) string {
 
 func init() {
 	// Generic document flags
-	createDocumentCmd.Flags().StringP("file", "f", "", "file containing document definition (required)")
+	createDocumentCmd.Flags().StringP("file", "f", "", "file containing document definition, or - for stdin (required)")
 	createDocumentCmd.Flags().String("type", "", "document type (e.g. launchpad, my-app:config); extracted from payload if not provided")
 	createDocumentCmd.Flags().String("name", "", "name for the document (extracted from content if not provided)")
 	createDocumentCmd.Flags().String("description", "", "description for the document")
@@ -430,7 +440,7 @@ func init() {
 	markFlagRequiredNonEmpty(createDocumentCmd, "file")
 
 	// Notebook flags
-	createNotebookCmd.Flags().StringP("file", "f", "", "file containing notebook definition (required)")
+	createNotebookCmd.Flags().StringP("file", "f", "", "file containing notebook definition, or - for stdin (required)")
 	createNotebookCmd.Flags().String("name", "", "name for the notebook (extracted from content if not provided)")
 	createNotebookCmd.Flags().String("description", "", "description for the notebook")
 	createNotebookCmd.Flags().String("id", "", "custom ID for the notebook (auto-generated if not provided)")
@@ -438,7 +448,7 @@ func init() {
 	markFlagRequiredNonEmpty(createNotebookCmd, "file")
 
 	// Dashboard flags
-	createDashboardCmd.Flags().StringP("file", "f", "", "file containing dashboard definition (required)")
+	createDashboardCmd.Flags().StringP("file", "f", "", "file containing dashboard definition, or - for stdin (required)")
 	createDashboardCmd.Flags().String("name", "", "name for the dashboard (extracted from content if not provided)")
 	createDashboardCmd.Flags().String("description", "", "description for the dashboard")
 	createDashboardCmd.Flags().String("id", "", "custom ID for the dashboard (auto-generated if not provided)")

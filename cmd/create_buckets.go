@@ -11,7 +11,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createBucketCmd creates a Grail bucket
@@ -45,7 +44,7 @@ Examples:
 
 		if file != "" {
 			// Read from file
-			fileData, err := vfs.ReadFile(file)
+			fileData, err := readFileFlag("file", file)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
@@ -111,7 +110,7 @@ Examples:
 
 func init() {
 	// Bucket flags
-	createBucketCmd.Flags().StringP("file", "f", "", "file containing bucket definition")
+	createBucketCmd.Flags().StringP("file", "f", "", "file containing bucket definition, or - for stdin")
 	createBucketCmd.Flags().String("name", "", "bucket name (3-100 chars, lowercase alphanumeric, underscores, hyphens)")
 	createBucketCmd.Flags().String("table", "", "table type (logs, events, or bizevents)")
 	createBucketCmd.Flags().Int("retention", 0, "retention period in days (1-3657)")

@@ -306,7 +306,7 @@ Apply hooks run external commands around `dtctl apply`:
 - **Pre-apply** (`pre-apply`): runs **before** the resource is sent to the API. Receives the processed JSON on stdin and can reject the apply (non-zero exit aborts).
 - **Post-apply** (`post-apply`): runs **after** a successful apply. Receives the apply result as JSON on stdin. Useful for cleanup, notifications, or writing metadata to disk. A non-zero exit is reported as a warning -- the resource is already persisted.
 
-Both hooks are invoked the same way: the command string is tokenized using POSIX-style shell quoting (so `"path with spaces"` and `'quoted args'` are honoured) and executed directly -- there is **no shell interpretation** of the command line itself. The resource type and source file are appended as the final two positional arguments.
+Both hooks are invoked the same way: the command string is tokenized using POSIX-style shell quoting (so `"path with spaces"` and `'quoted args'` are honoured) and executed directly -- there is **no shell interpretation** of the command line itself. The resource type and source file are appended as the final two positional arguments. When the input is piped (`dtctl apply -f -`), the source file argument is `<stdin>`.
 
 ### Configuration
 

@@ -14,7 +14,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createAnomalyDetectorCmd creates an anomaly detector from a file
@@ -49,7 +48,7 @@ Examples:
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 
 		// Read the file
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -163,7 +162,7 @@ func printDryRunAnomalyDetector(body map[string]any) {
 }
 
 func init() {
-	createAnomalyDetectorCmd.Flags().StringP("file", "f", "", "file containing anomaly detector definition (required)")
+	createAnomalyDetectorCmd.Flags().StringP("file", "f", "", "file containing anomaly detector definition, or - for stdin (required)")
 	createAnomalyDetectorCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	markFlagRequiredNonEmpty(createAnomalyDetectorCmd, "file")
 }
