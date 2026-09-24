@@ -645,3 +645,45 @@ func TestBuildSpillResponse_FieldCapAfterCompaction(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildSpillResponse_BudgetRechoiceUpdatesCompactHint checks the
+// --compact=false hint against the format -o auto re-chooses for budget-cut
+// rows. The full result is flat csv, where a partial null is kept, so the hint
+// is absent; one kept row is yaml, which drops that null, so the hint is due.
+func TestBuildSpillResponse_BudgetRechoiceUpdatesCompactHint(t *testing.T) {
+	e := &DQLExecutor{}
+	records := make([]map[string]interface{}, 40)
+	for i := range records {
+		records[i] = map[string]interface{}{"id": fmt.Sprintf("row-%03d", i), "msg": fmt.Sprintf("%03d ", i) + strings.Repeat("m", 200), "opt": fmt.Sprint(i)}
+	}
+	records[0]["opt"] = nil
+	opts := inlineOpts(true)
+	opts.AutoFormatByDefault = true
+	opts.Spill.Dir = t.TempDir()
+
+	full, _, err := e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "auto", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.Context.Format != "csv" || hasCompactSuggestion(full) {
+		t.Fatalf("full result: format %q, suggestions %q; want csv without the compact hint", full.Context.Format, full.Context.Suggestions)
+	}
+
+	// The smallest budget, in 50-byte steps, that keeps any row keeps one.
+	var resp output.Response
+	for opts.MaxOutputBytes = 500; opts.MaxOutputBytes < int64(encodedSize(t, full)); opts.MaxOutputBytes += 50 {
+		resp, _, err = e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "auto", opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.Context.Returned != nil && *resp.Context.Returned > 0 {
+			break
+		}
+	}
+	if resp.Context.Returned == nil || *resp.Context.Returned != 1 || resp.Context.Format != "yaml" {
+		t.Fatalf("budget cut: returned %v, format %q; want 1 row as yaml", resp.Context.Returned, resp.Context.Format)
+	}
+	if !hasCompactSuggestion(resp) {
+		t.Errorf("yaml dropped the row's null, yet no --compact=false hint: %q", resp.Context.Suggestions)
+	}
+}

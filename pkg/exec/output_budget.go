@@ -129,14 +129,19 @@ func (e *DQLExecutor) fitToBudget(query string, result *DQLQueryResponse, resp o
 		res, used, _ := inlineResult(encoding, auto, rows, k)
 		if auto {
 			// -o auto re-chooses for the kept rows; name what was emitted, and
-			// keep the default's -o json hint in step with that choice.
+			// keep the format-dependent hints (the default's -o json one, and
+			// --compact=false, since csv/toon keep partial nulls that json/yaml
+			// drop) in step with that choice.
 			ctx.Format = used
-			if opts.AutoFormatByDefault && used != encoding {
+			if used != encoding {
 				ctx.Suggestions = slices.DeleteFunc(ctx.Suggestions, func(s string) bool {
-					return s == output.AutoDefaultSuggestion(encoding)
+					return s == output.AutoDefaultSuggestion(encoding) || s == compactRowsSuggestion
 				})
-				if used != "json" {
+				if opts.AutoFormatByDefault && used != "json" {
 					ctx.Suggestions = append(ctx.Suggestions, output.AutoDefaultSuggestion(used))
+				}
+				if rows.compaction != nil && rows.compaction.Changed(used) {
+					ctx.Suggestions = append(ctx.Suggestions, compactRowsSuggestion)
 				}
 			}
 		}
