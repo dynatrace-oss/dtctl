@@ -34,8 +34,14 @@ func TestApplyWriteBack_StdinSourceIsNeverAFile(t *testing.T) {
 			if len(warnings) != 0 {
 				t.Errorf("expected no warnings, got %v", warnings)
 			}
-			if _, err := os.Stat(StdinSourceFile); !os.IsNotExist(err) {
-				t.Errorf("a file named %q was written", StdinSourceFile)
+			// "<stdin>" is not even a valid name on Windows, so check the
+			// directory rather than stat-ing the name.
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Errorf("expected no file to be written, found %v", entries)
 			}
 		})
 	}
