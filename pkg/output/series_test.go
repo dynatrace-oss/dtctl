@@ -398,3 +398,33 @@ func TestApplySeriesMode_PrecisionAppliesToNonTimeseriesRecords(t *testing.T) {
 		t.Errorf("input mutated")
 	}
 }
+
+func TestApplySeriesModeWithEffect_ReportsWhatChanged(t *testing.T) {
+	ts := []map[string]interface{}{tsRecord("cpu", floats(1.23456, 2.0)...)}
+	exact := []map[string]interface{}{{"avg": 2.5, "count": "42"}}
+	noisy := []map[string]interface{}{{"avg": 3.14159}}
+
+	tests := []struct {
+		name   string
+		in     []map[string]interface{}
+		mode   SeriesMode
+		digits int
+		want   SeriesEffect
+	}{
+		{"summary of a timeseries", ts, SeriesMode{Kind: SeriesSummary}, 4, SeriesEffect{Summarized: true}},
+		{"summary with no timeseries, exact floats", exact, SeriesMode{Kind: SeriesSummary}, 4, SeriesEffect{}},
+		{"rounding a noisy float", noisy, SeriesMode{Kind: SeriesFull}, 4, SeriesEffect{Rounded: true}},
+		{"rounding that changes nothing", exact, SeriesMode{Kind: SeriesFull}, 4, SeriesEffect{}},
+		{"rounding off", noisy, SeriesMode{Kind: SeriesFull}, 0, SeriesEffect{}},
+		{"downsample within budget", ts, SeriesMode{Kind: SeriesDownsample, Points: 10}, 0, SeriesEffect{}},
+		{"rounding raw series points", ts, SeriesMode{Kind: SeriesFull}, 3, SeriesEffect{Rounded: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, got := ApplySeriesModeWithEffect(tt.in, tt.mode, tt.digits, false)
+			if got != tt.want {
+				t.Errorf("effect = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}

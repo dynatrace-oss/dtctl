@@ -190,6 +190,10 @@ Examples:
   # Round numbers to 3 significant digits
   dtctl query "timeseries avg(dt.host.cpu.usage)" --precision 3 -o json
 
+  # In agent mode --series=summary and --precision 4 are the defaults;
+  # restore the raw datapoints with
+  dtctl query "timeseries avg(dt.host.cpu.usage)" -A --series=full --precision 0
+
   # Include query metadata (execution time, scanned records, etc.)
   dtctl query "fetch logs | limit 10" --metadata
   dtctl query "fetch logs | limit 10" -M -o json
@@ -434,7 +438,8 @@ Examples:
 
 		seriesVal, _ := cmd.Flags().GetString("series")
 		precision, _ := cmd.Flags().GetInt("precision")
-		seriesMode, err := resolveSeriesOptions(seriesVal, precision, outputFormat)
+		seriesOpts, err := resolveSeriesOptions(seriesVal, cmd.Flags().Changed("series"),
+			precision, cmd.Flags().Changed("precision"), outputFormat, agentMode)
 		if err != nil {
 			return err
 		}
@@ -472,8 +477,10 @@ Examples:
 			IncludeContributions:         includeContributions,
 			Typed:                        typed,
 			Compact:                      compact,
-			Series:                       seriesMode,
-			Precision:                    precision,
+			Series:                       seriesOpts.Mode,
+			Precision:                    seriesOpts.Precision,
+			SeriesDefaulted:              seriesOpts.SeriesDefaulted,
+			PrecisionDefaulted:           seriesOpts.PrecisionDefaulted,
 			DefaultTimeframeStart:        defaultTimeframeStart,
 			DefaultTimeframeEnd:          defaultTimeframeEnd,
 			Locale:                       locale,
@@ -513,7 +520,7 @@ Examples:
 			if typed {
 				output.PrintWarning("--typed is ignored in live mode (live mode renders a table, where the API's string encoding is not surfaced)")
 			}
-			if seriesMode.Kind != output.SeriesFull || precision > 0 {
+			if cmd.Flags().Changed("series") || cmd.Flags().Changed("precision") {
 				output.PrintWarning("--series and --precision are ignored in live mode (live mode renders the full series)")
 			}
 			if dryRun {

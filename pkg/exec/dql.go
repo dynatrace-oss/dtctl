@@ -164,6 +164,16 @@ type DQLExecuteOptions struct {
 	// digits (--precision); 0 leaves values unchanged.
 	Precision int
 
+	// SeriesDefaulted and PrecisionDefaulted mark Series/Precision as the
+	// agent-mode defaults rather than the caller's explicit choice. When a
+	// defaulted value actually changed the result, the agent envelope carries
+	// one suggestion naming the opt-out.
+	SeriesDefaulted    bool
+	PrecisionDefaulted bool
+
+	// seriesAdvice is that suggestion, computed by printResults.
+	seriesAdvice string
+
 	// Timeframe options
 	DefaultTimeframeStart string // Query timeframe start timestamp (ISO-8601/RFC3339)
 	DefaultTimeframeEnd   string // Query timeframe end timestamp (ISO-8601/RFC3339)
@@ -713,6 +723,39 @@ func isEmptyResult(records []map[string]interface{}) bool {
 	return len(records) == 0 || (len(records) == 1 && allAggregatesZero(records[0]))
 }
 
+// AgentDefaultPrecision is the significant-digit rounding agent mode applies
+// when --precision is not given.
+const AgentDefaultPrecision = 4
+
+// defaultSeriesAdvice names the opt-out for an agent-mode default that
+// actually changed the result: a summarized series, a rounded number, or both.
+// An explicit --series/--precision, or a default that changed nothing, gets no
+// advice.
+func defaultSeriesAdvice(effect output.SeriesEffect, opts DQLExecuteOptions) string {
+	summarized := effect.Summarized && opts.SeriesDefaulted
+	rounded := effect.Rounded && opts.PrecisionDefaulted
+	switch {
+	case summarized && opts.PrecisionDefaulted && opts.Precision > 0:
+		// --series=full alone would bring the points back rounded, so name
+		// both flags: together they restore the raw values exactly.
+		return fmt.Sprintf("# timeseries summarized and numbers rounded to %d significant digits (agent-mode default) — add --series=full --precision 0 for the raw values", opts.Precision)
+	case summarized:
+		return "# timeseries summarized (agent-mode default) — add --series=full for the raw datapoints"
+	case rounded:
+		return fmt.Sprintf("# numbers rounded to %d significant digits (agent-mode default) — add --precision 0 for full precision", opts.Precision)
+	}
+	return ""
+}
+
+// seriesAdvice returns the agent-default opt-out hint, if any, as a slice to
+// append to an envelope's suggestions.
+func seriesAdvice(opts DQLExecuteOptions) []string {
+	if opts.seriesAdvice == "" {
+		return nil
+	}
+	return []string{opts.seriesAdvice}
+}
+
 // entityFetchRe spots a query fetching a classic dt.entity.* table, and
 // captures the type suffix for a concrete smartscapeNodes suggestion.
 var entityFetchRe = regexp.MustCompile(`(?i)\bfetch\s+dt\.entity\.([a-z0-9_]+)`)
@@ -849,7 +892,9 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		case "", "table", "wide":
 			tabular = !opts.AgentMode
 		}
-		records = output.ApplySeriesMode(records, opts.Series, opts.Precision, tabular)
+		var effect output.SeriesEffect
+		records, effect = output.ApplySeriesModeWithEffect(records, opts.Series, opts.Precision, tabular)
+		opts.seriesAdvice = defaultSeriesAdvice(effect, opts)
 	}
 
 	// Spill path (D2/D3/D19-buffered): when spilling is enabled, a large result
@@ -1027,6 +1072,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
 	suggestions = append(suggestions, metaAdvice...)
+	suggestions = append(suggestions, seriesAdvice(opts)...)
 
 	total := len(records)
 	ctx := &output.ResponseContext{

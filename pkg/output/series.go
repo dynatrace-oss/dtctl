@@ -59,15 +59,30 @@ func ParseSeriesMode(s string) (SeriesMode, error) {
 
 // ApplySeriesMode compacts the numeric series of DQL timeseries records (those
 // carrying `timeframe` and `interval`) according to mode, and rounds every
-// float in the result — timeseries or not — to `digits` significant digits (0 = no rounding; summary
-// statistics default to 3). With tabular set, a summary is rendered as one
-// human-readable cell instead of an object, for table and CSV output.
+// float in the result — timeseries or not — to `digits` significant digits
+// (0 = no rounding; summary statistics default to 3). With tabular set, a
+// summary is rendered as one human-readable cell instead of an object, for
+// table and CSV output.
 //
 // Records without timeframe/interval, and arrays that are not purely numeric
 // (nulls allowed), pass through unchanged. The input is never mutated.
 func ApplySeriesMode(records []map[string]interface{}, mode SeriesMode, digits int, tabular bool) []map[string]interface{} {
+	out, _ := ApplySeriesModeWithEffect(records, mode, digits, tabular)
+	return out
+}
+
+// SeriesEffect reports what ApplySeriesModeWithEffect actually changed, so a
+// caller that applied a lossy default can tell the user only when it mattered.
+type SeriesEffect struct {
+	Summarized bool // at least one series was replaced by a summary
+	Rounded    bool // at least one float value changed through rounding
+}
+
+// ApplySeriesModeWithEffect is ApplySeriesMode that also reports its effect.
+func ApplySeriesModeWithEffect(records []map[string]interface{}, mode SeriesMode, digits int, tabular bool) ([]map[string]interface{}, SeriesEffect) {
+	var eff SeriesEffect
 	if mode.Kind == SeriesFull {
-		return RoundNumbers(records, digits)
+		return roundRecords(records, digits, &eff.Rounded), eff
 	}
 
 	out := make([]map[string]interface{}, len(records))
@@ -83,13 +98,15 @@ func ApplySeriesMode(records []map[string]interface{}, mode SeriesMode, digits i
 		}
 		switch mode.Kind {
 		case SeriesSummary:
-			summarizeRecord(cp, ts, digits, tabular)
+			if summarizeRecord(cp, ts, digits, tabular) {
+				eff.Summarized = true
+			}
 		case SeriesDownsample:
 			downsampleRecord(cp, ts, mode.Points)
 		}
 		out[i] = cp
 	}
-	return RoundNumbers(out, digits)
+	return roundRecords(out, digits, &eff.Rounded), eff
 }
 
 // seriesTimebase is the time axis shared by all series of one record.
@@ -171,7 +188,10 @@ func numericSeries(v interface{}) ([]float64, bool) {
 	return out, true
 }
 
-func summarizeRecord(rec map[string]interface{}, tb seriesTimebase, digits int, tabular bool) {
+// summarizeRecord replaces every numeric series of rec with its summary and
+// reports whether it found any.
+func summarizeRecord(rec map[string]interface{}, tb seriesTimebase, digits int, tabular bool) bool {
+	found := false
 	if digits <= 0 {
 		digits = defaultSummaryDigits
 	}
@@ -183,13 +203,15 @@ func summarizeRecord(rec map[string]interface{}, tb seriesTimebase, digits int, 
 		if !ok {
 			continue
 		}
-		sum := roundValue(summarizeSeries(vals, tb), digits).(map[string]interface{})
+		found = true
+		sum := roundValue(summarizeSeries(vals, tb), digits, nil).(map[string]interface{})
 		if tabular {
 			rec[k] = summaryCell(sum)
 		} else {
 			rec[k] = sum
 		}
 	}
+	return found
 }
 
 // summarizeSeries computes the per-series summary object. Keys that need at
@@ -426,36 +448,45 @@ func downsampleRecord(rec map[string]interface{}, tb seriesTimebase, points int)
 // returns records unchanged. Strings — including DQL longs, which the API
 // encodes as strings — are never touched.
 func RoundNumbers(records []map[string]interface{}, digits int) []map[string]interface{} {
+	return roundRecords(records, digits, nil)
+}
+
+// roundRecords is RoundNumbers that sets *changed when any value changed.
+func roundRecords(records []map[string]interface{}, digits int, changed *bool) []map[string]interface{} {
 	if digits <= 0 {
 		return records
 	}
 	out := make([]map[string]interface{}, len(records))
 	for i, r := range records {
-		out[i] = roundValue(r, digits).(map[string]interface{})
+		out[i] = roundValue(r, digits, changed).(map[string]interface{})
 	}
 	return out
 }
 
-func roundValue(v interface{}, digits int) interface{} {
+func roundValue(v interface{}, digits int, changed *bool) interface{} {
 	switch t := v.(type) {
 	case float64:
-		return roundSignificant(t, digits)
+		r := roundSignificant(t, digits)
+		if changed != nil && r != t {
+			*changed = true
+		}
+		return r
 	case map[string]interface{}:
 		cp := make(map[string]interface{}, len(t))
 		for k, x := range t {
-			cp[k] = roundValue(x, digits)
+			cp[k] = roundValue(x, digits, changed)
 		}
 		return cp
 	case []interface{}:
 		cp := make([]interface{}, len(t))
 		for i, x := range t {
-			cp[i] = roundValue(x, digits)
+			cp[i] = roundValue(x, digits, changed)
 		}
 		return cp
 	case []map[string]interface{}:
 		cp := make([]map[string]interface{}, len(t))
 		for i, x := range t {
-			cp[i] = roundValue(x, digits).(map[string]interface{})
+			cp[i] = roundValue(x, digits, changed).(map[string]interface{})
 		}
 		return cp
 	default:

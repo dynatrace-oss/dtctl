@@ -217,10 +217,12 @@ sample-based figures can't be misread as population truth.
 > `{ "records": …, "metadata": … }` output.
 
 Timeseries results are the most token-expensive shape: every series is a
-full-precision array. `--series=summary` replaces each with its statistics and
-a sparkline (typically ~9x fewer tokens), `--series=downsample:N` keeps at
-most N extreme-preserving points, and `--precision 3` rounds away the noise
-digits. All three are opt-in (experimental); see
+full-precision array. In agent mode `query` therefore defaults to
+`--series=summary --precision 4`: each series is replaced by its statistics
+and a sparkline (typically ~9x fewer tokens), and every number is rounded to 4
+significant digits. When that changed the result, `context.suggestions` names
+the opt-out: `--series=full --precision 0` restores the raw values exactly.
+`--series=downsample:N` keeps at most N extreme-preserving points instead. See
 [Output Formats](OUTPUT_FORMATS.md#compact-timeseries---series---precision).
 
 ### Choosing the encoding with `-o auto`

@@ -292,7 +292,17 @@ Notes:
 A `timeseries`/`makeTimeseries` result carries every datapoint of every series
 as a full-precision array, which makes it the most expensive result shape to
 read -- for a person (the table shows `<121 items>`) and for an AI agent (every
-value costs ~17 digits of tokens). Two experimental `query` flags compact it:
+value costs ~17 digits of tokens). Two experimental `query` flags compact it.
+
+**Agent-mode default.** In agent mode (`-A`, or auto-detected) `query`
+defaults to `--series=summary --precision 4`, so timeseries arrive summarized
+and numbers rounded to 4 significant digits. When that actually changed the
+result, `context.suggestions` carries one entry naming the opt-out.
+`--series=full --precision 0` restores the previous output exactly, and each
+flag can be set on its own. Two exceptions: the default summary is skipped for
+chart formats, which plot the full series, and neither default applies to
+`-o parquet` exports. Outside agent mode both flags default to off and output
+is unchanged.
 
 ```bash
 # Per-series summary with a sparkline
@@ -312,15 +322,15 @@ dtctl query 'timeseries avg(dt.host.cpu.usage)' --precision 3 -o json
 
 `--series` modes:
 
-- **`full`** (default) -- every datapoint, unchanged.
-- **`summary`** -- replaces each numeric series with `n` (points), `nulls`
+- **`full`** (default outside agent mode) -- every datapoint, unchanged.
+- **`summary`** (default in agent mode) -- replaces each numeric series with `n` (points), `nulls`
   (only when there are gaps), `min`/`avg`/`max`/`p95`/`last` over the non-null
   points, `min_at`/`max_at` (first occurrence), a sparkline of at most 24
   cells (longer series are bucketed; each cell keeps the value furthest from
   the mean, so a one-point spike is not averaged away; a space is a gap), and a
   `step` hint when the series is best described as a single level shift.
-  Statistics are rounded to 3 significant digits unless `--precision` says
-  otherwise. In `table`, `wide` and `csv` output the summary is one readable
+  Statistics are rounded to `--precision` significant digits, or to 3 when it
+  is `0`. In `table`, `wide` and `csv` output the summary is one readable
   cell (`▁▂█▃ min=15.7 avg=84.5 max=409 last=36.3 n=121`). Not combinable with
   the chart formats, which plot the full series.
 - **`downsample:N`** -- at most N points per series. The series is split into
@@ -338,8 +348,8 @@ through.
 so a `fetch` or `summarize` result is rounded too. It rounds every floating-point number to N
 significant digits but never into the integer part: `12345.678` at 3 digits is
 `12346`, not `12300`. DQL `long` values (strings on the wire) are never
-touched. Both flags are opt-in and apply to the agent envelope, `--jq`, and
-spilled files alike; live mode ignores them.
+touched. Both flags apply to the agent envelope, `--jq`, and spilled files
+alike; live mode ignores them.
 
 ## Plain Mode
 

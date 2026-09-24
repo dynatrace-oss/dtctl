@@ -230,6 +230,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	if compaction != nil && compaction.Changed("json") {
 		suggestions = append(suggestions, compactSummarySuggestion)
 	}
+	suggestions = append(suggestions, seriesAdvice(opts)...)
 
 	total := len(records)
 	ctx := &output.ResponseContext{
@@ -360,6 +361,7 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
 	notifSuggestions = append(notifSuggestions, emptySuggestions...)
 	notifSuggestions = append(notifSuggestions, lookbackAdvice(query)...)
+	notifSuggestions = append(notifSuggestions, seriesAdvice(opts)...)
 	if encodeWarning != "" {
 		notifWarnings = append(notifWarnings, encodeWarning)
 	}
