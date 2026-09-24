@@ -2,6 +2,7 @@ package exec
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,6 +53,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	// clipped (--max-field-chars), so that is what the spill decision measures,
 	// in the display encoding (D24); a spill file keeps the full rows.
 	inline := newInlineRows(records, compaction, opts.MaxFieldChars)
+	inline.types = emittedTypes(result, opts)
 	measured, encoding := measureInline(inline, displayFormat)
 	switch opts.Spill.Mode {
 	case SpillAuto:
@@ -112,6 +114,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	}
 	manifest.SetStats(envCols, sampled)
 	manifest.ColumnsOmitted = omittedCols
+	manifest.Types = inline.types
 	if compaction != nil {
 		manifest.Constant = compaction.EnvelopeConstant()
 		manifest.NullColumns = compaction.NullColumns
@@ -323,14 +326,14 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 // k rows as given. An encoding failure falls back to native JSON and returns
 // the warning to surface.
 func inlineResult(encoding string, rechoose bool, rows inlineRows, k int) (interface{}, string, string) {
-	native := &output.InlineRecords{Kind: output.KindRecords, Constant: rows.constant, Records: rows.records[:k]}
+	native := &output.InlineRecords{Kind: output.KindRecords, Constant: rows.constant, Records: rows.records[:k], Types: rows.types}
 	switch encoding {
 	case "toon":
 		toonRows, err := output.MarshalTOON(rows.forEncoding("toon")[:k])
 		if err != nil {
 			return native, "json", fmt.Sprintf("TOON encoding failed: %v; the rows were encoded as JSON instead", err)
 		}
-		return &output.InlineRecordsEncoded{Kind: output.KindRecords, Encoding: "toon", Constant: rows.constant, Records: toonRows}, "toon", ""
+		return &output.InlineRecordsEncoded{Kind: output.KindRecords, Encoding: "toon", Constant: rows.constant, Records: toonRows, Types: rows.types}, "toon", ""
 	case "csv", "yaml":
 		format := encoding
 		var encoded string
@@ -355,9 +358,23 @@ func inlineResult(encoding string, rechoose bool, rows inlineRows, k int) (inter
 		if format == "json" {
 			return native, "json", ""
 		}
-		return &output.InlineRecordsEncoded{Kind: output.KindRecords, Encoding: format, Constant: rows.constant, Records: encoded}, format, ""
+		return &output.InlineRecordsEncoded{Kind: output.KindRecords, Encoding: format, Constant: rows.constant, Records: encoded, Types: rows.types}, format, ""
 	}
 	return native, "json", ""
+}
+
+// emittedTypes returns the DQL type block for the agent envelope's result
+// payload, or nil. Like the plain json/yaml output it is emitted only for an
+// explicit --include-types (EmitTypes): --typed and Parquet request the types
+// to consume them, not to print them.
+func emittedTypes(result *DQLQueryResponse, opts DQLExecuteOptions) interface{} {
+	if !opts.EmitTypes {
+		return nil
+	}
+	if types := result.GetTypes(); len(types) > 0 {
+		return types
+	}
+	return nil
 }
 
 // compactionFor returns the compacted view of records when opts asks for it, or
@@ -371,11 +388,22 @@ func compactionFor(records []map[string]interface{}, opts DQLExecuteOptions) *ou
 }
 
 // measureInline measures the inline payload in the display encoding: the rows
-// as emitted plus, when compacting, the constant map they share. Under -o auto
-// with compaction the encoding is chosen from the compacted table (constant and
-// all-null columns removed), since that is what gets encoded; the returned
-// encoding is the chosen one.
+// as emitted plus, when compacting, the constant map they share, and the type
+// block when one rides along. Under -o auto with compaction the encoding is
+// chosen from the compacted table (constant and all-null columns removed),
+// since that is what gets encoded; the returned encoding is the chosen one.
 func measureInline(rows inlineRows, format string) (int64, string) {
+	n, enc := measureInlineRows(rows, format)
+	if rows.types != nil {
+		// Like constant, the type block is always native JSON in the envelope.
+		if b, err := json.Marshal(rows.types); err == nil {
+			n += int64(len(b))
+		}
+	}
+	return n, enc
+}
+
+func measureInlineRows(rows inlineRows, format string) (int64, string) {
 	if rows.compaction == nil {
 		return output.MeasureSerializedBytes(rows.records, format)
 	}

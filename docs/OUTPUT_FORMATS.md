@@ -210,6 +210,8 @@ Notes:
   metadata internally to do their work, but that does not add the `types` key.
 - **`json`/`yaml` only.** `jsonl` (one record per line) and `csv` (tabular) have
   no place for a document-level sibling, so the block is not emitted there.
+- **Agent mode** carries it in the envelope as `result.types`, on inline and
+  spilled results alike (see [Agent Mode](AGENT_MODE.md#column-types---include-types)).
 - Note the distinction from `--typed` below: `--include-types` reports the
   declared type while leaving values in their wire form (so a `long` still reads
   as `"200"`), whereas `--typed` uses the same metadata to rewrite the values.

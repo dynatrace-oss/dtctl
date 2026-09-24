@@ -358,6 +358,20 @@ dtctl query 'fetch logs | summarize c=count(), by:{loglevel}' -A
 }
 ```
 
+### Column types: `--include-types`
+
+`dtctl query --include-types` puts the DQL per-column type block in the
+envelope as `result.types`, next to the rows. It keeps the API's shape
+(`indexRange` + `mappings`, see [Output Formats](OUTPUT_FORMATS.md#column-types---include-types))
+and is the same on every result kind: inline `records` (whatever `-o auto`
+picked, since it stays native JSON like `constant`), `result-file` and
+`summary-only`. It describes the full result, so it still names a column that
+compaction moved into `constant` or dropped as all-null, and its `indexRange`
+indexes the full result when `--max-output-bytes` cut the rows. The block
+counts toward the spill threshold and the output budget. Without an explicit
+`--include-types` there is no `types` key; `--typed` requests the types only to
+cast values.
+
 ### Compacted rows: `constant`
 
 Agent mode compacts query rows by default (`--compact`, experimental): null

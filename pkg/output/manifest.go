@@ -71,10 +71,16 @@ type SampleStats struct {
 // them along with every null value; a row is `constant ∪ record`, an absent key
 // meaning null (see CompactRecords). Constant precedes Records so a reader sees
 // it first, and it is omitted when nothing was hoisted.
+//
+// Types is the DQL per-column type block (indexRange + mappings), set only when
+// the caller explicitly asked for it (--include-types) and the API returned it.
+// It describes the full result, so it is the same whether the rows were
+// compacted, clipped or cut by an output budget.
 type InlineRecords struct {
 	Kind     string                   `json:"kind"`
 	Constant map[string]interface{}   `json:"constant,omitempty"`
 	Records  []map[string]interface{} `json:"records"`
+	Types    interface{}              `json:"types,omitempty"`
 }
 
 // InlineRecordsEncoded is the KindRecords payload when the agent asked for a
@@ -86,12 +92,13 @@ type InlineRecords struct {
 // encoded under this shape, above it as a `result-file` manifest — never as a
 // bare TOON document with no `ok`/`context`.
 // Constant is the compaction's hoisted columns, as on InlineRecords; it stays
-// native JSON rather than joining the encoded string.
+// native JSON rather than joining the encoded string, and so does Types.
 type InlineRecordsEncoded struct {
 	Kind     string                 `json:"kind"`
 	Encoding string                 `json:"encoding"`
 	Constant map[string]interface{} `json:"constant,omitempty"`
 	Records  string                 `json:"records"`
+	Types    interface{}            `json:"types,omitempty"`
 }
 
 // SpecFileManifest is the result payload for the KindDocumentFile envelope: a
@@ -151,6 +158,10 @@ type ResultFileManifest struct {
 	ColumnsOmitted []string `json:"columns_omitted,omitempty"`
 
 	SampleRows []map[string]interface{} `json:"sample_rows,omitempty"`
+
+	// Types is the DQL per-column type block, as on InlineRecords: set only for
+	// an explicit --include-types, and describing the full spilled result.
+	Types interface{} `json:"types,omitempty"`
 }
 
 // SetStats places the computed column stats in the correct location depending on
