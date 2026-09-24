@@ -216,6 +216,13 @@ sample-based figures can't be misread as population truth.
 > transforms keep their requested shape and fall through to the plain
 > `{ "records": …, "metadata": … }` output.
 
+> Timeseries results are the most token-expensive shape: every series is a
+> full-precision array. `--series=summary` replaces each with its statistics and
+> a sparkline (typically ~9x fewer tokens), `--series=downsample:N` keeps at
+> most N extreme-preserving points, and `--precision 3` rounds away the noise
+> digits. All three are opt-in (experimental); see
+> [Output Formats](OUTPUT_FORMATS.md#compact-timeseries---series---precision).
+
 ### Choosing the encoding with `-o auto`
 
 No single encoding is the cheapest for every result: CSV wins on flat rows,

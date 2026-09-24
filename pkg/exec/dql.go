@@ -155,6 +155,15 @@ type DQLExecuteOptions struct {
 	// under --jq, whose program addresses the full rows.
 	Compact bool
 
+	// Series selects how the numeric arrays of timeseries records are rendered
+	// (--series): full (default, unchanged), a per-series summary, or
+	// extreme-preserving downsampling. See output.ApplySeriesMode.
+	Series output.SeriesMode
+
+	// Precision rounds every float in the records to this many significant
+	// digits (--precision); 0 leaves values unchanged.
+	Precision int
+
 	// Timeframe options
 	DefaultTimeframeStart string // Query timeframe start timestamp (ISO-8601/RFC3339)
 	DefaultTimeframeEnd   string // Query timeframe end timestamp (ISO-8601/RFC3339)
@@ -826,6 +835,21 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 	colTypes := columnTypeMappings(result)
 	if opts.Typed {
 		output.ApplyTrueTypes(records, colTypes)
+	}
+
+	// --series / --precision: compact timeseries arrays and round numbers.
+	// Opt-in; applied before the spill/agent branch so the envelope, --jq and a
+	// spilled file all see the same records. Table and CSV get a summary as one
+	// readable cell instead of an object they would print as "<n items>" — but
+	// not in agent mode, where the "table" default is an unset format and the
+	// records go into the JSON envelope.
+	if opts.Series.Kind != output.SeriesFull || opts.Precision > 0 {
+		tabular := effectiveFormat == "csv"
+		switch effectiveFormat {
+		case "", "table", "wide":
+			tabular = !opts.AgentMode
+		}
+		records = output.ApplySeriesMode(records, opts.Series, opts.Precision, tabular)
 	}
 
 	// Spill path (D2/D3/D19-buffered): when spilling is enabled, a large result

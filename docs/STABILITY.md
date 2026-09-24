@@ -831,9 +831,11 @@ query                                stable
   --metadata                         stable
   --no-progress                      stable
   --no-query-limits                  stable
+  --precision                        experimental  since 0.40.0
   --segment                          stable
   --segment-var                      stable
   --segments-file                    stable
+  --series                           experimental  since 0.40.0
   --set                              stable
   --spill                            stable
   --spill-format                     stable

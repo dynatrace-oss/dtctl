@@ -188,6 +188,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Local inspection of a spilled file (no Grail re-query): `dtctl inspect <file> --head/--tail/--page/--fields/--schema/--stats/--sample`
 - [x] Full-file predicate filtering via a streaming `--jq` program (per record over the whole file, re-spill-guarded): `dtctl inspect <file> --jq 'select(.status == 500)'`
 - [x] Recover a lost file handle by listing spilled files in the active context: `dtctl inspect --list`
+- [x] Compact timeseries output (experimental): `--series=summary` (per-series stats, sparkline, level-shift hint), `--series=downsample:N` (extreme-preserving), `--precision N` (significant-digit rounding)
 
 ### SLO Features
 - [x] List SLOs: `dtctl get slos`

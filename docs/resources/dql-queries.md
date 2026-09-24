@@ -41,6 +41,8 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 | `--include-types` | Include DQL column type information |
 | `--include-contributions` | Include Grail bucket contribution information |
 | `--client-context` | Set the `dt-client-context` request header (caller intent) |
+| `--series` | Timeseries rendering: `full` (default), `summary`, or `downsample:N` (see [Output Formats](../OUTPUT_FORMATS.md#compact-timeseries---series---precision)); experimental |
+| `--precision` | Round numbers to N significant digits (`0` = full precision); experimental |
 | `--width` / `--height` / `--fullscreen` | Terminal chart dimensions (chart output formats) |
 | `--decode-snapshots` | Decode Live Debugger snapshot payloads (see [Live Debugger](../LIVE_DEBUGGER.md)) |
 | `--spill*` | Spill large results to a file (see Output below) |
