@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -371,6 +372,115 @@ func TestDQLExecutor_AgentDefaultSeriesWithAutoFormat(t *testing.T) {
 		}
 		if env := decode(optOut); count(env.Context.Suggestions, "--series") != 0 || strings.Contains(env.Result.Records, "spark:") {
 			t.Errorf("opt-out should carry raw arrays and no series hint, got %q", env.Context.Suggestions)
+		}
+	})
+}
+
+// TestDQLExecutor_AgentDefaultSeriesWithCompact pins the agent-mode series
+// defaults composing with the agent-mode --compact default. Series run first,
+// so compaction hoists what a `by:` result shares (timeframe, interval) into
+// result.constant and keeps each row's summary; a summary that is the same in
+// every row is hoisted whole, and constant merged with a row is still that
+// row's summary.
+func TestDQLExecutor_AgentDefaultSeriesWithCompact(t *testing.T) {
+	clearAIAgentEnvVars(t)
+	series := func(offset float64) []interface{} {
+		values := make([]interface{}, 60)
+		for i := range values {
+			values[i] = 3.10276124773992 + offset + float64(i%5)
+		}
+		return values
+	}
+	timeframe := map[string]interface{}{
+		"start": "2026-01-01T12:00:00.000000000Z",
+		"end":   "2026-01-01T13:00:00.000000000Z",
+	}
+	rows := func(second float64) []map[string]interface{} {
+		return []map[string]interface{}{
+			{"host.name": "web-01", "cpu": series(0), "interval": "60000000000", "timeframe": timeframe},
+			{"host.name": "web-02", "cpu": series(second), "interval": "60000000000", "timeframe": timeframe},
+		}
+	}
+	type envelope struct {
+		Result struct {
+			Constant map[string]interface{}   `json:"constant"`
+			Records  []map[string]interface{} `json:"records"`
+		} `json:"result"`
+		Context struct {
+			Suggestions []string `json:"suggestions"`
+		} `json:"context"`
+	}
+	run := func(t *testing.T, records []map[string]interface{}) envelope {
+		t.Helper()
+		out := captureStdout(t, func() {
+			if err := newRecordsExecutor(t, records).ExecuteWithContext(context.Background(), "timeseries cpu=avg(x), by:{host.name}", DQLExecuteOptions{
+				OutputFormat: "json", AgentMode: true, Compact: true,
+				Spill:  SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+				Series: output.SeriesMode{Kind: output.SeriesSummary}, SeriesDefaulted: true,
+				Precision: AgentDefaultPrecision, PrecisionDefaulted: true,
+			}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		var env envelope
+		if err := json.Unmarshal(out, &env); err != nil {
+			t.Fatalf("not an envelope: %v\n%s", err, out)
+		}
+		return env
+	}
+	isSummary := func(v interface{}) bool {
+		m, ok := v.(map[string]interface{})
+		return ok && m["spark"] != nil && m["n"] != nil
+	}
+
+	t.Run("both defaults apply and each names its opt-out", func(t *testing.T) {
+		env := run(t, rows(100))
+		if env.Result.Constant["interval"] != "60000000000" || env.Result.Constant["timeframe"] == nil {
+			t.Errorf("shared timeframe/interval should be hoisted, constant = %v", env.Result.Constant)
+		}
+		if _, ok := env.Result.Constant["cpu"]; ok {
+			t.Errorf("differing summaries must stay in the rows, constant = %v", env.Result.Constant)
+		}
+		if len(env.Result.Records) != 2 {
+			t.Fatalf("records = %v, want 2 rows", env.Result.Records)
+		}
+		for i, r := range env.Result.Records {
+			if !isSummary(r["cpu"]) || r["timeframe"] != nil {
+				t.Errorf("row %d = %v, want a cpu summary without the hoisted columns", i, r)
+			}
+		}
+		if !strings.Contains(strings.Join(env.Context.Suggestions, "\n"), "--series=full --precision 0") {
+			t.Errorf("series opt-out missing: %q", env.Context.Suggestions)
+		}
+	})
+
+	t.Run("a summary equal in every row is hoisted whole", func(t *testing.T) {
+		env := run(t, rows(0))
+		if !isSummary(env.Result.Constant["cpu"]) {
+			t.Fatalf("identical summaries should be hoisted, constant = %v", env.Result.Constant)
+		}
+		for i, r := range env.Result.Records {
+			if len(r) != 1 || r["host.name"] == nil {
+				t.Errorf("row %d = %v, want only host.name", i, r)
+			}
+		}
+		// The hoisted value is exactly the per-row summary without --compact.
+		full := captureStdout(t, func() {
+			if err := newRecordsExecutor(t, rows(0)).ExecuteWithContext(context.Background(), "timeseries cpu=avg(x), by:{host.name}", DQLExecuteOptions{
+				OutputFormat: "json", AgentMode: true,
+				Spill:  SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+				Series: output.SeriesMode{Kind: output.SeriesSummary}, SeriesDefaulted: true,
+				Precision: AgentDefaultPrecision, PrecisionDefaulted: true,
+			}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		var plain envelope
+		if err := json.Unmarshal(full, &plain); err != nil {
+			t.Fatalf("not an envelope: %v\n%s", err, full)
+		}
+		if !reflect.DeepEqual(plain.Result.Records[1]["cpu"], env.Result.Constant["cpu"]) {
+			t.Errorf("hoisted summary %v differs from the row's %v", env.Result.Constant["cpu"], plain.Result.Records[1]["cpu"])
 		}
 	})
 }
