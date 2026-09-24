@@ -3,6 +3,7 @@ package output
 import (
 	"encoding/json"
 	"io"
+	"strings"
 
 	toon "github.com/toon-format/toon-go"
 )
@@ -40,7 +41,7 @@ func (p *ToonPrinter) marshal(obj interface{}) error {
 		return err
 	}
 
-	data, err := toon.Marshal(generic, toon.WithLengthMarkers(true))
+	data, err := toon.Marshal(toonSafe(generic), toon.WithLengthMarkers(true))
 	if err != nil {
 		return err
 	}
@@ -62,7 +63,49 @@ func MarshalTOON(v interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return toon.MarshalString(generic, toon.WithLengthMarkers(true))
+	return toon.MarshalString(toonSafe(generic), toon.WithLengthMarkers(true))
+}
+
+// toonSafe replaces C0 control characters other than \t, \n and \r in every
+// string (keys and values) of a generic value with their Unicode Control
+// Picture (U+2400 + c, e.g. ESC -> ␛). TOON only defines the escapes \\, \",
+// \n, \r and \t, and the encoder rejects any other control character, so one
+// ANSI color sequence in a log line would otherwise fail the whole output.
+func toonSafe(v interface{}) interface{} {
+	switch t := v.(type) {
+	case string:
+		return toonSafeString(t)
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(t))
+		for k, val := range t {
+			out[toonSafeString(k)] = toonSafe(val)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(t))
+		for i, val := range t {
+			out[i] = toonSafe(val)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func toonSafeString(s string) string {
+	if strings.IndexFunc(s, isUnsupportedToonControl) < 0 {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if isUnsupportedToonControl(r) {
+			return 0x2400 + r
+		}
+		return r
+	}, s)
+}
+
+func isUnsupportedToonControl(r rune) bool {
+	return r < 0x20 && r != '\t' && r != '\n' && r != '\r'
 }
 
 // toGeneric converts a typed Go value to an untyped representation

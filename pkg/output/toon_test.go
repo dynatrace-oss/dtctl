@@ -386,3 +386,44 @@ func TestAgentPrinter_SetResultFormatEmptyIsSilent(t *testing.T) {
 		t.Errorf("empty format should not warn, got %v", resp.Context.Warnings)
 	}
 }
+
+// Regression for #586: a single control character (e.g. the ESC of an ANSI
+// color sequence in log content) must not fail the whole TOON output. TOON has
+// no escape for it, so it is rendered as its Unicode Control Picture.
+func TestToonPrinter_ControlCharactersDoNotFailOutput(t *testing.T) {
+	var buf bytes.Buffer
+	p := &ToonPrinter{writer: &buf}
+
+	data := []map[string]any{
+		{"content": "\x1b[31mERROR\x1b[0m boom", "ok": "fine"},
+		{"content": "nul\x00bell\x07", "ok": "tab\tnewline\n"},
+	}
+	if err := p.PrintList(data); err != nil {
+		t.Fatalf("PrintList failed: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"␛[31mERROR␛[0m boom", "nul␀bell␇", `"tab\tnewline\n"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q, got:\n%s", want, out)
+		}
+	}
+	if strings.ContainsAny(out, "\x00\x07\x1b") {
+		t.Errorf("raw control characters leaked into output:\n%q", out)
+	}
+}
+
+func TestMarshalTOON_ControlCharactersInKeysAndNestedValues(t *testing.T) {
+	data := map[string]any{
+		"k\x1bey": map[string]any{"nested": []any{"a\x1bb", 1.0, true}},
+	}
+	out, err := MarshalTOON(data)
+	if err != nil {
+		t.Fatalf("MarshalTOON failed: %v", err)
+	}
+	for _, want := range []string{"k␛ey", "a␛b"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q, got:\n%s", want, out)
+		}
+	}
+}
