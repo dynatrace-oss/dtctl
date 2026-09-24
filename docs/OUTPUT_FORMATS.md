@@ -118,7 +118,9 @@ dtctl query 'fetch logs | summarize count(), by: {loglevel}' -o auto
 A table is never chosen because it truncates, and TOON is never chosen because
 CSV is at least as small on flat rows and YAML or JSON beats it on nested data.
 Structs are judged by their JSON form, so column and key names match `-o json`.
-With `--jq`, the choice is made on the filter's output.
+With `--jq`, the choice is made on the filter's output. (Whether a large
+`dtctl query` result spills is decided on the unfiltered rows, as for every
+format, because a spilled file holds the unfiltered rows.)
 
 The chosen format is always discoverable:
 

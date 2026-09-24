@@ -149,6 +149,9 @@ func NewAgentPrinter(writer io.Writer, ctx *ResponseContext) *AgentPrinter {
 // that passed `-o csv` learns its format was not honoured instead of silently
 // receiving JSON that looks like it was what it asked for.
 func (p *AgentPrinter) SetResultFormat(format string) {
+	if IsAutoFormat(format) {
+		format = FormatAuto
+	}
 	switch format {
 	case "toon", "json", FormatAuto:
 		p.resultFormat = format

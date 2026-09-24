@@ -28,8 +28,11 @@ func (e *JQError) Error() string { return e.Message }
 // JSON values emitted by jq. auto counts: it chooses its encoding after the
 // filter has run.
 func IsStructuredOutputFormat(format string) bool {
+	if IsAutoFormat(format) {
+		return true
+	}
 	switch format {
-	case "json", "yaml", "yml", "toon", FormatAuto:
+	case "json", "yaml", "yml", "toon":
 		return true
 	default:
 		return false

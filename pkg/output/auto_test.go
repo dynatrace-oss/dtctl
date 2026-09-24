@@ -270,3 +270,29 @@ func TestIsStructuredOutputFormat_Auto(t *testing.T) {
 		t.Errorf("NormalizeJQOutputFormat(auto) = %q, want auto", got)
 	}
 }
+
+// TestAutoFormat_CaseAndWhitespaceInsensitive pins that every entry point
+// recognises auto the way IsAutoFormat and `query` validation do, so
+// `-o AUTO` or `-o ' auto '` never silently degrades to another format.
+func TestAutoFormat_CaseAndWhitespaceInsensitive(t *testing.T) {
+	rows := []map[string]interface{}{{"host": "a", "cpu": 1.5}, {"host": "b", "cpu": 2.0}}
+	for _, f := range []string{"AUTO", " auto ", "Auto"} {
+		t.Run(f, func(t *testing.T) {
+			var buf bytes.Buffer
+			ap := NewAgentPrinter(&buf, nil)
+			ap.SetResultFormat(f)
+			if err := ap.PrintList(rows); err != nil {
+				t.Fatalf("PrintList: %v", err)
+			}
+			if ap.Context().Format != "csv" || len(ap.Context().Warnings) != 0 {
+				t.Errorf("agent: format=%q warnings=%v, want csv and no warnings", ap.Context().Format, ap.Context().Warnings)
+			}
+			if _, ok := NewPrinterWithOpts(PrinterOptions{Format: f, Writer: &bytes.Buffer{}}).(*AutoPrinter); !ok {
+				t.Errorf("NewPrinterWithOpts(%q) is not an AutoPrinter", f)
+			}
+			if !IsStructuredOutputFormat(f) {
+				t.Errorf("IsStructuredOutputFormat(%q) = false; --jq would demote it to json", f)
+			}
+		})
+	}
+}

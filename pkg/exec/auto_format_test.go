@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -131,5 +132,34 @@ func TestPrintResults_AutoOutsideAgentMode(t *testing.T) {
 				t.Error("the auto notice belongs on stderr, not stdout")
 			}
 		})
+	}
+}
+
+// TestPrintResults_AgentAutoWithJQChoosesOnFilterOutput pins that with --jq the
+// encoding is chosen from what the filter emits, not from the unfiltered rows:
+// flat rows (csv on their own) filtered down to a number come back as json.
+func TestPrintResults_AgentAutoWithJQChoosesOnFilterOutput(t *testing.T) {
+	records := []map[string]interface{}{{"host": "a", "count": float64(1)}, {"host": "b", "count": float64(2)}}
+	e := &DQLExecutor{}
+	out := captureStdout(t, func() {
+		err := e.printResults("fetch logs", &DQLQueryResponse{Records: records}, DQLExecuteOptions{
+			AgentMode:    true,
+			OutputFormat: "auto",
+			JQFilter:     ".records | length",
+			Spill:        SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+		})
+		if err != nil {
+			t.Fatalf("printResults: %v", err)
+		}
+	})
+	var resp struct {
+		Result  interface{}            `json:"result"`
+		Context output.ResponseContext `json:"context"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, out)
+	}
+	if resp.Context.Format != "json" || resp.Result != float64(2) {
+		t.Errorf("format=%q result=%v, want json and 2", resp.Context.Format, resp.Result)
 	}
 }

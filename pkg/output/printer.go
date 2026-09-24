@@ -63,6 +63,10 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 		format = "json"
 	}
 
+	if IsAutoFormat(format) {
+		format = FormatAuto
+	}
+
 	// Determine dimensions
 	width, height := opts.Width, opts.Height
 	termWidth, _ := GetTerminalSize()
