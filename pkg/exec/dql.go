@@ -817,6 +817,15 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		return e.printAgentJQ(query, result, records, meta, effectiveFormat, opts)
 	}
 
+	// -o auto: pick the format from the rows, so the switch below prints exactly
+	// what that explicit format would. With --jq the rows are not what gets
+	// printed, so the auto printer decides after the filter instead.
+	if output.IsAutoFormat(effectiveFormat) && opts.JQFilter == "" {
+		choice := output.ChooseAutoFormat(records)
+		output.FprintAutoChoice(os.Stderr, choice)
+		effectiveFormat = choice.Format
+	}
+
 	printer := output.NewPrinterWithOpts(output.PrinterOptions{
 		Format:     effectiveFormat,
 		JQFilter:   opts.JQFilter,

@@ -108,6 +108,39 @@ dtctl get workflows -o csv > workflows.csv
 dtctl query 'fetch logs | filter status == "ERROR" | limit 100' -o csv > errors.csv
 ```
 
+## Auto (`-o auto`)
+
+`-o auto` picks the encoding from the shape of the result, preferring the
+cheapest *lossless* one for an LLM to read. It is opt-in, and the rules below
+are **experimental**: they may be tuned in any release as measurements come in.
+
+```bash
+dtctl query 'fetch logs | summarize count(), by: {loglevel}' -o auto
+```
+
+| Result shape | Chosen format |
+|---|---|
+| empty, or a single scalar value | `json` |
+| a single object, or a list with one object | `yaml` (key: value lines) |
+| two or more objects, every value a scalar, at least half of the cells filled | `csv` |
+| anything else: nested values, sparse rows, a list of non-objects | `yaml` |
+
+A table is never chosen because it truncates, and TOON is never chosen because
+CSV is at least as small on flat rows and YAML or JSON beats it on nested data.
+Structs are judged by their JSON form, so column and key names match `-o json`.
+With `--jq`, the choice is made on the filter's output. (Whether a large
+`dtctl query` result spills is decided on the unfiltered rows, as for every
+format, because a spilled file holds the unfiltered rows.)
+
+The chosen format is always discoverable:
+
+- **Outside agent mode**, stdout is exactly what the chosen format prints, and
+  one line on stderr names the choice, e.g. `-o auto: csv (uniform flat rows)`.
+- **In agent mode**, `context.format` names the choice (`csv`, `yaml` or
+  `json`). For `csv` and `yaml` the rows are a string in that format; for
+  `json` they stay a native JSON value. See
+  [AGENT_MODE.md](AGENT_MODE.md#choosing-the-encoding-with--o-auto).
+
 ## JSON Lines and Parquet (large query exports)
 
 For `dtctl query`, two additional formats are tailored to large result exports:

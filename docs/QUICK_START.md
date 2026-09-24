@@ -39,7 +39,7 @@ dtctl apply -f workflow.yaml
 dtctl apply -f workflow.yaml --dry-run
 ```
 
-Output formats (`table`, `json`, `yaml`, `csv`, `toon`, `wide`, JSON Lines/Parquet exports) are covered in **[OUTPUT_FORMATS.md](OUTPUT_FORMATS.md)**.
+Output formats (`table`, `json`, `yaml`, `csv`, `toon`, `wide`, `auto`, JSON Lines/Parquet exports) are covered in **[OUTPUT_FORMATS.md](OUTPUT_FORMATS.md)**.
 
 ## 3. Work with resources
 

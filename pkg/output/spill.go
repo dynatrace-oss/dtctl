@@ -337,7 +337,12 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 // entire serialised result twice over. That transient buffer, not the column
 // statistics or the row sample, was what made a spilling query peak higher than
 // a non-spilling one (#467).
+//
+// For -o auto the encoding is the one ChooseAutoFormat picks for records.
 func MeasureSerializedBytes(records interface{}, format string) (int64, string) {
+	if IsAutoFormat(format) {
+		format = ChooseAutoFormat(records).Format
+	}
 	enc := NormalizeMeasureEncoding(format)
 	counter := &countingWriter{w: io.Discard}
 	if enc == "json" {

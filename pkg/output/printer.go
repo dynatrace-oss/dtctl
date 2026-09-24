@@ -63,6 +63,10 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 		format = "json"
 	}
 
+	if IsAutoFormat(format) {
+		format = FormatAuto
+	}
+
 	// Determine dimensions
 	width, height := opts.Width, opts.Height
 	termWidth, _ := GetTerminalSize()
@@ -83,6 +87,8 @@ func NewPrinterWithOpts(opts PrinterOptions) Printer {
 		return &ParquetPrinter{writer: writer, types: opts.Types}
 	case "toon":
 		return &ToonPrinter{writer: writer, jqFilter: opts.JQFilter}
+	case FormatAuto:
+		return &AutoPrinter{writer: writer, jqFilter: opts.JQFilter}
 	case "chart":
 		if width > 0 || height > 0 {
 			return NewChartPrinterWithSize(writer, width, height)

@@ -45,12 +45,12 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	switch opts.Spill.Mode {
 	case SpillAuto:
 		if measured <= opts.Spill.Threshold {
-			return e.inlineRecordsResponse(query, result, records, measured, encoding, opts) // inline
+			return e.inlineRecordsResponse(query, result, records, measured, encoding, output.IsAutoFormat(displayFormat), opts) // inline
 		}
 	case SpillAlways:
 		// always spill
 	default:
-		return e.inlineRecordsResponse(query, result, records, measured, encoding, opts) // never / unknown -> inline
+		return e.inlineRecordsResponse(query, result, records, measured, encoding, output.IsAutoFormat(displayFormat), opts) // never / unknown -> inline
 	}
 
 	// Provenance from Grail metadata.
@@ -241,7 +241,12 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 //
 // Outside agent mode an inline result is always a fall-through (a human wants the
 // table/CSV, not an envelope).
-func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, measured int64, encoding string, opts DQLExecuteOptions) (output.Response, bool, error) {
+//
+// With auto (-o auto), encoding is the format output.ChooseAutoFormat picked
+// for these rows. csv and yaml then stay in the envelope too, encoded like
+// toon, because the agent asked for the cheapest encoding, not for raw bytes;
+// context.format names the choice.
+func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, measured int64, encoding string, auto bool, opts DQLExecuteOptions) (output.Response, bool, error) {
 	// A --jq transform reshapes the result into something this kind:"records"
 	// envelope cannot describe, so it falls through to printResults, which wraps
 	// the filter output in the same {ok, result, context} envelope (#413). So do
@@ -273,6 +278,22 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 				Records:  toonRows,
 			}
 		}
+	case "csv", "yaml":
+		if !auto {
+			return output.Response{}, false, nil
+		}
+		_, encoded, err := output.MarshalAuto(records)
+		if err != nil {
+			encodeWarning = fmt.Sprintf("-o auto encoding failed: %v; the rows were encoded as JSON instead", err)
+			encoding = "json"
+			res = &output.InlineRecords{Kind: output.KindRecords, Records: records}
+		} else {
+			res = &output.InlineRecordsEncoded{
+				Kind:     output.KindRecords,
+				Encoding: encoding,
+				Records:  encoded,
+			}
+		}
 	default:
 		return output.Response{}, false, nil
 	}
@@ -301,6 +322,9 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		MeasuredEncoding: encoding,
 		Warnings:         notifWarnings,
 		Suggestions:      notifSuggestions,
+	}
+	if auto {
+		ctx.Format = encoding
 	}
 	return output.Response{
 		OK:              true,
