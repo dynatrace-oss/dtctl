@@ -144,7 +144,7 @@ reader is a model that reads every response afresh and adapts to it, so what the
 envelope carries (default fields, item counts, row encoding, rounding) may change
 in any minor release, `stable` commands included. That change needs no
 deprecation cycle and no dtctl-contrib breaking-change document, and it does not
-demote the command. The PR still has to:
+demote the command. A PR that changes what agent mode outputs still has to:
 
 - keep the envelope skeleton additive-only (`ok`, `error.code`, `result.kind`,
   the `context` keys), because host code parses it, not the model;
@@ -155,6 +155,9 @@ demote the command. The PR still has to:
   pins a shape;
 - use a breaking Conventional Commit title (`feat(scope)!:` plus a
   `BREAKING CHANGE:` footer), so the release notes lead with it.
+
+The breaking marker belongs to the PR that changes the output. A PR that only
+edits this policy or its docs changes no output, so it is not breaking.
 
 Output outside agent mode, and everything a caller types, keep the full promise.
 
