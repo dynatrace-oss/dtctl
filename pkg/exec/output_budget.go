@@ -190,9 +190,10 @@ func budgetSuggestion(budget int64, returned, total int, path string, clippedFie
 	return head + fmt.Sprintf("; the rest were not written to disk — narrow the query ('| fields …', '| limit N', '| summarize …'), raise --max-output-bytes, or re-run with --spill-to <file> and read on with dtctl inspect <file> --page --offset %d", returned)
 }
 
-// fieldClipSuggestion tells an agent that values were clipped and how to get
-// them in full.
+// fieldClipSuggestion names the opt-out for clipped values. It is emitted only
+// when something was clipped and kept short: in agent mode the cap is on by
+// default, so this line rides on every query that returns a long value.
 func fieldClipSuggestion(max int, fields []string) string {
-	return fmt.Sprintf("# values of %s were clipped to %d chars (each ends in \"…(+N chars)\"); re-run with --max-field-chars 0 for full values, ideally with '| fields %s' to fetch only what you need",
+	return fmt.Sprintf("# %s clipped to %d chars; full values: --max-field-chars 0 with '| fields %s'",
 		strings.Join(fields, ", "), max, strings.Join(fields, ", "))
 }

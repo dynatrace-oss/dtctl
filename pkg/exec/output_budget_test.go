@@ -98,11 +98,19 @@ func TestBuildSpillResponse_FieldCapZeroKeepsFullValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := envelopeRows(t, resp)[0]["content"].(string); len(got) != 1008 {
-		t.Errorf("uncapped content length = %d", len(got))
+	// The opt-out restores the pre-cap output exactly: the caller's rows as-is
+	// and no truncation marker or suggestion in the envelope.
+	if !reflect.DeepEqual(envelopeRows(t, resp), records) {
+		t.Error("--max-field-chars 0 must return the rows unchanged")
 	}
-	if resp.Context.Truncated {
-		t.Error("nothing was bounded, truncated must be false")
+	var buf bytes.Buffer
+	if err := output.EncodeEnvelope(&buf, resp); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"truncated", "max_field_chars", "chars)", "--max-field-chars"} {
+		if strings.Contains(buf.String(), key) {
+			t.Errorf("uncapped envelope mentions %q", key)
+		}
 	}
 }
 
@@ -127,6 +135,22 @@ func TestBuildSpillResponse_FieldCapMeasuredBeforeSpillDecision(t *testing.T) {
 	}
 	if resp.Context.MeasuredBytes > 10*1024 {
 		t.Errorf("measured_bytes = %d, want the clipped size", resp.Context.MeasuredBytes)
+	}
+}
+
+// With the cap on (the agent-mode default) but nothing long enough to clip,
+// the envelope carries no marker and no opt-out suggestion.
+func TestBuildSpillResponse_FieldCapNothingClippedAddsNothing(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := longContentResult(3, 10)
+	opts := DQLExecuteOptions{AgentMode: true, MaxFieldChars: 500, Spill: SpillOptions{Mode: SpillNever}}
+
+	resp, _, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Context.Truncated || resp.Context.MaxFieldChars != 0 || hasSuggestion(resp.Context, "--max-field-chars") {
+		t.Errorf("nothing was clipped, context must not say so: %+v", resp.Context)
 	}
 }
 

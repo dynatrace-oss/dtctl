@@ -46,7 +46,7 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 | `--width` / `--height` / `--fullscreen` | Terminal chart dimensions (chart output formats) |
 | `--decode-snapshots` | Decode Live Debugger snapshot payloads (see [Live Debugger](../LIVE_DEBUGGER.md)) |
 | `--spill*` | Spill large results to a file (see Output below) |
-| `--max-field-chars` | Agent mode: clip string values longer than N chars, marked `…(+N chars)` (opt-in; default `0` = full values) |
+| `--max-field-chars` | Agent mode: clip string values longer than N chars, marked `…(+N chars)` (default 500; `0` = full values) |
 | `--max-output-bytes` / `--max-output-tokens` | Agent mode: bound the encoded envelope; the rows that fit are returned and `context` marks the cut (see [Agent Mode](../AGENT_MODE.md#bounding-inline-query-output---max-field-chars-and---max-output-bytes)) |
 | `-S` / `--segment`, `-V` / `--segment-var`, `--segments-file` | Apply filter segments (see [Filter Segments](filter-segments.md)) |
 | `--live` / `--interval` | Live mode with periodic refresh |
@@ -119,11 +119,12 @@ dtctl inspect ./out.jsonl --schema                        # re-derive columns + 
 dtctl inspect --list                                      # lost the path? list spilled files in this context
 ```
 
-**Bounding inline results in agent mode.** Below the spill threshold a result comes back inline, and a handful of rows can still be large. In agent mode, `--max-field-chars N` clips string values to N characters, and `--max-output-bytes` / `--max-output-tokens` bound the whole envelope as printed, returning the rows that fit and marking the cut in `context`:
+**Bounding inline results in agent mode.** Below the spill threshold a result comes back inline, and a handful of rows can still be large. In agent mode string values are clipped to 500 characters by default (`--max-field-chars`, `0` for full values), and `--max-output-bytes` / `--max-output-tokens` bound the whole envelope as printed, returning the rows that fit and marking the cut in `context`:
 
 ```bash
-dtctl -A query 'fetch logs | filter loglevel == "ERROR" | limit 50' --max-field-chars 500  # content clipped to 500 chars each
+dtctl -A query 'fetch logs | filter loglevel == "ERROR" | limit 50'    # content clipped to 500 chars each
 dtctl -A query 'fetch logs | limit 200' --max-output-tokens 4000        # rows that fit + context.next to continue
+dtctl -A query 'fetch logs | fields content | limit 5' --max-field-chars 0  # full values
 ```
 
 `--jq` on `inspect` is a full-file filter run per record (like `jq` over NDJSON); it is not a query engine, so push aggregate questions back into DQL and re-query.

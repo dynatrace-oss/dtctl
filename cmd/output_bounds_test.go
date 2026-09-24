@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
 func newOutputBoundsTestCmd(args ...string) *cobra.Command {
@@ -24,9 +26,8 @@ func TestResolveOutputBounds_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Opt-in: agent-mode query output stays unchanged unless a bound is asked for.
-	if got.MaxFieldChars != 0 || got.MaxOutputBytes != 0 {
-		t.Errorf("agent defaults = %+v, want no bounds", got)
+	if got.MaxFieldChars != output.DefaultAgentMaxFieldChars || got.MaxOutputBytes != 0 {
+		t.Errorf("agent defaults = %+v, want field cap %d and no budget", got, output.DefaultAgentMaxFieldChars)
 	}
 
 	agentMode = false
@@ -51,9 +52,9 @@ func TestResolveOutputBounds_Flags(t *testing.T) {
 	}{
 		{[]string{"--max-field-chars", "0"}, 0, 0},
 		{[]string{"--max-field-chars", "80"}, 80, 0},
-		{[]string{"--max-output-bytes", "16KB"}, 0, 16 * 1024},
-		{[]string{"--max-output-bytes", "2000"}, 0, 2000},
-		{[]string{"--max-output-tokens", "4000"}, 0, 16000},
+		{[]string{"--max-output-bytes", "16KB"}, output.DefaultAgentMaxFieldChars, 16 * 1024},
+		{[]string{"--max-output-bytes", "2000"}, output.DefaultAgentMaxFieldChars, 2000},
+		{[]string{"--max-output-tokens", "4000"}, output.DefaultAgentMaxFieldChars, 16000},
 	}
 	for _, tc := range cases {
 		got, err := resolveOutputBounds(newOutputBoundsTestCmd(tc.args...))

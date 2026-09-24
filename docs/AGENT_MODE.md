@@ -410,11 +410,14 @@ when nothing is shared, and `context.total` still counts the rows.
 
 A row limit does not bound size: twenty log lines can each carry a
 multi-kilobyte `content` value or stack trace. Two flags bound what an inline
-`kind: "records"` result carries. Both are opt-in and work in agent mode only
-(outside it the output is unchanged and the flags warn):
+`kind: "records"` result carries, both in agent mode only (outside it the
+output is unchanged and the flags warn). The value cap is on by default in
+agent mode, as part of the agent-mode token-optimal defaults; the budget is
+off unless you set it:
 
-- **`--max-field-chars N`** (default `0` = full values) clips every string
-  value longer than N characters; `500` is a good starting point for logs. A clipped value keeps its
+- **`--max-field-chars N`** (default **500** in agent mode) clips every string
+  value longer than N characters. `--max-field-chars 0` turns the cap off and
+  restores the full values exactly. A clipped value keeps its
   first N characters and ends in `…(+3214 chars)`, the same marker the spill
   summary uses. A spilled file always keeps the full values, and so does a
   `--jq` filter's input: the values are clipped after the filter ran, so it
@@ -447,8 +450,8 @@ only when its full values are equal in every row; the values in `constant` are
 then clipped like the ones in `records`, and the budget counts `constant`
 toward the envelope size.
 
-`context.suggestions` leads with how to get the rest: `--max-field-chars 0`
-with `| fields <col>` for full values, or `--spill-to <file>` when nothing was
+`context.suggestions` says how to get the rest: `--max-field-chars 0` with
+`| fields <col>` for full values (only when a value was actually clipped), or `--spill-to <file>` when nothing was
 written to disk.
 
 ```json

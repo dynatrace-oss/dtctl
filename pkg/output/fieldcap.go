@@ -2,6 +2,13 @@ package output
 
 import "sort"
 
+// DefaultAgentMaxFieldChars is the per-value cap agent mode applies to string
+// values in an inline query result (--max-field-chars). A single log `content`,
+// stack trace or serialised object can run to many KB, and `| limit N` bounds
+// rows, not bytes; 500 runes keeps the head of such a value — usually the part
+// that identifies it — while a clipped value still says how much it lost.
+const DefaultAgentMaxFieldChars = 500
+
 // ClipRecordValues returns a copy of records in which every string value longer
 // than max runes, at any nesting depth, is cut to max runes and ends in the same
 // "…(+N chars)" marker the spill summary uses, so a consumer can tell a clipped
