@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/spf13/cobra"
 
@@ -58,6 +59,9 @@ func resolveOutputBounds(cmd *cobra.Command) (outputBounds, error) {
 	tokens, _ := f.GetInt("max-output-tokens")
 	if tokens < 0 {
 		return b, fmt.Errorf("--max-output-tokens must not be negative")
+	}
+	if int64(tokens) > math.MaxInt64/bytesPerToken {
+		return b, fmt.Errorf("--max-output-tokens %d is too large", tokens)
 	}
 	if tokens > 0 {
 		budget = int64(tokens) * bytesPerToken

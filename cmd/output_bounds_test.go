@@ -76,6 +76,8 @@ func TestResolveOutputBounds_Invalid(t *testing.T) {
 		{"--max-field-chars", "-1"},
 		{"--max-output-tokens", "-5"},
 		{"--max-output-bytes", "lots"},
+		{"--max-output-bytes", "NaNKB"},
+		{"--max-output-tokens", "4611686018427387904"}, // × 4 overflows int64
 	} {
 		if _, err := resolveOutputBounds(newOutputBoundsTestCmd(args...)); err == nil {
 			t.Errorf("%v: want an error", args)

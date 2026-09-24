@@ -280,6 +280,48 @@ func TestBuildSpillResponse_BudgetWritesContinuationFile(t *testing.T) {
 	}
 }
 
+// context.next must stay one runnable argument even when the spill location
+// contains spaces or shell metacharacters.
+func TestBuildSpillResponse_BudgetNextQuotesPath(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := longContentResult(50, 100)
+	dir := filepath.Join(t.TempDir(), "my dir $(touch x); 'q'")
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MaxOutputBytes: 3000,
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: dir, Format: "jsonl"},
+	}
+
+	resp, _, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches, _ := filepath.Glob(filepath.Join(dir, "results", "q-*.jsonl"))
+	if len(matches) != 1 {
+		t.Fatalf("continuation files = %v", matches)
+	}
+	k := *resp.Context.NextOffset
+	quoted := "'" + strings.ReplaceAll(matches[0], "'", `'\''`) + "'"
+	want := fmt.Sprintf("dtctl inspect %s --page --offset %d --limit %d", quoted, k, k)
+	if resp.Context.Next != want {
+		t.Errorf("next = %q, want %q", resp.Context.Next, want)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	for in, want := range map[string]string{
+		"/home/u/.cache/dtctl/results/prod/q-1a2b.jsonl": "/home/u/.cache/dtctl/results/prod/q-1a2b.jsonl",
+		"/tmp/my dir/q.jsonl":                            "'/tmp/my dir/q.jsonl'",
+		"/tmp/$(rm -rf ~)/q.jsonl":                       "'/tmp/$(rm -rf ~)/q.jsonl'",
+		"/tmp/it's/q.jsonl":                              `'/tmp/it'\''s/q.jsonl'`,
+		"":                                               "''",
+	} {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %s, want %s", in, got, want)
+		}
+	}
+}
+
 func TestBuildSpillResponse_BudgetTOON(t *testing.T) {
 	e := &DQLExecutor{}
 	result, records := longContentResult(50, 100)

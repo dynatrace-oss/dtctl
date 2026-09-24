@@ -2,6 +2,7 @@ package exec
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -85,7 +86,13 @@ func ParseByteSize(s string) (int64, error) {
 			if f < 0 {
 				return 0, fmt.Errorf("invalid size %q: must not be negative", s)
 			}
-			return int64(f * u.mult), nil
+			// ParseFloat accepts NaN and Inf, and a large mantissa overflows
+			// int64; converting either is undefined, so reject them.
+			n := f * u.mult
+			if math.IsNaN(n) || n >= math.MaxInt64 {
+				return 0, fmt.Errorf("invalid size %q: not a finite size", s)
+			}
+			return int64(n), nil
 		}
 	}
 	// Bare number = bytes.
