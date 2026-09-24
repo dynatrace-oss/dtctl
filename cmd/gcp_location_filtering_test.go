@@ -101,9 +101,10 @@ func TestCreateGCPMonitoringWithoutLocationFilteringDoesNotFilter(t *testing.T) 
 		return createGCPMonitoringConfigCmd.RunE(createGCPMonitoringConfigCmd, nil)
 	})
 
-	if locations, present := gcpLocationFiltering(t, body); present {
-		require.Empty(t, locations, "create without --locationFiltering must not filter by location")
-	}
+	// No filter is sent by omitting the field, like the other empty filter
+	// lists; the backend reads an absent list as "every location".
+	locations, present := gcpLocationFiltering(t, body)
+	require.False(t, present, "create without --locationFiltering must not filter by location, got %v", locations)
 }
 
 func TestCreateGCPMonitoringWithLocationFilteringSendsThem(t *testing.T) {
@@ -128,9 +129,10 @@ func TestUpdateGCPMonitoringLocationFilteringAllClearsFilter(t *testing.T) {
 		return updateGCPMonitoringConfigCmd.RunE(updateGCPMonitoringConfigCmd, nil)
 	})
 
-	if locations, present := gcpLocationFiltering(t, body); present {
-		require.Empty(t, locations, "--locationFiltering all must clear the location filter")
-	}
+	// No filter is sent by omitting the field, like the other empty filter
+	// lists; the backend reads an absent list as "every location".
+	locations, present := gcpLocationFiltering(t, body)
+	require.False(t, present, "--locationFiltering all must clear the location filter, got %v", locations)
 }
 
 func TestUpdateGCPMonitoringLocationFilteringAllCannotBeCombined(t *testing.T) {
