@@ -68,6 +68,15 @@ func resolveSeriesOptions(series string, seriesSet bool, precision int, precisio
 	return opts, nil
 }
 
+// querySeriesOptions resolves the series options against the format the query
+// actually renders with. Agent mode replaces a non-explicit -o (such as one
+// from DTCTL_OUTPUT) with -o auto, so the raw output format would skip the
+// series defaults for a chart or parquet format that never applies.
+func querySeriesOptions(series string, seriesSet bool, precision int, precisionSet bool) (seriesOptions, error) {
+	format, _ := agentResultFormat()
+	return resolveSeriesOptions(series, seriesSet, precision, precisionSet, format, agentMode)
+}
+
 func init() {
 	queryCmd.Flags().String("series", "full", `how to render timeseries arrays (records with timeframe and interval):
 full = every datapoint; summary = per-series min/avg/max/p95/last/n,

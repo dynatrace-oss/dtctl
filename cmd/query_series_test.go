@@ -77,3 +77,40 @@ func TestQuerySeriesFlagsAreExperimental(t *testing.T) {
 		}
 	}
 }
+
+// A non-explicit chart or parquet format (DTCTL_OUTPUT) is replaced by -o auto
+// in agent mode, so the series defaults must still apply; an explicit -o keeps
+// them off.
+func TestQuerySeriesOptionsUsesEffectiveFormat(t *testing.T) {
+	origFormat, origAgent := outputFormat, agentMode
+	flag := rootCmd.PersistentFlags().Lookup("output")
+	origChanged := flag.Changed
+	defer func() { outputFormat, agentMode, flag.Changed = origFormat, origAgent, origChanged }()
+
+	defaults := seriesOptions{Mode: output.SeriesMode{Kind: output.SeriesSummary}, SeriesDefaulted: true,
+		Precision: exec.AgentDefaultPrecision, PrecisionDefaulted: true}
+	cases := []struct {
+		name    string
+		format  string
+		changed bool
+		want    seriesOptions
+	}{
+		{"env chart is overridden by auto", "chart", false, defaults},
+		{"env parquet is overridden by auto", "parquet", false, defaults},
+		{"explicit -o chart keeps the full series", "chart", true,
+			seriesOptions{Mode: output.SeriesMode{Kind: output.SeriesFull}, Precision: exec.AgentDefaultPrecision, PrecisionDefaulted: true}},
+		{"explicit -o parquet is left alone", "parquet", true, seriesOptions{Mode: output.SeriesMode{Kind: output.SeriesFull}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			agentMode, outputFormat, flag.Changed = true, c.format, c.changed
+			got, err := querySeriesOptions("full", false, 0, false)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("got %+v, want %+v", got, c.want)
+			}
+		})
+	}
+}

@@ -438,8 +438,8 @@ Examples:
 
 		seriesVal, _ := cmd.Flags().GetString("series")
 		precision, _ := cmd.Flags().GetInt("precision")
-		seriesOpts, err := resolveSeriesOptions(seriesVal, cmd.Flags().Changed("series"),
-			precision, cmd.Flags().Changed("precision"), outputFormat, agentMode)
+		seriesOpts, err := querySeriesOptions(seriesVal, cmd.Flags().Changed("series"),
+			precision, cmd.Flags().Changed("precision"))
 		if err != nil {
 			return err
 		}

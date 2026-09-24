@@ -300,8 +300,6 @@ func TestDQLExecutor_AgentDefaultSeriesSuggestion(t *testing.T) {
 	})
 }
 
-// The lean series defaults compose with -o auto: the summarized records are
-// what auto encodes, and the opt-out hint still rides the envelope.
 // TestDQLExecutor_AgentDefaultSeriesWithAutoFormat pins the combined agent-mode
 // default for `query` with no -o: -o auto plus the series defaults. Both
 // defaults apply, each lossy one names its own opt-out, and the series opt-out
