@@ -473,13 +473,6 @@ _read-only | access: read_
 | uninstall | _(none declared)_ |
 
 
-## token-scopes
-
-Required token scopes for each safety level
-
-_read-only | access: read_
-
-
 ## translate
 
 Translate expressions between formats

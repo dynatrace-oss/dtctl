@@ -739,6 +739,11 @@ func TestCommandsCmd_ListingCoversAllNonHiddenCommands(t *testing.T) {
 		if name == "help" || name == "completion" || name == "version" || name == "commands" {
 			continue
 		}
+		// Help topics (e.g. token-scopes) have nothing to run.
+		if !cmd.Runnable() && !cmd.HasSubCommands() {
+			require.NotContains(t, listing.Verbs, name, "help topic %q must not be in the listing", name)
+			continue
+		}
 		require.Contains(t, listing.Verbs, name,
 			"non-hidden command %q should be in the listing", name)
 	}
