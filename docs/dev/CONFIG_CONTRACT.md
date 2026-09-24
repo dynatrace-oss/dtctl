@@ -12,7 +12,7 @@ update this spec in the same PR.
 
 | Artifact | Path |
 |---|---|
-| Global config | `$XDG_CONFIG_HOME/dtctl/config` (`~/.config/dtctl/config` on Linux, `~/Library/Application Support/dtctl/config` on macOS) |
+| Global config | `$XDG_CONFIG_HOME/dtctl/config` (`~/.config/dtctl/config` on Linux, `~/Library/Application Support/dtctl/config` on macOS, `%LOCALAPPDATA%\dtctl\config` on Windows) |
 | Project-local config | `.dtctl.yaml`, discovered upward from the working directory; used **exclusively** (never merged with the global file) |
 | Explicit config | `--config <path>` flag, wins over discovery |
 | OAuth file store | `$XDG_DATA_HOME/dtctl/oauth-tokens/<sanitized-name>.json`, mode 0600 (dir 0700) |
