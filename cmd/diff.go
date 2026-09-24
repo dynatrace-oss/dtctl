@@ -11,8 +11,8 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
+	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 var diffCmd = &cobra.Command{
@@ -60,7 +60,7 @@ Exit Codes:
 func init() {
 	rootCmd.AddCommand(diffCmd)
 
-	diffCmd.Flags().StringSliceP("file", "f", []string{}, "Files to compare (can specify twice)")
+	diffCmd.Flags().StringSliceP("file", "f", []string{}, "Files to compare (can specify twice; - reads one side from stdin)")
 	diffCmd.Flags().String("format", "unified", "Diff format: unified, side-by-side, json-patch, semantic")
 	diffCmd.Flags().Bool("semantic", false, "Use semantic diff (resource-aware)")
 	diffCmd.Flags().Bool("side-by-side", false, "Show side-by-side comparison")
@@ -152,7 +152,19 @@ func runDiff(cmd *cobra.Command, args []string) error {
 }
 
 func handleTwoFiles(differ *diff.Differ, file1, file2 string) (*diff.DiffResult, error) {
-	return differ.CompareFiles(file1, file2)
+	// Stdin can be read only once, so it can be at most one side.
+	if file1 == "-" && file2 == "-" {
+		return nil, &suggest.FlagError{Flag: "file", Message: "-f - can name only one side of a diff: stdin can be read once"}
+	}
+	left, err := readFileFlag("file", file1)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read left file: %w", err)
+	}
+	right, err := readFileFlag("file", file2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read right file: %w", err)
+	}
+	return differ.CompareData(left, right, sourceName(file1), sourceName(file2))
 }
 
 func handleFileVsRemote(differ *diff.Differ, file string) (*diff.DiffResult, error) {
@@ -176,7 +188,7 @@ func handleFileVsRemote(differ *diff.Differ, file string) (*diff.DiffResult, err
 		return nil, fmt.Errorf("failed to fetch remote resource: %w", err)
 	}
 
-	return differ.Compare(remoteData, localData, fmt.Sprintf("remote: %s/%s", resourceType, resourceID), fmt.Sprintf("local: %s", file))
+	return differ.Compare(remoteData, localData, fmt.Sprintf("remote: %s/%s", resourceType, resourceID), fmt.Sprintf("local: %s", sourceName(file)))
 }
 
 func handleFileVsNamedResource(differ *diff.Differ, file, resourceType, resourceID string) (*diff.DiffResult, error) {
@@ -195,7 +207,7 @@ func handleFileVsNamedResource(differ *diff.Differ, file, resourceType, resource
 		return nil, fmt.Errorf("failed to fetch remote resource: %w", err)
 	}
 
-	return differ.Compare(remoteData, localData, fmt.Sprintf("remote: %s/%s", resourceType, resourceID), fmt.Sprintf("local: %s", file))
+	return differ.Compare(remoteData, localData, fmt.Sprintf("remote: %s/%s", resourceType, resourceID), fmt.Sprintf("local: %s", sourceName(file)))
 }
 
 func handleTwoRemoteResources(differ *diff.Differ, resourceType, id1, id2 string) (*diff.DiffResult, error) {
@@ -218,7 +230,7 @@ func handleTwoRemoteResources(differ *diff.Differ, resourceType, id1, id2 string
 }
 
 func parseYAMLFile(path string) (interface{}, error) {
-	data, err := vfs.ReadFile(path)
+	data, err := readFileFlag("file", path)
 	if err != nil {
 		return nil, err
 	}

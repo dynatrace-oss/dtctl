@@ -12,7 +12,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createSettingsCmd creates a settings object from a file
@@ -53,7 +52,7 @@ Examples:
 		}
 
 		// Read the file
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -134,7 +133,7 @@ Examples:
 
 func init() {
 	// Settings flags
-	createSettingsCmd.Flags().StringP("file", "f", "", "file containing settings value (required)")
+	createSettingsCmd.Flags().StringP("file", "f", "", "file containing settings value, or - for stdin (required)")
 	createSettingsCmd.Flags().String("schema", "", "schema ID (required)")
 	createSettingsCmd.Flags().String("scope", "", "scope for the settings object (required)")
 	createSettingsCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")

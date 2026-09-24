@@ -157,6 +157,10 @@ func detectJSONIndent(afterBrace []byte) string {
 // needed, and the function is a no-op.
 // If resourceID is empty the function is always a no-op.
 func applyWriteBack(sourceFile, resourceID, resourceType string, writeID bool, fileAlreadyHasID bool, warnings *[]string) {
+	if sourceFile == StdinSourceFile {
+		// Piped input: there is no file to write to or to name in a hint.
+		return
+	}
 	if fileAlreadyHasID || resourceID == "" {
 		// File already had an id, or the API didn't return one — nothing to do.
 		return
@@ -171,6 +175,11 @@ func applyWriteBack(sourceFile, resourceID, resourceType string, writeID bool, f
 		printWriteIDHint(sourceFile, resourceID, resourceType)
 	}
 }
+
+// StdinSourceFile is the source-file name for input read from `apply -f -`.
+// It appears in output and as the hooks' source-file argument, and is never
+// a path: write-back and the write-back hint skip it.
+const StdinSourceFile = "<stdin>"
 
 // printWriteIDHint prints a stderr hint when a resource was created without --write-id.
 // It suggests the exact command to recover without creating another duplicate.

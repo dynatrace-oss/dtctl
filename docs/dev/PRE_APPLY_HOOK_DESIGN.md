@@ -10,7 +10,8 @@ Pre-apply hooks let users run an external command to validate (or reject) a
 resource before `dtctl apply` sends it to the Dynatrace API. The hook receives
 the **processed JSON on stdin** (after YAML-to-JSON conversion and template
 rendering) and the **resource type and source filename as positional parameters
-($1 and $2)**. The source filename is informational only — hooks must always
+($1 and $2)**; for piped input (`apply -f -`) the source filename is
+`<stdin>`. The source filename is informational only — hooks must always
 read content from stdin, not from the file. A non-zero exit code aborts the
 apply.
 

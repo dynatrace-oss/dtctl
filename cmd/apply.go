@@ -12,8 +12,8 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
+	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // applyCmd represents the apply command
@@ -176,8 +176,14 @@ resources in sync with their file definitions.
 			return err
 		}
 
+		// --write-id rewrites the input file in place; a pipe has nothing to
+		// write back to (and a file literally named "-" is not the input).
+		if file == "-" && writeID {
+			return &suggest.FlagError{Flag: "write-id", Message: "--write-id cannot be used with -f - (stdin): there is no file to write the ID back to; save the input to a file first"}
+		}
+
 		// Read the file
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -208,7 +214,7 @@ resources in sync with their file definitions.
 		// The source file is the --write-id writeback target (and hook
 		// context) — it must be set regardless of whether hooks are
 		// configured, or the id never lands back in the file.
-		applier = applier.WithSourceFile(file)
+		applier = applier.WithSourceFile(sourceName(file))
 		if !dryRun {
 			checker, err := NewSafetyChecker(cfg)
 			if err != nil {
@@ -226,10 +232,10 @@ resources in sync with their file definitions.
 				return &CapabilityError{Feature: "apply hooks"}
 			}
 			if hookCmd := cfg.GetPreApplyHook(); hookCmd != "" {
-				applier = applier.WithPreApplyHook(hookCmd).WithSourceFile(file)
+				applier = applier.WithPreApplyHook(hookCmd).WithSourceFile(sourceName(file))
 			}
 			if hookCmd := cfg.GetPostApplyHook(); hookCmd != "" {
-				applier = applier.WithPostApplyHook(hookCmd).WithSourceFile(file)
+				applier = applier.WithPostApplyHook(hookCmd).WithSourceFile(sourceName(file))
 			}
 			// Hook output (stdout and stderr) always goes to stderr so that
 			// stdout carries only the structured result — JSON, YAML, or table
@@ -316,7 +322,7 @@ resources in sync with their file definitions.
 func init() {
 	rootCmd.AddCommand(applyCmd)
 
-	applyCmd.Flags().StringP("file", "f", "", "file containing resource definition (required)")
+	applyCmd.Flags().StringP("file", "f", "", "file containing resource definition, or - for stdin (required)")
 	applyCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	applyCmd.Flags().Bool("dry-run", false, "preview changes without applying")
 	applyCmd.Flags().Bool("show-diff", false, "show diff of changes when updating existing resources")

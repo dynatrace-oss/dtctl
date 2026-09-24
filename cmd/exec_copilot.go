@@ -8,7 +8,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/copilot"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // execCopilotCmd executes a Davis CoPilot query
@@ -50,7 +49,7 @@ Examples:
 		inputFile, _ := cmd.Flags().GetString("file")
 
 		if inputFile != "" {
-			content, err := vfs.ReadFile(inputFile)
+			content, err := readFileFlag("file", inputFile)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
@@ -134,7 +133,7 @@ Examples:
 		inputFile, _ := cmd.Flags().GetString("file")
 
 		if inputFile != "" {
-			content, err := vfs.ReadFile(inputFile)
+			content, err := readFileFlag("file", inputFile)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
@@ -191,7 +190,7 @@ Examples:
 		inputFile, _ := cmd.Flags().GetString("file")
 
 		if inputFile != "" {
-			content, err := vfs.ReadFile(inputFile)
+			content, err := readFileFlag("file", inputFile)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
@@ -282,7 +281,7 @@ func init() {
 	execCopilotCmd.AddCommand(execCopilotDocSearchCmd)
 
 	// CoPilot flags
-	execCopilotCmd.Flags().StringP("file", "f", "", "read message from file")
+	execCopilotCmd.Flags().StringP("file", "f", "", "read message from file, or - for stdin")
 	execCopilotCmd.Flags().Bool("stream", false, "stream response in real-time")
 	execCopilotCmd.Flags().String("context", "", "additional context for the conversation")
 	// Renamed or removed in 1.0 because it hides a global flag
@@ -292,10 +291,10 @@ func init() {
 	execCopilotCmd.Flags().Bool("no-docs", false, "disable Dynatrace documentation retrieval")
 
 	// CoPilot nl2dql flags
-	execCopilotNl2DqlCmd.Flags().StringP("file", "f", "", "read prompt from file")
+	execCopilotNl2DqlCmd.Flags().StringP("file", "f", "", "read prompt from file, or - for stdin")
 
 	// CoPilot dql2nl flags
-	execCopilotDql2NlCmd.Flags().StringP("file", "f", "", "read DQL query from file")
+	execCopilotDql2NlCmd.Flags().StringP("file", "f", "", "read DQL query from file, or - for stdin")
 
 	// CoPilot document-search flags
 	execCopilotDocSearchCmd.Flags().StringSlice("collections", []string{}, "document collections to search (e.g., notebooks,dashboards)")

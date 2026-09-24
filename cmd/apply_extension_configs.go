@@ -12,7 +12,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // applyExtensionConfigCmd creates or updates a monitoring configuration for an extension
@@ -57,7 +56,7 @@ Examples:
 		}
 
 		// Read the file
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -175,7 +174,7 @@ Examples:
 func init() {
 	applyCmd.AddCommand(applyExtensionConfigCmd)
 
-	applyExtensionConfigCmd.Flags().StringP("file", "f", "", "file containing the monitoring configuration (scope + value) (required)")
+	applyExtensionConfigCmd.Flags().StringP("file", "f", "", "file containing the monitoring configuration (scope + value), or - for stdin (required)")
 	applyExtensionConfigCmd.Flags().String("scope", "", "scope for the monitoring configuration (e.g. HOST-1234, only for create)")
 	applyExtensionConfigCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	markFlagRequiredNonEmpty(applyExtensionConfigCmd, "file")

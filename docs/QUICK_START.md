@@ -69,6 +69,16 @@ Each resource type has its own reference page with supported operations, flags, 
 | Platform tokens | [resources/platform-tokens.md](resources/platform-tokens.md) |
 | Users & groups | [resources/users-groups.md](resources/users-groups.md) |
 
+Every flag that takes an input file (`apply -f`, `create <resource> -f`, `diff -f`, `update document -f`, `query -f`, and the rest) reads standard input when given `-`:
+
+```bash
+cat workflow.yaml | dtctl create workflow -f -
+render-dashboard.sh | dtctl apply -f - --dry-run
+dtctl get workflow my-wf -o yaml | dtctl diff -f - -f workflow.yaml
+```
+
+Piped input is shown as `<stdin>` wherever a file name would be. `apply --write-id` needs a file to write the ID back to, so it is rejected with `-f -`, and `diff` accepts `-` for one side only.
+
 The full generated verb-and-resource matrix is in **[COMMANDS.md](COMMANDS.md)**; required token scopes by resource are in **[TOKEN_SCOPES.md](TOKEN_SCOPES.md)**.
 
 ## OpenPipeline

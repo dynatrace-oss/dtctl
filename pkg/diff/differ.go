@@ -115,6 +115,23 @@ func (d *Differ) CompareFiles(leftPath, rightPath string) (*DiffResult, error) {
 	return d.Compare(left, right, leftPath, rightPath)
 }
 
+// CompareData compares two already-read YAML or JSON documents. Callers that
+// resolve their own inputs (e.g. stdin for `-f -`) use it instead of
+// CompareFiles; the labels name each side in the output.
+func (d *Differ) CompareData(leftData, rightData []byte, leftLabel, rightLabel string) (*DiffResult, error) {
+	left, err := parseData(leftData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse left file: %w", err)
+	}
+
+	right, err := parseData(rightData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse right file: %w", err)
+	}
+
+	return d.Compare(left, right, leftLabel, rightLabel)
+}
+
 func (d *Differ) getFormatter() Formatter {
 	if d.options.Semantic {
 		return &SemanticFormatter{}
@@ -151,6 +168,10 @@ func parseFile(path string) (interface{}, error) {
 		return nil, err
 	}
 
+	return parseData(data)
+}
+
+func parseData(data []byte) (interface{}, error) {
 	var result interface{}
 	if err := yaml.Unmarshal(data, &result); err == nil {
 		return result, nil

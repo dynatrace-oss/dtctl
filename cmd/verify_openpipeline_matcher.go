@@ -10,7 +10,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/matcherverify"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // verifyOpenPipelineMatcherCmd validates a DQL matcher expression against the
@@ -149,7 +148,7 @@ func printVerifyResultHuman(result *matcherverify.VerifyResult) {
 // path ("-" for stdin) through the vfs seam, so an embedded invocation reads
 // the request's virtual files rather than the host disk.
 func readVerifyExpressionFromFile(path string) (string, error) {
-	content, err := vfs.ReadFileOrStdin(path)
+	content, err := readFileFlag("file", path)
 	if err != nil {
 		return "", fmt.Errorf("read expression from %q: %w", path, err)
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/lookup"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createLookupCmd creates a lookup table
@@ -91,10 +90,10 @@ Examples:
 		var manifest map[string]interface{}
 		if err := json.Unmarshal(fileData, &manifest); err == nil {
 			if _, hasKind := manifest["kind"]; hasKind {
-				// It's a manifest - handle via apply command. `apply` reads a
-				// path, never stdin, so a piped manifest has to be saved first.
+				// It's a manifest - handle via apply command. The piped bytes
+				// are consumed, so the caller has to pipe them again.
 				if file == "-" {
-					return fmt.Errorf("the piped input is a manifest -- save it to a file and run 'dtctl apply -f <file>'")
+					return fmt.Errorf("the piped input is a manifest -- pipe it to 'dtctl apply -f -' instead")
 				}
 				return fmt.Errorf("manifest files should be used with 'dtctl apply -f %s'", file)
 			}
@@ -203,8 +202,8 @@ Examples:
 	},
 }
 
-// readLookupInput reads the lookup data named by --file: a user-supplied path
-// through the vfs seam, or "-" for the process stdin.
+// readLookupInput reads the lookup data named by --file through the shared
+// readFileFlag convention: a user-supplied path, or "-" for the process stdin.
 //
 // stdinIsTerminal is a parameter rather than a probe inside this function so
 // the interactive case is testable without a pty -- the same shape
@@ -219,14 +218,12 @@ func readLookupInput(file string, stdinIsTerminal bool) ([]byte, error) {
 		return nil, fmt.Errorf("--file - reads the lookup data from stdin, but stdin is a terminal -- nothing to read\n\nPipe the data in (generate-codes | dtctl create lookup -f - ...) or pass a file path (-f data.csv)")
 	}
 
-	data, err := vfs.ReadFileOrStdin(file)
+	// readFileFlagFrom rejects an empty pipe itself, naming stdin.
+	data, err := readFileFlagFrom("file", file, queryStdin{r: os.Stdin, isTerminal: stdinIsTerminal})
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 	if len(data) == 0 {
-		if file == "-" {
-			return nil, fmt.Errorf("no data arrived on stdin -- the producing command wrote nothing")
-		}
 		return nil, fmt.Errorf("%s is empty", file)
 	}
 	return data, nil

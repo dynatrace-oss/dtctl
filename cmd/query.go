@@ -18,7 +18,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // isTerminal checks if the given file is a terminal
@@ -654,7 +653,7 @@ func parseSegmentFlags(segmentIDs []string) ([]exec.FilterSegmentRef, error) {
 
 // parseSegmentsFile reads a YAML file containing an array of FilterSegmentRef entries.
 func parseSegmentsFile(path string) ([]exec.FilterSegmentRef, error) {
-	data, err := vfs.ReadFile(path)
+	data, err := readFileFlag("segments-file", path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read segments file: %w", err)
 	}

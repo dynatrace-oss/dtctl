@@ -11,7 +11,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createSLOCmd creates an SLO from a file
@@ -39,7 +38,7 @@ Examples:
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 
 		// Read the file
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -96,7 +95,7 @@ Examples:
 
 func init() {
 	// SLO flags
-	createSLOCmd.Flags().StringP("file", "f", "", "file containing SLO definition (required)")
+	createSLOCmd.Flags().StringP("file", "f", "", "file containing SLO definition, or - for stdin (required)")
 	createSLOCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	markFlagRequiredNonEmpty(createSLOCmd, "file")
 }

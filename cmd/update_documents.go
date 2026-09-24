@@ -8,7 +8,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/apply"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // updateDocumentCmd updates an existing document of any type from a file.
@@ -101,7 +100,7 @@ func updateDocumentRunE(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	fileData, err := vfs.ReadFile(file)
+	fileData, err := readFileFlag("file", file)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
@@ -160,7 +159,7 @@ func updateDocumentRunE(cmd *cobra.Command, _ []string) error {
 }
 
 func init() {
-	updateDocumentCmd.Flags().StringP("file", "f", "", "file containing the document definition (required)")
+	updateDocumentCmd.Flags().StringP("file", "f", "", "file containing the document definition, or - for stdin (required)")
 	updateDocumentCmd.Flags().String("type", "", "document type (e.g. launchpad, acme:config); read from payload if not provided")
 	updateDocumentCmd.Flags().String("id", "", "ID of the document to update; read from payload if not provided")
 	updateDocumentCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")

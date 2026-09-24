@@ -11,7 +11,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createSegmentCmd creates a Grail filter segment
@@ -39,7 +38,7 @@ Examples:
 		}
 
 		// Read from file
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -91,7 +90,7 @@ Examples:
 }
 
 func init() {
-	createSegmentCmd.Flags().StringP("file", "f", "", "file containing segment definition (YAML or JSON)")
+	createSegmentCmd.Flags().StringP("file", "f", "", "file containing segment definition (YAML or JSON), or - for stdin")
 }
 
 // Declared stable: the invocation and output contract of this command is

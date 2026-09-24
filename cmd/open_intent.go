@@ -11,7 +11,6 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/resources/appengine"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 var (
@@ -76,7 +75,7 @@ Examples:
 		if openIntentDataFile != "" {
 			// Read from file, or stdin for "-" — both through the vfs seam, so
 			// an embedded invocation reads the request's files and stdin.
-			content, err := vfs.ReadFileOrStdin(openIntentDataFile)
+			content, err := readFileFlag("data-file", openIntentDataFile)
 			if err != nil {
 				return fmt.Errorf("failed to read data file: %w", err)
 			}

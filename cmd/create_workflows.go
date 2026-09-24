@@ -10,7 +10,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 
 	"github.com/dynatrace-oss/dtctl/pkg/util/template"
 )
@@ -40,7 +39,7 @@ Examples:
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 
 		// Read the file
-		fileData, err := vfs.ReadFile(file)
+		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
 		}
@@ -97,7 +96,7 @@ Examples:
 
 func init() {
 	// Workflow flags
-	createWorkflowCmd.Flags().StringP("file", "f", "", "file containing workflow definition (required)")
+	createWorkflowCmd.Flags().StringP("file", "f", "", "file containing workflow definition, or - for stdin (required)")
 	createWorkflowCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	markFlagRequiredNonEmpty(createWorkflowCmd, "file")
 }

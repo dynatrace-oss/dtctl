@@ -12,7 +12,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 	"github.com/dynatrace-oss/dtctl/pkg/util/format"
-	"github.com/dynatrace-oss/dtctl/pkg/vfs"
 )
 
 // createEdgeConnectCmd creates an EdgeConnect
@@ -41,7 +40,7 @@ Examples:
 
 		if file != "" {
 			// Read from file
-			fileData, err := vfs.ReadFile(file)
+			fileData, err := readFileFlag("file", file)
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
@@ -112,7 +111,7 @@ Examples:
 
 func init() {
 	// EdgeConnect flags
-	createEdgeConnectCmd.Flags().StringP("file", "f", "", "file containing EdgeConnect definition")
+	createEdgeConnectCmd.Flags().StringP("file", "f", "", "file containing EdgeConnect definition, or - for stdin")
 	createEdgeConnectCmd.Flags().String("name", "", "EdgeConnect name (RFC 1123 compliant, max 50 chars)")
 	createEdgeConnectCmd.Flags().String("host-patterns", "", "comma-separated list of host patterns")
 }

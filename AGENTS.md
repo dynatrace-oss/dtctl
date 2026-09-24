@@ -474,10 +474,18 @@ rationale: [docs/dev/SERVICE_ENGINE_DESIGN.md](docs/dev/SERVICE_ENGINE_DESIGN.md
 ### 1. User-supplied file paths go through `pkg/vfs` — never `os` directly
 
 ```go
-content, err := os.ReadFile(pathFromFlag)        // ❌ reads the SERVER's disk
-content, err := vfs.ReadFile(pathFromFlag)       // ✅
-content, err := vfs.ReadFileOrStdin(pathFromFlag) // ✅ when "-" means stdin
+content, err := os.ReadFile(pathFromFlag)          // ❌ reads the SERVER's disk
+content, err := vfs.ReadFile(pathFromFlag)         // ❌ in cmd/: "-" is read as a file named "-"
+content, err := readFileFlag("file", pathFromFlag) // ✅ in cmd/: vfs seam, and "-" means stdin
 ```
+
+In `cmd/`, every `--file`-style flag reads through `readFileFlag`
+(`cmd/file_input.go`), so `-f -` means stdin in every command, a terminal stdin
+fails fast instead of hanging, and an empty pipe is an error. Piped input is
+named `<stdin>` wherever the path would be shown. Stdin can be read once: a
+command that could read two inputs from it (`diff -f - -f -`) refuses the
+combination.
+*Guard*: `go test ./cmd/ -run TestFileFlagsReadThroughReadFileFlag`
 
 The test is **whose file is it**: a path the *user named* (`-f`, `--file`,
 `--data-file`, a query file, a file to `diff`, an `apply --write-id` writeback)
@@ -490,8 +498,8 @@ and then handing the path to a `pkg/` helper that calls `os.ReadFile` is the
 same hole one frame deeper. The guard scans `cmd/` *and* `pkg/`.
 
 Never open `/dev/stdin` as a path — the seam swaps the `os.Stdin` *variable*, so
-a path slips past it and doesn't exist on Windows. Use `os.Stdin` or
-`vfs.ReadFileOrStdin`.
+a path slips past it and doesn't exist on Windows. Use `readFileFlag` (in
+`cmd/`), `os.Stdin`, or `vfs.ReadFileOrStdin`.
 
 *Guard*: `go test ./cmd/ -run TestUserFilePathsGoThroughVFS`
 
