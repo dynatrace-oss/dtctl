@@ -58,6 +58,7 @@ func TestPrintResults_AgentEnvelopeCarriesNotifications(t *testing.T) {
 	}{
 		{"inline records", DQLExecuteOptions{OutputFormat: "json", AgentMode: true}},
 		{"jq", DQLExecuteOptions{OutputFormat: "json", AgentMode: true, JQFilter: ".records"}},
+		{"-o auto", DQLExecuteOptions{OutputFormat: "auto", AgentMode: true}},
 		{"spilled", DQLExecuteOptions{OutputFormat: "json", AgentMode: true,
 			Spill: SpillOptions{Mode: SpillAlways, ToPath: "result.jsonl"}}},
 	}
