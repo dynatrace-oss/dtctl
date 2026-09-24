@@ -24,11 +24,22 @@ import (
 // call. A command must read a user-named input through readFileFlag, which is
 // where "-" means stdin. The allowlist names the few call sites that resolve
 // "-" themselves before touching the path.
+//
+// pkg/ helpers that take a path and read it with vfs.ReadFile are the same
+// hole one frame deeper, so calling one from cmd/ fails too.
 func TestFileFlagsReadThroughReadFileFlag(t *testing.T) {
 	allowed := map[string]string{
 		"file_input.go":  "the shared implementation",
 		"query_input.go": `resolveQueryInput handles "-" (with its own terminal guard) before it reads a path`,
 		"exec_api.go":    `-d @name, not a --file flag; "@-" is resolved by vfs.ReadFileOrStdin`,
+	}
+
+	// pkg/ helpers that read a path argument with vfs.ReadFile, so "-" is a
+	// file name there.
+	pathReaders := map[string]bool{
+		"ExecuteFromFile":    true, // pkg/exec DQLExecutor
+		"ParseInputFromFile": true, // pkg/resources/analyzer
+		"CompareFiles":       true, // pkg/diff Differ
 	}
 
 	files, err := filepath.Glob("*.go")
@@ -50,6 +61,11 @@ func TestFileFlagsReadThroughReadFileFlag(t *testing.T) {
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
 			if !ok {
+				return true
+			}
+			if pathReaders[sel.Sel.Name] {
+				t.Errorf("%s: %s reads a user-named path with vfs.ReadFile; read it with readFileFlag and pass the bytes",
+					fset.Position(call.Pos()), sel.Sel.Name)
 				return true
 			}
 			pkg, ok := sel.X.(*ast.Ident)
