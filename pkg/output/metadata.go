@@ -78,7 +78,8 @@ type MetadataBucket struct {
 
 // ParseMetadataFields parses the --metadata flag value into a field list.
 // "all" (the NoOptDefVal) returns ["all"]. A comma-separated string like
-// "executionTimeMilliseconds,scannedRecords" returns individual field names.
+// "executionTimeMilliseconds,scannedRecords" returns individual field names;
+// the "minimal" selector may appear among them (see ExpandMetadataFields).
 // Returns an error if any field name is not recognized.
 func ParseMetadataFields(val string) ([]string, error) {
 	val = strings.TrimSpace(val)
@@ -96,7 +97,7 @@ func ParseMetadataFields(val string) ([]string, error) {
 		if f == "" {
 			continue
 		}
-		if !allMetadataFields[f] {
+		if !allMetadataFields[f] && f != MetadataMinimal {
 			unknown = append(unknown, f)
 		} else {
 			fields = append(fields, f)
@@ -104,9 +105,10 @@ func ParseMetadataFields(val string) ([]string, error) {
 	}
 	if len(unknown) > 0 {
 		valid := ValidMetadataFieldNames()
-		return nil, fmt.Errorf("unknown metadata field(s): %s; valid fields: %s",
+		return nil, fmt.Errorf("unknown metadata field(s): %s; valid fields: %s (or the %q selector)",
 			strings.Join(unknown, ", "),
-			strings.Join(valid, ", "))
+			strings.Join(valid, ", "),
+			MetadataMinimal)
 	}
 	if len(fields) == 0 {
 		return nil, nil

@@ -1,0 +1,247 @@
+package exec
+
+import (
+	"encoding/json"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/output"
+)
+
+// resultWithFullGrailMetadata carries every field the issue (#577) calls out as
+// noise for an agent: the query echoed twice, locale, timezone, DQL version,
+// query id and the analysis window.
+func resultWithFullGrailMetadata() (*DQLQueryResponse, []map[string]interface{}) {
+	resp, records := resultWithScanStats()
+	g := resp.Metadata.Grail
+	g.Query = "fetch logs | limit 3"
+	g.CanonicalQuery = "fetch logs\n| limit 3"
+	g.Locale = "und"
+	g.Timezone = "Z"
+	g.DQLVersion = "V1_0"
+	return resp, records
+}
+
+func sortedKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func envelopeContext(t *testing.T, resp output.Response) map[string]interface{} {
+	t.Helper()
+	js, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(js, &parsed); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	ctx, ok := parsed["context"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("envelope has no context object:\n%s", js)
+	}
+	return ctx
+}
+
+var spillDebugKeys = []string{"threshold_bytes", "measured_bytes", "measured_encoding"}
+
+func TestBuildSpillResponse_MinimalMetadataInline(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"minimal"},
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	// An explicit window: the analysis timeframe is what the agent asked for,
+	// so echoing it back is noise.
+	resp, handled, err := e.buildSpillResponse("fetch logs, from:now()-1h | limit 3", result, records, "json", opts)
+	if err != nil || !handled {
+		t.Fatalf("buildSpillResponse: handled=%v err=%v", handled, err)
+	}
+
+	m := metadataMap(t, resp)
+	got := sortedKeys(m)
+	want := []string{"executionTimeMilliseconds", "scannedBytes"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("minimal metadata keys = %v, want %v", got, want)
+	}
+
+	ctx := envelopeContext(t, resp)
+	if ctx["decided"] != "inline" {
+		t.Errorf("decided = %v, want inline (it is documented as always present)", ctx["decided"])
+	}
+	for _, k := range spillDebugKeys {
+		if _, ok := ctx[k]; ok {
+			t.Errorf("context.%s should be omitted for an inline minimal result: %v", k, ctx)
+		}
+	}
+}
+
+func TestBuildSpillResponse_MinimalMetadataDefaultWindowKeepsTimeframe(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"minimal"},
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	// No from:/to:/timeframe: and no --default-timeframe-*: the query ran on the
+	// server's default window, which the agent cannot know without being told.
+	resp, _, err := e.buildSpillResponse("fetch logs | limit 3", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	m := metadataMap(t, resp)
+	if _, ok := m["analysisTimeframe"]; !ok {
+		t.Errorf("analysisTimeframe should be kept when the default window applied: %v", m)
+	}
+
+	opts.DefaultTimeframeStart = "2026-01-01T00:00:00Z"
+	resp, _, err = e.buildSpillResponse("fetch logs | limit 3", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	if _, ok := metadataMap(t, resp)["analysisTimeframe"]; ok {
+		t.Error("analysisTimeframe should be dropped when --default-timeframe-start set the window")
+	}
+}
+
+func TestBuildSpillResponse_MinimalVerboseKeepsSpillDebug(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"minimal"},
+		Verbose:        true,
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, _, err := e.buildSpillResponse("fetch logs, from:now()-1h", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	ctx := envelopeContext(t, resp)
+	for _, k := range spillDebugKeys {
+		if _, ok := ctx[k]; !ok {
+			t.Errorf("context.%s should be present under -v: %v", k, ctx)
+		}
+	}
+}
+
+func TestBuildSpillResponse_MinimalSpilledKeepsSpillDebug(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"minimal"},
+		Spill:          SpillOptions{Mode: SpillAlways, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, spilled, err := e.buildSpillResponse("fetch logs, from:now()-1h", result, records, "json", opts)
+	if err != nil || !spilled {
+		t.Fatalf("expected spilled: spilled=%v err=%v", spilled, err)
+	}
+	ctx := envelopeContext(t, resp)
+	for _, k := range spillDebugKeys {
+		if _, ok := ctx[k]; !ok {
+			t.Errorf("context.%s explains why the result spilled and must stay: %v", k, ctx)
+		}
+	}
+	if _, ok := metadataMap(t, resp)["queryId"]; ok {
+		t.Error("spilled minimal metadata should not carry queryId")
+	}
+}
+
+// The full default is unchanged: without "minimal" the envelope still carries
+// the complete metadata block and the spill-decision provenance.
+func TestBuildSpillResponse_AllMetadataUnchanged(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"all"},
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, _, err := e.buildSpillResponse("fetch logs, from:now()-1h", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	m := metadataMap(t, resp)
+	for _, k := range []string{"query", "canonicalQuery", "locale", "timezone", "dqlVersion", "queryId", "analysisTimeframe"} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("full metadata lost %q: %v", k, m)
+		}
+	}
+	ctx := envelopeContext(t, resp)
+	for _, k := range spillDebugKeys {
+		if _, ok := ctx[k]; !ok {
+			t.Errorf("context.%s should be present without minimal: %v", k, ctx)
+		}
+	}
+}
+
+// -o json with --jq in agent mode goes through printAgentJQ: both the filter
+// input and the envelope's metadata honor the minimal selection.
+func TestPrintResults_AgentJQ_MinimalMetadata(t *testing.T) {
+	e := &DQLExecutor{}
+	result, _ := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		OutputFormat:   "json",
+		AgentMode:      true,
+		JQFilter:       ".metadata",
+		MetadataFields: []string{"minimal"},
+	}
+	var printErr error
+	out := captureStdout(t, func() {
+		printErr = e.printResults("fetch logs, from:now()-1h", result, opts)
+	})
+	if printErr != nil {
+		t.Fatalf("printResults: %v", printErr)
+	}
+	var resp struct {
+		Result   map[string]interface{} `json:"result"`
+		Metadata map[string]interface{} `json:"metadata"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	want := "executionTimeMilliseconds,scannedBytes"
+	if got := strings.Join(sortedKeys(resp.Result), ","); got != want {
+		t.Errorf("--jq .metadata = %v, want keys %s", resp.Result, want)
+	}
+	if got := strings.Join(sortedKeys(resp.Metadata), ","); got != want {
+		t.Errorf("envelope metadata = %v, want keys %s", resp.Metadata, want)
+	}
+}
+
+// Outside the envelope (-o json --no-agent -M=minimal) the same lean block is
+// emitted next to the records.
+func TestPrintResults_JSONMinimalMetadata(t *testing.T) {
+	e := &DQLExecutor{}
+	result, _ := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		OutputFormat:   "json",
+		MetadataFields: []string{"minimal"},
+	}
+	var printErr error
+	out := captureStdout(t, func() {
+		printErr = e.printResults("fetch logs, from:now()-1h", result, opts)
+	})
+	if printErr != nil {
+		t.Fatalf("printResults: %v", printErr)
+	}
+	var parsed struct {
+		Metadata map[string]interface{} `json:"metadata"`
+	}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if got := strings.Join(sortedKeys(parsed.Metadata), ","); got != "executionTimeMilliseconds,scannedBytes" {
+		t.Errorf("metadata = %v, want only executionTimeMilliseconds,scannedBytes", parsed.Metadata)
+	}
+}

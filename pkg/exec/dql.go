@@ -165,7 +165,11 @@ type DQLExecuteOptions struct {
 	ShowProgress bool
 
 	// Metadata options
-	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, specific names = filtered
+	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, ["minimal"] = lean agent set, specific names = filtered
+
+	// Verbose mirrors -v. Under --metadata=minimal it keeps the inline spill
+	// decision's measurement details (threshold/measured bytes) in the envelope.
+	Verbose bool
 
 	// Segment options
 	Segments []FilterSegmentRef // Filter segments to apply to the query
@@ -833,10 +837,12 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		}
 	}
 
-	// Extract metadata if requested
+	// Extract metadata if requested, resolving --metadata=minimal against this
+	// response so every renderer below applies the same concrete selection.
 	var meta *output.QueryMetadata
 	if len(opts.MetadataFields) > 0 {
 		meta = extractQueryMetadata(result)
+		opts.MetadataFields = resolveMetadataFields(query, meta, opts)
 	}
 
 	// Agent mode + --jq: emit the ordinary agent envelope with the filter output
@@ -991,7 +997,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	ap.SetJQFilter(opts.JQFilter)
 	// Keep metadata next to `result` as the unfiltered envelope does, so a
 	// filter that narrows down to the rows doesn't silently drop it.
-	ap.SetMetadata(envelopeMetadata(result, opts))
+	ap.SetMetadata(envelopeMetadata(query, result, opts))
 	// -o toon asked for a token-efficient encoding of the filtered result; keep
 	// it. Any other non-JSON format the envelope can't carry warns for itself.
 	if opts.AutoFormatByDefault {

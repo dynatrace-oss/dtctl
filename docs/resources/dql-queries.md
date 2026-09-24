@@ -37,7 +37,7 @@ Resource commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--
 | `--max-result-bytes` | Maximum result payload size in bytes |
 | `--default-scan-limit-gbytes` | Cap on how much data Grail scans (GB) |
 | `--no-query-limits` | Ignore the context's configured query limits for this invocation (see [Configuration](../CONFIGURATION.md#query-limits)) |
-| `--metadata`, `-M` | Include execution metadata (bare = all, or `=field1,field2`) |
+| `--metadata`, `-M` | Include execution metadata (bare = all, `=minimal` for the lean agent set, or `=field1,field2`) |
 | `--include-types` | Include DQL column type information |
 | `--include-contributions` | Include Grail bucket contribution information |
 | `--client-context` | Set the `dt-client-context` request header (caller intent) |
@@ -180,7 +180,14 @@ dtctl query "fetch logs | limit 10" \
 
 dtctl query "fetch logs" --default-sampling-ratio 1000
 dtctl query "fetch logs | limit 10" --metadata=scannedRecords,scannedBytes,executionTimeMilliseconds
+dtctl query "fetch logs | limit 10" --metadata=minimal
 ```
+
+`--metadata=minimal` keeps only what is worth acting on: `executionTimeMilliseconds`,
+`scannedBytes`/`scannedDataPoints` when non-zero, `sampled` when the result is
+sampled, `analysisTimeframe` when the query named no window (neither `from:`/`to:`/
+`timeframe:` nor `--default-timeframe-*`), and `contributions` when requested.
+It combines with field names, e.g. `--metadata=minimal,metrics`.
 
 Live mode, streaming results at a regular interval:
 

@@ -221,7 +221,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		EnvelopeVersion: output.EnvelopeVersion,
 		Result:          manifest,
 		Context:         ctx,
-		Metadata:        envelopeMetadata(result, opts),
+		Metadata:        envelopeMetadata(query, result, opts),
 	}
 	return resp, true, nil
 }
@@ -319,16 +319,20 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 
 	total := len(records)
 	ctx := &output.ResponseContext{
-		Verb:             "query",
-		Resource:         resourceFromQuery(query),
-		Total:            &total,
-		Decided:          "inline",
-		ThresholdBytes:   opts.Spill.Threshold,
-		MeasuredBytes:    measured,
-		MeasuredEncoding: encoding,
-		Warnings:         notifWarnings,
-		Suggestions:      notifSuggestions,
-		EmptyReason:      emptyReason,
+		Verb:        "query",
+		Resource:    resourceFromQuery(query),
+		Total:       &total,
+		Decided:     "inline",
+		Warnings:    notifWarnings,
+		Suggestions: notifSuggestions,
+		EmptyReason: emptyReason,
+	}
+	// The threshold/measured sizes explain a spill decision; on an inline result
+	// they are debugging detail, which --metadata=minimal leaves to -v (#577).
+	if !output.IsMinimalFields(opts.MetadataFields) || opts.Verbose {
+		ctx.ThresholdBytes = opts.Spill.Threshold
+		ctx.MeasuredBytes = measured
+		ctx.MeasuredEncoding = encoding
 	}
 	if auto {
 		ctx.Format = encoding
@@ -338,7 +342,7 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		EnvelopeVersion: output.EnvelopeVersion,
 		Result:          res,
 		Context:         ctx,
-		Metadata:        envelopeMetadata(result, opts),
+		Metadata:        envelopeMetadata(query, result, opts),
 	}, true, nil
 }
 
@@ -348,8 +352,8 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 // response carried none, so the key is omitted rather than emitted empty. Agent
 // mode defaults --metadata to "all", so an agent gets the metadata by default
 // without asking for it; the same placement is used for inline and spilled
-// results.
-func envelopeMetadata(result *DQLQueryResponse, opts DQLExecuteOptions) interface{} {
+// results. --metadata=minimal is resolved against the response here.
+func envelopeMetadata(query string, result *DQLQueryResponse, opts DQLExecuteOptions) interface{} {
 	if len(opts.MetadataFields) == 0 {
 		return nil
 	}
@@ -357,7 +361,24 @@ func envelopeMetadata(result *DQLQueryResponse, opts DQLExecuteOptions) interfac
 	if meta == nil {
 		return nil
 	}
-	return output.MetadataToMap(meta, opts.MetadataFields)
+	return output.MetadataToMap(meta, resolveMetadataFields(query, meta, opts))
+}
+
+// resolveMetadataFields expands the --metadata=minimal selector into the
+// concrete fields worth reporting for this response (output.ExpandMetadataFields).
+// Any other selection is returned unchanged.
+func resolveMetadataFields(query string, meta *output.QueryMetadata, opts DQLExecuteOptions) []string {
+	return output.ExpandMetadataFields(meta, opts.MetadataFields, usesDefaultWindow(query, opts))
+}
+
+// usesDefaultWindow reports whether the query ran on the server's default
+// analysis window: neither the query text nor --default-timeframe-* named one.
+// Only then is the analysis timeframe news to the caller.
+func usesDefaultWindow(query string, opts DQLExecuteOptions) bool {
+	if opts.DefaultTimeframeStart != "" || opts.DefaultTimeframeEnd != "" {
+		return false
+	}
+	return !strings.Contains(query, "from:") && !strings.Contains(query, "to:") && !strings.Contains(query, "timeframe:")
 }
 
 // resolveSpillTarget decides the format, destination path, and base dir for a

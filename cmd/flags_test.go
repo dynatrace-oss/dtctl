@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -766,9 +767,9 @@ func TestMetadataFlagCompletion_Empty(t *testing.T) {
 		t.Error("expected ShellCompDirectiveNoSpace to be set")
 	}
 
-	// Should include "all" plus all valid field names
+	// Should include "all" and "minimal" plus all valid field names
 	allFields := output.ValidMetadataFieldNames()
-	expectedCount := len(allFields) + 1 // +1 for "all"
+	expectedCount := len(allFields) + 2 // +2 for "all" and "minimal"
 	if len(suggestions) != expectedCount {
 		t.Errorf("got %d suggestions, want %d", len(suggestions), expectedCount)
 	}
@@ -776,6 +777,26 @@ func TestMetadataFlagCompletion_Empty(t *testing.T) {
 	// First suggestion should be "all" (with tab-separated description)
 	if suggestions[0] != "all\tInclude all metadata fields" {
 		t.Errorf("first suggestion = %q, want %q", suggestions[0], "all\tInclude all metadata fields")
+	}
+	if !strings.HasPrefix(suggestions[1], "minimal\t") {
+		t.Errorf("second suggestion = %q, want the minimal selector", suggestions[1])
+	}
+}
+
+// TestMetadataFlagCompletion_Minimal tests that the minimal selector completes
+// by prefix, alone and after already-selected fields.
+func TestMetadataFlagCompletion_Minimal(t *testing.T) {
+	suggestions, _ := metadataFieldCompletion(nil, nil, "min")
+	if len(suggestions) != 1 || suggestions[0] != "minimal" {
+		t.Errorf("completion of %q = %v, want [minimal]", "min", suggestions)
+	}
+	suggestions, _ = metadataFieldCompletion(nil, nil, "metrics,mi")
+	if len(suggestions) != 1 || suggestions[0] != "metrics,minimal" {
+		t.Errorf("completion of %q = %v, want [metrics,minimal]", "metrics,mi", suggestions)
+	}
+	suggestions, _ = metadataFieldCompletion(nil, nil, "minimal,mi")
+	if len(suggestions) != 0 {
+		t.Errorf("completion of %q = %v, want none (minimal already selected)", "minimal,mi", suggestions)
 	}
 }
 
@@ -818,8 +839,8 @@ func TestMetadataFlagCompletion_AfterComma(t *testing.T) {
 		}
 	}
 
-	// Should have one suggestion per field minus the already-selected queryId
-	want := len(output.ValidMetadataFieldNames()) - 1
+	// One suggestion per field minus the already-selected queryId, plus minimal
+	want := len(output.ValidMetadataFieldNames()) - 1 + 1
 	if len(suggestions) != want {
 		t.Errorf("got %d suggestions, want %d", len(suggestions), want)
 	}
@@ -857,8 +878,8 @@ func TestMetadataFlagCompletion_MultipleSelected(t *testing.T) {
 		}
 	}
 
-	// All fields minus the 2 already-selected (queryId, sampled)
-	want := len(output.ValidMetadataFieldNames()) - 2
+	// All fields minus the 2 already-selected (queryId, sampled), plus minimal
+	want := len(output.ValidMetadataFieldNames()) - 2 + 1
 	if len(suggestions) != want {
 		t.Errorf("got %d suggestions, want %d", len(suggestions), want)
 	}
