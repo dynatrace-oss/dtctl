@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
-	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
 // bytesPerToken converts --max-output-tokens to a byte budget. Four bytes per
@@ -25,7 +24,7 @@ type outputBounds struct {
 // addOutputBoundFlags registers the agent-mode output bounds on a command.
 func addOutputBoundFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("max-field-chars", 0, `clip string values longer than N chars in an agent-mode result; a clipped value ends in "…(+N chars)"
-and context.truncated_fields names its field (default 500 in agent mode; 0 = full values; spilled files are never clipped)`)
+and context.truncated_fields names its field (default 0 = full values; spilled files are never clipped)`)
 	cmd.Flags().String("max-output-bytes", "", `bound the agent-mode output to this size of the encoded envelope, e.g. 16KB: the rows that fit are
 returned and context.truncated/returned/next_offset/next mark the cut (default: no budget)`)
 	cmd.Flags().Int("max-output-tokens", 0, "like --max-output-bytes, in approximate tokens (1 token ≈ 4 bytes)")
@@ -42,9 +41,6 @@ func resolveOutputBounds(cmd *cobra.Command) (outputBounds, error) {
 	chars, _ := f.GetInt("max-field-chars")
 	if chars < 0 {
 		return b, fmt.Errorf("--max-field-chars must not be negative (0 = full values)")
-	}
-	if !f.Changed("max-field-chars") {
-		chars = output.DefaultAgentMaxFieldChars
 	}
 
 	var budget int64
