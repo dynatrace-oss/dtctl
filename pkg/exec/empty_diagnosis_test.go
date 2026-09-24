@@ -163,6 +163,34 @@ func TestEmptyResultAdvice_FieldAbsentWithoutNearMatchIsHedged(t *testing.T) {
 	}
 }
 
+// A sample cut short by a scan, result, time or consumption limit may be
+// skewed toward whatever was read first, so it is not used as evidence.
+func TestEmptyResultAdvice_PartialFieldSampleClaimsNothing(t *testing.T) {
+	query := `fetch logs | filter servce.name == "x"`
+	for _, n := range []QueryNotification{
+		{Severity: "WARNING", NotificationType: "SCAN_LIMIT_GBYTES", Message: "Your execution was stopped after 1 gigabytes of data were scanned."},
+		{Severity: "WARNING", NotificationType: "RESULT_LIMIT_BYTES", Message: "The result has been limited to 4000000 bytes."},
+		{Severity: "WARNING", NotificationType: "RESULT_LIMIT_RECORDS", Message: "The result has been limited to 100 records."},
+		{Severity: "WARNING", NotificationType: "FETCH_TIMEOUT", Message: "The fetch timed out."},
+		{Severity: "WARNING", NotificationType: "QUERY_CONSUMPTION_LIMIT", Message: "The query consumption limit was reached."},
+	} {
+		t.Run(n.NotificationType, func(t *testing.T) {
+			p := &fakeProbe{respond: func(string) (*DQLQueryResponse, error) {
+				r := logSample()
+				r.Metadata = &DQLMetadata{Grail: &GrailMetadata{Notifications: []QueryNotification{n}}}
+				return r, nil
+			}}
+			e := &DQLExecutor{probe: p.run}
+
+			reason, sugg := e.emptyResultAdvice(query, recordsResponse(), nil, DQLExecuteOptions{})
+
+			if reason != nil || !reflect.DeepEqual(sugg, windowAdvice(query, nil, DQLExecuteOptions{})) {
+				t.Errorf("a partial sample is no evidence: reason=%+v sugg=%v", reason, sugg)
+			}
+		})
+	}
+}
+
 func TestEmptyResultAdvice_EmptySampleClaimsNothing(t *testing.T) {
 	p := &fakeProbe{respond: func(string) (*DQLQueryResponse, error) { return recordsResponse(), nil }}
 	e := &DQLExecutor{probe: p.run}

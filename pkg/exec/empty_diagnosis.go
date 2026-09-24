@@ -126,7 +126,9 @@ func diagnoseFields(ctx context.Context, probe probeFunc, query, object string, 
 	probeOpts.DefaultTimeframeStart = opts.DefaultTimeframeStart
 	probeOpts.DefaultTimeframeEnd = opts.DefaultTimeframeEnd
 	resp, err := probe(ctx, fmt.Sprintf("%s | limit %d", stages[0], emptyProbeSampleRecords), probeOpts)
-	if err != nil || resp == nil {
+	// A sample cut short by a limit is skewed toward whatever was read first,
+	// so it is not used as evidence.
+	if err != nil || resp == nil || probeIsPartial(resp) {
 		return nil, nil
 	}
 	sample := resp.GetRecords()
