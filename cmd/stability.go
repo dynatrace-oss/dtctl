@@ -708,17 +708,25 @@ func badgeFlags(cmd *cobra.Command) {
 // effect of merely rendering help — and the pristine-tree restore resets flags
 // per command, so a merged-in --config would start being reset by the wrong
 // command.
+// The comparison is by identity, not by name: a command may redefine a name an
+// ancestor already uses persistently, and cobra then binds the command's own
+// flag (`dtctl diff --context` is an int line count, not the global string
+// context). Skipping such a flag by name would leave it unbadged here and
+// unchecked in blockBelowFloorFlags, while visitInheritedFlags skips it too as
+// shadowed — so an experimental flag would pass a stable floor untouched. Only
+// the nearest ancestor that declares the name matters: that is the one cobra
+// would have merged in.
 func visitOwnFlags(cmd *cobra.Command, fn func(*pflag.Flag)) {
-	inherited := func(name string) bool {
+	inherited := func(f *pflag.Flag) bool {
 		for parent := cmd.Parent(); parent != nil; parent = parent.Parent() {
-			if parent.PersistentFlags().Lookup(name) != nil {
-				return true
+			if pf := parent.PersistentFlags().Lookup(f.Name); pf != nil {
+				return pf == f
 			}
 		}
 		return false
 	}
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if inherited(f.Name) {
+		if inherited(f) {
 			return
 		}
 		fn(f)

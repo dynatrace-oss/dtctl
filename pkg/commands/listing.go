@@ -350,7 +350,6 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 			var resourceStability map[string]string
 			subcommands := make(map[string]*Verb)
 			resourceFlags := make(map[string][]string)
-			hasResources := false
 
 			for _, sub := range subs {
 				if sub.Name() == "help" || isHelpTopic(sub) {
@@ -365,13 +364,12 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 
 				subName := sub.Name()
 
-				if len(listedChildren(sub)) > 0 {
+				if nested := listedChildren(sub); len(nested) > 0 {
 					// Nested subcommand (e.g., exec copilot -> nl2dql, dql2nl, ...)
-					subcommands[subName] = buildNestedVerb(name, sub)
+					subcommands[subName] = buildNestedVerb(name, sub, nested)
 				} else {
 					// Treat as a resource
 					resources = append(resources, subName)
-					hasResources = true
 					if lvl := stability.Effective(sub); lvl != stability.Stable {
 						if resourceStability == nil {
 							resourceStability = map[string]string{}
@@ -384,7 +382,7 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 				}
 			}
 
-			if hasResources {
+			if len(resources) > 0 {
 				verb.Resources = resources
 				verb.ResourceStability = resourceStability
 			}
@@ -420,17 +418,18 @@ func buildVerbs(root *cobra.Command) map[string]*Verb {
 //
 // A leaf child lists its flags by name in the parent's resource_flags, like a
 // verb's resources do, instead of as full flag objects.
-func buildNestedVerb(verbName string, cmd *cobra.Command) *Verb {
+//
+// children is cmd's listedChildren, which the caller has already computed to
+// decide that cmd nests at all.
+func buildNestedVerb(verbName string, cmd *cobra.Command, children []*cobra.Command) *Verb {
 	v := newNestedNode(verbName, cmd)
 	if flags := collectLocalFlags(cmd); len(flags) > 0 {
 		v.Flags = flags
 	}
-	for _, child := range listedChildren(cmd) {
-		if v.Subcommands == nil {
-			v.Subcommands = make(map[string]*Verb)
-		}
-		if len(listedChildren(child)) > 0 {
-			v.Subcommands[child.Name()] = buildNestedVerb(verbName, child)
+	v.Subcommands = make(map[string]*Verb, len(children))
+	for _, child := range children {
+		if nested := listedChildren(child); len(nested) > 0 {
+			v.Subcommands[child.Name()] = buildNestedVerb(verbName, child, nested)
 			continue
 		}
 		v.Subcommands[child.Name()] = newNestedNode(verbName, child)
@@ -461,9 +460,16 @@ func newNestedNode(verbName string, cmd *cobra.Command) *Verb {
 }
 
 // isHelpTopic reports whether cmd is a cobra help topic (such as
-// `token-scopes`): documentation with nothing to run and no subcommands.
+// `token-scopes`): documentation with nothing to run and nothing the catalog
+// would list beneath it.
+//
+// The children are counted with listedChildren rather than cobra's
+// HasSubCommands, which counts hidden ones. A group whose every child is masked
+// — by a command profile, by the stability floor, or by being hidden outright —
+// has as little to run as a help topic does, and listing it as a resource would
+// advertise a command that only prints its own help.
 func isHelpTopic(cmd *cobra.Command) bool {
-	return !cmd.Runnable() && !cmd.HasSubCommands()
+	return !cmd.Runnable() && len(listedChildren(cmd)) == 0
 }
 
 // listedChildren returns the subcommands of cmd that belong in the catalog:
@@ -485,15 +491,25 @@ func listedChildren(cmd *cobra.Command) []*cobra.Command {
 }
 
 // flagNames returns the sorted keys of cmd's own flags, in the form the flags
-// maps use ("--mine", "-y/--yes").
+// maps use ("--mine", "-y/--yes"). It describes nothing else about them, so it
+// visits the flags directly rather than building the objects collectLocalFlags
+// would and throwing them away.
 func flagNames(cmd *cobra.Command) []string {
-	flags := collectLocalFlags(cmd)
-	names := make([]string, 0, len(flags))
-	for name := range flags {
-		names = append(names, name)
-	}
+	var names []string
+	visitOwnFlags(cmd, func(f *pflag.Flag) {
+		names = append(names, flagKey(f))
+	})
 	sort.Strings(names)
 	return names
+}
+
+// flagKey is a flag's key in the catalog's flag maps: "--mine", or
+// "-y/--yes" when it has a shorthand.
+func flagKey(f *pflag.Flag) string {
+	if f.Shorthand != "" {
+		return "-" + f.Shorthand + "/--" + f.Name
+	}
+	return "--" + f.Name
 }
 
 // dqlScopeVerbs read Grail data via DQL; their scopes attach to the verb rather
@@ -555,25 +571,11 @@ func collectResourceScopes(verbs map[string]*Verb) map[string]auth.AccessScopes 
 	return table
 }
 
-// collectLocalFlags extracts a command's own non-hidden flags, leaving out
-// the persistent flags it inherits.
-//
-// It reads Flags and PersistentFlags directly. cobra's LocalFlags and
-// InheritedFlags merge the parents' persistent flags into the command as a side
-// effect, and doing that to the live command tree leaks state between
-// invocations.
+// collectLocalFlags describes a command's own non-hidden flags, leaving out the
+// persistent flags it inherits.
 func collectLocalFlags(cmd *cobra.Command) map[string]*Flag {
 	flags := make(map[string]*Flag)
-	add := func(f *pflag.Flag) {
-		if f.Hidden || inheritedFlag(cmd, f) {
-			return
-		}
-
-		key := "--" + f.Name
-		if f.Shorthand != "" {
-			key = "-" + f.Shorthand + "/" + key
-		}
-
+	visitOwnFlags(cmd, func(f *pflag.Flag) {
 		fl := &Flag{
 			Type:        flagTypeName(f),
 			Default:     f.DefValue,
@@ -587,16 +589,38 @@ func collectLocalFlags(cmd *cobra.Command) map[string]*Flag {
 			}
 		}
 
-		if lvl := stability.OfFlag(cmd, f.Name); lvl != stability.Undeclared {
+		// Read the tier off the flag rather than looking it up by name:
+		// stability.OfFlag searches cmd.Flags(), which does not hold the
+		// command's own persistent flags until cobra merges them — the merge
+		// this collector exists to avoid.
+		if lvl := stability.OfFlagValue(f); lvl != stability.Undeclared {
 			fl.Stability = string(lvl)
-			fl.StabilitySince = stability.SinceFlag(cmd, f.Name)
+			fl.StabilitySince = stability.SinceFlagValue(f)
 		}
 
-		flags[key] = fl
-	}
-	cmd.Flags().VisitAll(add)
-	cmd.PersistentFlags().VisitAll(add)
+		flags[flagKey(f)] = fl
+	})
 	return flags
+}
+
+// visitOwnFlags invokes fn for each non-hidden flag a command declares itself,
+// once per flag, skipping the persistent flags it inherits.
+//
+// It reads Flags and PersistentFlags directly. cobra's LocalFlags and
+// InheritedFlags merge the parents' persistent flags into the command as a side
+// effect, and doing that to the live command tree leaks state between
+// invocations.
+func visitOwnFlags(cmd *cobra.Command, fn func(*pflag.Flag)) {
+	seen := make(map[string]bool)
+	visit := func(f *pflag.Flag) {
+		if f.Hidden || seen[f.Name] || inheritedFlag(cmd, f) {
+			return
+		}
+		seen[f.Name] = true
+		fn(f)
+	}
+	cmd.Flags().VisitAll(visit)
+	cmd.PersistentFlags().VisitAll(visit)
 }
 
 // inheritedFlag reports whether f is an ancestor's persistent flag rather than
@@ -774,21 +798,7 @@ func NewBrief(l *Listing) *Listing {
 			Deprecated: verb.Deprecated,
 		}
 
-		// Simplify flags: just type, drop description/default
-		if verb.Flags != nil {
-			bv.Flags = make(map[string]*Flag, len(verb.Flags))
-			for k, f := range verb.Flags {
-				// Stability survives the strip for the same reason mutating
-				// status does: it is a constraint on whether the agent may act,
-				// not a description it can do without. StabilitySince does not
-				// — that is history, and history is what --full is for.
-				bf := &Flag{Type: f.Type, Stability: f.Stability}
-				if f.Required {
-					bf.Description = "(required)"
-				}
-				bv.Flags[k] = bf
-			}
-		}
+		bv.Flags = briefFlags(verb.Flags)
 
 		if verb.Subcommands != nil {
 			bv.Subcommands = make(map[string]*Verb, len(verb.Subcommands))
@@ -815,12 +825,7 @@ func newBriefSubcommand(sub *Verb) *Verb {
 		Stability:         sub.Stability,
 		Deprecated:        sub.Deprecated,
 	}
-	if sub.Flags != nil {
-		bs.Flags = make(map[string]*Flag, len(sub.Flags))
-		for k, f := range sub.Flags {
-			bs.Flags[k] = &Flag{Type: f.Type, Stability: f.Stability}
-		}
-	}
+	bs.Flags = briefFlags(sub.Flags)
 	if sub.Subcommands != nil {
 		bs.Subcommands = make(map[string]*Verb, len(sub.Subcommands))
 		for name, nested := range sub.Subcommands {
@@ -828,6 +833,28 @@ func newBriefSubcommand(sub *Verb) *Verb {
 		}
 	}
 	return bs
+}
+
+// briefFlags strips a flag map to what --brief keeps: the type, whether the
+// flag is required, and its stability tier.
+//
+// Stability survives the strip for the same reason mutating status does: it is
+// a constraint on whether the agent may act, not a description it can do
+// without. StabilitySince does not — that is history, and history is what
+// --full is for.
+func briefFlags(flags map[string]*Flag) map[string]*Flag {
+	if flags == nil {
+		return nil
+	}
+	out := make(map[string]*Flag, len(flags))
+	for k, f := range flags {
+		bf := &Flag{Type: f.Type, Stability: f.Stability}
+		if f.Required {
+			bf.Description = "(required)"
+		}
+		out[k] = bf
+	}
+	return out
 }
 
 // FilterByResource returns a new listing containing only verbs that operate on
@@ -882,17 +909,16 @@ func FilterByResource(l *Listing, name string) (*Listing, bool) {
 // resource name to a common stem (stripping trailing "s"). This avoids fragile
 // "append s" heuristics that break for irregular plurals.
 func containsResource(verb *Verb, name string) bool {
-	stem := singularize(name)
 	// Check resources list
 	for _, r := range verb.Resources {
-		if r == name || singularize(r) == stem {
+		if sameResource(r, name) {
 			return true
 		}
 	}
 	// Check subcommands, at any depth — the catalog nests as deeply as the
 	// command tree does (`get gcp connections principal`).
 	for subName, sub := range verb.Subcommands {
-		if subName == name || singularize(subName) == stem {
+		if sameResource(subName, name) {
 			return true
 		}
 		if containsResource(sub, name) {
@@ -900,6 +926,12 @@ func containsResource(verb *Verb, name string) bool {
 		}
 	}
 	return false
+}
+
+// sameResource reports whether two catalog names denote the same resource,
+// normalizing both to a common stem so "workflows" matches "workflow".
+func sameResource(a, b string) bool {
+	return a == b || singularize(a) == singularize(b)
 }
 
 // singularize returns a basic singular form by stripping a trailing "s".
@@ -969,6 +1001,11 @@ func RequiredScopesForResource(l *Listing, resource string) []string {
 		for _, s := range auth.ScopesForResource(resolved, auth.Access(verb.Access)) {
 			seen[s] = true
 		}
+		// A name that matches only below the verb (`create aws connection`) has
+		// no entry of its own in the canonical table. Reporting nothing for it
+		// would answer "this needs no scopes" about a command that needs the
+		// ones its enclosing subcommand declares, so take those instead.
+		addNestedScopes(verb, resolved, resource, nil, seen)
 	}
 	out := make([]string, 0, len(seen))
 	for s := range seen {
@@ -976,6 +1013,26 @@ func RequiredScopesForResource(l *Listing, resource string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// addNestedScopes records the scopes needed by every subcommand of v, at any
+// depth, whose name denotes the wanted resource. A node that declares no scopes
+// of its own takes those of its nearest enclosing node that does: `create aws
+// connection` is reached through `create aws`, and that is where the
+// hyperscaler scopes are declared.
+func addNestedScopes(v *Verb, resolved, raw string, inherited []string, seen map[string]bool) {
+	for name, sub := range v.Subcommands {
+		scopes := inherited
+		if len(sub.RequiredScopes) > 0 {
+			scopes = sub.RequiredScopes
+		}
+		if sameResource(name, resolved) || sameResource(name, raw) {
+			for _, s := range scopes {
+				seen[s] = true
+			}
+		}
+		addNestedScopes(sub, resolved, raw, scopes, seen)
+	}
 }
 
 // WriteTo writes the listing to w in the given format ("json", "yaml"/"yml", or "toon").

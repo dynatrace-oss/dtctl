@@ -332,6 +332,18 @@ func SinceFlag(cmd *cobra.Command, name string) string {
 	return flagSince(f.Annotations)
 }
 
+// SinceFlagValue returns the version at which a flag entered its current level,
+// read from the flag itself. It is to SinceFlag what OfFlagValue is to OfFlag:
+// the form that serves a caller already holding the flag, including a
+// command's own persistent flag, which cmd.Flags() does not see until cobra
+// merges persistent flags.
+func SinceFlagValue(f *pflag.Flag) string {
+	if f == nil {
+		return ""
+	}
+	return flagSince(f.Annotations)
+}
+
 // flagLevel extracts a level from a pflag annotation map.
 func flagLevel(annotations map[string][]string) Level {
 	vals := annotations[AnnotationLevel]

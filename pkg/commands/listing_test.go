@@ -33,7 +33,7 @@ func newTestRoot() *cobra.Command {
 	root.AddCommand(describe)
 
 	// apply verb (mutating, with flags)
-	apply := &cobra.Command{Use: "apply", Short: "Apply configuration", Run: func(*cobra.Command, []string) {}}
+	apply := &cobra.Command{Use: "apply", Short: "Apply configuration", Run: run}
 	apply.Flags().StringP("file", "f", "", "YAML/JSON file path")
 	_ = apply.MarkFlagRequired("file")
 	apply.Flags().StringArray("set", nil, "Template variables")
@@ -56,7 +56,7 @@ func newTestRoot() *cobra.Command {
 	root.AddCommand(exec)
 
 	// doctor (read-only, no resources)
-	root.AddCommand(&cobra.Command{Use: "doctor", Short: "Health check", Run: func(*cobra.Command, []string) {}})
+	root.AddCommand(&cobra.Command{Use: "doctor", Short: "Health check", Run: run})
 
 	// commands (should be excluded)
 	root.AddCommand(&cobra.Command{Use: "commands", Short: "List commands"})
@@ -435,7 +435,7 @@ func TestParseRequiredArgs(t *testing.T) {
 
 func TestBuild_HiddenCobraCommand(t *testing.T) {
 	root := &cobra.Command{Use: "dtctl"}
-	root.AddCommand(&cobra.Command{Use: "visible", Short: "Visible", Run: func(*cobra.Command, []string) {}})
+	root.AddCommand(&cobra.Command{Use: "visible", Short: "Visible", Run: run})
 	hidden := &cobra.Command{Use: "secret", Short: "Secret", Hidden: true}
 	root.AddCommand(hidden)
 

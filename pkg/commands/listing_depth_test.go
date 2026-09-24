@@ -70,6 +70,18 @@ func TestBuild_NestedLeavesInheritMutating(t *testing.T) {
 	require.True(t, brief.Verbs["enable"].Subcommands["aws"].Subcommands["monitoring"].Mutating)
 }
 
+// TestRequiredScopesForResource_NestedName covers a name that exists only
+// below the verb. `enable aws monitoring` is reached through `enable aws`, and
+// that is where the hyperscaler scopes are declared — reporting none for
+// "monitoring" would tell a caller the command needs no token scopes at all.
+func TestRequiredScopesForResource_NestedName(t *testing.T) {
+	listing := Build(newDeepTestRoot())
+
+	aws := listing.Verbs["enable"].Subcommands["aws"].RequiredScopes
+	require.NotEmpty(t, aws, "the test tree needs a scope-bearing nested node")
+	require.ElementsMatch(t, aws, RequiredScopesForResource(listing, "monitoring"))
+}
+
 func TestBuild_ResourceFlagNames(t *testing.T) {
 	listing := Build(newDeepTestRoot())
 

@@ -459,3 +459,27 @@ func TestStabilityExceptionAdmitsAGlobalFlag(t *testing.T) {
 		t.Errorf("a global-flag exception on one command spilled onto another: %v", err)
 	}
 }
+
+// TestStabilityFloorBlocksAFlagShadowingAGlobal covers a flag a command
+// redefines under a name the root already uses persistently.
+//
+// Such a flag fell through both halves of the walk: visitOwnFlags skipped it
+// because an ancestor declares the name, and visitInheritedFlags skipped the
+// ancestor's flag because the command shadows it. Nobody checked the one cobra
+// actually binds, so an experimental flag passed a stable floor untouched.
+func TestStabilityFloorBlocksAFlagShadowingAGlobal(t *testing.T) {
+	root := newFloorTree()
+	root.PersistentFlags().String("timeframe", "", "global timeframe")
+	stability.MarkFlag(treeCommand(t, root, "query"), "timeframe", stability.Experimental, "0.38.0")
+
+	applyStabilityFloor(root, stability.Policy{Floor: stability.Stable})
+
+	err := runTree(t, root, "query", "fetch logs", "--timeframe", "-2h")
+	var blocked *StabilityError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("an experimental flag shadowing a global was accepted under a stable floor: %v", err)
+	}
+	if blocked.Flag != "timeframe" || blocked.Command != "query" {
+		t.Errorf("the block should name the flag and the command a caller typed, got %+v", blocked)
+	}
+}
