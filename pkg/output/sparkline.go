@@ -8,8 +8,6 @@ import (
 )
 
 // sparkChars are characters from lowest to highest
-//
-//nolint:unused // Reserved for future sparkline features
 var sparkChars = []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 
 // SparklinePrinter prints timeseries data as compact sparklines

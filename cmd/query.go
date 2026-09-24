@@ -182,6 +182,18 @@ Examples:
   # Custom chart dimensions
   dtctl query "timeseries avg(dt.host.cpu.usage)" -o chart --width 150 --height 30
 
+  # Compact timeseries: per-series summary + sparkline, or downsampling
+  # that keeps each bucket's min and max
+  dtctl query "timeseries avg(dt.host.cpu.usage), by:{host.name}" --series=summary
+  dtctl query "timeseries avg(dt.host.cpu.usage)" --series=downsample:30 -o csv
+
+  # Round numbers to 3 significant digits
+  dtctl query "timeseries avg(dt.host.cpu.usage)" --precision 3 -o json
+
+  # In agent mode --series=summary and --precision 4 are the defaults;
+  # restore the raw datapoints with
+  dtctl query "timeseries avg(dt.host.cpu.usage)" -A --series=full --precision 0
+
   # Include query metadata (execution time, scanned records, etc.)
   dtctl query "fetch logs | limit 10" --metadata
   dtctl query "fetch logs | limit 10" -M -o json
@@ -424,6 +436,14 @@ Examples:
 			output.PrintWarning("%s", compactWarning)
 		}
 
+		seriesVal, _ := cmd.Flags().GetString("series")
+		precision, _ := cmd.Flags().GetInt("precision")
+		seriesOpts, err := querySeriesOptions(seriesVal, cmd.Flags().Changed("series"),
+			precision, cmd.Flags().Changed("precision"))
+		if err != nil {
+			return err
+		}
+
 		spillOpts, err := resolveSpillOptions(cmd, cfg)
 		if err != nil {
 			return err
@@ -457,6 +477,10 @@ Examples:
 			IncludeContributions:         includeContributions,
 			Typed:                        typed,
 			Compact:                      compact,
+			Series:                       seriesOpts.Mode,
+			Precision:                    seriesOpts.Precision,
+			SeriesDefaulted:              seriesOpts.SeriesDefaulted,
+			PrecisionDefaulted:           seriesOpts.PrecisionDefaulted,
 			DefaultTimeframeStart:        defaultTimeframeStart,
 			DefaultTimeframeEnd:          defaultTimeframeEnd,
 			Locale:                       locale,
@@ -495,6 +519,9 @@ Examples:
 			}
 			if typed {
 				output.PrintWarning("--typed is ignored in live mode (live mode renders a table, where the API's string encoding is not surfaced)")
+			}
+			if cmd.Flags().Changed("series") || cmd.Flags().Changed("precision") {
+				output.PrintWarning("--series and --precision are ignored in live mode (live mode renders the full series)")
 			}
 			if dryRun {
 				output.PrintWarning("--dry-run is ignored in live mode (live mode always executes queries)")

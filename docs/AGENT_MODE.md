@@ -216,6 +216,17 @@ sample-based figures can't be misread as population truth.
 > transforms keep their requested shape and fall through to the plain
 > `{ "records": …, "metadata": … }` output.
 
+Timeseries results are the most token-expensive shape: every series is a
+full-precision array. In agent mode `query` therefore defaults to
+`--series=summary --precision 4`: each series is replaced by its statistics
+and a sparkline (typically ~9x fewer tokens), and every number is rounded to 4
+significant digits. When that changed the result, `context.suggestions` names
+the opt-out: `--series=full --precision 0` restores the raw values exactly.
+`--series=downsample:N` keeps at most N extreme-preserving points instead.
+Summaries are nested objects, so with no `-o` the `-o auto` default encodes
+them as YAML; add `-o json` for native JSON. See
+[Output Formats](OUTPUT_FORMATS.md#compact-timeseries---series---precision).
+
 ### Choosing the encoding with `-o auto`
 
 No single encoding is the cheapest for every result: CSV wins on flat rows,
