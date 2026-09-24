@@ -230,6 +230,23 @@ func TestShapingPrinter_KeyContainingDot(t *testing.T) {
 	}
 }
 
+func TestLookupPath_NestedKeyContainingDot(t *testing.T) {
+	item := map[string]any{
+		"a.b":   map[string]any{"c": 1},
+		"x":     map[string]any{"y.z": map[string]any{"w": 2}},
+		"p.q.r": map[string]any{"s": 3},
+	}
+	for path, want := range map[string]any{"a.b.c": 1, "x.y.z.w": 2, "p.q.r.s": 3} {
+		got, ok := lookupPath(item, path)
+		if !ok || got != want {
+			t.Errorf("lookupPath(%q) = %v, %v; want %v", path, got, ok, want)
+		}
+	}
+	if _, ok := lookupPath(item, "a.b.missing"); ok {
+		t.Error("a path with no matching leaf must not resolve")
+	}
+}
+
 func TestShapingPrinter_AgentTruncationSetsContext(t *testing.T) {
 	var got bytes.Buffer
 	ap := NewAgentPrinter(&got, nil)

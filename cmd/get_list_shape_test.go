@@ -10,7 +10,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/livedebugger"
 )
 
 // newListShapeEnv serves three buckets, enough to observe --limit cutting a list.
@@ -117,4 +120,66 @@ type stderrLog struct{ t *testing.T }
 func (s stderrLog) Write(p []byte) (int, error) {
 	s.t.Log(strings.TrimSpace(string(p)))
 	return len(p), nil
+}
+
+// get breakpoints builds its own printer (it writes to rootCmd's writer), so
+// it has to opt into the shaping explicitly rather than via NewPrinter.
+func TestGetBreakpoints_HonorsLimitAndFields(t *testing.T) {
+	origFormat, origAgent, origLimit, origFields := outputFormat, agentMode, getListLimit, getListFields
+	origOut := rootCmd.OutOrStdout()
+	t.Cleanup(func() {
+		outputFormat, agentMode, getListLimit, getListFields = origFormat, origAgent, origLimit, origFields
+		rootCmd.SetOut(origOut)
+	})
+	outputFormat, agentMode = "csv", false
+	getListLimit, getListFields = 1, "lineNumber,id"
+
+	rule := func(id string, line float64) map[string]interface{} {
+		return map[string]interface{}{
+			"id": id, "is_disabled": false,
+			"aug_json": map[string]interface{}{
+				"location": map[string]interface{}{"filename": "OrderController.java", "lineno": line},
+			},
+		}
+	}
+	deps := liveDebuggerDeps{}
+	deps.loadConfig = func() (*config.Config, error) {
+		cfg := config.NewConfig()
+		cfg.SetContext("test", "https://example.invalid", "token")
+		cfg.CurrentContext = "test"
+		return cfg, nil
+	}
+	deps.newClient = func(cfg *config.Config) (*client.Client, error) { return nil, nil }
+	deps.newHandler = func(c *client.Client, environment string) (*livedebugger.Handler, error) { return nil, nil }
+	deps.getOrCreateWorkspace = func(handler *livedebugger.Handler, projectPath string) (map[string]interface{}, string, error) {
+		return map[string]interface{}{"data": map[string]interface{}{}}, "ws-1", nil
+	}
+	deps.getWorkspaceRules = func(handler *livedebugger.Handler, workspaceID string) (map[string]interface{}, error) {
+		return map[string]interface{}{"data": map[string]interface{}{"org": map[string]interface{}{
+			"workspace": map[string]interface{}{"rules": []interface{}{rule("bp-1", 306), rule("bp-2", 42)}},
+		}}}, nil
+	}
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	require.NoError(t, runGetBreakpointsWithDeps(nil, nil, deps))
+	// Rows come out sorted by file and line, so bp-2 (line 42) is first.
+	require.Equal(t, "lineNumber,id\n42,bp-2\n", out.String())
+}
+
+// get snapshots runs a DQL query and prints through the query executor, which
+// has no --fields projection; the flag must be refused, not silently ignored.
+func TestGetSnapshots_RejectsFields(t *testing.T) {
+	srv := newListShapeEnv(t)
+
+	t.Setenv("CLAUDECODE", "")
+	t.Setenv("CLAUDE_CODE", "")
+	t.Cleanup(restorePristineTree)
+	var stderr bytes.Buffer
+	code, _ := captureRun(t, []string{"get", "snapshots", "OrderController.java:306", "--fields", "id"}, RunOptions{
+		Session: &Session{EnvironmentURL: srv.URL, Token: "t", MinStability: "experimental"},
+		Stderr:  &stderr,
+	})
+	require.NotZero(t, code)
+	require.Contains(t, stderr.String(), "--fields", "must fail on the flag, before any request")
 }
