@@ -98,7 +98,7 @@ func ApplySeriesModeWithEffect(records []map[string]interface{}, mode SeriesMode
 		}
 		switch mode.Kind {
 		case SeriesSummary:
-			if summarizeRecord(cp, ts, digits, tabular) {
+			if summarizeRecord(cp, ts, digits, tabular, &eff.Rounded) {
 				eff.Summarized = true
 			}
 		case SeriesDownsample:
@@ -189,8 +189,9 @@ func numericSeries(v interface{}) ([]float64, bool) {
 }
 
 // summarizeRecord replaces every numeric series of rec with its summary and
-// reports whether it found any.
-func summarizeRecord(rec map[string]interface{}, tb seriesTimebase, digits int, tabular bool) bool {
+// reports whether it found any. It sets *rounded when rounding changed a
+// statistic, or would change a raw point that --series=full would show.
+func summarizeRecord(rec map[string]interface{}, tb seriesTimebase, digits int, tabular bool, rounded *bool) bool {
 	found := false
 	if digits <= 0 {
 		digits = defaultSummaryDigits
@@ -204,7 +205,13 @@ func summarizeRecord(rec map[string]interface{}, tb seriesTimebase, digits int, 
 			continue
 		}
 		found = true
-		sum := roundValue(summarizeSeries(vals, tb), digits, nil).(map[string]interface{})
+		for _, x := range vals {
+			if !math.IsNaN(x) && roundSignificant(x, digits) != x {
+				*rounded = true
+				break
+			}
+		}
+		sum := roundValue(summarizeSeries(vals, tb), digits, rounded).(map[string]interface{})
 		if tabular {
 			rec[k] = summaryCell(sum)
 		} else {

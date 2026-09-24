@@ -254,6 +254,37 @@ func TestDQLExecutor_AgentDefaultSeriesSuggestion(t *testing.T) {
 		}
 	})
 
+	t.Run("defaulted summary of exact values names --series=full only", func(t *testing.T) {
+		// Integer points and exact statistics: nothing was rounded, so the
+		// hint must not claim it, and --series=full alone restores the points.
+		exact := newRecordsExecutor(t, []map[string]interface{}{{
+			"cpu":      []interface{}{1.0, 2.0, 4.0, 8.0},
+			"interval": "60000000000",
+			"timeframe": map[string]interface{}{
+				"start": "2026-01-01T12:00:00.000000000Z",
+				"end":   "2026-01-01T12:04:00.000000000Z",
+			},
+		}})
+		out := captureStdout(t, func() {
+			if err := exact.ExecuteWithContext(context.Background(), "timeseries cpu=sum(x)", DQLExecuteOptions{
+				OutputFormat: "table", AgentMode: true,
+				Spill:  SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+				Series: output.SeriesMode{Kind: output.SeriesSummary}, SeriesDefaulted: true,
+				Precision: AgentDefaultPrecision, PrecisionDefaulted: true,
+			}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		var env agentEnvelope
+		if err := json.Unmarshal(out, &env); err != nil {
+			t.Fatalf("not an envelope: %v\n%s", err, out)
+		}
+		got := seriesSuggestions(env)
+		if len(got) != 1 || strings.Contains(got[0], "rounded") || strings.Contains(got[0], "--precision") {
+			t.Errorf("want a --series=full-only suggestion, got %q", got)
+		}
+	})
+
 	t.Run("defaulted suggestion rides the --jq envelope too", func(t *testing.T) {
 		out := captureStdout(t, func() {
 			if err := executor.ExecuteWithContext(context.Background(), "timeseries cpu=avg(x)", DQLExecuteOptions{

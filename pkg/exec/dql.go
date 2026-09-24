@@ -735,9 +735,10 @@ func defaultSeriesAdvice(effect output.SeriesEffect, opts DQLExecuteOptions) str
 	summarized := effect.Summarized && opts.SeriesDefaulted
 	rounded := effect.Rounded && opts.PrecisionDefaulted
 	switch {
-	case summarized && opts.PrecisionDefaulted && opts.Precision > 0:
-		// --series=full alone would bring the points back rounded, so name
-		// both flags: together they restore the raw values exactly.
+	case summarized && rounded:
+		// The summary's statistics lost digits, or --series=full alone would
+		// bring the points back rounded, so name both flags: together they
+		// restore the raw values exactly.
 		return fmt.Sprintf("# timeseries summarized and numbers rounded to %d significant digits (agent-mode default) — add --series=full --precision 0 for the raw values", opts.Precision)
 	case summarized:
 		return "# timeseries summarized (agent-mode default) — add --series=full for the raw datapoints"

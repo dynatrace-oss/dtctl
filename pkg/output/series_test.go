@@ -411,13 +411,16 @@ func TestApplySeriesModeWithEffect_ReportsWhatChanged(t *testing.T) {
 		digits int
 		want   SeriesEffect
 	}{
-		{"summary of a timeseries", ts, SeriesMode{Kind: SeriesSummary}, 4, SeriesEffect{Summarized: true}},
 		{"summary with no timeseries, exact floats", exact, SeriesMode{Kind: SeriesSummary}, 4, SeriesEffect{}},
 		{"rounding a noisy float", noisy, SeriesMode{Kind: SeriesFull}, 4, SeriesEffect{Rounded: true}},
 		{"rounding that changes nothing", exact, SeriesMode{Kind: SeriesFull}, 4, SeriesEffect{}},
 		{"rounding off", noisy, SeriesMode{Kind: SeriesFull}, 0, SeriesEffect{}},
 		{"downsample within budget", ts, SeriesMode{Kind: SeriesDownsample, Points: 10}, 0, SeriesEffect{}},
 		{"rounding raw series points", ts, SeriesMode{Kind: SeriesFull}, 3, SeriesEffect{Rounded: true}},
+		// A summary counts as rounded when its raw points (what --series=full
+		// would show) or its statistics lose digits at this precision.
+		{"summary of noisy points", ts, SeriesMode{Kind: SeriesSummary}, 4, SeriesEffect{Summarized: true, Rounded: true}},
+		{"summary of exact points", []map[string]interface{}{tsRecord("cpu", floats(1, 2, 3)...)}, SeriesMode{Kind: SeriesSummary}, 4, SeriesEffect{Summarized: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
