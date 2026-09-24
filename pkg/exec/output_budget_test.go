@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
@@ -458,11 +459,11 @@ func TestBuildSpillResponse_BudgetWithAutoFormat(t *testing.T) {
 	}
 }
 
-// TestBuildSpillResponse_AgentDefaultsCompose runs `query` as an agent gets it
+// TestBuildSpillResponse_AutoAndFieldCapCompose runs `query` as an agent gets it
 // with no -o and no bound flags: -o auto by default plus the default field cap.
 // Both apply, each names its own opt-out only when it changed something, and
 // the opt-outs together restore the native-JSON, unclipped rows exactly.
-func TestBuildSpillResponse_AgentDefaultsCompose(t *testing.T) {
+func TestBuildSpillResponse_AutoAndFieldCapCompose(t *testing.T) {
 	defaults := func(dir string) DQLExecuteOptions {
 		return DQLExecuteOptions{
 			AgentMode:           true,
@@ -544,6 +545,103 @@ func TestBuildSpillResponse_AgentDefaultsCompose(t *testing.T) {
 		}
 		if want := map[bool]int{true: 0, false: 1}[resp.Context.Format == "json"]; hints != want {
 			t.Errorf("%d auto hints for format %q, want %d: %v", hints, resp.Context.Format, want, resp.Context.Suggestions)
+		}
+	})
+}
+
+// TestBuildSpillResponse_FieldCapAfterCompaction checks the field cap against
+// the agent-mode compaction default: compaction compares the full values, and
+// clipping then applies to constant as well as to records.
+func TestBuildSpillResponse_FieldCapAfterCompaction(t *testing.T) {
+	e := &DQLExecutor{}
+	opts := func(dir string) DQLExecuteOptions {
+		o := inlineOpts(true)
+		o.MaxFieldChars = 500
+		o.Spill.Dir = dir
+		return o
+	}
+	shared := strings.Repeat("s", 2000)
+	prefix := strings.Repeat("p", 600)
+
+	t.Run("constant values are clipped", func(t *testing.T) {
+		records := []map[string]interface{}{
+			{"id": "a", "stack": shared},
+			{"id": "b", "stack": shared},
+		}
+		resp, _, err := e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "json", opts(t.TempDir()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ir := resp.Result.(*output.InlineRecords)
+		got, _ := ir.Constant["stack"].(string)
+		if !strings.HasSuffix(got, "…(+1500 chars)") || utf8.RuneCountInString(got) > 500+len("…(+1500 chars)") {
+			t.Errorf("constant.stack not clipped: %.80q", got)
+		}
+		if !reflect.DeepEqual(resp.Context.TruncatedFields, []string{"stack"}) || !resp.Context.Truncated {
+			t.Errorf("context = %+v, want truncated_fields [stack]", resp.Context)
+		}
+		if records[0]["stack"] != shared {
+			t.Error("the caller's rows must keep the full value")
+		}
+	})
+
+	t.Run("values equal only after clipping are not hoisted", func(t *testing.T) {
+		records := []map[string]interface{}{
+			{"id": "a", "stack": prefix + "one"},
+			{"id": "b", "stack": prefix + "two"},
+		}
+		resp, _, err := e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "json", opts(t.TempDir()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ir := resp.Result.(*output.InlineRecords)
+		if _, hoisted := ir.Constant["stack"]; hoisted {
+			t.Fatalf("distinct values collapsed into constant: %v", ir.Constant)
+		}
+		for i, row := range ir.Records {
+			if s, _ := row["stack"].(string); !strings.HasSuffix(s, "…(+103 chars)") {
+				t.Errorf("row %d stack = %.60q, want clipped", i, s)
+			}
+		}
+	})
+
+	t.Run("a budget cut keeps the clipped constant", func(t *testing.T) {
+		_, base := longContentResult(40, 100)
+		records := make([]map[string]interface{}, len(base))
+		for i, r := range base {
+			records[i] = map[string]interface{}{"host": r["host"], "content": r["content"], "stack": shared}
+		}
+		o := opts(t.TempDir())
+		o.MaxOutputBytes = 3000
+		resp, _, err := e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "json", o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ir := resp.Result.(*output.InlineRecords)
+		if resp.Context.Returned == nil || *resp.Context.Returned >= len(records) || *resp.Context.Returned == 0 {
+			t.Fatalf("returned = %v, want a non-empty budget cut", resp.Context.Returned)
+		}
+		if got, _ := ir.Constant["stack"].(string); !strings.HasSuffix(got, "…(+1500 chars)") {
+			t.Errorf("budget-cut constant.stack = %.60q, want clipped", got)
+		}
+		if n := encodedSize(t, resp); int64(n) > o.MaxOutputBytes {
+			t.Errorf("envelope is %d bytes, over the %d budget", n, o.MaxOutputBytes)
+		}
+	})
+
+	t.Run("--max-field-chars 0 restores the full constant", func(t *testing.T) {
+		records := []map[string]interface{}{
+			{"id": "a", "stack": shared},
+			{"id": "b", "stack": shared},
+		}
+		o := opts(t.TempDir())
+		o.MaxFieldChars = 0
+		resp, _, err := e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "json", o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := resp.Result.(*output.InlineRecords).Constant["stack"]; got != shared || resp.Context.Truncated {
+			t.Errorf("opt-out: constant.stack clipped or context truncated: %+v", resp.Context)
 		}
 	})
 }
