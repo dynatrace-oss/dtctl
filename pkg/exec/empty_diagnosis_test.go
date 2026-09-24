@@ -191,6 +191,30 @@ func TestEmptyResultAdvice_PartialFieldSampleClaimsNothing(t *testing.T) {
 	}
 }
 
+// When the user's own query was cut short, the limit may be why it is empty,
+// so no probe runs and the advice stays as it was without diagnosis.
+func TestEmptyResultAdvice_PartialQueryResultIsNotDiagnosed(t *testing.T) {
+	query := `fetch logs | filter servce.name == "x"`
+	for _, n := range []QueryNotification{
+		{Severity: "WARNING", NotificationType: "SCAN_LIMIT_GBYTES", Message: "Your execution was stopped after 500 gigabytes of data were scanned."},
+		{Severity: "WARNING", NotificationType: "FETCH_EXEC_TIME_LIMIT", Message: "The data couldn't be read within the internal time limit."},
+		{Severity: "WARNING", NotificationType: "QUERY_CONSUMPTION_LIMIT", Message: "The query consumption limit was reached."},
+	} {
+		t.Run(n.NotificationType, func(t *testing.T) {
+			p := &fakeProbe{respond: func(string) (*DQLQueryResponse, error) { return logSample(), nil }}
+			e := &DQLExecutor{probe: p.run}
+			result := recordsResponse()
+			result.Metadata = &DQLMetadata{Grail: &GrailMetadata{Notifications: []QueryNotification{n}}}
+
+			reason, sugg := e.emptyResultAdvice(query, result, nil, DQLExecuteOptions{})
+
+			if len(p.calls) != 0 || reason != nil || !reflect.DeepEqual(sugg, windowAdvice(query, nil, DQLExecuteOptions{})) {
+				t.Errorf("calls=%q reason=%+v sugg=%v", p.calls, reason, sugg)
+			}
+		})
+	}
+}
+
 func TestEmptyResultAdvice_EmptySampleClaimsNothing(t *testing.T) {
 	p := &fakeProbe{respond: func(string) (*DQLQueryResponse, error) { return recordsResponse(), nil }}
 	e := &DQLExecutor{probe: p.run}

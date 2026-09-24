@@ -205,7 +205,8 @@ dtctl runs one small, bounded probe before it suggests widening the time window:
 | `timeseries …` | the metric keys that reported series in the query window (at most its last 2h), listed with the `metrics` command | `metric_not_in_window` |
 
 The probes are capped (1 GB scan, 10 s read time, bounded result size), run only
-on an empty result, and never fail the query. If a probe errors, comes back
+on an empty result that no scan, time, result or consumption limit cut short,
+and never fail the query. If a probe errors, comes back
 partial, or finds an empty sample, the envelope keeps the widen-the-window advice
 and has no `empty_reason`.
 
