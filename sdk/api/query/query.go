@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -435,19 +436,29 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 		return nil, ctx.Err()
 	}
 
-	// If query completed synchronously, return. NOT_STARTED is a queued query
-	// on a congested tenant — terminal-looking but in-flight; returning it here
-	// would hand the caller the raw {"state":"NOT_STARTED"} envelope as a
-	// success (observed live: three leaks in a row on a busy dev tenant).
-	if result.State != "RUNNING" && result.State != "NOT_STARTED" {
+	// Only SUCCEEDED is a success. Every other state that carries a request
+	// token is polled: NOT_STARTED is a queued query on a congested tenant
+	// (observed live: it once leaked as a success three times in a row), and a
+	// state Grail adds later is more likely in flight than terminal.
+	if result.State == StateSucceeded {
 		return result, nil
 	}
-
+	if isFailedState(result.State) {
+		return result, &StateError{State: result.State}
+	}
+	// A response that declares no state at all is the pre-state synchronous
+	// shape GetRecords still supports — it carries the records directly.
+	if result.State == "" && result.RequestToken == "" {
+		return result, nil
+	}
 	if result.RequestToken == "" {
-		return nil, fmt.Errorf("query is running but no request token provided")
+		if isRunningState(result.State) {
+			return nil, fmt.Errorf("query is running but no request token provided")
+		}
+		return result, &StateError{State: result.State}
 	}
 
-	// Surface the initial RUNNING state (progress may already be non-zero).
+	// Surface the initial state (progress may already be non-zero).
 	emitUpdate(opts.OnUpdate, req.EnablePreview, result)
 
 	// Poll loop.
@@ -455,12 +466,20 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 	defer pollCancel()
 
 	tokenJustRefreshed := false
+	// lastState is the state of the most recent response. A state that is
+	// neither terminal nor running is polled like RUNNING; lastState is what
+	// names it if the poll deadline expires first.
+	lastState := result.State
 
 	for {
 		select {
 		case <-pollCtx.Done():
 			if ctx.Err() != nil {
 				_ = h.Cancel(context.Background(), result.RequestToken)
+				return nil, ctx.Err()
+			}
+			if !isRunningState(lastState) {
+				return nil, &StateError{State: lastState, TimedOut: true}
 			}
 			return nil, pollCtx.Err()
 		default:
@@ -486,23 +505,101 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 				_ = h.Cancel(context.Background(), result.RequestToken)
 				return nil, ctx.Err()
 			}
+			if pollCtx.Err() != nil && !isRunningState(lastState) {
+				return nil, &StateError{State: lastState, TimedOut: true}
+			}
+			// An expired or already consumed result is reported as HTTP 410
+			// (QUERY_GONE), not as a RESULT_GONE state — verified against a
+			// live tenant. It is the one failure a caller can fix by simply
+			// running the query again, so it gets the retryable error.
+			if errors.As(pollErr, &apiErr) && apiErr.StatusCode == http.StatusGone {
+				return nil, &StateError{State: StateResultGone}
+			}
 			return nil, pollErr
 		}
 
 		tokenJustRefreshed = false // reset after success
 
-		switch pollResult.State {
-		case "SUCCEEDED":
+		switch {
+		case pollResult.State == StateSucceeded:
 			return pollResult, nil
-		case "FAILED":
-			return pollResult, fmt.Errorf("query execution failed")
-		case "RUNNING", "NOT_STARTED":
-			emitUpdate(opts.OnUpdate, req.EnablePreview, pollResult)
-			continue
+		case isFailedState(pollResult.State):
+			// A Ctrl-C that races a completing poll must stay a cancellation,
+			// not turn into the CANCELLED state error. The query is already
+			// terminal, so there is nothing left to cancel on the backend.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return pollResult, &StateError{State: pollResult.State}
 		default:
-			return pollResult, nil
+			lastState = pollResult.State
+			emitUpdate(opts.OnUpdate, req.EnablePreview, pollResult)
+			if !isRunningState(lastState) {
+				// The server may answer an unrecognized state at once instead
+				// of holding the poll, so wait before the next round trip.
+				select {
+				case <-pollCtx.Done():
+				case <-time.After(unknownStatePollInterval):
+				}
+			}
 		}
 	}
+}
+
+// Query states reported by the Query API.
+const (
+	StateSucceeded  = "SUCCEEDED"
+	StateFailed     = "FAILED"
+	StateCancelled  = "CANCELLED"
+	StateResultGone = "RESULT_GONE"
+	StateRunning    = "RUNNING"
+	StateNotStarted = "NOT_STARTED"
+)
+
+// unknownStatePollInterval is the wait between polls of a query in a state
+// dtctl does not recognize.
+const unknownStatePollInterval = time.Second
+
+func isRunningState(state string) bool {
+	return state == StateRunning || state == StateNotStarted
+}
+
+func isFailedState(state string) bool {
+	return state == StateFailed || state == StateCancelled || state == StateResultGone
+}
+
+// StateError reports a query that did not end in SUCCEEDED: a known failure
+// state, or a state dtctl does not recognize.
+//
+// What a live tenant actually does, probed against the Query API: it answers
+// RUNNING, NOT_STARTED and SUCCEEDED as states, and reports failures over HTTP
+// instead — 400 with a typed DQL error for a query it rejects, 410 QUERY_GONE
+// for a result that expired, was consumed, or was cancelled. A scan limit, a
+// fetch timeout and an oversized result all come back as a truncated success
+// rather than as a failure. FAILED and CANCELLED were never observed as
+// states, so the branches for them are the forward-compatible half of this
+// type: the states the API documents, handled in case they do appear.
+type StateError struct {
+	State string
+	// TimedOut reports that the query never left State before the poll
+	// deadline expired. It may well still be running on the backend, so the
+	// message must not claim the state itself was terminal.
+	TimedOut bool
+}
+
+func (e *StateError) Error() string {
+	switch e.State {
+	case StateFailed:
+		return "query execution failed"
+	case StateCancelled:
+		return "query was cancelled on the server"
+	case StateResultGone:
+		return "query result expired before it was fetched"
+	}
+	if e.TimedOut {
+		return fmt.Sprintf("query was still in unrecognized state %q when the poll deadline expired", e.State)
+	}
+	return fmt.Sprintf("unrecognized query state %q", e.State)
 }
 
 // GetNotifications returns notifications from the response, checking both

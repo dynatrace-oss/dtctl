@@ -43,6 +43,7 @@ type (
 	SyntaxPosition        = sdkquery.SyntaxPosition
 	Position              = sdkquery.Position
 	QueryError            = sdkquery.QueryError
+	QueryStateError       = sdkquery.StateError
 )
 
 // DQLExecutor handles DQL query execution
