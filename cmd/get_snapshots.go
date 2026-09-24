@@ -49,6 +49,11 @@ Use -o json / -o yaml for structured output.`,
     --default-timeframe-end   2024-01-02T00:00:00Z`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Snapshots print through the DQL executor, not the get printer, so
+		// the get-wide --fields would be silently ignored here.
+		if getListFields != "" {
+			return fmt.Errorf("--fields is not supported by get snapshots; project fields in DQL instead: dtctl query 'fetch application.snapshots | fields ...'")
+		}
 		cfg, c, err := SetupClient()
 		if err != nil {
 			return err

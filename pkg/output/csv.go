@@ -15,12 +15,18 @@ type CSVPrinter struct {
 
 // Print prints a single object as CSV
 func (p *CSVPrinter) Print(obj interface{}) error {
+	if fr, ok := obj.(*FlatRows); ok {
+		return p.printFlatRows(fr)
+	}
 	// For single objects, convert to slice and use PrintList
 	return p.PrintList([]interface{}{obj})
 }
 
 // PrintList prints a list of objects as CSV
 func (p *CSVPrinter) PrintList(obj interface{}) error {
+	if fr, ok := obj.(*FlatRows); ok {
+		return p.printFlatRows(fr)
+	}
 	v := reflect.ValueOf(obj)
 	if v.Kind() == reflect.Pointer {
 		v = v.Elem()

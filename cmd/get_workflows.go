@@ -88,6 +88,7 @@ Examples:
 		typeStr, _ := cmd.Flags().GetString("type")
 		triggerStr, _ := cmd.Flags().GetString("trigger")
 		limit, _ := cmd.Flags().GetInt64("limit")
+		limit = agentPageLimit(cmd, limit)
 
 		chunk := GetChunkSize()
 		if err := validateAutomationChunkSize(chunk); err != nil {
@@ -131,7 +132,9 @@ Examples:
 		}
 
 		if ap != nil {
-			ap.SetTotal(len(list.Results))
+			// The server's count, not the page fetched: a --limit (or the
+			// agent-mode default page) makes the page smaller than the list.
+			ap.SetTotal(max(list.Count, len(list.Results)))
 			suggestions := []string{
 				"Run 'dtctl describe workflow <id>' for details",
 				"Run 'dtctl exec workflow <id>' to trigger a workflow",
@@ -227,7 +230,9 @@ Examples:
 		}
 
 		if ap != nil {
-			ap.SetTotal(len(list.Results))
+			// The server's count, not the page fetched: a --limit (or the
+			// agent-mode default page) makes the page smaller than the list.
+			ap.SetTotal(max(list.Count, len(list.Results)))
 			suggestions := []string{
 				"Run 'dtctl get workflow-executions <id>' for execution details",
 				"Run 'dtctl logs workflow-execution <id>' to view execution logs",

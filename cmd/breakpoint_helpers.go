@@ -132,11 +132,14 @@ func runGetBreakpointsWithDeps(cmd *cobra.Command, args []string, deps liveDebug
 		return err
 	}
 
+	// This printer writes to rootCmd's writer rather than going through
+	// NewPrinter, so it opts into the get-wide --limit/--fields itself.
 	var printer output.Printer
 	if agentMode {
-		printer = output.NewAgentPrinter(rootCmd.OutOrStdout(), &output.ResponseContext{})
+		printer = shapeListOutput(output.NewAgentPrinter(rootCmd.OutOrStdout(), &output.ResponseContext{}), "json", false)
 	} else {
-		printer = output.NewPrinterWithOptions(outputFormat, rootCmd.OutOrStdout(), plainMode)
+		printer = shapeListOutput(output.NewPrinterWithOptions(outputFormat, rootCmd.OutOrStdout(), plainMode),
+			outputFormat, output.IsTabularFormat(outputFormat, plainMode))
 	}
 	_ = enrichAgent(printer, "get", "breakpoint")
 	return printer.PrintList(rows)
