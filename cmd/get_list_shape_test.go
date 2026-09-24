@@ -29,9 +29,10 @@ func newListShapeEnv(t *testing.T) *httptest.Server {
 	}, 0)
 }
 
-// newListShapeEnvWith serves the given buckets and n synthetic workflows. The
-// workflow endpoint honors limit/offset like the Automation API, so a
-// server-side page is observable as a smaller request.
+// newListShapeEnvWith serves the given buckets and n synthetic workflows,
+// scheduling rules and executions. The Automation endpoints honor
+// limit/offset and report the full count, like the real API, so a
+// server-side page is observable as a smaller result with a larger count.
 func newListShapeEnvWith(t *testing.T, buckets []string, workflows int) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +40,7 @@ func newListShapeEnvWith(t *testing.T, buckets []string, workflows int) *httptes
 		switch r.URL.Path {
 		case "/platform/storage/management/v1/bucket-definitions":
 			_, _ = w.Write([]byte(`{"buckets":[` + strings.Join(buckets, ",") + `]}`))
-		case "/platform/automation/v1/workflows":
+		case "/platform/automation/v1/workflows", "/platform/automation/v1/scheduling-rules", "/platform/automation/v1/executions":
 			offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 			if limit == 0 {
@@ -137,6 +138,8 @@ func TestGetListShape_AgentDefaultPageServerSide(t *testing.T) {
 	resp := agentResponse(t, out)
 	require.Len(t, resp.Result, 50)
 	require.True(t, resp.Context.HasMore)
+	require.NotNil(t, resp.Context.Total)
+	require.Equal(t, 70, *resp.Context.Total, "context.total is the server count, not the page size")
 	require.Contains(t, strings.Join(resp.Context.Suggestions, "\n"), "Showing 50 of 70")
 
 	code, out = runListShape(t, srv, "-A", "get", "workflows", "--limit", "0")
@@ -328,4 +331,27 @@ func TestGetListShape_DefaultPageFollowsAgentMode(t *testing.T) {
 
 	require.NoError(t, getWorkflowsCmd.Flags().Set("limit", "0"))
 	require.Equal(t, int64(0), agentPageLimit(getWorkflowsCmd, 0), "an explicit --limit wins")
+}
+
+// Server-paged lists report the server's count as context.total, not the size
+// of the page they fetched.
+func TestGetListShape_ServerPagedTotalIsServerCount(t *testing.T) {
+	srv := newListShapeEnvWith(t, nil, 70)
+
+	for _, tc := range []struct {
+		argv  []string
+		items int
+	}{
+		{[]string{"-A", "get", "scheduling-rules"}, 50},
+		{[]string{"-A", "get", "workflow-executions"}, 70},
+		{[]string{"-A", "get", "workflow-executions", "--limit", "10"}, 10},
+	} {
+		code, out := runListShape(t, srv, tc.argv...)
+		require.Zero(t, code, out)
+		resp := agentResponse(t, out)
+		require.Len(t, resp.Result, tc.items, tc.argv)
+		require.NotNil(t, resp.Context.Total, tc.argv)
+		require.Equal(t, 70, *resp.Context.Total, tc.argv)
+		require.Equal(t, tc.items < 70, resp.Context.HasMore, tc.argv)
+	}
 }

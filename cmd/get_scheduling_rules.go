@@ -76,7 +76,9 @@ Examples:
 		}
 
 		if ap != nil {
-			ap.SetTotal(len(list.Results))
+			// The server's count, not the page fetched: a --limit (or the
+			// agent-mode default page) makes the page smaller than the list.
+			ap.SetTotal(max(list.Count, len(list.Results)))
 			suggestions := []string{
 				"Run 'dtctl describe scheduling-rule <id>' for details",
 			}
