@@ -484,3 +484,74 @@ func TestDQLExecutor_AgentDefaultSeriesWithCompact(t *testing.T) {
 		}
 	})
 }
+
+// TestDQLExecutor_AgentDefaultSeriesWithFieldCap runs the series defaults with
+// the agent-mode field cap and compaction. Clipping comes last, so a summary
+// (whose strings are a <=24-cell sparkline and timestamps) passes the default
+// 500-char cap unchanged, in the rows and in result.constant, while a long
+// string dimension next to it is clipped.
+func TestDQLExecutor_AgentDefaultSeriesWithFieldCap(t *testing.T) {
+	clearAIAgentEnvVars(t)
+	values := func(offset float64) []interface{} {
+		v := make([]interface{}, 60)
+		for i := range v {
+			v[i] = 3.10276124773992 + offset + float64(i%5)
+		}
+		return v
+	}
+	timeframe := map[string]interface{}{
+		"start": "2026-01-01T12:00:00.000000000Z",
+		"end":   "2026-01-01T13:00:00.000000000Z",
+	}
+	records := []map[string]interface{}{
+		{"host.name": "web-01", "note": "a" + strings.Repeat("n", 800), "cpu": values(0), "mem": values(0), "interval": "60000000000", "timeframe": timeframe},
+		{"host.name": "web-02", "note": "b" + strings.Repeat("n", 800), "cpu": values(100), "mem": values(0), "interval": "60000000000", "timeframe": timeframe},
+	}
+	type envelope struct {
+		Result struct {
+			Constant map[string]interface{}   `json:"constant"`
+			Records  []map[string]interface{} `json:"records"`
+		} `json:"result"`
+		Context struct {
+			Truncated       bool     `json:"truncated"`
+			TruncatedFields []string `json:"truncated_fields"`
+		} `json:"context"`
+	}
+	run := func(t *testing.T, maxChars int) envelope {
+		t.Helper()
+		out := captureStdout(t, func() {
+			if err := newRecordsExecutor(t, records).ExecuteWithContext(context.Background(), "timeseries cpu=avg(x), mem=avg(y), by:{host.name, note}", DQLExecuteOptions{
+				OutputFormat: "json", AgentMode: true, Compact: true, MaxFieldChars: maxChars,
+				Spill:  SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+				Series: output.SeriesMode{Kind: output.SeriesSummary}, SeriesDefaulted: true,
+				Precision: AgentDefaultPrecision, PrecisionDefaulted: true,
+			}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		var env envelope
+		if err := json.Unmarshal(out, &env); err != nil {
+			t.Fatalf("not an envelope: %v\n%s", err, out)
+		}
+		return env
+	}
+
+	capped, full := run(t, output.DefaultAgentMaxFieldChars), run(t, 0)
+	if !reflect.DeepEqual(capped.Result.Constant["mem"], full.Result.Constant["mem"]) || capped.Result.Constant["mem"] == nil {
+		t.Errorf("hoisted summary changed by the cap: %v vs %v", capped.Result.Constant["mem"], full.Result.Constant["mem"])
+	}
+	for i := range capped.Result.Records {
+		if !reflect.DeepEqual(capped.Result.Records[i]["cpu"], full.Result.Records[i]["cpu"]) {
+			t.Errorf("row %d summary changed by the cap: %v vs %v", i, capped.Result.Records[i]["cpu"], full.Result.Records[i]["cpu"])
+		}
+		if note, _ := capped.Result.Records[i]["note"].(string); !strings.HasSuffix(note, "…(+301 chars)") {
+			t.Errorf("row %d note = %.40q…, want clipped", i, note)
+		}
+	}
+	if !capped.Context.Truncated || !reflect.DeepEqual(capped.Context.TruncatedFields, []string{"note"}) {
+		t.Errorf("context truncated=%v fields=%v, want only note", capped.Context.Truncated, capped.Context.TruncatedFields)
+	}
+	if full.Context.Truncated {
+		t.Error("--max-field-chars 0 must not clip")
+	}
+}

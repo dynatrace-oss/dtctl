@@ -452,6 +452,9 @@ Both bounds apply after compaction (see above). A column goes into `constant`
 only when its full values are equal in every row; the values in `constant` are
 then clipped like the ones in `records`, and the budget counts `constant`
 toward the envelope size.
+Timeseries summaries (`--series=summary`, the agent-mode default) are built
+before either bound. Their only strings are a sparkline of at most 24 cells and
+timestamps, so the default cap leaves a summary whole.
 
 `context.suggestions` says how to get the rest: `--max-field-chars 0` with
 `| fields <col>` for full values (only when a value was actually clipped), or `--spill-to <file>` when nothing was
