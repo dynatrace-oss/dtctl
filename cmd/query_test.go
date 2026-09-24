@@ -660,3 +660,36 @@ func TestApplySegmentVars(t *testing.T) {
 		})
 	}
 }
+
+// TestAgentResultFormat pins the agent-mode default: with no -o, agent mode
+// resolves to -o auto; any explicit -o wins, and outside agent mode nothing
+// changes.
+func TestAgentResultFormat(t *testing.T) {
+	origFormat, origAgent := outputFormat, agentMode
+	flag := rootCmd.PersistentFlags().Lookup("output")
+	origChanged := flag.Changed
+	defer func() { outputFormat, agentMode, flag.Changed = origFormat, origAgent, origChanged }()
+
+	cases := []struct {
+		name        string
+		agent       bool
+		changed     bool
+		format      string
+		want        string
+		wantDefault bool
+	}{
+		{"agent mode, no -o", true, false, "table", "auto", true},
+		{"agent mode, explicit -o json", true, true, "json", "json", false},
+		{"agent mode, explicit -o toon", true, true, "toon", "toon", false},
+		{"not agent mode", false, false, "table", "table", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			agentMode, flag.Changed, outputFormat = c.agent, c.changed, c.format
+			got, byDefault := agentResultFormat()
+			if got != c.want || byDefault != c.wantDefault {
+				t.Errorf("agentResultFormat() = (%q, %v), want (%q, %v)", got, byDefault, c.want, c.wantDefault)
+			}
+		})
+	}
+}

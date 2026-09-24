@@ -160,17 +160,26 @@ sample-based figures can't be misread as population truth.
 > The inline `kind: "records"` envelope is emitted on the spill-aware path
 > whenever agent mode emits JSON -- including under `--spill=never`, which forces
 > every row inline regardless of size but still as a `kind: "records"` envelope
-> (never a human table). Explicit non-JSON output (`-o toon/csv/yaml`) and `--jq`
+> (never a human table). The agent-mode default `-o auto` also keeps this
+> envelope (see below). Explicit non-JSON output (`-o toon/csv/yaml`) and `--jq`
 > transforms keep their requested shape and fall through to the plain
 > `{ "records": …, "metadata": … }` output.
 
 ### Choosing the encoding with `-o auto`
 
 No single encoding is the cheapest for every result: CSV wins on flat rows,
-while nested documents come out smaller as YAML or JSON than as TOON. Pass
-`-o auto` to let dtctl choose per result (the rules are listed in
-[OUTPUT_FORMATS.md](OUTPUT_FORMATS.md#auto--o-auto) and are experimental). The
-envelope names the choice in `context.format`, so branch on it before parsing:
+while nested documents come out smaller as YAML or JSON than as TOON. `-o auto`
+lets dtctl choose per result (the rules are listed in
+[OUTPUT_FORMATS.md](OUTPUT_FORMATS.md#auto--o-auto) and are experimental).
+
+**`dtctl query` uses `-o auto` by default in agent mode** when no `-o` is given.
+Pass `-o json` to get the previous native-JSON rows back; any other explicit
+`-o` also wins over the default. Other commands keep native JSON unless you pass
+`-o auto` yourself. When the default returns CSV or YAML, `context.suggestions`
+carries one entry naming the `-o json` opt-out; when it returns native JSON
+(empty or scalar results), nothing is added.
+
+The envelope names the choice in `context.format`, so branch on it before parsing:
 
 | `context.format` | `result` (or `result.records` for `dtctl query`) |
 |---|---|
@@ -190,8 +199,7 @@ envelope names the choice in `context.format`, so branch on it before parsing:
 For `dtctl query`, `-o auto` keeps the `kind: "records"` envelope below the
 spill threshold (unlike an explicit `-o csv`/`-o yaml`, which print raw bytes)
 and the threshold is measured in the chosen encoding. A spilled result is a
-`result-file` manifest as usual and carries no `context.format`. `-o auto` is
-opt-in; it is not the agent-mode default.
+`result-file` manifest as usual and carries no `context.format`.
 
 ## Auto-Detection
 

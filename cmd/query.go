@@ -57,6 +57,18 @@ func isSupportedQueryOutputFormat(format string) bool {
 	}
 }
 
+// agentResultFormat returns the output format for `query` and whether it is the
+// agent-mode default. In agent mode with no -o, `query` defaults to -o auto
+// (the cheapest lossless encoding for the result's shape); any explicit -o
+// wins, and outside agent mode the -o value is returned unchanged.
+func agentResultFormat() (format string, byDefault bool) {
+	outputFlag := rootCmd.PersistentFlags().Lookup("output")
+	if agentMode && (outputFlag == nil || !outputFlag.Changed) {
+		return output.FormatAuto, true
+	}
+	return outputFormat, false
+}
+
 // queryCmd represents the query command
 var queryCmd = &cobra.Command{
 	Use:     "query [dql-string]",
@@ -381,8 +393,11 @@ Examples:
 			includeTypes = true
 		}
 
+		queryFormat, autoByDefault := agentResultFormat()
+
 		opts := exec.DQLExecuteOptions{
-			OutputFormat:                 outputFormat,
+			OutputFormat:                 queryFormat,
+			AutoFormatByDefault:          autoByDefault,
 			JQFilter:                     jqFilter,
 			AgentMode:                    agentMode,
 			Decode:                       decodeMode,
