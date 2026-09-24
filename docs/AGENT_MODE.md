@@ -73,6 +73,7 @@ Error codes are stable identifiers that agents can match on programmatically:
 | `result_expired` | The query result expired, was consumed, or was cancelled before it was fetched (HTTP 410) | Run the same query again |
 | `unknown_query_state` | The query reported a state this dtctl does not know, or never left it before the poll deadline | Upgrade dtctl; re-run if the query was simply slow |
 | `function_error` | The code you submitted to `exec function` failed | Fix the code; don't retry unchanged |
+| `task_log_unavailable` | `logs wfe --tasks`/`--all` printed the logs it could fetch, but one or more task logs failed; the message names each task | Treat the printed logs as incomplete; retry a single task with `--task <name>` |
 | `safety_blocked` | The context's [safety level](CONFIGURATION.md#safety-levels) forbids this operation | Don't retry; ask a human to widen the level |
 | `profile_blocked` | The active [command profile](CONFIGURATION.md#command-profiles) doesn't expose this command | Re-read `dtctl commands` and pick a supported path |
 | `stability_blocked` | The command or a flag you used offers a weaker contract than the context's [stability floor](STABILITY.md#choosing-what-this-environment-accepts) accepts | Don't retry; use a `stable` alternative, or ask a human to admit this entry |

@@ -2,14 +2,17 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
@@ -18,6 +21,9 @@ var taskName string
 var followLogs bool
 var allTaskLogs bool
 var tasksOnlyLogs bool
+
+// followPollInterval is how often --follow polls for new log output.
+var followPollInterval = 2 * time.Second
 
 // logsCmd represents the logs command
 var logsCmd = &cobra.Command{
@@ -80,6 +86,9 @@ Examples:
 		}
 
 		var logs string
+		// taskErr is a partial failure: some task logs could not be fetched.
+		// The logs that were fetched are printed before it is returned.
+		var taskErr *workflow.TaskLogError
 
 		if taskName != "" {
 			// Get logs for specific task
@@ -90,13 +99,13 @@ Examples:
 		} else if allTaskLogs {
 			// Get workflow execution log + all task logs
 			logs, err = handler.GetCompleteExecutionLog(executionID)
-			if err != nil {
+			if err != nil && !errors.As(err, &taskErr) {
 				return err
 			}
 		} else if tasksOnlyLogs {
 			// Get task logs only (all tasks with headers)
 			logs, err = handler.GetFullExecutionLog(executionID)
-			if err != nil {
+			if err != nil && !errors.As(err, &taskErr) {
 				return err
 			}
 		} else {
@@ -109,10 +118,12 @@ Examples:
 
 		if logs == "" {
 			fmt.Println("No logs available.")
-			return nil
+		} else {
+			fmt.Print(logs)
 		}
-
-		fmt.Print(logs)
+		if taskErr != nil {
+			return taskErr
+		}
 		return nil
 	},
 }
@@ -130,8 +141,22 @@ func followExecutionLogs(parentCtx context.Context, handler *workflow.ExecutionH
 		cancel()
 	}()
 
-	var lastLogLen int
-	pollInterval := 2 * time.Second
+	var printed string
+	// A task log that cannot be fetched mid-stream is warned about, once per
+	// distinct failure, and the stream goes on: the fetch is retried on the
+	// next poll. Only the final fetch decides the exit code.
+	var lastWarning string
+	warnTaskErr := func(err error) error {
+		var taskErr *workflow.TaskLogError
+		if !errors.As(err, &taskErr) {
+			return err
+		}
+		if msg := taskErr.Error(); msg != lastWarning {
+			output.PrintWarning("%s", msg)
+			lastWarning = msg
+		}
+		return nil
+	}
 
 	for {
 		select {
@@ -156,14 +181,14 @@ func followExecutionLogs(parentCtx context.Context, handler *workflow.ExecutionH
 			logs, err = handler.GetExecutionLog(executionID)
 		}
 
-		if err != nil {
+		if err := warnTaskErr(err); err != nil {
 			return err
 		}
 
 		// Print only new content
-		if len(logs) > lastLogLen {
-			fmt.Print(logs[lastLogLen:])
-			lastLogLen = len(logs)
+		fmt.Print(nextFollowChunk(printed, logs))
+		if !strings.HasPrefix(printed, logs) {
+			printed = logs
 		}
 
 		// Check execution status
@@ -174,31 +199,58 @@ func followExecutionLogs(parentCtx context.Context, handler *workflow.ExecutionH
 
 		// Check if execution is complete
 		if isTerminalState(exec.State) {
-			// Final log fetch to ensure we have everything
+			// Final log fetch to ensure we have everything. A plain fetch
+			// error here is ignored, as the logs polled so far stand; a task
+			// log still missing now is reported, because the stream is over.
+			var finalErr error
 			switch {
 			case task != "":
 				logs, _ = handler.GetTaskLog(executionID, task)
 			case allLogs:
-				logs, _ = handler.GetCompleteExecutionLog(executionID)
+				logs, finalErr = handler.GetCompleteExecutionLog(executionID)
 			case tasksOnly:
-				logs, _ = handler.GetFullExecutionLog(executionID)
+				logs, finalErr = handler.GetFullExecutionLog(executionID)
 			default:
 				logs, _ = handler.GetExecutionLog(executionID)
 			}
-			if len(logs) > lastLogLen {
-				fmt.Print(logs[lastLogLen:])
-			}
+			fmt.Print(nextFollowChunk(printed, logs))
 
 			fmt.Printf("\n--- Execution %s (state: %s) ---\n", exec.State, exec.State)
+
+			var taskErr *workflow.TaskLogError
+			if errors.As(finalErr, &taskErr) {
+				return taskErr
+			}
 			return nil
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(pollInterval):
+		case <-time.After(followPollInterval):
 		}
 	}
+}
+
+// nextFollowChunk returns what --follow prints when the log text it already
+// printed is followed by a poll that returned logs. Usually logs extends
+// printed and the chunk is the new tail. When an earlier part changed instead
+// (a task log fetched after a failed poll, or a task whose state in its header
+// moved on), the stream cannot take back what it printed, so the chunk
+// restarts at the "=== " header of the section that changed. A poll that
+// returned less text than was printed, but nothing different, prints nothing.
+func nextFollowChunk(printed, logs string) string {
+	if strings.HasPrefix(logs, printed) {
+		return logs[len(printed):]
+	}
+	if strings.HasPrefix(printed, logs) {
+		return ""
+	}
+	diverged := 0
+	for diverged < len(printed) && diverged < len(logs) && printed[diverged] == logs[diverged] {
+		diverged++
+	}
+	return logs[strings.LastIndex(logs[:diverged], "\n=== ")+1:]
 }
 
 // isTerminalState checks if the execution state is terminal

@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -161,7 +162,46 @@ func (h *ExecutionHandler) GetExecutionLog(executionID string) (string, error) {
 	return h.sdk.GetExecutionLog(context.Background(), executionID)
 }
 
-// GetFullExecutionLog retrieves logs for all tasks in an execution, formatted with headers
+// TaskLogFailure is one task whose log could not be fetched.
+type TaskLogFailure struct {
+	Task string
+	Err  error
+}
+
+// TaskLogError reports task logs that could not be fetched. It is returned
+// together with the log text, which still holds every log that was fetched and
+// an inline marker for each one that was not.
+type TaskLogError struct {
+	ExecutionID string
+	Total       int
+	Failed      []TaskLogFailure
+}
+
+func (e *TaskLogError) Error() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "could not fetch the log of %d of %d tasks in execution %s:", len(e.Failed), e.Total, e.ExecutionID)
+	for _, f := range e.Failed {
+		fmt.Fprintf(&b, "\n  %s: %v", f.Task, f.Err)
+	}
+	return b.String()
+}
+
+// Unwrap exposes the per-task errors to errors.Is and errors.As.
+func (e *TaskLogError) Unwrap() []error {
+	errs := make([]error, len(e.Failed))
+	for i, f := range e.Failed {
+		errs[i] = f.Err
+	}
+	return errs
+}
+
+// GetFullExecutionLog retrieves logs for all tasks in an execution, formatted with headers.
+//
+// A task log that cannot be fetched is marked inline and the remaining tasks
+// are still fetched. The text is then returned together with a *TaskLogError
+// if any fetch failed for a reason other than 404, or if no task log could be
+// fetched at all. A lone 404 is not reported as an error: the text already
+// says the log is missing, and a task that has no log is not a failure.
 func (h *ExecutionHandler) GetFullExecutionLog(executionID string) (string, error) {
 	// Get all tasks
 	tasks, err := h.ListTasks(executionID)
@@ -177,6 +217,8 @@ func (h *ExecutionHandler) GetFullExecutionLog(executionID string) (string, erro
 	sortTasksByStartTime(tasks)
 
 	var builder strings.Builder
+	var failed []TaskLogFailure
+	realFailure := false
 
 	for i, task := range tasks {
 		// Add separator between tasks
@@ -191,6 +233,10 @@ func (h *ExecutionHandler) GetFullExecutionLog(executionID string) (string, erro
 		log, err := h.sdk.GetTaskLog(context.Background(), executionID, task.Name)
 		if err != nil {
 			builder.WriteString(fmt.Sprintf("(failed to fetch log: %v)\n", err))
+			failed = append(failed, TaskLogFailure{Task: task.Name, Err: err})
+			if !errors.Is(err, httpclient.ErrNotFound) {
+				realFailure = true
+			}
 			continue
 		}
 
@@ -205,6 +251,9 @@ func (h *ExecutionHandler) GetFullExecutionLog(executionID string) (string, erro
 		}
 	}
 
+	if realFailure || len(failed) == len(tasks) {
+		return builder.String(), &TaskLogError{ExecutionID: executionID, Total: len(tasks), Failed: failed}
+	}
 	return builder.String(), nil
 }
 
@@ -228,9 +277,11 @@ func (h *ExecutionHandler) GetCompleteExecutionLog(executionID string) (string, 
 		builder.WriteString("\n")
 	}
 
-	// Get all task logs
+	// Get all task logs. A *TaskLogError still comes with the logs that were
+	// fetched, so it is passed on with the text rather than instead of it.
 	taskLogs, err := h.GetFullExecutionLog(executionID)
-	if err != nil {
+	var taskErr *TaskLogError
+	if err != nil && !errors.As(err, &taskErr) {
 		return "", err
 	}
 
@@ -238,7 +289,7 @@ func (h *ExecutionHandler) GetCompleteExecutionLog(executionID string) (string, 
 		builder.WriteString(taskLogs)
 	}
 
-	return builder.String(), nil
+	return builder.String(), err
 }
 
 // sortTasksByStartTime sorts tasks by their start time (nil times go last)
