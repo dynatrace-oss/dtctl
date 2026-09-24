@@ -108,12 +108,16 @@ const (
 type DQLExecuteOptions struct {
 	// Output formatting options
 	OutputFormat string
-	JQFilter     string     // jq filter expression applied before rendering
-	AgentMode    bool       // Enable agent mode (e.g. for Dynatrace API)
-	Decode       DecodeMode // Snapshot payload decoding mode
-	Width        int        // Chart width (0 = default)
-	Height       int        // Chart height (0 = default)
-	Fullscreen   bool       // Use terminal dimensions for chart
+	JQFilter     string // jq filter expression applied before rendering
+	AgentMode    bool   // Enable agent mode (e.g. for Dynatrace API)
+	// AutoFormatByDefault reports that OutputFormat is auto only because it is
+	// the agent-mode default (no -o given), so a non-JSON result carries the
+	// -o json opt-out suggestion.
+	AutoFormatByDefault bool
+	Decode              DecodeMode // Snapshot payload decoding mode
+	Width               int        // Chart width (0 = default)
+	Height              int        // Chart height (0 = default)
+	Fullscreen          bool       // Use terminal dimensions for chart
 
 	// Query limit options
 	MaxResultRecords       int64   // Maximum number of result records (0 = use default)
@@ -958,7 +962,11 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	ap.SetMetadata(envelopeMetadata(result, opts))
 	// -o toon asked for a token-efficient encoding of the filtered result; keep
 	// it. Any other non-JSON format the envelope can't carry warns for itself.
-	ap.SetResultFormat(effectiveFormat)
+	if opts.AutoFormatByDefault {
+		ap.UseAutoByDefault()
+	} else {
+		ap.SetResultFormat(effectiveFormat)
+	}
 	return ap.Print(payload)
 }
 

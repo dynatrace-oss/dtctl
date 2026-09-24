@@ -101,8 +101,10 @@ dtctl query 'fetch logs | filter status == "ERROR" | limit 100' -o csv > errors.
 ## Auto (`-o auto`)
 
 `-o auto` picks the encoding from the shape of the result, preferring the
-cheapest *lossless* one for an LLM to read. It is opt-in, and the rules below
-are **experimental**: they may be tuned in any release as measurements come in.
+cheapest *lossless* one for an LLM to read. It is the default for `dtctl query`
+in agent mode when no `-o` is given (pass `-o json` for native JSON rows);
+everywhere else it is opt-in. The rules below are **experimental**: they may be
+tuned in any release as measurements come in.
 
 ```bash
 dtctl query 'fetch logs | summarize count(), by: {loglevel}' -o auto

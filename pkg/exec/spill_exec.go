@@ -310,6 +310,9 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	if encodeWarning != "" {
 		notifWarnings = append(notifWarnings, encodeWarning)
 	}
+	if auto && opts.AutoFormatByDefault && encoding != "json" {
+		notifSuggestions = append(notifSuggestions, output.AutoDefaultSuggestion(encoding))
+	}
 
 	total := len(records)
 	ctx := &output.ResponseContext{

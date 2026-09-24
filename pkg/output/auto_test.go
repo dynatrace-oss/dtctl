@@ -296,3 +296,50 @@ func TestAutoFormat_CaseAndWhitespaceInsensitive(t *testing.T) {
 		})
 	}
 }
+
+// TestAgentPrinter_AutoByDefault covers the agent-mode default (no -o given):
+// the result is auto-encoded, and a single suggestion naming the opt-out
+// appears only when the encoding actually differs from native JSON.
+func TestAgentPrinter_AutoByDefault(t *testing.T) {
+	flat := []map[string]interface{}{{"host": "a", "cpu": 1.5}, {"host": "b", "cpu": 2.0}}
+
+	t.Run("changed encoding suggests -o json", func(t *testing.T) {
+		ap := NewAgentPrinter(&bytes.Buffer{}, nil)
+		ap.UseAutoByDefault()
+		if err := ap.PrintList(flat); err != nil {
+			t.Fatalf("PrintList: %v", err)
+		}
+		if ap.Context().Format != "csv" {
+			t.Errorf("context.format = %q, want csv", ap.Context().Format)
+		}
+		want := []string{AutoDefaultSuggestion("csv")}
+		if len(ap.Context().Suggestions) != 1 || ap.Context().Suggestions[0] != want[0] {
+			t.Errorf("suggestions = %v, want %v", ap.Context().Suggestions, want)
+		}
+		if !strings.Contains(want[0], "-o json") {
+			t.Errorf("suggestion %q must name the -o json opt-out", want[0])
+		}
+	})
+
+	t.Run("native json choice adds no suggestion", func(t *testing.T) {
+		ap := NewAgentPrinter(&bytes.Buffer{}, nil)
+		ap.UseAutoByDefault()
+		if err := ap.PrintList([]interface{}{}); err != nil {
+			t.Fatalf("PrintList: %v", err)
+		}
+		if ap.Context().Format != "json" || len(ap.Context().Suggestions) != 0 {
+			t.Errorf("format=%q suggestions=%v, want json and none", ap.Context().Format, ap.Context().Suggestions)
+		}
+	})
+
+	t.Run("explicit -o auto adds no suggestion", func(t *testing.T) {
+		ap := NewAgentPrinter(&bytes.Buffer{}, nil)
+		ap.SetResultFormat("auto")
+		if err := ap.PrintList(flat); err != nil {
+			t.Fatalf("PrintList: %v", err)
+		}
+		if len(ap.Context().Suggestions) != 0 {
+			t.Errorf("suggestions = %v, want none for an explicit -o auto", ap.Context().Suggestions)
+		}
+	})
+}
