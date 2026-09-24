@@ -209,7 +209,8 @@ dtctl update gcp connection \
   --name "my-gcp-connection" \
   --serviceAccountId "dynatrace-monitoring@<project-id>.iam.gserviceaccount.com"
 
-# Create a monitoring configuration against the connection (created disabled)
+# Create a monitoring configuration against the connection (created disabled).
+# Without --locationFiltering it monitors every location (no location filter).
 dtctl create gcp monitoring --name "my-gcp-monitoring" --credentials "my-gcp-connection"
 
 # Discover locations and feature sets
@@ -225,6 +226,9 @@ Update and delete:
 ```bash
 dtctl update gcp monitoring --name "my-gcp-monitoring" \
   --locationFiltering us-central1,europe-west1
+
+# Remove the location filter again (monitor every location)
+dtctl update gcp monitoring --name "my-gcp-monitoring" --locationFiltering all
 
 dtctl delete gcp monitoring my-gcp-monitoring
 dtctl delete gcp connection my-gcp-connection

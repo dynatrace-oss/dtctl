@@ -20,7 +20,40 @@ func TestSplitCSV(t *testing.T) {
 	}
 }
 
-func TestParseOrDefaultLocationsAndFeatureSets(t *testing.T) {
+func TestParseLocations(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		input   string
+		want    []string
+		wantErr string
+	}{
+		// #573: no flag means no filter, not every schema location.
+		{name: "blank means no filter", input: "  ", want: []string{}},
+		{name: "all means no filter", input: "all", want: []string{}},
+		{name: "all is case-insensitive", input: " ALL ", want: []string{}},
+		{name: "explicit list", input: "us-central1, europe-west1", want: []string{"us-central1", "europe-west1"}},
+		{name: "only separators", input: " , ", wantErr: "at least one location"},
+		{name: "all combined with a location", input: "all,us-central1", wantErr: "cannot be combined"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseLocations(tc.input)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("ParseLocations(%q) error = %v, want %q", tc.input, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseLocations(%q) error = %v", tc.input, err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("ParseLocations(%q) = %#v, want %#v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseOrDefaultFeatureSets(t *testing.T) {
 	calls := 0
 	h, server := newMonitoringHandler(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -30,29 +63,11 @@ func TestParseOrDefaultLocationsAndFeatureSets(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(ExtensionSchemaResponse{Enums: map[string]SchemaEnum{
-			"dynatrace.datasource.gcp:location": {Items: []SchemaEnumItem{{Value: "us-central1"}, {Value: "europe-west1"}}},
-			"FeatureSetsType":                   {Items: []SchemaEnumItem{{Value: "compute_engine_essential"}, {Value: "metrics_all"}}},
+			"FeatureSetsType": {Items: []SchemaEnumItem{{Value: "compute_engine_essential"}, {Value: "metrics_all"}}},
 		}})
 	})
 	defer server.Close()
 
-	locs, err := ParseOrDefaultLocations("", h)
-	if err != nil {
-		t.Fatalf("ParseOrDefaultLocations() error = %v", err)
-	}
-	if !reflect.DeepEqual(locs, []string{"us-central1", "europe-west1"}) {
-		t.Fatalf("unexpected locations: %#v", locs)
-	}
-
-	locs, err = ParseOrDefaultLocations("a,b", h)
-	if err != nil {
-		t.Fatalf("ParseOrDefaultLocations(csv) error = %v", err)
-	}
-	if !reflect.DeepEqual(locs, []string{"a", "b"}) {
-		t.Fatalf("unexpected parsed locations: %#v", locs)
-	}
-
-	calls = 0
 	sets, err := ParseOrDefaultFeatureSets("", h)
 	if err != nil {
 		t.Fatalf("ParseOrDefaultFeatureSets() error = %v", err)
