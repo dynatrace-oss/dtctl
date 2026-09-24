@@ -375,10 +375,6 @@ func resolveMetadataFields(query string, meta *output.QueryMetadata, opts DQLExe
 	return output.ExpandMetadataFields(meta, opts.MetadataFields, usesDefaultWindow(query, opts))
 }
 
-// dqlStringOrCommentRe matches DQL string literals (with backslash escapes) and
-// line comments, which are removed before looking for window parameters.
-var dqlStringOrCommentRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|//[^\n]*`)
-
 // windowParamRe matches a window parameter name. DQL parameter names are
 // case-insensitive and allow whitespace before the colon (`FROM :` is valid).
 var windowParamRe = regexp.MustCompile(`(?i)\b(?:from|to|timeframe)\s*:`)
@@ -408,7 +404,14 @@ func usesDefaultWindow(query string, opts DQLExecuteOptions) bool {
 	if opts.DefaultTimeframeStart != "" || opts.DefaultTimeframeEnd != "" {
 		return false
 	}
-	return !windowParamRe.MatchString(dqlStringOrCommentRe.ReplaceAllString(query, `""`))
+	// Only DQL code can name a window: strings, backtick identifiers and
+	// comments are blanked first. A query the stripper cannot read is treated
+	// as windowless, so the timeframe is kept rather than wrongly dropped.
+	code, ok := stripDQLLiterals(query)
+	if !ok {
+		return true
+	}
+	return !windowParamRe.MatchString(code)
 }
 
 // resolveSpillTarget decides the format, destination path, and base dir for a

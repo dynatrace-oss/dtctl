@@ -269,6 +269,12 @@ func TestUsesDefaultWindow(t *testing.T) {
 		{"fetch logs // from:now()-1d\n| limit 3", true},
 		{`fetch logs | filter url == "http://example.invalid" | limit 1`, true},
 		{"fetch logs | fieldsAdd auto:1", true},
+		{"fetch logs /* from:now() */ | limit 3", true},
+		{"fetch logs /* note */, from:now()-1h", false},
+		{`fetch logs | filter message == """from:now()"""`, true},
+		{"fetch logs | fieldsAdd `from:x` = 1", true},
+		// An unterminated literal cannot be stripped reliably: keep the window.
+		{`fetch logs | filter message == "from:`, true},
 	}
 	for _, tt := range tests {
 		if got := usesDefaultWindow(tt.query, DQLExecuteOptions{}); got != tt.want {
