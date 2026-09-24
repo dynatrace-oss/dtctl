@@ -100,34 +100,6 @@ func stageCommand(stage string) string {
 	return fields[0]
 }
 
-// splitTopLevel splits s on sep where sep is outside quotes and brackets.
-func splitTopLevel(s string, sep byte) []string {
-	var parts []string
-	depth, start := 0, 0
-	var quote byte
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case quote != 0:
-			if c == '\\' {
-				i++
-			} else if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '\'' || c == '`':
-			quote = c
-		case c == '(' || c == '{' || c == '[':
-			depth++
-		case c == ')' || c == '}' || c == ']':
-			depth--
-		case c == sep && depth == 0:
-			parts = append(parts, s[start:i])
-			start = i + 1
-		}
-	}
-	return append(parts, s[start:])
-}
-
 // topLevelAssign returns the index of an alias `=` outside brackets and
 // quotes — not part of `==`, `!=`, `<=` or `>=` — or -1.
 func topLevelAssign(s string) int {
