@@ -96,12 +96,15 @@ func byteOffset(q string, line, col int) int {
 	return off
 }
 
+var matchingOpen = map[byte]byte{')': '(', ']': '[', '}': '{'}
+
 // scan builds the masked view and bracket depths of q. ok is false for input
 // the rules should not touch.
 func scan(q string) (code string, depth []int, ok bool) {
 	b := []byte(q)
 	depth = make([]int, len(q))
 	d := 0
+	var open []byte // unclosed brackets, innermost last
 	for i := 0; i < len(b); i++ {
 		depth[i] = d
 		switch b[i] {
@@ -126,12 +129,14 @@ func scan(q string) (code string, depth []int, ok bool) {
 			depth[j] = d
 			i = j
 		case '(', '[', '{':
+			open = append(open, b[i])
 			d++
 		case ')', ']', '}':
-			d--
-			if d < 0 {
+			if d == 0 || open[d-1] != matchingOpen[b[i]] {
 				return "", nil, false
 			}
+			open = open[:d-1]
+			d--
 			depth[i] = d
 		case '/':
 			if i+1 < len(b) && (b[i+1] == '/' || b[i+1] == '*') {
@@ -168,12 +173,16 @@ type edit struct {
 	text       string
 }
 
-// apply returns q with non-overlapping edits applied.
+// apply returns q with edits applied. Overlapping edits have no single
+// meaning, so they leave q unchanged, which drops the hint.
 func apply(q string, edits []edit) string {
 	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
 	var out strings.Builder
 	last := 0
 	for _, e := range edits {
+		if e.start < last {
+			return q
+		}
 		out.WriteString(q[last:e.start])
 		out.WriteString(e.text)
 		last = e.end

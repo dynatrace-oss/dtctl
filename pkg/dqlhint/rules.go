@@ -177,6 +177,11 @@ func arrayContains(c *queryContext) (hint, bool) {
 		if !wordAt(c.code, m[2], c.code[m[2]:m[3]]) {
 			continue
 		}
+		// A call nested in another's arguments would need the outer rewrite
+		// to carry the inner one; leave such queries alone.
+		if len(edits) > 0 && m[2] < edits[len(edits)-1].end {
+			return hint{}, false
+		}
 		open := m[1] - 1
 		closing := c.closingParen(open)
 		if closing < 0 {

@@ -250,6 +250,10 @@ func TestSuggest_Conservative(t *testing.T) {
 			Arguments: []string{"c"}, Query: "fetch logs | summarize c: count()", Span: span(1, 5)}},
 		{"array.contains with three arguments", Error{Type: "UNKNOWN_FUNCTION", Arguments: []string{"array.contains"},
 			Query: `fetch logs | filter array.contains(tags, "a", "b")`, Span: span(21, 34)}},
+		{"nested array.contains calls", Error{Type: "UNKNOWN_FUNCTION", Arguments: []string{"array.contains"},
+			Query: `fetch logs | filter array.contains(array.contains(tags, "a"), "b")`, Span: span(21, 34)}},
+		{"mismatched bracket kinds", Error{Type: "MANDATORY_PARAMETER_HAS_TO_BE_BUT_WAS",
+			Arguments: []string{"a boolean", "a long"}, Query: `fetch logs | filter (x = 1]`, Span: span(26, 26)}},
 		{"unknown function that is not an array membership test", Error{Type: "UNKNOWN_FUNCTION",
 			Arguments: []string{"containz"}, Query: `fetch logs | filter containz(content, "a")`, Span: span(21, 28)}},
 		{"rollup with a non-duration value", Error{Type: "NAMED_PARAMETER_HAS_TO_BE",
@@ -286,5 +290,17 @@ func TestShellQuote(t *testing.T) {
 		if got := shellQuote(tt.in); got != tt.want {
 			t.Errorf("shellQuote(%q) = %s, want %s", tt.in, got, tt.want)
 		}
+	}
+}
+
+// TestApply_OverlappingEditsLeaveQueryUnchanged is the backstop for any rule
+// that emits overlapping edits: no panic, and no rewrite.
+func TestApply_OverlappingEditsLeaveQueryUnchanged(t *testing.T) {
+	q := "abcdef"
+	if got := apply(q, []edit{{1, 4, "X"}, {2, 3, "Y"}}); got != q {
+		t.Errorf("apply = %q, want %q unchanged", got, q)
+	}
+	if got := apply(q, []edit{{4, 5, "Y"}, {1, 2, "X"}}); got != "aXcdYf" {
+		t.Errorf("apply = %q, want aXcdYf", got)
 	}
 }
