@@ -332,6 +332,28 @@ A few consequences worth knowing when you parse the output:
   a `summarize ..., by:{...}` that has no `sort`, the suggestions say so: the
   groups kept are arbitrary, so rank before the cut (`| sort <agg> desc | limit N`).
 
+## Stability of agent-mode output
+
+Agent-mode output is shaped for agents, and it keeps being tuned for them. What
+the envelope carries (which fields and how many items a default returns, how
+rows are encoded, how numbers are rounded) may change in any minor release, on
+`stable` commands too. An agent reads every response afresh, so it adapts; the
+release notes mark such a change as breaking. See [what `stable` promises before
+1.0](STABILITY.md#what-stable-promises-before-10).
+
+What does not change without a deprecation cycle:
+
+- **The envelope skeleton.** `ok`, `error.code`, `result.kind` and the `context`
+  keys keep their names, types and meanings.
+- **Explicit flags.** A flag you pass keeps its meaning. If a program parses the
+  output instead of a model reading it, pin the shape with flags (for example
+  `-o json`) rather than relying on agent-mode defaults.
+- **Self-description.** When a default drops, clips, rounds, pages or re-encodes
+  data, the envelope says so, in `context.format`, `context.has_more`, or a
+  `context.suggestions` entry naming the flag that restores the full data.
+
+Output without agent mode is not affected by any of this.
+
 ## Command Catalog
 
 AI agents can bootstrap their knowledge of dtctl using the built-in command catalog:

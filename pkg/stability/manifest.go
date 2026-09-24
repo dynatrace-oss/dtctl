@@ -171,6 +171,26 @@ declared ` + "`experimental`" + ` *now*, ahead of the break, rather than carryin
 ` + "`stable`" + ` badge dtctl already knows it cannot keep. Most of the
 ` + "`experimental`" + ` entries below are there for that reason and no other.
 
+**Agent-mode output is shaped for agents, not frozen.** The additive-only
+promise covers what a caller *types* (commands, flags, arguments, exit codes)
+and the output outside agent mode. In agent mode (` + "`--agent`" + `, ` + "`-A`" + `, or
+auto-detected) the reader is a model that reads every response afresh and adapts
+to it, so what the envelope carries may change in any minor release, on
+` + "`stable`" + ` commands too: which fields and how many items a default returns, how
+rows are encoded, how numbers are rounded. Such a change is flagged as breaking
+in the release notes, but it needs no deprecation cycle and no breaking-change
+document, and it does not demote the command. Three things still hold:
+
+- The envelope's skeleton stays additive-only. ` + "`ok`" + `, ` + "`error.code`" + `,
+  ` + "`result.kind`" + ` and the ` + "`context`" + ` keys keep their names, types and meanings,
+  because host code parses those, not the model.
+- A change describes itself. When a default drops, clips, rounds, pages or
+  re-encodes data, the envelope says so (` + "`context.format`" + `, ` + "`context.has_more`" + `,
+  or a ` + "`context.suggestions`" + ` entry naming the flag that restores the full data).
+- An explicit flag keeps its meaning. A program that needs a fixed shape passes
+  the flags for it (for example ` + "`-o json`" + `) rather than relying on agent-mode
+  defaults, and that invocation is covered by the promise above.
+
 **` + "`experimental`" + ` and ` + "`development`" + ` are not covered.** They may
 change in any release, patch releases included. That is the whole distinction.
 

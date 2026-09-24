@@ -139,6 +139,25 @@ minor releases** later, so there is always a release that both warns and works.
 The policy is user-facing in the manifest header ("What `stable` promises before
 1.0"); `pkg/stability/manifest.go` is where you edit it.
 
+**Agent-mode output is the one exception to additive-only.** In agent mode the
+reader is a model that reads every response afresh and adapts to it, so what the
+envelope carries (default fields, item counts, row encoding, rounding) may change
+in any minor release, `stable` commands included. That change needs no
+deprecation cycle and no dtctl-contrib breaking-change document, and it does not
+demote the command. The PR still has to:
+
+- keep the envelope skeleton additive-only (`ok`, `error.code`, `result.kind`,
+  the `context` keys), because host code parses it, not the model;
+- make the change describe itself in the envelope: `context.format`,
+  `context.has_more`, or a `context.suggestions` entry naming the flag that
+  restores the full data;
+- leave every explicit flag's meaning unchanged, since that is how a program
+  pins a shape;
+- use a breaking Conventional Commit title (`feat(scope)!:` plus a
+  `BREAKING CHANGE:` footer), so the release notes lead with it.
+
+Output outside agent mode, and everything a caller types, keep the full promise.
+
 *Flags* are the deliberate exception — an unannotated flag inherits its
 command's tier. Requiring every flag on an experimental command to repeat the
 annotation would be pure noise, and a flag's silence cannot manufacture a
@@ -238,8 +257,10 @@ that names the exception which would admit it beats a dead end. The split is
 pinned by `pre10DemotedCommands` / `pre10SurvivingCommands` in the same test.
 
 The other reason to mark the command is that the break lives in no flag at all:
-`exec workflow` starts waiting by default and `logs workflow-execution` reshapes
-its whole agent-mode output, so there is nothing narrower to annotate. Note that
+`exec workflow` starts waiting by default, so there is nothing narrower to
+annotate. `logs workflow-execution` was demoted for reshaping its agent-mode
+output before the agent-mode exception above existed. A reshape of agent-mode
+output alone no longer demotes a command. Note that
 the manifest reports a flag's *effective* tier, so demoting a command shows up
 on every flag underneath it.
 
