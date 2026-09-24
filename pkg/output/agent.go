@@ -77,6 +77,25 @@ type ResponseContext struct {
 	ThresholdBytes   int64  `json:"threshold_bytes,omitempty"`
 	MeasuredBytes    int64  `json:"measured_bytes,omitempty"`
 	MeasuredEncoding string `json:"measured_encoding,omitempty"`
+
+	// EmptyReason explains an empty query result when a cheap follow-up
+	// probe found a likely cause. Omitted when the result is not empty or the
+	// probes found nothing conclusive.
+	EmptyReason *EmptyReason `json:"empty_reason,omitempty"`
+}
+
+// EmptyReason is a diagnosed cause of an empty query result. Each finding
+// names its basis in Evidence (a sample, or the window that was checked), so
+// a consumer never mistakes a sampled observation for a catalog fact.
+type EmptyReason struct {
+	// Code is "field_not_in_sample" or "metric_not_in_window".
+	Code       string   `json:"code"`
+	Field      string   `json:"field,omitempty"`
+	Metric     string   `json:"metric,omitempty"`
+	DataObject string   `json:"data_object,omitempty"`
+	DidYouMean []string `json:"did_you_mean,omitempty"`
+	SampleSize int      `json:"sample_size,omitempty"`
+	Evidence   string   `json:"evidence"`
 }
 
 // ErrorDetail is a structured error for machine consumption.

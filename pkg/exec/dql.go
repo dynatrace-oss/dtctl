@@ -51,6 +51,8 @@ type DQLExecutor struct {
 	client         *client.Client
 	sdk            *sdkquery.Handler
 	tokenRefresher func() (string, error)
+	// probe overrides the runner for empty-result diagnostic queries (tests).
+	probe probeFunc
 }
 
 // NewDQLExecutor creates a new DQL executor
@@ -660,7 +662,7 @@ func windowAdvice(query string, records []map[string]interface{}, opts DQLExecut
 	if opts.DefaultTimeframeStart != "" || opts.DefaultTimeframeEnd != "" {
 		return nil
 	}
-	if len(records) > 1 || (len(records) == 1 && !allAggregatesZero(records[0])) {
+	if !isEmptyResult(records) {
 		return nil
 	}
 	if strings.Contains(query, "from:") || strings.Contains(query, "to:") || strings.Contains(query, "timeframe:") {
@@ -674,6 +676,12 @@ func windowAdvice(query string, records []map[string]interface{}, opts DQLExecut
 		advice = "# empty result from the DEFAULT query window (the last 2h): metric.series lists only series with datapoints INSIDE the window — widen it for discovery, e.g. `fetch metric.series, from:now()-7d`"
 	}
 	return []string{advice}
+}
+
+// isEmptyResult reports whether a result carries no rows, or only the single
+// all-zero row a `summarize count()` yields when nothing matched.
+func isEmptyResult(records []map[string]interface{}) bool {
+	return len(records) == 0 || (len(records) == 1 && allAggregatesZero(records[0]))
 }
 
 // entityFetchRe spots a query fetching a classic dt.entity.* table, and
@@ -939,7 +947,8 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	scanWarnings, scanSuggestions := heavyScanAdvice(result)
 	warnings = append(warnings, scanWarnings...)
 	suggestions = append(suggestions, scanSuggestions...)
-	suggestions = append(suggestions, windowAdvice(query, records, opts)...)
+	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
+	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
 
 	total := len(records)
@@ -949,6 +958,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 		Total:       &total,
 		Warnings:    warnings,
 		Suggestions: suggestions,
+		EmptyReason: emptyReason,
 	}
 
 	ap := output.NewAgentPrinter(os.Stdout, ctx)
