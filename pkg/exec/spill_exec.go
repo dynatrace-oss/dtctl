@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -371,6 +372,14 @@ func resolveMetadataFields(query string, meta *output.QueryMetadata, opts DQLExe
 	return output.ExpandMetadataFields(meta, opts.MetadataFields, usesDefaultWindow(query, opts))
 }
 
+// dqlStringOrCommentRe matches DQL string literals (with backslash escapes) and
+// line comments, which are removed before looking for window parameters.
+var dqlStringOrCommentRe = regexp.MustCompile(`"(?:[^"\\]|\\.)*"|//[^\n]*`)
+
+// windowParamRe matches a window parameter name. DQL parameter names are
+// case-insensitive and allow whitespace before the colon (`FROM :` is valid).
+var windowParamRe = regexp.MustCompile(`(?i)\b(?:from|to|timeframe)\s*:`)
+
 // usesDefaultWindow reports whether the query ran on the server's default
 // analysis window: neither the query text nor --default-timeframe-* named one.
 // Only then is the analysis timeframe news to the caller.
@@ -378,7 +387,7 @@ func usesDefaultWindow(query string, opts DQLExecuteOptions) bool {
 	if opts.DefaultTimeframeStart != "" || opts.DefaultTimeframeEnd != "" {
 		return false
 	}
-	return !strings.Contains(query, "from:") && !strings.Contains(query, "to:") && !strings.Contains(query, "timeframe:")
+	return !windowParamRe.MatchString(dqlStringOrCommentRe.ReplaceAllString(query, `""`))
 }
 
 // resolveSpillTarget decides the format, destination path, and base dir for a

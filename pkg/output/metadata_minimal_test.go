@@ -191,3 +191,13 @@ func TestExpandedMinimalFields_DriveCSVAndFooter(t *testing.T) {
 		t.Errorf("MetadataToMap under minimal = %v", m)
 	}
 }
+
+// "all" is only valid alone, so it cannot be combined with minimal and then
+// act as a full-selection sentinel inside the expanded list.
+func TestParseMetadataFields_MinimalWithAllRejected(t *testing.T) {
+	for _, in := range []string{"minimal,all", "all,minimal"} {
+		if _, err := ParseMetadataFields(in); err == nil {
+			t.Errorf("ParseMetadataFields(%q) should fail", in)
+		}
+	}
+}

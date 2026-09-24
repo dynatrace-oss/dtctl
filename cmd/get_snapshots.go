@@ -158,6 +158,7 @@ Use -o json / -o yaml for structured output.`,
 			DefaultTimeframeStart: defaultTimeframeStart,
 			DefaultTimeframeEnd:   defaultTimeframeEnd,
 			MetadataFields:        metadataFields,
+			Verbose:               verbosity > 0,
 			ShowProgress:          !noProgress,
 		}
 

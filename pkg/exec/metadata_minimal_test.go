@@ -245,3 +245,34 @@ func TestPrintResults_JSONMinimalMetadata(t *testing.T) {
 		t.Errorf("metadata = %v, want only executionTimeMilliseconds,scannedBytes", parsed.Metadata)
 	}
 }
+
+// DQL parameter names are case-insensitive and allow whitespace before the
+// colon, and a window keyword inside a string literal or comment does not set
+// the window.
+func TestUsesDefaultWindow(t *testing.T) {
+	tests := []struct {
+		query string
+		want  bool
+	}{
+		{"fetch logs | limit 3", true},
+		{"fetch logs, from:now()-1h", false},
+		{"fetch logs, FROM:now()-1h", false},
+		{"fetch logs, From : now()-1h", false},
+		{"fetch logs, to:now()", false},
+		{"fetch logs, timeframe:\"2026-01-01T00:00:00Z/2026-01-02T00:00:00Z\"", false},
+		{"timeseries avg(dt.host.cpu.usage), from:-2h", false},
+		{`fetch logs | filter message == "from:"`, true},
+		{`fetch logs | filter contains(content, "to: someone")`, true},
+		{"fetch logs // from:now()-1d\n| limit 3", true},
+		{`fetch logs | filter url == "http://example.invalid" | limit 1`, true},
+		{"fetch logs | fieldsAdd auto:1", true},
+	}
+	for _, tt := range tests {
+		if got := usesDefaultWindow(tt.query, DQLExecuteOptions{}); got != tt.want {
+			t.Errorf("usesDefaultWindow(%q) = %v, want %v", tt.query, got, tt.want)
+		}
+	}
+	if usesDefaultWindow("fetch logs", DQLExecuteOptions{DefaultTimeframeEnd: "2026-01-01T00:00:00Z"}) {
+		t.Error("--default-timeframe-end names a window")
+	}
+}
