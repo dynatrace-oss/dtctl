@@ -30,6 +30,9 @@ type inlineRows struct {
 	// clipped.
 	tabular       []map[string]interface{}
 	clippedFields []string
+	// types is the DQL type block the payload carries next to the rows, or nil
+	// (see emittedTypes).
+	types interface{}
 }
 
 // newInlineRows clips the rows of compaction c (computed from full; nil when
