@@ -386,3 +386,76 @@ func TestAgentPrinter_SetResultFormatEmptyIsSilent(t *testing.T) {
 		t.Errorf("empty format should not warn, got %v", resp.Context.Warnings)
 	}
 }
+
+// Regression for #586: a single control character (e.g. the ESC of an ANSI
+// color sequence in log content) must not fail the whole TOON output. TOON has
+// no escape for it, so it is rendered as its Unicode Control Picture.
+func TestToonPrinter_ControlCharactersDoNotFailOutput(t *testing.T) {
+	var buf bytes.Buffer
+	p := &ToonPrinter{writer: &buf}
+
+	data := []map[string]any{
+		{"content": "\x1b[31mERROR\x1b[0m boom", "ok": "fine"},
+		{"content": "nul\x00bell\x07", "ok": "tab\tnewline\n"},
+	}
+	if err := p.PrintList(data); err != nil {
+		t.Fatalf("PrintList failed: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"␛[31mERROR␛[0m boom", "nul␀bell␇", `"tab\tnewline\n"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q, got:\n%s", want, out)
+		}
+	}
+	if strings.ContainsAny(out, "\x00\x07\x1b") {
+		t.Errorf("raw control characters leaked into output:\n%q", out)
+	}
+}
+
+func TestMarshalTOON_ControlCharactersInKeysAndNestedValues(t *testing.T) {
+	data := map[string]any{
+		"k\x1bey": map[string]any{"nested": []any{"a\x1bb", 1.0, true}},
+	}
+	out, err := MarshalTOON(data)
+	if err != nil {
+		t.Fatalf("MarshalTOON failed: %v", err)
+	}
+	for _, want := range []string{"k␛ey", "a␛b"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q, got:\n%s", want, out)
+		}
+	}
+}
+
+// A key whose Control Picture form equals another key must not silently drop
+// either entry; it falls back to a JSON-style escape of the original key.
+func TestMarshalTOON_ControlCharacterKeyCollisionKeepsBothEntries(t *testing.T) {
+	data := map[string]any{
+		"a\x00":     "from-control",
+		"a␀":        "from-picture",
+		"b\x00\x01": "first",
+		"b\x00␁":    "second",
+		"a\\u0000":  "literal-escape",
+	}
+	var first string
+	for i := 0; i < 20; i++ {
+		out, err := MarshalTOON(data)
+		if err != nil {
+			t.Fatalf("MarshalTOON failed: %v", err)
+		}
+		if i == 0 {
+			first = out
+		} else if out != first {
+			t.Fatalf("output not deterministic:\n%s\nvs\n%s", first, out)
+		}
+	}
+	for _, want := range []string{"from-control", "from-picture", "first", "second", "literal-escape"} {
+		if !strings.Contains(first, want) {
+			t.Errorf("output lost value %q, got:\n%s", want, first)
+		}
+	}
+	if got := strings.Count(first, "\n") + 1; got != len(data) {
+		t.Errorf("expected %d entries, got %d:\n%s", len(data), got, first)
+	}
+}

@@ -40,6 +40,16 @@ Output as YAML, useful for round-tripping with `dtctl apply`:
 dtctl get workflow wf-123 -o yaml
 ```
 
+## TOON
+
+Output as [TOON](https://github.com/toon-format/toon) (Token-Oriented Object Notation), a compact format for LLM token efficiency:
+
+```bash
+dtctl query 'fetch logs | limit 10' -o toon
+```
+
+TOON can only escape `\\`, `\"`, `\n`, `\r` and `\t`. Any other control character in a key or value (for example the ESC of an ANSI color sequence in log content) is shown as its Unicode Control Picture (`U+001B` becomes `␛`), so one such value never fails the whole output. Use `-o json` for byte-exact values.
+
 ## Wide
 
 The wide format adds additional columns that are hidden in the default table view:

@@ -3,6 +3,9 @@ package output
 import (
 	"encoding/json"
 	"io"
+	"sort"
+	"strconv"
+	"strings"
 
 	toon "github.com/toon-format/toon-go"
 )
@@ -40,7 +43,7 @@ func (p *ToonPrinter) marshal(obj interface{}) error {
 		return err
 	}
 
-	data, err := toon.Marshal(generic, toon.WithLengthMarkers(true))
+	data, err := toon.Marshal(toonSafe(generic), toon.WithLengthMarkers(true))
 	if err != nil {
 		return err
 	}
@@ -62,7 +65,83 @@ func MarshalTOON(v interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return toon.MarshalString(generic, toon.WithLengthMarkers(true))
+	return toon.MarshalString(toonSafe(generic), toon.WithLengthMarkers(true))
+}
+
+// toonSafe replaces C0 control characters other than \t, \n and \r in every
+// string (keys and values) of a generic value with their Unicode Control
+// Picture (U+2400 + c, e.g. ESC -> ␛). TOON only defines the escapes \\, \",
+// \n, \r and \t, and the encoder rejects any other control character, so one
+// ANSI color sequence in a log line would otherwise fail the whole output.
+func toonSafe(v interface{}) interface{} {
+	switch t := v.(type) {
+	case string:
+		return toonSafeString(t)
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(t))
+		for k, newKey := range toonSafeKeys(t) {
+			out[newKey] = toonSafe(t[k])
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(t))
+		for i, val := range t {
+			out[i] = toonSafe(val)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// toonSafeKeys maps each key of m to a TOON-safe key without ever merging two
+// entries. Keys without unsupported control characters keep their name. The
+// others, in sorted order for deterministic output, take their Control Picture
+// form; if that name is already taken (e.g. "a\x00" next to "a␀"), they fall
+// back to the JSON escape of the original key ("a\u0000"), then to that escape
+// with a numeric suffix.
+func toonSafeKeys(m map[string]interface{}) map[string]string {
+	keys := make(map[string]string, len(m))
+	taken := make(map[string]bool, len(m))
+	var changed []string
+	for k := range m {
+		if strings.IndexFunc(k, isUnsupportedToonControl) < 0 {
+			keys[k] = k
+			taken[k] = true
+		} else {
+			changed = append(changed, k)
+		}
+	}
+	sort.Strings(changed)
+	for _, k := range changed {
+		name := toonSafeString(k)
+		if taken[name] {
+			escaped, _ := json.Marshal(k) // cannot fail for a string
+			name = string(escaped[1 : len(escaped)-1])
+			for i, base := 2, name; taken[name]; i++ {
+				name = base + "~" + strconv.Itoa(i)
+			}
+		}
+		keys[k] = name
+		taken[name] = true
+	}
+	return keys
+}
+
+func toonSafeString(s string) string {
+	if strings.IndexFunc(s, isUnsupportedToonControl) < 0 {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if isUnsupportedToonControl(r) {
+			return 0x2400 + r
+		}
+		return r
+	}, s)
+}
+
+func isUnsupportedToonControl(r rune) bool {
+	return r < 0x20 && r != '\t' && r != '\n' && r != '\r'
 }
 
 // toGeneric converts a typed Go value to an untyped representation
