@@ -94,6 +94,8 @@ dtctl query "fetch logs" --spill-to ./out.jsonl      # explicit path: jsonl|json
 dtctl query "fetch logs" --spill=auto --spill-threshold 100KB
 ```
 
+Inline results are bounded too. String values are clipped to 500 chars by default and end in `…(+N chars)` (`--max-field-chars 0` gives full values; add `| fields <col>` to fetch only that column). `--max-output-tokens N` / `--max-output-bytes SIZE` returns only the rows that fit. When `context.truncated` is true the result is incomplete: `truncated_fields` lists the clipped fields, and `returned` < `total` means rows were dropped. In that case run `context.next` (a `dtctl inspect` command) to continue at `next_offset` without re-querying.
+
 ### Inspect a spilled file (no Grail re-query)
 
 `dtctl inspect <file>` reads the rows the summary left out — bounded, streaming, agent-context-friendly — so you never re-run the Grail scan. Pick exactly one primitive per call:

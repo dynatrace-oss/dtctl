@@ -16,8 +16,24 @@ import (
 // drops the ~⅓ of bytes that indentation would otherwise add; the envelope shape
 // is identical either way, only whitespace differs.
 func EncodeEnvelope(w io.Writer, resp Response) error {
+	return encodeEnvelopeTo(w, resp, isTerminalWriter(w))
+}
+
+// EnvelopeSize returns the number of bytes EncodeEnvelope would write for resp
+// to w — the same indentation decision, so the count is what the reader of w
+// actually receives. Nothing is written to w. An output budget
+// (--max-output-bytes) is measured with it rather than with a separate
+// serialisation of the rows, so the envelope, the context and the encoding the
+// caller chose are all inside the budget.
+func EnvelopeSize(w io.Writer, resp Response) (int64, error) {
+	counter := &countingWriter{w: io.Discard}
+	err := encodeEnvelopeTo(counter, resp, isTerminalWriter(w))
+	return counter.n, err
+}
+
+func encodeEnvelopeTo(w io.Writer, resp Response, indent bool) error {
 	enc := json.NewEncoder(w)
-	if isTerminalWriter(w) {
+	if indent {
 		enc.SetIndent("", "  ")
 	}
 	return enc.Encode(resp)
@@ -82,6 +98,42 @@ type ResponseContext struct {
 	// probe found a likely cause. Omitted when the result is not empty or the
 	// probes found nothing conclusive.
 	EmptyReason *EmptyReason `json:"empty_reason,omitempty"`
+
+	// Truncation markers. Truncated is true whenever the result is not the
+	// complete answer because dtctl bounded it: rows were dropped to fit an
+	// output budget (Returned < Total, see NextOffset/Next), or string values
+	// were clipped to MaxFieldChars (each clipped value ends in "…(+N chars)"
+	// and its field is named in TruncatedFields). Both can apply at once.
+	Truncated bool `json:"truncated,omitempty"`
+	// Returned is the number of rows in the result when an output budget
+	// dropped some; Total still counts every row the query returned.
+	Returned *int `json:"returned,omitempty"`
+	// NextOffset is the zero-based index of the first row the budget dropped.
+	NextOffset *int `json:"next_offset,omitempty"`
+	// Next is a ready-to-run command that continues at NextOffset without
+	// re-querying, when the full result was written to disk. Empty when it was
+	// not (spilling disabled); context.suggestions then says how to get the rest.
+	Next string `json:"next,omitempty"`
+	// BudgetBytes is the output budget that dropped rows, in bytes of the
+	// encoded envelope (--max-output-bytes, or --max-output-tokens × 4).
+	BudgetBytes int64 `json:"budget_bytes,omitempty"`
+	// MaxFieldChars is the per-value cap in runes, set only when it clipped at
+	// least one value.
+	MaxFieldChars int `json:"max_field_chars,omitempty"`
+	// TruncatedFields names the fields with at least one clipped value.
+	TruncatedFields []string `json:"truncated_fields,omitempty"`
+}
+
+// MarkFieldsClipped records on the context that values in fields were clipped
+// to max runes. A no-op when nothing was clipped, so an unclipped result keeps
+// a clean context.
+func (c *ResponseContext) MarkFieldsClipped(max int, fields []string) {
+	if len(fields) == 0 {
+		return
+	}
+	c.Truncated = true
+	c.MaxFieldChars = max
+	c.TruncatedFields = fields
 }
 
 // EmptyReason is a diagnosed cause of an empty query result. Each finding
@@ -165,6 +217,9 @@ type AgentPrinter struct {
 	autoByDefault bool
 	jqFilter      string
 	metadata      interface{}
+	// maxFieldChars clips long string values in the result after the jq
+	// filter ran (0 = off); see SetMaxFieldChars.
+	maxFieldChars int
 }
 
 // NewAgentPrinter creates an AgentPrinter that writes envelope-wrapped JSON to writer.
@@ -216,6 +271,11 @@ func (p *AgentPrinter) Print(data interface{}) error {
 	transformed, err := ApplyJQ(p.jqFilter, data)
 	if err != nil {
 		return err
+	}
+	if p.maxFieldChars > 0 {
+		var fields []string
+		transformed, fields = ClipValue(transformed, p.maxFieldChars)
+		p.ctx.MarkFieldsClipped(p.maxFieldChars, fields)
 	}
 
 	result, err := p.encodeResult(transformed)
@@ -292,6 +352,13 @@ func (p *AgentPrinter) PrintList(data interface{}) error {
 // SetJQFilter applies a jq transform to the result before envelope encoding.
 func (p *AgentPrinter) SetJQFilter(filter string) {
 	p.jqFilter = filter
+}
+
+// SetMaxFieldChars clips every string value in the result longer than n runes
+// (0 = off, the default), marking the clip on the context. It runs after the jq
+// filter, so a filter still sees — and can match on — the full values.
+func (p *AgentPrinter) SetMaxFieldChars(n int) {
+	p.maxFieldChars = n
 }
 
 // SetMetadata sets the envelope's metadata sibling (Grail query metadata). It

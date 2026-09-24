@@ -187,7 +187,7 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 - commands: 269 stable, 15 experimental, 11 development
 - global flags (accepted on every command): 12
-- entries below (commands + flags): 849
+- entries below (commands + flags): 852
 
 ## Surface
 
@@ -846,6 +846,9 @@ query                                stable
   --interval                         stable
   --live                             stable
   --locale                           stable
+  --max-field-chars                  experimental  since 0.40.0
+  --max-output-bytes                 experimental  since 0.40.0
+  --max-output-tokens                experimental  since 0.40.0
   --max-result-bytes                 stable
   --max-result-records               stable
   --metadata                         stable

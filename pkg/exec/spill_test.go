@@ -32,6 +32,12 @@ func TestParseByteSize(t *testing.T) {
 		{"", 0, true},
 		{"abc", 0, true},
 		{"-5KB", 0, true},
+		// Non-finite and out-of-range sizes must be rejected, not converted
+		// into an undefined int64.
+		{"NaNKB", 0, true},
+		{"InfKB", 0, true},
+		{"1e300GB", 0, true},
+		{"99999999999999999999", 0, true},
 	}
 	for _, c := range cases {
 		got, err := ParseByteSize(c.in)
