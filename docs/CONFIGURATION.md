@@ -229,7 +229,7 @@ Commit the file to version control without secrets -- each developer or CI syste
 1. `--config` flag (explicit path)
 2. `DTCTL_CONFIG` environment variable (explicit path)
 3. `.dtctl.yaml` in the current directory or any parent (walks up to root)
-4. Global config (`~/.config/dtctl/config`)
+4. Global config (`$XDG_CONFIG_HOME/dtctl/config` — `~/.config/dtctl/config` on Linux, `~/Library/Application Support/dtctl/config` on macOS, `%LOCALAPPDATA%\dtctl\config` on Windows)
 
 > **Security: local configs cannot run commands.** Because a `.dtctl.yaml` is
 > auto-discovered by walking up from your current directory, it is treated as
@@ -237,8 +237,10 @@ Commit the file to version control without secrets -- each developer or CI syste
 > tarball, or a shared work dir. dtctl therefore **ignores command aliases and
 > apply hooks** found in an auto-discovered local `.dtctl.yaml`, printing a
 > warning to stderr when it does. These code-execution keys are honored **only**
-> from the global config (`~/.config/dtctl/config`) or a config you point at
-> explicitly with `--config` or `DTCTL_CONFIG`. A local config may still define
+> from the global config (`$XDG_CONFIG_HOME/dtctl/config`, see
+> [Config Search Order](#config-search-order) for the per-OS default) or a
+> config you point at explicitly with `--config` or `DTCTL_CONFIG`. A local
+> config may still define
 > contexts, tokens, and other preferences. As an additional safeguard, an alias
 > can never shadow a built-in command (e.g. `get`, `apply`, `version`)
 > regardless of where it is defined.
@@ -311,7 +313,9 @@ Both hooks are invoked the same way: the command string is tokenized using POSIX
 Hooks are configured globally in `preferences` or per-context:
 
 ```yaml
-# ~/.config/dtctl/config
+# global config, e.g. ~/.config/dtctl/config on Linux,
+# ~/Library/Application Support/dtctl/config on macOS,
+# or %LOCALAPPDATA%\dtctl\config on Windows
 preferences:
   hooks:
     pre-apply:  "node /opt/dtctl-hooks/validate.js"
@@ -336,7 +340,8 @@ contexts:
 Per-context hooks take precedence over global hooks. The special value `"none"` disables the global hook for a specific context.
 
 > **Security: hooks are ignored in local configs.** Apply hooks are honored only
-> from the global config (`~/.config/dtctl/config`) or a config named explicitly
+> from the global config (`$XDG_CONFIG_HOME/dtctl/config`, see
+> [Config Search Order](#config-search-order)) or a config named explicitly
 > with `--config` or `DTCTL_CONFIG`. Hooks defined in an auto-discovered local
 > `.dtctl.yaml` (whether in
 > `preferences` or a context) are **ignored**, since a local config from an
@@ -417,7 +422,9 @@ instead of the rows. Defaults can be set globally or per-context under a
 `spill:` section:
 
 ```yaml
-# ~/.config/dtctl/config  (global, or under a specific context)
+# global config, e.g. ~/.config/dtctl/config on Linux,
+# ~/Library/Application Support/dtctl/config on macOS,
+# or %LOCALAPPDATA%\dtctl\config on Windows (or under a specific context)
 spill:
   mode: auto            # auto | always | never  (overrides the agent/non-agent default)
   dir: ~/.cache/dtctl/results   # base directory for spilled files
@@ -446,7 +453,9 @@ in a context, including generated ones, scripts, and agent-driven runs, which a
 flag you have to remember to type does not.
 
 ```yaml
-# ~/.config/dtctl/config
+# global config, e.g. ~/.config/dtctl/config on Linux,
+# ~/Library/Application Support/dtctl/config on macOS,
+# or %LOCALAPPDATA%\dtctl\config on Windows
 query-limits:                 # global defaults
   scan-limit-gbytes: 500      # cap the data scanned (PARTIAL result beyond it)
   max-result-records: 5000    # cap returned records (0 = server default, ~1000)
