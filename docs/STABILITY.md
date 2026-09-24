@@ -642,6 +642,8 @@ find intents                         stable
   --data-file                        stable
   --limit                            stable
 get                                  stable
+  --fields                           experimental  since 0.40.0
+  --limit                            experimental  since 0.40.0
 get analyzers                        stable
   --filter                           stable
 get anomaly-detectors                stable

@@ -44,15 +44,6 @@ func encodedSize(t *testing.T, resp output.Response) int {
 	return buf.Len()
 }
 
-func hasSuggestion(ctx *output.ResponseContext, substr string) bool {
-	for _, s := range ctx.Suggestions {
-		if strings.Contains(s, substr) {
-			return true
-		}
-	}
-	return false
-}
-
 func TestBuildSpillResponse_FieldCapClipsInlineValues(t *testing.T) {
 	e := &DQLExecutor{}
 	result, records := longContentResult(3, 1000)
@@ -81,7 +72,7 @@ func TestBuildSpillResponse_FieldCapClipsInlineValues(t *testing.T) {
 	if ctx.Returned != nil || ctx.NextOffset != nil {
 		t.Errorf("a field clip must not claim dropped rows: %+v", ctx)
 	}
-	if !hasSuggestion(ctx, "--max-field-chars 0") || !hasSuggestion(ctx, "'| fields content'") {
+	if !hasSuggestion(ctx.Suggestions, "--max-field-chars 0") || !hasSuggestion(ctx.Suggestions, "'| fields content'") {
 		t.Errorf("suggestions do not say how to get full values: %v", ctx.Suggestions)
 	}
 	if !strings.HasPrefix(records[0]["content"].(string), "row-000 xxx") || len(records[0]["content"].(string)) != 1008 {
@@ -149,7 +140,7 @@ func TestBuildSpillResponse_FieldCapNothingClippedAddsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Context.Truncated || resp.Context.MaxFieldChars != 0 || hasSuggestion(resp.Context, "--max-field-chars") {
+	if resp.Context.Truncated || resp.Context.MaxFieldChars != 0 || hasSuggestion(resp.Context.Suggestions, "--max-field-chars") {
 		t.Errorf("nothing was clipped, context must not say so: %+v", resp.Context)
 	}
 }
@@ -209,7 +200,7 @@ func TestBuildSpillResponse_BudgetDropsRowsToFit(t *testing.T) {
 	if ctx.Next != "" {
 		t.Errorf("next = %q, want empty: nothing was written to disk under --spill=never", ctx.Next)
 	}
-	if !hasSuggestion(ctx, "--spill-to") {
+	if !hasSuggestion(ctx.Suggestions, "--spill-to") {
 		t.Errorf("suggestions must say how to get the remaining rows: %v", ctx.Suggestions)
 	}
 
@@ -496,7 +487,7 @@ func TestBuildSpillResponse_AgentDefaultsCompose(t *testing.T) {
 		if !strings.Contains(enc.Records, "…(+1508 chars)") || strings.Contains(enc.Records, strings.Repeat("x", 600)) {
 			t.Errorf("default cap not applied before auto: %.200s", enc.Records)
 		}
-		if !hasSuggestion(resp.Context, "-o json") || !hasSuggestion(resp.Context, "--max-field-chars 0") {
+		if !hasSuggestion(resp.Context.Suggestions, "-o json") || !hasSuggestion(resp.Context.Suggestions, "--max-field-chars 0") {
 			t.Errorf("each default must name its opt-out: %v", resp.Context.Suggestions)
 		}
 	})
@@ -507,7 +498,7 @@ func TestBuildSpillResponse_AgentDefaultsCompose(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if resp.Context.Truncated || hasSuggestion(resp.Context, "--max-field-chars") {
+		if resp.Context.Truncated || hasSuggestion(resp.Context.Suggestions, "--max-field-chars") {
 			t.Errorf("nothing was clipped, yet the cap reports it: %+v", resp.Context)
 		}
 		if !reflect.DeepEqual(resp.Context.Suggestions, []string{output.AutoDefaultSuggestion("csv")}) {
