@@ -427,3 +427,35 @@ func TestMarshalTOON_ControlCharactersInKeysAndNestedValues(t *testing.T) {
 		}
 	}
 }
+
+// A key whose Control Picture form equals another key must not silently drop
+// either entry; it falls back to a JSON-style escape of the original key.
+func TestMarshalTOON_ControlCharacterKeyCollisionKeepsBothEntries(t *testing.T) {
+	data := map[string]any{
+		"a\x00":     "from-control",
+		"a␀":        "from-picture",
+		"b\x00\x01": "first",
+		"b\x00␁":    "second",
+		"a\\u0000":  "literal-escape",
+	}
+	var first string
+	for i := 0; i < 20; i++ {
+		out, err := MarshalTOON(data)
+		if err != nil {
+			t.Fatalf("MarshalTOON failed: %v", err)
+		}
+		if i == 0 {
+			first = out
+		} else if out != first {
+			t.Fatalf("output not deterministic:\n%s\nvs\n%s", first, out)
+		}
+	}
+	for _, want := range []string{"from-control", "from-picture", "first", "second", "literal-escape"} {
+		if !strings.Contains(first, want) {
+			t.Errorf("output lost value %q, got:\n%s", want, first)
+		}
+	}
+	if got := strings.Count(first, "\n") + 1; got != len(data) {
+		t.Errorf("expected %d entries, got %d:\n%s", len(data), got, first)
+	}
+}
