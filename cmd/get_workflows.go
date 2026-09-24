@@ -88,6 +88,7 @@ Examples:
 		typeStr, _ := cmd.Flags().GetString("type")
 		triggerStr, _ := cmd.Flags().GetString("trigger")
 		limit, _ := cmd.Flags().GetInt64("limit")
+		limit = agentPageLimit(cmd, limit)
 
 		chunk := GetChunkSize()
 		if err := validateAutomationChunkSize(chunk); err != nil {

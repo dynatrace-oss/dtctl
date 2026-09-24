@@ -114,10 +114,14 @@ func (p *ShapingPrinter) applyLimit(obj interface{}) interface{} {
 
 func (p *ShapingPrinter) notifyTruncated(shown, total int) {
 	if ap := AsAgentPrinter(p.inner); ap != nil {
-		ap.SetTotal(total)
+		// A command may already have reported a larger server-side total;
+		// never shrink it to the count that was fetched.
+		if ap.ctx.Total == nil || *ap.ctx.Total < total {
+			ap.SetTotal(total)
+		}
 		ap.SetHasMore(true)
 		ap.ctx.Suggestions = append(ap.ctx.Suggestions, fmt.Sprintf(
-			"Showing %d of %d items. Raise --limit (0 = all) to see more, or narrow the list with the command's filter flags", shown, total))
+			"Showing %d of %d items; --limit 0 returns all", shown, total))
 		return
 	}
 	if p.opts.Notices != nil {

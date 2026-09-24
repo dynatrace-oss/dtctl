@@ -334,16 +334,18 @@ This is about the data in the environment, not the resources you manage -- for d
 
 ### Keep list output small
 
-Lists return every item with every field by default. Trim them with
-`--limit` and `--fields` *(experimental)*:
+In agent mode a `get` list returns a page of at most **50** items by
+default. When the page cuts the list, `context.total` holds the full count,
+`context.has_more` is `true`, and a suggestion names the opt-out: `--limit 0`
+returns every item, a larger `--limit` returns more. Trim the items themselves
+with `--fields` *(experimental)*:
 
 ```bash
-dtctl get dashboards -A --limit 50 --fields id,name,owner,modificationInfo.lastModifiedTime
+dtctl get dashboards -A --fields id,name,owner,modificationInfo.lastModifiedTime
+dtctl get dashboards -A --limit 0     # every dashboard
 ```
 
-When `--limit` cuts the list, `context.total` holds the full count and
-`context.has_more` is `true`. With `-o toon`, the projected fields are
-flattened into columns so the result stays a single TOON table. See
+With `-o toon`, the projected fields are flattened into columns so the result stays a single TOON table. See
 [Output Formats](OUTPUT_FORMATS.md#trimming-lists---limit---fields).
 
 ### Name resolution

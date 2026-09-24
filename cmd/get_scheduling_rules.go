@@ -52,6 +52,7 @@ Examples:
 		}
 
 		limit, _ := cmd.Flags().GetInt64("limit")
+		limit = agentPageLimit(cmd, limit)
 		chunk := GetChunkSize()
 		if err := validateAutomationChunkSize(chunk); err != nil {
 			return err

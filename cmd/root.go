@@ -132,6 +132,8 @@ func executeArgs(argv []string) int {
 	// Wrap runnable commands with the token-scope preflight (--check-scopes and
 	// agent-mode auto-preflight). Must run after all subcommands are registered.
 	installScopePreflight(rootCmd)
+	// Record which get subcommand runs, for the agent-mode default page.
+	installGetListPaging(getCmd)
 
 	// Cobra falls back to os.Args when no args were set — always pin the
 	// requested argv so embedded invocations never see the host's arguments.

@@ -283,4 +283,13 @@ dtctl get dashboards --fields id,name,modificationInfo.lastModifiedTime -o toon
 - Commands that already had a server-side `--limit` (`get workflows`,
   `get workflow-executions`, `get scheduling-rules`, `get snapshots`) keep
   their own flag and its meaning.
+- **Agent mode pages by default.** In agent mode (`-A` or auto-detected), a
+  `get` list returns at most **50** items when `--limit` is not given.
+  `--limit 0` returns everything, and a larger `--limit` returns more. When the
+  page cuts the list, the envelope carries `context.total`,
+  `context.has_more: true` and a suggestion naming `--limit`; a list of 50 or
+  fewer is returned unchanged. `get workflows` and `get scheduling-rules` pass
+  the page to the API as their `--limit`; `get workflow-executions` keeps its
+  server-side window of 100 and `get snapshots` its DQL record limit. Outside
+  agent mode nothing is paged by default.
 - `--fields` is rejected with the chart formats, which need the full records.

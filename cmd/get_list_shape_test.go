@@ -3,13 +3,16 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dynatrace-oss/dtctl/cmd/testutil"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
@@ -19,19 +22,134 @@ import (
 // newListShapeEnv serves three buckets, enough to observe --limit cutting a list.
 func newListShapeEnv(t *testing.T) *httptest.Server {
 	t.Helper()
+	return newListShapeEnvWith(t, []string{
+		`{"bucketName":"b_one","table":"logs","status":"active","retentionDays":35,"version":1}`,
+		`{"bucketName":"b_two","table":"spans","status":"active","retentionDays":10,"version":2}`,
+		`{"bucketName":"b_three","table":"events","status":"active","retentionDays":7,"version":3}`,
+	}, 0)
+}
+
+// newListShapeEnvWith serves the given buckets and n synthetic workflows. The
+// workflow endpoint honors limit/offset like the Automation API, so a
+// server-side page is observable as a smaller request.
+func newListShapeEnvWith(t *testing.T, buckets []string, workflows int) *httptest.Server {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/platform/storage/management/v1/bucket-definitions" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"buckets":[` +
-			`{"bucketName":"b_one","table":"logs","status":"active","retentionDays":35,"version":1},` +
-			`{"bucketName":"b_two","table":"spans","status":"active","retentionDays":10,"version":2},` +
-			`{"bucketName":"b_three","table":"events","status":"active","retentionDays":7,"version":3}]}`))
+		switch r.URL.Path {
+		case "/platform/storage/management/v1/bucket-definitions":
+			_, _ = w.Write([]byte(`{"buckets":[` + strings.Join(buckets, ",") + `]}`))
+		case "/platform/automation/v1/workflows":
+			offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			if limit == 0 {
+				limit = workflows
+			}
+			results := []any{}
+			for i := offset; i < workflows && i < offset+limit; i++ {
+				results = append(results, map[string]any{"id": fmt.Sprintf("wf-%03d", i), "title": "WF", "owner": "u1", "ownerType": "USER"})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"count": workflows, "results": results})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func manyBuckets(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf(`{"bucketName":"b_%03d","table":"logs","status":"active","retentionDays":35,"version":1}`, i)
+	}
+	return out
+}
+
+func agentResponse(t *testing.T, out string) output.Response {
+	t.Helper()
+	var resp output.Response
+	require.NoError(t, json.Unmarshal([]byte(out), &resp), out)
+	require.True(t, resp.OK, out)
+	return resp
+}
+
+// In agent mode a get list is a page of 50 unless --limit says otherwise.
+func TestGetListShape_AgentDefaultPage(t *testing.T) {
+	srv := newListShapeEnvWith(t, manyBuckets(60), 0)
+
+	code, out := runListShape(t, srv, "-A", "get", "buckets")
+	require.Zero(t, code, out)
+	resp := agentResponse(t, out)
+	require.Len(t, resp.Result, 50)
+	require.NotNil(t, resp.Context.Total)
+	require.Equal(t, 60, *resp.Context.Total)
+	require.True(t, resp.Context.HasMore)
+	require.Contains(t, strings.Join(resp.Context.Suggestions, "\n"), "--limit 0")
+}
+
+// --limit 0 is the opt-out: the pre-default agent output, byte for byte.
+func TestGetListShape_AgentDefaultPageOptOut(t *testing.T) {
+	srv := newListShapeEnvWith(t, manyBuckets(60), 0)
+
+	code, out := runListShape(t, srv, "-A", "get", "buckets", "--limit", "0")
+	require.Zero(t, code, out)
+	resp := agentResponse(t, out)
+	require.Len(t, resp.Result, 60)
+	require.False(t, resp.Context.HasMore)
+	require.NotContains(t, out, "--limit", "no paging suggestion when nothing was cut")
+
+	// A larger explicit --limit also wins over the default page.
+	code, out = runListShape(t, srv, "-A", "get", "buckets", "--limit", "55")
+	require.Zero(t, code, out)
+	require.Len(t, agentResponse(t, out).Result, 55)
+}
+
+// A list that fits in the default page is untouched: same bytes as the opt-out.
+func TestGetListShape_AgentDefaultPageSilentWhenNothingCut(t *testing.T) {
+	srv := newListShapeEnvWith(t, manyBuckets(50), 0)
+
+	code, paged := runListShape(t, srv, "-A", "get", "buckets")
+	require.Zero(t, code, paged)
+	code, all := runListShape(t, srv, "-A", "get", "buckets", "--limit", "0")
+	require.Zero(t, code, all)
+	require.Equal(t, all, paged)
+}
+
+// Outside agent mode nothing is paged by default.
+func TestGetListShape_NoDefaultPageOutsideAgentMode(t *testing.T) {
+	srv := newListShapeEnvWith(t, manyBuckets(60), 0)
+
+	code, out := runListShape(t, srv, "get", "buckets", "-o", "json")
+	require.Zero(t, code, out)
+	var items []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &items), out)
+	require.Len(t, items, 60)
+}
+
+// get workflows has a server-side --limit: the agent default page is passed
+// to the API as that limit, and the server count still reaches the envelope.
+func TestGetListShape_AgentDefaultPageServerSide(t *testing.T) {
+	srv := newListShapeEnvWith(t, nil, 70)
+
+	code, out := runListShape(t, srv, "-A", "get", "workflows")
+	require.Zero(t, code, out)
+	resp := agentResponse(t, out)
+	require.Len(t, resp.Result, 50)
+	require.True(t, resp.Context.HasMore)
+	require.Contains(t, strings.Join(resp.Context.Suggestions, "\n"), "Showing 50 of 70")
+
+	code, out = runListShape(t, srv, "-A", "get", "workflows", "--limit", "0")
+	require.Zero(t, code, out)
+	resp = agentResponse(t, out)
+	require.Len(t, resp.Result, 70)
+	require.False(t, resp.Context.HasMore)
+
+	code, out = runListShape(t, srv, "get", "workflows", "-o", "json")
+	require.Zero(t, code, out)
+	var items []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &items), out)
+	require.Len(t, items, 70, "no default page outside agent mode")
 }
 
 func runListShape(t *testing.T, srv *httptest.Server, argv ...string) (int, string) {
@@ -182,4 +300,32 @@ func TestGetSnapshots_RejectsFields(t *testing.T) {
 	})
 	require.NotZero(t, code)
 	require.Contains(t, stderr.String(), "--fields", "must fail on the flag, before any request")
+}
+
+// Auto-detected agent mode sets the same agentMode switch as -A (sessions skip
+// auto-detection, so this drives the switch directly).
+func TestGetListShape_DefaultPageFollowsAgentMode(t *testing.T) {
+	origAgent, origInvoked, origLimit := agentMode, invokedGetCmd, getListLimit
+	t.Cleanup(func() { agentMode, invokedGetCmd, getListLimit = origAgent, origInvoked, origLimit })
+	testutil.ResetCommandFlags(getWorkflowsCmd)
+	t.Cleanup(func() { testutil.ResetCommandFlags(getWorkflowsCmd) })
+
+	base := output.NewPrinterWithOpts(output.PrinterOptions{Format: "json", Writer: &bytes.Buffer{}})
+	invokedGetCmd, getListLimit = getBucketsCmd, 0
+
+	agentMode = false
+	require.Same(t, base, shapeListOutput(base, "json", false), "no default page outside agent mode")
+	require.Equal(t, int64(0), agentPageLimit(getWorkflowsCmd, 0))
+
+	agentMode = true
+	_, wrapped := shapeListOutput(base, "json", false).(*output.ShapingPrinter)
+	require.True(t, wrapped, "agent mode pages get lists by default")
+	require.Equal(t, int64(agentDefaultPage), agentPageLimit(getWorkflowsCmd, 0))
+
+	// A subcommand with its own --limit is paged server-side, not cut again.
+	invokedGetCmd = getWorkflowsCmd
+	require.Same(t, base, shapeListOutput(base, "json", false))
+
+	require.NoError(t, getWorkflowsCmd.Flags().Set("limit", "0"))
+	require.Equal(t, int64(0), agentPageLimit(getWorkflowsCmd, 0), "an explicit --limit wins")
 }

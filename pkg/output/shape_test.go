@@ -275,6 +275,19 @@ func TestShapingPrinter_AgentTruncationSetsContext(t *testing.T) {
 	}
 }
 
+func TestShapingPrinter_AgentKeepsLargerServerTotal(t *testing.T) {
+	var got bytes.Buffer
+	ap := NewAgentPrinter(&got, nil)
+	ap.SetTotal(500) // the server reported more than was fetched
+	p := NewShapingPrinter(ap, ShapeOptions{Limit: 2})
+	if err := p.PrintList(shapeTestDocs()); err != nil {
+		t.Fatal(err)
+	}
+	if *ap.Context().Total != 500 {
+		t.Errorf("context.total = %d, want the server total 500", *ap.Context().Total)
+	}
+}
+
 func TestShapingPrinter_AgentUnknownFieldIsEnvelopeWarning(t *testing.T) {
 	var got, notices bytes.Buffer
 	ap := NewAgentPrinter(&got, nil)
