@@ -275,7 +275,7 @@ func (h *Handler) GetRaw(id string) ([]byte, error) {
 
 func (h *Handler) Get(id string) (*GCPMonitoringConfig, error) {
 	var result GCPMonitoringConfig
-	resp, err := h.client.HTTP().R().SetResult(&result).Get(fmt.Sprintf("%s/%s", BaseAPI, id))
+	resp, err := h.client.HTTP().R().SetResult(&result).Get(fmt.Sprintf("%s/%s", BaseAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +363,7 @@ func (h *Handler) Update(id string, data []byte) (*GCPMonitoringConfig, error) {
 		SetHeader("Content-Type", "application/json").
 		SetBody(data).
 		SetResult(&result).
-		Put(fmt.Sprintf("%s/%s", BaseAPI, id))
+		Put(fmt.Sprintf("%s/%s", BaseAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to update gcp_monitoring_config: %w", err)
 	}
@@ -375,7 +375,7 @@ func (h *Handler) Update(id string, data []byte) (*GCPMonitoringConfig, error) {
 }
 
 func (h *Handler) Delete(id string) error {
-	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", BaseAPI, id))
+	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", BaseAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return err
 	}

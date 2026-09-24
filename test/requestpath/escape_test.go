@@ -31,7 +31,28 @@ import (
 // pathSprintf matches a single-line `fmt.Sprintf("/…", args…)` whose format
 // string is a request path. Multi-line calls are matched by their first line
 // and their arguments read from the lines that follow.
+//
+// A path is also spelled `fmt.Sprintf("%s/%s", basePath, id)`, where a constant
+// holds the leading portion. That form is matched too, and it is the one that
+// hid ten unescaped ids through two rounds of this fix: the settings-backed
+// handlers and the cloud monitoring-config handlers all build their paths that
+// way, so a guard that looked only for a literal "/" could not see them. The
+// leading "%s" is the constant and is not an id, so it is not counted -- see
+// stringVerbs.
+//
+// "%s/%s" is also how a User-Agent, a display label and a browser URL are
+// spelled, and none of those is a request path. So that form counts only when
+// the call is an argument to an HTTP verb on the same line, which is how every
+// handler in both modules writes it. A literal "/…" needs no such proof.
 var pathSprintf = regexp.MustCompile(`fmt\.Sprintf\("(/[^"]*)"(.*)$`)
+
+// basePathSprintf matches the `fmt.Sprintf("%s/…", basePath, …)` form.
+var basePathSprintf = regexp.MustCompile(`fmt\.Sprintf\("(%s/[^"]*)"(.*)$`)
+
+// httpVerb reports a resty call that sends the path it is given.
+// A chained call puts the verb at the start of a continuation line, with the
+// dot on the line before, so a leading verb counts too.
+var httpVerb = regexp.MustCompile(`(?:\.|^\s*)(Get|Post|Put|Patch|Delete|Head|Options)\(`)
 
 // skipDirs are trees with no request paths in them; walking them only invites
 // false positives from documentation samples and fixtures.
@@ -69,6 +90,14 @@ func TestEveryInterpolatedPathValueIsEscaped(t *testing.T) {
 		lines := strings.Split(string(data), "\n")
 		for i, line := range lines {
 			m := pathSprintf.FindStringSubmatch(line)
+			if m == nil {
+				// The base-path form is a request path only when it is handed
+				// straight to an HTTP verb.
+				if !httpVerb.MatchString(line) {
+					continue
+				}
+				m = basePathSprintf.FindStringSubmatch(line)
+			}
 			if m == nil {
 				continue
 			}
@@ -119,10 +148,17 @@ func countEscapers(args string) int {
 	return n
 }
 
-// stringVerbs returns the %s verbs in a format string. %d and the rest cannot
-// carry a path separator, so they need no escaping.
+// stringVerbs returns the %s verbs in a format string that stand for an
+// interpolated id. %d and the rest cannot carry a path separator, so they need
+// no escaping.
+//
+// A format that opens with "%s/" names a base path in a constant, and that
+// first verb is not an id, so it is skipped. Every later verb is one.
 func stringVerbs(format string) []string {
 	var out []string
+	if strings.HasPrefix(format, "%s/") {
+		format = format[len("%s"):]
+	}
 	for i := 0; i < len(format)-1; i++ {
 		if format[i] != '%' {
 			continue

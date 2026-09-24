@@ -105,7 +105,7 @@ func (h *Handler) Create(ctx context.Context, req PlatformTokenCreate) (*Platfor
 // Revoke deletes (revokes) a platform token by ID.
 func (h *Handler) Revoke(ctx context.Context, tokenID string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("%s/%s", h.basePath(), tokenID))
+		Delete(fmt.Sprintf("%s/%s", h.basePath(), httpclient.PathSegment(tokenID)))
 	if err != nil {
 		return fmt.Errorf("revoke platform token: %w", err)
 	}
