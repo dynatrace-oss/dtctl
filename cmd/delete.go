@@ -92,6 +92,10 @@ var deleteAzureConnectionCmd = &cobra.Command{
 		}
 		// If not found by name, assume identifier is an ID
 
+		if dryRun {
+			return deleteDryRun(cmd, "Azure connection", identifier, objectID)
+		}
+
 		if err := handler.Delete(objectID); err != nil {
 			return fmt.Errorf("failed to delete Azure connection %q: %w", objectID, err)
 		}
@@ -126,6 +130,10 @@ var deleteAzureMonitoringConfigCmd = &cobra.Command{
 			output.PrintInfo("Resolved name %q to ID %s", identifier, objectID)
 		}
 		// If not found by name, assume identifier is an ID
+
+		if dryRun {
+			return deleteDryRun(cmd, "Azure monitoring config", identifier, objectID)
+		}
 
 		if err := handler.Delete(objectID); err != nil {
 			return fmt.Errorf("failed to delete Azure monitoring config %q: %w", objectID, err)

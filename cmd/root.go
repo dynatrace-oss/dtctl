@@ -78,6 +78,9 @@ var rootCmd = &cobra.Command{
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := rejectUnimplementedDryRun(cmd); err != nil {
+			return err
+		}
 		return validateGlobalFlags()
 	},
 	Long: `dtctl is a kubectl-inspired CLI tool for managing Dynatrace platform resources.
@@ -418,19 +421,14 @@ func collectSubcommands(cmd *cobra.Command) []string {
 	return commands
 }
 
-var (
-	unknownFlagRe = regexp.MustCompile(`unknown (?:shorthand )?flag: ['-]*(\w+)['-]*`)
-	unknownCmdRe  = regexp.MustCompile(`unknown command "(\w+)"`)
-)
-
 // enhanceFlagError adds suggestions to flag errors
 func enhanceFlagError(cmd *cobra.Command, err error) error {
 	errStr := err.Error()
 
 	// Handle unknown flag errors
 	if strings.Contains(errStr, "unknown flag") || strings.Contains(errStr, "unknown shorthand flag") {
-		if m := unknownFlagRe.FindStringSubmatch(errStr); len(m) == 2 {
-			if fe := adviseFlag(cmd, m[1]); fe != nil {
+		if name := suggest.UnknownFlagName(errStr); name != "" {
+			if fe := adviseFlag(cmd, name); fe != nil {
 				return fe
 			}
 		}
@@ -466,6 +464,8 @@ func adviseFlag(cmd *cobra.Command, flag string) *suggest.FlagError {
 	case cmd.Name() == "query" && flag == "query":
 		return &suggest.FlagError{Flag: flag,
 			Message: "unknown flag --query — pass the DQL text as the positional argument: dtctl query 'fetch ...'"}
+	case flag == "dry-run":
+		return &suggest.FlagError{Flag: flag, Message: dryRunUnavailableMessage(cmd)}
 	}
 	return nil
 }
@@ -493,11 +493,11 @@ func enhanceCommandError(cmd *cobra.Command, err error) error {
 
 	// Handle unknown command errors
 	if strings.Contains(errStr, "unknown command") {
-		if m := unknownCmdRe.FindStringSubmatch(errStr); len(m) == 2 {
-			if syn, ok := verbSynonyms[m[1]]; ok {
+		if name := suggest.UnknownCommandName(errStr); name != "" {
+			if syn, ok := verbSynonyms[name]; ok {
 				return &suggest.CommandError{
-					Command:    m[1],
-					Message:    fmt.Sprintf("unknown command %q", m[1]),
+					Command:    name,
+					Message:    fmt.Sprintf("unknown command %q", name),
 					Suggestion: &suggest.Suggestion{Value: syn.verb},
 					UsageHint:  syn.hint,
 				}
@@ -1323,16 +1323,15 @@ func SetupClient() (*config.Config, *client.Client, error) {
 // check before the client is created. Use this for commands where ownership is unknown
 // (i.e., the resource doesn't need to be fetched first to determine the owner).
 // A Printer is not included because many mutating commands don't use one.
+//
+// Under --dry-run the check is skipped: see CheckSafety for why, and for the
+// invariant that makes it sound.
 func SetupWithSafety(op safety.Operation) (*config.Config, *client.Client, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, nil, err
 	}
-	checker, err := NewSafetyChecker(cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := checker.CheckError(op, safety.OwnershipUnknown); err != nil {
+	if err := CheckSafety(cfg, op, safety.OwnershipUnknown); err != nil {
 		return nil, nil, err
 	}
 	c, err := NewClientFromConfig(cfg)
@@ -1340,6 +1339,32 @@ func SetupWithSafety(op safety.Operation) (*config.Config, *client.Client, error
 		return nil, nil, err
 	}
 	return cfg, c, nil
+}
+
+// CheckSafety applies the context's safety level to a mutating operation --
+// and is the single place that exempts a dry run from it.
+//
+// A dry run reads to build its preview and writes nothing, so it is gated like
+// a read, not like the mutation it describes. Checking it would refuse the
+// preview in exactly the context that wants one most: `readonly` exists for
+// someone who wants to look without touching, and `dtctl get dashboard X`
+// already succeeds there, so refusing the same GET under `delete --dry-run`
+// would be inconsistent rather than safer.
+//
+// The exemption is sound only because --dry-run is opt-in per command
+// (dryRunCommands): a command that reaches this function with dryRun set has a
+// dry-run branch that returns before any write. TestDryRunNeedsNoSafetyLevel
+// holds that invariant by running every such command against a readonly
+// context and a mock environment whose writes fail.
+func CheckSafety(cfg *config.Config, op safety.Operation, ownership safety.ResourceOwnership) error {
+	if dryRun {
+		return nil
+	}
+	checker, err := NewSafetyChecker(cfg)
+	if err != nil {
+		return err
+	}
+	return checker.CheckError(op, ownership)
 }
 
 // SetupWithSafetyAndPrinter is SetupWithSafety plus a Printer, for mutating
@@ -1550,11 +1575,7 @@ func SetupAccountWithSafety(op safety.Operation) (*httpclient.Client, string, er
 	if err != nil {
 		return nil, "", err
 	}
-	checker, err := NewSafetyChecker(cfg)
-	if err != nil {
-		return nil, "", err
-	}
-	if err := checker.CheckError(op, safety.OwnershipUnknown); err != nil {
+	if err := CheckSafety(cfg, op, safety.OwnershipUnknown); err != nil {
 		return nil, "", err
 	}
 	return setupAccountClient(cfg)
@@ -1747,7 +1768,6 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	rootCmd.PersistentFlags().StringVar(&jqFilter, "jq", "", "jq filter expression for structured output (json|yaml|toon); applied to the result payload, not the --agent envelope (on query: '.records', not '.result.records'); non-structured formats are auto-promoted to json")
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "verbose output (-v for details, -vv for full debug including auth headers)")
 	rootCmd.PersistentFlags().BoolVar(&debugMode, "debug", false, "enable debug mode (full HTTP request/response logging, equivalent to -vv)")
-	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "print what would be done without doing it")
 	rootCmd.PersistentFlags().BoolVar(&plainMode, "plain", false, "plain output for machine processing (no colors, no interactive prompts)")
 	rootCmd.PersistentFlags().BoolVarP(&agentMode, "agent", "A", false, "agent output mode: wrap output in a structured JSON envelope with metadata")
 	rootCmd.PersistentFlags().BoolVar(&noAgent, "no-agent", false, "disable auto-detected agent mode")

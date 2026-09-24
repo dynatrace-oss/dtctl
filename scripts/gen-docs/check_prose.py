@@ -48,10 +48,6 @@ REDIRECT_PREFIX = "https://github.com/dynatrace-oss/dtctl/blob/main/"
 # silently truncate them to a prefix that happens to be a real flag.
 FLAG = r"(--[A-Za-z0-9][A-Za-z0-9-]*)"
 
-# Flags the CLI accepts everywhere but that cobra does not print in a
-# subcommand's own --help output.
-ALWAYS_VALID_FLAGS = {"--dry-run"}
-
 # Commands hidden behind a registration gate are absent from a stock binary, so
 # probing them would report every documented `serve`/`account` example as
 # missing. The docs describe them (clearly marked experimental), so the checker
@@ -256,7 +252,7 @@ def check_commands(docs: pathlib.Path, probe: Probe, known_verbs: set[str]) -> l
                     f"(have: {', '.join(sorted(help_.subcommands))})")
                 continue
 
-            known = help_.flags | global_flags | ALWAYS_VALID_FLAGS
+            known = help_.flags | global_flags
             # Scan token by token rather than the raw line, and skip any token
             # that still carries whitespace: shlex has already stripped its
             # quotes, so a `--flag` inside it is part of an argument *value* --

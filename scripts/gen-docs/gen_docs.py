@@ -178,13 +178,13 @@ def render_resource_page(resource: str, ops: list[dict], catalog: dict, display_
         out.append(
             "\n<!-- GAP: dtctl's catalog does not expose flags scoped to a single "
             "resource - only verb-level flags (shown above) plus dtctl's global "
-            "flags (-o/--output, --dry-run, --context, etc.) apply here. -->\n"
+            "flags (-o/--output, --context, etc.) apply here. -->\n"
         )
     else:
         out.append(
             "No resource-specific or verb-specific flags are declared in the "
             "catalog for the operations above; only dtctl's **global flags** "
-            "apply (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, etc. "
+            "apply (`-o/--output`, `--context`, `--jq`, `-v`, etc. "
             "- see `COMMANDS.md`).\n"
         )
 

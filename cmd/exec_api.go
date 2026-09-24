@@ -149,11 +149,7 @@ func runExecAPI(cmd *cobra.Command, args []string) error {
 		return printAPIDryRun(cfg, method, requestPath, headerMap, body, class, native.Command)
 	}
 
-	checker, err := NewSafetyChecker(cfg)
-	if err != nil {
-		return err
-	}
-	if err := checker.CheckError(class.SafetyOp, safety.OwnershipUnknown); err != nil {
+	if err := CheckSafety(cfg, class.SafetyOp, safety.OwnershipUnknown); err != nil {
 		return &resapi.BlockedError{
 			Method:        method,
 			RequestPath:   requestPath,

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -72,14 +73,14 @@ Examples:
 		}
 
 		// Safety check with actual ownership - restore modifies the workflow
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(wf.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return newDryRunReport(cmd).Linef("Dry run: would restore workflow %q to version %d", wf.Title, version).Print()
 		}
 
 		// Confirm restore unless --force or --plain
@@ -153,14 +154,14 @@ Examples:
 		}
 
 		// Safety check with actual ownership - restore modifies the dashboard
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return newDryRunReport(cmd).Linef("Dry run: would restore dashboard %q from snapshot %d", metadata.Name, version).Print()
 		}
 
 		// Confirm restore unless --force or --plain
@@ -234,14 +235,14 @@ Examples:
 		}
 
 		// Safety check with actual ownership - restore modifies the notebook
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return newDryRunReport(cmd).Linef("Dry run: would restore notebook %q from snapshot %d", metadata.Name, version).Print()
 		}
 
 		// Confirm restore unless --force or --plain
@@ -317,14 +318,14 @@ Examples:
 		}
 
 		// Safety check with actual ownership - restore modifies the document
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationUpdate, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationUpdate, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return newDryRunReport(cmd).Linef("Dry run: would restore document %q (%s) from snapshot %d", metadata.Name, metadata.Type, version).Print()
 		}
 
 		// Confirm restore unless --force or --plain
@@ -381,6 +382,13 @@ Examples:
 		// Get flags
 		forceRestore, _ := cmd.Flags().GetBool("force")
 		newName, _ := cmd.Flags().GetString("new-name")
+
+		if dryRun {
+			return newDryRunReport(cmd).
+				Linef("Dry run: would restore %d document(s) from trash: %s", len(args), strings.Join(args, ", ")).
+				Detail("ids", "%s", strings.Join(args, ",")).
+				Print()
+		}
 
 		opts := document.RestoreOptions{
 			Force:   forceRestore,

@@ -297,14 +297,14 @@ Examples:
 		}
 
 		// Safety check with actual ownership
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(wf.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationDelete, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return deleteDryRun(cmd, "workflow", wf.Title, workflowID)
 		}
 
 		// Confirm deletion unless --force or --plain

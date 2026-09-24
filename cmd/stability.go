@@ -11,6 +11,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
+	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/sdk/session"
 )
 
@@ -743,13 +744,13 @@ func developmentHint(errStr string, signpost bool) error {
 	if !signpost {
 		return nil
 	}
-	m := unknownCmdRe.FindStringSubmatch(errStr)
-	if len(m) != 2 {
+	name := suggest.UnknownCommandName(errStr)
+	if name == "" {
 		return nil
 	}
-	feature, ok := stability.DefaultRegistry().FeatureForCommand(m[1])
+	feature, ok := stability.DefaultRegistry().FeatureForCommand(name)
 	if !ok {
 		return nil
 	}
-	return &DevelopmentError{Command: m[1], Feature: feature}
+	return &DevelopmentError{Command: name, Feature: feature}
 }

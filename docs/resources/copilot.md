@@ -20,7 +20,7 @@ CoPilot is Dynatrace's conversational AI assistant. dtctl lets you interact with
 
 ## Flags
 
-These commands take dtctl's **global flags** (`-o/--output`, `--dry-run`, `--context`, `--jq`, `-v`, and more). Some verbs add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb in **[COMMANDS.md](../COMMANDS.md)**. Individual commands may take further flags of their own — run `dtctl <verb> <resource> --help` for the authoritative list.
+These commands take dtctl's **global flags** (`-o/--output`, `--context`, `--jq`, `-v`, and more). Some verbs add their own flags (`apply`, `diff`, `query`, `inventory`); see the verb in **[COMMANDS.md](../COMMANDS.md)**. Individual commands may take further flags of their own — run `dtctl <verb> <resource> --help` for the authoritative list.
 
 
 ## Required token scopes

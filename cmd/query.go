@@ -532,9 +532,6 @@ Examples:
 			if cmd.Flags().Changed("series") || cmd.Flags().Changed("precision") {
 				output.PrintWarning("--series and --precision are ignored in live mode (live mode renders the full series)")
 			}
-			if dryRun {
-				output.PrintWarning("--dry-run is ignored in live mode (live mode always executes queries)")
-			}
 
 			if interval == 0 {
 				interval = output.DefaultLiveInterval

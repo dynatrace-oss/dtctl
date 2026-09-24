@@ -111,6 +111,10 @@ func TestParseFlagError(t *testing.T) {
 		{"unknown flag: --ownr", "did you mean --owner?"},
 		{"unknown flag: --outpt", "did you mean --output?"},
 		{"unknown shorthand flag: 'x'", "unknown flag --x"},
+		// A hyphenated name must survive whole; truncating it at the hyphen
+		// reported --dry-run as --dry.
+		{"unknown flag: --dry-run", "unknown flag --dry-run"},
+		{"unknown flag: --no-headers", "unknown flag --no-headers"},
 	}
 
 	for _, tt := range tests {
@@ -298,6 +302,15 @@ func TestParseCommandError(t *testing.T) {
 			errMsg:   `unknown command "xyz" for "dtctl"`,
 			contains: "unknown command \"xyz\"",
 			wantCmd:  "xyz",
+		},
+		{
+			// dtctl is full of hyphenated commands (delete-credentials,
+			// use-context, scheduling-rule); a name the regex misses loses the
+			// error's type, its usage exit code and its agent envelope.
+			name:     "hyphenated command",
+			errMsg:   `unknown command "delete-credential" for "dtctl config"`,
+			contains: `unknown command "delete-credential"`,
+			wantCmd:  "delete-credential",
 		},
 		{
 			name:     "non-matching error",

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -280,14 +281,14 @@ Examples:
 		}
 
 		// Safety check with actual ownership
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationDelete, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return deleteDryRun(cmd, "dashboard", metadata.Name, dashboardID)
 		}
 
 		// Confirm deletion unless --force or --plain
@@ -349,14 +350,14 @@ Examples:
 		}
 
 		// Safety check with actual ownership
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationDelete, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return deleteDryRun(cmd, "notebook", metadata.Name, notebookID)
 		}
 
 		// Confirm deletion unless --force or --plain
@@ -409,6 +410,13 @@ Examples:
 		}
 
 		handler := document.NewTrashHandler(c)
+
+		if dryRun {
+			return newDryRunReport(cmd).
+				Linef("Dry run: would permanently delete %d document(s) from trash: %s", len(args), strings.Join(args, ", ")).
+				Detail("ids", "%s", strings.Join(args, ",")).
+				Print()
+		}
 
 		// Confirm deletion unless --force or --plain or deleting multiple
 		if !forceDelete && !plainMode {
@@ -611,14 +619,14 @@ Examples:
 		}
 
 		// Safety check with actual ownership
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(metadata.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationDelete, ownership); err != nil {
 			return err
+		}
+
+		if dryRun {
+			return deleteDryRun(cmd, metadata.Type, metadata.Name, documentID)
 		}
 
 		// Confirm deletion unless --force or --plain

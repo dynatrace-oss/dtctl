@@ -131,11 +131,7 @@ Examples:
 }
 
 func checkDeleteBreakpointSafety(cfg *config.Config) error {
-	checker, err := NewSafetyChecker(cfg)
-	if err != nil {
-		return err
-	}
-	return checker.CheckError(safety.OperationDelete, safety.OwnershipUnknown)
+	return CheckSafety(cfg, safety.OperationDelete, safety.OwnershipUnknown)
 }
 
 func validateDeleteBreakpointArgs(cmd *cobra.Command, args []string) error {

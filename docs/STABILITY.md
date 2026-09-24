@@ -186,8 +186,8 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 ## Summary
 
 - commands: 269 stable, 15 experimental, 11 development
-- global flags (accepted on every command): 12
-- entries below (commands + flags): 852
+- global flags (accepted on every command): 11
+- entries below (commands + flags): 926
 
 ## Surface
 
@@ -199,7 +199,6 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
   --config                           stable
   --context                          stable
   --debug                            stable
-  --dry-run                          stable
   --jq                               stable
   --no-agent                         stable
   --output                           stable
@@ -208,6 +207,7 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 account                              development  (opt-in key: account)
 account create                       development
 account create token                 development
+  --dry-run                          development
   --expires                          development
   --expires-at                       development
   --name                             development
@@ -217,6 +217,7 @@ account create token                 development
   --user-uuid                        development
 account delete                       development
 account delete token                 development
+  --dry-run                          development
 account list                         development
 account list token                   development
 account login                        development
@@ -246,6 +247,7 @@ apply                                stable
   --type                             stable
   --write-id                         stable
 apply extension-config               stable
+  --dry-run                          stable
   --file                             stable
   --scope                            stable
   --set                              stable
@@ -277,7 +279,9 @@ config                               stable
 config current-context               stable
 config delete-context                stable
   --delete-credentials               stable
+  --dry-run                          stable
 config delete-credentials            stable
+  --dry-run                          stable
 config describe-context              stable
 config get-contexts                  stable
 config init                          stable
@@ -302,15 +306,18 @@ config use-context                   stable
 config view                          stable
 create                               stable
 create anomaly-detector              stable
+  --dry-run                          stable
   --file                             stable
   --set                              stable
 create aws                           stable
 create aws connection                stable
+  --dry-run                          stable
   --name                             stable
   --roleArn                          experimental  since 0.39.0
 create aws monitoring                stable
   --central-enrichment               stable
   --credentials                      stable
+  --dry-run                          stable
   --featureSets                      experimental  since 0.39.0
   --name                             stable
   --regions                          stable
@@ -319,33 +326,39 @@ create azure connection              stable
   --applicationId                    experimental  since 0.39.0
   --clientSecret                     experimental  since 0.39.0
   --directoryId                      experimental  since 0.39.0
+  --dry-run                          stable
   --issuer                           stable
   --name                             stable
   --type                             stable
 create azure monitoring              stable
   --central-enrichment               stable
   --credentials                      stable
+  --dry-run                          stable
   --featureSets                      experimental  since 0.39.0
   --featuresets                      experimental  since 0.39.0
   --locationFiltering                experimental  since 0.39.0
   --name                             stable
 create breakpoint                    experimental  since 0.39.0
+  --dry-run                          experimental
   --filters                          experimental
   --yes                              experimental
 create bucket                        stable
   --display-name                     stable
+  --dry-run                          stable
   --file                             stable
   --name                             stable
   --retention                        stable
   --table                            stable
 create dashboard                     stable
   --description                      stable
+  --dry-run                          stable
   --file                             stable
   --id                               stable
   --name                             stable
   --set                              stable
 create document                      stable
   --description                      stable
+  --dry-run                          stable
   --file                             stable
   --id                               stable
   --label                            stable
@@ -353,21 +366,25 @@ create document                      stable
   --set                              stable
   --type                             stable
 create edgeconnect                   stable
+  --dry-run                          stable
   --file                             stable
   --host-patterns                    stable
   --name                             stable
 create extension                     stable
+  --dry-run                          stable
   --file                             stable
   --hub-extension                    stable
   --version                          stable
 create gcp                           stable
 create gcp connection                stable
+  --dry-run                          stable
   --name                             stable
   --serviceAccountId                 experimental  since 0.39.0
   --serviceaccountid                 experimental  since 0.39.0
 create gcp monitoring                stable
   --central-enrichment               stable
   --credentials                      stable
+  --dry-run                          stable
   --featureSets                      experimental  since 0.39.0
   --featuresets                      experimental  since 0.39.0
   --locationFiltering                experimental  since 0.39.0
@@ -375,6 +392,7 @@ create gcp monitoring                stable
 create lookup                        stable
   --description                      stable
   --display-name                     stable
+  --dry-run                          stable
   --file                             stable
   --locale                           stable
   --lookup-field                     stable
@@ -384,31 +402,38 @@ create lookup                        stable
   --timezone                         stable
 create notebook                      stable
   --description                      stable
+  --dry-run                          stable
   --file                             stable
   --id                               stable
   --name                             stable
   --set                              stable
 create scheduling-rule               stable
+  --dry-run                          stable
   --file                             stable
   --set                              stable
 create segment                       stable
+  --dry-run                          stable
   --file                             stable
 create settings                      stable
+  --dry-run                          stable
   --file                             stable
   --schema                           stable
   --scope                            stable
   --set                              stable
   --validate-only                    stable
 create slo                           stable
+  --dry-run                          stable
   --file                             stable
   --set                              stable
 create workflow                      stable
+  --dry-run                          stable
   --file                             stable
   --set                              stable
 ctx                                  stable
 ctx current                          stable
 ctx delete                           stable
   --delete-credentials               stable
+  --dry-run                          stable
 ctx describe                         stable
 ctx set                              stable
   --description                      stable
@@ -422,49 +447,71 @@ ctx set                              stable
 ctx token                            stable
 delete                               stable
 delete anomaly-detector              stable
+  --dry-run                          stable
   --yes                              stable
 delete app                           stable
+  --dry-run                          stable
   --yes                              stable
 delete aws                           stable
 delete aws connection                stable
+  --dry-run                          stable
 delete aws monitoring                stable
+  --dry-run                          stable
 delete azure                         stable
 delete azure connection              stable
+  --dry-run                          stable
 delete azure monitoring              stable
+  --dry-run                          stable
 delete breakpoint                    experimental  since 0.39.0
   --all                              experimental
+  --dry-run                          experimental
   --yes                              experimental
 delete bucket                        stable
   --confirm                          stable
+  --dry-run                          stable
   --yes                              stable
 delete dashboard                     stable
+  --dry-run                          stable
   --yes                              stable
 delete document                      stable
+  --dry-run                          stable
   --yes                              stable
 delete edgeconnect                   stable
+  --dry-run                          stable
   --yes                              stable
 delete gcp                           stable
 delete gcp connection                stable
+  --dry-run                          stable
 delete gcp monitoring                stable
+  --dry-run                          stable
 delete lookup                        stable
+  --dry-run                          stable
   --yes                              stable
 delete notebook                      stable
+  --dry-run                          stable
   --yes                              stable
 delete notification                  stable
+  --dry-run                          stable
   --yes                              stable
 delete scheduling-rule               stable
+  --dry-run                          stable
   --yes                              stable
 delete segment                       stable
   --confirm                          stable
+  --dry-run                          stable
   --yes                              stable
 delete settings                      stable
+  --dry-run                          stable
   --yes                              stable
 delete slo                           stable
+  --dry-run                          stable
   --yes                              stable
 delete trash                         stable
+  --dry-run                          stable
   --permanent                        stable
   --yes                              stable
 delete workflow                      stable
+  --dry-run                          stable
   --yes                              stable
 describe                             stable
 describe analyzer                    stable
@@ -533,12 +580,15 @@ diff                                 stable
 disable                              stable
 disable aws                          stable
 disable aws monitoring               stable
+  --dry-run                          stable
   --name                             stable
 disable azure                        stable
 disable azure monitoring             stable
+  --dry-run                          stable
   --name                             stable
 disable gcp                          stable
 disable gcp monitoring               stable
+  --dry-run                          stable
   --name                             stable
 doctor                               stable
 download                             stable
@@ -580,15 +630,18 @@ edit workflow                        stable
 enable                               stable
 enable aws                           stable
 enable aws monitoring                stable
+  --dry-run                          stable
   --name                             stable
   --roleArn                          experimental  since 0.39.0
 enable azure                         stable
 enable azure monitoring              stable
   --applicationId                    experimental  since 0.39.0
   --directoryId                      experimental  since 0.39.0
+  --dry-run                          stable
   --name                             stable
 enable gcp                           stable
 enable gcp monitoring                stable
+  --dry-run                          stable
   --name                             stable
   --serviceAccountId                 experimental  since 0.39.0
 exec                                 stable
@@ -601,6 +654,7 @@ exec analyzer                        stable
   --wait                             experimental  since 0.39.0
 exec api                             stable
   --data                             stable
+  --dry-run                          stable
   --header                           stable
   --method                           stable
 exec copilot                         stable
@@ -869,15 +923,20 @@ query                                stable
   --width                            stable
 restore                              stable
 restore dashboard                    stable
+  --dry-run                          stable
   --force                            experimental  since 0.39.0
 restore document                     stable
+  --dry-run                          stable
   --force                            experimental  since 0.39.0
 restore notebook                     stable
+  --dry-run                          stable
   --force                            experimental  since 0.39.0
 restore trash                        stable
+  --dry-run                          stable
   --force                            stable
   --new-name                         stable
 restore workflow                     stable
+  --dry-run                          stable
   --force                            experimental  since 0.39.0
 serve                                development  (opt-in key: serve)
 serve http                           development
@@ -891,16 +950,19 @@ serve http                           development
 share                                stable
 share dashboard                      stable
   --access                           stable
+  --dry-run                          stable
   --group                            stable
   --no-notify                        experimental  since 0.40.0
   --user                             stable
 share document                       stable
   --access                           stable
+  --dry-run                          stable
   --group                            stable
   --no-notify                        experimental  since 0.40.0
   --user                             stable
 share notebook                       stable
   --access                           stable
+  --dry-run                          stable
   --group                            stable
   --no-notify                        experimental  since 0.40.0
   --user                             stable
@@ -928,24 +990,29 @@ unshare                              stable
 unshare dashboard                    stable
   --access                           stable
   --all                              stable
+  --dry-run                          stable
   --group                            stable
   --user                             stable
 unshare document                     stable
   --access                           stable
   --all                              stable
+  --dry-run                          stable
   --group                            stable
   --user                             stable
 unshare notebook                     stable
   --access                           stable
   --all                              stable
+  --dry-run                          stable
   --group                            stable
   --user                             stable
 update                               stable
 update aws                           stable
 update aws connection                experimental  since 0.39.0
+  --dry-run                          experimental
   --name                             experimental
   --roleArn                          experimental  since 0.39.0
 update aws monitoring                stable
+  --dry-run                          stable
   --featureSets                      experimental  since 0.39.0
   --name                             stable
   --regions                          stable
@@ -957,14 +1024,17 @@ update azure connection              experimental  since 0.39.0
   --clientSecret                     experimental  since 0.39.0
   --directoryID                      experimental  since 0.39.0
   --directoryId                      experimental  since 0.39.0
+  --dry-run                          experimental
   --name                             experimental
 update azure monitoring              experimental  since 0.39.0
+  --dry-run                          experimental
   --featureSets                      experimental  since 0.39.0
   --featuresets                      experimental  since 0.39.0
   --locationFiltering                experimental  since 0.39.0
   --name                             experimental
 update breakpoint                    experimental  since 0.39.0
   --condition                        experimental
+  --dry-run                          experimental
   --enabled                          experimental
   --filters                          experimental
   --log-message                      experimental
@@ -980,21 +1050,25 @@ update document                      stable
   --snapshot-description             stable
   --type                             stable
 update extension                     stable
+  --dry-run                          stable
   --hub-latest                       stable
   --latest                           stable
   --version                          stable
   --with-configurations              stable
 update extensions                    stable
   --all                              stable
+  --dry-run                          stable
   --hub-latest                       stable
   --latest                           stable
   --with-configurations              stable
 update gcp                           stable
 update gcp connection                experimental  since 0.39.0
+  --dry-run                          experimental
   --name                             experimental
   --serviceAccountId                 experimental  since 0.39.0
   --serviceaccountid                 experimental  since 0.39.0
 update gcp monitoring                experimental  since 0.39.0
+  --dry-run                          experimental
   --featureSets                      experimental  since 0.39.0
   --featuresets                      experimental  since 0.39.0
   --locationFiltering                experimental  since 0.39.0

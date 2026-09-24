@@ -303,7 +303,7 @@ func collect(root *cobra.Command) []entry {
 		path := Path(cmd, root)
 		if path == "" {
 			// The root command carries no contract of its own, but its
-			// persistent flags do: --agent, --dry-run, --jq and the rest are
+			// persistent flags do: --agent, --jq and the rest are
 			// usable on every command, and until they were listed here they
 			// were stable purely by omission — the one tier nobody chose. They
 			// are grouped under a synthetic path so that the group sorts ahead
@@ -363,6 +363,11 @@ const globalFlagPath = "(global)"
 // globalFlagEntries renders the root command's persistent flags — the flags
 // every command accepts.
 //
+// A hidden persistent flag is left out. It is a parser shim, not a flag every
+// command accepts: the root keeps --dry-run hidden only so cobra can parse it
+// ahead of the subcommand, and a command without a dry run rejects it. Listing
+// it here would promise a stable global contract dtctl no longer makes.
+//
 // The group itself is stable: dtctl promises that a global flag keeps working
 // on every command. An individual flag may still promise less, and
 // session.Weakest in collect already lets a flag be weaker than the surface it
@@ -371,6 +376,9 @@ func globalFlagEntries(root *cobra.Command) []entry {
 	entries := []entry{{path: globalFlagPath, level: Stable}}
 
 	visitFlags(root, func(f flagInfo) {
+		if f.hidden {
+			return
+		}
 		if f.name == "help" {
 			// cobra synthesises --help lazily, so whether it exists here
 			// depends on whether anything has asked for usage yet. Listing it

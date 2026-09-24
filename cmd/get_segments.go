@@ -94,13 +94,9 @@ Examples:
 		}
 
 		// Safety check with actual ownership
-		checker, err := NewSafetyChecker(cfg)
-		if err != nil {
-			return err
-		}
 		currentUserID, _ := c.CurrentUserID()
 		ownership := safety.DetermineOwnership(seg.Owner, currentUserID)
-		if err := checker.CheckError(safety.OperationDelete, ownership); err != nil {
+		if err := CheckSafety(cfg, safety.OperationDelete, ownership); err != nil {
 			return err
 		}
 
@@ -108,6 +104,10 @@ Examples:
 		displayName := seg.Name
 		if displayName == "" {
 			displayName = uid
+		}
+
+		if dryRun {
+			return deleteDryRun(cmd, "segment", displayName, uid)
 		}
 
 		confirmFlag, _ := cmd.Flags().GetString("confirm")

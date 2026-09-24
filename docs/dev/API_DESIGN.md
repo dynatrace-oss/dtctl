@@ -216,7 +216,6 @@ dtctl query "fetch logs | limit 10"
 --no-headers          # Omit headers in table output
 -v, --verbose         # Verbose output (-v for details, -vv for full HTTP debug)
 --debug               # Enable debug mode (full HTTP logging, equivalent to -vv)
---dry-run             # Print what would be done without doing it
 --field-selector string # Filter by fields (e.g., owner=me,type=notebook)
 -A, --agent           # Agent output mode: wrap all output in a structured JSON envelope
 --no-agent            # Disable auto-detected agent mode
