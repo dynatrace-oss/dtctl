@@ -163,3 +163,42 @@ func TestPrintResults_AgentAutoWithJQChoosesOnFilterOutput(t *testing.T) {
 		t.Errorf("format=%q result=%v, want json and 2", resp.Context.Format, resp.Result)
 	}
 }
+
+// TestBuildSpillResponse_AutoByDefault covers the agent-mode default for
+// `query`: with no -o, the inline envelope is auto-encoded, and the opt-out
+// suggestion appears only when the rows are not native JSON.
+func TestBuildSpillResponse_AutoByDefault(t *testing.T) {
+	flat := []map[string]interface{}{{"host": "a", "count": float64(1)}, {"host": "b", "count": float64(2)}}
+	cases := []struct {
+		name           string
+		records        []map[string]interface{}
+		wantSuggestion bool
+	}{
+		{"csv choice suggests the opt-out", flat, true},
+		{"json choice stays quiet", []map[string]interface{}{}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := &DQLExecutor{}
+			opts := DQLExecuteOptions{
+				AgentMode:           true,
+				OutputFormat:        output.FormatAuto,
+				AutoFormatByDefault: true,
+				Spill:               SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+			}
+			resp, handled, err := e.buildSpillResponse("fetch logs | limit 2", &DQLQueryResponse{Records: c.records}, c.records, output.FormatAuto, opts)
+			if err != nil || !handled {
+				t.Fatalf("handled=%v err=%v", handled, err)
+			}
+			got := false
+			for _, s := range resp.Context.Suggestions {
+				if s == output.AutoDefaultSuggestion(resp.Context.Format) {
+					got = true
+				}
+			}
+			if got != c.wantSuggestion {
+				t.Errorf("opt-out suggestion present = %v, want %v (suggestions %v)", got, c.wantSuggestion, resp.Context.Suggestions)
+			}
+		})
+	}
+}

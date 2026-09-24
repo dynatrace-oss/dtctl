@@ -204,6 +204,13 @@ func MarshalAuto(data interface{}) (choice AutoChoice, encoded string, err error
 	return choice, buf.String(), nil
 }
 
+// AutoDefaultSuggestion is the context.suggestions entry added when the
+// agent-mode default (-o auto, no -o given) returned a non-JSON encoding. It
+// names the opt-out that restores the native JSON result.
+func AutoDefaultSuggestion(format string) string {
+	return "# result is " + format + " (agent default -o auto); -o json returns native JSON"
+}
+
 // FprintAutoChoice writes the one-line notice that tells a human which format
 // `-o auto` picked. It goes to stderr so stdout stays exactly the chosen format.
 func FprintAutoChoice(w io.Writer, choice AutoChoice) {

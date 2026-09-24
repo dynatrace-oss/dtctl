@@ -126,9 +126,12 @@ func ClassifyHTTPError(statusCode int) string {
 type AgentPrinter struct {
 	writer       io.Writer
 	ctx          *ResponseContext
-	resultFormat string // "json" (default) or "toon"
-	jqFilter     string
-	metadata     interface{}
+	resultFormat string // "json" (default), "toon" or "auto"
+	// autoByDefault marks auto as the agent-mode default rather than an
+	// explicit -o auto, so a non-JSON choice carries the -o json opt-out hint.
+	autoByDefault bool
+	jqFilter      string
+	metadata      interface{}
 }
 
 // NewAgentPrinter creates an AgentPrinter that writes envelope-wrapped JSON to writer.
@@ -164,6 +167,15 @@ func (p *AgentPrinter) SetResultFormat(format string) {
 			format,
 		))
 	}
+}
+
+// UseAutoByDefault selects -o auto as the agent-mode default, used when the
+// caller gave no -o. It differs from SetResultFormat("auto") only in that a
+// csv/yaml choice adds AutoDefaultSuggestion, since the caller did not ask for
+// a non-JSON result and may not expect one.
+func (p *AgentPrinter) UseAutoByDefault() {
+	p.resultFormat = FormatAuto
+	p.autoByDefault = true
 }
 
 // Print writes a single result wrapped in the agent envelope.
@@ -226,6 +238,9 @@ func (p *AgentPrinter) encodeAutoResult(data interface{}) interface{} {
 	p.ctx.Format = choice.Format
 	if choice.Format == "json" {
 		return data
+	}
+	if p.autoByDefault {
+		p.ctx.Suggestions = append(p.ctx.Suggestions, AutoDefaultSuggestion(choice.Format))
 	}
 	return encoded
 }
