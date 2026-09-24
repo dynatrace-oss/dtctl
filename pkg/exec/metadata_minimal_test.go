@@ -411,3 +411,40 @@ func TestPrintResults_AgentJQ_DefaultMinimalSuggestion(t *testing.T) {
 		t.Errorf("--jq path: default minimal should not carry queryId: %v", resp.Metadata)
 	}
 }
+
+// Agent mode combines the minimal metadata default with the auto encoding:
+// the rows are auto-encoded (context.format names the choice) while metadata
+// and context are trimmed, and each default names only its own opt-out.
+func TestBuildSpillResponse_DefaultMinimalWithAutoEncoding(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		AgentMode:         true,
+		OutputFormat:      output.FormatAuto,
+		MetadataFields:    []string{"minimal"},
+		MetadataDefaulted: true,
+		Spill:             SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs, from:now()-1h", result, records, output.FormatAuto, opts)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v", handled, err)
+	}
+	if resp.Context.Format != "csv" {
+		t.Errorf("context.format = %q, want csv for flat rows", resp.Context.Format)
+	}
+	if enc, ok := resp.Result.(*output.InlineRecordsEncoded); !ok || enc.Encoding != "csv" {
+		t.Errorf("result = %#v, want csv-encoded inline records", resp.Result)
+	}
+	if got := strings.Join(sortedKeys(metadataMap(t, resp)), ","); got != "executionTimeMilliseconds,scannedBytes" {
+		t.Errorf("metadata keys = %s, want the minimal set", got)
+	}
+	ctx := envelopeContext(t, resp)
+	for _, k := range spillDebugKeys {
+		if _, ok := ctx[k]; ok {
+			t.Errorf("context.%s should be omitted under the minimal default: %v", k, ctx)
+		}
+	}
+	if !hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("want the -M=all suggestion: %v", resp.Context.Suggestions)
+	}
+}
