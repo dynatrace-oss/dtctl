@@ -61,7 +61,7 @@ Error codes are stable identifiers that agents can match on programmatically:
 |---|---|---|
 | `auth_required` | Not authenticated (HTTP 401) | Authenticate, then retry once |
 | `permission_denied` | Authenticated but not allowed (HTTP 403) | Don't retry; report the missing permission |
-| `insufficient_scope` | Token lacks the scopes this command needs | Re-create the token with the `missing` scopes in the envelope |
+| `insufficient_scope` | Token lacks the scopes this command needs | Don't retry; re-create the token with the `missing_scopes` in the envelope, or follow `suggestions` to an alternative the token can read |
 | `not_found` | Resource does not exist (HTTP 404) | Verify the ID with `dtctl get <resource>` |
 | `conflict` | Concurrent or duplicate change (HTTP 409) | Re-read the resource, re-apply on top |
 | `bad_request` | The API rejected the request shape (HTTP 400) | Fix the payload; don't retry unchanged |
@@ -96,6 +96,16 @@ Error codes are stable identifiers that agents can match on programmatically:
 `dtctl query` additionally passes the DQL API's own error type through as the code
 (lowercased), e.g. `unknown_data_object`. **Treat an unrecognised code as
 `error`** -- read `message` and `suggestions` instead of branching on it.
+
+The exception is a table the token cannot read: Grail's `NOT_AUTHORIZED_FOR_TABLE`
+is reported as `insufficient_scope` (exit code 5), with `missing_scopes` naming
+the storage scope when the error identifies the table. When the token's scopes
+are introspectable (OAuth), `dtctl query` also checks the query *before* sending
+it: a query that provably needs a storage scope the token lacks -- `fetch logs`
+needs `storage:logs:read`, `smartscapeNodes`/`getNodeName()` need
+`storage:smartscape:read` -- fails fast with the same code, without a request.
+The check only blocks what it is certain of; with a platform or API token it
+never blocks, and the query runs as usual.
 
 ### Query results: the `result.kind` discriminator
 
