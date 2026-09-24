@@ -81,6 +81,7 @@ func TestRequiredStorageScopes(t *testing.T) {
 		{name: "keyword inside a triple-quoted string", query: "fetch dt.system.events | filter content == \"\"\"\nfetch logs\n\"\"\""},
 		{name: "keyword inside a line comment", query: "// fetch logs\nfetch dt.system.events"},
 		{name: "keyword inside a block comment", query: "/* smartscapeNodes \"HOST\" */ fetch dt.system.events"},
+		{name: "single quote inside a double-quoted string is plain text", query: `fetch dt.system.events | filter content == "it's"`},
 		{name: "keyword inside a backtick identifier", query: "fetch dt.system.events | fieldsAdd `getNodeName(x)` = 1"},
 		{name: "fetch not at command position", query: "fetch dt.system.events | filter fetch logs"},
 		{name: "makeTimeseries is not timeseries", query: "fetch dt.system.events | makeTimeseries count()"},
@@ -89,6 +90,13 @@ func TestRequiredStorageScopes(t *testing.T) {
 		{name: "case matters in DQL", query: "FETCH logs"},
 		{name: "unterminated string abstains", query: `fetch logs | filter content == "oops`},
 		{name: "unterminated block comment abstains", query: "fetch logs /* oops"},
+		// Grail rejects single-quoted strings (PARSE_ERROR_SINGLE_QUOTES), and
+		// dtctl turns that into a quoting hint. The precheck must not preempt the
+		// hint with a scope error read out of the quoted text.
+		{name: "pipe and fetch inside a single-quoted string", query: "fetch dt.system.events | filter content == '| fetch logs'"},
+		{name: "smartscape function inside a single-quoted string", query: "fetch dt.system.events | filter content == 'getNodeName(x)'"},
+		{name: "escaped quote inside a single-quoted string", query: `fetch dt.system.events | filter content == 'it\'s | fetch logs'`},
+		{name: "single quote anywhere outside a literal abstains", query: "fetch logs | filter content == 'ERROR'"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

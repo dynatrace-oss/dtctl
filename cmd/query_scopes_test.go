@@ -86,6 +86,8 @@ func TestDQLScopePrecheck_Abstains(t *testing.T) {
 			granted: []string{"storage:logs:read"}, known: true},
 		{name: "wildcard grant cannot be compared", query: smartscapeLogQuery,
 			granted: []string{"storage:*"}, known: true},
+		{name: "single-quoted string (rejected by Grail, which dtctl turns into a quoting hint)",
+			query: "fetch dt.system.events | filter content == '| fetch logs'", granted: []string{"storage:events:read"}, known: true},
 		{name: "keyword only in a string literal", query: `fetch dt.system.events | filter content == "getNodeName(x)"`,
 			granted: []string{"storage:logs:read"}, known: true},
 	}
