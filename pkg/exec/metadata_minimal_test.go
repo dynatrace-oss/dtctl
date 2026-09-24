@@ -454,3 +454,39 @@ func TestBuildSpillResponse_DefaultMinimalWithAutoEncoding(t *testing.T) {
 		t.Errorf("want the -M=all suggestion: %v", resp.Context.Suggestions)
 	}
 }
+
+// -M=all under the auto encoding opts out of the metadata default only: the
+// rows stay auto-encoded while the full metadata and the spill provenance
+// come back.
+func TestBuildSpillResponse_AllMetadataWithAutoEncoding(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		AgentMode:      true,
+		OutputFormat:   output.FormatAuto,
+		MetadataFields: []string{"all"},
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs, from:now()-1h", result, records, output.FormatAuto, opts)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v", handled, err)
+	}
+	if resp.Context.Format != "csv" {
+		t.Errorf("context.format = %q, want csv for flat rows", resp.Context.Format)
+	}
+	m := metadataMap(t, resp)
+	for _, k := range []string{"query", "canonicalQuery", "locale", "timezone", "dqlVersion", "queryId", "analysisTimeframe"} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("full metadata lost %q: %v", k, m)
+		}
+	}
+	ctx := envelopeContext(t, resp)
+	for _, k := range spillDebugKeys {
+		if _, ok := ctx[k]; !ok {
+			t.Errorf("context.%s should be present with -M=all: %v", k, ctx)
+		}
+	}
+	if hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("-M=all dropped nothing, want no opt-out suggestion: %v", resp.Context.Suggestions)
+	}
+}
