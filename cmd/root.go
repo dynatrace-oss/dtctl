@@ -683,16 +683,20 @@ func errorToDetail(err error) *output.ErrorDetail {
 	// ScopeError — agent-mode preflight blocked a command missing token scopes
 	var scopeErr *ScopeError
 	if errors.As(err, &scopeErr) {
+		suggestions := scopeErr.Advice
+		if len(suggestions) == 0 {
+			suggestions = []string{
+				"re-create your token with: " + strings.Join(scopeErr.Missing, ", "),
+				"see 'dtctl commands howto' for token scope guidance",
+			}
+		}
 		return &output.ErrorDetail{
 			Code:           "insufficient_scope",
 			Message:        scopeErr.Error(),
 			RequiredScopes: scopeErr.Required,
 			GrantedScopes:  scopeErr.Granted,
 			MissingScopes:  scopeErr.Missing,
-			Suggestions: []string{
-				"re-create your token with: " + strings.Join(scopeErr.Missing, ", "),
-				"see 'dtctl commands howto' for token scope guidance",
-			},
+			Suggestions:    suggestions,
 		}
 	}
 
@@ -807,6 +811,11 @@ func errorToDetail(err error) *output.ErrorDetail {
 	// query.QueryError — a typed DQL API error. The envelope code becomes the
 	// API's error type (e.g. unknown_data_object) and recurring mistake
 	// classes get a targeted recovery suggestion.
+	// A table the token cannot read is a scope problem, not a query problem:
+	// report it with the precheck's code so an agent handles both the same way.
+	if q, ok := isNotAuthorizedForTable(err); ok {
+		return notAuthorizedForTableDetail(q)
+	}
 	var queryErr *sdkquery.QueryError
 	if errors.As(err, &queryErr) {
 		code := strings.ToLower(queryErr.ErrorType)
@@ -1102,6 +1111,9 @@ func exitCodeForError(err error) int {
 
 	var scopeErr *ScopeError
 	if errors.As(err, &scopeErr) {
+		return client.ExitPermissionError
+	}
+	if _, ok := isNotAuthorizedForTable(err); ok {
 		return client.ExitPermissionError
 	}
 

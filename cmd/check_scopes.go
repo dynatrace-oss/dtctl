@@ -30,17 +30,26 @@ const (
 )
 
 // ScopeError is returned by the agent-mode auto-preflight when a mutating
-// command is missing required scopes. It is rendered as an insufficient_scope
-// envelope (see errorToDetail) and exits with ExitPermissionError.
+// command is missing required scopes, and by the DQL scope precheck. It is
+// rendered as an insufficient_scope envelope (see errorToDetail) and exits with
+// ExitPermissionError.
 type ScopeError struct {
 	Verb     string
 	Resource string
 	Required []string
 	Granted  []string
 	Missing  []string
+	// Reason, when set, replaces the generic message: it says which part of
+	// the invocation needs the missing scopes.
+	Reason string
+	// Advice, when set, replaces the generic suggestions.
+	Advice []string
 }
 
 func (e *ScopeError) Error() string {
+	if e.Reason != "" {
+		return e.Reason
+	}
 	target := e.Verb
 	if e.Resource != "" {
 		target += " " + e.Resource
@@ -374,7 +383,9 @@ var grantedScopesFunc = grantedScopes
 // grantedScopes returns the scopes granted in the active context's token and
 // whether they are introspectable. Opaque API/platform tokens are not
 // introspectable, so (nil, false) is returned — the caller treats this as
-// "unknown" rather than a false negative.
+// "unknown" rather than a false negative. The same goes for a scope list read
+// back from the access token's claim, which is a subset of the grant: a scope
+// absent from it is not proven missing.
 func grantedScopes() (scopes []string, known bool) {
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -385,7 +396,7 @@ func grantedScopes() (scopes []string, known bool) {
 		return nil, false
 	}
 	status, err := buildSessionStatusFunc(cfg.CurrentContext, ctx, ctx.TokenRef)
-	if err != nil || status == nil || !status.IsOAuth || len(status.GrantedScopes) == 0 {
+	if err != nil || status == nil || !status.IsOAuth || len(status.GrantedScopes) == 0 || status.grantedScopesPartial {
 		return nil, false
 	}
 	return status.GrantedScopes, true

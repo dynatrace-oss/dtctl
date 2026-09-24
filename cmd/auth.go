@@ -65,6 +65,11 @@ type SessionStatus struct {
 	RefreshTokenPresent   bool       `json:"refreshTokenPresent" yaml:"refreshTokenPresent"`
 	RefreshTokenExpiresAt *time.Time `json:"refreshTokenExpiresAt,omitempty" yaml:"refreshTokenExpiresAt,omitempty"`
 	GrantedScopes         []string   `json:"grantedScopes,omitempty" yaml:"grantedScopes,omitempty"`
+
+	// grantedScopesPartial is set when GrantedScopes came from the access
+	// token's own scope claim, an audience-reduced subset of the grant. Such a
+	// list is fine to display but cannot prove a scope is missing.
+	grantedScopesPartial bool
 }
 
 // buildSessionStatusFunc builds a SessionStatus for a given context + token name.
@@ -117,6 +122,7 @@ func buildSessionStatus(contextName string, ctx *config.Context, tokenName strin
 			scopes = cached
 		} else if stored.AccessToken != "" {
 			scopes = auth.ExtractJWTScopes(stored.AccessToken)
+			status.grantedScopesPartial = true
 		}
 	}
 	if len(scopes) > 0 {

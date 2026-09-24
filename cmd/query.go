@@ -221,6 +221,13 @@ Examples:
 			query = rendered
 		}
 
+		// Fail fast, before any request, when the query provably needs a
+		// storage scope the token lacks — instead of one NOT_AUTHORIZED_FOR_TABLE
+		// per query an agent fans out.
+		if err := dqlScopePrecheck(query); err != nil {
+			return err
+		}
+
 		// Get visualization options
 		live, _ := cmd.Flags().GetBool("live")
 		interval, _ := cmd.Flags().GetDuration("interval")
