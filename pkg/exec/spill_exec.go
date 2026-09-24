@@ -198,7 +198,8 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	scanWarnings, scanSuggestions := heavyScanAdvice(result)
 	warnings = append(warnings, scanWarnings...)
 	suggestions = append(suggestions, scanSuggestions...)
-	suggestions = append(suggestions, windowAdvice(query, records, opts)...)
+	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
+	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
 
 	total := len(records)
@@ -212,6 +213,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		MeasuredEncoding: encoding,
 		Warnings:         warnings,
 		Suggestions:      suggestions,
+		EmptyReason:      emptyReason,
 	}
 
 	resp := output.Response{
@@ -305,7 +307,8 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	scanWarnings, scanSuggestions := heavyScanAdvice(result)
 	notifWarnings = append(notifWarnings, scanWarnings...)
 	notifSuggestions = append(notifSuggestions, scanSuggestions...)
-	notifSuggestions = append(notifSuggestions, windowAdvice(query, records, opts)...)
+	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
+	notifSuggestions = append(notifSuggestions, emptySuggestions...)
 	notifSuggestions = append(notifSuggestions, lookbackAdvice(query)...)
 	if encodeWarning != "" {
 		notifWarnings = append(notifWarnings, encodeWarning)
@@ -325,6 +328,7 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		MeasuredEncoding: encoding,
 		Warnings:         notifWarnings,
 		Suggestions:      notifSuggestions,
+		EmptyReason:      emptyReason,
 	}
 	if auto {
 		ctx.Format = encoding

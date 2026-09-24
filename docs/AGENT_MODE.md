@@ -234,6 +234,52 @@ spill threshold (unlike an explicit `-o csv`/`-o yaml`, which print raw bytes)
 and the threshold is measured in the chosen encoding. A spilled result is a
 `result-file` manifest as usual and carries no `context.format`.
 
+### Empty query results: `context.empty_reason`
+
+A misspelled field name or metric key makes DQL succeed with zero rows. On an
+empty result (no rows, or the single all-zero row of a `summarize count()`),
+dtctl runs one small, bounded probe before it suggests widening the time window:
+
+| Query shape | Probe | Finding |
+|---|---|---|
+| `fetch <object> \| filter …` / `summarize … by:` | the query's own `fetch` stage with `\| limit 100`, and the field names in its `filter`/`filterOut` stages and `by:` clause compared against the sampled records | `field_not_in_sample` |
+| `timeseries …` | the metric keys that reported series in the query window (at most its last 2h), listed with the `metrics` command | `metric_not_in_window` |
+
+The probes are capped (1 GB scan, 10 s read time, bounded result size), run only
+on an empty result that no scan, time, result or consumption limit cut short,
+and never fail the query. If a probe errors, comes back
+partial, or finds an empty sample, the envelope keeps the widen-the-window advice
+and has no `empty_reason`.
+
+`context.empty_reason` is set only when a missing name has a close match that
+*was* observed, which is what a typo looks like. That advice replaces the
+widen-the-window suggestion, because a wider window cannot fix a misspelled
+name:
+
+```json
+{
+  "ok": true,
+  "result": { "kind": "records", "records": null },
+  "context": {
+    "total": 0,
+    "empty_reason": {
+      "code": "field_not_in_sample",
+      "field": "servce.name",
+      "data_object": "logs",
+      "did_you_mean": ["service.name"],
+      "sample_size": 100,
+      "evidence": "`servce.name` is absent from all 100 sampled `logs` records (the query's fetch stage with `| limit 100`); the near match is present in the sample"
+    },
+    "suggestions": ["# `servce.name` did not occur in any of the 100 sampled `logs` records, but `service.name` did — likely a typo in the field name; …"]
+  }
+}
+```
+
+A finding is an observation about a sample or a window, not a catalog fact.
+`evidence` names that basis. A field can be rare enough to be missing from a
+100-record sample. A missing name with no close match therefore only adds a
+hedged note to `suggestions`, and the widen-the-window advice stays.
+
 ## Auto-Detection
 
 dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on the presence of specific environment variables:
