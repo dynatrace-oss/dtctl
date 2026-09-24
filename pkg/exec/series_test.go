@@ -302,20 +302,27 @@ func TestDQLExecutor_AgentDefaultSeriesSuggestion(t *testing.T) {
 
 // The lean series defaults compose with -o auto: the summarized records are
 // what auto encodes, and the opt-out hint still rides the envelope.
+// TestDQLExecutor_AgentDefaultSeriesWithAutoFormat pins the combined agent-mode
+// default for `query` with no -o: -o auto plus the series defaults. Both
+// defaults apply, each lossy one names its own opt-out, and the series opt-out
+// restores the -o auto output byte for byte.
 func TestDQLExecutor_AgentDefaultSeriesWithAutoFormat(t *testing.T) {
 	clearAIAgentEnvVars(t)
-	executor := newTimeseriesExecutor(t)
-	out := captureStdout(t, func() {
-		if err := executor.ExecuteWithContext(context.Background(), "timeseries cpu=avg(x)", DQLExecuteOptions{
-			OutputFormat: "auto", AgentMode: true,
-			Spill:  SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
-			Series: output.SeriesMode{Kind: output.SeriesSummary}, SeriesDefaulted: true,
-			Precision: AgentDefaultPrecision, PrecisionDefaulted: true,
-		}); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
-	var env struct {
+	spillDir := t.TempDir()
+	run := func(series output.SeriesMode, precision int, defaulted bool) []byte {
+		executor := newTimeseriesExecutor(t)
+		return captureStdout(t, func() {
+			if err := executor.ExecuteWithContext(context.Background(), "timeseries cpu=avg(x)", DQLExecuteOptions{
+				OutputFormat: "auto", AutoFormatByDefault: true, AgentMode: true,
+				Spill:  SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: spillDir, Format: "json"},
+				Series: series, SeriesDefaulted: defaulted,
+				Precision: precision, PrecisionDefaulted: defaulted,
+			}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+	}
+	type autoEnvelope struct {
 		Result struct {
 			Records string `json:"records"`
 		} `json:"result"`
@@ -324,15 +331,48 @@ func TestDQLExecutor_AgentDefaultSeriesWithAutoFormat(t *testing.T) {
 			Suggestions []string `json:"suggestions"`
 		} `json:"context"`
 	}
-	if err := json.Unmarshal(out, &env); err != nil {
-		t.Fatalf("not an auto envelope: %v\n%s", err, out)
+	decode := func(out []byte) autoEnvelope {
+		var env autoEnvelope
+		if err := json.Unmarshal(out, &env); err != nil {
+			t.Fatalf("not an auto envelope: %v\n%s", err, out)
+		}
+		return env
 	}
-	if env.Context.Format != "yaml" || !strings.Contains(env.Result.Records, "spark:") || strings.Contains(env.Result.Records, "3.10276124773992") {
-		t.Errorf("auto should encode the summarized records, got format %q:\n%s", env.Context.Format, env.Result.Records)
+	count := func(suggestions []string, needle string) int {
+		n := 0
+		for _, s := range suggestions {
+			if strings.Contains(s, needle) {
+				n++
+			}
+		}
+		return n
 	}
-	if got := seriesSuggestions(agentEnvelope{Context: struct {
-		Suggestions []string `json:"suggestions"`
-	}{env.Context.Suggestions}}); len(got) != 1 || !strings.Contains(got[0], "--series=full --precision 0") {
-		t.Errorf("opt-out hint missing under -o auto: %q", env.Context.Suggestions)
-	}
+
+	t.Run("both defaults apply and each names its opt-out", func(t *testing.T) {
+		env := decode(run(output.SeriesMode{Kind: output.SeriesSummary}, AgentDefaultPrecision, true))
+		if env.Context.Format != "yaml" || !strings.Contains(env.Result.Records, "spark:") || strings.Contains(env.Result.Records, "3.10276124773992") {
+			t.Errorf("auto should encode the summarized records, got format %q:\n%s", env.Context.Format, env.Result.Records)
+		}
+		if count(env.Context.Suggestions, "--series=full --precision 0") != 1 || count(env.Context.Suggestions, "-o json") != 1 {
+			t.Errorf("want one series and one -o json suggestion, got %q", env.Context.Suggestions)
+		}
+	})
+
+	t.Run("series opt-out restores the -o auto output exactly", func(t *testing.T) {
+		optOut := run(output.SeriesMode{Kind: output.SeriesFull}, 0, false)
+		autoOnly := captureStdout(t, func() {
+			if err := newTimeseriesExecutor(t).ExecuteWithContext(context.Background(), "timeseries cpu=avg(x)", DQLExecuteOptions{
+				OutputFormat: "auto", AutoFormatByDefault: true, AgentMode: true,
+				Spill: SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: spillDir, Format: "json"},
+			}); err != nil {
+				t.Fatalf("execute: %v", err)
+			}
+		})
+		if string(optOut) != string(autoOnly) {
+			t.Errorf("--series=full --precision 0 changed the output:\n%s\nvs\n%s", optOut, autoOnly)
+		}
+		if env := decode(optOut); count(env.Context.Suggestions, "--series") != 0 || strings.Contains(env.Result.Records, "spark:") {
+			t.Errorf("opt-out should carry raw arrays and no series hint, got %q", env.Context.Suggestions)
+		}
+	})
 }
