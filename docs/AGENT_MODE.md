@@ -421,8 +421,9 @@ off unless you set it:
   first N characters and ends in `…(+3214 chars)`, the same marker the spill
   summary uses. A spilled file always keeps the full values, and so does a
   `--jq` filter's input: the values are clipped after the filter ran, so it
-  still matches on them. With `-o auto`, values are clipped first, so auto
-  chooses and encodes the clipped rows.
+  still matches on them. Under `-o auto` (the agent-mode default for `query`),
+  values are clipped first, so auto chooses and encodes the clipped rows.
+  `-o json --max-field-chars 0` restores native, unclipped rows.
 - **`--max-output-bytes SIZE`** (e.g. `16KB`) or **`--max-output-tokens N`**
   (approximate: 1 token ≈ 4 bytes) is a budget on the envelope exactly as it
   is printed: compact or indented, JSON, TOON or the `-o auto` choice, with

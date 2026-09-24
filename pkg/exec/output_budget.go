@@ -128,8 +128,17 @@ func (e *DQLExecutor) fitToBudget(query string, result *DQLQueryResponse, resp o
 		}
 		res, used, _ := inlineResult(encoding, auto, rows, k)
 		if auto {
-			// -o auto re-chooses for the kept rows; name what was emitted.
+			// -o auto re-chooses for the kept rows; name what was emitted, and
+			// keep the default's -o json hint in step with that choice.
 			ctx.Format = used
+			if opts.AutoFormatByDefault && used != encoding {
+				ctx.Suggestions = slices.DeleteFunc(ctx.Suggestions, func(s string) bool {
+					return s == output.AutoDefaultSuggestion(encoding)
+				})
+				if used != "json" {
+					ctx.Suggestions = append(ctx.Suggestions, output.AutoDefaultSuggestion(used))
+				}
+			}
 		}
 		r := resp
 		r.Result = res

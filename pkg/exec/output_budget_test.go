@@ -264,7 +264,7 @@ func TestBuildSpillResponse_BudgetWritesContinuationFile(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("continuation files = %v, want one", matches)
 	}
-	want := fmt.Sprintf("dtctl inspect %s --page --offset %d --limit %d", matches[0], k, k)
+	want := fmt.Sprintf("dtctl inspect %s --page --offset %d --limit %d", shellQuote(matches[0]), k, k)
 	if ctx.Next != want {
 		t.Errorf("next = %q, want %q", ctx.Next, want)
 	}
@@ -465,4 +465,94 @@ func TestBuildSpillResponse_BudgetWithAutoFormat(t *testing.T) {
 	if !strings.Contains(enc.Records, fmt.Sprintf("row-%03d", k-1)) || strings.Contains(enc.Records, fmt.Sprintf("row-%03d", k)) {
 		t.Errorf("auto payload does not hold exactly the first %d rows", k)
 	}
+}
+
+// TestBuildSpillResponse_AgentDefaultsCompose runs `query` as an agent gets it
+// with no -o and no bound flags: -o auto by default plus the default field cap.
+// Both apply, each names its own opt-out only when it changed something, and
+// the opt-outs together restore the native-JSON, unclipped rows exactly.
+func TestBuildSpillResponse_AgentDefaultsCompose(t *testing.T) {
+	defaults := func(dir string) DQLExecuteOptions {
+		return DQLExecuteOptions{
+			AgentMode:           true,
+			OutputFormat:        output.FormatAuto,
+			AutoFormatByDefault: true,
+			MaxFieldChars:       output.DefaultAgentMaxFieldChars,
+			Spill:               SpillOptions{Mode: SpillAuto, Threshold: 50 * 1024, Dir: dir, Format: "jsonl"},
+		}
+	}
+	e := &DQLExecutor{}
+
+	t.Run("long values are clipped, then auto-encoded", func(t *testing.T) {
+		result, records := longContentResult(3, 2000)
+		resp, _, err := e.buildSpillResponse("fetch logs", result, records, output.FormatAuto, defaults(t.TempDir()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		enc, ok := resp.Result.(*output.InlineRecordsEncoded)
+		if !ok || enc.Encoding != "csv" || resp.Context.Format != "csv" {
+			t.Fatalf("result = %T, format %q; want csv", resp.Result, resp.Context.Format)
+		}
+		if !strings.Contains(enc.Records, "…(+1508 chars)") || strings.Contains(enc.Records, strings.Repeat("x", 600)) {
+			t.Errorf("default cap not applied before auto: %.200s", enc.Records)
+		}
+		if !hasSuggestion(resp.Context, "-o json") || !hasSuggestion(resp.Context, "--max-field-chars 0") {
+			t.Errorf("each default must name its opt-out: %v", resp.Context.Suggestions)
+		}
+	})
+
+	t.Run("short values add only the auto hint", func(t *testing.T) {
+		result, records := longContentResult(3, 10)
+		resp, _, err := e.buildSpillResponse("fetch logs", result, records, output.FormatAuto, defaults(t.TempDir()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.Context.Truncated || hasSuggestion(resp.Context, "--max-field-chars") {
+			t.Errorf("nothing was clipped, yet the cap reports it: %+v", resp.Context)
+		}
+		if !reflect.DeepEqual(resp.Context.Suggestions, []string{output.AutoDefaultSuggestion("csv")}) {
+			t.Errorf("suggestions = %v, want only the auto opt-out", resp.Context.Suggestions)
+		}
+	})
+
+	t.Run("opt-outs restore native unclipped rows", func(t *testing.T) {
+		result, records := longContentResult(3, 2000)
+		opts := defaults(t.TempDir())
+		opts.OutputFormat, opts.AutoFormatByDefault, opts.MaxFieldChars = "json", false, 0
+		resp, _, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(envelopeRows(t, resp), records) {
+			t.Error("-o json --max-field-chars 0 must return the rows unchanged")
+		}
+		if resp.Context.Format != "" || resp.Context.Truncated || len(resp.Context.Suggestions) != 0 {
+			t.Errorf("opt-out envelope carries default markers: %+v", resp.Context)
+		}
+	})
+
+	t.Run("a budget keeps the auto hint in step with the emitted format", func(t *testing.T) {
+		result, records := longContentResult(50, 100)
+		opts := defaults(t.TempDir())
+		opts.MaxOutputBytes = 2000
+		resp, _, err := e.buildSpillResponse("fetch logs", result, records, output.FormatAuto, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if size := encodedSize(t, resp); size > 2000 {
+			t.Errorf("envelope %d bytes over budget", size)
+		}
+		hints := 0
+		for _, s := range resp.Context.Suggestions {
+			if strings.Contains(s, "agent default -o auto") {
+				hints++
+				if s != output.AutoDefaultSuggestion(resp.Context.Format) {
+					t.Errorf("auto hint %q does not match context.format %q", s, resp.Context.Format)
+				}
+			}
+		}
+		if want := map[bool]int{true: 0, false: 1}[resp.Context.Format == "json"]; hints != want {
+			t.Errorf("%d auto hints for format %q, want %d: %v", hints, resp.Context.Format, want, resp.Context.Suggestions)
+		}
+	})
 }
