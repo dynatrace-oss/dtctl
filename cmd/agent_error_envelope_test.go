@@ -157,3 +157,12 @@ func TestUnknownResourceTypeHumanMessageUnchanged(t *testing.T) {
 	err = requireSubcommand(getCmd, []string{"zzzzzzzzzz"})
 	require.EqualError(t, err, "unknown resource type \"zzzzzzzzzz\"\nRun 'dtctl get --help' for available resources")
 }
+
+// TestRawAgentFlagScansStopAtDelimiter: after `--` every argument is
+// positional, so a value spelled like a flag must not opt out.
+func TestRawAgentFlagScansStopAtDelimiter(t *testing.T) {
+	require.True(t, rawNoAgent([]string{"--no-agent"}))
+	require.False(t, rawNoAgent([]string{"query", "--", "--no-agent"}))
+	_, given := rawOutputFormat([]string{"query", "--", "-otable"})
+	require.False(t, given)
+}

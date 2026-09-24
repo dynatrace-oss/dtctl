@@ -1737,6 +1737,9 @@ func agentModeAutoDetectedFromArgs(args []string) bool {
 // rawNoAgent reports whether the unparsed args turn --no-agent on.
 func rawNoAgent(args []string) bool {
 	for _, a := range args {
+		if a == "--" {
+			break
+		}
 		if a == "--no-agent" {
 			return true
 		}
