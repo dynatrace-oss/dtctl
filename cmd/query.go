@@ -448,6 +448,13 @@ Examples:
 		if err != nil {
 			return err
 		}
+		bounds, err := resolveOutputBounds(cmd)
+		if err != nil {
+			return err
+		}
+		for _, w := range bounds.Warnings {
+			output.PrintWarning("%s", w)
+		}
 		spillTenantID, spillContextName := spillProvenance(cfg)
 		// A Parquet spill derives its columnar schema from DQL types, so request
 		// them even when the displayed output format does not — same reasoning as
@@ -491,6 +498,8 @@ Examples:
 			Segments:                     segments,
 			ClientContext:                clientContext,
 			Spill:                        spillOpts,
+			MaxFieldChars:                bounds.MaxFieldChars,
+			MaxOutputBytes:               bounds.MaxOutputBytes,
 			TenantID:                     spillTenantID,
 			ContextName:                  spillContextName,
 			// The progress bar is a user-facing affordance of the `query`
@@ -926,6 +935,14 @@ default: never for a bare command, auto in agent mode`)
 	queryCmd.Flags().String("spill-to", "", "explicit spill destination file (implies --spill=always; format inferred from extension)")
 	queryCmd.Flags().String("spill-format", "", "spill file format when spilling to the default dir: jsonl|json|csv|parquet (default jsonl)")
 	queryCmd.Flags().String("spill-threshold", "", "serialised output size above which a result spills, e.g. 50KB (default 50KB)")
+
+	// In-response output bounds for agent mode (#583): a per-value cap and a
+	// budget on the encoded envelope, for the middle zone below the spill
+	// threshold that a row limit alone does not bound.
+	addOutputBoundFlags(queryCmd)
+	stability.MarkFlag(queryCmd, "max-field-chars", stability.Experimental, outputBoundsSince)
+	stability.MarkFlag(queryCmd, "max-output-bytes", stability.Experimental, outputBoundsSince)
+	stability.MarkFlag(queryCmd, "max-output-tokens", stability.Experimental, outputBoundsSince)
 
 	_ = queryCmd.RegisterFlagCompletionFunc("spill", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{

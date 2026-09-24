@@ -642,8 +642,6 @@ find intents                         stable
   --data-file                        stable
   --limit                            stable
 get                                  stable
-  --fields                           experimental  since 0.40.0
-  --limit                            experimental  since 0.40.0
 get analyzers                        stable
   --filter                           stable
 get anomaly-detectors                stable
@@ -846,6 +844,9 @@ query                                stable
   --interval                         stable
   --live                             stable
   --locale                           stable
+  --max-field-chars                  experimental  since 0.40.0
+  --max-output-bytes                 experimental  since 0.40.0
+  --max-output-tokens                experimental  since 0.40.0
   --max-result-bytes                 stable
   --max-result-records               stable
   --metadata                         stable

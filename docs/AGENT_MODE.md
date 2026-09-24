@@ -406,6 +406,65 @@ when nothing is shared, and `context.total` still counts the rows.
   full per-column profile in a manifest) exactly. Outside agent mode,
   `--compact` opts in for plain `-o json`/`yaml`/`toon`.
 
+### Bounding inline query output: `--max-field-chars` and `--max-output-bytes`
+
+A row limit does not bound size: twenty log lines can each carry a
+multi-kilobyte `content` value or stack trace. Two flags bound what an inline
+`kind: "records"` result carries, both in agent mode only (outside it the
+output is unchanged and the flags warn):
+
+- **`--max-field-chars N`** (default **500** in agent mode, `0` = full values)
+  clips every string value longer than N characters. A clipped value keeps its
+  first N characters and ends in `…(+3214 chars)`, the same marker the spill
+  summary uses. A spilled file always keeps the full values, and so does a
+  `--jq` filter's input: the values are clipped after the filter ran, so it
+  still matches on them.
+- **`--max-output-bytes SIZE`** (e.g. `16KB`) or **`--max-output-tokens N`**
+  (approximate: 1 token ≈ 4 bytes) is a budget on the envelope exactly as it
+  is printed: compact or indented, JSON or TOON, with `context` and `metadata`
+  included. A result over the budget keeps the leading rows that fit, in
+  order. When spilling is enabled (the agent-mode default) the full result is
+  also written to disk and `context.next` is the `dtctl inspect` command that
+  continues where the rows stop, with no Grail re-query. The budget covers the
+  gap between "fits inline" and the spill threshold; a result above the
+  threshold still spills. It is not applied to `--jq` output, which has no
+  rows to cut; the envelope warns when you set both.
+
+A bounded result says so in `context`. `truncated: true` means the result is
+not the complete answer:
+
+| `context` field | Set when | Meaning |
+|---|---|---|
+| `truncated` | any bound applied | the result was cut: rows, values, or both |
+| `max_field_chars`, `truncated_fields` | values were clipped | the cap, and which fields had a clipped value |
+| `total`, `returned` | rows were dropped | rows in the full result, rows in `result.records` |
+| `next_offset` | rows were dropped | index of the first row not returned |
+| `next` | rows were dropped and the result was written to disk | the command that continues at `next_offset` |
+| `budget_bytes` | rows were dropped | the budget that dropped them, in bytes |
+
+Both bounds apply after compaction (see above). A column goes into `constant`
+only when its full values are equal in every row; the values in `constant` are
+then clipped like the ones in `records`, and the budget counts `constant`
+toward the envelope size.
+
+`context.suggestions` leads with how to get the rest: `--max-field-chars 0`
+with `| fields <col>` for full values, or `--spill-to <file>` when nothing was
+written to disk.
+
+```json
+{
+  "ok": true,
+  "envelope_version": 1,
+  "result": { "kind": "records", "records": [ { "content": "java.lang.IllegalStateException: …(+3214 chars)" } ] },
+  "context": {
+    "verb": "query", "total": 200, "decided": "inline",
+    "truncated": true, "returned": 37, "next_offset": 37, "budget_bytes": 16000,
+    "next": "dtctl inspect ~/.cache/dtctl/results/prod/q-7f3a9c12.jsonl --page --offset 37 --limit 37",
+    "max_field_chars": 500, "truncated_fields": ["content"]
+  }
+}
+```
+
 ## Auto-Detection
 
 dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on the presence of specific environment variables:

@@ -214,6 +214,17 @@ type DQLExecuteOptions struct {
 	// unchanged from today's behaviour.
 	Spill SpillOptions
 
+	// MaxFieldChars clips every string value in an agent-mode result to this
+	// many runes, ending a clipped value in "…(+N chars)" (0 = no cap). Spilled
+	// files always keep the full values. The command layer defaults it to
+	// output.DefaultAgentMaxFieldChars in agent mode.
+	MaxFieldChars int
+
+	// MaxOutputBytes bounds the agent-mode envelope, measured on the bytes
+	// actually written to stdout (0 = no budget). An inline result over it keeps
+	// the leading rows that fit and marks the cut on the context.
+	MaxOutputBytes int64
+
 	// TenantID and ContextName are provenance recorded in the spill manifest and
 	// used to partition the spill directory by context (D9). They are not part of
 	// query execution and are only consulted on the spill path.
@@ -1085,8 +1096,16 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 		EmptyReason: emptyReason,
 	}
 
+	// A filter's output has no row structure to cut at, so the budget cannot
+	// drop rows from it; say so rather than silently exceed it.
+	if opts.MaxOutputBytes > 0 {
+		ctx.Warnings = append(ctx.Warnings, "--max-output-bytes/--max-output-tokens are not applied to --jq output; narrow the filter to bound it")
+	}
+
 	ap := output.NewAgentPrinter(os.Stdout, ctx)
 	ap.SetJQFilter(opts.JQFilter)
+	// Clipped after the filter ran, so the filter matches on full values.
+	ap.SetMaxFieldChars(opts.MaxFieldChars)
 	// Keep metadata next to `result` as the unfiltered envelope does, so a
 	// filter that narrows down to the rows doesn't silently drop it.
 	ap.SetMetadata(envelopeMetadata(query, result, opts))
