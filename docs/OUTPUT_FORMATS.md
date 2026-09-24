@@ -252,6 +252,41 @@ Notes:
   doubles such as `"NaN"`/`"Infinity"`, which JSON cannot represent) are left as
   strings rather than failing the output.
 
+## Compact query results (`--compact`, experimental)
+
+Telemetry rows repeat the same resource attributes (`k8s.*`, `host.*`,
+`service.name`, ...) on every row, and Grail returns explicit `null`s for
+fields a row's source does not have. `--compact` drops the null values and
+prints every column that holds one value in every row once, under a `constant`
+map that precedes `records`:
+
+```bash
+dtctl query 'fetch spans | filter service.name == "payment" | limit 50' -o json --compact
+# {
+#   "constant": { "k8s.namespace.name": "checkout", "service.name": "payment" },
+#   "records":  [ { "span.name": "POST /pay", "duration": "812000", ... }, ... ]
+# }
+```
+
+A row is `constant` merged with its record; a key absent from both is null.
+
+Notes:
+
+- **On by default in [agent mode](AGENT_MODE.md#compacted-rows-constant), off
+  otherwise.** Outside agent mode the output does not change unless you pass
+  `--compact`; in agent mode `--compact=false` restores the full rows.
+- Applies to `json`, `yaml`, `toon` and `auto`. Other formats ignore it (an
+  explicit `--compact` there prints a warning). `toon` keeps a null in a column
+  that has values in other rows, so the rows stay one table.
+- With `-o auto` outside agent mode, a `yaml`/`json` choice is compacted, while
+  a `csv` choice prints the full rows (a plain CSV file has no place for
+  `constant`). In agent mode `-o auto` chooses from the compacted rows and
+  carries `constant` next to them whatever it picks (see
+  [AGENT_MODE.md](AGENT_MODE.md#compacted-rows-constant)).
+- `constant` is only computed for two or more rows; a single row just loses its
+  nulls. It is never applied under `--jq`, whose program sees the full rows.
+- Spilled files always hold the full rows.
+
 ## Plain Mode
 
 The `--plain` flag disables colors, progress indicators, and interactive prompts. This is useful for piping output or running in non-interactive environments:

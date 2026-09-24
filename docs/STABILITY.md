@@ -167,7 +167,7 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 - commands: 269 stable, 15 experimental, 11 development
 - global flags (accepted on every command): 12
-- entries below (commands + flags): 846
+- entries below (commands + flags): 847
 
 ## Surface
 
@@ -808,6 +808,7 @@ plugin                               stable
 plugin list                          stable
 query                                stable
   --client-context                   stable
+  --compact                          experimental  since 0.40.0
   --decode-snapshots                 experimental  since 0.39.0
   --default-sampling-ratio           stable
   --default-scan-limit-gbytes        stable

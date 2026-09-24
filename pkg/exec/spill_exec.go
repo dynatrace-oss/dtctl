@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,13 @@ import (
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+)
+
+// Compaction advice (#578). Compaction is the agent-mode default, so when it
+// changed what the agent sees it says how to read it and how to opt out.
+const (
+	compactRowsSuggestion    = "# rows compacted: row = result.constant + record, absent key = null; --compact=false for full rows"
+	compactSummarySuggestion = "# summary compacted: one-value columns in result.constant, all-null in result.null_columns; --compact=false for the full profile"
 )
 
 const userPathPrivacyWarning = "spill path is a user-chosen location and opts out of the managed privacy guarantees (no TTL pruning, no per-context partitioning, best-effort 0600 only); you own its lifetime"
@@ -40,18 +48,22 @@ func (e *DQLExecutor) trySpill(query string, result *DQLQueryResponse, records [
 // the Response and leaves emission to the caller, while its only side effect
 // (writing to disk) is fully controlled via opts.Spill (ToPath / Dir).
 func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, displayFormat string, opts DQLExecuteOptions) (output.Response, bool, error) {
-	// Measure serialised size against the chosen display encoding (D24).
-	measured, encoding := output.MeasureSerializedBytes(records, displayFormat)
+	compaction := compactionFor(records, opts)
+
+	// Measure serialised size against the chosen display encoding (D24) — of
+	// the compacted rows when compacting, since that is what an inline result
+	// puts in front of the agent.
+	measured, encoding := measureInline(records, compaction, displayFormat)
 
 	switch opts.Spill.Mode {
 	case SpillAuto:
 		if measured <= opts.Spill.Threshold {
-			return e.inlineRecordsResponse(query, result, records, measured, encoding, output.IsAutoFormat(displayFormat), opts) // inline
+			return e.inlineRecordsResponse(query, result, records, compaction, measured, encoding, output.IsAutoFormat(displayFormat), opts) // inline
 		}
 	case SpillAlways:
 		// always spill
 	default:
-		return e.inlineRecordsResponse(query, result, records, measured, encoding, output.IsAutoFormat(displayFormat), opts) // never / unknown -> inline
+		return e.inlineRecordsResponse(query, result, records, compaction, measured, encoding, output.IsAutoFormat(displayFormat), opts) // never / unknown -> inline
 	}
 
 	// Provenance from Grail metadata.
@@ -92,12 +104,20 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	}
 
 	cols := output.ComputeColumnStats(records, sampled, output.DefaultStatsTopK, output.DefaultStatsMaxDistinct)
-	sampleRows := output.SampleRows(records, output.DefaultSampleRows)
+
+	// Compaction collapses the single-value columns into one map and names the
+	// all-null ones instead of profiling them; the sample rows drop both. The
+	// file and the sidecar below still carry every column.
+	summaryCols, sampleSource := cols, records
+	if compaction != nil {
+		summaryCols, sampleSource = compaction.FilterColumns(cols), compaction.Records
+	}
+	sampleRows := output.SampleRows(sampleSource, output.DefaultSampleRows)
 
 	// The in-context envelope carries a size-bounded view of the columns (the
 	// most-populated ones, by null count); the on-disk sidecar written below
 	// keeps the full per-column set so nothing is lost for later inspection.
-	envCols, omittedCols := output.CapColumnsForEnvelope(cols, output.DefaultMaxSummaryColumns)
+	envCols, omittedCols := output.CapColumnsForEnvelope(summaryCols, output.DefaultMaxSummaryColumns)
 
 	manifest := &output.ResultFileManifest{
 		Query:         query,
@@ -111,6 +131,10 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	}
 	manifest.SetStats(envCols, sampled)
 	manifest.ColumnsOmitted = omittedCols
+	if compaction != nil {
+		manifest.Constant = compaction.EnvelopeConstant()
+		manifest.NullColumns = compaction.NullColumns
+	}
 
 	decided := "spilled"
 	if !summaryOnly {
@@ -203,6 +227,9 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
 	suggestions = append(suggestions, metadataDefaultAdvice(query, extractQueryMetadata(result), opts, false)...)
+	if compaction != nil && compaction.Changed("json") {
+		suggestions = append(suggestions, compactSummarySuggestion)
+	}
 
 	total := len(records)
 	ctx := &output.ResponseContext{
@@ -250,7 +277,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 // for these rows. csv and yaml then stay in the envelope too, encoded like
 // toon, because the agent asked for the cheapest encoding, not for raw bytes;
 // context.format names the choice.
-func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, measured int64, encoding string, auto bool, opts DQLExecuteOptions) (output.Response, bool, error) {
+func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryResponse, records []map[string]interface{}, compaction *output.Compaction, measured int64, encoding string, auto bool, opts DQLExecuteOptions) (output.Response, bool, error) {
 	// A --jq transform reshapes the result into something this kind:"records"
 	// envelope cannot describe, so it falls through to printResults, which wraps
 	// the filter output in the same {ok, result, context} envelope (#413). So do
@@ -260,25 +287,34 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		return output.Response{}, false, nil
 	}
 
+	// The rows as emitted: compacted ones plus the hoisted constant map, or the
+	// rows verbatim. total, the advice below and a spill still see the full rows.
+	rows := records
+	var constant map[string]interface{}
+	if compaction != nil {
+		rows, constant = compactedRows(compaction, records, encoding), compaction.Constant
+	}
+
 	var res interface{}
 	var encodeWarning string
 	switch encoding {
 	case "json":
-		res = &output.InlineRecords{Kind: output.KindRecords, Records: records}
+		res = &output.InlineRecords{Kind: output.KindRecords, Constant: constant, Records: rows}
 	case "toon":
 		// `-o toon` keeps the envelope, with the rows encoded inside it. This is
 		// what makes the contract independent of result size: the same flags
 		// produce a `kind: "records"` envelope below the spill threshold and a
 		// `kind: "result-file"` envelope above it, so `ok`, `error.code` and
 		// `context` (heavy-scan warnings, suggestions) survive either way.
-		toonRows, err := output.MarshalTOON(records)
+		toonRows, err := output.MarshalTOON(rows)
 		if err != nil {
 			encodeWarning = fmt.Sprintf("TOON encoding failed: %v; the rows were encoded as JSON instead", err)
-			res = &output.InlineRecords{Kind: output.KindRecords, Records: records}
+			res = &output.InlineRecords{Kind: output.KindRecords, Constant: constant, Records: rows}
 		} else {
 			res = &output.InlineRecordsEncoded{
 				Kind:     output.KindRecords,
 				Encoding: "toon",
+				Constant: constant,
 				Records:  toonRows,
 			}
 		}
@@ -286,15 +322,27 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		if !auto {
 			return output.Response{}, false, nil
 		}
-		_, encoded, err := output.MarshalAuto(records)
+		// Compacted rows were chosen for (see measureInline) and are encoded as
+		// they are; re-choosing on them could land on a different format.
+		var encoded string
+		var err error
+		if compaction != nil {
+			encoded, err = encodeRows(rows, encoding)
+		} else {
+			_, encoded, err = output.MarshalAuto(records)
+		}
 		if err != nil {
 			encodeWarning = fmt.Sprintf("-o auto encoding failed: %v; the rows were encoded as JSON instead", err)
 			encoding = "json"
-			res = &output.InlineRecords{Kind: output.KindRecords, Records: records}
+			if compaction != nil {
+				rows = compaction.Records
+			}
+			res = &output.InlineRecords{Kind: output.KindRecords, Constant: constant, Records: rows}
 		} else {
 			res = &output.InlineRecordsEncoded{
 				Kind:     output.KindRecords,
 				Encoding: encoding,
+				Constant: constant,
 				Records:  encoded,
 			}
 		}
@@ -317,6 +365,9 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	}
 	if auto && opts.AutoFormatByDefault && encoding != "json" {
 		notifSuggestions = append(notifSuggestions, output.AutoDefaultSuggestion(encoding))
+	}
+	if compaction != nil && compaction.Changed(encoding) {
+		notifSuggestions = append(notifSuggestions, compactRowsSuggestion)
 	}
 
 	total := len(records)
@@ -348,6 +399,58 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		Context:         ctx,
 		Metadata:        envelopeMetadata(query, result, opts),
 	}, true, nil
+}
+
+// compactionFor returns the compacted view of records when opts asks for it, or
+// nil. A --jq program addresses the full rows, so it never sees a compaction.
+func compactionFor(records []map[string]interface{}, opts DQLExecuteOptions) *output.Compaction {
+	if !opts.Compact || opts.JQFilter != "" {
+		return nil
+	}
+	c := output.CompactRecords(records)
+	return &c
+}
+
+// measureInline measures the inline payload in the display encoding: the rows
+// verbatim, or the compacted rows plus the constant map they share. Under
+// -o auto with compaction the encoding is chosen from the compacted table
+// (constant and all-null columns removed), since that is what gets encoded;
+// the returned encoding is the chosen one.
+func measureInline(records []map[string]interface{}, c *output.Compaction, format string) (int64, string) {
+	if c == nil {
+		return output.MeasureSerializedBytes(records, format)
+	}
+	if output.IsAutoFormat(format) {
+		format = output.ChooseAutoFormat(c.Tabular(records)).Format
+	}
+	n, enc := output.MeasureSerializedBytes(compactedRows(c, records, output.NormalizeMeasureEncoding(format)), format)
+	if len(c.Constant) > 0 {
+		// constant is always a JSON map in the envelope, whatever encodes the rows.
+		m, _ := output.MeasureSerializedBytes([]map[string]interface{}{c.Constant}, "json")
+		n += m
+	}
+	return n, enc
+}
+
+// compactedRows returns the rows c emits in the given encoding: without nulls,
+// except under the tabular encodings (TOON, CSV), which keep partial nulls so
+// the rows stay one table (see output.Compaction.Tabular).
+func compactedRows(c *output.Compaction, records []map[string]interface{}, encoding string) []map[string]interface{} {
+	if encoding == "toon" || encoding == "csv" {
+		return c.Tabular(records)
+	}
+	return c.Records
+}
+
+// encodeRows renders rows in format (csv or yaml) as a string for an
+// InlineRecordsEncoded payload.
+func encodeRows(rows []map[string]interface{}, format string) (string, error) {
+	var buf bytes.Buffer
+	p := output.NewPrinterWithOpts(output.PrinterOptions{Format: format, Writer: &buf})
+	if err := p.PrintList(rows); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 // envelopeMetadata returns the Grail/metrics query metadata for the agent

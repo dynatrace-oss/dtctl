@@ -148,6 +148,13 @@ type DQLExecuteOptions struct {
 	// available. See output.ApplyTrueTypes.
 	Typed bool
 
+	// Compact omits null values and hoists the columns that hold one value in
+	// every row into a `constant` map (#578). It applies to the agent envelope
+	// (inline records and the spill manifest) and to plain json/yaml/toon
+	// output; the command layer defaults it on in agent mode. Never applied
+	// under --jq, whose program addresses the full rows.
+	Compact bool
+
 	// Timeframe options
 	DefaultTimeframeStart string // Query timeframe start timestamp (ISO-8601/RFC3339)
 	DefaultTimeframeEnd   string // Query timeframe end timestamp (ISO-8601/RFC3339)
@@ -934,7 +941,13 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 
 	default:
 		out := make(map[string]interface{})
-		if len(records) > 0 {
+		if c := compactionFor(records, opts); c != nil && len(records) > 0 {
+			// Map keys encode sorted, so `constant` lands before `records`.
+			out["records"] = compactedRows(c, records, output.NormalizeMeasureEncoding(effectiveFormat))
+			if len(c.Constant) > 0 {
+				out["constant"] = c.Constant
+			}
+		} else if len(records) > 0 {
 			out["records"] = records
 		} else if result.Result != nil {
 			// An empty result is still a result: emit an empty array rather than
