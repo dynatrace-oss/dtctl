@@ -73,7 +73,7 @@ Davis analyzers: before running one, `dtctl describe analyzer <id>` shows its re
 --jq '.[].id'    # filter structured output (json|yaml|toon; other formats auto-promote to json)
 ```
 
-Prefer `--agent` plus `-o toon` and `--jq` to cut tokens; add `-M=minimal` to `query` to keep only cost/sampling metadata.
+Prefer `--agent` plus `-o toon` and `--jq` to cut tokens. Agent-mode `query` trims metadata to cost/sampling fields by default; `-M=all` for the full block.
 
 ### Query results: branch on `result.kind`
 

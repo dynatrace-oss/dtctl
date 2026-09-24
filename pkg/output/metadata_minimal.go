@@ -1,5 +1,7 @@
 package output
 
+import "encoding/json"
+
 // MetadataMinimal is the --metadata selector for the lean metadata set an agent
 // acts on (#577): what the query cost, and whether the result is approximate.
 // Everything the caller already knows — the query text it typed (twice, as
@@ -65,4 +67,30 @@ func ExpandMetadataFields(meta *QueryMetadata, fields []string, defaultWindow bo
 		out = append(out, f)
 	}
 	return out
+}
+
+// MetadataOmitsFields reports whether rendering meta with the given concrete
+// field selection leaves out a field the full block would have shown.
+func MetadataOmitsFields(meta *QueryMetadata, fields []string) bool {
+	if meta == nil || len(fields) == 0 || IsAllFields(fields) {
+		return false
+	}
+	js, err := json.Marshal(meta)
+	if err != nil {
+		return false
+	}
+	var full map[string]json.RawMessage
+	if err := json.Unmarshal(js, &full); err != nil {
+		return false
+	}
+	shown := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		shown[f] = true
+	}
+	for k := range full {
+		if !shown[k] {
+			return true
+		}
+	}
+	return false
 }

@@ -283,12 +283,14 @@ hedged note to `suggestions`, and the widen-the-window advice stays.
 ### Query metadata
 
 In agent mode `dtctl query` adds the Grail query metadata as a top-level
-`metadata` key next to `result` and `context`. The default is the full block
-(`-M` / `--metadata`), including the query text echoed back as `query` and
-`canonicalQuery`, `locale`, `timezone`, `dqlVersion`, `queryId` and
-`analysisTimeframe`. On small results that block can be larger than the rows.
+`metadata` key next to `result` and `context`. Agent mode defaults to
+`--metadata=minimal`, which keeps only what an agent acts on. The full block
+repeats the query text as `query` and `canonicalQuery` and adds `locale`,
+`timezone`, `dqlVersion` and `queryId`, and on small results it can be larger
+than the rows. Pass `-M=all` (or bare `-M`) to get it back exactly as before.
+Outside agent mode metadata stays off unless `-M` is given.
 
-`--metadata=minimal` keeps only what an agent acts on:
+The minimal set:
 
 | Field | Included |
 |---|---|
@@ -301,11 +303,13 @@ In agent mode `dtctl query` adds the Grail query metadata as a top-level
 It also drops the spill measurement details (`threshold_bytes`, `measured_bytes`,
 `measured_encoding`) from `context` on an inline result; they stay on a spilled or
 summary-only result, where they explain the decision, and come back with `-v`.
-`context.decided` is always present. Add field names to opt back into more,
+`context.decided` is always present. When the default dropped something,
+`context.suggestions` carries one line naming `-M=all`; an explicit
+`-M=minimal` does not. Add field names to opt back into more,
 e.g. `--metadata=minimal,queryId`; `--metadata=` (empty) turns metadata off.
 
 ```bash
-dtctl query 'fetch logs | summarize c=count(), by:{loglevel}' -A -M=minimal
+dtctl query 'fetch logs | summarize c=count(), by:{loglevel}' -A
 ```
 
 ```json
@@ -313,7 +317,10 @@ dtctl query 'fetch logs | summarize c=count(), by:{loglevel}' -A -M=minimal
   "ok": true,
   "envelope_version": 1,
   "result": { "kind": "records", "records": [ { "c": "26", "loglevel": "ERROR" } ] },
-  "context": { "verb": "query", "resource": "logs", "total": 1, "decided": "inline" },
+  "context": {
+    "verb": "query", "resource": "logs", "total": 1, "decided": "inline",
+    "suggestions": [ "# metadata trimmed by default; -M=all for the full block" ]
+  },
   "metadata": {
     "executionTimeMilliseconds": 132,
     "scannedBytes": 623373940,

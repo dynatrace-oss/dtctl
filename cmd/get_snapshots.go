@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
-	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/livedebugger"
 )
 
@@ -126,16 +125,9 @@ Use -o json / -o yaml for structured output.`,
 		defaultTimeframeEnd, _ := cmd.Flags().GetString("default-timeframe-end")
 		noProgress, _ := cmd.Flags().GetBool("no-progress")
 
-		// In agent mode, always include metadata unless explicitly disabled.
-		var metadataFields []string
-		if agentMode && !cmd.Flags().Changed("metadata") {
-			metadataFields = []string{"all"}
-		} else if cmd.Flags().Changed("metadata") {
-			metaVal, _ := cmd.Flags().GetString("metadata")
-			metadataFields, err = output.ParseMetadataFields(metaVal)
-			if err != nil {
-				return err
-			}
+		metadataFields, metadataDefaulted, err := resolveMetadataFlag(cmd, agentMode)
+		if err != nil {
+			return err
 		}
 
 		executor := NewDQLExecutorFromConfig(cfg, c)
@@ -158,6 +150,7 @@ Use -o json / -o yaml for structured output.`,
 			DefaultTimeframeStart: defaultTimeframeStart,
 			DefaultTimeframeEnd:   defaultTimeframeEnd,
 			MetadataFields:        metadataFields,
+			MetadataDefaulted:     metadataDefaulted,
 			Verbose:               verbosity > 0,
 			ShowProgress:          !noProgress,
 		}

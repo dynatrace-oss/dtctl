@@ -167,6 +167,11 @@ type DQLExecuteOptions struct {
 	// Metadata options
 	MetadataFields []string // Metadata fields to include; nil/empty = disabled, ["all"] = all fields, ["minimal"] = lean agent set, specific names = filtered
 
+	// MetadataDefaulted records that agent mode chose MetadataFields
+	// (["minimal"]) because -M was not given, so an envelope that dropped
+	// something names the -M=all opt-out.
+	MetadataDefaulted bool
+
 	// Verbose mirrors -v. Under --metadata=minimal it keeps the inline spill
 	// decision's measurement details (threshold/measured bytes) in the envelope.
 	Verbose bool
@@ -840,8 +845,10 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 	// Extract metadata if requested, resolving --metadata=minimal against this
 	// response so every renderer below applies the same concrete selection.
 	var meta *output.QueryMetadata
+	var metaAdvice []string
 	if len(opts.MetadataFields) > 0 {
 		meta = extractQueryMetadata(result)
+		metaAdvice = metadataDefaultAdvice(query, meta, opts, false)
 		opts.MetadataFields = resolveMetadataFields(query, meta, opts)
 	}
 
@@ -851,7 +858,7 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 	// bare {result, metadata} object instead, which dropped `ok` — the one field
 	// a consumer could have used to tell success from failure.
 	if opts.AgentMode && opts.JQFilter != "" {
-		return e.printAgentJQ(query, result, records, meta, effectiveFormat, opts)
+		return e.printAgentJQ(query, result, records, meta, effectiveFormat, opts, metaAdvice)
 	}
 
 	// No envelope from here on: stderr is the only channel left.
@@ -961,7 +968,7 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 // and the same "the filter sees the payload, not the envelope" rule every other
 // command follows. `records` is always present, even when empty, so --jq '.records'
 // on an empty result yields [] rather than the null that a missing key would give.
-func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, records []map[string]interface{}, meta *output.QueryMetadata, effectiveFormat string, opts DQLExecuteOptions) error {
+func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, records []map[string]interface{}, meta *output.QueryMetadata, effectiveFormat string, opts DQLExecuteOptions, metaAdvice []string) error {
 	if records == nil {
 		records = []map[string]interface{}{}
 	}
@@ -982,6 +989,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
 	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
+	suggestions = append(suggestions, metaAdvice...)
 
 	total := len(records)
 	ctx := &output.ResponseContext{

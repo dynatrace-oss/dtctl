@@ -187,7 +187,8 @@ dtctl query "fetch logs | limit 10" --metadata=minimal
 `scannedBytes`/`scannedDataPoints` when non-zero, `sampled` when the result is
 sampled, `analysisTimeframe` when the query named no window (neither `from:`/`to:`/
 `timeframe:` nor `--default-timeframe-*`), and `contributions` when requested.
-It combines with field names, e.g. `--metadata=minimal,metrics`.
+It combines with field names, e.g. `--metadata=minimal,metrics`. It is the
+default in agent mode; `-M=all` restores the full block there.
 
 Live mode, streaming results at a regular interval:
 

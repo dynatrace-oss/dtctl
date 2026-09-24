@@ -157,8 +157,8 @@ func TestBuildSpillResponse_MinimalSpilledKeepsSpillDebug(t *testing.T) {
 	}
 }
 
-// The full default is unchanged: without "minimal" the envelope still carries
-// the complete metadata block and the spill-decision provenance.
+// -M=all (the opt-out from agent mode's minimal default) restores the complete
+// metadata block and the spill-decision provenance, with no opt-out suggestion.
 func TestBuildSpillResponse_AllMetadataUnchanged(t *testing.T) {
 	e := &DQLExecutor{}
 	result, records := resultWithFullGrailMetadata()
@@ -182,6 +182,9 @@ func TestBuildSpillResponse_AllMetadataUnchanged(t *testing.T) {
 		if _, ok := ctx[k]; !ok {
 			t.Errorf("context.%s should be present without minimal: %v", k, ctx)
 		}
+	}
+	if hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("-M=all dropped nothing, want no opt-out suggestion: %v", resp.Context.Suggestions)
 	}
 }
 
@@ -274,5 +277,137 @@ func TestUsesDefaultWindow(t *testing.T) {
 	}
 	if usesDefaultWindow("fetch logs", DQLExecuteOptions{DefaultTimeframeEnd: "2026-01-01T00:00:00Z"}) {
 		t.Error("--default-timeframe-end names a window")
+	}
+}
+
+func hasMetadataDefaultSuggestion(ctx *output.ResponseContext) bool {
+	for _, s := range ctx.Suggestions {
+		if strings.Contains(s, "-M=all") {
+			return true
+		}
+	}
+	return false
+}
+
+// When agent mode applied minimal by default and it dropped something, one
+// short suggestion names the opt-out; an explicit -M=minimal gets none.
+func TestBuildSpillResponse_DefaultMinimalSuggestion(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := resultWithFullGrailMetadata()
+	base := DQLExecuteOptions{
+		AgentMode:      true,
+		MetadataFields: []string{"minimal"},
+		Spill:          SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+
+	defaulted := base
+	defaulted.MetadataDefaulted = true
+	resp, _, err := e.buildSpillResponse("fetch logs, from:now()-1h", result, records, "json", defaulted)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	if !hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("default minimal dropped metadata but no -M=all suggestion: %v", resp.Context.Suggestions)
+	}
+	n := 0
+	for _, s := range resp.Context.Suggestions {
+		if strings.Contains(s, "-M=all") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("want exactly one -M=all suggestion, got %d: %v", n, resp.Context.Suggestions)
+	}
+
+	resp, _, err = e.buildSpillResponse("fetch logs, from:now()-1h", result, records, "json", base)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	if hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("explicit -M=minimal should not carry the opt-out suggestion: %v", resp.Context.Suggestions)
+	}
+
+	spilled := defaulted
+	spilled.Spill.Mode = SpillAlways
+	resp, _, err = e.buildSpillResponse("fetch logs, from:now()-1h", result, records, "json", spilled)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	if !hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("spilled default minimal dropped metadata but no -M=all suggestion: %v", resp.Context.Suggestions)
+	}
+}
+
+// Nothing dropped (only the minimal fields exist, and -v keeps the spill
+// measurements): no suggestion.
+func TestBuildSpillResponse_DefaultMinimalNothingDroppedNoSuggestion(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := sampleResult(false)
+	result.Metadata.Grail = &GrailMetadata{ExecutionTimeMilliseconds: 12, ScannedBytes: 34}
+	opts := DQLExecuteOptions{
+		AgentMode:         true,
+		MetadataFields:    []string{"minimal"},
+		MetadataDefaulted: true,
+		Verbose:           true,
+		Spill:             SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, _, err := e.buildSpillResponse("fetch logs, from:now()-1h", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	if hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("nothing was dropped, want no suggestion: %v", resp.Context.Suggestions)
+	}
+}
+
+// The inline spill measurements alone count as dropped output.
+func TestBuildSpillResponse_DefaultMinimalSpillDebugDroppedSuggests(t *testing.T) {
+	e := &DQLExecutor{}
+	result, records := sampleResult(false)
+	result.Metadata.Grail = &GrailMetadata{ExecutionTimeMilliseconds: 12, ScannedBytes: 34}
+	opts := DQLExecuteOptions{
+		AgentMode:         true,
+		MetadataFields:    []string{"minimal"},
+		MetadataDefaulted: true,
+		Spill:             SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, _, err := e.buildSpillResponse("fetch logs, from:now()-1h", result, records, "json", opts)
+	if err != nil {
+		t.Fatalf("buildSpillResponse: %v", err)
+	}
+	if !hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("spill measurements were dropped, want the suggestion: %v", resp.Context.Suggestions)
+	}
+}
+
+func TestPrintResults_AgentJQ_DefaultMinimalSuggestion(t *testing.T) {
+	e := &DQLExecutor{}
+	result, _ := resultWithFullGrailMetadata()
+	opts := DQLExecuteOptions{
+		OutputFormat:      "json",
+		AgentMode:         true,
+		JQFilter:          ".records",
+		MetadataFields:    []string{"minimal"},
+		MetadataDefaulted: true,
+	}
+	var printErr error
+	out := captureStdout(t, func() {
+		printErr = e.printResults("fetch logs, from:now()-1h", result, opts)
+	})
+	if printErr != nil {
+		t.Fatalf("printResults: %v", printErr)
+	}
+	var resp struct {
+		Context  *output.ResponseContext `json:"context"`
+		Metadata map[string]interface{}  `json:"metadata"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if !hasMetadataDefaultSuggestion(resp.Context) {
+		t.Errorf("--jq path: want the -M=all suggestion: %v", resp.Context.Suggestions)
+	}
+	if _, ok := resp.Metadata["queryId"]; ok {
+		t.Errorf("--jq path: default minimal should not carry queryId: %v", resp.Metadata)
 	}
 }

@@ -201,3 +201,16 @@ func TestParseMetadataFields_MinimalWithAllRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestMetadataOmitsFields(t *testing.T) {
+	meta := &QueryMetadata{ExecutionTimeMilliseconds: 5, ScannedBytes: 10, QueryID: "q-1"}
+	if !MetadataOmitsFields(meta, []string{"executionTimeMilliseconds", "scannedBytes"}) {
+		t.Error("queryId is dropped, want true")
+	}
+	if MetadataOmitsFields(meta, []string{"executionTimeMilliseconds", "scannedBytes", "queryId"}) {
+		t.Error("every non-empty field is shown, want false")
+	}
+	if MetadataOmitsFields(meta, []string{"all"}) || MetadataOmitsFields(nil, []string{"queryId"}) {
+		t.Error("all / nil metadata omit nothing")
+	}
+}

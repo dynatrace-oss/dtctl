@@ -291,19 +291,9 @@ Examples:
 		locale, _ := cmd.Flags().GetString("locale")
 		timezone, _ := cmd.Flags().GetString("timezone")
 
-		// Get metadata option
-		metadataVal, _ := cmd.Flags().GetString("metadata")
-		// In agent mode, always include metadata unless explicitly disabled
-		if agentMode && !cmd.Flags().Changed("metadata") {
-			metadataVal = "all"
-		}
-		var metadataFields []string
-		if metadataVal != "" {
-			var err error
-			metadataFields, err = output.ParseMetadataFields(metadataVal)
-			if err != nil {
-				return err
-			}
+		metadataFields, metadataDefaulted, err := resolveMetadataFlag(cmd, agentMode)
+		if err != nil {
+			return err
 		}
 
 		// Get snapshot decode option
@@ -423,6 +413,7 @@ Examples:
 			Locale:                       locale,
 			Timezone:                     timezone,
 			MetadataFields:               metadataFields,
+			MetadataDefaulted:            metadataDefaulted,
 			Verbose:                      verbosity > 0,
 			Segments:                     segments,
 			ClientContext:                clientContext,
@@ -800,7 +791,8 @@ func init() {
 	queryCmd.Flags().StringP("metadata", "M", "", `include query metadata in output (use = for field selection)
 bare --metadata or -M shows all fields; --metadata=field1,field2 selects specific fields
 --metadata=minimal keeps only execution time, scanned bytes/data points, sampled (when true),
-and analysisTimeframe (when the query named no window); it combines with field names
+and analysisTimeframe (when the query named no window); it combines with field names.
+In agent mode the default is minimal; -M=all restores the full block
 available: executionTimeMilliseconds,scannedRecords,scannedBytes,scannedDataPoints,
 sampled,queryId,dqlVersion,query,canonicalQuery,timezone,locale,
 analysisTimeframe,contributions,metrics`)
@@ -866,6 +858,19 @@ default: never for a bare command, auto in agent mode`)
 	_ = queryCmd.RegisterFlagCompletionFunc("spill-format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{"jsonl", "json", "csv", "parquet"}, cobra.ShellCompDirectiveNoFileComp
 	})
+}
+
+// resolveMetadataFlag reads --metadata. Agent mode is token-optimal by default:
+// without the flag it gets the minimal set (defaulted=true, so the envelope can
+// name the -M=all opt-out when that dropped something). An explicit value
+// always wins, and outside agent mode an absent flag means no metadata.
+func resolveMetadataFlag(cmd *cobra.Command, agentMode bool) (fields []string, defaulted bool, err error) {
+	if agentMode && !cmd.Flags().Changed("metadata") {
+		return []string{output.MetadataMinimal}, true, nil
+	}
+	val, _ := cmd.Flags().GetString("metadata")
+	fields, err = output.ParseMetadataFields(val)
+	return fields, false, err
 }
 
 // metadataFieldCompletion provides shell completion for --metadata flag values.
