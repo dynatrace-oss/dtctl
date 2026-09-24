@@ -110,7 +110,7 @@ func (e *DQLExecutor) fitToBudget(query string, result *DQLQueryResponse, resp o
 
 	total := len(rows.full)
 	base := *resp.Context
-	build := func(k int, tooSmall bool) output.Response {
+	build := func(k int, tooSmall, rechoose bool) output.Response {
 		ctx := base
 		ctx.Warnings = append(append([]string(nil), base.Warnings...), fileWarnings...)
 		if tooSmall {
@@ -126,7 +126,7 @@ func (e *DQLExecutor) fitToBudget(query string, result *DQLQueryResponse, resp o
 		if path != "" {
 			ctx.Next = fmt.Sprintf("dtctl inspect %s --page --offset %d --limit %d", shellQuote(path), k, max(k, 1))
 		}
-		res, used, _ := inlineResult(encoding, auto, rows, k)
+		res, used, _ := inlineResult(encoding, auto && rechoose, rows, k)
 		if auto {
 			// -o auto re-chooses for the kept rows; name what was emitted, and
 			// keep the format-dependent hints (the default's -o json one, and
@@ -151,21 +151,31 @@ func (e *DQLExecutor) fitToBudget(query string, result *DQLQueryResponse, resp o
 		return r
 	}
 
-	// The envelope grows with every row, so the largest fitting prefix is found
-	// by bisection over [0, total-1] (total rows is already known not to fit).
+	// In one format the envelope grows with every row, so the largest fitting
+	// prefix is found by bisection over [0, total-1] (total rows is already
+	// known not to fit). The search keeps the format chosen for the full result:
+	// -o auto re-chooses per prefix (a sparse or single-row prefix is yaml, a
+	// longer dense one csv), and sizes across such a switch are not monotonic,
+	// so a bisection over re-chosen prefixes could skip a longer one that fits.
 	best := -1
 	for lo, hi := 0, total-1; lo <= hi; {
 		mid := (lo + hi) / 2
-		if size(build(mid, false)) <= budget {
+		if size(build(mid, false, false)) <= budget {
 			best, lo = mid, mid+1
 		} else {
 			hi = mid - 1
 		}
 	}
 	if best < 0 {
-		return build(0, true)
+		return build(0, true, false)
 	}
-	return build(best, false)
+	// The kept rows get the format -o auto picks for them when that still fits.
+	if auto {
+		if r := build(best, false, true); size(r) <= budget {
+			return r
+		}
+	}
+	return build(best, false, false)
 }
 
 // shellQuote returns s as a single POSIX shell word, so context.next runs as

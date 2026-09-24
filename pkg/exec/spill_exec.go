@@ -316,31 +316,35 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 // envelope below the spill threshold and a `kind: "result-file"` envelope above
 // it, so `ok`, `error.code` and `context` (heavy-scan warnings, suggestions)
 // survive either way. The constant map of a compacted result stays a JSON map
-// next to the rows whatever encodes them. With auto, a csv/yaml encoding is
-// re-chosen for the k rows, so a budget-cut prefix is encoded in the format
-// that suits it (a single row is yaml, not one-line csv); for all the rows
-// that is the choice measureInline made. An encoding failure falls back to
-// native JSON and returns the warning to surface.
-func inlineResult(encoding string, auto bool, rows inlineRows, k int) (interface{}, string, string) {
+// next to the rows whatever encodes them. With rechoose, a csv/yaml encoding is
+// the -o auto choice for the k rows, so a budget-cut prefix is encoded in the
+// format that suits it (a single row is yaml, not one-line csv); for all the
+// rows that is the choice measureInline made. Without it, csv/yaml encode the
+// k rows as given. An encoding failure falls back to native JSON and returns
+// the warning to surface.
+func inlineResult(encoding string, rechoose bool, rows inlineRows, k int) (interface{}, string, string) {
 	native := &output.InlineRecords{Kind: output.KindRecords, Constant: rows.constant, Records: rows.records[:k]}
-	switch {
-	case encoding == "toon":
+	switch encoding {
+	case "toon":
 		toonRows, err := output.MarshalTOON(rows.forEncoding("toon")[:k])
 		if err != nil {
 			return native, "json", fmt.Sprintf("TOON encoding failed: %v; the rows were encoded as JSON instead", err)
 		}
 		return &output.InlineRecordsEncoded{Kind: output.KindRecords, Encoding: "toon", Constant: rows.constant, Records: toonRows}, "toon", ""
-	case auto && (encoding == "csv" || encoding == "yaml"):
-		var format, encoded string
+	case "csv", "yaml":
+		format := encoding
+		var encoded string
 		var err error
-		if rows.compaction == nil {
+		switch {
+		case rechoose && rows.compaction == nil:
 			var choice output.AutoChoice
 			choice, encoded, err = output.MarshalAuto(rows.records[:k])
 			format = choice.Format
-		} else {
-			// Chosen on the compacted table, as measureInline does, and encoded
-			// from the rows that format emits.
+		case rechoose:
+			// Chosen on the compacted table, as measureInline does.
 			format = output.ChooseAutoFormat(rows.tabular[:k]).Format
+			fallthrough
+		default:
 			if format != "json" {
 				encoded, err = encodeRows(rows.forEncoding(format)[:k], format)
 			}

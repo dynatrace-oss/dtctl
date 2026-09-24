@@ -669,14 +669,16 @@ func TestBuildSpillResponse_BudgetRechoiceUpdatesCompactHint(t *testing.T) {
 		t.Fatalf("full result: format %q, suggestions %q; want csv without the compact hint", full.Context.Format, full.Context.Suggestions)
 	}
 
-	// The smallest budget, in 50-byte steps, that keeps any row keeps one.
+	// The smallest budget, in 50-byte steps, that fits one row as yaml. (A
+	// smaller one can fit that row as csv, the format the budget search
+	// keeps, since yaml does not fit.)
 	var resp output.Response
 	for opts.MaxOutputBytes = 500; opts.MaxOutputBytes < int64(encodedSize(t, full)); opts.MaxOutputBytes += 50 {
 		resp, _, err = e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "auto", opts)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if resp.Context.Returned != nil && *resp.Context.Returned > 0 {
+		if resp.Context.Returned != nil && (*resp.Context.Returned > 1 || resp.Context.Format == "yaml") {
 			break
 		}
 	}
@@ -685,5 +687,55 @@ func TestBuildSpillResponse_BudgetRechoiceUpdatesCompactHint(t *testing.T) {
 	}
 	if !hasCompactSuggestion(resp) {
 		t.Errorf("yaml dropped the row's null, yet no --compact=false hint: %q", resp.Context.Suggestions)
+	}
+}
+
+// TestBuildSpillResponse_BudgetSearchAcrossAutoFormats checks that the budget
+// finds the longest fitting prefix when -o auto would pick a different format
+// for shorter prefixes. The first 20 rows are sparse, so a prefix of fewer
+// than 36 rows is yaml, which repeats every long key on every row; longer
+// prefixes are dense csv. A search that re-chooses per prefix sees the yaml
+// midpoint overflow and settles on a short prefix, though a long csv one fits.
+func TestBuildSpillResponse_BudgetSearchAcrossAutoFormats(t *testing.T) {
+	e := &DQLExecutor{}
+	const cols, sparse, total = 10, 20, 60
+	records := make([]map[string]interface{}, total)
+	for i := range records {
+		row := map[string]interface{}{}
+		for c := 0; c < cols; c++ {
+			key := fmt.Sprintf("attribute.with.a.rather.long.name.%02d", c)
+			if i < sparse && c > 0 {
+				row[key] = nil
+			} else {
+				row[key] = fmt.Sprintf("v%d", i)
+			}
+		}
+		records[i] = row
+	}
+	opts := inlineOpts(false)
+	opts.AutoFormatByDefault = true
+	opts.Spill.Dir = t.TempDir()
+
+	full, _, err := e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "auto", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.Context.Format != "csv" {
+		t.Fatalf("full result format = %q, want csv", full.Context.Format)
+	}
+
+	opts.MaxOutputBytes = int64(encodedSize(t, full)) - 150
+	resp, _, err := e.buildSpillResponse("fetch logs", &DQLQueryResponse{Records: records}, records, "auto", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Context.Returned == nil {
+		t.Fatal("the budget cut no rows; want a truncated result")
+	}
+	if got := *resp.Context.Returned; got < 40 {
+		t.Errorf("returned %d rows, want the longest fitting csv prefix (at least 40 of %d)", got, total)
+	}
+	if n := encodedSize(t, resp); int64(n) > opts.MaxOutputBytes {
+		t.Errorf("envelope is %d bytes, over the %d budget", n, opts.MaxOutputBytes)
 	}
 }
