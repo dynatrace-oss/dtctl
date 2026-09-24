@@ -268,3 +268,40 @@ func TestDQLExecutor_AgentDefaultSeriesSuggestion(t *testing.T) {
 		}
 	})
 }
+
+// The lean series defaults compose with -o auto: the summarized records are
+// what auto encodes, and the opt-out hint still rides the envelope.
+func TestDQLExecutor_AgentDefaultSeriesWithAutoFormat(t *testing.T) {
+	clearAIAgentEnvVars(t)
+	executor := newTimeseriesExecutor(t)
+	out := captureStdout(t, func() {
+		if err := executor.ExecuteWithContext(context.Background(), "timeseries cpu=avg(x)", DQLExecuteOptions{
+			OutputFormat: "auto", AgentMode: true,
+			Spill:  SpillOptions{Mode: SpillAuto, Threshold: 1 << 20, Dir: t.TempDir(), Format: "json"},
+			Series: output.SeriesMode{Kind: output.SeriesSummary}, SeriesDefaulted: true,
+			Precision: AgentDefaultPrecision, PrecisionDefaulted: true,
+		}); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+	})
+	var env struct {
+		Result struct {
+			Records string `json:"records"`
+		} `json:"result"`
+		Context struct {
+			Format      string   `json:"format"`
+			Suggestions []string `json:"suggestions"`
+		} `json:"context"`
+	}
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("not an auto envelope: %v\n%s", err, out)
+	}
+	if env.Context.Format != "yaml" || !strings.Contains(env.Result.Records, "spark:") || strings.Contains(env.Result.Records, "3.10276124773992") {
+		t.Errorf("auto should encode the summarized records, got format %q:\n%s", env.Context.Format, env.Result.Records)
+	}
+	if got := seriesSuggestions(agentEnvelope{Context: struct {
+		Suggestions []string `json:"suggestions"`
+	}{env.Context.Suggestions}}); len(got) != 1 || !strings.Contains(got[0], "--series=full --precision 0") {
+		t.Errorf("opt-out hint missing under -o auto: %q", env.Context.Suggestions)
+	}
+}
