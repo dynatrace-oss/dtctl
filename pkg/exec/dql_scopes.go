@@ -143,6 +143,12 @@ func RequiredStorageScopes(query string) []ScopeNeed {
 // Each is replaced by a single space. It reports false for an unterminated
 // literal or comment: the query will not parse, and guessing at where the
 // literal ends could invent a requirement.
+//
+// It also reports false for a single quote outside those literals. DQL has no
+// single-quoted strings — Grail rejects them with PARSE_ERROR_SINGLE_QUOTES,
+// which dtctl turns into a quoting hint — yet their content is text, not code.
+// Matching inside one would answer that query with a scope error instead of
+// the hint.
 func stripDQLLiterals(q string) (string, bool) {
 	var b strings.Builder
 	b.Grow(len(q))
@@ -167,6 +173,8 @@ func stripDQLLiterals(q string) (string, bool) {
 			}
 			i = j + 1
 			b.WriteByte(' ')
+		case q[i] == '\'':
+			return "", false
 		case q[i] == '`':
 			end := strings.IndexByte(q[i+1:], '`')
 			if end < 0 {
