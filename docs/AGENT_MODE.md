@@ -81,7 +81,7 @@ Error codes are stable identifiers that agents can match on programmatically:
 | `capability_disabled` | A host ability (plugin, alias, hook, editor, browser) isn't granted | Don't retry; use an in-process alternative |
 | `hook_rejected` | A pre-apply hook rejected the resource | Fix the resource, or apply with `--no-hooks` |
 | `validation_error` | Local input validation failed | Fix the file or flags |
-| `unknown_command` | Unknown command or flag | Follow the "did you mean" suggestion; re-read `dtctl commands` |
+| `unknown_command` | Unknown command, resource type or flag | Follow the suggestion (a runnable command where dtctl can name one); re-read `dtctl commands` |
 | `context_error` | No active context, or the named context is missing | Select a context (`dtctl ctx <name>`) |
 | `config_error` | The dtctl config could not be read or is invalid | Report it; needs human repair |
 | `spill_file_not_found` | The spilled result file is gone | `dtctl inspect --list`, or re-run the query |
@@ -229,6 +229,21 @@ Agent mode implies `--plain`:
 - No progress spinners or animations
 
 This ensures output is always machine-parseable.
+
+A few consequences worth knowing when you parse the output:
+
+- **Command-line mistakes are enveloped too.** An unknown command, resource type
+  or flag produces `{"ok": false, "error": {"code": "unknown_command", ...}}` on
+  stdout and exits with the usage code (2) -- also when agent mode was
+  auto-detected rather than requested with `-A`. Where dtctl can name the command
+  you most likely meant, `suggestions` carries it as a line that runs as-is, e.g.
+  `dtctl get dashbords` suggests `dtctl get dashboards`.
+- **Query notifications live in the envelope, not on stderr.** Result-limit,
+  scan-limit and timeout notices are in `context.warnings`, with the advice in
+  `context.suggestions`. dtctl writes them to stderr only when there is no
+  envelope to carry them (`-o csv`, `-o yaml`, charts). When a result limit cuts
+  a `summarize ..., by:{...}` that has no `sort`, the suggestions say so: the
+  groups kept are arbitrary, so rank before the cut (`| sort <agg> desc | limit N`).
 
 ## Command Catalog
 
