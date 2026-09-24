@@ -25,6 +25,7 @@ func TestIsSupportedQueryOutputFormat(t *testing.T) {
 		{name: "toon", format: "toon", want: true},
 		{name: "jsonl", format: "jsonl", want: true},
 		{name: "parquet", format: "parquet", want: true},
+		{name: "auto", format: "auto", want: true},
 		{name: "trimmed and mixed case", format: " Json ", want: true},
 		{name: "unsupported", format: "xml", want: false},
 	}

@@ -64,6 +64,12 @@ type ResponseContext struct {
 	Duration    string            `json:"duration,omitempty"`
 	Links       map[string]string `json:"links,omitempty"`
 
+	// Format names the encoding `-o auto` chose for result ("csv", "yaml" or
+	// "json"), so a consumer can branch on it before parsing. For csv and yaml
+	// the result is a string in that format; for json it is a native value.
+	// Omitted for every explicitly requested format.
+	Format string `json:"format,omitempty"`
+
 	// Spill decision provenance (D2/D24). Populated only on the spill path so
 	// both agents and humans can see *why* they got the shape they got.
 	// Decided is one of "inline", "spilled", "summary-only".
@@ -136,14 +142,15 @@ func NewAgentPrinter(writer io.Writer, ctx *ResponseContext) *AgentPrinter {
 }
 
 // SetResultFormat controls how the result field is encoded inside the agent
-// envelope. Supported values are "toon" and "json" (default). Any other value
+// envelope. Supported values are "toon", "auto" (chosen per result, reported in
+// context.format) and "json" (default). Any other value
 // falls back to "json" — the result must be a valid native JSON value inside
 // the envelope — and records a warning on the response context, so an agent
 // that passed `-o csv` learns its format was not honoured instead of silently
 // receiving JSON that looks like it was what it asked for.
 func (p *AgentPrinter) SetResultFormat(format string) {
 	switch format {
-	case "toon", "json":
+	case "toon", "json", FormatAuto:
 		p.resultFormat = format
 	case "":
 		// Not an explicit choice; keep the default without warning.
@@ -186,6 +193,9 @@ func (p *AgentPrinter) Print(data interface{}) error {
 // (which json.Encoder will serialise as native JSON) and adds a warning
 // to the response context so the consumer can detect the fallback.
 func (p *AgentPrinter) encodeResult(data interface{}) (interface{}, error) {
+	if p.resultFormat == FormatAuto {
+		return p.encodeAutoResult(data), nil
+	}
 	if p.resultFormat != "toon" || data == nil {
 		return data, nil
 	}
@@ -197,6 +207,24 @@ func (p *AgentPrinter) encodeResult(data interface{}) (interface{}, error) {
 	}
 
 	return encoded, nil
+}
+
+// encodeAutoResult encodes data in the format ChooseAutoFormat picks and records
+// that format in context.format. A json choice keeps data as a native value. If
+// encoding fails, the result falls back to native JSON with a warning, and
+// context.format says json so it still describes what the consumer received.
+func (p *AgentPrinter) encodeAutoResult(data interface{}) interface{} {
+	choice, encoded, err := MarshalAuto(data)
+	if err != nil {
+		p.ctx.Format = "json"
+		p.addWarning(fmt.Sprintf("-o auto encoding failed: %v; fell back to JSON", err))
+		return data
+	}
+	p.ctx.Format = choice.Format
+	if choice.Format == "json" {
+		return data
+	}
+	return encoded
 }
 
 // addWarning appends a warning message to the response context.

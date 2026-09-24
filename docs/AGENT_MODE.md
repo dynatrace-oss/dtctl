@@ -154,6 +154,35 @@ sample-based figures can't be misread as population truth.
 > transforms keep their requested shape and fall through to the plain
 > `{ "records": …, "metadata": … }` output.
 
+### Choosing the encoding with `-o auto`
+
+No single encoding is the cheapest for every result: CSV wins on flat rows,
+while nested documents come out smaller as YAML or JSON than as TOON. Pass
+`-o auto` to let dtctl choose per result (the rules are listed in
+[OUTPUT_FORMATS.md](OUTPUT_FORMATS.md#auto--o-auto) and are experimental). The
+envelope names the choice in `context.format`, so branch on it before parsing:
+
+| `context.format` | `result` (or `result.records` for `dtctl query`) |
+|---|---|
+| `csv` | a CSV string with a header row |
+| `yaml` | a YAML string |
+| `json` | a native JSON value (used for empty and scalar results) |
+
+```json
+{
+  "ok": true,
+  "envelope_version": 1,
+  "result": { "kind": "records", "encoding": "csv", "records": "count(),loglevel\n1204,ERROR\n88311,INFO\n" },
+  "context": { "verb": "query", "resource": "logs", "total": 2, "format": "csv", "decided": "inline" }
+}
+```
+
+For `dtctl query`, `-o auto` keeps the `kind: "records"` envelope below the
+spill threshold (unlike an explicit `-o csv`/`-o yaml`, which print raw bytes)
+and the threshold is measured in the chosen encoding. A spilled result is a
+`result-file` manifest as usual and carries no `context.format`. `-o auto` is
+opt-in; it is not the agent-mode default.
+
 ## Auto-Detection
 
 dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on the presence of specific environment variables:

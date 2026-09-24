@@ -50,7 +50,7 @@ func formatRequiresIncludeTypes(format string) bool {
 
 func isSupportedQueryOutputFormat(format string) bool {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "", "table", "wide", "json", "yaml", "yml", "csv", "jsonl", "parquet", "toon", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+	case "", "table", "wide", "json", "yaml", "yml", "csv", "jsonl", "parquet", "toon", "auto", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
 		return true
 	default:
 		return false

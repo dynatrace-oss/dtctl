@@ -25,10 +25,11 @@ type JQError struct {
 func (e *JQError) Error() string { return e.Message }
 
 // IsStructuredOutputFormat reports whether a format can represent arbitrary
-// JSON values emitted by jq.
+// JSON values emitted by jq. auto counts: it chooses its encoding after the
+// filter has run.
 func IsStructuredOutputFormat(format string) bool {
 	switch format {
-	case "json", "yaml", "yml", "toon":
+	case "json", "yaml", "yml", "toon", FormatAuto:
 		return true
 	default:
 		return false
