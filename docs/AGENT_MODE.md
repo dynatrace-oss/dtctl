@@ -421,12 +421,14 @@ off unless you set it:
   first N characters and ends in `…(+3214 chars)`, the same marker the spill
   summary uses. A spilled file always keeps the full values, and so does a
   `--jq` filter's input: the values are clipped after the filter ran, so it
-  still matches on them.
+  still matches on them. With `-o auto`, values are clipped first, so auto
+  chooses and encodes the clipped rows.
 - **`--max-output-bytes SIZE`** (e.g. `16KB`) or **`--max-output-tokens N`**
   (approximate: 1 token ≈ 4 bytes) is a budget on the envelope exactly as it
-  is printed: compact or indented, JSON or TOON, with `context` and `metadata`
-  included. A result over the budget keeps the leading rows that fit, in
-  order. When spilling is enabled (the agent-mode default) the full result is
+  is printed: compact or indented, JSON, TOON or the `-o auto` choice, with
+  `context` and `metadata` included. A result over the budget keeps the
+  leading rows that fit, in order. With `-o auto` the kept rows are encoded in
+  the format auto picks for them, and `context.format` names it. When spilling is enabled (the agent-mode default) the full result is
   also written to disk and `context.next` is the `dtctl inspect` command that
   continues where the rows stop, with no Grail re-query. The budget covers the
   gap between "fits inline" and the spill threshold; a result above the
