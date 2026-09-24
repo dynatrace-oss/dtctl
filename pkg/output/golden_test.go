@@ -2337,6 +2337,24 @@ func TestGolden_AgentErrorGeneric(t *testing.T) {
 	assertGolden(t, "errors/generic-error-agent", buf.String())
 }
 
+func TestGolden_AgentErrorQueryPosition(t *testing.T) {
+	var buf bytes.Buffer
+	detail := &ErrorDetail{
+		Code:       "parse_error",
+		Message:    "query failed (PARSE_ERROR): `by` isn't allowed here.",
+		StatusCode: 400,
+		Position:   &ErrorPosition{Line: 1, Column: 32, EndLine: 1, EndColumn: 33},
+		Snippet:    "fetch logs | summarize count() by service.name\n                               ^^",
+		Suggestions: []string{
+			"group with the by: parameter, by:{field, …}, not a trailing by keyword: dtctl query 'fetch logs | summarize count(), by:{service.name}'",
+		},
+	}
+	if err := PrintError(&buf, detail); err != nil {
+		t.Fatalf("PrintError failed: %v", err)
+	}
+	assertGolden(t, "errors/query-position-agent", buf.String())
+}
+
 // ---------------------------------------------------------------------------
 // Golden tests: agent mode output
 // ---------------------------------------------------------------------------

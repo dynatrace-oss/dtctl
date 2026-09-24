@@ -231,6 +231,10 @@ type ErrorResponse struct {
 			ErrorType    string   `json:"errorType"`
 			ErrorMessage string   `json:"errorMessage"`
 			Arguments    []string `json:"arguments"`
+			// QueryString is the query as the backend parsed it; the
+			// syntax error position indexes into it.
+			QueryString         string          `json:"queryString"`
+			SyntaxErrorPosition *SyntaxPosition `json:"syntaxErrorPosition"`
 		} `json:"details"`
 	} `json:"error"`
 }
@@ -710,6 +714,8 @@ func parseError(statusCode int, body []byte) error {
 			ErrorType:  apiErr.Error.Details.ErrorType,
 			Detail:     apiErr.Error.Details.ErrorMessage,
 			Arguments:  apiErr.Error.Details.Arguments,
+			Query:      apiErr.Error.Details.QueryString,
+			Position:   apiErr.Error.Details.SyntaxErrorPosition,
 		}
 	}
 	// Keep the fallback typed: callers branch on QueryError.StatusCode (the
@@ -724,6 +730,12 @@ type QueryError struct {
 	ErrorType  string
 	Detail     string
 	Arguments  []string
+	// Query is the query the backend parsed, and Position the offending span
+	// within it (1-based line/column, end inclusive). Both are empty when the
+	// backend reported no position, e.g. for errors that are not about the
+	// query text.
+	Query    string
+	Position *SyntaxPosition
 }
 
 func (e *QueryError) Error() string {

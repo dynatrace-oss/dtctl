@@ -91,7 +91,21 @@ type ErrorDetail struct {
 	RequiredScopes []string `json:"required_scopes,omitempty"`
 	GrantedScopes  []string `json:"granted_scopes,omitempty"`
 	MissingScopes  []string `json:"missing_scopes,omitempty"`
-	Suggestions    []string `json:"suggestions,omitempty"`
+	// Query-error fields, populated when the DQL API reports where in the
+	// query the error is: the span, and the offending line with a caret line
+	// marking it.
+	Position    *ErrorPosition `json:"position,omitempty"`
+	Snippet     string         `json:"snippet,omitempty"`
+	Suggestions []string       `json:"suggestions,omitempty"`
+}
+
+// ErrorPosition locates an error in a query: 1-based line and column, in
+// characters, with the end inclusive. The end is omitted when unknown.
+type ErrorPosition struct {
+	Line      int `json:"line"`
+	Column    int `json:"column"`
+	EndLine   int `json:"end_line,omitempty"`
+	EndColumn int `json:"end_column,omitempty"`
 }
 
 // ClassifyHTTPError maps an HTTP status code to a machine-readable error code.

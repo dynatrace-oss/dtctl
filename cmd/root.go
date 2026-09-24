@@ -809,8 +809,9 @@ func errorToDetail(err error) *output.ErrorDetail {
 	}
 
 	// query.QueryError — a typed DQL API error. The envelope code becomes the
-	// API's error type (e.g. unknown_data_object) and recurring mistake
-	// classes get a targeted recovery suggestion.
+	// API's error type (e.g. unknown_data_object), the reported position is
+	// passed through, and recurring mistake classes get a targeted recovery
+	// suggestion.
 	// A table the token cannot read is a scope problem, not a query problem:
 	// report it with the precheck's code so an agent handles both the same way.
 	if q, ok := isNotAuthorizedForTable(err); ok {
@@ -822,12 +823,13 @@ func errorToDetail(err error) *output.ErrorDetail {
 		if code == "" {
 			code = output.ClassifyHTTPError(queryErr.StatusCode)
 		}
-		return &output.ErrorDetail{
-			Code:        code,
-			Message:     queryErr.Error(),
-			StatusCode:  queryErr.StatusCode,
-			Suggestions: dqlErrorAdvice(queryErr),
+		detail := &output.ErrorDetail{
+			Code:       code,
+			Message:    queryErr.Error(),
+			StatusCode: queryErr.StatusCode,
 		}
+		addQueryErrorHints(detail, queryErr)
+		return detail
 	}
 
 	// sdkquery.StateError — the query ended in a state other than SUCCEEDED.

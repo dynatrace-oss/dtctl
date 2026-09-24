@@ -256,7 +256,7 @@ When `--agent` (or `-A`) is passed, all CLI output is wrapped in a structured JS
 **Envelope fields:**
 - `ok` (bool) — `true` for success, `false` for errors. Always present.
 - `result` — The command output data. Always present (may be `null`).
-- `error` (object, optional) — Structured error with `code`, `message`, `operation`, `status_code`, `request_id`, `suggestions`.
+- `error` (object, optional) — Structured error with `code`, `message`, `operation`, `status_code`, `request_id`, `suggestions`; DQL errors add `position` and `snippet` (see [AGENT_MODE.md](../AGENT_MODE.md#error-responses)).
 - `context` (object, optional) — Operational metadata: `total`, `has_more`, `verb`, `resource`, `suggestions`, `warnings`, `duration`, `links`.
 
 **Auto-detection:** Agent mode is automatically enabled when dtctl detects it is running inside an AI agent environment (via the `aidetect` package). Use `--no-agent` to opt out. Auto-detection is skipped if an explicit `--output` format is set.

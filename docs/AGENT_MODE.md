@@ -107,6 +107,39 @@ needs `storage:logs:read`, `smartscapeNodes`/`getNodeName()` need
 The check only blocks what it is certain of; with a platform or API token it
 never blocks, and the query runs as usual.
 
+When the DQL API reports where in the query the error is, the envelope also
+carries `position` (1-based `line` and `column`, counted in characters, plus
+`end_line`/`end_column` with the end inclusive) and `snippet` (the offending
+line with a caret line under it). For a known authoring trap, the first
+suggestion is the corrected query, ready to run:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "parse_error",
+    "message": "query failed (PARSE_ERROR): `by` isn't allowed here. ...",
+    "status_code": 400,
+    "position": {"line": 1, "column": 32, "end_line": 1, "end_column": 33},
+    "snippet": "fetch logs | summarize count() by service.name\n                               ^^",
+    "suggestions": [
+      "group with the by: parameter, by:{field, …}, not a trailing by keyword: dtctl query 'fetch logs | summarize count(), by:{service.name}'"
+    ]
+  }
+}
+```
+
+The traps with a rewrite: `=` instead of `==` in `filter`/`filterOut`; a
+trailing `by field` instead of `by:{field}`; `name: aggregation(…)` instead of
+`name = aggregation(…)`; `array.contains(arr, v)` instead of `in(v, arr)`; a
+duration as `rollup:` instead of `interval:` on `timeseries`; a positional
+condition on `timeseries` instead of `filter:`; and `fetch dt.entity.service` /
+`dt.entity.host` where those tables are not data objects, instead of
+`smartscapeNodes`. A non-metric aggregation on `timeseries` (e.g. `last()`) gets
+advice rather than a rewrite, because the fix depends on whether the field is a
+metric. A hint is only given when the pattern clearly matches; the suggested
+command carries only the query, so re-add any flags you used.
+
 ### Query results: the `result.kind` discriminator
 
 In agent mode, `dtctl query` results are self-describing: the `result` payload
