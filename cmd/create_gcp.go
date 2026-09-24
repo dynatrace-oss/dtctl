@@ -173,7 +173,7 @@ Examples:
 		}
 		credential.Enabled = false // Created in disabled state; use 'dtctl enable gcp monitoring' to enable
 
-		locations, err := gcpmonitoringconfig.ParseOrDefaultLocations(createGCPMonitoringConfigLocationFiltering, monitoringHandler)
+		locations, err := gcpmonitoringconfig.ParseLocations(createGCPMonitoringConfigLocationFiltering)
 		if err != nil {
 			return err
 		}
@@ -259,7 +259,7 @@ func init() {
 
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigName, "name", "", "Monitoring config name/description (required)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigCredentials, "credentials", "", "GCP connection name or ID (required)")
-	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations (default: all from schema)")
+	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations to monitor, or 'all' for no filter (default: all)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets (default: all *_essential from schema)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
 	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);

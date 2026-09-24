@@ -51,20 +51,34 @@ func isNotFoundError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
-func ParseOrDefaultLocations(input string, handler *Handler) ([]string, error) {
-	if strings.TrimSpace(input) != "" {
-		return SplitCSV(input), nil
+// AllLocations is the --locationFiltering value that removes the location
+// filter, so every location is monitored.
+const AllLocations = "all"
+
+// ParseLocations parses a --locationFiltering value into the config's
+// locationFiltering list. A blank input and AllLocations both yield an empty
+// list, which the backend reads as "no location filter". Spelling out every
+// schema location instead is not equivalent: the Smartscape poller turns each
+// listed location into an alternation of one Cloud Asset query, and GCP
+// rejects the query once the list is long ("Query has too many alternations").
+func ParseLocations(input string) ([]string, error) {
+	if strings.TrimSpace(input) == "" {
+		return []string{}, nil
 	}
 
-	available, err := handler.ListAvailableLocations()
-	if err != nil {
-		return nil, err
+	locations := SplitCSV(input)
+	if len(locations) == 0 {
+		return nil, fmt.Errorf("--locationFiltering must contain at least one location, or %q", AllLocations)
 	}
-	out := make([]string, 0, len(available))
-	for _, location := range available {
-		out = append(out, location.Value)
+	for _, location := range locations {
+		if strings.EqualFold(location, AllLocations) {
+			if len(locations) > 1 {
+				return nil, fmt.Errorf("--locationFiltering %q cannot be combined with other locations", AllLocations)
+			}
+			return []string{}, nil
+		}
 	}
-	return out, nil
+	return locations, nil
 }
 
 func ParseOrDefaultFeatureSets(input string, handler *Handler) ([]string, error) {

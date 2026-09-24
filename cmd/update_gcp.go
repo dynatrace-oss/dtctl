@@ -105,7 +105,8 @@ var updateGCPMonitoringConfigCmd = &cobra.Command{
 Examples:
   dtctl update gcp monitoring --name "my-monitoring" --locationFiltering "us-central1,europe-west1"
   dtctl update gcp monitoring --name "my-monitoring" --featureSets "compute_engine_essential,cloud_run_essential"
-  dtctl update gcp monitoring <id> --locationFiltering "us-central1,europe-west1"`,
+  dtctl update gcp monitoring <id> --locationFiltering "us-central1,europe-west1"
+  dtctl update gcp monitoring --name "my-monitoring" --locationFiltering all   # remove the location filter`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if strings.TrimSpace(updateGCPMonitoringConfigLocationFiltering) == "" &&
@@ -142,9 +143,9 @@ Examples:
 
 		value := existing.Value
 		if strings.TrimSpace(updateGCPMonitoringConfigLocationFiltering) != "" {
-			locations := gcpmonitoringconfig.SplitCSV(updateGCPMonitoringConfigLocationFiltering)
-			if len(locations) == 0 {
-				return fmt.Errorf("--locationFiltering must contain at least one location")
+			locations, err := gcpmonitoringconfig.ParseLocations(updateGCPMonitoringConfigLocationFiltering)
+			if err != nil {
+				return err
 			}
 			value.GoogleCloud.LocationFiltering = locations
 		}
@@ -200,7 +201,7 @@ func init() {
 	stability.MarkFlag(updateGCPConnectionCmd, "serviceaccountid", stability.Experimental, pre10Since)
 
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
-	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")
+	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations to monitor, or 'all' to remove the location filter")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
 	// Every path through this command needs a flag the rename takes away
