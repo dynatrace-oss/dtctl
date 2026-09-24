@@ -332,6 +332,20 @@ This is about the data in the environment, not the resources you manage -- for d
 
 ## Tips and Tricks
 
+### Keep list output small
+
+Lists return every item with every field by default. Trim them with
+`--limit` and `--fields` *(experimental)*:
+
+```bash
+dtctl get dashboards -A --limit 50 --fields id,name,owner,modificationInfo.lastModifiedTime
+```
+
+When `--limit` cuts the list, `context.total` holds the full count and
+`context.has_more` is `true`. With `-o toon`, the projected fields are
+flattened into columns so the result stays a single TOON table. See
+[Output Formats](OUTPUT_FORMATS.md#trimming-lists---limit---fields).
+
 ### Name resolution
 
 When agent mode is active, interactive name disambiguation is disabled. Use exact IDs instead of display names to avoid ambiguity:

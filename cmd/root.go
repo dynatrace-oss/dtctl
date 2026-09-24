@@ -1286,26 +1286,31 @@ func NewPrinter() output.Printer {
 		// use that format for the result field inside the agent envelope
 		// (e.g. -o toon for token-efficient encoding).
 		outputFlag := rootCmd.PersistentFlags().Lookup("output")
+		resultFormat := "json"
 		if outputFlag != nil && outputFlag.Changed {
 			ap.SetResultFormat(outputFormat)
+			if outputFormat == "toon" {
+				resultFormat = "toon"
+			}
 		}
-		return ap
+		return shapeListOutput(ap, resultFormat, resultFormat == "toon")
 	}
 
-	return output.NewPrinterWithOpts(output.PrinterOptions{
+	p := output.NewPrinterWithOpts(output.PrinterOptions{
 		Format:    outputFormat,
 		Writer:    os.Stdout,
 		PlainMode: plainMode,
 		JQFilter:  jqFilter,
 	})
+	return shapeListOutput(p, outputFormat, output.IsTabularFormat(outputFormat, plainMode))
 }
 
 // enrichAgent configures agent-mode metadata on the printer if agent mode is active.
 // It is a no-op when the printer is not an AgentPrinter. Returns the AgentPrinter
 // for further customization (or nil if not in agent mode).
 func enrichAgent(printer output.Printer, verb, resource string) *output.AgentPrinter {
-	ap, ok := printer.(*output.AgentPrinter)
-	if !ok {
+	ap := output.AsAgentPrinter(printer)
+	if ap == nil {
 		return nil
 	}
 	ap.Context().Verb = verb

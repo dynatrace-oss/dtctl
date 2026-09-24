@@ -20,6 +20,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] Global flags: `--context`, `--output`, `--verbose`, `--debug`, `--dry-run`, `--chunk-size`, `--show-diff`, `--agent`, `--no-agent`
 - [x] Shell completion (bash, zsh, fish)
 - [x] Automatic pagination with `--chunk-size` (default 500)
+- [x] List shaping on every `get` list verb: `--limit N` and `--fields a,b.c` (experimental; nested paths flattened into columns for table/csv/toon)
 - [x] User identity: `dtctl auth whoami` (via metadata API with JWT fallback)
 - [x] OS keychain integration for secure token storage
 - [x] Command aliases: simple, parameterized ($1-$9), and shell aliases (with import/export)

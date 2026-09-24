@@ -35,7 +35,7 @@ func (p *ToonPrinter) marshal(obj interface{}) error {
 		return err
 	}
 
-	generic, err := toGeneric(transformed)
+	generic, err := toonGeneric(transformed)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func (p *ToonPrinter) marshal(obj interface{}) error {
 // emits comes out of one encoder. Exported for callers outside this package
 // that embed a TOON-encoded payload inside the agent envelope (pkg/exec).
 func MarshalTOON(v interface{}) (string, error) {
-	generic, err := toGeneric(v)
+	generic, err := toonGeneric(v)
 	if err != nil {
 		return "", err
 	}

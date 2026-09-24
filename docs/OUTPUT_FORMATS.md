@@ -246,3 +246,41 @@ dtctl get workflows --chunk-size=0
 ```
 
 All pages are fetched automatically and combined into a single result set.
+
+## Trimming lists (`--limit`, `--fields`)
+
+Every `get` list verb accepts `--limit` and `--fields` *(experimental)*. Both
+shape the result after it was fetched, so `--chunk-size` still decides how the
+API is paged.
+
+```bash
+# Only the first 20 SLOs
+dtctl get slos --limit 20
+
+# Only these fields, in this order; dotted paths reach nested fields
+dtctl get dashboards --fields id,name,owner,modificationInfo.lastModifiedTime -o json
+
+# Tabular formats flatten nested fields into columns, so TOON stays tabular
+dtctl get dashboards --fields id,name,modificationInfo.lastModifiedTime -o toon
+# [#185]{id,name,modificationInfo.lastModifiedTime}:
+#   ...
+```
+
+- `json`/`yaml`/`jsonl` keep the projected fields nested
+  (`{"modificationInfo":{"lastModifiedTime":...}}`), so a path or `--jq` filter
+  that works on the full object works on the projection. `--jq` runs after
+  `--fields`.
+- `table`/`wide`/`csv`/`toon` use one column per requested path, named by the
+  path. A field that holds an object expands into one column per leaf
+  (`--fields modificationInfo` gives `modificationInfo.createdBy`,
+  `modificationInfo.lastModifiedTime`, ...).
+- A requested field no item carries produces a warning (a typo is the usual
+  cause) rather than an error, since optional fields can be absent from every
+  item.
+- When `--limit` cuts the list, a hint on stderr says how many items there
+  were; in agent mode the envelope carries `context.total`,
+  `context.has_more: true` and a suggestion instead.
+- Commands that already had a server-side `--limit` (`get workflows`,
+  `get workflow-executions`, `get scheduling-rules`, `get snapshots`) keep
+  their own flag and its meaning.
+- `--fields` is rejected with the chart formats, which need the full records.

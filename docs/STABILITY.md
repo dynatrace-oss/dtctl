@@ -167,7 +167,7 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 - commands: 269 stable, 15 experimental, 11 development
 - global flags (accepted on every command): 12
-- entries below (commands + flags): 844
+- entries below (commands + flags): 846
 
 ## Surface
 
@@ -622,6 +622,8 @@ find intents                         stable
   --data-file                        stable
   --limit                            stable
 get                                  stable
+  --fields                           experimental  since 0.40.0
+  --limit                            experimental  since 0.40.0
 get analyzers                        stable
   --filter                           stable
 get anomaly-detectors                stable

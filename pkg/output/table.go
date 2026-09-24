@@ -248,6 +248,9 @@ func colorizeTableValue(value string) string {
 
 // Print prints a single object as a table
 func (p *TablePrinter) Print(obj interface{}) error {
+	if fr, ok := obj.(*FlatRows); ok {
+		return p.printFlatRows(fr)
+	}
 	table := tablewriter.NewTable(p.writer, kubectlStyleOptions()...)
 
 	// Use reflection to get field names and values
@@ -284,6 +287,9 @@ func (p *TablePrinter) Print(obj interface{}) error {
 
 // PrintList prints a list of objects as a table
 func (p *TablePrinter) PrintList(obj interface{}) error {
+	if fr, ok := obj.(*FlatRows); ok {
+		return p.printFlatRows(fr)
+	}
 	table := tablewriter.NewTable(p.writer, kubectlStyleOptions()...)
 
 	v := reflect.ValueOf(obj)
