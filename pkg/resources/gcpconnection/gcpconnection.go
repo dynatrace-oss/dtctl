@@ -7,6 +7,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 const (
@@ -147,7 +148,7 @@ func (h *Handler) listBySchema(schemaID string) ([]GCPConnection, error) {
 func (h *Handler) Get(id string) (*GCPConnection, error) {
 	var result GCPConnection
 	req := h.client.HTTP().R().SetResult(&result)
-	resp, err := req.Get(fmt.Sprintf("%s/%s", SettingsAPI, id))
+	resp, err := req.Get(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +187,7 @@ func (h *Handler) GetDynatracePrincipal() (*GCPConnection, error) {
 }
 
 func (h *Handler) Delete(id string) error {
-	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", SettingsAPI, id))
+	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return err
 	}
@@ -339,7 +340,7 @@ func (h *Handler) Update(objectID string, value Value) (*GCPConnection, error) {
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
 		SetHeader("If-Match", obj.SchemaVersion).
-		Put(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
+		Put(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(objectID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to update gcp_connection: %w", err)
 	}

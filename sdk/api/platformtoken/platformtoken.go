@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strconv"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -54,7 +53,7 @@ type PlatformTokenCreate struct {
 }
 
 func (h *Handler) basePath() string {
-	return fmt.Sprintf("/iam/v1/accounts/%s/platform-tokens", url.PathEscape(h.accountUUID))
+	return fmt.Sprintf("/iam/v1/accounts/%s/platform-tokens", httpclient.PathSegment(h.accountUUID))
 }
 
 const listPageSize = 100
@@ -106,7 +105,7 @@ func (h *Handler) Create(ctx context.Context, req PlatformTokenCreate) (*Platfor
 // Revoke deletes (revokes) a platform token by ID.
 func (h *Handler) Revoke(ctx context.Context, tokenID string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("%s/%s", h.basePath(), tokenID))
+		Delete(fmt.Sprintf("%s/%s", h.basePath(), httpclient.PathSegment(tokenID)))
 	if err != nil {
 		return fmt.Errorf("revoke platform token: %w", err)
 	}

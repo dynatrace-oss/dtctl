@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -121,7 +120,7 @@ func (h *Handler) List(ctx context.Context, filter string) (*AnalyzerList, error
 // Get retrieves a specific analyzer definition
 func (h *Handler) Get(ctx context.Context, name string) (*AnalyzerDefinition, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s", url.PathEscape(name)))
+		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s", httpclient.PathSegment(name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get analyzer: %w", err)
 	}
@@ -145,7 +144,7 @@ func (h *Handler) Get(ctx context.Context, name string) (*AnalyzerDefinition, er
 func (h *Handler) GetDocumentation(ctx context.Context, name string) (string, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Accept", "text/markdown").
-		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/documentation", url.PathEscape(name)))
+		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/documentation", httpclient.PathSegment(name)))
 	if err != nil {
 		return "", fmt.Errorf("failed to get analyzer documentation: %w", err)
 	}
@@ -162,7 +161,7 @@ func (h *Handler) GetDocumentation(ctx context.Context, name string) (string, er
 // GetInputSchema retrieves the JSON schema for analyzer input
 func (h *Handler) GetInputSchema(ctx context.Context, name string) (map[string]interface{}, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/json-schema/input", url.PathEscape(name)))
+		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/json-schema/input", httpclient.PathSegment(name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get input schema: %w", err)
 	}
@@ -180,7 +179,7 @@ func (h *Handler) GetInputSchema(ctx context.Context, name string) (map[string]i
 // GetResultSchema retrieves the JSON schema for analyzer result
 func (h *Handler) GetResultSchema(ctx context.Context, name string) (map[string]interface{}, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/json-schema/result", url.PathEscape(name)))
+		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s/json-schema/result", httpclient.PathSegment(name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get result schema: %w", err)
 	}
@@ -206,7 +205,7 @@ func (h *Handler) Execute(ctx context.Context, name string, input map[string]int
 	var result ExecuteResult
 	resp, err := req.
 		SetBody(input).
-		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:execute", url.PathEscape(name)))
+		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:execute", httpclient.PathSegment(name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute analyzer: %w", err)
 	}
@@ -344,7 +343,7 @@ func (h *Handler) Poll(ctx context.Context, name string, requestToken string, ti
 
 	var result ExecuteResult
 	resp, err := req.
-		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:poll", url.PathEscape(name)))
+		Get(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:poll", httpclient.PathSegment(name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to poll analyzer: %w", err)
 	}
@@ -369,7 +368,7 @@ func (h *Handler) Cancel(ctx context.Context, name string, requestToken string) 
 		SetQueryParam("request-token", requestToken)
 
 	resp, err := req.
-		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:cancel", url.PathEscape(name)))
+		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:cancel", httpclient.PathSegment(name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel analyzer: %w", err)
 	}
@@ -388,7 +387,7 @@ func (h *Handler) Cancel(ctx context.Context, name string, requestToken string) 
 func (h *Handler) Validate(ctx context.Context, name string, input map[string]interface{}) (*ValidationResult, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(input).
-		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:validate", url.PathEscape(name)))
+		Post(fmt.Sprintf("/platform/davis/analyzers/v1/analyzers/%s:validate", httpclient.PathSegment(name)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate analyzer input: %w", err)
 	}

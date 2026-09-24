@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -145,7 +144,7 @@ func (h *Handler) List(ctx context.Context, filter string, chunkSize int64) (*SL
 // Get gets a specific SLO by ID
 func (h *Handler) Get(ctx context.Context, id string) (*SLO, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/slo/v1/slos/%s", url.PathEscape(id)))
+		Get(fmt.Sprintf("/platform/slo/v1/slos/%s", httpclient.PathSegment(id)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get SLO: %w", err)
@@ -192,7 +191,7 @@ func (h *Handler) Update(ctx context.Context, id string, version string, data []
 		SetBody(data).
 		SetHeader("Content-Type", "application/json").
 		SetQueryParam("optimistic-locking-version", version).
-		Put(fmt.Sprintf("/platform/slo/v1/slos/%s", url.PathEscape(id)))
+		Put(fmt.Sprintf("/platform/slo/v1/slos/%s", httpclient.PathSegment(id)))
 
 	if err != nil {
 		return fmt.Errorf("failed to update SLO: %w", err)
@@ -209,7 +208,7 @@ func (h *Handler) Update(ctx context.Context, id string, version string, data []
 func (h *Handler) Delete(ctx context.Context, id string, version string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("optimistic-locking-version", version).
-		Delete(fmt.Sprintf("/platform/slo/v1/slos/%s", url.PathEscape(id)))
+		Delete(fmt.Sprintf("/platform/slo/v1/slos/%s", httpclient.PathSegment(id)))
 
 	if err != nil {
 		return fmt.Errorf("failed to delete SLO: %w", err)
@@ -251,7 +250,7 @@ func (h *Handler) ListTemplates(ctx context.Context, filter string) (*TemplateLi
 // GetTemplate gets a specific SLO template by ID
 func (h *Handler) GetTemplate(ctx context.Context, id string) (*Template, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/slo/v1/objective-templates/%s", url.PathEscape(id)))
+		Get(fmt.Sprintf("/platform/slo/v1/objective-templates/%s", httpclient.PathSegment(id)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get SLO template: %w", err)

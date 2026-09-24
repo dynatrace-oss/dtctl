@@ -7,6 +7,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 const (
@@ -113,7 +114,7 @@ type ListResponse struct {
 func (h *Handler) Get(id string) (*AzureConnection, error) {
 	var result AzureConnection
 	req := h.client.HTTP().R().SetResult(&result)
-	resp, err := req.Get(fmt.Sprintf("%s/%s", SettingsAPI, id))
+	resp, err := req.Get(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +185,7 @@ func (h *Handler) List() ([]AzureConnection, error) {
 
 // Delete deletes an Azure connection by ID
 func (h *Handler) Delete(id string) error {
-	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", SettingsAPI, id))
+	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return err
 	}
@@ -326,7 +327,7 @@ func (h *Handler) Update(objectID string, value Value) (*AzureConnection, error)
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
 		SetHeader("If-Match", obj.SchemaVersion).
-		Put(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
+		Put(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(objectID)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to update azure_connection: %w", err)

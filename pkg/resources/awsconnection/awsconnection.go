@@ -12,6 +12,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 const (
@@ -191,7 +192,7 @@ func (h *Handler) listBySchema(schemaID string) ([]AWSConnection, error) {
 func (h *Handler) Get(id string) (*AWSConnection, error) {
 	var result AWSConnection
 	req := h.client.HTTP().R().SetResult(&result)
-	resp, err := req.Get(fmt.Sprintf("%s/%s", SettingsAPI, id))
+	resp, err := req.Get(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +217,7 @@ func (h *Handler) List() ([]AWSConnection, error) {
 }
 
 func (h *Handler) Delete(id string) error {
-	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", SettingsAPI, id))
+	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return err
 	}
@@ -328,7 +329,7 @@ func (h *Handler) Update(objectID string, value Value) (*AWSConnection, error) {
 	body := map[string]interface{}{"value": value}
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
-		Put(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
+		Put(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(objectID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to update aws_connection: %w", err)
 	}

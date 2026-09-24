@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"time"
 
@@ -107,10 +106,10 @@ func (h *TrashHandler) List(ctx context.Context, opts TrashListOptions) ([]Trash
 	var conditions []string
 
 	if opts.Type != "" {
-		conditions = append(conditions, fmt.Sprintf("type=='%s'", opts.Type))
+		conditions = append(conditions, fmt.Sprintf("type=='%s'", escapeFilterValue(opts.Type)))
 	}
 	if opts.DeletedBy != "" {
-		conditions = append(conditions, fmt.Sprintf("deletionInfo.deletedBy=='%s'", opts.DeletedBy))
+		conditions = append(conditions, fmt.Sprintf("deletionInfo.deletedBy=='%s'", escapeFilterValue(opts.DeletedBy)))
 	}
 	if !opts.DeletedAfter.IsZero() {
 		conditions = append(conditions, fmt.Sprintf("deletionInfo.deletedTime>='%s'", opts.DeletedAfter.Format(time.RFC3339)))
@@ -175,7 +174,7 @@ func (h *TrashHandler) Get(ctx context.Context, id string) (*TrashedDocument, er
 
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetResult(&doc).
-		Get(fmt.Sprintf("/platform/document/v1/trash/documents/%s", url.PathEscape(id)))
+		Get(fmt.Sprintf("/platform/document/v1/trash/documents/%s", httpclient.PathSegment(id)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trashed document: %w", err)
@@ -208,7 +207,7 @@ func (h *TrashHandler) Restore(ctx context.Context, id string, opts RestoreOptio
 		req.SetQueryParam("force", "true")
 	}
 
-	resp, err := req.Post(fmt.Sprintf("/platform/document/v1/trash/documents/%s/restore", url.PathEscape(id)))
+	resp, err := req.Post(fmt.Sprintf("/platform/document/v1/trash/documents/%s/restore", httpclient.PathSegment(id)))
 	if err != nil {
 		return fmt.Errorf("failed to restore document: %w", err)
 	}
@@ -227,7 +226,7 @@ func (h *TrashHandler) Restore(ctx context.Context, id string, opts RestoreOptio
 // Delete permanently deletes a document from trash
 func (h *TrashHandler) Delete(ctx context.Context, id string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Delete(fmt.Sprintf("/platform/document/v1/trash/documents/%s", url.PathEscape(id)))
+		Delete(fmt.Sprintf("/platform/document/v1/trash/documents/%s", httpclient.PathSegment(id)))
 
 	if err != nil {
 		return fmt.Errorf("failed to permanently delete document: %w", err)

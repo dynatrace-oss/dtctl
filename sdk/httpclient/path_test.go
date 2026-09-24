@@ -3,7 +3,6 @@ package httpclient
 import (
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/go-resty/resty/v2"
@@ -20,8 +19,8 @@ func TestCheckRequestPath(t *testing.T) {
 		{name: "a plain resource path", path: "/platform/slo/v1/slos/slo-1"},
 		{name: "an id with dots", path: "/platform/davis/analyzers/v1/analyzers/dt.statistics.Clustering"},
 		{name: "an action suffix keeps its colon", path: "/platform/storage/management/v1/bucket-definitions/b:truncate"},
-		{name: "an escaped separator stays one segment", path: "/platform/slo/v1/slos/" + url.PathEscape("a/b")},
-		{name: "an escaped hash stays one segment", path: "/platform/slo/v1/slos/" + url.PathEscape("slo-1#x")},
+		{name: "an escaped separator stays one segment", path: "/platform/slo/v1/slos/" + PathSegment("a/b")},
+		{name: "an escaped hash stays one segment", path: "/platform/slo/v1/slos/" + PathSegment("slo-1#x")},
 		{name: "a query string is the caller's business", path: "/platform/example/v1/things?page=2"},
 		{name: "an empty path resolves to the base URL", path: ""},
 		{name: "an absolute URL is vetted on its path only", path: "http://127.0.0.1:8080/platform/dob/graphql"},
@@ -105,7 +104,7 @@ func TestGuardRequestPathsRefusesBeforeSending(t *testing.T) {
 	// The same id, escaped the way a handler escapes it, does go out -- as one
 	// segment, so the API decides whether it exists rather than dtctl silently
 	// acting on a different object.
-	_, err = rc.R().Delete("/platform/slo/v1/slos/" + url.PathEscape("slo-1#x"))
+	_, err = rc.R().Delete("/platform/slo/v1/slos/" + PathSegment("slo-1#x"))
 	require.NoError(t, err)
 	require.Equal(t, []string{"/platform/slo/v1/slos/slo-1%23x"}, got)
 }
@@ -119,4 +118,61 @@ func TestGuardRequestPathsIsInstalledByNew(t *testing.T) {
 	_, err = c.HTTP().R().Get("/platform/slo/v1/slos/slo-1#x")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid request path")
+}
+
+// TestPathSegment covers the characters that can retarget a request, and the
+// ones deliberately left readable.
+func TestPathSegment(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain id", "slo-1", "slo-1"},
+		{"separator", "a/b", "a%2Fb"},
+		{"fragment", "slo-1#x", "slo-1%23x"},
+		{"query", "slo-1?x=1", "slo-1%3Fx=1"},
+		{"space", "a b", "a%20b"},
+
+		// The colon is why PathSegment exists and url.PathEscape is not enough:
+		// "/analyzers/%s:poll" makes a colon in an id name an operation.
+		{"action suffix in an id", "foo:poll", "foo%3Apoll"},
+		{"colon alone", ":", "%3A"},
+
+		// Left readable on purpose: none of these route in a path segment.
+		{"dots and dashes", "dt.statistics.Generic-Analyzer", "dt.statistics.Generic-Analyzer"},
+		{"at sign", "a@b", "a@b"},
+		{"ampersand and equals", "a&b=c", "a&b=c"},
+		{"tilde and underscore", "a~b_c", "a~b_c"},
+
+		// CheckRequestPath refuses these; PathSegment leaves them alone.
+		{"dot", ".", "."},
+		{"dot dot", "..", ".."},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PathSegment(tt.in); got != tt.want {
+				t.Errorf("PathSegment(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPathSegmentKeepsActionSuffixes pins the reason escaping the colon is
+// free: an action suffix is a literal in the format string and never passes
+// through PathSegment, so only the interpolated value is affected.
+func TestPathSegmentKeepsActionSuffixes(t *testing.T) {
+	got := "/platform/davis/analyzers/v1/analyzers/" + PathSegment("dt.statistics.Forecast") + ":poll"
+	want := "/platform/davis/analyzers/v1/analyzers/dt.statistics.Forecast:poll"
+	if got != want {
+		t.Errorf("path = %q, want %q", got, want)
+	}
+
+	// The same suffix spelled inside the id is not an operation.
+	got = "/platform/davis/analyzers/v1/analyzers/" + PathSegment("foo:poll")
+	want = "/platform/davis/analyzers/v1/analyzers/foo%3Apoll"
+	if got != want {
+		t.Errorf("path = %q, want %q", got, want)
+	}
 }

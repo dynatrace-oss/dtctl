@@ -195,3 +195,47 @@ func TestList_ServerError(t *testing.T) {
 		t.Fatal("List() expected error for 500")
 	}
 }
+
+// TestDelete_EscapesID covers #492: characters that are special in a URL must
+// stay inside the ID segment instead of cutting the path or adding query
+// parameters.
+func TestDelete_EscapesID(t *testing.T) {
+	for _, id := range []string{"slo-1#x", "slo-1?x=1", "slo-1/other", "a b"} {
+		t.Run(id, func(t *testing.T) {
+			var gotPath, gotQuery string
+			h := NewHandler(newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath, gotQuery = r.URL.EscapedPath(), r.URL.RawQuery
+				w.WriteHeader(http.StatusNoContent)
+			})))
+
+			if err := h.Delete(context.Background(), id, "1"); err != nil {
+				t.Fatalf("Delete() error: %v", err)
+			}
+			if want := "/platform/slo/v1/slos/" + httpclient.PathSegment(id); gotPath != want {
+				t.Errorf("path = %q, want %q", gotPath, want)
+			}
+			if gotQuery != "optimistic-locking-version=1" {
+				t.Errorf("query = %q, want only the locking version", gotQuery)
+			}
+		})
+	}
+}
+
+func TestDelete_RejectsDotAndEmptyID(t *testing.T) {
+	for _, id := range []string{"", ".", ".."} {
+		t.Run(fmt.Sprintf("%q", id), func(t *testing.T) {
+			called := false
+			h := NewHandler(newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusNoContent)
+			})))
+
+			if err := h.Delete(context.Background(), id, "1"); err == nil {
+				t.Fatal("Delete() error = nil, want an invalid path error")
+			}
+			if called {
+				t.Error("the request reached the server")
+			}
+		})
+	}
+}

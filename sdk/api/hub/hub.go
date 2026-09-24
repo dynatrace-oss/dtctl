@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -113,7 +112,7 @@ func (h *Handler) ListExtensions(ctx context.Context, filter string, chunkSize i
 // GetExtension gets a specific Hub extension by ID.
 func (h *Handler) GetExtension(ctx context.Context, id string) (*HubExtension, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/hub/v1/catalog/extensions/%s", url.PathEscape(id)))
+		Get(fmt.Sprintf("/platform/hub/v1/catalog/extensions/%s", httpclient.PathSegment(id)))
 	if err != nil {
 		return nil, fmt.Errorf("get hub extension: %w", err)
 	}
@@ -148,7 +147,7 @@ func (h *Handler) ListExtensionReleases(ctx context.Context, id string, chunkSiz
 
 		req.SetQueryParamsFromValues(params)
 
-		resp, err := req.Get(fmt.Sprintf("/platform/hub/v1/catalog/extensions/%s/releases", url.PathEscape(id)))
+		resp, err := req.Get(fmt.Sprintf("/platform/hub/v1/catalog/extensions/%s/releases", httpclient.PathSegment(id)))
 		if err != nil {
 			return nil, fmt.Errorf("list hub extension releases: %w", err)
 		}

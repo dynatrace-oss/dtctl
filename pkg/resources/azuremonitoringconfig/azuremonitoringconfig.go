@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // ErrNotFound reports that no monitoring configuration matches the name. It
@@ -182,7 +182,7 @@ func (h *Handler) ListAvailableLocations() ([]Location, error) {
 	}
 
 	var schema ExtensionSchemaResponse
-	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, url.PathEscape(latestVersion))
+	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, httpclient.PathSegment(latestVersion))
 	resp, err := h.client.HTTP().R().SetResult(&schema).Get(schemaEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch extension schema: %w", err)
@@ -217,7 +217,7 @@ func (h *Handler) ListAvailableFeatureSets() ([]FeatureSet, error) {
 	}
 
 	var schema ExtensionSchemaResponse
-	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, url.PathEscape(latestVersion))
+	schemaEndpoint := fmt.Sprintf(ExtensionSchemaAPI, httpclient.PathSegment(latestVersion))
 	resp, err := h.client.HTTP().R().SetResult(&schema).Get(schemaEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch extension schema: %w", err)
@@ -260,7 +260,7 @@ func (h *Handler) GetRaw(id string) ([]byte, error) {
 func (h *Handler) Get(id string) (*AzureMonitoringConfig, error) {
 	var result AzureMonitoringConfig
 	req := h.client.HTTP().R().SetResult(&result)
-	resp, err := req.Get(fmt.Sprintf("%s/%s", BaseAPI, id))
+	resp, err := req.Get(fmt.Sprintf("%s/%s", BaseAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +353,7 @@ func (h *Handler) Update(id string, data []byte) (*AzureMonitoringConfig, error)
 		SetHeader("Content-Type", "application/json").
 		SetBody(data).
 		SetResult(&result).
-		Put(fmt.Sprintf("%s/%s", BaseAPI, id))
+		Put(fmt.Sprintf("%s/%s", BaseAPI, httpclient.PathSegment(id)))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to update azure_monitoring_config: %w", err)
@@ -367,7 +367,7 @@ func (h *Handler) Update(id string, data []byte) (*AzureMonitoringConfig, error)
 
 // Delete deletes an Azure monitoring config by ID
 func (h *Handler) Delete(id string) error {
-	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", BaseAPI, id))
+	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", BaseAPI, httpclient.PathSegment(id)))
 	if err != nil {
 		return err
 	}

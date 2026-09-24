@@ -10,6 +10,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 const (
@@ -372,7 +373,7 @@ func (h *Handler) Get(objectID string) (*AnomalyDetector, error) {
 	var raw settingsItem
 	req := h.client.HTTP().R().SetResult(&raw)
 
-	resp, err := req.Get(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
+	resp, err := req.Get(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(objectID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get anomaly detector: %w", err)
 	}
@@ -541,7 +542,7 @@ func (h *Handler) Update(objectID string, data []byte) (*AnomalyDetector, error)
 	resp, err := h.client.HTTP().R().
 		SetBody(body).
 		SetHeader("If-Match", existing.SchemaVersion).
-		Put(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
+		Put(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(objectID)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to update anomaly detector: %w", err)
 	}
@@ -571,7 +572,7 @@ func (h *Handler) Update(objectID string, data []byte) (*AnomalyDetector, error)
 
 // Delete deletes an anomaly detector by object ID.
 func (h *Handler) Delete(objectID string) error {
-	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", SettingsAPI, objectID))
+	resp, err := h.client.HTTP().R().Delete(fmt.Sprintf("%s/%s", SettingsAPI, httpclient.PathSegment(objectID)))
 	if err != nil {
 		return fmt.Errorf("failed to delete anomaly detector: %w", err)
 	}

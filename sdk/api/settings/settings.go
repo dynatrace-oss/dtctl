@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -110,7 +109,7 @@ func (h *Handler) ListSchemas(ctx context.Context) (*SchemaList, error) {
 // GetSchema gets a specific schema definition.
 func (h *Handler) GetSchema(ctx context.Context, schemaID string) (map[string]any, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/schemas/%s", url.PathEscape(schemaID)))
+		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/schemas/%s", httpclient.PathSegment(schemaID)))
 	if err != nil {
 		return nil, fmt.Errorf("get schema %q: %w", schemaID, err)
 	}
@@ -199,7 +198,7 @@ func (h *Handler) ListObjects(ctx context.Context, schemaID, scope string, chunk
 func (h *Handler) Get(ctx context.Context, objectID string) (*SettingsObject, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("fields", "objectId,scope,schemaId,schemaVersion,externalId,summary,value,modificationInfo").
-		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", url.PathEscape(objectID)))
+		Get(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", httpclient.PathSegment(objectID)))
 	if err != nil {
 		return nil, fmt.Errorf("get settings object %q: %w", objectID, err)
 	}
@@ -273,7 +272,7 @@ func (h *Handler) ValidateUpdate(ctx context.Context, objectID, schemaVersion st
 		SetBody(body).
 		SetHeader("If-Match", schemaVersion).
 		SetQueryParam("validateOnly", "true").
-		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", url.PathEscape(objectID)))
+		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", httpclient.PathSegment(objectID)))
 	if err != nil {
 		return fmt.Errorf("validate settings object update: %w", err)
 	}
@@ -292,7 +291,7 @@ func (h *Handler) Update(ctx context.Context, objectID, schemaVersion string, va
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetBody(body).
 		SetHeader("If-Match", schemaVersion).
-		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", url.PathEscape(objectID)))
+		Put(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", httpclient.PathSegment(objectID)))
 	if err != nil {
 		return fmt.Errorf("update settings object %q: %w", objectID, err)
 	}
@@ -308,7 +307,7 @@ func (h *Handler) Update(ctx context.Context, objectID, schemaVersion string, va
 func (h *Handler) Delete(ctx context.Context, objectID, schemaVersion string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("If-Match", schemaVersion).
-		Delete(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", url.PathEscape(objectID)))
+		Delete(fmt.Sprintf("/platform/classic/environment-api/v2/settings/objects/%s", httpclient.PathSegment(objectID)))
 	if err != nil {
 		return fmt.Errorf("delete settings object %q: %w", objectID, err)
 	}

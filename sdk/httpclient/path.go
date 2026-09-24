@@ -2,11 +2,38 @@ package httpclient
 
 import (
 	"fmt"
+	"net/url"
 	"path"
 	"strings"
 
 	"github.com/go-resty/resty/v2"
 )
+
+// PathSegment escapes v for use as one complete segment of a request path.
+//
+// It is [net/url.PathEscape] plus the colon. PathEscape leaves ':' intact, and
+// several Dynatrace collections spell an action as a suffix on the resource
+// segment -- "/analyzers/%s:poll", "/bucket-definitions/%s:truncate". An id
+// carrying a colon therefore names an *operation* rather than a resource:
+//
+//	dtctl describe analyzer "foo:poll"  ->  GET /analyzers/foo:poll
+//
+// which polls the analyzer "foo" instead of looking up the one that was named.
+// That is the same retargeting as '/', '?' and '#', and it is invisible for the
+// same reason: the request succeeds, against something else.
+//
+// Escaping the colon costs nothing, because an action suffix is a literal in
+// the format string and never passes through here -- only the interpolated
+// value does. The other characters PathEscape leaves alone ('$', '&', '+', '-',
+// '.', '=', '@', '_', '~') route nothing in a path segment: '?' and '#' are
+// already escaped, so '&' and '=' cannot begin a query, and ".." is refused by
+// [CheckRequestPath]. They stay readable on the wire.
+//
+// A value that is a path by design does not belong here. sdk/api/appengine
+// escapes a nested function name part by part instead.
+func PathSegment(v string) string {
+	return strings.ReplaceAll(url.PathEscape(v), ":", "%3A")
+}
 
 // CheckRequestPath reports whether reqPath addresses what it spells.
 //
