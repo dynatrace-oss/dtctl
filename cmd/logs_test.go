@@ -1,0 +1,134 @@
+package cmd
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
+)
+
+// newTaskLogEnv serves execution exec-1 with tasks step1 and step2. step1's log
+// is always fetched; step2's log answers with step2Status. The execution
+// reports RUNNING for the first runningPolls state checks and SUCCESS after.
+func newTaskLogEnv(t *testing.T, step2Status int, runningPolls int32) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var stateChecks atomic.Int32
+	now := time.Now().UTC().Format(time.RFC3339)
+	later := time.Now().Add(time.Second).UTC().Format(time.RFC3339)
+	const base = "/platform/automation/v1/executions/exec-1"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case base:
+			state := "SUCCESS"
+			if stateChecks.Add(1) <= runningPolls {
+				state = "RUNNING"
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"id":"exec-1","state":%q,"startedAt":%q}`, state, now)
+		case base + "/log":
+			fmt.Fprint(w, `"workflow log\n"`)
+		case base + "/tasks":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"step1":{"id":"t1","name":"step1","state":"SUCCESS","startedAt":%q},`+
+				`"step2":{"id":"t2","name":"step2","state":"SUCCESS","startedAt":%q}}`, now, later)
+		case base + "/tasks/step1/log":
+			fmt.Fprint(w, `"step1 output\n"`)
+		case base + "/tasks/step2/log":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(step2Status)
+			fmt.Fprint(w, `{"error":{"message":"step2 refused"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &stateChecks
+}
+
+func runLogs(t *testing.T, srv *httptest.Server, argv ...string) (code int, stdout, stderr string) {
+	t.Helper()
+	t.Setenv("CLAUDECODE", "")
+	t.Setenv("CLAUDE_CODE", "")
+	t.Cleanup(restorePristineTree)
+	var errBuf bytes.Buffer
+	code, stdout = captureRun(t, argv, RunOptions{
+		Session: &Session{EnvironmentURL: srv.URL, Token: "t", MinStability: "experimental"},
+		Stderr:  &errBuf,
+	})
+	return code, stdout, errBuf.String()
+}
+
+// A task log that cannot be fetched fails the command, but only after the logs
+// that were fetched are printed: stdout is what it always was.
+func TestLogsWorkflowExecution_TaskLogFailureFailsAfterPrinting(t *testing.T) {
+	for _, flag := range []string{"--tasks", "--all"} {
+		t.Run(flag, func(t *testing.T) {
+			srv, _ := newTaskLogEnv(t, http.StatusForbidden, 0)
+
+			code, stdout, stderr := runLogs(t, srv, "logs", "wfe", "exec-1", flag, "--no-agent")
+
+			require.Equal(t, client.ExitError, code, stdout)
+			require.Contains(t, stdout, "=== Task: step1 [SUCCESS] ===\nstep1 output\n")
+			require.Contains(t, stdout, "=== Task: step2 [SUCCESS] ===\n(failed to fetch log:")
+			require.Contains(t, stderr, "could not fetch the log of 1 of 2 tasks in execution exec-1")
+			require.Contains(t, stderr, "step2")
+		})
+	}
+}
+
+func TestLogsWorkflowExecution_TaskLogFailureAgentEnvelope(t *testing.T) {
+	srv, _ := newTaskLogEnv(t, http.StatusInternalServerError, 0)
+
+	code, stdout, _ := runLogs(t, srv, "-A", "logs", "wfe", "exec-1", "--tasks")
+
+	require.Equal(t, client.ExitError, code, stdout)
+	require.Contains(t, stdout, "step1 output")
+	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
+	var resp output.Response
+	require.NoError(t, json.Unmarshal([]byte(lines[len(lines)-1]), &resp), stdout)
+	require.False(t, resp.OK)
+	require.NotNil(t, resp.Error)
+	require.Equal(t, "task_log_unavailable", resp.Error.Code)
+	require.Contains(t, resp.Error.Message, "step2")
+	require.NotEmpty(t, resp.Error.Suggestions)
+}
+
+// A 404 for one task, while another task's log was fetched, keeps today's
+// behavior: marked inline, exit 0.
+func TestLogsWorkflowExecution_LoneNotFoundStillSucceeds(t *testing.T) {
+	srv, _ := newTaskLogEnv(t, http.StatusNotFound, 0)
+
+	code, stdout, _ := runLogs(t, srv, "logs", "wfe", "exec-1", "--tasks", "--no-agent")
+
+	require.Zero(t, code, stdout)
+	require.Contains(t, stdout, "step1 output")
+}
+
+// Under --follow a failed task log is a warning, not the end of the stream;
+// the command only fails if the log is still incomplete when the execution
+// has finished.
+func TestLogsWorkflowExecution_FollowWarnsAndKeepsStreaming(t *testing.T) {
+	orig := followPollInterval
+	followPollInterval = time.Millisecond
+	t.Cleanup(func() { followPollInterval = orig })
+	srv, stateChecks := newTaskLogEnv(t, http.StatusForbidden, 2)
+
+	code, stdout, stderr := runLogs(t, srv, "logs", "wfe", "exec-1", "--tasks", "--follow", "--no-agent")
+
+	require.Equal(t, int32(3), stateChecks.Load(), "the stream must survive the failed fetches")
+	require.Contains(t, stdout, "step1 output")
+	require.Contains(t, stdout, "--- Execution SUCCESS")
+	require.Equal(t, 1, strings.Count(stderr, "Warning:"), "one warning per distinct failure, not per poll:\n%s", stderr)
+	require.Equal(t, client.ExitError, code, stdout)
+	require.Contains(t, stderr, "could not fetch the log of 1 of 2 tasks")
+}

@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -369,6 +370,119 @@ func TestGetFullExecutionLog_NoTasks(t *testing.T) {
 	}
 	if log != "" {
 		t.Errorf("expected empty log for no tasks, got: %q", log)
+	}
+}
+
+// twoTaskMux serves an execution with tasks step1 and step2. step1's log
+// always succeeds; step2's log answers with step2Status and a JSON error body.
+func twoTaskMux(execID string, step2Status int) *http.ServeMux {
+	now := time.Now()
+	later := now.Add(time.Second)
+	base := "/platform/automation/v1/executions/" + execID
+	mux := http.NewServeMux()
+	mux.HandleFunc(base+"/log", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `"workflow log\n"`)
+	})
+	mux.HandleFunc(base+"/tasks", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(TaskExecutionMap{
+			"step1": {ID: "t1", Name: "step1", State: "SUCCESS", StartedAt: &now},
+			"step2": {ID: "t2", Name: "step2", State: "SUCCESS", StartedAt: &later},
+		})
+	})
+	mux.HandleFunc(base+"/tasks/step1/log", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `"step1 output\n"`)
+	})
+	mux.HandleFunc(base+"/tasks/step2/log", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(step2Status)
+		fmt.Fprint(w, `{"error":{"message":"step2 refused"}}`)
+	})
+	return mux
+}
+
+func TestGetFullExecutionLog_TaskLogFailureIsReturned(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			h, cleanup := newExecTestHandler(t, twoTaskMux("exec-partial", status))
+			defer cleanup()
+
+			log, err := h.GetFullExecutionLog("exec-partial")
+
+			var taskErr *TaskLogError
+			if !errors.As(err, &taskErr) {
+				t.Fatalf("expected *TaskLogError, got %T: %v", err, err)
+			}
+			if taskErr.Total != 2 || len(taskErr.Failed) != 1 || taskErr.Failed[0].Task != "step2" {
+				t.Errorf("unexpected failure record: %+v", taskErr)
+			}
+			if !strings.Contains(err.Error(), "step2") {
+				t.Errorf("error does not name the failed task: %v", err)
+			}
+			// The logs that were fetched are still returned, and the text
+			// keeps its inline marker for the task that failed.
+			if !strings.Contains(log, "step1 output") {
+				t.Errorf("fetched log missing from output: %q", log)
+			}
+			if !strings.Contains(log, "=== Task: step2 [SUCCESS] ===\n(failed to fetch log:") {
+				t.Errorf("inline failure marker missing: %q", log)
+			}
+		})
+	}
+}
+
+// A task whose log does not exist is not a failure of the command while some
+// other task's log was fetched: the text marks it inline, as before.
+func TestGetFullExecutionLog_NotFoundAloneIsNotAnError(t *testing.T) {
+	h, cleanup := newExecTestHandler(t, twoTaskMux("exec-404", http.StatusNotFound))
+	defer cleanup()
+
+	log, err := h.GetFullExecutionLog("exec-404")
+	if err != nil {
+		t.Fatalf("expected no error for a lone 404, got %v", err)
+	}
+	if !strings.Contains(log, "step1 output") || !strings.Contains(log, "(failed to fetch log:") {
+		t.Errorf("unexpected log: %q", log)
+	}
+}
+
+func TestGetFullExecutionLog_NoTaskLogFetchedIsAnError(t *testing.T) {
+	now := time.Now()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/automation/v1/executions/exec-none/tasks", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(TaskExecutionMap{
+			"only": {ID: "t1", Name: "only", State: "SUCCESS", StartedAt: &now},
+		})
+	})
+	mux.HandleFunc("/platform/automation/v1/executions/exec-none/tasks/only/log", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	h, cleanup := newExecTestHandler(t, mux)
+	defer cleanup()
+
+	_, err := h.GetFullExecutionLog("exec-none")
+	var taskErr *TaskLogError
+	if !errors.As(err, &taskErr) {
+		t.Fatalf("expected *TaskLogError when no task log could be fetched, got %T: %v", err, err)
+	}
+	if taskErr.Total != 1 || len(taskErr.Failed) != 1 {
+		t.Errorf("unexpected failure record: %+v", taskErr)
+	}
+}
+
+func TestGetCompleteExecutionLog_TaskLogFailureKeepsFetchedLogs(t *testing.T) {
+	h, cleanup := newExecTestHandler(t, twoTaskMux("exec-all", http.StatusForbidden))
+	defer cleanup()
+
+	log, err := h.GetCompleteExecutionLog("exec-all")
+
+	var taskErr *TaskLogError
+	if !errors.As(err, &taskErr) {
+		t.Fatalf("expected *TaskLogError, got %T: %v", err, err)
+	}
+	if !strings.Contains(log, "=== Workflow Execution Log ===\nworkflow log") || !strings.Contains(log, "step1 output") {
+		t.Errorf("fetched logs missing from output: %q", log)
 	}
 }
 

@@ -27,6 +27,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/inspect"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
+	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/tracing"
@@ -949,6 +950,23 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// workflow.TaskLogError — `logs wfe --tasks/--all` printed what it could but
+	// some task logs are missing. It wraps one error per task, possibly with
+	// different statuses, so it must be matched before APIError picks one.
+	var taskLogErr *workflow.TaskLogError
+	if errors.As(err, &taskLogErr) {
+		suggestions := make([]string, 0, len(taskLogErr.Failed)+1)
+		suggestions = append(suggestions, "the logs that could be fetched were printed before this error; the output is incomplete")
+		for _, f := range taskLogErr.Failed {
+			suggestions = append(suggestions, fmt.Sprintf("retry one task: dtctl logs wfe %s --task %s", taskLogErr.ExecutionID, f.Task))
+		}
+		return &output.ErrorDetail{
+			Code:        "task_log_unavailable",
+			Message:     taskLogErr.Error(),
+			Suggestions: suggestions,
+		}
+	}
+
 	// httpclient.APIError — an HTTP failure from an SDK call. Checked after the
 	// typed errors above, since several of them wrap an APIError and carry
 	// more specific context.
@@ -1204,6 +1222,13 @@ func exitCodeForError(err error) int {
 
 	var specErr *resapi.SpecUnavailableError
 	if errors.As(err, &specErr) {
+		return client.ExitError
+	}
+
+	// Several task logs may have failed with different statuses; none of them
+	// alone describes the failure.
+	var taskLogErr *workflow.TaskLogError
+	if errors.As(err, &taskLogErr) {
 		return client.ExitError
 	}
 

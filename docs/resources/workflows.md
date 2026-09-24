@@ -116,6 +116,8 @@ dtctl logs wfe exec-456 --follow
 dtctl get wfe-task-result exec-456 --task my_task -o json
 ```
 
+`dtctl logs wfe <id> --tasks` and `--all` print every task log they can fetch. If a task log cannot be fetched, the command marks it inline, names the failed tasks on stderr, and exits non-zero. A single missing (404) task log does not fail the command when other task logs were fetched. With `--follow`, a failed fetch prints a warning and streaming continues; the command exits non-zero only if a task log is still missing after the execution has finished.
+
 View and restore version history:
 
 ```bash
