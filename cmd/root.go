@@ -30,6 +30,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/suggest"
 	"github.com/dynatrace-oss/dtctl/pkg/tracing"
+	"github.com/dynatrace-oss/dtctl/sdk/api/appengine"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 	sdkauth "github.com/dynatrace-oss/dtctl/sdk/auth"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -673,20 +674,6 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
-	// client.APIError — raw API error without diagnostic wrapping
-	var apiErr *client.APIError
-	if errors.As(err, &apiErr) {
-		msg := apiErr.Message
-		if apiErr.Details != "" {
-			msg += " - " + apiErr.Details
-		}
-		return &output.ErrorDetail{
-			Code:       output.ClassifyHTTPError(apiErr.StatusCode),
-			Message:    msg,
-			StatusCode: apiErr.StatusCode,
-		}
-	}
-
 	// ScopeError — agent-mode preflight blocked a command missing token scopes
 	var scopeErr *ScopeError
 	if errors.As(err, &scopeErr) {
@@ -951,6 +938,33 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// appengine.ExecutionError — the submitted function code failed. Not an HTTP
+	// failure: the request arrived and App Engine answered. Retrying it unchanged
+	// can only fail the same way.
+	var execErr *appengine.ExecutionError
+	if errors.As(err, &execErr) {
+		return &output.ErrorDetail{
+			Code:    "function_error",
+			Message: err.Error(),
+		}
+	}
+
+	// httpclient.APIError — an HTTP failure from an SDK call. Checked after the
+	// typed errors above, since several of them wrap an APIError and carry
+	// more specific context.
+	var apiErr *httpclient.APIError
+	if errors.As(err, &apiErr) {
+		return &output.ErrorDetail{
+			Code:       output.ClassifyHTTPError(apiErr.StatusCode),
+			Message:    err.Error(),
+			StatusCode: apiErr.StatusCode,
+			// The same troubleshooting advice a diagnostic.Error carries for the
+			// same status: without it an SDK failure reaches a caller with a code
+			// and nothing to do about it.
+			Suggestions: diagnostic.SuggestionsForStatusCode(apiErr.StatusCode),
+		}
+	}
+
 	// Fallback — generic error with no structured context
 	return &output.ErrorDetail{
 		Code:    classifyGenericError(err),
@@ -1079,7 +1093,7 @@ func isPermissionDenied(err error) bool {
 		return diagErr.StatusCode == 403
 	}
 
-	var apiErr *client.APIError
+	var apiErr *httpclient.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.StatusCode == 403
 	}
@@ -1096,7 +1110,7 @@ func isURLRelatedError(err error) bool {
 		return diagErr.StatusCode == 401 || diagErr.StatusCode == 403
 	}
 
-	var apiErr *client.APIError
+	var apiErr *httpclient.APIError
 	if errors.As(err, &apiErr) {
 		return apiErr.StatusCode == 401 || apiErr.StatusCode == 403
 	}
@@ -1114,7 +1128,7 @@ func isURLRelatedError(err error) bool {
 }
 
 // exitCodeForError returns the appropriate process exit code for an error.
-// Uses typed exit codes from client.APIError and diagnostic.Error when available,
+// Uses typed exit codes from httpclient.APIError and diagnostic.Error when available,
 // falling back to ExitUsageError for command/flag errors and ExitError for everything else.
 func exitCodeForError(err error) int {
 	var silent *silentExitError
@@ -1133,11 +1147,6 @@ func exitCodeForError(err error) int {
 	var diagErr *diagnostic.Error
 	if errors.As(err, &diagErr) {
 		return diagErr.ExitCode()
-	}
-
-	var apiErr *client.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ExitCode()
 	}
 
 	var profileErr *ProfileError
@@ -1177,6 +1186,33 @@ func exitCodeForError(err error) int {
 
 	if errors.Is(err, errEmptyFlagValue) {
 		return client.ExitUsageError
+	}
+
+	// The API-index errors wrap an APIError but classify themselves, and their
+	// envelope codes (api_index_unavailable, api_spec_unavailable) are not the
+	// status of the failed request. Reporting "not found" for an environment that
+	// publishes no index would say the API asked about does not exist.
+	var registryErr *resapi.RegistryUnavailableError
+	if errors.As(err, &registryErr) {
+		// A refused index is a fact about the credential — the one case where the
+		// status does describe the failure, as errorToDetail also decides.
+		if registryErr.StatusCode == 401 || registryErr.StatusCode == 403 {
+			return client.ExitCodeForStatus(registryErr.StatusCode)
+		}
+		return client.ExitError
+	}
+
+	var specErr *resapi.SpecUnavailableError
+	if errors.As(err, &specErr) {
+		return client.ExitError
+	}
+
+	// httpclient.APIError — an HTTP failure from an SDK call. Last, for the same
+	// reason it is last in errorToDetail: the typed errors above wrap an APIError
+	// and carry a classification of their own, which must win.
+	var apiErr *httpclient.APIError
+	if errors.As(err, &apiErr) {
+		return client.ExitCodeForStatus(apiErr.StatusCode)
 	}
 
 	return client.ExitError

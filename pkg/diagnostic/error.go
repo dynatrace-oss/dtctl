@@ -63,55 +63,13 @@ func (e *Error) Unwrap() error {
 
 // ExitCode returns the appropriate exit code for this error
 func (e *Error) ExitCode() int {
-	switch e.StatusCode {
-	case 401:
-		return client.ExitAuthError
-	case 403:
-		return client.ExitPermissionError
-	case 404:
-		return client.ExitNotFoundError
-	default:
-		return client.ExitError
-	}
+	return client.ExitCodeForStatus(e.StatusCode)
 }
 
-// Wrap wraps an error with diagnostic information
-func Wrap(err error, operation string) *Error {
-	if err == nil {
-		return nil
-	}
-
-	de := &Error{
-		Operation: operation,
-		Err:       err,
-	}
-
-	// Extract status code if it's an APIError
-	if apiErr, ok := err.(*client.APIError); ok {
-		de.StatusCode = apiErr.StatusCode
-		de.Message = apiErr.Message
-		if apiErr.Details != "" {
-			de.Message += " - " + apiErr.Details
-		}
-	}
-
-	// Add suggestions based on status code
-	de.Suggestions = suggestionsForStatusCode(de.StatusCode)
-
-	return de
-}
-
-// WrapWithMessage wraps an error with a custom message
-func WrapWithMessage(err error, operation string, message string) *Error {
-	de := Wrap(err, operation)
-	if de != nil && message != "" {
-		de.Message = message
-	}
-	return de
-}
-
-// suggestionsForStatusCode returns troubleshooting suggestions based on HTTP status code
-func suggestionsForStatusCode(statusCode int) []string {
+// SuggestionsForStatusCode returns troubleshooting suggestions for an HTTP status
+// code. Exported so the agent envelope can carry the same advice for a bare SDK
+// HTTP failure that a diagnostic.Error carries for a wrapped one.
+func SuggestionsForStatusCode(statusCode int) []string {
 	switch statusCode {
 	case 401:
 		return []string{
@@ -189,7 +147,7 @@ func (e *Error) WithRequestID(requestID string) *Error {
 func (e *Error) WithStatusCode(statusCode int) *Error {
 	e.StatusCode = statusCode
 	if len(e.Suggestions) == 0 {
-		e.Suggestions = suggestionsForStatusCode(statusCode)
+		e.Suggestions = SuggestionsForStatusCode(statusCode)
 	}
 	return e
 }

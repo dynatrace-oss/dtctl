@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 func TestError_Error(t *testing.T) {
@@ -124,97 +125,6 @@ func TestError_ExitCode(t *testing.T) {
 	}
 }
 
-func TestWrap(t *testing.T) {
-	tests := []struct {
-		name           string
-		err            error
-		operation      string
-		wantNil        bool
-		wantOperation  string
-		wantStatusCode int
-	}{
-		{
-			name:      "nil error returns nil",
-			err:       nil,
-			operation: "test",
-			wantNil:   true,
-		},
-		{
-			name:           "regular error",
-			err:            errors.New("test error"),
-			operation:      "get workflows",
-			wantOperation:  "get workflows",
-			wantStatusCode: 0,
-		},
-		{
-			name: "APIError extracts status code",
-			err: &client.APIError{
-				StatusCode: 404,
-				Message:    "not found",
-				Details:    "workflow does not exist",
-			},
-			operation:      "get workflows",
-			wantOperation:  "get workflows",
-			wantStatusCode: 404,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := Wrap(tt.err, tt.operation)
-
-			if tt.wantNil {
-				if got != nil {
-					t.Errorf("Wrap() = %v, want nil", got)
-				}
-				return
-			}
-
-			if got == nil {
-				t.Fatal("Wrap() returned nil, want non-nil")
-			}
-
-			if got.Operation != tt.wantOperation {
-				t.Errorf("Operation = %q, want %q", got.Operation, tt.wantOperation)
-			}
-
-			if got.StatusCode != tt.wantStatusCode {
-				t.Errorf("StatusCode = %d, want %d", got.StatusCode, tt.wantStatusCode)
-			}
-
-			// Should have underlying error
-			if got.Err != tt.err {
-				t.Errorf("Underlying error not preserved")
-			}
-
-			// Should have suggestions if status code warrants it
-			if tt.wantStatusCode > 0 {
-				expectedSuggestions := suggestionsForStatusCode(tt.wantStatusCode)
-				if len(expectedSuggestions) > 0 && len(got.Suggestions) == 0 {
-					t.Errorf("Expected suggestions for status code %d, got none", tt.wantStatusCode)
-				}
-			}
-		})
-	}
-}
-
-func TestWrapWithMessage(t *testing.T) {
-	err := errors.New("original error")
-	de := WrapWithMessage(err, "test operation", "custom message")
-
-	if de == nil {
-		t.Fatal("WrapWithMessage() returned nil")
-	}
-
-	if de.Message != "custom message" {
-		t.Errorf("Message = %q, want %q", de.Message, "custom message")
-	}
-
-	if de.Operation != "test operation" {
-		t.Errorf("Operation = %q, want %q", de.Operation, "test operation")
-	}
-}
-
 func TestSuggestionsForStatusCode(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -279,10 +189,10 @@ func TestSuggestionsForStatusCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := suggestionsForStatusCode(tt.statusCode)
+			got := SuggestionsForStatusCode(tt.statusCode)
 
 			if len(got) < tt.wantCount {
-				t.Errorf("suggestionsForStatusCode(%d) returned %d suggestions, want at least %d",
+				t.Errorf("SuggestionsForStatusCode(%d) returned %d suggestions, want at least %d",
 					tt.statusCode, len(got), tt.wantCount)
 			}
 
@@ -293,7 +203,7 @@ func TestSuggestionsForStatusCode(t *testing.T) {
 					found = true
 				}
 				if !found {
-					t.Errorf("suggestionsForStatusCode(%d) suggestions don't contain %q\ngot: %v",
+					t.Errorf("SuggestionsForStatusCode(%d) suggestions don't contain %q\ngot: %v",
 						tt.statusCode, tt.wantContains, got)
 				}
 			}
@@ -366,15 +276,15 @@ func TestError_Unwrap(t *testing.T) {
 
 func TestError_ChainedWrapping(t *testing.T) {
 	// Test that errors.Is and errors.As work with our wrapped errors
-	originalErr := &client.APIError{StatusCode: 404, Message: "not found"}
-	wrappedErr := Wrap(originalErr, "get workflow")
+	originalErr := httpclient.NewAPIError(404, "not found", "")
+	wrappedErr := &Error{Operation: "get workflow", StatusCode: 404, Err: originalErr}
 
 	// Should be able to unwrap to find the original error
 	if !errors.Is(wrappedErr, originalErr) {
 		t.Error("errors.Is should find the original error")
 	}
 
-	var apiErr *client.APIError
+	var apiErr *httpclient.APIError
 	if !errors.As(wrappedErr, &apiErr) {
 		t.Error("errors.As should extract APIError from wrapped error")
 	}

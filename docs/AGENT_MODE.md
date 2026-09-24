@@ -72,6 +72,7 @@ Error codes are stable identifiers that agents can match on programmatically:
 | `query_cancelled` | The query was cancelled on the server | Retry if the cancellation was not intended |
 | `result_expired` | The query result expired, was consumed, or was cancelled before it was fetched (HTTP 410) | Run the same query again |
 | `unknown_query_state` | The query reported a state this dtctl does not know, or never left it before the poll deadline | Upgrade dtctl; re-run if the query was simply slow |
+| `function_error` | The code you submitted to `exec function` failed | Fix the code; don't retry unchanged |
 | `safety_blocked` | The context's [safety level](CONFIGURATION.md#safety-levels) forbids this operation | Don't retry; ask a human to widen the level |
 | `profile_blocked` | The active [command profile](CONFIGURATION.md#command-profiles) doesn't expose this command | Re-read `dtctl commands` and pick a supported path |
 | `stability_blocked` | The command or a flag you used offers a weaker contract than the context's [stability floor](STABILITY.md#choosing-what-this-environment-accepts) accepts | Don't retry; use a `stable` alternative, or ask a human to admit this entry |
@@ -139,6 +140,23 @@ condition on `timeseries` instead of `filter:`; and `fetch dt.entity.service` /
 advice rather than a rewrite, because the fix depends on whether the field is a
 metric. A hint is only given when the pattern clearly matches; the suggested
 command carries only the query, so re-add any flags you used.
+
+### Exit codes
+
+The process exit code is the same verdict at lower resolution, for shell callers
+that do not parse the envelope:
+
+| Exit | Meaning | Codes that produce it |
+|---|---|---|
+| `0` | Success | -- |
+| `1` | General failure | every code not listed below |
+| `2` | Usage error | `unknown_command`, `profile_blocked`, `stability_blocked`, `deprecated_surface`, `development_disabled`, `unsupported_in_service`, and `validation_error` for an empty flag value |
+| `3` | Not authenticated (HTTP 401) | `auth_required` |
+| `4` | Resource does not exist (HTTP 404) | `not_found` |
+| `5` | Not allowed (HTTP 403) | `permission_denied`, `insufficient_scope` |
+
+Branch on `code` wherever you can. An exit code cannot tell `safety_blocked`
+apart from a network failure, and a new code arrives without a new exit code.
 
 ### Query results: the `result.kind` discriminator
 
