@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -339,19 +340,23 @@ func executeArgs(argv []string) int {
 		// so the guard is the only observable outcome, and a flag error stops
 		// pflag before it reaches a mode flag given later on the line. Honor
 		// them from the raw argv so a machine caller still gets the structured
-		// envelope, wherever it put --agent.
+		// envelope, wherever it put --agent. An unknown command stops cobra
+		// even earlier, and neither failure ever reaches initConfig, so the
+		// environment's auto-detection is asked here as well.
 		structuredError := agentMode || plainMode
 		if !structuredError {
 			var maskedProfile *ProfileError
 			var maskedUnsupported *UnsupportedCommandError
 			var maskedStability *StabilityError
 			var unknownFlag *suggest.FlagError
+			var unknownCmd *suggest.CommandError
 			if errors.As(err, &maskedProfile) || errors.As(err, &maskedUnsupported) ||
 				errors.As(err, &maskedStability) || errors.As(err, &unknownFlag) ||
-				errors.Is(err, errEmptyFlagValue) {
+				errors.As(err, &unknownCmd) || errors.Is(err, errEmptyFlagValue) {
 				structuredError = hasRawFlag(spanArgs, "--agent") ||
 					hasShortFlagLetter(spanArgs, 'A') ||
-					hasRawFlag(spanArgs, "--plain")
+					hasRawFlag(spanArgs, "--plain") ||
+					agentModeAutoDetectedFromArgs(spanArgs)
 			}
 		}
 
@@ -848,6 +853,10 @@ func errorToDetail(err error) *output.ErrorDetail {
 			Code:    "unknown_command",
 			Message: cmdErr.Message,
 		}
+		if len(cmdErr.Runnable) > 0 {
+			detail.Suggestions = cmdErr.Runnable
+			return detail
+		}
 		if cmdErr.Suggestion != nil {
 			detail.Suggestions = []string{
 				fmt.Sprintf("did you mean %q?", cmdErr.Suggestion.Value),
@@ -1193,9 +1202,16 @@ func requireSubcommand(cmd *cobra.Command, args []string) error {
 
 	// Schema introspection is DQL-side, not a resource — agents try
 	// `describe field` / `describe dataobject` when hunting for a schema.
+	// The errors are typed so the agent envelope reports unknown_command (and
+	// the usage exit code) like any other misspelled command, with the
+	// correction as a command line that runs as-is.
 	switch args[0] {
 	case "field", "fields", "dataobject", "data-object", "dataobjects", "schema":
-		return fmt.Errorf("unknown resource type %q — the data schema is queried, not described: dtctl query 'fetch dt.system.data_objects | fields name' lists tables; a table's fields show up in its records", args[0])
+		return &suggest.CommandError{
+			Command:  args[0],
+			Message:  fmt.Sprintf("unknown resource type %q — the data schema is queried, not described: dtctl query 'fetch dt.system.data_objects | fields name' lists tables; a table's fields show up in its records", args[0]),
+			Runnable: []string{"dtctl query 'fetch dt.system.data_objects | fields name'"},
+		}
 	}
 
 	// Check if the first arg looks like an unknown subcommand
@@ -1203,10 +1219,29 @@ func requireSubcommand(cmd *cobra.Command, args []string) error {
 	suggestion := suggest.FindClosest(args[0], subcommands)
 
 	if suggestion != nil {
-		return fmt.Errorf("unknown resource type %q, did you mean %q?", args[0], suggestion.Value)
+		corrected := append([]string{cmd.CommandPath(), suggestion.Value}, quoteCommandArgs(args[1:])...)
+		return &suggest.CommandError{
+			Command:    args[0],
+			Message:    fmt.Sprintf("unknown resource type %q", args[0]),
+			Suggestion: suggestion,
+			Runnable:   []string{strings.Join(corrected, " ")},
+		}
 	}
 
-	return fmt.Errorf("unknown resource type %q\nRun '%s --help' for available resources", args[0], cmd.CommandPath())
+	return &suggest.CommandError{
+		Command:   args[0],
+		Message:   fmt.Sprintf("unknown resource type %q", args[0]),
+		UsageHint: fmt.Sprintf("Run '%s --help' for available resources", cmd.CommandPath()),
+		Runnable:  []string{"dtctl commands"},
+	}
+}
+
+func quoteCommandArgs(args []string) []string {
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = quoteCommandArg(a)
+	}
+	return quoted
 }
 
 // GetPlainMode returns the current plain mode setting
@@ -1694,6 +1729,59 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	_ = viper.BindPFlag("context", rootCmd.PersistentFlags().Lookup("context"))
 	_ = viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output"))
 	_ = viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+}
+
+// agentModeAutoDetectedFromArgs answers initConfig's auto-detection question
+// from the raw command line, for failures cobra raises before initConfig runs
+// (unknown command, unknown flag). It applies the same rules: an explicit
+// --no-agent, a session-backed invocation, or an explicit non-JSON -o opts out.
+func agentModeAutoDetectedFromArgs(args []string) bool {
+	if noAgent || runSession != nil || rawNoAgent(args) || !aidetect.Detect().Detected {
+		return false
+	}
+	format, given := rawOutputFormat(args)
+	return !given || format == "json"
+}
+
+// rawNoAgent reports whether the unparsed args turn --no-agent on.
+func rawNoAgent(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "--no-agent" {
+			return true
+		}
+		if v, ok := strings.CutPrefix(a, "--no-agent="); ok {
+			if on, err := strconv.ParseBool(v); err == nil && on {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// rawOutputFormat extracts -o/--output from unparsed args, in all the
+// spellings pflag accepts: "--output x", "--output=x", "-o x", "-ox", "-o=x".
+func rawOutputFormat(args []string) (string, bool) {
+	for i, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "--output" || a == "-o" {
+			if i+1 < len(args) {
+				return args[i+1], true
+			}
+			return "", true
+		}
+		if v, ok := strings.CutPrefix(a, "--output="); ok {
+			return v, true
+		}
+		if v, ok := strings.CutPrefix(a, "-o"); ok && !strings.HasPrefix(a, "--") {
+			return strings.TrimPrefix(v, "="), true
+		}
+	}
+	return "", false
 }
 
 // initConfig reads in config file and ENV variables if set

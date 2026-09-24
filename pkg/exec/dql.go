@@ -756,9 +756,28 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		effectiveFormat = output.NormalizeJQOutputFormat(effectiveFormat)
 	}
 
-	// Print any notifications/warnings first
-	if notifications := result.GetNotifications(); len(notifications) > 0 {
+	// Notifications go to stderr ahead of the rows — except where the agent
+	// envelope carries them in context.warnings/suggestions: printing them
+	// there too made a host that merges the streams read the advice twice,
+	// once as prose it cannot parse. An agent that asked for bytes the envelope
+	// cannot wrap (-o csv/yaml) still gets them on stderr, below.
+	notificationsPrinted := false
+	printNotifications := func() {
+		if notificationsPrinted {
+			return
+		}
+		notificationsPrinted = true
+		notifications := result.GetNotifications()
+		if len(notifications) == 0 {
+			return
+		}
 		e.PrintNotifications(notifications)
+		if advice := unsortedSummarizeAdvice(query, notifications); advice != "" {
+			output.PrintHint("%s", advice)
+		}
+	}
+	if !opts.AgentMode {
+		printNotifications()
 	}
 
 	// Extract records from result
@@ -820,6 +839,9 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 	if opts.AgentMode && opts.JQFilter != "" {
 		return e.printAgentJQ(query, result, records, meta, effectiveFormat, opts)
 	}
+
+	// No envelope from here on: stderr is the only channel left.
+	printNotifications()
 
 	// -o auto: pick the format from the rows, so the switch below prints exactly
 	// what that explicit format would. With --jq the rows are not what gets
@@ -939,7 +961,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 		}
 	}
 
-	warnings, suggestions := notificationAdvice(result.GetNotifications())
+	warnings, suggestions := queryNotificationAdvice(query, result.GetNotifications())
 	scanWarnings, scanSuggestions := heavyScanAdvice(result)
 	warnings = append(warnings, scanWarnings...)
 	suggestions = append(suggestions, scanSuggestions...)

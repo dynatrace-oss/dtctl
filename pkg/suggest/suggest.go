@@ -141,6 +141,10 @@ type CommandError struct {
 	Suggestion  *Suggestion
 	Suggestions []Suggestion
 	UsageHint   string
+	// Runnable holds complete command lines that do what the caller most
+	// likely meant. It does not change Error(); an agent envelope offers these
+	// in place of the did-you-mean prose, so a caller can run one as-is.
+	Runnable []string
 }
 
 func (e *CommandError) Error() string {
