@@ -59,7 +59,7 @@ func ParseSeriesMode(s string) (SeriesMode, error) {
 
 // ApplySeriesMode compacts the numeric series of DQL timeseries records (those
 // carrying `timeframe` and `interval`) according to mode, and rounds every
-// float in the result to `digits` significant digits (0 = no rounding; summary
+// float in the result — timeseries or not — to `digits` significant digits (0 = no rounding; summary
 // statistics default to 3). With tabular set, a summary is rendered as one
 // human-readable cell instead of an object, for table and CSV output.
 //

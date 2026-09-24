@@ -382,3 +382,19 @@ func TestApplySeriesMode_DownsampleWithPrecision(t *testing.T) {
 		t.Errorf("got %v, want %v", got[0]["cpu"], want)
 	}
 }
+
+// --precision is result-wide by design: a plain fetch/summarize record (no
+// timeframe/interval) is rounded too, while --series leaves it alone.
+func TestApplySeriesMode_PrecisionAppliesToNonTimeseriesRecords(t *testing.T) {
+	in := []map[string]interface{}{{"avg": 3.14159, "host": "web-01", "count": "42"}}
+	for _, mode := range []SeriesMode{{Kind: SeriesFull}, {Kind: SeriesSummary}, {Kind: SeriesDownsample, Points: 4}} {
+		got := ApplySeriesMode(in, mode, 3, false)
+		want := map[string]interface{}{"avg": 3.14, "host": "web-01", "count": "42"}
+		if !reflect.DeepEqual(got[0], want) {
+			t.Errorf("mode %+v: got %#v, want %#v", mode, got[0], want)
+		}
+	}
+	if in[0]["avg"] != 3.14159 {
+		t.Errorf("input mutated")
+	}
+}

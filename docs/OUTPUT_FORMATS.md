@@ -330,10 +330,12 @@ dtctl query 'timeseries avg(dt.host.cpu.usage)' --precision 3 -o json
   the result is still a regular timeseries over the same `timeframe` and works
   with every output format, including charts.
 
-Only records carrying both `timeframe` and `interval` are touched, and within
-them only arrays of numbers (nulls allowed); dimension columns pass through.
+`--series` touches only records carrying both `timeframe` and `interval`, and
+within them only arrays of numbers (nulls allowed); dimension columns pass
+through.
 
-`--precision N` rounds every floating-point number in the result to N
+`--precision N` is not limited to timeseries: it applies to the whole result,
+so a `fetch` or `summarize` result is rounded too. It rounds every floating-point number to N
 significant digits but never into the integer part: `12345.678` at 3 digits is
 `12346`, not `12300`. DQL `long` values (strings on the wire) are never
 touched. Both flags are opt-in and apply to the agent envelope, `--jq`, and
