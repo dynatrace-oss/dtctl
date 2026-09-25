@@ -49,8 +49,9 @@ dtctl exec api /platform/example/v1/things -X POST -d @body.json
 3. **Derive authority from the specification.** What a request may do is a
    property of the endpoint, published by the environment — not of the verb the
    caller typed.
-4. **Never become the integration target.** See below; this is a design
-   constraint, not a caveat.
+4. **Don't become the integration target.** See below. This is design advice
+   about where integrations should end up, not a stability caveat: `exec api`
+   is `stable`.
 5. **Disclose nothing.** dtctl mirrors the environment's index and filters
    nothing, and no committed artifact names a non-public API.
 
@@ -250,6 +251,19 @@ would gate each of them one level too low. Two mechanisms close this:
 `TestExecAPIRefusesAmbiguousPathSpellings` pin both halves.
 
 ### Never the integration target
+
+This is advice about where an integration should end up, which is a native
+command (`dtctl get apis --uncovered` is the backlog). It is **not** a statement
+about the command's stability contract. `exec api` (and `exec dql`) are
+declared `stable`: the command's shape (path argument, `-X`, `-d`, `-H`,
+`--dry-run`, the safety gate, the refusal behaviour) is additive-only like any
+other stable command. What it *reaches* is whatever the environment's APIs
+offer, and those change on the platform's schedule, not dtctl's. The response
+body it passes through is therefore outside dtctl's stable output contract.
+Only the invocation and how dtctl frames the response are covered. Demoting it
+was considered and rejected (#544): under a `stable` floor, which CI and
+embedding services pin, it would stop working in exactly the automation that has
+no native alternative yet.
 
 An escape hatch that becomes the normal way to use dtctl has failed, even while
 working. Every native command validates input, resolves names, formats output, and

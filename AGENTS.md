@@ -156,6 +156,16 @@ demote the command. A PR that changes what agent mode outputs still has to:
 - use a breaking Conventional Commit title (`feat(scope)!:` plus a
   `BREAKING CHANGE:` footer), so the release notes lead with it.
 
+**Outside agent mode, the output contract is per command, not per field.**
+The golden tests enforce it at whole-command level: they snapshot each printer's
+output and fail on any change. A payload that comes from the environment (the
+body `exec api` passes through, the records a query returns) is not dtctl's
+to promise; only the invocation and how dtctl frames the output are. There is no field-level tier, so no experimental
+or deprecated output field, no field entries in the manifest, and
+`DTCTL_NO_DEPRECATED` covers commands and flags only (#542). To ship a field
+without the `stable` promise, put it behind an experimental flag or on an
+experimental command.
+
 The breaking marker belongs to the PR that changes the output. A PR that only
 edits this policy or its docs changes no output, so it is not breaking.
 
@@ -335,7 +345,7 @@ never exempted by file.
 
 1. **dtctl mirrors the environment's API index and filters nothing.** A dtctl-side filter would have to hard-code which APIs to conceal, and in an open-source tool that list *is* the disclosure. Resolution consults only what the index returned — never synthesize a candidate path from a name and retry it, which would turn a name lookup into an existence oracle.
 2. **The HTTP method never decides the safety gate.** `resapi.Classify` takes the stricter of the method floor and the specification's declared scope; POST's floor is `OperationRead`, because plenty of read-only endpoints are POSTs. Unresolvable → `OperationDelete`. There is deliberately no flag to assert an operation.
-3. **`exec api` must never be the integration target.** It stays `Hidden` (present in `dtctl commands --full` via `unadvertisedResources` in `pkg/commands/listing.go`, absent from `--help` and the compact catalogs), it names the native command whenever one covers the path, and no command profile grants it.
+3. **`exec api` should not end up as the integration target.** That is advice about where an integration belongs (a native command, with `dtctl get apis --uncovered` as the backlog), not a statement about its stability contract: `exec api` and `exec dql` are `stable`, so the command's shape is additive-only like any other stable command, and what it reaches is whatever the environment's APIs offer (#544). The constraints that back the advice are real: it stays `Hidden` (present in `dtctl commands --full` via `unadvertisedResources` in `pkg/commands/listing.go`, absent from `--help` and the compact catalogs), it names the native command whenever one covers the path, and no command profile grants it.
 4. **No committed artifact names a non-public API.** Help text, examples, golden files, and E2E fixtures are synthetic; live tests assert invariants of the mechanism, never a list of expected APIs.
 
 ## Design Principles
@@ -571,7 +581,7 @@ Never put customer names, employee names, usernames, or specific Dynatrace envir
 ❌ **Don't** skip safety checks on mutating commands  
 ✅ **Do** add safety checks to ALL create/edit/apply/delete/update/exec commands
 
-❌ **Don't** script against `dtctl exec api` — an escape hatch that becomes the integration target has failed  
+❌ **Don't** build an integration on `dtctl exec api` for longer than it takes to add a native command. This is advice, not a stability warning: the command is `stable`, but a passthrough doesn't validate input, resolve names or format output\
 ✅ **Do** add a native command for the API instead (`dtctl get apis --uncovered` is the backlog)
 
 ❌ **Don't** read a user-supplied path with `os.ReadFile` / `os.Open`  

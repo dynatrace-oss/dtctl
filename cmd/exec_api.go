@@ -35,10 +35,11 @@ import (
 // the tool. This one resolves what the request actually does from the API's own
 // specification and gates it through the same safety checker as every native
 // mutating command.
-// Hidden, but reachable, so it declares a tier like anything else. Stable
-// records today's behaviour rather than changing it here: `exec api` is the
-// documented escape hatch and demoting it is a separate decision (AGENTS.md
-// says nothing should be built on it, which is an argument for experimental).
+// Hidden, but reachable, so it declares a tier like anything else. It is
+// stable by decision (#544): demoting it would make it unusable under a stable
+// floor, in exactly the automation that has no native alternative yet. AGENTS.md's
+// "don't script against it" is advice about where integrations should end up,
+// not a statement about this contract.
 var execAPICmd = &cobra.Command{
 	Use:    "api <path>",
 	Short:  "Send a request to a platform API endpoint (escape hatch)",

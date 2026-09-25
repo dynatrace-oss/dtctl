@@ -90,7 +90,9 @@ DTCTL_DEVELOPMENT=serve dtctl serve http      # one process
 ## Finding out early what a removal will break
 
 ` + "`DTCTL_NO_DEPRECATED=1`" + ` makes dtctl behave as if every deprecated command
-and flag had already been removed. A deprecation warning in a log is
+and flag had already been removed (commands and flags only:
+output fields carry no deprecation record, see "What ` + "`stable`" + ` promises before
+1.0"). A deprecation warning in a log is
 easy to miss; a failing pipeline is not. Run a CI job with it set and it fails
 now, while that is a fixable build, rather than on the day the removal release
 lands:
@@ -190,6 +192,21 @@ document, and it does not demote the command. Three things still hold:
 - An explicit flag keeps its meaning. A program that needs a fixed shape passes
   the flags for it (for example ` + "`-o json`" + `) rather than relying on agent-mode
   defaults, and that invocation is covered by the promise above.
+
+**Output outside agent mode is promised per command, not per field.** A
+` + "`stable`" + ` command's output (JSON and YAML fields, table columns) is additive-only
+as a whole, and what enforces that is the golden tests, which snapshot each
+printer's output per resource and fail on any change. Content that comes from
+the environment rather than from dtctl is outside that promise: the response
+body ` + "`exec api`" + ` passes through, and the records a query returns, change when
+the platform's APIs and data do. For those commands the promise covers the
+invocation and how dtctl frames what it prints, not the payload. There is no
+finer grain: an output field cannot declare a tier of its own, so there is no
+experimental or deprecated field on a ` + "`stable`" + ` command, this file lists no
+fields, and ` + "`DTCTL_NO_DEPRECATED`" + ` covers commands and flags but not fields.
+A new field that should not carry the promise ships behind an experimental flag
+or on an experimental command, because that is the finest grain a tier can be
+declared at.
 
 **` + "`experimental`" + ` and ` + "`development`" + ` are not covered.** They may
 change in any release, patch releases included. That is the whole distinction.
