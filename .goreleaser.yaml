@@ -46,13 +46,17 @@ checksum:
   name_template: 'checksums.txt'
 
 signs:
+  # cosign v3 (installed by sigstore/cosign-installer v4) signs into a single
+  # Sigstore bundle; --output-signature/--output-certificate are ignored with the
+  # new bundle format, so checksums.txt is signed to checksums.txt.sigstore.json.
+  # Verify with: cosign verify-blob --bundle checksums.txt.sigstore.json ...
   - cmd: cosign
     artifacts: checksum
+    signature: "${artifact}.sigstore.json"
     args:
       - "sign-blob"
       - "--yes"
-      - "--output-signature=${signature}"
-      - "--output-certificate=${certificate}"
+      - "--bundle=${signature}"
       - "${artifact}"
 
 sboms:
