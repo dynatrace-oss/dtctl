@@ -85,6 +85,9 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Test the compatibility check
+        run: python3 -m unittest discover -s scripts/stability -v
+
       - name: Refuse a withdrawal of stable surface
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}"
