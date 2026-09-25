@@ -120,6 +120,33 @@ Some keyring backends impose a per-item size limit, and a large OAuth response (
 
 If you see `failed to save token to keyring: ... data passed to Set was too big`, a size limit was hit; dtctl falls back to compact storage automatically. Re-run `dtctl auth login --context <name> --environment <url>` if the error persists.
 
+### Cloud agent sandboxes (Claude Code on the web)
+
+The setup script runs without the session's environment variables, so the version
+and URL go in the script and the token stays an environment variable, stored as a
+`${DT_API_TOKEN}` reference that dtctl resolves at runtime.
+
+Setup script:
+
+```bash
+set -e
+DTCTL_VERSION=0.40.0
+DT_ENVIRONMENT_URL=https://abc12345.apps.dynatrace.com
+
+curl -fsSL "https://github.com/dynatrace-oss/dtctl/releases/download/v${DTCTL_VERSION}/dtctl_${DTCTL_VERSION}_linux_amd64.tar.gz" | tar -xz -C /usr/local/bin dtctl
+dtctl config set-context web --environment "$DT_ENVIRONMENT_URL" --token-ref t --safety-level readonly
+dtctl config set-credentials t --token '${DT_API_TOKEN}'
+```
+
+Environment variables:
+
+```
+DT_API_TOKEN=dt0s16.XXXXXXXX.YYYYYYYY
+```
+
+Allow `*.dynatrace.com` in the network settings. `install.sh` does not work here:
+its GitHub API lookup hits the sandbox's shared rate limit (HTTP 403).
+
 ## Multiple Environments
 
 ### Create Contexts
