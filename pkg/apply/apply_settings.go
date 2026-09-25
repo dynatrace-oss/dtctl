@@ -17,8 +17,8 @@ type settingsPlan struct {
 	schemaID string
 	scope    string
 	value    map[string]interface{}
-	// update is true when objectID names an existing object.
-	update bool
+	// existing is the live object objectID names, nil when the apply creates.
+	existing *settings.SettingsObject
 }
 
 // resolveSettings parses a settings payload and decides create vs update.
@@ -65,7 +65,8 @@ func (a *Applier) resolveSettings(handler *settings.Handler, data []byte) (*sett
 	}
 
 	// Check if settings object exists
-	if _, err := handler.Get(objectID); err != nil {
+	existing, err := handler.Get(objectID)
+	if err != nil {
 		if lookupErr := lookupError("settings object", objectID, err); lookupErr != nil {
 			return nil, lookupErr
 		}
@@ -80,7 +81,7 @@ func (a *Applier) resolveSettings(handler *settings.Handler, data []byte) (*sett
 		return plan, nil
 	}
 
-	plan.update = true
+	plan.existing = existing
 	return plan, nil
 }
 
@@ -93,7 +94,7 @@ func (a *Applier) applySettings(data []byte) (ApplyResult, error) {
 		return nil, err
 	}
 
-	if !plan.update {
+	if plan.existing == nil {
 		if err := a.checkSafety(safety.OperationCreate, safety.OwnershipUnknown); err != nil {
 			return nil, err
 		}
@@ -154,16 +155,24 @@ func (a *Applier) dryRunSettings(doc map[string]interface{}, data []byte) (Apply
 		return nil, err
 	}
 
-	action := ActionCreated
-	id := ""
-	if plan.update {
-		action = ActionUpdated
-		id = plan.objectID
-	}
-
 	name, _ := doc["name"].(string)
 	if name == "" {
 		name, _ = doc["title"].(string)
+	}
+
+	action := ActionCreated
+	id := ""
+	scope := plan.scope
+	if plan.existing != nil {
+		// Report the live object the update targets, as the apply result
+		// does: a legacy export carries no scope, and its summary is the
+		// name the update reports.
+		action = ActionUpdated
+		id = plan.objectID
+		scope = plan.existing.Scope
+		if plan.existing.Summary != "" {
+			name = plan.existing.Summary
+		}
 	}
 
 	return &DryRunResult{
@@ -173,6 +182,6 @@ func (a *Applier) dryRunSettings(doc map[string]interface{}, data []byte) (Apply
 			ID:           id,
 			Name:         name,
 		},
-		Scope: plan.scope,
+		Scope: scope,
 	}, nil
 }

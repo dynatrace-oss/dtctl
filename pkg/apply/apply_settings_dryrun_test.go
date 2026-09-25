@@ -176,3 +176,56 @@ func TestApply_SettingsDryRun_LookupError_Fails(t *testing.T) {
 		t.Errorf("error = %q, want the lookup failure", err)
 	}
 }
+
+// A legacy export carries no scope, and its update reports the scope and name
+// of the live object. The dry run must report the same object the apply result
+// does, not an empty scope read from the payload.
+func TestApply_SettingsDryRun_LegacyExportWithoutScope_ReportsLiveObject(t *testing.T) {
+	const objectID = "obj-legacy-521"
+	liveObject := `{"objectId":"` + objectID + `","schemaId":"builtin:synthetic.schema","schemaVersion":"1","scope":"environment","summary":"my-aws-conn","value":{"name":"my-aws-conn"}}`
+	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		settingsDryRunObjectPrefix + objectID: func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(liveObject))
+			case http.MethodPut:
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				t.Errorf("unexpected %s", r.Method)
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		},
+		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		},
+	})
+	defer srv.Close()
+	a := NewApplier(c)
+
+	payload := `{"objectId":"` + objectID + `","value":{"name":"my-aws-conn","type":"awsRoleBasedAuthentication","awsRoleBasedAuthentication":{"roleArn":"arn:aws:iam::123456789012:role/Example","consumers":["SVC:com.dynatrace.da"]}}}`
+
+	dr := cloudDryRun(t, a, payload)
+
+	results, err := a.Apply([]byte(payload), ApplyOptions{})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %d, want 1", len(results))
+	}
+	applied, ok := results[0].(*SettingsApplyResult)
+	if !ok {
+		t.Fatalf("result type = %T, want *SettingsApplyResult", results[0])
+	}
+
+	if dr.Scope != "environment" || dr.Scope != applied.Scope {
+		t.Errorf("dry run scope = %q, apply scope = %q, want both %q", dr.Scope, applied.Scope, "environment")
+	}
+	if dr.Name != "my-aws-conn" || dr.Name != applied.Name {
+		t.Errorf("dry run name = %q, apply name = %q, want both %q", dr.Name, applied.Name, "my-aws-conn")
+	}
+	if dr.ID != applied.ID || dr.Action != applied.Action {
+		t.Errorf("dry run (%s %q) and apply (%s %q) disagree", dr.Action, dr.ID, applied.Action, applied.ID)
+	}
+}
