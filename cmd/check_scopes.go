@@ -40,6 +40,9 @@ type ScopeError struct {
 	Required []string
 	Granted  []string
 	Missing  []string
+	// Alternatives are scope sets accepted in place of Required; the token
+	// holds none of them in full.
+	Alternatives [][]string
 	// Reason, when set, replaces the generic message: it says which part of
 	// the invocation needs the missing scopes.
 	Reason string
@@ -150,12 +153,13 @@ func scopePreflight(c *cobra.Command, args []string) (skip bool, err error) {
 		if agentMode {
 			if result.Status == scopeStatusInsufficient {
 				return false, &ScopeError{
-					Verb:     verb,
-					Resource: resource,
-					Required: result.RequiredScopes,
-					Granted:  result.GrantedScopes,
-					Missing:  result.MissingScopes,
-					Advice:   result.Suggestions,
+					Verb:         verb,
+					Resource:     resource,
+					Required:     result.RequiredScopes,
+					Granted:      result.GrantedScopes,
+					Missing:      result.MissingScopes,
+					Alternatives: result.AlternativeScopes,
+					Advice:       result.Suggestions,
 				}
 			}
 			printScopeVerdictAgent(result)
@@ -196,12 +200,13 @@ func scopePreflight(c *cobra.Command, args []string) (skip bool, err error) {
 		return false, nil
 	}
 	return false, &ScopeError{
-		Verb:     verb,
-		Resource: resource,
-		Required: required,
-		Granted:  granted,
-		Missing:  missing,
-		Advice:   insufficientScopeAdvice(missing, alternatives),
+		Verb:         verb,
+		Resource:     resource,
+		Required:     required,
+		Granted:      granted,
+		Missing:      missing,
+		Alternatives: alternatives,
+		Advice:       insufficientScopeAdvice(missing, alternatives),
 	}
 }
 

@@ -96,6 +96,23 @@ func TestScopePreflight_CheckScopes_AcceptsAlternativeScope(t *testing.T) {
 				require.Equal(t, client.ExitPermissionError, silent.code)
 			})
 
+			t.Run("agent mode, none held", func(t *testing.T) {
+				withScopeState(t, true, true, "json", []string{"automation:workflows:read"}, true)
+				skip, preErr := scopePreflight(cmd, nil)
+				require.False(t, skip)
+				var scopeErr *ScopeError
+				require.ErrorAs(t, preErr, &scopeErr)
+
+				detail := errorToDetail(preErr)
+				require.Equal(t, "insufficient_scope", detail.Code)
+				require.Equal(t, []string{"app-engine:apps:run"}, detail.MissingScopes)
+				require.Equal(t,
+					[][]string{{"app-engine:functions:run"}, {"platform-management:environments:read"}},
+					detail.AlternativeScopes, "the error envelope must carry the accepted alternatives")
+				require.Contains(t, strings.Join(detail.Suggestions, "\n"), "platform-management:environments:read")
+				require.Equal(t, client.ExitPermissionError, exitCodeForError(preErr))
+			})
+
 			t.Run("agent mode, alternative held", func(t *testing.T) {
 				withScopeState(t, true, true, "json", []string{"app-engine:functions:run"}, true)
 				var preErr error
@@ -104,6 +121,20 @@ func TestScopePreflight_CheckScopes_AcceptsAlternativeScope(t *testing.T) {
 			})
 		})
 	}
+}
+
+// The agent-mode auto-preflight builds its ScopeError itself; whatever
+// alternatives it found must reach the envelope, and a command without any must
+// not grow the field.
+func TestScopeErrorEnvelopeCarriesAlternatives(t *testing.T) {
+	alts := [][]string{{"b"}, {"c", "d"}}
+	detail := errorToDetail(&ScopeError{Verb: "delete", Resource: "x", Required: []string{"a"},
+		Missing: []string{"a"}, Alternatives: alts, Advice: insufficientScopeAdvice([]string{"a"}, alts)})
+	require.Equal(t, alts, detail.AlternativeScopes)
+	require.Contains(t, strings.Join(detail.Suggestions, "\n"), "b | c + d")
+
+	plain := errorToDetail(&ScopeError{Verb: "delete", Resource: "x", Required: []string{"a"}, Missing: []string{"a"}})
+	require.Nil(t, plain.AlternativeScopes)
 }
 
 // A resource without alternatives keeps its all-of requirement.
