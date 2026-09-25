@@ -392,6 +392,104 @@ func TestExecute_DurationBudgetCancelsExecution(t *testing.T) {
 	require.Less(t, elapsed, 200*time.Millisecond, "execution must abort within the budget")
 }
 
+// TestExecute_DurationBudgetCancelsInFlightQuery: when the request's budget
+// elapses while a DQL query is still running on Grail, the query is cancelled
+// on the backend and the request returns promptly, instead of polling on for
+// the SDK's own poll deadline after the caller has gone (#502).
+func TestExecute_DurationBudgetCancelsInFlightQuery(t *testing.T) {
+	const token = "tok-engine-inflight"
+	cancelled := make(chan string, 1)
+	release := make(chan struct{})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/platform/storage/query/v1/query:execute":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"state":"RUNNING","requestToken":"` + token + `"}`))
+		case "/platform/storage/query/v1/query:poll":
+			// A query that never finishes: hold each poll until the client
+			// gives up (or the test ends), then report it still running.
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			case <-time.After(5 * time.Second):
+			}
+			_, _ = w.Write([]byte(`{"state":"RUNNING","requestToken":"` + token + `"}`))
+		case "/platform/storage/query/v1/query:cancel":
+			select {
+			case cancelled <- r.URL.Query().Get("request-token"):
+			default:
+			}
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"code":404,"message":"not found"}}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(release) })
+
+	lim := engine.DefaultLimits()
+	lim.MaxDuration = 300 * time.Millisecond
+
+	done := make(chan struct{})
+	start := time.Now()
+	go func() {
+		defer close(done)
+		_, _ = engine.ExecuteWithLimits(context.Background(), engine.Request{
+			Command: `query "fetch logs" --plain`, EnvironmentURL: srv.URL, Token: "t",
+		}, lim)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("query kept running after the request's budget elapsed")
+	}
+	require.Less(t, time.Since(start), 5*time.Second, "an abandoned query must not outlive its request")
+
+	select {
+	case got := <-cancelled:
+		require.Equal(t, token, got, "the running query must be cancelled on the backend")
+	default:
+		t.Fatal("the running query was never cancelled on the backend")
+	}
+}
+
+// TestExecute_LaterRequestsGetTheirOwnContext: each request's context ends
+// with the request, so a command must not keep the context of the first
+// request that ran it — or every later query would start out cancelled.
+func TestExecute_LaterRequestsGetTheirOwnContext(t *testing.T) {
+	var mu sync.Mutex
+	executes := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/platform/storage/query/v1/query:execute" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"code":404,"message":"not found"}}`))
+			return
+		}
+		mu.Lock()
+		executes++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"state":"SUCCEEDED","result":{"records":[{"marker":"engine-ctx-ok"}]}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	for i := 0; i < 2; i++ {
+		res, err := engine.Execute(context.Background(), engine.Request{
+			Command: `query "fetch logs" --plain -o json`, EnvironmentURL: srv.URL, Token: "t",
+		})
+		require.NoError(t, err)
+		require.Zero(t, res.ExitCode, "request %d: %s", i, res.Stderr)
+		require.Contains(t, string(res.Stdout), "engine-ctx-ok", "request %d", i)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, 2, executes)
+}
+
 // TestExecute_OutputIsCapped: a MaxOutputBytes well below the command's real
 // output causes Result.Truncated and len(Stdout) <= cap.
 func TestExecute_OutputIsCapped(t *testing.T) {

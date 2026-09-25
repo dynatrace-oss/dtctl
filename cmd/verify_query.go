@@ -159,7 +159,7 @@ Examples:
 		}
 
 		// Call VerifyQuery and handle response
-		result, err := executor.VerifyQuery(query, opts)
+		result, err := executor.VerifyQueryWithContext(cmdContext(cmd), query, opts)
 
 		// Get exit code first (needed for all output formats)
 		exitCode := getVerifyExitCode(result, err, failOnWarn)

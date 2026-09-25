@@ -235,7 +235,7 @@ Examples:
 		executor := NewDQLExecutorFromConfig(cfg, c)
 
 		// Set up signal handling so a running Grail query is cancelled on Ctrl+C / SIGTERM.
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(cmdContext(cmd))
 		defer cancel()
 
 		sigCh := make(chan os.Signal, 1)

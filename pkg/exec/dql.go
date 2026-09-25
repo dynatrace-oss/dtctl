@@ -504,6 +504,12 @@ func singleQuoteHint() string {
 
 // VerifyQuery verifies a DQL query without executing it
 func (e *DQLExecutor) VerifyQuery(query string, opts DQLVerifyOptions) (*DQLVerifyResponse, error) {
+	return e.VerifyQueryWithContext(context.Background(), query, opts)
+}
+
+// VerifyQueryWithContext is VerifyQuery bound to the caller's context, so an
+// embedding caller that goes away stops waiting on the verification.
+func (e *DQLExecutor) VerifyQueryWithContext(ctx context.Context, query string, opts DQLVerifyOptions) (*DQLVerifyResponse, error) {
 	req := sdkquery.VerifyRequest{
 		Query:                  query,
 		GenerateCanonicalQuery: opts.GenerateCanonicalQuery,
@@ -514,7 +520,7 @@ func (e *DQLExecutor) VerifyQuery(query string, opts DQLVerifyOptions) (*DQLVeri
 	handler := e.sdkHandler(opts.ClientContext)
 
 	// Create context with 30-second timeout (verify is fast)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	return handler.Verify(ctx, req)

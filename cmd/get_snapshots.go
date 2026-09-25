@@ -132,7 +132,7 @@ Use -o json / -o yaml for structured output.`,
 
 		executor := NewDQLExecutorFromConfig(cfg, c)
 
-		cancelCtx, cancel := context.WithCancel(context.Background())
+		cancelCtx, cancel := context.WithCancel(cmdContext(cmd))
 		defer cancel()
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
