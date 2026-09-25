@@ -11,8 +11,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
 // withScopeState overrides grantedScopesFunc and the relevant global flags for a
@@ -411,6 +413,33 @@ func TestFlagScopeRequirementsAreWellFormed(t *testing.T) {
 			require.NotNil(t, cmd.Flags().Lookup(name),
 				"%q has no flag %q — the flag was renamed or removed", key, name)
 			require.NotEmpty(t, scopes, "%q flag %q lists no scopes", key, name)
+		}
+	}
+}
+
+// TestFlagScopesAreRequestedAtLogin guards #375: `--admin-access` needed
+// document:documents:admin, the preflight knew it, and yet no safety level asked
+// for it at `dtctl auth login` — so an OAuth session could never carry it, however
+// the user's IAM policy was set up. A flag scope that no login requests is a flag
+// that cannot work with OAuth at all.
+func TestFlagScopesAreRequestedAtLogin(t *testing.T) {
+	requested := map[string]bool{}
+	for _, level := range []config.SafetyLevel{
+		config.SafetyLevelReadOnly,
+		config.SafetyLevelReadWriteMine,
+		config.SafetyLevelReadWriteAll,
+		config.SafetyLevelDangerouslyUnrestricted,
+	} {
+		for _, s := range auth.GetScopesForSafetyLevel(level) {
+			requested[s] = true
+		}
+	}
+	for key, byFlag := range flagScopeRequirements {
+		for name, scopes := range byFlag {
+			for _, scope := range scopes {
+				require.True(t, requested[scope],
+					"%q --%s needs %q, but no safety level requests it at login", key, name, scope)
+			}
 		}
 	}
 }
