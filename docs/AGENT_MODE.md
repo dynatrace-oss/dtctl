@@ -519,6 +519,9 @@ Variables an IDE sets in *every* integrated terminal (such as `CURSOR_TRACE_ID` 
 
 When auto-detected, agent mode is enabled without requiring the `--agent` flag.
 
+To give a hosted agent sandbox (such as Claude Code on the web) a working dtctl,
+see [Cloud agent sandboxes](CONFIGURATION.md#cloud-agent-sandboxes-claude-code-on-the-web).
+
 ### Opting out
 
 To disable auto-detection and get normal human-readable output:
