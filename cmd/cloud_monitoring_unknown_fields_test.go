@@ -142,6 +142,8 @@ var unmodelledCloudFixtures = []struct {
 					"observabilityScopesEnabled": false,
 					"logsConfiguration": {"enabled": true, "locations": [{"location": "us-central1"}]},
 					"featureSetConfiguration": {"compute_engine_essential": {"enabled": true}},
+					"futureCounter": 9007199254740993,
+					"futureRatio": 0.25,
 					"tenantInstanceId": null
 				}
 			}
@@ -154,6 +156,7 @@ var unmodelledCloudFixtures = []struct {
 			"value.googleCloud.tenantInstanceId",
 			"value.googleCloud.observabilityScopesEnabled",
 			"value.googleCloud.credentials.0.futureCredentialField",
+			"value.googleCloud.futureRatio",
 		},
 	},
 }
@@ -167,7 +170,7 @@ type putRecordingServer struct {
 	puts map[string][]byte // path -> last body
 }
 
-func (s *putRecordingServer) lastPut(t *testing.T, path string) map[string]any {
+func (s *putRecordingServer) lastPutRaw(t *testing.T, path string) []byte {
 	t.Helper()
 	s.mu.Lock()
 	body, ok := s.puts[path]
@@ -175,6 +178,12 @@ func (s *putRecordingServer) lastPut(t *testing.T, path string) map[string]any {
 	if !ok {
 		t.Fatalf("no PUT was sent to %s", path)
 	}
+	return body
+}
+
+func (s *putRecordingServer) lastPut(t *testing.T, path string) map[string]any {
+	t.Helper()
+	body := s.lastPutRaw(t, path)
 	var doc map[string]any
 	if err := json.Unmarshal(body, &doc); err != nil {
 		t.Fatalf("PUT body to %s is not a JSON object: %v\n%s", path, err, body)
@@ -342,6 +351,12 @@ func TestCloudMonitoringReadModifyWriteKeepsUnmodelledFields(t *testing.T) {
 
 			sent := srv.lastPut(t, fx.baseAPI+"/"+fx.id)
 			assertPreserved(t, fx.doc, sent, fx.preserved)
+			if fx.cloud == "gcp" {
+				raw := srv.lastPutRaw(t, fx.baseAPI+"/"+fx.id)
+				if !strings.Contains(string(raw), `"futureCounter":9007199254740993`) {
+					t.Errorf("large integer was altered on the update payload:\n%s", raw)
+				}
+			}
 			if tc.check != nil {
 				tc.check(t, sent)
 			}
@@ -397,6 +412,15 @@ func TestCloudMonitoringGetYAMLApplyKeepsUnmodelledFields(t *testing.T) {
 
 			sent := srv.lastPut(t, fx.baseAPI+"/"+fx.id)
 			assertPreserved(t, fx.doc, sent, fx.preserved)
+
+			// An integer above 2^53 must reach the API as the same token; a
+			// float64 detour on the YAML path would round it to ...992.
+			if fx.cloud == "gcp" {
+				raw := srv.lastPutRaw(t, fx.baseAPI+"/"+fx.id)
+				if !strings.Contains(string(raw), `"futureCounter":9007199254740993`) {
+					t.Errorf("large integer was altered on the get -o yaml -> apply path:\n%s", raw)
+				}
+			}
 		})
 	}
 }

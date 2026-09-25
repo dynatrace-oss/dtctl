@@ -101,6 +101,10 @@ func JSONToYAML(jsonData []byte) ([]byte, error) {
 // (keys are lowercased, omitempty is not honored, json:"-" fields leak in) and
 // []byte/json.RawMessage fields are emitted as a sequence of raw byte values.
 //
+// Numbers keep their JSON token: decoding them into float64 would round an
+// integer above 2^53, and a document printed with `-o yaml` and applied back
+// must carry the value the server sent.
+//
 // json.Marshal never invokes MarshalYAML, so calling this from a MarshalYAML
 // method does not recurse.
 func YAMLNodeFromJSON(v any) (any, error) {
@@ -108,11 +112,39 @@ func YAMLNodeFromJSON(v any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var out any
-	if err := json.Unmarshal(data, &out); err != nil {
+	if err := dec.Decode(&out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return exactNumbers(out), nil
+}
+
+// exactNumbers replaces every json.Number in a decoded JSON value with a YAML
+// scalar node carrying the original token. Maps and slices stay plain Go
+// values, so yaml.v3 orders and lays them out exactly as before.
+func exactNumbers(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, child := range t {
+			t[k] = exactNumbers(child)
+		}
+		return t
+	case []any:
+		for i, child := range t {
+			t[i] = exactNumbers(child)
+		}
+		return t
+	case json.Number:
+		tag := "!!int"
+		if strings.ContainsAny(string(t), ".eE") {
+			tag = "!!float"
+		}
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: string(t)}
+	default:
+		return v
+	}
 }
 
 // ValidateAndConvert validates input data and converts it to JSON
