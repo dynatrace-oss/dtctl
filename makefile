@@ -93,6 +93,8 @@ stability-manifest:
 # Refuse a change that withdraws stable surface. The freshness gate above only
 # proves the manifest matches the tree, so a deleted stable flag passes it once
 # the manifest is regenerated; this compares against another ref instead.
+# It also refuses a since-version that misdates its change (new or changed but
+# naming an already-shipped release, or not matching the release being cut).
 # Override the ref locally with: make stability-compat STABILITY_BASE=v0.39.0
 STABILITY_BASE ?= origin/main
 stability-compat:
