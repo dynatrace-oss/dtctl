@@ -1,27 +1,22 @@
-objectid: azmon-a1b2c3d4
-scope: ""
-value:
-  enabled: true
-  description: Production Azure monitoring
-  version: "1.0"
-  azure:
-    deploymentscope: MANAGEMENT_GROUP
-    subscriptionfilteringmode: ALL
-    credentials:
-      - enabled: true
-        description: Main credential
-        connectionid: azure-conn-a1b2c3d4
-        serviceprincipalid: ""
-        type: CLIENT_SECRET
-    locationfiltering: []
-    configurationmode: STANDARD
-    deploymentmode: FULL
-    tagfiltering: []
-    tagenrichment: []
-    dtlabelsenrichment: {}
-  featuresets:
-    - default
-    - advanced
 description: Production Azure monitoring
 enabled: true
+objectId: azmon-a1b2c3d4
+value:
+  azure:
+    configurationMode: STANDARD
+    credentials:
+      - connectionId: azure-conn-a1b2c3d4
+        description: Main credential
+        enabled: true
+        servicePrincipalId: ""
+        type: CLIENT_SECRET
+    deploymentMode: FULL
+    deploymentScope: MANAGEMENT_GROUP
+    subscriptionFilteringMode: ALL
+  description: Production Azure monitoring
+  enabled: true
+  featureSets:
+    - default
+    - advanced
+  version: "1.0"
 version: "1.0"

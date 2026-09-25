@@ -76,6 +76,9 @@ type Value struct {
 	Version     string            `json:"version"`
 	GoogleCloud GoogleCloudConfig `json:"googleCloud"`
 	FeatureSets []string          `json:"featureSets"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type GoogleCloudConfig struct {
@@ -90,25 +93,37 @@ type GoogleCloudConfig struct {
 	TagEnrichment                      []string                  `json:"tagEnrichment,omitempty"`
 	LabelEnrichment                    []string                  `json:"labelEnrichment,omitempty"`
 	DtLabelsEnrichment                 map[string]DtLabelMapping `json:"dtLabelsEnrichment,omitempty" yaml:"dtLabelsEnrichment,omitempty"`
-	ObservabilityScopesEnabled         bool                      `json:"observabilityScopesEnabled,omitempty"`
+	ObservabilityScopesEnabled         *bool                     `json:"observabilityScopesEnabled,omitempty" yaml:"observabilityScopesEnabled,omitempty"`
 	SmartscapeConfiguration            FlagConfig                `json:"smartscapeConfiguration,omitempty"`
 	Resources                          []MetricSource            `json:"resources,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type TagFilter struct {
 	Key       string `json:"key"`
 	Value     string `json:"value"`
 	Condition string `json:"condition"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type DtLabelMapping struct {
 	Literal  string `json:"literal,omitempty"`
 	TagKey   string `json:"tagKey,omitempty"`
 	LabelKey string `json:"labelKey,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type FlagConfig struct {
 	Enabled bool `json:"enabled"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type MetricSource struct {
@@ -116,6 +131,9 @@ type MetricSource struct {
 	AutoDiscoveryEnabled           bool     `json:"autoDiscoveryEnabled"`
 	AutodiscoveryExcludeMetricType []string `json:"autodiscoveryExcludeMetricType,omitempty"`
 	Metrics                        []Metric `json:"metrics,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 // Metric is a single Cloud Monitoring metric collected for a resource type,
@@ -124,6 +142,9 @@ type Metric struct {
 	Name         string   `json:"name"`
 	MetricLabels []string `json:"metricLabels,omitempty"`
 	Type         string   `json:"type,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type Credential struct {
@@ -131,6 +152,9 @@ type Credential struct {
 	Enabled        bool   `json:"enabled"`
 	ConnectionID   string `json:"connectionId"`
 	ServiceAccount string `json:"serviceAccount"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type ListResponse struct {
