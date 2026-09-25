@@ -338,6 +338,7 @@ How it works (maintainers):
 - The release workflow runs only on manual dispatch (Actions → **Release** → **Run workflow**, or `gh workflow run release.yml`).
 - **First dispatch**: release-please opens/updates a **release PR** that bumps the version based on the [Conventional Commits](#commit-messages) since the last release.
 - Merge that release PR, then **dispatch again**: release-please creates the git tag and GitHub Release (with generated notes), and GoReleaser builds and publishes the binaries and Homebrew cask.
+- **If GoReleaser fails** after the tag and release exist, never move or recreate the tag: the Go module proxy and checksum database have already recorded it. Fix the cause on `main`, then dispatch with `republish_tag` set to the tag (`gh workflow run release.yml -f republish_tag=vX.Y.Z`). That run skips release-please, builds the tag unchanged with `main`'s `.goreleaser.yaml`, and uploads into the existing release.
 
 Version impact of commit types (pre-1.0):
 

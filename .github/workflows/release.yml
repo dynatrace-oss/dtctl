@@ -31,6 +31,13 @@ name: Release
 # so release_created is false and the job is skipped, leaving a published release
 # whose sdk tag is missing and which therefore cannot be imported. Re-dispatch with
 # the `retag_sdk` input set to that release tag to create the sdk tag and re-verify.
+#
+# RECOVERY: if GoReleaser fails after release-please created the release (the tag
+# exists, the GitHub Release has no artifacts), fix the cause on main and re-dispatch
+# with `republish_tag` set to that tag. It skips release-please, checks out the tag
+# unchanged and builds it with the .goreleaser.yaml of the dispatched ref, uploading
+# into the existing release. The tag is never moved: the module proxy and checksum
+# database have already recorded it.
 
 on:
   workflow_dispatch:
@@ -43,12 +50,22 @@ on:
         required: false
         type: string
         default: ''
+      republish_tag:
+        description: >-
+          Recovery only: release tag (e.g. v0.40.0) whose GoReleaser job failed.
+          Builds that tag with the .goreleaser.yaml of the ref this run is dispatched
+          from and uploads into the existing release. Leave empty for a normal release.
+        required: false
+        type: string
+        default: ''
 
 permissions: {}
 
 jobs:
   release-please:
     name: Release Please
+    # A republish must not open or update a release PR for the fix commits.
+    if: ${{ inputs.republish_tag == '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -153,7 +170,9 @@ jobs:
   goreleaser:
     name: GoReleaser
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    # !cancelled(): with republish_tag set, release-please is skipped, and a job
+    # whose need was skipped is skipped too unless its condition says otherwise.
+    if: ${{ !cancelled() && (needs.release-please.outputs.release_created == 'true' || inputs.republish_tag != '') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -162,8 +181,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ inputs.republish_tag || needs.release-please.outputs.tag_name }}
           fetch-depth: 0
+
+      - name: Use the dispatched ref's GoReleaser config for a republish
+        id: config
+        if: ${{ inputs.republish_tag != '' }}
+        env:
+          TAG: ${{ inputs.republish_tag }}
+          CONFIG_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          release_tag_re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+          if [[ ! "$TAG" =~ $release_tag_re ]]; then
+            echo "::error::Refusing to republish: '$TAG' is not a release tag (vX.Y.Z[-rc.N])."
+            exit 1
+          fi
+          # Outside the checkout, so the tree GoReleaser builds stays clean at the tag.
+          git show "$CONFIG_REF:.goreleaser.yaml" > "$RUNNER_TEMP/goreleaser.yaml"
+          echo "args=--config $RUNNER_TEMP/goreleaser.yaml" >> "$GITHUB_OUTPUT"
+          echo "Building $TAG ($(git rev-parse HEAD)) with .goreleaser.yaml from $CONFIG_REF"
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -189,7 +226,7 @@ jobs:
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: latest
-          args: release --clean
+          args: release --clean ${{ steps.config.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
