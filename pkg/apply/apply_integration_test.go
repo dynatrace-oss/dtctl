@@ -2461,6 +2461,14 @@ func TestApply_Settings_OverrideID_TriggersUpdate(t *testing.T) {
 // dry-run was using doc["id"] which is never set for settings objects.
 func TestApply_Settings_DryRun_WithObjectID_ReportsUpdated(t *testing.T) {
 	srv, c := newApplyTestServer(t, map[string]http.HandlerFunc{
+		// The dry run looks the object up, as apply does (#521): it exists.
+		"/platform/classic/environment-api/v2/settings/objects/urn:settings:obj-256": func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				t.Errorf("dry run issued %s, want only GET", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"objectId":"urn:settings:obj-256","schemaId":"builtin:alerting.profile","scope":"environment","value":{"name":"Test"}}`))
+		},
 		"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 		},
