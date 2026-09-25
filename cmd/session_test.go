@@ -225,8 +225,7 @@ func TestRunWithSession_TargetsInjectedEnvironment(t *testing.T) {
 	// Hostile host state: none of this may reach the request.
 	t.Setenv("DTCTL_TOKEN", "host-secret")
 	t.Setenv("DTCTL_CONFIG", "/nonexistent/host/config.yaml")
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 
 	code, out := captureRun(t, []string{"get", "buckets", "--plain"}, RunOptions{
 		Session: &Session{EnvironmentURL: env.URL, Token: "tenant-token"},
@@ -247,8 +246,7 @@ func TestRunWithSession_TargetsInjectedEnvironment(t *testing.T) {
 // stop a mutating command before any request is sent.
 func TestRunWithSession_ReadOnlyBlocksMutation(t *testing.T) {
 	env := newSessionMockEnv(t)
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 
 	code, _ := captureRun(t,
 		[]string{"create", "bucket", "--name", "b", "--table", "logs", "--retention", "35", "--plain"},
@@ -268,8 +266,7 @@ func TestRunWithSession_ReadOnlyBlocksMutation(t *testing.T) {
 // mutations, so the same create goes through.
 func TestRunWithSession_WriteAllowedByDefault(t *testing.T) {
 	env := newSessionMockEnv(t)
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 
 	code, _ := captureRun(t,
 		[]string{"create", "bucket", "--name", "b", "--table", "logs", "--retention", "35", "--plain"},
@@ -285,8 +282,7 @@ func TestRunWithSession_WriteAllowedByDefault(t *testing.T) {
 // profile per request, and the host's DTCTL_PROFILE is restored afterwards.
 func TestRunWithSession_ProfileViaEnv(t *testing.T) {
 	t.Setenv("DTCTL_PROFILE", "host-profile-value")
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 
 	code, out := captureRun(t, []string{"get", "--help"}, RunOptions{
 		Session: &Session{EnvironmentURL: "https://x.example.invalid", Token: "t"},
@@ -305,8 +301,7 @@ func TestRunWithSession_ProfileViaEnv(t *testing.T) {
 // x.yaml" where x.yaml lives in a LangChain-style virtual file system).
 func TestRunWithSession_VirtualFile(t *testing.T) {
 	env := newSessionMockEnv(t)
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 
 	virtual := vfs.NewMapFS(map[string][]byte{
 		"bucket.yaml": []byte("bucketName: virtual_bucket\ntable: logs\nretentionDays: 35\n"),
@@ -337,8 +332,7 @@ func TestRunWithSession_VirtualFile(t *testing.T) {
 // defines one.
 func TestRunWithSession_HostAliasesIgnored(t *testing.T) {
 	env := newSessionMockEnv(t)
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 
 	// Without a session this config would expand `bkts` to `get buckets`.
 	isolatedConfig(t, "aliases:\n  bkts: get buckets\ncontexts: []\n")

@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 )
 
 // Everything the mock environment serves is synthetic. It has to be: a recording
@@ -259,11 +261,7 @@ func writeIsolatedConfig(t *testing.T, content string) {
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	t.Setenv("DTCTL_CONFIG", path)
 	t.Setenv("DTCTL_PROFILE", "")
-	for _, v := range []string{
-		"CLAUDECODE", "CLAUDE_CODE", "AI_AGENT", "CODEX", "CURSOR_AGENT",
-		"COPILOT_CLI", "GITHUB_COPILOT", "AGENT_CONTEXT_OUT", "KIRO_SESSION_ID",
-		"OPENCODE",
-	} {
+	for _, v := range aidetect.EnvVars() {
 		t.Setenv(v, "")
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/engine"
 )
 
@@ -137,11 +138,9 @@ func splitTestCommand(command string) ([]string, error) {
 }
 
 func scrubbedEnviron(extra map[string]string) []string {
-	agentVars := map[string]bool{
-		"CLAUDECODE": true, "CLAUDE_CODE": true, "AI_AGENT": true, "CODEX": true,
-		"CURSOR_AGENT": true, "COPILOT_CLI": true, "GITHUB_COPILOT": true,
-		"AGENT_CONTEXT_OUT": true, "KIRO_SESSION_ID": true, "OPENCODE": true,
-		"NO_COLOR": true, "FORCE_COLOR": true,
+	agentVars := map[string]bool{"NO_COLOR": true, "FORCE_COLOR": true}
+	for _, v := range aidetect.EnvVars() {
+		agentVars[v] = true
 	}
 	var out []string
 	for _, kv := range os.Environ() {

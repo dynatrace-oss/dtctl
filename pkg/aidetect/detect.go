@@ -12,20 +12,10 @@ func Detect() AgentInfo {
 	return agentmode.Detect()
 }
 
-// knownAgents is kept for test compatibility — mirrors the SDK's internal list.
-var knownAgents = map[string]string{
-	"CLAUDECODE":     "claude-code",
-	"CODEX":          "codex",
-	"CURSOR_AGENT":   "cursor",
-	"GITHUB_COPILOT": "github-copilot",
-	"CODEIUM_AGENT":  "codeium",
-	"TABNINE_AGENT":  "tabnine",
-	"AMAZON_Q":       "amazon-q",
-	"JUNIE":          "junie",
-	"KIRO":           "kiro",
-	"OPENCODE":       "opencode",
-	"OPENCLAW":       "openclaw",
-	"AI_AGENT":       "generic-ai",
+// EnvVars returns every environment variable Detect consults.
+// Delegates to agentmode.EnvVars from the SDK.
+func EnvVars() []string {
+	return agentmode.EnvVars()
 }
 
 // UserAgentSuffix returns a suffix to append to the User-Agent header.

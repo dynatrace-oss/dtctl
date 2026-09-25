@@ -269,12 +269,16 @@ var perCallScopeCommands = map[string]bool{
 // all: the agent-mode auto-preflight refuses mutating commands on a missing
 // required scope, so a speculative entry turns a working command into a blocked
 // one.
+//
+// Every scope listed here must also be requested by `dtctl auth login` at some
+// safety level (TestFlagScopesAreRequestedAtLogin): the preflight can only name
+// a scope, and naming one that no login ever requests is how #375 happened.
 var flagScopeRequirements = map[string]map[string][]string{
 	// Documents, dashboards and notebooks are the same API; the flag is declared
 	// on each of the three leaves, so the requirement is too.
-	"get documents":  {"admin-access": {"document:documents:admin"}},
-	"get dashboards": {"admin-access": {"document:documents:admin"}},
-	"get notebooks":  {"admin-access": {"document:documents:admin"}},
+	"get documents":  {"admin-access": {auth.DocumentAdminScope}},
+	"get dashboards": {"admin-access": {auth.DocumentAdminScope}},
+	"get notebooks":  {"admin-access": {auth.DocumentAdminScope}},
 
 	// Activating a version touches extension *definitions*;
 	// --with-configurations additionally reads every monitoring configuration of

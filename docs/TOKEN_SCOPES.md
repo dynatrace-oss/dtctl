@@ -131,6 +131,7 @@ Full resource management for team environments (no data deletion; document delet
 document:documents:read,
 document:documents:write,
 document:documents:delete,
+document:documents:admin,
 document:direct-shares:read,
 document:direct-shares:write,
 document:direct-shares:delete,
@@ -307,6 +308,8 @@ A few flags reach a second API, so they need a scope the resource itself does no
 | `dtctl update extension` / `extensions` | `--with-configurations` | `extensions:configurations:read`, `extensions:configurations:write` |
 
 Without the extra scope the flag fails with `403 Insufficient permissions`, while the same command without it succeeds — which is why the scope is not declared on the resource.
+
+`dtctl auth login` requests `document:documents:admin` at the `readwrite-all` and `dangerously-unrestricted` safety levels (not at `readonly` or `readwrite-mine`, which exist to keep other users' documents out of reach). The scope alone is not enough: the tenant's IAM policy must also grant the `document:documents:admin` permission — a user without it can still log in, the API just keeps refusing `--admin-access`. OAuth sessions created before dtctl requested the scope do not carry it; run `dtctl auth login` again to pick it up.
 
 ### Endpoints that accept one of several scopes
 

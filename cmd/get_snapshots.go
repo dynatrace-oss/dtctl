@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -132,15 +131,8 @@ Use -o json / -o yaml for structured output.`,
 
 		executor := NewDQLExecutorFromConfig(cfg, c)
 
-		cancelCtx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-		defer signal.Stop(sigCh)
-		go func() {
-			<-sigCh
-			cancel()
-		}()
+		cancelCtx, stop := signal.NotifyContext(cmdContext(cmd), os.Interrupt, syscall.SIGTERM)
+		defer stop()
 
 		opts := exec.DQLExecuteOptions{
 			OutputFormat:          outputFormat,

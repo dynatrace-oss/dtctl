@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
@@ -2593,11 +2594,8 @@ func parseDTClientContext(t *testing.T, raw string) map[string]string {
 // CLAUDECODE=1), which would otherwise bleed into tests that expect no agent field.
 func clearAIAgentEnvVars(t *testing.T) {
 	t.Helper()
-	for _, env := range []string{
-		"CLAUDECODE", "CURSOR_AGENT", "GITHUB_COPILOT", "CODEIUM_AGENT",
-		"TABNINE_AGENT", "AMAZON_Q", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW", "AI_AGENT",
-	} {
-		t.Setenv(env, "0")
+	for _, env := range aidetect.EnvVars() {
+		t.Setenv(env, "")
 	}
 }
 

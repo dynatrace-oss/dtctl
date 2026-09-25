@@ -309,6 +309,23 @@ func IsLocalResource(name string) bool {
 	return localResources[name]
 }
 
+// DocumentAdminScope lets a Document API request act as the effective owner of
+// every document (`get documents|dashboards|notebooks --admin-access`, which
+// sends admin-access=true). The API refuses such a request with 403
+// "Insufficient permissions to request admin-access" unless the token carries
+// this scope *and* the tenant's IAM policy grants the permission of the same
+// name — two separate gates.
+//
+// It is not tied to a resource access level, because no plain document
+// operation needs it: the flag alone does (see flagScopeRequirements in cmd/).
+// Login requests it from readwrite-all upward. That covers the administrative
+// levels the flag is meant for, and it is harmless for a user whose policy
+// lacks the permission: the OAuth client is allowed to request the scope, the
+// token merely carries it, and without the IAM permission the API still says
+// no. readonly and readwrite-mine leave it out on purpose — acting as the owner
+// of other people's documents is exactly what those levels exist to rule out.
+const DocumentAdminScope = "document:documents:admin"
+
 // grailExtendedReadScopes are additional Grail read scopes granted at the
 // readonly, readwrite-all and dangerously-unrestricted levels. readwrite-mine
 // intentionally omits them (it focuses on write access to one's own resources).
@@ -407,6 +424,7 @@ func (s *scopeSet) addMineWrites() {
 // generation, and app/EdgeConnect lifecycle.
 func (s *scopeSet) addAllExtras() {
 	s.add("document:environment-shares:read", "document:environment-shares:write")
+	s.add(DocumentAdminScope)
 	s.add("storage:logs:write", "storage:events:write", "storage:metrics:write")
 	s.addResource("bucket", AccessWrite)
 	s.add("davis-copilot:nl2dql:execute", "davis-copilot:dql2nl:execute", "davis-copilot:document-search:execute")
@@ -450,6 +468,7 @@ func (s *scopeSet) addUnrestricted() {
 	// writes / destructive
 	s.addResource("dashboard", AccessWrite, AccessDelete)
 	s.add("document:environment-shares:write")
+	s.add(DocumentAdminScope)
 	s.add("document:trash.documents:restore", "document:trash.documents:delete")
 	s.addResource("workflow", AccessWrite, AccessRun)
 	s.addResource("scheduling-rule", AccessWrite)

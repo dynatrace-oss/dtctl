@@ -29,46 +29,16 @@ import (
 //     actually carries it also fails the test, with an instruction to delete
 //     the entry. A fix therefore cannot leave a stale excuse behind.
 //
-// The entries themselves are the bug, tracked separately from the tests that
-// found them, in #516. Two of them are worse than cosmetic:
-// tenantInstanceId has modificationPolicy NEVER
-// and is nullable in all three schemas, so an update that omits it is itself a
-// modification of a never-modifiable property — the same shape that made
-// useIngestEnrichmentConfig a hard rejection in #442.
-var knownFidelityGaps = map[string][]string{
-	"aws": {
-		"value.dtAttributes",
-		"value.aws.eventsConfiguration",
-		"value.aws.ingestPercentileMetrics",
-		"value.aws.ingestS3StorageLENSMetrics",
-		"value.aws.automatedDeploymentTemplateVersion",
-		"value.aws.tenantInstanceId",
-	},
-	"azure": {
-		"value.activationContext",
-		"value.dtAttributes",
-		"value.azure.subscriptionFiltering",
-		"value.azure.smartscapeConfiguration",
-		"value.azure.metricsConfiguration",
-		"value.azure.eventHubsConfiguration",
-		"value.azure.namespaces",
-		"value.azure.manualDeploymentStatus",
-		"value.azure.deploymentTemplateVersion",
-		"value.azure.configurationSource",
-		"value.azure.ands",
-		"value.azure.tenantInstanceId",
-	},
-	"gcp": {
-		"value.activationContext",
-		"value.dtAttributes",
-		"value.googleCloud.logsConfiguration",
-		"value.googleCloud.featureSetConfiguration",
-		"value.googleCloud.tenantInstanceId",
-		// Modelled, but as a plain bool with `omitempty`, so an explicit
-		// false is indistinguishable from absent once re-marshalled.
-		"value.googleCloud.observabilityScopesEnabled",
-	},
-}
+// It is empty: every typed struct in a monitoring configuration's value tree
+// now keeps the members it does not model (pkg/util/unknownfields), and the
+// booleans whose explicit false matters are pointers, so nothing the server
+// sends is lost on a round trip (#516, #608). tenantInstanceId in particular
+// has modificationPolicy NEVER and is nullable in all three schemas, so an
+// update that omitted it would itself modify a never-modifiable property — the
+// shape that made useIngestEnrichmentConfig a hard rejection in #442.
+//
+// Add an entry only for a field dtctl deliberately discards, with the reason.
+var knownFidelityGaps = map[string][]string{}
 
 func isKnownFidelityGap(cloud, path string) bool {
 	for _, known := range knownFidelityGaps[cloud] {
@@ -162,11 +132,12 @@ func assertDocumentFidelity(t *testing.T, cloud, id string, serverDoc, rendered 
 //
 // This is a separate risk from the dropped fields above. The printer
 // yaml-encodes the structs by reflection, so json tags are ignored and every
-// key arrives lowercased (`deploymentregion`, `activationcontext`). Apply
-// converts that YAML to JSON and unmarshals it with encoding/json, which
-// matches field names case-insensitively — which is the only reason the
-// round trip works at all. A yaml tag added on one field and not another, or
-// any key whose lowercased form stops matching, breaks it silently.
+// modelled key arrives lowercased (`deploymentregion`, `activationcontext`);
+// apply converts that YAML to JSON and unmarshals it with encoding/json, which
+// matches field names case-insensitively. Reflection never sees the Extra map
+// that holds unmodelled members, so each type in the value tree has a
+// MarshalYAML that appends them under their API names (unknownfields.YAML); a
+// type that lost it would drop them on this path while JSON stayed intact.
 func TestCloudMonitoringConfig_YAMLRoundTrip(t *testing.T) {
 	env := SetupIntegration(t)
 

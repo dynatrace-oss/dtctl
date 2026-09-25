@@ -157,8 +157,7 @@ func TestGetListShape_AgentDefaultPageServerSide(t *testing.T) {
 
 func runListShape(t *testing.T, srv *httptest.Server, argv ...string) (int, string) {
 	t.Helper()
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 	// Run resets the tree before an invocation, not after; tests that call
 	// RunE directly afterwards must not inherit this run's -o/--fields/--agent.
 	t.Cleanup(restorePristineTree)
@@ -293,8 +292,7 @@ func TestGetBreakpoints_HonorsLimitAndFields(t *testing.T) {
 func TestGetSnapshots_RejectsFields(t *testing.T) {
 	srv := newListShapeEnv(t)
 
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 	t.Cleanup(restorePristineTree)
 	var stderr bytes.Buffer
 	code, _ := captureRun(t, []string{"get", "snapshots", "OrderController.java:306", "--fields", "id"}, RunOptions{

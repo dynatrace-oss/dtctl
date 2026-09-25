@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/skills"
 )
@@ -35,10 +36,7 @@ func resetSkillsFlags(t *testing.T) {
 // clearAgentEnvVars unsets all AI-agent env vars to ensure test isolation.
 func clearAgentEnvVars(t *testing.T) {
 	t.Helper()
-	for _, env := range []string{
-		"CLAUDECODE", "CODEX", "CURSOR_AGENT", "GITHUB_COPILOT", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW",
-		"CODEIUM_AGENT", "TABNINE_AGENT", "AMAZON_Q", "AI_AGENT",
-	} {
+	for _, env := range aidetect.EnvVars() {
 		t.Setenv(env, "")
 	}
 }

@@ -274,6 +274,40 @@ func TestConfig_CurrentContextObj(t *testing.T) {
 	}
 }
 
+// TestConfig_CurrentContextObj_AliasesConfig guards #543: the returned pointer
+// must alias the entry in cfg.Contexts, not a loop copy, so a write through it
+// changes the config instead of being silently dropped.
+func TestConfig_CurrentContextObj_AliasesConfig(t *testing.T) {
+	cfg := NewConfig()
+	cfg.SetContext("dev", "https://dev.example.invalid", "dev-token")
+	cfg.SetContext("prod", "https://prod.example.invalid", "prod-token")
+	cfg.CurrentContext = "prod"
+
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		t.Fatalf("CurrentContextObj() error = %v", err)
+	}
+	ctx.Description = "edited"
+	ctx.NoDeprecated = true
+
+	got, err := cfg.GetContext("prod")
+	if err != nil {
+		t.Fatalf("GetContext(prod) error = %v", err)
+	}
+	if got.Context.Description != "edited" || !got.Context.NoDeprecated {
+		t.Errorf("write through CurrentContextObj was lost: got %+v", got.Context)
+	}
+	if dev, _ := cfg.GetContext("dev"); dev.Context.Description != "" || dev.Context.NoDeprecated {
+		t.Errorf("write through CurrentContextObj leaked into another context: %+v", dev.Context)
+	}
+
+	// GetContext must alias the config the same way.
+	got.Context.Environment = "https://edited.example.invalid"
+	if again, _ := cfg.CurrentContextObj(); again.Environment != "https://edited.example.invalid" {
+		t.Errorf("write through GetContext was lost: Environment = %q", again.Environment)
+	}
+}
+
 func TestConfig_SaveAndLoad(t *testing.T) {
 	// Create temp directory
 	tmpDir, err := os.MkdirTemp("", "dtctl-test-*")

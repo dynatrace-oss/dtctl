@@ -249,6 +249,15 @@ const pollRequestTimeoutMs int64 = 5000
 // each long-poll returns RUNNING, so 5s is comfortably above the actual gap.
 const defaultPollingPromiseSeconds int32 = 5
 
+// executeTimeout caps the initial execute request, whatever the caller's
+// context allows.
+const executeTimeout = 2 * time.Minute
+
+// executeCancelGrace is how long the initial execute may keep running after the
+// caller's context is cancelled, so its request token can still come back and
+// the started query be cancelled on the backend. A var so tests can shorten it.
+var executeCancelGrace = 10 * time.Second
+
 const basePath = "/platform/storage/query/v1/query"
 
 // --- API methods ---
@@ -397,10 +406,27 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 // and preview results while the query is still running.
 func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequest, opts ExecuteAndPollOptions) (*Response, error) {
 	onUnauthorized := opts.OnUnauthorized
-	// Use an independent context for the initial execute so we always get the
-	// request token back even if the caller cancels mid-flight.
-	execCtx, execCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+
+	// A caller that is already gone gets nothing started on its behalf.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// The initial execute derives from the caller's context (values, and
+	// cancellation after a grace period). It is not aborted the instant the
+	// caller cancels: that would discard the request token of a query Grail
+	// may already have started, leaving it running with nothing able to cancel
+	// it. The server holds the execute for at most RequestTimeoutMilliseconds
+	// (5s by default), so the token normally arrives within the grace and the
+	// query is cancelled on the backend below; the grace only bounds an
+	// execute that stalls.
+	execCtx, execCancel := context.WithTimeout(context.WithoutCancel(ctx), executeTimeout)
 	defer execCancel()
+	stopGrace := context.AfterFunc(ctx, func() {
+		grace := time.AfterFunc(executeCancelGrace, execCancel)
+		context.AfterFunc(execCtx, func() { grace.Stop() })
+	})
+	defer stopGrace()
 
 	// Ensure the execute request uses the server-side long-poll timeout so the
 	// backend returns promptly for the poll loop.
@@ -417,7 +443,7 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 		// poll loop has — long-lived processes outlive the first
 		// bearer token, and without this every query after expiry fails
 		// terminally even though a refresher is wired.
-		if isUnauthorized(err) && onUnauthorized != nil {
+		if isUnauthorized(err) && onUnauthorized != nil && ctx.Err() == nil {
 			newToken, refreshErr := onUnauthorized()
 			if refreshErr != nil {
 				return nil, fmt.Errorf("execute returned 401 (%v) and token refresh failed: %w", err, refreshErr)

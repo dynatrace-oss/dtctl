@@ -145,7 +145,7 @@ dtctl delete trash dash-123 --permanent
 
 ### Access dashboards you don't own
 
-Use `--admin-access` to list all documents as their effective owner. This requires the `document:documents:admin` scope.
+Use `--admin-access` to list all documents as their effective owner. This requires the `document:documents:admin` scope in your token *and* the `document:documents:admin` permission in the tenant's IAM policy. `dtctl auth login` requests the scope at the `readwrite-all` and `dangerously-unrestricted` safety levels; if you logged in with an older dtctl, run `dtctl auth login` again to pick it up.
 
 ```bash
 dtctl get dashboards --admin-access

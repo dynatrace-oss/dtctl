@@ -799,15 +799,18 @@ func (c *Config) SaveTo(path string) error {
 	return nil
 }
 
-// CurrentContextObj returns the current context object
+// CurrentContextObj returns the current context object. The pointer aliases
+// the entry in c.Contexts, so writes through it change the config.
 func (c *Config) CurrentContextObj() (*Context, error) {
 	if c.CurrentContext == "" {
 		return nil, fmt.Errorf("no current context set")
 	}
 
-	for _, nc := range c.Contexts {
-		if nc.Name == c.CurrentContext {
-			return &nc.Context, nil
+	// Index the slice rather than ranging over copies: a pointer into the loop
+	// variable would not alias c.Contexts, and writes through it would be lost.
+	for i := range c.Contexts {
+		if c.Contexts[i].Name == c.CurrentContext {
+			return &c.Contexts[i].Context, nil
 		}
 	}
 

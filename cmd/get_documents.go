@@ -42,7 +42,7 @@ Examples:
   dtctl get dashboards --mine
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, c, printer, err := Setup()
+		cfg, c, printer, err := Setup()
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ Examples:
 		watchMode, _ := cmd.Flags().GetBool("watch")
 		if watchMode {
 			fetcher := func() (interface{}, error) {
-				list, err := handler.List(filters)
+				list, err := listDocuments(handler, filters, cfg)
 				if err != nil {
 					return nil, err
 				}
@@ -77,7 +77,7 @@ Examples:
 			return executeWithWatch(cmd, fetcher, printer)
 		}
 
-		list, err := handler.List(filters)
+		list, err := listDocuments(handler, filters, cfg)
 		if err != nil {
 			return err
 		}
@@ -111,7 +111,7 @@ Examples:
   dtctl get notebooks --mine
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, c, printer, err := Setup()
+		cfg, c, printer, err := Setup()
 		if err != nil {
 			return err
 		}
@@ -137,7 +137,7 @@ Examples:
 		watchMode, _ := cmd.Flags().GetBool("watch")
 		if watchMode {
 			fetcher := func() (interface{}, error) {
-				list, err := handler.List(filters)
+				list, err := listDocuments(handler, filters, cfg)
 				if err != nil {
 					return nil, err
 				}
@@ -146,7 +146,7 @@ Examples:
 			return executeWithWatch(cmd, fetcher, printer)
 		}
 
-		list, err := handler.List(filters)
+		list, err := listDocuments(handler, filters, cfg)
 		if err != nil {
 			return err
 		}
@@ -507,7 +507,7 @@ Examples:
   dtctl get documents -o json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, c, printer, err := Setup()
+		cfg, c, printer, err := Setup()
 		if err != nil {
 			return err
 		}
@@ -557,7 +557,7 @@ Examples:
 		watchMode, _ := cmd.Flags().GetBool("watch")
 		if watchMode {
 			fetcher := func() (interface{}, error) {
-				list, err := handler.List(filters)
+				list, err := listDocuments(handler, filters, cfg)
 				if err != nil {
 					return nil, err
 				}
@@ -566,7 +566,7 @@ Examples:
 			return executeWithWatch(cmd, fetcher, printer)
 		}
 
-		list, err := handler.List(filters)
+		list, err := listDocuments(handler, filters, cfg)
 		if err != nil {
 			return err
 		}
