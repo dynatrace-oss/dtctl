@@ -195,9 +195,13 @@ document, and it does not demote the command. Three things still hold:
 
 **Output outside agent mode is promised per command, not per field.** A
 ` + "`stable`" + ` command's output (JSON and YAML fields, table columns) is additive-only
-as a whole, and what enforces that is the golden tests, which snapshot every
-printer's output for every resource and fail on any change. There is no finer
-grain: an output field cannot declare a tier of its own, so there is no
+as a whole, and what enforces that is the golden tests, which snapshot each
+printer's output per resource and fail on any change. Content that comes from
+the environment rather than from dtctl is outside that promise: the response
+body ` + "`exec api`" + ` passes through, and the records a query returns, change when
+the platform's APIs and data do. For those commands the promise covers the
+invocation and how dtctl frames what it prints, not the payload. There is no
+finer grain: an output field cannot declare a tier of its own, so there is no
 experimental or deprecated field on a ` + "`stable`" + ` command, this file lists no
 fields, and ` + "`DTCTL_NO_DEPRECATED`" + ` covers commands and flags but not fields.
 A new field that should not carry the promise ships behind an experimental flag

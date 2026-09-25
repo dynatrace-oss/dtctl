@@ -158,7 +158,9 @@ demote the command. A PR that changes what agent mode outputs still has to:
 
 **Outside agent mode, the output contract is per command, not per field.**
 The golden tests enforce it at whole-command level: they snapshot each printer's
-output and fail on any change. There is no field-level tier, so no experimental
+output and fail on any change. A payload that comes from the environment (the
+body `exec api` passes through, the records a query returns) is not dtctl's
+to promise; only the invocation and how dtctl frames the output are. There is no field-level tier, so no experimental
 or deprecated output field, no field entries in the manifest, and
 `DTCTL_NO_DEPRECATED` covers commands and flags only (#542). To ship a field
 without the `stable` promise, put it behind an experimental flag or on an
