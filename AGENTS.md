@@ -241,10 +241,19 @@ warn about a typo costs every correct caller and protects none of them. The
 spared rows carry their reason in `pre10RejectUnusableInputSpared`.
 
 A since-version is the one part of the manifest the release itself can falsify:
-`experimental since 0.39.0` is a claim about a version that does not exist yet.
-`TestSinceVersionsNameThisReleaseOrTheNextOne` holds every declaration to this
-release or the next one, so a differently-numbered release fails on
-release-please's own version-bump PR rather than after the tag exists.
+`experimental since 0.39.0` is a claim about a version that does not exist yet
+when it is written. The guard is split by what each half can see.
+`TestSinceVersionsNameNoReleaseBeyondTheNextOne` sees only the tree, so it
+holds every declaration to a real version no later than the next release — an
+already-released since-version stays valid forever, as it must, since it is
+true. `make stability-compat` sees the base branch too, so it checks the
+change: a since-version that is new or changed must name the next release, not
+one that already shipped without it; a released one may not be rewritten; and
+an unreleased one must still be this release or the next by the head's
+`pkg/version`, so a differently-numbered release fails on release-please's own
+version-bump PR rather than after the tag exists. (The first version of the
+test only allowed this release or the next one, and so broke main on the first
+commit after every release.)
 
 That list is a test and not a comment for a reason: `stability.MarkFlag` is a
 silent no-op when the flag it names does not exist, so renaming a flag in `cmd/`
