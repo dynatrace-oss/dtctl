@@ -235,16 +235,10 @@ Examples:
 		executor := NewDQLExecutorFromConfig(cfg, c)
 
 		// Set up signal handling so a running Grail query is cancelled on Ctrl+C / SIGTERM.
-		ctx, cancel := context.WithCancel(cmdContext(cmd))
-		defer cancel()
-
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-		defer signal.Stop(sigCh)
-		go func() {
-			<-sigCh
-			cancel()
-		}()
+		// NotifyContext leaves no goroutine behind when the command ends or the
+		// caller's context is cancelled first.
+		ctx, stop := signal.NotifyContext(cmdContext(cmd), os.Interrupt, syscall.SIGTERM)
+		defer stop()
 
 		queryFile, _ := cmd.Flags().GetString("file")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
