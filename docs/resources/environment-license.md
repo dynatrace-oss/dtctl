@@ -31,7 +31,7 @@ These commands take dtctl's **global flags** (`-o/--output`, `--context`, `--jq`
 
 | Safety level | Scopes |
 | --- | --- |
-| read | `app-engine:apps:run` |
+| read | `app-engine:apps:run` (or instead any one of: `app-engine:functions:run`; `platform-management:environments:read`) |
 <!-- GENERATED:environment-license:end -->
 
 ## Output
@@ -100,5 +100,5 @@ dtctl get license-settings AUTOMATION -o json --jq '.[0].value'    # -> "true"
 - **`license-settings` has no `describe` form** — each object is just a key and a value, so `get` already shows everything.
 - **An unknown key is not an error.** `dtctl get license-settings NOT_A_REAL_KEY` prints `No resources found.` and exits 0, so a script that greps for a key name should check the row count rather than the exit code.
 - Both resources accept short aliases: `env` for `environment`, `license-setting` for `license-settings`.
-- The required scope for all five commands is `app-engine:apps:run`, which most contexts already hold — see **[TOKEN_SCOPES.md](../TOKEN_SCOPES.md)**.
+- The required scope for all five commands is `app-engine:apps:run`, which most contexts already hold. The API also accepts `app-engine:functions:run` or `platform-management:environments:read` instead, and `--check-scopes` accepts a token that holds either one — see **[TOKEN_SCOPES.md](../TOKEN_SCOPES.md)**.
 

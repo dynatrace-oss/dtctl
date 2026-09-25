@@ -133,12 +133,27 @@ def resource_managed_body(title: str, stems: list[str], catalog: dict,
     out.append("\n## Required token scopes\n")
     resource_scopes = catalog.get("resource_scopes", {})
     by_level: dict[str, set[str]] = {}
+    # Alternatives per level, one entry per contributing resource key. They are
+    # shown only when every key at that level declares the same ones: an
+    # alternative to one resource's scopes does not stand in for another's.
+    alts_by_level: dict[str, set[tuple]] = {}
     for key, levels in resource_scopes.items():
         if not matches(key, stemset):
             continue
-        for level, scopes in levels.items():
+        alternatives = levels.get(gen_docs.ALTERNATIVES_KEY, {})
+        for level, scopes in gen_docs.scope_levels(levels):
             by_level.setdefault(level, set()).update(scopes)
-    scope_rows = [[level, ", ".join(f"`{s}`" for s in sorted(by_level[level]))]
+            alts_by_level.setdefault(level, set()).add(
+                tuple(tuple(alt) for alt in alternatives.get(level, [])))
+
+    def level_alternatives(level: str) -> list[list[str]] | None:
+        alts = alts_by_level.get(level, set())
+        if len(alts) != 1:
+            return None
+        only = next(iter(alts))
+        return [list(alt) for alt in only] or None
+
+    scope_rows = [[level, gen_docs.scope_cell(sorted(by_level[level]), level_alternatives(level))]
                   for level in sorted(by_level.keys())]
     out.append(gen_docs.md_table(["Safety level", "Scopes"], scope_rows))
 

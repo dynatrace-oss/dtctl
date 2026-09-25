@@ -24,11 +24,21 @@ const (
 // when Delete is empty, matching resources that fold deletion into their write
 // scope (e.g. workflows, buckets) rather than exposing a distinct :delete scope
 // (e.g. documents).
+//
+// The per-level lists are conjunctive: a token needs every scope in them.
+// Alternatives covers the endpoints that document "one of the following scopes
+// is required": each entry is another complete scope set the platform accepts in
+// place of that level's list. The list stays the one dtctl requests at login and
+// reports as required; an alternative only lets a scope check accept a token
+// that holds it instead.
 type AccessScopes struct {
 	Read   []string `json:"read,omitempty" yaml:"read,omitempty"`
 	Write  []string `json:"write,omitempty" yaml:"write,omitempty"`
 	Delete []string `json:"delete,omitempty" yaml:"delete,omitempty"`
 	Run    []string `json:"run,omitempty" yaml:"run,omitempty"`
+	// Alternatives maps an access level to the scope sets accepted instead of
+	// its list. Any one fully granted set satisfies the level.
+	Alternatives map[Access][][]string `json:"alternatives,omitempty" yaml:"alternatives,omitempty"`
 }
 
 // For returns the scopes required for the given access level, applying the
@@ -49,6 +59,33 @@ func (a AccessScopes) For(access Access) []string {
 	default:
 		return nil
 	}
+}
+
+// AlternativesFor returns the scope sets accepted in place of For(access),
+// applying the same delete→write fallback so an alternative always refers to the
+// list For returned.
+func (a AccessScopes) AlternativesFor(access Access) [][]string {
+	if access == AccessDelete && len(a.Delete) == 0 {
+		access = AccessWrite
+	}
+	return a.Alternatives[access]
+}
+
+// platformManagementRead is the requirement of the Platform Management endpoints
+// (/platform/management/v1/...), which accept any one of app-engine:apps:run,
+// app-engine:functions:run and platform-management:environments:read.
+//
+// app-engine:apps:run is the one dtctl lists and requests: the narrow
+// platform-management:environments:read is not grantable to OAuth clients via
+// the standard login flow, and apps:run already is at every safety level (via
+// the "app" resource), so no extra login scope is needed. The other two are
+// declared as alternatives so that --check-scopes accepts a token holding only
+// one of them, for which the call succeeds.
+var platformManagementRead = AccessScopes{
+	Read: []string{"app-engine:apps:run"},
+	Alternatives: map[Access][][]string{
+		AccessRead: {{"app-engine:functions:run"}, {"platform-management:environments:read"}},
+	},
 }
 
 // ResourceScopes is the single source of truth for which scope each
@@ -176,15 +213,11 @@ var ResourceScopes = map[string]AccessScopes{
 	// possible target would be wrong for almost all of them.
 	"api": {},
 
-	// Platform Management (/platform/management/v1/...).
-	// platform-management:environments:read is the documented narrow scope for
-	// these endpoints, but it is not grantable to OAuth clients via the standard
-	// login flow. app-engine:apps:run also authorizes all three endpoints and IS
-	// grantable, so we use it here. The scope is already in every safety-level
-	// set via the "app" resource — no extra login scope needed.
-	"environment":      {Read: []string{"app-engine:apps:run"}},
-	"license":          {Read: []string{"app-engine:apps:run"}},
-	"license-settings": {Read: []string{"app-engine:apps:run"}},
+	// Platform Management (/platform/management/v1/...): any one of three
+	// scopes authorizes these endpoints — see platformManagementRead.
+	"environment":      platformManagementRead,
+	"license":          platformManagementRead,
+	"license-settings": platformManagementRead,
 }
 
 // localResources are catalog subcommands that operate entirely on the local
@@ -238,22 +271,35 @@ func singularize(name string) string {
 // "workflows"); aliases must be resolved by the caller. Returns nil when the
 // resource has no scope mapping (e.g. a local-only command).
 func ScopesForResource(resource string, access Access) []string {
-	if s, ok := ResourceScopes[resource]; ok {
-		return s.For(access)
-	}
-	if s, ok := ResourceScopes[singularize(resource)]; ok {
+	if s, ok := lookupResourceScopes(resource); ok {
 		return s.For(access)
 	}
 	return nil
 }
 
+// AlternativeScopesForResource returns the scope sets the platform accepts in
+// place of ScopesForResource(resource, access), or nil when that requirement has
+// no alternative. Names resolve as in ScopesForResource.
+func AlternativeScopesForResource(resource string, access Access) [][]string {
+	if s, ok := lookupResourceScopes(resource); ok {
+		return s.AlternativesFor(access)
+	}
+	return nil
+}
+
+// lookupResourceScopes finds a resource's entry by its singular or plural name.
+func lookupResourceScopes(resource string) (AccessScopes, bool) {
+	if s, ok := ResourceScopes[resource]; ok {
+		return s, true
+	}
+	s, ok := ResourceScopes[singularize(resource)]
+	return s, ok
+}
+
 // HasResourceScopes reports whether the resource has an entry in the canonical
 // table (regardless of whether any access level is populated).
 func HasResourceScopes(resource string) bool {
-	if _, ok := ResourceScopes[resource]; ok {
-		return true
-	}
-	_, ok := ResourceScopes[singularize(resource)]
+	_, ok := lookupResourceScopes(resource)
 	return ok
 }
 

@@ -137,14 +137,14 @@ func TestRequiredScopesFor(t *testing.T) {
 func TestComputeScopeVerdict(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		withScopeState(t, true, false, "json", []string{"automation:workflows:write", "x"}, true)
-		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, scopeRequirementKnown)
+		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, nil, scopeRequirementKnown)
 		require.Equal(t, scopeStatusOK, r.Status)
 		require.Empty(t, r.MissingScopes)
 	})
 
 	t.Run("insufficient", func(t *testing.T) {
 		withScopeState(t, true, false, "json", []string{"automation:workflows:read"}, true)
-		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, scopeRequirementKnown)
+		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, nil, scopeRequirementKnown)
 		require.Equal(t, scopeStatusInsufficient, r.Status)
 		require.Equal(t, []string{"automation:workflows:write"}, r.MissingScopes)
 		require.NotEmpty(t, r.Suggestions)
@@ -152,7 +152,7 @@ func TestComputeScopeVerdict(t *testing.T) {
 
 	t.Run("unknown", func(t *testing.T) {
 		withScopeState(t, true, false, "json", nil, false)
-		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, scopeRequirementKnown)
+		r := computeScopeVerdict("delete", "workflow", []string{"automation:workflows:write"}, nil, scopeRequirementKnown)
 		require.Equal(t, scopeStatusUnknown, r.Status)
 		require.Empty(t, r.GrantedScopes)
 		require.NotEmpty(t, r.Suggestions)
@@ -160,7 +160,7 @@ func TestComputeScopeVerdict(t *testing.T) {
 
 	t.Run("no scopes required", func(t *testing.T) {
 		withScopeState(t, true, false, "json", nil, false)
-		r := computeScopeVerdict("ctx", "set", nil, scopeRequirementNone)
+		r := computeScopeVerdict("ctx", "set", nil, nil, scopeRequirementNone)
 		require.Equal(t, scopeStatusOK, r.Status)
 		require.Empty(t, r.RequiredScopes)
 	})
@@ -171,7 +171,7 @@ func TestComputeScopeVerdict(t *testing.T) {
 	// that checked nothing is an assurance dtctl has no basis to give.
 	t.Run("per-call requirement is unknown, never ok", func(t *testing.T) {
 		withScopeState(t, true, false, "json", []string{"automation:workflows:write"}, true)
-		r := computeScopeVerdict("exec", "api", nil, scopeRequirementPerCall)
+		r := computeScopeVerdict("exec", "api", nil, nil, scopeRequirementPerCall)
 		require.Equal(t, scopeStatusUnknown, r.Status,
 			"a check that did not happen must not report ok")
 		require.Empty(t, r.RequiredScopes)

@@ -686,12 +686,13 @@ func errorToDetail(err error) *output.ErrorDetail {
 			}
 		}
 		return &output.ErrorDetail{
-			Code:           "insufficient_scope",
-			Message:        scopeErr.Error(),
-			RequiredScopes: scopeErr.Required,
-			GrantedScopes:  scopeErr.Granted,
-			MissingScopes:  scopeErr.Missing,
-			Suggestions:    suggestions,
+			Code:              "insufficient_scope",
+			Message:           scopeErr.Error(),
+			RequiredScopes:    scopeErr.Required,
+			GrantedScopes:     scopeErr.Granted,
+			MissingScopes:     scopeErr.Missing,
+			AlternativeScopes: scopeErr.Alternatives,
+			Suggestions:       suggestions,
 		}
 	}
 

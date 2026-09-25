@@ -162,6 +162,9 @@ type ErrorDetail struct {
 	RequiredScopes []string `json:"required_scopes,omitempty"`
 	GrantedScopes  []string `json:"granted_scopes,omitempty"`
 	MissingScopes  []string `json:"missing_scopes,omitempty"`
+	// AlternativeScopes are scope sets the endpoint accepts in place of
+	// RequiredScopes; granting any one set in full would also suffice.
+	AlternativeScopes [][]string `json:"alternative_scopes,omitempty"`
 	// Query-error fields, populated when the DQL API reports where in the
 	// query the error is: the span, and the offending line with a caret line
 	// marking it.
