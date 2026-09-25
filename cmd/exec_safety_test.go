@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 )
 
 // safetyLevelConfig points dtctl at env with the given safety level.
@@ -50,11 +52,7 @@ func isolatedContext(t *testing.T, level string) {
 	t.Setenv("DTCTL_PROFILE", "")
 	// Suppress agent-mode auto-detection so --agent is the only thing shaping
 	// output (mirrors isolatedConfig in run_test.go).
-	for _, v := range []string{
-		"CLAUDECODE", "CLAUDE_CODE", "AI_AGENT", "CODEX", "CURSOR_AGENT",
-		"COPILOT_CLI", "GITHUB_COPILOT", "AGENT_CONTEXT_OUT", "KIRO_SESSION_ID",
-		"OPENCODE",
-	} {
+	for _, v := range aidetect.EnvVars() {
 		t.Setenv(v, "")
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 	"github.com/dynatrace-oss/dtctl/pkg/engine"
 	"github.com/dynatrace-oss/dtctl/sdk/session"
 )
@@ -373,11 +374,7 @@ func TestDevelopmentGateHidesCommand(t *testing.T) {
 	}
 	// The assertions read human output, so a test run under an AI agent must
 	// not auto-enable the agent envelope. Empty means "not set" to detection.
-	for _, v := range []string{
-		"CLAUDECODE", "AI_AGENT", "CODEX", "CURSOR_AGENT", "COPILOT_CLI", "GITHUB_COPILOT",
-		"CODEIUM_AGENT", "TABNINE_AGENT", "AMAZON_Q", "JUNIE", "KIRO", "AGENT_CONTEXT_OUT",
-		"KIRO_SESSION_ID", "OPENCODE", "OPENCLAW",
-	} {
+	for _, v := range aidetect.EnvVars() {
 		base = append(base, v+"=")
 	}
 	run := func(env []string, args ...string) (int, string) {

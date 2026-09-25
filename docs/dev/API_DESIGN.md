@@ -327,23 +327,11 @@ Use `--debug` to see full HTTP details when troubleshooting.
 
 ### AI Agent Detection
 
-dtctl automatically detects when running under AI coding assistants and includes this in the User-Agent header for telemetry:
-
-- **Claude Code**: Detected via `CLAUDECODE` environment variable
-- **OpenCode**: Detected via `OPENCODE` environment variable
-- **GitHub Copilot**: Detected via `GITHUB_COPILOT` environment variable
-- **Cursor**: Detected via `CURSOR_AGENT` environment variable
-- **Kiro**: Detected via `KIRO` environment variable
-- **Junie**: Detected via `JUNIE` environment variable
-- **OpenClaw**: Detected via `OPENCLAW` environment variable
-- **OpenAI Codex CLI**: Detected via `CODEX` environment variable
-- **Codeium**: Detected via `CODEIUM_AGENT` environment variable
-- **TabNine**: Detected via `TABNINE_AGENT` environment variable
-- **Amazon Q**: Detected via `AMAZON_Q` environment variable
+dtctl automatically detects when running under AI coding assistants. Detection enables [agent mode](../AGENT_MODE.md#auto-detection) (opt out with `--no-agent`) and names the agent in the User-Agent header for telemetry. The environment variables, and the order they are checked in, are listed in [AGENT_MODE.md](../AGENT_MODE.md#auto-detection); the implementation is `sdk/agentmode/detect.go`.
 
 Example User-Agent: `dtctl/0.12.0 (AI-Agent: opencode)`
 
-This telemetry helps improve the CLI experience for AI-assisted workflows. Detection is automatic and doesn't affect functionality.
+This telemetry helps improve the CLI experience for AI-assisted workflows.
 
 ### Skills Management
 

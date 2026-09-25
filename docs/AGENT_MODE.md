@@ -491,20 +491,31 @@ written to disk.
 
 ## Auto-Detection
 
-dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on the presence of specific environment variables:
+dtctl automatically enables agent mode when it detects it is running inside a known AI agent environment. Detection is based on environment variables the agent sets on the commands it runs. Variables are checked in the order below and the first match wins, so the reported agent name is stable even when several are set (Claude Code, for example, sets both `CLAUDECODE` and `AI_AGENT`).
 
 | Environment Variable | Agent |
 |---|---|
+| `AI_AGENT` naming a known agent (e.g. `claude-code_2-1-282_agent`) | that agent |
+| `AGENT=amp` | Amp (also sets `CLAUDECODE`) |
 | `CLAUDECODE` | Claude Code |
-| `OPENCODE` | OpenCode |
-| `GITHUB_COPILOT` | GitHub Copilot |
+| `CODEX_CI`, `CODEX_THREAD_ID`, `CODEX_SANDBOX` | OpenAI Codex CLI |
 | `CURSOR_AGENT` | Cursor |
-| `KIRO` | Kiro |
-| `JUNIE` | Junie |
-| `OPENCLAW` | OpenClaw |
-| `CODEIUM_AGENT` | Codeium / Windsurf |
-| `TABNINE_AGENT` | Tabnine |
-| `AMAZON_Q` | Amazon Q |
+| `COPILOT_CLI`, `COPILOT_AGENT` | GitHub Copilot (CLI, VS Code) |
+| `GEMINI_CLI` | Gemini CLI |
+| `QWEN_CODE` | Qwen Code |
+| `OPENCODE` | OpenCode |
+| `AGENT_CONTEXT_OUT`, `KIRO_SESSION_ID` | Kiro |
+| `OPENCLAW_SHELL=exec` | OpenClaw |
+| `TABNINE_CLI` | Tabnine CLI |
+| `AWS_EXECUTION_ENV` containing `AmazonQ-For-CLI` | Amazon Q Developer CLI |
+| `AUGMENT_AGENT` | Augment |
+| `ANTIGRAVITY_AGENT` | Antigravity |
+| `CLINE_ACTIVE` | Cline |
+| `AI_AGENT` with any other value | reported as `generic-ai` |
+
+`CODEX`, `GITHUB_COPILOT`, `KIRO`, `OPENCLAW`, `JUNIE`, `CODEIUM_AGENT`, `TABNINE_AGENT` and `AMAZON_Q` are also honoured as manual overrides (no agent is known to set them), after every variable above. A value of `0` or `false` does not count.
+
+Variables an IDE sets in *every* integrated terminal (such as `CURSOR_TRACE_ID` or `TERM_PROGRAM`) are deliberately ignored: they would switch a human's output to JSON.
 
 When auto-detected, agent mode is enabled without requiring the `--agent` flag.
 

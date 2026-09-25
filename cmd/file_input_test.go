@@ -131,8 +131,7 @@ func runWithStdin(t *testing.T, srvURL, stdin string, argv ...string) (int, stri
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "-"), []byte("title: FROM-THE-DISK\ntasks: {}\n"), 0o600))
 	t.Chdir(dir)
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 	t.Cleanup(restorePristineTree)
 
 	var stdout, stderr bytes.Buffer

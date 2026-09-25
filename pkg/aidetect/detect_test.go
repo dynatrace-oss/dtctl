@@ -1,7 +1,6 @@
 package aidetect
 
 import (
-	"os"
 	"testing"
 )
 
@@ -170,7 +169,7 @@ func TestDetect(t *testing.T) {
 			},
 		},
 		{
-			name: "multiple agents set - first one wins",
+			name: "multiple agents set - first in order wins",
 			envVars: map[string]string{
 				"CLAUDECODE":     "1",
 				"CURSOR_AGENT":   "true",
@@ -178,29 +177,19 @@ func TestDetect(t *testing.T) {
 			},
 			expected: AgentInfo{
 				Detected: true,
-				Name:     "", // Name depends on map iteration order, just check Detected
+				Name:     "claude-code",
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear all known environment variables
-			for envVar := range knownAgents {
-				os.Unsetenv(envVar)
+			for _, envVar := range EnvVars() {
+				t.Setenv(envVar, "")
 			}
-
-			// Set test environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
-
-			// Cleanup after test
-			defer func() {
-				for k := range tt.envVars {
-					os.Unsetenv(k)
-				}
-			}()
 
 			got := Detect()
 
@@ -208,24 +197,8 @@ func TestDetect(t *testing.T) {
 				t.Errorf("Detect() Detected = %v, want %v", got.Detected, tt.expected.Detected)
 			}
 
-			// Only check name if we expect one and it's not the multi-agent test
 			if tt.expected.Name != "" && got.Name != tt.expected.Name {
 				t.Errorf("Detect() Name = %v, want %v", got.Name, tt.expected.Name)
-			}
-
-			// For multi-agent test, just ensure we got one of the agents
-			if tt.name == "multiple agents set - first one wins" && got.Detected {
-				validNames := []string{"claude-code", "cursor", "github-copilot"}
-				found := false
-				for _, name := range validNames {
-					if got.Name == name {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("Detect() Name = %v, want one of %v", got.Name, validNames)
-				}
 			}
 		})
 	}
@@ -267,22 +240,12 @@ func TestUserAgentSuffix(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear all known environment variables
-			for envVar := range knownAgents {
-				os.Unsetenv(envVar)
+			for _, envVar := range EnvVars() {
+				t.Setenv(envVar, "")
 			}
-
-			// Set test environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
-
-			// Cleanup after test
-			defer func() {
-				for k := range tt.envVars {
-					os.Unsetenv(k)
-				}
-			}()
 
 			got := UserAgentSuffix()
 
