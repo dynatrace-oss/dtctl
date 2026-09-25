@@ -130,12 +130,14 @@ func assertDocumentFidelity(t *testing.T, cloud, id string, serverDoc, rendered 
 // `get -o yaml` → `apply -f` path: that apply can read back the YAML dtctl
 // prints without losing anything *relative to the typed struct*.
 //
-// This is a separate risk from the dropped fields above. yaml.v3 encodes a
-// struct by reflection — ignoring json tags and never seeing the Extra map
-// that holds unmodelled members — unless the type has a MarshalYAML. The
-// monitoring-config types render YAML through their JSON shape for exactly
-// that reason; a type in the value tree that lost its MarshalYAML would drop
-// every unmodelled member on this path while the JSON path stayed intact.
+// This is a separate risk from the dropped fields above. The printer
+// yaml-encodes the structs by reflection, so json tags are ignored and every
+// modelled key arrives lowercased (`deploymentregion`, `activationcontext`);
+// apply converts that YAML to JSON and unmarshals it with encoding/json, which
+// matches field names case-insensitively. Reflection never sees the Extra map
+// that holds unmodelled members, so each type in the value tree has a
+// MarshalYAML that appends them under their API names (unknownfields.YAML); a
+// type that lost it would drop them on this path while JSON stayed intact.
 func TestCloudMonitoringConfig_YAMLRoundTrip(t *testing.T) {
 	env := SetupIntegration(t)
 

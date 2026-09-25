@@ -35,7 +35,65 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 )
+
+// YAML renders known (a method-less alias of the struct) the way yaml.v3
+// reflection always has — same keys, order and empty values — and appends
+// the extra members under their original API names, in key order, with
+// numbers kept exactly as the server sent them. It is the MarshalYAML
+// counterpart of Marshal, so `get -o yaml` → `apply -f` keeps unmodelled
+// members: apply matches the reflected lowercase keys case-insensitively and
+// reads the appended ones back into Extra.
+//
+// TEMPORARY: this exists only because `-o yaml` still prints reflected
+// lowercase field names, which stable commands promise to keep. Once YAML
+// output uses JSON field names everywhere (centrally, in the printer), Extra
+// is emitted by MarshalJSON alone, and this function and every MarshalYAML
+// that calls it should be deleted.
+func YAML(known any, extra map[string]json.RawMessage) (any, error) {
+	var node yaml.Node
+	if err := node.Encode(known); err != nil {
+		return nil, err
+	}
+	if len(extra) == 0 {
+		return &node, nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("unknownfields: %T does not encode as a YAML mapping", known)
+	}
+
+	names := fieldNames(reflect.TypeOf(known))
+	keys := make([]string, 0, len(extra))
+	for key := range extra {
+		if !names.has(key) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		raw := extra[key]
+		if len(bytes.TrimSpace(raw)) == 0 {
+			raw = json.RawMessage("null")
+		}
+		value, err := format.YAMLNodeFromJSON(raw)
+		if err != nil {
+			return nil, fmt.Errorf("unknownfields: invalid extra member %q in %T: %w", key, known, err)
+		}
+		var valueNode yaml.Node
+		if err := valueNode.Encode(value); err != nil {
+			return nil, err
+		}
+		node.Content = append(node.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+			&valueNode)
+	}
+	return &node, nil
+}
 
 // Unmarshal decodes the JSON object in data into known, which must be a
 // pointer to a struct without its own UnmarshalJSON (use a method-less alias),

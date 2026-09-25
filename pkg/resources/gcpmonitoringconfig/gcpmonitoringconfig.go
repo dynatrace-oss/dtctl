@@ -93,7 +93,7 @@ type GoogleCloudConfig struct {
 	TagEnrichment                      []string                  `json:"tagEnrichment,omitempty"`
 	LabelEnrichment                    []string                  `json:"labelEnrichment,omitempty"`
 	DtLabelsEnrichment                 map[string]DtLabelMapping `json:"dtLabelsEnrichment,omitempty" yaml:"dtLabelsEnrichment,omitempty"`
-	ObservabilityScopesEnabled         *bool                     `json:"observabilityScopesEnabled,omitempty" yaml:"observabilityScopesEnabled,omitempty"`
+	ObservabilityScopesEnabled         *bool                     `json:"observabilityScopesEnabled,omitempty"`
 	SmartscapeConfiguration            FlagConfig                `json:"smartscapeConfiguration,omitempty"`
 	Resources                          []MetricSource            `json:"resources,omitempty"`
 

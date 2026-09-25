@@ -1,15 +1,14 @@
 package azuremonitoringconfig
 
 import (
-	"github.com/dynatrace-oss/dtctl/pkg/util/format"
 	"github.com/dynatrace-oss/dtctl/pkg/util/unknownfields"
 )
 
 // The monitoring-configuration document is read, modified and written back as
 // a whole, so every struct in the value tree keeps the members it does not
-// model (see package unknownfields) and renders YAML through its JSON shape —
-// yaml.v3 reflection would otherwise ignore the json tags and drop Extra,
-// breaking the `get -o yaml` → `apply -f` round trip.
+// model (see package unknownfields). MarshalYAML keeps the reflected YAML
+// shape that stable commands promise and appends Extra to it; it is temporary
+// until YAML output uses JSON field names (see unknownfields.YAML).
 
 func (v *Value) UnmarshalJSON(data []byte) error {
 	type plain Value
@@ -26,7 +25,10 @@ func (v Value) MarshalJSON() ([]byte, error) {
 	return unknownfields.Marshal(plain(v), v.Extra)
 }
 
-func (v Value) MarshalYAML() (any, error) { return format.YAMLNodeFromJSON(v) }
+func (v Value) MarshalYAML() (any, error) {
+	type plain Value
+	return unknownfields.YAML(plain(v), v.Extra)
+}
 
 func (v *AzureConfig) UnmarshalJSON(data []byte) error {
 	type plain AzureConfig
@@ -43,7 +45,10 @@ func (v AzureConfig) MarshalJSON() ([]byte, error) {
 	return unknownfields.Marshal(plain(v), v.Extra)
 }
 
-func (v AzureConfig) MarshalYAML() (any, error) { return format.YAMLNodeFromJSON(v) }
+func (v AzureConfig) MarshalYAML() (any, error) {
+	type plain AzureConfig
+	return unknownfields.YAML(plain(v), v.Extra)
+}
 
 func (v *TagFilter) UnmarshalJSON(data []byte) error {
 	type plain TagFilter
@@ -60,7 +65,10 @@ func (v TagFilter) MarshalJSON() ([]byte, error) {
 	return unknownfields.Marshal(plain(v), v.Extra)
 }
 
-func (v TagFilter) MarshalYAML() (any, error) { return format.YAMLNodeFromJSON(v) }
+func (v TagFilter) MarshalYAML() (any, error) {
+	type plain TagFilter
+	return unknownfields.YAML(plain(v), v.Extra)
+}
 
 func (v *Labels) UnmarshalJSON(data []byte) error {
 	type plain Labels
@@ -77,7 +85,10 @@ func (v Labels) MarshalJSON() ([]byte, error) {
 	return unknownfields.Marshal(plain(v), v.Extra)
 }
 
-func (v Labels) MarshalYAML() (any, error) { return format.YAMLNodeFromJSON(v) }
+func (v Labels) MarshalYAML() (any, error) {
+	type plain Labels
+	return unknownfields.YAML(plain(v), v.Extra)
+}
 
 func (v *Credential) UnmarshalJSON(data []byte) error {
 	type plain Credential
@@ -94,8 +105,7 @@ func (v Credential) MarshalJSON() ([]byte, error) {
 	return unknownfields.Marshal(plain(v), v.Extra)
 }
 
-func (v Credential) MarshalYAML() (any, error) { return format.YAMLNodeFromJSON(v) }
-
-// MarshalYAML renders the configuration through its JSON shape, so `-o yaml`
-// carries the same camelCase keys and unmodelled members as `-o json`.
-func (c AzureMonitoringConfig) MarshalYAML() (any, error) { return format.YAMLNodeFromJSON(c) }
+func (v Credential) MarshalYAML() (any, error) {
+	type plain Credential
+	return unknownfields.YAML(plain(v), v.Extra)
+}

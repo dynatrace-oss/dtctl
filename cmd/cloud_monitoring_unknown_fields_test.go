@@ -402,6 +402,15 @@ func TestCloudMonitoringGetYAMLApplyKeepsUnmodelledFields(t *testing.T) {
 				t.Fatalf("yaml encode: %v", err)
 			}
 
+			// The modelled keys keep the reflected lowercase names stable
+			// commands have always printed; unmodelled members are added
+			// under their API names.
+			for _, want := range []string{"objectid: " + fx.id, "description: " + fx.name, "dtAttributes:", "tenantInstanceId: null"} {
+				if !strings.Contains(string(rendered), want) {
+					t.Errorf("yaml output lacks %q:\n%s", want, rendered)
+				}
+			}
+
 			results, err := apply.NewApplier(c).Apply(rendered, apply.ApplyOptions{})
 			if err != nil {
 				t.Fatalf("apply of the exported yaml failed: %v\n%s", err, rendered)
@@ -412,6 +421,7 @@ func TestCloudMonitoringGetYAMLApplyKeepsUnmodelledFields(t *testing.T) {
 
 			sent := srv.lastPut(t, fx.baseAPI+"/"+fx.id)
 			assertPreserved(t, fx.doc, sent, fx.preserved)
+			assertNoCaseDuplicates(t, "", sent)
 
 			// An integer above 2^53 must reach the API as the same token; a
 			// float64 detour on the YAML path would round it to ...992.
@@ -430,5 +440,27 @@ func assertPathEquals(t *testing.T, doc map[string]any, path string, want any) {
 	got, ok := jsonPath(t, doc, path)
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Errorf("%s = %#v (present=%v), want %#v", path, got, ok, want)
+	}
+}
+
+// assertNoCaseDuplicates fails when an object carries two keys that differ
+// only in case: a lowercase YAML key read back must fill the modelled field,
+// not also travel on as an unknown member.
+func assertNoCaseDuplicates(t *testing.T, path string, node any) {
+	t.Helper()
+	switch n := node.(type) {
+	case map[string]any:
+		seen := map[string]string{}
+		for k, v := range n {
+			if prev, dup := seen[strings.ToLower(k)]; dup {
+				t.Errorf("%s carries both %q and %q", path, prev, k)
+			}
+			seen[strings.ToLower(k)] = k
+			assertNoCaseDuplicates(t, path+"."+k, v)
+		}
+	case []any:
+		for i, v := range n {
+			assertNoCaseDuplicates(t, fmt.Sprintf("%s[%d]", path, i), v)
+		}
 	}
 }

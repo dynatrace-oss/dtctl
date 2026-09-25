@@ -1,35 +1,44 @@
-description: Production GCP monitoring
-enabled: true
-objectId: gcpmon-a1b2c3d4
+objectid: gcpmon-a1b2c3d4
+scope: ""
 value:
-  description: Production GCP monitoring
   enabled: true
-  featureSets:
-    - default
-  googleCloud:
+  description: Production GCP monitoring
+  version: "2.0"
+  googlecloud:
     credentials:
-      - connectionId: gcp-conn-x1y2z3
-        description: Main SA credential
+      - description: Main SA credential
         enabled: true
-        serviceAccount: sa-monitor@project-id.iam.gserviceaccount.com
-    locationFiltering:
+        connectionid: gcp-conn-x1y2z3
+        serviceaccount: sa-monitor@project-id.iam.gserviceaccount.com
+    locationfiltering:
       - us-east1
       - eu-west1
-    projectFiltering:
+    projectfiltering:
       - my-project-123
-    resources:
-      - autoDiscoveryEnabled: false
-        metrics:
-          - metricLabels:
-              - response_class
-            name: pubsub.googleapis.com/topic/send_request_count
-            type: CUSTOM
-        resourceType: pubsub_topic
-      - autoDiscoveryEnabled: true
-        autodiscoveryExcludeMetricType:
-          - compute.googleapis.com/instance/disk/*
-        resourceType: gce_instance
-    smartscapeConfiguration:
+    folderfiltering: []
+    tagfiltering: []
+    labelfiltering: []
+    tagenrichment: []
+    labelenrichment: []
+    observabilityscopesenabled: false
+    smartscapeconfiguration:
       enabled: false
-  version: "2.0"
+    resources:
+      - resourcetype: pubsub_topic
+        autodiscoveryenabled: false
+        autodiscoveryexcludemetrictype: []
+        metrics:
+          - name: pubsub.googleapis.com/topic/send_request_count
+            metriclabels:
+              - response_class
+            type: CUSTOM
+      - resourcetype: gce_instance
+        autodiscoveryenabled: true
+        autodiscoveryexcludemetrictype:
+          - compute.googleapis.com/instance/disk/*
+        metrics: []
+  featuresets:
+    - default
+description: Production GCP monitoring
+enabled: true
 version: "2.0"
