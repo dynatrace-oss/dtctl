@@ -119,3 +119,20 @@ func TestYAMLWithoutExtraIsPlainReflection(t *testing.T) {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// yaml.Node.Encode returns the document's root content, not the DocumentNode
+// wrapper, so YAML sees a MappingNode and can append the extra members.
+func TestYAMLReturnsMappingNodeWithExtra(t *testing.T) {
+	type plain yamlInner
+	got, err := YAML(plain{Enabled: true}, map[string]json.RawMessage{"newBlock": json.RawMessage(`{"a":1}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, ok := got.(*yaml.Node)
+	if !ok || node.Kind != yaml.MappingNode {
+		t.Fatalf("want *yaml.Node of kind MappingNode, got %#v", got)
+	}
+	if n := len(node.Content); n != 4 || node.Content[2].Value != "newBlock" {
+		t.Fatalf("extra member not appended: %d nodes", n)
+	}
+}
