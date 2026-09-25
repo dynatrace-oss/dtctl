@@ -122,18 +122,11 @@ If you see `failed to save token to keyring: ... data passed to Set was too big`
 
 ### Cloud agent sandboxes (Claude Code on the web)
 
-Hosted coding agents such as Claude Code on the web run each session in a fresh
-container. That container has no browser for `dtctl auth login` and no OS keyring,
-and its environment settings typically offer two separate inputs: a **setup
-script** that runs before the session starts, and **environment variables** that
-are set only inside the session. The setup script cannot see those variables.
+The setup script runs without the session's environment variables, so the version
+and URL go in the script and the token stays an environment variable, stored as a
+`${DT_API_TOKEN}` reference that dtctl resolves at runtime.
 
-That split decides where each value goes. The version and the environment URL
-are needed by the setup script, so they live in the script. The token is needed
-only when dtctl runs, so it stays an environment variable and is stored in the
-config as a `${DT_API_TOKEN}` reference that dtctl resolves on every run:
-
-**Setup script**
+Setup script:
 
 ```bash
 set -e
@@ -145,40 +138,14 @@ dtctl config set-context web --environment "$DT_ENVIRONMENT_URL" --token-ref t -
 dtctl config set-credentials t --token '${DT_API_TOKEN}'
 ```
 
-**Environment variables**
+Environment variables:
 
 ```
 DT_API_TOKEN=dt0s16.XXXXXXXX.YYYYYYYY
 ```
 
-A few details matter:
-
-- **Single quotes around `${DT_API_TOKEN}`.** They keep the shell from expanding
-  it, so the config holds the reference rather than the token. With no keyring,
-  `set-credentials` writes it to the config file and warns that it is stored in
-  plaintext -- expected here, since what it stores is the reference, not the
-  secret. The token never touches the container's disk, and rotating it is an
-  edit to the environment variable alone.
-- **Double quotes around `$DT_ENVIRONMENT_URL`.** The URL is not a secret, and
-  `config set-context` needs a real URL: it does not keep a `${VAR}` reference.
-- **Download the release directly rather than piping `install.sh`.** The
-  installer looks up the latest release through `api.github.com`, whose
-  unauthenticated rate limit is shared by every session behind the sandbox's
-  egress IP, so it fails with `curl: (22) ... 403` regardless of the network
-  settings. Pinning the version also makes each session reproducible. Use
-  `linux_arm64` in the asset name on an ARM sandbox.
-- **Allow the tenant's domain** (for example `*.dynatrace.com`) in the sandbox's
-  network settings, next to GitHub for the download.
-- **Scope the token down.** Environment variables in these products are usually
-  visible to everyone who can use the environment, so create a
-  [platform token](#creating-a-platform-token) with only the scopes the agent
-  needs and a short expiry. `--safety-level readonly` adds a client-side guard
-  on top; the token's scopes are the real boundary.
-
-Agent mode needs no setup: dtctl detects the session and switches to the JSON
-envelope on its own (see [AI Agent Mode](AGENT_MODE.md#auto-detection)). Run
-`dtctl doctor` in a session to confirm the context resolves and the environment
-is reachable.
+Allow `*.dynatrace.com` in the network settings. `install.sh` does not work here:
+its GitHub API lookup hits the sandbox's shared rate limit (HTTP 403).
 
 ## Multiple Environments
 
