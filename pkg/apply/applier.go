@@ -756,6 +756,12 @@ func (a *Applier) dryRun(resourceType ResourceType, data []byte, opts ApplyOptio
 		return a.dryRunAzureConnection(doc)
 	case ResourceGCPConnection:
 		return a.dryRunGCPConnection(doc)
+	case ResourceSettings:
+		// Settings objects (and the legacy AWS connection exports routed here)
+		// resolve create vs update by looking the objectId up, falling back to
+		// a create that needs schemaId and scope. See
+		// https://github.com/dynatrace-oss/dtctl/issues/521
+		return a.dryRunSettings(doc, data)
 	}
 
 	// For other resources, return basic info

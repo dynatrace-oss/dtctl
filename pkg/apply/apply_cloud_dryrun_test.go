@@ -281,6 +281,12 @@ func TestApply_LegacyConnectionExport_DetectedAsConnection(t *testing.T) {
 					t.Errorf("dry run reached the documents API — the export was read as a document")
 					w.WriteHeader(http.StatusInternalServerError)
 				},
+				// The settings dry run (the AWS case) looks the object up, as
+				// apply does (#521): it exists.
+				"/platform/classic/environment-api/v2/settings/objects/aws-conn-legacy": func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.Write([]byte(`{"objectId":"aws-conn-legacy","schemaId":"builtin:hyperscaler-authentication.connections.aws","scope":"environment","value":{"name":"my-aws-conn","type":"awsRoleBasedAuthentication"}}`))
+				},
 				"/platform/metadata/v1/user": func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusUnauthorized)
 				},
