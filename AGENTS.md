@@ -572,7 +572,7 @@ Never put customer names, employee names, usernames, or specific Dynatrace envir
 ❌ **Don't** skip safety checks on mutating commands  
 ✅ **Do** add safety checks to ALL create/edit/apply/delete/update/exec commands
 
-❌ **Don't** build an integration on `dtctl exec api` for longer than it takes to add a native command. This is advice, not a stability warning: the command is `stable`, but a passthrough doesn't validate input, resolve names or format output  
+❌ **Don't** build an integration on `dtctl exec api` for longer than it takes to add a native command. This is advice, not a stability warning: the command is `stable`, but a passthrough doesn't validate input, resolve names or format output\
 ✅ **Do** add a native command for the API instead (`dtctl get apis --uncovered` is the backlog)
 
 ❌ **Don't** read a user-supplied path with `os.ReadFile` / `os.Open`  
