@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
@@ -77,9 +78,15 @@ type ScopeCheckResult struct {
 	Resource       string   `json:"resource,omitempty" yaml:"resource,omitempty"`
 	Status         string   `json:"status" yaml:"status"` // ok | insufficient_scope | unknown
 	RequiredScopes []string `json:"required_scopes" yaml:"required_scopes"`
-	GrantedScopes  []string `json:"granted_scopes,omitempty" yaml:"granted_scopes,omitempty"`
-	MissingScopes  []string `json:"missing_scopes,omitempty" yaml:"missing_scopes,omitempty"`
-	Suggestions    []string `json:"suggestions,omitempty" yaml:"suggestions,omitempty"`
+	// AlternativeScopes are scope sets the endpoint accepts in place of
+	// RequiredScopes; holding any one set in full is as good as holding them.
+	AlternativeScopes [][]string `json:"alternative_scopes,omitempty" yaml:"alternative_scopes,omitempty"`
+	// SatisfiedBy is the alternative set an ok verdict rests on, when the
+	// token lacks RequiredScopes but holds one of AlternativeScopes.
+	SatisfiedBy   []string `json:"satisfied_by,omitempty" yaml:"satisfied_by,omitempty"`
+	GrantedScopes []string `json:"granted_scopes,omitempty" yaml:"granted_scopes,omitempty"`
+	MissingScopes []string `json:"missing_scopes,omitempty" yaml:"missing_scopes,omitempty"`
+	Suggestions   []string `json:"suggestions,omitempty" yaml:"suggestions,omitempty"`
 }
 
 // installScopePreflight wraps the RunE of every runnable command so that a scope
@@ -130,7 +137,11 @@ func scopePreflight(c *cobra.Command, args []string) (skip bool, err error) {
 				required, req = scopes, scopeRequirementKnown
 			}
 		}
-		result := computeScopeVerdict(verb, resource, required, req)
+		var alternatives [][]string
+		if req == scopeRequirementKnown {
+			alternatives = alternativesForInvocation(c, verb, resource)
+		}
+		result := computeScopeVerdict(verb, resource, required, alternatives, req)
 		// In agent mode the verdict must use the same envelope contract as every
 		// other command: an insufficient verdict reuses the ScopeError path (so it
 		// renders as an `insufficient_scope` error envelope with exit 5, identical
@@ -144,6 +155,7 @@ func scopePreflight(c *cobra.Command, args []string) (skip bool, err error) {
 					Required: result.RequiredScopes,
 					Granted:  result.GrantedScopes,
 					Missing:  result.MissingScopes,
+					Advice:   result.Suggestions,
 				}
 			}
 			printScopeVerdictAgent(result)
@@ -179,12 +191,17 @@ func scopePreflight(c *cobra.Command, args []string) (skip bool, err error) {
 	if len(missing) == 0 {
 		return false, nil
 	}
+	alternatives := alternativesForInvocation(c, verb, resource)
+	if grantedAlternative(alternatives, granted) != nil {
+		return false, nil
+	}
 	return false, &ScopeError{
 		Verb:     verb,
 		Resource: resource,
 		Required: required,
 		Granted:  granted,
 		Missing:  missing,
+		Advice:   insufficientScopeAdvice(missing, alternatives),
 	}
 }
 
@@ -308,6 +325,59 @@ func flagContributedScopes(c *cobra.Command, verb, resource string) []string {
 	return extra
 }
 
+// alternativesForInvocation returns the scope sets that satisfy this invocation
+// in place of its catalog requirement (auth.AccessScopes.Alternatives), or nil.
+//
+// An alternative stands in for the resource's own scopes only. What a flag adds
+// reaches a different API, so it stays required whichever alternative is held.
+func alternativesForInvocation(c *cobra.Command, verb, resource string) [][]string {
+	if resource == "" {
+		return nil
+	}
+	access := auth.AccessForVerb(verb, commands.MutatingVerbs[verb])
+	alternatives := auth.AlternativeScopesForResource(resource, access)
+	if len(alternatives) == 0 {
+		return nil
+	}
+	extra := flagContributedScopes(c, verb, resource)
+	out := make([][]string, 0, len(alternatives))
+	for _, alt := range alternatives {
+		out = append(out, unionScopes(alt, extra))
+	}
+	return out
+}
+
+// grantedAlternative returns the first alternative whose every scope is granted,
+// or nil when none is.
+func grantedAlternative(alternatives [][]string, granted []string) []string {
+	for _, alt := range alternatives {
+		if len(alt) > 0 && len(subtractScopes(alt, granted)) == 0 {
+			return alt
+		}
+	}
+	return nil
+}
+
+// formatAlternatives renders scope sets as "a | b + c": any one set, each set
+// needing all of its scopes.
+func formatAlternatives(alternatives [][]string) string {
+	sets := make([]string, 0, len(alternatives))
+	for _, alt := range alternatives {
+		sets = append(sets, strings.Join(alt, " + "))
+	}
+	return strings.Join(sets, " | ")
+}
+
+// insufficientScopeAdvice is what a caller can do about missing scopes: add the
+// missing ones, or — where the endpoint accepts them — any one alternative set.
+func insufficientScopeAdvice(missing []string, alternatives [][]string) []string {
+	advice := []string{"re-create your token with: " + strings.Join(missing, ", ")}
+	if len(alternatives) > 0 {
+		advice = append(advice, "or with any one of these instead: "+formatAlternatives(alternatives))
+	}
+	return append(advice, "see 'dtctl commands howto' for token scope guidance")
+}
+
 // unionScopes merges scope lists, dropping duplicates and keeping the result
 // sorted so a verdict does not depend on Go's map iteration order.
 func unionScopes(lists ...[]string) []string {
@@ -403,7 +473,9 @@ func grantedScopes() (scopes []string, known bool) {
 }
 
 // computeScopeVerdict builds the verdict for the explicit --check-scopes path.
-func computeScopeVerdict(verb, resource string, required []string, req scopeRequirement) ScopeCheckResult {
+// alternatives are the scope sets accepted in place of required (see
+// alternativesForInvocation); a token holding any one of them is sufficient.
+func computeScopeVerdict(verb, resource string, required []string, alternatives [][]string, req scopeRequirement) ScopeCheckResult {
 	res := ScopeCheckResult{
 		Verb:           verb,
 		Resource:       resource,
@@ -431,12 +503,16 @@ func computeScopeVerdict(verb, resource string, required []string, req scopeRequ
 		return res
 	}
 
+	res.AlternativeScopes = alternatives
+
 	granted, known := grantedScopesFunc()
 	if !known {
 		res.Status = scopeStatusUnknown
-		res.Suggestions = []string{
-			"token scopes are not introspectable (API/platform token); ensure it carries: " + strings.Join(required, ", "),
+		ensure := "token scopes are not introspectable (API/platform token); ensure it carries: " + strings.Join(required, ", ")
+		if len(alternatives) > 0 {
+			ensure += " (or any one of: " + formatAlternatives(alternatives) + ")"
 		}
+		res.Suggestions = []string{ensure}
 		return res
 	}
 
@@ -446,12 +522,14 @@ func computeScopeVerdict(verb, resource string, required []string, req scopeRequ
 		res.Status = scopeStatusOK
 		return res
 	}
+	if alt := grantedAlternative(alternatives, granted); alt != nil {
+		res.Status = scopeStatusOK
+		res.SatisfiedBy = alt
+		return res
+	}
 	res.Status = scopeStatusInsufficient
 	res.MissingScopes = missing
-	res.Suggestions = []string{
-		"re-create your token with: " + strings.Join(missing, ", "),
-		"see 'dtctl commands howto' for token scope guidance",
-	}
+	res.Suggestions = insufficientScopeAdvice(missing, alternatives)
 	return res
 }
 
@@ -510,6 +588,9 @@ func printScopeVerdictHuman(r ScopeCheckResult) {
 		return
 	}
 	fmt.Printf("  required: %s\n", strings.Join(r.RequiredScopes, ", "))
+	if len(r.AlternativeScopes) > 0 {
+		fmt.Printf("  or any of: %s\n", formatAlternatives(r.AlternativeScopes))
+	}
 	switch r.Status {
 	case scopeStatusUnknown:
 		fmt.Println("  granted:  unknown (token scopes are not introspectable)")
@@ -518,7 +599,14 @@ func printScopeVerdictHuman(r ScopeCheckResult) {
 		fmt.Printf("  granted:  %s\n", strings.Join(r.GrantedScopes, ", "))
 		fmt.Printf("  missing:  %s\n", strings.Join(r.MissingScopes, ", "))
 		fmt.Printf("  status:   insufficient — missing %d scope(s)\n", len(r.MissingScopes))
+		if len(r.AlternativeScopes) > 0 {
+			fmt.Println("            and no accepted alternative is granted")
+		}
 	default:
+		if len(r.SatisfiedBy) > 0 {
+			fmt.Printf("  status:   ok — granted accepted alternative: %s\n", strings.Join(r.SatisfiedBy, " + "))
+			return
+		}
 		fmt.Println("  status:   ok — all required scopes granted")
 	}
 }
