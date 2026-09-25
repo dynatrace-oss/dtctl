@@ -245,6 +245,12 @@ func restorePristineTree() {
 		c.SetOut(nil)
 		c.SetErr(nil)
 		c.SetIn(nil)
+		// Cobra hands a subcommand its parent's context only while the
+		// subcommand's own is nil, so after the first run every command keeps
+		// the context of the invocation that first executed it — by then
+		// cancelled, since the engine cancels each request's context when it
+		// ends. Rebind the whole tree to this invocation's context.
+		c.SetContext(runCtx)
 		resetFlagSet(c.Flags())
 		resetFlagSet(c.PersistentFlags())
 	})

@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/exec"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
@@ -50,7 +51,7 @@ Examples:
 			if err != nil {
 				return fmt.Errorf("failed to read file: %w", err)
 			}
-			return executor.Execute(string(data), outputFormat)
+			return executor.ExecuteWithContext(cmdContext(cmd), string(data), exec.DQLExecuteOptions{OutputFormat: outputFormat})
 		}
 
 		if len(args) == 0 {
@@ -58,7 +59,7 @@ Examples:
 		}
 
 		query := args[0]
-		return executor.Execute(query, outputFormat)
+		return executor.ExecuteWithContext(cmdContext(cmd), query, exec.DQLExecuteOptions{OutputFormat: outputFormat})
 	},
 }
 

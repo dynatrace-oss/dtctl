@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
@@ -219,6 +220,62 @@ func TestWait_ContextTimeout(t *testing.T) {
 	// Context timeout returns ctx.Err() — either nil result or timeout error
 	if err == nil && result != nil && result.Success {
 		t.Error("expected non-success for timed-out wait")
+	}
+}
+
+// The wait's deadline cancels the query that is running at that moment, rather
+// than letting it poll on after the wait has given up (#502).
+func TestWait_TimeoutCancelsInFlightQuery(t *testing.T) {
+	cancelled := make(chan string, 1)
+	executor, cleanup := newWaiterTestExecutor(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "query:execute"):
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"state":"RUNNING","requestToken":"tok-wait"}`))
+		case strings.HasSuffix(r.URL.Path, "query:poll"):
+			select {
+			case <-r.Context().Done():
+			case <-time.After(5 * time.Second):
+			}
+			_, _ = w.Write([]byte(`{"state":"RUNNING","requestToken":"tok-wait"}`))
+		case strings.HasSuffix(r.URL.Path, "query:cancel"):
+			select {
+			case cancelled <- r.URL.Query().Get("request-token"):
+			default:
+			}
+			w.WriteHeader(http.StatusAccepted)
+		}
+	})
+	defer cleanup()
+
+	waiter := NewQueryWaiter(executor, WaitConfig{
+		Query:       "fetch logs",
+		Condition:   Condition{Type: ConditionTypeCount, Operator: OpGreaterEqual, Value: 1},
+		Quiet:       true,
+		ProgressOut: &bytes.Buffer{},
+		Timeout:     200 * time.Millisecond,
+		Backoff:     BackoffConfig{MinInterval: 0, MaxInterval: 0},
+	})
+
+	start := time.Now()
+	result, err := waiter.Wait(context.Background())
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("Wait returned after %s; the running query outlived the deadline", elapsed)
+	}
+	if err == nil {
+		t.Fatal("expected a deadline error")
+	}
+	if result == nil || result.Success {
+		t.Fatalf("result = %+v, want a non-success result", result)
+	}
+	select {
+	case got := <-cancelled:
+		if got != "tok-wait" {
+			t.Errorf("cancelled token = %q, want %q", got, "tok-wait")
+		}
+	default:
+		t.Error("the running query was never cancelled on the backend")
 	}
 }
 

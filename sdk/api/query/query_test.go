@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -349,6 +350,96 @@ func TestExecuteAndPoll_Cancellation(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if !cancelCalled.Load() {
 		t.Error("expected cancel endpoint to be called")
+	}
+}
+
+// A caller that has already gone away must not start a query at all.
+func TestExecuteAndPoll_PreCancelledContextStartsNothing(t *testing.T) {
+	var requests atomic.Int32
+	h := NewHandler(newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := h.ExecuteAndPoll(ctx, ExecuteRequest{Query: "fetch logs"}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("sent %d requests for a cancelled caller, want 0", n)
+	}
+}
+
+// Cancelling the caller while the initial execute is in flight still lets the
+// request token come back, so the query Grail already started is cancelled on
+// the backend instead of running on unobserved (#502).
+func TestExecuteAndPoll_CancelDuringExecuteCancelsBackendQuery(t *testing.T) {
+	var cancelledToken atomic.Value
+	var polls atomic.Int32
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond) // server-side hold; the caller cancels meanwhile
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(Response{State: "RUNNING", RequestToken: "tok-in-flight"})
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:poll", func(w http.ResponseWriter, r *http.Request) {
+		polls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	mux.HandleFunc("/platform/storage/query/v1/query:cancel", func(w http.ResponseWriter, r *http.Request) {
+		cancelledToken.Store(r.URL.Query().Get("request-token"))
+		w.WriteHeader(http.StatusOK)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	_, err := h.ExecuteAndPoll(ctx, ExecuteRequest{Query: "fetch logs"}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if got, _ := cancelledToken.Load().(string); got != "tok-in-flight" {
+		t.Errorf("backend cancel token = %q, want %q", got, "tok-in-flight")
+	}
+	if n := polls.Load(); n != 0 {
+		t.Errorf("polled %d times after the caller cancelled, want 0", n)
+	}
+}
+
+// An execute that stalls is abandoned executeCancelGrace after the caller
+// cancels, rather than holding the caller for the full executeTimeout.
+func TestExecuteAndPoll_CancelDuringStalledExecuteReturnsAfterGrace(t *testing.T) {
+	prev := executeCancelGrace
+	executeCancelGrace = 50 * time.Millisecond
+	t.Cleanup(func() { executeCancelGrace = prev })
+
+	release := make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/storage/query/v1/query:execute", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})
+	h := NewHandler(newTestClient(t, mux))
+	t.Cleanup(func() { close(release) })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	start := time.Now()
+	_, err := h.ExecuteAndPoll(ctx, ExecuteRequest{Query: "fetch logs"}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("returned after %s; a cancelled caller should be released within the grace", elapsed)
 	}
 }
 

@@ -133,7 +133,16 @@ func (w *QueryWaiter) Wait(ctx context.Context) (*Result, error) {
 		}
 
 		// Execute query
-		result, err := w.executor.ExecuteQueryWithOptions(w.config.Query, w.config.QueryOptions)
+		// Bound to ctx, so the --timeout deadline (or an embedding caller going
+		// away) cancels the in-flight query instead of only the next attempt.
+		result, err := w.executor.ExecuteQueryWithContext(ctx, w.config.Query, w.config.QueryOptions)
+		if err == nil && result == nil {
+			// ExecuteQueryWithContext reports a cancelled context as (nil, nil).
+			err = context.Canceled
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				err = ctxErr
+			}
+		}
 		if err != nil {
 			// Query execution error - retry unless context cancelled
 			if ctx.Err() != nil {
