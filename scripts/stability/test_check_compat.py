@@ -76,6 +76,37 @@ class SinceTest(unittest.TestCase):
         self.assertEqual([k for k, _ in out], ["exec widget"])
         self.assertIn("rewritten", out[0][1])
 
+    def test_rewriting_a_released_since_version_forward_is_refused(self):
+        # On the release PR 0.41.0 is an allowed value, but 0.40.0 shipped.
+        head = [
+            "exec widget                   experimental  since 0.39.0",
+            "  --wait                      experimental  since 0.41.0",
+        ]
+        out = findings(self.RELEASED, head, "0.40.0", "0.41.0")
+        self.assertEqual([k for k, _ in out], ["exec widget --wait"])
+        self.assertIn("rewritten to 0.41.0", out[0][1])
+
+    def test_removing_a_released_since_version_is_refused(self):
+        head = [
+            "exec widget                   experimental",
+            "  --wait                      experimental  since 0.40.0",
+        ]
+        out = findings(self.RELEASED, head, "0.40.0", "0.40.0")
+        self.assertEqual([k for k, _ in out], ["exec widget"])
+        self.assertIn("removed", out[0][1])
+
+    def test_promotion_drops_the_since_version(self):
+        head = [
+            "exec widget                   stable",
+            "  --wait                      stable",
+        ]
+        self.assertEqual(findings(self.RELEASED, head, "0.40.0", "0.40.0"), [])
+
+    def test_unreleased_since_version_may_be_corrected(self):
+        base = self.RELEASED + ["get gadgets                   experimental  since 0.40.1"]
+        head = self.RELEASED + ["get gadgets                   experimental  since 0.41.0"]
+        self.assertEqual(findings(base, head, "0.40.0", "0.40.0"), [])
+
     def test_since_beyond_the_next_release_is_refused(self):
         for since in ("0.40.2", "0.42.0", "1.0.0"):
             head = self.RELEASED + ["get gadgets                   experimental  since " + since]

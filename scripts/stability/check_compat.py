@@ -28,8 +28,9 @@ depends on what the base looked like. Three more things are refused here:
   * a since-version that is new or changed relative to the base but names a
     release that had already shipped at the base -- that release went out
     without the change, so the claim is false from the start;
-  * an existing since-version rewritten while its entry keeps its tier -- the
-    change it records is history, and a different number misdates it;
+  * a released since-version rewritten (to any version) or removed while its
+    entry keeps its tier -- the change it records is history, and a different
+    number, or none, misdates it;
   * a since-version naming a release the base had not reached that is not this
     release or the next one by the head's pkg/version -- on release-please's
     version-bump PR, that is a declaration written for a release that is now
@@ -120,6 +121,16 @@ def since_findings(base, head, base_version, head_version):
     unreleased_text = ", ".join(show(v) for v in allowed if v > base_version)
     out = []
     for key, (level, _, since) in sorted(head.items()):
+        old = base.get(key)
+        if (old is not None and old[0] == level and old[2] is not None
+                and old[2] != since and _released(old[2], base_version)):
+            # A since-version that shipped is history while the tier it dates
+            # stands: moving it to any other version, released or not, or
+            # dropping it, misdates the change.
+            out.append((key, "since %s %s without a tier change; it already shipped"
+                             % (old[2], "removed" if since is None
+                                else "rewritten to %s" % since)))
+            continue
         if since is None:
             continue
         try:
@@ -127,7 +138,6 @@ def since_findings(base, head, base_version, head_version):
         except ValueError:
             out.append((key, "since %s is not a version" % since))
             continue
-        old = base.get(key)
         if v > base_version:
             # Not released at the base: whichever release carries it is this
             # one or the next, as the head numbers them.
@@ -136,14 +146,17 @@ def since_findings(base, head, base_version, head_version):
                                  "(pkg/version is %s; expected one of %s)"
                                  % (since, show(head_version), unreleased_text)))
         elif old is None or old[2] != since:
-            if old is not None and old[2] is not None and old[0] == level:
-                out.append((key, "since %s rewritten to %s without a tier change"
-                                 % (old[2], since)))
-            else:
-                out.append((key, "since %s is new here, but %s had already shipped "
-                                 "without it (expected one of %s)"
-                                 % (since, since, unreleased_text)))
+            out.append((key, "since %s is new here, but %s had already shipped "
+                             "without it (expected one of %s)"
+                             % (since, since, unreleased_text)))
     return out
+
+
+def _released(since, base_version):
+    try:
+        return parse_version(since) <= base_version
+    except ValueError:
+        return False
 
 
 def git_show(ref, path):
