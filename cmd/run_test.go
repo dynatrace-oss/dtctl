@@ -12,6 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 )
 
 // captureRun invokes Run and returns its exit code plus everything written to
@@ -50,11 +52,7 @@ func isolatedConfig(t *testing.T, content string) {
 	// Suppress agent-mode auto-detection: the test machine may itself run
 	// under an AI agent (any of sdk/agentmode's known env vars), which would
 	// silently flip output to envelopes. Empty means "not set" to Detect.
-	for _, v := range []string{
-		"CLAUDECODE", "CLAUDE_CODE", "AI_AGENT", "CODEX", "CURSOR_AGENT",
-		"COPILOT_CLI", "GITHUB_COPILOT", "AGENT_CONTEXT_OUT", "KIRO_SESSION_ID",
-		"OPENCODE",
-	} {
+	for _, v := range aidetect.EnvVars() {
 		t.Setenv(v, "")
 	}
 }

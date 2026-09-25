@@ -68,8 +68,7 @@ func newRecoveringTaskLogEnv(t *testing.T, step2Status int, runningPolls, step2F
 
 func runLogs(t *testing.T, srv *httptest.Server, argv ...string) (code int, stdout, stderr string) {
 	t.Helper()
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 	t.Cleanup(restorePristineTree)
 	var errBuf bytes.Buffer
 	code, stdout = captureRun(t, argv, RunOptions{

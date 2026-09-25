@@ -50,8 +50,7 @@ func TestRedirectStdioLargeOutput(t *testing.T) {
 // stderr the human messages — the separation must survive redirection.
 func TestRunRedirectedStreamsSeparated(t *testing.T) {
 	env := newSessionMockEnv(t)
-	t.Setenv("CLAUDECODE", "")
-	t.Setenv("CLAUDE_CODE", "")
+	clearAgentEnvVars(t)
 
 	var stdout, stderr bytes.Buffer
 	code := Run(

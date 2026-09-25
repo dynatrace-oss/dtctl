@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/aidetect"
 )
 
 func TestSupportedAgents(t *testing.T) {
@@ -52,10 +54,7 @@ func TestFindAgent(t *testing.T) {
 
 func TestDetectAgent(t *testing.T) {
 	// Each subtest clears ALL agent env vars to ensure full isolation.
-	allEnvVars := []string{
-		"CLAUDECODE", "CODEX", "CURSOR_AGENT", "GITHUB_COPILOT", "JUNIE", "KIRO", "OPENCODE", "OPENCLAW",
-		"CODEIUM_AGENT", "TABNINE_AGENT", "AMAZON_Q", "AI_AGENT",
-	}
+	allEnvVars := aidetect.EnvVars()
 
 	clearAllEnvVars := func(t *testing.T) {
 		t.Helper()
