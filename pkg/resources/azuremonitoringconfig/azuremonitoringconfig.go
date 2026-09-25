@@ -79,6 +79,9 @@ type Value struct {
 	Version     string      `json:"version"`
 	Azure       AzureConfig `json:"azure"`
 	FeatureSets []string    `json:"featureSets"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type AzureConfig struct {
@@ -93,17 +96,26 @@ type AzureConfig struct {
 	TagFiltering                       []TagFilter       `json:"tagFiltering,omitempty"`
 	TagEnrichment                      []string          `json:"tagEnrichment,omitempty"`
 	DtLabelsEnrichment                 map[string]Labels `json:"dtLabelsEnrichment,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type TagFilter struct {
 	Key       string `json:"key"`
 	Value     string `json:"value"`
 	Condition string `json:"condition"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type Labels struct {
 	Literal string `json:"literal,omitempty"`
 	TagKey  string `json:"tagKey,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type Credential struct {
@@ -112,6 +124,9 @@ type Credential struct {
 	ConnectionId       string `json:"connectionId"`
 	ServicePrincipalId string `json:"servicePrincipalId"`
 	Type               string `json:"type"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type ListResponse struct {

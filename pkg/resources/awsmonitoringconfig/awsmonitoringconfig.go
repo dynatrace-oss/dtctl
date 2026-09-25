@@ -95,6 +95,9 @@ type Value struct {
 	ActivationContext string    `json:"activationContext,omitempty"`
 	Aws               AWSConfig `json:"aws"`
 	FeatureSets       []string  `json:"featureSets"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type AWSConfig struct {
@@ -115,6 +118,9 @@ type AWSConfig struct {
 	DeploymentScope                    string                    `json:"deploymentScope,omitempty"`
 	ManualDeploymentStatus             string                    `json:"manualDeploymentStatus,omitempty"`
 	AutomatedDeploymentStatus          string                    `json:"automatedDeploymentStatus,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type Credential struct {
@@ -122,21 +128,33 @@ type Credential struct {
 	Enabled      bool   `json:"enabled"`
 	ConnectionID string `json:"connectionId"`
 	AccountID    string `json:"accountId,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type FlagConfig struct {
 	Enabled bool `json:"enabled"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type RegionalFlagConfig struct {
 	Enabled bool     `json:"enabled"`
 	Regions []string `json:"regions"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type TagFilter struct {
 	Key       string `json:"key"`
 	Value     string `json:"value"`
 	Condition string `json:"condition"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 // DtLabelMapping maps a Dynatrace label to either a literal value or an AWS
@@ -144,6 +162,9 @@ type TagFilter struct {
 type DtLabelMapping struct {
 	Literal string `json:"literal,omitempty"`
 	TagKey  string `json:"tagKey,omitempty"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 // CustomNamespace defines a custom CloudWatch namespace with ad-hoc metrics
@@ -152,6 +173,9 @@ type CustomNamespace struct {
 	Namespace            string         `json:"namespace"`
 	AutoDiscoveryEnabled bool           `json:"autoDiscoveryEnabled"`
 	Metrics              []CustomMetric `json:"metrics"`
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 // CustomMetric defines a single CloudWatch metric within a CustomNamespace.
@@ -161,6 +185,9 @@ type CustomMetric struct {
 	Dimensions   []string `json:"dimensions"`
 	Aggregations []string `json:"aggregations"`
 	Type         string   `json:"type,omitempty"` // e.g. "CUSTOM_AWS", "CUSTOM"
+
+	// Extra keeps the members this struct does not model (unknown_fields.go).
+	Extra map[string]json.RawMessage `json:"-" yaml:"-" table:"-"`
 }
 
 type ListResponse struct {
