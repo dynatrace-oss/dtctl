@@ -147,9 +147,11 @@ func TestNoDeprecatedPrecedence(t *testing.T) {
 
 	// The context can make it durable, for a deployment that wants every run
 	// held to the post-removal surface.
-	// Set on the slice element, not through CurrentContextObj: that accessor
-	// returns a pointer into a range copy, so a write through it is lost.
-	cfg.Contexts[0].Context.NoDeprecated = true
+	ctx, err := cfg.CurrentContextObj()
+	if err != nil {
+		t.Fatalf("CurrentContextObj: %v", err)
+	}
+	ctx.NoDeprecated = true
 	if !cfg.NoDeprecated() {
 		t.Error("the context field did not enable the mode")
 	}
