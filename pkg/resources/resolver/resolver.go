@@ -1,6 +1,7 @@
 package resolver
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/resources/document"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/segment"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // Resolver resolves resource names to IDs
@@ -33,12 +35,30 @@ const (
 
 // ResolveID resolves a name or ID to a resource ID
 // If identifier looks like an ID, returns it directly
+// For document-backed types, an identifier that is an existing document's ID
+// resolves to that ID even when it does not look like a UUID (see
+// resolveDocumentID)
 // If it's a name, searches for matching resources
 // Returns error if multiple matches found (ambiguous)
 func (r *Resolver) ResolveID(resourceType ResourceType, identifier string) (string, error) {
 	// If identifier looks like an ID, return it directly
 	if r.looksLikeID(identifier, resourceType) {
 		return identifier, nil
+	}
+
+	// Documents may carry a caller-chosen, non-UUID ID (`create document --id
+	// my-slug`). `get document <id>` fetches such an ID directly, so every other
+	// verb must accept it too: try it as an ID first and only fall back to a name
+	// search when no such document exists. An exact ID therefore always wins over
+	// a different document whose name happens to match, which matters for delete.
+	if isDocumentType(resourceType) {
+		id, found, err := r.resolveDocumentID(resourceType, identifier)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			return id, nil
+		}
 	}
 
 	// Search for resources by name
@@ -76,6 +96,35 @@ func (r *Resolver) looksLikeID(str string, resourceType ResourceType) bool {
 	}
 
 	return false
+}
+
+// isDocumentType reports whether resourceType is backed by the Document API.
+func isDocumentType(resourceType ResourceType) bool {
+	return resourceType == TypeDocument || resourceType == TypeDashboard || resourceType == TypeNotebook
+}
+
+// resolveDocumentID looks identifier up as a document ID. found is false when no
+// document with that ID exists (HTTP 404, or 400 for a string the API does not
+// accept as an ID, e.g. a name with spaces), so the caller falls back to a name
+// search. For TypeDashboard/TypeNotebook a document of another type is not a
+// match either, so `delete dashboard <id>` cannot reach a notebook that owns
+// that ID. Any other failure (auth, forbidden, server) is returned rather than
+// masked by a name search that could pick a different document.
+func (r *Resolver) resolveDocumentID(resourceType ResourceType, identifier string) (id string, found bool, err error) {
+	if identifier == "" {
+		return "", false, nil
+	}
+	metadata, err := document.NewHandler(r.client).GetMetadata(identifier)
+	if err != nil {
+		if errors.Is(err, httpclient.ErrNotFound) || errors.Is(err, httpclient.ErrBadRequest) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if resourceType != TypeDocument && metadata.Type != string(resourceType) {
+		return "", false, nil
+	}
+	return identifier, true, nil
 }
 
 // Resource represents a found resource

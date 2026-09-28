@@ -421,19 +421,9 @@ func showJSONDiff(oldData, newData []byte, resourceType string) {
 
 // documentURL returns the UI URL for a document
 func (a *Applier) documentURL(docType, id string) string {
-	// Build the app-based URL for the document
 	// e.g., https://abc12345.apps.dynatrace.com -> https://abc12345.apps.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard/<id>
-	switch docType {
-	case "dashboard":
-		return fmt.Sprintf("%s/ui/apps/dynatrace.dashboards/dashboard/%s", a.baseURL, id)
-	case "notebook":
-		return fmt.Sprintf("%s/ui/apps/dynatrace.notebooks/notebook/%s", a.baseURL, id)
-	default:
-		// Custom document types have no known viewer app — the app ID cannot be
-		// derived from the type (e.g. "acme:config" is not served by an app named
-		// "dynatrace.acme:configs"). Emit no URL rather than a broken guess.
-		return ""
-	}
+	// Empty for custom document types, which have no known viewer app.
+	return document.UIURL(a.baseURL, docType, id)
 }
 
 // dryRunDocument performs dry-run validation for a document of any type

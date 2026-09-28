@@ -291,12 +291,10 @@ func createDocumentFromData(cmd *cobra.Command, docType string, fileData []byte)
 	if tileCount > 0 {
 		output.PrintInfo("  %s: %d", capitalize(itemName(docType)), tileCount)
 	}
-	// Only dashboards and notebooks have a known viewer app whose URL can be
-	// derived from the type. For custom document types the app ID is unknown
-	// (e.g. "acme:config" is not served by "dynatrace.acme:configs"), so print
-	// no URL rather than a broken guess.
-	if result.ID != "" && (docType == "dashboard" || docType == "notebook") {
-		output.PrintInfo("  URL:  %s/ui/apps/dynatrace.%ss/%s/%s", c.BaseURL(), docType, docType, result.ID)
+	// Only document types with a known viewer app get a URL; for custom types
+	// the app ID is unknown, so print none rather than a broken guess.
+	if url := document.UIURL(c.BaseURL(), docType, result.ID); url != "" {
+		output.PrintInfo("  URL:  %s", url)
 	}
 	return nil
 }

@@ -288,6 +288,11 @@ func TestResolveID_DashboardByName_SingleMatch(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// "Test" is not a document ID, so the ID probe finds nothing.
+		if r.URL.Path == "/platform/document/v1/documents/Test/metadata" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		if r.URL.Path != "/platform/document/v1/documents" {
 			t.Errorf("Unexpected path: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -339,6 +344,11 @@ func TestResolveID_NotebookByName_SingleMatch(t *testing.T) {
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// "Test" is not a document ID, so the ID probe finds nothing.
+		if r.URL.Path == "/platform/document/v1/documents/Test/metadata" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		if r.URL.Path != "/platform/document/v1/documents" {
 			t.Errorf("Unexpected path: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -824,4 +834,172 @@ func TestResolveID_SegmentUID_PriorityOverName(t *testing.T) {
 	if id != "Stocks" {
 		t.Errorf("ResolveID() = %q, want %q (exact UID match should take priority)", id, "Stocks")
 	}
+}
+
+// newDocumentIDMockServer serves document metadata for the IDs in byID and the
+// documents in listed from the list endpoint. An ID absent from byID answers
+// probeStatus (404 when zero). listCalls counts list requests.
+func newDocumentIDMockServer(t *testing.T, byID map[string]document.DocumentMetadata, listed []document.DocumentMetadata, probeStatus int, listCalls *int) *httptest.Server {
+	t.Helper()
+	const prefix = "/platform/document/v1/documents/"
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/platform/document/v1/documents":
+			if listCalls != nil {
+				*listCalls++
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(document.DocumentList{TotalCount: len(listed), Documents: listed})
+		case strings.HasPrefix(r.URL.Path, prefix) && strings.HasSuffix(r.URL.Path, "/metadata"):
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, prefix), "/metadata")
+			meta, ok := byID[id]
+			if !ok {
+				status := probeStatus
+				if status == 0 {
+					status = http.StatusNotFound
+				}
+				w.WriteHeader(status)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(meta)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+}
+
+func newTestResolver(t *testing.T, serverURL string) *Resolver {
+	t.Helper()
+	c, err := client.NewForTesting(serverURL, "test-token")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	return NewResolver(c)
+}
+
+// A caller-chosen, non-UUID document ID (a slug) resolves as an ID, the way
+// `get document <slug>` fetches it, without a name search.
+func TestResolveID_DocumentBySlugID(t *testing.T) {
+	listCalls := 0
+	server := newDocumentIDMockServer(t,
+		map[string]document.DocumentMetadata{
+			"team-launchpad": {ID: "team-launchpad", Name: "Team Launchpad", Type: "launchpad"},
+		}, nil, 0, &listCalls)
+	defer server.Close()
+
+	id, err := newTestResolver(t, server.URL).ResolveID(TypeDocument, "team-launchpad")
+	if err != nil {
+		t.Fatalf("ResolveID() error = %v", err)
+	}
+	if id != "team-launchpad" {
+		t.Errorf("ResolveID() = %q, want %q", id, "team-launchpad")
+	}
+	if listCalls != 0 {
+		t.Errorf("name search ran %d times, want 0 for an existing ID", listCalls)
+	}
+}
+
+// An argument that is one document's ID and another document's name resolves
+// to the ID, deterministically. Delete relies on this: it must never act on a
+// different document than the one whose exact ID was given.
+func TestResolveID_DocumentIDWinsOverOtherDocumentsName(t *testing.T) {
+	server := newDocumentIDMockServer(t,
+		map[string]document.DocumentMetadata{
+			"team-launchpad": {ID: "team-launchpad", Name: "Team Launchpad", Type: "launchpad"},
+		},
+		[]document.DocumentMetadata{
+			{ID: "other-doc-id", Name: "team-launchpad", Type: "dashboard"},
+		}, 0, nil)
+	defer server.Close()
+
+	id, err := newTestResolver(t, server.URL).ResolveID(TypeDocument, "team-launchpad")
+	if err != nil {
+		t.Fatalf("ResolveID() error = %v", err)
+	}
+	if id != "team-launchpad" {
+		t.Errorf("ResolveID() = %q, want the exact ID %q", id, "team-launchpad")
+	}
+}
+
+// When the argument is not a document ID (404, or 400 for a string the API
+// rejects as an ID), resolution falls back to the name search.
+func TestResolveID_DocumentFallsBackToName(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusBadRequest} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := newDocumentIDMockServer(t, nil,
+				[]document.DocumentMetadata{
+					{ID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", Name: "Team Launchpad", Type: "launchpad"},
+				}, status, nil)
+			defer server.Close()
+
+			id, err := newTestResolver(t, server.URL).ResolveID(TypeDocument, "Team Launchpad")
+			if err != nil {
+				t.Fatalf("ResolveID() error = %v", err)
+			}
+			if id != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
+				t.Errorf("ResolveID() = %q, want the name match", id)
+			}
+		})
+	}
+}
+
+// Neither an ID nor a name: the error still names the argument.
+func TestResolveID_DocumentNeitherIDNorName(t *testing.T) {
+	server := newDocumentIDMockServer(t, nil, nil, 0, nil)
+	defer server.Close()
+
+	_, err := newTestResolver(t, server.URL).ResolveID(TypeDocument, "missing-slug")
+	if err == nil || !strings.Contains(err.Error(), `no document found with name "missing-slug"`) {
+		t.Errorf("ResolveID() error = %v, want no-document-found error", err)
+	}
+}
+
+// A probe failure other than "no such ID" is returned, not masked by a name
+// search that could select a different document.
+func TestResolveID_DocumentProbeErrorIsReturned(t *testing.T) {
+	listCalls := 0
+	server := newDocumentIDMockServer(t, nil,
+		[]document.DocumentMetadata{
+			{ID: "other-doc-id", Name: "team-launchpad", Type: "launchpad"},
+		}, http.StatusForbidden, &listCalls)
+	defer server.Close()
+
+	id, err := newTestResolver(t, server.URL).ResolveID(TypeDocument, "team-launchpad")
+	if err == nil {
+		t.Fatalf("ResolveID() = %q, want an error for a forbidden ID probe", id)
+	}
+	if listCalls != 0 {
+		t.Errorf("name search ran %d times after a forbidden ID probe, want 0", listCalls)
+	}
+}
+
+// Typed resolution only accepts an ID of its own document type, so
+// `delete dashboard <id>` cannot resolve to a notebook with that ID.
+func TestResolveID_TypedDocumentIDMustMatchType(t *testing.T) {
+	byID := map[string]document.DocumentMetadata{
+		"ops-notes": {ID: "ops-notes", Name: "Ops Notes", Type: "notebook"},
+	}
+
+	t.Run("matching type resolves as ID", func(t *testing.T) {
+		server := newDocumentIDMockServer(t, byID, nil, 0, nil)
+		defer server.Close()
+		id, err := newTestResolver(t, server.URL).ResolveID(TypeNotebook, "ops-notes")
+		if err != nil || id != "ops-notes" {
+			t.Errorf("ResolveID(notebook) = %q, %v; want %q", id, err, "ops-notes")
+		}
+	})
+
+	t.Run("other type falls back to name", func(t *testing.T) {
+		server := newDocumentIDMockServer(t, byID, nil, 0, nil)
+		defer server.Close()
+		id, err := newTestResolver(t, server.URL).ResolveID(TypeDashboard, "ops-notes")
+		if err == nil {
+			t.Fatalf("ResolveID(dashboard) = %q, want no-match error for a notebook ID", id)
+		}
+		if !strings.Contains(err.Error(), "no dashboard found") {
+			t.Errorf("error = %v, want no dashboard found", err)
+		}
+	})
 }

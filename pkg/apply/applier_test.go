@@ -683,6 +683,13 @@ func TestDocumentURL(t *testing.T) {
 			expected: "https://abc12345.apps.dynatrace.com/ui/apps/dynatrace.notebooks/notebook/nb-456",
 		},
 		{
+			name:     "launchpad URL uses the launcher app",
+			baseURL:  "https://abc12345.apps.dynatrace.com",
+			docType:  "launchpad",
+			id:       "team-launchpad",
+			expected: "https://abc12345.apps.dynatrace.com/ui/apps/dynatrace.launcher/launchpad/team-launchpad",
+		},
+		{
 			name:     "custom document type has no derivable viewer app URL",
 			baseURL:  "https://tenant.apps.dynatrace.com",
 			docType:  "acme:config",
