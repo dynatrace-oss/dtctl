@@ -165,6 +165,9 @@ func decodeResponseStream(r io.Reader, sink recordSink) (*Response, error) {
 	if err := expectDelim(dec, '}'); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
+	if err := expectEOF(dec); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
 	return &resp, nil
 }
 
@@ -214,7 +217,7 @@ func decodeResultStream(dec *json.Decoder, onRecord func(map[string]interface{})
 		}
 	}
 
-	if _, err := dec.Token(); err != nil { // closing '}'
+	if err := expectDelim(dec, '}'); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -247,7 +250,7 @@ func streamRecordsArray(dec *json.Decoder, onRecord func(map[string]interface{})
 		}
 	}
 
-	if _, err := dec.Token(); err != nil { // closing ']'
+	if err := expectDelim(dec, ']'); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -261,6 +264,17 @@ func expectDelim(dec *json.Decoder, want json.Delim) error {
 	d, ok := tok.(json.Delim)
 	if !ok || d != want {
 		return fmt.Errorf("expected %q, got %v", want, tok)
+	}
+	return nil
+}
+
+// expectEOF requires no further tokens remain in dec, rejecting trailing data after a decoded value.
+func expectEOF(dec *json.Decoder) error {
+	if _, err := dec.Token(); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("unexpected trailing data after response")
+		}
+		return err
 	}
 	return nil
 }

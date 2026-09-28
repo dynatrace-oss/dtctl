@@ -90,6 +90,20 @@ func TestDecodeResponseStream_CallbackErrorAborts(t *testing.T) {
 	}
 }
 
+func TestDecodeResponseStream_RejectsTrailingData(t *testing.T) {
+	body := `{"state": "SUCCEEDED"} trailing garbage`
+	if _, err := decodeResponseStream(bytes.NewBufferString(body), recordSink{}); err == nil {
+		t.Fatal("expected an error for trailing data after the response object")
+	}
+}
+
+func TestDecodeResponseStream_AllowsTrailingWhitespace(t *testing.T) {
+	body := "{\"state\": \"SUCCEEDED\"}   \n"
+	if _, err := decodeResponseStream(bytes.NewBufferString(body), recordSink{}); err != nil {
+		t.Fatalf("decodeResponseStream() error: %v, want nil for trailing whitespace only", err)
+	}
+}
+
 func TestDecodeResponseStream_PresenceFidelity(t *testing.T) {
 	tests := []struct {
 		name       string

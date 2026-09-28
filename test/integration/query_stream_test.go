@@ -5,6 +5,7 @@ package integration
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
@@ -12,7 +13,8 @@ import (
 )
 
 // Live-tenant guard: runs the same query through ExecuteAndPoll and through ExecuteStream
-// and requires them to agree on row count and content.
+// and requires them to agree on row count and content. Uses "data record(...)" instead of
+// "fetch logs" so rows are deterministic and a value-level comparison isn't flaky.
 func TestQueryExecuteStream_MatchesAccumulatedResult(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -21,7 +23,7 @@ func TestQueryExecuteStream_MatchesAccumulatedResult(t *testing.T) {
 	env := SetupIntegration(t)
 	handler := sdkquery.NewHandler(httpclient.Wrap(env.Client.HTTP()))
 
-	const query = "fetch logs | limit 25"
+	const query = `data record(n=1, s="alpha", f=1.5), record(n=2, s="beta", f=2.5), record(n=3, s="gamma", f=3.5)`
 
 	accumulated, err := handler.ExecuteAndPoll(context.Background(), sdkquery.ExecuteRequest{Query: query}, nil)
 	if err != nil {
@@ -62,9 +64,8 @@ func TestQueryExecuteStream_MatchesAccumulatedResult(t *testing.T) {
 	}
 
 	for i := range wantRecords {
-		if len(streamed[i]) != len(wantRecords[i]) {
-			t.Errorf("row %d: field count = %d, want %d (accumulated: %#v, streamed: %#v)",
-				i, len(streamed[i]), len(wantRecords[i]), wantRecords[i], streamed[i])
+		if !reflect.DeepEqual(streamed[i], wantRecords[i]) {
+			t.Errorf("row %d: streamed = %#v, want %#v (accumulated)", i, streamed[i], wantRecords[i])
 		}
 	}
 }
