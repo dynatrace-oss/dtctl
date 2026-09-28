@@ -1,6 +1,10 @@
 package document
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
+)
 
 // viewerPaths maps a document type to the app path that renders it, relative
 // to "<base>/ui/apps/". The app ID cannot be derived from the type: launchpads
@@ -15,11 +19,13 @@ var viewerPaths = map[string]string{
 // UIURL returns the URL at which the environment's UI shows the document, or ""
 // when the document type has no known viewer app. Custom document types (e.g.
 // "acme:config") are not served by an app whose ID follows from the type, so
-// no URL is better than a broken guess.
+// no URL is better than a broken guess. The ID is escaped as one path segment,
+// so a caller-chosen ID containing "/", "?", "#" or ":" cannot address a
+// different route or lose its tail.
 func UIURL(baseURL, docType, id string) string {
 	path, ok := viewerPaths[docType]
 	if !ok || id == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/ui/apps/%s/%s", baseURL, path, id)
+	return fmt.Sprintf("%s/ui/apps/%s/%s", baseURL, path, httpclient.PathSegment(id))
 }
