@@ -208,8 +208,12 @@ Notes:
 - **Only with an explicit flag.** The block is emitted only when you pass
   `--include-types` yourself. `--typed` and Parquet output request the same
   metadata internally to do their work, but that does not add the `types` key.
-- **`json`/`yaml` only.** `jsonl` (one record per line) and `csv` (tabular) have
-  no place for a document-level sibling, so the block is not emitted there.
+- **`json`/`yaml`/`toon` only.** `table`, `wide`, `csv`, `jsonl` (one record
+  per line), the chart formats and `parquet` have no place for a document-level
+  sibling, so the block is not emitted there, and dtctl prints a warning on
+  stderr saying so (stdout is unchanged). With `-o auto` the warning follows the
+  format it picks; with `--jq` the filter input always carries the block.
+  Live mode (`--live`) never emits it and warns likewise.
 - **Agent mode** carries it in the envelope as `result.types`, on inline and
   spilled results alike (see [Agent Mode](AGENT_MODE.md#column-types---include-types)).
 - Note the distinction from `--typed` below: `--include-types` reports the

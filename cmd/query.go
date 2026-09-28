@@ -522,6 +522,9 @@ Examples:
 			if typed {
 				output.PrintWarning("--typed is ignored in live mode (live mode renders a table, where the API's string encoding is not surfaced)")
 			}
+			if emitTypes {
+				output.PrintWarning("--include-types is ignored in live mode (live updates render the records only, without the types block)")
+			}
 			if cmd.Flags().Changed("series") || cmd.Flags().Changed("precision") {
 				output.PrintWarning("--series and --precision are ignored in live mode (live mode renders the full series)")
 			}

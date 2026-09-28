@@ -967,6 +967,17 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		effectiveFormat = choice.Format
 	}
 
+	// An explicit --include-types asks for the type block as a sibling of
+	// "records", which only the document-shaped encodings in the default branch
+	// below have room for. Say so on stderr rather than dropping it silently
+	// (#435); stdout is unchanged. Checked after -o auto has resolved, so an
+	// auto run that picks csv warns and one that picks yaml does not.
+	if opts.EmitTypes {
+		if w := includeTypesInertWarning(effectiveFormat); w != "" {
+			output.PrintWarning("%s", w)
+		}
+	}
+
 	printer := output.NewPrinterWithOpts(output.PrinterOptions{
 		Format:     effectiveFormat,
 		JQFilter:   opts.JQFilter,
@@ -1059,6 +1070,21 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 		}
 		return printer.Print(result)
 	}
+}
+
+// includeTypesInertWarning returns the warning for an explicit --include-types
+// whose type block the resolved output format cannot carry, or "" when the
+// format emits it. It mirrors the format switch in printResults: every format
+// with its own case there prints the rows alone, and only the default branch
+// (json/yaml/toon — and, under --jq, the filter input) carries "types".
+func includeTypesInertWarning(format string) string {
+	switch format {
+	case "table", "wide", "csv", "jsonl", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+		return fmt.Sprintf("--include-types has no effect with %s output (types are emitted for -o json/yaml/toon)", format)
+	case "parquet":
+		return "--include-types has no effect with parquet output (the column types are already encoded in the Parquet schema)"
+	}
+	return ""
 }
 
 // printAgentJQ emits an agent envelope whose result is the --jq output.
