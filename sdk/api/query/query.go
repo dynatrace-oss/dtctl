@@ -265,33 +265,31 @@ const basePath = "/platform/storage/query/v1/query"
 // Execute submits a DQL query for execution. If the query completes synchronously
 // the response contains the results directly. If the query is asynchronous
 // (HTTP 202 or state RUNNING), the response contains a RequestToken for polling.
+//
+// Execute accumulates the full result in memory (Records/Result.Records), so
+// its peak memory scales with the result size — see ExecuteStream for a
+// bounded-memory alternative that streams rows to a callback instead.
+// Internally, Execute is a thin accumulating wrapper over that same streaming
+// decode, so it no longer pays for a second, resty-buffered copy of the
+// response body on top of the accumulated slice.
 func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, error) {
-	var result Response
-
-	httpReq := h.client.HTTP().R().SetContext(ctx).
-		SetHeader("Content-Type", "application/json").
-		SetBody(req).
-		SetResult(&result)
-	if req.EnrichMetricMetadata {
-		httpReq.SetQueryParam("enrich", enrichMetricMetadataParam)
+	var topRecords, resultRecords []map[string]interface{}
+	sink := recordSink{
+		onTop:    func(row map[string]interface{}) error { topRecords = append(topRecords, row); return nil },
+		onResult: func(row map[string]interface{}) error { resultRecords = append(resultRecords, row); return nil },
 	}
-	h.applyHeaders(httpReq)
 
-	resp, err := httpReq.Post(basePath + ":execute")
+	resp, err := h.executeRaw(ctx, req, sink)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute query: %w", err)
+		return nil, err
 	}
-
-	// 200 with completed state or 202 with RUNNING are both valid
-	if resp.StatusCode() == 200 || resp.StatusCode() == 202 {
-		return &result, nil
+	if resp.Records != nil {
+		resp.Records = orEmpty(topRecords)
 	}
-
-	if resp.IsError() {
-		return nil, parseError(resp.StatusCode(), resp.Body())
+	if resp.Result != nil && resp.Result.Records != nil {
+		resp.Result.Records = orEmpty(resultRecords)
 	}
-
-	return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode())
+	return resp, nil
 }
 
 // Poll polls for the results of an asynchronous query. The server holds the
@@ -299,27 +297,39 @@ func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, e
 // true, the poll requests metric-metadata enrichment so the final SUCCEEDED
 // response carries displayName/description/unit — it must match the enrichment
 // requested on the originating execute call.
+//
+// Like Execute, Poll accumulates the full result in memory; see PollStream for
+// a bounded-memory alternative.
 func (h *Handler) Poll(ctx context.Context, requestToken string, timeoutMs int64, enrich bool) (*Response, error) {
-	var result Response
-
-	httpReq := h.client.HTTP().R().SetContext(ctx).
-		SetQueryParam("request-token", requestToken).
-		SetQueryParam("request-timeout-milliseconds", fmt.Sprintf("%d", timeoutMs)).
-		SetResult(&result)
-	if enrich {
-		httpReq.SetQueryParam("enrich", enrichMetricMetadataParam)
+	var topRecords, resultRecords []map[string]interface{}
+	sink := recordSink{
+		onTop:    func(row map[string]interface{}) error { topRecords = append(topRecords, row); return nil },
+		onResult: func(row map[string]interface{}) error { resultRecords = append(resultRecords, row); return nil },
 	}
-	h.applyHeaders(httpReq)
 
-	resp, err := httpReq.Get(basePath + ":poll")
+	resp, err := h.pollRaw(ctx, requestToken, timeoutMs, enrich, sink)
 	if err != nil {
-		return nil, fmt.Errorf("failed to poll query: %w", err)
+		return nil, err
 	}
-	if resp.IsError() {
-		return nil, httpclient.NewAPIError(resp.StatusCode(), resp.Status(), resp.String())
+	if resp.Records != nil {
+		resp.Records = orEmpty(topRecords)
 	}
+	if resp.Result != nil && resp.Result.Records != nil {
+		resp.Result.Records = orEmpty(resultRecords)
+	}
+	return resp, nil
+}
 
-	return &result, nil
+// orEmpty returns records unchanged when non-nil, or a non-nil empty slice
+// when it is nil — used to restore the empty-slice presence marker
+// decodeResponseStream leaves in place of accumulated rows (see
+// executeRaw/pollRaw) once Execute/Poll have their own accumulated rows (or
+// none, for a present-but-empty array) to reattach.
+func orEmpty(records []map[string]interface{}) []map[string]interface{} {
+	if records == nil {
+		return []map[string]interface{}{}
+	}
+	return records
 }
 
 // Cancel sends a best-effort cancellation request for a running query.
