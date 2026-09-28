@@ -45,10 +45,7 @@ import (
 var sharedTransport http.RoundTripper = &pooledTransport{t: newDefaultTransport()}
 
 // pooledTransport hides the shared *http.Transport from resty's type
-// assertion (see sharedTransport). It deliberately does not forward
-// CloseIdleConnections: a Client does not own the pool, so
-// http.Client.CloseIdleConnections on one client must not drop the idle
-// connections every other client is about to reuse.
+// assertion (see sharedTransport).
 type pooledTransport struct {
 	t *http.Transport
 }
@@ -57,6 +54,18 @@ type pooledTransport struct {
 // concurrent use, so the wrapper needs no locking of its own.
 func (p *pooledTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return p.t.RoundTrip(req)
+}
+
+// CloseIdleConnections lets http.Client.CloseIdleConnections keep working on
+// a session client: a consumer that calls it to release connections promptly
+// (shutdown, a network change, a test) gets exactly that. Because the pool is
+// shared, it closes the idle connections of every Client in the process, not
+// just the caller's. That costs the others at most one fresh handshake each:
+// an idle connection is a cache, not state — in-flight requests are
+// untouched, and nothing tenant-specific lives on a connection (see
+// sharedTransport).
+func (p *pooledTransport) CloseIdleConnections() {
+	p.t.CloseIdleConnections()
 }
 
 // newDefaultTransport builds a transport with the settings resty v2's

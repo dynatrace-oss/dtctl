@@ -169,3 +169,36 @@ func TestDefaultTransportMatchesResty(t *testing.T) {
 		t.Errorf("shared transport drifted from resty's default:\n got  %+v\n want %+v", got, want)
 	}
 }
+
+// TestNewClient_CloseIdleConnectionsReachesThePool: http.Client's
+// CloseIdleConnections only works if the RoundTripper implements it, and the
+// wrapper hiding the shared transport from resty must not swallow it — a
+// consumer calling it to release connections expects the next request to dial
+// afresh.
+func TestNewClient_CloseIdleConnectionsReachesThePool(t *testing.T) {
+	srv, conns := connCountingServer(t)
+
+	c, err := NewForTesting(srv.URL, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func() {
+		t.Helper()
+		resp, err := c.HTTP().R().Get("/test")
+		if err != nil || resp.StatusCode() != http.StatusOK {
+			t.Fatalf("request failed: err=%v resp=%v", err, resp)
+		}
+	}
+
+	get()
+	get()
+	if got := conns(); got != 1 {
+		t.Fatalf("before CloseIdleConnections: %d connections, want 1", got)
+	}
+
+	c.HTTP().GetClient().CloseIdleConnections()
+	get()
+	if got := conns(); got != 2 {
+		t.Errorf("after CloseIdleConnections: %d connections, want 2 (idle connection was not closed)", got)
+	}
+}
