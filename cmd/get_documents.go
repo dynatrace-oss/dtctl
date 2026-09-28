@@ -279,6 +279,9 @@ Examples:
 		if err != nil {
 			return err
 		}
+		if err := requireDocumentType(metadata, "dashboard", dashboardID); err != nil {
+			return err
+		}
 
 		// Safety check with actual ownership
 		currentUserID, _ := c.CurrentUserID()
@@ -346,6 +349,9 @@ Examples:
 		// Get current version for optimistic locking and details for confirmation
 		metadata, err := handler.GetMetadata(notebookID)
 		if err != nil {
+			return err
+		}
+		if err := requireDocumentType(metadata, "notebook", notebookID); err != nil {
 			return err
 		}
 

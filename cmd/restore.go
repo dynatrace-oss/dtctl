@@ -152,6 +152,9 @@ Examples:
 		if err != nil {
 			return err
 		}
+		if err := requireDocumentType(metadata, "dashboard", dashboardID); err != nil {
+			return err
+		}
 
 		// Safety check with actual ownership - restore modifies the dashboard
 		currentUserID, _ := c.CurrentUserID()
@@ -231,6 +234,9 @@ Examples:
 		// Get notebook metadata for confirmation and ownership check
 		metadata, err := handler.GetMetadata(notebookID)
 		if err != nil {
+			return err
+		}
+		if err := requireDocumentType(metadata, "notebook", notebookID); err != nil {
 			return err
 		}
 

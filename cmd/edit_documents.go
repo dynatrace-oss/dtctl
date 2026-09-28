@@ -87,6 +87,9 @@ Examples:
 		if err != nil {
 			return err
 		}
+		if err := requireDocumentType(metadata, "dashboard", dashboardID); err != nil {
+			return err
+		}
 
 		// Determine ownership for safety check
 		currentUserID, _ := c.CurrentUserID() // Ignore error - will be empty string
@@ -240,6 +243,9 @@ Examples:
 		// from Get() may not include the owner field
 		metadata, err := handler.GetMetadata(notebookID)
 		if err != nil {
+			return err
+		}
+		if err := requireDocumentType(metadata, "notebook", notebookID); err != nil {
 			return err
 		}
 

@@ -84,6 +84,9 @@ Examples:
 		if err != nil {
 			return err
 		}
+		if err := requireDocumentType(metadata, "dashboard", dashboardID); err != nil {
+			return err
+		}
 
 		return printDocumentOrFormat(metadata, "dashboard")
 	},
@@ -125,6 +128,9 @@ Examples:
 		// Get full metadata
 		metadata, err := handler.GetMetadata(notebookID)
 		if err != nil {
+			return err
+		}
+		if err := requireDocumentType(metadata, "notebook", notebookID); err != nil {
 			return err
 		}
 
