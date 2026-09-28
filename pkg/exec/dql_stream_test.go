@@ -563,3 +563,78 @@ func mustJSON(t *testing.T, v interface{}) string {
 	}
 	return string(b)
 }
+
+// A row whose weight sits in a nested array or object must count for that
+// weight: the buffering cap is only a bound if the estimate sees the payload.
+func TestEstimateRowBytes_CountsNestedValues(t *testing.T) {
+	long := strings.Repeat("x", 100)
+	items := make([]interface{}, 1000)
+	for i := range items {
+		items[i] = map[string]interface{}{"msg": long}
+	}
+	row := map[string]interface{}{
+		"nested": map[string]interface{}{"items": items},
+	}
+	if got, least := estimateRowBytes(row), 1000*len(long); got < least {
+		t.Errorf("estimateRowBytes() = %d for a row carrying %d bytes of nested strings", got, least)
+	}
+}
+
+// Rows fat only in their nested values must still cross the byte cap and hand
+// over to the stream before the row count would.
+func TestStreamCollector_NestedRowsCrossTheByteCap(t *testing.T) {
+	opts := DQLExecuteOptions{
+		AgentMode: true, Compact: true,
+		Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10, Dir: t.TempDir(), Format: "jsonl"},
+	}
+	e := &DQLExecutor{}
+	plan, ok := e.planStream(opts)
+	if !ok {
+		t.Fatal("planStream() declined an auto-spill agent invocation")
+	}
+	plan.bufferCap = 1 << 20
+
+	payload := make([]interface{}, 1000)
+	for i := range payload {
+		payload[i] = strings.Repeat("y", 200)
+	}
+	rows := make([]map[string]interface{}, 10) // ~2 MB, far below switchRows
+	for i := range rows {
+		rows[i] = map[string]interface{}{"id": float64(i), "payload": payload}
+	}
+	if len(rows) > plan.switchRows {
+		t.Fatalf("test needs fewer rows (%d) than the switch point (%d)", len(rows), plan.switchRows)
+	}
+	col := feed(t, e, plan, opts, rows)
+	defer col.abort()
+
+	if !col.streaming {
+		t.Error("~2 MB of nested row payload stayed buffered under a 1 MB cap")
+	}
+}
+
+// A spill threshold above the default buffering cap raises the cap with it, so
+// a result the buffered path would emit inline is not spilled for its size.
+func TestPlanStream_BufferCapFollowsARaisedThreshold(t *testing.T) {
+	e := &DQLExecutor{}
+	for _, tc := range []struct {
+		threshold int64
+		want      int64
+	}{
+		{50 << 10, maxBufferedBytes},
+		{maxBufferedBytes, maxBufferedBytes},
+		{64 << 20, 64 << 20},
+	} {
+		opts := DQLExecuteOptions{
+			AgentMode: true,
+			Spill:     SpillOptions{Mode: SpillAuto, Threshold: tc.threshold, Dir: t.TempDir(), Format: "jsonl"},
+		}
+		plan, ok := e.planStream(opts)
+		if !ok {
+			t.Fatal("planStream() declined an auto-spill agent invocation")
+		}
+		if plan.bufferCap != tc.want {
+			t.Errorf("threshold %d: bufferCap = %d, want %d", tc.threshold, plan.bufferCap, tc.want)
+		}
+	}
+}

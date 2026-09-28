@@ -30,7 +30,10 @@ import (
 
 // maxBufferedBytes caps what the buffering phase holds before handing over to
 // the stream. The row count below settles the inline decision exactly, but says
-// nothing about how fat a row is, so this bounds the phase in bytes too.
+// nothing about how fat a row is, so this bounds the phase in bytes too. A
+// --spill-threshold above it raises the cap to the threshold (see bufferCap):
+// the caller asked for results that large inline, and inline output needs every
+// row in hand anyway.
 //
 // Crossing it can in principle spill a result that compaction would have
 // squeezed back under the threshold — that needs every column of a multi-megabyte
@@ -58,6 +61,9 @@ type streamPlan struct {
 	// switchRows is how many rows may be buffered before the result is known to
 	// exceed the spill threshold; 0 streams from the first row.
 	switchRows int
+	// bufferCap is the estimated size (estimateRowBytes) the buffering phase
+	// may reach before it hands over to the stream regardless of the row count.
+	bufferCap int64
 	// tabular mirrors what printResults passes to ApplySeriesMode for this
 	// destination.
 	tabular bool
@@ -108,6 +114,7 @@ func (e *DQLExecutor) planStream(opts DQLExecuteOptions) (*streamPlan, bool) {
 		kind:       sinkSpill,
 		spillDir:   dir,
 		switchRows: streamSwitchRows(opts, format),
+		bufferCap:  bufferCap(opts),
 		tabular:    seriesTabular(format, opts),
 		format:     format,
 	}, true
@@ -167,6 +174,18 @@ func streamSwitchRows(opts DQLExecuteOptions, format string) int {
 		return 0
 	}
 	return int(n)
+}
+
+// bufferCap is how large the buffering phase may grow, by estimateRowBytes,
+// before it hands over to the stream. It is maxBufferedBytes, or the spill
+// threshold when that is larger: the byte cap is a memory bound, not a size
+// measurement, so it must not overrule a threshold the caller raised above it
+// and spill a result the buffered path would have emitted inline.
+func bufferCap(opts DQLExecuteOptions) int64 {
+	if opts.Spill.Threshold > maxBufferedBytes {
+		return opts.Spill.Threshold
+	}
+	return maxBufferedBytes
 }
 
 // minRowCost is a lower bound on what one row costs in the inline envelope (per)
@@ -277,7 +296,7 @@ func (c *streamCollector) observe(row map[string]interface{}) error {
 		// printRecords, which applies --series/--precision itself.
 		c.buf = append(c.buf, row)
 		c.bufBytes += int64(estimateRowBytes(row))
-		if len(c.buf) > c.plan.switchRows || c.bufBytes > maxBufferedBytes {
+		if len(c.buf) > c.plan.switchRows || c.bufBytes > c.plan.bufferCap {
 			if err := c.startStreaming(); err != nil {
 				c.err = err
 				return err
@@ -417,19 +436,40 @@ func orEmptyRows(rows []map[string]interface{}) []map[string]interface{} {
 }
 
 // estimateRowBytes approximates a row's in-memory cost for the buffering cap.
-// It counts keys and string values, which dominate a telemetry row, rather than
-// serialising it — the cap only has to bound the buffer, not measure it.
+// It counts keys, strings and a fixed cost per scalar, recursing into nested
+// objects and arrays, rather than serialising the row — the cap only has to
+// bound the buffer, not measure it. Nested values have to be walked: a row
+// whose payload is one large array or object would otherwise count as a
+// single scalar and let the buffer grow far past the cap.
 func estimateRowBytes(row map[string]interface{}) int {
-	n := 0
-	for k, v := range row {
-		n += len(k) + 16
-		if s, ok := v.(string); ok {
-			n += len(s)
-		} else {
-			n += 16
+	return estimateValueBytes(row)
+}
+
+func estimateValueBytes(v interface{}) int {
+	switch x := v.(type) {
+	case string:
+		return len(x) + 16
+	case map[string]interface{}:
+		n := 16
+		for k, e := range x {
+			n += len(k) + estimateValueBytes(e)
 		}
+		return n
+	case []interface{}:
+		n := 16
+		for _, e := range x {
+			n += estimateValueBytes(e)
+		}
+		return n
+	case []map[string]interface{}:
+		n := 16
+		for _, e := range x {
+			n += estimateValueBytes(e)
+		}
+		return n
+	default:
+		return 16
 	}
-	return n
 }
 
 // streamCall picks the accumulating or the streaming SDK driver. Everything
