@@ -98,6 +98,27 @@ Consequences to internalize before "optimizing" this:
   dispatches `serve` before the command pipeline, and why `dtctl serve http`
   refuses to run when `cmd.RunActive()` reports an invocation in progress.
 
+### Upstream connections are pooled across requests
+
+Every request builds its own client, but all of them send through one
+process-wide `http.Transport` (`sdk/session/transport.go`), so repeated
+requests to a tenant reuse a warm connection instead of paying a TCP + TLS
+handshake each time (#576). That is the one piece of client state a request
+shares, and it holds nothing tenant-specific: the credential is a per-request
+`Authorization` header, there are no client certificates, and net/http keys
+the pool by proxy, scheme and host, so two environments never share a
+connection (and requests that do share one still send their own token).
+The per-client parts — timeout, redirect policy, cookie jar — stay per client.
+
+The transport sits behind a wrapper so resty's in-place mutators
+(`SetProxy`, `SetTLSClientConfig`, `SetCertificates`, …) cannot reach it: on a
+bare shared transport, one client calling them would rewrite TLS trust or the
+proxy for every request in the process. They are no-ops on a session client; a
+consumer that needs its own TLS or proxy settings replaces that client's
+transport with `HTTP().SetTransport`. The proxy itself still comes from
+`HTTPS_PROXY`/`NO_PROXY` as before — read once per process by net/http, so a
+per-request `Env` entry never changed it.
+
 ### Restriction has five independent axes
 
 Do not conflate these; each answers a different question.

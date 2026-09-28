@@ -157,7 +157,12 @@ func NewClient(baseURL, token string, opts ...ClientOption) (*Client, error) {
 		userAgent += aiSuffix
 	}
 
+	// resty.New still builds this client's own http.Client and cookie jar;
+	// only the RoundTripper is swapped for the process-wide pool, so a
+	// long-lived consumer reuses upstream connections across clients (see
+	// sharedTransport).
 	httpClient := httpclient.GuardRequestPaths(resty.New()).
+		SetTransport(sharedTransport).
 		SetLogger(&noopRestyLogger{}).
 		SetBaseURL(baseURL).
 		SetAuthScheme("Bearer").
@@ -202,7 +207,13 @@ func isRetryable(r *resty.Response, err error) bool {
 	return statusCode == 429 || statusCode >= 500
 }
 
-// HTTP returns the underlying resty client
+// HTTP returns the underlying resty client.
+//
+// Its RoundTripper is the process-wide connection pool shared by every Client
+// (see sharedTransport), so resty's in-place transport mutators — SetProxy,
+// RemoveProxy, SetTLSClientConfig, SetCertificates, SetRootCertificate and
+// friends — are no-ops on it. To give one client its own TLS or proxy
+// settings, install a transport of its own with SetTransport.
 func (c *Client) HTTP() *resty.Client {
 	return c.http
 }
