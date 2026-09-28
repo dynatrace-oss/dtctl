@@ -315,18 +315,9 @@ func TestExecute_RecordsPresenceFidelityMatchesUnmarshal(t *testing.T) {
 	}
 }
 
-// TestDecodeResponseStream_AllFields is the regression guard for the manual
-// field-by-field switch in decodeResponseStream/decodeResultStream: it builds
-// a Response with every known field populated, round-trips it through
-// json.Marshal, decodes the bytes with BOTH encoding/json (the ground truth)
-// and decodeResponseStream (reattaching accumulated rows the same way
-// Execute does), and requires the two to be identical.
-//
-// If a field is ever added to Response, Result, Metadata, or GrailMetadata
-// without a matching case in decodeResponseStream/decodeResultStream, this
-// test starts failing here (the stdlib decode picks it up, the streaming one
-// silently drops it into discardValue) — update the fixture below and the
-// switch statements in query_stream.go together.
+// Regression guard: decodes a fully-populated Response with both encoding/json and
+// decodeResponseStream and requires identical results, catching a field added without
+// a matching case in decodeResponseStream/decodeResultStream.
 func TestDecodeResponseStream_AllFields(t *testing.T) {
 	fixture := Response{
 		State:        "SUCCEEDED",

@@ -9,36 +9,14 @@ import (
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// recordSink routes decoded records to the right callback depending on where
-// the JSON carried them: the older, synchronous shape puts them at the top
-// level ("records"), the current shape nests them under "result"
-// ("result.records"). A response only ever populates one of the two in
-// practice, but both are wired independently so a caller cannot silently miss
-// rows if that ever changes. Either field may be nil.
+// recordSink dispatches a decoded row to the top-level or result-nested callback.
 type recordSink struct {
 	onTop    func(map[string]interface{}) error
 	onResult func(map[string]interface{}) error
 }
 
-// ExecuteStream is Execute, but decodes the response body incrementally
-// instead of buffering it whole, and does not accumulate the result records
-// itself: onRecord is invoked once per row, in order, as it is decoded off
-// the wire, and the row is then dropped. This is what makes it safe to run
-// against an arbitrarily large result under a tight memory budget — Execute's
-// buffered path costs 10-14x the printed output size in peak RSS, because it
-// keeps the raw response body, resty's decoded copy, and the accumulated
-// Records slice all live at once.
-//
-// The returned Response never carries decoded records: Records and
-// Result.Records are always nil, whether or not the query actually returned
-// rows, since every row was delivered through onRecord instead. Every other
-// field (state, requestToken, metadata, types, progress) is populated exactly
-// as Execute would populate it.
-//
-// onRecord may be nil, in which case records are decoded and discarded one at
-// a time — useful for validating a query completes without holding its
-// result. A non-nil error returned from onRecord aborts the decode and is
-// returned from ExecuteStream, wrapped.
+// ExecuteStream is Execute but decodes incrementally, calling onRecord per row instead of accumulating.
+// Response.Records / Result.Records are always nil; onRecord may be nil to just discard rows.
 func (h *Handler) ExecuteStream(ctx context.Context, req ExecuteRequest, onRecord func(map[string]interface{}) error) (*Response, error) {
 	resp, err := h.executeRaw(ctx, req, recordSink{onTop: onRecord, onResult: onRecord})
 	if err != nil {
@@ -51,9 +29,7 @@ func (h *Handler) ExecuteStream(ctx context.Context, req ExecuteRequest, onRecor
 	return resp, nil
 }
 
-// PollStream is Poll, but decodes the response body incrementally instead of
-// buffering it whole — see ExecuteStream for the memory rationale and the
-// onRecord/nil-Records contract, both of which apply identically here.
+// PollStream is Poll but streams like ExecuteStream — same onRecord/nil-Records contract.
 func (h *Handler) PollStream(ctx context.Context, requestToken string, timeoutMs int64, enrich bool, onRecord func(map[string]interface{}) error) (*Response, error) {
 	resp, err := h.pollRaw(ctx, requestToken, timeoutMs, enrich, recordSink{onTop: onRecord, onResult: onRecord})
 	if err != nil {
@@ -66,15 +42,8 @@ func (h *Handler) PollStream(ctx context.Context, requestToken string, timeoutMs
 	return resp, nil
 }
 
-// executeRaw performs the query:execute HTTP call and streams the response
-// through decodeResponseStream, invoking sink's callbacks per record. It
-// never accumulates rows on its own behalf: the returned Response.Records and
-// Result.Records are non-nil only as an O(1) presence marker (an empty slice)
-// when the corresponding JSON key held a non-null array — never populated
-// with the actual rows, regardless of how many were streamed through sink.
-// Callers that want the rows accumulate them via sink and reattach the result
-// themselves (see Execute); callers that don't care clear the marker (see
-// ExecuteStream).
+// executeRaw performs query:execute and streams the response through sink.
+// Response.Records / Result.Records come back as a non-nil presence marker only, never populated — see Execute/ExecuteStream.
 func (h *Handler) executeRaw(ctx context.Context, req ExecuteRequest, sink recordSink) (*Response, error) {
 	httpReq := h.client.HTTP().R().SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
@@ -108,9 +77,7 @@ func (h *Handler) executeRaw(ctx context.Context, req ExecuteRequest, sink recor
 	return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode())
 }
 
-// pollRaw performs the query:poll HTTP call and streams the response through
-// decodeResponseStream — see executeRaw for the accumulation contract, which
-// is identical here.
+// pollRaw performs query:poll and streams the response — see executeRaw for the accumulation contract.
 func (h *Handler) pollRaw(ctx context.Context, requestToken string, timeoutMs int64, enrich bool, sink recordSink) (*Response, error) {
 	httpReq := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("request-token", requestToken).
@@ -140,23 +107,9 @@ func (h *Handler) pollRaw(ctx context.Context, requestToken string, timeoutMs in
 	return result, nil
 }
 
-// decodeResponseStream decodes a query Execute/Poll JSON response from r,
-// invoking sink.onTop/sink.onResult for each record as it is decoded instead
-// of buffering the whole records array in memory. Every other field is
-// decoded normally into the returned Response.
-//
-// Response.Records and Result.Records are set to a non-nil empty slice when
-// the corresponding JSON key held a present, non-null array — an O(1)
-// presence marker, matching encoding/json's own nil-vs-empty-slice fidelity
-// for that field, without accumulating the rows a second time. They are never
-// populated with the decoded rows themselves; a caller that needs them
-// collects rows via sink and reattaches them (see Execute/Poll in query.go).
-//
-// The set of keys handled here must be kept in sync with the Response and
-// Result struct definitions in query.go — see TestDecodeResponseStream_AllFields
-// for the regression guard. A key this function does not recognize is decoded
-// into a throwaway json.RawMessage and dropped, matching encoding/json's
-// default behavior of silently ignoring unknown fields.
+// decodeResponseStream decodes a query Execute/Poll response from r, streaming records
+// through sink instead of buffering them. Keys not listed here are decoded and discarded.
+// Keep in sync with Response/Result in query.go — see TestDecodeResponseStream_AllFields.
 func decodeResponseStream(r io.Reader, sink recordSink) (*Response, error) {
 	dec := json.NewDecoder(r)
 
@@ -215,11 +168,8 @@ func decodeResponseStream(r io.Reader, sink recordSink) (*Response, error) {
 	return &resp, nil
 }
 
-// decodeResultStream decodes a "result" object, streaming its nested
-// "records" array through onRecord. dec must be positioned right after the
-// "result" key token. Returns (nil, nil) for a JSON null result. See
-// decodeResponseStream for the Records presence-marker contract, which
-// applies identically to the returned Result.Records.
+// decodeResultStream decodes a "result" object, streaming its nested "records" through onRecord.
+// dec must be positioned right after the "result" key token. Returns (nil, nil) for a JSON null.
 func decodeResultStream(dec *json.Decoder, onRecord func(map[string]interface{}) error) (*Result, error) {
 	tok, err := dec.Token()
 	if err != nil {
@@ -270,13 +220,8 @@ func decodeResultStream(dec *json.Decoder, onRecord func(map[string]interface{})
 	return &result, nil
 }
 
-// streamRecordsArray decodes a JSON array of row objects positioned right
-// after the array's key token, invoking onRecord for each row as it is
-// decoded. It does not accumulate rows itself, so memory stays bounded to one
-// row at a time whenever onRecord does not retain it.
-//
-// Returns present=false for a JSON null array (key existed but was null), and
-// present=true (with zero calls to onRecord) for "[]".
+// streamRecordsArray decodes a JSON array of rows, invoking onRecord per row instead of accumulating.
+// present=false means the array was JSON null; present=true with zero calls means "[]".
 func streamRecordsArray(dec *json.Decoder, onRecord func(map[string]interface{}) error) (present bool, err error) {
 	tok, err := dec.Token()
 	if err != nil {
@@ -308,8 +253,6 @@ func streamRecordsArray(dec *json.Decoder, onRecord func(map[string]interface{})
 	return true, nil
 }
 
-// expectDelim reads the next token from dec and requires it to be the given
-// JSON delimiter (e.g. '{' or '}').
 func expectDelim(dec *json.Decoder, want json.Delim) error {
 	tok, err := dec.Token()
 	if err != nil {
@@ -322,8 +265,6 @@ func expectDelim(dec *json.Decoder, want json.Delim) error {
 	return nil
 }
 
-// decodeObjectKey reads the next token from dec and requires it to be a
-// string (an object key). Used while walking an object with dec.More().
 func decodeObjectKey(dec *json.Decoder) (string, error) {
 	tok, err := dec.Token()
 	if err != nil {
@@ -336,8 +277,6 @@ func decodeObjectKey(dec *json.Decoder) (string, error) {
 	return key, nil
 }
 
-// discardValue consumes and drops the next JSON value (of any shape) from
-// dec, for a key this decoder does not otherwise handle.
 func discardValue(dec *json.Decoder) error {
 	var discard json.RawMessage
 	return dec.Decode(&discard)

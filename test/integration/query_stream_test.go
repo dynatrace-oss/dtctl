@@ -11,14 +11,8 @@ import (
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// TestQueryExecuteStream_MatchesAccumulatedResult is the live-tenant guard for
-// issue #466's streaming decode: it runs the same query through the
-// accumulating ExecuteAndPoll and through ExecuteStream (with a callback that
-// re-accumulates), against a real Grail backend, and requires the two to
-// agree on row count and content. This is the end-to-end proof that
-// decodeResponseStream's manual field-by-field decode has not drifted from
-// what the live API actually sends, beyond what the synthetic fixture in
-// query_stream_test.go can cover.
+// Live-tenant guard: runs the same query through ExecuteAndPoll and through ExecuteStream
+// and requires them to agree on row count and content.
 func TestQueryExecuteStream_MatchesAccumulatedResult(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

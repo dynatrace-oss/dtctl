@@ -266,12 +266,7 @@ const basePath = "/platform/storage/query/v1/query"
 // the response contains the results directly. If the query is asynchronous
 // (HTTP 202 or state RUNNING), the response contains a RequestToken for polling.
 //
-// Execute accumulates the full result in memory (Records/Result.Records), so
-// its peak memory scales with the result size — see ExecuteStream for a
-// bounded-memory alternative that streams rows to a callback instead.
-// Internally, Execute is a thin accumulating wrapper over that same streaming
-// decode, so it no longer pays for a second, resty-buffered copy of the
-// response body on top of the accumulated slice.
+// Execute accumulates the full result in memory; see ExecuteStream for a bounded-memory alternative.
 func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, error) {
 	var topRecords, resultRecords []map[string]interface{}
 	sink := recordSink{
@@ -298,8 +293,7 @@ func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, e
 // response carries displayName/description/unit — it must match the enrichment
 // requested on the originating execute call.
 //
-// Like Execute, Poll accumulates the full result in memory; see PollStream for
-// a bounded-memory alternative.
+// Like Execute, Poll accumulates the full result in memory; see PollStream for a bounded-memory alternative.
 func (h *Handler) Poll(ctx context.Context, requestToken string, timeoutMs int64, enrich bool) (*Response, error) {
 	var topRecords, resultRecords []map[string]interface{}
 	sink := recordSink{
@@ -320,11 +314,7 @@ func (h *Handler) Poll(ctx context.Context, requestToken string, timeoutMs int64
 	return resp, nil
 }
 
-// orEmpty returns records unchanged when non-nil, or a non-nil empty slice
-// when it is nil — used to restore the empty-slice presence marker
-// decodeResponseStream leaves in place of accumulated rows (see
-// executeRaw/pollRaw) once Execute/Poll have their own accumulated rows (or
-// none, for a present-but-empty array) to reattach.
+// orEmpty returns records unchanged when non-nil, else a non-nil empty slice (preserves the presence marker).
 func orEmpty(records []map[string]interface{}) []map[string]interface{} {
 	if records == nil {
 		return []map[string]interface{}{}
