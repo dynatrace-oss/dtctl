@@ -317,6 +317,10 @@ Examples:
 		// includeTypes on below to *consume* the metadata internally, but that
 		// must not start emitting the block, so capture intent before forcing.
 		emitTypes := cmd.Flags().Changed("include-types")
+		// Only an explicit, true --include-types asked for the block, so only
+		// that warns when a format or live mode cannot show it;
+		// --include-types=false declines it and must stay quiet.
+		typesRequested := emitTypes && includeTypes
 		// Parquet derives its column schema from DQL types, so request them even
 		// if the user did not pass --include-types. The type metadata is consumed
 		// to build the schema and is not added to the output rows.
@@ -474,6 +478,7 @@ Examples:
 			EnforceQueryConsumptionLimit: enforceQueryConsumptionLimit,
 			IncludeTypes:                 includeTypes,
 			EmitTypes:                    emitTypes,
+			TypesRequested:               typesRequested,
 			IncludeContributions:         includeContributions,
 			Typed:                        typed,
 			Compact:                      compact,
@@ -522,7 +527,7 @@ Examples:
 			if typed {
 				output.PrintWarning("--typed is ignored in live mode (live mode renders a table, where the API's string encoding is not surfaced)")
 			}
-			if emitTypes {
+			if typesRequested {
 				output.PrintWarning("--include-types is ignored in live mode (live updates render the records only, without the types block)")
 			}
 			if cmd.Flags().Changed("series") || cmd.Flags().Changed("precision") {

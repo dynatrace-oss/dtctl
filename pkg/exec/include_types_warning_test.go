@@ -64,7 +64,7 @@ func TestPrintResults_IncludeTypesWarnsWhenFormatDropsTypes(t *testing.T) {
 			result, _, _ := typedResult()
 			without, _ := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: format, IncludeTypes: true})
 			result, _, _ = typedResult()
-			with, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: format, IncludeTypes: true, EmitTypes: true})
+			with, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: format, IncludeTypes: true, EmitTypes: true, TypesRequested: true})
 
 			want := "Warning: --include-types has no effect with " + format + " output (types are emitted for -o json/yaml/toon)"
 			if !strings.Contains(string(stderr), want) {
@@ -86,7 +86,7 @@ func TestPrintResults_IncludeTypesNoWarningWhenFormatCarriesTypes(t *testing.T) 
 	for _, format := range []string{"json", "yaml", "toon"} {
 		t.Run(format, func(t *testing.T) {
 			result, _, _ := typedResult()
-			stdout, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: format, IncludeTypes: true, EmitTypes: true})
+			stdout, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: format, IncludeTypes: true, EmitTypes: true, TypesRequested: true})
 			if bytes.Contains(stderr, []byte(includeTypesInert)) {
 				t.Errorf("-o %s carries the types block but warned: %q", format, stderr)
 			}
@@ -109,28 +109,28 @@ func TestPrintResults_IncludeTypesWarningCases(t *testing.T) {
 	}{
 		{
 			name:     "--jq promotes table to json, whose filter input carries types",
-			opts:     DQLExecuteOptions{OutputFormat: "table", JQFilter: ".types", IncludeTypes: true, EmitTypes: true},
+			opts:     DQLExecuteOptions{OutputFormat: "table", JQFilter: ".types", IncludeTypes: true, EmitTypes: true, TypesRequested: true},
 			wantWarn: false,
 		},
 		{
 			name:     "-o auto that picks csv warns",
-			opts:     DQLExecuteOptions{OutputFormat: "auto", IncludeTypes: true, EmitTypes: true},
+			opts:     DQLExecuteOptions{OutputFormat: "auto", IncludeTypes: true, EmitTypes: true, TypesRequested: true},
 			wantWarn: true,
 		},
 		{
 			name:     "-o auto that picks yaml does not warn",
 			records:  []map[string]interface{}{{"host": "web-01", "count": "3"}},
-			opts:     DQLExecuteOptions{OutputFormat: "auto", IncludeTypes: true, EmitTypes: true},
+			opts:     DQLExecuteOptions{OutputFormat: "auto", IncludeTypes: true, EmitTypes: true, TypesRequested: true},
 			wantWarn: false,
 		},
 		{
 			name:     "agent mode with an explicit -o csv warns",
-			opts:     DQLExecuteOptions{OutputFormat: "csv", AgentMode: true, IncludeTypes: true, EmitTypes: true},
+			opts:     DQLExecuteOptions{OutputFormat: "csv", AgentMode: true, IncludeTypes: true, EmitTypes: true, TypesRequested: true},
 			wantWarn: true,
 		},
 		{
 			name:     "agent mode -o table is wrapped in the envelope, which carries types",
-			opts:     DQLExecuteOptions{OutputFormat: "table", AgentMode: true, IncludeTypes: true, EmitTypes: true},
+			opts:     DQLExecuteOptions{OutputFormat: "table", AgentMode: true, IncludeTypes: true, EmitTypes: true, TypesRequested: true},
 			wantWarn: false,
 		},
 		{
@@ -161,7 +161,7 @@ func TestPrintResults_IncludeTypesWarningCases(t *testing.T) {
 func TestPrintResults_IncludeTypesChartFollowsWhatIsPrinted(t *testing.T) {
 	t.Run("rows: warns, and the fallback carries no types", func(t *testing.T) {
 		result, _, _ := typedResult()
-		stdout, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: "chart", IncludeTypes: true, EmitTypes: true})
+		stdout, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: "chart", IncludeTypes: true, EmitTypes: true, TypesRequested: true})
 		if !bytes.Contains(stderr, []byte(includeTypesInert+" with chart output")) {
 			t.Errorf("stderr = %q, want the chart warning", stderr)
 		}
@@ -172,7 +172,7 @@ func TestPrintResults_IncludeTypesChartFollowsWhatIsPrinted(t *testing.T) {
 	t.Run("no rows: the raw-response fallback carries types, no warning", func(t *testing.T) {
 		result, _, _ := typedResult()
 		result.Result.Records = nil
-		stdout, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: "chart", IncludeTypes: true, EmitTypes: true})
+		stdout, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: "chart", IncludeTypes: true, EmitTypes: true, TypesRequested: true})
 		if bytes.Contains(stderr, []byte(includeTypesInert)) {
 			t.Errorf("warned although the output carries types: %q", stderr)
 		}
@@ -192,11 +192,12 @@ func TestPrintResults_IncludeTypesSpilledEnvelopeCarriesTypes(t *testing.T) {
 		t.Run(fmt.Sprintf("agent=%v", agent), func(t *testing.T) {
 			result, _, _ := typedResult()
 			opts := DQLExecuteOptions{
-				OutputFormat: "csv",
-				AgentMode:    agent,
-				IncludeTypes: true,
-				EmitTypes:    true,
-				Spill:        SpillOptions{Mode: SpillAlways, Dir: t.TempDir()},
+				OutputFormat:   "csv",
+				AgentMode:      agent,
+				IncludeTypes:   true,
+				EmitTypes:      true,
+				TypesRequested: true,
+				Spill:          SpillOptions{Mode: SpillAlways, Dir: t.TempDir()},
 			}
 			stdout, stderr := runPrintResults(t, result, opts)
 			if bytes.Contains(stderr, []byte(includeTypesInert)) {

@@ -141,6 +141,13 @@ type DQLExecuteOptions struct {
 	// effect unless the API actually returned type information.
 	EmitTypes bool
 
+	// TypesRequested reports that the user explicitly asked for the type block:
+	// --include-types was passed and is true. EmitTypes is set whenever the flag
+	// was passed at all, --include-types=false included; the "has no effect"
+	// warning keys off this field instead, so declining the block never warns
+	// about not getting it. It does not affect what is printed on stdout.
+	TypesRequested bool
+
 	// Typed opts in to casting scalar columns (long, double, duration, boolean)
 	// to their native JSON/YAML types using the DQL type metadata, instead of the
 	// wire form where integer-valued columns arrive as strings. Off by default so
@@ -972,7 +979,7 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 	// below have room for. Say so on stderr rather than dropping it silently
 	// (#435); stdout is unchanged. Checked after -o auto has resolved, so an
 	// auto run that picks csv warns and one that picks yaml does not.
-	if opts.EmitTypes {
+	if opts.TypesRequested {
 		if w := includeTypesInertWarning(effectiveFormat, len(records)); w != "" {
 			output.PrintWarning("%s", w)
 		}
