@@ -100,3 +100,22 @@ func markFlagRequiredNonEmpty(cmd *cobra.Command, name string) {
 		panic(err)
 	}
 }
+
+// helpFlagUsages renders fs for the usage template as pflag's FlagUsages does,
+// with each nonEmptySliceValue swapped back for the slice it wraps. pflag
+// decides whether to print "(default ...)" by switching on the value's
+// concrete type, so a wrapped StringArray would otherwise gain "(default [])".
+// The registered flags are left untouched: the copies live only in this set.
+func helpFlagUsages(fs *pflag.FlagSet) string {
+	unwrapped := pflag.NewFlagSet(fs.Name(), pflag.ContinueOnError)
+	unwrapped.SortFlags = fs.SortFlags
+	fs.VisitAll(func(f *pflag.Flag) {
+		if v, ok := f.Value.(*nonEmptySliceValue); ok {
+			c := *f
+			c.Value = v.Value
+			f = &c
+		}
+		unwrapped.AddFlag(f)
+	})
+	return unwrapped.FlagUsages()
+}

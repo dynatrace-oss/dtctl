@@ -1751,6 +1751,7 @@ func init() {
 	cobra.AddTemplateFunc("bold", func(s string) string {
 		return output.Colorize(output.Bold, s)
 	})
+	cobra.AddTemplateFunc("flagUsages", helpFlagUsages)
 
 	// Custom usage template with bold section headers.
 	// NOTE: This is a copy of Cobra's default usage template with {{bold ...}} wrappers.
@@ -1776,10 +1777,10 @@ func init() {
   {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
 
 {{bold "Flags:"}}
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+{{flagUsages .LocalFlags | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
 
 {{bold "Global Flags:"}}
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
+{{flagUsages .InheritedFlags | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
 
 {{bold "Additional help topics:"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}

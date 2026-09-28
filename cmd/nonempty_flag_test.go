@@ -96,6 +96,22 @@ func clearFlag(cmd *cobra.Command, name string) {
 	_ = f.Value.Set(f.DefValue)
 }
 
+// TestRejectEmptySliceFlagKeepsHelpDefault pins that wrapping a repeatable
+// flag leaves its help line alone: pflag prints "(default [])" for a value
+// type it does not recognize, and the wrapper is one.
+func TestRejectEmptySliceFlagKeepsHelpDefault(t *testing.T) {
+	if _, ok := shareDashboardCmd.Flags().Lookup("user").Value.(*nonEmptySliceValue); !ok {
+		t.Fatal("share dashboard --user is no longer wrapped; pick another wrapped slice flag")
+	}
+	usage := shareDashboardCmd.UsageString()
+	if strings.Contains(usage, "(default [])") {
+		t.Errorf("usage shows a default for a wrapped slice flag:\n%s", usage)
+	}
+	if !strings.Contains(usage, "--user stringArray") {
+		t.Errorf("usage lost the --user flag:\n%s", usage)
+	}
+}
+
 func TestNonEmptyFlagResetRestoresDefault(t *testing.T) {
 	cmd := &cobra.Command{Use: "x"}
 	cmd.Flags().String("name", "fallback", "")
