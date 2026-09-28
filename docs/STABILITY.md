@@ -164,9 +164,9 @@ and the output outside agent mode. In agent mode (`--agent`, `-A`, or
 auto-detected) the reader is a model that reads every response afresh and adapts
 to it, so what the envelope carries may change in any minor release, on
 `stable` commands too: which fields and how many items a default returns, how
-rows are encoded, how numbers are rounded. Such a change is flagged as breaking
-in the release notes, but it needs no deprecation cycle and no breaking-change
-document, and it does not demote the command. Three things still hold:
+rows are encoded, how numbers are rounded. Such a change is not a breaking
+change: the release notes do not flag it as one, it needs no deprecation cycle
+and no breaking-change document, and it does not demote the command. Three things still hold:
 
 - The envelope's skeleton stays additive-only. `ok`, `error.code`,
   `result.kind` and the `context` keys keep their names, types and meanings,

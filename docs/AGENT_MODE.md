@@ -560,8 +560,8 @@ A few consequences worth knowing when you parse the output:
 Agent-mode output is shaped for agents, and it keeps being tuned for them. What
 the envelope carries (which fields and how many items a default returns, how
 rows are encoded, how numbers are rounded) may change in any minor release, on
-`stable` commands too. An agent reads every response afresh, so it adapts; the
-release notes mark such a change as breaking. See [what `stable` promises before
+`stable` commands too. An agent reads every response afresh, so it adapts, and
+the release notes do not treat such a change as breaking. See [what `stable` promises before
 1.0](STABILITY.md#what-stable-promises-before-10).
 
 What does not change without a deprecation cycle:

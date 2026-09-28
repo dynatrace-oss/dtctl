@@ -152,9 +152,15 @@ demote the command. A PR that changes what agent mode outputs still has to:
   `context.has_more`, or a `context.suggestions` entry naming the flag that
   restores the full data;
 - leave every explicit flag's meaning unchanged, since that is how a program
-  pins a shape;
-- use a breaking Conventional Commit title (`feat(scope)!:` plus a
-  `BREAKING CHANGE:` footer), so the release notes lead with it.
+  pins a shape.
+
+Such a change is **not** a breaking change: no `!` in the Conventional Commit
+title and no `BREAKING CHANGE:` footer, just the `feat`/`fix` type it would
+otherwise get. A model adapts to what it reads, so there is no caller to warn,
+and marking every agent-output tweak breaking would drown out the breaks a
+program actually has to act on. The marker stays for what the rules above
+protect: a PR that renames or removes an envelope skeleton key, or changes an
+explicit flag's meaning, has broken a promise and is breaking like any other.
 
 **Outside agent mode, the output contract is per command, not per field.**
 The golden tests enforce it at whole-command level: they snapshot each printer's
@@ -165,9 +171,6 @@ or deprecated output field, no field entries in the manifest, and
 `DTCTL_NO_DEPRECATED` covers commands and flags only (#542). To ship a field
 without the `stable` promise, put it behind an experimental flag or on an
 experimental command.
-
-The breaking marker belongs to the PR that changes the output. A PR that only
-edits this policy or its docs changes no output, so it is not breaking.
 
 Output outside agent mode, and everything a caller types, keep the full promise.
 
