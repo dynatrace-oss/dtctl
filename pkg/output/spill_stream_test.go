@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -38,12 +39,15 @@ func TestSpillWriter_CommitsAtomically(t *testing.T) {
 		t.Errorf("file holds %q", got)
 	}
 
-	info, err := os.Stat(target)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != spillFileMode {
-		t.Errorf("mode = %v, want %v", perm, spillFileMode)
+	// Windows does not carry Unix permission bits.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(target)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if perm := info.Mode().Perm(); perm != spillFileMode {
+			t.Errorf("mode = %v, want %v", perm, spillFileMode)
+		}
 	}
 	assertNoTempLeftovers(t, dir)
 }
@@ -116,7 +120,7 @@ func TestSpillWriter_CreatesTheDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != spillDirMode {
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != spillDirMode {
 		t.Errorf("dir mode = %v, want %v", perm, spillDirMode)
 	}
 }
