@@ -2,8 +2,12 @@ package exec
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
 const includeTypesInert = "--include-types has no effect"
@@ -176,4 +180,43 @@ func TestPrintResults_IncludeTypesChartFollowsWhatIsPrinted(t *testing.T) {
 			t.Errorf("expected the raw response's types block on stdout:\n%s", stdout)
 		}
 	})
+}
+
+// TestPrintResults_IncludeTypesSpilledEnvelopeCarriesTypes covers the spill
+// path, which returns before the warning: its envelope carries result.types
+// (on the manifest) whatever the display or file format, so --include-types
+// has an effect there and there is nothing to warn about. That includes an
+// explicit -o csv in agent mode, which warns only when it falls through inline.
+func TestPrintResults_IncludeTypesSpilledEnvelopeCarriesTypes(t *testing.T) {
+	for _, agent := range []bool{true, false} {
+		t.Run(fmt.Sprintf("agent=%v", agent), func(t *testing.T) {
+			result, _, _ := typedResult()
+			opts := DQLExecuteOptions{
+				OutputFormat: "csv",
+				AgentMode:    agent,
+				IncludeTypes: true,
+				EmitTypes:    true,
+				Spill:        SpillOptions{Mode: SpillAlways, Dir: t.TempDir()},
+			}
+			stdout, stderr := runPrintResults(t, result, opts)
+			if bytes.Contains(stderr, []byte(includeTypesInert)) {
+				t.Errorf("warned although the spilled envelope carries types: %q", stderr)
+			}
+			var env struct {
+				Result struct {
+					Kind  string          `json:"kind"`
+					Types json.RawMessage `json:"types"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal(stdout, &env); err != nil {
+				t.Fatalf("not a JSON envelope: %v\n%s", err, stdout)
+			}
+			if env.Result.Kind != output.KindResultFile {
+				t.Fatalf("kind = %q, want %q", env.Result.Kind, output.KindResultFile)
+			}
+			if !bytes.Contains(env.Result.Types, []byte("indexRange")) {
+				t.Errorf("spilled envelope has no result.types:\n%s", stdout)
+			}
+		})
+	}
 }
