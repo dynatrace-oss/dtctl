@@ -2,9 +2,12 @@ package exec
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
@@ -212,5 +215,102 @@ func TestApproximationWarnings(t *testing.T) {
 	got := approximationWarnings(approximateResponse())
 	if len(got) != 1 || got[0] != approximationPrefix+approxText {
 		t.Errorf("got %q, want [%q]", got, approximationPrefix+approxText)
+	}
+}
+
+// mockApproximateGrail is mockGrail with Grail's approximations and an INFO
+// notification in the result metadata, which the encoder writes after the
+// records — the order a streamed decode meets them in.
+func mockApproximateGrail(t *testing.T, records []map[string]interface{}) *DQLExecutor {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		resp := DQLQueryResponse{
+			State: "SUCCEEDED",
+			Result: &DQLResult{
+				Records: records,
+				Metadata: &DQLMetadata{Grail: &GrailMetadata{
+					ExecutionTimeMilliseconds: 9,
+					Approximations:            []string{approxText},
+					Notifications: []QueryNotification{{
+						Severity: "INFO", NotificationType: "EXAMPLE_NOTICE", Message: infoNotice,
+					}},
+				}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := client.NewForTesting(srv.URL, "test-token")
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	return NewDQLExecutor(c)
+}
+
+// A streamed spill (#633) learns the metadata only after the rows are on disk;
+// the approximation must still reach context.warnings and the metadata block,
+// exactly as on the buffered spill.
+func TestE2E_StreamedSpillCarriesApproximations(t *testing.T) {
+	e := mockApproximateGrail(t, manyRecords(200))
+
+	var out string
+	stderr := captureStderr(t, func() {
+		out = runAndCapture(t, func() error {
+			return e.ExecuteWithOptions("fetch logs, from:now()-1h", DQLExecuteOptions{
+				OutputFormat:      "json",
+				AgentMode:         true,
+				ContextName:       "prod",
+				MetadataFields:    []string{output.MetadataMinimal},
+				MetadataDefaulted: true,
+				Spill:             SpillOptions{Mode: SpillAuto, Threshold: 200, Dir: t.TempDir(), Format: "jsonl"},
+			})
+		})
+	})
+
+	var env struct {
+		Context  *output.ResponseContext `json:"context"`
+		Metadata struct {
+			Approximations []string `json:"approximations"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("stdout is not a single JSON envelope: %v\n%s", err, out)
+	}
+	if env.Context == nil || !env.Context.Streamed {
+		t.Fatalf("result was not streamed; the test no longer covers the streamed path:\n%s", out)
+	}
+	if !contains(env.Context.Warnings, approximationPrefix+approxText) {
+		t.Errorf("context.warnings = %v, want %q", env.Context.Warnings, approximationPrefix+approxText)
+	}
+	if len(env.Metadata.Approximations) != 1 || env.Metadata.Approximations[0] != approxText {
+		t.Errorf("metadata.approximations = %q, want [%q]", env.Metadata.Approximations, approxText)
+	}
+	if strings.Contains(string(stderr), approxText) {
+		t.Errorf("stderr = %q, want nothing about the approximation: the envelope carries it", stderr)
+	}
+}
+
+// `-o jsonl` streamed to stdout: the rows stay untouched and the approximation
+// lands on stderr once the trailing metadata arrives.
+func TestE2E_StreamedJSONLWarnsOfApproximationsOnStderr(t *testing.T) {
+	e := mockApproximateGrail(t, manyRecords(50))
+
+	var out string
+	stderr := captureStderr(t, func() {
+		out = runAndCapture(t, func() error {
+			return e.ExecuteWithOptions("fetch logs", DQLExecuteOptions{OutputFormat: "jsonl"})
+		})
+	})
+
+	if !strings.Contains(string(stderr), approximationPrefix+approxText) {
+		t.Errorf("stderr = %q, want the approximation warning", stderr)
+	}
+	if strings.Contains(out, approxText) {
+		t.Errorf("stdout carries the approximation; it must hold only rows:\n%s", out)
+	}
+	if lines := strings.Split(strings.TrimRight(out, "\n"), "\n"); len(lines) != 50 {
+		t.Errorf("got %d stdout lines, want 50", len(lines))
 	}
 }
