@@ -33,10 +33,6 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file, _ := cmd.Flags().GetString("file")
 
-		if file == "" {
-			return fmt.Errorf("--file (-f) is required")
-		}
-
 		// Read from file
 		fileData, err := readFileFlag("file", file)
 		if err != nil {
@@ -91,6 +87,7 @@ Examples:
 
 func init() {
 	createSegmentCmd.Flags().StringP("file", "f", "", "file containing segment definition (YAML or JSON), or - for stdin")
+	markFlagRequiredNonEmpty(createSegmentCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of this command is

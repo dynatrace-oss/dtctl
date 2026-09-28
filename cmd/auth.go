@@ -934,6 +934,9 @@ func init() {
 	// Flags for login
 	authLoginCmd.Flags().String("context", "", "name for the context to create or update (defaults to current context)")
 	authLoginCmd.Flags().String("environment", "", "Dynatrace environment URL (defaults to current context's environment)")
+	// Left out, it defaults from the config; an explicitly empty value (an
+	// unset shell variable) must not silently take that default.
+	rejectEmptyFlag(authLoginCmd, "environment")
 	authLoginCmd.Flags().String("token-name", "", "name for storing the OAuth token (defaults to existing token name or <context>-oauth)")
 	authLoginCmd.Flags().String("timeout", "5m", "timeout for the authentication flow (bounds the browser flow and the client credentials token request)")
 	authLoginCmd.Flags().String("safety-level", string(config.DefaultSafetyLevel), "safety level for the context (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")

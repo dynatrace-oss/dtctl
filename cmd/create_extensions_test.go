@@ -31,8 +31,8 @@ func TestCreateExtensionFlagValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset flags between cases since they're package-global on the cobra command.
-			_ = createExtensionCmd.Flags().Set("file", "")
-			_ = createExtensionCmd.Flags().Set("hub-extension", "")
+			clearFlag(createExtensionCmd, "file")
+			clearFlag(createExtensionCmd, "hub-extension")
 			_ = createExtensionCmd.Flags().Set("version", "")
 
 			rootCmd.SetArgs(tt.args)

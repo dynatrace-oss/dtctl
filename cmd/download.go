@@ -30,9 +30,6 @@ var downloadExtensionCmd = &cobra.Command{
 		extensionName := args[0]
 		versionFlag, _ := cmd.Flags().GetString("version")
 
-		if versionFlag == "" {
-			return fmt.Errorf("--version is required")
-		}
 		if outputFormat != "table" {
 			return fmt.Errorf("download extension does not support -o output formatting")
 		}
@@ -60,6 +57,7 @@ func init() {
 	rootCmd.AddCommand(downloadCmd)
 	downloadCmd.AddCommand(downloadExtensionCmd)
 	downloadExtensionCmd.Flags().String("version", "", "Extension version to download")
+	markFlagRequiredNonEmpty(downloadExtensionCmd, "version")
 }
 
 // Declared stable: the invocation and output contract of these commands is

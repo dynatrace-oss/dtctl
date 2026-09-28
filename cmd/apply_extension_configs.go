@@ -51,10 +51,6 @@ Examples:
 		scope, _ := cmd.Flags().GetString("scope")
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
-
 		// Read the file
 		fileData, err := readFileFlag("file", file)
 		if err != nil {

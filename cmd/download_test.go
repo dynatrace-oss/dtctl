@@ -22,7 +22,7 @@ func TestDownloadExtensionValidation(t *testing.T) {
 		{
 			name:    "requires version",
 			args:    []string{"download", "extension", "com.dynatrace.extension.postgres"},
-			wantErr: "--version is required",
+			wantErr: `required flag(s) "version" not set`,
 		},
 		{
 			name:    "rejects output flag",

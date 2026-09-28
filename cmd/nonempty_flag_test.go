@@ -83,6 +83,19 @@ func TestEmptyFlagValueIsRejected(t *testing.T) {
 	}
 }
 
+// clearFlag returns one flag to its declared default, as resetFlagSet does for
+// a whole set. Tests that reset a flag with Set(name, "") cannot use that on a
+// flag that rejects an empty value: the Set fails and the old value stays.
+func clearFlag(cmd *cobra.Command, name string) {
+	f := cmd.Flags().Lookup(name)
+	f.Changed = false
+	if rv, ok := f.Value.(interface{ Reset() }); ok {
+		rv.Reset()
+		return
+	}
+	_ = f.Value.Set(f.DefValue)
+}
+
 func TestNonEmptyFlagResetRestoresDefault(t *testing.T) {
 	cmd := &cobra.Command{Use: "x"}
 	cmd.Flags().String("name", "fallback", "")

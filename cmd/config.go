@@ -315,10 +315,6 @@ var configSetCredentialsCmd = &cobra.Command{
 		token, _ := cmd.Flags().GetString("token")
 		global, _ := cmd.Flags().GetBool("global")
 
-		if token == "" {
-			return fmt.Errorf("--token is required")
-		}
-
 		cfg, err := loadConfigForWrite(global)
 		if err != nil {
 			cfg = config.NewConfig()
@@ -604,6 +600,7 @@ func init() {
 
 	// Flags for set-credentials
 	configSetCredentialsCmd.Flags().String("token", "", "API token")
+	markFlagRequiredNonEmpty(configSetCredentialsCmd, "token")
 	configSetCredentialsCmd.Flags().Bool("global", false, "write to the global config instead of a discovered .dtctl.yaml")
 
 	// Flags for delete-context

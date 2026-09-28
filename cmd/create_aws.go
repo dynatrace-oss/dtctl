@@ -39,9 +39,6 @@ Examples:
   dtctl create aws connection --name "my-aws"
   dtctl create aws connection --name "my-aws" --roleArn arn:aws:iam::123456789012:role/DynatraceMonitoringRole`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if createAWSConnectionName == "" {
-			return fmt.Errorf("--name is required")
-		}
 		if createAWSConnectionRoleArn != "" {
 			if err := awsconnection.ValidateRoleArn(createAWSConnectionRoleArn); err != nil {
 				return err
@@ -96,13 +93,6 @@ Examples:
   dtctl create aws monitoring --name "my-aws" --credentials "my-aws" --regions us-east-1,eu-central-1
   dtctl create aws monitoring --name "my-aws" --credentials "my-aws" --regions us-east-1 --featureSets EC2_essential,RDS_essential`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if createAWSMonitoringConfigName == "" {
-			return fmt.Errorf("--name is required")
-		}
-		if createAWSMonitoringConfigCredentials == "" {
-			return fmt.Errorf("--credentials is required")
-		}
-
 		_, c, err := SetupWithSafety(safety.OperationCreate)
 		if err != nil {
 			return err
@@ -257,6 +247,7 @@ func init() {
 	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(createAWSConnectionCmd, "roleArn", stability.Experimental, pre10Since)
+	markFlagRequiredNonEmpty(createAWSConnectionCmd, "name")
 
 	createAWSMonitoringConfigCmd.Flags().StringVar(&createAWSMonitoringConfigName, "name", "", "Monitoring config name/description (required)")
 	createAWSMonitoringConfigCmd.Flags().StringVar(&createAWSMonitoringConfigCredentials, "credentials", "", "AWS connection name or ID (required)")
@@ -266,6 +257,8 @@ func init() {
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(createAWSMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
 	addCentralEnrichmentFlag(createAWSMonitoringConfigCmd, &createAWSMonitoringConfigCentral)
+	markFlagRequiredNonEmpty(createAWSMonitoringConfigCmd, "name")
+	markFlagRequiredNonEmpty(createAWSMonitoringConfigCmd, "credentials")
 }
 
 // Declared stable: the invocation and output contract of these commands is

@@ -38,8 +38,33 @@ func (v *nonEmptyStringValue) Reset() {
 	_ = v.Value.Set(v.defValue)
 }
 
-// rejectEmptyFlag makes an explicitly empty value for the named string flag
-// a usage error.
+// nonEmptySliceValue is nonEmptyStringValue for a repeatable flag
+// (StringArray, StringSlice): every occurrence is checked, so `--user ""`
+// fails even next to a valid `--user alice`. It keeps the SliceValue methods
+// visible, because a slice flag is reset with Replace — Set appends.
+type nonEmptySliceValue struct {
+	nonEmptyStringValue
+	slice pflag.SliceValue
+}
+
+func (v *nonEmptySliceValue) Append(value string) error {
+	if strings.TrimSpace(value) == "" {
+		return errEmptyFlagValue
+	}
+	return v.slice.Append(value)
+}
+
+func (v *nonEmptySliceValue) Replace(values []string) error { return v.slice.Replace(values) }
+
+func (v *nonEmptySliceValue) GetSlice() []string { return v.slice.GetSlice() }
+
+func (v *nonEmptySliceValue) Reset() {
+	_ = v.slice.Replace(sliceFlagDefaults(v.defValue))
+}
+
+// rejectEmptyFlag makes an explicitly empty value for the named flag a usage
+// error. It is the whole fix for a flag that is optional, or required only in
+// some modes: an absent flag keeps whatever the command does without it.
 func rejectEmptyFlag(cmd *cobra.Command, name string) {
 	flag := cmd.Flags().Lookup(name)
 	if flag == nil {
@@ -50,7 +75,21 @@ func rejectEmptyFlag(cmd *cobra.Command, name string) {
 	if flag == nil {
 		panic(fmt.Sprintf("rejectEmptyFlag: %s has no --%s flag", cmd.Name(), name))
 	}
-	flag.Value = &nonEmptyStringValue{Value: flag.Value, defValue: flag.DefValue}
+	wrapped := nonEmptyStringValue{Value: flag.Value, defValue: flag.DefValue}
+	if slice, ok := flag.Value.(pflag.SliceValue); ok {
+		flag.Value = &nonEmptySliceValue{nonEmptyStringValue: wrapped, slice: slice}
+		return
+	}
+	flag.Value = &wrapped
+}
+
+// emptyFlagValueError is the error the parse-time rejection produces, for a
+// value that is only recognizably empty once the command body has parsed it:
+// `--scope ","` passes rejectEmptyFlag but names no scope. It wraps
+// errEmptyFlagValue, so it exits with the usage code and reports
+// validation_error in agent mode, exactly like `--scope ""`.
+func emptyFlagValueError(name string) error {
+	return fmt.Errorf("--%s %w; pass a value or leave the flag out", name, errEmptyFlagValue)
 }
 
 // markFlagRequiredNonEmpty marks the named string flag as required and

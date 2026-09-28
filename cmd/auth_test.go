@@ -55,6 +55,13 @@ func resetAuthLoginFlags(t *testing.T) {
 				f.Changed = false
 				continue
 			}
+			// A flag that rejects an empty value refuses Set(""), so it
+			// resets through its own Reset.
+			if rv, ok := f.Value.(interface{ Reset() }); ok {
+				rv.Reset()
+				f.Changed = false
+				continue
+			}
 			if err := f.Value.Set(f.DefValue); err != nil {
 				t.Logf("warning: could not reset flag %q: %v", name, err)
 			}

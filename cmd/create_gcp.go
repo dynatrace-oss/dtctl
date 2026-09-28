@@ -152,13 +152,6 @@ Examples:
   dtctl create gcp monitoring --name "my-gcp-monitoring" --credentials "my-gcp-connection"
   dtctl create gcp monitoring --name "my-gcp-monitoring" --credentials "<connection-id>" --locationFiltering "us-central1,europe-west1"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if createGCPMonitoringConfigName == "" {
-			return fmt.Errorf("--name is required")
-		}
-		if createGCPMonitoringConfigCredentials == "" {
-			return fmt.Errorf("--credentials is required")
-		}
-
 		_, c, err := SetupWithSafety(safety.OperationCreate)
 		if err != nil {
 			return err
@@ -257,6 +250,9 @@ func init() {
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(createGCPConnectionCmd, "serviceAccountId", stability.Experimental, pre10Since)
 	stability.MarkFlag(createGCPConnectionCmd, "serviceaccountid", stability.Experimental, pre10Since)
+	// The name can come from the positional argument instead, so --name is
+	// not marked required; an explicitly empty value is still rejected.
+	rejectEmptyFlag(createGCPConnectionCmd, "name")
 
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigName, "name", "", "Monitoring config name/description (required)")
 	createGCPMonitoringConfigCmd.Flags().StringVar(&createGCPMonitoringConfigCredentials, "credentials", "", "GCP connection name or ID (required)")

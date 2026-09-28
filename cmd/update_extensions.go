@@ -366,6 +366,9 @@ func init() {
 
 	// Flags for a single extension
 	updateExtensionCmd.Flags().String("version", "", "specific version to activate (already uploaded to the environment)")
+	// One of --version, --latest or --hub-latest is required; an explicitly
+	// empty --version must not count as "not given".
+	rejectEmptyFlag(updateExtensionCmd, "version")
 	updateExtensionCmd.Flags().Bool("latest", false, "activate the highest installed version")
 	updateExtensionCmd.Flags().Bool("hub-latest", false, "install the latest Hub release and activate it")
 	updateExtensionCmd.Flags().Bool("with-configurations", false, "re-validate monitoring configurations against the new version after activation")

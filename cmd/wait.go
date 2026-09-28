@@ -77,9 +77,6 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Parse the condition
 		conditionStr, _ := cmd.Flags().GetString("for")
-		if conditionStr == "" {
-			return fmt.Errorf("--for flag is required")
-		}
 
 		condition, err := wait.ParseCondition(conditionStr)
 		if err != nil {
@@ -224,6 +221,7 @@ func init() {
 
 	// Query input flags
 	waitQueryCmd.Flags().StringP("file", "f", "", "read query from file (use - for stdin)")
+	rejectEmptyFlag(waitQueryCmd, "file")
 	waitQueryCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 
 	// Timing flags

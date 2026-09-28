@@ -241,6 +241,12 @@ func init() {
 	stability.MarkFlag(updateAzureConnectionCmd, "applicationID", stability.Experimental, pre10Since)
 	stability.MarkFlag(updateAzureConnectionCmd, "aplicationID", stability.Experimental, pre10Since)
 	stability.MarkFlag(updateAzureConnectionCmd, "clientSecret", stability.Experimental, pre10Since)
+	// At least one of these is required, and a flag left out keeps the stored
+	// value; an explicitly empty one (every spelling) is rejected rather than
+	// read as "left out".
+	for _, name := range []string{"directoryId", "directoryID", "applicationId", "applicationID", "aplicationID", "clientSecret"} {
+		rejectEmptyFlag(updateAzureConnectionCmd, name)
+	}
 
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateAzureMonitoringConfigCmd.Flags().StringVar(&updateAzureMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations")
@@ -257,6 +263,11 @@ func init() {
 	stability.MarkFlag(updateAzureMonitoringConfigCmd, "locationFiltering", stability.Experimental, pre10Since)
 	stability.MarkFlag(updateAzureMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
 	stability.MarkFlag(updateAzureMonitoringConfigCmd, "featuresets", stability.Experimental, pre10Since)
+	// At least one is required and a flag left out keeps the stored value, so
+	// an explicitly empty one is rejected rather than read as "left out".
+	for _, name := range []string{"locationFiltering", "featureSets", "featuresets"} {
+		rejectEmptyFlag(updateAzureMonitoringConfigCmd, name)
+	}
 }
 
 // Declared stable: the invocation and output contract of this command is

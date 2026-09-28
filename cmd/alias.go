@@ -122,9 +122,6 @@ var aliasExportCmd = &cobra.Command{
 	Short: "Export aliases to a YAML file",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file, _ := cmd.Flags().GetString("file")
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
 
 		cfg, err := loadConfigRaw()
 		if err != nil {
@@ -150,10 +147,6 @@ var aliasImportCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file, _ := cmd.Flags().GetString("file")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
-
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
 
 		cfg, err := loadConfigRaw()
 		if err != nil {
@@ -192,6 +185,8 @@ func init() {
 	aliasExportCmd.Flags().StringP("file", "f", "", "output file path")
 	aliasImportCmd.Flags().StringP("file", "f", "", "input file path")
 	aliasImportCmd.Flags().Bool("overwrite", false, "overwrite existing aliases")
+	markFlagRequiredNonEmpty(aliasExportCmd, "file")
+	markFlagRequiredNonEmpty(aliasImportCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of these commands is

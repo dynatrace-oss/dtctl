@@ -157,6 +157,7 @@ func readVerifyExpressionFromFile(path string) (string, error) {
 
 func init() {
 	verifyOpenPipelineMatcherCmd.Flags().StringP("file", "f", "", `read the matcher from a file ("-" for stdin)`)
+	rejectEmptyFlag(verifyOpenPipelineMatcherCmd, "file")
 	verifyOpenPipelineMatcherCmd.Flags().String("context", "", `stage context, e.g. "processing" or "ROUTING_RULE"`)
 	// Renamed or removed in 1.0 because it hides a global flag
 	// (contrib breaking-changes/unshadow-global-flags.md).

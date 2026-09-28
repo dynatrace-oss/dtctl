@@ -31,9 +31,6 @@ Examples:
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file, _ := cmd.Flags().GetString("file")
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
 
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 

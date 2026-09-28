@@ -197,7 +197,7 @@ func TestConfigCommandsRespectCustomPath(t *testing.T) {
 		_ = configSetContextCmd.Flags().Set("environment", "https://first.example.com")
 		_ = configSetContextCmd.Flags().Set("token-ref", "first-token")
 		defer func() {
-			_ = configSetContextCmd.Flags().Set("environment", "")
+			clearFlag(configSetContextCmd, "environment")
 			_ = configSetContextCmd.Flags().Set("token-ref", "")
 		}()
 
@@ -299,7 +299,7 @@ func TestConfigMultipleCustomPaths(t *testing.T) {
 	_ = configSetContextCmd.Flags().Set("environment", "https://config1.example.com")
 	_ = configSetContextCmd.Flags().Set("token-ref", "config1-token")
 	defer func() {
-		_ = configSetContextCmd.Flags().Set("environment", "")
+		clearFlag(configSetContextCmd, "environment")
 		_ = configSetContextCmd.Flags().Set("token-ref", "")
 	}()
 
@@ -354,7 +354,7 @@ func TestConfigSetCredentialsWithCustomPath(t *testing.T) {
 	_ = configSetContextCmd.Flags().Set("environment", "https://test.example.com")
 	_ = configSetContextCmd.Flags().Set("token-ref", "test-token")
 	defer func() {
-		_ = configSetContextCmd.Flags().Set("environment", "")
+		clearFlag(configSetContextCmd, "environment")
 		_ = configSetContextCmd.Flags().Set("token-ref", "")
 	}()
 

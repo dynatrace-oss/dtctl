@@ -138,7 +138,7 @@ func TestCtxSetCmd(t *testing.T) {
 		_ = ctxSetCmd.Flags().Set("safety-level", "readonly")
 		_ = ctxSetCmd.Flags().Set("description", "Staging environment")
 		defer func() {
-			_ = ctxSetCmd.Flags().Set("environment", "")
+			clearFlag(ctxSetCmd, "environment")
 			_ = ctxSetCmd.Flags().Set("token-ref", "")
 			_ = ctxSetCmd.Flags().Set("safety-level", "")
 			_ = ctxSetCmd.Flags().Set("description", "")
@@ -183,7 +183,7 @@ func TestCtxSetCmd(t *testing.T) {
 
 		// Update prod (not the current context) — this should switch to it
 		_ = ctxSetCmd.Flags().Set("environment", "https://prod.example.com")
-		defer func() { _ = ctxSetCmd.Flags().Set("environment", "") }()
+		defer func() { clearFlag(ctxSetCmd, "environment") }()
 
 		err := ctxSetCmd.RunE(ctxSetCmd, []string{"prod"})
 		if err != nil {
@@ -200,7 +200,7 @@ func TestCtxSetCmd(t *testing.T) {
 	})
 
 	t.Run("create without environment fails", func(t *testing.T) {
-		_ = ctxSetCmd.Flags().Set("environment", "")
+		clearFlag(ctxSetCmd, "environment")
 		_ = ctxSetCmd.Flags().Set("token-ref", "")
 		_ = ctxSetCmd.Flags().Set("safety-level", "")
 		_ = ctxSetCmd.Flags().Set("description", "")
@@ -224,7 +224,7 @@ func TestCtxSetCmd(t *testing.T) {
 		_ = ctxSetCmd.Flags().Set("environment", "https://test.example.com")
 		_ = ctxSetCmd.Flags().Set("safety-level", "invalid-level")
 		defer func() {
-			_ = ctxSetCmd.Flags().Set("environment", "")
+			clearFlag(ctxSetCmd, "environment")
 			_ = ctxSetCmd.Flags().Set("safety-level", "")
 		}()
 
@@ -378,7 +378,7 @@ func TestCtxWithCustomConfigPath(t *testing.T) {
 	_ = ctxSetCmd.Flags().Set("environment", "https://test.example.com")
 	_ = ctxSetCmd.Flags().Set("token-ref", "test-token")
 	defer func() {
-		_ = ctxSetCmd.Flags().Set("environment", "")
+		clearFlag(ctxSetCmd, "environment")
 		_ = ctxSetCmd.Flags().Set("token-ref", "")
 	}()
 

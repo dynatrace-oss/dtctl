@@ -296,6 +296,12 @@ func init() {
 	// CoPilot dql2nl flags
 	execCopilotDql2NlCmd.Flags().StringP("file", "f", "", "read DQL query from file, or - for stdin")
 
+	// Each takes its text as the positional argument or from --file: reject
+	// only an explicitly empty --file.
+	for _, c := range []*cobra.Command{execCopilotCmd, execCopilotNl2DqlCmd, execCopilotDql2NlCmd} {
+		rejectEmptyFlag(c, "file")
+	}
+
 	// CoPilot document-search flags
 	execCopilotDocSearchCmd.Flags().StringSlice("collections", []string{}, "document collections to search (e.g., notebooks,dashboards)")
 	execCopilotDocSearchCmd.Flags().StringSlice("exclude", []string{}, "document IDs to exclude from results")

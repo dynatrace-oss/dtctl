@@ -99,6 +99,11 @@ func addAnalyzerInputFlags(cmd *cobra.Command) {
 	cmd.Flags().StringP("file", "f", "", "read input from JSON file, or - for stdin")
 	cmd.Flags().String("input", "", "inline JSON input")
 	cmd.Flags().String("query", "", "DQL query shorthand (for timeseries analyzers)")
+	// Exactly one source is required; an explicitly empty one must not count
+	// as "not given".
+	for _, name := range []string{"file", "input", "query"} {
+		rejectEmptyFlag(cmd, name)
+	}
 }
 
 // buildAnalyzerInput assembles an analyzer input map from the --file, --input,

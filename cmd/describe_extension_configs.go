@@ -28,10 +28,6 @@ Examples:
 		extensionName := args[0]
 		configID, _ := cmd.Flags().GetString("config-id")
 
-		if configID == "" {
-			return fmt.Errorf("--config-id is required")
-		}
-
 		_, c, printer, err := Setup()
 		if err != nil {
 			return err

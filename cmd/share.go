@@ -326,6 +326,9 @@ func init() {
 		cmd.Flags().StringArray("group", []string{}, "SSO group ID to share with (can be specified multiple times)")
 		cmd.Flags().String("access", "read", "access level: 'read' or 'read-write'")
 		cmd.Flags().Bool("no-notify", false, "do not notify recipients of the share (a group recipient notifies every member)")
+		// A blank recipient would be sent to the API as an empty SSO ID.
+		rejectEmptyFlag(cmd, "user")
+		rejectEmptyFlag(cmd, "group")
 	}
 
 	// Unshare flags (apply to all unshare subcommands)
@@ -334,6 +337,8 @@ func init() {
 		cmd.Flags().StringArray("group", []string{}, "SSO group ID to remove (can be specified multiple times)")
 		cmd.Flags().Bool("all", false, "remove all shares")
 		cmd.Flags().String("access", "", "filter by access level: 'read' or 'read-write'")
+		rejectEmptyFlag(cmd, "user")
+		rejectEmptyFlag(cmd, "group")
 	}
 }
 

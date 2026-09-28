@@ -391,6 +391,7 @@ func init() {
 
 	// Flags for verify query command
 	verifyQueryCmd.Flags().StringP("file", "f", "", "read query from file (use '-' for stdin)")
+	rejectEmptyFlag(verifyQueryCmd, "file")
 	verifyQueryCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	verifyQueryCmd.Flags().Bool("canonical", false, "print canonical query representation")
 	verifyQueryCmd.Flags().String("timezone", "", "timezone for query verification (IANA, CET, +01:00, etc.)")

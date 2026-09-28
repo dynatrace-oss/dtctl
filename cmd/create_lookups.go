@@ -77,10 +77,6 @@ Examples:
 		timezone, _ := cmd.Flags().GetString("timezone")
 		locale, _ := cmd.Flags().GetString("locale")
 
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
-
 		fileData, err := readLookupInput(file, isTerminal(os.Stdin))
 		if err != nil {
 			return err
@@ -241,6 +237,11 @@ func init() {
 	createLookupCmd.Flags().String("timezone", "UTC", "timezone for parsing time/date fields")
 	createLookupCmd.Flags().String("locale", "en_US", "locale for parsing locale-specific data")
 	markFlagRequiredNonEmpty(createLookupCmd, "file")
+	// Not MarkFlagRequired: a manifest passed here gets the "use dtctl apply"
+	// hint, which cobra's required-flag error would preempt. The command body
+	// reports a flag left out; an explicitly empty value is rejected here.
+	rejectEmptyFlag(createLookupCmd, "path")
+	rejectEmptyFlag(createLookupCmd, "lookup-field")
 }
 
 // Declared stable: the invocation and output contract of this command is

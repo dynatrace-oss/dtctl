@@ -199,6 +199,11 @@ func init() {
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(updateGCPConnectionCmd, "serviceAccountId", stability.Experimental, pre10Since)
 	stability.MarkFlag(updateGCPConnectionCmd, "serviceaccountid", stability.Experimental, pre10Since)
+	// Not MarkFlagRequired: --serviceaccountid sets the same value, and an
+	// invocation using only that spelling is valid. The command body reports
+	// both left out; an explicitly empty value is rejected at parse time.
+	rejectEmptyFlag(updateGCPConnectionCmd, "serviceAccountId")
+	rejectEmptyFlag(updateGCPConnectionCmd, "serviceaccountid")
 
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateGCPMonitoringConfigCmd.Flags().StringVar(&updateGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations to monitor, or 'all' to remove the location filter")
@@ -215,4 +220,9 @@ func init() {
 	stability.MarkFlag(updateGCPMonitoringConfigCmd, "locationFiltering", stability.Experimental, pre10Since)
 	stability.MarkFlag(updateGCPMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
 	stability.MarkFlag(updateGCPMonitoringConfigCmd, "featuresets", stability.Experimental, pre10Since)
+	// At least one is required and a flag left out keeps the stored value, so
+	// an explicitly empty one is rejected rather than read as "left out".
+	for _, name := range []string{"locationFiltering", "featureSets", "featuresets"} {
+		rejectEmptyFlag(updateGCPMonitoringConfigCmd, name)
+	}
 }

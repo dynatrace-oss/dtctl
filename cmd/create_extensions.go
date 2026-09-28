@@ -133,6 +133,10 @@ func init() {
 	createExtensionCmd.Flags().StringP("file", "f", "", "path to the extension zip file (for custom extension upload), or - for stdin")
 	createExtensionCmd.Flags().String("hub-extension", "", "Hub extension catalog ID to install (e.g. com.dynatrace.extension.host-monitoring)")
 	createExtensionCmd.Flags().String("version", "", "version to install (only for --hub-extension; defaults to latest)")
+	// One of --file or --hub-extension is required; an explicitly empty value
+	// for either is rejected so it cannot count as "not given".
+	rejectEmptyFlag(createExtensionCmd, "file")
+	rejectEmptyFlag(createExtensionCmd, "hub-extension")
 }
 
 // Declared stable: the invocation and output contract of this command is

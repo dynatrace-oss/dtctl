@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dynatrace-oss/dtctl/cmd/testutil"
 )
 
@@ -87,12 +89,12 @@ func TestExecPreviewProcessorCmd_JSONOutput(t *testing.T) {
 	}
 }
 
+// TestExecPreviewProcessorCmd_FileRequired: --file is enforced at parse time
+// (marked required, empty rejected), so RunE no longer checks it.
 func TestExecPreviewProcessorCmd_FileRequired(t *testing.T) {
-	setupExecPreviewTest(t, `{"results":[]}`)
-
-	err := execPreviewProcessorCmd.RunE(execPreviewProcessorCmd, nil)
-	if err == nil || !strings.Contains(err.Error(), "--file is required") {
-		t.Fatalf("RunE() error = %v, want --file required error", err)
+	f := execPreviewProcessorCmd.Flags().Lookup("file")
+	if got := f.Annotations[cobra.BashCompOneRequiredFlag]; len(got) == 0 || got[0] != "true" {
+		t.Fatalf("--file annotations = %v, want it marked required", f.Annotations)
 	}
 }
 

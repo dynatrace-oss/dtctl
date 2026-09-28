@@ -115,6 +115,11 @@ func init() {
 	createBucketCmd.Flags().String("table", "", "table type (logs, events, or bizevents)")
 	createBucketCmd.Flags().Int("retention", 0, "retention period in days (1-3657)")
 	createBucketCmd.Flags().String("display-name", "", "display name for the bucket")
+	// Not needed with -f, so only an explicitly empty value is rejected here;
+	// the command body reports a flag left out.
+	rejectEmptyFlag(createBucketCmd, "name")
+	rejectEmptyFlag(createBucketCmd, "table")
+	rejectEmptyFlag(createBucketCmd, "retention")
 }
 
 // Declared stable: the invocation and output contract of this command is

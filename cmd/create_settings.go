@@ -41,16 +41,6 @@ Examples:
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 		validateOnly, _ := cmd.Flags().GetBool("validate-only")
 
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
-		if schemaID == "" {
-			return fmt.Errorf("--schema is required")
-		}
-		if scope == "" {
-			return fmt.Errorf("--scope is required")
-		}
-
 		// Read the file
 		fileData, err := readFileFlag("file", file)
 		if err != nil {

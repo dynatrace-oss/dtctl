@@ -378,7 +378,7 @@ func TestUpdateExtension_FlagValidation(t *testing.T) {
 	origDryRun := dryRun
 	t.Cleanup(func() {
 		dryRun = origDryRun
-		_ = updateExtensionCmd.Flags().Set("version", "")
+		clearFlag(updateExtensionCmd, "version")
 		_ = updateExtensionCmd.Flags().Set("latest", "false")
 		_ = updateExtensionCmd.Flags().Set("hub-latest", "false")
 	})
@@ -388,8 +388,11 @@ func TestUpdateExtension_FlagValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := updateExtensionCmd.Flags().Set("version", tt.version); err != nil {
-				t.Fatalf("set --version: %v", err)
+			clearFlag(updateExtensionCmd, "version")
+			if tt.version != "" {
+				if err := updateExtensionCmd.Flags().Set("version", tt.version); err != nil {
+					t.Fatalf("set --version: %v", err)
+				}
 			}
 			for flag, val := range map[string]bool{"latest": tt.latest, "hub-latest": tt.hubLatest} {
 				if err := updateExtensionCmd.Flags().Set(flag, fmt.Sprintf("%t", val)); err != nil {

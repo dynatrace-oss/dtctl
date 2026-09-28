@@ -83,10 +83,6 @@ See also:
 // identical to 'apply'.
 func updateDocumentRunE(cmd *cobra.Command, _ []string) error {
 	file, _ := cmd.Flags().GetString("file")
-	if file == "" {
-		return fmt.Errorf("--file is required")
-	}
-
 	docType, _ := cmd.Flags().GetString("type")
 	id, _ := cmd.Flags().GetString("id")
 	setFlags, _ := cmd.Flags().GetStringArray("set")

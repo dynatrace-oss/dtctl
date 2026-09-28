@@ -301,16 +301,21 @@ func resetFlagSet(fs *pflag.FlagSet) {
 			rv.Reset()
 		} else if sv, ok := flag.Value.(pflag.SliceValue); ok {
 			// SliceValue.Set appends rather than replaces; use Replace to
-			// restore the declared default. StringArray stores DefValue as
-			// JSON; other slice types fall back to nil (empty) if the format
-			// doesn't parse.
-			var defaults []string
-			if flag.DefValue != "[]" {
-				_ = json.Unmarshal([]byte(flag.DefValue), &defaults)
-			}
-			_ = sv.Replace(defaults)
+			// restore the declared default.
+			_ = sv.Replace(sliceFlagDefaults(flag.DefValue))
 		} else {
 			_ = flag.Value.Set(flag.DefValue)
 		}
 	})
+}
+
+// sliceFlagDefaults parses a slice flag's DefValue back into its items.
+// StringArray stores DefValue as JSON; other slice types fall back to nil
+// (empty) if the format doesn't parse.
+func sliceFlagDefaults(defValue string) []string {
+	var defaults []string
+	if defValue != "[]" {
+		_ = json.Unmarshal([]byte(defValue), &defaults)
+	}
+	return defaults
 }

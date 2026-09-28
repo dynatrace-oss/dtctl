@@ -92,11 +92,11 @@ Examples:
 		resources, _ := cmd.Flags().GetStringArray("resource")
 		tags, _ := cmd.Flags().GetStringArray("tag")
 
-		if name == "" {
-			return fmt.Errorf("--name is required")
-		}
+		// --scope is marked required and rejects a blank value at parse time;
+		// a value made only of separators ("--scope ,") gets past both and
+		// still names no scope.
 		if len(scopes) == 0 {
-			return fmt.Errorf("--scope is required")
+			return emptyFlagValueError("scope")
 		}
 		if expiresAt != "" && cmd.Flags().Changed("expires") {
 			return fmt.Errorf("--expires and --expires-at are mutually exclusive")
@@ -248,4 +248,6 @@ func init() {
 	accountCreateTokenCmd.Flags().String("user-uuid", "", "user UUID the token belongs to (default: current user)")
 	accountCreateTokenCmd.Flags().StringArray("resource", nil, "environment URL(s) the token is scoped to (default: current environment)")
 	accountCreateTokenCmd.Flags().StringArray("tag", nil, "token tag; may be specified multiple times")
+	markFlagRequiredNonEmpty(accountCreateTokenCmd, "name")
+	markFlagRequiredNonEmpty(accountCreateTokenCmd, "scope")
 }

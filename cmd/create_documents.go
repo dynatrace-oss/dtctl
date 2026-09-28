@@ -79,9 +79,6 @@ Examples:
 		if docType == "" {
 			return fmt.Errorf("document type is required: use --type flag or include a \"type\" field in the payload")
 		}
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
 
 		return createDocumentFromData(cmd, docType, fileData)
 	},
@@ -157,9 +154,6 @@ See also:
 func createDocumentRunE(docType string) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		file, _ := cmd.Flags().GetString("file")
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
 		fileData, err := readFileFlag("file", file)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)

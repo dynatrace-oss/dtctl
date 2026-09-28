@@ -445,7 +445,7 @@ func enhanceFlagError(cmd *cobra.Command, err error) error {
 	// exitCodeForError classify on.
 	var invalidValue *pflag.InvalidValueError
 	if errors.As(err, &invalidValue) && errors.Is(err, errEmptyFlagValue) {
-		return fmt.Errorf("--%s %w; pass a value or leave the flag out", invalidValue.GetFlag().Name, errEmptyFlagValue)
+		return emptyFlagValueError(invalidValue.GetFlag().Name)
 	}
 
 	return err

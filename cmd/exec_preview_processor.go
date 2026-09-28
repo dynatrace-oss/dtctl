@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -56,9 +55,6 @@ Examples:
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		fileFlag, _ := cmd.Flags().GetString("file")
 		configIDFlag, _ := cmd.Flags().GetString("config-id")
-		if fileFlag == "" {
-			return fmt.Errorf("--file is required")
-		}
 
 		_, c, printer, err := SetupWithSafetyAndPrinter(safety.OperationRead)
 		if err != nil {
@@ -89,6 +85,7 @@ Examples:
 func init() {
 	execPreviewProcessorCmd.Flags().StringP("file", "f", "", `read the processor definition body from a file ("-" for stdin); required`)
 	execPreviewProcessorCmd.Flags().String("config-id", "", `configuration scope, e.g. "logs"`)
+	markFlagRequiredNonEmpty(execPreviewProcessorCmd, "file")
 }
 
 // Declared stable: the invocation and output contract of this command is

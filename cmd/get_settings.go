@@ -170,6 +170,8 @@ func init() {
 	// Settings flags
 	getSettingsCmd.Flags().String("schema", "", "Schema ID (required when listing settings objects)")
 	getSettingsCmd.Flags().String("scope", "", "Scope to filter settings (e.g., 'environment')")
+	// Required only when listing, so only an explicitly empty value is rejected.
+	rejectEmptyFlag(getSettingsCmd, "schema")
 
 	// Delete settings flags
 	deleteSettingsCmd.Flags().BoolVarP(&forceDelete, "yes", "y", false, "Skip confirmation prompt")

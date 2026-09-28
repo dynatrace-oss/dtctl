@@ -152,9 +152,6 @@ resources in sync with their file definitions.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file, _ := cmd.Flags().GetString("file")
-		if file == "" {
-			return fmt.Errorf("--file is required")
-		}
 
 		setFlags, _ := cmd.Flags().GetStringArray("set")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")

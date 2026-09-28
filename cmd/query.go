@@ -826,6 +826,7 @@ func init() {
 
 	// Flags for main query command
 	queryCmd.Flags().StringP("file", "f", "", "read query from file")
+	rejectEmptyFlag(queryCmd, "file")
 	queryCmd.Flags().StringArray("set", []string{}, "set template variable (key=value)")
 	queryCmd.Flags().String("dql", "", "DQL text (alias for the positional argument)")
 

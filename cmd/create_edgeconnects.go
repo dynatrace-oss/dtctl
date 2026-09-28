@@ -114,6 +114,8 @@ func init() {
 	createEdgeConnectCmd.Flags().StringP("file", "f", "", "file containing EdgeConnect definition, or - for stdin")
 	createEdgeConnectCmd.Flags().String("name", "", "EdgeConnect name (RFC 1123 compliant, max 50 chars)")
 	createEdgeConnectCmd.Flags().String("host-patterns", "", "comma-separated list of host patterns")
+	// Not needed with -f: only an explicitly empty value is rejected here.
+	rejectEmptyFlag(createEdgeConnectCmd, "name")
 }
 
 // Declared stable: the invocation and output contract of this command is

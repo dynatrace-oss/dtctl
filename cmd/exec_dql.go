@@ -66,6 +66,9 @@ Examples:
 func init() {
 	// DQL flags
 	execDQLCmd.Flags().StringP("file", "f", "", "read query from file, or - for stdin")
+	// The query can be the positional argument instead: reject only an
+	// explicitly empty --file.
+	rejectEmptyFlag(execDQLCmd, "file")
 }
 
 func init() {

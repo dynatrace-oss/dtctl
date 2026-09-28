@@ -117,13 +117,7 @@ func TestStateRankOrdersNotApplicableAfterData(t *testing.T) {
 // without a client, which is what makes them safe to run here at all.
 func TestArrivalsUsageErrorsPrecedeClientSetup(t *testing.T) {
 	flags := inventoryArrivalsCmd.Flags()
-	t.Cleanup(func() {
-		for _, name := range []string{"scope", "since", "signals"} {
-			f := flags.Lookup(name)
-			_ = flags.Set(name, f.DefValue)
-			f.Changed = false
-		}
-	})
+	t.Cleanup(func() { resetFlagSet(flags) })
 
 	for _, tc := range []struct {
 		name string
@@ -132,7 +126,7 @@ func TestArrivalsUsageErrorsPrecedeClientSetup(t *testing.T) {
 	}{
 		{
 			name: "omitted scope explains itself",
-			set:  map[string]string{"scope": ""},
+			set:  map[string]string{},
 			want: "--scope is required: see 'dtctl inventory arrivals --help'",
 		},
 		{
@@ -147,6 +141,7 @@ func TestArrivalsUsageErrorsPrecedeClientSetup(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			resetFlagSet(flags)
 			for k, v := range tc.set {
 				if err := flags.Set(k, v); err != nil {
 					t.Fatalf("set %s=%q: %v", k, v, err)

@@ -445,6 +445,9 @@ func signalAge(sig inventory.Signal) string {
 func init() {
 	addInventoryDiscoveryFlags(inventoryArrivalsCmd)
 	inventoryArrivalsCmd.Flags().String("scope", "", "DQL filter fragment scoping every probe, e.g. 'k8s.namespace.name == \"payments\"' (required)")
+	// Not marked required (see the RunE check for why); an explicitly empty
+	// value is still a usage error.
+	rejectEmptyFlag(inventoryArrivalsCmd, "scope")
 	inventoryArrivalsCmd.Flags().String("since", inventory.DefaultWindow, "Window to report arrivals over (e.g. 15m, 1h)")
 	inventoryArrivalsCmd.Flags().StringSlice("signals", nil, "Restrict probing to these signals (default: all signal streams and metric families)")
 	inventoryArrivalsCmd.Flags().StringSlice("require", nil, "Exit non-zero unless every named signal is live (10 = not live, 11 = no verdict)")

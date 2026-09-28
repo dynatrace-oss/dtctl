@@ -34,9 +34,6 @@ Examples:
   dtctl update aws connection <id> --roleArn arn:aws:iam::123456789012:role/DynatraceMonitoringRole`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if updateAWSConnectionRoleArn == "" {
-			return fmt.Errorf("--roleArn is required")
-		}
 		if err := awsconnection.ValidateRoleArn(updateAWSConnectionRoleArn); err != nil {
 			return err
 		}
@@ -200,6 +197,7 @@ func init() {
 	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(updateAWSConnectionCmd, "roleArn", stability.Experimental, pre10Since)
+	markFlagRequiredNonEmpty(updateAWSConnectionCmd, "roleArn")
 
 	updateAWSMonitoringConfigCmd.Flags().StringVar(&updateAWSMonitoringConfigName, "name", "", "Monitoring config name/description (used when ID argument is not provided)")
 	updateAWSMonitoringConfigCmd.Flags().StringVar(&updateAWSMonitoringConfigRegions, "regions", "", "Comma-separated AWS regions")
@@ -207,6 +205,10 @@ func init() {
 	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
 	// the spelling aliases are removed outright.
 	stability.MarkFlag(updateAWSMonitoringConfigCmd, "featureSets", stability.Experimental, pre10Since)
+	// At least one of these is required, and a flag left out keeps the stored
+	// value; an explicitly empty one is rejected rather than read as "left out".
+	rejectEmptyFlag(updateAWSMonitoringConfigCmd, "regions")
+	rejectEmptyFlag(updateAWSMonitoringConfigCmd, "featureSets")
 }
 
 // Declared stable: the invocation and output contract of this command is

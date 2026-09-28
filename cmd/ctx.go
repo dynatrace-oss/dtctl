@@ -358,6 +358,9 @@ func contextSettingsFromFlags(cmd *cobra.Command) contextSettings {
 // addContextFlags declares the shared context flags on a command.
 func addContextFlags(cmd *cobra.Command) {
 	cmd.Flags().String("environment", "", "environment URL")
+	// Required only for a new context (an update keeps the stored URL), so
+	// only an explicitly empty value is rejected here.
+	rejectEmptyFlag(cmd, "environment")
 	cmd.Flags().String("token-ref", "", "token reference name")
 	cmd.Flags().String("safety-level", "", "safety level (readonly, readwrite-mine, readwrite-all, dangerously-unrestricted)")
 	cmd.Flags().String("description", "", "human-readable description for this context")
