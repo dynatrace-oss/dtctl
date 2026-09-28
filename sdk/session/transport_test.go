@@ -2,6 +2,7 @@ package session
 
 import (
 	"crypto/tls"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -200,5 +201,99 @@ func TestNewClient_CloseIdleConnectionsReachesThePool(t *testing.T) {
 	get()
 	if got := conns(); got != 2 {
 		t.Errorf("after CloseIdleConnections: %d connections, want 2 (idle connection was not closed)", got)
+	}
+}
+
+// TestNewClient_RefusedTransportSetterFailsRequests is the other half of the
+// wrapper: a setter that cannot reach the shared pool must not be dropped
+// silently either. A caller who asked for an egress proxy (or asked to bypass
+// one, or for a pinned CA) and then sent requests without it would never
+// know. Every later request on that client fails with
+// ErrSharedTransportSetting instead — and sends nothing — while other clients
+// are unaffected.
+func TestNewClient_RefusedTransportSetterFailsRequests(t *testing.T) {
+	if restyTransportRefusal == "" {
+		t.Fatal("resty no longer refuses to mutate a non-*http.Transport; the guard cannot detect setter calls")
+	}
+
+	setters := map[string]func(*resty.Client){
+		"SetProxy":           func(c *resty.Client) { c.SetProxy("http://proxy.example.invalid:3128") },
+		"RemoveProxy":        func(c *resty.Client) { c.RemoveProxy() },
+		"SetTLSClientConfig": func(c *resty.Client) { c.SetTLSClientConfig(&tls.Config{MinVersion: tls.VersionTLS13}) },
+		"SetCertificates":    func(c *resty.Client) { c.SetCertificates(tls.Certificate{}) },
+		"SetRootCertificateFromString": func(c *resty.Client) {
+			c.SetRootCertificateFromString("-----BEGIN CERTIFICATE-----")
+		},
+		"SetClientRootCertificateFromString": func(c *resty.Client) {
+			c.SetClientRootCertificateFromString("-----BEGIN CERTIFICATE-----")
+		},
+	}
+	for name, set := range setters {
+		t.Run(name, func(t *testing.T) {
+			var mu sync.Mutex
+			hits := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				mu.Lock()
+				hits++
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+			}))
+			t.Cleanup(srv.Close)
+
+			a, err := NewForTesting(srv.URL, "token-a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := NewForTesting(srv.URL, "token-b")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			set(a.HTTP())
+
+			if _, err := a.HTTP().R().Get("/test"); !errors.Is(err, ErrSharedTransportSetting) {
+				t.Errorf("request after a refused %s: err = %v, want ErrSharedTransportSetting", name, err)
+			}
+			mu.Lock()
+			sent := hits
+			mu.Unlock()
+			if sent != 0 {
+				t.Errorf("a request without the requested %s setting reached the server", name)
+			}
+
+			resp, err := b.HTTP().R().Get("/test")
+			if err != nil || resp.StatusCode() != http.StatusOK {
+				t.Errorf("another client was affected by %s: err=%v", name, err)
+			}
+		})
+	}
+}
+
+// TestNewClient_PrivateTransportTakesSetters pins the documented per-client
+// path: install NewTransport, then resty's setters apply to that client alone
+// and requests go through.
+func TestNewClient_PrivateTransportTakesSetters(t *testing.T) {
+	srv, _ := connCountingServer(t)
+
+	c, err := NewForTesting(srv.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.HTTP().SetTransport(NewTransport()).RemoveProxy()
+
+	own, err := c.HTTP().Transport()
+	if err != nil {
+		t.Fatalf("private transport not visible to resty: %v", err)
+	}
+	if own.Proxy != nil {
+		t.Error("RemoveProxy did not apply to the private transport")
+	}
+	if pooled := sharedTransport.(*pooledTransport).t; pooled.Proxy == nil {
+		t.Error("RemoveProxy on a private transport reached the shared pool")
+	}
+
+	resp, err := c.HTTP().R().Get("/test")
+	if err != nil || resp.StatusCode() != http.StatusOK {
+		t.Fatalf("request over the private transport failed: err=%v", err)
 	}
 }

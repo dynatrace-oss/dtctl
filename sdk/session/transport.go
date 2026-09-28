@@ -1,10 +1,14 @@
 package session
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"runtime"
+	"sync/atomic"
 	"time"
+
+	"github.com/go-resty/resty/v2"
 )
 
 // sharedTransport is the one connection pool every Client built by NewClient
@@ -37,11 +41,13 @@ import (
 // client holds. Shared, one tenant's client calling them would rewrite the
 // proxy or TLS trust of every other client in the process, racing with
 // requests in flight. Behind the wrapper resty's Transport() reports "not an
-// *http.Transport" and those calls become no-ops (their error goes to the
-// client's resty logger, which NewClient silences): they fail closed rather
-// than leak. A consumer that needs custom TLS or proxy settings installs its
-// own transport with Client.HTTP().SetTransport, which replaces only that
-// client's RoundTripper.
+// *http.Transport" and those calls cannot apply; the client's
+// transportSetterGuard notices the refusal and fails that client's requests
+// with ErrSharedTransportSetting, so they fail closed and loudly rather than
+// leak or be silently dropped. A consumer that needs custom TLS or proxy
+// settings installs its own transport with
+// Client.HTTP().SetTransport(NewTransport()), which replaces only that
+// client's RoundTripper, and then calls the setters.
 var sharedTransport http.RoundTripper = &pooledTransport{t: newDefaultTransport()}
 
 // pooledTransport hides the shared *http.Transport from resty's type
@@ -87,4 +93,79 @@ func newDefaultTransport() *http.Transport {
 		ExpectContinueTimeout: 1 * time.Second,
 		MaxIdleConnsPerHost:   runtime.GOMAXPROCS(0) + 1,
 	}
+}
+
+// NewTransport returns a new, private *http.Transport with the same settings
+// as the shared pool. It is the per-client configuration path for a consumer
+// that needs its own proxy or TLS settings: install it with
+// Client.HTTP().SetTransport, after which resty's transport setters
+// (SetProxy, SetTLSClientConfig, SetCertificates, …) apply to that client
+// alone. The client then no longer shares upstream connections with anyone.
+func NewTransport() *http.Transport {
+	return newDefaultTransport()
+}
+
+// ErrSharedTransportSetting is returned by every request on a Client after
+// one of resty's transport setters was called on it while it still sent
+// through the shared pool (see Client.HTTP).
+//
+// resty applies those setters by editing the client's *http.Transport in
+// place. The shared pool is hidden from that on purpose (see
+// sharedTransport), so the setter cannot take effect — and resty reports the
+// failure only to the client's logger, while returning the client as if it
+// had worked. Letting the client carry on would send requests without the
+// proxy or TLS settings its caller asked for: a required egress proxy
+// bypassed, a pinned CA ignored. Failing every request instead is the one
+// way resty's API leaves to make that detectable.
+var ErrSharedTransportSetting = errors.New(
+	"session: a resty transport setter (SetProxy, RemoveProxy, SetTLSClientConfig, SetCertificates, " +
+		"SetRootCertificate, …) was called on a client that uses the shared connection pool, so the " +
+		"setting was not applied; install a private transport first with " +
+		"HTTP().SetTransport(session.NewTransport()) and then call the setter")
+
+// restyTransportRefusal is the message of the error resty logs when a
+// transport setter finds a RoundTripper that is not an *http.Transport. It is
+// taken from resty itself rather than spelled out, so a reworded message in a
+// resty upgrade cannot quietly disable the guard; if resty ever stops
+// refusing, TestNewClient_TransportMutatorsDoNotLeakAcrossClients fails.
+var restyTransportRefusal = func() string {
+	_, err := resty.New().SetTransport(&pooledTransport{}).Transport()
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}()
+
+// transportSetterGuard is a session client's resty logger and pre-request
+// hook. As the logger it discards resty's internal log output (errors reach
+// callers as returned values) — except the refusal of a transport setter,
+// which it records. As the hook it then fails every request with
+// ErrSharedTransportSetting (see there for why).
+//
+// A consumer that replaces the logger with SetLogger takes over that
+// message; it reaches their logger instead of being dropped, so it still
+// is not silent.
+type transportSetterGuard struct {
+	refused atomic.Bool
+}
+
+func (g *transportSetterGuard) Errorf(_ string, v ...interface{}) {
+	if restyTransportRefusal == "" {
+		return
+	}
+	for _, arg := range v {
+		if err, ok := arg.(error); ok && err.Error() == restyTransportRefusal {
+			g.refused.Store(true)
+		}
+	}
+}
+
+func (*transportSetterGuard) Warnf(string, ...interface{})  {}
+func (*transportSetterGuard) Debugf(string, ...interface{}) {}
+
+func (g *transportSetterGuard) checkRequest(*resty.Client, *resty.Request) error {
+	if g.refused.Load() {
+		return ErrSharedTransportSetting
+	}
+	return nil
 }

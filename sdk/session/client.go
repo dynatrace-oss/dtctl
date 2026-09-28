@@ -129,14 +129,6 @@ func NewForTesting(baseURL, token string) (*Client, error) {
 	return c, nil
 }
 
-// noopRestyLogger discards all resty-internal log output.
-// Error information is surfaced through returned error values, not internal logs.
-type noopRestyLogger struct{}
-
-func (noopRestyLogger) Errorf(string, ...interface{}) {}
-func (noopRestyLogger) Warnf(string, ...interface{})  {}
-func (noopRestyLogger) Debugf(string, ...interface{}) {}
-
 // NewClient creates a new client with base URL and token.
 func NewClient(baseURL, token string, opts ...ClientOption) (*Client, error) {
 	if baseURL == "" {
@@ -161,9 +153,14 @@ func NewClient(baseURL, token string, opts ...ClientOption) (*Client, error) {
 	// only the RoundTripper is swapped for the process-wide pool, so a
 	// long-lived consumer reuses upstream connections across clients (see
 	// sharedTransport).
+	//
+	// The logger is what turns a refused transport setter into an error:
+	// see transportSetterGuard.
+	guard := &transportSetterGuard{}
 	httpClient := httpclient.GuardRequestPaths(resty.New()).
 		SetTransport(sharedTransport).
-		SetLogger(&noopRestyLogger{}).
+		SetLogger(guard).
+		OnBeforeRequest(guard.checkRequest).
 		SetBaseURL(baseURL).
 		SetAuthScheme("Bearer").
 		SetAuthToken(token).
@@ -210,10 +207,15 @@ func isRetryable(r *resty.Response, err error) bool {
 // HTTP returns the underlying resty client.
 //
 // Its RoundTripper is the process-wide connection pool shared by every Client
-// (see sharedTransport), so resty's in-place transport mutators — SetProxy,
+// (see sharedTransport), so resty's in-place transport setters — SetProxy,
 // RemoveProxy, SetTLSClientConfig, SetCertificates, SetRootCertificate and
-// friends — are no-ops on it. To give one client its own TLS or proxy
-// settings, install a transport of its own with SetTransport.
+// friends — cannot apply to it. Calling one does not change the pool; instead
+// every later request on this client fails with ErrSharedTransportSetting, so
+// a required proxy or TLS setting is never silently dropped. To give one
+// client its own TLS or proxy settings, install a private transport first and
+// then call the setters:
+//
+//	c.HTTP().SetTransport(session.NewTransport()).SetProxy(proxyURL)
 func (c *Client) HTTP() *resty.Client {
 	return c.http
 }

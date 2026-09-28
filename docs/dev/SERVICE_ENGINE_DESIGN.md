@@ -113,9 +113,15 @@ The per-client parts — timeout, redirect policy, cookie jar — stay per clien
 The transport sits behind a wrapper so resty's in-place mutators
 (`SetProxy`, `SetTLSClientConfig`, `SetCertificates`, …) cannot reach it: on a
 bare shared transport, one client calling them would rewrite TLS trust or the
-proxy for every request in the process. They are no-ops on a session client; a
-consumer that needs its own TLS or proxy settings replaces that client's
-transport with `HTTP().SetTransport`. The proxy itself still comes from
+proxy for every request in the process. On a session client they cannot apply,
+and they do not fail silently either: every later request on that client
+returns `session.ErrSharedTransportSetting` and sends nothing, so a required
+egress proxy or pinned CA is never quietly dropped. A consumer that needs its
+own TLS or proxy settings installs a private transport first —
+`HTTP().SetTransport(session.NewTransport())` — and then calls the setters.
+`http.Client.CloseIdleConnections` is forwarded to the pool, so it closes idle
+connections for every client; that is harmless, since an idle connection is a
+cache. The proxy itself still comes from
 `HTTPS_PROXY`/`NO_PROXY` as before — read once per process by net/http, so a
 per-request `Env` entry never changed it.
 
