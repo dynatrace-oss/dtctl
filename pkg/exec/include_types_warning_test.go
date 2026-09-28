@@ -31,21 +31,21 @@ func runPrintResults(t *testing.T, result *DQLQueryResponse, opts DQLExecuteOpti
 func TestIncludeTypesInertWarning(t *testing.T) {
 	inert := []string{"table", "wide", "csv", "jsonl", "parquet", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br"}
 	for _, f := range inert {
-		w := includeTypesInertWarning(f)
+		w := includeTypesInertWarning(f, 1)
 		if !strings.HasPrefix(w, includeTypesInert+" with "+f+" output") {
 			t.Errorf("-o %s: warning = %q, want it to name the format", f, w)
 		}
 	}
-	if w := includeTypesInertWarning("table"); w != "--include-types has no effect with table output (types are emitted for -o json/yaml/toon)" {
+	if w := includeTypesInertWarning("table", 1); w != "--include-types has no effect with table output (types are emitted for -o json/yaml/toon)" {
 		t.Errorf("table warning = %q", w)
 	}
-	if w := includeTypesInertWarning("parquet"); !strings.Contains(w, "Parquet schema") {
+	if w := includeTypesInertWarning("parquet", 1); !strings.Contains(w, "Parquet schema") {
 		t.Errorf("parquet warning should point at the schema, got %q", w)
 	}
 	// auto is only still unresolved here under --jq, where the filter input
 	// carries the block.
 	for _, f := range []string{"json", "yaml", "yml", "toon", "auto", ""} {
-		if w := includeTypesInertWarning(f); w != "" {
+		if w := includeTypesInertWarning(f, 1); w != "" {
 			t.Errorf("-o %s carries the type block but warned: %q", f, w)
 		}
 	}
@@ -147,4 +147,33 @@ func TestPrintResults_IncludeTypesWarningCases(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestPrintResults_IncludeTypesChartFollowsWhatIsPrinted pins the chart case
+// to what reaches stdout: with rows the chart branch prints them alone (even
+// its not-chartable JSON fallback has no "types"), so it warns; with no rows
+// it prints the raw API response, whose own types block is there, so it does
+// not.
+func TestPrintResults_IncludeTypesChartFollowsWhatIsPrinted(t *testing.T) {
+	t.Run("rows: warns, and the fallback carries no types", func(t *testing.T) {
+		result, _, _ := typedResult()
+		stdout, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: "chart", IncludeTypes: true, EmitTypes: true})
+		if !bytes.Contains(stderr, []byte(includeTypesInert+" with chart output")) {
+			t.Errorf("stderr = %q, want the chart warning", stderr)
+		}
+		if bytes.Contains(stdout, []byte("indexRange")) {
+			t.Errorf("chart output carried the types block, so the warning is wrong:\n%s", stdout)
+		}
+	})
+	t.Run("no rows: the raw-response fallback carries types, no warning", func(t *testing.T) {
+		result, _, _ := typedResult()
+		result.Result.Records = nil
+		stdout, stderr := runPrintResults(t, result, DQLExecuteOptions{OutputFormat: "chart", IncludeTypes: true, EmitTypes: true})
+		if bytes.Contains(stderr, []byte(includeTypesInert)) {
+			t.Errorf("warned although the output carries types: %q", stderr)
+		}
+		if !bytes.Contains(stdout, []byte("indexRange")) {
+			t.Errorf("expected the raw response's types block on stdout:\n%s", stdout)
+		}
+	})
 }

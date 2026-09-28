@@ -212,7 +212,9 @@ Notes:
   per line), the chart formats and `parquet` have no place for a document-level
   sibling, so the block is not emitted there, and dtctl prints a warning on
   stderr saying so (stdout is unchanged). With `-o auto` the warning follows the
-  format it picks; with `--jq` the filter input always carries the block.
+  format it picks; with `--jq` the filter input always carries the block. A
+  chart format with no rows falls back to the raw JSON response, which keeps
+  its types, so that case does not warn.
   Live mode (`--live`) never emits it and warns likewise.
 - **Agent mode** carries it in the envelope as `result.types`, on inline and
   spilled results alike (see [Agent Mode](AGENT_MODE.md#column-types---include-types)).

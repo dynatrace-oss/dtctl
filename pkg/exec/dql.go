@@ -973,7 +973,7 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 	// (#435); stdout is unchanged. Checked after -o auto has resolved, so an
 	// auto run that picks csv warns and one that picks yaml does not.
 	if opts.EmitTypes {
-		if w := includeTypesInertWarning(effectiveFormat); w != "" {
+		if w := includeTypesInertWarning(effectiveFormat, len(records)); w != "" {
 			output.PrintWarning("%s", w)
 		}
 	}
@@ -1077,9 +1077,20 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 // format emits it. It mirrors the format switch in printResults: every format
 // with its own case there prints the rows alone, and only the default branch
 // (json/yaml/toon — and, under --jq, the filter input) carries "types".
-func includeTypesInertWarning(format string) string {
+//
+// The chart formats depend on rows, the number of records the chart branch
+// sees. With none it hands the raw API response to the chart printer, which
+// falls back to JSON and so prints the response's own "types" block; there is
+// nothing to warn about then. With rows, it passes {"records": ...} alone, so
+// even the not-chartable JSON fallback carries no types.
+func includeTypesInertWarning(format string, rows int) string {
 	switch format {
-	case "table", "wide", "csv", "jsonl", "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+	case "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
+		if rows == 0 {
+			return ""
+		}
+		return fmt.Sprintf("--include-types has no effect with %s output (types are emitted for -o json/yaml/toon)", format)
+	case "table", "wide", "csv", "jsonl":
 		return fmt.Sprintf("--include-types has no effect with %s output (types are emitted for -o json/yaml/toon)", format)
 	case "parquet":
 		return "--include-types has no effect with parquet output (the column types are already encoded in the Parquet schema)"
