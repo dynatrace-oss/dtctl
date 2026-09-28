@@ -202,6 +202,15 @@ a one-off write failure suggests retrying with an explicit `--spill-to <path>`.
 }
 ```
 
+A large enough result is written to that file row by row as it arrives, without
+ever being held whole. Those envelopes carry `"streamed": true` in `context` and
+no `measured_bytes`/`measured_encoding`: nothing was serialised for inline
+emission, so the spill decision was settled by row count alone. Everything else —
+`rows`, `columns`, `sample_rows`, `decided` — reads the same either way. Smaller
+results, and the formats that need the whole result to render (`-o table`, `csv`,
+`yaml`, `toon`, `parquet`, plus `--jq` and `--typed`), take the buffered path and
+are unchanged.
+
 The envelope carries `envelope_version` for forward compatibility. **A consumer
 MUST treat an unrecognised `result.kind` as opaque** -- don't parse `result`, fall
 back to the human-readable `context` (which always carries `decided`, `total`,
@@ -333,6 +342,8 @@ The minimal set:
 It also drops the spill measurement details (`threshold_bytes`, `measured_bytes`,
 `measured_encoding`) from `context` on an inline result; they stay on a spilled or
 summary-only result, where they explain the decision, and come back with `-v`.
+A streamed result (`context.streamed`, see above) carries no `measured_bytes` or
+`measured_encoding` at all, because nothing was serialised to measure.
 `context.decided` is always present. When the default dropped something,
 `context.suggestions` carries one line naming `-M=all`; an explicit
 `-M=minimal` does not. Add field names to opt back into more,
