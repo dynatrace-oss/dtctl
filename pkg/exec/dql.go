@@ -322,6 +322,13 @@ func (e *DQLExecutor) ExecuteWithOptions(query string, opts DQLExecuteOptions) e
 
 // ExecuteWithContext executes a DQL query with a cancellable context and prints the results.
 func (e *DQLExecutor) ExecuteWithContext(ctx context.Context, query string, opts DQLExecuteOptions) error {
+	// When the destination takes rows one at a time, decode them straight into
+	// it instead of holding the whole result (see dql_stream.go). A small result
+	// still takes the buffered path below, byte for byte.
+	if plan, ok := e.planStream(opts); ok {
+		return e.executeStreaming(ctx, query, opts, plan)
+	}
+
 	result, err := e.ExecuteQueryWithContext(ctx, query, opts)
 	if err != nil {
 		return err
@@ -346,6 +353,14 @@ func (e *DQLExecutor) ExecuteQueryWithOptions(query string, opts DQLExecuteOptio
 // If ctx is cancelled while the query is polling, a best-effort cancel request is sent
 // to the Grail backend before returning.
 func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string, opts DQLExecuteOptions) (*DQLQueryResponse, error) {
+	return e.runQuery(ctx, query, opts, nil)
+}
+
+// runQuery drives execute + poll. With onRecord nil the response carries the
+// rows, as every caller of ExecuteQueryWithContext expects; with onRecord set
+// the rows are delivered to it as they decode and the response comes back
+// without them (see dql_stream.go).
+func (e *DQLExecutor) runQuery(ctx context.Context, query string, opts DQLExecuteOptions, onRecord func(map[string]interface{}) error) (*DQLQueryResponse, error) {
 	req := buildExecuteRequest(query, opts)
 	handler := e.sdkHandler(opts.ClientContext)
 
@@ -374,7 +389,7 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 	// to them if the terminal result metadata omits scannedBytes/Records. The
 	// closure runs synchronously in this goroutine, so these need no locking.
 	var lastScannedBytes, lastScannedRecords int64
-	result, err := handler.ExecuteAndPollWithOptions(ctx, req, sdkquery.ExecuteAndPollOptions{
+	result, err := streamCall(ctx, handler, req, sdkquery.ExecuteAndPollOptions{
 		OnUnauthorized: onUnauthorized,
 		OnUpdate: func(u sdkquery.PollUpdate) {
 			state := output.ProgressState{
@@ -393,7 +408,7 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 			}
 			reporter.Update(state)
 		},
-	})
+	}, onRecord)
 	if err != nil {
 		// Clear the bar before any further stderr output (cancellation notice,
 		// error hints). Stop is idempotent; the defer remains a safety net.
@@ -845,6 +860,13 @@ func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 
 // printResults prints the query results with the given options
 func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts DQLExecuteOptions) error {
+	return e.printRecords(query, result, result.GetRecords(), opts)
+}
+
+// printRecords is printResults with the rows supplied separately, so the
+// streaming path can hand over a buffer it collected itself from a response
+// that carries none (see dql_stream.go).
+func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, records []map[string]interface{}, opts DQLExecuteOptions) error {
 	effectiveFormat := opts.OutputFormat
 	if opts.JQFilter != "" {
 		effectiveFormat = output.NormalizeJQOutputFormat(effectiveFormat)
@@ -873,9 +895,6 @@ func (e *DQLExecutor) printResults(query string, result *DQLQueryResponse, opts 
 	if !opts.AgentMode {
 		printNotifications()
 	}
-
-	// Extract records from result
-	records := result.GetRecords()
 
 	// Apply snapshot decoding if requested
 	if opts.Decode != DecodeNone && len(records) > 0 {

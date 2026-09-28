@@ -9,16 +9,26 @@ import (
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
-// recordSink dispatches a decoded row to the top-level or result-nested callback.
+// recordSink dispatches a decoded row to the top-level or result-nested
+// callback, with the response state decoded so far ("" until "state" is seen).
 type recordSink struct {
-	onTop    func(map[string]interface{}) error
-	onResult func(map[string]interface{}) error
+	onTop    func(state string, row map[string]interface{}) error
+	onResult func(state string, row map[string]interface{}) error
+}
+
+// ignoreState adapts a state-less row callback to a recordSink callback.
+func ignoreState(onRecord func(map[string]interface{}) error) func(string, map[string]interface{}) error {
+	if onRecord == nil {
+		return nil
+	}
+	return func(_ string, row map[string]interface{}) error { return onRecord(row) }
 }
 
 // ExecuteStream is Execute but decodes incrementally, calling onRecord per row instead of accumulating.
 // Response.Records / Result.Records are always nil; onRecord may be nil to just discard rows.
 func (h *Handler) ExecuteStream(ctx context.Context, req ExecuteRequest, onRecord func(map[string]interface{}) error) (*Response, error) {
-	resp, err := h.executeRaw(ctx, req, recordSink{onTop: onRecord, onResult: onRecord})
+	cb := ignoreState(onRecord)
+	resp, err := h.executeRaw(ctx, req, recordSink{onTop: cb, onResult: cb})
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +41,8 @@ func (h *Handler) ExecuteStream(ctx context.Context, req ExecuteRequest, onRecor
 
 // PollStream is Poll but streams like ExecuteStream — same onRecord/nil-Records contract.
 func (h *Handler) PollStream(ctx context.Context, requestToken string, timeoutMs int64, enrich bool, onRecord func(map[string]interface{}) error) (*Response, error) {
-	resp, err := h.pollRaw(ctx, requestToken, timeoutMs, enrich, recordSink{onTop: onRecord, onResult: onRecord})
+	cb := ignoreState(onRecord)
+	resp, err := h.pollRaw(ctx, requestToken, timeoutMs, enrich, recordSink{onTop: cb, onResult: cb})
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +153,7 @@ func decodeResponseStream(r io.Reader, sink recordSink) (*Response, error) {
 				return nil, fmt.Errorf("decode response.metadata: %w", err)
 			}
 		case "records":
-			present, err := streamRecordsArray(dec, sink.onTop)
+			present, err := streamRecordsArray(dec, resp.State, sink.onTop)
 			if err != nil {
 				return nil, fmt.Errorf("decode response.records: %w", err)
 			}
@@ -150,7 +161,7 @@ func decodeResponseStream(r io.Reader, sink recordSink) (*Response, error) {
 				resp.Records = []map[string]interface{}{}
 			}
 		case "result":
-			result, err := decodeResultStream(dec, sink.onResult)
+			result, err := decodeResultStream(dec, resp.State, sink.onResult)
 			if err != nil {
 				return nil, fmt.Errorf("decode response.result: %w", err)
 			}
@@ -173,7 +184,7 @@ func decodeResponseStream(r io.Reader, sink recordSink) (*Response, error) {
 
 // decodeResultStream decodes a "result" object, streaming its nested "records" through onRecord.
 // dec must be positioned right after the "result" key token. Returns (nil, nil) for a JSON null.
-func decodeResultStream(dec *json.Decoder, onRecord func(map[string]interface{}) error) (*Result, error) {
+func decodeResultStream(dec *json.Decoder, state string, onRecord func(string, map[string]interface{}) error) (*Result, error) {
 	tok, err := dec.Token()
 	if err != nil {
 		return nil, err
@@ -195,7 +206,7 @@ func decodeResultStream(dec *json.Decoder, onRecord func(map[string]interface{})
 
 		switch key {
 		case "records":
-			present, err := streamRecordsArray(dec, onRecord)
+			present, err := streamRecordsArray(dec, state, onRecord)
 			if err != nil {
 				return nil, err
 			}
@@ -225,7 +236,7 @@ func decodeResultStream(dec *json.Decoder, onRecord func(map[string]interface{})
 
 // streamRecordsArray decodes a JSON array of rows, invoking onRecord per row instead of accumulating.
 // present=false means the array was JSON null; present=true with zero calls means "[]".
-func streamRecordsArray(dec *json.Decoder, onRecord func(map[string]interface{}) error) (present bool, err error) {
+func streamRecordsArray(dec *json.Decoder, state string, onRecord func(string, map[string]interface{}) error) (present bool, err error) {
 	tok, err := dec.Token()
 	if err != nil {
 		return false, err
@@ -244,7 +255,7 @@ func streamRecordsArray(dec *json.Decoder, onRecord func(map[string]interface{})
 			return false, err
 		}
 		if onRecord != nil {
-			if err := onRecord(row); err != nil {
+			if err := onRecord(state, row); err != nil {
 				return false, err
 			}
 		}

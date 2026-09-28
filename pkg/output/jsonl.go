@@ -13,9 +13,8 @@ import (
 // the whole slice into one buffer, and the result is read natively by common
 // local data tooling.
 //
-// Note: the input record slice is still fully materialised in memory by the
-// caller; only the serialised form is produced incrementally. End-to-end bounded
-// streaming (records never fully buffered) is a separate, later change.
+// Note: this printer takes a materialised slice. The query path reaches the
+// same line format without one — see pkg/exec/dql_stream.go.
 type JSONLPrinter struct {
 	writer io.Writer
 }

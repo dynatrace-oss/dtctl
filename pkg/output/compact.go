@@ -157,3 +157,73 @@ func (c Compaction) EnvelopeConstant() map[string]interface{} {
 	m, _ := prepareSampleValue(c.Constant).(map[string]interface{})
 	return m
 }
+
+// CompactionAccumulator folds rows one at a time into the column-level half of
+// a Compaction — the constant and all-null columns — so a streamed result can
+// be compacted without being held. The per-row Records a buffered Compaction
+// also carries have no place here; a streamed row is written to its destination
+// and released.
+//
+// Memory is O(columns), independent of the row count.
+type CompactionAccumulator struct {
+	rows      int
+	seen      map[string]bool
+	hasValue  map[string]bool
+	candidate map[string]interface{}
+	nulls     int
+}
+
+// NewCompactionAccumulator creates an accumulator. Reuse one per result; it is
+// not safe for concurrent use.
+func NewCompactionAccumulator() *CompactionAccumulator {
+	return &CompactionAccumulator{seen: map[string]bool{}, hasValue: map[string]bool{}}
+}
+
+// Observe folds a single row in.
+func (a *CompactionAccumulator) Observe(rec map[string]interface{}) {
+	for k, v := range rec {
+		a.seen[k] = true
+		if v != nil {
+			a.hasValue[k] = true
+		} else {
+			a.nulls++
+		}
+	}
+
+	if a.rows == 0 {
+		a.candidate = make(map[string]interface{}, len(rec))
+		for k, v := range rec {
+			if v != nil {
+				a.candidate[k] = v
+			}
+		}
+		a.rows++
+		return
+	}
+
+	for k, v := range a.candidate {
+		other, ok := rec[k]
+		if !ok || other == nil || !reflect.DeepEqual(v, other) {
+			delete(a.candidate, k)
+		}
+	}
+	a.rows++
+}
+
+// Finalize produces the compaction the observed rows imply. It matches what
+// CompactRecords would have computed over the same rows, minus Records: a
+// single row yields no Constant (hoisting it would only move it), and columns
+// that were null or absent everywhere are named rather than profiled.
+func (a *CompactionAccumulator) Finalize() Compaction {
+	c := Compaction{Records: []map[string]interface{}{}, DroppedNulls: a.nulls}
+	for k := range a.seen {
+		if !a.hasValue[k] {
+			c.NullColumns = append(c.NullColumns, k)
+		}
+	}
+	sort.Strings(c.NullColumns)
+	if a.rows >= 2 && len(a.candidate) > 0 {
+		c.Constant = a.candidate
+	}
+	return c
+}

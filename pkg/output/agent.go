@@ -93,6 +93,11 @@ type ResponseContext struct {
 	ThresholdBytes   int64  `json:"threshold_bytes,omitempty"`
 	MeasuredBytes    int64  `json:"measured_bytes,omitempty"`
 	MeasuredEncoding string `json:"measured_encoding,omitempty"`
+	// Streamed marks a result written to disk row by row as it arrived, without
+	// ever being held whole. The spill decision was then settled by row count
+	// alone, so measured_bytes/measured_encoding are absent: nothing was
+	// serialised for inline emission to measure.
+	Streamed bool `json:"streamed,omitempty"`
 
 	// EmptyReason explains an empty query result when a cheap follow-up
 	// probe found a likely cause. Omitted when the result is not empty or the

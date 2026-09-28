@@ -268,23 +268,36 @@ const basePath = "/platform/storage/query/v1/query"
 //
 // Execute accumulates the full result in memory; see ExecuteStream for a bounded-memory alternative.
 func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, error) {
-	var topRecords, resultRecords []map[string]interface{}
-	sink := recordSink{
-		onTop:    func(row map[string]interface{}) error { topRecords = append(topRecords, row); return nil },
-		onResult: func(row map[string]interface{}) error { resultRecords = append(resultRecords, row); return nil },
-	}
-
-	resp, err := h.executeRaw(ctx, req, sink)
+	acc := &recordAccumulator{}
+	resp, err := h.executeRaw(ctx, req, acc.sink())
 	if err != nil {
 		return nil, err
 	}
+	acc.applyTo(resp)
+	return resp, nil
+}
+
+// recordAccumulator collects streamed rows so Execute/Poll can return them in
+// the Response, preserving the presence marker decodeResponseStream leaves.
+type recordAccumulator struct {
+	top    []map[string]interface{}
+	result []map[string]interface{}
+}
+
+func (a *recordAccumulator) sink() recordSink {
+	return recordSink{
+		onTop:    func(_ string, row map[string]interface{}) error { a.top = append(a.top, row); return nil },
+		onResult: func(_ string, row map[string]interface{}) error { a.result = append(a.result, row); return nil },
+	}
+}
+
+func (a *recordAccumulator) applyTo(resp *Response) {
 	if resp.Records != nil {
-		resp.Records = orEmpty(topRecords)
+		resp.Records = orEmpty(a.top)
 	}
 	if resp.Result != nil && resp.Result.Records != nil {
-		resp.Result.Records = orEmpty(resultRecords)
+		resp.Result.Records = orEmpty(a.result)
 	}
-	return resp, nil
 }
 
 // Poll polls for the results of an asynchronous query. The server holds the
@@ -295,22 +308,12 @@ func (h *Handler) Execute(ctx context.Context, req ExecuteRequest) (*Response, e
 //
 // Like Execute, Poll accumulates the full result in memory; see PollStream for a bounded-memory alternative.
 func (h *Handler) Poll(ctx context.Context, requestToken string, timeoutMs int64, enrich bool) (*Response, error) {
-	var topRecords, resultRecords []map[string]interface{}
-	sink := recordSink{
-		onTop:    func(row map[string]interface{}) error { topRecords = append(topRecords, row); return nil },
-		onResult: func(row map[string]interface{}) error { resultRecords = append(resultRecords, row); return nil },
-	}
-
-	resp, err := h.pollRaw(ctx, requestToken, timeoutMs, enrich, sink)
+	acc := &recordAccumulator{}
+	resp, err := h.pollRaw(ctx, requestToken, timeoutMs, enrich, acc.sink())
 	if err != nil {
 		return nil, err
 	}
-	if resp.Records != nil {
-		resp.Records = orEmpty(topRecords)
-	}
-	if resp.Result != nil && resp.Result.Records != nil {
-		resp.Result.Records = orEmpty(resultRecords)
-	}
+	acc.applyTo(resp)
 	return resp, nil
 }
 
@@ -405,6 +408,13 @@ func (h *Handler) ExecuteAndPoll(ctx context.Context, req ExecuteRequest, onUnau
 // ExecuteAndPollOptions), notably an OnUpdate callback for surfacing progress
 // and preview results while the query is still running.
 func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequest, opts ExecuteAndPollOptions) (*Response, error) {
+	return h.executeAndPoll(ctx, req, opts, nil)
+}
+
+// executeAndPoll drives execute + the poll loop. stream is nil for the
+// accumulating contract; a non-nil stream delivers the terminal response's rows
+// to the callback instead (see ExecuteAndPollStream).
+func (h *Handler) executeAndPoll(ctx context.Context, req ExecuteRequest, opts ExecuteAndPollOptions, stream func(map[string]interface{}) error) (*Response, error) {
 	onUnauthorized := opts.OnUnauthorized
 
 	// A caller that is already gone gets nothing started on its behalf.
@@ -437,7 +447,7 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 		req.PollingPromiseSeconds = defaultPollingPromiseSeconds
 	}
 
-	result, err := h.Execute(execCtx, req)
+	result, err := h.executeFor(execCtx, req, stream)
 	if err != nil {
 		// A 401 on the initial execute gets the same one-shot refresh the
 		// poll loop has — long-lived processes outlive the first
@@ -451,7 +461,7 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 			if newToken != "" {
 				h.client.SetToken(newToken)
 			}
-			result, err = h.Execute(execCtx, req)
+			result, err = h.executeFor(execCtx, req, stream)
 		}
 		if err != nil {
 			return nil, err
@@ -515,7 +525,7 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 		default:
 		}
 
-		pollResult, pollErr := h.Poll(pollCtx, result.RequestToken, pollRequestTimeoutMs, req.EnrichMetricMetadata)
+		pollResult, pollErr := h.pollFor(pollCtx, result.RequestToken, pollRequestTimeoutMs, req.EnrichMetricMetadata, stream)
 		if pollErr != nil {
 			// On 401, try the onUnauthorized callback once per consecutive failure.
 			var apiErr *httpclient.APIError

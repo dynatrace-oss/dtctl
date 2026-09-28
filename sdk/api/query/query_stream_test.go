@@ -22,7 +22,7 @@ func TestDecodeResponseStream_StreamsResultRecordsInOrder(t *testing.T) {
 
 	var got []map[string]interface{}
 	resp, err := decodeResponseStream(bytes.NewBufferString(body), recordSink{
-		onResult: func(row map[string]interface{}) error {
+		onResult: func(_ string, row map[string]interface{}) error {
 			got = append(got, row)
 			return nil
 		},
@@ -52,7 +52,7 @@ func TestDecodeResponseStream_StreamsTopLevelRecords(t *testing.T) {
 
 	var got []map[string]interface{}
 	resp, err := decodeResponseStream(bytes.NewBufferString(body), recordSink{
-		onTop: func(row map[string]interface{}) error {
+		onTop: func(_ string, row map[string]interface{}) error {
 			got = append(got, row)
 			return nil
 		},
@@ -74,7 +74,7 @@ func TestDecodeResponseStream_CallbackErrorAborts(t *testing.T) {
 
 	seen := 0
 	_, err := decodeResponseStream(bytes.NewBufferString(body), recordSink{
-		onResult: func(row map[string]interface{}) error {
+		onResult: func(_ string, row map[string]interface{}) error {
 			seen++
 			if seen == 2 {
 				return sentinel
@@ -400,8 +400,11 @@ func TestDecodeResponseStream_AllFields(t *testing.T) {
 
 	var topRecords, resultRecords []map[string]interface{}
 	got, err := decodeResponseStream(bytes.NewReader(raw), recordSink{
-		onTop:    func(row map[string]interface{}) error { topRecords = append(topRecords, row); return nil },
-		onResult: func(row map[string]interface{}) error { resultRecords = append(resultRecords, row); return nil },
+		onTop: func(_ string, row map[string]interface{}) error { topRecords = append(topRecords, row); return nil },
+		onResult: func(_ string, row map[string]interface{}) error {
+			resultRecords = append(resultRecords, row)
+			return nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("decodeResponseStream: %v", err)
