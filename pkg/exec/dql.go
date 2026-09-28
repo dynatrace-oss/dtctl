@@ -356,11 +356,11 @@ func (e *DQLExecutor) ExecuteQueryWithContext(ctx context.Context, query string,
 	return e.runQuery(ctx, query, opts, nil)
 }
 
-// runQuery drives execute + poll. With onRecord nil the response carries the
-// rows, as every caller of ExecuteQueryWithContext expects; with onRecord set
-// the rows are delivered to it as they decode and the response comes back
-// without them (see dql_stream.go).
-func (e *DQLExecutor) runQuery(ctx context.Context, query string, opts DQLExecuteOptions, onRecord func(map[string]interface{}) error) (*DQLQueryResponse, error) {
+// runQuery drives execute + poll. With sink nil the response carries the rows,
+// as every caller of ExecuteQueryWithContext expects; with a sink the rows are
+// delivered to it as they decode and the response comes back without them (see
+// dql_stream.go).
+func (e *DQLExecutor) runQuery(ctx context.Context, query string, opts DQLExecuteOptions, sink *streamCollector) (*DQLQueryResponse, error) {
 	req := buildExecuteRequest(query, opts)
 	handler := e.sdkHandler(opts.ClientContext)
 
@@ -389,6 +389,17 @@ func (e *DQLExecutor) runQuery(ctx context.Context, query string, opts DQLExecut
 	// to them if the terminal result metadata omits scannedBytes/Records. The
 	// closure runs synchronously in this goroutine, so these need no locking.
 	var lastScannedBytes, lastScannedRecords int64
+	var onRecord func(map[string]interface{}) error
+	if sink != nil {
+		onRecord = sink.observe
+		// Rows streamed to stdout arrive while the bar may still be redrawing on
+		// stderr. The gate only releases rows once the query has finished, so
+		// the bar is settled then, with the live scan totals: the final metadata
+		// follows the rows.
+		sink.beforeStdout = func() {
+			reporter.Complete(output.ProgressState{Progress: 100, ScannedBytes: lastScannedBytes, ScannedRecords: lastScannedRecords})
+		}
+	}
 	result, err := streamCall(ctx, handler, req, sdkquery.ExecuteAndPollOptions{
 		OnUnauthorized: onUnauthorized,
 		OnUpdate: func(u sdkquery.PollUpdate) {

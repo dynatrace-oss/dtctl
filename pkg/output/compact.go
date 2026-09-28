@@ -44,7 +44,7 @@ func (c Compaction) Changed(encoding string) bool {
 
 // CompactRecords computes the Compaction of records. The input is not mutated.
 func CompactRecords(records []map[string]interface{}) Compaction {
-	c := Compaction{Records: make([]map[string]interface{}, 0, len(records))}
+	var c Compaction
 
 	// Columns with at least one non-null value, and those that are null in
 	// every row they appear in.
@@ -87,11 +87,28 @@ func CompactRecords(records []map[string]interface{}) Compaction {
 		}
 	}
 
+	c.Records, c.DroppedNulls = c.strip(records)
+	return c
+}
+
+// Sparse returns copies of records without the constant columns and without
+// any null value — the shape CompactRecords gives Records. A streamed result
+// uses it for the few rows it keeps (the sample), since its Compaction carries
+// no Records.
+func (c Compaction) Sparse(records []map[string]interface{}) []map[string]interface{} {
+	rows, _ := c.strip(records)
+	return rows
+}
+
+// strip is Sparse, also counting the null values it dropped.
+func (c Compaction) strip(records []map[string]interface{}) ([]map[string]interface{}, int) {
+	out := make([]map[string]interface{}, 0, len(records))
+	dropped := 0
 	for _, rec := range records {
 		row := make(map[string]interface{}, len(rec))
 		for k, v := range rec {
 			if v == nil {
-				c.DroppedNulls++
+				dropped++
 				continue
 			}
 			if _, ok := c.Constant[k]; ok {
@@ -99,9 +116,9 @@ func CompactRecords(records []map[string]interface{}) Compaction {
 			}
 			row[k] = v
 		}
-		c.Records = append(c.Records, row)
+		out = append(out, row)
 	}
-	return c
+	return out, dropped
 }
 
 // Tabular returns copies of records (the rows this compaction was computed

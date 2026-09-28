@@ -206,10 +206,12 @@ A large enough result is written to that file row by row as it arrives, without
 ever being held whole. Those envelopes carry `"streamed": true` in `context` and
 no `measured_bytes`/`measured_encoding`: nothing was serialised for inline
 emission, so the spill decision was settled by row count alone. Everything else —
-`rows`, `columns`, `sample_rows`, `decided` — reads the same either way. Smaller
-results, and the formats that need the whole result to render (`-o table`, `csv`,
-`yaml`, `toon`, `parquet`, plus `--jq` and `--typed`), take the buffered path and
-are unchanged.
+`rows`, `columns`, `sample_rows`, `decided` — reads the same either way. This
+applies whatever the display format (`-o json`, `toon`, `csv`, ...), because a
+result that spills is never rendered in it. It needs a JSONL spill file (the
+default `--spill-format`); a `csv`, `json` or `parquet` spill file, `--jq`,
+`--typed` and `--decode-snapshots` keep the buffered path. Results small enough to be
+emitted inline are unchanged.
 
 The envelope carries `envelope_version` for forward compatibility. **A consumer
 MUST treat an unrecognised `result.kind` as opaque** -- don't parse `result`, fall

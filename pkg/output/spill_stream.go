@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,7 @@ import (
 type SpillWriter struct {
 	dir       string
 	tmp       *os.File
+	buf       *bufio.Writer // batches the per-row writes into few syscalls
 	counter   *countingWriter
 	committed bool
 	closed    bool
@@ -33,7 +35,8 @@ func NewSpillWriter(dir string) (*SpillWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SpillWriter{dir: dir, tmp: tmp, counter: &countingWriter{w: tmp}}, nil
+	buf := bufio.NewWriterSize(tmp, 64<<10)
+	return &SpillWriter{dir: dir, tmp: tmp, buf: buf, counter: &countingWriter{w: buf}}, nil
 }
 
 // Writer returns the sink rows are written to.
@@ -50,6 +53,12 @@ func (w *SpillWriter) Commit(targetPath string) (int64, error) {
 		return 0, fmt.Errorf("spill target %q is not in the streaming directory %q", targetPath, w.dir)
 	}
 	tmpName := w.tmp.Name()
+	if err := w.buf.Flush(); err != nil {
+		_ = w.tmp.Close()
+		w.closed = true
+		_ = os.Remove(tmpName)
+		return 0, err
+	}
 	if err := w.tmp.Close(); err != nil {
 		w.closed = true
 		_ = os.Remove(tmpName)

@@ -47,6 +47,50 @@ func TestExecuteAndPollStream_DropsPreviewRows(t *testing.T) {
 	}
 }
 
+// Not forwarding a preview's rows must not hide it from OnUpdate: a caller
+// that set EnablePreview gets the same snapshot ExecuteAndPollWithOptions
+// reports, while the row callback still sees only the final rows.
+func TestExecuteAndPollStream_ReportsPreviewToOnUpdate(t *testing.T) {
+	var polls int32
+	mux := http.NewServeMux()
+	mux.HandleFunc(basePath+":execute", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprint(w, `{"state":"RUNNING","requestToken":"tok","progress":10}`)
+	})
+	mux.HandleFunc(basePath+":poll", func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&polls, 1) == 1 {
+			// Rows ahead of the state, so the gate has to hold them first.
+			fmt.Fprint(w, `{"result":{"records":[{"n":1},{"n":2}]},"progress":60,"state":"RUNNING"}`)
+			return
+		}
+		fmt.Fprint(w, `{"state":"SUCCEEDED","result":{"records":[{"n":1},{"n":2},{"n":3}]}}`)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	var previews [][]map[string]interface{}
+	var got []map[string]interface{}
+	_, err := h.ExecuteAndPollStream(context.Background(), ExecuteRequest{Query: "fetch logs", EnablePreview: true},
+		ExecuteAndPollOptions{OnUpdate: func(u PollUpdate) {
+			if u.Preview != nil {
+				previews = append(previews, u.Preview.Records)
+			}
+		}}, func(row map[string]interface{}) error {
+			got = append(got, row)
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("ExecuteAndPollStream: %v", err)
+	}
+
+	wantPreview := [][]map[string]interface{}{{{"n": float64(1)}, {"n": float64(2)}}}
+	if !reflect.DeepEqual(previews, wantPreview) {
+		t.Errorf("previews = %#v, want %#v", previews, wantPreview)
+	}
+	if len(got) != 3 {
+		t.Errorf("streamed %d rows, want the 3 final ones", len(got))
+	}
+}
+
 // The streamed response must not carry the rows as well, or the caller holds
 // the very result the streaming was meant to avoid.
 func TestExecuteAndPollStream_ResponseCarriesNoRows(t *testing.T) {

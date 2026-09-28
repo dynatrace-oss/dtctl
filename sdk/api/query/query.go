@@ -416,6 +416,9 @@ func (h *Handler) ExecuteAndPollWithOptions(ctx context.Context, req ExecuteRequ
 // to the callback instead (see ExecuteAndPollStream).
 func (h *Handler) executeAndPoll(ctx context.Context, req ExecuteRequest, opts ExecuteAndPollOptions, stream func(map[string]interface{}) error) (*Response, error) {
 	onUnauthorized := opts.OnUnauthorized
+	// A streamed call still owes OnUpdate its preview snapshots; only then are
+	// a still-running response's rows held (see terminalGate).
+	keepPreview := stream != nil && req.EnablePreview && opts.OnUpdate != nil
 
 	// A caller that is already gone gets nothing started on its behalf.
 	if err := ctx.Err(); err != nil {
@@ -447,7 +450,7 @@ func (h *Handler) executeAndPoll(ctx context.Context, req ExecuteRequest, opts E
 		req.PollingPromiseSeconds = defaultPollingPromiseSeconds
 	}
 
-	result, err := h.executeFor(execCtx, req, stream)
+	result, err := h.executeFor(execCtx, req, stream, keepPreview)
 	if err != nil {
 		// A 401 on the initial execute gets the same one-shot refresh the
 		// poll loop has — long-lived processes outlive the first
@@ -461,7 +464,7 @@ func (h *Handler) executeAndPoll(ctx context.Context, req ExecuteRequest, opts E
 			if newToken != "" {
 				h.client.SetToken(newToken)
 			}
-			result, err = h.executeFor(execCtx, req, stream)
+			result, err = h.executeFor(execCtx, req, stream, keepPreview)
 		}
 		if err != nil {
 			return nil, err
@@ -525,7 +528,7 @@ func (h *Handler) executeAndPoll(ctx context.Context, req ExecuteRequest, opts E
 		default:
 		}
 
-		pollResult, pollErr := h.pollFor(pollCtx, result.RequestToken, pollRequestTimeoutMs, req.EnrichMetricMetadata, stream)
+		pollResult, pollErr := h.pollFor(pollCtx, result.RequestToken, pollRequestTimeoutMs, req.EnrichMetricMetadata, stream, keepPreview)
 		if pollErr != nil {
 			// On 401, try the onUnauthorized callback once per consecutive failure.
 			var apiErr *httpclient.APIError

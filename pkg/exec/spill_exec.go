@@ -146,41 +146,9 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		decided = "summary-only"
 	}
 
-	suggestions := spillSuggestions(query, manifest.Kind, summaryReason)
-	// Now that `dtctl inspect` ships (Layer 2), point at concrete, bounded
-	// row-access follow-ups on the spilled file — the calls an agent cannot
-	// satisfy from the summary it just received (INSPECT IN4/D30).
-	if manifest.Kind == output.KindResultFile && manifest.Path != "" {
-		suggestions = append(suggestions,
-			"# for bounded row access without re-querying Grail: dtctl inspect "+manifest.Path+" --head 20 (also --tail, --page --offset N --limit M, --fields a,b)")
-	}
-	if n := len(omittedCols); n > 0 {
-		if manifest.Kind == output.KindResultFile {
-			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted and full per-column stats are in the sidecar manifest next to the file", n))
-		} else {
-			// Summary-only: nothing was written, so there is no sidecar to point at.
-			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted (the rows were not written to disk, so there is no sidecar manifest)", n))
-		}
-	}
-
-	// Surface query notifications (scan-limit truncation, result caps, timeouts,
-	// sampling) into the envelope. Their advice leads the suggestions because a
-	// PARTIAL result is more consequential to an agent than the spill/inspect
-	// follow-ups — an agent parsing stdout must learn the result is incomplete.
-	notifWarnings, notifSuggestions := queryNotificationAdvice(query, result.GetNotifications())
-	warnings = append(warnings, notifWarnings...)
-	suggestions = append(notifSuggestions, suggestions...)
-	scanWarnings, scanSuggestions := heavyScanAdvice(result)
-	warnings = append(warnings, scanWarnings...)
-	suggestions = append(suggestions, scanSuggestions...)
 	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
-	suggestions = append(suggestions, emptySuggestions...)
-	suggestions = append(suggestions, lookbackAdvice(query)...)
-	suggestions = append(suggestions, metadataDefaultAdvice(query, extractQueryMetadata(result), opts, false)...)
-	if compaction != nil && compaction.Changed("json") {
-		suggestions = append(suggestions, compactSummarySuggestion)
-	}
-	suggestions = append(suggestions, seriesAdvice(opts)...)
+	adviceWarnings, suggestions := spillAdvice(query, result, manifest, summaryReason, len(omittedCols), compaction, emptySuggestions, opts)
+	warnings = append(warnings, adviceWarnings...)
 
 	total := len(records)
 	ctx := &output.ResponseContext{
@@ -204,6 +172,49 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		Metadata:        envelopeMetadata(query, result, opts),
 	}
 	return resp, true, nil
+}
+
+// spillAdvice assembles the warnings and suggestions of a spilled or
+// summary-only envelope, after the ones the spill target itself produced. Both
+// the buffered and the streamed builder use it, so the two envelopes read the
+// same. emptySuggestions is the empty-result diagnosis, which only a buffered
+// result can have.
+func spillAdvice(query string, result *DQLQueryResponse, manifest *output.ResultFileManifest, summaryReason string, omittedCols int, compaction *output.Compaction, emptySuggestions []string, opts DQLExecuteOptions) (warnings, suggestions []string) {
+	suggestions = spillSuggestions(query, manifest.Kind, summaryReason)
+	// Now that `dtctl inspect` ships (Layer 2), point at concrete, bounded
+	// row-access follow-ups on the spilled file — the calls an agent cannot
+	// satisfy from the summary it just received (INSPECT IN4/D30).
+	if manifest.Kind == output.KindResultFile && manifest.Path != "" {
+		suggestions = append(suggestions,
+			"# for bounded row access without re-querying Grail: dtctl inspect "+manifest.Path+" --head 20 (also --tail, --page --offset N --limit M, --fields a,b)")
+	}
+	if omittedCols > 0 {
+		if manifest.Kind == output.KindResultFile {
+			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted and full per-column stats are in the sidecar manifest next to the file", omittedCols))
+		} else {
+			// Summary-only: nothing was written, so there is no sidecar to point at.
+			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted (the rows were not written to disk, so there is no sidecar manifest)", omittedCols))
+		}
+	}
+
+	// Surface query notifications (scan-limit truncation, result caps, timeouts,
+	// sampling) into the envelope. Their advice leads the suggestions because a
+	// PARTIAL result is more consequential to an agent than the spill/inspect
+	// follow-ups — an agent parsing stdout must learn the result is incomplete.
+	notifWarnings, notifSuggestions := queryNotificationAdvice(query, result.GetNotifications())
+	warnings = append(warnings, notifWarnings...)
+	suggestions = append(notifSuggestions, suggestions...)
+	scanWarnings, scanSuggestions := heavyScanAdvice(result)
+	warnings = append(warnings, scanWarnings...)
+	suggestions = append(suggestions, scanSuggestions...)
+	suggestions = append(suggestions, emptySuggestions...)
+	suggestions = append(suggestions, lookbackAdvice(query)...)
+	suggestions = append(suggestions, metadataDefaultAdvice(query, extractQueryMetadata(result), opts, false)...)
+	if compaction != nil && compaction.Changed("json") {
+		suggestions = append(suggestions, compactSummarySuggestion)
+	}
+	suggestions = append(suggestions, seriesAdvice(opts)...)
+	return warnings, suggestions
 }
 
 // inlineRecordsResponse handles the inline (not-spilled) decision. In agent mode

@@ -1,9 +1,11 @@
 package exec
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -147,16 +149,16 @@ func (e *DQLExecutor) streamedSpillDir(opts DQLExecuteOptions) (string, bool) {
 }
 
 // streamSwitchRows is the largest number of rows that can still be emitted
-// inline, and so the most the buffering phase may hold. Compaction can only
-// ever shrink a row to an empty one, and an empty row still costs its share of
-// the encoding, so any count above this exceeds the threshold whatever the rows
-// turn out to contain. At or below it the buffered path is kept, which is what
-// keeps a small result's output exactly what it is today.
+// inline, and so the most the buffering phase may hold. Any count above it
+// exceeds the threshold whatever the rows turn out to contain, because every
+// row costs at least minRowCost in the envelope's encoding. At or below it the
+// buffered path is kept, which is what keeps a small result's output exactly
+// what it is today.
 func streamSwitchRows(opts DQLExecuteOptions, format string) int {
 	if opts.Spill.Mode == SpillAlways {
 		return 0
 	}
-	per, frame := emptyRowCost(format)
+	per, frame := minRowCost(format)
 	if opts.Spill.Threshold <= 0 || per <= 0 {
 		return 0
 	}
@@ -167,11 +169,20 @@ func streamSwitchRows(opts DQLExecuteOptions, format string) int {
 	return int(n)
 }
 
-// emptyRowCost measures what an all-empty row set costs in the inline envelope:
-// per is the marginal cost of one more row, frame the fixed cost around them.
-// Measured rather than assumed, so the switch point stays exact for whichever
-// encoding the envelope uses.
-func emptyRowCost(format string) (per, frame int64) {
+// minRowCost is a lower bound on what one row costs in the inline envelope (per)
+// and on the fixed cost around the rows (frame).
+//
+// In JSON and YAML every key a row carries adds bytes, so compaction's best case
+// — every column hoisted, an empty row — is also the cheapest row, and it is
+// measured rather than assumed. The tabular encodings break that: CSV and TOON
+// move the keys into a header, so a narrow row can be cheaper than an empty one
+// (an empty row makes TOON fall back to its list form). -o auto can pick CSV. For
+// those the only bound that holds for any row is the newline that ends it.
+func minRowCost(format string) (per, frame int64) {
+	enc := output.NormalizeMeasureEncoding(format)
+	if output.IsAutoFormat(format) || (enc != "json" && enc != "yaml") {
+		return 1, 0
+	}
 	empty := map[string]interface{}{}
 	one, _ := output.MeasureSerializedBytes([]map[string]interface{}{empty}, format)
 	two, _ := output.MeasureSerializedBytes([]map[string]interface{}{empty, empty}, format)
@@ -201,15 +212,17 @@ func (e *DQLExecutor) executeStreaming(ctx context.Context, query string, opts D
 	col := newStreamCollector(e, plan, opts)
 	defer col.abort()
 
-	result, err := e.runQuery(ctx, query, opts, col.observe)
+	result, err := e.runQuery(ctx, query, opts, col)
+	if col.err != nil {
+		// The sink failed; the SDK only relays that error wrapped in its decode
+		// context, which would misdescribe it.
+		return col.err
+	}
 	if err != nil {
 		return err
 	}
 	if result == nil {
 		return nil // context was cancelled; message already printed to stderr
-	}
-	if col.err != nil {
-		return col.err
 	}
 	return col.finish(query, result, opts)
 }
@@ -233,7 +246,17 @@ type streamCollector struct {
 	sample  []map[string]interface{}
 
 	writer *output.SpillWriter
+	stdout *bufio.Writer // -o jsonl: rows are batched into few writes
 	enc    *json.Encoder
+	// writeFailed records that the managed spill file could not be written. The
+	// rows are still folded into the summary, and the result degrades to
+	// summary-only, as a buffered result does when its write fails (D8).
+	writeFailed bool
+
+	// beforeStdout runs once, just before the first row goes to stdout. The
+	// query runner sets it to settle the progress line on stderr, which would
+	// otherwise keep redrawing between the rows on a shared terminal.
+	beforeStdout func()
 
 	effect output.SeriesEffect
 	err    error
@@ -248,9 +271,10 @@ func (c *streamCollector) observe(row map[string]interface{}) error {
 	if c.err != nil {
 		return c.err
 	}
-	row = c.transform(row)
 
 	if !c.streaming {
+		// Held untransformed: a result that stays small is replayed through
+		// printRecords, which applies --series/--precision itself.
 		c.buf = append(c.buf, row)
 		c.bufBytes += int64(estimateRowBytes(row))
 		if len(c.buf) > c.plan.switchRows || c.bufBytes > maxBufferedBytes {
@@ -261,7 +285,7 @@ func (c *streamCollector) observe(row map[string]interface{}) error {
 		}
 		return nil
 	}
-	return c.write(row)
+	return c.write(c.transform(row))
 }
 
 // transform applies the per-row reshaping printResults applies to the whole
@@ -286,12 +310,21 @@ func (c *streamCollector) startStreaming() error {
 	if c.plan.kind == sinkSpill {
 		w, err := output.NewSpillWriter(c.plan.spillDir)
 		if err != nil {
-			return fmt.Errorf("failed to open spill file: %w", err)
+			if c.opts.Spill.ToPath != "" {
+				return fmt.Errorf("failed to write spill file %q: %w", c.opts.Spill.ToPath, err)
+			}
+			c.writeFailed = true
+			c.enc = json.NewEncoder(io.Discard)
+		} else {
+			c.writer = w
+			c.enc = json.NewEncoder(w.Writer())
 		}
-		c.writer = w
-		c.enc = json.NewEncoder(w.Writer())
 	} else {
-		c.enc = json.NewEncoder(os.Stdout)
+		if c.beforeStdout != nil {
+			c.beforeStdout()
+		}
+		c.stdout = bufio.NewWriterSize(os.Stdout, 64<<10)
+		c.enc = json.NewEncoder(c.stdout)
 	}
 	c.stats = output.NewStatsAccumulator(output.DefaultStatsTopK, output.DefaultStatsMaxDistinct)
 	c.compact = output.NewCompactionAccumulator()
@@ -300,7 +333,7 @@ func (c *streamCollector) startStreaming() error {
 	buffered := c.buf
 	c.buf, c.bufBytes = nil, 0
 	for _, row := range buffered {
-		if err := c.write(row); err != nil {
+		if err := c.write(c.transform(row)); err != nil {
 			return err
 		}
 	}
@@ -320,17 +353,40 @@ func (c *streamCollector) write(row map[string]interface{}) error {
 	// json.Encoder writes one compact object per line — the JSONL contract, and
 	// what the -o jsonl and jsonl-spill writers produce for a buffered result.
 	if err := c.enc.Encode(row); err != nil {
+		if c.plan.kind == sinkSpill && c.opts.Spill.ToPath == "" {
+			// A managed write failed (a full disk, say). Keep summarising the
+			// remaining rows and report the overview only.
+			c.writeFailed = true
+			c.writer.Abort()
+			c.writer = nil
+			c.enc = json.NewEncoder(io.Discard)
+			return nil
+		}
+		if c.plan.kind == sinkSpill {
+			err = fmt.Errorf("failed to write spill file %q: %w", c.opts.Spill.ToPath, err)
+		}
 		c.err = err
 		return err
 	}
 	return nil
 }
 
-// abort discards an uncommitted spill file.
+// flushStdout pushes the -o jsonl rows still batched in memory to stdout.
+func (c *streamCollector) flushStdout() error {
+	if c.stdout == nil {
+		return nil
+	}
+	return c.stdout.Flush()
+}
+
+// abort discards an uncommitted spill file, and flushes the -o jsonl rows
+// already written so a failed query still leaves them on stdout, as it would
+// have unbatched.
 func (c *streamCollector) abort() {
 	if c.writer != nil {
 		c.writer.Abort()
 	}
+	_ = c.flushStdout()
 }
 
 // finish emits the result. A collector that never left the buffering phase
@@ -338,14 +394,15 @@ func (c *streamCollector) abort() {
 // started streaming has already emitted the rows and only has to close out.
 func (c *streamCollector) finish(query string, result *DQLQueryResponse, opts DQLExecuteOptions) error {
 	if !c.streaming {
-		opts.seriesAdvice = defaultSeriesAdvice(c.effect, opts)
 		return c.e.printRecords(query, result, orEmptyRows(c.buf), opts)
 	}
 	opts.seriesAdvice = defaultSeriesAdvice(c.effect, opts)
 	if c.plan.kind == sinkJSONL {
-		// The rows are already on stdout; notifications and the metadata footer
-		// follow on stderr exactly as the buffered path emits them.
-		return c.e.finishStreamedJSONL(query, result, opts)
+		if err := c.flushStdout(); err != nil {
+			return err
+		}
+		// The rows are already on stdout; the notifications follow on stderr.
+		return c.e.finishStreamedJSONL(query, result)
 	}
 	return c.e.finishStreamedSpill(query, result, c, opts)
 }

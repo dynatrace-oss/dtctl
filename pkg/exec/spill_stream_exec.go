@@ -9,19 +9,16 @@ import (
 )
 
 // finishStreamedJSONL closes out a `-o jsonl` stream: the rows are already on
-// stdout, so only the stderr tail the buffered path emits is left.
-func (e *DQLExecutor) finishStreamedJSONL(query string, result *DQLQueryResponse, opts DQLExecuteOptions) error {
+// stdout, so only the notifications are left for stderr. The buffered path
+// prints them ahead of the rows; a stream only learns them from the response
+// metadata, which follows the rows. Like the buffered jsonl branch it prints no
+// metadata footer.
+func (e *DQLExecutor) finishStreamedJSONL(query string, result *DQLQueryResponse) error {
 	notifications := result.GetNotifications()
 	if len(notifications) > 0 {
 		e.PrintNotifications(notifications)
 		if advice := unsortedSummarizeAdvice(query, notifications); advice != "" {
 			output.PrintHint("%s", advice)
-		}
-	}
-	if len(opts.MetadataFields) > 0 {
-		if meta := extractQueryMetadata(result); meta != nil {
-			fields := resolveMetadataFields(query, meta, opts)
-			fmt.Fprint(os.Stderr, output.FormatMetadataFooter(meta, fields))
 		}
 	}
 	return nil
@@ -52,16 +49,23 @@ func (e *DQLExecutor) buildStreamedSpillResponse(query string, result *DQLQueryR
 	if summaryOnly {
 		summaryReason = summaryReasonNoLocation
 	}
+	if !summaryOnly && c.writeFailed {
+		summaryOnly = true
+		summaryReason = summaryReasonWriteFailed
+		warnings = append(warnings, "spill write failed; returning overview only")
+	}
 
 	cols := c.stats.Finalize(sampled)
 	compaction := c.compaction()
 	rows := c.rows
 
+	// The same column view and sample rows buildSpillResponse derives from a
+	// held result: the sample drops constant columns and null values alike.
 	summaryCols := cols
 	sampleSource := c.sample
 	if compaction != nil {
 		summaryCols = compaction.FilterColumns(cols)
-		sampleSource = compaction.Tabular(c.sample)
+		sampleSource = compaction.Sparse(c.sample)
 	}
 	sampleRows := output.SampleRows(sampleSource, output.DefaultSampleRows)
 	envCols, omittedCols := output.CapColumnsForEnvelope(summaryCols, output.DefaultMaxSummaryColumns)
@@ -86,7 +90,8 @@ func (e *DQLExecutor) buildStreamedSpillResponse(query string, result *DQLQueryR
 
 	decided := "spilled"
 	if summaryOnly {
-		// No writable location: the rows went nowhere, so drop the temp file.
+		// The rows went nowhere (no writable location, or the write failed), so
+		// drop the temp file.
 		c.abort()
 	} else {
 		written, cerr := c.writer.Commit(targetPath)
@@ -126,35 +131,10 @@ func (e *DQLExecutor) buildStreamedSpillResponse(query string, result *DQLQueryR
 		decided = "summary-only"
 	}
 
-	if opts.JQFilter != "" {
-		warnings = append(warnings, "--jq was not applied to the spilled result; the file holds the full untransformed rows — apply your filter to the file locally")
-	}
-
-	suggestions := spillSuggestions(query, manifest.Kind, summaryReason)
-	if manifest.Kind == output.KindResultFile && manifest.Path != "" {
-		suggestions = append(suggestions,
-			"# for bounded row access without re-querying Grail: dtctl inspect "+manifest.Path+" --head 20 (also --tail, --page --offset N --limit M, --fields a,b)")
-	}
-	if n := len(omittedCols); n > 0 {
-		if manifest.Kind == output.KindResultFile {
-			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted and full per-column stats are in the sidecar manifest next to the file", n))
-		} else {
-			suggestions = append(suggestions, fmt.Sprintf("# %d sparser columns were omitted from this summary to keep it compact; their names are in result.columns_omitted (the rows were not written to disk, so there is no sidecar manifest)", n))
-		}
-	}
-
-	notifWarnings, notifSuggestions := queryNotificationAdvice(query, result.GetNotifications())
-	warnings = append(warnings, notifWarnings...)
-	suggestions = append(notifSuggestions, suggestions...)
-	scanWarnings, scanSuggestions := heavyScanAdvice(result)
-	warnings = append(warnings, scanWarnings...)
-	suggestions = append(suggestions, scanSuggestions...)
-	suggestions = append(suggestions, lookbackAdvice(query)...)
-	suggestions = append(suggestions, metadataDefaultAdvice(query, extractQueryMetadata(result), opts, false)...)
-	if compaction != nil && compaction.Changed("json") {
-		suggestions = append(suggestions, compactSummarySuggestion)
-	}
-	suggestions = append(suggestions, seriesAdvice(opts)...)
+	// planStream never streams under --jq, so unlike buildSpillResponse there is
+	// no unapplied-filter warning to add, and a streamed result is never empty.
+	adviceWarnings, suggestions := spillAdvice(query, result, manifest, summaryReason, len(omittedCols), compaction, nil, opts)
+	warnings = append(warnings, adviceWarnings...)
 
 	total := rows
 	ctx := &output.ResponseContext{

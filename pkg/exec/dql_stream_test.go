@@ -88,32 +88,51 @@ func TestPlanStream_Eligibility(t *testing.T) {
 	}
 }
 
-// The switch point is the largest row count that can still be emitted inline:
-// holding one more row could never have paid off, and holding one fewer would
-// have streamed a result that still fitted.
-func TestStreamSwitchRows_IsTheLargestInlineRowCount(t *testing.T) {
-	for _, format := range []string{"json", "toon", "csv"} {
+// The switch point may never be too early: one row past it must exceed the
+// threshold whatever the rows look like, or a result that fits inline would be
+// spilled. The shapes cover the cheapest rows each encoding has — an empty row
+// in JSON and YAML, a single short column in the tabular ones, where the keys
+// live in a header. -o auto can pick CSV for narrow rows, and is the agent
+// default, so it gets the tabular bound too.
+func TestStreamSwitchRows_NeverSpillsARowSetThatFits(t *testing.T) {
+	shapes := map[string]func(i int) map[string]interface{}{
+		"empty":        func(int) map[string]interface{} { return map[string]interface{}{} },
+		"empty string": func(int) map[string]interface{} { return map[string]interface{}{"a": ""} },
+		"one digit":    func(i int) map[string]interface{} { return map[string]interface{}{"a": fmt.Sprint(i % 10)} },
+		"small number": func(i int) map[string]interface{} { return map[string]interface{}{"a": float64(i % 10)} },
+	}
+	for _, format := range []string{"json", "yaml", "toon", "csv", "auto"} {
+		opts := DQLExecuteOptions{Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10}}
+		switchAt := streamSwitchRows(opts, format)
+		for name, shape := range shapes {
+			t.Run(format+"/"+name, func(t *testing.T) {
+				rows := make([]map[string]interface{}, switchAt+1)
+				for i := range rows {
+					rows[i] = shape(i)
+				}
+				if got, _ := output.MeasureSerializedBytes(rows, format); got <= opts.Spill.Threshold {
+					t.Errorf("%d rows measure %d bytes, within the %d-byte threshold — the switch at %d is too early",
+						len(rows), got, opts.Spill.Threshold, switchAt)
+				}
+			})
+		}
+	}
+}
+
+// Where the empty row is the cheapest one (JSON, YAML), the switch point is
+// also exact: holding one row fewer would have streamed a result that fitted.
+func TestStreamSwitchRows_IsExactWhereTheEmptyRowIsCheapest(t *testing.T) {
+	for _, format := range []string{"json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
 			opts := DQLExecuteOptions{Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10}}
 			switchAt := streamSwitchRows(opts, format)
-
-			emptyRows := func(n int) []map[string]interface{} {
-				rows := make([]map[string]interface{}, n)
-				for i := range rows {
-					rows[i] = map[string]interface{}{}
-				}
-				return rows
+			rows := make([]map[string]interface{}, switchAt)
+			for i := range rows {
+				rows[i] = map[string]interface{}{}
 			}
-
-			fits, _ := output.MeasureSerializedBytes(emptyRows(switchAt), format)
-			if fits > opts.Spill.Threshold {
+			if fits, _ := output.MeasureSerializedBytes(rows, format); fits > opts.Spill.Threshold {
 				t.Errorf("%d empty rows measure %d bytes, over the %d-byte threshold — the switch is too late",
 					switchAt, fits, opts.Spill.Threshold)
-			}
-			over, _ := output.MeasureSerializedBytes(emptyRows(switchAt+1), format)
-			if over <= opts.Spill.Threshold {
-				t.Errorf("%d empty rows still measure %d bytes under the %d-byte threshold — the switch is too early",
-					switchAt+1, over, opts.Spill.Threshold)
 			}
 		})
 	}
@@ -139,9 +158,19 @@ func bigRecords(n int) []map[string]interface{} {
 			"dt.entity.host":  "HOST-1",
 			"response.status": float64(200 + i%3),
 			"optional":        nil,
+			"trace_id":        partialNull(i),
 		}
 	}
 	return out
+}
+
+// partialNull is null on every other row, so compaction keeps the column but
+// drops its null values.
+func partialNull(i int) interface{} {
+	if i%2 == 0 {
+		return nil
+	}
+	return fmt.Sprintf("trace-%d", i)
 }
 
 // feed runs rows through a collector exactly as the SDK would.
@@ -392,14 +421,115 @@ func TestStreamCollector_PerRowTransformMatchesBuffered(t *testing.T) {
 
 	e := &DQLExecutor{}
 	plan, _ := e.planStream(opts)
-	col := feed(t, e, plan, opts, records)
-	defer col.abort()
+	col := newStreamCollector(e, plan, opts)
+	got := make([]map[string]interface{}, len(records))
+	for i, r := range records {
+		got[i] = col.transform(r)
+	}
 
-	if !reflect.DeepEqual(col.buf, want) {
-		t.Errorf("per-row transform:\n got %#v\nwant %#v", col.buf, want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("per-row transform:\n got %#v\nwant %#v", got, want)
 	}
 	if col.effect != wantEffect {
 		t.Errorf("series effect = %+v, want %+v", col.effect, wantEffect)
+	}
+}
+
+// A result that stays below the switch point is handed to printRecords, which
+// applies --series/--precision itself. The buffer must hold the rows as they
+// arrived: transformed twice, the second pass finds nothing left to round and
+// the envelope loses the advice that names the opt-out flag.
+func TestStreamCollector_BuffersRowsUntransformed(t *testing.T) {
+	records := []map[string]interface{}{{"latency": 1.23456789}, {"latency": 9.87654321}}
+	opts := DQLExecuteOptions{
+		AgentMode: true, Precision: 3, PrecisionDefaulted: true, Series: output.SeriesMode{Kind: output.SeriesFull},
+		Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10, Dir: t.TempDir(), Format: "jsonl"},
+	}
+	e := &DQLExecutor{}
+	plan, _ := e.planStream(opts)
+	col := feed(t, e, plan, opts, records)
+	defer col.abort()
+
+	if !reflect.DeepEqual(col.buf, records) {
+		t.Errorf("buffered rows were reshaped before printRecords saw them:\n got %#v\nwant %#v", col.buf, records)
+	}
+}
+
+// A managed spill that cannot be written degrades to a summary, as a buffered
+// result does (D8), rather than failing the whole query.
+func TestStreamedSpill_UnwritableManagedDirDegradesToSummary(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	opts := DQLExecuteOptions{
+		AgentMode: true, Compact: true, ContextName: "prod",
+		Spill: SpillOptions{Mode: SpillAlways, Threshold: 1 << 10, Dir: t.TempDir(), Format: "jsonl"},
+	}
+	e := &DQLExecutor{}
+	plan, ok := e.planStream(opts)
+	if !ok {
+		t.Fatal("planStream() declined an --spill=always jsonl agent invocation")
+	}
+	// The directory went bad after planning: MkdirAll cannot create a
+	// directory under a regular file.
+	plan.spillDir = filepath.Join(blocker, "sub")
+
+	records := bigRecords(20)
+	col := feed(t, e, plan, opts, records)
+	defer col.abort()
+	if col.err != nil {
+		t.Fatalf("a managed write failure aborted the query: %v", col.err)
+	}
+
+	result, _ := sampleResult(false)
+	result.Records = nil
+	resp, err := e.buildStreamedSpillResponse("fetch logs", result, col, opts)
+	if err != nil {
+		t.Fatalf("buildStreamedSpillResponse: %v", err)
+	}
+	m := resp.Result.(*output.ResultFileManifest)
+	if m.Kind != output.KindSummaryOnly || resp.Context.Decided != "summary-only" {
+		t.Errorf("kind=%q decided=%q, want summary-only", m.Kind, resp.Context.Decided)
+	}
+	if m.Rows != len(records) {
+		t.Errorf("rows = %d, want %d: the summary must still count every row", m.Rows, len(records))
+	}
+	found := false
+	for _, w := range resp.Context.Warnings {
+		if strings.Contains(w, "spill write failed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings %v do not say the write failed", resp.Context.Warnings)
+	}
+}
+
+// An explicit --spill-to is a destination the caller pinned, so a failure
+// there is an error, as it is on the buffered path.
+func TestStreamedSpill_UnwritableExplicitTargetIsAnError(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "out.jsonl")
+	opts := DQLExecuteOptions{
+		AgentMode: true,
+		Spill:     SpillOptions{Mode: SpillAlways, Threshold: 1 << 10, ToPath: target},
+	}
+	e := &DQLExecutor{}
+	plan, ok := e.planStream(opts)
+	if !ok {
+		t.Fatal("planStream() declined a --spill-to .jsonl agent invocation")
+	}
+	plan.spillDir = filepath.Join(blocker, "sub")
+
+	col := newStreamCollector(e, plan, opts)
+	defer col.abort()
+	err := col.observe(bigRecords(1)[0])
+	if err == nil || !strings.Contains(err.Error(), "failed to write spill file") {
+		t.Fatalf("observe() = %v, want a spill write error naming the target", err)
 	}
 }
 
