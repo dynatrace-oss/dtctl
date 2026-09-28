@@ -203,6 +203,7 @@ func spillAdvice(query string, result *DQLQueryResponse, manifest *output.Result
 	// follow-ups — an agent parsing stdout must learn the result is incomplete.
 	notifWarnings, notifSuggestions := queryNotificationAdvice(query, result.GetNotifications())
 	warnings = append(warnings, notifWarnings...)
+	warnings = append(warnings, approximationWarnings(result)...)
 	suggestions = append(notifSuggestions, suggestions...)
 	scanWarnings, scanSuggestions := heavyScanAdvice(result)
 	warnings = append(warnings, scanWarnings...)
@@ -267,6 +268,7 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	// few rows. Surface the same notification advice so the agent isn't misled
 	// into treating a truncated scan as the complete answer.
 	notifWarnings, notifSuggestions := queryNotificationAdvice(query, result.GetNotifications())
+	notifWarnings = append(notifWarnings, approximationWarnings(result)...)
 	scanWarnings, scanSuggestions := heavyScanAdvice(result)
 	notifWarnings = append(notifWarnings, scanWarnings...)
 	notifSuggestions = append(notifSuggestions, scanSuggestions...)

@@ -876,11 +876,11 @@ func TestYAMLPrinter_MetadataToMap(t *testing.T) {
 }
 
 // TestValidMetadataFieldNames_Sorted verifies that ValidMetadataFieldNames
-// returns all 14 fields in sorted order.
+// returns all 16 fields in sorted order.
 func TestValidMetadataFieldNames_Sorted(t *testing.T) {
 	names := ValidMetadataFieldNames()
-	if len(names) != 14 {
-		t.Fatalf("expected 14 valid field names, got %d: %v", len(names), names)
+	if len(names) != 16 {
+		t.Fatalf("expected 16 valid field names, got %d: %v", len(names), names)
 	}
 	// Verify sorted
 	for i := 1; i < len(names); i++ {
@@ -895,6 +895,8 @@ func TestValidMetadataFieldNames_Sorted(t *testing.T) {
 		"scannedBytes":              true,
 		"scannedDataPoints":         true,
 		"sampled":                   true,
+		"approximations":            true,
+		"notifications":             true,
 		"queryId":                   true,
 		"dqlVersion":                true,
 		"query":                     true,
@@ -1036,5 +1038,98 @@ func TestMetadataToMap_Metrics(t *testing.T) {
 	jsonOut, _ := json.Marshal(m2)
 	if !strings.Contains(string(jsonOut), `"metrics":null`) {
 		t.Errorf("expected metrics:null for empty slice, got: %s", jsonOut)
+	}
+}
+
+// approximateMetadata is a synthetic response that answered approximately and
+// carried an advisory notification (#415).
+func approximateMetadata() *QueryMetadata {
+	return &QueryMetadata{
+		ExecutionTimeMilliseconds: 12,
+		QueryID:                   "q-approx",
+		Approximations:            []string{"~ on content: substring match,\n  not token match"},
+		Notifications: []MetadataNotice{
+			{Severity: "INFO", NotificationType: "EXAMPLE_NOTICE", Message: "an advisory note"},
+			{Message: "an untyped note"},
+		},
+	}
+}
+
+func TestMetadataToMap_ApproximationsAndNotifications(t *testing.T) {
+	meta := approximateMetadata()
+
+	// "all" returns the struct; both lists appear in the JSON.
+	js, err := json.Marshal(MetadataToMap(meta, []string{"all"}))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, want := range []string{`"approximations":["~ on content: substring match,\n  not token match"]`, `"notifications":[{"severity":"INFO","notificationType":"EXAMPLE_NOTICE","message":"an advisory note"},{"message":"an untyped note"}]`} {
+		if !strings.Contains(string(js), want) {
+			t.Errorf("all-fields JSON missing %s, got: %s", want, js)
+		}
+	}
+
+	// Explicit selection keeps exactly the selected keys.
+	m, ok := MetadataToMap(meta, []string{"approximations", "notifications"}).(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map for an explicit selection")
+	}
+	if len(m) != 2 {
+		t.Fatalf("expected 2 keys, got %d: %v", len(m), m)
+	}
+	if got, _ := m["approximations"].([]string); len(got) != 1 {
+		t.Errorf("approximations = %v, want one entry", m["approximations"])
+	}
+	if got, _ := m["notifications"].([]MetadataNotice); len(got) != 2 {
+		t.Errorf("notifications = %v, want two entries", m["notifications"])
+	}
+
+	// Absent lists stay out of the all-fields block (omitempty), so an exact,
+	// notice-free result encodes exactly as before.
+	js, _ = json.Marshal(MetadataToMap(&QueryMetadata{QueryID: "q"}, []string{"all"}))
+	if strings.Contains(string(js), "approximations") || strings.Contains(string(js), "notifications") {
+		t.Errorf("empty lists must be omitted, got: %s", js)
+	}
+}
+
+func TestFormatMetadataFooter_ApproximationsAndNotifications(t *testing.T) {
+	ResetColorCache()
+	SetPlainMode(true)
+	defer ResetColorCache()
+
+	result := FormatMetadataFooter(approximateMetadata(), nil)
+	for _, want := range []string{
+		"Approximations:\n  ~ on content: substring match, not token match\n",
+		"Notifications:\n  INFO [EXAMPLE_NOTICE] an advisory note\n  INFO an untyped note\n",
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("footer missing %q, got:\n%s", want, result)
+		}
+	}
+
+	filtered := FormatMetadataFooter(approximateMetadata(), []string{"queryId"})
+	if strings.Contains(filtered, "Approximations:") || strings.Contains(filtered, "Notifications:") {
+		t.Errorf("unselected lists must not print, got:\n%s", filtered)
+	}
+
+	exact := FormatMetadataFooter(&QueryMetadata{QueryID: "q"}, nil)
+	if strings.Contains(exact, "Approximations:") || strings.Contains(exact, "Notifications:") {
+		t.Errorf("absent lists must not print a heading, got:\n%s", exact)
+	}
+}
+
+func TestFormatMetadataCSVComments_ApproximationsAndNotifications(t *testing.T) {
+	result := FormatMetadataCSVComments(approximateMetadata(), nil)
+	for _, want := range []string{
+		"# approximation: ~ on content: substring match, not token match\n",
+		"# notification: INFO [EXAMPLE_NOTICE] an advisory note\n",
+		"# notification: INFO an untyped note\n",
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("CSV comments missing %q, got:\n%s", want, result)
+		}
+	}
+	if filtered := FormatMetadataCSVComments(approximateMetadata(), []string{"queryId"}); strings.Contains(filtered, "approximation") {
+		t.Errorf("unselected approximations must not print, got:\n%s", filtered)
 	}
 }

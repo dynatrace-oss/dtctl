@@ -626,6 +626,106 @@ func TestResponse_GetMetadata(t *testing.T) {
 	}
 }
 
+func TestGrailMetadata_UnmarshalApproximationsAndNotifications(t *testing.T) {
+	// Mirrors the metadata.grail shape the query API returns for a successful
+	// but approximate result (#415). Every advisory field must survive decoding.
+	const raw = `{
+		"records": [{"n": "1"}],
+		"metadata": {
+			"grail": {
+				"approximations": ["~ on content: substring match, not token match"],
+				"canonicalQuery": "fetch logs | filter content ~ \"error\" | summarize n=count()",
+				"notifications": [
+					{"severity": "INFO", "notificationType": "EXAMPLE_NOTICE", "message": "an advisory note"}
+				],
+				"sampled": true,
+				"scannedRecords": 1
+			}
+		}
+	}`
+
+	var r Response
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	g := r.GetMetadata()
+	if g == nil {
+		t.Fatal("expected grail metadata")
+	}
+	want := []string{"~ on content: substring match, not token match"}
+	if len(g.Approximations) != 1 || g.Approximations[0] != want[0] {
+		t.Errorf("Approximations = %q, want %q", g.Approximations, want)
+	}
+	if got := r.GetApproximations(); len(got) != 1 || got[0] != want[0] {
+		t.Errorf("GetApproximations() = %q, want %q", got, want)
+	}
+	if !g.Sampled {
+		t.Error("Sampled = false, want true")
+	}
+	if n := r.GetNotifications(); len(n) != 1 || n[0].Severity != "INFO" || n[0].Message != "an advisory note" {
+		t.Errorf("notifications = %+v, want the one INFO notification", n)
+	}
+}
+
+func TestApproximations_LenientDecoding(t *testing.T) {
+	// An unexpected entry shape must not fail the whole response: the list is
+	// advisory, and the stream decoder aborts on any metadata decode error.
+	tests := []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{"strings", `["a", "b"]`, []string{"a", "b"}},
+		{"empty list", `[]`, nil},
+		{"null", `null`, nil},
+		{"object with message", `[{"message": "approx"}]`, []string{"approx"}},
+		{"object without message", `[{"kind": "x"}]`, []string{`{"kind":"x"}`}},
+		{"mixed", `["a", {"message": "b"}, 3, null]`, []string{"a", "b", "3"}},
+		{"single string", `"only"`, []string{"only"}},
+		{"not a list", `{"message": "x"}`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var g GrailMetadata
+			if err := json.Unmarshal([]byte(`{"approximations": `+tt.raw+`, "scannedRecords": 7}`), &g); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if g.ScannedRecords != 7 {
+				t.Errorf("ScannedRecords = %d, want 7 (sibling fields must still decode)", g.ScannedRecords)
+			}
+			if len(g.Approximations) != len(tt.want) {
+				t.Fatalf("Approximations = %q, want %q", g.Approximations, tt.want)
+			}
+			for i := range tt.want {
+				if g.Approximations[i] != tt.want[i] {
+					t.Errorf("Approximations[%d] = %q, want %q", i, g.Approximations[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestResponse_GetApproximations(t *testing.T) {
+	t.Run("none", func(t *testing.T) {
+		if got := (&Response{}).GetApproximations(); got != nil {
+			t.Errorf("got %q, want nil", got)
+		}
+	})
+	t.Run("from result metadata", func(t *testing.T) {
+		r := &Response{
+			Metadata: &Metadata{Grail: &GrailMetadata{}},
+			Result: &Result{
+				Metadata: &Metadata{
+					Grail: &GrailMetadata{Approximations: Approximations{"approx"}},
+				},
+			},
+		}
+		if got := r.GetApproximations(); len(got) != 1 || got[0] != "approx" {
+			t.Errorf("got %q, want [approx]", got)
+		}
+	})
+}
+
 func TestMetricInfo_UnmarshalFromAPI(t *testing.T) {
 	// Mirrors the metadata.metrics[] shape the DQL API returns for timeseries
 	// queries. All descriptor fields must survive unmarshalling.

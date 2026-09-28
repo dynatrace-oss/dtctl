@@ -706,6 +706,30 @@ func notificationAdvice(notifications []QueryNotification) (warnings, suggestion
 	return warnings, suggestions
 }
 
+// approximationPrefix leads every approximation line, on stderr and in the
+// agent envelope's warnings alike.
+const approximationPrefix = "Result is approximate: "
+
+// approximationWarnings turns Grail's metadata.grail.approximations into
+// warning lines. An approximation is a successful query that answered a
+// slightly different question than the one written (e.g. a substring match
+// where the query asked for a token match); without the line the caller reads
+// the number as exact, and nothing else in the output hints otherwise (#415).
+func approximationWarnings(result *DQLQueryResponse) []string {
+	if result == nil {
+		return nil
+	}
+	approximations := result.GetApproximations()
+	if len(approximations) == 0 {
+		return nil
+	}
+	warnings := make([]string, 0, len(approximations))
+	for _, a := range approximations {
+		warnings = append(warnings, approximationPrefix+a)
+	}
+	return warnings
+}
+
 // heavyScanWarnBytes is the scanned-data level above which the agent envelope
 // warns. An agent that cannot see the bill will happily re-run an 85 GB scan
 // it already paid for; the warning makes the cost visible and steers toward
@@ -894,6 +918,11 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 			return
 		}
 		notificationsPrinted = true
+		// Approximations ride with the notifications: stderr here, the
+		// envelope's context.warnings in agent mode.
+		for _, w := range approximationWarnings(result) {
+			output.PrintWarning("%s", w)
+		}
 		notifications := result.GetNotifications()
 		if len(notifications) == 0 {
 			return
@@ -1113,6 +1142,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	}
 
 	warnings, suggestions := queryNotificationAdvice(query, result.GetNotifications())
+	warnings = append(warnings, approximationWarnings(result)...)
 	scanWarnings, scanSuggestions := heavyScanAdvice(result)
 	warnings = append(warnings, scanWarnings...)
 	suggestions = append(suggestions, scanSuggestions...)
@@ -1224,6 +1254,24 @@ func extractQueryMetadata(result *DQLQueryResponse) *output.QueryMetadata {
 			}
 			meta.Contributions = contribs
 		}
+	}
+
+	// Approximations and notifications are carried verbatim, notifications of
+	// every severity: stderr and the envelope warnings show only WARNING and
+	// ERROR, so this block is where an INFO notification can be read at all.
+	// Read through the getters (not g) so the block agrees with what the
+	// stderr and envelope paths report.
+	if approximations := result.GetApproximations(); len(approximations) > 0 {
+		meta.Approximations = append([]string(nil), approximations...)
+	}
+	for _, n := range result.GetNotifications() {
+		meta.Notifications = append(meta.Notifications, output.MetadataNotice{
+			Severity:         n.Severity,
+			NotificationType: n.NotificationType,
+			Message:          n.Message,
+			MessageFormat:    n.MessageFormat,
+			Arguments:        n.Arguments,
+		})
 	}
 
 	for _, m := range metrics {

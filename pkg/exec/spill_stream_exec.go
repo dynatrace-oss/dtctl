@@ -9,11 +9,14 @@ import (
 )
 
 // finishStreamedJSONL closes out a `-o jsonl` stream: the rows are already on
-// stdout, so only the notifications are left for stderr. The buffered path
-// prints them ahead of the rows; a stream only learns them from the response
-// metadata, which follows the rows. Like the buffered jsonl branch it prints no
-// metadata footer.
+// stdout, so only the approximations and notifications are left for stderr.
+// The buffered path prints them ahead of the rows; a stream only learns them
+// from the response metadata, which follows the rows. Like the buffered jsonl
+// branch it prints no metadata footer.
 func (e *DQLExecutor) finishStreamedJSONL(query string, result *DQLQueryResponse) error {
+	for _, w := range approximationWarnings(result) {
+		output.PrintWarning("%s", w)
+	}
 	notifications := result.GetNotifications()
 	if len(notifications) > 0 {
 		e.PrintNotifications(notifications)

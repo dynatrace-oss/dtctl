@@ -197,10 +197,19 @@ dtctl query "fetch logs | limit 10" --metadata=minimal
 
 `--metadata=minimal` keeps only what is worth acting on: `executionTimeMilliseconds`,
 `scannedBytes`/`scannedDataPoints` when non-zero, `sampled` when the result is
-sampled, `analysisTimeframe` when the query named no window (neither `from:`/`to:`/
-`timeframe:` nor `--default-timeframe-*`), and `contributions` when requested.
+sampled, `approximations` when Grail reported any, `analysisTimeframe` when the
+query named no window (neither `from:`/`to:`/`timeframe:` nor
+`--default-timeframe-*`), and `contributions` when requested.
 It combines with field names, e.g. `--metadata=minimal,metrics`. It is the
 default in agent mode; `-M=all` restores the full block there.
+
+When Grail answers a query approximately (`metadata.grail.approximations`, e.g. a
+substring match where the query asked for a token match), dtctl prints each
+approximation to stderr as `Warning: Result is approximate: …` and leaves stdout
+as it was; in agent mode the envelope's `context.warnings` carries it instead.
+With `--metadata`, the `approximations` and `notifications` fields carry the full
+lists (notifications of every severity, INFO included) in `-o json`/`-o yaml`
+and in the table/CSV metadata footer.
 
 Live mode, streaming results at a regular interval:
 

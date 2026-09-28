@@ -27,6 +27,7 @@ func IsMinimalFields(fields []string) bool {
 //   - executionTimeMilliseconds: always
 //   - scannedBytes, scannedDataPoints: when non-zero (the cost of the scan)
 //   - sampled: only when true (the result is approximate)
+//   - approximations: only when non-empty (the result is approximate)
 //   - analysisTimeframe: only when defaultWindow — the query named no window,
 //     so the agent cannot know which one the server picked
 //   - contributions: when present (the caller asked for them explicitly)
@@ -47,6 +48,9 @@ func ExpandMetadataFields(meta *QueryMetadata, fields []string, defaultWindow bo
 	}
 	if meta.Sampled {
 		out = append(out, "sampled")
+	}
+	if len(meta.Approximations) > 0 {
+		out = append(out, "approximations")
 	}
 	if defaultWindow && meta.AnalysisTimeframe != nil {
 		out = append(out, "analysisTimeframe")

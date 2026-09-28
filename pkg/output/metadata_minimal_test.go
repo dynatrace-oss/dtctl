@@ -99,6 +99,18 @@ func TestExpandMetadataFields(t *testing.T) {
 			want:   []string{"executionTimeMilliseconds", "scannedBytes", "sampled"},
 		},
 		{
+			name:   "minimal includes approximations only when present",
+			meta:   &QueryMetadata{ExecutionTimeMilliseconds: 5, Approximations: []string{"approximate match"}},
+			fields: []string{"minimal"},
+			want:   []string{"executionTimeMilliseconds", "approximations"},
+		},
+		{
+			name:   "minimal leaves out notifications (the envelope warnings carry them)",
+			meta:   &QueryMetadata{ExecutionTimeMilliseconds: 5, Notifications: []MetadataNotice{{Severity: "INFO", Message: "note"}}},
+			fields: []string{"minimal"},
+			want:   []string{"executionTimeMilliseconds"},
+		},
+		{
 			name:   "minimal includes scannedDataPoints when non-zero",
 			meta:   &QueryMetadata{ExecutionTimeMilliseconds: 5, ScannedDataPoints: 1200},
 			fields: []string{"minimal"},

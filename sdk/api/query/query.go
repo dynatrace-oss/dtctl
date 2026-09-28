@@ -6,6 +6,7 @@
 package query
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -155,9 +156,70 @@ type GrailMetadata struct {
 	ScannedBytes              int64              `json:"scannedBytes,omitempty"`
 	ScannedDataPoints         int64              `json:"scannedDataPoints,omitempty"`
 	Sampled                   bool               `json:"sampled,omitempty"`
+	Approximations            Approximations     `json:"approximations,omitempty"`
 	Notifications             []Notification     `json:"notifications,omitempty"`
 	AnalysisTimeframe         *AnalysisTimeframe `json:"analysisTimeframe,omitempty"`
 	Contributions             *Contributions     `json:"contributions,omitempty"`
+}
+
+// Approximations lists the ways Grail answered a different question than the
+// query literally asked, e.g. "~ on content: substring match, not Grail's token
+// match". A non-empty list means the result is approximate even though the
+// query succeeded, so it must reach the caller rather than be dropped.
+//
+// The shape observed from the query API is a list of strings (#415). Decoding
+// is deliberately lenient anyway: this list lives inside the metadata block,
+// and a strict decode that failed on an unexpected entry shape would fail the
+// whole query response over an advisory field. A non-string entry keeps its
+// "message" when it has one and its compact JSON text otherwise; a value that
+// is not a list at all is kept as one entry if it is a string and ignored
+// otherwise.
+type Approximations []string
+
+// UnmarshalJSON implements json.Unmarshaler with the lenient decoding described
+// on Approximations.
+func (a *Approximations) UnmarshalJSON(data []byte) error {
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		var single string
+		if json.Unmarshal(data, &single) == nil && single != "" {
+			*a = Approximations{single}
+			return nil
+		}
+		*a = nil
+		return nil
+	}
+	out := make(Approximations, 0, len(items))
+	for _, item := range items {
+		if text := approximationText(item); text != "" {
+			out = append(out, text)
+		}
+	}
+	if len(out) == 0 {
+		out = nil
+	}
+	*a = out
+	return nil
+}
+
+// approximationText renders one approximations entry as text: the string
+// itself, an object's "message", or the entry's compact JSON.
+func approximationText(item json.RawMessage) string {
+	var s string
+	if json.Unmarshal(item, &s) == nil {
+		return s
+	}
+	var obj struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(item, &obj) == nil && obj.Message != "" {
+		return obj.Message
+	}
+	var buf bytes.Buffer
+	if json.Compact(&buf, item) != nil || buf.String() == "null" {
+		return ""
+	}
+	return buf.String()
 }
 
 // Contributions represents the bucket contributions for a query.
@@ -653,6 +715,20 @@ func (r *Response) GetNotifications() []Notification {
 	}
 	if r.Result != nil && r.Result.Metadata != nil && r.Result.Metadata.Grail != nil {
 		return r.Result.Metadata.Grail.Notifications
+	}
+	return nil
+}
+
+// GetApproximations returns the approximations Grail reported for the result,
+// checking both top-level and result-level metadata (in the same order as
+// GetNotifications). Nil means the result is not approximate in any declared
+// way.
+func (r *Response) GetApproximations() []string {
+	if r.Metadata != nil && r.Metadata.Grail != nil && len(r.Metadata.Grail.Approximations) > 0 {
+		return r.Metadata.Grail.Approximations
+	}
+	if r.Result != nil && r.Result.Metadata != nil && r.Result.Metadata.Grail != nil && len(r.Result.Metadata.Grail.Approximations) > 0 {
+		return r.Result.Metadata.Grail.Approximations
 	}
 	return nil
 }

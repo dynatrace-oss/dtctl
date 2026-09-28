@@ -2256,6 +2256,60 @@ func TestGolden_QueryDQL_Metadata_TOON(t *testing.T) {
 	})
 }
 
+// approximateMetadataFixture is a synthetic response Grail qualified: an
+// approximation and an advisory notification on a successful result (#415).
+func approximateMetadataFixture() *QueryMetadata {
+	return &QueryMetadata{
+		ExecutionTimeMilliseconds: 12,
+		ScannedRecords:            1,
+		Sampled:                   true,
+		QueryID:                   "00000000-0000-4000-8000-000000000415",
+		Approximations:            []string{"~ on content: substring match, not token match"},
+		Notifications: []MetadataNotice{
+			{Severity: "INFO", NotificationType: "EXAMPLE_NOTICE", Message: "an informational advisory"},
+		},
+	}
+}
+
+func TestGolden_QueryDQL_Metadata_Approximations(t *testing.T) {
+	records := dqlRecordsFixture()
+	meta := approximateMetadataFixture()
+
+	ResetColorCache()
+	SetPlainMode(true)
+	defer ResetColorCache()
+
+	for _, format := range []string{"json", "yaml"} {
+		t.Run(format, func(t *testing.T) {
+			payload := map[string]interface{}{
+				"records":  records,
+				"metadata": MetadataToMap(meta, []string{"all"}),
+			}
+			var buf bytes.Buffer
+			if err := NewPrinterWithWriter(format, &buf).Print(payload); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "query/dql-metadata-approximations-"+format, buf.String())
+		})
+	}
+
+	t.Run("table", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := NewPrinterWithWriter("table", &buf).PrintList(records); err != nil {
+			t.Fatalf("PrintList failed: %v", err)
+		}
+		assertGolden(t, "query/dql-metadata-approximations-table", buf.String()+FormatMetadataFooter(meta, nil))
+	})
+
+	t.Run("csv", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := NewPrinterWithWriter("csv", &buf).PrintList(records); err != nil {
+			t.Fatalf("PrintList failed: %v", err)
+		}
+		assertGolden(t, "query/dql-metadata-approximations-csv", FormatMetadataCSVComments(meta, nil)+buf.String())
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Golden tests: empty results
 // ---------------------------------------------------------------------------

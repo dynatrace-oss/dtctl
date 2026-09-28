@@ -47,6 +47,29 @@ func TestDecodeResponseStream_StreamsResultRecordsInOrder(t *testing.T) {
 	}
 }
 
+// An unexpected approximations entry shape must not abort the streamed decode:
+// the stream decoder fails the whole response on any metadata decode error.
+func TestDecodeResponseStream_KeepsApproximations(t *testing.T) {
+	body := `{
+		"state": "SUCCEEDED",
+		"result": {
+			"records": [{"n": 1}],
+			"metadata": {"grail": {"approximations": ["approx one", {"message": "approx two"}], "scannedRecords": 1}}
+		}
+	}`
+
+	resp, err := decodeResponseStream(bytes.NewBufferString(body), recordSink{
+		onResult: func(string, map[string]interface{}) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("decodeResponseStream() error: %v", err)
+	}
+	got := resp.GetApproximations()
+	if len(got) != 2 || got[0] != "approx one" || got[1] != "approx two" {
+		t.Errorf("GetApproximations() = %q, want [approx one approx two]", got)
+	}
+}
+
 func TestDecodeResponseStream_StreamsTopLevelRecords(t *testing.T) {
 	body := `{"state": "SUCCEEDED", "records": [{"a": 1}, {"a": 2}]}`
 

@@ -338,6 +338,7 @@ The minimal set:
 | `executionTimeMilliseconds` | always |
 | `scannedBytes`, `scannedDataPoints` | when non-zero |
 | `sampled` | only when `true` (the result is approximate) |
+| `approximations` | only when Grail reported any (the result is approximate) |
 | `analysisTimeframe` | only when the query named no window, so the server picked the default one |
 | `contributions` | when requested with `--include-contributions` |
 
@@ -346,7 +347,10 @@ It also drops the spill measurement details (`threshold_bytes`, `measured_bytes`
 summary-only result, where they explain the decision, and come back with `-v`.
 A streamed result (`context.streamed`, see above) carries no `measured_bytes` or
 `measured_encoding` at all, because nothing was serialised to measure.
-`context.decided` is always present. When the default dropped something,
+`context.decided` is always present. Each of Grail's `approximations` is also a
+`context.warnings` entry (`Result is approximate: …`), next to the WARNING and
+ERROR notifications; the full block (`-M=all`) adds `notifications` of every
+severity, INFO included. When the default dropped something,
 `context.suggestions` carries one line naming `-M=all`; an explicit
 `-M=minimal` does not. Add field names to opt back into more,
 e.g. `--metadata=minimal,queryId`; `--metadata=` (empty) turns metadata off.

@@ -870,10 +870,10 @@ func init() {
 	queryCmd.Flags().StringP("metadata", "M", "", `include query metadata in output (use = for field selection)
 bare --metadata or -M shows all fields; --metadata=field1,field2 selects specific fields
 --metadata=minimal keeps only execution time, scanned bytes/data points, sampled (when true),
-and analysisTimeframe (when the query named no window); it combines with field names.
-In agent mode the default is minimal; -M=all restores the full block
+approximations (when present), and analysisTimeframe (when the query named no window);
+it combines with field names. In agent mode the default is minimal; -M=all restores the full block
 available: executionTimeMilliseconds,scannedRecords,scannedBytes,scannedDataPoints,
-sampled,queryId,dqlVersion,query,canonicalQuery,timezone,locale,
+sampled,approximations,notifications,queryId,dqlVersion,query,canonicalQuery,timezone,locale,
 analysisTimeframe,contributions,metrics`)
 	queryCmd.Flags().Lookup("metadata").NoOptDefVal = "all"
 
