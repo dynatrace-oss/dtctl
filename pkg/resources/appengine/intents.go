@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -21,12 +23,45 @@ func NewIntentHandler(c *client.Client) *IntentHandler {
 	return &IntentHandler{client: c}
 }
 
-// IntentProperty represents a property definition in an intent
+// IntentProperty represents a property definition in an intent.
+//
+// An app declares a property in one of two forms:
+//
+//   - singular `schema`: the property name is the payload key, governed by
+//     that one schema;
+//   - plural `schemas`: a map whose keys are the payload keys the intent
+//     accepts for this property (aliases such as `dt.entity` or `id`), each
+//     with its own schema. The property name is then only a label: a payload
+//     can carry it only when it is also one of the keys.
+//
+// Type, Required, Format and Description predate the plural form and keep
+// their meaning. Everything else the declaration carries is exposed next to
+// them rather than folded into them, so -o json/yaml show what the app
+// declared.
 type IntentProperty struct {
+	// Type is the declared JSON-schema type. It is empty when the declaration
+	// names none: dtctl does not guess one. A list-form type
+	// (`type: ["string", "array"]`), or different types across the keys of a
+	// plural `schemas` declaration, is joined with "|"; Types has the list.
 	Type        string `json:"type"`
 	Required    bool   `json:"required"`
 	Format      string `json:"format,omitempty"`
 	Description string `json:"description,omitempty"`
+
+	// Types lists every declared type without duplicates, in declaration
+	// order (for `schemas`, in accepted-key order).
+	Types []string `json:"types,omitempty" yaml:",omitempty"`
+	// AcceptedKeys are the payload keys that satisfy this property: the
+	// property name for the singular form, the `schemas` keys (sorted) for
+	// the plural one. Always present; an empty list means the app declared
+	// `schemas: {}`, which no payload can satisfy.
+	AcceptedKeys []string `json:"acceptedKeys"`
+	// Schema is the singular `schema` exactly as declared (pattern, enum,
+	// items, nested properties and required, ...).
+	Schema map[string]interface{} `json:"schema,omitempty" yaml:",omitempty"`
+	// Schemas is the plural `schemas` map exactly as declared, keyed by
+	// accepted payload key.
+	Schemas map[string]interface{} `json:"schemas,omitempty" yaml:",omitempty"`
 }
 
 // Intent represents an app intent from the manifest
@@ -38,6 +73,13 @@ type Intent struct {
 	Properties    map[string]IntentProperty `json:"properties,omitempty" table:"-"`
 	FullName      string                    `json:"fullName" table:"FULL_NAME"`
 	RequiredProps []string                  `json:"requiredProps,omitempty" table:"REQUIRED"`
+
+	// Name is the declaration's human-readable label, as declared.
+	Name string `json:"name,omitempty" yaml:",omitempty" table:"-"`
+	// Deprecated is true when the app marks the intent deprecated.
+	Deprecated bool `json:"deprecated,omitempty" yaml:",omitempty" table:"-"`
+	// DeprecationMessage is the app's note when `deprecated` is a string.
+	DeprecationMessage string `json:"deprecationMessage,omitempty" yaml:",omitempty" table:"-"`
 }
 
 // IntentMatch represents a matched intent with quality score
@@ -46,6 +88,9 @@ type IntentMatch struct {
 	MatchQuality float64  `json:"matchQuality" table:"MATCH%"`
 	MatchedProps []string `json:"matchedProps,omitempty" table:"-"`
 	MissingProps []string `json:"missingProps,omitempty" table:"-"`
+	// MatchedKeys maps each matched property to the key in the data that
+	// satisfied it: the key to send when opening the intent.
+	MatchedKeys map[string]string `json:"matchedKeys,omitempty" yaml:",omitempty" table:"-"`
 }
 
 // ListIntents lists all intents across apps (or filtered by app ID)
@@ -112,6 +157,12 @@ func (h *IntentHandler) FindIntentsForData(data map[string]interface{}) ([]Inten
 		return nil, err
 	}
 
+	return rankIntentMatches(intents, data), nil
+}
+
+// rankIntentMatches matches every intent against the data and returns those
+// with a non-zero match quality, best first.
+func rankIntentMatches(intents []Intent, data map[string]interface{}) []IntentMatch {
 	var matches []IntentMatch
 
 	// Match each intent against the data
@@ -123,12 +174,21 @@ func (h *IntentHandler) FindIntentsForData(data map[string]interface{}) ([]Inten
 		}
 	}
 
-	// Sort by match quality (descending)
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].MatchQuality > matches[j].MatchQuality
+	// Sort by match quality (descending). At equal quality a deprecated
+	// intent ranks below the others, and the full name breaks the remaining
+	// ties so that identical runs print identical output.
+	sort.SliceStable(matches, func(i, j int) bool {
+		a, b := matches[i], matches[j]
+		if a.MatchQuality != b.MatchQuality {
+			return a.MatchQuality > b.MatchQuality
+		}
+		if a.Deprecated != b.Deprecated {
+			return !a.Deprecated
+		}
+		return a.FullName < b.FullName
 	})
 
-	return matches, nil
+	return matches
 }
 
 // GenerateIntentURL generates an intent URL for the given app, intent, and payload
@@ -157,15 +217,16 @@ func escapeFragment(s string) string {
 	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }
 
-// extractIntentsFromManifest extracts intents from an app manifest
+// extractIntentsFromManifest extracts intents from an app manifest, ordered
+// by intent ID so that consecutive runs print identical output.
 func extractIntentsFromManifest(app App) []Intent {
 	var intents []Intent
 
 	// Navigate manifest structure: manifest.intents (object/map at top level)
 	if app.Manifest != nil {
 		if intentsMap, ok := app.Manifest["intents"].(map[string]interface{}); ok {
-			for intentID, intentData := range intentsMap {
-				if intentMap, ok := intentData.(map[string]interface{}); ok {
+			for _, intentID := range sortedKeys(intentsMap) {
+				if intentMap, ok := intentsMap[intentID].(map[string]interface{}); ok {
 					intent := parseIntentFromMap(app.ID, app.Name, intentID, intentMap)
 					intents = append(intents, intent)
 				}
@@ -182,12 +243,19 @@ func parseIntentFromMap(appID, appName, intentID string, intentMap map[string]in
 	name, _ := intentMap["name"].(string)
 	description, _ := intentMap["description"].(string)
 
-	// If no explicit display name, use description or intent ID
-	if name == "" {
-		name = description
-	}
+	// Without an explicit description, fall back to the display name.
 	if description == "" {
 		description = name
+	}
+
+	var deprecated bool
+	var deprecationMessage string
+	switch d := intentMap["deprecated"].(type) {
+	case bool:
+		deprecated = d
+	case string:
+		deprecated = d != ""
+		deprecationMessage = d
 	}
 
 	// Parse properties
@@ -197,36 +265,9 @@ func parseIntentFromMap(appID, appName, intentID string, intentMap map[string]in
 	if propsMap, ok := intentMap["properties"].(map[string]interface{}); ok {
 		for propName, propData := range propsMap {
 			if propMap, ok := propData.(map[string]interface{}); ok {
-				// Get required flag (defaults to false)
-				propRequired, _ := propMap["required"].(bool)
-
-				// Extract type and format from schema
-				propType := "string" // default
-				propFormat := ""
-				propDescription := ""
-
-				if schema, ok := propMap["schema"].(map[string]interface{}); ok {
-					if schemaType, ok := schema["type"].(string); ok {
-						propType = schemaType
-					}
-					if schemaFormat, ok := schema["format"].(string); ok {
-						propFormat = schemaFormat
-					}
-				}
-
-				// Try to get description at property level
-				if desc, ok := propMap["description"].(string); ok {
-					propDescription = desc
-				}
-
-				properties[propName] = IntentProperty{
-					Type:        propType,
-					Required:    propRequired,
-					Format:      propFormat,
-					Description: propDescription,
-				}
-
-				if propRequired {
+				prop := parseIntentProperty(propName, propMap)
+				properties[propName] = prop
+				if prop.Required {
 					requiredProps = append(requiredProps, propName)
 				}
 			}
@@ -237,73 +278,253 @@ func parseIntentFromMap(appID, appName, intentID string, intentMap map[string]in
 	sort.Strings(requiredProps)
 
 	return Intent{
-		AppID:         appID,
-		AppName:       appName,
-		IntentID:      intentID,
-		Description:   description,
-		Properties:    properties,
-		FullName:      fmt.Sprintf("%s/%s", appID, intentID),
-		RequiredProps: requiredProps,
+		AppID:              appID,
+		AppName:            appName,
+		IntentID:           intentID,
+		Description:        description,
+		Properties:         properties,
+		FullName:           fmt.Sprintf("%s/%s", appID, intentID),
+		RequiredProps:      requiredProps,
+		Name:               name,
+		Deprecated:         deprecated,
+		DeprecationMessage: deprecationMessage,
 	}
 }
 
-// matchIntentToData matches an intent against provided data
+// parseIntentProperty parses one entry of an intent's `properties` map, in
+// either the singular `schema` or the plural `schemas` form (see
+// IntentProperty). Nothing is defaulted: a type the app did not declare is
+// reported as empty.
+func parseIntentProperty(propName string, propMap map[string]interface{}) IntentProperty {
+	required, _ := propMap["required"].(bool)
+	description, _ := propMap["description"].(string)
+
+	prop := IntentProperty{
+		Required:     required,
+		Description:  description,
+		AcceptedKeys: []string{},
+	}
+
+	if schema, ok := propMap["schema"].(map[string]interface{}); ok {
+		prop.Schema = schema
+	}
+	if schemas, ok := propMap["schemas"].(map[string]interface{}); ok {
+		prop.Schemas = schemas
+	}
+
+	var formats []string
+	for _, key := range prop.acceptedKeys(propName) {
+		schema := prop.keySchema(propName, key)
+		for _, t := range schemaTypes(schema) {
+			prop.Types = appendUnique(prop.Types, t)
+		}
+		if f, ok := schema["format"].(string); ok && f != "" {
+			formats = appendUnique(formats, f)
+		}
+		prop.AcceptedKeys = append(prop.AcceptedKeys, key)
+	}
+	prop.Type = strings.Join(prop.Types, "|")
+	// Format holds one value. When the accepted keys disagree it stays
+	// empty, and each key's own schema (in Schemas) still carries its format.
+	if len(formats) == 1 {
+		prop.Format = formats[0]
+	}
+
+	return prop
+}
+
+// acceptedKeys returns the payload keys that satisfy the property: the
+// `schemas` keys (sorted) when the plural form is declared, else the property
+// name. A declared `schemas` map takes precedence over a singular `schema`.
+func (p IntentProperty) acceptedKeys(propName string) []string {
+	if p.Schemas != nil {
+		return sortedKeys(p.Schemas)
+	}
+	return []string{propName}
+}
+
+// keySchema returns the schema governing one accepted key, or nil when none
+// is declared (or the declaration is not an object).
+func (p IntentProperty) keySchema(propName, key string) map[string]interface{} {
+	if p.Schemas != nil {
+		schema, _ := p.Schemas[key].(map[string]interface{})
+		return schema
+	}
+	if key == propName {
+		return p.Schema
+	}
+	return nil
+}
+
+// KeyPattern returns the `pattern` the schema of one accepted key declares,
+// or "" when it declares none.
+func (p IntentProperty) KeyPattern(propName, key string) string {
+	pattern, _ := p.keySchema(propName, key)["pattern"].(string)
+	return pattern
+}
+
+// schemaTypes returns the types a schema declares: `type: "string"` and
+// `type: ["string", "array"]` are both valid JSON Schema. Anything else
+// (absent, or malformed such as an object) declares no type.
+func schemaTypes(schema map[string]interface{}) []string {
+	switch t := schema["type"].(type) {
+	case string:
+		if t != "" {
+			return []string{t}
+		}
+	case []interface{}:
+		var types []string
+		for _, v := range t {
+			if s, ok := v.(string); ok && s != "" {
+				types = appendUnique(types, s)
+			}
+		}
+		return types
+	}
+	return nil
+}
+
+// matchIntentToData matches an intent against provided data.
+//
+// A property is satisfied when the data carries one of its accepted keys
+// (see IntentProperty) with a value the key's schema admits: a declared
+// `pattern` must match a string value. A pattern Go cannot compile (RE2
+// lacks some ECMAScript constructs) is not evaluated, so the key alone
+// decides.
+//
+// Match quality is the share of declared properties the data satisfies. It
+// is 0 when a required property is unsatisfied, and also when nothing
+// matched: an intent that declares no properties does not use the data, so
+// the data does not select it.
 func matchIntentToData(intent Intent, data map[string]interface{}) IntentMatch {
 	var matchedProps []string
 	var missingProps []string
+	matchedKeys := make(map[string]string)
+
+	satisfy := func(propName string) bool {
+		if _, done := matchedKeys[propName]; done {
+			return true
+		}
+		prop := intent.Properties[propName]
+		key, ok := prop.satisfyingKey(propName, data)
+		if !ok {
+			return false
+		}
+		matchedKeys[propName] = key
+		matchedProps = append(matchedProps, propName)
+		return true
+	}
 
 	// Check all required properties
 	for _, reqProp := range intent.RequiredProps {
-		if _, exists := data[reqProp]; exists {
-			matchedProps = append(matchedProps, reqProp)
-		} else {
+		if !satisfy(reqProp) {
 			missingProps = append(missingProps, reqProp)
 		}
 	}
 
+	match := IntentMatch{Intent: intent, MissingProps: missingProps}
+
 	// If any required property is missing, match quality is 0
 	if len(missingProps) > 0 {
-		return IntentMatch{
-			Intent:       intent,
-			MatchQuality: 0,
-			MatchedProps: matchedProps,
-			MissingProps: missingProps,
-		}
+		match.MatchedProps = matchedProps
+		return match
 	}
 
-	// Calculate match quality based on property coverage
+	// Then the optional ones, in name order for stable output.
+	for _, propName := range sortedPropertyNames(intent.Properties) {
+		satisfy(propName)
+	}
+
+	match.MatchedProps = matchedProps
+	if len(matchedKeys) > 0 {
+		match.MatchedKeys = matchedKeys
+	}
+
 	totalProps := len(intent.Properties)
 	if totalProps == 0 {
-		// Intent with no properties always matches
-		return IntentMatch{
-			Intent:       intent,
-			MatchQuality: 100,
-			MatchedProps: matchedProps,
-			MissingProps: missingProps,
-		}
-	}
-
-	// Count all properties in data that match intent properties
-	matchedCount := 0
-	for propName := range intent.Properties {
-		if _, exists := data[propName]; exists {
-			matchedCount++
-			// Add to matchedProps if not already there (for optional props)
-			if !contains(matchedProps, propName) {
-				matchedProps = append(matchedProps, propName)
-			}
-		}
+		return match
 	}
 
 	// Calculate coverage: (matched_properties / total_properties) * 100
-	matchQuality := (float64(matchedCount) / float64(totalProps)) * 100
-
-	return IntentMatch{
-		Intent:       intent,
-		MatchQuality: matchQuality,
-		MatchedProps: matchedProps,
-		MissingProps: missingProps,
+	matched := 0
+	for propName := range intent.Properties {
+		if _, ok := matchedKeys[propName]; ok {
+			matched++
+		}
 	}
+	match.MatchQuality = (float64(matched) / float64(totalProps)) * 100
+
+	return match
+}
+
+// satisfyingKey returns the first accepted key (in sorted order) that the
+// data carries with an admitted value. An accepted key containing "*" is a
+// wildcard (e.g. `dt.smartscape.*`) matched against the data's keys, and the
+// data key it matched is returned.
+func (p IntentProperty) satisfyingKey(propName string, data map[string]interface{}) (string, bool) {
+	for _, key := range p.acceptedKeys(propName) {
+		schema := p.keySchema(propName, key)
+		if !strings.Contains(key, "*") {
+			if value, ok := data[key]; ok && valueAdmitted(schema, value) {
+				return key, true
+			}
+			continue
+		}
+		for _, dataKey := range sortedKeys(data) {
+			if ok, err := path.Match(key, dataKey); err == nil && ok && valueAdmitted(schema, data[dataKey]) {
+				return dataKey, true
+			}
+		}
+	}
+	return "", false
+}
+
+// valueAdmitted reports whether a schema's `pattern` admits a value. Only a
+// string value is checked, and only against a pattern Go can compile.
+func valueAdmitted(schema map[string]interface{}, value interface{}) bool {
+	pattern, ok := schema["pattern"].(string)
+	if !ok || pattern == "" {
+		return true
+	}
+	s, ok := value.(string)
+	if !ok {
+		return true
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return true
+	}
+	return re.MatchString(s)
+}
+
+// SortedPropertyNames returns the intent's property names in sorted order.
+func (i Intent) SortedPropertyNames() []string {
+	return sortedPropertyNames(i.Properties)
+}
+
+func sortedPropertyNames(props map[string]IntentProperty) []string {
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func sortedKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func appendUnique(list []string, item string) []string {
+	if contains(list, item) {
+		return list
+	}
+	return append(list, item)
 }
 
 // contains checks if a string slice contains a given item

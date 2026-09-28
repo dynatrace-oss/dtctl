@@ -1,0 +1,3 @@
+APP_ID,APP,INTENT_ID,DESCRIPTION,FULL_NAME,REQUIRED
+example.app,Example App,view-thing,Open a thing,example.app/view-thing,[thing]
+example.app,Example App,view-thing-legacy,Open a thing (legacy),example.app/view-thing-legacy,[id unused]

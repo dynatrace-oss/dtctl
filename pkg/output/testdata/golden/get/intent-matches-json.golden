@@ -1,0 +1,71 @@
+[
+  {
+    "appId": "example.app",
+    "appName": "Example App",
+    "intentId": "view-thing",
+    "description": "Open a thing",
+    "properties": {
+      "note": {
+        "type": "",
+        "required": false,
+        "acceptedKeys": [
+          "note"
+        ]
+      },
+      "tags": {
+        "type": "string|array",
+        "required": false,
+        "types": [
+          "string",
+          "array"
+        ],
+        "acceptedKeys": [
+          "tags"
+        ],
+        "schema": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        }
+      },
+      "thing": {
+        "type": "string",
+        "required": true,
+        "description": "The thing to open",
+        "types": [
+          "string"
+        ],
+        "acceptedKeys": [
+          "dt.entity",
+          "thing"
+        ],
+        "schemas": {
+          "dt.entity": {
+            "pattern": "^(?:THING-|WIDGET-)[0-9A-F]{16}$",
+            "type": "string"
+          },
+          "thing": {
+            "pattern": "^(?:THING-|WIDGET-)[0-9A-F]{16}$",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "fullName": "example.app/view-thing",
+    "requiredProps": [
+      "thing"
+    ],
+    "name": "View thing",
+    "matchQuality": 33.33333333333333,
+    "matchedProps": [
+      "thing"
+    ],
+    "matchedKeys": {
+      "thing": "dt.entity"
+    }
+  }
+]

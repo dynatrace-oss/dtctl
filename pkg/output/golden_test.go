@@ -1625,6 +1625,127 @@ func TestGolden_DescribeApp(t *testing.T) {
 	}
 }
 
+// intentFixtures covers both declaration forms (#517): a property declared
+// with singular `schema`, one with plural `schemas` (accepted alias keys with
+// per-key patterns), a list-form type, an undeclared type (empty, never a
+// made-up "string"), an empty `schemas` map, and a deprecated intent.
+func intentFixtures() []appengine.Intent {
+	thingPattern := "^(?:THING-|WIDGET-)[0-9A-F]{16}$"
+	return []appengine.Intent{
+		{
+			AppID:       "example.app",
+			AppName:     "Example App",
+			IntentID:    "view-thing",
+			Name:        "View thing",
+			Description: "Open a thing",
+			FullName:    "example.app/view-thing",
+			Properties: map[string]appengine.IntentProperty{
+				"thing": {
+					Type:         "string",
+					Types:        []string{"string"},
+					Required:     true,
+					Description:  "The thing to open",
+					AcceptedKeys: []string{"dt.entity", "thing"},
+					Schemas: map[string]interface{}{
+						"dt.entity": map[string]interface{}{"type": "string", "pattern": thingPattern},
+						"thing":     map[string]interface{}{"type": "string", "pattern": thingPattern},
+					},
+				},
+				"tags": {
+					Type:         "string|array",
+					Types:        []string{"string", "array"},
+					AcceptedKeys: []string{"tags"},
+					Schema: map[string]interface{}{
+						"type":  []interface{}{"string", "array"},
+						"items": map[string]interface{}{"type": "string"},
+					},
+				},
+				"note": {
+					AcceptedKeys: []string{"note"},
+				},
+			},
+			RequiredProps: []string{"thing"},
+		},
+		{
+			AppID:              "example.app",
+			AppName:            "Example App",
+			IntentID:           "view-thing-legacy",
+			Description:        "Open a thing (legacy)",
+			FullName:           "example.app/view-thing-legacy",
+			Deprecated:         true,
+			DeprecationMessage: "Use view-thing instead",
+			Properties: map[string]appengine.IntentProperty{
+				"id": {
+					Type:         "string",
+					Types:        []string{"string"},
+					Required:     true,
+					Format:       "uuid",
+					AcceptedKeys: []string{"id"},
+					Schema:       map[string]interface{}{"type": "string", "format": "uuid"},
+				},
+				"unused": {
+					Required:     true,
+					AcceptedKeys: []string{},
+					Schemas:      map[string]interface{}{},
+				},
+			},
+			RequiredProps: []string{"id", "unused"},
+		},
+	}
+}
+
+func TestGolden_GetIntents(t *testing.T) {
+	intents := intentFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(intents); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/intents-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_FindIntents(t *testing.T) {
+	matches := []appengine.IntentMatch{
+		{
+			Intent:       intentFixtures()[0],
+			MatchQuality: 33.33333333333333,
+			MatchedProps: []string{"thing"},
+			MatchedKeys:  map[string]string{"thing": "dt.entity"},
+		},
+	}
+
+	formats := map[string]string{
+		"table": "table",
+		"json":  "json",
+		"yaml":  "yaml",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(matches); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/intent-matches-"+name, buf.String())
+		})
+	}
+}
+
 func TestGolden_DescribeSettings(t *testing.T) {
 	s := describeSettingsFixture()
 

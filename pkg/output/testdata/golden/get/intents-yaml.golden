@@ -1,0 +1,78 @@
+- appid: example.app
+  appname: Example App
+  intentid: view-thing
+  description: Open a thing
+  properties:
+    note:
+      type: ""
+      required: false
+      format: ""
+      description: ""
+      acceptedkeys:
+        - note
+    tags:
+      type: string|array
+      required: false
+      format: ""
+      description: ""
+      types:
+        - string
+        - array
+      acceptedkeys:
+        - tags
+      schema:
+        items:
+          type: string
+        type:
+          - string
+          - array
+    thing:
+      type: string
+      required: true
+      format: ""
+      description: The thing to open
+      types:
+        - string
+      acceptedkeys:
+        - dt.entity
+        - thing
+      schemas:
+        dt.entity:
+          pattern: ^(?:THING-|WIDGET-)[0-9A-F]{16}$
+          type: string
+        thing:
+          pattern: ^(?:THING-|WIDGET-)[0-9A-F]{16}$
+          type: string
+  fullname: example.app/view-thing
+  requiredprops:
+    - thing
+  name: View thing
+- appid: example.app
+  appname: Example App
+  intentid: view-thing-legacy
+  description: Open a thing (legacy)
+  properties:
+    id:
+      type: string
+      required: true
+      format: uuid
+      description: ""
+      types:
+        - string
+      acceptedkeys:
+        - id
+      schema:
+        format: uuid
+        type: string
+    unused:
+      type: ""
+      required: true
+      format: ""
+      description: ""
+      acceptedkeys: []
+  fullname: example.app/view-thing-legacy
+  requiredprops:
+    - id
+    - unused
+  deprecated: true
+  deprecationmessage: Use view-thing instead

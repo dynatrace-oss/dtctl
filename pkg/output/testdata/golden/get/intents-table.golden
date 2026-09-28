@@ -1,0 +1,3 @@
+APP           INTENT ID           DESCRIPTION             FULL NAME                       REQUIRED    
+Example App   view-thing          Open a thing            example.app/view-thing          <1 items>   
+Example App   view-thing-legacy   Open a thing (legacy)   example.app/view-thing-legacy   <2 items>   

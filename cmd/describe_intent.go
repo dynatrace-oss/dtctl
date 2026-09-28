@@ -51,27 +51,27 @@ Examples:
 			const w = 14
 			output.DescribeKV("Intent:", w, "%s", intent.IntentID)
 			output.DescribeKV("Full Name:", w, "%s", intent.FullName)
+			if intent.Name != "" && intent.Name != intent.Description {
+				output.DescribeKV("Name:", w, "%s", intent.Name)
+			}
 			if intent.Description != "" {
 				output.DescribeKV("Description:", w, "%s", intent.Description)
 			}
 			output.DescribeKV("App:", w, "%s (%s)", intent.AppName, intent.AppID)
+			if intent.Deprecated {
+				if intent.DeprecationMessage != "" {
+					output.DescribeKV("Deprecated:", w, "yes (%s)", intent.DeprecationMessage)
+				} else {
+					output.DescribeKV("Deprecated:", w, "yes")
+				}
+			}
 
-			// Print properties
+			// Print properties, in name order so repeated runs match.
 			if len(intent.Properties) > 0 {
 				fmt.Println()
 				output.DescribeSection("Properties:")
-				for propName, prop := range intent.Properties {
-					required := ""
-					if prop.Required {
-						required = " (required)"
-					}
-					fmt.Printf("  - %s: %s%s\n", propName, prop.Type, required)
-					if prop.Format != "" {
-						fmt.Printf("    Format: %s\n", prop.Format)
-					}
-					if prop.Description != "" {
-						fmt.Printf("    Description: %s\n", prop.Description)
-					}
+				for _, propName := range intent.SortedPropertyNames() {
+					describeIntentProperty(propName, intent.Properties[propName])
 				}
 			}
 
@@ -93,6 +93,47 @@ Examples:
 		// For other formats, use standard printer
 		return printer.Print(intent)
 	},
+}
+
+// describeIntentProperty prints one property of `describe intent`'s table
+// view: its declared type (never a guessed one), and the payload keys that
+// satisfy it when those are not simply the property name.
+func describeIntentProperty(propName string, prop appengine.IntentProperty) {
+	required := ""
+	if prop.Required {
+		required = " (required)"
+	}
+	propType := prop.Type
+	if propType == "" {
+		propType = "(type not declared)"
+	}
+	fmt.Printf("  - %s: %s%s\n", propName, propType, required)
+	if prop.Format != "" {
+		fmt.Printf("    Format: %s\n", prop.Format)
+	}
+
+	keyIsName := len(prop.AcceptedKeys) == 1 && prop.AcceptedKeys[0] == propName
+	switch {
+	case keyIsName:
+		if pattern := prop.KeyPattern(propName, propName); pattern != "" {
+			fmt.Printf("    Pattern: %s\n", pattern)
+		}
+	case len(prop.AcceptedKeys) == 0:
+		fmt.Printf("    Accepted keys: none (empty schemas; no payload can satisfy it)\n")
+	default:
+		fmt.Printf("    Accepted keys:\n")
+		for _, key := range prop.AcceptedKeys {
+			if pattern := prop.KeyPattern(propName, key); pattern != "" {
+				fmt.Printf("      - %s  (pattern: %s)\n", key, pattern)
+			} else {
+				fmt.Printf("      - %s\n", key)
+			}
+		}
+	}
+
+	if prop.Description != "" {
+		fmt.Printf("    Description: %s\n", prop.Description)
+	}
 }
 
 func init() {

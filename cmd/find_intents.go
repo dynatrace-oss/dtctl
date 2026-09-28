@@ -26,9 +26,16 @@ var findIntentsCmd = &cobra.Command{
 This command matches the provided data against all available intents
 and returns intents that can handle the data, sorted by match quality.
 
+A property is satisfied when the data carries one of the keys the intent
+accepts for it (see acceptedKeys in 'dtctl describe intent -o json') and,
+where the app declares a pattern for that key, the value matches it.
+
 Match quality is calculated based on property coverage:
-  - 0%: Intent has required properties missing from data
-  - 1-100%: Percentage of intent properties present in data
+  - 0%: Intent has required properties the data does not satisfy, or
+        declares no property the data satisfies (not listed)
+  - 1-100%: Percentage of intent properties the data satisfies
+
+At equal quality, deprecated intents are listed after the others.
 
 Examples:
   # Find intents for trace data
