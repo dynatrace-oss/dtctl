@@ -140,6 +140,7 @@ func init() {
 	getCmd.AddCommand(getLookupsCmd)
 	getCmd.AddCommand(getAppsCmd)
 	getCmd.AddCommand(getFunctionsCmd)
+	getCmd.AddCommand(getActionsCmd)
 	getCmd.AddCommand(getIntentsCmd)
 	getCmd.AddCommand(getEdgeConnectsCmd)
 	getCmd.AddCommand(getUsersCmd)

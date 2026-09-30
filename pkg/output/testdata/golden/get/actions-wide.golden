@@ -1,0 +1,4 @@
+APP ID              APP                 ACTION         TITLE          DESCRIPTION        STATEFUL   FULL NAME                        
+example.app         Example App         send-thing     Send thing     Sends a thing      true       example.app/send-thing           
+example.app         Example App         list-things    List things    Lists the things   false      example.app/list-things          
+example.connector   Example Connector   create-thing   Create thing   Creates a thing    false      example.connector/create-thing   

@@ -1,0 +1,24 @@
+- appid: example.app
+  appname: Example App
+  actionname: send-thing
+  title: Send thing
+  description: Sends a thing
+  stateful: true
+  fullname: example.app/send-thing
+  extra: {}
+- appid: example.app
+  appname: Example App
+  actionname: list-things
+  title: List things
+  description: Lists the things
+  stateful: false
+  fullname: example.app/list-things
+  extra: {}
+- appid: example.connector
+  appname: Example Connector
+  actionname: create-thing
+  title: Create thing
+  description: Creates a thing
+  stateful: false
+  fullname: example.connector/create-thing
+  extra: {}

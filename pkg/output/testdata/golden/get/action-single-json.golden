@@ -1,0 +1,17 @@
+{
+  "appId": "example.connector",
+  "appName": "Example Connector",
+  "actionName": "create-thing",
+  "title": "Create thing",
+  "description": "Creates a thing",
+  "fullName": "example.connector/create-thing",
+  "extra": {
+    "approval": true,
+    "expressionValidation": {
+      "owner": {
+        "pattern": "^[A-Za-z0-9-]+$"
+      }
+    },
+    "widget": "/actions/create-thing"
+  }
+}

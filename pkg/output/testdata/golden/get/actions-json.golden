@@ -1,0 +1,27 @@
+[
+  {
+    "appId": "example.app",
+    "appName": "Example App",
+    "actionName": "send-thing",
+    "title": "Send thing",
+    "description": "Sends a thing",
+    "stateful": true,
+    "fullName": "example.app/send-thing"
+  },
+  {
+    "appId": "example.app",
+    "appName": "Example App",
+    "actionName": "list-things",
+    "title": "List things",
+    "description": "Lists the things",
+    "fullName": "example.app/list-things"
+  },
+  {
+    "appId": "example.connector",
+    "appName": "Example Connector",
+    "actionName": "create-thing",
+    "title": "Create thing",
+    "description": "Creates a thing",
+    "fullName": "example.connector/create-thing"
+  }
+]

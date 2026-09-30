@@ -3357,3 +3357,105 @@ func TestGolden_GetLicenseSettings_Empty(t *testing.T) {
 		})
 	}
 }
+
+// actionFixtures is what `get actions` lists. Extra is deliberately absent
+// from every entry: the flat /actions collection serves a fixed field set, so
+// a list can never carry arbitrary keys. Only a single action has them --
+// see actionWithExtraFixture.
+func actionFixtures() []appengine.AppAction {
+	return []appengine.AppAction{
+		{
+			AppID:       "example.app",
+			AppName:     "Example App",
+			ActionName:  "send-thing",
+			Title:       "Send thing",
+			Description: "Sends a thing",
+			Stateful:    true,
+			FullName:    "example.app/send-thing",
+		},
+		{
+			AppID:       "example.app",
+			AppName:     "Example App",
+			ActionName:  "list-things",
+			Title:       "List things",
+			Description: "Lists the things",
+			FullName:    "example.app/list-things",
+		},
+		{
+			AppID:       "example.connector",
+			AppName:     "Example Connector",
+			ActionName:  "create-thing",
+			Title:       "Create thing",
+			Description: "Creates a thing",
+			FullName:    "example.connector/create-thing",
+		},
+	}
+}
+
+// actionWithExtraFixture is a single action as `get action <app>/<name>`
+// returns it: every key the typed fields do not model lands in Extra, nested
+// and scalar both, hidden from tables and present in the structured formats.
+func actionWithExtraFixture() appengine.AppAction {
+	return appengine.AppAction{
+		AppID:       "example.connector",
+		AppName:     "Example Connector",
+		ActionName:  "create-thing",
+		Title:       "Create thing",
+		Description: "Creates a thing",
+		FullName:    "example.connector/create-thing",
+		Extra: map[string]interface{}{
+			"approval": true,
+			"widget":   "/actions/create-thing",
+			"expressionValidation": map[string]interface{}{
+				"owner": map[string]interface{}{"pattern": "^[A-Za-z0-9-]+$"},
+			},
+		},
+	}
+}
+
+func TestGolden_GetActions(t *testing.T) {
+	actions := actionFixtures()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"csv":   "csv",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.PrintList(actions); err != nil {
+				t.Fatalf("PrintList failed: %v", err)
+			}
+			assertGolden(t, "get/actions-"+name, buf.String())
+		})
+	}
+}
+
+func TestGolden_GetAction(t *testing.T) {
+	action := actionWithExtraFixture()
+
+	formats := map[string]string{
+		"table": "table",
+		"wide":  "wide",
+		"json":  "json",
+		"yaml":  "yaml",
+		"toon":  "toon",
+	}
+
+	for name, format := range formats {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			printer := NewPrinterWithWriter(format, &buf)
+			if err := printer.Print(action); err != nil {
+				t.Fatalf("Print failed: %v", err)
+			}
+			assertGolden(t, "get/action-single-"+name, buf.String())
+		})
+	}
+}

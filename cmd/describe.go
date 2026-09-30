@@ -323,6 +323,7 @@ func init() {
 	describeCmd.AddCommand(describeLookupCmd)
 	describeCmd.AddCommand(describeAppCmd)
 	describeCmd.AddCommand(describeFunctionCmd)
+	describeCmd.AddCommand(describeActionCmd)
 	describeCmd.AddCommand(describeIntentCmd)
 	describeCmd.AddCommand(describeEdgeConnectCmd)
 	describeCmd.AddCommand(describeUserCmd)
