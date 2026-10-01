@@ -530,7 +530,19 @@ func populateVerbScopes(name string, verb *Verb) {
 	access := auth.Access(verb.Access)
 	byResource := make(map[string][]string)
 	for _, r := range verb.Resources {
-		if scopes := auth.ScopesForResource(r, access); len(scopes) > 0 {
+		scopes := auth.ScopesForResource(r, access)
+		if len(scopes) == 0 && access != auth.AccessRead {
+			// A resource nested under a mutating verb can itself be read-only
+			// (e.g. `share get` under the mutating `share` verb): such a
+			// resource has no scopes at the verb's own access level by
+			// construction, so falling back to its Read scopes reports what
+			// it actually requires instead of silently omitting it, which
+			// would wrongly read as "needs no token scopes at all". A
+			// genuinely mutating resource never hits this fallback -- it
+			// always has scopes at the verb's access level.
+			scopes = auth.ScopesForResource(r, auth.AccessRead)
+		}
+		if len(scopes) > 0 {
 			byResource[r] = scopes
 		}
 	}
