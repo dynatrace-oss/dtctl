@@ -327,7 +327,9 @@ func emitRawSpec(cmd *cobra.Command, cfg *config.Config, entry resapi.Entry, doc
 		if _, werr := os.Stdout.Write(doc); werr != nil {
 			return werr
 		}
-		if size > 0 && doc[size-1] != '\n' {
+		// Only when a human is watching: --raw is documented as going to stdout so
+		// the caller can redirect it, and a redirected document must be byte-exact.
+		if isTerminal(os.Stdout) && size > 0 && doc[size-1] != '\n' {
 			fmt.Println()
 		}
 		return nil

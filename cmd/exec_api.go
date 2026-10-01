@@ -384,7 +384,9 @@ func emitAPIResponse(method, requestPath string, status int, contentType string,
 		if _, err := os.Stdout.Write(body); err != nil {
 			return err
 		}
-		if body[len(body)-1] != '\n' {
+		// Only when a human is watching: redirected output must be byte-exact, or
+		// a downloaded archive no longer matches the checksum the API reports.
+		if isTerminal(os.Stdout) && body[len(body)-1] != '\n' {
 			fmt.Println()
 		}
 		return nil
