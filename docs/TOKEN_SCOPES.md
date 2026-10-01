@@ -371,6 +371,8 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | function | `app-engine:apps:run` |
 | gcp | `extensions:configurations:read` |
 | gcp | `settings:objects:read` |
+| get | `document:environment-shares:read` |
+| get | or instead any one of: `document:direct-shares:read` |
 | group | `iam:groups:read` |
 | hub-extension | `hub:catalog:read` |
 | hub-extension-release | `hub:catalog:read` |
@@ -423,6 +425,7 @@ Generated reference of the API token scopes each resource requires, grouped by s
 | azure | `settings:objects:write` |
 | breakpoint | `dev-obs:breakpoints:set` |
 | bucket | `storage:buckets:write` |
+| claim | `document:environment-shares:claim` |
 | dashboard | `document:documents:write` |
 | document | `document:documents:write` |
 | edgeconnect | `app-engine:edge-connects:write` |

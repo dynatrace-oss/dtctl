@@ -302,6 +302,123 @@ func TestListDirectShares_Paginated(t *testing.T) {
 	}
 }
 
+func TestGetEnvironmentShare(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"share-1","documentId":"doc-123","access":["read"],"claimCount":2}`))
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.GetEnvironmentShare(context.Background(), "share-1")
+	if err != nil {
+		t.Fatalf("GetEnvironmentShare() error: %v", err)
+	}
+	if result.DocumentID != "doc-123" {
+		t.Errorf("DocumentID = %q, want doc-123", result.DocumentID)
+	}
+	if result.ClaimCount != 2 {
+		t.Errorf("ClaimCount = %d, want 2", result.ClaimCount)
+	}
+}
+
+func TestGetEnvironmentShare_NotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares/missing", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, `{"error":{"code":404,"message":"not found"}}`)
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	_, err := h.GetEnvironmentShare(context.Background(), "missing")
+	if err == nil {
+		t.Fatal("GetEnvironmentShare() expected error for 404")
+	}
+	if !errors.Is(err, httpclient.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got: %v", err)
+	}
+}
+
+func TestClaimEnvironmentShare_BodyCarriesDocumentID(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares/share-1/claim", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"share-1","documentId":"doc-123","access":["read"],"claimCount":1}`))
+	})
+	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("ClaimEnvironmentShare() should not fall back to GET when the PUT response already carries the documentId")
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.ClaimEnvironmentShare(context.Background(), "share-1")
+	if err != nil {
+		t.Fatalf("ClaimEnvironmentShare() error: %v", err)
+	}
+	if result.DocumentID != "doc-123" {
+		t.Errorf("DocumentID = %q, want doc-123", result.DocumentID)
+	}
+}
+
+func TestClaimEnvironmentShare_EmptyBodyFallsBackToGet(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/environment-shares/share-1/claim", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"share-1","documentId":"doc-123","access":["read"],"claimCount":1}`))
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.ClaimEnvironmentShare(context.Background(), "share-1")
+	if err != nil {
+		t.Fatalf("ClaimEnvironmentShare() error: %v", err)
+	}
+	if result.DocumentID != "doc-123" {
+		t.Errorf("DocumentID = %q, want doc-123 (from GET fallback)", result.DocumentID)
+	}
+}
+
+func TestGetDirectShare(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/direct-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"share-1","documentId":"doc-456","access":["read","write"]}`))
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	result, err := h.GetDirectShare(context.Background(), "share-1")
+	if err != nil {
+		t.Fatalf("GetDirectShare() error: %v", err)
+	}
+	if result.DocumentID != "doc-456" {
+		t.Errorf("DocumentID = %q, want doc-456", result.DocumentID)
+	}
+	if !result.ExactAccess("read-write") {
+		t.Errorf("got access %v, want exactly read-write", result.Access)
+	}
+}
+
 func TestDeleteEnvironmentShare(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {

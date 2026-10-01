@@ -414,6 +414,15 @@ func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) 
 	return fromSDKDirectShareList(l), nil
 }
 
+// GetDirectShare retrieves a direct share by ID.
+func (h *Handler) GetDirectShare(shareID string) (*DirectShare, error) {
+	d, err := h.sdk.GetDirectShare(context.Background(), shareID)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKDirectShare(d), nil
+}
+
 // DeleteDirectShare deletes a direct share.
 func (h *Handler) DeleteDirectShare(shareID string) error {
 	return h.sdk.DeleteDirectShare(context.Background(), shareID)
@@ -453,9 +462,76 @@ func (h *Handler) ListEnvironmentShares(documentID string) (*EnvironmentShareLis
 	return fromSDKEnvironmentShareList(l), nil
 }
 
+// GetEnvironmentShare retrieves an environment share by ID.
+func (h *Handler) GetEnvironmentShare(shareID string) (*EnvironmentShare, error) {
+	s, err := h.sdk.GetEnvironmentShare(context.Background(), shareID)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKEnvironmentShare(s), nil
+}
+
+// ClaimEnvironmentShare claims an environment share, granting the current user
+// access to the underlying document and resolving the share to it.
+func (h *Handler) ClaimEnvironmentShare(shareID string) (*EnvironmentShare, error) {
+	s, err := h.sdk.ClaimEnvironmentShare(context.Background(), shareID)
+	if err != nil {
+		return nil, err
+	}
+	return fromSDKEnvironmentShare(s), nil
+}
+
 // DeleteEnvironmentShare deletes an environment share.
 func (h *Handler) DeleteEnvironmentShare(shareID string) error {
 	return h.sdk.DeleteEnvironmentShare(context.Background(), shareID)
+}
+
+// ShareDetails is the resolved result of GetShareByID: a share located purely
+// by ID, without the caller needing to know upfront whether it names an
+// environment share or a direct share (share links don't carry that
+// information themselves).
+type ShareDetails struct {
+	ID         string   `json:"id" table:"ID"`
+	Kind       string   `json:"kind" table:"KIND"`
+	DocumentID string   `json:"documentId" table:"DOCUMENT_ID"`
+	Access     []string `json:"access" table:"ACCESS"`
+	ClaimCount int      `json:"claimCount,omitempty" yaml:"claimCount,omitempty" table:"CLAIM_COUNT,wide"`
+}
+
+// GetShareByID resolves a share ID to its document, trying environment-share
+// first and falling back to direct-share so callers don't need to know the
+// share's type upfront.
+//
+// The fallback triggers on a 403 as well as a 404: document:environment-shares:read
+// is only granted at the top safety tiers (readwrite-all and above), so a
+// readwrite-mine token resolving its own direct-share link would otherwise be
+// refused by the environment-share lookup before ever reaching the endpoint
+// it actually has access to.
+func (h *Handler) GetShareByID(shareID string) (*ShareDetails, error) {
+	share, err := h.GetEnvironmentShare(shareID)
+	if err == nil {
+		return &ShareDetails{
+			ID:         share.ID,
+			Kind:       "environment",
+			DocumentID: share.DocumentID,
+			Access:     share.Access,
+			ClaimCount: share.ClaimCount,
+		}, nil
+	}
+	if !IsNotFound(err) && !errors.Is(err, httpclient.ErrForbidden) {
+		return nil, err
+	}
+
+	direct, err := h.GetDirectShare(shareID)
+	if err != nil {
+		return nil, err
+	}
+	return &ShareDetails{
+		ID:         direct.ID,
+		Kind:       "direct",
+		DocumentID: direct.DocumentID,
+		Access:     direct.Access,
+	}, nil
 }
 
 // SetDocumentPublic flips a document's isPrivate flag to false.

@@ -227,6 +227,7 @@ var dryRunCommands = []*cobra.Command{
 	restoreNotebookCmd,
 	restoreTrashCmd,
 	restoreWorkflowCmd,
+	shareClaimCmd,
 	shareDashboardCmd,
 	shareDocumentCmd,
 	shareNotebookCmd,

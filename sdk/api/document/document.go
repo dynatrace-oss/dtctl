@@ -709,6 +709,28 @@ func (h *Handler) ListDirectShares(ctx context.Context, documentID string) (*Dir
 	}, nil
 }
 
+// GetDirectShare retrieves a direct share by ID. Direct-share links (as opposed
+// to environment-share links) resolve through this endpoint.
+func (h *Handler) GetDirectShare(ctx context.Context, shareID string) (*DirectShare, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/document/v1/direct-shares/%s", httpclient.PathSegment(shareID)))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get direct share: %w", err)
+	}
+
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return nil, fmt.Errorf("failed to get direct share %q: %w", shareID, err)
+	}
+
+	var result DirectShare
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get direct share: parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // DeleteDirectShare deletes a direct share
 func (h *Handler) DeleteDirectShare(ctx context.Context, shareID string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
@@ -963,6 +985,59 @@ func (h *Handler) DeleteEnvironmentShare(ctx context.Context, shareID string) er
 	}
 
 	return nil
+}
+
+// GetEnvironmentShare retrieves an environment share by ID, resolving it to the
+// document it points to. Environment share URLs (`.../document/v0/#share=<id>`)
+// carry only the share ID, not the document ID, so this is how a share link
+// gets resolved.
+func (h *Handler) GetEnvironmentShare(ctx context.Context, shareID string) (*EnvironmentShare, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/document/v1/environment-shares/%s", httpclient.PathSegment(shareID)))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment share: %w", err)
+	}
+
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return nil, fmt.Errorf("failed to get environment share %q: %w", shareID, err)
+	}
+
+	var result EnvironmentShare
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("get environment share: parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ClaimEnvironmentShare claims an environment share, mirroring the browser's
+// "Copy link to share" -> open flow: opening the link claims the share and
+// grants the current user access to the underlying document.
+//
+// The claim endpoint's response body isn't pinned by the spec, so this falls
+// back to GetEnvironmentShare whenever the PUT response doesn't already carry
+// the document ID, guaranteeing callers always get it back to chain into.
+func (h *Handler) ClaimEnvironmentShare(ctx context.Context, shareID string) (*EnvironmentShare, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Put(fmt.Sprintf("/platform/document/v1/environment-shares/%s/claim", httpclient.PathSegment(shareID)))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim environment share: %w", err)
+	}
+
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return nil, fmt.Errorf("failed to claim environment share %q: %w", shareID, err)
+	}
+
+	var result EnvironmentShare
+	if len(resp.Body()) > 0 {
+		if err := json.Unmarshal(resp.Body(), &result); err == nil && result.DocumentID != "" {
+			return &result, nil
+		}
+	}
+
+	return h.GetEnvironmentShare(ctx, shareID)
 }
 
 // SetDocumentPublic flips a document's isPrivate flag to false, making it discoverable

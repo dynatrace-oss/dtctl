@@ -36,6 +36,7 @@
 | Unmapped key |
 | --- |
 | arrivals |
+| claim |
 | classic-pipelines |
 | current |
 | current-context |
@@ -45,6 +46,7 @@
 | describe |
 | describe-context |
 | export |
+| get |
 | get-contexts |
 | import |
 | init |

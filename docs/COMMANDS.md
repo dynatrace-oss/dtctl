@@ -455,8 +455,10 @@ _mutating | access: write | safety: OperationUpdate_
 
 | Resource | Required scopes |
 | --- | --- |
+| claim | `document:environment-shares:claim` |
 | dashboard | `document:documents:write` |
 | document | `document:documents:write` |
+| get | _(none declared)_ |
 | notebook | `document:documents:write` |
 
 

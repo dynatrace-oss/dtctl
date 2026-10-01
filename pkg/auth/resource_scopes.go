@@ -115,6 +115,26 @@ var ResourceScopes = map[string]AccessScopes{
 	"notebook":  {Read: []string{"document:documents:read"}, Write: []string{"document:documents:write"}, Delete: []string{"document:documents:delete"}},
 	"trash":     {Read: []string{"document:trash.documents:read"}, Write: []string{"document:trash.documents:restore"}, Delete: []string{"document:trash.documents:delete"}},
 
+	// `share get` and `share claim` resolve/claim a share by ID (environment
+	// share, falling back to direct share) rather than managing a resource of
+	// their own, so -- like "describe"/"delete" under `ctx` -- their resource
+	// name doubles as a verb name elsewhere in the tree; see localResources
+	// below for the established precedent.
+	//
+	// Both live under the `share` verb, whose single catalog access level is
+	// Write (MutatingVerbs["share"]), so only "claim"'s Write entry actually
+	// surfaces in required_scopes_by_resource; "get" is real but read-only and
+	// is documented here for `--check-scopes --resource get` rather than being
+	// reachable through the verb-level lookup.
+	"get": {Read: []string{"document:environment-shares:read"}, Alternatives: map[Access][][]string{
+		AccessRead: {{"document:direct-shares:read"}},
+	}},
+	// `document:environment-shares:claim` is a distinct scope from
+	// `:write` (already documented in docs/TOKEN_SCOPES.md's hand-maintained
+	// readwrite-all/dangerously-unrestricted scope lists since before this
+	// resource existed); added alongside `:write` in addAllExtras/addUnrestricted.
+	"claim": {Write: []string{"document:environment-shares:claim"}},
+
 	// `inventory arrivals` is pure DQL against the environment's own data —
 	// same Grail read surface as `query`, no managed resource of its own.
 	"arrivals": {Read: QueryScopes},
@@ -423,7 +443,7 @@ func (s *scopeSet) addMineWrites() {
 // readwrite-mine: environment sharing, Grail writes, bucket writes, CoPilot
 // generation, and app/EdgeConnect lifecycle.
 func (s *scopeSet) addAllExtras() {
-	s.add("document:environment-shares:read", "document:environment-shares:write")
+	s.add("document:environment-shares:read", "document:environment-shares:write", "document:environment-shares:claim")
 	s.add(DocumentAdminScope)
 	s.add("storage:logs:write", "storage:events:write", "storage:metrics:write")
 	s.addResource("bucket", AccessWrite)
@@ -467,7 +487,7 @@ func (s *scopeSet) addUnrestricted() {
 	s.addResource("preview-processor", AccessRead)
 	// writes / destructive
 	s.addResource("dashboard", AccessWrite, AccessDelete)
-	s.add("document:environment-shares:write")
+	s.add("document:environment-shares:write", "document:environment-shares:claim")
 	s.add(DocumentAdminScope)
 	s.add("document:trash.documents:restore", "document:trash.documents:delete")
 	s.addResource("workflow", AccessWrite, AccessRun)

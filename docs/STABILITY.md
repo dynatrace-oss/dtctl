@@ -202,9 +202,9 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 ## Summary
 
-- commands: 269 stable, 15 experimental, 14 development
+- commands: 269 stable, 17 experimental, 14 development
 - global flags (accepted on every command): 11
-- entries below (commands + flags): 933
+- entries below (commands + flags): 936
 
 ## Surface
 
@@ -972,6 +972,8 @@ serve http                           development
   --read-timeout                     development
   --write-timeout                    development
 share                                stable
+share claim                          experimental  since 0.41.0
+  --dry-run                          experimental
 share dashboard                      stable
   --access                           stable
   --dry-run                          stable
@@ -984,6 +986,7 @@ share document                       stable
   --group                            stable
   --no-notify                        experimental  since 0.40.0
   --user                             stable
+share get                            experimental  since 0.41.0
 share notebook                       stable
   --access                           stable
   --dry-run                          stable

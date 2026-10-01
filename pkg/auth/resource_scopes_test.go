@@ -112,7 +112,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"email:emails:send",
 		"dev-obs:breakpoints:set",
 	},
-	config.SafetyLevelReadWriteAll: { // 75 scopes
+	config.SafetyLevelReadWriteAll: { // 76 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
@@ -176,6 +176,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"dev-obs:breakpoints:set",
 		"document:environment-shares:read",
 		"document:environment-shares:write",
+		"document:environment-shares:claim",
 		"document:documents:admin",
 		"storage:logs:write",
 		"storage:events:write",
@@ -189,7 +190,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"app-engine:edge-connects:write",
 		"notification:notifications:write",
 	},
-	config.SafetyLevelDangerouslyUnrestricted: { // 83 scopes
+	config.SafetyLevelDangerouslyUnrestricted: { // 84 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
@@ -234,6 +235,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"document:documents:write",
 		"document:documents:delete",
 		"document:environment-shares:write",
+		"document:environment-shares:claim",
 		"document:documents:admin",
 		"document:trash.documents:restore",
 		"document:trash.documents:delete",
