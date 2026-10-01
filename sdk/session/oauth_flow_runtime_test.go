@@ -288,6 +288,42 @@ func TestOAuthFlowExchangeCodeSendsResource(t *testing.T) {
 	})
 }
 
+func TestOAuthFlowRefreshTokenSendsResource(t *testing.T) {
+	refresh := func(t *testing.T, resource string) url.Values {
+		t.Helper()
+		cfg := DefaultOAuthConfig()
+		cfg.EnvironmentURL = resource
+		flow, _ := NewOAuthFlow(cfg)
+		var got url.Values
+		flow.httpDo = func(req *http.Request) (*http.Response, error) {
+			body, _ := io.ReadAll(req.Body)
+			got, _ = url.ParseQuery(string(body))
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"access_token":"tok"}`)),
+				Header:     make(http.Header),
+			}, nil
+		}
+		if _, err := flow.RefreshToken("r1"); err != nil {
+			t.Fatalf("RefreshToken: %v", err)
+		}
+		return got
+	}
+
+	t.Run("account URN is sent", func(t *testing.T) {
+		urn := "urn:dtaccount:00000000-0000-0000-0000-000000000000"
+		if got := refresh(t, urn).Get("resource"); got != urn {
+			t.Fatalf("resource = %q, want %q", got, urn)
+		}
+	})
+
+	t.Run("no resource configured sends none", func(t *testing.T) {
+		if refresh(t, "").Has("resource") {
+			t.Fatalf("resource must be absent when none is configured")
+		}
+	})
+}
+
 func TestOAuthFlowClientCredentials(t *testing.T) {
 	t.Run("posts the grant and returns the token", func(t *testing.T) {
 		flow, _ := NewOAuthFlow(DefaultOAuthConfig())

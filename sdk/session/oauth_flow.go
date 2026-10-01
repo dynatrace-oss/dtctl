@@ -252,6 +252,10 @@ func (f *OAuthFlow) RefreshToken(refreshToken string) (*TokenSet, error) {
 		"refresh_token": {refreshToken},
 		"client_id":     {f.config.ClientID},
 	}
+	// Repeat the resource so the refreshed token keeps its "res" claim.
+	if f.config.EnvironmentURL != "" {
+		data.Set("resource", f.config.EnvironmentURL)
+	}
 
 	req, err := http.NewRequest("POST", f.config.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
