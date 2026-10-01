@@ -179,6 +179,7 @@ query       - Execute a DQL query (with template support)
 exec        - Execute a workflow or function
 history     - Show version history (snapshots) of a document
 restore     - Restore a document to a previous version
+claim       - Claim access to a shared resource (claim environment-share)
 wait        - Wait for a specific condition (query results, resource state)
 alias       - Manage command aliases (set, list, delete, import, export)
 ctx         - Quick context management (list, switch, describe, set, delete)
@@ -410,6 +411,7 @@ dtctl share dashboard <id> --user <id> --access read-write  # Read-write access
 dtctl share dashboard <id> --group <group-sso-id> # Share with group
 dtctl unshare dashboard <id> --user <user-sso-id> # Remove user access
 dtctl unshare dashboard <id> --all               # Remove all shares
+dtctl claim environment-share <share-id|share-url> # Claim a #share= link; prints the document ID
 
 # (not implemented yet)
 # dtctl lock dashboard <id>                        # Acquire active lock

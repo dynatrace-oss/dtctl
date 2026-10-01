@@ -293,6 +293,9 @@ auth status                          stable
 auth whoami                          stable
   --id-only                          stable
   --refresh                          stable
+claim                                experimental  since 0.41.0
+claim environment-share              experimental  since 0.41.0
+  --dry-run                          experimental
 commands                             stable
   --brief                            stable
   --full                             stable
@@ -972,8 +975,6 @@ serve http                           development
   --read-timeout                     development
   --write-timeout                    development
 share                                stable
-share claim                          experimental  since 0.41.0
-  --dry-run                          experimental
 share dashboard                      stable
   --access                           stable
   --dry-run                          stable
@@ -986,7 +987,6 @@ share document                       stable
   --group                            stable
   --no-notify                        experimental  since 0.40.0
   --user                             stable
-share get                            experimental  since 0.41.0
 share notebook                       stable
   --access                           stable
   --dry-run                          stable

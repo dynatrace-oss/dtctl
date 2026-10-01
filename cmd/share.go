@@ -270,121 +270,6 @@ Examples:
 	},
 }
 
-// shareGetCmd resolves a share ID (or a pasted share URL) to its document.
-var shareGetCmd = &cobra.Command{
-	Use:   "get <share-id>",
-	Short: "Resolve a share ID or share URL to its document",
-	Long: `Resolve a share ID (or a share URL copied from the browser) to the document it points to.
-
-Dynatrace share URLs carry the share ID in the URL fragment, not the document
-ID, so dtctl can't act on a pasted link until it's resolved:
-
-  https://<environment>.apps.dynatrace.com/ui/document/v0/#share=<share-id>
-
-Accepts either the bare share ID or the full URL (the "#share=" fragment is
-stripped automatically), and tries both share types -- environment share
-first, then direct share -- so callers don't need to know which kind they
-have. Read-only: it never claims the share. Use "dtctl share claim" to claim
-an environment share and gain access to its document.
-
-Examples:
-  # Resolve a bare share ID
-  dtctl share get 018f1234-abcd-7000-8000-000000000000
-
-  # Resolve a pasted share URL
-  dtctl share get 'https://xyz.apps.dynatrace.com/ui/document/v0/#share=018f1234-abcd-7000-8000-000000000000'
-`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		shareID := parseShareID(args[0])
-
-		_, c, printer, err := Setup()
-		if err != nil {
-			return err
-		}
-
-		handler := document.NewHandler(c)
-		share, err := handler.GetShareByID(shareID)
-		if err != nil {
-			return err
-		}
-
-		return printer.Print(share)
-	},
-}
-
-// shareClaimCmd claims an environment share, mirroring the browser's
-// "Copy link to share" -> open flow.
-var shareClaimCmd = &cobra.Command{
-	Use:   "claim <share-id>",
-	Short: "Claim an environment share",
-	Long: `Claim an environment share, mirroring the browser's "Copy link to share" -> open flow.
-
-Claiming grants the current user access to the share's underlying document.
-Accepts a bare share ID or a full share URL (the "#share=" fragment is
-stripped automatically):
-
-  https://<environment>.apps.dynatrace.com/ui/document/v0/#share=<share-id>
-
-Prints the resolved document ID on success, so the caller can chain straight
-into "dtctl get dashboard <id>" (or the matching notebook/document command)
-without opening a browser.
-
-Examples:
-  # Claim a bare share ID
-  dtctl share claim 018f1234-abcd-7000-8000-000000000000
-
-  # Claim a pasted share URL
-  dtctl share claim 'https://xyz.apps.dynatrace.com/ui/document/v0/#share=018f1234-abcd-7000-8000-000000000000'
-`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		shareID := parseShareID(args[0])
-
-		_, c, err := SetupWithSafety(safety.OperationCreate)
-		if err != nil {
-			return err
-		}
-
-		if dryRun {
-			return newDryRunReport(cmd).
-				Linef("Dry run: would claim environment share %q", shareID).
-				Detail("share_id", "%s", shareID).
-				Print()
-		}
-
-		handler := document.NewHandler(c)
-		share, err := handler.ClaimEnvironmentShare(shareID)
-		if err != nil {
-			return err
-		}
-
-		output.PrintSuccess("Claimed environment share %s", shareID)
-		output.PrintInfo("  Document ID: %s", share.DocumentID)
-		output.PrintInfo("  Access:      %s", strings.Join(share.Access, ", "))
-		return nil
-	},
-}
-
-// parseShareID extracts a share ID from either a bare ID or a share URL
-// pasted from the browser's "Copy link to share" action
-// (".../document/v0/#share=<share-id>"). Stripping the fragment removes the
-// friction of extracting the ID by hand, which is the whole point of this
-// command family (#644).
-func parseShareID(raw string) string {
-	raw = strings.TrimSpace(raw)
-	const marker = "#share="
-	idx := strings.Index(raw, marker)
-	if idx == -1 {
-		return raw
-	}
-	id := raw[idx+len(marker):]
-	if amp := strings.IndexByte(id, '&'); amp != -1 {
-		id = id[:amp]
-	}
-	return id
-}
-
 // shareNotebookCmd is an alias for sharing notebooks
 var shareNotebookCmd = &cobra.Command{
 	Use:     "notebook <notebook-id> --user <user-id> | --group <group-id>",
@@ -429,8 +314,6 @@ func init() {
 	shareCmd.AddCommand(shareDocumentCmd)
 	shareCmd.AddCommand(shareNotebookCmd)
 	shareCmd.AddCommand(shareDashboardCmd)
-	shareCmd.AddCommand(shareGetCmd)
-	shareCmd.AddCommand(shareClaimCmd)
 
 	// Unshare subcommands
 	unshareCmd.AddCommand(unshareDocumentCmd)
@@ -488,6 +371,4 @@ func init() {
 
 	// New: may still change shape (output fields, fallback order) -- see
 	// AGENTS.md "Stability Tiers".
-	stability.Mark(shareGetCmd, stability.Experimental, "0.41.0")
-	stability.Mark(shareClaimCmd, stability.Experimental, "0.41.0")
 }

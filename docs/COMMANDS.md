@@ -43,6 +43,17 @@ _read-only | access: read_
 | whoami | _(none declared)_ |
 
 
+## claim
+
+[Experimental] Claim access to a shared resource
+
+_mutating | access: claim | safety: OperationCreate_
+
+| Resource | Required scopes |
+| --- | --- |
+| environment-share | `document:environment-shares:claim` |
+
+
 ## config
 
 Manage dtctl configuration
@@ -455,10 +466,8 @@ _mutating | access: write | safety: OperationUpdate_
 
 | Resource | Required scopes |
 | --- | --- |
-| claim | `document:environment-shares:claim` |
 | dashboard | `document:documents:write` |
 | document | `document:documents:write` |
-| get | `document:environment-shares:read` |
 | notebook | `document:documents:write` |
 
 

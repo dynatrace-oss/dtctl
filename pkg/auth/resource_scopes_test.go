@@ -55,7 +55,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"hub:catalog:read",
 		"openpipeline:configurations:read",
 	},
-	config.SafetyLevelReadWriteMine: { // 55 scopes
+	config.SafetyLevelReadWriteMine: { // 56 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
@@ -109,6 +109,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"davis:analyzers:execute",
 		"davis-copilot:conversations:execute",
 		"app-engine:functions:run",
+		"document:environment-shares:claim",
 		"email:emails:send",
 		"dev-obs:breakpoints:set",
 	},

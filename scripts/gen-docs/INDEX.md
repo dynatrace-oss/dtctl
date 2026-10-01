@@ -36,7 +36,6 @@
 | Unmapped key |
 | --- |
 | arrivals |
-| claim |
 | classic-pipelines |
 | current |
 | current-context |
@@ -45,8 +44,8 @@
 | delete-credentials |
 | describe |
 | describe-context |
+| environment-share |
 | export |
-| get |
 | get-contexts |
 | import |
 | init |

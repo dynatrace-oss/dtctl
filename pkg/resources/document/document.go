@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
@@ -414,15 +416,6 @@ func (h *Handler) ListDirectShares(documentID string) (*DirectShareList, error) 
 	return fromSDKDirectShareList(l), nil
 }
 
-// GetDirectShare retrieves a direct share by ID.
-func (h *Handler) GetDirectShare(shareID string) (*DirectShare, error) {
-	d, err := h.sdk.GetDirectShare(context.Background(), shareID)
-	if err != nil {
-		return nil, err
-	}
-	return fromSDKDirectShare(d), nil
-}
-
 // DeleteDirectShare deletes a direct share.
 func (h *Handler) DeleteDirectShare(shareID string) error {
 	return h.sdk.DeleteDirectShare(context.Background(), shareID)
@@ -471,67 +464,54 @@ func (h *Handler) GetEnvironmentShare(shareID string) (*EnvironmentShare, error)
 	return fromSDKEnvironmentShare(s), nil
 }
 
+// EnvironmentShareClaim is the CLI read model for a claimed environment share.
+type EnvironmentShareClaim struct {
+	DocumentID   string   `json:"documentId" yaml:"documentId" table:"DOCUMENT_ID"`
+	DocumentType string   `json:"documentType" yaml:"documentType" table:"TYPE"`
+	Access       []string `json:"access" yaml:"access" table:"-"`
+	AccessLevel  string   `json:"-" yaml:"-" table:"ACCESS"`
+}
+
 // ClaimEnvironmentShare claims an environment share, granting the current user
-// access to the underlying document and resolving the share to it.
-func (h *Handler) ClaimEnvironmentShare(shareID string) (*EnvironmentShare, error) {
-	s, err := h.sdk.ClaimEnvironmentShare(context.Background(), shareID)
+// access to the shared document.
+func (h *Handler) ClaimEnvironmentShare(shareID string) (*EnvironmentShareClaim, error) {
+	r, err := h.sdk.ClaimEnvironmentShare(context.Background(), shareID)
 	if err != nil {
 		return nil, err
 	}
-	return fromSDKEnvironmentShare(s), nil
+	return &EnvironmentShareClaim{
+		DocumentID:   r.DocumentID,
+		DocumentType: r.DocumentType,
+		Access:       r.Access,
+		AccessLevel:  strings.Join(r.Access, ","),
+	}, nil
+}
+
+// ParseShareRef accepts a bare share ID or a pasted share link
+// (`https://<env>/.../#share=<id>`) and returns the share ID plus the link's
+// host ("" for a bare ID).
+func ParseShareRef(input string) (id, host string, err error) {
+	input = strings.TrimSpace(input)
+	if i := strings.Index(input, "#share="); i >= 0 {
+		id = input[i+len("#share="):]
+		if j := strings.IndexByte(id, '&'); j >= 0 {
+			id = id[:j]
+		}
+		if u, perr := url.Parse(input[:i]); perr == nil {
+			host = u.Host
+		}
+	} else {
+		id = input
+	}
+	if id == "" || strings.ContainsAny(id, "/?# ") {
+		return "", "", fmt.Errorf("invalid share ID or URL %q", input)
+	}
+	return id, host, nil
 }
 
 // DeleteEnvironmentShare deletes an environment share.
 func (h *Handler) DeleteEnvironmentShare(shareID string) error {
 	return h.sdk.DeleteEnvironmentShare(context.Background(), shareID)
-}
-
-// ShareDetails is the resolved result of GetShareByID: a share located purely
-// by ID, without the caller needing to know upfront whether it names an
-// environment share or a direct share (share links don't carry that
-// information themselves).
-type ShareDetails struct {
-	ID         string   `json:"id" table:"ID"`
-	Kind       string   `json:"kind" table:"KIND"`
-	DocumentID string   `json:"documentId" table:"DOCUMENT_ID"`
-	Access     []string `json:"access" table:"ACCESS"`
-	ClaimCount int      `json:"claimCount,omitempty" yaml:"claimCount,omitempty" table:"CLAIM_COUNT,wide"`
-}
-
-// GetShareByID resolves a share ID to its document, trying environment-share
-// first and falling back to direct-share so callers don't need to know the
-// share's type upfront.
-//
-// The fallback triggers on a 403 as well as a 404: document:environment-shares:read
-// is only granted at the top safety tiers (readwrite-all and above), so a
-// readwrite-mine token resolving its own direct-share link would otherwise be
-// refused by the environment-share lookup before ever reaching the endpoint
-// it actually has access to.
-func (h *Handler) GetShareByID(shareID string) (*ShareDetails, error) {
-	share, err := h.GetEnvironmentShare(shareID)
-	if err == nil {
-		return &ShareDetails{
-			ID:         share.ID,
-			Kind:       "environment",
-			DocumentID: share.DocumentID,
-			Access:     share.Access,
-			ClaimCount: share.ClaimCount,
-		}, nil
-	}
-	if !IsNotFound(err) && !errors.Is(err, httpclient.ErrForbidden) {
-		return nil, err
-	}
-
-	direct, err := h.GetDirectShare(shareID)
-	if err != nil {
-		return nil, err
-	}
-	return &ShareDetails{
-		ID:         direct.ID,
-		Kind:       "direct",
-		DocumentID: direct.DocumentID,
-		Access:     direct.Access,
-	}, nil
 }
 
 // SetDocumentPublic flips a document's isPrivate flag to false.

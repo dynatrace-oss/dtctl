@@ -1,0 +1,7 @@
+{
+  "documentId": "doc-1234",
+  "documentType": "dashboard",
+  "access": [
+    "read"
+  ]
+}

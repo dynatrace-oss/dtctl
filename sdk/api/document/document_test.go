@@ -343,7 +343,7 @@ func TestGetEnvironmentShare_NotFound(t *testing.T) {
 	}
 }
 
-func TestClaimEnvironmentShare_BodyCarriesDocumentID(t *testing.T) {
+func TestClaimEnvironmentShare(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/environment-shares/share-1/claim", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
@@ -351,10 +351,7 @@ func TestClaimEnvironmentShare_BodyCarriesDocumentID(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"share-1","documentId":"doc-123","access":["read"],"claimCount":1}`))
-	})
-	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("ClaimEnvironmentShare() should not fall back to GET when the PUT response already carries the documentId")
+		_, _ = w.Write([]byte(`{"documentId":"doc-123","documentType":"dashboard","access":["read","write"]}`))
 	})
 
 	h := NewHandler(newTestClient(t, mux))
@@ -362,60 +359,43 @@ func TestClaimEnvironmentShare_BodyCarriesDocumentID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClaimEnvironmentShare() error: %v", err)
 	}
-	if result.DocumentID != "doc-123" {
-		t.Errorf("DocumentID = %q, want doc-123", result.DocumentID)
+	if result.DocumentID != "doc-123" || result.DocumentType != "dashboard" {
+		t.Errorf("got %+v, want doc-123/dashboard", result)
+	}
+	if len(result.Access) != 2 {
+		t.Errorf("Access = %v, want read+write", result.Access)
 	}
 }
 
-func TestClaimEnvironmentShare_EmptyBodyFallsBackToGet(t *testing.T) {
+func TestClaimEnvironmentShare_EscapesShareID(t *testing.T) {
+	var gotPath string
 	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares/share-1/claim", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"share-1","documentId":"doc-123","access":["read"],"claimCount":1}`))
+		_, _ = w.Write([]byte(`{"documentId":"d","documentType":"notebook","access":["read"]}`))
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.ClaimEnvironmentShare(context.Background(), "share-1")
-	if err != nil {
+	if _, err := h.ClaimEnvironmentShare(context.Background(), "a/b?c"); err != nil {
 		t.Fatalf("ClaimEnvironmentShare() error: %v", err)
 	}
-	if result.DocumentID != "doc-123" {
-		t.Errorf("DocumentID = %q, want doc-123 (from GET fallback)", result.DocumentID)
+	if want := "/platform/document/v1/environment-shares/a%2Fb%3Fc/claim"; gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
 	}
 }
 
-func TestGetDirectShare(t *testing.T) {
+func TestClaimEnvironmentShare_NotFound(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/direct-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"share-1","documentId":"doc-456","access":["read","write"]}`))
+	mux.HandleFunc("/platform/document/v1/environment-shares/missing/claim", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":404,"message":"not found"}}`))
 	})
 
 	h := NewHandler(newTestClient(t, mux))
-	result, err := h.GetDirectShare(context.Background(), "share-1")
-	if err != nil {
-		t.Fatalf("GetDirectShare() error: %v", err)
-	}
-	if result.DocumentID != "doc-456" {
-		t.Errorf("DocumentID = %q, want doc-456", result.DocumentID)
-	}
-	if !result.ExactAccess("read-write") {
-		t.Errorf("got access %v, want exactly read-write", result.Access)
+	_, err := h.ClaimEnvironmentShare(context.Background(), "missing")
+	if !errors.Is(err, httpclient.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got: %v", err)
 	}
 }
 

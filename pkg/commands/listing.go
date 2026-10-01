@@ -150,6 +150,7 @@ var MutatingVerbs = map[string]string{
 	"delete":  "OperationDelete",
 	"restore": "OperationUpdate",
 	"share":   "OperationUpdate",
+	"claim":   "OperationCreate",
 	"unshare": "OperationUpdate",
 	"update":  "OperationUpdate",
 	"exec":    "OperationCreate", // semantically mutating (runs workflows, functions)

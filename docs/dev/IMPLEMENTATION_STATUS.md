@@ -53,6 +53,7 @@ This document tracks the current implementation status of dtctl. For future plan
 - [x] `history` - Show version history (snapshots)
 - [x] `restore` - Restore to previous version
 - [x] `share/unshare` - Share dashboards and notebooks
+- [x] `claim environment-share` - Claim an environment share by ID or `#share=` URL; returns the document ID/type/access (experimental)
 - [x] `alias` - Manage command aliases (set, list, delete, import, export)
 - [x] `ctx` - Quick context management (list, switch, describe, set, delete)
 - [x] `doctor` - Health check (config, context, token, connectivity, auth)

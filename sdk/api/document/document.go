@@ -709,28 +709,6 @@ func (h *Handler) ListDirectShares(ctx context.Context, documentID string) (*Dir
 	}, nil
 }
 
-// GetDirectShare retrieves a direct share by ID. Direct-share links (as opposed
-// to environment-share links) resolve through this endpoint.
-func (h *Handler) GetDirectShare(ctx context.Context, shareID string) (*DirectShare, error) {
-	resp, err := h.client.HTTP().R().SetContext(ctx).
-		Get(fmt.Sprintf("/platform/document/v1/direct-shares/%s", httpclient.PathSegment(shareID)))
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get direct share: %w", err)
-	}
-
-	if err := httpclient.CheckResponse(resp); err != nil {
-		return nil, fmt.Errorf("failed to get direct share %q: %w", shareID, err)
-	}
-
-	var result DirectShare
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("get direct share: parse response: %w", err)
-	}
-
-	return &result, nil
-}
-
 // DeleteDirectShare deletes a direct share
 func (h *Handler) DeleteDirectShare(ctx context.Context, shareID string) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
@@ -1011,14 +989,19 @@ func (h *Handler) GetEnvironmentShare(ctx context.Context, shareID string) (*Env
 	return &result, nil
 }
 
+// EnvironmentShareClaimResult is what claiming an environment share returns: the
+// document the share points to and the access the caller now holds on it.
+type EnvironmentShareClaimResult struct {
+	DocumentID   string   `json:"documentId"`
+	DocumentType string   `json:"documentType"`
+	Access       []string `json:"access"`
+}
+
 // ClaimEnvironmentShare claims an environment share, mirroring the browser's
-// "Copy link to share" -> open flow: opening the link claims the share and
-// grants the current user access to the underlying document.
-//
-// The claim endpoint's response body isn't pinned by the spec, so this falls
-// back to GetEnvironmentShare whenever the PUT response doesn't already carry
-// the document ID, guaranteeing callers always get it back to chain into.
-func (h *Handler) ClaimEnvironmentShare(ctx context.Context, shareID string) (*EnvironmentShare, error) {
+// "Copy link to share" -> open flow. Claiming is how a recipient resolves a share
+// link: GetEnvironmentShare only answers for the share's owner, so the claim
+// response is the one place the recipient learns the document.
+func (h *Handler) ClaimEnvironmentShare(ctx context.Context, shareID string) (*EnvironmentShareClaimResult, error) {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		Put(fmt.Sprintf("/platform/document/v1/environment-shares/%s/claim", httpclient.PathSegment(shareID)))
 
@@ -1030,14 +1013,12 @@ func (h *Handler) ClaimEnvironmentShare(ctx context.Context, shareID string) (*E
 		return nil, fmt.Errorf("failed to claim environment share %q: %w", shareID, err)
 	}
 
-	var result EnvironmentShare
-	if len(resp.Body()) > 0 {
-		if err := json.Unmarshal(resp.Body(), &result); err == nil && result.DocumentID != "" {
-			return &result, nil
-		}
+	var result EnvironmentShareClaimResult
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("claim environment share: parse response: %w", err)
 	}
 
-	return h.GetEnvironmentShare(ctx, shareID)
+	return &result, nil
 }
 
 // SetDocumentPublic flips a document's isPrivate flag to false, making it discoverable

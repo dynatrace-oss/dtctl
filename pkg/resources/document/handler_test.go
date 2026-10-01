@@ -490,88 +490,6 @@ func TestListEnvironmentShares_FiltersByDocumentID(t *testing.T) {
 	}
 }
 
-func TestGetShareByID_EnvironmentShare(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(EnvironmentShare{ID: "share-1", DocumentID: "doc-1", Access: []string{"read"}, ClaimCount: 2})
-	})
-	mux.HandleFunc("/platform/document/v1/direct-shares/share-1", func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("GetShareByID should not fall back to direct-share once the environment-share resolves")
-	})
-	h, cleanup := newDocTestHandler(t, mux)
-	defer cleanup()
-
-	got, err := h.GetShareByID("share-1")
-	if err != nil {
-		t.Fatalf("GetShareByID: %v", err)
-	}
-	if got.Kind != "environment" || got.DocumentID != "doc-1" || got.ClaimCount != 2 {
-		t.Errorf("unexpected result: %+v", got)
-	}
-}
-
-func TestGetShareByID_FallsBackToDirectShare(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares/share-2", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, `{"error":{"code":404,"message":"not found"}}`)
-	})
-	mux.HandleFunc("/platform/document/v1/direct-shares/share-2", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DirectShare{ID: "share-2", DocumentID: "doc-2", Access: []string{"read", "write"}})
-	})
-	h, cleanup := newDocTestHandler(t, mux)
-	defer cleanup()
-
-	got, err := h.GetShareByID("share-2")
-	if err != nil {
-		t.Fatalf("GetShareByID: %v", err)
-	}
-	if got.Kind != "direct" || got.DocumentID != "doc-2" {
-		t.Errorf("unexpected result: %+v", got)
-	}
-}
-
-func TestGetShareByID_FallsBackOnForbidden(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares/share-4", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"error":{"code":403,"message":"missing scope document:environment-shares:read"}}`)
-	})
-	mux.HandleFunc("/platform/document/v1/direct-shares/share-4", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DirectShare{ID: "share-4", DocumentID: "doc-4", Access: []string{"read"}})
-	})
-	h, cleanup := newDocTestHandler(t, mux)
-	defer cleanup()
-
-	got, err := h.GetShareByID("share-4")
-	if err != nil {
-		t.Fatalf("GetShareByID: %v", err)
-	}
-	if got.Kind != "direct" || got.DocumentID != "doc-4" {
-		t.Errorf("unexpected result: %+v", got)
-	}
-}
-
-func TestGetShareByID_PropagatesNonNotFoundError(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares/share-3", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"error":{"code":500,"message":"boom"}}`)
-	})
-	mux.HandleFunc("/platform/document/v1/direct-shares/share-3", func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("GetShareByID should not fall back to direct-share on a server error")
-	})
-	h, cleanup := newDocTestHandler(t, mux)
-	defer cleanup()
-
-	if _, err := h.GetShareByID("share-3"); err == nil {
-		t.Fatal("expected an error")
-	}
-}
-
 func TestClaimEnvironmentShare(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/environment-shares/share-1/claim", func(w http.ResponseWriter, r *http.Request) {
@@ -579,7 +497,7 @@ func TestClaimEnvironmentShare(t *testing.T) {
 			t.Errorf("expected PUT, got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(EnvironmentShare{ID: "share-1", DocumentID: "doc-1", Access: []string{"read"}})
+		fmt.Fprint(w, `{"documentId":"doc-1","documentType":"notebook","access":["read"]}`)
 	})
 	h, cleanup := newDocTestHandler(t, mux)
 	defer cleanup()
@@ -588,8 +506,33 @@ func TestClaimEnvironmentShare(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ClaimEnvironmentShare: %v", err)
 	}
-	if got.DocumentID != "doc-1" {
+	if got.DocumentID != "doc-1" || got.DocumentType != "notebook" {
 		t.Errorf("unexpected result: %+v", got)
+	}
+}
+
+func TestParseShareRef(t *testing.T) {
+	tests := []struct {
+		in, id, host string
+		wantErr      bool
+	}{
+		{in: "abc-123", id: "abc-123"},
+		{in: " abc-123\n", id: "abc-123"},
+		{in: "https://env.apps.example.invalid/ui/document/v0/#share=abc-123", id: "abc-123", host: "env.apps.example.invalid"},
+		{in: "https://env.apps.example.invalid/ui/document/v0/#share=abc-123&x=1", id: "abc-123", host: "env.apps.example.invalid"},
+		{in: "", wantErr: true},
+		{in: "https://env.apps.example.invalid/#share=", wantErr: true},
+		{in: "a/b", wantErr: true},
+	}
+	for _, tt := range tests {
+		id, host, err := ParseShareRef(tt.in)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ParseShareRef(%q) err = %v, wantErr %v", tt.in, err, tt.wantErr)
+			continue
+		}
+		if id != tt.id || host != tt.host {
+			t.Errorf("ParseShareRef(%q) = %q, %q; want %q, %q", tt.in, id, host, tt.id, tt.host)
+		}
 	}
 }
 
