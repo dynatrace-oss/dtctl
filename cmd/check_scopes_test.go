@@ -372,6 +372,27 @@ func TestScopesForInvocation_UnlistedCommandIsUnchanged(t *testing.T) {
 	require.Equal(t, wantReq, req)
 }
 
+// `share get` is read-only but nested under the mutating `share` verb, whose
+// access (write) is what alternativesForInvocation would otherwise derive
+// access from; its direct-share alternative is only declared at Read.
+func TestAlternativesForInvocation_ReadOnlyResourceUnderMutatingVerb(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"share", "get"})
+	require.NoError(t, err)
+
+	alternatives := alternativesForInvocation(cmd, "share", "get")
+	require.Equal(t, [][]string{{"document:direct-shares:read"}}, alternatives,
+		"a direct-shares:read token must still satisfy `share get` as an alternative to environment-shares:read")
+
+	required, req := requiredScopesFor("share", "get")
+	require.Equal(t, scopeRequirementKnown, req)
+
+	withScopeState(t, true, false, "json", []string{"document:direct-shares:read"}, true)
+	verdict := computeScopeVerdict("share", "get", required, alternatives, req)
+	require.Equal(t, scopeStatusOK, verdict.Status,
+		"a direct-shares:read-only token must satisfy `share get` via the alternative")
+	require.Equal(t, []string{"document:direct-shares:read"}, verdict.SatisfiedBy)
+}
+
 func TestScopePreflight_FlagScopeReachesTheVerdict(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"get", "dashboards"})
 	require.NoError(t, err)

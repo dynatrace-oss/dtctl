@@ -345,6 +345,13 @@ func alternativesForInvocation(c *cobra.Command, verb, resource string) [][]stri
 	}
 	access := auth.AccessForVerb(verb, commands.MutatingVerbs[verb])
 	alternatives := auth.AlternativeScopesForResource(resource, access)
+	if len(alternatives) == 0 && access != auth.AccessRead {
+		// Mirrors the fallback in populateVerbScopes: a resource nested under a
+		// mutating verb can itself be read-only (`share get` under the
+		// mutating `share` verb), and such a resource declares its
+		// alternatives at Read, not at the verb's own write access.
+		alternatives = auth.AlternativeScopesForResource(resource, auth.AccessRead)
+	}
 	if len(alternatives) == 0 {
 		return nil
 	}
