@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	sdkpt "github.com/dynatrace-oss/dtctl/sdk/api/platformtoken"
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
@@ -27,12 +28,21 @@ func tokenBasePath(accountUUID string) string {
 	return fmt.Sprintf("/iam/v1/accounts/%s/platform-tokens", accountUUID)
 }
 
+// futureExpiry is an expiration date that is always ahead of the clock the test
+// runs on. A literal date here is a time bomb: fromSDK derives EXPIRED from
+// time.Now(), so a hard-coded "ACTIVE" token silently becomes an expired one the
+// day the date arrives, and the suite fails on a commit that changed nothing.
+func futureExpiry() string {
+	return time.Now().UTC().AddDate(1, 0, 0).Format(time.RFC3339Nano)
+}
+
 func TestFromSDK(t *testing.T) {
+	expiry := futureExpiry()
 	sdk := sdkpt.PlatformToken{
 		Name:           "ci-token",
 		TokenID:        "tok-001",
 		Status:         "ACTIVE",
-		ExpirationDate: "2026-10-01T00:00:00.000Z",
+		ExpirationDate: expiry,
 		Scope:          []string{"storage:events:read", "account-idm-read"},
 		Token:          "dt0s16.secret",
 	}
@@ -46,8 +56,8 @@ func TestFromSDK(t *testing.T) {
 	if got.Status != "ACTIVE" {
 		t.Errorf("Status = %q, want %q", got.Status, "ACTIVE")
 	}
-	if got.ExpirationDate != "2026-10-01T00:00:00.000Z" {
-		t.Errorf("ExpirationDate = %q, want %q", got.ExpirationDate, "2026-10-01T00:00:00.000Z")
+	if got.ExpirationDate != expiry {
+		t.Errorf("ExpirationDate = %q, want %q", got.ExpirationDate, expiry)
 	}
 	if got.Scope != "storage:events:read account-idm-read" {
 		t.Errorf("Scope = %q, want joined string", got.Scope)
@@ -147,7 +157,7 @@ func TestCreate(t *testing.T) {
 		Scope:          []string{"account-idm-write"},
 		Resource:       []string{},
 		Tags:           []string{},
-		ExpirationDate: "2026-10-01T00:00:00.000Z",
+		ExpirationDate: futureExpiry(),
 	})
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
