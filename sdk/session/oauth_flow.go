@@ -537,6 +537,11 @@ func (f *OAuthFlow) exchangeCode(code string) (*TokenSet, error) {
 		"redirect_uri":  {f.getRedirectURI()},
 		"code_verifier": {f.codeVerifier},
 	}
+	// The resource must repeat here: the token's "res" claim comes from this request,
+	// and account APIs such as service-users answer 401 without it.
+	if f.config.EnvironmentURL != "" {
+		data.Set("resource", f.config.EnvironmentURL)
+	}
 
 	req, err := http.NewRequest("POST", f.config.TokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
