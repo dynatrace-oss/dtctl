@@ -14,6 +14,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/commands"
+	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	resapi "github.com/dynatrace-oss/dtctl/pkg/resources/api"
 )
@@ -380,11 +381,33 @@ func formatAlternatives(alternatives [][]string) string {
 // insufficientScopeAdvice is what a caller can do about missing scopes: add the
 // missing ones, or — where the endpoint accepts them — any one alternative set.
 func insufficientScopeAdvice(missing []string, alternatives [][]string) []string {
-	advice := []string{"re-create your token with: " + strings.Join(missing, ", ")}
+	cfg, _ := LoadConfig()
+	advice := loginScopeAdvice(cfg, missing)
 	if len(alternatives) > 0 {
 		advice = append(advice, "or with any one of these instead: "+formatAlternatives(alternatives))
 	}
 	return append(advice, "see 'dtctl commands howto' for token scope guidance")
+}
+
+// loginScopeAdvice says whether logging in again, or only a higher safety
+// level, gets the missing scopes.
+func loginScopeAdvice(cfg *config.Config, missing []string) []string {
+	if cfg == nil || cfg.CurrentContext == "" {
+		return []string{"re-create your token with: " + strings.Join(missing, ", ")}
+	}
+	level := cfg.GetEffectiveSafetyLevel()
+	var notRequested []string
+	for _, s := range missing {
+		if !loginRequestsScope(level, s) {
+			notRequested = append(notRequested, s)
+		}
+	}
+	if len(notRequested) == 0 {
+		return []string{fmt.Sprintf("OAuth login: 'dtctl auth login' requests %s at the %s safety level. A session from an older dtctl does not carry it — run 'dtctl auth login' again to pick it up",
+			strings.Join(missing, ", "), level)}
+	}
+	return []string{fmt.Sprintf("OAuth login: the %s safety level of context %q does not request %s. Log in with a context at a higher safety level to get it",
+		level, cfg.CurrentContext, strings.Join(notRequested, ", "))}
 }
 
 // unionScopes merges scope lists, dropping duplicates and keeping the result

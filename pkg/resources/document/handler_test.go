@@ -520,6 +520,7 @@ func TestParseShareRef(t *testing.T) {
 		{in: " abc-123\n", id: "abc-123"},
 		{in: "https://env.apps.example.invalid/ui/document/v0/#share=abc-123", id: "abc-123", host: "env.apps.example.invalid"},
 		{in: "https://env.apps.example.invalid/ui/document/v0/#share=abc-123&x=1", id: "abc-123", host: "env.apps.example.invalid"},
+		{in: "https://ENV.apps.example.invalid:443/ui/document/v0/#share=abc-123", id: "abc-123", host: "env.apps.example.invalid"},
 		{in: "", wantErr: true},
 		{in: "https://env.apps.example.invalid/#share=", wantErr: true},
 		{in: "a/b", wantErr: true},

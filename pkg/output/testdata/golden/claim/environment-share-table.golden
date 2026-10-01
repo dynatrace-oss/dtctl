@@ -1,2 +1,2 @@
-DOCUMENT ID   TYPE        ACCESS   
-doc-1234      dashboard   read     
+DOCUMENT ID   NAME            TYPE        ACCESS   
+doc-1234      Prod overview   dashboard   read     

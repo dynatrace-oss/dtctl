@@ -467,9 +467,11 @@ func (h *Handler) GetEnvironmentShare(shareID string) (*EnvironmentShare, error)
 // EnvironmentShareClaim is the CLI read model for a claimed environment share.
 type EnvironmentShareClaim struct {
 	DocumentID   string   `json:"documentId" yaml:"documentId" table:"DOCUMENT_ID"`
+	Name         string   `json:"name,omitempty" yaml:"name,omitempty" table:"NAME"`
 	DocumentType string   `json:"documentType" yaml:"documentType" table:"TYPE"`
 	Access       []string `json:"access" yaml:"access" table:"-"`
 	AccessLevel  string   `json:"-" yaml:"-" table:"ACCESS"`
+	URL          string   `json:"url,omitempty" yaml:"url,omitempty" table:"URL,wide"`
 }
 
 // ClaimEnvironmentShare claims an environment share, granting the current user
@@ -489,7 +491,7 @@ func (h *Handler) ClaimEnvironmentShare(shareID string) (*EnvironmentShareClaim,
 
 // ParseShareRef accepts a bare share ID or a pasted share link
 // (`https://<env>/.../#share=<id>`) and returns the share ID plus the link's
-// host ("" for a bare ID).
+// lowercase hostname ("" for a bare ID).
 func ParseShareRef(input string) (id, host string, err error) {
 	input = strings.TrimSpace(input)
 	if i := strings.Index(input, "#share="); i >= 0 {
@@ -498,7 +500,7 @@ func ParseShareRef(input string) (id, host string, err error) {
 			id = id[:j]
 		}
 		if u, perr := url.Parse(input[:i]); perr == nil {
-			host = u.Host
+			host = strings.ToLower(u.Hostname())
 		}
 	} else {
 		id = input

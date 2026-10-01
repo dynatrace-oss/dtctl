@@ -1,4 +1,6 @@
 documentId: doc-1234
+name: Prod overview
 documentType: dashboard
 access:
   - read
+url: https://abc.apps.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard/doc-1234

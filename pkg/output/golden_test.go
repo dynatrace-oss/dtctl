@@ -700,12 +700,14 @@ func TestGolden_GetDocuments(t *testing.T) {
 func TestGolden_ClaimEnvironmentShare(t *testing.T) {
 	claim := &document.EnvironmentShareClaim{
 		DocumentID:   "doc-1234",
+		Name:         "Prod overview",
 		DocumentType: "dashboard",
 		Access:       []string{"read"},
 		AccessLevel:  "read",
+		URL:          "https://abc.apps.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard/doc-1234",
 	}
 
-	for _, format := range []string{"table", "json", "yaml"} {
+	for _, format := range []string{"table", "wide", "json", "yaml"} {
 		t.Run(format, func(t *testing.T) {
 			var buf bytes.Buffer
 			printer := NewPrinterWithWriter(format, &buf)
