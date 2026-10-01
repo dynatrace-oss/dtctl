@@ -80,8 +80,8 @@ Examples:
 }
 
 // sameEnvironment reports whether a share link's host belongs to the
-// environment: equal hosts, or equal tenant ID (first label), since the same
-// tenant is reachable under both its apps and live hostnames.
+// environment: equal hosts, or the same tenant ID and domain once the apps/live
+// subdomain, which reach the same tenant, is dropped.
 func sameEnvironment(linkHost, environmentURL string) bool {
 	envHost := urls.Host(environmentURL)
 	if envHost == "" {
@@ -91,11 +91,17 @@ func sameEnvironment(linkHost, environmentURL string) bool {
 	if i := strings.IndexByte(link, ':'); i >= 0 {
 		link = link[:i]
 	}
-	if link == envHost {
-		return true
+	return link == envHost || tenantDomain(link) == tenantDomain(envHost)
+}
+
+// tenantDomain drops the apps/live label after the tenant ID, so
+// "abc.apps.dynatrace.com" and "abc.live.dynatrace.com" compare equal.
+func tenantDomain(host string) string {
+	labels := strings.Split(host, ".")
+	if len(labels) > 2 && (labels[1] == "apps" || labels[1] == "live") {
+		labels = append(labels[:1], labels[2:]...)
 	}
-	first := func(h string) string { return strings.SplitN(h, ".", 2)[0] }
-	return first(link) == first(envHost)
+	return strings.Join(labels, ".")
 }
 
 // claimFollowUp is the agent-mode suggestion for reading the claimed document.

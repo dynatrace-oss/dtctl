@@ -99,6 +99,8 @@ func TestSameEnvironment(t *testing.T) {
 		{"abc.apps.dynatrace.com", "https://abc.apps.dynatrace.com", true},
 		{"abc.apps.dynatrace.com", "https://abc.live.dynatrace.com", true},
 		{"abc.apps.dynatrace.com", "https://xyz.apps.dynatrace.com", false},
+		{"abc.attacker.example", "https://abc.apps.dynatrace.com", false},
+		{"abc.apps.dynatrace.com.attacker.example", "https://abc.apps.dynatrace.com", false},
 		{"127.0.0.1:8080", "http://127.0.0.1:8080", true},
 	}
 	for _, tt := range tests {
