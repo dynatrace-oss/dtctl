@@ -323,9 +323,13 @@ Path matching uses the longest base-path prefix at a segment boundary, so
   everywhere else. Anything else is passed through **verbatim, even under
   `--agent`** — a passthrough can return YAML, CSV, Prometheus text, or a binary
   archive, and wrapping those would corrupt them, while refusing them would make
-  the command useless for the exports it exists to reach. An HTML body earns a
-  warning on stderr (it is almost always a login redirect), which keeps agent-mode
-  stdout pure.
+  the command useless for the exports it exists to reach. Verbatim means
+  byte-exact: the newline that completes a line for a human terminal is added
+  only when stdout *is* one, because a redirected archive that gained a trailing
+  byte no longer matches the checksum the API reports for it (#643). The same
+  applies to `describe api --raw`, whose whole purpose is a document the caller
+  redirects. An HTML body earns a warning on stderr (it is almost always a login
+  redirect), which keeps agent-mode stdout pure.
 - **`--dry-run` reports the verdict instead of enforcing it.** Showing the composed
   request plus "this would be BLOCKED, here is why" is more useful than an error
   that hides the request. Credential-bearing headers are redacted in that output,

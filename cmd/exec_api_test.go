@@ -321,6 +321,29 @@ func TestExecAPIOutputProtocolIsDeclaredNotSniffed(t *testing.T) {
 				"would make the command useless for the exports it exists to reach")
 	})
 
+	// A CSV export ends in a newline, so it never noticed that the passthrough
+	// appended one. A binary archive does not: a ZIP ends with the
+	// end-of-central-directory record, whose last field is a two-byte comment
+	// length — 0x00 when there is no comment. One appended byte is enough that the
+	// download no longer matches the checksum the API reports for it, which is the
+	// only integrity check some endpoints offer.
+	t.Run("a body that does not end in a newline does not gain one", func(t *testing.T) {
+		zip := "PK\x05\x06" + strings.Repeat("\x00", 18)
+		env := newMockEnvironmentAt(t, "readonly")
+		env.respond(http.MethodGet, "/platform/widget/v1/widgets", mockResponse{
+			status:      200,
+			contentType: "application/zip",
+			body:        zip,
+		})
+
+		code, out, errOut := runAPI(t, []string{
+			"exec", "api", "/platform/widget/v1/widgets", "--agent",
+		}, RunOptions{})
+		require.Zero(t, code, errOut)
+		require.Equal(t, zip, out,
+			"redirected output must be byte-exact: %d bytes in, %d out", len(zip), len(out))
+	})
+
 	t.Run("a failure keeps the platform's own message", func(t *testing.T) {
 		env := newMockEnvironmentAt(t, "readonly")
 		env.respond(http.MethodGet, "/platform/widget/v1/widgets", mockResponse{

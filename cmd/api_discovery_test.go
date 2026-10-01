@@ -428,6 +428,27 @@ func TestDescribeAPIRawToStdoutIsTheHumanDefault(t *testing.T) {
 	require.Contains(t, out, "x-api-gateway-url: /platform/widget/v1")
 }
 
+// TestDescribeAPIRawToStdoutIsByteExact is the stdout half of the verbatim
+// contract. mockWidgetSpec ends in a newline, so neither test above could notice
+// that the stdout path appended one — and the classic environment API, the one
+// API that serves JSON here, commonly serves it without a trailing newline. A
+// document redirected to a file is what --raw is documented for, so a gained
+// byte means it no longer matches what the environment served.
+func TestDescribeAPIRawToStdoutIsByteExact(t *testing.T) {
+	const spec = `{"openapi":"3.0.3","info":{"title":"Widget","version":"2.4.1"},"paths":{}}`
+	env := newMockEnvironment(t)
+	env.respond(http.MethodGet, "/platform/widget/v1/openapi.yaml", mockResponse{
+		status:      200,
+		contentType: "application/json",
+		body:        spec,
+	})
+
+	code, out := captureRun(t, []string{"describe", "api", "Widget Service", "--raw"}, RunOptions{})
+	require.Zero(t, code, out)
+	require.Equal(t, spec, out,
+		"a redirected document must be byte-exact: %d bytes served, %d out", len(spec), len(out))
+}
+
 // TestAPIIndexUnavailableNamesTheFallback pins the fail-soft contract for an
 // environment with no machine-readable index: a stable error code, no forwarded
 // HTTP body, and the documented explorer as the way forward.
