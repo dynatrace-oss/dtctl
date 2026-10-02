@@ -255,7 +255,9 @@ var perCallScopeCommands = map[string]bool{
 }
 
 // flagScopeRequirements are scopes that a flag adds to its command's catalog
-// requirement, keyed by `<verb> <resource>` and then by flag name.
+// requirement, keyed by `<verb> <resource>` and then by flag name. A key of the
+// form `<flag>=<value>` applies only when the flag is set to that value, for a
+// flag whose values reach different APIs.
 //
 // The catalog keys scopes by (verb, resource), so it cannot express "this flag
 // reaches a second API". `get documents --admin-access` lists documents as their
@@ -281,16 +283,17 @@ var flagScopeRequirements = map[string]map[string][]string{
 	"get dashboards": {"admin-access": {auth.DocumentAdminScope}},
 	"get notebooks":  {"admin-access": {auth.DocumentAdminScope}},
 
-	// --environment works on environment shares, a second API next to the
+	// --environment link works on environment shares, a second API next to the
 	// documents one: share lists and creates them (replacing one at another
-	// access level also deletes, but only sometimes, so :delete is not listed),
-	// unshare lists and deletes them.
-	"share document":    {"environment": {"document:environment-shares:read", "document:environment-shares:write"}},
-	"share dashboard":   {"environment": {"document:environment-shares:read", "document:environment-shares:write"}},
-	"share notebook":    {"environment": {"document:environment-shares:read", "document:environment-shares:write"}},
-	"unshare document":  {"environment": {"document:environment-shares:read", "document:environment-shares:delete"}},
-	"unshare dashboard": {"environment": {"document:environment-shares:read", "document:environment-shares:delete"}},
-	"unshare notebook":  {"environment": {"document:environment-shares:read", "document:environment-shares:delete"}},
+	// access level also deletes, but only with an explicit --access, so :delete
+	// is not listed), unshare lists and deletes them. --environment public only
+	// sets the document's isPrivate flag, which the documents scopes cover.
+	"share document":    {"environment=link": {"document:environment-shares:read", "document:environment-shares:write"}},
+	"share dashboard":   {"environment=link": {"document:environment-shares:read", "document:environment-shares:write"}},
+	"share notebook":    {"environment=link": {"document:environment-shares:read", "document:environment-shares:write"}},
+	"unshare document":  {"environment=link": environmentShareDeleteScopes},
+	"unshare dashboard": {"environment=link": environmentShareDeleteScopes},
+	"unshare notebook":  {"environment=link": environmentShareDeleteScopes},
 
 	// Activating a version touches extension *definitions*;
 	// --with-configurations additionally reads every monitoring configuration of
@@ -329,19 +332,25 @@ func flagContributedScopes(c *cobra.Command, verb, resource string) []string {
 		return nil
 	}
 	var extra []string
-	for name, scopes := range byFlag {
+	for key, scopes := range byFlag {
+		name, value, byValue := strings.Cut(key, "=")
 		f := c.Flags().Lookup(name)
 		if f == nil {
 			continue
 		}
-		if f.Value.Type() == "bool" {
-			if on, err := c.Flags().GetBool(name); err != nil || !on {
-				continue
-			}
-		} else if !f.Changed || f.Value.String() == "" {
-			continue
+		var on bool
+		switch {
+		case byValue:
+			on = f.Changed && f.Value.String() == value
+		case f.Value.Type() == "bool":
+			v, err := c.Flags().GetBool(name)
+			on = err == nil && v
+		default:
+			on = f.Changed && f.Value.String() != ""
 		}
-		extra = append(extra, scopes...)
+		if on {
+			extra = append(extra, scopes...)
+		}
 	}
 	return extra
 }

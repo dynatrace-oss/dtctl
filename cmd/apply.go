@@ -392,9 +392,7 @@ func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyRes
 // document, the only kind of resource an environment share applies to.
 func isDocumentApplyResult(r apply.ApplyResult) bool {
 	switch r.(type) {
-	case *apply.DashboardApplyResult, apply.DashboardApplyResult,
-		*apply.NotebookApplyResult, apply.NotebookApplyResult,
-		*apply.DocumentApplyResult, apply.DocumentApplyResult:
+	case *apply.DashboardApplyResult, *apply.NotebookApplyResult, *apply.DocumentApplyResult:
 		return true
 	}
 	return false

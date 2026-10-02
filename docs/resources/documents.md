@@ -99,15 +99,20 @@ dtctl get documents --add-fields labels
 dtctl get document acme-config -o yaml   # labels appear at the top level
 ```
 
-Share a document of any type with users, groups, or everyone in the environment. `--environment` creates an environment share at the `--access` level and marks the document public; `unshare --environment` removes it and marks the document private again (`--all` removes user and group shares only):
+Share a document of any type with users, groups, or everyone in the environment. `--environment` takes one of two independent modes, and each `unshare` mode undoes only its own (`--all` removes user and group shares only):
+
+- `link` creates an environment share at the `--access` level and prints its claim link (`https://<environment>/ui/document/v0/#share=<id>`; `shareId` and `url` in agent mode). Anyone in the environment who opens the link gets that access. Re-running it reuses the existing share; an explicit `--access` at another level replaces it, which breaks the old link. `unshare --environment link` deletes the share(s), optionally only those at exactly `--access`.
+- `public` marks the document public (`isPrivate=false`): everyone in the environment can find and read it. `unshare --environment public` marks it private again.
 
 ```bash
 dtctl share document my-launchpad --user user-sso-id --access read-write
-dtctl share document my-launchpad --environment
-dtctl share document my-launchpad --environment --access read-write
-dtctl unshare document my-launchpad --environment
+dtctl share document my-launchpad --environment link
+dtctl share document my-launchpad --environment link --access read-write
+dtctl share document my-launchpad --environment public
+dtctl unshare document my-launchpad --environment link
+dtctl unshare document my-launchpad --environment public
 
-# Or share with the environment as part of an apply
+# Or share with the environment as part of an apply (link and public at once)
 dtctl apply -f launchpad.yaml --share-environment
 ```
 

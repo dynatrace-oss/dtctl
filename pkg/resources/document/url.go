@@ -29,3 +29,9 @@ func UIURL(baseURL, docType, id string) string {
 	}
 	return fmt.Sprintf("%s/ui/apps/%s/%s", baseURL, path, httpclient.PathSegment(id))
 }
+
+// ShareURL returns the link that hands out an environment share: whoever opens
+// it in the environment's UI claims the share. ParseShareRef reads it back.
+func ShareURL(baseURL, shareID string) string {
+	return fmt.Sprintf("%s/ui/document/v0/#share=%s", baseURL, shareID)
+}

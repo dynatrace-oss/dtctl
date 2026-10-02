@@ -916,164 +916,156 @@ func TestEnsureEnvironmentShare_RetriesSetPublicOn409(t *testing.T) {
 	}
 }
 
-// removeEnvSharesServer mocks the endpoints RemoveEnvironmentShares touches and
-// records every mutating call ("PATCH isPrivate=<v>", "DELETE <id>") in order.
-// patchStatus and failDelete inject failures.
-func removeEnvSharesServer(t *testing.T, shares []EnvironmentShare, isPrivate bool,
-	patchStatus int, failDelete string) (*Handler, *[]string) {
+// envLinkServer mocks the environment-share and metadata endpoints and records
+// every mutating call ("POST <access>", "DELETE <id>", "PATCH isPrivate=<v>")
+// in order. A DELETE of failDelete answers 500.
+func envLinkServer(t *testing.T, shares []EnvironmentShare, failDelete string) (*Handler, *[]string) {
 	t.Helper()
 	var calls []string
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			calls = append(calls, "POST "+body["access"])
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(EnvironmentShare{ID: "s-new", DocumentID: "doc-1", Access: []string{"read", "write"}})
+			return
+		}
 		json.NewEncoder(w).Encode(EnvironmentShareList{Shares: shares, TotalCount: len(shares)})
 	})
 	mux.HandleFunc("/platform/document/v1/environment-shares/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			id := strings.TrimPrefix(r.URL.Path, "/platform/document/v1/environment-shares/")
-			calls = append(calls, "DELETE "+id)
-			if id == failDelete {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
+		id := strings.TrimPrefix(r.URL.Path, "/platform/document/v1/environment-shares/")
+		calls = append(calls, r.Method+" "+id)
+		if id == failDelete {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "launchpad", Version: 2, IsPrivate: isPrivate})
+		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "launchpad", Version: 2, IsPrivate: true})
 	})
 	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			_ = r.ParseMultipartForm(1 << 20)
-			calls = append(calls, "PATCH isPrivate="+r.FormValue("isPrivate"))
-			if patchStatus != 0 {
-				w.WriteHeader(patchStatus)
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-		}
+		_ = r.ParseMultipartForm(1 << 20)
+		calls = append(calls, r.Method+" isPrivate="+r.FormValue("isPrivate"))
+		w.WriteHeader(http.StatusOK)
 	})
 	h, cleanup := newDocTestHandler(t, mux)
 	t.Cleanup(cleanup)
 	return h, &calls
 }
 
-func TestRemoveEnvironmentShares(t *testing.T) {
+// TestEnsureEnvironmentLink: a link never touches isPrivate, and an existing
+// share at another level is replaced only on request, because replacing it
+// changes the share ID and breaks the links already handed out.
+func TestEnsureEnvironmentLink(t *testing.T) {
+	readWrite := []EnvironmentShare{{ID: "s-rw", DocumentID: "doc-1", Access: []string{"read", "write"}}}
 	tests := []struct {
-		name      string
-		shares    []EnvironmentShare
-		isPrivate bool
-		access    string
-		wantCalls []string // in order: the document goes private before any share is deleted
-		wantN     int
-		wantMade  bool
+		name         string
+		shares       []EnvironmentShare
+		access       string
+		replace      bool
+		wantCalls    string
+		wantShare    string
+		wantCreated  bool
+		wantReplaced string
 	}{
-		{
-			name:      "makes the document private, then deletes the share",
-			shares:    []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
-			wantCalls: []string{"PATCH isPrivate=true", "DELETE s1"},
-			wantN:     1,
-			wantMade:  true,
-		},
-		{
-			name:      "access filter deletes only the exact match",
-			shares:    []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read", "write"}}},
-			access:    "read-write",
-			wantCalls: []string{"PATCH isPrivate=true", "DELETE s1"},
-			wantN:     1,
-			wantMade:  true,
-		},
-		{
-			name:   "access filter that matches nothing changes nothing",
-			shares: []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read", "write"}}},
-			access: "read",
-		},
-		{
-			name:      "public document without a share is made private",
-			wantCalls: []string{"PATCH isPrivate=true"},
-			wantMade:  true,
-		},
-		{
-			name:      "already private document only loses its share",
-			shares:    []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
-			isPrivate: true,
-			wantCalls: []string{"DELETE s1"},
-			wantN:     1,
-		},
-		{
-			name:      "private document without a share is left alone",
-			isPrivate: true,
-		},
+		{name: "creates a share when there is none", access: "read",
+			wantCalls: "POST read", wantShare: "s-new", wantCreated: true},
+		{name: "reuses a share at the same level", shares: readWrite, access: "read-write",
+			wantShare: "s-rw"},
+		{name: "keeps a share at another level without replace", shares: readWrite, access: "read",
+			wantShare: "s-rw"},
+		{name: "replaces a share at another level on request", shares: readWrite, access: "read", replace: true,
+			wantCalls: "DELETE s-rw; POST read", wantShare: "s-new", wantCreated: true, wantReplaced: "s-rw"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h, calls := removeEnvSharesServer(t, tt.shares, tt.isPrivate, 0, "")
+			h, calls := envLinkServer(t, tt.shares, "")
 
-			n, made, err := h.RemoveEnvironmentShares("doc-1", tt.access)
+			res, err := h.EnsureEnvironmentLink("doc-1", tt.access, tt.replace)
 			if err != nil {
-				t.Fatalf("RemoveEnvironmentShares: %v", err)
+				t.Fatalf("EnsureEnvironmentLink: %v", err)
 			}
-			if got, want := strings.Join(*calls, "; "), strings.Join(tt.wantCalls, "; "); got != want {
-				t.Errorf("calls = [%s], want [%s]", got, want)
+			if got := strings.Join(*calls, "; "); got != tt.wantCalls {
+				t.Errorf("calls = [%s], want [%s]", got, tt.wantCalls)
 			}
-			if n != tt.wantN {
-				t.Errorf("deleted = %d, want %d", n, tt.wantN)
+			if res.Share.ID != tt.wantShare || res.Created != tt.wantCreated {
+				t.Errorf("share = %s (created %v), want %s (created %v)",
+					res.Share.ID, res.Created, tt.wantShare, tt.wantCreated)
 			}
-			if made != tt.wantMade {
-				t.Errorf("madePrivate = %v, want %v", made, tt.wantMade)
+			var replaced []string
+			for _, s := range res.Replaced {
+				replaced = append(replaced, s.ID)
+			}
+			if got := strings.Join(replaced, ","); got != tt.wantReplaced {
+				t.Errorf("replaced = %q, want %q", got, tt.wantReplaced)
 			}
 		})
 	}
 }
 
-// TestRemoveEnvironmentShares_FailurePartway: a failure leaves the document
-// private (or untouched), never public with its share gone, and the error
-// says which state it is in.
-func TestRemoveEnvironmentShares_FailurePartway(t *testing.T) {
-	twoShares := []EnvironmentShare{
+// TestRemoveEnvironmentLinks: deleting links never touches isPrivate, and an
+// --access filter deletes only shares at exactly that level.
+func TestRemoveEnvironmentLinks(t *testing.T) {
+	shares := []EnvironmentShare{
+		{ID: "s-r", DocumentID: "doc-1", Access: []string{"read"}},
+		{ID: "s-rw", DocumentID: "doc-1", Access: []string{"read", "write"}},
+	}
+	tests := []struct {
+		name      string
+		shares    []EnvironmentShare
+		access    string
+		wantCalls string
+		wantN     int
+	}{
+		{name: "deletes every share", shares: shares, wantCalls: "DELETE s-r; DELETE s-rw", wantN: 2},
+		{name: "access filter deletes only the exact match", shares: shares, access: "read-write",
+			wantCalls: "DELETE s-rw", wantN: 1},
+		{name: "a filter that matches nothing changes nothing", shares: shares[1:], access: "read"},
+		{name: "no share, nothing to do"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, calls := envLinkServer(t, tt.shares, "")
+
+			n, err := h.RemoveEnvironmentLinks("doc-1", tt.access)
+			if err != nil {
+				t.Fatalf("RemoveEnvironmentLinks: %v", err)
+			}
+			if got := strings.Join(*calls, "; "); got != tt.wantCalls {
+				t.Errorf("calls = [%s], want [%s]", got, tt.wantCalls)
+			}
+			if n != tt.wantN {
+				t.Errorf("deleted = %d, want %d", n, tt.wantN)
+			}
+		})
+	}
+}
+
+// TestRemoveEnvironmentLinks_FailurePartway: the error says how many shares
+// were deleted before the failure.
+func TestRemoveEnvironmentLinks_FailurePartway(t *testing.T) {
+	h, _ := envLinkServer(t, []EnvironmentShare{
 		{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}},
 		{ID: "s2", DocumentID: "doc-1", Access: []string{"read"}},
+	}, "s2")
+
+	n, err := h.RemoveEnvironmentLinks("doc-1", "")
+	if err == nil {
+		t.Fatal("expected an error")
 	}
-
-	t.Run("making private fails: no share is deleted", func(t *testing.T) {
-		h, calls := removeEnvSharesServer(t, twoShares, false, http.StatusForbidden, "")
-
-		n, made, err := h.RemoveEnvironmentShares("doc-1", "")
-		if err == nil {
-			t.Fatal("expected an error")
+	for _, want := range []string{"s2", "1 of 2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
 		}
-		if !strings.Contains(err.Error(), "no environment share was deleted") ||
-			!strings.Contains(err.Error(), "the document is unchanged") {
-			t.Errorf("error %q does not state that the document is unchanged", err)
-		}
-		if got := strings.Join(*calls, "; "); got != "PATCH isPrivate=true" {
-			t.Errorf("calls = [%s], want only the failed PATCH", got)
-		}
-		if n != 0 || made {
-			t.Errorf("deleted = %d, madePrivate = %v; want 0, false", n, made)
-		}
-	})
-
-	t.Run("deleting a share fails: the document is already private", func(t *testing.T) {
-		h, calls := removeEnvSharesServer(t, twoShares, false, 0, "s2")
-
-		n, made, err := h.RemoveEnvironmentShares("doc-1", "")
-		if err == nil {
-			t.Fatal("expected an error")
-		}
-		for _, want := range []string{"the document is private", "s2", "1 of 2"} {
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("error %q does not mention %q", err, want)
-			}
-		}
-		if got := strings.Join(*calls, "; "); got != "PATCH isPrivate=true; DELETE s1; DELETE s2" {
-			t.Errorf("calls = [%s]", got)
-		}
-		if n != 1 || !made {
-			t.Errorf("deleted = %d, madePrivate = %v; want 1, true", n, made)
-		}
-	})
+	}
+	if n != 1 {
+		t.Errorf("deleted = %d, want 1", n)
+	}
 }
 
 // --- documentListItemToDocument / ConvertToDocuments ---

@@ -363,6 +363,25 @@ func TestScopesForInvocation_FlagOffAddsNothing(t *testing.T) {
 	require.Equal(t, base, got)
 }
 
+// TestScopesForInvocation_FlagValueSelectsScopes: a `<flag>=<value>` entry
+// applies only to that value. `share --environment link` works on environment
+// shares; `--environment public` only sets isPrivate, so demanding the
+// environment-share scopes there would block a call that does not need them.
+func TestScopesForInvocation_FlagValueSelectsScopes(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"share", "document"})
+	require.NoError(t, err)
+	base, _ := scopesForInvocation(cmd, "share", "document")
+
+	withFlagSet(t, cmd, "environment", "public")
+	got, _ := scopesForInvocation(cmd, "share", "document")
+	require.Equal(t, base, got)
+
+	withFlagSet(t, cmd, "environment", "link")
+	got, _ = scopesForInvocation(cmd, "share", "document")
+	require.Contains(t, got, "document:environment-shares:write")
+	require.Subset(t, got, base)
+}
+
 func TestScopesForInvocation_UnlistedCommandIsUnchanged(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"delete", "workflow"})
 	require.NoError(t, err)
@@ -409,7 +428,8 @@ func TestFlagScopeRequirementsAreWellFormed(t *testing.T) {
 		require.Equal(t, scopeRequirementKnown, req,
 			"%q has no catalog scopes, so a flag scope on it would never be reported", key)
 
-		for name, scopes := range byFlag {
+		for flagKey, scopes := range byFlag {
+			name, _, _ := strings.Cut(flagKey, "=")
 			require.NotNil(t, cmd.Flags().Lookup(name),
 				"%q has no flag %q — the flag was renamed or removed", key, name)
 			require.NotEmpty(t, scopes, "%q flag %q lists no scopes", key, name)
