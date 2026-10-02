@@ -3,7 +3,9 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -172,7 +174,7 @@ func TestMeasureSerializedBytes_MatchesPrinterOutput(t *testing.T) {
 		if err := p.PrintList(records); err != nil {
 			t.Fatalf("%s: printer failed: %v", format, err)
 		}
-		got, gotEnc := MeasureSerializedBytes(records, format)
+		got, gotEnc := MeasureSerializedBytes(records, format, true)
 		if gotEnc != enc {
 			t.Errorf("%s: encoding = %q, want %q", format, gotEnc, enc)
 		}
@@ -201,10 +203,89 @@ func TestMeasureSerializedBytes_UnstreamableShapesStayExact(t *testing.T) {
 		var buf bytes.Buffer
 		p := NewPrinterWithOpts(PrinterOptions{Format: "json", Writer: &buf})
 		_ = p.PrintList(c.in) // may fail; the measurement must match either way
-		got, _ := MeasureSerializedBytes(c.in, "json")
+		got, _ := MeasureSerializedBytes(c.in, "json", true)
 		if got != int64(buf.Len()) {
 			t.Errorf("%s: measured %d bytes, printer wrote %d", c.name, got, buf.Len())
 		}
+	}
+}
+
+// TestMeasureSerializedBytes_CompactMatchesCompactEncoding is the #570 guard:
+// piped and agent output is compact JSON, so a compact measurement has to count
+// exactly the bytes of the compact encoding, not of the indented one — for the
+// streamed shapes and for the whole-value fallback alike.
+func TestMeasureSerializedBytes_CompactMatchesCompactEncoding(t *testing.T) {
+	cases := []struct {
+		name string
+		in   interface{}
+	}{
+		{"rows", []map[string]interface{}{
+			{"host": "web-01", "status": float64(200), "msg": "a\"b <c>"},
+			{"host": "web-02", "nested": map[string]interface{}{"k": []interface{}{1.0, "2"}}},
+		}},
+		{"empty", []map[string]interface{}{}},
+		{"nil slice", []map[string]interface{}(nil)},
+		{"single map", map[string]interface{}{"a": 1.0}},
+	}
+	for _, c := range cases {
+		var buf bytes.Buffer
+		if err := json.NewEncoder(&buf).Encode(c.in); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		got, enc := MeasureSerializedBytes(c.in, "json", false)
+		if enc != "json" {
+			t.Errorf("%s: encoding = %q, want json", c.name, enc)
+		}
+		if got != int64(buf.Len()) {
+			t.Errorf("%s: measured %d bytes, compact encoding is %d", c.name, got, buf.Len())
+		}
+	}
+}
+
+// The indent flag is a JSON layout choice; the other encodings have one layout
+// and must measure the same either way.
+func TestMeasureSerializedBytes_IndentOnlyAffectsJSON(t *testing.T) {
+	records := []map[string]interface{}{{"host": "web-01", "n": 1.0}, {"host": "web-02", "n": 2.0}}
+	for _, format := range []string{"csv", "yaml", "toon"} {
+		a, _ := MeasureSerializedBytes(records, format, true)
+		b, _ := MeasureSerializedBytes(records, format, false)
+		if a != b {
+			t.Errorf("%s: indented %d != compact %d", format, a, b)
+		}
+	}
+	indented, _ := MeasureSerializedBytes(records, "json", true)
+	compact, _ := MeasureSerializedBytes(records, "json", false)
+	if compact >= indented {
+		t.Errorf("json: compact %d should be smaller than indented %d", compact, indented)
+	}
+}
+
+// EmittedJSONIndented must give the answer EncodeEnvelope acts on: a non-TTY
+// writer gets a compact envelope in agent mode, and the JSON printer, which is
+// what writes the rows outside agent mode, always indents.
+func TestEmittedJSONIndented(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "stdout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for _, w := range []io.Writer{&bytes.Buffer{}, f} {
+		if EmittedJSONIndented(w, true) {
+			t.Errorf("%T: agent output to a non-terminal reported indented", w)
+		}
+		if !EmittedJSONIndented(w, false) {
+			t.Errorf("%T: JSON printer output reported compact", w)
+		}
+	}
+
+	// And it agrees with the bytes EncodeEnvelope actually writes.
+	var buf bytes.Buffer
+	if err := EncodeEnvelope(&buf, Response{OK: true, Result: []map[string]interface{}{{"a": 1.0}}}); err != nil {
+		t.Fatal(err)
+	}
+	if indented := strings.Count(buf.String(), "\n") > 1; indented != EmittedJSONIndented(&buf, true) {
+		t.Errorf("EncodeEnvelope wrote indented=%v, EmittedJSONIndented says %v: %q",
+			indented, EmittedJSONIndented(&buf, true), buf.String())
 	}
 }
 

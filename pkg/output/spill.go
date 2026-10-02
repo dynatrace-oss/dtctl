@@ -330,6 +330,13 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 // receive (50 KB of JSON ≠ 50 KB of toon). table/wide/chart-style formats are
 // measured as json because that is what agent mode actually emits.
 //
+// indent selects the JSON layout, and the caller passes the one the rows'
+// writer actually emits, as EmittedJSONIndented reports it. An agent envelope
+// piped to a tool or a model is compact JSON; measuring it with the printer's
+// indentation overstated it about 2.5x, so --spill=auto spilled results well
+// under --spill-threshold (#570). indent affects json only: csv, yaml and toon
+// have a single layout.
+//
 // Nothing is kept: bytes go to io.Discard and only the count is returned. The
 // JSON measurement — the one every agent-mode query pays, since json is the
 // agent display encoding — streams element by element (streamJSONArray) rather
@@ -339,14 +346,18 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 // a non-spilling one (#467).
 //
 // For -o auto the encoding is the one ChooseAutoFormat picks for records.
-func MeasureSerializedBytes(records interface{}, format string) (int64, string) {
+func MeasureSerializedBytes(records interface{}, format string, indent bool) (int64, string) {
 	if IsAutoFormat(format) {
 		format = ChooseAutoFormat(records).Format
 	}
 	enc := NormalizeMeasureEncoding(format)
 	counter := &countingWriter{w: io.Discard}
 	if enc == "json" {
-		handled, err := streamJSONArray(counter, records, "", jsonIndent)
+		layout := ""
+		if indent {
+			layout = jsonIndent
+		}
+		handled, err := streamJSONArray(counter, records, "", layout)
 		if handled && err == nil {
 			return counter.n, enc
 		}
@@ -354,10 +365,27 @@ func MeasureSerializedBytes(records interface{}, format string) (int64, string) 
 		// through: drop the partial count and measure the whole value the way it
 		// will actually be printed.
 		counter.n = 0
+		if !indent {
+			_ = json.NewEncoder(counter).Encode(records)
+			return counter.n, enc
+		}
 	}
 	p := NewPrinterWithOpts(PrinterOptions{Format: enc, Writer: counter})
 	_ = p.PrintList(records)
 	return counter.n, enc
+}
+
+// EmittedJSONIndented reports whether JSON rows written to w come out indented,
+// which is the layout MeasureSerializedBytes has to measure. In agent mode the
+// rows go out inside an envelope that EncodeEnvelope lays out, so this defers
+// to EnvelopeIndented: indented on an interactive terminal, compact when piped
+// or redirected. Outside agent mode they go through the JSON printer, which
+// always indents.
+func EmittedJSONIndented(w io.Writer, agent bool) bool {
+	if agent {
+		return EnvelopeIndented(w)
+	}
+	return true
 }
 
 // NormalizeMeasureEncoding maps a display format to the encoding the bytes are

@@ -104,7 +104,7 @@ dtctl query "fetch logs" --spill=never      # force rows inline (the default for
 # Choose the destination or format
 dtctl query "fetch logs" --spill-to ./out.jsonl    # explicit file (implies --spill; format from extension)
 dtctl query "fetch logs" --spill --spill-format parquet # jsonl (default), json, csv, or parquet
-dtctl query "fetch logs" --spill=auto --spill-threshold 100KB  # size that triggers a spill (default 50KB)
+dtctl query "fetch logs" --spill=auto --spill-threshold 100KB  # output size that triggers a spill (default 50KB)
 ```
 
 Defaults: `never` for a bare command (so the `... -o csv > out.csv` pipeline path is untouched), `auto` in agent mode. Files go to the OS user cache dir, partitioned by context, written atomically and pruned after a 24h TTL. Spill is also configurable via a `spill:` config section and the `DTCTL_SPILL` / `DTCTL_SPILL_DIR` environment variables.

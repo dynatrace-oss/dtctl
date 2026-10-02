@@ -202,6 +202,11 @@ a one-off write failure suggests retrying with an explicit `--spill-to <path>`.
 }
 ```
 
+`measured_bytes` is the size the rows would have taken inline, in
+`measured_encoding` and laid out as this invocation prints it: compact JSON when
+stdout is piped or redirected (the agent case), indented on a terminal.
+`--spill=auto` compares it with `threshold_bytes` (`--spill-threshold`).
+
 A large enough result is written to that file row by row as it arrives, without
 ever being held whole. Those envelopes carry `"streamed": true` in `context` and
 no `measured_bytes`/`measured_encoding`: nothing was serialised for inline

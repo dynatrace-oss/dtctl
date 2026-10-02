@@ -8,9 +8,9 @@ import (
 	"reflect"
 )
 
-// jsonIndent is the indentation the JSON printer emits, and therefore the
-// indentation the spill byte measurement has to reproduce to stay faithful to
-// what the invocation would print.
+// jsonIndent is the indentation the JSON printer (and an envelope printed to a
+// terminal) emits, and therefore the indentation the spill byte measurement has
+// to reproduce whenever the rows will be printed indented.
 const jsonIndent = "  "
 
 var (

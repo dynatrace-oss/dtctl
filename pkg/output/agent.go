@@ -16,7 +16,16 @@ import (
 // drops the ~⅓ of bytes that indentation would otherwise add; the envelope shape
 // is identical either way, only whitespace differs.
 func EncodeEnvelope(w io.Writer, resp Response) error {
-	return encodeEnvelopeTo(w, resp, isTerminalWriter(w))
+	return encodeEnvelopeTo(w, resp, EnvelopeIndented(w))
+}
+
+// EnvelopeIndented reports whether EncodeEnvelope pretty-prints for w. It is
+// the one place that decision is made: anything that has to predict the bytes
+// an envelope written to w will take (EnvelopeSize, the spill measurement via
+// EmittedJSONIndented) asks it rather than repeating the test, so the
+// prediction cannot drift from what is actually written.
+func EnvelopeIndented(w io.Writer) bool {
+	return isTerminalWriter(w)
 }
 
 // EnvelopeSize returns the number of bytes EncodeEnvelope would write for resp
@@ -27,7 +36,7 @@ func EncodeEnvelope(w io.Writer, resp Response) error {
 // caller chose are all inside the budget.
 func EnvelopeSize(w io.Writer, resp Response) (int64, error) {
 	counter := &countingWriter{w: io.Discard}
-	err := encodeEnvelopeTo(counter, resp, isTerminalWriter(w))
+	err := encodeEnvelopeTo(counter, resp, EnvelopeIndented(w))
 	return counter.n, err
 }
 
@@ -88,7 +97,11 @@ type ResponseContext struct {
 
 	// Spill decision provenance (D2/D24). Populated only on the spill path so
 	// both agents and humans can see *why* they got the shape they got.
-	// Decided is one of "inline", "spilled", "summary-only".
+	// Decided is one of "inline", "spilled", "summary-only". MeasuredBytes is
+	// the size of the rows as they would be printed inline, in MeasuredEncoding
+	// and in the writer's layout (compact JSON unless stdout is a terminal in
+	// agent mode, see EmittedJSONIndented); --spill=auto compares it with
+	// ThresholdBytes.
 	Decided          string `json:"decided,omitempty"`
 	ThresholdBytes   int64  `json:"threshold_bytes,omitempty"`
 	MeasuredBytes    int64  `json:"measured_bytes,omitempty"`
