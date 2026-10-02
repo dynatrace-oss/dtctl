@@ -235,21 +235,25 @@ func createDocumentFromData(cmd *cobra.Command, docType string, fileData []byte)
 
 	// Handle dry-run
 	if dryRun {
-		output.PrintInfo("Dry run: would create %s", docType)
-		output.PrintInfo("  Name: %s", name)
+		report := newDryRunReport(cmd).OnStderr().
+			Linef("Dry run: would create %s", docType).
+			Detail("type", "%s", docType).
+			Linef("  Name: %s", name).
+			Detail("name", "%s", name)
 		if id != "" {
-			output.PrintInfo("  ID: %s", id)
+			report.Linef("  ID: %s", id).Detail("id", "%s", id)
 		}
 		if description != "" {
-			output.PrintInfo("  Description: %s", description)
+			report.Linef("  Description: %s", description).Detail("description", "%s", description)
 		}
 		if tileCount > 0 {
-			output.PrintInfo("  %s: %d", capitalize(itemName(docType)), tileCount)
+			report.Linef("  %s: %d", capitalize(itemName(docType)), tileCount).
+				Detail(itemName(docType), "%d", tileCount)
 		}
 		if len(warnings) == 0 {
-			output.PrintInfo("\nDocument structure validated successfully")
+			report.Linef("").Linef("Document structure validated successfully")
 		}
-		return nil
+		return report.Print()
 	}
 
 	_, c, err := SetupWithSafety(safety.OperationCreate)

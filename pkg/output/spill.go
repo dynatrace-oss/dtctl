@@ -323,12 +323,46 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 	})
 }
 
+// JSONLayout is how a JSON value is laid out where it is printed: compact (the
+// zero value), or indented by Indent per level with every line after the first
+// carrying Prefix, the indentation of the depth the value sits at inside its
+// document. Measuring a value with the layout it is printed in counts exactly
+// the bytes it takes there.
+type JSONLayout struct {
+	Prefix string
+	Indent string
+	// Lines is JSON Lines, as JSONLPrinter prints a slice: each element compact
+	// on a line of its own, with no array framing, and nothing at all for an
+	// empty slice. Prefix and Indent do not apply.
+	Lines bool
+}
+
+// JSONLinesLayout is the layout of rows printed with -o jsonl.
+var JSONLinesLayout = JSONLayout{Lines: true}
+
+// IndentedJSONLayout is the layout of a value depth levels deep in a document
+// printed with the JSON printer's 2-space indentation; depth 0 is the root.
+func IndentedJSONLayout(depth int) JSONLayout {
+	return JSONLayout{Prefix: strings.Repeat(jsonIndent, depth), Indent: jsonIndent}
+}
+
 // MeasureSerializedBytes serialises records in the chosen display encoding and
 // returns the byte count plus the normalised encoding name used (D24). The
 // threshold is measured against the actual encoding the invocation will emit so
 // the byte count is a faithful proxy for the tokens the agent would otherwise
 // receive (50 KB of JSON ≠ 50 KB of toon). table/wide/chart-style formats are
 // measured as json because that is what agent mode actually emits.
+//
+// layout is the JSON layout the rows are printed in, which the caller knows:
+// compact in an agent envelope piped to a tool or a model, indented at the
+// rows' depth on a terminal (EnvelopeRecordsLayout). Measured with the printer's
+// root-level indentation instead, a piped agent result was overstated by up to
+// 2.5x for narrow rows, so --spill=auto spilled results under --spill-threshold (#570).
+// For json the count is then exactly the bytes the value occupies in the
+// printed document, plus one for the newline that ends a top-level encoding;
+// with JSONLinesLayout it is exactly what JSONLPrinter writes (-o jsonl
+// outside agent mode). layout does not affect csv, yaml and toon; inside an agent envelope those are
+// carried as a JSON string, and the count is the text before string escaping.
 //
 // Nothing is kept: bytes go to io.Discard and only the count is returned. The
 // JSON measurement — the one every agent-mode query pays, since json is the
@@ -339,21 +373,33 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 // a non-spilling one (#467).
 //
 // For -o auto the encoding is the one ChooseAutoFormat picks for records.
-func MeasureSerializedBytes(records interface{}, format string) (int64, string) {
+func MeasureSerializedBytes(records interface{}, format string, layout JSONLayout) (int64, string) {
 	if IsAutoFormat(format) {
 		format = ChooseAutoFormat(records).Format
 	}
 	enc := NormalizeMeasureEncoding(format)
 	counter := &countingWriter{w: io.Discard}
+	if enc == "json" && layout.Lines {
+		// The printer itself, into the counter: it already encodes one element
+		// at a time, and it is by construction what -o jsonl writes — including
+		// its zero bytes for an empty slice, and for a non-slice it refuses.
+		_ = (&JSONLPrinter{writer: counter}).PrintList(records)
+		return counter.n, enc
+	}
 	if enc == "json" {
-		handled, err := streamJSONArray(counter, records, "", jsonIndent)
+		handled, err := streamJSONArray(counter, records, layout.Prefix, layout.Indent)
 		if handled && err == nil {
 			return counter.n, enc
 		}
 		// Unstreamable shape, or an element that failed to marshal partway
 		// through: drop the partial count and measure the whole value the way it
-		// will actually be printed.
+		// will actually be printed. At the root with the printer's indent this
+		// is byte for byte what the JSON printer writes.
 		counter.n = 0
+		je := json.NewEncoder(counter)
+		je.SetIndent(layout.Prefix, layout.Indent)
+		_ = je.Encode(records)
+		return counter.n, enc
 	}
 	p := NewPrinterWithOpts(PrinterOptions{Format: enc, Writer: counter})
 	_ = p.PrintList(records)

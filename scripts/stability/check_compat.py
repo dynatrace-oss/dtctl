@@ -39,6 +39,18 @@ depends on what the base looked like. Three more things are refused here:
 "Shipped at the base" means at or below the base's pkg/version.Version, which
 release-please bumps only in the release commit itself.
 
+Finally it refuses stable surface that nobody chose. A flag with no tier of its
+own inherits its command's, so a flag added to an already-stable command is
+stable on its first day unless someone says otherwise. The manifest tags each
+flag that declared its own tier with "(declared)", and a flag that is stable in
+the head, was not stable at the base, sits under a command that was stable in
+both, and lacks the tag is refused. Flags that were already stable at the base
+are left alone (they predate the rule), and so are the flags of a command that
+is new or newly stable: there the command's own MarkStable is the decision.
+The (global) group is a stable entry like any command, so a new global flag is
+held to the same rule. A base manifest written before the tag existed parses
+the same way, because only the head's tags are read.
+
 Usage:
     check_compat.py [--base REF_OR_FILE] [--head FILE]
                     [--base-version X.Y.Z] [--head-version X.Y.Z]
@@ -57,14 +69,19 @@ ROW = re.compile(
     r"(?P<level>stable|experimental|development)\b(?P<rest>.*)$"
 )
 SINCE = re.compile(r"\bsince (?P<v>\S+)")
+# Must match declaredMarker in pkg/stability/manifest.go.
+DECLARED = "(declared)"
+FLAG_SEP = " --"
 
 
 def surface(text):
     """Parse the manifest's Surface block into
-    {entry key: (level, deprecated, since-version or None)}.
+    {entry key: (level, deprecated, since-version or None, declared)}.
 
     A flag is keyed by the command it hangs off, so `query --spill` vanishing is
-    a different finding from `query` vanishing.
+    a different finding from `query` vanishing. `declared` is True for a flag
+    line tagged "(declared)"; it is always False for a command line and for any
+    line of a manifest generated before the tag existed.
     """
     _, _, body = text.partition("## Surface")
     if not body:
@@ -84,7 +101,9 @@ def surface(text):
         else:
             continue
         since = SINCE.search(rest)
-        entries[key] = (level, "deprecated" in rest, since["v"] if since else None)
+        declared = bool(m["indent"]) and rest.rstrip().endswith(DECLARED)
+        entries[key] = (level, "deprecated" in rest, since["v"] if since else None,
+                        declared)
     if not entries:
         sys.exit("parsed no entries out of the Surface section: refusing to compare")
     return entries
@@ -120,7 +139,7 @@ def since_findings(base, head, base_version, head_version):
     # the base; on the release PR it is the release being cut.
     unreleased_text = ", ".join(show(v) for v in allowed if v > base_version)
     out = []
-    for key, (level, _, since) in sorted(head.items()):
+    for key, (level, _, since, _) in sorted(head.items()):
         old = base.get(key)
         if (old is not None and old[0] == level and old[2] is not None
                 and old[2] != since and _released(old[2], base_version)):
@@ -149,6 +168,25 @@ def since_findings(base, head, base_version, head_version):
             out.append((key, "since %s is new here, but %s had already shipped "
                              "without it (expected one of %s)"
                              % (since, since, unreleased_text)))
+    return out
+
+
+def undeclared_findings(base, head):
+    """Flags that became stable in head only by inheriting from a command that
+    was already stable at the base. Returns sorted entry keys.
+    """
+    out = []
+    for key, (level, _, _, declared) in sorted(head.items()):
+        if FLAG_SEP not in key or level != "stable" or declared:
+            continue
+        old = base.get(key)
+        if old is not None and old[0] == "stable":
+            continue  # already promised at the base; predates the rule
+        command = key.rsplit(FLAG_SEP, 1)[0]
+        was, now = base.get(command), head.get(command)
+        if was is None or was[0] != "stable" or now is None or now[0] != "stable":
+            continue  # new or newly stable command: its MarkStable decided
+        out.append(key)
     return out
 
 
@@ -229,7 +267,7 @@ def main():
                     else version_of(None))
 
     removed, demoted = [], []
-    for key, (level, deprecated, _) in sorted(base.items()):
+    for key, (level, deprecated, _, _) in sorted(base.items()):
         if level != "stable":
             continue
         if key not in head:
@@ -239,15 +277,18 @@ def main():
         if head[key][0] != "stable":
             demoted.append((key, head[key][0]))
     misdated = since_findings(base, head, base_version, head_version)
+    undeclared = undeclared_findings(base, head)
 
-    if not removed and not demoted and not misdated:
+    if not removed and not demoted and not misdated and not undeclared:
         print("OK Stable surface intact against %s (%d stable entries checked); "
-              "since-versions consistent with %s."
+              "since-versions consistent with %s; no new flag is stable by omission."
               % (args.base, sum(1 for e in base.values() if e[0] == "stable"),
                  show(head_version)))
         return 0
 
+    sections = 0
     if removed or demoted:
+        sections += 1
         print("Stable surface withdrawn relative to %s:\n" % args.base)
         for key in removed:
             print("  removed   %s" % key)
@@ -263,8 +304,9 @@ def main():
             "dtctl-contrib breaking-changes/ before overriding this check."
         )
     if misdated:
-        if removed or demoted:
+        if sections:
             print()
+        sections += 1
         print("Since-versions that misdate their change relative to %s "
               "(base pkg/version %s, head %s):\n"
               % (args.base, show(base_version), show(head_version)))
@@ -274,6 +316,27 @@ def main():
             "\nA since-version records the release that changed the contract, so it\n"
             "names the release the change first ships in and never changes after.\n"
             "Fix the declaration in cmd/ and run `make stability-manifest`."
+        )
+    if undeclared:
+        if sections:
+            print()
+        next_release = " or ".join(show(v) for v in this_or_next(head_version)
+                                   if v > base_version)
+        print("New flags that are stable only because their command is "
+              "(relative to %s):\n" % args.base)
+        for key in undeclared:
+            print("  undeclared  %s" % key)
+        print(
+            "\nA flag without a tier of its own inherits its command's, so each of these\n"
+            "would ship an additive-only promise that nobody chose. Declare the tier\n"
+            "where the flag is defined (for a (global) flag, on the root command):\n"
+            "  * stability.MarkFlag(cmd, \"<flag>\", stability.Experimental, \"<version>\")\n"
+            "    if its name or behaviour may still change; <version> is the release\n"
+            "    it first ships in (%s);\n"
+            "  * stability.MarkFlagStable(cmd, \"<flag>\") if it is additive-only from\n"
+            "    its first release on.\n"
+            "Then run `make stability-manifest`; the line gains \"(declared)\"."
+            % next_release
         )
     return 1
 

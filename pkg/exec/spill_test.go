@@ -280,6 +280,175 @@ func TestBuildSpillResponse_InlineRecordsEnvelopeInAgentMode(t *testing.T) {
 	}
 }
 
+// pipedStdout points os.Stdout at a regular file for the rest of the test, so
+// the output is not a terminal — as for an agent or a pipe — whatever `go test`
+// itself was attached to. The spill measurement follows the layout the envelope
+// will be written in, and that depends on os.Stdout.
+func pipedStdout(t *testing.T) {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "stdout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = f
+	t.Cleanup(func() {
+		os.Stdout = old
+		_ = f.Close()
+	})
+}
+
+// #570: piped agent output is a compact envelope, so --spill=auto measures the
+// rows compact. At a threshold equal to their compact size the result now stays
+// inline; measured indented, as before, it was ~2x over and spilled. The
+// measured size is the bytes the envelope actually carries for the rows.
+func TestBuildSpillResponse_AgentPipedMeasuresCompactBytes(t *testing.T) {
+	pipedStdout(t)
+	records := make([]map[string]interface{}, 0, 20)
+	for i := 0; i < 20; i++ {
+		records = append(records, map[string]interface{}{
+			"host":    fmt.Sprintf("web-%02d", i),
+			"status":  float64(200 + i),
+			"content": fmt.Sprintf("request %d served", i),
+		})
+	}
+	result := &DQLQueryResponse{Records: records}
+
+	var compactBuf, indentedBuf bytes.Buffer
+	if err := json.NewEncoder(&compactBuf).Encode(records); err != nil {
+		t.Fatal(err)
+	}
+	ienc := json.NewEncoder(&indentedBuf)
+	ienc.SetIndent("", "  ")
+	if err := ienc.Encode(records); err != nil {
+		t.Fatal(err)
+	}
+	compact, indented := int64(compactBuf.Len()), int64(indentedBuf.Len())
+	if indented <= compact {
+		t.Fatalf("fixture: indented %d should exceed compact %d", indented, compact)
+	}
+
+	e := &DQLExecutor{}
+	opts := DQLExecuteOptions{
+		AgentMode: true,
+		Verbose:   true, // keep measured_bytes on the inline envelope
+		Spill:     SpillOptions{Mode: SpillAuto, Threshold: compact, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v", handled, err)
+	}
+	if resp.Context.Decided != "inline" {
+		t.Fatalf("decided = %q at a threshold equal to the compact size (%d B; indented %d B), want inline",
+			resp.Context.Decided, compact, indented)
+	}
+	if resp.Context.MeasuredBytes != compact {
+		t.Errorf("measured_bytes = %d, want the compact encoding's %d", resp.Context.MeasuredBytes, compact)
+	}
+
+	// And that is what the envelope written to the piped stdout carries for the
+	// rows (plus the encoder's trailing newline, which the envelope does not
+	// repeat after a nested value).
+	var out bytes.Buffer
+	if err := output.EncodeEnvelope(&out, resp); err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Result struct {
+			Records json.RawMessage `json:"records"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if got := int64(len(env.Result.Records)) + 1; got != resp.Context.MeasuredBytes {
+		t.Errorf("envelope carries %d bytes of rows, measured_bytes = %d", got, resp.Context.MeasuredBytes)
+	}
+
+	// One byte under that, it spills.
+	opts.Spill.Threshold = compact - 1
+	resp, _, err = e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Context.Decided != "spilled" || resp.Context.MeasuredBytes != compact {
+		t.Errorf("threshold %d: decided=%q measured=%d, want spilled at %d",
+			opts.Spill.Threshold, resp.Context.Decided, resp.Context.MeasuredBytes, compact)
+	}
+}
+
+// Outside agent mode the rows go through the JSON printer, which indents even
+// when piped, and prints them one level deep as {"records": [...]}. That is the
+// size measured — exactly what printResults writes for them — so the threshold
+// that keeps a piped agent result inline spills this one.
+func TestBuildSpillResponse_NonAgentMeasuresPrintedBytes(t *testing.T) {
+	pipedStdout(t)
+	_, records := sampleResult(false)
+	result := &DQLQueryResponse{Records: records}
+
+	printed := captureStdout(t, func() {
+		if err := (&DQLExecutor{}).printResults("fetch logs", result, DQLExecuteOptions{OutputFormat: "json"}); err != nil {
+			t.Errorf("printResults: %v", err)
+		}
+	})
+	layout := output.IndentedJSONLayout(1)
+	var want bytes.Buffer
+	enc := json.NewEncoder(&want)
+	enc.SetIndent(layout.Prefix, layout.Indent)
+	if err := enc.Encode(records); err != nil {
+		t.Fatal(err)
+	}
+	text := bytes.TrimSuffix(want.Bytes(), []byte("\n"))
+	if !bytes.Contains(printed, append([]byte(`"records": `), text...)) {
+		t.Fatalf("printed output does not carry the rows laid out as %+v:\n%s\nprinted:\n%s", layout, text, printed)
+	}
+
+	compact, _ := output.MeasureSerializedBytes(records, "json", output.JSONLayout{})
+	e := &DQLExecutor{}
+	opts := DQLExecuteOptions{
+		OutputFormat: "json",
+		Spill:        SpillOptions{Mode: SpillAuto, Threshold: compact, Dir: t.TempDir(), Format: "json"},
+	}
+	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
+	if err != nil || !handled {
+		t.Fatalf("handled=%v err=%v", handled, err)
+	}
+	if want := int64(len(text)) + 1; resp.Context.Decided != "spilled" || resp.Context.MeasuredBytes != want {
+		t.Errorf("decided=%q measured=%d, want spilled at the printed %d (+1 newline)", resp.Context.Decided, resp.Context.MeasuredBytes, want)
+	}
+}
+
+// Outside agent mode -o jsonl prints the rows as they came, one compact line
+// each and nothing for an empty result: no array framing, no compaction (even
+// with --compact) and no type block. The spill measurement must be exactly
+// that, for 0, 1 and several rows.
+func TestMeasureInline_NonAgentJSONLMatchesPrintedBytes(t *testing.T) {
+	pipedStdout(t)
+	rows := func(n int) []map[string]interface{} {
+		out := make([]map[string]interface{}, n)
+		for i := range out {
+			// "region" is constant across rows, so --compact would hoist it.
+			out[i] = map[string]interface{}{"host": fmt.Sprintf("web-%02d", i), "region": "eu", "status": float64(200 + i)}
+		}
+		return out
+	}
+	for _, n := range []int{0, 1, 3} {
+		records := rows(n)
+		opts := DQLExecuteOptions{OutputFormat: "jsonl", Compact: true}
+		printed := captureStdout(t, func() {
+			if err := (&DQLExecutor{}).printResults("fetch logs", &DQLQueryResponse{Records: records}, opts); err != nil {
+				t.Errorf("printResults: %v", err)
+			}
+		})
+		inline := newInlineRows(records, compactionFor(records, opts), opts.MaxFieldChars)
+		inline.types = []interface{}{map[string]interface{}{"mappings": map[string]interface{}{}}}
+		got, _ := measureInline(inline, "jsonl", inlineLayout(opts, "jsonl"))
+		if got != int64(len(printed)) {
+			t.Errorf("%d rows: measured %d bytes, -o jsonl printed %d: %q", n, got, len(printed), printed)
+		}
+	}
+}
+
 // resultWithNotification returns a small result carrying a query notification,
 // so the envelope-building paths can be exercised against truncation warnings.
 func resultWithNotification(n QueryNotification) (*DQLQueryResponse, []map[string]interface{}) {

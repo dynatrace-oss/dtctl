@@ -1,8 +1,9 @@
 // Package httpclient provides an HTTP client for Dynatrace APIs.
 //
-// It wraps [resty] with Dynatrace-specific defaults: automatic retry on
-// 429/5xx, Bearer/Api-Token auth scheme selection, User-Agent with AI agent
-// detection, gzip, and redacted verbose logging.
+// It wraps [resty] with Dynatrace-specific defaults: automatic retry of
+// requests that are safe to resend (see [IsRetryable]), Bearer/Api-Token auth
+// scheme selection, User-Agent with AI agent detection, gzip, and redacted
+// verbose logging.
 //
 // # Constructor
 //

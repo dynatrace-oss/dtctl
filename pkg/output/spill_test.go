@@ -179,7 +179,7 @@ func TestPruneOldSpills_Throttled(t *testing.T) {
 
 func TestMeasureSerializedBytes(t *testing.T) {
 	records := []map[string]interface{}{{"a": "x"}, {"a": "y"}}
-	n, enc := MeasureSerializedBytes(records, "json")
+	n, enc := MeasureSerializedBytes(records, "json", IndentedJSONLayout(0))
 	if n <= 0 {
 		t.Errorf("measured bytes = %d, want > 0", n)
 	}
@@ -187,10 +187,10 @@ func TestMeasureSerializedBytes(t *testing.T) {
 		t.Errorf("encoding = %q, want json", enc)
 	}
 	// table is not emitted in agent mode -> measured as json
-	if _, enc := MeasureSerializedBytes(records, "table"); enc != "json" {
+	if _, enc := MeasureSerializedBytes(records, "table", IndentedJSONLayout(0)); enc != "json" {
 		t.Errorf("table should be measured as json, got %q", enc)
 	}
-	if _, enc := MeasureSerializedBytes(records, "csv"); enc != "csv" {
+	if _, enc := MeasureSerializedBytes(records, "csv", IndentedJSONLayout(0)); enc != "csv" {
 		t.Errorf("csv encoding = %q, want csv", enc)
 	}
 }

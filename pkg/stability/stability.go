@@ -127,8 +127,13 @@ func Mark(cmd *cobra.Command, level Level, since string) {
 		return
 	}
 	setAnnotation(cmd, AnnotationLevel, string(level))
+	// A declaration replaces the previous one whole. Keeping an older
+	// since-version when the new one has none would leave a promotion to
+	// stable dated by the experimental mark it replaced.
 	if since != "" {
 		setAnnotation(cmd, AnnotationSince, since)
+	} else {
+		delete(cmd.Annotations, AnnotationSince)
 	}
 }
 
@@ -152,8 +157,17 @@ func MarkDevelopment(cmd *cobra.Command, feature string) {
 // promise than its command — an experimental flag on a stable command is how a
 // new idea ships without inventing a new command — but never a stronger one;
 // Lint reports the inverted case.
+//
+// Stable is recorded like any other level, for the reason Mark records it for a
+// command: a flag that declares nothing inherits its command's tier, and on a
+// stable command that is a stable promise nobody chose. The flags that predate
+// this rule may keep inheriting, but a flag that newly becomes stable under an
+// already-stable command must say so (MarkFlagStable) or be marked weaker;
+// `make stability-compat` refuses one that does neither. The manifest tags
+// every flag carrying its own declaration with "(declared)", which is what that
+// check reads.
 func MarkFlag(cmd *cobra.Command, name string, level Level, since string) {
-	if cmd == nil || level == Stable || level == "" {
+	if cmd == nil || level == Undeclared {
 		return
 	}
 	f := cmd.Flags().Lookup(name)
@@ -167,8 +181,12 @@ func MarkFlag(cmd *cobra.Command, name string, level Level, since string) {
 		f.Annotations = map[string][]string{}
 	}
 	f.Annotations[AnnotationLevel] = []string{string(level)}
+	// Replaces the previous declaration whole, as Mark does: a flag promoted
+	// to stable must not keep its experimental since-version.
 	if since != "" {
 		f.Annotations[AnnotationSince] = []string{since}
+	} else {
+		delete(f.Annotations, AnnotationSince)
 	}
 }
 
@@ -250,6 +268,14 @@ func Effective(cmd *cobra.Command) Level {
 	}
 	return lvl
 }
+
+// MarkFlagStable declares a flag stable: part of its command's additive-only
+// invocation contract from here on. Like MarkStable it takes no since-version,
+// because stable is the terminus and tier expiry has nothing left to measure.
+//
+// A flag added to a command that is already stable needs this (or a weaker
+// MarkFlag); see MarkFlag for why only new flags are held to it.
+func MarkFlagStable(cmd *cobra.Command, name string) { MarkFlag(cmd, name, Stable, "") }
 
 // MarkStable declares a command stable: its invocation and output contract are
 // additive-only from here on.

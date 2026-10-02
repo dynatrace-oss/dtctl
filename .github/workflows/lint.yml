@@ -49,3 +49,21 @@ jobs:
         with:
           version: v2.11.1
 
+  goreleaser-check:
+    name: GoReleaser Config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Same action and `version: latest` as the release job, so a PR sees what the
+      # next release would: an invalid config, or a property GoReleaser has since
+      # deprecated. `check` exits non-zero on a deprecation too (exit 2), on
+      # purpose. Not filtered on .goreleaser.yaml changes, because a new GoReleaser
+      # release can deprecate a property without this repo touching the file.
+      - name: Run goreleaser check
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: latest
+          args: check
+

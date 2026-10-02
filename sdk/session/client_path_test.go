@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 // The CLI's own HTTP client is built here, not by httpclient.New, and every
@@ -21,7 +23,7 @@ func TestNewClientGuardsRequestPaths(t *testing.T) {
 }
 
 // A request rejected before it is sent produces no response, and resty consults
-// the retry conditions anyway. isRetryable has to survive that.
+// the retry conditions anyway. httpclient.IsRetryable has to survive that.
 func TestNewClientDoesNotRetryARequestThatWasNeverSent(t *testing.T) {
 	c, err := NewClient("https://example.apps.dynatrace.com", "dt0c01.TEST")
 	require.NoError(t, err)
@@ -29,5 +31,5 @@ func TestNewClientDoesNotRetryARequestThatWasNeverSent(t *testing.T) {
 	require.NotPanics(t, func() {
 		_, _ = c.HTTP().R().Get("/platform/slo/v1/slos/slo-1#x")
 	})
-	require.False(t, isRetryable(nil, errors.New("rejected before sending")))
+	require.False(t, httpclient.IsRetryable(nil, errors.New("rejected before sending")))
 }

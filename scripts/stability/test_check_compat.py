@@ -31,10 +31,107 @@ class SurfaceTest(unittest.TestCase):
             "exec widget                   experimental  since 0.39.0",
             "  --wait                      experimental  since 0.40.0",
         ))
-        self.assertEqual(s["get widgets"], ("stable", False, None))
-        self.assertEqual(s["get widgets --old"], ("stable", True, None))
-        self.assertEqual(s["exec widget"], ("experimental", False, "0.39.0"))
-        self.assertEqual(s["exec widget --wait"], ("experimental", False, "0.40.0"))
+        self.assertEqual(s["get widgets"], ("stable", False, None, False))
+        self.assertEqual(s["get widgets --old"], ("stable", True, None, False))
+        self.assertEqual(s["exec widget"], ("experimental", False, "0.39.0", False))
+        self.assertEqual(s["exec widget --wait"], ("experimental", False, "0.40.0", False))
+
+    def test_parses_the_declared_tag(self):
+        s = cc.surface(manifest(
+            "(global)                      stable",
+            "  --agent                     stable",
+            "  --trace                     stable  (declared)",
+            "get widgets                   stable",
+            "  --limit                     stable  (declared)",
+            "  --spill                     experimental  since 0.40.0  (declared)",
+            "  --old                       stable  deprecated 0.38.0 → remove 0.40.0  (declared)",
+        ))
+        self.assertFalse(s["(global) --agent"][3])
+        self.assertTrue(s["(global) --trace"][3])
+        self.assertEqual(s["get widgets --limit"], ("stable", False, None, True))
+        self.assertEqual(s["get widgets --spill"], ("experimental", False, "0.40.0", True))
+        self.assertEqual(s["get widgets --old"], ("stable", True, None, True))
+
+
+class UndeclaredTest(unittest.TestCase):
+    # The base as main has it before the tag existed: no line says (declared).
+    BASE = [
+        "(global)                      stable",
+        "  --agent                     stable",
+        "get widgets                   stable",
+        "  --limit                     stable",
+        "  --spill                     experimental  since 0.40.0",
+        "ingest                        experimental  since 0.39.0",
+        "  --wait                      experimental  since 0.39.0",
+    ]
+
+    def check(self, head):
+        return cc.undeclared_findings(cc.surface(manifest(*self.BASE)),
+                                      cc.surface(manifest(*head)))
+
+    def test_regenerating_an_old_manifest_in_the_new_format_passes(self):
+        # The PR that introduces the tag: same surface, the head now tags the
+        # flags that declared a tier. Nothing is new, so nothing is refused.
+        head = [
+            "(global)                      stable",
+            "  --agent                     stable",
+            "get widgets                   stable",
+            "  --limit                     stable",
+            "  --spill                     experimental  since 0.40.0  (declared)",
+            "ingest                        experimental  since 0.39.0",
+            "  --wait                      experimental  since 0.39.0  (declared)",
+        ]
+        self.assertEqual(self.check(head), [])
+
+    def test_existing_inherited_stable_flags_are_left_alone(self):
+        self.assertEqual(self.check(self.BASE), [])
+
+    def test_new_inherited_stable_flag_on_a_stable_command_is_refused(self):
+        head = self.BASE[:4] + ["  --sort                      stable"] + self.BASE[4:]
+        self.assertEqual(self.check(head), ["get widgets --sort"])
+
+    def test_new_declared_stable_flag_passes(self):
+        head = self.BASE[:4] + ["  --sort                      stable  (declared)"] + self.BASE[4:]
+        self.assertEqual(self.check(head), [])
+
+    def test_new_experimental_flag_passes(self):
+        head = self.BASE[:4] + [
+            "  --sort                      experimental  since 0.40.1  (declared)",
+        ] + self.BASE[4:]
+        self.assertEqual(self.check(head), [])
+
+    def test_new_global_flag_must_be_declared(self):
+        head = self.BASE[:2] + ["  --trace                     stable"] + self.BASE[2:]
+        self.assertEqual(self.check(head), ["(global) --trace"])
+        head = self.BASE[:2] + ["  --trace                     stable  (declared)"] + self.BASE[2:]
+        self.assertEqual(self.check(head), [])
+
+    def test_flag_promoted_by_dropping_its_mark_is_refused(self):
+        # Deleting MarkFlag(..., Experimental, ...) makes the flag inherit
+        # stable: as much a promise nobody wrote down as a brand-new flag.
+        head = self.BASE[:4] + ["  --spill                     stable"] + self.BASE[5:]
+        self.assertEqual(self.check(head), ["get widgets --spill"])
+        head = self.BASE[:4] + ["  --spill                     stable  (declared)"] + self.BASE[5:]
+        self.assertEqual(self.check(head), [])
+
+    def test_flags_of_a_new_stable_command_are_covered_by_its_declaration(self):
+        head = self.BASE + [
+            "get gadgets                   stable",
+            "  --limit                     stable",
+        ]
+        self.assertEqual(self.check(head), [])
+
+    def test_flags_of_a_newly_promoted_command_are_covered_by_its_declaration(self):
+        head = self.BASE[:5] + [
+            "ingest                        stable",
+            "  --wait                      stable",
+            "  --batch                     stable",
+        ]
+        self.assertEqual(self.check(head), [])
+
+    def test_new_flag_on_an_experimental_command_passes(self):
+        head = self.BASE + ["  --batch                     experimental"]
+        self.assertEqual(self.check(head), [])
 
 
 class SinceTest(unittest.TestCase):

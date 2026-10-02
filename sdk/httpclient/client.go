@@ -2,8 +2,6 @@ package httpclient
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,7 +34,17 @@ func WithToken(token string) Option {
 	}
 }
 
-// WithRetry configures retry behaviour.
+// WithRetry sets how often, and with what backoff, a failed request is
+// retried. maxRetries is the number of attempts after the first; 0 disables
+// retries entirely. waitTime and maxWaitTime bound the jittered exponential
+// backoff between attempts.
+//
+// WithRetry changes only the budget, not which requests qualify: a request is
+// retried only when [IsRetryable] says it is safe to send again, so a POST or
+// PATCH that fails with a 5xx or a dropped connection is never resent, however
+// high maxRetries is. To retry one specific non-idempotent request anyway, add
+// a request-level condition with resty's Request.AddRetryCondition; it is
+// consulted before the client's.
 func WithRetry(maxRetries int, waitTime, maxWaitTime time.Duration) Option {
 	return func(c *Client) {
 		c.retryConfigured = true
@@ -100,6 +108,17 @@ func (noopRestyLogger) Debugf(string, ...interface{}) {}
 //
 // The baseURL is required (e.g. "https://abc.apps.dynatrace.com").
 // At minimum, provide WithToken to authenticate requests.
+//
+// Retries are on by default: up to 3 retries, with jittered exponential
+// backoff from 1s up to 10s between attempts. Use [WithRetry] to change that,
+// or WithRetry(0, 0, 0) for a single attempt.
+//
+// Only requests that are safe to send again are retried (see [IsRetryable]):
+// idempotent methods (GET, HEAD, OPTIONS, TRACE, PUT, DELETE) on a 5xx or a
+// transport error, and any method on a 429, on a 503 with Retry-After, or
+// when the connection could not be established. A POST or PATCH that fails
+// with any other 5xx or transport error is returned to the caller after one
+// attempt, because the server may already have acted on it.
 func New(baseURL string, opts ...Option) (*Client, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("base URL is required")
@@ -137,7 +156,7 @@ func New(baseURL string, opts ...Option) (*Client, error) {
 	// Multipart bodies are one-shot readers, so rewind them before a retry
 	c.http.SetRetryResetReaders(true)
 	c.http.AddRetryCondition(func(r *resty.Response, err error) bool {
-		retry := isRetryable(r, err)
+		retry := IsRetryable(r, err)
 		if retry {
 			if err != nil {
 				c.logger.Debugf("retrying request due to error: %v", err)
@@ -155,27 +174,6 @@ func New(baseURL string, opts ...Option) (*Client, error) {
 	c.logger.Debugf("initialized HTTP client for %s", baseURL)
 
 	return c, nil
-}
-
-// isRetryable determines if a request should be retried.
-func isRetryable(r *resty.Response, err error) bool {
-	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return false
-		}
-		// A nil response means the request never left the process: resty's own
-		// parseRequestURL, or the request-path guard, rejected it before a transport
-		// was involved. Retrying cannot change that outcome -- and resty consults
-		// the retry conditions even for an error it has marked non-retryable, then
-		// dereferences the nil response while preparing the retry, so answering
-		// "yes" here is a panic rather than a wasted attempt.
-		if r == nil || r.Request == nil {
-			return false
-		}
-		return true
-	}
-	statusCode := r.StatusCode()
-	return statusCode == 429 || statusCode >= 500
 }
 
 // HTTP returns the underlying resty client for advanced use cases.

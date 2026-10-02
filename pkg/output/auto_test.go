@@ -254,7 +254,7 @@ func TestAgentPrinter_ExplicitFormatsDoNotReportFormat(t *testing.T) {
 
 func TestMeasureSerializedBytes_AutoMeasuresChosenEncoding(t *testing.T) {
 	records := []map[string]interface{}{{"host": "a", "cpu": 1.5}, {"host": "b", "cpu": 2.0}}
-	n, enc := MeasureSerializedBytes(records, "auto")
+	n, enc := MeasureSerializedBytes(records, "auto", JSONLayout{})
 	if enc != "csv" {
 		t.Fatalf("encoding = %q, want csv", enc)
 	}

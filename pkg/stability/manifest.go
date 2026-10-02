@@ -43,6 +43,14 @@ having thought about it.
 Deprecation is not a tier: a deprecated command is still stable in shape and is
 merely scheduled for removal. It is recorded on the same line.
 
+A flag line ending in ` + "`(declared)`" + ` carries a tier declaration of its own; any
+other flag inherits its command's. The flags that predate this rule may keep
+inheriting, but a flag that newly becomes ` + "`stable`" + ` under a command that was
+already ` + "`stable`" + ` has to be declared — ` + "`stability.MarkFlagStable`" + `, or
+` + "`stability.MarkFlag`" + ` with a weaker tier — and ` + "`make stability-compat`" + `
+refuses one that is not. Otherwise a flag would be stable by omission, the one
+tier nobody chose deliberately.
+
 The ` + "`(global)`" + ` group at the top is not a command. It is the root command's
 persistent flags — the ones every command accepts. They are listed because a
 flag that appears nowhere in this file is stable by omission, which is the one
@@ -225,6 +233,10 @@ type entry struct {
 	since       string
 	feature     string // development feature key
 	deprecation *Deprecation
+	// declared marks a flag that carries a tier annotation of its own rather
+	// than inheriting its command's. Rendered as "(declared)" so the compat
+	// check can tell a chosen stable flag from one that merely inherited.
+	declared bool
 }
 
 // Manifest renders the checked-in stability manifest for a command tree.
@@ -302,6 +314,9 @@ func (e entry) render(width int) string {
 			line += ", use `" + d.Replacement + "`"
 		}
 	}
+	if e.declared {
+		line += "  " + declaredMarker
+	}
 	return strings.TrimRight(line, " ")
 }
 
@@ -353,8 +368,9 @@ func collect(root *cobra.Command) []entry {
 				flag: f.name,
 				// The flag's own promise is capped by its command's: a stable
 				// flag on an experimental command is stable in name only.
-				level: session.Weakest(e.level, f.level),
-				since: f.since,
+				level:    session.Weakest(e.level, f.level),
+				since:    f.since,
+				declared: f.declared,
 			})
 		})
 	})
@@ -371,6 +387,11 @@ func collect(root *cobra.Command) []entry {
 	})
 	return entries
 }
+
+// declaredMarker tags a flag line whose tier the flag declared itself.
+// scripts/stability/check_compat.py matches this exact text: a new stable flag
+// under an already-stable command without it is refused as stable by omission.
+const declaredMarker = "(declared)"
 
 // globalFlagPath is the synthetic command path the root command's persistent
 // flags are listed under. The parentheses keep it out of the namespace of real
@@ -389,6 +410,12 @@ const globalFlagPath = "(global)"
 // on every command. An individual flag may still promise less, and
 // session.Weakest in collect already lets a flag be weaker than the surface it
 // hangs off, so nothing special is needed to demote one.
+//
+// Because the group is a stable entry like any command, a new global flag is
+// held to the same rule as a new flag on a stable command: it must be declared
+// (MarkFlagStable or MarkFlag on the root), or the compat check refuses it. A
+// global flag is the widest surface dtctl has, so it is the last place silence
+// should buy a tree-wide stable promise.
 func globalFlagEntries(root *cobra.Command) []entry {
 	entries := []entry{{path: globalFlagPath, level: Stable}}
 
@@ -403,10 +430,11 @@ func globalFlagEntries(root *cobra.Command) []entry {
 			return
 		}
 		entries = append(entries, entry{
-			path:  globalFlagPath,
-			flag:  f.name,
-			level: f.level,
-			since: f.since,
+			path:     globalFlagPath,
+			flag:     f.name,
+			level:    f.level,
+			since:    f.since,
+			declared: f.declared,
 		})
 	})
 	return entries

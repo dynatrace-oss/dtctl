@@ -58,12 +58,14 @@ Examples:
 			if len(args) > 0 {
 				name = args[0]
 			}
-			output.PrintInfo("Dry run: would resolve GCP monitoring config %q", name)
+			report := newDryRunReport(cmd).OnStderr().
+				Linef("Dry run: would resolve GCP monitoring config %q", name).
+				Detail("monitoring_config", "%s", name)
 			if enableGCPMonitoringServiceAccountID != "" {
-				output.PrintInfo("Dry run: would update linked GCP connection with service account %q", enableGCPMonitoringServiceAccountID)
+				report.Linef("Dry run: would update linked GCP connection with service account %q", enableGCPMonitoringServiceAccountID).
+					Detail("service_account_id", "%s", enableGCPMonitoringServiceAccountID)
 			}
-			output.PrintInfo("Dry run: would enable monitoring config and all credentials")
-			return nil
+			return report.Linef("Dry run: would enable monitoring config and all credentials").Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationUpdate)

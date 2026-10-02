@@ -89,6 +89,12 @@ func TestPolicyFloorBlocksAndExceptionsAdmit(t *testing.T) {
 	if !p.AllowsFlag("ingest", "wait", Experimental, Undeclared) {
 		t.Error("a command exception must admit the flags that only inherit its level")
 	}
+	// A flag declared stable promises nothing weaker than its command, so it
+	// too is below the floor only because of the command. (Lint forbids one
+	// under an experimental command; this pins the policy, not the tree.)
+	if !p.AllowsFlag("ingest", "wait", Experimental, Stable) {
+		t.Error("a command exception must admit a flag declared stable")
+	}
 	// ... and only for the command it names.
 	if p.AllowsFlag("translate", "wait", Experimental, Undeclared) {
 		t.Error("inheritance must not admit a flag on a command that has no exception")

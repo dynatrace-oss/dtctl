@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"os"
 	"testing"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 )
 
@@ -18,9 +21,16 @@ import (
 //
 // Individual tests may still opt back in with t.Setenv, which restores this
 // default when they finish.
+//
+// It also replaces the interactive browser login. Tests that drive `auth login`
+// past the keyring gate would otherwise open the developer's browser against
+// the real SSO with a placeholder environment, and wait for the redirect.
 func TestMain(m *testing.M) {
 	if err := os.Setenv(config.EnvDisableKeyring, "1"); err != nil {
 		panic(err)
+	}
+	authBrowserFlowFunc = func(context.Context, *auth.OAuthFlow) (*auth.TokenSet, error) {
+		return nil, errors.New("browser login is disabled in tests")
 	}
 	os.Exit(m.Run())
 }

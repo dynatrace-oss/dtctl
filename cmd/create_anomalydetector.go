@@ -71,7 +71,7 @@ Examples:
 
 		// Handle dry-run
 		if dryRun {
-			return dryRunCreateAnomalyDetector(jsonData)
+			return dryRunCreateAnomalyDetector(cmd, jsonData)
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationCreate)
@@ -112,7 +112,11 @@ func currentActor(c *client.Client) string {
 // dryRunCreateAnomalyDetector prints the payload dtctl would send and reports
 // the verdict of server-side schema validation. Echoing the input back
 // unchecked reported success for definitions the live call rejects (issue #369).
-func dryRunCreateAnomalyDetector(jsonData []byte) error {
+//
+// In agent mode the verdict travels in the plan as details.schema_validation
+// ("passed", or "skipped: <reason>"), so it is read from the envelope rather
+// than from stderr. A definition the schema rejects is an error, not a plan.
+func dryRunCreateAnomalyDetector(cmd *cobra.Command, jsonData []byte) error {
 	_, c, err := SetupClient()
 	if err != nil {
 		// No usable environment: fall back to local validation only.
@@ -120,9 +124,7 @@ func dryRunCreateAnomalyDetector(jsonData []byte) error {
 		if prepErr != nil {
 			return prepErr
 		}
-		printDryRunAnomalyDetector(body)
-		output.PrintWarning("schema validation skipped: %v", err)
-		return nil
+		return printDryRunAnomalyDetector(cmd, body, nil, err)
 	}
 
 	handler := anomalydetector.NewHandler(c).WithDefaultActor(currentActor(c))
@@ -130,32 +132,64 @@ func dryRunCreateAnomalyDetector(jsonData []byte) error {
 	if err != nil {
 		return err
 	}
-	printDryRunAnomalyDetector(body)
 
 	var unavailable *anomalydetector.ValidationUnavailableError
 	switch err := handler.ValidateCreate(jsonData); {
 	case err == nil:
-		output.PrintSuccess("Schema validation passed")
+		return printDryRunAnomalyDetector(cmd, body, nil, nil)
 	case errors.As(err, &unavailable):
-		output.PrintWarning("schema validation skipped: %v", unavailable.Err)
+		return printDryRunAnomalyDetector(cmd, body, nil, unavailable.Err)
 	default:
-		return err
+		return printDryRunAnomalyDetector(cmd, body, err, nil)
 	}
-	return nil
 }
 
 // printDryRunAnomalyDetector shows the request body, including the schema
-// defaults dtctl fills in, so the dry run reflects what would actually be sent.
-func printDryRunAnomalyDetector(body map[string]any) {
-	output.PrintInfo("Dry run: would create anomaly detector")
-	output.PrintInfo("---")
+// defaults dtctl fills in, so the dry run reflects what would actually be sent,
+// followed by the validation verdict.
+//
+// At most one of invalid (the schema rejected the definition) and skipped
+// (validation could not run) is set; neither means validation passed. A human
+// sees the body first in every case, then the verdict. In agent mode an invalid
+// definition produces the error envelope alone, since stdout carries one
+// document.
+func printDryRunAnomalyDetector(cmd *cobra.Command, body map[string]any, invalid, skipped error) error {
+	report := newDryRunReport(cmd).OnStderr().
+		Linef("Dry run: would create anomaly detector").
+		Linef("---")
 	rendered, err := json.Marshal(body)
 	if err != nil {
-		output.PrintInfo("%v", body)
+		report.Linef("%v", body)
 	} else {
-		output.PrintInfo("%s", rendered)
+		report.Linef("%s", rendered).Payload(rendered)
 	}
-	output.PrintInfo("---")
+	report.Linef("---")
+
+	if invalid != nil {
+		if !agentMode {
+			if err := report.Print(); err != nil {
+				return err
+			}
+		}
+		return invalid
+	}
+
+	if skipped != nil {
+		report.Detail("schema_validation", "skipped: %v", skipped)
+	} else {
+		report.Detail("schema_validation", "passed")
+	}
+	if err := report.Print(); err != nil {
+		return err
+	}
+
+	switch {
+	case skipped != nil:
+		output.PrintWarning("schema validation skipped: %v", skipped)
+	case !agentMode:
+		output.PrintSuccess("Schema validation passed")
+	}
+	return nil
 }
 
 func init() {

@@ -2,8 +2,6 @@ package session
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -164,10 +162,15 @@ func NewClient(baseURL, token string, opts ...ClientOption) (*Client, error) {
 		SetBaseURL(baseURL).
 		SetAuthScheme("Bearer").
 		SetAuthToken(token).
+		// Same retry policy as httpclient.New: only requests that are safe to
+		// resend (idempotent methods, 429, 503 with Retry-After, failed dials).
 		SetRetryCount(3).
 		SetRetryWaitTime(1*time.Second).
 		SetRetryMaxWaitTime(10*time.Second).
-		AddRetryCondition(isRetryable).
+		// Multipart parts are one-shot readers (document create/update), so
+		// rewind them before a retry or the resent part is empty.
+		SetRetryResetReaders(true).
+		AddRetryCondition(httpclient.IsRetryable).
 		SetTimeout(6*time.Minute). // Allow for long-running Grail queries (up to 5 min)
 		SetHeader("User-Agent", userAgent).
 		SetHeader("Accept-Encoding", "gzip")
@@ -177,31 +180,6 @@ func NewClient(baseURL, token string, opts ...ClientOption) (*Client, error) {
 		baseURL: baseURL,
 		token:   token,
 	}, nil
-}
-
-// isRetryable determines if a request should be retried
-func isRetryable(r *resty.Response, err error) bool {
-	if err != nil {
-		// Don't retry on context cancellation — retrying is pointless when the context
-		// is already done (covers both user-initiated cancellation and deadline exceeded).
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return false
-		}
-		// A nil response means the request never left the process: resty's own
-		// parseRequestURL, or the request-path guard, rejected it before a transport
-		// was involved. Retrying cannot change that outcome -- and resty consults
-		// the retry conditions even for an error it has marked non-retryable, then
-		// dereferences the nil response while preparing the retry, so answering
-		// "yes" here is a panic rather than a wasted attempt.
-		if r == nil || r.Request == nil {
-			return false
-		}
-		return true
-	}
-
-	// Retry on rate limit or server errors
-	statusCode := r.StatusCode()
-	return statusCode == 429 || statusCode >= 500
 }
 
 // HTTP returns the underlying resty client.

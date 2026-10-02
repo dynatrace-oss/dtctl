@@ -52,19 +52,22 @@ Examples:
 			if len(args) > 0 {
 				name = args[0]
 			}
-			output.PrintInfo("Dry run: would resolve Azure monitoring config %q", name)
+			report := newDryRunReport(cmd).OnStderr().
+				Linef("Dry run: would resolve Azure monitoring config %q", name).
+				Detail("monitoring_config", "%s", name)
 			if enableAzureMonitoringDirectoryID != "" || enableAzureMonitoringApplicationID != "" {
 				msg := "Dry run: would update linked Azure connection"
 				if enableAzureMonitoringDirectoryID != "" {
 					msg += fmt.Sprintf(" directoryId=%q", enableAzureMonitoringDirectoryID)
+					report.Detail("directory_id", "%s", enableAzureMonitoringDirectoryID)
 				}
 				if enableAzureMonitoringApplicationID != "" {
 					msg += fmt.Sprintf(" applicationId=%q", enableAzureMonitoringApplicationID)
+					report.Detail("application_id", "%s", enableAzureMonitoringApplicationID)
 				}
-				output.PrintInfo(msg)
+				report.Linef("%s", msg)
 			}
-			output.PrintInfo("Dry run: would enable monitoring config and all credentials")
-			return nil
+			return report.Linef("Dry run: would enable monitoring config and all credentials").Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationUpdate)

@@ -160,9 +160,10 @@ func (p Policy) AllowsFlag(path, flag string, effective, own Level) bool {
 	// `query`) still needs its own entry. There the flag is the risk being
 	// accepted, not the command, which is the whole point of per-flag
 	// granularity.
-	if own == Undeclared {
-		// An undeclared flag has no level of its own, so effective is exactly
-		// the command's.
+	if own == Undeclared || own == Stable {
+		// An undeclared flag has no level of its own, and one declared stable
+		// promises nothing weaker than its command, so either way effective is
+		// exactly the command's.
 		return p.AllowsCommand(path, effective)
 	}
 	return false

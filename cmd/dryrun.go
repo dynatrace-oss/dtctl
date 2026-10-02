@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -40,9 +41,39 @@ type dryRunPlan struct {
 // the lines, their order, and their wording are the contract this type preserves.
 type dryRunReport struct {
 	cmd     *cobra.Command
-	lines   []string
+	lines   []dryRunLine
 	details map[string]string
 	payload json.RawMessage
+	stderr  bool
+
+	// verb and resource override what the command tree reports; see As.
+	verb, resource string
+}
+
+// dryRunLine is one line of the human rendering. A line with a label is an
+// aligned key-value line (see KV); every other line is printed as text.
+type dryRunLine struct {
+	text  string
+	label string
+	width int
+}
+
+// plain is the line without terminal styling: what the agent envelope carries
+// in its message, and exactly what a human sees with color off.
+func (l dryRunLine) plain() string {
+	if l.label == "" {
+		return l.text
+	}
+	return l.label + strings.Repeat(" ", kvPadding(l.label, l.width)) + l.text
+}
+
+// kvPadding mirrors output.FprintDescribeKV: pad the label to width, and always
+// leave at least one space before the value.
+func kvPadding(label string, width int) int {
+	if pad := width - len(label); pad > 1 {
+		return pad
+	}
+	return 1
 }
 
 // newDryRunReport starts a report for a command's dry-run branch. The verb and
@@ -52,10 +83,30 @@ func newDryRunReport(cmd *cobra.Command) *dryRunReport {
 	return &dryRunReport{cmd: cmd, details: make(map[string]string)}
 }
 
+// As sets the verb and resource the envelope reports, for a command nested under
+// a group: `account create token` sits below `account`, so the command tree alone
+// would report the group as the verb and lose whether the plan creates or
+// deletes.
+func (r *dryRunReport) As(verb, resource string) *dryRunReport {
+	r.verb, r.resource = verb, resource
+	return r
+}
+
+// OnStderr renders the human lines on stderr instead of stdout. It exists for
+// the dry runs that have always written their plan as informational output on
+// stderr: moving those lines to stdout would change what a script redirecting
+// either stream sees, so the human rendering stays where it was. The agent
+// envelope goes to stdout either way, because stdout is the stream an agent
+// decodes.
+func (r *dryRunReport) OnStderr() *dryRunReport {
+	r.stderr = true
+	return r
+}
+
 // Linef adds a line of prose. It contributes no structured field — use Field for
 // anything a caller might want to read back.
 func (r *dryRunReport) Linef(format string, args ...interface{}) *dryRunReport {
-	r.lines = append(r.lines, fmt.Sprintf(format, args...))
+	r.lines = append(r.lines, dryRunLine{text: fmt.Sprintf(format, args...)})
 	return r
 }
 
@@ -63,7 +114,18 @@ func (r *dryRunReport) Linef(format string, args ...interface{}) *dryRunReport {
 // so the same value is both readable and machine-readable.
 func (r *dryRunReport) Field(label, format string, args ...interface{}) *dryRunReport {
 	value := fmt.Sprintf(format, args...)
-	r.lines = append(r.lines, label+": "+value)
+	r.lines = append(r.lines, dryRunLine{text: label + ": " + value})
+	r.details[detailKey(label)] = value
+	return r
+}
+
+// KV adds an aligned key-value line, rendered exactly as output.DescribeKV
+// renders it (a bold label padded to width), and records the value under the
+// label's snake_case key. It is Field for previews laid out like describe
+// output; the envelope's message carries the same line without styling.
+func (r *dryRunReport) KV(label string, width int, format string, args ...interface{}) *dryRunReport {
+	value := fmt.Sprintf(format, args...)
+	r.lines = append(r.lines, dryRunLine{text: value, label: label, width: width})
 	r.details[detailKey(label)] = value
 	return r
 }
@@ -92,18 +154,31 @@ func (r *dryRunReport) Payload(raw []byte) *dryRunReport {
 // Print renders the report. It is the return value of a dry-run branch.
 func (r *dryRunReport) Print() error {
 	if !agentMode {
+		// Resolved per call, not cached: the embedding seam swaps the streams per
+		// invocation.
+		w := io.Writer(os.Stdout)
+		if r.stderr {
+			w = os.Stderr
+		}
 		for _, line := range r.lines {
-			fmt.Println(line)
+			if line.label != "" {
+				output.FprintDescribeKV(w, line.label, line.width, "%s", line.text)
+				continue
+			}
+			fmt.Fprintln(w, line.text)
 		}
 		return nil
 	}
 
-	verb, resource := verbResource(r.cmd)
+	verb, resource := r.verb, r.resource
+	if verb == "" {
+		verb, resource = verbResource(r.cmd)
+	}
 	plan := dryRunPlan{
 		DryRun:   true,
 		Verb:     verb,
 		Resource: resource,
-		Message:  strings.Join(r.lines, "\n"),
+		Message:  r.message(),
 	}
 	if len(r.details) > 0 {
 		plan.Details = r.details
@@ -119,6 +194,15 @@ func (r *dryRunReport) Print() error {
 		Result:  plan,
 		Context: &output.ResponseContext{Verb: verb, Resource: resource},
 	})
+}
+
+// message is the human rendering without styling, one line per entry.
+func (r *dryRunReport) message() string {
+	plain := make([]string, len(r.lines))
+	for i, line := range r.lines {
+		plain[i] = line.plain()
+	}
+	return strings.Join(plain, "\n")
 }
 
 // detailKey turns a human label into a stable snake_case JSON key ("Display

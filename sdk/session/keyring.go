@@ -205,16 +205,61 @@ func IsOAuthStorageAvailable() bool {
 	return IsKeyringAvailable() || IsFileTokenStorage()
 }
 
+// TokenStorage names the store an OAuth token actually lives in.
+//
+// That is a different question from "is the keyring reachable?". CheckKeyring
+// only probes reads, and a keyring can answer reads while refusing writes —
+// macOS rejects keychain writes from unsigned binaries with `security` exit
+// status 44 — in which case saveToken falls back to the file store while every
+// keyring probe still succeeds. Diagnostics that want to say where a token is
+// must ask where it is, not whether the keyring answers.
+type TokenStorage string
+
+const (
+	// TokenStorageKeyring means the token is held by the OS keyring.
+	TokenStorageKeyring TokenStorage = "keyring"
+	// TokenStorageFile means the token is held by the file store
+	// (see OAuthFileStore), whether by choice (DTCTL_TOKEN_STORAGE=file) or
+	// because the keyring refused the write.
+	TokenStorageFile TokenStorage = "file"
+)
+
+// Label returns a human-readable description of the store, in the same form
+// OAuthStorageBackend uses.
+func (s TokenStorage) Label() string {
+	if s == TokenStorageFile {
+		return fileStorageLabel()
+	}
+	return KeyringBackend()
+}
+
+func fileStorageLabel() string {
+	return fmt.Sprintf("file (%s)", oauthTokensDir())
+}
+
 // OAuthStorageBackend returns a human-readable label describing
 // where OAuth tokens are (or will be) stored.
+//
+// This is the configured preference, derived from the environment and the
+// keyring probe alone; it deliberately keeps no memory of earlier saves, so it
+// cannot carry one invocation's outcome into another in an embedded process.
+// Because the probe only tests reads, a keyring that refuses writes is still
+// reported here. To learn where a token actually went, use the store returned
+// by TokenManager.SaveTokenWithStorage or TokenManager.GetTokenInfoWithStorage.
 func OAuthStorageBackend() string {
+	return oauthStorageBackend(IsKeyringAvailable)
+}
+
+// oauthStorageBackend is OAuthStorageBackend with the keyring probe injected,
+// so tests can model a keyring that answers reads but refuses writes.
+func oauthStorageBackend(keyringAvailable func() bool) string {
 	if IsFileTokenStorage() {
-		return fmt.Sprintf("file (%s)", oauthTokensDir())
+		return fileStorageLabel()
 	}
-	if IsKeyringAvailable() {
+	if keyringAvailable() {
 		return KeyringBackend()
 	}
 	// Fallback: file storage is used implicitly when keyring is unavailable
 	// and the token manager falls back to file.
-	return fmt.Sprintf("file (%s)", oauthTokensDir())
+	return fileStorageLabel()
 }

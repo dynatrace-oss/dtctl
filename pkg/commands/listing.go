@@ -606,7 +606,9 @@ func collectLocalFlags(cmd *cobra.Command) map[string]*Flag {
 		// stability.OfFlag searches cmd.Flags(), which does not hold the
 		// command's own persistent flags until cobra merges them — the merge
 		// this collector exists to avoid.
-		if lvl := stability.OfFlagValue(f); lvl != stability.Undeclared {
+		// A flag declared stable (stability.MarkFlagStable) is omitted like an
+		// undeclared one: the field is documented as absent for stable.
+		if lvl := stability.OfFlagValue(f); lvl != stability.Undeclared && lvl != stability.Stable {
 			fl.Stability = string(lvl)
 			fl.StabilitySince = stability.SinceFlagValue(f)
 		}

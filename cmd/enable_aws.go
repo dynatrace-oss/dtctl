@@ -51,12 +51,14 @@ Examples:
 			if len(args) > 0 {
 				name = args[0]
 			}
-			output.PrintInfo("Dry run: would resolve AWS monitoring config %q", name)
+			report := newDryRunReport(cmd).OnStderr().
+				Linef("Dry run: would resolve AWS monitoring config %q", name).
+				Detail("monitoring_config", "%s", name)
 			if enableAWSMonitoringRoleArn != "" {
-				output.PrintInfo("Dry run: would update linked AWS connection roleArn=%q", enableAWSMonitoringRoleArn)
+				report.Linef("Dry run: would update linked AWS connection roleArn=%q", enableAWSMonitoringRoleArn).
+					Detail("role_arn", "%s", enableAWSMonitoringRoleArn)
 			}
-			output.PrintInfo("Dry run: would enable monitoring config and all credentials")
-			return nil
+			return report.Linef("Dry run: would enable monitoring config and all credentials").Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationUpdate)

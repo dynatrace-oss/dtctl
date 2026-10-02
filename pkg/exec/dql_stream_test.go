@@ -93,28 +93,35 @@ func TestPlanStream_Eligibility(t *testing.T) {
 // spilled. The shapes cover the cheapest rows each encoding has — an empty row
 // in JSON and YAML, a single short column in the tabular ones, where the keys
 // live in a header. -o auto can pick CSV for narrow rows, and is the agent
-// default, so it gets the tabular bound too.
+// default, so it gets the tabular bound too. Both JSON layouts are covered:
+// indented (the JSON printer) and compact (a piped agent envelope), each
+// measured as stdout (piped here) prints it. The compact case is the
+// #570 guard for the stream: costed indented, a piped agent query switched to
+// streaming at under half the rows the buffered path still emits inline.
 func TestStreamSwitchRows_NeverSpillsARowSetThatFits(t *testing.T) {
+	pipedStdout(t)
 	shapes := map[string]func(i int) map[string]interface{}{
 		"empty":        func(int) map[string]interface{} { return map[string]interface{}{} },
 		"empty string": func(int) map[string]interface{} { return map[string]interface{}{"a": ""} },
 		"one digit":    func(i int) map[string]interface{} { return map[string]interface{}{"a": fmt.Sprint(i % 10)} },
 		"small number": func(i int) map[string]interface{} { return map[string]interface{}{"a": float64(i % 10)} },
 	}
-	for _, format := range []string{"json", "yaml", "toon", "csv", "auto"} {
-		opts := DQLExecuteOptions{Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10}}
-		switchAt := streamSwitchRows(opts, format)
-		for name, shape := range shapes {
-			t.Run(format+"/"+name, func(t *testing.T) {
-				rows := make([]map[string]interface{}, switchAt+1)
-				for i := range rows {
-					rows[i] = shape(i)
-				}
-				if got, _ := output.MeasureSerializedBytes(rows, format); got <= opts.Spill.Threshold {
-					t.Errorf("%d rows measure %d bytes, within the %d-byte threshold — the switch at %d is too early",
-						len(rows), got, opts.Spill.Threshold, switchAt)
-				}
-			})
+	for _, agent := range []bool{false, true} {
+		for _, format := range []string{"json", "jsonl", "yaml", "toon", "csv", "auto"} {
+			opts := DQLExecuteOptions{AgentMode: agent, Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10}}
+			switchAt := streamSwitchRows(opts, format)
+			for name, shape := range shapes {
+				t.Run(fmt.Sprintf("agent=%v/%s/%s", agent, format, name), func(t *testing.T) {
+					rows := make([]map[string]interface{}, switchAt+1)
+					for i := range rows {
+						rows[i] = shape(i)
+					}
+					if got, _ := output.MeasureSerializedBytes(rows, format, printedLayout(agent, format)); got <= opts.Spill.Threshold {
+						t.Errorf("%d rows measure %d bytes, within the %d-byte threshold — the switch at %d is too early",
+							len(rows), got, opts.Spill.Threshold, switchAt)
+					}
+				})
+			}
 		}
 	}
 }
@@ -122,20 +129,36 @@ func TestStreamSwitchRows_NeverSpillsARowSetThatFits(t *testing.T) {
 // Where the empty row is the cheapest one (JSON, YAML), the switch point is
 // also exact: holding one row fewer would have streamed a result that fitted.
 func TestStreamSwitchRows_IsExactWhereTheEmptyRowIsCheapest(t *testing.T) {
-	for _, format := range []string{"json", "yaml"} {
-		t.Run(format, func(t *testing.T) {
-			opts := DQLExecuteOptions{Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10}}
-			switchAt := streamSwitchRows(opts, format)
-			rows := make([]map[string]interface{}, switchAt)
-			for i := range rows {
-				rows[i] = map[string]interface{}{}
-			}
-			if fits, _ := output.MeasureSerializedBytes(rows, format); fits > opts.Spill.Threshold {
-				t.Errorf("%d empty rows measure %d bytes, over the %d-byte threshold — the switch is too late",
-					switchAt, fits, opts.Spill.Threshold)
-			}
-		})
+	pipedStdout(t)
+	for _, agent := range []bool{false, true} {
+		for _, format := range []string{"json", "jsonl", "yaml"} {
+			t.Run(fmt.Sprintf("agent=%v/%s", agent, format), func(t *testing.T) {
+				opts := DQLExecuteOptions{AgentMode: agent, Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10}}
+				switchAt := streamSwitchRows(opts, format)
+				rows := make([]map[string]interface{}, switchAt)
+				for i := range rows {
+					rows[i] = map[string]interface{}{}
+				}
+				if fits, _ := output.MeasureSerializedBytes(rows, format, printedLayout(agent, format)); fits > opts.Spill.Threshold {
+					t.Errorf("%d empty rows measure %d bytes, over the %d-byte threshold — the switch is too late",
+						switchAt, fits, opts.Spill.Threshold)
+				}
+			})
+		}
 	}
+}
+
+// printedLayout is the JSON layout the inline rows are printed in to a piped
+// stdout: a compact envelope in agent mode, and otherwise JSON lines for
+// -o jsonl or {"records": [...]} from the JSON printer.
+func printedLayout(agent bool, format string) output.JSONLayout {
+	switch {
+	case agent:
+		return output.JSONLayout{}
+	case format == "jsonl":
+		return output.JSONLinesLayout
+	}
+	return output.IndentedJSONLayout(1)
 }
 
 func TestStreamSwitchRows_SpillAlwaysStreamsFromTheFirstRow(t *testing.T) {

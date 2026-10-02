@@ -245,6 +245,17 @@ func TestAuthLogin_KeyringRecovery(t *testing.T) {
 		return nil
 	}
 
+	// Past the keyring gate the command starts the browser flow. Stub it, or
+	// the test opens the developer's browser against the real SSO and blocks
+	// until the flow's 5-minute timeout.
+	browserFlowCalled := false
+	origFlow := authBrowserFlowFunc
+	defer func() { authBrowserFlowFunc = origFlow }()
+	authBrowserFlowFunc = func(_ context.Context, _ *auth.OAuthFlow) (*auth.TokenSet, error) {
+		browserFlowCalled = true
+		return nil, errors.New("browser flow stubbed in test")
+	}
+
 	rootCmd.SetArgs([]string{"auth", "login", "--context", ctxName, "--environment", envURL})
 	err := rootCmd.Execute()
 
@@ -258,6 +269,9 @@ func TestAuthLogin_KeyringRecovery(t *testing.T) {
 	// keyring gate error about requiring a working keyring.
 	if err != nil && strings.Contains(err.Error(), "OAuth login requires a working system keyring") {
 		t.Errorf("expected recovery to succeed and proceed past keyring gate, got: %v", err)
+	}
+	if !browserFlowCalled {
+		t.Errorf("expected auth login to reach the browser flow after keyring recovery, got: %v", err)
 	}
 }
 
