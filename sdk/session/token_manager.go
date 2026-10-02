@@ -285,12 +285,24 @@ func (tm *TokenManager) refreshTokenLocked(tokenName string) (*TokenSet, error) 
 
 // SaveToken stores an OAuth token set
 func (tm *TokenManager) SaveToken(tokenName string, tokens *TokenSet) error {
+	_, err := tm.SaveTokenWithStorage(tokenName, tokens)
+	return err
+}
+
+// SaveTokenWithStorage is SaveToken plus the store the token set actually
+// landed in. That can be the file store even when the keyring is reachable:
+// a keyring that answers reads but refuses the write (macOS `security` exit
+// status 44), or cannot hold even the most compact encoding, makes saveToken
+// fall back to the file store. Callers that report where tokens went (e.g.
+// `dtctl auth login`) should use this result rather than OAuthStorageBackend,
+// which only knows the configured preference.
+func (tm *TokenManager) SaveTokenWithStorage(tokenName string, tokens *TokenSet) (TokenStorage, error) {
 	stored := &StoredToken{
 		TokenSet: *tokens,
 		Name:     tokenName,
 	}
 
-	return tm.saveToken(tokenName, stored)
+	return tm.saveTokenWithStorage(tokenName, stored)
 }
 
 // DeleteToken removes a stored OAuth token
@@ -425,12 +437,20 @@ func parseStoredToken(data string, storage TokenStorage) (*StoredToken, TokenSto
 // access-token-less form, and finally to file storage that can hold the full
 // token.
 func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
+	_, err := tm.saveTokenWithStorage(tokenName, stored)
+	return err
+}
+
+// saveTokenWithStorage is saveToken plus the store the token landed in. The
+// result is returned, never cached: in an embedded process (pkg/engine) one
+// save must not decide what a later invocation reports.
+func (tm *TokenManager) saveTokenWithStorage(tokenName string, stored *StoredToken) (TokenStorage, error) {
 	keyringName := tm.getKeyringName(tokenName)
 
 	// Serialize the full token for the file-store fallback below.
 	fullData, err := json.Marshal(stored)
 	if err != nil {
-		return fmt.Errorf("failed to serialize token: %w", err)
+		return "", fmt.Errorf("failed to serialize token: %w", err)
 	}
 
 	// File storage explicitly requested — bypass keyring entirely so that
@@ -438,9 +458,9 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 	// but writes fail (e.g. Windows elevated/Admin sessions).
 	if tm.deps.fileStoreAvailable() {
 		if err := tm.deps.fileSetToken(keyringName, string(fullData)); err != nil {
-			return fmt.Errorf("failed to save token to file store: %w", err)
+			return "", fmt.Errorf("failed to save token to file store: %w", err)
 		}
-		return nil
+		return TokenStorageFile, nil
 	}
 
 	// Save to keyring
@@ -454,8 +474,7 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 			}
 			if setErr := tm.deps.setToken(tm.tokenStore, keyringName, string(data)); setErr == nil {
 				tm.syncScopeCompanion(keyringName, stored.Scope, enc.Scope)
-				recordSavedStorage(TokenStorageKeyring)
-				return nil
+				return TokenStorageKeyring, nil
 			} else {
 				lastErr = setErr
 			}
@@ -470,16 +489,15 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 				// reads the full token — scope included — from the file next time.
 				_ = tm.deps.deleteToken(tm.tokenStore, keyringName)
 				_ = tm.deps.deleteToken(tm.tokenStore, keyringName+scopeCompanionSuffix)
-				// The keyring probe still reports the keyring as reachable, so
-				// record the real sink for OAuthStorageBackend.
-				recordSavedStorage(TokenStorageFile)
-				return nil
+				// The keyring probe still reports the keyring as reachable;
+				// the returned store is what tells the caller otherwise.
+				return TokenStorageFile, nil
 			}
 		}
-		return fmt.Errorf("failed to save token to keyring: %w", lastErr)
+		return "", fmt.Errorf("failed to save token to keyring: %w", lastErr)
 	}
 
-	return fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
+	return "", fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
 }
 
 // isKeyringFallbackErr reports whether a keyring write error should trigger the

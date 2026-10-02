@@ -719,11 +719,15 @@ Non-interactive login (CI/CD):
 			return fmt.Errorf("failed to create token manager: %w", err)
 		}
 
-		if err := tokenManager.SaveToken(tokenName, tokens); err != nil {
+		// Report the store the tokens actually landed in: the keyring probe only
+		// tests reads, so a keyring that refused the write still looks
+		// available (#393).
+		storage, err := tokenManager.SaveTokenWithStorage(tokenName, tokens)
+		if err != nil {
 			return fmt.Errorf("failed to store tokens: %w", err)
 		}
 
-		output.PrintSuccess("Tokens stored in %s as '%s'", config.OAuthStorageBackend(), tokenName)
+		output.PrintSuccess("Tokens stored in %s as '%s'", storage.Label(), tokenName)
 
 		// Identify placeholder contexts from the raw (unexpanded) config.
 		// A context is a placeholder if its environment expands to the empty string

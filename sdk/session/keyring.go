@@ -5,7 +5,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync/atomic"
 
 	"github.com/zalando/go-keyring"
 )
@@ -238,28 +237,15 @@ func fileStorageLabel() string {
 	return fmt.Sprintf("file (%s)", oauthTokensDir())
 }
 
-// savedStorage records where this process's most recent OAuth token save
-// through the keyring path actually landed. It only lets OAuthStorageBackend
-// answer correctly in the process that did the save (e.g. right after
-// `dtctl auth login`); a later process cannot see it, which is why per-token
-// diagnostics use TokenManager.GetTokenInfoWithStorage instead.
-var savedStorage atomic.Value // TokenStorage
-
-func recordSavedStorage(s TokenStorage) { savedStorage.Store(s) }
-
-func lastSavedStorage() TokenStorage {
-	s, _ := savedStorage.Load().(TokenStorage)
-	return s
-}
-
 // OAuthStorageBackend returns a human-readable label describing
 // where OAuth tokens are (or will be) stored.
 //
-// If this process has already saved an OAuth token, the label reflects where
-// that save actually landed: a keyring that answers reads but refused the
-// write is not reported as the backend. Without a save in this process it
-// can only report the configured preference; to learn where an existing token
-// lives, use TokenManager.GetTokenInfoWithStorage.
+// This is the configured preference, derived from the environment and the
+// keyring probe alone; it deliberately keeps no memory of earlier saves, so it
+// cannot carry one invocation's outcome into another in an embedded process.
+// Because the probe only tests reads, a keyring that refuses writes is still
+// reported here. To learn where a token actually went, use the store returned
+// by TokenManager.SaveTokenWithStorage or TokenManager.GetTokenInfoWithStorage.
 func OAuthStorageBackend() string {
 	return oauthStorageBackend(IsKeyringAvailable)
 }
@@ -268,9 +254,6 @@ func OAuthStorageBackend() string {
 // so tests can model a keyring that answers reads but refuses writes.
 func oauthStorageBackend(keyringAvailable func() bool) string {
 	if IsFileTokenStorage() {
-		return fileStorageLabel()
-	}
-	if lastSavedStorage() == TokenStorageFile {
 		return fileStorageLabel()
 	}
 	if keyringAvailable() {

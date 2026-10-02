@@ -138,39 +138,99 @@ func TestTokenStorageLabel(t *testing.T) {
 	}
 }
 
-// TestOAuthStorageBackend_ReflectsWhereTheSaveLanded covers the in-process
-// half of #393: right after a login whose keyring write was refused,
-// OAuthStorageBackend must name the file store even though the read-only
-// keyring probe still succeeds.
-//
-// Not parallel: it reads and resets the process-wide save record, and the
-// testing package runs every t.Parallel test only after the sequential ones.
-func TestOAuthStorageBackend_ReflectsWhereTheSaveLanded(t *testing.T) {
-	t.Setenv(EnvTokenStorage, "")
-	prev := lastSavedStorage()
-	recordSavedStorage("")
-	t.Cleanup(func() { recordSavedStorage(prev) })
+// TestSaveTokenWithStorage_ReportsWhereEachSaveLanded covers the login half of
+// #393: the store comes back from the save itself, per call, so `auth login`
+// can name the file store when the keyring refused the write. Managers saved
+// one after the other must not see each other's outcome; in an embedded
+// process (pkg/engine) they would be separate invocations.
+func TestSaveTokenWithStorage_ReportsWhereEachSaveLanded(t *testing.T) {
+	t.Parallel()
+	tokens := &sampleStoredToken().TokenSet
 
+	denied, _, _ := newTMWithSizedKeyring(t, -1)
+	denyKeyringWrites(denied)
+	storage, err := denied.SaveTokenWithStorage("my-token", tokens)
+	if err != nil {
+		t.Fatalf("write-denied SaveTokenWithStorage() error = %v, want nil (file fallback)", err)
+	}
+	if storage != TokenStorageFile {
+		t.Errorf("write-denied save landed in %q, want %q", storage, TokenStorageFile)
+	}
+
+	// A later, unrelated manager whose keyring accepts the write.
+	ok, keyring, _ := newTMWithSizedKeyring(t, -1)
+	storage, err = ok.SaveTokenWithStorage("my-token", tokens)
+	if err != nil {
+		t.Fatalf("SaveTokenWithStorage() error = %v", err)
+	}
+	if storage != TokenStorageKeyring {
+		t.Errorf("second save landed in %q, want %q: an earlier fallback must not leak into a later save", storage, TokenStorageKeyring)
+	}
+	if _, found := keyring[ok.getKeyringName("my-token")]; !found {
+		t.Error("second save reported the keyring but wrote nothing there")
+	}
+
+	// And the other way round: a refused write after a successful one.
+	storage, err = denied.SaveTokenWithStorage("other-token", tokens)
+	if err != nil {
+		t.Fatalf("write-denied SaveTokenWithStorage() error = %v", err)
+	}
+	if storage != TokenStorageFile {
+		t.Errorf("third save landed in %q, want %q", storage, TokenStorageFile)
+	}
+}
+
+func TestSaveTokenWithStorage_ExplicitFileStorage(t *testing.T) {
+	t.Parallel()
+
+	tm, _, _ := newTMWithSizedKeyring(t, -1)
+	tm.deps.fileStoreAvailable = func() bool { return true }
+	storage, err := tm.SaveTokenWithStorage("my-token", &sampleStoredToken().TokenSet)
+	if err != nil {
+		t.Fatalf("SaveTokenWithStorage() error = %v", err)
+	}
+	if storage != TokenStorageFile {
+		t.Errorf("storage = %q, want %q", storage, TokenStorageFile)
+	}
+}
+
+func TestSaveTokenWithStorage_FailureReportsNoStorage(t *testing.T) {
+	t.Parallel()
+
+	tm, _, _ := newTMWithSizedKeyring(t, -1)
+	tm.deps.setToken = func(_ *TokenStore, _, _ string) error {
+		return fmt.Errorf("keyring is locked") // transient: no file fallback
+	}
+	storage, err := tm.SaveTokenWithStorage("my-token", &sampleStoredToken().TokenSet)
+	if err == nil {
+		t.Fatal("SaveTokenWithStorage() error = nil, want the keyring error")
+	}
+	if storage != "" {
+		t.Errorf("storage = %q, want empty when nothing was saved", storage)
+	}
+}
+
+// TestOAuthStorageBackend_KeepsNoSaveHistory pins that OAuthStorageBackend is
+// a pure function of the environment and the keyring probe. A save that fell
+// back to the file store must not change what it reports afterwards, or one
+// invocation in an embedded process would leak into the next.
+func TestOAuthStorageBackend_KeepsNoSaveHistory(t *testing.T) {
+	t.Setenv(EnvTokenStorage, "")
 	keyringReachable := func() bool { return true }
 
-	if got := oauthStorageBackend(keyringReachable); got != KeyringBackend() {
-		t.Fatalf("before any save: OAuthStorageBackend() = %q, want %q", got, KeyringBackend())
+	before := oauthStorageBackend(keyringReachable)
+	if before != KeyringBackend() {
+		t.Fatalf("OAuthStorageBackend() = %q, want %q", before, KeyringBackend())
 	}
 
 	denied, _, _ := newTMWithSizedKeyring(t, -1)
 	denyKeyringWrites(denied)
-	if err := denied.saveToken("my-token", sampleStoredToken()); err != nil {
-		t.Fatalf("saveToken() error = %v, want nil (file fallback)", err)
-	}
-	if got := oauthStorageBackend(keyringReachable); got != fileStorageLabel() {
-		t.Errorf("after a refused keyring write: OAuthStorageBackend() = %q, want %q", got, fileStorageLabel())
+	storage, err := denied.SaveTokenWithStorage("my-token", &sampleStoredToken().TokenSet)
+	if err != nil || storage != TokenStorageFile {
+		t.Fatalf("SaveTokenWithStorage() = %q, %v; want %q, nil", storage, err, TokenStorageFile)
 	}
 
-	ok, _, _ := newTMWithSizedKeyring(t, -1)
-	if err := ok.saveToken("my-token", sampleStoredToken()); err != nil {
-		t.Fatalf("saveToken() error = %v", err)
-	}
-	if got := oauthStorageBackend(keyringReachable); got != KeyringBackend() {
-		t.Errorf("after a keyring save: OAuthStorageBackend() = %q, want %q", got, KeyringBackend())
+	if after := oauthStorageBackend(keyringReachable); after != before {
+		t.Errorf("after a file fallback OAuthStorageBackend() = %q, want unchanged %q", after, before)
 	}
 }
