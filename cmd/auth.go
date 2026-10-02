@@ -38,6 +38,14 @@ var authClientCredentialsFunc = func(ctx context.Context, flow *auth.OAuthFlow, 
 	return flow.ClientCredentials(ctx, clientID, clientSecret, resource, scopes)
 }
 
+// authBrowserFlowFunc runs the interactive browser login during auth login. It
+// defaults to the real flow, which opens the system browser and waits for the
+// redirect; tests that drive `auth login` past the keyring gate override it so
+// `go test` never opens a browser against the real SSO.
+var authBrowserFlowFunc = func(ctx context.Context, flow *auth.OAuthFlow) (*auth.TokenSet, error) {
+	return flow.Start(ctx)
+}
+
 // authCmd represents the auth command
 var authCmd = &cobra.Command{
 	Use:   "auth",
@@ -687,7 +695,7 @@ Non-interactive login (CI/CD):
 			output.PrintInfo("Requesting OAuth scopes for safety level %s...", oauthConfig.SafetyLevel)
 
 			output.PrintInfo("Starting OAuth authentication flow...")
-			tokens, err = flow.Start(ctx)
+			tokens, err = authBrowserFlowFunc(ctx, flow)
 			if err != nil {
 				return fmt.Errorf("authentication failed: %w", err)
 			}
