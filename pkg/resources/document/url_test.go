@@ -26,3 +26,12 @@ func TestUIURL(t *testing.T) {
 		})
 	}
 }
+
+func TestUIURL_TrailingSlashOnBase(t *testing.T) {
+	const want = "https://env.example.invalid/ui/apps/dynatrace.notebooks/notebook/nb-1"
+	for _, base := range []string{"https://env.example.invalid/", "https://env.example.invalid//"} {
+		if got := UIURL(base, "notebook", "nb-1"); got != want {
+			t.Errorf("UIURL(%q) = %q, want %q", base, got, want)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package document
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
@@ -21,11 +22,12 @@ var viewerPaths = map[string]string{
 // "acme:config") are not served by an app whose ID follows from the type, so
 // no URL is better than a broken guess. The ID is escaped as one path segment,
 // so a caller-chosen ID containing "/", "?", "#" or ":" cannot address a
-// different route or lose its tail.
+// different route or lose its tail. Trailing slashes on baseURL are dropped, so
+// an environment configured as "https://host/" does not yield "//ui/".
 func UIURL(baseURL, docType, id string) string {
 	path, ok := viewerPaths[docType]
 	if !ok || id == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s/ui/apps/%s/%s", baseURL, path, httpclient.PathSegment(id))
+	return fmt.Sprintf("%s/ui/apps/%s/%s", strings.TrimRight(baseURL, "/"), path, httpclient.PathSegment(id))
 }
