@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dynatrace-oss/dtctl/pkg/auth"
@@ -324,6 +325,18 @@ func withFlagSet(t *testing.T, cmd *cobra.Command, name, value string) {
 	t.Helper()
 	f := cmd.Flags().Lookup(name)
 	require.NotNil(t, f, "flag %q is not registered on %q", name, cmd.CommandPath())
+	// A list flag's Set appends, and its String() does not parse back, so it
+	// is replaced and restored as a list.
+	if sv, ok := f.Value.(pflag.SliceValue); ok {
+		orig, origChanged := sv.GetSlice(), f.Changed
+		require.NoError(t, sv.Replace(strings.Split(value, ",")))
+		f.Changed = true
+		t.Cleanup(func() {
+			require.NoError(t, sv.Replace(orig))
+			f.Changed = origChanged
+		})
+		return
+	}
 	origValue, origChanged := f.Value.String(), f.Changed
 	require.NoError(t, cmd.Flags().Set(name, value))
 	t.Cleanup(func() {
@@ -380,6 +393,11 @@ func TestScopesForInvocation_FlagValueSelectsScopes(t *testing.T) {
 	got, _ = scopesForInvocation(cmd, "share", "document")
 	require.Contains(t, got, "document:environment-shares:write")
 	require.Subset(t, got, base)
+
+	// --environment is a list: link counts wherever it appears in it.
+	withFlagSet(t, cmd, "environment", "public,link")
+	got, _ = scopesForInvocation(cmd, "share", "document")
+	require.Contains(t, got, "document:environment-shares:write")
 }
 
 func TestScopesForInvocation_UnlistedCommandIsUnchanged(t *testing.T) {

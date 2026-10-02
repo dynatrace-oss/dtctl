@@ -416,6 +416,7 @@ dtctl share dashboard <id> --environment link --access read-write  # Link with w
 dtctl share dashboard <id> --environment public  # Everyone in the environment can read it
 dtctl unshare dashboard <id> --environment link  # Delete the environment share link(s)
 dtctl unshare dashboard <id> --environment public  # Make it private again
+dtctl share dashboard <id> --environment link,public  # Both at once (unshare too)
 dtctl claim environment-share <share-id|share-url> # Claim a #share= link; prints the document ID
 
 # (not implemented yet)

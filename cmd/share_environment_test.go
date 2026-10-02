@@ -163,43 +163,67 @@ func TestShareDocument_EnvironmentLinkAgent(t *testing.T) {
 	}
 	assertCalls(t, s, "")
 	var env struct {
-		OK     bool                  `json:"ok"`
-		Result environmentLinkResult `json:"result"`
+		OK     bool                   `json:"ok"`
+		Result environmentShareResult `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
 		t.Fatalf("agent output is not an envelope: %v\n%s", err, stdout)
 	}
 	want := environmentLinkResult{
-		DocumentID: "lp-1", ShareID: "env-share-1", Access: "read",
+		ShareID: "env-share-1", Access: "read",
 		URL: srv.URL + "/ui/document/v0/#share=env-share-1",
 	}
-	if !env.OK || env.Result != want {
-		t.Errorf("result = %+v (ok %v), want %+v", env.Result, env.OK, want)
+	if !env.OK || env.Result.DocumentID != "lp-1" || env.Result.Link == nil || *env.Result.Link != want ||
+		env.Result.Visibility != nil {
+		t.Errorf("result = %+v (ok %v), want link %+v and no visibility", env.Result, env.OK, want)
 	}
 }
 
-// TestShareDocument_EnvironmentLinkKeepsExistingLink: a re-run without an
-// explicit --access keeps a share at another level, because replacing it
-// would give it a new ID and break the links already handed out. An explicit
-// --access replaces it and warns about exactly that.
-func TestShareDocument_EnvironmentLinkKeepsExistingLink(t *testing.T) {
+// TestShareDocument_EnvironmentLinkAtAnotherLevel: without an explicit
+// --access, an existing share at another level is neither reused (that would
+// hand out a read-write link to someone who asked for a read one) nor replaced
+// (that would break the links already handed out): the command fails, changes
+// nothing, and names both ways out. An explicit --access replaces it and warns
+// that the old link broke.
+func TestShareDocument_EnvironmentLinkAtAnotherLevel(t *testing.T) {
 	readWrite := []map[string]any{{"id": "env-share-1", "documentId": "lp-1", "access": []string{"read", "write"}}}
 
-	t.Run("bare re-run keeps the read-write share", func(t *testing.T) {
+	t.Run("bare re-run fails and changes nothing", func(t *testing.T) {
 		s, srv := newEnvShareServer(t)
 		s.shares = readWrite
 		setupDocumentCmdTest(t, srv.URL, config.SafetyLevelReadWriteAll)
 
-		stdout, stderr, err := runShareCmd(t, shareDocumentCmd, map[string]string{"environment": "link"})
+		stdout, _, err := runShareCmd(t, shareDocumentCmd, map[string]string{"environment": "link"})
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		for _, want := range []string{
+			"already has a read-write environment share (env-share-1)",
+			"pass --access read-write (" + srv.URL + "/ui/document/v0/#share=env-share-1)",
+			"pass --access read explicitly",
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
+		}
+		if stdout != "" {
+			t.Errorf("stdout = %q, want no link", stdout)
+		}
+		assertCalls(t, s, "")
+	})
+
+	t.Run("explicit --access at the existing level reuses it", func(t *testing.T) {
+		s, srv := newEnvShareServer(t)
+		s.shares = readWrite
+		setupDocumentCmdTest(t, srv.URL, config.SafetyLevelReadWriteAll)
+
+		stdout, _, err := runShareCmd(t, shareDocumentCmd, map[string]string{"environment": "link", "access": "read-write"})
 		if err != nil {
-			t.Fatalf("share document --environment link: %v", err)
+			t.Fatalf("share document --environment link --access read-write: %v", err)
 		}
 		assertCalls(t, s, "")
 		if !strings.Contains(stdout, "#share=env-share-1") {
 			t.Errorf("stdout %q does not carry the existing link", stdout)
-		}
-		if !strings.Contains(stderr, "kept the existing read-write environment share") {
-			t.Errorf("stderr %q does not say the share was kept", stderr)
 		}
 	})
 
@@ -236,20 +260,40 @@ func TestShareDocument_EnvironmentPublic(t *testing.T) {
 	assertCalls(t, s, "PATCH isPrivate=false")
 }
 
+// TestShareDocument_EnvironmentLinkAndPublic: both modes at once create the
+// link first, then make the document public, and stdout still carries
+// nothing but the link.
+func TestShareDocument_EnvironmentLinkAndPublic(t *testing.T) {
+	s, srv := newEnvShareServer(t)
+	s.isPrivate = true
+	s.shares = nil
+	setupDocumentCmdTest(t, srv.URL, config.SafetyLevelReadWriteAll)
+
+	stdout, _, err := runShareCmd(t, shareDocumentCmd, map[string]string{"environment": "link,public"})
+	if err != nil {
+		t.Fatalf("share document --environment link,public: %v", err)
+	}
+	assertCalls(t, s, "POST environment-share lp-1 read\nPATCH isPrivate=false")
+	if want := srv.URL + "/ui/document/v0/#share=env-share-2\n"; stdout != want {
+		t.Errorf("stdout = %q, want only the share link %q", stdout, want)
+	}
+}
+
 func TestShareDocument_EnvironmentRejectedInvocations(t *testing.T) {
 	tests := []struct {
 		name  string
 		flags map[string]string
 		want  string
 	}{
-		{"unknown mode", map[string]string{"environment": "everyone"}, "must be 'link' or 'public'"},
-		{"empty mode", map[string]string{"environment": ""}, "must be 'link' or 'public'"},
+		{"unknown mode", map[string]string{"environment": "everyone"}, "must be 'link', 'public', or both"},
+		{"unknown mode in a list", map[string]string{"environment": "link,everyone"}, "must be 'link', 'public', or both"},
+		{"empty mode", map[string]string{"environment": ""}, "needs a value"},
 		{"with --user", map[string]string{"environment": "link", "user": "user-1"}, "cannot be combined"},
 		{"with --group", map[string]string{"environment": "link", "group": "group-1"}, "cannot be combined"},
 		{"with --no-notify", map[string]string{"environment": "link", "no-notify": "true"}, "--no-notify"},
 		{"public with --access", map[string]string{"environment": "public", "access": "read-write"}, "--access does not apply"},
 		{"public with --access read", map[string]string{"environment": "public", "access": "read"}, "--access does not apply"},
-		{"nothing to share with", map[string]string{}, "--environment link|public"},
+		{"nothing to share with", map[string]string{}, "--environment link,public"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -269,7 +313,7 @@ func TestShareDocument_EnvironmentRejectedInvocations(t *testing.T) {
 // changes who can read the document, so a readonly context refuses it.
 func TestShareUnshareDocument_EnvironmentNeedsSafetyLevel(t *testing.T) {
 	for _, c := range []*cobra.Command{shareDocumentCmd, unshareDocumentCmd} {
-		for _, mode := range []string{"link", "public"} {
+		for _, mode := range []string{"link", "public", "link,public"} {
 			t.Run(c.Parent().Name()+" "+mode, func(t *testing.T) {
 				s, srv := newEnvShareServer(t)
 				setupDocumentCmdTest(t, srv.URL, config.SafetyLevelReadOnly)
@@ -286,7 +330,7 @@ func TestShareUnshareDocument_EnvironmentNeedsSafetyLevel(t *testing.T) {
 
 func TestShareUnshareDocument_EnvironmentDryRun(t *testing.T) {
 	for _, c := range []*cobra.Command{shareDocumentCmd, unshareDocumentCmd} {
-		for _, mode := range []string{"link", "public"} {
+		for _, mode := range []string{"link", "public", "link,public"} {
 			t.Run(c.Parent().Name()+" "+mode, func(t *testing.T) {
 				s, srv := newEnvShareServer(t)
 				setupDocumentCmdTest(t, srv.URL, config.SafetyLevelReadWriteAll)
@@ -366,6 +410,19 @@ func TestUnshareDocument_EnvironmentPublic(t *testing.T) {
 	assertCalls(t, s, "PATCH isPrivate=true")
 }
 
+// TestUnshareDocument_EnvironmentLinkAndPublic: both modes at once make the
+// document private first, then delete the link, so a failure partway leaves
+// the narrower exposure.
+func TestUnshareDocument_EnvironmentLinkAndPublic(t *testing.T) {
+	s, srv := newEnvShareServer(t)
+	setupDocumentCmdTest(t, srv.URL, config.SafetyLevelReadWriteAll)
+
+	if _, _, err := runShareCmd(t, unshareDocumentCmd, map[string]string{"environment": "link,public"}); err != nil {
+		t.Fatalf("unshare document --environment link,public: %v", err)
+	}
+	assertCalls(t, s, "PATCH isPrivate=true\nDELETE /platform/document/v1/environment-shares/env-share-1")
+}
+
 func TestUnshareDocument_EnvironmentRejectedInvocations(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -374,9 +431,9 @@ func TestUnshareDocument_EnvironmentRejectedInvocations(t *testing.T) {
 	}{
 		// An unrecognized level used to be matched as 'read', so a typo deleted read shares.
 		{"unknown access", map[string]string{"environment": "link", "access": "rw"}, "invalid access level"},
-		{"unknown mode", map[string]string{"environment": "everyone"}, "must be 'link' or 'public'"},
+		{"unknown mode", map[string]string{"environment": "everyone"}, "must be 'link', 'public', or both"},
 		{"public with --access", map[string]string{"environment": "public", "access": "read"}, "--access does not apply"},
-		{"nothing to remove", map[string]string{}, "--environment link|public"},
+		{"nothing to remove", map[string]string{}, "--environment link,public"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

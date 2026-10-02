@@ -18,7 +18,7 @@ import (
 
 // The two ways --environment opens a document to everyone in the environment.
 // The Document API keeps them apart, so each mode does (and undoes) only its
-// own half.
+// own half; `--environment link,public` asks for both.
 const (
 	// environmentLink is an environment share: a #share=<id> link that anyone
 	// in the environment can claim, at read or read-write access.
@@ -28,35 +28,73 @@ const (
 	environmentPublic = "public"
 )
 
-// environmentMode reads --environment: "" when it was not given, otherwise
-// "link" or "public". The flag deliberately has no default value: with one,
-// pflag would read `--environment link` as a bare --environment followed by a
-// second positional argument "link".
-func environmentMode(cmd *cobra.Command) (string, error) {
-	mode, _ := cmd.Flags().GetString("environment")
-	if !cmd.Flags().Changed("environment") {
-		return "", nil
-	}
-	if mode != environmentLink && mode != environmentPublic {
-		return "", fmt.Errorf("invalid --environment %q, must be 'link' or 'public'", mode)
-	}
-	return mode, nil
+// environmentModes is which of the two ways to open a document to the
+// environment an invocation asks for: share/unshare --environment and apply
+// --share-environment all spell it the same way.
+type environmentModes struct {
+	link, public bool
 }
 
-// environmentLinkResult is what `share --environment link` reports.
+func (m environmentModes) none() bool { return !m.link && !m.public }
+
+func (m environmentModes) String() string {
+	var parts []string
+	if m.link {
+		parts = append(parts, environmentLink)
+	}
+	if m.public {
+		parts = append(parts, environmentPublic)
+	}
+	return strings.Join(parts, ",")
+}
+
+// parseEnvironmentModes reads a list of modes from flag, comma-separated or
+// repeated: "link", "public", or both. The zero value means the flag was not
+// given. The flag deliberately has no default value: with one, pflag would
+// read `--environment link` as a bare --environment followed by a second
+// positional argument "link".
+func parseEnvironmentModes(cmd *cobra.Command, flag string) (environmentModes, error) {
+	var m environmentModes
+	if !cmd.Flags().Changed(flag) {
+		return m, nil
+	}
+	values, _ := cmd.Flags().GetStringSlice(flag)
+	for _, v := range values {
+		switch strings.TrimSpace(v) {
+		case environmentLink:
+			m.link = true
+		case environmentPublic:
+			m.public = true
+		default:
+			return m, fmt.Errorf("invalid --%s value %q, must be 'link', 'public', or both ('link,public')", flag, v)
+		}
+	}
+	if m.none() {
+		return m, fmt.Errorf("--%s needs a value: 'link', 'public', or both ('link,public')", flag)
+	}
+	return m, nil
+}
+
+// environmentShareResult is what `share --environment` reports in agent mode.
+// Link and Visibility are set for the modes that were asked for.
+type environmentShareResult struct {
+	DocumentID string                       `json:"documentId"`
+	Link       *environmentLinkResult       `json:"link,omitempty"`
+	Visibility *environmentVisibilityResult `json:"visibility,omitempty"`
+}
+
+// environmentLinkResult is the environment share `--environment link` ensured.
 type environmentLinkResult struct {
-	DocumentID string `json:"documentId" table:"DOCUMENT_ID"`
-	ShareID    string `json:"shareId" table:"SHARE_ID"`
-	Access     string `json:"access" table:"ACCESS"`
-	Created    bool   `json:"created" table:"CREATED"`
-	URL        string `json:"url" table:"URL"`
+	ShareID string `json:"shareId"`
+	Access  string `json:"access"`
+	Created bool   `json:"created"`
+	URL     string `json:"url"`
 }
 
-// environmentPublicResult is what `share --environment public` reports.
-type environmentPublicResult struct {
-	DocumentID string `json:"documentId" table:"DOCUMENT_ID"`
-	Public     bool   `json:"public" table:"PUBLIC"`
-	Changed    bool   `json:"changed" table:"CHANGED"`
+// environmentVisibilityResult is what `--environment public` did.
+type environmentVisibilityResult struct {
+	Public  bool `json:"public"`
+	Changed bool `json:"changed"`
 }
 
 // shareCmd represents the share command
@@ -68,24 +106,26 @@ var shareCmd = &cobra.Command{
 
 // shareDocumentCmd shares a document with users/groups or the environment
 var shareDocumentCmd = &cobra.Command{
-	Use:   "document <document-id> --user <user-id> | --group <group-id> | --environment link|public",
+	Use:   "document <document-id> --user <user-id> | --group <group-id> | --environment link,public",
 	Short: "Share a document with users, groups, or the environment",
 	Long: `Share a document of any type with specific users or groups, or with
 everyone in the environment.
 
---environment opens the document to everyone in the environment, in one of
-two ways. They are independent of each other and of --user/--group shares,
-and --environment cannot be combined with --user or --group:
+--environment opens the document to everyone in the environment, in two
+independent ways; pass one or both ('--environment link,public'). They are
+independent of --user/--group shares too, and --environment cannot be
+combined with --user or --group:
 
   link    Create an environment share and print its link
           (https://<environment>/ui/document/v0/#share=<id>). Anyone in the
           environment who opens the link gets --access to the document. The
-          document's visibility is not changed. Re-running it reuses the
-          existing share; an explicit --access at another level replaces it,
-          which gives it a new link and breaks the old one.
+          document's visibility is not changed. Re-running it reuses a share
+          at the same level. A share at another level is replaced only with an
+          explicit --access, which gives it a new link and breaks the old one;
+          without one the command fails and changes nothing.
   public  Mark the document public (isPrivate=false): everyone in the
           environment can find and read it. No share is created, and --access
-          does not apply.
+          applies only to link.
 
 Examples:
   # Share a document with a user (read access)
@@ -116,6 +156,9 @@ Examples:
 
   # Make a document readable by everyone in the environment
   dtctl share document my-launchpad-id --environment public
+
+  # Both: make it public and print a link that grants write access
+  dtctl share document my-launchpad-id --environment link,public --access read-write
 `,
 	Aliases: []string{"doc"},
 	Args:    cobra.ExactArgs(1),
@@ -125,24 +168,24 @@ Examples:
 		groups, _ := cmd.Flags().GetStringArray("group")
 		access, _ := cmd.Flags().GetString("access")
 		noNotify, _ := cmd.Flags().GetBool("no-notify")
-		environment, err := environmentMode(cmd)
+		environment, err := parseEnvironmentModes(cmd, "environment")
 		if err != nil {
 			return err
 		}
 
-		if environment != "" {
+		if !environment.none() {
 			if len(users) > 0 || len(groups) > 0 {
 				return fmt.Errorf("--environment cannot be combined with --user or --group")
 			}
 			if noNotify {
 				return fmt.Errorf("--no-notify applies to --user/--group shares only, not to --environment")
 			}
-			if environment == environmentPublic && cmd.Flags().Changed("access") {
+			if !environment.link && cmd.Flags().Changed("access") {
 				return fmt.Errorf("--access does not apply to --environment public, which grants read access; " +
 					"use --environment link --access read-write for a link with write access")
 			}
 		} else if len(users) == 0 && len(groups) == 0 {
-			return fmt.Errorf("at least one --user, --group, or --environment link|public is required")
+			return fmt.Errorf("at least one --user, --group, or --environment link,public is required")
 		}
 
 		// Validate access level
@@ -150,15 +193,16 @@ Examples:
 			return fmt.Errorf("invalid access level %q, must be 'read' or 'read-write'", access)
 		}
 
-		if environment != "" && dryRun {
+		if !environment.none() && dryRun {
 			report := newDryRunReport(cmd).
 				Detail("document", "%s", documentID).
 				Detail("environment", "%s", environment)
-			if environment == environmentLink {
+			if environment.link {
 				report.
 					Linef("Dry run: would create an environment share link for document %q (%s access)", documentID, access).
 					Detail("access", "%s", access)
-			} else {
+			}
+			if environment.public {
 				report.Linef("Dry run: would make document %q public to everyone in the environment", documentID)
 			}
 			return report.Print()
@@ -207,11 +251,8 @@ Examples:
 			return err
 		}
 
-		switch environment {
-		case environmentLink:
-			return shareEnvironmentLink(cmd, handler, c.BaseURL(), documentID, access)
-		case environmentPublic:
-			return shareEnvironmentPublic(cmd, handler, documentID)
+		if !environment.none() {
+			return shareWithEnvironment(cmd, cfg, handler, c.BaseURL(), documentID, access, environment)
 		}
 
 		// Check if a share already exists for this document with the same access level
@@ -256,32 +297,45 @@ Examples:
 	},
 }
 
-// shareEnvironmentLink creates (or reuses) the document's environment share
-// and prints its link: on stdout as a plain line, so it can be captured, or as
-// the result in agent mode.
-func shareEnvironmentLink(cmd *cobra.Command, handler *document.Handler, baseURL, documentID, access string) error {
-	// Without an explicit --access, an existing share at another level is
-	// kept: replacing it would break every link already handed out.
-	res, err := handler.EnsureEnvironmentLink(documentID, access, cmd.Flags().Changed("access"))
-	if err != nil {
-		return fmt.Errorf("failed to create an environment share for document %q: %w", documentID, err)
+// shareWithEnvironment opens the document to the environment in the given
+// modes: the link first, so a failure to make the document public leaves the
+// narrower of the two in place. The link goes to stdout as a plain line, so it
+// can be captured, or into the result in agent mode.
+func shareWithEnvironment(cmd *cobra.Command, cfg *config.Config, handler *document.Handler, baseURL, documentID,
+	access string, modes environmentModes) error {
+	result := environmentShareResult{DocumentID: documentID}
+	var warnings []string
+
+	if modes.link {
+		// Only an explicit --access may replace a share at another level:
+		// that gives it a new ID and breaks every link already handed out.
+		replace := cmd.Flags().Changed("access")
+		res, err := handler.EnsureEnvironmentLink(documentID, access, replace)
+		if err != nil {
+			return environmentLinkError(err, cfg, baseURL, documentID, access, "access", replace)
+		}
+		result.Link = &environmentLinkResult{
+			ShareID: res.Share.ID,
+			Access:  res.Share.Level(),
+			Created: res.Created,
+			URL:     document.ShareURL(baseURL, res.Share.ID),
+		}
+		for _, old := range res.Replaced {
+			warnings = append(warnings, fmt.Sprintf("replaced the %s environment share %s: links to it no longer work",
+				old.Level(), old.ID))
+		}
 	}
 
-	result := environmentLinkResult{
-		DocumentID: documentID,
-		ShareID:    res.Share.ID,
-		Access:     res.Share.Level(),
-		Created:    res.Created,
-		URL:        document.ShareURL(baseURL, res.Share.ID),
-	}
-	var warnings []string
-	for _, old := range res.Replaced {
-		warnings = append(warnings, fmt.Sprintf("replaced the %s environment share %s: links to it no longer work",
-			old.Level(), old.ID))
-	}
-	if !res.Created && result.Access != access {
-		warnings = append(warnings, fmt.Sprintf("kept the existing %s environment share; pass --access %s to replace it "+
-			"(this breaks links to the existing share)", result.Access, access))
+	if modes.public {
+		changed, err := handler.SetPrivate(documentID, false)
+		if err != nil {
+			if result.Link != nil {
+				return fmt.Errorf("created the environment share link %s, but failed to make document %q public: %w",
+					result.Link.URL, documentID, err)
+			}
+			return fmt.Errorf("failed to make document %q public: %w", documentID, err)
+		}
+		result.Visibility = &environmentVisibilityResult{Public: true, Changed: changed}
 	}
 
 	printer := NewPrinter()
@@ -292,32 +346,54 @@ func shareEnvironmentLink(cmd *cobra.Command, handler *document.Handler, baseURL
 	for _, w := range warnings {
 		output.PrintWarning("%s", w)
 	}
-	if res.Created {
-		output.PrintSuccess("Created %s environment share %s for document %q", result.Access, result.ShareID, documentID)
-	} else {
-		output.PrintSuccess("Document %q already has a %s environment share (%s)", documentID, result.Access, result.ShareID)
+	if l := result.Link; l != nil {
+		if l.Created {
+			output.PrintSuccess("Created %s environment share %s for document %q", l.Access, l.ShareID, documentID)
+		} else {
+			output.PrintSuccess("Document %q already has a %s environment share (%s)", documentID, l.Access, l.ShareID)
+		}
 	}
-	fmt.Println(result.URL)
+	if v := result.Visibility; v != nil {
+		if v.Changed {
+			output.PrintSuccess("Document %q is now public: everyone in the environment can find and read it", documentID)
+		} else {
+			output.PrintSuccess("Document %q is already public", documentID)
+		}
+	}
+	if result.Link != nil {
+		fmt.Println(result.Link.URL)
+	}
 	return nil
 }
 
-// shareEnvironmentPublic marks the document public (isPrivate=false).
-func shareEnvironmentPublic(cmd *cobra.Command, handler *document.Handler, documentID string) error {
-	changed, err := handler.SetPrivate(documentID, false)
-	if err != nil {
-		return fmt.Errorf("failed to make document %q public: %w", documentID, err)
+// environmentLinkError explains why ensuring an environment share link failed:
+// a share at another level that the caller did not ask to replace, or a 403
+// for an environment-shares scope. accessFlag is the flag that sets the level
+// (--access on share, --share-access on apply); replace says whether it was
+// given, in which case a share at another level is deleted, which needs
+// :delete.
+func environmentLinkError(err error, cfg *config.Config, baseURL, documentID, access, accessFlag string, replace bool) error {
+	var existing *document.ExistingEnvironmentShareError
+	if errors.As(err, &existing) {
+		level := existing.Share.Level()
+		return &diagnostic.Error{
+			Operation: fmt.Sprintf("create a %s environment share for document %q", access, documentID),
+			Message:   fmt.Sprintf("it already has a %s environment share (%s); nothing was changed", level, existing.Share.ID),
+			Err:       err,
+			Suggestions: []string{
+				fmt.Sprintf("Reuse the existing %s link: pass --%s %s (%s)",
+					level, accessFlag, level, document.ShareURL(baseURL, existing.Share.ID)),
+				fmt.Sprintf("Replace it with a %s link: pass --%s %s explicitly; links to the existing share stop working",
+					access, accessFlag, access),
+			},
+		}
 	}
-
-	printer := NewPrinter()
-	if enrichAgent(printer, "share", cmd.Name()) != nil {
-		return printer.Print(environmentPublicResult{DocumentID: documentID, Public: true, Changed: changed})
+	scopes := []string{"document:environment-shares:read", "document:environment-shares:write"}
+	if replace {
+		scopes = append(scopes, "document:environment-shares:delete")
 	}
-	if changed {
-		output.PrintSuccess("Document %q is now public: everyone in the environment can find and read it", documentID)
-	} else {
-		fmt.Printf("Document %q is already public\n", documentID)
-	}
-	return nil
+	return environmentShareScopeError(err, cfg,
+		fmt.Sprintf("create an environment share for document %q", documentID), scopes)
 }
 
 // environmentShareDeleteScopes are what `unshare --environment link` needs on
@@ -325,20 +401,21 @@ func shareEnvironmentPublic(cmd *cobra.Command, handler *document.Handler, docum
 // :delete at login do not carry it.
 var environmentShareDeleteScopes = []string{"document:environment-shares:read", "document:environment-shares:delete"}
 
-// unshareEnvironmentLinkError turns a 403 from listing or deleting environment
-// shares into one that names the scopes and how to get them.
-func unshareEnvironmentLinkError(err error, cfg *config.Config, documentID string) error {
+// environmentShareScopeError turns a 403 from the environment-shares API into
+// an error that names the scopes and how to get them. Any other error is
+// wrapped with the operation.
+func environmentShareScopeError(err error, cfg *config.Config, operation string, scopes []string) error {
 	var apiErr *httpclient.APIError
 	if !errors.As(err, &apiErr) || apiErr.StatusCode != 403 {
-		return fmt.Errorf("failed to delete the environment share of document %q: %w", documentID, err)
+		return fmt.Errorf("failed to %s: %w", operation, err)
 	}
 	return &diagnostic.Error{
-		Operation:  fmt.Sprintf("delete the environment share of document %q", documentID),
+		Operation:  operation,
 		StatusCode: apiErr.StatusCode,
 		Message:    "access denied: " + err.Error(),
 		Err:        err,
-		Suggestions: append(loginScopeAdvice(cfg, environmentShareDeleteScopes),
-			"Platform token: create it with "+strings.Join(environmentShareDeleteScopes, ", "),
+		Suggestions: append(loginScopeAdvice(cfg, scopes),
+			"Platform token: create it with "+strings.Join(scopes, ", "),
 			"Check the scope gate: re-run the same command with --check-scopes"),
 	}
 }
@@ -352,14 +429,14 @@ var unshareCmd = &cobra.Command{
 
 // unshareDocumentCmd removes sharing from a document
 var unshareDocumentCmd = &cobra.Command{
-	Use:   "document <document-id> [--user <user-id>] [--group <group-id>] [--all] [--environment link|public]",
+	Use:   "document <document-id> [--user <user-id>] [--group <group-id>] [--all] [--environment link,public]",
 	Short: "Remove sharing from a document",
 	Long: `Remove sharing from a document. Can remove specific users/groups, all
-user/group shares, or what --environment link|public on share created.
+user/group shares, or what --environment link,public on share created.
 
---all removes user and group shares only. --environment undoes one of the two
-ways a document is opened to the environment, and can be combined with the
-other flags:
+--all removes user and group shares only. --environment undoes one or both of
+the two ways a document is opened to the environment, and can be combined
+with the other flags:
 
   link    Delete the document's environment share(s), so their links stop
           working. With --access, only shares at exactly that level are
@@ -389,6 +466,9 @@ Examples:
   # Make a public document private again
   dtctl unshare document my-launchpad-id --environment public
 
+  # Close the document to the environment entirely
+  dtctl unshare document my-launchpad-id --environment link,public
+
   # Remove every user, group, and environment share
   dtctl unshare document my-launchpad-id --all --environment link
 `,
@@ -401,20 +481,20 @@ Examples:
 		all, _ := cmd.Flags().GetBool("all")
 		access, _ := cmd.Flags().GetString("access")
 		direct := all || len(users) > 0 || len(groups) > 0
-		environment, err := environmentMode(cmd)
+		environment, err := parseEnvironmentModes(cmd, "environment")
 		if err != nil {
 			return err
 		}
 
-		if !direct && environment == "" {
-			return fmt.Errorf("specify --user, --group, --all, or --environment link|public")
+		if !direct && environment.none() {
+			return fmt.Errorf("specify --user, --group, --all, or --environment link,public")
 		}
 		// An unrecognized level would otherwise be matched as 'read'.
 		if access != "" && access != "read" && access != "read-write" {
 			return fmt.Errorf("invalid access level %q, must be 'read' or 'read-write'", access)
 		}
 		// --access filters shares, and --environment public removes none.
-		if environment == environmentPublic && access != "" && !direct {
+		if !environment.link && environment.public && access != "" && !direct {
 			return fmt.Errorf("--access does not apply to --environment public, which deletes no share")
 		}
 
@@ -429,19 +509,18 @@ Examples:
 					Detail("users", "%d", len(users)).
 					Detail("groups", "%d", len(groups))
 			}
-			switch environment {
-			case environmentLink:
+			if !environment.none() {
+				report.Detail("environment", "%s", environment)
+			}
+			if environment.public {
+				report.Linef("Dry run: would make document %q private", documentID)
+			}
+			if environment.link {
 				which := "all environment shares"
 				if access != "" {
 					which = access + " environment shares"
 				}
-				report.
-					Linef("Dry run: would delete %s of document %q", which, documentID).
-					Detail("environment", "%s", environment)
-			case environmentPublic:
-				report.
-					Linef("Dry run: would make document %q private", documentID).
-					Detail("environment", "%s", environment)
+				report.Linef("Dry run: would delete %s of document %q", which, documentID)
 			}
 			return report.Print()
 		}
@@ -466,11 +545,25 @@ Examples:
 			return err
 		}
 
-		switch environment {
-		case environmentLink:
+		// Private first: isPrivate=false lets everyone read the document, a
+		// link only those who claim it, so a failure partway leaves the
+		// narrower of the two.
+		if environment.public {
+			changed, err := handler.SetPrivate(documentID, true)
+			if err != nil {
+				return fmt.Errorf("failed to make document %q private: %w", documentID, err)
+			}
+			if changed {
+				output.PrintSuccess("Document %q is private again", documentID)
+			} else {
+				fmt.Printf("Document %q is already private\n", documentID)
+			}
+		}
+		if environment.link {
 			deleted, err := handler.RemoveEnvironmentLinks(documentID, access)
 			if err != nil {
-				return unshareEnvironmentLinkError(err, cfg, documentID)
+				return environmentShareScopeError(err, cfg,
+					fmt.Sprintf("delete the environment share of document %q", documentID), environmentShareDeleteScopes)
 			}
 			switch {
 			case deleted > 0:
@@ -480,16 +573,6 @@ Examples:
 				fmt.Printf("No %s environment share found for document %q, nothing changed\n", access, documentID)
 			default:
 				fmt.Printf("Document %q has no environment share, nothing changed\n", documentID)
-			}
-		case environmentPublic:
-			changed, err := handler.SetPrivate(documentID, true)
-			if err != nil {
-				return fmt.Errorf("failed to make document %q private: %w", documentID, err)
-			}
-			if changed {
-				output.PrintSuccess("Document %q is private again", documentID)
-			} else {
-				fmt.Printf("Document %q is already private\n", documentID)
 			}
 		}
 		if !direct {
@@ -503,7 +586,7 @@ Examples:
 		}
 
 		if len(shares.Shares) == 0 {
-			fmt.Printf("No shares found for document %q\n", documentID)
+			fmt.Printf("No user or group shares found for document %q\n", documentID)
 			return nil
 		}
 
@@ -547,7 +630,7 @@ Examples:
 
 // shareNotebookCmd is an alias for sharing notebooks
 var shareNotebookCmd = &cobra.Command{
-	Use:     "notebook <notebook-id> --user <user-id> | --group <group-id> | --environment link|public",
+	Use:     "notebook <notebook-id> --user <user-id> | --group <group-id> | --environment link,public",
 	Short:   "Share a notebook with users, groups, or the environment",
 	Aliases: []string{"nb"},
 	Args:    cobra.ExactArgs(1),
@@ -556,7 +639,7 @@ var shareNotebookCmd = &cobra.Command{
 
 // shareDashboardCmd is an alias for sharing dashboards
 var shareDashboardCmd = &cobra.Command{
-	Use:     "dashboard <dashboard-id> --user <user-id> | --group <group-id> | --environment link|public",
+	Use:     "dashboard <dashboard-id> --user <user-id> | --group <group-id> | --environment link,public",
 	Short:   "Share a dashboard with users, groups, or the environment",
 	Aliases: []string{"db"},
 	Args:    cobra.ExactArgs(1),
@@ -565,7 +648,7 @@ var shareDashboardCmd = &cobra.Command{
 
 // unshareNotebookCmd is an alias for unsharing notebooks
 var unshareNotebookCmd = &cobra.Command{
-	Use:     "notebook <notebook-id> [--user <user-id>] [--group <group-id>] [--all] [--environment link|public]",
+	Use:     "notebook <notebook-id> [--user <user-id>] [--group <group-id>] [--all] [--environment link,public]",
 	Short:   "Remove sharing from a notebook",
 	Aliases: []string{"nb"},
 	Args:    cobra.ExactArgs(1),
@@ -574,7 +657,7 @@ var unshareNotebookCmd = &cobra.Command{
 
 // unshareDashboardCmd is an alias for unsharing dashboards
 var unshareDashboardCmd = &cobra.Command{
-	Use:     "dashboard <dashboard-id> [--user <user-id>] [--group <group-id>] [--all] [--environment link|public]",
+	Use:     "dashboard <dashboard-id> [--user <user-id>] [--group <group-id>] [--all] [--environment link,public]",
 	Short:   "Remove sharing from a dashboard",
 	Aliases: []string{"db"},
 	Args:    cobra.ExactArgs(1),
@@ -601,7 +684,7 @@ func init() {
 		cmd.Flags().StringArray("group", []string{}, "SSO group ID to share with (can be specified multiple times)")
 		cmd.Flags().String("access", "read", "access level: 'read' or 'read-write'")
 		cmd.Flags().Bool("no-notify", false, "do not notify recipients of the share (a group recipient notifies every member)")
-		cmd.Flags().String("environment", "", "open the document to everyone in the environment: 'link' (an environment share link, at --access) or 'public' (isPrivate=false, read access); cannot be combined with --user/--group")
+		cmd.Flags().StringSlice("environment", nil, "open the document to everyone in the environment: 'link' (an environment share link, at --access), 'public' (isPrivate=false, read access), or both ('link,public'); cannot be combined with --user/--group")
 		// A blank recipient would be sent to the API as an empty SSO ID.
 		rejectEmptyFlag(cmd, "user")
 		rejectEmptyFlag(cmd, "group")
@@ -613,7 +696,7 @@ func init() {
 		cmd.Flags().StringArray("group", []string{}, "SSO group ID to remove (can be specified multiple times)")
 		cmd.Flags().Bool("all", false, "remove all user and group shares (add --environment link to delete the environment share too)")
 		cmd.Flags().String("access", "", "filter by access level: 'read' or 'read-write'")
-		cmd.Flags().String("environment", "", "'link' deletes the environment share(s) (filtered by --access), 'public' makes the document private again")
+		cmd.Flags().StringSlice("environment", nil, "'link' deletes the environment share(s) (filtered by --access), 'public' makes the document private again; 'link,public' does both")
 		rejectEmptyFlag(cmd, "user")
 		rejectEmptyFlag(cmd, "group")
 	}

@@ -571,24 +571,6 @@ func (h *Handler) GetAtVersion(id string, version int) (*Document, error) {
 	return fromSDKDocument(d), nil
 }
 
-// EnsureEnvironmentShare idempotently ensures the document has an environment share at the given
-// access level, AND that the document itself is marked public (isPrivate=false). An environment
-// share at another access level is replaced.
-//
-// This is a CLI-specific composite operation not present in the SDK. `apply --share-environment`
-// uses it; `share --environment link|public` does each half on its own (EnsureEnvironmentLink,
-// SetPrivate).
-func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*EnvironmentShare, error) {
-	res, err := h.ensureShareAtAccess(documentID, access, true)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := h.SetPrivate(documentID, false); err != nil {
-		return res.Share, fmt.Errorf("share created but %w", err)
-	}
-	return res.Share, nil
-}
-
 // EnvironmentLinkResult is what EnsureEnvironmentLink did.
 type EnvironmentLinkResult struct {
 	// Share is the environment share the document now has.
@@ -600,14 +582,28 @@ type EnvironmentLinkResult struct {
 	Replaced []EnvironmentShare
 }
 
+// ExistingEnvironmentShareError is what EnsureEnvironmentLink returns, without
+// changing anything, when the document already has an environment share at
+// another access level and the caller did not ask to replace it.
+type ExistingEnvironmentShareError struct {
+	DocumentID string
+	// Share is the existing share. Its link still works.
+	Share EnvironmentShare
+}
+
+func (e *ExistingEnvironmentShareError) Error() string {
+	return fmt.Sprintf("document %q already has a %s environment share (%s)", e.DocumentID, e.Share.Level(), e.Share.ID)
+}
+
 // EnsureEnvironmentLink idempotently ensures the document has an environment
 // share: a link anyone in the environment can claim. It leaves the document's
 // isPrivate flag alone.
 //
 // An existing share at exactly the access level is reused. An existing share
 // at another level is replaced only when replace is set, because replacing it
-// gives the share a new ID and breaks every link already handed out; without
-// replace the existing share is returned as it is.
+// gives the share a new ID and breaks every link already handed out. Without
+// replace it is an *ExistingEnvironmentShareError: reusing it instead would
+// hand out a link at a level the caller did not ask for.
 func (h *Handler) EnsureEnvironmentLink(documentID, access string, replace bool) (*EnvironmentLinkResult, error) {
 	return h.ensureShareAtAccess(documentID, access, replace)
 }
@@ -680,13 +676,13 @@ func (h *Handler) SetPrivate(documentID string, private bool) (bool, error) {
 }
 
 // ensureShareAtAccess handles the share creation/replacement logic, including 409 race recovery.
-// Without replace, an existing share at another access level is kept and returned.
+// Without replace, an existing share at another access level is an *ExistingEnvironmentShareError.
 func (h *Handler) ensureShareAtAccess(documentID, access string, replace bool) (*EnvironmentLinkResult, error) {
 	existing, err := h.sdk.ListEnvironmentShares(context.Background(), documentID)
 	if err != nil {
 		return nil, err
 	}
-	res, done, err := h.reuseOrReplace(existing.Shares, access, replace, "existing")
+	res, done, err := h.reuseOrReplace(documentID, existing.Shares, access, replace, "existing")
 	if done || err != nil {
 		return res, err
 	}
@@ -710,7 +706,7 @@ func (h *Handler) ensureShareAtAccess(documentID, access string, replace bool) (
 	if reErr != nil {
 		return nil, fmt.Errorf("create returned conflict and re-list failed: %w", reErr)
 	}
-	raced, done, err := h.reuseOrReplace(reListed.Shares, access, replace, "racing")
+	raced, done, err := h.reuseOrReplace(documentID, reListed.Shares, access, replace, "racing")
 	if done || err != nil {
 		return raced, err
 	}
@@ -729,18 +725,19 @@ func (h *Handler) ensureShareAtAccess(documentID, access string, replace bool) (
 }
 
 // reuseOrReplace settles the listed environment shares before a create. done
-// means a share was found that the caller should return as it is: one at
-// exactly the access level, or, without replace, one at any level. Otherwise
-// the shares at other levels have been deleted (and are listed in the
-// returned result's Replaced), and the caller should create one.
-func (h *Handler) reuseOrReplace(shares []sdkdocument.EnvironmentShare, access string, replace bool,
+// means a share at exactly the access level was found, which the caller should
+// return as it is. Otherwise the shares at other levels have been deleted (and
+// are listed in the returned result's Replaced), and the caller should create
+// one. Without replace, a share at another level is an
+// *ExistingEnvironmentShareError and nothing is deleted.
+func (h *Handler) reuseOrReplace(documentID string, shares []sdkdocument.EnvironmentShare, access string, replace bool,
 	which string) (*EnvironmentLinkResult, bool, error) {
 	match, others := findOrCollectSDKShares(shares, access)
 	if match != nil {
 		return &EnvironmentLinkResult{Share: fromSDKEnvironmentShare(match)}, true, nil
 	}
 	if len(others) > 0 && !replace {
-		return &EnvironmentLinkResult{Share: fromSDKEnvironmentShare(&others[0])}, true, nil
+		return nil, false, &ExistingEnvironmentShareError{DocumentID: documentID, Share: *fromSDKEnvironmentShare(&others[0])}
 	}
 
 	res := &EnvironmentLinkResult{}

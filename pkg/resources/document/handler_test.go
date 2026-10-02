@@ -2,6 +2,7 @@ package document
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -537,152 +538,11 @@ func TestParseShareRef(t *testing.T) {
 	}
 }
 
-func TestEnsureEnvironmentShare_AlreadyExists_NoOp(t *testing.T) {
-	createCalls := 0
+// TestSetPrivate_SkipsPatchWhenAlreadySet: no PATCH when isPrivate already
+// has the requested value.
+func TestSetPrivate_SkipsPatchWhenAlreadySet(t *testing.T) {
 	patchCalls := 0
 	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(EnvironmentShareList{
-				Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
-				TotalCount: 1,
-			})
-			return
-		}
-		if r.Method == http.MethodPost {
-			createCalls++
-			w.WriteHeader(http.StatusCreated)
-		}
-	})
-	// EnsureEnvironmentShare also flips isPrivate=false; mock metadata + PATCH.
-	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 3, IsPrivate: true})
-	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			patchCalls++
-			w.WriteHeader(http.StatusOK)
-		}
-	})
-	h, cleanup := newDocTestHandler(t, mux)
-	defer cleanup()
-
-	got, err := h.EnsureEnvironmentShare("doc-1", "read")
-	if err != nil {
-		t.Fatalf("EnsureEnvironmentShare: %v", err)
-	}
-	if got.ID != "s1" {
-		t.Errorf("expected existing share returned, got %+v", got)
-	}
-	if createCalls != 0 {
-		t.Errorf("expected no create calls, got %d", createCalls)
-	}
-	if patchCalls != 1 {
-		t.Errorf("expected exactly 1 isPrivate PATCH, got %d", patchCalls)
-	}
-}
-
-func TestEnsureEnvironmentShare_CreatesWhenAbsent(t *testing.T) {
-	postCalls := 0
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet {
-			json.NewEncoder(w).Encode(EnvironmentShareList{Shares: nil, TotalCount: 0})
-			return
-		}
-		if r.Method == http.MethodPost {
-			postCalls++
-			json.NewEncoder(w).Encode(EnvironmentShare{ID: "s-new", DocumentID: "doc-1", Access: []string{"read"}})
-		}
-	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 1, IsPrivate: true})
-	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			w.WriteHeader(http.StatusOK)
-		}
-	})
-	h, cleanup := newDocTestHandler(t, mux)
-	defer cleanup()
-
-	got, err := h.EnsureEnvironmentShare("doc-1", "read")
-	if err != nil {
-		t.Fatalf("EnsureEnvironmentShare: %v", err)
-	}
-	if got.ID != "s-new" {
-		t.Errorf("unexpected result: %+v", got)
-	}
-	if postCalls != 1 {
-		t.Errorf("expected exactly 1 create call, got %d", postCalls)
-	}
-}
-
-func TestEnsureEnvironmentShare_ReplacesDifferentAccess(t *testing.T) {
-	var deletedID string
-	postCalls := 0
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet {
-			json.NewEncoder(w).Encode(EnvironmentShareList{
-				Shares:     []EnvironmentShare{{ID: "s-old", DocumentID: "doc-1", Access: []string{"read"}}},
-				TotalCount: 1,
-			})
-			return
-		}
-		if r.Method == http.MethodPost {
-			postCalls++
-			json.NewEncoder(w).Encode(EnvironmentShare{ID: "s-new", DocumentID: "doc-1", Access: []string{"read", "write"}})
-		}
-	})
-	mux.HandleFunc("/platform/document/v1/environment-shares/s-old", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			deletedID = "s-old"
-			w.WriteHeader(http.StatusNoContent)
-		}
-	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 1, IsPrivate: true})
-	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			w.WriteHeader(http.StatusOK)
-		}
-	})
-	h, cleanup := newDocTestHandler(t, mux)
-	defer cleanup()
-
-	got, err := h.EnsureEnvironmentShare("doc-1", "read-write")
-	if err != nil {
-		t.Fatalf("EnsureEnvironmentShare: %v", err)
-	}
-	if got.ID != "s-new" || !got.HasAccess("read-write") {
-		t.Errorf("unexpected result: %+v", got)
-	}
-	if deletedID != "s-old" {
-		t.Error("expected old share to be deleted")
-	}
-	if postCalls != 1 {
-		t.Errorf("expected 1 create call, got %d", postCalls)
-	}
-}
-
-func TestEnsureEnvironmentShare_SkipsPatchWhenAlreadyPublic(t *testing.T) {
-	patchCalls := 0
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(EnvironmentShareList{
-			Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
-			TotalCount: 1,
-		})
-	})
 	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 5, IsPrivate: false})
@@ -696,19 +556,19 @@ func TestEnsureEnvironmentShare_SkipsPatchWhenAlreadyPublic(t *testing.T) {
 	h, cleanup := newDocTestHandler(t, mux)
 	defer cleanup()
 
-	got, err := h.EnsureEnvironmentShare("doc-1", "read")
+	changed, err := h.SetPrivate("doc-1", false)
 	if err != nil {
-		t.Fatalf("EnsureEnvironmentShare: %v", err)
+		t.Fatalf("SetPrivate: %v", err)
 	}
-	if got.ID != "s1" {
-		t.Errorf("expected existing share, got %+v", got)
+	if changed {
+		t.Error("expected changed=false when isPrivate is already false")
 	}
 	if patchCalls != 0 {
 		t.Errorf("expected no PATCH when isPrivate=false, got %d calls", patchCalls)
 	}
 }
 
-func TestEnsureEnvironmentShare_Handles409Race(t *testing.T) {
+func TestEnsureEnvironmentLink_Handles409Race(t *testing.T) {
 	listCalls := 0
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
@@ -733,23 +593,14 @@ func TestEnsureEnvironmentShare_Handles409Race(t *testing.T) {
 			fmt.Fprintf(w, `{"error":{"message":"an environment share already exists for document \"doc-1\""}}`)
 		}
 	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 2, IsPrivate: true})
-	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			w.WriteHeader(http.StatusOK)
-		}
-	})
 	h, cleanup := newDocTestHandler(t, mux)
 	defer cleanup()
 
-	got, err := h.EnsureEnvironmentShare("doc-1", "read")
+	res, err := h.EnsureEnvironmentLink("doc-1", "read", false)
 	if err != nil {
-		t.Fatalf("EnsureEnvironmentShare should recover from 409 race: %v", err)
+		t.Fatalf("EnsureEnvironmentLink should recover from 409 race: %v", err)
 	}
-	if got.ID != "s-race" {
+	if got := res.Share; got.ID != "s-race" {
 		t.Errorf("expected recovered share s-race, got %+v", got)
 	}
 	if listCalls != 2 {
@@ -757,7 +608,9 @@ func TestEnsureEnvironmentShare_Handles409Race(t *testing.T) {
 	}
 }
 
-func TestEnsureEnvironmentShare_409RaceWithDifferentAccess(t *testing.T) {
+// TestEnsureEnvironmentLink_409RaceWithDifferentAccess: with replace, a share
+// at another level that a concurrent create left behind is replaced.
+func TestEnsureEnvironmentLink_409RaceWithDifferentAccess(t *testing.T) {
 	listCalls := 0
 	deleteCalls := 0
 	createCalls := 0
@@ -793,23 +646,14 @@ func TestEnsureEnvironmentShare_409RaceWithDifferentAccess(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 2, IsPrivate: true})
-	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPatch {
-			w.WriteHeader(http.StatusOK)
-		}
-	})
 	h, cleanup := newDocTestHandler(t, mux)
 	defer cleanup()
 
-	got, err := h.EnsureEnvironmentShare("doc-1", "read-write")
+	res, err := h.EnsureEnvironmentLink("doc-1", "read-write", true)
 	if err != nil {
-		t.Fatalf("EnsureEnvironmentShare should handle 409 with different access: %v", err)
+		t.Fatalf("EnsureEnvironmentLink should handle 409 with different access: %v", err)
 	}
-	if got.ID != "s-new" {
+	if got := res.Share; got.ID != "s-new" {
 		t.Errorf("expected new share, got %+v", got)
 	}
 	if deleteCalls != 1 {
@@ -820,63 +664,12 @@ func TestEnsureEnvironmentShare_409RaceWithDifferentAccess(t *testing.T) {
 	}
 }
 
-func TestEnsureEnvironmentShare_DowngradesAccess(t *testing.T) {
-	var deletedID string
-	postCalls := 0
-	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodGet {
-			json.NewEncoder(w).Encode(EnvironmentShareList{
-				Shares:     []EnvironmentShare{{ID: "s-rw", DocumentID: "doc-1", Access: []string{"read", "write"}}},
-				TotalCount: 1,
-			})
-			return
-		}
-		if r.Method == http.MethodPost {
-			postCalls++
-			json.NewEncoder(w).Encode(EnvironmentShare{ID: "s-r", DocumentID: "doc-1", Access: []string{"read"}})
-		}
-	})
-	mux.HandleFunc("/platform/document/v1/environment-shares/s-rw", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			deletedID = "s-rw"
-			w.WriteHeader(http.StatusNoContent)
-		}
-	})
-	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "notebook", Version: 1, IsPrivate: false})
-	})
-	h, cleanup := newDocTestHandler(t, mux)
-	defer cleanup()
-
-	got, err := h.EnsureEnvironmentShare("doc-1", "read")
-	if err != nil {
-		t.Fatalf("EnsureEnvironmentShare downgrade: %v", err)
-	}
-	if got.ID != "s-r" {
-		t.Errorf("expected new read-only share, got %+v", got)
-	}
-	if deletedID != "s-rw" {
-		t.Errorf("expected read-write share to be deleted, deletedID=%q", deletedID)
-	}
-	if postCalls != 1 {
-		t.Errorf("expected 1 create call, got %d", postCalls)
-	}
-}
-
-func TestEnsureEnvironmentShare_RetriesSetPublicOn409(t *testing.T) {
+// TestSetPrivate_RetriesOnVersionConflict: a 409 on the PATCH re-reads the
+// version and tries once more.
+func TestSetPrivate_RetriesOnVersionConflict(t *testing.T) {
 	patchCalls := 0
 	metaCalls := 0
 	mux := http.NewServeMux()
-	mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(EnvironmentShareList{
-			Shares:     []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
-			TotalCount: 1,
-		})
-	})
 	mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
 		metaCalls++
 		w.Header().Set("Content-Type", "application/json")
@@ -901,12 +694,12 @@ func TestEnsureEnvironmentShare_RetriesSetPublicOn409(t *testing.T) {
 	h, cleanup := newDocTestHandler(t, mux)
 	defer cleanup()
 
-	got, err := h.EnsureEnvironmentShare("doc-1", "read")
+	changed, err := h.SetPrivate("doc-1", false)
 	if err != nil {
-		t.Fatalf("EnsureEnvironmentShare should retry on version conflict: %v", err)
+		t.Fatalf("SetPrivate should retry on version conflict: %v", err)
 	}
-	if got.ID != "s1" {
-		t.Errorf("expected share s1, got %+v", got)
+	if !changed {
+		t.Error("expected changed=true")
 	}
 	if patchCalls != 2 {
 		t.Errorf("expected 2 PATCH calls (first 409, then retry), got %d", patchCalls)
@@ -960,7 +753,9 @@ func envLinkServer(t *testing.T, shares []EnvironmentShare, failDelete string) (
 
 // TestEnsureEnvironmentLink: a link never touches isPrivate, and an existing
 // share at another level is replaced only on request, because replacing it
-// changes the share ID and breaks the links already handed out.
+// changes the share ID and breaks the links already handed out. Without the
+// request it is a conflict, not a reuse: that would hand out a link at a level
+// nobody asked for.
 func TestEnsureEnvironmentLink(t *testing.T) {
 	readWrite := []EnvironmentShare{{ID: "s-rw", DocumentID: "doc-1", Access: []string{"read", "write"}}}
 	tests := []struct {
@@ -972,13 +767,14 @@ func TestEnsureEnvironmentLink(t *testing.T) {
 		wantShare    string
 		wantCreated  bool
 		wantReplaced string
+		wantConflict string
 	}{
 		{name: "creates a share when there is none", access: "read",
 			wantCalls: "POST read", wantShare: "s-new", wantCreated: true},
 		{name: "reuses a share at the same level", shares: readWrite, access: "read-write",
 			wantShare: "s-rw"},
-		{name: "keeps a share at another level without replace", shares: readWrite, access: "read",
-			wantShare: "s-rw"},
+		{name: "a share at another level without replace is a conflict", shares: readWrite, access: "read",
+			wantConflict: "s-rw"},
 		{name: "replaces a share at another level on request", shares: readWrite, access: "read", replace: true,
 			wantCalls: "DELETE s-rw; POST read", wantShare: "s-new", wantCreated: true, wantReplaced: "s-rw"},
 	}
@@ -987,11 +783,18 @@ func TestEnsureEnvironmentLink(t *testing.T) {
 			h, calls := envLinkServer(t, tt.shares, "")
 
 			res, err := h.EnsureEnvironmentLink("doc-1", tt.access, tt.replace)
-			if err != nil {
-				t.Fatalf("EnsureEnvironmentLink: %v", err)
-			}
 			if got := strings.Join(*calls, "; "); got != tt.wantCalls {
 				t.Errorf("calls = [%s], want [%s]", got, tt.wantCalls)
+			}
+			if tt.wantConflict != "" {
+				var existing *ExistingEnvironmentShareError
+				if !errors.As(err, &existing) || existing.Share.ID != tt.wantConflict {
+					t.Fatalf("error = %v, want an ExistingEnvironmentShareError for %s", err, tt.wantConflict)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("EnsureEnvironmentLink: %v", err)
 			}
 			if res.Share.ID != tt.wantShare || res.Created != tt.wantCreated {
 				t.Errorf("share = %s (created %v), want %s (created %v)",

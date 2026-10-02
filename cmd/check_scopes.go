@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtctl/pkg/auth"
@@ -256,8 +257,8 @@ var perCallScopeCommands = map[string]bool{
 
 // flagScopeRequirements are scopes that a flag adds to its command's catalog
 // requirement, keyed by `<verb> <resource>` and then by flag name. A key of the
-// form `<flag>=<value>` applies only when the flag is set to that value, for a
-// flag whose values reach different APIs.
+// form `<flag>=<value>` applies only when the flag is set to that value (or,
+// for a list flag, includes it), for a flag whose values reach different APIs.
 //
 // The catalog keys scopes by (verb, resource), so it cannot express "this flag
 // reaches a second API". `get documents --admin-access` lists documents as their
@@ -283,11 +284,12 @@ var flagScopeRequirements = map[string]map[string][]string{
 	"get dashboards": {"admin-access": {auth.DocumentAdminScope}},
 	"get notebooks":  {"admin-access": {auth.DocumentAdminScope}},
 
-	// --environment link works on environment shares, a second API next to the
-	// documents one: share lists and creates them (replacing one at another
-	// access level also deletes, but only with an explicit --access, so :delete
-	// is not listed), unshare lists and deletes them. --environment public only
-	// sets the document's isPrivate flag, which the documents scopes cover.
+	// --environment link (alone or in link,public) works on environment
+	// shares, a second API next to the documents one: share lists and creates
+	// them (replacing one at another access level also deletes, but only with
+	// an explicit --access, so :delete is not listed), unshare lists and
+	// deletes them. --environment public only sets the document's isPrivate
+	// flag, which the documents scopes cover.
 	"share document":    {"environment=link": {"document:environment-shares:read", "document:environment-shares:write"}},
 	"share dashboard":   {"environment=link": {"document:environment-shares:read", "document:environment-shares:write"}},
 	"share notebook":    {"environment=link": {"document:environment-shares:read", "document:environment-shares:write"}},
@@ -341,7 +343,7 @@ func flagContributedScopes(c *cobra.Command, verb, resource string) []string {
 		var on bool
 		switch {
 		case byValue:
-			on = f.Changed && f.Value.String() == value
+			on = f.Changed && flagHasValue(f, value)
 		case f.Value.Type() == "bool":
 			v, err := c.Flags().GetBool(name)
 			on = err == nil && v
@@ -677,4 +679,17 @@ func subtractScopes(required, granted []string) []string {
 	}
 	sort.Strings(missing)
 	return missing
+}
+
+// flagHasValue reports whether f is set to value or, for a list flag, lists it.
+func flagHasValue(f *pflag.Flag, value string) bool {
+	if sv, ok := f.Value.(pflag.SliceValue); ok {
+		for _, v := range sv.GetSlice() {
+			if strings.TrimSpace(v) == value {
+				return true
+			}
+		}
+		return false
+	}
+	return f.Value.String() == value
 }
