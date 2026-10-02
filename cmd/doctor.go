@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtctl/pkg/auth"
 	"github.com/dynatrace-oss/dtctl/pkg/client"
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
@@ -147,26 +148,33 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 	}
 
 	// 5. Keyring status
-	if keyringErr := checkKeyringFunc(); keyringErr != nil {
-		if config.IsFileTokenStorage() {
-			results = append(results, checkResult{
-				Name:   "Token storage",
-				Status: "ok",
-				Detail: fmt.Sprintf("file-based (%s=file); keyring unavailable: %v", config.EnvTokenStorage, keyringErr),
-			})
-		} else {
-			detail := fmt.Sprintf("%s: %v", config.KeyringBackend(), keyringErr)
-			if strings.Contains(keyringErr.Error(), config.ErrMsgCollectionUnlock) {
-				detail += " (run 'dtctl auth login' to create the collection automatically)"
-			}
-			detail += fmt.Sprintf(" (set %s=file to use file-based token storage)", config.EnvTokenStorage)
-			results = append(results, checkResult{
-				Name:   "Token storage",
-				Status: "warn",
-				Detail: detail,
-			})
+	storageIdx := len(results)
+	keyringErr := checkKeyringFunc()
+	switch {
+	case config.IsFileTokenStorage():
+		// Explicit file storage bypasses the keyring for OAuth tokens, so a
+		// reachable keyring is not where they go.
+		detail := fmt.Sprintf("file-based (%s=file)", config.EnvTokenStorage)
+		if keyringErr != nil {
+			detail += fmt.Sprintf("; keyring unavailable: %v", keyringErr)
 		}
-	} else {
+		results = append(results, checkResult{
+			Name:   "Token storage",
+			Status: "ok",
+			Detail: detail,
+		})
+	case keyringErr != nil:
+		detail := fmt.Sprintf("%s: %v", config.KeyringBackend(), keyringErr)
+		if strings.Contains(keyringErr.Error(), config.ErrMsgCollectionUnlock) {
+			detail += " (run 'dtctl auth login' to create the collection automatically)"
+		}
+		detail += fmt.Sprintf(" (set %s=file to use file-based token storage)", config.EnvTokenStorage)
+		results = append(results, checkResult{
+			Name:   "Token storage",
+			Status: "warn",
+			Detail: detail,
+		})
+	default:
 		results = append(results, checkResult{
 			Name:   "Token storage",
 			Status: "ok",
@@ -189,12 +197,38 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 		return results
 	}
 
+	// OAuth session state (only applies when the stored token is OAuth). It is
+	// read before the Token row is built because it knows which store the
+	// token was actually found in.
+	session, sessionErr := buildSessionStatusFunc(cfg.CurrentContext, ctx, ctx.TokenRef)
+	oauthSession := sessionErr == nil && session.IsOAuth
+
 	tokenSource := "config file"
-	if config.IsKeyringAvailable() {
+	switch {
+	case oauthSession && session.storage == auth.TokenStorageFile:
+		tokenSource = fmt.Sprintf("file store (%s)", session.Storage)
+	case oauthSession && session.storage == auth.TokenStorageKeyring:
+		tokenSource = fmt.Sprintf("keyring (%s)", session.Storage)
+	case config.IsKeyringAvailable():
 		tokenSource = fmt.Sprintf("keyring (%s)", config.KeyringBackend())
-	} else if config.IsFileTokenStorage() {
+	case config.IsFileTokenStorage():
 		tokenSource = fmt.Sprintf("file store (%s)", config.OAuthStorageBackend())
 	}
+
+	// The keyring probe only tests reads. A keyring that answers reads but
+	// refused the write (macOS `security` exit status 44) leaves the OAuth
+	// token in the file store, so the probe's "ok" would name the wrong
+	// backend (#393).
+	if oauthSession && session.storage == auth.TokenStorageFile &&
+		!config.IsFileTokenStorage() && results[storageIdx].Status == "ok" {
+		results[storageIdx] = checkResult{
+			Name:   "Token storage",
+			Status: "warn",
+			Detail: fmt.Sprintf("%s is reachable, but OAuth token %q is stored in %s, not the keyring (set %s=file to make file storage explicit)",
+				config.KeyringBackend(), ctx.TokenRef, session.Storage, config.EnvTokenStorage),
+		}
+	}
+
 	// Mask token for display
 	maskedToken := token
 	if len(token) > 8 {
@@ -206,8 +240,6 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 		Detail: fmt.Sprintf("retrieved from %s (%s)", tokenSource, maskedToken),
 	})
 
-	// OAuth session state (only applies when the stored token is OAuth)
-	session, sessionErr := buildSessionStatusFunc(cfg.CurrentContext, ctx, ctx.TokenRef)
 	if sessionErr != nil {
 		results = append(results, checkResult{
 			Name:   "OAuth session",

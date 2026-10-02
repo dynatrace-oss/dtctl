@@ -70,6 +70,11 @@ type SessionStatus struct {
 	// token's own scope claim, an audience-reduced subset of the grant. Such a
 	// list is fine to display but cannot prove a scope is missing.
 	grantedScopesPartial bool
+
+	// storage is the store the token was actually read from (Storage is its
+	// label). doctor compares it with the keyring probe, which only tests reads
+	// and so cannot see a keyring that refused the write.
+	storage auth.TokenStorage
 }
 
 // buildSessionStatusFunc builds a SessionStatus for a given context + token name.
@@ -92,14 +97,18 @@ func buildSessionStatus(contextName string, ctx *config.Context, tokenName strin
 		return nil, err
 	}
 
-	stored, err := tokenManager.GetTokenInfo(tokenName)
+	stored, storage, err := tokenManager.GetTokenInfoWithStorage(tokenName)
 	if err != nil || stored == nil {
 		// Not an OAuth token (e.g. platform token) or not stored yet.
 		return status, nil
 	}
 
 	status.IsOAuth = true
-	status.Storage = config.OAuthStorageBackend()
+	// Report the store the token was found in, not the keyring probe: a keyring
+	// that answers reads but refused the write leaves the token in the file
+	// store while the probe still succeeds (#393).
+	status.storage = storage
+	status.Storage = storage.Label()
 	status.AccessTokenPresent = stored.AccessToken != ""
 	if !stored.ExpiresAt.IsZero() {
 		t := stored.ExpiresAt

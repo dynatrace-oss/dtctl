@@ -363,48 +363,54 @@ func refreshBufferFor(tokens *TokenSet) time.Duration {
 
 // loadToken loads a token from storage
 func (tm *TokenManager) loadToken(tokenName string) (*StoredToken, error) {
+	stored, _, err := tm.loadTokenWithStorage(tokenName)
+	return stored, err
+}
+
+// loadTokenWithStorage loads a token and reports the store it was read from.
+// The store is the one the token was actually found in, so it reflects a
+// saveToken fallback to the file store even when the keyring is reachable.
+func (tm *TokenManager) loadTokenWithStorage(tokenName string) (*StoredToken, TokenStorage, error) {
 	keyringName := tm.getKeyringName(tokenName)
 
 	// File storage explicitly requested — bypass keyring entirely.
 	if tm.deps.fileStoreAvailable() {
 		data, err := tm.deps.fileGetToken(keyringName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load token from file store: %w", err)
+			return nil, "", fmt.Errorf("failed to load token from file store: %w", err)
 		}
-		var stored StoredToken
-		if err := json.Unmarshal([]byte(data), &stored); err != nil {
-			return nil, fmt.Errorf("failed to parse stored token: %w", err)
-		}
-		return &stored, nil
+		return parseStoredToken(data, TokenStorageFile)
 	}
 
 	// Try to load from keyring
 	if tm.deps.keyringAvailable() {
 		data, err := tm.deps.getToken(tm.tokenStore, keyringName)
 		if err == nil {
-			var stored StoredToken
-			if err := json.Unmarshal([]byte(data), &stored); err != nil {
-				return nil, fmt.Errorf("failed to parse stored token: %w", err)
-			}
-			return &stored, nil
+			return parseStoredToken(data, TokenStorageKeyring)
 		}
 		// Non-"not found" errors are fatal (e.g. keyring locked or corrupted).
 		if !strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("failed to load token from keyring: %w", err)
+			return nil, "", fmt.Errorf("failed to load token from keyring: %w", err)
 		}
-		// Token not in keyring — may have been saved to file as a size-limit fallback.
-		// Also try file store before returning an error.
+		// Token not in keyring — saveToken may have fallen back to the file
+		// store (size limit, or the keyring refused the write). Also try the
+		// file store before returning an error.
 		if data, fileErr := tm.deps.fileGetToken(keyringName); fileErr == nil {
-			var stored StoredToken
-			if err := json.Unmarshal([]byte(data), &stored); err != nil {
-				return nil, fmt.Errorf("failed to parse stored token: %w", err)
-			}
-			return &stored, nil
+			return parseStoredToken(data, TokenStorageFile)
 		}
-		return nil, fmt.Errorf("failed to load token from keyring: %w", err)
+		return nil, "", fmt.Errorf("failed to load token from keyring: %w", err)
 	}
 
-	return nil, fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
+	return nil, "", fmt.Errorf("OAuth tokens require a storage backend (keyring or file); set %s=file to use file-based storage", EnvTokenStorage)
+}
+
+// parseStoredToken decodes a stored token read from storage.
+func parseStoredToken(data string, storage TokenStorage) (*StoredToken, TokenStorage, error) {
+	var stored StoredToken
+	if err := json.Unmarshal([]byte(data), &stored); err != nil {
+		return nil, "", fmt.Errorf("failed to parse stored token: %w", err)
+	}
+	return &stored, storage, nil
 }
 
 // saveToken saves a token to storage.
@@ -448,6 +454,7 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 			}
 			if setErr := tm.deps.setToken(tm.tokenStore, keyringName, string(data)); setErr == nil {
 				tm.syncScopeCompanion(keyringName, stored.Scope, enc.Scope)
+				recordSavedStorage(TokenStorageKeyring)
 				return nil
 			} else {
 				lastErr = setErr
@@ -463,6 +470,9 @@ func (tm *TokenManager) saveToken(tokenName string, stored *StoredToken) error {
 				// reads the full token — scope included — from the file next time.
 				_ = tm.deps.deleteToken(tm.tokenStore, keyringName)
 				_ = tm.deps.deleteToken(tm.tokenStore, keyringName+scopeCompanionSuffix)
+				// The keyring probe still reports the keyring as reachable, so
+				// record the real sink for OAuthStorageBackend.
+				recordSavedStorage(TokenStorageFile)
 				return nil
 			}
 		}
@@ -617,6 +627,15 @@ func (tm *TokenManager) getKeyringName(tokenName string) string {
 // GetTokenInfo retrieves information about a stored OAuth token
 func (tm *TokenManager) GetTokenInfo(tokenName string) (*StoredToken, error) {
 	return tm.loadToken(tokenName)
+}
+
+// GetTokenInfoWithStorage is GetTokenInfo plus the store the token was read
+// from. The store is detected from where the token actually is, not from a
+// keyring probe, so it is correct in any later process — including after
+// saveToken fell back to the file store because the keyring refused the write
+// while still answering reads.
+func (tm *TokenManager) GetTokenInfoWithStorage(tokenName string) (*StoredToken, TokenStorage, error) {
+	return tm.loadTokenWithStorage(tokenName)
 }
 
 // IsTokenExpired checks if a token is expired
