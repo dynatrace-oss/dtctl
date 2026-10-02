@@ -574,40 +574,56 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 	return share, nil
 }
 
-// RemoveEnvironmentShares is the inverse of EnsureEnvironmentShare: it deletes
-// the document's environment shares and marks the document private again
-// (isPrivate=true), since isPrivate=false on its own still lets everyone in the
-// environment read the document. A non-empty access deletes only shares at
-// exactly that level. Direct (user/group) shares are left alone.
+// RemoveEnvironmentShares is the inverse of EnsureEnvironmentShare: it marks
+// the document private again (isPrivate=true), since isPrivate=false on its own
+// still lets everyone in the environment read the document, and deletes its
+// environment shares. A non-empty access deletes only shares at exactly that
+// level. Direct (user/group) shares are left alone.
 //
-// The document is made private only once no environment share remains, and
-// only when access is empty or a share was actually deleted, so a filter that
-// matched nothing changes nothing. It reports how many shares were deleted and
-// whether the isPrivate flag had to be flipped.
+// The document is made private first and the shares are deleted afterwards, so
+// a failure partway through leaves the document private rather than public
+// without a share. It is made private only when no environment share will
+// remain, and only when access is empty or a share matches, so a filter that
+// matches nothing changes nothing. It reports how many shares were deleted and
+// whether the isPrivate flag had to be flipped; every error says what state
+// the document was left in.
 func (h *Handler) RemoveEnvironmentShares(documentID, access string) (deleted int, madePrivate bool, err error) {
 	existing, err := h.sdk.ListEnvironmentShares(context.Background(), documentID)
 	if err != nil {
 		return 0, false, err
 	}
 
+	var toDelete []string
 	remaining := 0
 	for _, s := range existing.Shares {
 		if access != "" && !s.ExactAccess(access) {
 			remaining++
 			continue
 		}
-		if err := h.sdk.DeleteEnvironmentShare(context.Background(), s.ID); err != nil {
-			return deleted, false, fmt.Errorf("failed to delete environment share %s: %w", s.ID, err)
-		}
-		deleted++
+		toDelete = append(toDelete, s.ID)
 	}
 
-	if remaining > 0 || (access != "" && deleted == 0) {
-		return deleted, false, nil
+	private := false
+	if remaining == 0 && (access == "" || len(toDelete) > 0) {
+		madePrivate, err = h.setPrivate(documentID, true)
+		if err != nil {
+			return 0, false, fmt.Errorf("could not make the document private, so no environment share was deleted "+
+				"and the document is unchanged: %w", err)
+		}
+		private = true
 	}
-	madePrivate, err = h.setPrivate(documentID, true)
-	if err != nil {
-		return deleted, false, fmt.Errorf("environment shares removed but %w", err)
+
+	for _, id := range toDelete {
+		if err := h.sdk.DeleteEnvironmentShare(context.Background(), id); err != nil {
+			state := "the document's visibility is unchanged"
+			if private {
+				state = "the document is private"
+			}
+			return deleted, madePrivate, fmt.Errorf("%s, but deleting environment share %s failed "+
+				"(%d of %d environment share(s) deleted; re-run to remove the rest): %w",
+				state, id, deleted, len(toDelete), err)
+		}
+		deleted++
 	}
 	return deleted, madePrivate, nil
 }
