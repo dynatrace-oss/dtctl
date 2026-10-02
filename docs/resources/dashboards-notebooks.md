@@ -20,7 +20,7 @@ Dynatrace dashboards and notebooks are managed as documents. dtctl supports the 
 | get | dashboards | `dtctl get dashboards` | Display one or many resources | no | read |
 | history | dashboard | `dtctl history dashboard` | Show version history of resources | no | read |
 | restore | dashboard | `dtctl restore dashboard` | Restore resources to a previous version | yes | write |
-| share | dashboard | `dtctl share dashboard` | Share documents with users or groups | yes | write |
+| share | dashboard | `dtctl share dashboard` | Share documents with users, groups, or the environment | yes | write |
 | unshare | dashboard | `dtctl unshare dashboard` | Remove sharing from documents | yes | write |
 | create | notebook | `dtctl create notebook` | Create resources from files | yes | write |
 | delete | notebook | `dtctl delete notebook` | Delete resources | yes | delete |
@@ -29,7 +29,7 @@ Dynatrace dashboards and notebooks are managed as documents. dtctl supports the 
 | get | notebooks | `dtctl get notebooks` | Display one or many resources | no | read |
 | history | notebook | `dtctl history notebook` | Show version history of resources | no | read |
 | restore | notebook | `dtctl restore notebook` | Restore resources to a previous version | yes | write |
-| share | notebook | `dtctl share notebook` | Share documents with users or groups | yes | write |
+| share | notebook | `dtctl share notebook` | Share documents with users, groups, or the environment | yes | write |
 | unshare | notebook | `dtctl unshare notebook` | Remove sharing from documents | yes | write |
 
 

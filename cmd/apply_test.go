@@ -83,9 +83,13 @@ func TestEnsureEnvironmentShareForResults_SkipsNonDocuments(t *testing.T) {
 		&apply.WorkflowApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "wf-1", ResourceType: "workflow"}},
 		&apply.SLOApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "slo-1", ResourceType: "slo"}},
 		&apply.DashboardApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "db-1", ResourceType: "dashboard"}},
+		&apply.DocumentApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "lp-1", ResourceType: "launchpad"}},
 	}
 	if err := ensureEnvironmentShareForResults(c, results, "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := counts["lp-1"]; got == nil || atomic.LoadInt64(got) != 1 {
+		t.Errorf("expected launchpad lp-1 to be shared once, counts=%v", counts)
 	}
 	if got := counts["nb-1"]; got == nil || atomic.LoadInt64(got) != 1 {
 		t.Errorf("expected notebook nb-1 to be shared once, counts=%v", counts)

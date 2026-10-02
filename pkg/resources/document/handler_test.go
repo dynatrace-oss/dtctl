@@ -916,6 +916,92 @@ func TestEnsureEnvironmentShare_RetriesSetPublicOn409(t *testing.T) {
 	}
 }
 
+func TestRemoveEnvironmentShares(t *testing.T) {
+	tests := []struct {
+		name        string
+		shares      []EnvironmentShare
+		isPrivate   bool
+		access      string
+		wantDeleted []string
+		wantPatch   string // isPrivate value PATCHed, "" for no PATCH
+		wantMade    bool
+	}{
+		{
+			name:        "deletes the share and makes the document private",
+			shares:      []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read"}}},
+			wantDeleted: []string{"s1"},
+			wantPatch:   "true",
+			wantMade:    true,
+		},
+		{
+			name:        "access filter deletes only the exact match",
+			shares:      []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read", "write"}}},
+			access:      "read-write",
+			wantDeleted: []string{"s1"},
+			wantPatch:   "true",
+			wantMade:    true,
+		},
+		{
+			name:   "access filter that matches nothing changes nothing",
+			shares: []EnvironmentShare{{ID: "s1", DocumentID: "doc-1", Access: []string{"read", "write"}}},
+			access: "read",
+		},
+		{
+			name:      "public document without a share is made private",
+			wantPatch: "true",
+			wantMade:  true,
+		},
+		{
+			name:      "private document without a share is left alone",
+			isPrivate: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var deleted []string
+			patched := ""
+			mux := http.NewServeMux()
+			mux.HandleFunc("/platform/document/v1/environment-shares", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(EnvironmentShareList{Shares: tt.shares, TotalCount: len(tt.shares)})
+			})
+			mux.HandleFunc("/platform/document/v1/environment-shares/", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodDelete {
+					deleted = append(deleted, strings.TrimPrefix(r.URL.Path, "/platform/document/v1/environment-shares/"))
+					w.WriteHeader(http.StatusNoContent)
+				}
+			})
+			mux.HandleFunc("/platform/document/v1/documents/doc-1/metadata", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(DocumentMetadata{ID: "doc-1", Name: "doc", Type: "launchpad", Version: 2, IsPrivate: tt.isPrivate})
+			})
+			mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPatch {
+					_ = r.ParseMultipartForm(1 << 20)
+					patched = r.FormValue("isPrivate")
+					w.WriteHeader(http.StatusOK)
+				}
+			})
+			h, cleanup := newDocTestHandler(t, mux)
+			defer cleanup()
+
+			n, made, err := h.RemoveEnvironmentShares("doc-1", tt.access)
+			if err != nil {
+				t.Fatalf("RemoveEnvironmentShares: %v", err)
+			}
+			if n != len(tt.wantDeleted) || strings.Join(deleted, ",") != strings.Join(tt.wantDeleted, ",") {
+				t.Errorf("deleted %v (n=%d), want %v", deleted, n, tt.wantDeleted)
+			}
+			if patched != tt.wantPatch {
+				t.Errorf("PATCH isPrivate = %q, want %q", patched, tt.wantPatch)
+			}
+			if made != tt.wantMade {
+				t.Errorf("madePrivate = %v, want %v", made, tt.wantMade)
+			}
+		})
+	}
+}
+
 // --- documentListItemToDocument / ConvertToDocuments ---
 
 func TestConvertToDocuments(t *testing.T) {

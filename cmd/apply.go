@@ -330,7 +330,7 @@ func init() {
 	applyCmd.Flags().StringArray("label", []string{}, "document classification label (repeatable); replaces the document's labels, overriding any in the payload (labels cannot be cleared, only replaced)")
 	applyCmd.Flags().Bool("create-snapshot", false, "snapshot the document's current state before updating it, so the previous version stays available via 'dtctl history'/'dtctl restore' (documents only)")
 	applyCmd.Flags().String("snapshot-description", "", "description for the snapshot created by --create-snapshot (max 128 characters)")
-	applyCmd.Flags().String("share-environment", "", "share the applied notebook/dashboard with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")
+	applyCmd.Flags().String("share-environment", "", "share the applied document (dashboard, notebook, launchpad, ...) with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")
 	applyCmd.Flags().Lookup("share-environment").NoOptDefVal = "read"
 
 	markFlagRequiredNonEmpty(applyCmd, "file")
@@ -347,7 +347,8 @@ func validateShareEnvironmentValue(v string) error {
 	}
 }
 
-// ensureEnvironmentShareForResults walks apply results and creates an environment share for every notebook/dashboard.
+// ensureEnvironmentShareForResults walks apply results and creates an environment share for every
+// document (dashboards, notebooks, and documents of any other type such as launchpads).
 // Other resource types are silently skipped — environment shares only apply to documents.
 //
 // Per-document failures do not abort the walk: we attempt a share for every eligible
@@ -357,11 +358,11 @@ func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyRes
 	handler := document.NewHandler(c)
 	var errs []error
 	for _, r := range results {
-		base := extractApplyBase(r)
-		if base == nil {
+		if !isDocumentApplyResult(r) {
 			continue
 		}
-		if base.ResourceType != "notebook" && base.ResourceType != "dashboard" {
+		base := extractApplyBase(r)
+		if base == nil {
 			continue
 		}
 		if base.ID == "" {
@@ -385,6 +386,18 @@ func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyRes
 		ids = append(ids, e.Error())
 	}
 	return fmt.Errorf("%d documents failed to share: %s", len(errs), strings.Join(ids, "; "))
+}
+
+// isDocumentApplyResult reports whether an apply result is a Document Service
+// document, the only kind of resource an environment share applies to.
+func isDocumentApplyResult(r apply.ApplyResult) bool {
+	switch r.(type) {
+	case *apply.DashboardApplyResult, apply.DashboardApplyResult,
+		*apply.NotebookApplyResult, apply.NotebookApplyResult,
+		*apply.DocumentApplyResult, apply.DocumentApplyResult:
+		return true
+	}
+	return false
 }
 
 // Declared stable: the invocation and output contract of this command is

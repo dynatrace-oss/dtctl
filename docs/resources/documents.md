@@ -20,7 +20,7 @@ Dashboards and notebooks (see [Dashboards & Notebooks](dashboards-notebooks.md))
 | get | documents | `dtctl get documents` | Display one or many resources | no | read |
 | history | document | `dtctl history document` | Show version history of resources | no | read |
 | restore | document | `dtctl restore document` | Restore resources to a previous version | yes | write |
-| share | document | `dtctl share document` | Share documents with users or groups | yes | write |
+| share | document | `dtctl share document` | Share documents with users, groups, or the environment | yes | write |
 | unshare | document | `dtctl unshare document` | Remove sharing from documents | yes | write |
 | update | document | `dtctl update document` | Update resources | yes | write |
 | delete | trash | `dtctl delete trash` | Delete resources | yes | delete |
@@ -97,6 +97,18 @@ dtctl update document -f doc.yaml --label team-a --label env:prod
 # Query labels back
 dtctl get documents --add-fields labels
 dtctl get document acme-config -o yaml   # labels appear at the top level
+```
+
+Share a document of any type with users, groups, or everyone in the environment. `--environment` creates an environment share at the `--access` level and marks the document public; `unshare --environment` removes it and marks the document private again (`--all` removes user and group shares only):
+
+```bash
+dtctl share document my-launchpad --user user-sso-id --access read-write
+dtctl share document my-launchpad --environment
+dtctl share document my-launchpad --environment --access read-write
+dtctl unshare document my-launchpad --environment
+
+# Or share with the environment as part of an apply
+dtctl apply -f launchpad.yaml --share-environment
 ```
 
 Version history and deletion (same commands work for `document` or `trash`):

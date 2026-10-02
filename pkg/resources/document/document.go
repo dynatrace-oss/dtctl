@@ -568,30 +568,86 @@ func (h *Handler) EnsureEnvironmentShare(documentID, access string) (*Environmen
 	if err != nil {
 		return nil, err
 	}
-
-	// Flip the document to public. Fetch current version for optimistic locking.
-	meta, err := h.sdk.GetMetadata(context.Background(), documentID)
-	if err != nil {
-		return share, fmt.Errorf("share created but could not read document metadata to flip isPrivate: %w", err)
-	}
-	if meta.IsPrivate {
-		if err := h.sdk.SetDocumentPublic(context.Background(), documentID, meta.Version); err != nil {
-			if !errors.Is(err, sdkdocument.ErrVersionConflict) {
-				return share, err
-			}
-			// Retry once: re-fetch metadata and try again.
-			meta, err = h.sdk.GetMetadata(context.Background(), documentID)
-			if err != nil {
-				return share, fmt.Errorf("share created but retry metadata fetch failed: %w", err)
-			}
-			if meta.IsPrivate {
-				if err := h.sdk.SetDocumentPublic(context.Background(), documentID, meta.Version); err != nil {
-					return share, err
-				}
-			}
-		}
+	if _, err := h.setPrivate(documentID, false); err != nil {
+		return share, fmt.Errorf("share created but %w", err)
 	}
 	return share, nil
+}
+
+// RemoveEnvironmentShares is the inverse of EnsureEnvironmentShare: it deletes
+// the document's environment shares and marks the document private again
+// (isPrivate=true), since isPrivate=false on its own still lets everyone in the
+// environment read the document. A non-empty access deletes only shares at
+// exactly that level. Direct (user/group) shares are left alone.
+//
+// The document is made private only once no environment share remains, and
+// only when access is empty or a share was actually deleted, so a filter that
+// matched nothing changes nothing. It reports how many shares were deleted and
+// whether the isPrivate flag had to be flipped.
+func (h *Handler) RemoveEnvironmentShares(documentID, access string) (deleted int, madePrivate bool, err error) {
+	existing, err := h.sdk.ListEnvironmentShares(context.Background(), documentID)
+	if err != nil {
+		return 0, false, err
+	}
+
+	remaining := 0
+	for _, s := range existing.Shares {
+		if access != "" && !s.ExactAccess(access) {
+			remaining++
+			continue
+		}
+		if err := h.sdk.DeleteEnvironmentShare(context.Background(), s.ID); err != nil {
+			return deleted, false, fmt.Errorf("failed to delete environment share %s: %w", s.ID, err)
+		}
+		deleted++
+	}
+
+	if remaining > 0 || (access != "" && deleted == 0) {
+		return deleted, false, nil
+	}
+	madePrivate, err = h.setPrivate(documentID, true)
+	if err != nil {
+		return deleted, false, fmt.Errorf("environment shares removed but %w", err)
+	}
+	return deleted, madePrivate, nil
+}
+
+// setPrivate sets the document's isPrivate flag, reading the current version
+// for optimistic locking and retrying once on a version conflict. It reports
+// whether the flag had to change.
+func (h *Handler) setPrivate(documentID string, private bool) (bool, error) {
+	set := h.sdk.SetDocumentPublic
+	if private {
+		set = h.sdk.SetDocumentPrivate
+	}
+
+	meta, err := h.sdk.GetMetadata(context.Background(), documentID)
+	if err != nil {
+		return false, fmt.Errorf("could not read document metadata to set isPrivate=%t: %w", private, err)
+	}
+	if meta.IsPrivate == private {
+		return false, nil
+	}
+	err = set(context.Background(), documentID, meta.Version)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, sdkdocument.ErrVersionConflict) {
+		return false, err
+	}
+
+	// Retry once: re-fetch metadata and try again.
+	meta, err = h.sdk.GetMetadata(context.Background(), documentID)
+	if err != nil {
+		return false, fmt.Errorf("retry metadata fetch failed: %w", err)
+	}
+	if meta.IsPrivate == private {
+		return false, nil
+	}
+	if err := set(context.Background(), documentID, meta.Version); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ensureShareAtAccess handles the share creation/replacement logic, including 409 race recovery.
