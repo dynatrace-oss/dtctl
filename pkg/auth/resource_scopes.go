@@ -380,6 +380,9 @@ func (s *scopeSet) addReadTier(extended bool) {
 	s.addResource("scheduling-rule", AccessRead)
 	s.addResource("dashboard", AccessRead)
 	s.add("document:direct-shares:read", "document:trash.documents:read")
+	// Claiming a share only grants the caller access to a document someone else
+	// chose to share with them, so every level can request it.
+	s.addResource("environment-share", AccessClaim)
 	s.addResource("slo", AccessRead)
 	s.addResource("setting", AccessRead)
 	s.addResource("settings-schema", AccessRead)
@@ -424,7 +427,6 @@ func (s *scopeSet) addMineWrites() {
 	s.addResource("analyzer", AccessRun)
 	s.add("davis-copilot:conversations:execute")
 	s.addResource("function", AccessRun)
-	s.addResource("environment-share", AccessClaim)
 	s.add("email:emails:send", "dev-obs:breakpoints:set")
 }
 

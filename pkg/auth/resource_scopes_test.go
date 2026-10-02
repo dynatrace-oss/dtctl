@@ -12,7 +12,7 @@ import (
 // preserving: login must request exactly the same scopes as before. Update this
 // table only with an intentional, reviewed change to login behavior.
 var baselineScopes = map[config.SafetyLevel][]string{
-	config.SafetyLevelReadOnly: { // 41 scopes
+	config.SafetyLevelReadOnly: { // 42 scopes
 		"openid",
 		"offline_access",
 		"automation:workflows:read",
@@ -20,6 +20,7 @@ var baselineScopes = map[config.SafetyLevel][]string{
 		"document:documents:read",
 		"document:direct-shares:read",
 		"document:trash.documents:read",
+		"document:environment-shares:claim",
 		"slo:slos:read",
 		"slo:objective-templates:read",
 		"settings:objects:read",

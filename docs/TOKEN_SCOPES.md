@@ -31,6 +31,7 @@ This level does not include the Live Debugger write scope `dev-obs:breakpoints:s
 document:documents:read,
 document:direct-shares:read,
 document:trash.documents:read,
+document:environment-shares:claim,
 automation:workflows:read,
 slo:slos:read,
 slo:objective-templates:read,
