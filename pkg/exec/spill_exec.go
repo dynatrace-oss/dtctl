@@ -2,7 +2,6 @@ package exec
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,7 +53,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	// in the display encoding (D24); a spill file keeps the full rows.
 	inline := newInlineRows(records, compaction, opts.MaxFieldChars)
 	inline.types = emittedTypes(result, opts)
-	measured, encoding := measureInline(inline, displayFormat, inlineIndented(opts))
+	measured, encoding := measureInline(inline, displayFormat, inlineLayout(opts, displayFormat))
 	switch opts.Spill.Mode {
 	case SpillAuto:
 		if measured <= opts.Spill.Threshold {
@@ -400,43 +399,53 @@ func compactionFor(records []map[string]interface{}, opts DQLExecuteOptions) *ou
 	return &c
 }
 
-// inlineIndented reports whether this invocation would print its inline rows
-// as indented JSON, which is the layout the spill decision has to measure: a
-// compact agent envelope piped to a model is about 2.5x smaller than the same
-// rows indented (#570). It asks the same question EncodeEnvelope does, of the
-// same writer.
-func inlineIndented(opts DQLExecuteOptions) bool {
-	return output.EmittedJSONIndented(os.Stdout, opts.AgentMode)
+// inlineLayout is the JSON layout this invocation would print its inline rows
+// in, which is what the spill decision has to measure (#570). In agent mode the
+// rows go into an envelope and EnvelopeRecordsLayout asks the question
+// EncodeEnvelope does, of the same writer: compact when piped, as for an agent
+// (up to about 2.5x smaller than the same rows indented, for narrow rows), and indented at the depth
+// of result.records on a terminal. Outside agent mode printRecords prints
+// {"records": [...]} with the indenting JSON printer, or one compact row per
+// line for -o jsonl.
+func inlineLayout(opts DQLExecuteOptions, format string) output.JSONLayout {
+	if opts.AgentMode {
+		return output.EnvelopeRecordsLayout(os.Stdout)
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "jsonl", "ndjson":
+		return output.JSONLayout{}
+	}
+	return output.IndentedJSONLayout(1)
 }
 
 // measureInline measures the inline payload in the display encoding, laid out
-// as the writer will print it (indent, see inlineIndented): the rows as emitted
-// plus, when compacting, the constant map they share, and the type block when
-// one rides along. Under -o auto with compaction the encoding is chosen from
-// the compacted table (constant and all-null columns removed), since that is
-// what gets encoded; the returned encoding is the chosen one.
-func measureInline(rows inlineRows, format string, indent bool) (int64, string) {
-	n, enc := measureInlineRows(rows, format, indent)
+// as the writer will print it (see inlineLayout): the rows as emitted plus,
+// when compacting, the constant map they share, and the type block when one
+// rides along. Both sit beside the rows, at their depth. Under -o auto with
+// compaction the encoding is chosen from the compacted table (constant and
+// all-null columns removed), since that is what gets encoded; the returned
+// encoding is the chosen one.
+func measureInline(rows inlineRows, format string, layout output.JSONLayout) (int64, string) {
+	n, enc := measureInlineRows(rows, format, layout)
 	if rows.types != nil {
 		// Like constant, the type block is always native JSON in the envelope.
-		if b, err := json.Marshal(rows.types); err == nil {
-			n += int64(len(b))
-		}
+		m, _ := output.MeasureSerializedBytes(rows.types, "json", layout)
+		n += m
 	}
 	return n, enc
 }
 
-func measureInlineRows(rows inlineRows, format string, indent bool) (int64, string) {
+func measureInlineRows(rows inlineRows, format string, layout output.JSONLayout) (int64, string) {
 	if rows.compaction == nil {
-		return output.MeasureSerializedBytes(rows.records, format, indent)
+		return output.MeasureSerializedBytes(rows.records, format, layout)
 	}
 	if output.IsAutoFormat(format) {
 		format = output.ChooseAutoFormat(rows.tabular).Format
 	}
-	n, enc := output.MeasureSerializedBytes(rows.forEncoding(output.NormalizeMeasureEncoding(format)), format, indent)
+	n, enc := output.MeasureSerializedBytes(rows.forEncoding(output.NormalizeMeasureEncoding(format)), format, layout)
 	if len(rows.constant) > 0 {
 		// constant is always a JSON map in the envelope, whatever encodes the rows.
-		m, _ := output.MeasureSerializedBytes([]map[string]interface{}{rows.constant}, "json", indent)
+		m, _ := output.MeasureSerializedBytes(rows.constant, "json", layout)
 		n += m
 	}
 	return n, enc

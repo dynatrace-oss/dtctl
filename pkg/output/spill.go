@@ -323,6 +323,22 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 	})
 }
 
+// JSONLayout is how a JSON value is laid out where it is printed: compact (the
+// zero value), or indented by Indent per level with every line after the first
+// carrying Prefix, the indentation of the depth the value sits at inside its
+// document. Measuring a value with the layout it is printed in counts exactly
+// the bytes it takes there.
+type JSONLayout struct {
+	Prefix string
+	Indent string
+}
+
+// IndentedJSONLayout is the layout of a value depth levels deep in a document
+// printed with the JSON printer's 2-space indentation; depth 0 is the root.
+func IndentedJSONLayout(depth int) JSONLayout {
+	return JSONLayout{Prefix: strings.Repeat(jsonIndent, depth), Indent: jsonIndent}
+}
+
 // MeasureSerializedBytes serialises records in the chosen display encoding and
 // returns the byte count plus the normalised encoding name used (D24). The
 // threshold is measured against the actual encoding the invocation will emit so
@@ -330,12 +346,15 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 // receive (50 KB of JSON ≠ 50 KB of toon). table/wide/chart-style formats are
 // measured as json because that is what agent mode actually emits.
 //
-// indent selects the JSON layout, and the caller passes the one the rows'
-// writer actually emits, as EmittedJSONIndented reports it. An agent envelope
-// piped to a tool or a model is compact JSON; measuring it with the printer's
-// indentation overstated it about 2.5x, so --spill=auto spilled results well
-// under --spill-threshold (#570). indent affects json only: csv, yaml and toon
-// have a single layout.
+// layout is the JSON layout the rows are printed in, which the caller knows:
+// compact in an agent envelope piped to a tool or a model, indented at the
+// rows' depth on a terminal (EnvelopeRecordsLayout). Measured with the printer's
+// root-level indentation instead, a piped agent result was overstated by up to
+// 2.5x for narrow rows, so --spill=auto spilled results under --spill-threshold (#570).
+// For json the count is then exactly the bytes the value occupies in the
+// printed document, plus one for the newline that ends a top-level encoding.
+// layout does not affect csv, yaml and toon; inside an agent envelope those are
+// carried as a JSON string, and the count is the text before string escaping.
 //
 // Nothing is kept: bytes go to io.Discard and only the count is returned. The
 // JSON measurement — the one every agent-mode query pays, since json is the
@@ -346,46 +365,30 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 // a non-spilling one (#467).
 //
 // For -o auto the encoding is the one ChooseAutoFormat picks for records.
-func MeasureSerializedBytes(records interface{}, format string, indent bool) (int64, string) {
+func MeasureSerializedBytes(records interface{}, format string, layout JSONLayout) (int64, string) {
 	if IsAutoFormat(format) {
 		format = ChooseAutoFormat(records).Format
 	}
 	enc := NormalizeMeasureEncoding(format)
 	counter := &countingWriter{w: io.Discard}
 	if enc == "json" {
-		layout := ""
-		if indent {
-			layout = jsonIndent
-		}
-		handled, err := streamJSONArray(counter, records, "", layout)
+		handled, err := streamJSONArray(counter, records, layout.Prefix, layout.Indent)
 		if handled && err == nil {
 			return counter.n, enc
 		}
 		// Unstreamable shape, or an element that failed to marshal partway
 		// through: drop the partial count and measure the whole value the way it
-		// will actually be printed.
+		// will actually be printed. At the root with the printer's indent this
+		// is byte for byte what the JSON printer writes.
 		counter.n = 0
-		if !indent {
-			_ = json.NewEncoder(counter).Encode(records)
-			return counter.n, enc
-		}
+		je := json.NewEncoder(counter)
+		je.SetIndent(layout.Prefix, layout.Indent)
+		_ = je.Encode(records)
+		return counter.n, enc
 	}
 	p := NewPrinterWithOpts(PrinterOptions{Format: enc, Writer: counter})
 	_ = p.PrintList(records)
 	return counter.n, enc
-}
-
-// EmittedJSONIndented reports whether JSON rows written to w come out indented,
-// which is the layout MeasureSerializedBytes has to measure. In agent mode the
-// rows go out inside an envelope that EncodeEnvelope lays out, so this defers
-// to EnvelopeIndented: indented on an interactive terminal, compact when piped
-// or redirected. Outside agent mode they go through the JSON printer, which
-// always indents.
-func EmittedJSONIndented(w io.Writer, agent bool) bool {
-	if agent {
-		return EnvelopeIndented(w)
-	}
-	return true
 }
 
 // NormalizeMeasureEncoding maps a display format to the encoding the bytes are

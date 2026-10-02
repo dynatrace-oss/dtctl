@@ -378,24 +378,43 @@ func TestBuildSpillResponse_AgentPipedMeasuresCompactBytes(t *testing.T) {
 }
 
 // Outside agent mode the rows go through the JSON printer, which indents even
-// when piped, so that is the size measured: the same threshold spills them.
-func TestBuildSpillResponse_NonAgentMeasuresIndentedBytes(t *testing.T) {
+// when piped, and prints them one level deep as {"records": [...]}. That is the
+// size measured — exactly what printResults writes for them — so the threshold
+// that keeps a piped agent result inline spills this one.
+func TestBuildSpillResponse_NonAgentMeasuresPrintedBytes(t *testing.T) {
 	pipedStdout(t)
 	_, records := sampleResult(false)
 	result := &DQLQueryResponse{Records: records}
-	compact, _ := output.MeasureSerializedBytes(records, "json", false)
-	indented, _ := output.MeasureSerializedBytes(records, "json", true)
 
+	printed := captureStdout(t, func() {
+		if err := (&DQLExecutor{}).printResults("fetch logs", result, DQLExecuteOptions{OutputFormat: "json"}); err != nil {
+			t.Errorf("printResults: %v", err)
+		}
+	})
+	layout := output.IndentedJSONLayout(1)
+	var want bytes.Buffer
+	enc := json.NewEncoder(&want)
+	enc.SetIndent(layout.Prefix, layout.Indent)
+	if err := enc.Encode(records); err != nil {
+		t.Fatal(err)
+	}
+	text := bytes.TrimSuffix(want.Bytes(), []byte("\n"))
+	if !bytes.Contains(printed, append([]byte(`"records": `), text...)) {
+		t.Fatalf("printed output does not carry the rows laid out as %+v:\n%s\nprinted:\n%s", layout, text, printed)
+	}
+
+	compact, _ := output.MeasureSerializedBytes(records, "json", output.JSONLayout{})
 	e := &DQLExecutor{}
 	opts := DQLExecuteOptions{
-		Spill: SpillOptions{Mode: SpillAuto, Threshold: compact, Dir: t.TempDir(), Format: "json"},
+		OutputFormat: "json",
+		Spill:        SpillOptions{Mode: SpillAuto, Threshold: compact, Dir: t.TempDir(), Format: "json"},
 	}
 	resp, handled, err := e.buildSpillResponse("fetch logs", result, records, "json", opts)
 	if err != nil || !handled {
 		t.Fatalf("handled=%v err=%v", handled, err)
 	}
-	if resp.Context.Decided != "spilled" || resp.Context.MeasuredBytes != indented {
-		t.Errorf("decided=%q measured=%d, want spilled at the indented %d", resp.Context.Decided, resp.Context.MeasuredBytes, indented)
+	if want := int64(len(text)) + 1; resp.Context.Decided != "spilled" || resp.Context.MeasuredBytes != want {
+		t.Errorf("decided=%q measured=%d, want spilled at the printed %d (+1 newline)", resp.Context.Decided, resp.Context.MeasuredBytes, want)
 	}
 }
 

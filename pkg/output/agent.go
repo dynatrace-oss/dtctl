@@ -22,10 +22,26 @@ func EncodeEnvelope(w io.Writer, resp Response) error {
 // EnvelopeIndented reports whether EncodeEnvelope pretty-prints for w. It is
 // the one place that decision is made: anything that has to predict the bytes
 // an envelope written to w will take (EnvelopeSize, the spill measurement via
-// EmittedJSONIndented) asks it rather than repeating the test, so the
+// EnvelopeRecordsLayout) asks it rather than repeating the test, so the
 // prediction cannot drift from what is actually written.
 func EnvelopeIndented(w io.Writer) bool {
 	return isTerminalWriter(w)
+}
+
+// EnvelopeRecordsLayout is the JSON layout of the rows of a kind:"records"
+// result (InlineRecords: result.records, and result.constant and result.types
+// beside them) in an envelope EncodeEnvelope writes to w, for the spill
+// measurement (MeasureSerializedBytes): compact unless w is a terminal, and
+// indented two levels deep, {"result": {"records": ...}}, when it is.
+func EnvelopeRecordsLayout(w io.Writer) JSONLayout {
+	return envelopeRecordsLayout(EnvelopeIndented(w))
+}
+
+func envelopeRecordsLayout(indented bool) JSONLayout {
+	if !indented {
+		return JSONLayout{}
+	}
+	return IndentedJSONLayout(2)
 }
 
 // EnvelopeSize returns the number of bytes EncodeEnvelope would write for resp
@@ -99,9 +115,8 @@ type ResponseContext struct {
 	// both agents and humans can see *why* they got the shape they got.
 	// Decided is one of "inline", "spilled", "summary-only". MeasuredBytes is
 	// the size of the rows as they would be printed inline, in MeasuredEncoding
-	// and in the writer's layout (compact JSON unless stdout is a terminal in
-	// agent mode, see EmittedJSONIndented); --spill=auto compares it with
-	// ThresholdBytes.
+	// and in the JSON layout of the output (compact unless stdout is a terminal,
+	// see EnvelopeRecordsLayout); --spill=auto compares it with ThresholdBytes.
 	Decided          string `json:"decided,omitempty"`
 	ThresholdBytes   int64  `json:"threshold_bytes,omitempty"`
 	MeasuredBytes    int64  `json:"measured_bytes,omitempty"`

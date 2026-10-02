@@ -116,7 +116,7 @@ func TestStreamSwitchRows_NeverSpillsARowSetThatFits(t *testing.T) {
 					for i := range rows {
 						rows[i] = shape(i)
 					}
-					if got, _ := output.MeasureSerializedBytes(rows, format, !agent); got <= opts.Spill.Threshold {
+					if got, _ := output.MeasureSerializedBytes(rows, format, printedLayout(agent)); got <= opts.Spill.Threshold {
 						t.Errorf("%d rows measure %d bytes, within the %d-byte threshold — the switch at %d is too early",
 							len(rows), got, opts.Spill.Threshold, switchAt)
 					}
@@ -139,13 +139,23 @@ func TestStreamSwitchRows_IsExactWhereTheEmptyRowIsCheapest(t *testing.T) {
 				for i := range rows {
 					rows[i] = map[string]interface{}{}
 				}
-				if fits, _ := output.MeasureSerializedBytes(rows, format, !agent); fits > opts.Spill.Threshold {
+				if fits, _ := output.MeasureSerializedBytes(rows, format, printedLayout(agent)); fits > opts.Spill.Threshold {
 					t.Errorf("%d empty rows measure %d bytes, over the %d-byte threshold — the switch is too late",
 						switchAt, fits, opts.Spill.Threshold)
 				}
 			})
 		}
 	}
+}
+
+// printedLayout is the JSON layout the inline rows are printed in to a piped
+// stdout: a compact envelope in agent mode, {"records": [...]} from the JSON
+// printer otherwise.
+func printedLayout(agent bool) output.JSONLayout {
+	if agent {
+		return output.JSONLayout{}
+	}
+	return output.IndentedJSONLayout(1)
 }
 
 func TestStreamSwitchRows_SpillAlwaysStreamsFromTheFirstRow(t *testing.T) {

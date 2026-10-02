@@ -174,7 +174,7 @@ func TestMeasureSerializedBytes_MatchesPrinterOutput(t *testing.T) {
 		if err := p.PrintList(records); err != nil {
 			t.Fatalf("%s: printer failed: %v", format, err)
 		}
-		got, gotEnc := MeasureSerializedBytes(records, format, true)
+		got, gotEnc := MeasureSerializedBytes(records, format, IndentedJSONLayout(0))
 		if gotEnc != enc {
 			t.Errorf("%s: encoding = %q, want %q", format, gotEnc, enc)
 		}
@@ -203,7 +203,7 @@ func TestMeasureSerializedBytes_UnstreamableShapesStayExact(t *testing.T) {
 		var buf bytes.Buffer
 		p := NewPrinterWithOpts(PrinterOptions{Format: "json", Writer: &buf})
 		_ = p.PrintList(c.in) // may fail; the measurement must match either way
-		got, _ := MeasureSerializedBytes(c.in, "json", true)
+		got, _ := MeasureSerializedBytes(c.in, "json", IndentedJSONLayout(0))
 		if got != int64(buf.Len()) {
 			t.Errorf("%s: measured %d bytes, printer wrote %d", c.name, got, buf.Len())
 		}
@@ -232,7 +232,7 @@ func TestMeasureSerializedBytes_CompactMatchesCompactEncoding(t *testing.T) {
 		if err := json.NewEncoder(&buf).Encode(c.in); err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		got, enc := MeasureSerializedBytes(c.in, "json", false)
+		got, enc := MeasureSerializedBytes(c.in, "json", JSONLayout{})
 		if enc != "json" {
 			t.Errorf("%s: encoding = %q, want json", c.name, enc)
 		}
@@ -242,50 +242,97 @@ func TestMeasureSerializedBytes_CompactMatchesCompactEncoding(t *testing.T) {
 	}
 }
 
-// The indent flag is a JSON layout choice; the other encodings have one layout
-// and must measure the same either way.
-func TestMeasureSerializedBytes_IndentOnlyAffectsJSON(t *testing.T) {
+// The layout is a JSON choice; the other encodings have one layout and must
+// measure the same whatever it is.
+func TestMeasureSerializedBytes_LayoutOnlyAffectsJSON(t *testing.T) {
 	records := []map[string]interface{}{{"host": "web-01", "n": 1.0}, {"host": "web-02", "n": 2.0}}
 	for _, format := range []string{"csv", "yaml", "toon"} {
-		a, _ := MeasureSerializedBytes(records, format, true)
-		b, _ := MeasureSerializedBytes(records, format, false)
+		a, _ := MeasureSerializedBytes(records, format, IndentedJSONLayout(2))
+		b, _ := MeasureSerializedBytes(records, format, JSONLayout{})
 		if a != b {
 			t.Errorf("%s: indented %d != compact %d", format, a, b)
 		}
 	}
-	indented, _ := MeasureSerializedBytes(records, "json", true)
-	compact, _ := MeasureSerializedBytes(records, "json", false)
-	if compact >= indented {
-		t.Errorf("json: compact %d should be smaller than indented %d", compact, indented)
+	nested, _ := MeasureSerializedBytes(records, "json", IndentedJSONLayout(2))
+	root, _ := MeasureSerializedBytes(records, "json", IndentedJSONLayout(0))
+	compact, _ := MeasureSerializedBytes(records, "json", JSONLayout{})
+	if !(compact < root && root < nested) {
+		t.Errorf("json: compact %d < root-indented %d < nested-indented %d does not hold", compact, root, nested)
 	}
 }
 
-// EmittedJSONIndented must give the answer EncodeEnvelope acts on: a non-TTY
-// writer gets a compact envelope in agent mode, and the JSON printer, which is
-// what writes the rows outside agent mode, always indents.
-func TestEmittedJSONIndented(t *testing.T) {
+// TestEnvelopeRecordsLayout_MatchesEncodedEnvelope pins the measurement to the
+// bytes EncodeEnvelope actually writes for a kind:"records" result, in both of
+// its layouts: compact (piped, as for an agent) and indented (a terminal), where
+// result.records, result.constant and result.types sit two levels deep, so
+// every line of theirs carries that depth's indentation on top of their own.
+// Measured as a root-level value instead, the terminal case came out short by
+// four bytes a line.
+func TestEnvelopeRecordsLayout_MatchesEncodedEnvelope(t *testing.T) {
+	records := []map[string]interface{}{
+		{"host": "web-01", "status": float64(200), "msg": "a\"b <c>"},
+		{"host": "web-02", "nested": map[string]interface{}{"k": []interface{}{1.0, "2"}}},
+	}
+	constant := map[string]interface{}{"dt.entity": "HOST-0", "region": "eu"}
+	types := []interface{}{map[string]interface{}{"mappings": map[string]interface{}{"host": map[string]interface{}{"type": "string"}}}}
+
+	for _, indented := range []bool{false, true} {
+		layout := envelopeRecordsLayout(indented)
+		var out bytes.Buffer
+		resp := Response{
+			OK:              true,
+			EnvelopeVersion: EnvelopeVersion,
+			Result:          &InlineRecords{Kind: KindRecords, Constant: constant, Records: records, Types: types},
+			Context:         &ResponseContext{Verb: "query", Decided: "inline"},
+		}
+		if err := encodeEnvelopeTo(&out, resp, indented); err != nil {
+			t.Fatal(err)
+		}
+		sep := ":"
+		if indented {
+			sep = ": "
+		}
+		for key, v := range map[string]interface{}{"records": records, "constant": constant, "types": types} {
+			// What the value looks like laid out at its depth, without the
+			// newline a top-level encoding ends in.
+			var want bytes.Buffer
+			enc := json.NewEncoder(&want)
+			enc.SetIndent(layout.Prefix, layout.Indent)
+			if err := enc.Encode(v); err != nil {
+				t.Fatal(err)
+			}
+			text := bytes.TrimSuffix(want.Bytes(), []byte("\n"))
+			if !bytes.Contains(out.Bytes(), append([]byte(`"`+key+`"`+sep), text...)) {
+				t.Errorf("indented=%v: the envelope does not carry %s laid out as %+v:\n%s\nenvelope:\n%s",
+					indented, key, layout, text, out.String())
+				continue
+			}
+			got, _ := MeasureSerializedBytes(v, "json", layout)
+			if got != int64(len(text))+1 {
+				t.Errorf("indented=%v: %s measured %d bytes, the envelope carries %d (+1 newline)",
+					indented, key, got, len(text))
+			}
+		}
+	}
+
+	// EnvelopeRecordsLayout makes the same call EncodeEnvelope does: a buffer
+	// or a regular file is not a terminal, so both get the compact layout.
 	f, err := os.CreateTemp(t.TempDir(), "stdout")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer f.Close()
 	for _, w := range []io.Writer{&bytes.Buffer{}, f} {
-		if EmittedJSONIndented(w, true) {
-			t.Errorf("%T: agent output to a non-terminal reported indented", w)
+		if got := EnvelopeRecordsLayout(w); got != (JSONLayout{}) {
+			t.Errorf("%T: layout = %+v, want compact", w, got)
 		}
-		if !EmittedJSONIndented(w, false) {
-			t.Errorf("%T: JSON printer output reported compact", w)
+		var buf bytes.Buffer
+		if err := EncodeEnvelope(&buf, Response{OK: true, Result: records}); err != nil {
+			t.Fatal(err)
 		}
-	}
-
-	// And it agrees with the bytes EncodeEnvelope actually writes.
-	var buf bytes.Buffer
-	if err := EncodeEnvelope(&buf, Response{OK: true, Result: []map[string]interface{}{{"a": 1.0}}}); err != nil {
-		t.Fatal(err)
-	}
-	if indented := strings.Count(buf.String(), "\n") > 1; indented != EmittedJSONIndented(&buf, true) {
-		t.Errorf("EncodeEnvelope wrote indented=%v, EmittedJSONIndented says %v: %q",
-			indented, EmittedJSONIndented(&buf, true), buf.String())
+		if strings.Count(buf.String(), "\n") != 1 {
+			t.Errorf("EncodeEnvelope indented its output to a non-terminal: %q", buf.String())
+		}
 	}
 }
 

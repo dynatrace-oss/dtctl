@@ -203,8 +203,10 @@ a one-off write failure suggests retrying with an explicit `--spill-to <path>`.
 ```
 
 `measured_bytes` is the size the rows would have taken inline, in
-`measured_encoding` and laid out as this invocation prints it: compact JSON when
-stdout is piped or redirected (the agent case), indented on a terminal.
+`measured_encoding` and laid out as this invocation prints them: compact JSON
+when stdout is piped or redirected (the agent case), indented at their depth in
+the envelope on a terminal. For `csv`, `yaml` and `toon`, which the envelope
+carries as a JSON string, it is the encoded text before string escaping.
 `--spill=auto` compares it with `threshold_bytes` (`--spill-threshold`).
 
 A large enough result is written to that file row by row as it arrives, without

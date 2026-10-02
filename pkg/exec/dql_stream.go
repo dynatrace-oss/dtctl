@@ -161,14 +161,14 @@ func (e *DQLExecutor) streamedSpillDir(opts DQLExecuteOptions) (string, bool) {
 // row costs at least minRowCost in the envelope's encoding. At or below it the
 // buffered path is kept, which is what keeps a small result's output exactly
 // what it is today. The bound is taken in the layout the buffered path measures
-// (inlineIndented), so the two settle the same result the same way: costed
+// (inlineLayout), so the two settle the same result the same way: costed
 // indented, a compact envelope would switch to streaming at under half the rows
 // the buffered path still emits inline.
 func streamSwitchRows(opts DQLExecuteOptions, format string) int {
 	if opts.Spill.Mode == SpillAlways {
 		return 0
 	}
-	per, frame := minRowCost(format, inlineIndented(opts))
+	per, frame := minRowCost(format, inlineLayout(opts, format))
 	if opts.Spill.Threshold <= 0 || per <= 0 {
 		return 0
 	}
@@ -200,14 +200,14 @@ func bufferCap(opts DQLExecuteOptions) int64 {
 // move the keys into a header, so a narrow row can be cheaper than an empty one
 // (an empty row makes TOON fall back to its list form). -o auto can pick CSV. For
 // those the only bound that holds for any row is the newline that ends it.
-func minRowCost(format string, indent bool) (per, frame int64) {
+func minRowCost(format string, layout output.JSONLayout) (per, frame int64) {
 	enc := output.NormalizeMeasureEncoding(format)
 	if output.IsAutoFormat(format) || (enc != "json" && enc != "yaml") {
 		return 1, 0
 	}
 	empty := map[string]interface{}{}
-	one, _ := output.MeasureSerializedBytes([]map[string]interface{}{empty}, format, indent)
-	two, _ := output.MeasureSerializedBytes([]map[string]interface{}{empty, empty}, format, indent)
+	one, _ := output.MeasureSerializedBytes([]map[string]interface{}{empty}, format, layout)
+	two, _ := output.MeasureSerializedBytes([]map[string]interface{}{empty, empty}, format, layout)
 	per = two - one
 	if per <= 0 {
 		return 1, 0
