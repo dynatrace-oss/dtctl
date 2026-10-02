@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"os"
@@ -238,6 +239,35 @@ func TestMeasureSerializedBytes_CompactMatchesCompactEncoding(t *testing.T) {
 		}
 		if got != int64(buf.Len()) {
 			t.Errorf("%s: measured %d bytes, compact encoding is %d", c.name, got, buf.Len())
+		}
+	}
+}
+
+// JSON Lines carries no array framing: n rows are n compact lines, and an empty
+// result is no bytes at all, where a compact array would be "[]\n" — two bytes
+// more than the lines for every non-empty result. The measurement has to be
+// what JSONLPrinter writes, for every row count.
+func TestMeasureSerializedBytes_JSONLinesMatchesPrinter(t *testing.T) {
+	row := func(i int) map[string]interface{} {
+		return map[string]interface{}{"host": fmt.Sprintf("web-%02d", i), "msg": "a\"b <c>", "n": float64(i)}
+	}
+	cases := map[string]interface{}{
+		"0 rows":                           []map[string]interface{}{},
+		"nil slice":                        []map[string]interface{}(nil),
+		"1 row":                            []map[string]interface{}{row(1)},
+		"3 rows":                           []map[string]interface{}{row(1), row(2), row(3)},
+		"not a slice (printer refuses it)": map[string]interface{}{"a": 1.0},
+	}
+	for name, in := range cases {
+		var buf bytes.Buffer
+		p := NewPrinterWithOpts(PrinterOptions{Format: "jsonl", Writer: &buf})
+		_ = p.PrintList(in)
+		got, enc := MeasureSerializedBytes(in, "jsonl", JSONLinesLayout)
+		if got != int64(buf.Len()) {
+			t.Errorf("%s: measured %d bytes, JSONLPrinter wrote %d: %q", name, got, buf.Len(), buf.String())
+		}
+		if enc != "json" {
+			t.Errorf("%s: encoding = %q, want json", name, enc)
 		}
 	}
 }

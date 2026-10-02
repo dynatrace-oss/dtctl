@@ -107,7 +107,7 @@ func TestStreamSwitchRows_NeverSpillsARowSetThatFits(t *testing.T) {
 		"small number": func(i int) map[string]interface{} { return map[string]interface{}{"a": float64(i % 10)} },
 	}
 	for _, agent := range []bool{false, true} {
-		for _, format := range []string{"json", "yaml", "toon", "csv", "auto"} {
+		for _, format := range []string{"json", "jsonl", "yaml", "toon", "csv", "auto"} {
 			opts := DQLExecuteOptions{AgentMode: agent, Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10}}
 			switchAt := streamSwitchRows(opts, format)
 			for name, shape := range shapes {
@@ -116,7 +116,7 @@ func TestStreamSwitchRows_NeverSpillsARowSetThatFits(t *testing.T) {
 					for i := range rows {
 						rows[i] = shape(i)
 					}
-					if got, _ := output.MeasureSerializedBytes(rows, format, printedLayout(agent)); got <= opts.Spill.Threshold {
+					if got, _ := output.MeasureSerializedBytes(rows, format, printedLayout(agent, format)); got <= opts.Spill.Threshold {
 						t.Errorf("%d rows measure %d bytes, within the %d-byte threshold — the switch at %d is too early",
 							len(rows), got, opts.Spill.Threshold, switchAt)
 					}
@@ -131,7 +131,7 @@ func TestStreamSwitchRows_NeverSpillsARowSetThatFits(t *testing.T) {
 func TestStreamSwitchRows_IsExactWhereTheEmptyRowIsCheapest(t *testing.T) {
 	pipedStdout(t)
 	for _, agent := range []bool{false, true} {
-		for _, format := range []string{"json", "yaml"} {
+		for _, format := range []string{"json", "jsonl", "yaml"} {
 			t.Run(fmt.Sprintf("agent=%v/%s", agent, format), func(t *testing.T) {
 				opts := DQLExecuteOptions{AgentMode: agent, Spill: SpillOptions{Mode: SpillAuto, Threshold: 50 << 10}}
 				switchAt := streamSwitchRows(opts, format)
@@ -139,7 +139,7 @@ func TestStreamSwitchRows_IsExactWhereTheEmptyRowIsCheapest(t *testing.T) {
 				for i := range rows {
 					rows[i] = map[string]interface{}{}
 				}
-				if fits, _ := output.MeasureSerializedBytes(rows, format, printedLayout(agent)); fits > opts.Spill.Threshold {
+				if fits, _ := output.MeasureSerializedBytes(rows, format, printedLayout(agent, format)); fits > opts.Spill.Threshold {
 					t.Errorf("%d empty rows measure %d bytes, over the %d-byte threshold — the switch is too late",
 						switchAt, fits, opts.Spill.Threshold)
 				}
@@ -149,11 +149,14 @@ func TestStreamSwitchRows_IsExactWhereTheEmptyRowIsCheapest(t *testing.T) {
 }
 
 // printedLayout is the JSON layout the inline rows are printed in to a piped
-// stdout: a compact envelope in agent mode, {"records": [...]} from the JSON
-// printer otherwise.
-func printedLayout(agent bool) output.JSONLayout {
-	if agent {
+// stdout: a compact envelope in agent mode, and otherwise JSON lines for
+// -o jsonl or {"records": [...]} from the JSON printer.
+func printedLayout(agent bool, format string) output.JSONLayout {
+	switch {
+	case agent:
 		return output.JSONLayout{}
+	case format == "jsonl":
+		return output.JSONLinesLayout
 	}
 	return output.IndentedJSONLayout(1)
 }

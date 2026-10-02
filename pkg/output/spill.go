@@ -331,7 +331,14 @@ func PruneOldSpills(baseDir string, ttl time.Duration) {
 type JSONLayout struct {
 	Prefix string
 	Indent string
+	// Lines is JSON Lines, as JSONLPrinter prints a slice: each element compact
+	// on a line of its own, with no array framing, and nothing at all for an
+	// empty slice. Prefix and Indent do not apply.
+	Lines bool
 }
+
+// JSONLinesLayout is the layout of rows printed with -o jsonl.
+var JSONLinesLayout = JSONLayout{Lines: true}
 
 // IndentedJSONLayout is the layout of a value depth levels deep in a document
 // printed with the JSON printer's 2-space indentation; depth 0 is the root.
@@ -352,8 +359,9 @@ func IndentedJSONLayout(depth int) JSONLayout {
 // root-level indentation instead, a piped agent result was overstated by up to
 // 2.5x for narrow rows, so --spill=auto spilled results under --spill-threshold (#570).
 // For json the count is then exactly the bytes the value occupies in the
-// printed document, plus one for the newline that ends a top-level encoding.
-// layout does not affect csv, yaml and toon; inside an agent envelope those are
+// printed document, plus one for the newline that ends a top-level encoding;
+// with JSONLinesLayout it is exactly what JSONLPrinter writes (-o jsonl
+// outside agent mode). layout does not affect csv, yaml and toon; inside an agent envelope those are
 // carried as a JSON string, and the count is the text before string escaping.
 //
 // Nothing is kept: bytes go to io.Discard and only the count is returned. The
@@ -371,6 +379,13 @@ func MeasureSerializedBytes(records interface{}, format string, layout JSONLayou
 	}
 	enc := NormalizeMeasureEncoding(format)
 	counter := &countingWriter{w: io.Discard}
+	if enc == "json" && layout.Lines {
+		// The printer itself, into the counter: it already encodes one element
+		// at a time, and it is by construction what -o jsonl writes — including
+		// its zero bytes for an empty slice, and for a non-slice it refuses.
+		_ = (&JSONLPrinter{writer: counter}).PrintList(records)
+		return counter.n, enc
+	}
 	if enc == "json" {
 		handled, err := streamJSONArray(counter, records, layout.Prefix, layout.Indent)
 		if handled && err == nil {

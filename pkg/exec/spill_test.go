@@ -418,6 +418,37 @@ func TestBuildSpillResponse_NonAgentMeasuresPrintedBytes(t *testing.T) {
 	}
 }
 
+// Outside agent mode -o jsonl prints the rows as they came, one compact line
+// each and nothing for an empty result: no array framing, no compaction (even
+// with --compact) and no type block. The spill measurement must be exactly
+// that, for 0, 1 and several rows.
+func TestMeasureInline_NonAgentJSONLMatchesPrintedBytes(t *testing.T) {
+	pipedStdout(t)
+	rows := func(n int) []map[string]interface{} {
+		out := make([]map[string]interface{}, n)
+		for i := range out {
+			// "region" is constant across rows, so --compact would hoist it.
+			out[i] = map[string]interface{}{"host": fmt.Sprintf("web-%02d", i), "region": "eu", "status": float64(200 + i)}
+		}
+		return out
+	}
+	for _, n := range []int{0, 1, 3} {
+		records := rows(n)
+		opts := DQLExecuteOptions{OutputFormat: "jsonl", Compact: true}
+		printed := captureStdout(t, func() {
+			if err := (&DQLExecutor{}).printResults("fetch logs", &DQLQueryResponse{Records: records}, opts); err != nil {
+				t.Errorf("printResults: %v", err)
+			}
+		})
+		inline := newInlineRows(records, compactionFor(records, opts), opts.MaxFieldChars)
+		inline.types = []interface{}{map[string]interface{}{"mappings": map[string]interface{}{}}}
+		got, _ := measureInline(inline, "jsonl", inlineLayout(opts, "jsonl"))
+		if got != int64(len(printed)) {
+			t.Errorf("%d rows: measured %d bytes, -o jsonl printed %d: %q", n, got, len(printed), printed)
+		}
+	}
+}
+
 // resultWithNotification returns a small result carrying a query notification,
 // so the envelope-building paths can be exercised against truncation warnings.
 func resultWithNotification(n QueryNotification) (*DQLQueryResponse, []map[string]interface{}) {

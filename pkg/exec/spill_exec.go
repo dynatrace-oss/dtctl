@@ -405,15 +405,14 @@ func compactionFor(records []map[string]interface{}, opts DQLExecuteOptions) *ou
 // EncodeEnvelope does, of the same writer: compact when piped, as for an agent
 // (up to about 2.5x smaller than the same rows indented, for narrow rows), and indented at the depth
 // of result.records on a terminal. Outside agent mode printRecords prints
-// {"records": [...]} with the indenting JSON printer, or one compact row per
-// line for -o jsonl.
+// {"records": [...]} with the indenting JSON printer, or for -o jsonl the
+// rows one compact line each with JSONLPrinter.
 func inlineLayout(opts DQLExecuteOptions, format string) output.JSONLayout {
 	if opts.AgentMode {
 		return output.EnvelopeRecordsLayout(os.Stdout)
 	}
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "jsonl", "ndjson":
-		return output.JSONLayout{}
+	if strings.ToLower(strings.TrimSpace(format)) == "jsonl" {
+		return output.JSONLinesLayout
 	}
 	return output.IndentedJSONLayout(1)
 }
@@ -426,6 +425,12 @@ func inlineLayout(opts DQLExecuteOptions, format string) output.JSONLayout {
 // all-null columns removed), since that is what gets encoded; the returned
 // encoding is the chosen one.
 func measureInline(rows inlineRows, format string, layout output.JSONLayout) (int64, string) {
+	if layout.Lines {
+		// printRecords prints -o jsonl rows as they came: not compacted, and
+		// with no constant map or type block, which a line format has no place
+		// for.
+		return output.MeasureSerializedBytes(rows.full, format, layout)
+	}
 	n, enc := measureInlineRows(rows, format, layout)
 	if rows.types != nil {
 		// Like constant, the type block is always native JSON in the envelope.
