@@ -167,6 +167,9 @@ func NewClient(baseURL, token string, opts ...ClientOption) (*Client, error) {
 		SetRetryCount(3).
 		SetRetryWaitTime(1*time.Second).
 		SetRetryMaxWaitTime(10*time.Second).
+		// Multipart parts are one-shot readers (document create/update), so
+		// rewind them before a retry or the resent part is empty.
+		SetRetryResetReaders(true).
 		AddRetryCondition(httpclient.IsRetryable).
 		SetTimeout(6*time.Minute). // Allow for long-running Grail queries (up to 5 min)
 		SetHeader("User-Agent", userAgent).

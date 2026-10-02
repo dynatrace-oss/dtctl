@@ -410,6 +410,61 @@ func TestClient_RetryOnlyResendsSafeRequests(t *testing.T) {
 	}
 }
 
+// TestClient_RetryResendsMultipartBody: the document write paths build their
+// multipart parts from one-shot readers, and resty re-reads them on every
+// attempt. Without rewinding, a retried create or update sends an empty part
+// and still reports success. httpclient.New got this in #398; the CLI's client
+// is built here and needs it too.
+func TestClient_RetryResendsMultipartBody(t *testing.T) {
+	const content = `{"tiles":{"0":{"type":"markdown"}}}`
+
+	var attempts int32
+	received := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&attempts, 1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		file, _, err := r.FormFile("content")
+		if err != nil {
+			t.Errorf("FormFile: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		body, err := io.ReadAll(file)
+		if err != nil {
+			t.Errorf("ReadAll: %v", err)
+		}
+		received = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.HTTP().SetRetryWaitTime(time.Millisecond)
+	client.HTTP().SetRetryMaxWaitTime(time.Millisecond)
+
+	resp, err := client.HTTP().R().
+		SetMultipartField("content", "content.json", "application/json", strings.NewReader(content)).
+		Patch("/platform/document/v1/documents/doc-1")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		t.Errorf("status = %d, want 200", resp.StatusCode())
+	}
+	if got := atomic.LoadInt32(&attempts); got != 2 {
+		t.Errorf("attempts = %d, want 2", got)
+	}
+	if received != content {
+		t.Errorf("content = %q, want %q", received, content)
+	}
+}
+
 func TestClient_Timeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
