@@ -85,7 +85,9 @@ func TestClient_RetryResendsMultipartBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
 		if attempts == 1 {
-			w.WriteHeader(http.StatusServiceUnavailable)
+			// 429, not a 5xx: PATCH is not idempotent, so a 429 is the
+			// failure that still gets it resent (see IsRetryable).
+			w.WriteHeader(http.StatusTooManyRequests)
 			return
 		}
 		file, _, err := r.FormFile("content")

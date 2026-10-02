@@ -4,14 +4,18 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-resty/resty/v2"
+
+	"github.com/dynatrace-oss/dtctl/sdk/httpclient"
 )
 
 func TestNew(t *testing.T) {
@@ -137,22 +141,22 @@ func TestIsRetryable(t *testing.T) {
 	}
 
 	// Test with successful response - should not retry
-	if isRetryable(resp, nil) {
-		t.Error("isRetryable() should return false for 200 response")
+	if httpclient.IsRetryable(resp, nil) {
+		t.Error("httpclient.IsRetryable() should return false for 200 response")
 	}
 
 	// A transport error still carries a response: resty builds one around the
 	// request before calling the transport, and only leaves RawResponse nil. That
 	// is the case worth retrying.
-	if !isRetryable(&resty.Response{Request: resp.Request}, http.ErrServerClosed) {
-		t.Error("isRetryable() should return true for a transport error")
+	if !httpclient.IsRetryable(&resty.Response{Request: resp.Request}, http.ErrServerClosed) {
+		t.Error("httpclient.IsRetryable() should return true for a transport error")
 	}
 
 	// No response at all means the request never left the process -- resty
 	// returns (nil, err) from a before-request middleware. Retrying cannot change
 	// the outcome, and resty dereferences the nil response to prepare the retry.
-	if isRetryable(nil, http.ErrServerClosed) {
-		t.Error("isRetryable() should return false when the request was never sent")
+	if httpclient.IsRetryable(nil, http.ErrServerClosed) {
+		t.Error("httpclient.IsRetryable() should return false when the request was never sent")
 	}
 }
 
@@ -363,6 +367,46 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 	if requestCount < 3 {
 		t.Errorf("Expected at least 3 requests (with retries), got %d", requestCount)
+	}
+}
+
+// TestClient_RetryOnlyResendsSafeRequests: the CLI's client shares
+// httpclient.IsRetryable, so a POST (query:execute, a workflow run) that hits
+// a 5xx is not sent a second time, while a 429 still is.
+func TestClient_RetryOnlyResendsSafeRequests(t *testing.T) {
+	tests := []struct {
+		method string
+		status int
+		want   int
+	}{
+		{method: http.MethodPost, status: http.StatusInternalServerError, want: 1},
+		{method: http.MethodPost, status: http.StatusBadGateway, want: 1},
+		{method: http.MethodPost, status: http.StatusTooManyRequests, want: 4},
+		{method: http.MethodGet, status: http.StatusBadGateway, want: 4},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s %d", tt.method, tt.status), func(t *testing.T) {
+			var attempts int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				atomic.AddInt32(&attempts, 1)
+				w.WriteHeader(tt.status)
+			}))
+			defer server.Close()
+
+			client, err := NewClient(server.URL, "test-token")
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+			client.HTTP().SetRetryWaitTime(time.Millisecond)
+			client.HTTP().SetRetryMaxWaitTime(time.Millisecond)
+
+			if _, err := client.HTTP().R().Execute(tt.method, "/platform/x/v1/y"); err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			if got := atomic.LoadInt32(&attempts); int(got) != tt.want {
+				t.Errorf("attempts = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -682,8 +726,8 @@ func TestIsRetryable_ContextDeadline(t *testing.T) {
 
 	// Test that context deadline errors are NOT retried
 	err := context.DeadlineExceeded
-	if isRetryable(nil, err) {
-		t.Error("isRetryable() should return false for context.DeadlineExceeded")
+	if httpclient.IsRetryable(nil, err) {
+		t.Error("httpclient.IsRetryable() should return false for context.DeadlineExceeded")
 	}
 }
 
@@ -693,8 +737,8 @@ func TestIsRetryable_ContextCanceled(t *testing.T) {
 	// context.Canceled is the error produced when the user presses Ctrl+C.
 	// It must not trigger retries, otherwise the resty WARN/ERROR logs
 	// reappear and the process hangs for the full retry back-off period.
-	if isRetryable(nil, context.Canceled) {
-		t.Error("isRetryable() should return false for context.Canceled")
+	if httpclient.IsRetryable(nil, context.Canceled) {
+		t.Error("httpclient.IsRetryable() should return false for context.Canceled")
 	}
 }
 
@@ -759,9 +803,9 @@ func TestIsRetryable_StatusCodes(t *testing.T) {
 			client.HTTP().SetRetryCount(0)
 
 			resp, _ := client.HTTP().R().Get("/test")
-			got := isRetryable(resp, nil)
+			got := httpclient.IsRetryable(resp, nil)
 			if got != tt.want {
-				t.Errorf("isRetryable() with status %d = %v, want %v", tt.statusCode, got, tt.want)
+				t.Errorf("httpclient.IsRetryable() with status %d = %v, want %v", tt.statusCode, got, tt.want)
 			}
 		})
 	}
