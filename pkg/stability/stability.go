@@ -127,8 +127,13 @@ func Mark(cmd *cobra.Command, level Level, since string) {
 		return
 	}
 	setAnnotation(cmd, AnnotationLevel, string(level))
+	// A declaration replaces the previous one whole. Keeping an older
+	// since-version when the new one has none would leave a promotion to
+	// stable dated by the experimental mark it replaced.
 	if since != "" {
 		setAnnotation(cmd, AnnotationSince, since)
+	} else {
+		delete(cmd.Annotations, AnnotationSince)
 	}
 }
 
@@ -176,8 +181,12 @@ func MarkFlag(cmd *cobra.Command, name string, level Level, since string) {
 		f.Annotations = map[string][]string{}
 	}
 	f.Annotations[AnnotationLevel] = []string{string(level)}
+	// Replaces the previous declaration whole, as Mark does: a flag promoted
+	// to stable must not keep its experimental since-version.
 	if since != "" {
 		f.Annotations[AnnotationSince] = []string{since}
+	} else {
+		delete(f.Annotations, AnnotationSince)
 	}
 }
 

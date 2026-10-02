@@ -139,6 +139,32 @@ func TestMarkFlagStableIsRecorded(t *testing.T) {
 	}
 }
 
+// Promoting to stable must drop the since-version the experimental mark wrote:
+// since dates a tier below stable, and a stale one would render as
+// "stable  since X" and be held to the since-version rules of the compat check.
+func TestPromotionToStableClearsSince(t *testing.T) {
+	cmd := &cobra.Command{Use: "query"}
+	cmd.Flags().Bool("spill", false, "")
+
+	MarkFlag(cmd, "spill", Experimental, "0.38.0")
+	MarkFlagStable(cmd, "spill")
+	if got := OfFlag(cmd, "spill"); got != Stable {
+		t.Errorf("OfFlag(spill) = %q after promotion, want stable", got)
+	}
+	if got := SinceFlag(cmd, "spill"); got != "" {
+		t.Errorf("SinceFlag(spill) = %q after promotion, want none", got)
+	}
+
+	Mark(cmd, Experimental, "0.38.0")
+	MarkStable(cmd)
+	if got := Of(cmd); got != Stable {
+		t.Errorf("Of(query) = %q after promotion, want stable", got)
+	}
+	if got := Since(cmd); got != "" {
+		t.Errorf("Since(query) = %q after promotion, want none", got)
+	}
+}
+
 func TestLintRequiresSinceAndFeatureKeys(t *testing.T) {
 	root := &cobra.Command{Use: "dtctl"}
 
