@@ -112,6 +112,7 @@ it is built — including the stable ones:
 stability.MarkStable(getWorkflowsCmd)                        // yes, this is required
 stability.Mark(ingestCmd, stability.Experimental, "0.39.0")  // since-version required
 stability.MarkFlag(queryCmd, "spill", stability.Experimental, "0.39.0")
+stability.MarkFlagStable(queryCmd, "limit")                  // a new flag on a stable command
 addDevelopmentCommand(rootCmd, accountCmd, "account")        // top-level, in cmd/
 cmd.AddDevelopmentCommand(serve.NewCommand(), "serve")       // wired from main
 ```
@@ -176,11 +177,20 @@ Output outside agent mode, and everything a caller types, keep the full promise.
 
 *Flags* are the deliberate exception — an unannotated flag inherits its
 command's tier. Requiring every flag on an experimental command to repeat the
-annotation would be pure noise, and a flag's silence cannot manufacture a
-promise the way a command's could, because inheritance can only ever weaken it.
-Only a flag making a *weaker* promise than its command declares itself. A flag
-may be weaker (an experimental flag on a stable command is how a new idea ships
-without a new command) but never stronger.
+annotation would be pure noise. A flag may be weaker than its command (an
+experimental flag on a stable command is how a new idea ships without a new
+command) but never stronger.
+
+Inheritance only weakens, but under a *stable* command it still hands a new flag
+a stable promise nobody chose. So a flag that **newly** becomes stable under a
+command that was already stable must declare its tier — `MarkFlag(cmd, name,
+stability.Experimental, "<next>")` or `stability.MarkFlagStable(cmd, name)`.
+The manifest tags every self-declared flag `(declared)`, and `make
+stability-compat` refuses a new or promoted stable flag without the tag. The
+existing flags predate the rule and keep inheriting; the flags of a new (or
+newly promoted) stable command are covered by its `MarkStable`. `(global)` is a
+stable entry like any command, so a new global flag must declare too (on
+`rootCmd`): it is the widest surface dtctl has.
 
 After changing any of this, regenerate the checked-in manifest:
 

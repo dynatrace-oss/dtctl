@@ -28,6 +28,14 @@ having thought about it.
 Deprecation is not a tier: a deprecated command is still stable in shape and is
 merely scheduled for removal. It is recorded on the same line.
 
+A flag line ending in `(declared)` carries a tier declaration of its own; any
+other flag inherits its command's. The flags that predate this rule may keep
+inheriting, but a flag that newly becomes `stable` under a command that was
+already `stable` has to be declared — `stability.MarkFlagStable`, or
+`stability.MarkFlag` with a weaker tier — and `make stability-compat`
+refuses one that is not. Otherwise a flag would be stable by omission, the one
+tier nobody chose deliberately.
+
 The `(global)` group at the top is not a command. It is the root command's
 persistent flags — the ones every command accepts. They are listed because a
 flag that appears nowhere in this file is stable by omission, which is the one
@@ -340,19 +348,19 @@ create aws                           stable
 create aws connection                stable
   --dry-run                          stable
   --name                             stable
-  --roleArn                          experimental  since 0.39.0
+  --roleArn                          experimental  since 0.39.0  (declared)
 create aws monitoring                stable
   --central-enrichment               stable
   --credentials                      stable
   --dry-run                          stable
-  --featureSets                      experimental  since 0.39.0
+  --featureSets                      experimental  since 0.39.0  (declared)
   --name                             stable
   --regions                          stable
 create azure                         stable
 create azure connection              stable
-  --applicationId                    experimental  since 0.39.0
-  --clientSecret                     experimental  since 0.39.0
-  --directoryId                      experimental  since 0.39.0
+  --applicationId                    experimental  since 0.39.0  (declared)
+  --clientSecret                     experimental  since 0.39.0  (declared)
+  --directoryId                      experimental  since 0.39.0  (declared)
   --dry-run                          stable
   --issuer                           stable
   --name                             stable
@@ -361,9 +369,9 @@ create azure monitoring              stable
   --central-enrichment               stable
   --credentials                      stable
   --dry-run                          stable
-  --featureSets                      experimental  since 0.39.0
-  --featuresets                      experimental  since 0.39.0
-  --locationFiltering                experimental  since 0.39.0
+  --featureSets                      experimental  since 0.39.0  (declared)
+  --featuresets                      experimental  since 0.39.0  (declared)
+  --locationFiltering                experimental  since 0.39.0  (declared)
   --name                             stable
 create breakpoint                    experimental  since 0.39.0
   --dry-run                          experimental
@@ -406,15 +414,15 @@ create gcp                           stable
 create gcp connection                stable
   --dry-run                          stable
   --name                             stable
-  --serviceAccountId                 experimental  since 0.39.0
-  --serviceaccountid                 experimental  since 0.39.0
+  --serviceAccountId                 experimental  since 0.39.0  (declared)
+  --serviceaccountid                 experimental  since 0.39.0  (declared)
 create gcp monitoring                stable
   --central-enrichment               stable
   --credentials                      stable
   --dry-run                          stable
-  --featureSets                      experimental  since 0.39.0
-  --featuresets                      experimental  since 0.39.0
-  --locationFiltering                experimental  since 0.39.0
+  --featureSets                      experimental  since 0.39.0  (declared)
+  --featuresets                      experimental  since 0.39.0  (declared)
+  --locationFiltering                experimental  since 0.39.0  (declared)
   --name                             stable
 create lookup                        stable
   --description                      stable
@@ -595,12 +603,12 @@ describe workflow                    stable
 describe workflow-execution          stable
 diff                                 stable
   --color                            stable
-  --context                          experimental  since 0.39.0
+  --context                          experimental  since 0.39.0  (declared)
   --file                             stable
   --format                           stable
   --ignore-metadata                  stable
   --ignore-order                     stable
-  --output                           experimental  since 0.39.0
+  --output                           experimental  since 0.39.0  (declared)
   --quiet                            stable
   --semantic                         stable
   --side-by-side                     stable
@@ -659,33 +667,33 @@ enable aws                           stable
 enable aws monitoring                stable
   --dry-run                          stable
   --name                             stable
-  --roleArn                          experimental  since 0.39.0
+  --roleArn                          experimental  since 0.39.0  (declared)
 enable azure                         stable
 enable azure monitoring              stable
-  --applicationId                    experimental  since 0.39.0
-  --directoryId                      experimental  since 0.39.0
+  --applicationId                    experimental  since 0.39.0  (declared)
+  --directoryId                      experimental  since 0.39.0  (declared)
   --dry-run                          stable
   --name                             stable
 enable gcp                           stable
 enable gcp monitoring                stable
   --dry-run                          stable
   --name                             stable
-  --serviceAccountId                 experimental  since 0.39.0
+  --serviceAccountId                 experimental  since 0.39.0  (declared)
 exec                                 stable
 exec analyzer                        stable
   --file                             stable
   --input                            stable
   --query                            stable
-  --timeout                          experimental  since 0.39.0
+  --timeout                          experimental  since 0.39.0  (declared)
   --validate                         stable
-  --wait                             experimental  since 0.39.0
+  --wait                             experimental  since 0.39.0  (declared)
 exec api                             stable
   --data                             stable
   --dry-run                          stable
   --header                           stable
   --method                           stable
 exec copilot                         stable
-  --context                          experimental  since 0.39.0
+  --context                          experimental  since 0.39.0  (declared)
   --file                             stable
   --instruction                      stable
   --no-docs                          stable
@@ -710,7 +718,7 @@ exec preview-processor               stable
   --config-id                        stable
   --file                             stable
 exec slo                             stable
-  --timeout                          experimental  since 0.39.0
+  --timeout                          experimental  since 0.39.0  (declared)
 exec workflow                        experimental  since 0.39.0
   --input                            experimental
   --params                           experimental
@@ -723,8 +731,8 @@ find intents                         stable
   --data-file                        stable
   --limit                            stable
 get                                  stable
-  --fields                           experimental  since 0.40.0
-  --limit                            experimental  since 0.40.0
+  --fields                           experimental  since 0.40.0  (declared)
+  --limit                            experimental  since 0.40.0  (declared)
 get analyzers                        stable
   --filter                           stable
 get anomaly-detectors                stable
@@ -852,7 +860,7 @@ get workflows                        stable
   --interval                         stable
   --limit                            stable
   --mine                             stable
-  --trigger                          experimental  since 0.39.0
+  --trigger                          experimental  since 0.39.0  (declared)
   --type                             stable
   --watch                            stable
   --watch-only                       stable
@@ -897,7 +905,7 @@ inventory arrivals                   experimental
 logs                                 stable
 logs workflow-execution              experimental  since 0.39.0
   --all                              experimental
-  --follow                           experimental  since 0.39.0
+  --follow                           experimental  since 0.39.0  (declared)
   --task                             experimental
   --tasks                            experimental
 open                                 stable
@@ -909,8 +917,8 @@ plugin                               stable
 plugin list                          stable
 query                                stable
   --client-context                   stable
-  --compact                          experimental  since 0.40.0
-  --decode-snapshots                 experimental  since 0.39.0
+  --compact                          experimental  since 0.40.0  (declared)
+  --decode-snapshots                 experimental  since 0.39.0  (declared)
   --default-sampling-ratio           stable
   --default-scan-limit-gbytes        stable
   --default-timeframe-end            stable
@@ -927,19 +935,19 @@ query                                stable
   --interval                         stable
   --live                             stable
   --locale                           stable
-  --max-field-chars                  experimental  since 0.40.0
-  --max-output-bytes                 experimental  since 0.40.0
-  --max-output-tokens                experimental  since 0.40.0
+  --max-field-chars                  experimental  since 0.40.0  (declared)
+  --max-output-bytes                 experimental  since 0.40.0  (declared)
+  --max-output-tokens                experimental  since 0.40.0  (declared)
   --max-result-bytes                 stable
   --max-result-records               stable
   --metadata                         stable
   --no-progress                      stable
   --no-query-limits                  stable
-  --precision                        experimental  since 0.40.0
+  --precision                        experimental  since 0.40.0  (declared)
   --segment                          stable
   --segment-var                      stable
   --segments-file                    stable
-  --series                           experimental  since 0.40.0
+  --series                           experimental  since 0.40.0  (declared)
   --set                              stable
   --spill                            stable
   --spill-format                     stable
@@ -951,20 +959,20 @@ query                                stable
 restore                              stable
 restore dashboard                    stable
   --dry-run                          stable
-  --force                            experimental  since 0.39.0
+  --force                            experimental  since 0.39.0  (declared)
 restore document                     stable
   --dry-run                          stable
-  --force                            experimental  since 0.39.0
+  --force                            experimental  since 0.39.0  (declared)
 restore notebook                     stable
   --dry-run                          stable
-  --force                            experimental  since 0.39.0
+  --force                            experimental  since 0.39.0  (declared)
 restore trash                        stable
   --dry-run                          stable
   --force                            stable
   --new-name                         stable
 restore workflow                     stable
   --dry-run                          stable
-  --force                            experimental  since 0.39.0
+  --force                            experimental  since 0.39.0  (declared)
 serve                                development  (opt-in key: serve)
 serve http                           development
   --addr                             development
@@ -979,19 +987,19 @@ share dashboard                      stable
   --access                           stable
   --dry-run                          stable
   --group                            stable
-  --no-notify                        experimental  since 0.40.0
+  --no-notify                        experimental  since 0.40.0  (declared)
   --user                             stable
 share document                       stable
   --access                           stable
   --dry-run                          stable
   --group                            stable
-  --no-notify                        experimental  since 0.40.0
+  --no-notify                        experimental  since 0.40.0  (declared)
   --user                             stable
 share notebook                       stable
   --access                           stable
   --dry-run                          stable
   --group                            stable
-  --no-notify                        experimental  since 0.40.0
+  --no-notify                        experimental  since 0.40.0  (declared)
   --user                             stable
 skills                               stable
 skills install                       stable
@@ -1037,27 +1045,27 @@ update aws                           stable
 update aws connection                experimental  since 0.39.0
   --dry-run                          experimental
   --name                             experimental
-  --roleArn                          experimental  since 0.39.0
+  --roleArn                          experimental  since 0.39.0  (declared)
 update aws monitoring                stable
   --dry-run                          stable
-  --featureSets                      experimental  since 0.39.0
+  --featureSets                      experimental  since 0.39.0  (declared)
   --name                             stable
   --regions                          stable
 update azure                         stable
 update azure connection              experimental  since 0.39.0
-  --aplicationID                     experimental  since 0.39.0
-  --applicationID                    experimental  since 0.39.0
-  --applicationId                    experimental  since 0.39.0
-  --clientSecret                     experimental  since 0.39.0
-  --directoryID                      experimental  since 0.39.0
-  --directoryId                      experimental  since 0.39.0
+  --aplicationID                     experimental  since 0.39.0  (declared)
+  --applicationID                    experimental  since 0.39.0  (declared)
+  --applicationId                    experimental  since 0.39.0  (declared)
+  --clientSecret                     experimental  since 0.39.0  (declared)
+  --directoryID                      experimental  since 0.39.0  (declared)
+  --directoryId                      experimental  since 0.39.0  (declared)
   --dry-run                          experimental
   --name                             experimental
 update azure monitoring              experimental  since 0.39.0
   --dry-run                          experimental
-  --featureSets                      experimental  since 0.39.0
-  --featuresets                      experimental  since 0.39.0
-  --locationFiltering                experimental  since 0.39.0
+  --featureSets                      experimental  since 0.39.0  (declared)
+  --featuresets                      experimental  since 0.39.0  (declared)
+  --locationFiltering                experimental  since 0.39.0  (declared)
   --name                             experimental
 update breakpoint                    experimental  since 0.39.0
   --condition                        experimental
@@ -1092,13 +1100,13 @@ update gcp                           stable
 update gcp connection                experimental  since 0.39.0
   --dry-run                          experimental
   --name                             experimental
-  --serviceAccountId                 experimental  since 0.39.0
-  --serviceaccountid                 experimental  since 0.39.0
+  --serviceAccountId                 experimental  since 0.39.0  (declared)
+  --serviceaccountid                 experimental  since 0.39.0  (declared)
 update gcp monitoring                experimental  since 0.39.0
   --dry-run                          experimental
-  --featureSets                      experimental  since 0.39.0
-  --featuresets                      experimental  since 0.39.0
-  --locationFiltering                experimental  since 0.39.0
+  --featureSets                      experimental  since 0.39.0  (declared)
+  --featuresets                      experimental  since 0.39.0  (declared)
+  --locationFiltering                experimental  since 0.39.0  (declared)
   --name                             experimental
 update settings                      stable
 verify                               stable
@@ -1111,7 +1119,7 @@ verify openpipeline-dql-processor    stable
   --file                             stable
 verify openpipeline-matcher          stable
   --config-id                        stable
-  --context                          experimental  since 0.39.0
+  --context                          experimental  since 0.39.0  (declared)
   --file                             stable
 verify query                         stable
   --canonical                        stable
@@ -1144,5 +1152,5 @@ wait query                           stable
   --set                              stable
   --timeout                          stable
   --timezone                         stable
-  --verbose                          experimental  since 0.39.0
+  --verbose                          experimental  since 0.39.0  (declared)
 ```

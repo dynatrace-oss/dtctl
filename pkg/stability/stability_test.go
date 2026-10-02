@@ -115,6 +115,30 @@ func TestStableIsRecordedNotAssumed(t *testing.T) {
 	}
 }
 
+// TestMarkFlagStableIsRecorded pins the flag half of "stable is explicit": a
+// flag declared stable is distinguishable from one that only inherits, which
+// is what the manifest's "(declared)" tag and the compat check rely on.
+func TestMarkFlagStableIsRecorded(t *testing.T) {
+	cmd := &cobra.Command{Use: "query"}
+	MarkStable(cmd)
+	cmd.Flags().Bool("declared", false, "")
+	cmd.Flags().Bool("silent", false, "")
+	MarkFlagStable(cmd, "declared")
+
+	if got := OfFlag(cmd, "declared"); got != Stable {
+		t.Errorf("OfFlag(declared) = %q, want stable: MarkFlagStable must be on the record", got)
+	}
+	if got := SinceFlag(cmd, "declared"); got != "" {
+		t.Errorf("MarkFlagStable wrote a since-version (%q); stable is the terminus", got)
+	}
+	if got := OfFlag(cmd, "silent"); got != Undeclared {
+		t.Errorf("OfFlag(silent) = %q, want undeclared", got)
+	}
+	if got := EffectiveFlag(cmd, "declared"); got != Stable {
+		t.Errorf("EffectiveFlag(declared) = %q, want stable", got)
+	}
+}
+
 func TestLintRequiresSinceAndFeatureKeys(t *testing.T) {
 	root := &cobra.Command{Use: "dtctl"}
 
@@ -171,6 +195,15 @@ func TestLintCatchesAFlagStrongerThanItsCommand(t *testing.T) {
 	}
 	if !strings.Contains(problems[0].Error(), "never stronger") {
 		t.Errorf("unexpected lint message: %v", problems[0])
+	}
+
+	// The public API reaches the same check. MarkFlag used to drop a stable
+	// declaration on the floor, so this case could only be built by hand.
+	exp.Flags().Bool("follow", false, "")
+	MarkFlagStable(exp, "follow")
+	if problems := Lint(root); len(problems) != 2 {
+		t.Errorf("Lint found %d problems (%v), want 2 after MarkFlagStable on an "+
+			"experimental command", len(problems), problems)
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
 // newTestRoot creates a minimal Cobra command tree for testing.
@@ -223,6 +225,23 @@ func TestBuild_VerbFlags(t *testing.T) {
 
 	fileFlag := applyVerb.Flags["-f/--file"]
 	require.Equal(t, "string", fileFlag.Type)
+}
+
+// A flag's tier is carried only when it is weaker than stable; declaring a flag
+// stable (stability.MarkFlagStable) must not add a field the catalog documents
+// as omitted for stable.
+func TestBuild_FlagStabilityOmitsStable(t *testing.T) {
+	root := newTestRoot()
+	apply, _, err := root.Find([]string{"apply"})
+	require.NoError(t, err)
+	stability.MarkFlagStable(apply, "set")
+	stability.MarkFlag(apply, "show-diff", stability.Experimental, "0.38.0")
+
+	flags := Build(root).Verbs["apply"].Flags
+	require.Empty(t, flags["--set"].Stability)
+	require.Empty(t, flags["--set"].StabilitySince)
+	require.Equal(t, "experimental", flags["--show-diff"].Stability)
+	require.Equal(t, "0.38.0", flags["--show-diff"].StabilitySince)
 }
 
 func TestBuild_NestedSubcommands(t *testing.T) {
