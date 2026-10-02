@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -128,66 +129,180 @@ func TestDetailKey(t *testing.T) {
 	}
 }
 
-// dryRunStdoutAllowlist records files whose dry-run branch may still write prose
-// straight to stdout, with the reason. A file not listed here must route its
-// dry-run output through dryRunReport, so that agent mode receives an envelope
-// on the stream it parses as JSON instead of a sentence.
-var dryRunStdoutAllowlist = map[string]string{
-	// exec api renders an aligned key-value preview through output.DescribeKV
-	// (bold labels, fixed column width), which dryRunReport's line model does not
-	// express. It is also the one command that must never become an integration
-	// target (AGENTS.md, "Generic API Access"), so it is tracked in issue #514
-	// rather than reshaped here.
-	"exec_api.go": "aligned DescribeKV preview; tracked in #514",
+// dryRunBranch is the code a dry run executes: the body of `if dryRun { ... }`,
+// or the else of `if !dryRun { ... } else { ... }`.
+type dryRunBranch struct {
+	file  string
+	line  int
+	block *ast.BlockStmt
 }
 
-// TestDryRunBranchesDoNotPrintToStdout guards the invariant this replaced: a
-// dry-run branch that prints with fmt.Print* puts prose on stdout, which in
-// agent mode is the stream the caller decodes as JSON — so the dry run became
-// the one outcome an agent could not read, while errors from the same command
-// arrived correctly enveloped.
-//
-// The scan is lexical: it finds `if dryRun { ... }` blocks and the print calls
-// written inside them. A branch that calls a helper which prints (exec api's
-// printAPIDryRun) is not reachable this way, so this catches the regression
-// shape that produced the original 15 sites, not every conceivable one.
-func TestDryRunBranchesDoNotPrintToStdout(t *testing.T) {
+// dryRunBranches finds every dry-run branch in the non-test files of cmd/, and
+// indexes the package's top-level functions so a branch can be followed into
+// the helpers it calls.
+func dryRunBranches(t *testing.T) ([]dryRunBranch, map[string]*ast.FuncDecl, *token.FileSet) {
+	t.Helper()
 	entries, err := os.ReadDir(".")
 	require.NoError(t, err)
 
+	fset := token.NewFileSet()
+	funcs := map[string]*ast.FuncDecl{}
+	var branches []dryRunBranch
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		if reason, allowed := dryRunStdoutAllowlist[name]; allowed {
-			require.NotEmpty(t, reason, "%s: an allowlist entry must carry a reason", name)
-			continue
-		}
-
-		fset := token.NewFileSet()
 		file, perr := parser.ParseFile(fset, filepath.Clean(name), nil, 0)
 		require.NoError(t, perr)
 
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Body != nil {
+				funcs[fn.Name.Name] = fn
+			}
+		}
 		ast.Inspect(file, func(n ast.Node) bool {
 			ifStmt, ok := n.(*ast.IfStmt)
 			if !ok || !mentionsDryRun(ifStmt.Cond) {
 				return true
 			}
-			ast.Inspect(ifStmt.Body, func(inner ast.Node) bool {
-				call, ok := inner.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				if callee := stdoutPrintCallee(call); callee != "" {
-					t.Errorf("%s:%d: dry-run branch calls %s — build a dryRunReport and return its Print() so agent mode gets an envelope",
-						name, fset.Position(call.Pos()).Line, callee)
-				}
-				return true
-			})
+			block := ifStmt.Body
+			switch {
+			case isNotDryRun(ifStmt.Cond):
+				// `if !dryRun { real work }`: the dry run is the else, if any.
+				block, _ = ifStmt.Else.(*ast.BlockStmt)
+			case negatesDryRun(ifStmt.Cond):
+				// `if x && !dryRun { real work }`: neither branch is the dry run.
+				block = nil
+			}
+			if block != nil {
+				branches = append(branches, dryRunBranch{name, fset.Position(ifStmt.Pos()).Line, block})
+			}
 			return true
 		})
 	}
+	return branches, funcs, fset
+}
+
+// dryRunReach is what a dry-run branch does, including in the package helpers
+// it calls (followed transitively, each at most once).
+type dryRunReach struct {
+	stdoutPrints []string // "file:line callee"
+	infoPrints   []string // "file:line" of output.PrintInfo
+	agentAware   bool     // builds a report, an agent printer, or reads agentMode
+}
+
+func reachOf(block *ast.BlockStmt, funcs map[string]*ast.FuncDecl, fset *token.FileSet) dryRunReach {
+	var r dryRunReach
+	visited := map[string]bool{}
+	var walk func(ast.Node)
+	walk = func(node ast.Node) {
+		ast.Inspect(node, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.Ident:
+				if n.Name == "agentMode" {
+					r.agentAware = true
+				}
+			case *ast.CallExpr:
+				pos := fset.Position(n.Pos())
+				where := fmt.Sprintf("%s:%d", filepath.Base(pos.Filename), pos.Line)
+				if callee := stdoutPrintCallee(n); callee != "" {
+					r.stdoutPrints = append(r.stdoutPrints, where+" "+callee)
+				}
+				if isQualifiedCall(n, "output", "PrintInfo") {
+					r.infoPrints = append(r.infoPrints, where)
+				}
+				if ident, ok := n.Fun.(*ast.Ident); ok {
+					switch ident.Name {
+					case "newDryRunReport", "deleteDryRun", "enrichAgent", "NewPrinter":
+						r.agentAware = true
+					}
+					if fn, ok := funcs[ident.Name]; ok && !visited[ident.Name] {
+						visited[ident.Name] = true
+						walk(fn.Body)
+					}
+				}
+			}
+			return true
+		})
+	}
+	walk(block)
+	return r
+}
+
+// TestDryRunBranchesDoNotPrintToStdout guards the invariant dryRunReport
+// established: a dry-run branch that prints with fmt.Print* puts prose on
+// stdout, which in agent mode is the stream the caller decodes as JSON — so the
+// dry run became the one outcome an agent could not read, while errors from the
+// same command arrived correctly enveloped.
+//
+// The scan is lexical but follows calls: it finds the dry-run branches and the
+// print calls inside them and inside every package helper they reach, so a
+// branch that delegates its printing (exec api's printAPIDryRun did) is held to
+// the same rule as one that prints inline.
+func TestDryRunBranchesDoNotPrintToStdout(t *testing.T) {
+	branches, funcs, fset := dryRunBranches(t)
+	require.NotEmpty(t, branches, "the scan found no dry-run branches; it is not looking where the code is")
+
+	for _, b := range branches {
+		for _, p := range reachOf(b.block, funcs, fset).stdoutPrints {
+			t.Errorf("%s:%d: dry-run branch reaches %s — build a dryRunReport and return its Print() so agent mode gets an envelope",
+				b.file, b.line, p)
+		}
+	}
+}
+
+// TestDryRunBranchesPutThePlanInTheResult catches the quieter form of the same
+// failure (#514): a dry run that writes its plan only with output.PrintInfo.
+// That is stderr, so stdout stays clean — but in agent mode it stays *empty*:
+// the agent is told nothing about what would have happened, and the prose it
+// would need is on the stream it does not parse.
+//
+// A branch may use PrintInfo as long as it also renders for agent mode: through
+// a dryRunReport (OnStderr keeps the human lines on stderr), or by checking
+// agentMode / building an agent printer itself.
+func TestDryRunBranchesPutThePlanInTheResult(t *testing.T) {
+	branches, funcs, fset := dryRunBranches(t)
+	for _, b := range branches {
+		reach := reachOf(b.block, funcs, fset)
+		if len(reach.infoPrints) > 0 && !reach.agentAware {
+			t.Errorf("%s:%d: dry-run branch writes its plan only with output.PrintInfo (%s), so agent mode gets no result — "+
+				"build a dryRunReport (OnStderr() keeps the human lines on stderr) and return its Print()",
+				b.file, b.line, strings.Join(reach.infoPrints, ", "))
+		}
+	}
+}
+
+// isNotDryRun reports whether a condition is exactly `!dryRun`.
+func isNotDryRun(expr ast.Expr) bool {
+	unary, ok := expr.(*ast.UnaryExpr)
+	if !ok || unary.Op != token.NOT {
+		return false
+	}
+	ident, ok := unary.X.(*ast.Ident)
+	return ok && ident.Name == "dryRun"
+}
+
+// negatesDryRun reports whether a condition contains `!dryRun` anywhere.
+func negatesDryRun(expr ast.Expr) bool {
+	found := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if e, ok := n.(ast.Expr); ok && isNotDryRun(e) {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// isQualifiedCall reports whether call is pkg.name(...).
+func isQualifiedCall(call *ast.CallExpr, pkg, name string) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != name {
+		return false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	return ok && ident.Name == pkg
 }
 
 // mentionsDryRun reports whether an expression reads the dryRun flag.

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -143,12 +144,22 @@ Examples:
 		}
 
 		if dryRun {
-			output.PrintInfo("Dry run: would create platform token")
-			output.PrintInfo("Name:     %s", req.Name)
-			output.PrintInfo("Scope:    %s", strings.Join(req.Scope, ", "))
-			output.PrintInfo("UserUUID: %s", req.UserUUID)
-			output.PrintInfo("Expires:  %s", req.ExpirationDate)
-			return nil
+			report := newDryRunReport(cmd).As("create", "token").OnStderr().
+				Linef("Dry run: would create platform token").
+				Linef("Name:     %s", req.Name).
+				Linef("Scope:    %s", strings.Join(req.Scope, ", ")).
+				Linef("UserUUID: %s", req.UserUUID).
+				Linef("Expires:  %s", req.ExpirationDate).
+				Detail("name", "%s", req.Name).
+				Detail("scope", "%s", strings.Join(req.Scope, ", ")).
+				Detail("user_uuid", "%s", req.UserUUID).
+				Detail("expires", "%s", req.ExpirationDate)
+			// The request carries no secret — the token is minted by the server —
+			// so the exact body is safe to show.
+			if body, err := json.Marshal(req); err == nil {
+				report.Payload(body)
+			}
+			return report.Print()
 		}
 
 		handler := platformtoken.NewHandler(accClient, accountUUID)
@@ -185,8 +196,10 @@ Examples:
 		tokenID := args[0]
 
 		if dryRun {
-			output.PrintInfo("Dry run: would delete platform token %q", tokenID)
-			return nil
+			return newDryRunReport(cmd).As("delete", "token").OnStderr().
+				Linef("Dry run: would delete platform token %q", tokenID).
+				Detail("id", "%s", tokenID).
+				Print()
 		}
 
 		accClient, accountUUID, err := SetupAccountWithSafety(safety.OperationDelete)

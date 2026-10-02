@@ -147,7 +147,7 @@ func runExecAPI(cmd *cobra.Command, args []string) error {
 	warnAboutTarget(canonicalPath, nativeBase, native.Command)
 
 	if dryRun {
-		return printAPIDryRun(cfg, method, requestPath, headerMap, body, class, native.Command)
+		return printAPIDryRun(cmd, cfg, method, requestPath, headerMap, body, class, native.Command)
 	}
 
 	if err := CheckSafety(cfg, class.SafetyOp, safety.OwnershipUnknown); err != nil {
@@ -291,22 +291,29 @@ func warnAboutTarget(requestPath, nativeBase, nativeCommand string) {
 // It reports the safety verdict instead of enforcing it — a dry run's job is to
 // show what would happen, and "this would be blocked, here is why" is more useful
 // than an error that hides the composed request.
-func printAPIDryRun(cfg *config.Config, method, requestPath string, headers map[string]string,
+//
+// In agent mode the same preview arrives as a dry-run envelope: each line's value
+// under its snake_case label in result.details, plus the rendered text. The body
+// is reported by size only, as it is for a human — the envelope is no more
+// willing to echo a request body than the preview is.
+func printAPIDryRun(cmd *cobra.Command, cfg *config.Config, method, requestPath string, headers map[string]string,
 	body []byte, class resapi.Classification, nativeCommand string) error {
 
 	const w = 14
-	output.DescribeKV("Method:", w, "%s", method)
-	output.DescribeKV("Path:", w, "%s", requestPath)
+	report := newDryRunReport(cmd).
+		KV("Method:", w, "%s", method).
+		KV("Path:", w, "%s", requestPath)
 	if len(headers) > 0 {
-		output.DescribeKV("Headers:", w, "%s", strings.Join(redactedHeaderLines(headers), ", "))
+		report.KV("Headers:", w, "%s", strings.Join(redactedHeaderLines(headers), ", "))
 	}
 	if len(body) > 0 {
-		output.DescribeKV("Body:", w, "%d bytes", len(body))
+		report.KV("Body:", w, "%d bytes", len(body))
 	}
-	output.DescribeKV("Gated as:", w, "%s", string(class.SafetyOp))
-	output.DescribeKV("Because:", w, "%s", class.Reason)
+	report.KV("Gated as:", w, "%s", string(class.SafetyOp)).
+		KV("Because:", w, "%s", class.Reason)
 	if nativeCommand != "" {
-		output.DescribeKV("Native:", w, "%s (preferred)", nativeCommand)
+		report.KV("Native:", w, "%s (preferred)", nativeCommand).
+			Detail("native", "%s", nativeCommand)
 	}
 
 	verdict := "permitted in this context"
@@ -315,11 +322,10 @@ func printAPIDryRun(cfg *config.Config, method, requestPath string, headers map[
 			verdict = "BLOCKED in this context — " + safetyRefusalReason(serr)
 		}
 	}
-	output.DescribeKV("Safety:", w, "%s", verdict)
-
-	fmt.Println()
-	fmt.Println("  Nothing was sent (--dry-run).")
-	return nil
+	return report.KV("Safety:", w, "%s", verdict).
+		Linef("").
+		Linef("  Nothing was sent (--dry-run).").
+		Print()
 }
 
 // safetyRefusalReason extracts the one-line reason from a safety refusal.

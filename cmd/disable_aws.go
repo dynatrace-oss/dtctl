@@ -44,9 +44,11 @@ Examples:
 			if len(args) > 0 {
 				name = args[0]
 			}
-			output.PrintInfo("Dry run: would resolve AWS monitoring config %q", name)
-			output.PrintInfo("Dry run: would disable monitoring config and all credentials")
-			return nil
+			return newDryRunReport(cmd).OnStderr().
+				Linef("Dry run: would resolve AWS monitoring config %q", name).
+				Detail("monitoring_config", "%s", name).
+				Linef("Dry run: would disable monitoring config and all credentials").
+				Print()
 		}
 
 		_, c, err := SetupWithSafety(safety.OperationUpdate)
