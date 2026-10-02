@@ -281,6 +281,17 @@ var flagScopeRequirements = map[string]map[string][]string{
 	"get dashboards": {"admin-access": {auth.DocumentAdminScope}},
 	"get notebooks":  {"admin-access": {auth.DocumentAdminScope}},
 
+	// --environment works on environment shares, a second API next to the
+	// documents one: share lists and creates them (replacing one at another
+	// access level also deletes, but only sometimes, so :delete is not listed),
+	// unshare lists and deletes them.
+	"share document":    {"environment": {"document:environment-shares:read", "document:environment-shares:write"}},
+	"share dashboard":   {"environment": {"document:environment-shares:read", "document:environment-shares:write"}},
+	"share notebook":    {"environment": {"document:environment-shares:read", "document:environment-shares:write"}},
+	"unshare document":  {"environment": {"document:environment-shares:read", "document:environment-shares:delete"}},
+	"unshare dashboard": {"environment": {"document:environment-shares:read", "document:environment-shares:delete"}},
+	"unshare notebook":  {"environment": {"document:environment-shares:read", "document:environment-shares:delete"}},
+
 	// Activating a version touches extension *definitions*;
 	// --with-configurations additionally reads every monitoring configuration of
 	// the extension and writes each one back against the new version's schema.
