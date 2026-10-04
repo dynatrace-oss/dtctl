@@ -215,3 +215,22 @@ func TestDomainNamesCannotContainTheSeparator(t *testing.T) {
 	assert.Contains(t, b.Problems[0].Message, `domain "my-team"`)
 	assert.NotContains(t, b.Domains, "my-team")
 }
+
+// TestFragmentUsedInsideWithCounts: a fragment invoked only inside a {{with}}
+// body is used, and its fields are not read as the recipe's params.
+func TestFragmentUsedInsideWithCounts(t *testing.T) {
+	b := loadBook(t, map[string]string{
+		"_fragments/f.tmpl": `{{define "by-name"}}| filter name == {{.}}{{end}}`,
+		"k8s/k8s-w.yaml": recipeYAML("k8s-w", `
+summary: w
+timeframe: 1h
+params:
+  pod: {type: string}
+dql: fetch logs {{with .pod}}{{template "by-name" .}}{{end}}
+means: m
+emptyMeans: e
+`),
+	})
+	require.Empty(t, b.Problems)
+	assert.Empty(t, b.Lint(map[string]bool{}))
+}

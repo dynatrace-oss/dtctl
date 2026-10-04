@@ -375,11 +375,22 @@ type Next struct {
 
 // NextWindow names the row fields that hold a follow-up's window. To may be
 // empty or null in the row (an open problem): the follow-up then runs to now.
+//
+// From may instead be a duration ("30d"): a window relative to now that needs
+// no row, for an edge such as "nothing in 24h, look back 30 days" on an
+// empty result. To is then empty or a duration too, and there is no pad.
 type NextWindow struct {
 	From string `json:"from" yaml:"from"`
 	To   string `json:"to,omitempty" yaml:"to,omitempty"`
 	// Pad widens the window on both sides, as a duration ("5m").
 	Pad string `json:"pad,omitempty" yaml:"pad,omitempty"`
+}
+
+// Literal reports whether the window is relative to now rather than read
+// from a row.
+func (w *NextWindow) Literal() bool {
+	_, err := ParseDuration(w.From)
+	return err == nil
 }
 
 // EmptyMode is spec.empty.

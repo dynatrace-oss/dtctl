@@ -159,7 +159,17 @@ func (b *Book) Validate(r *Recipe) error {
 		}
 		if w := n.Window; w != nil {
 			if w.From == "" {
-				add("spec.next[%d].window.from is required (the row field holding the start)", i)
+				add("spec.next[%d].window.from is required (the row field holding the start, or a duration such as 30d)", i)
+			}
+			_, toErr := ParseDuration(w.To)
+			switch {
+			case w.From == "":
+			case w.Literal() && w.To != "" && toErr != nil:
+				add("spec.next[%d].window: with a duration from, to must be a duration too or absent", i)
+			case w.Literal() && w.Pad != "":
+				add("spec.next[%d].window: pad widens row times; a duration from has none", i)
+			case !w.Literal() && w.To != "" && toErr == nil:
+				add("spec.next[%d].window: to is a duration but from is a row field; use durations for both or fields for both", i)
 			}
 			if w.Pad != "" {
 				if d, err := ParseDuration(w.Pad); err != nil || d < 0 {
@@ -303,6 +313,12 @@ func (b *Book) Lint(capabilities map[string]bool) []LintIssue {
 			}
 			if n.Window != nil && (target.Spec.Timeframe.None || target.Spec.Timeframe.Fixed) {
 				out = append(out, LintIssue{r.Name(), fmt.Sprintf("next: %s takes no window, so window: has nothing to set", n.Recipe)})
+			}
+			if w := n.Window; w != nil && w.Literal() {
+				from, to := literalWindow(w, target.Spec.Timeframe.Max)
+				if span := windowSpan(from, to); target.Spec.Timeframe.Min > 0 && span < target.Spec.Timeframe.Min {
+					out = append(out, LintIssue{r.Name(), fmt.Sprintf("next: window %s is shorter than %s's minimum %s", FormatDuration(span), n.Recipe, FormatDuration(target.Spec.Timeframe.Min))})
+				}
 			}
 		}
 		for _, msg := range b.DQLLint(r) {

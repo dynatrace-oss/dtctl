@@ -241,3 +241,52 @@ emptyMeans: e
 
 	assert.Empty(t, b.Lint(map[string]bool{}))
 }
+
+// TestNextLiteralWindowWidensAnEmptyResult: an empty result suggests running
+// again further back, once; a run already that wide gets no such suggestion.
+func TestNextLiteralWindowWidensAnEmptyResult(t *testing.T) {
+	b := loadBook(t, map[string]string{
+		"k8s/k8s-problem.yaml": recipeYAML("k8s-problem", `
+summary: p
+timeframe: {default: 24h, max: 14d}
+params:
+  id: {type: string, required: true, positional: true}
+dql: fetch dt.davis.problems | filter display_id == {{.id}}
+means: m
+emptyMeans: e
+next:
+  - recipe: k8s-problem
+    with: {id: "{{.id}}"}
+    when: empty
+    window: {from: 30d}
+`),
+	})
+	require.Empty(t, b.Problems)
+	r := b.Get("k8s-problem")
+	params := map[string]any{"id": "P-1"}
+	got := b.NextCommands(r, params, Carry{}, true, nil)
+	assert.Equal(t, []string{"dtctl run k8s-problem P-1 --from=14d"}, got, "cut at the target's max")
+	assert.Empty(t, b.NextCommands(r, params, Carry{From: "14d"}, true, nil), "already that wide")
+	assert.Empty(t, b.NextCommands(r, params, Carry{}, false, nil), "only on an empty result")
+	assert.Empty(t, b.Lint(map[string]bool{}))
+}
+
+func TestNextWindowValidation(t *testing.T) {
+	for spec, want := range map[string]string{
+		"{from: 30d, pad: 5m}":        "a duration from has none",
+		"{from: 30d, to: event.end}":  "to must be a duration too",
+		"{from: event.start, to: 1d}": "use durations for both",
+	} {
+		b := loadBook(t, map[string]string{"k8s/k8s-x.yaml": recipeYAML("k8s-x", `
+summary: x
+timeframe: 1h
+dql: fetch logs
+means: m
+emptyMeans: e
+next:
+  - recipe: k8s-x
+    window: `+spec)})
+		require.Len(t, b.Problems, 1, spec)
+		assert.Contains(t, b.Problems[0].Message, want, spec)
+	}
+}

@@ -59,9 +59,13 @@ func (b *Book) NextCommands(r *Recipe, params map[string]any, carry Carry, empty
 			args[k] = v
 		}
 		var row map[string]any
-		if ok && (len(n.Bind) > 0 || n.Window != nil) {
+		rowWin := n.Window
+		if rowWin != nil && rowWin.Literal() {
+			rowWin = nil
+		}
+		if ok && (len(n.Bind) > 0 || rowWin != nil) {
 			var bound map[string]string
-			bound, row = bindRow(target, n.Bind, n.Window, rows)
+			bound, row = bindRow(target, n.Bind, rowWin, rows)
 			if row == nil {
 				ok = false
 			}
@@ -73,8 +77,14 @@ func (b *Book) NextCommands(r *Recipe, params map[string]any, carry Carry, empty
 			continue
 		}
 		c := carryWindow(r, target, carry)
-		if n.Window != nil {
-			c.From, c.To = rowWindow(n.Window, row, target.Spec.Timeframe.Max, time.Now())
+		switch {
+		case rowWin != nil:
+			c.From, c.To = rowWindow(rowWin, row, target.Spec.Timeframe.Max, time.Now())
+		case n.Window != nil:
+			c.From, c.To = literalWindow(n.Window, target.Spec.Timeframe.Max)
+			if target == r && !widens(r, carry, c.From, time.Now()) {
+				continue // already looked that far back
+			}
 		}
 		out = append(out, CommandLine(target, args, c))
 	}
@@ -181,6 +191,46 @@ func rowWindow(w *NextWindow, row map[string]any, max time.Duration, now time.Ti
 		to = end.UTC().Format(time.RFC3339)
 	}
 	return from, to
+}
+
+// literalWindow renders a window relative to now (from: 30d), its length cut
+// at the target's max by moving the start, as rowWindow keeps the onset.
+func literalWindow(w *NextWindow, max time.Duration) (from, to string) {
+	start, _ := ParseDuration(w.From)
+	end, _ := ParseDuration(w.To)
+	if max > 0 && start-end > max {
+		start = end + max
+	}
+	from = FormatDuration(start)
+	if w.To != "" {
+		to = FormatDuration(end)
+	}
+	return from, to
+}
+
+// widens reports whether a relative start reaches further back than the
+// window this invocation ran with (its --from, or the recipe's default).
+func widens(r *Recipe, carry Carry, from string, now time.Time) bool {
+	want, err := ParseDuration(from)
+	if err != nil {
+		return true
+	}
+	ran := r.Spec.Timeframe.Default
+	if carry.From != "" {
+		if d, err := ParseDuration(carry.From); err == nil {
+			ran = d
+		} else if t, err := time.Parse(time.RFC3339Nano, carry.From); err == nil {
+			ran = now.Sub(t)
+		}
+	}
+	return want > ran
+}
+
+// windowSpan is the length of a literal window's --from/--to.
+func windowSpan(from, to string) time.Duration {
+	start, _ := ParseDuration(from)
+	end, _ := ParseDuration(to)
+	return start - end
 }
 
 // rowTime reads a timestamp as DQL returns it: an RFC 3339 string.

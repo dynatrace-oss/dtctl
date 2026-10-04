@@ -139,6 +139,10 @@ next:
     window: {from: event.start, to: event.end, pad: 15m}   # clamped to the target's timeframe.max
 ```
 
+`window: {from: 30d}` (a duration instead of a field) needs no row: with
+`when: empty`, a recipe can suggest itself further back. The edge is dropped
+when the run already looked that far.
+
 ### Fragments
 
 A DQL piece that several recipes must spell identically goes in

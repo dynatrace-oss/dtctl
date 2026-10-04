@@ -477,7 +477,8 @@ func (b *Book) fragmentSources(r *Recipe) []string {
 // those fragments. It reads the parse tree rather than matching text.
 func templateRefs(t *template.Template, root string) (fields, invoked map[string]bool) {
 	fields, invoked = map[string]bool{}, map[string]bool{}
-	var walk func(n parse.Node)
+	walked, followed := map[string]bool{}, map[string]bool{}
+	var walk, uses func(n parse.Node)
 	visit := func(name string) {
 		if tt := t.Lookup(name); tt != nil && tt.Tree != nil {
 			walk(tt.Tree.Root)
@@ -518,14 +519,48 @@ func templateRefs(t *template.Template, root string) (fields, invoked map[string
 			walk(x.List)
 			walk(x.ElseList)
 		case *parse.WithNode:
-			// Inside {{with}}, "." is rebound: only the pipe references the root.
+			// Inside {{with}}, "." is rebound: only the pipe references root
+			// fields, but a fragment invoked in the body is still used.
 			walk(x.Pipe)
 			walk(x.ElseList)
+			uses(x.List)
 		case *parse.TemplateNode:
 			walk(x.Pipe)
-			if !invoked[x.Name] {
-				invoked[x.Name] = true
+			invoked[x.Name] = true
+			if !walked[x.Name] {
+				walked[x.Name] = true
 				visit(x.Name)
+			}
+		}
+	}
+	// uses records only the fragments invoked under n, following them into
+	// fragments they invoke, without their field references: inside a
+	// {{with}} body "." is not the root.
+	uses = func(n parse.Node) {
+		switch x := n.(type) {
+		case *parse.ListNode:
+			if x == nil {
+				return
+			}
+			for _, c := range x.Nodes {
+				uses(c)
+			}
+		case *parse.IfNode:
+			uses(x.List)
+			uses(x.ElseList)
+		case *parse.RangeNode:
+			uses(x.List)
+			uses(x.ElseList)
+		case *parse.WithNode:
+			uses(x.List)
+			uses(x.ElseList)
+		case *parse.TemplateNode:
+			invoked[x.Name] = true
+			if !followed[x.Name] {
+				followed[x.Name] = true
+				if tt := t.Lookup(x.Name); tt != nil && tt.Tree != nil {
+					uses(tt.Tree.Root)
+				}
 			}
 		}
 	}
