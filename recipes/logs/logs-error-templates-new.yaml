@@ -54,8 +54,8 @@ spec:
         by: {pattern = template}
     | filter records > 0
     | fieldsAdd new = before == 0,
-        per_min = records / toDouble(({{.window.to}} - {{.window.from}}) / 1m),
-        before_per_min = before / {{.control}}
+        per_min = toDouble(records) / {{.window.minutes}},
+        before_per_min = toDouble(before) / {{.control}}
     | fields pattern, new, records, before, surge = if(before > 0, round(per_min / before_per_min, decimals: 1)),
         first_seen, last_seen, pods, example = example[content]
     | sort new desc, records desc

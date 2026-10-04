@@ -25,8 +25,8 @@ fetch spans, from: toTimestamp("2026-01-15T10:30:00Z"), to: toTimestamp("2026-01
 | fieldsFlatten v, prefix: ""
 | fieldsRemove v
 | filter signature != "" and f > 0
-| fieldsAdd per_min = f / toDouble((toTimestamp("2026-01-15T12:00:00Z") - toTimestamp("2026-01-15T11:30:00Z")) / 1m), control_per_min = b / 60
-| fields endpoint.name, signature, failures = toLong(round(f)), share = round(f / requests, decimals: 3),
+| fieldsAdd per_min = toDouble(f) / 30, control_per_min = toDouble(b) / 60
+| fields endpoint.name, signature, failures = toLong(round(f)), share = round(toDouble(f) / requests, decimals: 3),
     requests = toLong(round(requests)), per_min = round(per_min, decimals: 2),
     control_per_min = round(control_per_min, decimals: 2), new = b == 0,
     surge = if(b > 0, round(per_min / control_per_min, decimals: 1)),

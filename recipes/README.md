@@ -193,7 +193,7 @@ dql: |
   | fieldsAdd infocus = start_time >= {{.window.from}}
   | summarize { now = countIf(infocus), before = countIf(not(infocus)) }, by: { … }
   | fieldsAdd new = before == 0,
-      per_min = now / toDouble(({{.window.to}} - {{.window.from}}) / 1m), before_per_min = before / {{.control}}
+      per_min = toDouble(now) / {{.window.minutes}}, before_per_min = toDouble(before) / {{.control}}
 ```
 
 A control on another day (the same hour yesterday, a week ago) is a second
@@ -241,6 +241,9 @@ error**; most were measured on real environments.
   maxLength: 100000), total = count() } | expand v | fieldsFlatten v, prefix:
   "" | fieldsRemove v` keeps the rows and adds the total to each. Over no
   input it still yields one row with `total = 0`: add `| filter total > 0`.
+- **A long divided by a long is integer division**: 411 records over 15
+  minutes is 27 per minute, 9 is 0, and a ratio of two such rates is 0 or a
+  division by zero (null). Counts are longs: `toDouble(n) / {{.window.minutes}}`.
 - **`countDistinct` is an estimate** (`countDistinctApprox`). Use
   `countDistinctExact` for small counts that are the answer (problems,
   events), and count events by `event.id`: open events re-emit records.
