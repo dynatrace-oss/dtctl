@@ -247,6 +247,9 @@ type DQLExecuteOptions struct {
 	// recipe's own reading of what the emptiness means. Agent mode carries
 	// it in context.empty_reason instead (see Decorate).
 	EmptyHint string
+	// IsEmpty decides when EmptyHint applies; nil means "no rows". A
+	// recipe whose single all-zero summary row means "nothing" sets it.
+	IsEmpty func([]map[string]interface{}) bool
 	// SkipEmptyDiagnosis turns off the generic empty-result probes and
 	// window advice: a recipe's query is verified, and its own emptyMeans
 	// knows better than a heuristic (a restart metric that has no series
@@ -956,7 +959,10 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 	}
 	if !opts.AgentMode {
 		printNotifications()
-		if len(records) == 0 && opts.EmptyHint != "" {
+		empty := len(records) == 0 || (opts.IsEmpty != nil && opts.IsEmpty(records))
+		// A cut-short read that found nothing is not the absence the hint
+		// describes; the notification printed above already says so.
+		if empty && opts.EmptyHint != "" && !anyPartial(result.GetNotifications()) {
 			defer output.PrintHint("%s", opts.EmptyHint)
 		}
 	}
@@ -1379,4 +1385,14 @@ func (e *DQLExecutor) ExecuteFromFile(filename string, outputFormat string) erro
 	}
 
 	return e.Execute(string(data), outputFormat)
+}
+
+// anyPartial reports whether any notification says the result is incomplete.
+func anyPartial(notifications []QueryNotification) bool {
+	for _, n := range notifications {
+		if ResultIsPartial(n) {
+			return true
+		}
+	}
+	return false
 }

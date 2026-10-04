@@ -5,7 +5,7 @@ timeseries { cpu_alloc = sum(dt.kubernetes.node.cpu_allocatable),
              mem_req = sum(dt.kubernetes.container.requests_memory),
              cpu_use = sum(dt.kubernetes.container.cpu_usage),
              mem_use = sum(dt.kubernetes.container.memory_working_set) },
-  by: {k8s.cluster.name, k8s.node.name}
+  by: {k8s.cluster.name, k8s.node.name}, union: true
 | fieldsAdd live = if(iIndex() >= arraySize(cpu_alloc) - 3 and isNotNull(cpu_alloc[]), 1, else: 0)
 | filter arraySum(live) > 0
 | fieldsAdd cpu_alloc = arrayAvg(cpu_alloc), mem_alloc = arrayAvg(mem_alloc)

@@ -68,7 +68,7 @@ func loadBook(t *testing.T, files map[string]string) *Book {
 // mustRecipe loads one recipe and fails on any load problem.
 func mustRecipe(t *testing.T, name, spec string) (*Book, *Recipe) {
 	t.Helper()
-	b := loadBook(t, map[string]string{"x/" + name + ".yaml": recipeYAML(name, spec)})
+	b := loadBook(t, map[string]string{strings.SplitN(name, "-", 2)[0] + "/" + name + ".yaml": recipeYAML(name, spec)})
 	require.Empty(t, b.Problems)
 	r := b.Get(name)
 	require.NotNil(t, r)

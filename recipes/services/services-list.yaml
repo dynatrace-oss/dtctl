@@ -22,7 +22,7 @@ spec:
   dql: |
     timeseries { requests = sum(dt.service.request.count, scalar: true),
                  failures = sum(dt.service.request.failure_count, scalar: true) },
-      by: {dt.service.name, k8s.namespace.name, k8s.workload.name}
+      by: {dt.service.name, k8s.namespace.name, k8s.workload.name}, union: true
       {{- if or .scope.expr .contains}}, filter: {{with .scope.expr}}{{.}}{{if $.contains}} and {{end}}{{end}}
       {{- with .contains}}contains(dt.service.name, {{.}}, caseSensitive: false){{end}}{{end}}
     | summarize { requests = toLong(sum(requests)), failures = toLong(sum(failures)),

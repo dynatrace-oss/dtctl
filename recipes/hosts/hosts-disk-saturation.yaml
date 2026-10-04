@@ -20,7 +20,7 @@ spec:
       max: 100
   dql: |
     timeseries { used = avg(dt.host.disk.used.percent), avail = avg(dt.host.disk.avail) },
-      by: {dt.smartscape.host, host.name, dt.smartscape.disk}
+      by: {dt.smartscape.host, host.name, dt.smartscape.disk}, union: true
       {{- with .scope.expr}}, filter: {{.}}{{end}}
     | fieldsAdd avg_used_pct = round(arrayAvg(used), decimals: 1)
     | filter avg_used_pct >= {{.threshold}}

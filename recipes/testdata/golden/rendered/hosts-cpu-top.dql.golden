@@ -2,7 +2,7 @@
 timeseries { cpu = avg(dt.host.cpu.usage),
              iowait = avg(dt.host.cpu.iowait),
              steal = avg(dt.host.cpu.steal) },
-  by: {dt.smartscape.host, host.name}
+  by: {dt.smartscape.host, host.name}, union: true
 | fieldsAdd avg_cpu_pct = round(arrayAvg(cpu), decimals: 1),
     peak_cpu_pct = round(arrayMax(cpu), decimals: 1),
     iowait_pct = round(arrayAvg(iowait), decimals: 1),

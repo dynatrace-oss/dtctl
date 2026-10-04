@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -508,7 +510,7 @@ func runRecipe(cmd *cobra.Command, args []string, load *recipeLoad, r *recipes.R
 		}
 	}
 
-	run := dqlRun{Query: rendered.DQL, EmptyHint: strings.TrimSpace(r.Spec.EmptyMeans), SkipEmptyDiagnosis: true}
+	run := dqlRun{Query: rendered.DQL, EmptyHint: strings.TrimSpace(r.Spec.EmptyMeans), SkipEmptyDiagnosis: true, IsEmpty: r.IsEmpty}
 	if rendered.Window != nil {
 		run.TimeframeStart, run.TimeframeEnd = rendered.Window.FromRFC3339(), rendered.Window.ToRFC3339()
 	}
@@ -545,11 +547,24 @@ func decorateRecipeContext(ctx *output.ResponseContext, book *recipes.Book, r *r
 	ctx.Warnings = append(ctx.Warnings, warnings...)
 
 	// records is nil only for a result streamed to disk, which is never empty.
-	empty := records != nil && len(records) == 0
-	if empty {
+	empty := r.IsEmpty(records)
+	partial := recipePartialCause(result)
+	switch {
+	case empty && partial != "":
+		// A scan that stopped early found nothing in the part it read: that
+		// is "unknown", and the recipe's reading of an empty result would
+		// turn it into a verified absence.
+		ctx.EmptyReason = &output.EmptyReason{Code: "recipe_partial", Evidence: partialEvidence(partial)}
+	case empty:
 		ctx.EmptyReason = &output.EmptyReason{Code: "recipe_empty_means", Evidence: strings.TrimSpace(r.Spec.EmptyMeans)}
+	case partial != "":
+		ctx.Warnings = append(ctx.Warnings, "partial result: "+partialEvidence(partial)+"; counts are lower bounds and a row missing here may exist")
 	}
-	next := book.NextCommands(r, rendered.Params, inv.carry, empty, records)
+	if n := finalLimit(rendered.DQL); n > 0 && len(records) == n {
+		ctx.HasMore = true
+		ctx.Suggestions = append(ctx.Suggestions, fmt.Sprintf("# the recipe stops at %d rows and returned %d: this is the top of a longer list, not a total — count with dtctl query '<context.query>' after replacing the final | limit with | summarize n = count()", n, n))
+	}
+	next := book.NextCommands(r, rendered.Params, inv.carry, empty && partial == "", records)
 	adapt := "adapt the recipe: dtctl query '<context.query>'"
 	if requested != nil && rendered.Window != nil {
 		adapt += " --from " + requested.FromRFC3339() + " --to " + requested.ToRFC3339()
@@ -624,4 +639,45 @@ func printRecipeDryRun(cmd *cobra.Command, r *recipes.Recipe, rendered *recipes.
 		}
 	}
 	return rep.Print()
+}
+
+// recipePartialCause is the first reason the query result is incomplete, as
+// an exec.Partial* cause, or "".
+func recipePartialCause(result *exec.DQLQueryResponse) string {
+	if result == nil {
+		return ""
+	}
+	for _, n := range result.GetNotifications() {
+		if c := exec.PartialCause(n); c != "" {
+			return c
+		}
+	}
+	return ""
+}
+
+// partialEvidence names the cut and its remedy.
+func partialEvidence(cause string) string {
+	switch cause {
+	case exec.PartialScanLimit:
+		return "the scan stopped at its data limit before reading the whole window — narrow --from/--to or the scope, or raise --default-scan-limit-gbytes"
+	case exec.PartialTimeout:
+		return "the query timed out before reading the whole window — narrow --from/--to or the scope"
+	case exec.PartialResultLimit:
+		return "the result was cut at the record limit — aggregate further or raise --max-result-records"
+	case exec.PartialConsumption:
+		return "the query stopped at the consumption limit — narrow --from/--to or the scope"
+	}
+	return "the query result is incomplete (" + cause + ")"
+}
+
+var finalLimitRe = regexp.MustCompile(`(?s)\|\s*limit\s+(\d+)\s*$`)
+
+// finalLimit is N of a statement's closing | limit N, or 0.
+func finalLimit(dql string) int {
+	m := finalLimitRe.FindStringSubmatch(strings.TrimSpace(dql))
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
 }

@@ -31,7 +31,7 @@ spec:
       max: 3650
   dql: |
     timeseries { used = avg(dt.host.disk.used.percent), avail = avg(dt.host.disk.avail) },
-      interval: 24h, by: {dt.smartscape.host, host.name, dt.smartscape.disk}
+      interval: 24h, by: {dt.smartscape.host, host.name, dt.smartscape.disk}, union: true
       {{- with .scope.expr}}, filter: {{.}}{{end}}
     | fieldsAdd x = if(isNotNull(used[]), toDouble(iIndex())), xy = used[] * iIndex(),
         recent = if(iIndex() >= arraySize(used) - 2 and isNotNull(used[]), 1, else: 0)

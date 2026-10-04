@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"time"
 )
 
 // Carry is what a follow-up invocation inherits from the current one, as the
@@ -57,9 +58,11 @@ func (b *Book) NextCommands(r *Recipe, params map[string]any, carry Carry, empty
 			}
 			args[k] = v
 		}
-		if ok && len(n.Bind) > 0 {
-			bound := bindRow(target, n.Bind, rows)
-			if bound == nil {
+		var row map[string]any
+		if ok && (len(n.Bind) > 0 || n.Window != nil) {
+			var bound map[string]string
+			bound, row = bindRow(target, n.Bind, n.Window, rows)
+			if row == nil {
 				ok = false
 			}
 			for k, v := range bound {
@@ -69,7 +72,11 @@ func (b *Book) NextCommands(r *Recipe, params map[string]any, carry Carry, empty
 		if !ok {
 			continue
 		}
-		out = append(out, CommandLine(target, args, carryWindow(r, target, carry)))
+		c := carryWindow(r, target, carry)
+		if n.Window != nil {
+			c.From, c.To = rowWindow(n.Window, row, target.Spec.Timeframe.Max, time.Now())
+		}
+		out = append(out, CommandLine(target, args, c))
 	}
 	return out
 }
@@ -88,11 +95,19 @@ func carryWindow(from, to *Recipe, c Carry) Carry {
 // bindRows bounds how far bindRow looks for a usable row.
 const bindRows = 20
 
-// bindRow returns the bind values from the first usable row, or nil.
-func bindRow(target *Recipe, bind map[string]string, rows []map[string]any) map[string]string {
+// bindRow returns the bind values from the first usable row, and the row;
+// nil when no row is usable. A row is usable when every bound field holds a
+// value the target accepts and, with a window, the start field holds a time.
+// An array binds to a list param as its elements.
+func bindRow(target *Recipe, bind map[string]string, win *NextWindow, rows []map[string]any) (map[string]string, map[string]any) {
 	for i, row := range rows {
 		if i == bindRows {
 			break
+		}
+		if win != nil {
+			if _, ok := rowTime(row[win.From]); !ok {
+				continue
+			}
 		}
 		vals := map[string]string{}
 		for k, field := range bind {
@@ -101,18 +116,81 @@ func bindRow(target *Recipe, bind map[string]string, rows []map[string]any) map[
 				vals = nil
 				break
 			}
-			s := strings.TrimSpace(fmt.Sprint(v))
-			if p := target.Spec.Params.Get(k); s == "" || (p != nil && !accepts(p, s)) {
+			p := target.Spec.Params.Get(k)
+			s, ok := bindValue(p, v)
+			if !ok || s == "" || (p != nil && !accepts(p, s)) {
 				vals = nil
 				break
 			}
 			vals[k] = s
 		}
 		if vals != nil {
-			return vals
+			return vals, row
 		}
 	}
-	return nil
+	return nil, nil
+}
+
+// bindValue spells a row value as a param value. An array is accepted only
+// by a list param, as its elements joined by commas; an element that holds
+// a comma itself would split, so such an array does not bind.
+func bindValue(p *Param, v any) (string, bool) {
+	arr, isArr := v.([]any)
+	if !isArr {
+		return strings.TrimSpace(fmt.Sprint(v)), true
+	}
+	if p == nil || p.Type != TypeList {
+		return "", false
+	}
+	parts := make([]string, 0, len(arr))
+	for _, e := range arr {
+		if e == nil {
+			continue
+		}
+		s := strings.TrimSpace(fmt.Sprint(e))
+		if s == "" || strings.Contains(s, ",") {
+			return "", false
+		}
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ","), len(parts) > 0
+}
+
+// rowWindow renders the follow-up's --from/--to from the row: start and end
+// widened by the pad, end empty (now) when the row has none.
+// A window longer than the target's max keeps its start, where the onset
+// is, and ends max later.
+func rowWindow(w *NextWindow, row map[string]any, max time.Duration, now time.Time) (from, to string) {
+	pad, _ := ParseDuration(w.Pad)
+	start, _ := rowTime(row[w.From])
+	start = start.Add(-pad)
+	end, bounded := time.Time{}, false
+	if w.To != "" {
+		if e, ok := rowTime(row[w.To]); ok {
+			end, bounded = e.Add(pad), true
+		}
+	}
+	if !bounded || end.After(now) {
+		end, bounded = now, false
+	}
+	if max > 0 && end.Sub(start) > max {
+		end, bounded = start.Add(max), true
+	}
+	from = start.UTC().Format(time.RFC3339)
+	if bounded {
+		to = end.UTC().Format(time.RFC3339)
+	}
+	return from, to
+}
+
+// rowTime reads a timestamp as DQL returns it: an RFC 3339 string.
+func rowTime(v any) (time.Time, bool) {
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	return t, err == nil
 }
 
 func accepts(p *Param, s string) bool {

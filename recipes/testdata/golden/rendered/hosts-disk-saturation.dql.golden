@@ -1,6 +1,6 @@
 # hosts-disk-saturation v1 — window: default 1h
 timeseries { used = avg(dt.host.disk.used.percent), avail = avg(dt.host.disk.avail) },
-  by: {dt.smartscape.host, host.name, dt.smartscape.disk}
+  by: {dt.smartscape.host, host.name, dt.smartscape.disk}, union: true
 | fieldsAdd avg_used_pct = round(arrayAvg(used), decimals: 1)
 | filter avg_used_pct >= 80
 | fieldsAdd disk = getNodeName(dt.smartscape.disk),

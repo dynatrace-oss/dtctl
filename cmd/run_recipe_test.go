@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,13 +12,17 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dynatrace-oss/dtctl/pkg/client"
+	"github.com/dynatrace-oss/dtctl/pkg/exec"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/recipes"
 	builtinrecipes "github.com/dynatrace-oss/dtctl/recipes"
+	sdkquery "github.com/dynatrace-oss/dtctl/sdk/api/query"
 )
 
 // recipeEnv is a mock environment for recipe tests: a query endpoint that
@@ -426,4 +431,55 @@ func TestHiddenBetterMatchesNamesWhatInventoryHid(t *testing.T) {
 
 	assert.Empty(t, hiddenBetterMatches(book, "slow endpoints", book.Sorted(), hidden, hiddenFor),
 		"a search whose best match is listed warns about nothing")
+}
+
+// TestRecipeEnvelopeReadsTruncationAndZeroRows: a recipe's reading of an
+// empty result applies only to a complete read; a single all-zero summary row
+// is empty under `empty: zero-row`; a result as long as the recipe's own
+// limit says there is more.
+func TestRecipeEnvelopeReadsTruncationAndZeroRows(t *testing.T) {
+	book := recipes.Loader{Builtin: recipes.FileLayer{Layer: recipes.LayerBuiltin, FS: builtinrecipes.FS(), Root: "builtin"}}.Load()
+	base := book.Get("problems-active")
+	require.NotNil(t, base)
+	rendered, err := book.Example(base, time.Now())
+	require.NoError(t, err)
+	scanCut := &exec.DQLQueryResponse{Result: &sdkquery.Result{Metadata: &sdkquery.Metadata{Grail: &sdkquery.GrailMetadata{
+		Notifications: []sdkquery.Notification{{Severity: "WARNING", NotificationType: "SCAN_LIMIT_GBYTES", Message: "scan limit reached"}},
+	}}}}
+	decorate := func(r *recipes.Recipe, result *exec.DQLQueryResponse, records []map[string]interface{}) *output.ResponseContext {
+		ctx := &output.ResponseContext{}
+		decorateRecipeContext(ctx, book, r, rendered, &recipeInvocation{}, nil, nil, result, records)
+		return ctx
+	}
+
+	ctx := decorate(base, &exec.DQLQueryResponse{}, []map[string]interface{}{})
+	require.NotNil(t, ctx.EmptyReason)
+	assert.Equal(t, "recipe_empty_means", ctx.EmptyReason.Code)
+
+	ctx = decorate(base, scanCut, []map[string]interface{}{})
+	require.NotNil(t, ctx.EmptyReason)
+	assert.Equal(t, "recipe_partial", ctx.EmptyReason.Code)
+	assert.Contains(t, ctx.EmptyReason.Evidence, "scan stopped")
+
+	ctx = decorate(base, scanCut, []map[string]interface{}{{"n": 3.0}})
+	assert.Nil(t, ctx.EmptyReason)
+	assert.Contains(t, strings.Join(ctx.Warnings, "\n"), "partial result")
+
+	zero := *base
+	zero.Spec.Empty = recipes.EmptyZeroRow
+	ctx = decorate(&zero, &exec.DQLQueryResponse{}, []map[string]interface{}{{"n": 0.0}})
+	require.NotNil(t, ctx.EmptyReason, "one all-zero row is empty under zero-row")
+	assert.Equal(t, "recipe_empty_means", ctx.EmptyReason.Code)
+
+	limit := finalLimit(rendered.DQL)
+	require.Positive(t, limit, "problems-active ends in | limit N")
+	rows := make([]map[string]interface{}, limit)
+	for i := range rows {
+		rows[i] = map[string]interface{}{"display_id": fmt.Sprintf("P-%d", i)}
+	}
+	ctx = decorate(base, &exec.DQLQueryResponse{}, rows)
+	assert.True(t, ctx.HasMore)
+	assert.Contains(t, strings.Join(ctx.Suggestions, "\n"), "not a total")
+	ctx = decorate(base, &exec.DQLQueryResponse{}, rows[:limit-1])
+	assert.False(t, ctx.HasMore)
 }

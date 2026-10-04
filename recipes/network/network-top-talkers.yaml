@@ -20,7 +20,7 @@ spec:
       max: 200
   dql: |
     timeseries { rx = sum(dt.host.net.nic.bytes_rx), tx = sum(dt.host.net.nic.bytes_tx) },
-      by: {dt.smartscape.host, host.name}
+      by: {dt.smartscape.host, host.name}, union: true
       {{- with .scope.expr}}, filter: {{.}}{{end}}
     | fieldsAdd rx_bytes = arraySum(rx), tx_bytes = arraySum(tx), both = rx[] + tx[]
     | fieldsAdd total_bytes = rx_bytes + tx_bytes,

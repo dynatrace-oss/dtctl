@@ -148,9 +148,24 @@ func (b *Book) Validate(r *Recipe) error {
 			add("spec.scope: unknown dimension %q (known: %s)", d, strings.Join(sortedKeys(b.Scopes), ", "))
 		}
 	}
+	switch s.Empty {
+	case "", EmptyNoRows, EmptyZeroRow:
+	default:
+		add("spec.empty must be %s or %s", EmptyNoRows, EmptyZeroRow)
+	}
 	for i, n := range s.Next {
 		if n.Recipe == "" {
 			add("spec.next[%d]: recipe is required", i)
+		}
+		if w := n.Window; w != nil {
+			if w.From == "" {
+				add("spec.next[%d].window.from is required (the row field holding the start)", i)
+			}
+			if w.Pad != "" {
+				if d, err := ParseDuration(w.Pad); err != nil || d < 0 {
+					add("spec.next[%d].window.pad must be a duration such as 5m", i)
+				}
+			}
 		}
 		switch n.When {
 		case "", "always", "empty", "nonempty":
@@ -286,6 +301,12 @@ func (b *Book) Lint(capabilities map[string]bool) []LintIssue {
 					out = append(out, LintIssue{r.Name(), fmt.Sprintf("next: %s has no param or scope %q", n.Recipe, k)})
 				}
 			}
+			if n.Window != nil && (target.Spec.Timeframe.None || target.Spec.Timeframe.Fixed) {
+				out = append(out, LintIssue{r.Name(), fmt.Sprintf("next: %s takes no window, so window: has nothing to set", n.Recipe)})
+			}
+		}
+		for _, msg := range b.DQLLint(r) {
+			out = append(out, LintIssue{r.Name(), msg})
 		}
 		if r.Spec.Deprecated != nil && r.Spec.Deprecated.ReplacedBy != "" && b.Recipes[r.Spec.Deprecated.ReplacedBy] == nil {
 			out = append(out, LintIssue{r.Name(), fmt.Sprintf("deprecated.replacedBy %q does not exist", r.Spec.Deprecated.ReplacedBy)})

@@ -2,6 +2,7 @@ package recipes
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -191,4 +192,52 @@ emptyMeans: e
 		"dtctl run services-list --cluster=c1 --from=6h",
 		"dtctl run costs-trend",
 	}, got, "an unset optional with-param is left out; a trend recipe does not inherit a plain window")
+}
+
+// TestNextBindsListsAndRowWindows: a problem's array of event ids flows into
+// a list param, and the follow-up runs over the problem's own window.
+func TestNextBindsListsAndRowWindows(t *testing.T) {
+	b := loadBook(t, map[string]string{
+		"k8s/k8s-problem.yaml": recipeYAML("k8s-problem", `
+summary: p
+timeframe: 24h
+dql: fetch dt.davis.problems
+means: m
+emptyMeans: e
+next:
+  - recipe: k8s-evidence
+    bind: {ids: dt.davis.event_ids}
+    window: {from: event.start, to: event.end, pad: 5m}
+`),
+		"k8s/k8s-evidence.yaml": recipeYAML("k8s-evidence", `
+summary: e
+timeframe: {default: 1h, max: 6h}
+params:
+  ids: {type: list, required: true}
+dql: fetch dt.davis.events | filter in(event.id, {{.ids}})
+means: m
+emptyMeans: e
+`),
+	})
+	require.Empty(t, b.Problems)
+	r := b.Get("k8s-problem")
+	rows := []map[string]any{
+		{"dt.davis.event_ids": []any{"a,b"}, "event.start": "2026-03-10T10:00:00Z"}, // an id with a comma cannot bind
+		{"dt.davis.event_ids": []any{"e-1", "e-2"}, "event.start": "2026-03-10T10:00:00.000000000Z", "event.end": "2026-03-10T11:00:00Z"},
+	}
+	got := b.NextCommands(r, nil, Carry{From: "24h"}, false, rows)
+	require.Len(t, got, 1)
+	assert.Equal(t, "dtctl run k8s-evidence --ids=e-1,e-2 --from=2026-03-10T09:55:00Z --to=2026-03-10T11:05:00Z", got[0])
+
+	// Open problem: no end, the follow-up runs to now; a long one is cut at
+	// the target's max, keeping the onset.
+	open := []map[string]any{{"dt.davis.event_ids": []any{"e-1"}, "event.start": "2026-03-10T10:00:00Z", "event.end": nil}}
+	from, to := rowWindow(r.Spec.Next[0].Window, open[0], 0, testNow)
+	assert.Equal(t, "2026-03-10T09:55:00Z", from)
+	assert.Empty(t, to)
+	from, to = rowWindow(r.Spec.Next[0].Window, open[0], 2*time.Hour, testNow)
+	assert.Equal(t, "2026-03-10T09:55:00Z", from)
+	assert.Equal(t, "2026-03-10T11:55:00Z", to)
+
+	assert.Empty(t, b.Lint(map[string]bool{}))
 }

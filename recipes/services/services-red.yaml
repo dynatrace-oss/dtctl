@@ -23,7 +23,7 @@ spec:
     timeseries { p95 = percentile(dt.service.request.response_time, 95, scalar: true),
                  requests = sum(dt.service.request.count, scalar: true),
                  failures = sum(dt.service.request.failure_count, scalar: true) },
-      by: {dt.service.name}
+      by: {dt.service.name}, union: true
       {{- if or .scope.expr .services}}, filter: {{with .scope.expr}}{{.}}{{if $.services}} and {{end}}{{end}}
       {{- with .services}}in(dt.service.name, {{.}}){{end}}{{end}}
     | fields dt.service.name, requests = toLong(requests), failures = toLong(failures),

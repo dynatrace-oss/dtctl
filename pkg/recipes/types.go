@@ -9,6 +9,7 @@
 package recipes
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -133,8 +134,12 @@ type Spec struct {
 	DQL         string       `json:"dql" yaml:"dql"`
 	Means       string       `json:"means" yaml:"means"`
 	EmptyMeans  string       `json:"emptyMeans" yaml:"emptyMeans"`
-	Next        []Next       `json:"next,omitempty" yaml:"next,omitempty"`
-	Deprecated  *Deprecated  `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
+	// Empty says which results read as empty: no rows (the default), or
+	// zero-row, which also counts the single all-zero row a summarize
+	// without by: returns over nothing.
+	Empty      EmptyMode   `json:"empty,omitempty" yaml:"empty,omitempty"`
+	Next       []Next      `json:"next,omitempty" yaml:"next,omitempty"`
+	Deprecated *Deprecated `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
 // SegmentsMode says whether filter segments may narrow a recipe.
@@ -363,6 +368,90 @@ type Next struct {
 	Bind map[string]string `json:"bind,omitempty" yaml:"bind,omitempty"`
 	// When is always (default), empty, or nonempty.
 	When string `json:"when,omitempty" yaml:"when,omitempty"`
+	// Window takes the follow-up's window from the bound row instead of
+	// carrying this invocation's: a problem's own start and end, padded.
+	Window *NextWindow `json:"window,omitempty" yaml:"window,omitempty"`
+}
+
+// NextWindow names the row fields that hold a follow-up's window. To may be
+// empty or null in the row (an open problem): the follow-up then runs to now.
+type NextWindow struct {
+	From string `json:"from" yaml:"from"`
+	To   string `json:"to,omitempty" yaml:"to,omitempty"`
+	// Pad widens the window on both sides, as a duration ("5m").
+	Pad string `json:"pad,omitempty" yaml:"pad,omitempty"`
+}
+
+// EmptyMode is spec.empty.
+type EmptyMode string
+
+const (
+	EmptyNoRows  EmptyMode = "no-rows"
+	EmptyZeroRow EmptyMode = "zero-row"
+)
+
+// IsEmpty reports whether records are an empty result for this recipe. Under
+// zero-row, a single row whose numbers are all zero or null (strings aside,
+// arrays counted by their elements) is empty too: "no X in the window" is the
+// reading, not "found one row".
+func (r *Recipe) IsEmpty(records []map[string]any) bool {
+	if records == nil {
+		return false
+	}
+	if len(records) == 0 {
+		return true
+	}
+	if r.Spec.Empty != EmptyZeroRow || len(records) != 1 {
+		return false
+	}
+	numbers := 0
+	for _, v := range records[0] {
+		zero, isNumber := zeroValue(v)
+		if !zero {
+			return false
+		}
+		if isNumber {
+			numbers++
+		}
+	}
+	return numbers > 0
+}
+
+// zeroValue reports whether v carries nothing: null, a zero number, or an
+// array of such values. isNumber is true for a number or an array; a string
+// or bool is neither zero nor counted, so a label column does not decide.
+func zeroValue(v any) (zero, isNumber bool) {
+	switch x := v.(type) {
+	case nil:
+		return true, false
+	case float64:
+		return x == 0, true
+	case float32:
+		return x == 0, true
+	case int:
+		return x == 0, true
+	case int64:
+		return x == 0, true
+	case json.Number:
+		f, err := x.Float64()
+		return err == nil && f == 0, true
+	case string:
+		// DQL renders long integers as strings: "0" is a zero count.
+		if x == "0" {
+			return true, true
+		}
+		return true, false
+	case bool:
+		return true, false
+	case []any:
+		for _, e := range x {
+			if z, _ := zeroValue(e); !z {
+				return false, true
+			}
+		}
+		return true, true
+	}
+	return false, false
 }
 
 // Deprecated marks a recipe scheduled for removal.

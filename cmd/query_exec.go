@@ -165,6 +165,7 @@ type dqlRun struct {
 	TimeframeStart, TimeframeEnd string
 	Decorate                     func(*output.ResponseContext, *exec.DQLQueryResponse, []map[string]interface{})
 	EmptyHint                    string
+	IsEmpty                      func([]map[string]interface{}) bool
 	SkipEmptyDiagnosis           bool
 }
 
@@ -409,6 +410,7 @@ func runDQL(cmd *cobra.Command, cfg *config.Config, c *client.Client, run dqlRun
 		ShowProgress: !noProgress,
 		Decorate:     run.Decorate,
 		EmptyHint:    run.EmptyHint,
+		IsEmpty:      run.IsEmpty,
 
 		SkipEmptyDiagnosis: run.SkipEmptyDiagnosis,
 	}

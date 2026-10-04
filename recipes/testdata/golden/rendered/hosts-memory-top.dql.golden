@@ -3,7 +3,7 @@ timeseries { used = avg(dt.host.memory.usage),
              avail = min(dt.host.memory.avail.bytes),
              swap_used = avg(dt.host.memory.swap.used),
              swap_total = avg(dt.host.memory.swap.total) },
-  by: {dt.smartscape.host, host.name}
+  by: {dt.smartscape.host, host.name}, union: true
 | fieldsAdd avg_used_pct = round(arrayAvg(used), decimals: 1),
     peak_used_pct = round(arrayMax(used), decimals: 1),
     min_avail_gib = round(arrayMin(avail) / 1073741824, decimals: 2),

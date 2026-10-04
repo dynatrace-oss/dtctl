@@ -20,7 +20,7 @@ spec:
   dql: |
     timeseries { restarts = sum(dt.kubernetes.container.restarts),
                  oom_kills = sum(dt.kubernetes.container.oom_kills) },
-      by: {k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.pod.name}
+      by: {k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.pod.name}, union: true
       {{- with .scope.expr}}, filter: {{.}}{{end}}
     | fieldsAdd restarts = coalesce(arraySum(restarts), 0), oom_kills = coalesce(arraySum(oom_kills), 0)
     | filter restarts >= {{.min_restarts}} or oom_kills > 0

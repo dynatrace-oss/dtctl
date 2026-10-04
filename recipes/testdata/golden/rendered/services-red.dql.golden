@@ -2,7 +2,7 @@
 timeseries { p95 = percentile(dt.service.request.response_time, 95, scalar: true),
              requests = sum(dt.service.request.count, scalar: true),
              failures = sum(dt.service.request.failure_count, scalar: true) },
-  by: {dt.service.name}
+  by: {dt.service.name}, union: true
 | fields dt.service.name, requests = toLong(requests), failures = toLong(failures),
     failure_rate_pct = round(if(requests > 0, failures * 100.0 / requests, else: 0), decimals: 2),
     p95_ms = round(p95 / 1000, decimals: 1)

@@ -27,7 +27,7 @@ spec:
                  avail = min(dt.host.memory.avail.bytes),
                  swap_used = avg(dt.host.memory.swap.used),
                  swap_total = avg(dt.host.memory.swap.total) },
-      by: {dt.smartscape.host, host.name}
+      by: {dt.smartscape.host, host.name}, union: true
       {{- with .scope.expr}}, filter: {{.}}{{end}}
     | fieldsAdd avg_used_pct = round(arrayAvg(used), decimals: 1),
         peak_used_pct = round(arrayMax(used), decimals: 1),

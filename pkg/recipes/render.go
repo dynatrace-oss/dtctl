@@ -3,6 +3,7 @@ package recipes
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
@@ -302,6 +303,9 @@ func (b *Book) Render(r *Recipe, in Input) (*Rendered, error) {
 		data[fieldWindow] = map[string]any{
 			"from": timestampExpr(in.Window.From),
 			"to":   timestampExpr(in.Window.To),
+			// minutes is the window's length, for a rate's denominator: a
+			// duplicate "focus minutes" param could disagree with --from/--to.
+			"minutes": intLit(windowMinutes(in.Window)),
 		}
 		out.InlineWindow = in.Window
 	} else {
@@ -527,4 +531,14 @@ func templateRefs(t *template.Template, root string) (fields, invoked map[string
 	}
 	visit(root)
 	return fields, invoked
+}
+
+// windowMinutes is the window's length in whole minutes, at least 1, so a
+// rate divided by it never divides by zero.
+func windowMinutes(w *Window) int64 {
+	m := int64(math.Round(w.To.Sub(w.From).Minutes()))
+	if m < 1 {
+		return 1
+	}
+	return m
 }
