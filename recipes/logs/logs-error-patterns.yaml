@@ -3,15 +3,15 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: logs-error-patterns
-  version: 2
+  version: 3
   tags: [logs, errors, patterns, messages, triage]
 spec:
-  summary: Most frequent ERROR log messages, with numbers and ids masked so variants group together
+  summary: Most frequent ERROR (or WARN) log messages, with variable parts masked so variants group together
   description: >-
-    What the errors say. Each ERROR record is reduced to a pattern (its first
-    200 characters with line breaks folded, numbers, hex ids and UUIDs replaced
-    by *) and patterns are ranked by count. Narrow to one source with
-    --service.
+    What the errors say. Each record is reduced to a message template: a JSON
+    line contributes its message and error fields, timestamps, IP addresses,
+    UUIDs, hex ids and numbers are masked, and the first 200 characters are
+    kept. Templates are ranked by count. Narrow to one source with --service.
   requires: [logs]
   timeframe: { default: 30m, max: 1d }
   scope: [cluster, namespace, host_group, tag]
@@ -22,45 +22,53 @@ spec:
     contains:
       type: string
       description: Only lines containing this text (case-insensitive)
+    min_level:
+      type: enum
+      values: [ERROR, WARN]
+      default: ERROR
+      description: Lowest normalized status to include; WARN adds warnings (often ten times the errors)
   dql: |
     fetch logs
     {{- with .scope.stage}}
     {{.}}{{end}}
+    {{- if eq .min_level "WARN"}}
+    | filter in(status, {"ERROR", "WARN"})
+    {{- else}}
+    | filter status == "ERROR"{{end}}
     {{- with .service}}
-    | filter dt.service.name == {{.}} or service.name == {{.}}
-        or k8s.workload.name == {{.}} or dt.process_group.detected_name == {{.}}{{end}}
-    | filter status == "ERROR"
+    | filter dt.service.name == {{.}} or service.name == {{.}} or dt.process_group.detected_name == {{.}}
+        or {{template "k8s-workload-logs" .}}{{end}}
     {{- with .contains}}
     | filter contains(content, {{.}}, caseSensitive: false){{end}}
-    | fieldsAdd pattern = replacePattern(
-        substring(trim(replaceString(content, "\n", " ")), from: 0, to: 200),
-        "(UUIDSTRING | [0-9a-fA-F]{8,} | DIGIT+)", "*")
-    | summarize { errors = count(),
+    {{template "log-template"}}
+    | summarize { records = count(), errors = countIf(status == "ERROR"),
                   sources = countDistinct({{template "log-source"}}),
                   last_seen = max(timestamp),
                   example = takeMax(record(timestamp, content = substring(content, from: 0, to: 500))) },
-        by: {pattern}
-    | fields pattern, errors, sources, last_seen, example = example[content]
-    | sort errors desc
+        by: {pattern = template}
+    | fields pattern, records, errors, sources, last_seen, example = example[content]
+    | sort records desc
     | limit 20
   means: >-
-    One row per message pattern, most frequent first. pattern is the first 200
-    characters of the record (line breaks folded into spaces) with digits, hex
-    ids of 8+ characters and UUIDs replaced by *, so "order 123 failed" and
-    "order 456 failed" are one row; messages that differ only after 200
-    characters, or in a leading timestamp format, merge or split accordingly.
-    example is the newest real record (cut at 500 characters). sources counts
-    the distinct emitters (the same attribution as logs-error-sources), so 1
-    means one workload or service says it.
-    Counts are records, so one chatty retry loop can dominate; read the top
-    rows as what is being said most, not as what is most severe.
+    One row per message template, most frequent first. pattern is the
+    record's message with timestamps (<ts>), IP addresses (<ip>), UUIDs (<id>),
+    hex ids (<hex>) and numbers (<n>) masked, cut at 200 characters; for a JSON
+    line it is the message field plus " | " and the error field, so a JSON line
+    and its plain-text twin share a row. example is the newest real record
+    (cut at 500 characters). records counts all matching records, errors those
+    with status ERROR (the same unless --min-level WARN). sources counts the
+    distinct emitters (the same attribution as logs-error-sources), so 1 means
+    one workload or service says it. Counts are records, so one chatty retry
+    loop can dominate: read the top rows as what is said most, not what is
+    most severe, and check whether a template is new before blaming it (a
+    message that was there yesterday did not start today's incident).
   emptyMeans: >-
-    No record has the normalized status ERROR in the window (with --service,
-    none of that source: the name must match dt.service.name, service.name,
-    k8s.workload.name or dt.process_group.detected_name exactly). That is not
-    proof of health: sources that log failures at another level, or whose
-    level is not parsed, report status NONE or INFO, so try `dtctl run
-    logs-search exception`.
+    No record has the normalized status ERROR (or WARN with --min-level WARN)
+    in the window; with --service, none of that source (the name must match
+    dt.service.name, service.name, dt.process_group.detected_name or the k8s
+    workload exactly). That is not proof of health: sources that log failures
+    at another level, or whose level is not parsed, report status NONE or
+    INFO, so try `dtctl run logs-search exception`.
   next:
     - recipe: logs-search
       when: empty

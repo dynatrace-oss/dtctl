@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: logs-for-service
-  version: 1
+  version: 2
   tags: [logs, service, workload, recent, tail]
 spec:
   summary: Recent log lines of one service, workload or process group, newest first
@@ -38,11 +38,14 @@ spec:
     fetch logs
     {{- with .scope.stage}}
     {{.}}{{end}}
-    {{- if .field}}
+    {{- if eq (print .field) "k8s.workload.name"}}
+    | filter {{template "k8s-workload-logs" .service}}
+    {{- else if .field}}
     | filter {{.field}} == {{.service}}
     {{- else}}
     | filter dt.service.name == {{.service}} or service.name == {{.service}}
-        or k8s.workload.name == {{.service}} or dt.process_group.detected_name == {{.service}}
+        or dt.process_group.detected_name == {{.service}}
+        or {{template "k8s-workload-logs" .service}}
     {{- end}}
     {{- with .status}}
     | filter status == {{.}}{{end}}
@@ -58,7 +61,9 @@ spec:
     inside a traced request; open it with traces-get. A Dynatrace service name
     (dt.service.name) is rarely on a log record: logs carry the k8s workload,
     OpenTelemetry service.name or process group instead, which services-list
-    shows next to the service.
+    shows next to the service. A Kubernetes workload also matches pod logs
+    that lack k8s.workload.name (recovered from the pod name), which is often
+    a fifth or more of a workload's lines.
   emptyMeans: >-
     No log record of this source matched in the window. The name has to match
     exactly and case-sensitively one of dt.service.name, service.name,

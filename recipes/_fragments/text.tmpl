@@ -1,0 +1,23 @@
+{{/*
+  Masks the variable parts of a message so occurrences group by template:
+  timestamps, IP addresses, UUIDs, hex ids and numbers, in that order (each
+  pattern would otherwise eat part of the next). Called with the expression
+  to mask as its argument: {{template "text-mask" "log.msg"}}. The
+  placeholders differ (<ts>, <ip>, <id>, <hex>, <n>) so a template stays
+  readable.
+*/}}
+{{define "text-mask"}}replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern({{.}},
+      "DIGIT{4} '-' DIGIT{2} '-' DIGIT{2} [T ] DIGIT{2} ':' DIGIT{2} ':' DIGIT{2} ([.,] DIGIT+)? 'Z'?", "<ts>"),
+      "IPADDR", "<ip>"), "UUIDSTRING", "<id>"), "'0x' XDIGIT+", "<hex>"), "XDIGIT{10,}", "<hex>"), "INT", "<n>"){{end}}
+
+{{/*
+  A log record's message template, as the field `template` (at most 200
+  characters). A JSON line contributes its message and error fields, so it
+  lands on the same row as its plain-text twin; line breaks fold into spaces.
+  Adds log.json, log.msg and log.err as working fields.
+*/}}
+{{define "log-template"}}| parse content, "JSON:log.json"
+| fieldsAdd log.msg = toString(coalesce(log.json[message], log.json[msg], log.json[errorMessage],
+      log.json[error_message], content)),
+    log.err = toString(coalesce(log.json[error], log.json[err], log.json[exception]))
+| fieldsAdd template = substring(trim({{template "text-mask" "replaceString(if(isNull(log.err) or log.err == log.msg, log.msg, else: concat(log.msg, \" | \", log.err)), \"\\n\", \" \")"}}), from: 0, to: 200){{end}}

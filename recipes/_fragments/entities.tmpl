@@ -1,0 +1,14 @@
+{{/*
+  Records of one Kubernetes workload, called with the quoted name as its
+  argument: {{template "k8s-workload-logs" .workload}}. Container logs
+  collected without Kubernetes enrichment carry the pod name but no
+  k8s.workload.name (a fifth to a third of pod logs on some environments), so
+  the name is also recovered from the pod name: Deployment and CronJob pods
+  end in -<hash>-<5 chars>, StatefulSet pods in -<ordinal>, DaemonSet and Job
+  pods in -<5 chars>.
+*/}}
+{{define "k8s-workload-logs"}}(k8s.workload.name == {{.}}
+        or isNull(k8s.workload.name) and startsWith(k8s.pod.name, concat({{.}}, "-"))
+          and (replacePattern(k8s.pod.name, "'-' ALNUM{5,10} '-' ALNUM{5} EOS", "") == {{.}}
+            or replacePattern(k8s.pod.name, "'-' INT EOS", "") == {{.}}
+            or replacePattern(k8s.pod.name, "'-' ALNUM{5} EOS", "") == {{.}})){{end}}

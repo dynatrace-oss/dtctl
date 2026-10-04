@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: logs-error-sources
-  version: 1
+  version: 2
   tags: [logs, errors, sources, workloads, hosts, triage]
 spec:
   summary: Workloads, services and hosts emitting the most ERROR logs
@@ -15,11 +15,20 @@ spec:
   requires: [logs]
   timeframe: { default: 30m, max: 1d }
   scope: [cluster, namespace, host_group, tag]
+  params:
+    min_level:
+      type: enum
+      values: [ERROR, WARN]
+      default: ERROR
+      description: Lowest normalized status to include; WARN adds warnings (often ten times the errors)
   dql: |
     fetch logs
     {{- with .scope.stage}}
     {{.}}{{end}}
-    | filter status == "ERROR"
+    {{- if eq .min_level "WARN"}}
+    | filter in(status, {"ERROR", "WARN"})
+    {{- else}}
+    | filter status == "ERROR"{{end}}
     | fieldsAdd source = {{template "log-source"}},
         source_field = coalesce(
           if(isNotNull(k8s.workload.name), "k8s.workload.name"),
@@ -31,12 +40,13 @@ spec:
           if(isNotNull(log.source), "log.source"),
           if(isNotNull(host.name), "host.name"),
           if(isNotNull(dt.openpipeline.source), "dt.openpipeline.source"))
-    | summarize { errors = count(), hosts = countDistinct(host.name), last_seen = max(timestamp) },
+    | summarize { records = count(), errors = countIf(status == "ERROR"), hosts = countDistinct(host.name), last_seen = max(timestamp) },
         by: {source, source_field, k8s.namespace.name}
-    | sort errors desc
+    | sort records desc
     | limit 25
   means: >-
-    One row per log source, most ERROR records first. source is the first of
+    One row per log source, most records first (ERROR, plus WARN with
+    --min-level WARN; errors counts the ERROR ones). source is the first of
     k8s.workload.name, dt.service.name, service.name,
     dt.process_group.detected_name, faas.name, aws.log_group, log.source,
     host.name and dt.openpipeline.source (the ingest channel, such as an OTLP

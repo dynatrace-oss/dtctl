@@ -1,4 +1,4 @@
-# logs-error-sources v1 — window: default 30m, max 1d
+# logs-error-sources v2 — window: default 30m, max 1d
 fetch logs
 | filter status == "ERROR"
 | fieldsAdd source = coalesce(k8s.workload.name, dt.service.name, service.name,
@@ -14,7 +14,7 @@ fetch logs
       if(isNotNull(log.source), "log.source"),
       if(isNotNull(host.name), "host.name"),
       if(isNotNull(dt.openpipeline.source), "dt.openpipeline.source"))
-| summarize { errors = count(), hosts = countDistinct(host.name), last_seen = max(timestamp) },
+| summarize { records = count(), errors = countIf(status == "ERROR"), hosts = countDistinct(host.name), last_seen = max(timestamp) },
     by: {source, source_field, k8s.namespace.name}
-| sort errors desc
+| sort records desc
 | limit 25
