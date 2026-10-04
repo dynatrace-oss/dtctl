@@ -175,6 +175,15 @@ func unknownRecipeError(load *recipeLoad, name string) error {
 		UsageHint: "List recipes with 'dtctl get recipes' or search them with 'dtctl get recipes --search <words>'.",
 	}
 	if load != nil {
+		// A recipe that failed to load is not unknown: say why it was
+		// dropped, which is what its author needs to fix.
+		for _, p := range load.book.Problems {
+			if strings.Contains(p.Message, fmt.Sprintf("recipe %q:", name)) {
+				e.Message = fmt.Sprintf("recipe %q did not load: %s", name, p.String())
+				e.UsageHint = "Fix the file, then check it with 'dtctl verify recipe -f <file>'."
+				return e
+			}
+		}
 		for i, m := range load.book.Search(strings.ReplaceAll(name, "-", " "), load.book.Sorted()) {
 			if i == 3 {
 				break

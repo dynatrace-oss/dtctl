@@ -512,3 +512,16 @@ func TestQueryEnvelopeNamesMatchingRecipes(t *testing.T) {
 	got = suggestions("fetch bizevents | summarize n = count()")
 	assert.NotContains(t, got, "dtctl run ", "no recipe reads bizevents")
 }
+
+// TestUnknownRecipeNamesItsLoadProblem: a recipe that failed validation is
+// not "unknown"; the error says why it was dropped.
+func TestUnknownRecipeNamesItsLoadProblem(t *testing.T) {
+	book := &recipes.Book{Problems: []recipes.Problem{{
+		Source:  recipes.Source{Location: "mine/hosts-long.yaml"},
+		Message: `recipe "hosts-long": spec.summary must be one line of at most 100 characters`,
+	}}}
+	err := unknownRecipeError(&recipeLoad{book: book}, "hosts-long")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `recipe "hosts-long" did not load`)
+	assert.Contains(t, err.Error(), "at most 100 characters")
+}
