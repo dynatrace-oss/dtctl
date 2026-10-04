@@ -604,7 +604,7 @@ Content is reviewed as content, but it is still tested:
   them: `multi-key-timeseries` (several metric keys without `union: true` keep
   only series every key reports, which hid every pod without an OOM kill),
   `sampling-source`, `sampling-unscaled`, `limit-before-aggregate`,
-  `coalesce-filter`, `unaliased-aggregate`, `interval-equals-window`. Each
+  `coalesce-filter`, `case-folded-filter`, `unaliased-aggregate`, `interval-equals-window`. Each
   was measured to give a wrong or needlessly expensive answer with no error.
   They run on the DQL as `describe` renders it.
 - **`dtctl verify recipe --all`** against a live environment, run in the

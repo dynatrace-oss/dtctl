@@ -135,7 +135,8 @@ def t06(q, env):
 def t07(q, env):
     m = s(env["EVAL_T2_GENAI_MODEL_RE"].lower())
     base = ('fetch spans, from:now()-24h | filter isNotNull(gen_ai.usage.input_tokens) '
-            f'| filter contains(lower(coalesce(gen_ai.request.model, gen_ai.response.model)), {m}) ')
+            f'| filter contains(gen_ai.request.model, {m}, caseSensitive: false) '
+            f'or (isNull(gen_ai.request.model) and contains(gen_ai.response.model, {m}, caseSensitive: false)) ')
     agg = '| summarize calls=count(), inp=sum(gen_ai.usage.input_tokens), out=sum(gen_ai.usage.output_tokens)'
     naive = q(base + agg)
     spell = q(base + agg + ', by:{model=coalesce(gen_ai.request.model, gen_ai.response.model)}')

@@ -175,6 +175,7 @@ recipes.
 | `sampling-unscaled` | a sampled `count()` under-reports by the ratio | `sum(coalesce(dt.system.sampling_ratio, 1))` |
 | `limit-before-aggregate` | `limit` then `summarize` aggregates an arbitrary subset | limit after aggregating |
 | `coalesce-filter` | `coalesce(a, b) == x` in a filter defeats the field index | `a == x or b == x` |
+| `case-folded-filter` | `lower(field)`/`upper(field)` in a filter defeats the n-gram index and reads every record | `contains(f, "x", caseSensitive: false)`, `matchesPhrase`, `matchesValue` |
 | `unaliased-aggregate` | the column is named by the expression, which an adapted query or `--jq` must backquote | `n = count()` |
 | `interval-equals-window` | an interval equal to the window straddles two aligned buckets and reads up to 2x | a smaller interval, or `summarize` |
 

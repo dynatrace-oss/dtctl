@@ -27,6 +27,7 @@ var dqlLints = []dqlLint{
 	{"sampling-unscaled", lintSamplingUnscaled},
 	{"limit-before-aggregate", lintLimitBeforeAggregate},
 	{"coalesce-filter", lintCoalesceFilter},
+	{"case-folded-filter", lintCaseFoldedFilter},
 	{"unaliased-aggregate", lintUnaliasedAggregate},
 	{"multi-key-timeseries", lintMultiKeyTimeseries},
 	{"interval-equals-window", lintIntervalEqualsWindow},
@@ -95,6 +96,19 @@ func lintCoalesceFilter(_ *Recipe, stages []string) string {
 	for _, s := range stages {
 		if c := stageCmd(s); (c == "filter" || c == "filterOut") && coalesceCompare.MatchString(s) {
 			return "coalesce(...) == in a filter defeats the field index; compare each field (a == x or b == x)"
+		}
+	}
+	return ""
+}
+
+// caseFold matches lower(/upper( applied to anything but a string literal:
+// lower("<id>") folds the value, not the field, and leaves the index alone.
+var caseFold = regexp.MustCompile(`\b(lower|upper)\(\s*[^"\s)]`)
+
+func lintCaseFoldedFilter(_ *Recipe, stages []string) string {
+	for _, s := range stages {
+		if c := stageCmd(s); (c == "filter" || c == "filterOut") && caseFold.MatchString(s) {
+			return "lower()/upper() on a field in a filter defeats the n-gram index and scans every record (115 GB against an index skip, measured on a rare term over 10m); use contains(f, \"x\", caseSensitive: false), matchesPhrase or matchesValue, which match case-insensitively on the raw field"
 		}
 	}
 	return ""

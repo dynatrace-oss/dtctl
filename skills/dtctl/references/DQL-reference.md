@@ -93,6 +93,7 @@ fetch logs, from:now()-7d, samplingRatio:1000      -- scan ~1/1000 of the data
 - `samplingRatio:` (power of 10, max 100000) trades exactness for scan volume on wide log/span windows. Extrapolate counts with `sum(dt.system.sampling_ratio)`, not `count()`.
 - Same knobs as dtctl flags when the query text is fixed: `--default-scan-limit-gbytes`, `--default-sampling-ratio`. `--include-contributions --metadata=contributions` reports per-bucket scan contribution — use it to find the heavy buckets, then restrict with `bucket:{"<bucket>"}`. `--default-scan-limit-gbytes -1` is unlimited.
 - Filter on the raw field (`filter loglevel == "ERROR"`), not on a transform of it (`filter lower(loglevel) == "error"`) — the latter defeats index pushdown and scans far more.
+- Case-insensitive text search: `contains(content, "oomkill", caseSensitive: false)`, `matchesPhrase(content, "OOMKilled")` or `matchesValue(field, "*payment*")`, never `contains(lower(content), "oomkill")`. Folding the field disables the n-gram index: for a rare term over 10 minutes, `lower()` scanned 115 GB, while the case-insensitive forms let the index skip the data.
 - A PARTIAL or sampled result is not a complete answer. When Grail reports one, dtctl names the applicable reduction — a hint on stderr for humans, envelope `warnings`/`suggestions` in `--agent` mode. Act on it rather than reading the rows as final.
 - `limit N | summarize` vs `summarize | limit N` is a **semantic** choice (partial sample vs full aggregate), not a cost anti-pattern. Pick by intent.
 
@@ -227,10 +228,11 @@ fetch logs
 | `count()` | `cnt = count()` |
 | `sum(field)` | `total = sum(amount)` |
 | `avg(field)` | `average = avg(duration)` |
-| `contains(str, sub)` | `contains(content, "error")` |
+| `contains(str, sub)` | `contains(content, "error")`; case-insensitive: `contains(content, "error", caseSensitive: false)` |
+| `matchesPhrase(str, phrase)` | `matchesPhrase(content, "connection refused")` (case-insensitive, token-aware) |
 | `startsWith(str, pre)` | `startsWith(name, "api-")` |
 | `endsWith(str, suf)` | `endsWith(source, ".log")` |
-| `lower(str)` | `lower(loglevel) == "error"` |
+| `lower(str)` | `fieldsAdd level = lower(loglevel)` (for display or grouping; never inside a `filter`) |
 | `in(val, arr)` | `in(level, array("A","B"))` |
 | `stringLength(str)` | `stringLength(content)` |
 | `formatTimestamp(ts, format:f)` | `formatTimestamp(timestamp, format:"HH:mm")` |
