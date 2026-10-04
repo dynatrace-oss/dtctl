@@ -124,7 +124,7 @@ HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\s*(?=\n|$)", re.
 def command_words(cmd):
     """The program names of a shell command line (quotes respected; a heredoc's
     body is data, not commands, so it is dropped before tokenizing)."""
-    cmd = HEREDOC.sub("<<HEREDOC\n", cmd)
+    cmd = HEREDOC.sub("<<HEREDOC\n", cmd).replace("\\\n", " ")  # and join continued lines
     try:
         lex = shlex.shlex(cmd, posix=True, punctuation_chars="();<>|&\n")
         lex.whitespace = " \t\r"  # a newline separates commands, like ";"
@@ -156,7 +156,7 @@ def tool_use_flags(c, ws):
             flags.append("Read " + fp[-60:])
     elif c["name"] == "Bash":
         cmd = c["input"].get("command", "")
-        for path in re.findall(r"(?:~|/)[\w./-]+", cmd):
+        for path in re.findall(r"(?:(?<![=\w])~|/)[\w./-]+", cmd):
             outside_ws = path.startswith(("~", "/home", "/etc", "/usr", "/var", "/opt", "/root")) or \
                 (str(ws.parent.parent.parent) in path and "/cfg/skills/" not in path
                  and str(ws) not in path)
@@ -205,7 +205,8 @@ def transcript_metrics(ws):
                     continue
                 txt = c["content"] if isinstance(c["content"], str) else json.dumps(c["content"])
                 flags = pending.pop(c["tool_use_id"])
-                if c.get("is_error") and "Permission to use" in txt and "denied" in txt:
+                if c.get("is_error") and (("Permission to use" in txt and "denied" in txt)
+                                          or "No such tool available" in txt):
                     m["denied"].extend(flags)
                 else:
                     m["off_policy"].extend(flags)
@@ -295,6 +296,22 @@ def paired2(rows, a, b, key="score", tasks=None, n_boot=10000, seed=1):
                 a_mean=mean([mean(per[t][a]) for t in ts]), b_mean=mean([mean(per[t][b]) for t in ts]))
 
 
+def arm_ci(rows, arm, key="score", n_boot=10000, seed=1):
+    """Mean over tasks of an arm's per-task mean, with the same two-level bootstrap CI."""
+    per = defaultdict(list)
+    for r in rows:
+        if r["arm"] == arm and r.get(key) is not None:
+            per[r["task"]].append(r[key])
+    ts = list(per)
+    if not ts:
+        return None
+    rnd = random.Random(seed)
+    boots = sorted(mean([mean([rnd.choice(per[t]) for _ in per[t]]) for t in (rnd.choice(ts) for _ in ts)])
+                   for _ in range(n_boot))
+    return dict(mean=mean([mean(per[t]) for t in ts]), lo=boots[int(0.025 * n_boot)],
+                hi=boots[int(0.975 * n_boot)])
+
+
 def decision(rows, a, b, meta):
     """The preregistered v2 decision rule for arm b against control a."""
     uncovered = {t for t, m in meta.items() if m.get("coverage") == "none"}
@@ -331,7 +348,20 @@ def main():
     tasks = sorted({r["task"] for r in rows})
     meta = {t["id"]: t["meta"] for t in lib.load_tasks()}
 
-    print("## Per arm\n")
+    print("## Summary per arm\n")
+    print("| arm | runs | score [95% CI] | dtctl calls | cost $/run | scanned GB/run (mean, median) | "
+          "runs with a scan-limited result | recipe runs/run | runs with >=1 recipe |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    for a in arms:
+        rs = [r for r in rows if r["arm"] == a]
+        ci = arm_ci(rows, a)
+        gb = [r["scanned_gb"] for r in rs]
+        print(f"| {a} | {len(rs)} | {fmt(ci['mean'])} [{fmt(ci['lo'])}, {fmt(ci['hi'])}] | "
+              f"{fmt(mean([r['calls'] for r in rs]), 1)} | {fmt(mean([r['cost'] for r in rs]), 3)} | "
+              f"{fmt(mean(gb), 1)}, {fmt(st.median(gb), 1)} | {sum(1 for r in rs if r['partial'])} | "
+              f"{fmt(mean([r['runs'] for r in rs]), 2)} | {sum(1 for r in rs if r['runs'])}/{len(rs)} |")
+
+    print("\n## Per arm\n")
     print("| arm | runs | mean score | sd (runs) | sd of task means across reps | fully correct (3) | zero | "
           "dtctl calls | errored | empty | recipe runs | cost $ | tokens in (k) | tokens out (k) | wall s |")
     print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
