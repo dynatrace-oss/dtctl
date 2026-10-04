@@ -213,6 +213,16 @@ exit $rc
 FILTERS = ["jq", "head", "tail", "wc", "sort", "uniq", "grep", "cut", "tr", "cat", "column",
            "cd", "echo", "printf", "date", "ls", "true"]
 
+# Leaving a program off FILTERS is not enough: claude treats some commands as
+# read-only on its own and runs them without an allow rule (the v2 pilot ran
+# `... | sed -E 's/x/y/'` and `... | xargs wc -l`). Deny the ones that can run
+# another program explicitly; a deny rule wins over that built-in judgement.
+DENIED_PROGRAMS = ["sed", "awk", "gawk", "mawk", "xargs", "env", "find", "perl", "python", "python3",
+                   "node", "bash", "sh", "zsh", "eval", "exec", "command", "nohup", "timeout", "nice",
+                   "watch", "parallel", "tee", "dd", "cp", "mv", "rm", "ln", "chmod", "curl", "wget"]
+DISALLOWED = ["WebSearch", "WebFetch", "Task", "Agent", "Write", "Edit", "Grep", "Glob"] + \
+    [f"Bash({p}:*)" for p in DENIED_PROGRAMS]
+
 # GNU sort runs --compress-program; getopt also accepts any unambiguous prefix
 # (`--co`, `--compress`), so refuse every argument that starts with `--co`.
 SORT_SHIM = r"""#!/usr/bin/env bash
@@ -305,7 +315,7 @@ def run_one(env, batch_dir, task, arm, rep, cfg_by_tenant, pointers=None):
            "--permission-mode", "dontAsk",
            "--tools", "Bash,Read,Skill",
            "--allowedTools", ",".join(allowed),
-           "--disallowedTools", "WebSearch,WebFetch,Task,Agent,Write,Edit,Grep,Glob",
+           "--disallowedTools", ",".join(DISALLOWED),
            "--strict-mcp-config", "--no-session-persistence"]
     if system_nudge(arm):
         cmd += ["--append-system-prompt", system_nudge(arm)]

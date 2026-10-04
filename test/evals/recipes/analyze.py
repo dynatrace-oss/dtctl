@@ -97,7 +97,12 @@ def call_metrics(ws):
             sb = [int(x) for x in re.findall(r'"?scannedBytes"?\s*[:=]\s*"?(\d+)', text)]
             if sb:
                 m["scanned_gb"] += sum(sb) / 1e9
-            else:
+            elif re.search(r"executionTimeMilliseconds|scannedDataPoints", text):
+                pass  # metadata without scannedBytes: Grail scanned no bytes (timeseries, entities)
+            elif rc == "0":
+                # a failed query (parse error, unknown field) scanned nothing;
+                # only a successful one whose output dropped the metadata
+                # (--jq, csv) is a gap in the measurement
                 m["scan_unknown"] += 1
             if re.search(r"PARTIAL|scan limit|scanLimit|SCAN_LIMIT", text):
                 m["partial"] += 1
@@ -113,15 +118,22 @@ def call_metrics(ws):
     return m
 
 
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\s*(?=\n|$)", re.S)
+
+
 def command_words(cmd):
-    """The program names of a shell command line (quotes respected)."""
+    """The program names of a shell command line (quotes respected; a heredoc's
+    body is data, not commands, so it is dropped before tokenizing)."""
+    cmd = HEREDOC.sub("<<HEREDOC\n", cmd)
     try:
-        toks = list(shlex.shlex(cmd, posix=True, punctuation_chars=True))
+        lex = shlex.shlex(cmd, posix=True, punctuation_chars="();<>|&\n")
+        lex.whitespace = " \t\r"  # a newline separates commands, like ";"
+        toks = list(lex)
     except ValueError:
         return [cmd.split()[0]] if cmd.split() else []
     words, expect = [], True
     for t in toks:
-        if t in ("|", "||", "&&", ";", "&", "(", ")"):
+        if t.strip(" \n") in ("|", "||", "&&", ";", "&", "(", ")", ""):
             expect = True
         elif expect:
             if "=" in t and not t.startswith("="):  # VAR=value prefix
@@ -133,12 +145,42 @@ def command_words(cmd):
     return words
 
 
+def tool_use_flags(c, ws):
+    """Policy findings for one tool call (empty when it is within policy)."""
+    flags = []
+    if c["name"] == "Read":
+        fp = c["input"].get("file_path", "")
+        # the run's own files (a spilled result, claude's persisted tool
+        # output) are inside its workspace; anything else but the skills is not
+        if "/cfg/skills/" not in fp and not fp.startswith(str(ws) + "/"):
+            flags.append("Read " + fp[-60:])
+    elif c["name"] == "Bash":
+        cmd = c["input"].get("command", "")
+        for path in re.findall(r"(?:~|/)[\w./-]+", cmd):
+            outside_ws = path.startswith(("~", "/home", "/etc", "/usr", "/var", "/opt", "/root")) or \
+                (str(ws.parent.parent.parent) in path and "/cfg/skills/" not in path
+                 and str(ws) not in path)
+            if outside_ws:
+                flags.append("Path " + path[-60:])
+            if "_gt" in path or "/repos/" in path or "/test/evals" in path:
+                flags.append("FORBIDDEN " + path[-60:])
+        for w in command_words(cmd):
+            if w not in ALLOWED_BASH:
+                flags.append("Bash " + w)
+    elif c["name"] != "Skill":
+        flags.append(c["name"])
+    return flags
+
+
 def transcript_metrics(ws):
+    """off_policy lists findings for calls that ran; denied lists the ones
+    claude's permission check refused (attempts, not breaches)."""
     m = dict(cost=None, turns=None, duration_s=None, in_tokens=None, out_tokens=None, skills=[],
-             skill_refs=0, bash=0, off_policy=[], result_error=None)
+             skill_refs=0, bash=0, off_policy=[], denied=[], result_error=None)
     p = ws / "transcript.jsonl"
     if not p.exists():
         return m
+    pending = {}
     for line in p.read_text().splitlines():
         try:
             e = json.loads(line)
@@ -152,25 +194,21 @@ def transcript_metrics(ws):
                     m["skills"].append(c["input"].get("skill") or c["input"].get("command") or "?")
                 elif c["name"] == "Read":
                     m["skill_refs"] += 1
-                    fp = c["input"].get("file_path", "")
-                    if "/cfg/skills/" not in fp:
-                        m["off_policy"].append("Read " + fp[-60:])
                 elif c["name"] == "Bash":
                     m["bash"] += 1
-                    cmd = c["input"].get("command", "")
-                    for path in re.findall(r"(?:~|/)[\w./-]+", cmd):
-                        outside_ws = path.startswith(("~", "/home", "/etc", "/usr", "/var", "/opt", "/root")) or \
-                            (str(ws.parent.parent.parent) in path and "/cfg/skills/" not in path
-                             and str(ws) not in path)
-                        if outside_ws:
-                            m["off_policy"].append("Path " + path[-60:])
-                        if "_gt" in path or "/repos/" in path or "/test/evals" in path:
-                            m["off_policy"].append("FORBIDDEN " + path[-60:])
-                    for w in command_words(cmd):
-                        if w not in ALLOWED_BASH:
-                            m["off_policy"].append("Bash " + w)
+                flags = tool_use_flags(c, ws)
+                if flags:
+                    pending[c["id"]] = flags
+        elif e.get("type") == "user" and isinstance(e.get("message", {}).get("content"), list):
+            for c in e["message"]["content"]:
+                if c.get("type") != "tool_result" or c.get("tool_use_id") not in pending:
+                    continue
+                txt = c["content"] if isinstance(c["content"], str) else json.dumps(c["content"])
+                flags = pending.pop(c["tool_use_id"])
+                if c.get("is_error") and "Permission to use" in txt and "denied" in txt:
+                    m["denied"].extend(flags)
                 else:
-                    m["off_policy"].append(c["name"])
+                    m["off_policy"].extend(flags)
         elif e.get("type") == "result":
             u = e.get("usage") or {}
             m.update(cost=e.get("total_cost_usd"), turns=e.get("num_turns"),
@@ -178,6 +216,9 @@ def transcript_metrics(ws):
                      in_tokens=sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens",
                                                            "cache_read_input_tokens")),
                      out_tokens=u.get("output_tokens"), result_error=e.get("is_error"))
+    # a call with no result in the transcript: assume it ran
+    for flags in pending.values():
+        m["off_policy"].extend(flags)
     return m
 
 
@@ -406,9 +447,12 @@ def main():
 
     off = [(r["task"], r["arm"], r["rep"], r["off_policy"]) for r in rows if r["off_policy"]]
     print("\n## Policy audit\n")
-    print(f"- runs with off-policy tool use: {len(off)}")
+    print(f"- runs with off-policy tool use that ran: {len(off)}")
     for o in off[:20]:
         print(f"  - {o}")
+    den = [r for r in rows if r["denied"]]
+    print(f"- runs with off-policy attempts that claude's permission check denied: {len(den)} "
+          f"({sum(len(r['denied']) for r in den)} findings)")
     print(f"- runs refused by the call budget or verb guard: {sum(1 for r in rows if r['refused'])}")
     print(f"- runs not finishing cleanly: {[(r['task'], r['arm'], r['rep'], r['rc']) for r in rows if r['rc'] != 0]}")
 
