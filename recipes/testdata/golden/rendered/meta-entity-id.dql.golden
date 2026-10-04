@@ -1,0 +1,5 @@
+# meta-entity-id v1 — window: none (state query; no window)
+smartscapeNodes "*"
+| filter id_classic == "<id>" or toString(id) == "<id>" or name == "<id>"
+| fields id, id_classic, type, name
+| limit 20

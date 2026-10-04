@@ -1,0 +1,50 @@
+# Source: prior art (TUI data explorer, recipe prototype ground truth)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: meta-buckets
+  version: 1
+  tags: [meta, discovery, grail, buckets, retention, storage]
+spec:
+  summary: Grail buckets with the table they hold, record count, size and retention
+  description: >-
+    Where the data lives: every bucket, the table it belongs to (logs, spans,
+    events, ...), how many records it holds and for how long. Bucket names
+    let a query read one bucket instead of the whole table.
+  timeframe: none                # current state of the storage, not records in a window
+  params:
+    table:
+      type: string
+      description: Only buckets of this table (logs, spans, events, bizevents, ...)
+    include_empty:
+      type: bool
+      default: false
+      description: Also list buckets that hold no records
+  dql: |
+    fetch dt.system.buckets
+    {{- with .table}}
+    | filter dt.system.table == {{.}}{{end}}
+    {{- if not .include_empty}}
+    | filter records > 0{{end}}
+    | fields name, table = dt.system.table, records,
+        size_gb = round(toDouble(estimated_uncompressed_bytes) / 1000000000, decimals: 1),
+        retention_days, display_name
+    | sort records desc
+    | limit 100
+  means: >-
+    One row per bucket, largest record count first. table is the Grail table
+    the bucket feeds (null for some built-in buckets); size_gb is the
+    estimated uncompressed size, which is roughly what a full scan of the
+    bucket reads. A table split over several buckets can be queried one bucket
+    at a time with `fetch <table>, bucket:{"<name>"}`, which scans only that
+    bucket; retention_days is how far back its data reaches, so a question
+    about older data cannot be answered from it. Not shown: what the records
+    contain, or how fast each bucket grows.
+  emptyMeans: >-
+    No bucket matches. --table is the exact table name (logs, spans, events,
+    bizevents, security.events), and buckets with no records are hidden
+    unless --include-empty is set. With neither, the caller lacks read access
+    to dt.system.buckets.
+  next:
+    - recipe: meta-data-objects
+      when: empty
