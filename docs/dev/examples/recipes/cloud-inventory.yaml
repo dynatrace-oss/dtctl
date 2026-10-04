@@ -1,0 +1,42 @@
+# Source: dt-obs-aws/references/resource-management.md, dt-obs-azure/references/resource-management.md,
+#         dt-obs-gcp (GCP_* wildcard). Collapses ~100 per-type inventory blocks into one family.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: cloud-inventory
+  version: 1
+  tags: [cloud, aws, azure, gcp, inventory]
+spec:
+  summary: Cloud resources by type, account/subscription/project and region
+  timeframe: none                # Smartscape state; a window changes field values
+  scope: [aws_account, azure_subscription, gcp_project, tag]
+  params:
+    provider:
+      type: enum
+      values: [aws, azure, gcp]
+      required: true
+      positional: true           # dtctl run cloud-inventory azure
+    type:
+      type: string
+      pattern: '^(AWS|AZURE|GCP)_[A-Z0-9_]+$'
+      description: One Smartscape type, e.g. AWS_RDS_DBINSTANCE
+  dql: |
+    smartscapeNodes {{if .type}}{{.type}}{{else if eq .provider "aws"}}"AWS_*"{{else if eq .provider "azure"}}"AZURE_*"{{else}}"GCP_*"{{end}}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | summarize resources = count(), by: {type,
+    {{- if eq .provider "aws"}} aws.account.id, aws.region
+    {{- else if eq .provider "azure"}} azure.subscription, azure.location
+    {{- else}} gcp.project.id, gcp.region{{end}} }
+    | sort resources desc
+    | limit 200
+  means: >-
+    Current Smartscape inventory of discovered cloud resources. Type names follow
+    the provider's API path (e.g. AZURE_MICROSOFT_COMPUTE_VIRTUALMACHINES).
+  emptyMeans: >-
+    Smartscape has no resources of this provider or type. The cloud integration
+    is not configured for this environment, or the type name does not exist. Run
+    without --type to list the types that do exist.
+  next:
+    - recipe: cloud-untagged
+      with: { provider: "{{.provider}}" }

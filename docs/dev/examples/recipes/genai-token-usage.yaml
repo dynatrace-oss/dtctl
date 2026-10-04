@@ -1,0 +1,34 @@
+# Source: dt-obs-genai/references/cost-and-tokens.md (and the skill's empty-state rule)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: genai-token-usage
+  version: 1
+  tags: [genai, llm, tokens, cost]
+spec:
+  summary: LLM token consumption by provider and model
+  requires: [spans]
+  timeframe: 24h
+  scope: [cluster, namespace, tag]
+  dql: |
+    fetch spans
+    | filter isNotNull(gen_ai.usage.input_tokens) or isNotNull(gen_ai.usage.output_tokens)
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | summarize input_tokens = sum(gen_ai.usage.input_tokens),
+        output_tokens = sum(gen_ai.usage.output_tokens),
+        cache_read_tokens = sum(gen_ai.usage.cache_read.input_tokens),
+        by: {gen_ai.provider.name, gen_ai.request.model}
+    | fieldsAdd total_tokens = input_tokens + output_tokens
+    | sort total_tokens desc
+  means: >-
+    Token volume per model. Turning it into cost needs per-model prices from the
+    user; never assume prices.
+  emptyMeans: >-
+    No span carries token usage. This is NOT "no AI traffic". Run the presence
+    check: if no span has gen_ai.request.model, the app is not instrumented for
+    AI observability; if such spans exist without usage fields, the
+    instrumentation does not record token counts.
+  next:
+    - recipe: genai-presence
+      when: empty                # the empty-state protocol, as a ready-to-run suggestion

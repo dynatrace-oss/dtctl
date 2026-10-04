@@ -1,0 +1,37 @@
+# Source: dt-obs-problems/SKILL.md (standard pattern; root cause and affected entities)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: problems-active
+  version: 1
+  tags: [problems, davis, triage]
+spec:
+  summary: Currently open Davis problems with root cause and blast radius
+  requires: [davis]
+  timeframe: 2h
+  scope: [cluster, namespace, host_group, tag]
+  params:
+    category:
+      type: enum
+      values: [AVAILABILITY, ERROR, SLOWDOWN, RESOURCE, CUSTOM]
+  dql: |
+    fetch dt.davis.problems
+    | filter not(dt.davis.is_duplicate) and event.status == "ACTIVE"
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- if .category}}
+    | filter event.category == {{.category}}{{end}}
+    | fields event.start, display_id, event.name, event.category,
+        root_cause_entity_name, dt.davis.affected_users_count,
+        affected_entity_ids = smartscape.affected_entities[][id]
+    | sort event.start desc
+  means: >-
+    Open problems, Davis duplicates removed. root_cause_entity_name
+    can be null when Davis found no single cause.
+  emptyMeans: >-
+    No problem update in the window has status ACTIVE. A long-running problem
+    with no update inside a short window can be missed, so widen --from before
+    concluding that nothing is wrong. ("OPEN" is not a status value.)
+  next:
+    - recipe: problems-get
+      bind: { id: display_id }

@@ -1,0 +1,36 @@
+# Source: dt-obs-frontends/references/web-vitals.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: frontends-web-vitals
+  version: 1
+  tags: [frontends, rum, web-vitals]
+spec:
+  summary: p75 LCP and INP per frontend, rated against Core Web Vitals thresholds
+  requires: [rum]
+  timeframe: 2h
+  params:
+    frontend:
+      type: string
+      positional: true
+      description: Restrict to one frontend (exact frontend.name)
+  dql: |
+    timeseries {
+        lcp_p75 = percentile(dt.frontend.web.page.largest_contentful_paint, 75, scalar: true),
+        inp_p75 = percentile(dt.frontend.web.page.interaction_to_next_paint, 75, scalar: true) },
+      by: {frontend.name}
+      {{- if .frontend}}, filter: frontend.name == {{.frontend}}{{end}}
+    | fieldsAdd lcp_rating = if(isNull(lcp_p75), "no_data",
+          else: if(lcp_p75 < 2500, "good", else: if(lcp_p75 < 4000, "needs_improvement", else: "poor"))),
+        inp_rating = if(isNull(inp_p75), "no_data",
+          else: if(inp_p75 < 200, "good", else: if(inp_p75 < 500, "needs_improvement", else: "poor")))
+    | sort lcp_p75 desc
+  means: >-
+    Google Core Web Vitals ratings at p75, in milliseconds: LCP good below 2.5 s,
+    poor from 4 s; INP good below 200 ms, poor from 500 ms. CLS is not here: its
+    metric is stored multiplied by 10,000, so it has its own recipe
+    (frontends-web-vitals-cls).
+  emptyMeans: >-
+    No page-summary data for these frontends. The app is not instrumented with
+    the new RUM (RUM Classic data is not used here), or the name does not match
+    frontend.name.

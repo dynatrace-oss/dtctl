@@ -11,8 +11,8 @@ exposed as a dtctl command:
 
 ```bash
 dtctl get recipes                                  # what is in the book
-dtctl run service-failures --service checkout --from 6h
-dtctl run service-failures --service checkout --dry-run   # show the DQL, don't run it
+dtctl run services-failures --service checkout --from 6h
+dtctl run services-failures --service checkout --dry-run   # show the DQL, don't run it
 ```
 
 The goal is to let AI agents (and humans) answer common questions **without
@@ -97,13 +97,14 @@ plugin (correlation-graph). What carries over:
 
 ### 1. Recipe file format
 
-One recipe per file, `recipes/<name>.yaml`.
+One recipe per file, `recipes/<domain>/<name>.yaml`. Fourteen fuller worked
+examples live in [examples/recipes/](examples/recipes/) (see §12).
 
 ```yaml
 apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
-  name: service-failures          # kebab-case, unique; the `run` subcommand name
+  name: services-failures         # <domain>-<name>, kebab-case; the `run` subcommand
   version: 1                      # content version; bump when the output shape changes
   tags: [services, errors, triage]
 spec:
@@ -112,21 +113,23 @@ spec:
     Groups failed root requests of one service by endpoint and HTTP status,
     most frequent first.
   requires: [spans]               # optional; capability names from `dtctl inventory`
+  scope: [cluster, namespace, tag]  # cross-cutting scope flags (§10)
   params:
     service:
       type: string
       required: true
-      positional: true            # at most one; `dtctl run service-failures checkout`
+      positional: true            # at most one; `dtctl run services-failures checkout`
       description: Service name as shown in Smartscape
     top:
       type: int
       default: 10
       min: 1
       max: 100
-  timeframe:
-    default: 2h                   # or `none` for state queries (smartscapeNodes)
+  timeframe: 2h                   # or `none`, or {default, min, fixed, ...} (§3)
   dql: |                          # illustrative; shipped bodies are verified (§9)
     fetch spans
+    {{- with .scope.stage}}
+    {{.}}{{end}}
     | filter service.name == {{.service}}
     | filter request.is_root_span and request.is_failed
     | summarize n = count(), by: {endpoint.name, http.response.status_code}
@@ -137,10 +140,14 @@ spec:
   emptyMeans: >-
     The service had no failed root requests in the window. Failures may sit on
     a downstream service, or the service name may not match exactly. Check it
-    with `dtctl run services --name <part>`.
+    with `dtctl run services-list`.
   next:
-    - recipe: service-logs
-      with: { service: "{{.service}}" }
+    - recipe: logs-for-service
+      with: { service: "{{.service}}" }   # bound from this invocation's params
+    - recipe: traces-get
+      bind: { trace_id: trace.id }        # phase 2: bound from a result row
+    - recipe: services-list
+      when: empty                         # only suggested on an empty result
   deprecated:                     # optional
     message: ...
     replacedBy: ...
@@ -150,22 +157,28 @@ Schema rules, enforced by the loader and by `dtctl verify recipe`:
 
 | Field | Rule |
 |---|---|
-| `metadata.name` | `^[a-z][a-z0-9-]{1,48}$`; unique within a layer |
+| `metadata.name` | `^[a-z][a-z0-9-]{1,48}$`, starting with a registered domain (`k8s-`, `services-`, …; §11); unique within a layer |
 | `metadata.version` | positive integer; reported in the envelope |
 | `spec.summary` | required, single line, ≤ 100 chars (it is the catalog/`--help` line) |
-| `spec.dql` | required; a Go template over `params` (see §2) |
+| `spec.dql` | required; a Go template over `params`, `scope` and `window` (§2) |
 | `spec.means`, `spec.emptyMeans` | **required** |
-| `spec.timeframe` | required: a default window, or `none` |
-| `spec.params.*` | name `^[a-z][a-z0-9-]*$`, not a reserved framework flag (§4) |
+| `spec.timeframe` | required: a duration, `none`, or a map (§3) |
+| `spec.params.*` | name `^[a-z][a-z0-9_]*$` (a valid template field; the flag spells `_` as `-`); not a reserved framework flag (§4) |
+| `spec.params.*.pattern` | optional regular expression a `string` value must match (`^P-\d+$`) |
+| `spec.scope` | optional list of scope dimensions from `_scopes.yaml`; the DQL must place `.scope.stage` or `.scope.expr`, and must not when no scope is declared (§10) |
+| `spec.segments` | `on` (default) or `off` for recipes over data that filter segments must not narrow (§10) |
 | `spec.requires` | names defined by `dtctl inventory` (built-in or user definitions) |
-| `spec.next[].recipe` | must resolve in the merged book (warning for user layers) |
+| `spec.next[]` | `recipe` must resolve in the merged book (warning for user layers); `with` binds from params, `bind` from result fields (phase 2); `when: always\|empty\|nonempty` |
 
 **Complexity governors**, carried over because the prototype needed them:
 
 - Every new keyword is "default no".
 - A recipe that needs `variants:` is two recipes.
 - DQL bodies stay short enough to read in `describe` (≈20 lines).
-- Templates may test whether a param is present. They may not contain logic.
+- Templates may test whether a param is present and compare an enum. They may
+  not contain other logic.
+- Shared DQL prefixes go into fragments (§2), not copy-paste. Fragments hold
+  complete pipeline stages, never half an expression.
 
 ### 2. Parameters and rendering
 
@@ -193,6 +206,34 @@ Phase 1 types: `string`, `int`, `bool`, `enum` (with `values:`), and
     values.
 - This is deliberately stricter than today's `query --set` (`missingkey=zero`,
   raw substitution). `--set` keeps its behaviour, because it is a stable flag.
+- **Names.** A param is a template field, so it is snake_case (`min_restarts`).
+  Its flag uses dashes (`--min-restarts`). `scope` and `window` are reserved:
+  they hold the framework's template data.
+- **`pattern`** validates a `string` before rendering. For example,
+  `problems-get` takes only `^P-\d+$`, so a wrong ID fails with a usage error
+  instead of an empty result.
+- **Implementation note.** Each param value is a named Go type whose `String()`
+  returns the escaped DQL literal. `{{.provider}}` then prints `"aws"`, while
+  `eq .provider "aws"` still compares the raw value, because `text/template`
+  compares by kind.
+
+**Template data**
+
+| Field | Contents |
+|---|---|
+| `.<param>` | each declared param, rendered as a DQL literal; `nil` when unset |
+| `.scope.stage` | `\| filter <expr>` built from the scope flags, or empty (§10) |
+| `.scope.expr` | the same predicate as a bare expression, for `timeseries … filter:`, or empty |
+| `.window.from`, `.window.to` | the resolved window as DQL timestamp expressions; only for `timeframe: {inline: true}` (§3) |
+
+**Fragments.** Several skill families share a long prefix. In the security
+skill, four-step pipelines repeat a 20–45 line "latest state per vulnerability"
+base in about 15 variants. Fragments are Go's own `{{define}}`/`{{template}}`:
+`recipes/_fragments/*.tmpl` files are parsed into every recipe's template set,
+and a recipe writes `{{template "vuln-latest-state" .}}`. The only additions
+are lint rules: fragment names are unique, every fragment is used, and the
+golden rendered DQL shows the expanded result, so a fragment change shows its
+effect in every recipe that uses it.
 
 ### 3. Timeframe: `--from` / `--to` for recipes and `query`
 
@@ -231,6 +272,19 @@ How it works:
   `--from` was overridden by the query. This needs no DQL parsing on the client.
   It also closes the "non-empty answer, wrong window" failure that the
   empty-result advice cannot catch.
+- **Timeframe forms.** The worked examples needed more than a default:
+
+  | Form | Example | Meaning |
+  |---|---|---|
+  | duration | `timeframe: 2h` | default window; `--from/--to` override it |
+  | `none` | `timeframe: none` | state query; no window is sent and no flags are offered |
+  | `min` | `{default: 30d, min: 14d}` | a trend needs history; a shorter `--from` is a usage error |
+  | `fixed` | `{default: 30m, fixed: true}` | a snapshot of current state (security RVA); `--from/--to` are rejected, not silently ignored |
+  | `inline` | `{default: 7d, inline: true}` | the DQL writes `from:`/`to:` itself from `.window` (billing fetches past the window end to catch late usage) |
+  | `align` | `{default: 7d, align: utc-day, inline: true}` | rounds the resolved window to UTC midnights |
+
+  A search horizon is not a separate form. `problems-get` uses `timeframe: 30d`,
+  and its `describe` text says the window is how far back to look.
 - New flags on the stable `query` command declare their tier:
   `stability.MarkFlag(queryCmd, "from", stability.Experimental, "0.42.0")`,
   and the same for `to`.
@@ -247,16 +301,21 @@ How it works:
 **Each recipe is a cobra subcommand of `run`**, generated from its file.
 
 - Params become flags (`--service`, `--top`), with type, default, required
-  marker and description, so `dtctl run service-failures --help` is the recipe's
+  marker and description, so `dtctl run services-failures --help` is the recipe's
   documentation.
 - The `Short` line is the recipe's `summary`.
-- `run` is a verb in the catalog. Its recipes appear as its resources in the
-  minimal `dtctl commands` output (names only), so the agent bootstrap path lists
-  them for free.
+- `run` is a verb in the catalog. Listing every recipe there does not scale
+  (§11): about 300 names cost about 2k tokens on every agent bootstrap. The
+  minimal `dtctl commands` output therefore shows `run` with its domains and
+  counts (`recipes: {k8s: 28, services: 14, …}`). The full catalog lists every
+  recipe.
 
 **Framework flags**, present on every recipe and reserved as param names:
 
 - the timeframe: `--from`, `--to`
+- the scope dimensions the recipe declares (`--cluster`, `--namespace`,
+  `--tag key=value`, …; §10) and the segment flags shared with `query`
+  (`-S/--segment`, `--segments-file`, `-V/--segment-var`)
 - `--dry-run`: print the rendered DQL and resolved window, execute nothing
 - the output and limit flags shared with `dtctl query`: `-o`,
   `--max-result-records`, `--max-result-bytes`,
@@ -294,12 +353,13 @@ A recipe is a pre-filled `dtctl query`, not a second query engine.
   "result": { "kind": "records", "records": [ ... ] },
   "context": {
     "verb": "run",
-    "resource": "service-failures",
-    "recipe": { "name": "service-failures", "version": 1, "source": "builtin" },
+    "resource": "services-failures",
+    "recipe": { "name": "services-failures", "version": 1, "source": "builtin" },
     "query": "fetch spans\n| filter dt.service.name == \"checkout\"\n...",
     "window": { "from": "2026-10-04T08:00:00Z", "to": "2026-10-04T10:00:00Z" },
+    "scope": { "namespace": ["payments"], "segments": ["team-checkout"] },
     "suggestions": [
-      "dtctl run service-logs --service checkout --from 2h",
+      "dtctl run logs-for-service --service checkout --from 2h",
       "adapt: dtctl query '<context.query>' --from 2h"
     ]
   }
@@ -308,6 +368,12 @@ A recipe is a pre-filled `dtctl query`, not a second query engine.
 
 - `context.query` is the rendered DQL. This is the escape hatch, and it is what
   the evals showed agents actually use.
+- `context.scope` names every filter that narrowed the result and that does not
+  appear in the recipe's own params: scope dimensions, plus segments, including
+  ones a context applied by default (§10). An agent reading an empty or small
+  result must be able to see that something outside the query text narrowed
+  it. `context.query` shows the scope predicate, but not the segments, which
+  Grail applies on the server.
 - **Empty result:** `context.empty_reason` carries a new code,
   `recipe_empty_means`, whose `evidence` is the recipe's `emptyMeans`. dtctl's
   own empty-result diagnosis still runs. If it finds something concrete (a field
@@ -328,12 +394,19 @@ A recipe is a pre-filled `dtctl query`, not a second query engine.
 
 The bootstrap path agents already take is the place to advertise recipes:
 
-1. `dtctl commands` (minimal) lists `run` and its recipe names.
-2. `dtctl get recipes` gives one line per recipe: name, summary and required
-   params. This is the "briefing" the prototype found agents always read.
-   - Agent mode returns a compact list.
-   - `--tag` filters.
-   - Deprecated recipes are hidden unless `--all` is given.
+1. `dtctl commands` (minimal) lists `run` with its recipe domains and counts.
+2. `dtctl get recipes` is the "briefing" the prototype found agents always read.
+   It is built for a book of hundreds of recipes (§11):
+   - With no filter, agent mode returns the **domain index**: domain, one-line
+     description, count. Human mode prints the full table.
+   - `--domain k8s` gives one line per recipe in that domain: name, summary,
+     required params, scope dimensions.
+   - `--search oom` does keyword ranking over name, summary and tags. There
+     are no embeddings and no network calls.
+   - `--tag` filters. Deprecated recipes are hidden unless `--all` is given.
+
+   A typical agent bootstrap costs two short calls: the domain index, then one
+   domain. That replaces dozens of `dtctl commands` and failed-DQL calls.
 3. The `dtctl` skill (`skills/dtctl/SKILL.md`) gets one rule: *before writing
    DQL, check `dtctl get recipes`. `dtctl run <name> --dry-run` shows a recipe's
    DQL as a starting point.* There is no recipe content in the skill. The prototype
@@ -350,8 +423,8 @@ runnable, because inventory evidence can be wrong.
 
 | Layer | Location | Phase |
 |---|---|---|
-| Built-in | `recipes/*.yaml` at the repo root, embedded with `go:embed` (as `skills/dtctl/` is) | 1 |
-| User | `$XDG_CONFIG_HOME/dtctl/recipes/*.yaml` (`~/.config/dtctl/recipes/`) | 1 |
+| Built-in | `recipes/<domain>/*.yaml` at the repo root, embedded with `go:embed` (as `skills/dtctl/` is) | 1 |
+| User | `$XDG_CONFIG_HOME/dtctl/recipes/**/*.yaml` (`~/.config/dtctl/recipes/`) | 1 |
 | Team/org | directories in `DTCTL_RECIPE_PATH` (colon-separated) | 2 |
 | Project | `.dtctl/recipes/`, found by searching upward like `.dtctl.yaml` | 3, DQL-only, trusted only after opt-in (open question) |
 | Pulled bundle | a versioned recipe bundle released independently of dtctl | later, if content cadence demands it |
@@ -364,6 +437,9 @@ is where the prototype's complexity came from.
   and `context.recipe.source` says `user`.
 - Overriding a built-in is a feature. A team can pin a recipe to its own
   environment's field names.
+- A user layer may add fragments and scope dimensions, but may not redefine
+  built-in ones. A changed fragment would silently change built-in recipes
+  that the user never overrode.
 
 **Failure isolation:**
 
@@ -382,7 +458,7 @@ is where the prototype's complexity came from.
 
 | Path | Contents |
 |---|---|
-| `recipes/` | content and `embed.go` only |
+| `recipes/` | content and `embed.go` only: `<domain>/*.yaml`, `_domains.yaml`, `_scopes.yaml`, `_fragments/*.tmpl`, and the generated index (§11) |
 | `pkg/recipes/` | types, loader (layers, precedence), validation, rendering. No cobra and no output code; testable alone. |
 | `cmd/run.go` → `cmd/run_recipe.go` | `cmd/run.go` is already the embedding entry point (`cmd.Run`), so the command lives in `run_recipe.go`: building the `run` subtree from the loaded book, plus `get recipes`, `describe recipe` and `verify recipe` in their verb files |
 | `pkg/exec` | the shared query execution path (extracted from `cmd/query.go`) |
@@ -411,7 +487,7 @@ is where the prototype's complexity came from.
     stable deprecation window. Changing what a recipe returns bumps
     `metadata.version`.
 - **Profiles.**
-  - `run` in a profile's allowlist grants every recipe. `run service-failures`
+  - `run` in a profile's allowlist grants every recipe. `run services-failures`
     grants one; existing segment-prefix matching covers both.
   - Profiles are default-deny, so no existing profile gains recipes silently.
   - Whether the `investigate` preset should include `run` is an open question.
@@ -451,37 +527,262 @@ Content is reviewed as content, but it is still tested:
 - Recipe changes are conventional commits (`feat(recipes): …`,
   `fix(recipes): …`), so they reach users with the normal release flow.
 
+### 10. Scoping and filter context
+
+"Only my team's stuff" reaches a query through five mechanisms. A recipe uses
+each of them in a different way:
+
+| Mechanism | Who sets it | Where it acts | In recipes |
+|---|---|---|---|
+| **Recipe params** | the caller, per recipe | the DQL text | the question's own subject: service, host, problem ID, threshold |
+| **Scope dimensions** | the caller, the same flag on every recipe that declares it | the DQL text (`.scope.stage` / `.scope.expr`) | cross-cutting "where": cluster, namespace, host group, cloud account, primary tag |
+| **Filter segments** | the caller or the context (phase 2) | server-side, the query API's `filterSegments` | passed through unchanged; DQL text is unaware of them |
+| **Permissions** | IAM policies, record-level permissions | server-side, always | cannot be bypassed or detected; `emptyMeans` must allow for them |
+| **Buckets** | the data's ingest configuration | `fetch …, bucket:` | only when a recipe's data lives in a known bucket (`network-top-talkers`) |
+
+The mechanisms combine with AND. None of them can widen what another one
+narrowed.
+
+**Scope dimensions: primary fields and primary tags only.** A scope dimension is
+worth having only if one predicate means the same thing in every recipe. Primary
+Grail fields (`k8s.cluster.name`, `k8s.namespace.name`, `dt.host_group.id`,
+`aws.account.id`, `azure.subscription`, `gcp.project.id`) and primary Grail tags
+(`primary_tags.<key>`) meet that bar: Dynatrace enriches them on logs, metrics,
+spans, events and problems, and on the relevant Smartscape nodes. A recipe over
+spans and a recipe over logs can therefore both write
+`k8s.namespace.name == "payments"`, with no per-data-object mapping table.
+
+Anything else changes spelling per data object, and stays a recipe param:
+`service.name` on spans, `dt.service.name` on metrics, `dt.smartscape.service`
+as an ID. Service logs reach the service only through the pod. The phase 2
+`entity` type handles that hop.
+
+- The dimension list lives in content, `recipes/_scopes.yaml`
+  ([example](examples/recipes/_scopes.yaml)). Adding a dimension needs no code
+  change.
+- A recipe opts in with `scope: [cluster, namespace, tag]` and gets those flags
+  only. A recipe over billing events offers no `--namespace`, because the field
+  is not there.
+- Multiple flags combine with AND. A repeated flag combines with OR, through
+  `in()`. `--tag team=payments --tag team=checkout` becomes
+  `in(primary_tags.team, {"payments", "checkout"})`.
+- The values render as escaped literals, the same as params.
+- `.scope.stage` goes after a `fetch` or `smartscapeNodes`. `.scope.expr` goes
+  into `timeseries … filter:`, so the filter runs before aggregation instead of
+  on a result that has already been aggregated.
+- Deliberately excluded: `dt.security_context` (a permission field that IAM
+  already enforces; filtering on it duplicates the server's job), and
+  `dt.cost.costcenter`/`dt.cost.product`, which are strings on some billing
+  events and `record[]` on others. A cost recipe takes those as explicit params.
+- Management zones do not exist in DQL. A team that used zones moves to
+  segments or primary tags. Recipes have nothing to offer here.
+- Primary tag keys are customer-defined. `dtctl run meta-primary-tags` lists the
+  keys present in the environment (through the `primary-field` tag in
+  `dt.semantic_dictionary.fields`), so an agent can find out that `--tag team=…`
+  is meaningful before using it.
+
+**Filter segments: pass-through, not modelled.** A segment is a saved, named
+filter that the query API applies on the server. Its include rules are per data
+object, which is what the UI uses to offer "my team" across every app. It is
+the closest thing to a scope dimension that already exists, so recipes do not
+re-implement it:
+
+- Every recipe inherits `query`'s segment flags (`-S/--segment`,
+  `--segments-file`, `-V/--segment-var`). They are sent unchanged as
+  `filterSegments`.
+- **Phase 2: context default segments.** `dtctl config set-context prod
+  --segments team-checkout` applies the segment to every `query` and `run` in
+  that context, unless `--no-segments` is given. This is the "agent works for
+  one team" setup with nothing to remember per call.
+- `spec.segments: off` marks a recipe whose data segments must not narrow:
+  billing usage, security posture, environment discovery. Passing `-S` to such a
+  recipe is a usage error. A context default is skipped and the envelope says
+  so, so the agent does not read a full billing total as "my team's cost".
+- `context.scope` (§5) lists the applied dimensions and segments, including a
+  context default. An empty result with a segment applied is a different
+  finding from an empty result without one.
+
+**Permissions.** Record-level permissions and sensitive-data fieldsets remove
+records or fields with no error, so a recipe cannot tell "nothing happened"
+from "you may not see it". `emptyMeans` of recipes over data that is commonly
+restricted (security events, audit logs, billing) says so. Reviewers check
+this; it is not something lint can decide.
+
+**Precedence for a dimension set in more than one place.** Explicit wins:
+a flag on the command, then the context's default (phase 2), then the recipe's
+own default. The context never overrides what the caller typed.
+
+### 11. Size and organization of the recipe book
+
+**How large will the book get?** The best evidence is the `dynatrace-for-ai`
+skills: that is where the same knowledge is being written today, as Markdown.
+
+Across 23 query-heavy skills there are 2,093 DQL blocks. About 1,320 ask a real
+question. The rest teach syntax, show fragments or duplicate other blocks.
+Collapsed with the rules below, the 1,320 become **about 270–315 distinct
+recipes**:
+
+| Skill | DQL blocks | Question queries | Distinct recipes |
+|---|---|---|---|
+| dt-obs-azure | 306 | 192 | 15–20 |
+| dt-sec-insights | 210 | 77 | 15–20 |
+| dt-obs-aws | 197 | 118 | 15–18 |
+| dt-dql-essentials | 173 | 94 | 3–5 (discovery utilities) |
+| dt-obs-frontends | 150 | 133 | 30–35 |
+| dt-obs-hosts | 140 | 115 | ~25 |
+| dt-obs-kubernetes | 136 | 112 | 25–30 |
+| dt-obs-tracing | 130 | 106 | 25–30 |
+| dt-obs-services | 101 | 94 | 12–14 |
+| dt-obs-problems | 90 | 52 | 15–18 |
+| dt-obs-gcp | 83 | 38 | 8–10 |
+| dt-platform-costs | 68 | 18 | 10–12 |
+| dt-obs-genai | 52 | 39 | ~15 |
+| dt-obs-network-flows | 49 | 35 | ~15 |
+| 9 smaller skills | 208 | 97 | ~45 |
+| **Total** | **2,093** | **1,320** | **~270–315** |
+
+(Counts come from scripted classification plus a manual pass over every
+heading, so treat them as ±10%. Snapshot: `dynatrace-for-ai` at 4f9aa71.)
+
+The other prior work overlaps heavily with this: dynatui's 35 views, the
+prototype's 52 recipes and correlate's 28 evidence recipes. The union is
+about **300–350 recipes**.
+
+**Collapsing rules.** These are what keep the number in the hundreds. They are
+the review rules for new content.
+
+1. **The same pipeline over a different type or metric is one recipe with an
+   enum param.** About 25 Azure and 30 AWS blocks are "one metric for one
+   resource type". About 70 runtime blocks (Java, Go, PHP, Node.js, Python,
+   .NET) become one `services-runtime-health --runtime --signal`.
+2. **The same question with a different group-by or filter is one recipe with an
+   optional param or an enum `--by`.** 30 Kubernetes label queries become one
+   `k8s-label-coverage --label`. Browser, OS and geo breakdowns are one recipe.
+3. **Teaching blocks are never recipes.** ❌/✅ pairs, pitfall demonstrations,
+   placeholder syntax and step-by-step walkthroughs (35 of the problems skill's
+   90 blocks) stay in the skill.
+4. **Copy-paste is a duplicate.** One security reference repeats about 27
+   blocks from two others. GCP has 33 blocks with the same shape.
+5. **A composed pipeline is a fragment plus variants.** The security skill's
+   "base + dedup → optional filter → summarize → variant" accounts for its 77
+   fragments.
+
+**When would it be thousands?** If a recipe were written per entity type, per
+extension or per technology, with no families. Smartscape has hundreds of node
+types, and the Extensions Hub has hundreds of extensions, each with its own
+metrics. A recipe per pair would reach thousands quickly, and nearly all of
+them would be one template with a different literal. The book does not grow
+that way:
+
+- Core (built-in) aims at **300–500** recipes once mature: the union above
+  plus areas the skills do not cover yet.
+- Per-extension and per-technology long tail goes to **org and extension
+  layers** (`DTCTL_RECIPE_PATH`, phase 2), owned by whoever owns the
+  extension. An extension could ship its recipes the way it ships dashboards.
+- A family parameter whose values come from the environment (all node types, all
+  metric keys) is not an enum but a `meta-` discovery recipe plus a string
+  param.
+
+**What scale changes in the design:**
+
+- **Domains.** Names are `<domain>-<name>`, against a registry in
+  `recipes/_domains.yaml` ([example](examples/recipes/_domains.yaml)) of about
+  15 domains. Files live in `recipes/<domain>/`. Domains drive the catalog
+  index, `get recipes --domain` and `CODEOWNERS`, so the Kubernetes team owns
+  `recipes/k8s/`.
+- **Discovery** returns the domain index first, then one domain (§6). An agent
+  never reads 300 summaries.
+- **Loading.** Parsing 300 small YAML files on every `run` would break the 5 ms
+  startup budget (§7). The build generates a compact index (name, domain,
+  summary, params, scope) into the embedded set. The loader reads the index, and
+  parses a full recipe only when it runs or describes it. User layers are small
+  and are parsed directly.
+- **CI cost.** Offline tests are cheap at any size. `verify recipe --all` makes
+  one verify call per recipe, so about 300 calls per live run. That is fine for
+  a nightly job. On a PR it runs only for changed recipes and their fragments.
+- **One source for skills and recipes.** At this size, the skills and the book
+  would be two copies of the same knowledge. The long-term answer is that a
+  skill reference *points to* the recipe (`dtctl run k8s-pod-restarts`), and
+  the generated Markdown arm of the evaluation is what agents without dtctl get.
+  This is an open question, and the evaluation decides it.
+
+### 12. Worked examples
+
+[examples/recipes/](examples/recipes/) holds fourteen recipes adapted from the
+`dynatrace-for-ai` skills, plus the domain registry, the scope dimensions, and a
+fragment. Together they exercise every schema feature in this design:
+
+| Recipe | Shows |
+|---|---|
+| `k8s-pod-restarts` | `.scope.expr` inside `timeseries filter:`; an int threshold |
+| `services-red` | a `list` param; a unit trap (µs) encoded once in `means` |
+| `traces-slow-endpoints` | an optional positional param; `next` bound from a result row |
+| `logs-error-patterns` | optional filters plus `.scope.stage` |
+| `problems-active` | an `enum` param; the `ACTIVE` vs `OPEN` trap |
+| `problems-get` | `pattern` on a positional ID; a lookback window |
+| `hosts-disk-saturation` | host-group scope on metrics |
+| `cloud-inventory` | `timeframe: none`; an enum that selects the node type |
+| `frontends-web-vitals` | unit and threshold conventions |
+| `genai-token-usage` | `next: when: empty`, the "is anything instrumented?" protocol |
+| `security-vulns-critical-exploitable` | a `fixed` snapshot window; a fragment; `segments: off` |
+| `costs-dps-by-capability` | an inline window aligned to UTC days; `segments: off` |
+| `capacity-cpu-saturation` | a minimum window for a trend |
+| `network-top-talkers` | a bucket-scoped fetch |
+
+They also show where the skills' knowledge goes:
+
+- the query becomes `dql`;
+- the prose around it ("response time is in microseconds", "`OPEN` is not a
+  status") becomes `means` and `emptyMeans`;
+- "next, look at …" becomes `next`.
+
+None of them has been executed against an environment. They are design
+material, not the initial set.
+
 ## Initial recipe set
 
 The prototype's eval suite is a good source for the first ~12 recipes: most of
 them encode a trap that cost control-arm agents calls or a wrong answer. Every
-one is re-verified on at least two environments before it lands.
+one is re-verified on at least two environments before it lands. The worked
+examples (§12) are the next candidates, once verified the same way.
 
 | Recipe | Question | Why it earns a recipe |
 |---|---|---|
-| `error-log-sources` | top sources of ERROR logs | most common triage entry point |
-| `service-latency` | services ranked by p95 | sampling hid the true slow tail and flipped a ranking in one eval |
-| `service-failures` | failure signatures of one service | common triage step (a correlation-graph evidence recipe) |
-| `active-problems` | open Davis problems | problem update records vs distinct current problems |
-| `host-census` | hosts by OS/cloud | the `dt.entity.*` lookback view under-counted on one tenant and over-counted on another; Smartscape is live state |
-| `cloud-function-census` | serverless functions per cloud | same lookback trap at fleet scale (~1.2k of ~9.3k Lambdas found) |
+| `logs-error-sources` | top sources of ERROR logs | most common triage entry point |
+| `services-latency` | services ranked by p95 | sampling hid the true slow tail and flipped a ranking in one eval |
+| `services-failures` | failure signatures of one service | common triage step (a correlation-graph evidence recipe) |
+| `problems-active` | open Davis problems | status is `ACTIVE`, not `OPEN`; Davis duplicates must be filtered |
+| `hosts-census` | hosts by OS/cloud | the `dt.entity.*` lookback view under-counted on one tenant and over-counted on another; Smartscape is live state |
+| `cloud-functions-census` | serverless functions per cloud | same lookback trap at fleet scale (~1.2k of ~9.3k Lambdas found) |
 | `k8s-workload-status` | ready vs desired replicas | era-specific manifest keys; superseded pods linger in topology |
-| `oom-killed-pods` | pods with OOM kills | truncated series undercounted (21–50 of 252) at scale |
-| `rum-volume` | user events per frontend | control agents guessed 8–10 wrong data object names |
+| `k8s-oom-killed-pods` | pods with OOM kills | truncated series undercounted (21–50 of 252) at scale |
+| `frontends-event-volume` | user events per frontend | control agents guessed 8–10 wrong data object names |
 | `genai-token-usage` | tokens by model/provider | guided-by-skill query scanned ≈6 GB where the recipe scanned ≈0 |
 | `security-detections` | attack detections | proving absence cheaply (≈10× less scan) |
-| `compliance-findings` | posture findings | a 2h default-window count reported as "7 days" |
+| `security-compliance-findings` | posture findings | a 2h default-window count reported as "7 days" |
 
 ## Phasing
 
-**Phase 1 (this design):**
+**Phase 1a (MVP):**
 - single-query DQL recipes
-- built-in plus user layers
+- built-in plus user layers, domain-prefixed names
 - `run`, `get/describe/verify recipe`
 - `--from/--to` on recipes and `query`, `context.window`
+- typed params, including `pattern`
 - `emptyMeans`, plus `next` bound from params
+- segment flags passed through from `query`
 - ~12 built-in recipes
 - the skill pointer
+
+**Phase 1b (the worked examples need these):**
+- scope dimensions (`_scopes.yaml`, `.scope.stage`/`.scope.expr`,
+  `context.scope`)
+- timeframe forms: `none`, `min`, `fixed`, `inline` with `align`
+- `next.when`
+- fragments
+- `segments: off`
+- `get recipes --domain/--search` and the domain index in the catalog
+- the generated index for lazy loading
 
 **Phase 2, gated on the evaluation below:**
 - `entity` param type: name-or-ID resolution with ambiguity errors, plus
@@ -489,7 +790,8 @@ one is re-verified on at least two environments before it lands.
   and the prototype each solved separately
 - `next` bound from result rows
 - `get recipes --check` against inventory
-- `DTCTL_RECIPE_PATH`
+- `DTCTL_RECIPE_PATH` (org and extension layers)
+- context default segments, with `--no-segments`
 
 **Phase 3:**
 - `steps:` (named DQL steps referencing earlier steps' results; parallel when
@@ -526,7 +828,7 @@ tokens in/out, cost, wall time, scanned bytes.
 |---|---|
 | Per-environment recipe books generated by discovery, with run stamps (the prototype) | Most of the complexity, little of the measured value; capabilities now come from `dtctl inventory` |
 | `dtctl query --recipe <name> --set k=v` | Params can't be typed flags; no per-recipe `--help`/completion; recipes invisible in the catalog |
-| Recipes as top-level verbs (`dtctl service-failures`) | Pollutes the verb namespace; collides with plugin dispatch; blurs built-in vs content |
+| Recipes as top-level verbs (`dtctl services-failures`) | Pollutes the verb namespace; collides with plugin dispatch; blurs built-in vs content |
 | Recipes as `get <name>` resources | Mixes content into the resource model and the stability manifest |
 | Go-defined catalog (dynatui `catalog.Spec`) | Couples content changes to code changes, the opposite of the goal |
 | Raw template substitution (today's `--set`) | DQL injection by accident; silent empty renders on typos |
@@ -545,3 +847,14 @@ tokens in/out, cost, wall time, scanned bytes.
    the `describe` call at the price of a longer index?
 5. Where should the eval harness live: in this repository (`test/evals/`, data
    outside the repo) or alongside the prototype?
+6. Should a context carry default scope dimensions (`--namespace payments` on
+   every call), or are default segments (§10) enough? Segments already work
+   across all data objects and in the UI. A second mechanism would need a
+   strong reason.
+7. Should the `dynatrace-for-ai` skills reference recipes instead of carrying
+   their own DQL, making the recipe book the single source? This depends on the
+   evaluation, and on whether the skills must work without dtctl.
+8. Who owns a domain? `CODEOWNERS` per `recipes/<domain>/` assumes owners
+   exist for each of the ~15 domains.
+9. Should cost attribution fields (`dt.cost.costcenter`, `dt.cost.product`)
+   become scope dimensions once their type is consistent across billing events?

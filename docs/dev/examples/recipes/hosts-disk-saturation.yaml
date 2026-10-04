@@ -1,0 +1,36 @@
+# Source: dt-obs-hosts/references/host-metrics.md, dt-obs-hosts/SKILL.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: hosts-disk-saturation
+  version: 1
+  tags: [hosts, disk, capacity]
+spec:
+  summary: Disks above a used-space threshold, per host
+  requires: [host-metrics]
+  timeframe: 1h
+  # host_group is a primary field, enriched on host metrics, so the scope
+  # filter can be pushed down into timeseries instead of a getNodeField() lookup.
+  scope: [host_group, cluster, tag]
+  params:
+    threshold:
+      type: int
+      default: 80
+      min: 1
+      max: 100
+  dql: |
+    timeseries used = avg(dt.host.disk.used.percent),
+      by: {dt.smartscape.host, dt.smartscape.disk}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd avg_used_pct = arrayAvg(used), peak_used_pct = arrayMax(used)
+    | filter avg_used_pct > {{.threshold}}
+    | fieldsAdd host_name = getNodeName(dt.smartscape.host)
+    | fields host_name, dt.smartscape.disk, avg_used_pct, peak_used_pct
+    | sort avg_used_pct desc
+  means: >-
+    Disks averaging above the threshold. The peak shows whether usage is still
+    climbing toward full.
+  emptyMeans: >-
+    No monitored disk averaged above the threshold. Hosts without OneAgent
+    infrastructure monitoring report no disk metrics at all: they are absent
+    from this result, not healthy.

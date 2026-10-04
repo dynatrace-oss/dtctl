@@ -1,0 +1,35 @@
+# Source: dt-obs-network-flows/references/oneagent-flows/oneagent-flows.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: network-top-talkers
+  version: 1
+  tags: [network, flows, hosts]
+spec:
+  summary: Hosts moving the most network traffic (OneAgent network flows)
+  requires: [network-flows]
+  timeframe: 1h
+  scope: [host_group, cluster, tag]
+  params:
+    top:
+      type: int
+      default: 20
+      max: 200
+  dql: |
+    fetch events, bucket: {"default_network_flows"}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | summarize total_bytes = sum(network_flow.bytes.rx + network_flow.bytes.tx),
+        flows = count(), by: {dt.smartscape.host}
+    | fieldsAdd host_name = getNodeName(dt.smartscape.host),
+        total_mb = round(toDouble(total_bytes) / 1024 / 1024, decimals: 1)
+    | fields host_name, dt.smartscape.host, total_mb, flows
+    | sort total_mb desc
+    | limit {{.top}}
+  means: >-
+    Received plus transmitted bytes as seen by each capturing host. Every flow is
+    reported from that host's side.
+  emptyMeans: >-
+    The default_network_flows bucket has no events in the window. Network
+    connection monitoring is off, or was enabled less than about 15 minutes ago.
+    NetFlow and AWS VPC flow logs are stored as logs, not here.

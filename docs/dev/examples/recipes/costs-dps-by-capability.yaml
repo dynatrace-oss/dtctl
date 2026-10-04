@@ -1,0 +1,38 @@
+# Source: dt-platform-costs/references/billing-capabilities.md ("Base Usage") and SKILL.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: costs-dps-by-capability
+  version: 1
+  tags: [costs, dps, billing]
+spec:
+  summary: Billable DPS usage per capability for whole UTC days
+  requires: [billing]
+  # Billing needs explicit timestamps: usage is emitted up to ~80 min late, so
+  # the fetch runs 2h past the window and attributes by usage.start. `inline`
+  # makes .window.from/.window.to available and skips the default-timeframe
+  # mechanism; `align` rounds the window to UTC midnights. Both render as DQL
+  # timestamp expressions; timeAdd shifts one.
+  timeframe: { default: 7d, align: utc-day, inline: true }
+  segments: off                  # billing events carry no team primary tags
+  dql: |
+    fetch dt.system.events, from: {{.window.from}}, to: {{timeAdd .window.to "2h"}}
+    | filter event.kind == "BILLING_USAGE_EVENT"
+    | filter not in(event.type, {"Automation Workflow", "Security Posture Management",
+        "Metrics - Ingest & Process", "Traces - Ingest & Process"})
+    | fieldsAdd effective_start = coalesce(usage.start, timestamp)
+    | filter effective_start >= {{.window.from}} and effective_start < {{.window.to}}
+    | fieldsAdd usage = coalesce(billed_gibibyte_hours, billed_host_hours, billed_msu_hours,
+        billed_container_hours, billed_bytes, billed_sessions, billed_pod_hours,
+        billed_synthetic_action_count, billed_http_request_count, billed_invocations,
+        `usage.quantity.billable`)
+    | dedup {event.id, event.type}
+    | summarize billable_usage = sum(usage), by: {event.type}
+  means: >-
+    Billable quantity per capability, each in its own unit, so rows cannot be
+    added together. Workflows, Security Posture Management, metrics and traces
+    are billed differently and have their own recipes.
+  emptyMeans: >-
+    No billing usage events in these days. This does NOT mean the capability is
+    unlicensed or free. Check read access to dt.system.events and that the
+    account is on DPS.

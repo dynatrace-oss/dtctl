@@ -1,0 +1,41 @@
+# Source: dt-obs-kubernetes/SKILL.md (OOM-kill and restart queries, merged)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: k8s-pod-restarts
+  version: 1
+  tags: [k8s, pods, oom, triage]
+spec:
+  summary: Pods whose containers restarted or were OOM-killed in the window
+  requires: [k8s-metrics]
+  timeframe: 1h
+  # cluster/namespace are scope dimensions, not params: every scoped recipe
+  # spells them --cluster/--namespace and means k8s.cluster.name/k8s.namespace.name.
+  scope: [cluster, namespace, tag]
+  params:
+    min_restarts:                # flag: --min-restarts
+      type: int
+      default: 5
+      min: 1
+  dql: |
+    timeseries { restarts = sum(dt.kubernetes.container.restarts),
+                 oom_kills = sum(dt.kubernetes.container.oom_kills) },
+      by: {k8s.cluster.name, k8s.namespace.name, k8s.pod.name}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd total_restarts = arraySum(restarts), total_oom_kills = arraySum(oom_kills)
+    | filter total_restarts >= {{.min_restarts}} or total_oom_kills > 0
+    | fields k8s.cluster.name, k8s.namespace.name, k8s.pod.name, total_restarts, total_oom_kills
+    | sort total_oom_kills desc, total_restarts desc
+    | limit 50
+  means: >-
+    Each row is a pod that is crash-looping (restarts) or hitting its memory
+    limit (OOM kills). OOM kills mean the limit is too low or the process leaks.
+    Restarts without OOM kills usually mean failing liveness probes or a crash on
+    start. Readiness-probe failures are not restarts and do not appear here.
+  emptyMeans: >-
+    No pod restarted at least min_restarts times and none was OOM-killed in the
+    window. A misspelled --cluster/--namespace, or a cluster without Kubernetes
+    metrics, gives the same empty result. Check with `dtctl run k8s-clusters`.
+  next:
+    - recipe: k8s-warning-events
+      bind: { namespace: k8s.namespace.name, pod: k8s.pod.name }   # phase 2: bound from a row

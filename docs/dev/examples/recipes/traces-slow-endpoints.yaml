@@ -1,0 +1,40 @@
+# Source: dt-obs-tracing/references/performance-analysis.md (exemplar pattern from dt-obs-tracing/SKILL.md)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: traces-slow-endpoints
+  version: 1
+  tags: [traces, latency, endpoints]
+spec:
+  summary: Slowest endpoints by p99 root-span duration, with an example trace each
+  requires: [spans]
+  timeframe: 1h
+  scope: [cluster, namespace, tag]
+  params:
+    service:
+      type: string
+      positional: true
+      description: Restrict to one service (exact dt.service.name)
+  dql: |
+    fetch spans
+    | filter request.is_root_span == true
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- if .service}}
+    | filter dt.service.name == {{.service}}{{end}}
+    | summarize { requests = count(), p95 = percentile(duration, 95),
+                  p99 = percentile(duration, 99),
+                  example = takeAny(record(start_time, trace.id)) },
+        by: {dt.service.name, endpoint.name}
+    | sort p99 desc
+    | limit 10
+  means: >-
+    Endpoints ranked by the tail latency of entry (root) spans; durations are in
+    nanoseconds. "requests" counts stored spans, so with trace sampling it
+    undercounts real traffic. example.trace.id opens a representative trace.
+  emptyMeans: >-
+    No root spans in the window. The service is not traced (no OneAgent or
+    OpenTelemetry instrumentation), or the name does not match dt.service.name.
+  next:
+    - recipe: traces-get
+      bind: { trace_id: example.trace.id }

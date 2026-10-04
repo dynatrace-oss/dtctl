@@ -1,0 +1,40 @@
+# Source: dt-obs-problems/SKILL.md ("specific problem")
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: problems-get
+  version: 1
+  tags: [problems, davis]
+spec:
+  summary: Details, root cause and affected entities of one problem (P-xxxxx)
+  requires: [davis]
+  # A search horizon, not an analysis window: the problem may have started
+  # long ago. --from widens the search.
+  timeframe: 30d
+  params:
+    id:
+      type: string
+      required: true
+      positional: true           # dtctl run problems-get P-2410123
+      pattern: '^P-\d+$'
+      description: Problem display ID
+  dql: |
+    fetch dt.davis.problems
+    | filter display_id == {{.id}}
+    | sort timestamp desc
+    | limit 1
+    | fields display_id, event.status, event.start, event.end, event.name,
+        event.category, event.description, dt.davis.is_duplicate,
+        root_cause_entity_id, root_cause_entity_name,
+        affected_entity_ids = smartscape.affected_entities[][id],
+        dt.davis.affected_users_count, dt.davis.event_ids
+  means: >-
+    Latest state of the problem. event.end is null while it is ACTIVE.
+    dt.davis.event_ids links to the contributing dt.davis.events. If
+    dt.davis.is_duplicate is true, the problem was merged into another one.
+  emptyMeans: >-
+    No problem with this display ID in the last 30 days. It is older, the ID is
+    mistyped, or it belongs to another environment. Re-run with a longer --from.
+  next:
+    - recipe: problems-logs
+      with: { id: "{{.id}}" }

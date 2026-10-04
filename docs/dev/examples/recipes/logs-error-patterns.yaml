@@ -1,0 +1,39 @@
+# Source: dt-obs-logs/SKILL.md (top error messages; process-group filter)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: logs-error-patterns
+  version: 1
+  tags: [logs, errors, triage]
+spec:
+  summary: Most frequent ERROR log lines, optionally narrowed
+  requires: [logs]
+  timeframe: 24h
+  scope: [cluster, namespace, host_group, tag]
+  params:
+    process_group:
+      type: string
+      description: Detected process group name
+    contains:
+      type: string
+      description: Only lines containing this text
+  dql: |
+    fetch logs
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter status == "ERROR"
+    {{- if .process_group}}
+    | filter dt.process_group.detected_name == {{.process_group}}{{end}}
+    {{- if .contains}}
+    | filter contains(content, {{.contains}}){{end}}
+    | summarize error_count = count(), last_seen = max(timestamp), by: {content}
+    | sort error_count desc
+    | limit 20
+  means: >-
+    Identical error lines ranked by frequency. Lines that differ only in IDs or
+    timestamps count separately, so read the top rows as patterns, not totals.
+  emptyMeans: >-
+    No record has the normalized status ERROR. That is not proof of health:
+    sources that log failures at another level, or whose level is not mapped,
+    report status NONE or INFO. Check the distribution with
+    `dtctl run logs-status-distribution`.

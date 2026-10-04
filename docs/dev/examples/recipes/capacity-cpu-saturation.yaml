@@ -1,0 +1,38 @@
+# Source: dt-obs-predictive-analytics/SKILL.md (linear trend to saturation)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: capacity-cpu-saturation
+  version: 1
+  tags: [capacity, hosts, cpu, forecast]
+spec:
+  summary: Hosts ranked by linear-trend days until CPU reaches a ceiling
+  requires: [host-metrics]
+  # A trend needs history: --from shorter than 14d is rejected.
+  timeframe: { default: 30d, min: 14d }
+  scope: [host_group, cluster, tag]
+  params:
+    ceiling:
+      type: int
+      default: 90
+      min: 1
+      max: 100
+  dql: |
+    timeseries cpu = avg(dt.host.cpu.usage), interval: 1d, by: {dt.smartscape.host}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd current = arrayLast(cpu), days = arraySize(cpu) - 1
+    | filter isNotNull(current) and days > 0
+    | fieldsAdd daily_growth = (arrayLast(cpu) - arrayFirst(cpu)) / days
+    | fieldsAdd days_to_saturation = if(daily_growth > 0,
+        toLong(({{.ceiling}} - current) / daily_growth), else: 9999)
+    | fieldsAdd host_name = getNodeName(dt.smartscape.host)
+    | fields host_name, current, daily_growth, days_to_saturation
+    | sort days_to_saturation asc
+    | limit 20
+  means: >-
+    A rough first-to-last-point linear projection; 9999 means flat or falling.
+    For a real forecast, use the timeseries-forecast analyzer with at least twice
+    the horizon as history.
+  emptyMeans: >-
+    No host reported CPU over the period, which means no OneAgent-monitored
+    hosts in scope.

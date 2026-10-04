@@ -1,0 +1,40 @@
+# Source: dt-obs-services/SKILL.md, dt-obs-services/references/service-metrics.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: services-red
+  version: 1
+  tags: [services, red, latency, errors]
+spec:
+  summary: Request rate, failure rate and p95 latency per service
+  requires: [service-metrics]
+  timeframe: 2h
+  scope: [cluster, namespace, tag]
+  params:
+    services:                    # list: --services checkout,cart
+      type: list
+      description: Restrict to these service names (exact dt.service.name)
+  dql: |
+    timeseries { p95 = percentile(dt.service.request.response_time, 95, scalar: true),
+                 requests = sum(dt.service.request.count, scalar: true),
+                 failures = sum(dt.service.request.failure_count, scalar: true) },
+      by: {dt.service.name}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    {{- if .services}}
+    | filter in(dt.service.name, {{.services}}){{end}}
+    | fieldsAdd p95_ms = p95 / 1000,
+        failure_rate_pct = if(requests > 0, failures * 100.0 / requests, else: 0)
+    | fields dt.service.name, requests, failures, failure_rate_pct, p95_ms
+    | sort requests desc
+    | limit 50
+  means: >-
+    RED summary per service. Response time is stored in microseconds; p95_ms is
+    already converted. Failures are Dynatrace's failure detection
+    (dt.service.request.failure_count), not raw HTTP 5xx counts.
+  emptyMeans: >-
+    No requests were recorded for the selected services in the window. Service
+    names match dt.service.name exactly and are case-sensitive, so a typo looks
+    the same as an idle service. List names with `dtctl run services-list`.
+  next:
+    - recipe: traces-slow-endpoints
+      bind: { service: dt.service.name }
