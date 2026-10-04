@@ -84,6 +84,17 @@ API spec discovery and the governed HTTP passthrough:
 
 ---
 
+### [RECIPES_DESIGN.md](RECIPES_DESIGN.md) (proposed)
+Recipes: named, parameterized DQL queries defined in YAML and run as `dtctl run <recipe>`:
+- **Recipe Format** - one YAML file per recipe; typed params rendered as DQL literals; mandatory `emptyMeans`
+- **Timeframe** - `--from`/`--to` shared by recipes and `dtctl query`, effective window reported back
+- **Layers** - built-in recipes embedded from `recipes/`, user overrides in the config dir
+- **Prior Work & Evaluation** - what the earlier prototype's evals showed, and the gate for phase 2
+
+**Use this for**: implementing or extending recipes, or authoring built-in recipe content.
+
+---
+
 ### [../LIVE_DEBUGGER.md](../LIVE_DEBUGGER.md)
 User-facing Live Debugger workflow documentation:
 - **Workspace Filters** - Target runtimes with `dtctl update breakpoint --filters`
