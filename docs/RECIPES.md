@@ -228,6 +228,9 @@ merely slow or slightly off in an editor is a wrong answer here.
 
 **Correctness traps**
 
+The ones a lint can see fail `go test ./recipes/` and `dtctl verify recipe`
+(the lint table is in `recipes/README.md`); the rest are on you.
+
 - `interval:` equal to the window reads up to twice the data (the grid is
   aligned); use `1m`/`5m` and sum, or `summarize`.
 - A `timeseries` over several metric keys keeps only the series every key

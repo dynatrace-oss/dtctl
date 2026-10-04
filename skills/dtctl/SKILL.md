@@ -34,17 +34,19 @@ A recipe is a named, verified DQL query with typed parameters, a default window,
 
 | Question about | Recipes |
 |---|---|
-| open / recent problems, root cause | `problems-active`, `problems-get`, `problems-history`, `problems-logs` |
-| service errors, latency, throughput | `services-red`, `services-failures`, `services-latency`, `services-list` |
-| traces, slow endpoints, span errors | `traces-errors`, `traces-slow-endpoints`, `traces-get` |
-| log errors, patterns, sources | `logs-error-sources`, `logs-error-patterns`, `logs-for-service`, `logs-for-trace`, `logs-search` |
+| open / recent problems, root cause | `problems-active`, `problems-get`, `problems-history`, `problems-logs`, `problems-evidence` |
+| service errors, latency, throughput | `services-red`, `services-failures`, `services-latency`, `services-list`, `services-failure-signatures`, `services-failure-logs`, `services-slow-endpoints-shift` |
+| traces, slow endpoints, span errors | `traces-errors`, `traces-slow-endpoints`, `traces-get`, `traces-exceptions` |
+| log errors, patterns, sources | `logs-error-sources`, `logs-error-patterns`, `logs-error-templates-new`, `logs-for-service`, `logs-for-trace`, `logs-search` |
 | Kubernetes pods, workloads, nodes | `k8s-pod-restarts`, `k8s-workload-status`, `k8s-node-pressure`, `k8s-warning-events`, `k8s-clusters` |
 | hosts CPU, memory, disks | `hosts-cpu-top`, `hosts-memory-top`, `hosts-disk-saturation`, `hosts-census` |
+| what changed: deployments, config, rollouts | `changes-recent`, `k8s-changes-new` |
 | capacity, forecasts | `capacity-cpu-saturation`, `capacity-disk-forecast` |
 | LLM / GenAI tokens, models | `genai-token-usage`, `genai-presence` |
 | web vitals, frontend errors | `frontends-web-vitals`, `frontends-errors`, `frontends-list` |
 | vulnerabilities, detections, compliance | `security-vulns-open`, `security-vulns-critical-exploitable`, `security-detections`, `security-compliance-findings` |
 | cloud resources, network, DPS cost | `cloud-inventory`, `network-top-talkers`, `costs-dps-by-capability` |
+| which tables, buckets, tags; an entity ID | `meta-data-objects`, `meta-buckets`, `meta-primary-tags`, `meta-entity-id` |
 
 ```bash
 dtctl get recipes --search "pod restarts"  # ranked matches for words of the question, with their arguments
