@@ -4,7 +4,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: problems-history
-  version: 1
+  version: 2
   tags: [problems, davis, mttr, recurring, trend]
 spec:
   summary: Problem counts and time to resolve, by category, title or root cause
@@ -18,14 +18,20 @@ spec:
       default: event.category
       render: identifier
       description: Group by category, problem title (recurring problems) or root-cause entity
+    entity:
+      type: string
+      description: Only problems that affect or relate to this entity (ID or exact name)
   dql: |
     fetch dt.davis.problems
     | filter not(dt.davis.is_duplicate)
     {{- with .scope.stage}}
     {{.}}{{end}}
+    {{- if .entity}}
+    | filter {{template "problem-affects" .entity}}{{end}}
     | fieldsAdd duration_min = if(event.status == "CLOSED",
         toDouble(event.end - event.start) / 60000000000)
-    | summarize { problems = count(), active = countIf(event.status == "ACTIVE"),
+    | summarize { problems = countDistinctExact(event.id),
+        active = countDistinctExact(if(event.status == "ACTIVE", event.id)),
         mttr_min = round(avg(duration_min), decimals: 1),
         p50_min = round(median(duration_min), decimals: 1),
         p90_min = round(percentile(duration_min, 90), decimals: 1),
@@ -34,13 +40,15 @@ spec:
     | sort problems desc
     | limit 50
   means: >-
-    One row per group: problems with an update in the window (Davis duplicates
-    removed), how many are still ACTIVE, and the mean, median and p90 time to
-    resolve in minutes, over the CLOSED ones only. A long-open problem counts
-    but adds no duration, so a low mttr_min next to many active problems is not
-    good news. Grouping by event.name surfaces recurring problems; by
-    root_cause_entity_name, a null group holds the problems without a single
-    identified root cause (most of them).
+    One row per group: distinct problems with an update in the window (Davis
+    duplicates removed), how many are still ACTIVE, and the mean, median and
+    p90 time to resolve in minutes, over the CLOSED ones only. A long-open
+    problem counts but adds no duration, so a low mttr_min next to many active
+    problems is not good news. A group whose count dwarfs the rest is the
+    recurring problem to fix first; grouping by event.name shows which
+    problem recurs, by root_cause_entity_name where (a null group holds the
+    problems without a single identified root cause, most of them). Not shown:
+    individual problems (problems-active, problems-get) or a time series.
   emptyMeans: >-
     No problem was updated in the window, which on a monitored environment
     usually means a short window or a scope that matched nothing (values are

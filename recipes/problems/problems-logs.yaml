@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: problems-logs
-  version: 1
+  version: 2
   tags: [problems, davis, logs, correlation, root-cause]
 spec:
   summary: Error and warning logs from the entities a problem affects, per source (P-xxxxx)
@@ -24,12 +24,17 @@ spec:
   # IDs (dt.smartscape*), depending on the environment's generation; the
   # problem lists both, so both are matched. dt.source_entity can be an array,
   # and `in [subquery]` matches only a scalar, so its first elements are tested
-  # one by one (an iterative expression is not allowed with a subquery). The
-  # subqueries keep the scan to the entity columns; a lookup or join here
-  # reads every log record in full.
+  # one by one (an iterative expression is not allowed with a subquery). Pod
+  # logs often carry no entity ID at all, so a problem placed on Kubernetes
+  # workloads also matches by namespace and workload name, the name recovered
+  # from the pod name when the record lacks k8s.workload.name. The subqueries
+  # keep the scan to the entity columns; a lookup or join here reads every log
+  # record in full.
   dql: |
     {{- $classic := printf "[fetch dt.davis.problems | filter display_id == %s | expand id = affected_entity_ids | fields id]" .id}}
     {{- $smartscape := printf "[fetch dt.davis.problems | filter display_id == %s | expand e = smartscape.affected_entities | fields id = e[id]]" .id}}
+    {{- $namespaces := printf "[fetch dt.davis.problems | filter display_id == %s | expand v = k8s.namespace.name | fields v]" .id}}
+    {{- $workloads := printf "[fetch dt.davis.problems | filter display_id == %s | expand v = k8s.workload.name | fields v]" .id}}
     fetch logs
     | filter in(status, {{.status}})
     | filter dt.entity.service in {{$classic}}
@@ -41,26 +46,37 @@ spec:
         or dt.smartscape_source.id in {{$smartscape}}
         or dt.smartscape.service in {{$smartscape}}
         or dt.smartscape.host in {{$smartscape}}
+        or k8s.namespace.name in {{$namespaces}}
+          and (k8s.workload.name in {{$workloads}}
+            or isNull(k8s.workload.name)
+              and (replacePattern(k8s.pod.name, "'-' ALNUM{5,10} '-' ALNUM{5} EOS", "") in {{$workloads}}
+                or replacePattern(k8s.pod.name, "'-' INT EOS", "") in {{$workloads}}
+                or replacePattern(k8s.pod.name, "'-' ALNUM{5} EOS", "") in {{$workloads}}))
     | summarize { lines = count(), first_seen = min(timestamp), last_seen = max(timestamp),
           example = takeLast(substring(content, to: 300)) },
-        by: {source = coalesce(dt.service.name, k8s.workload.name, faas.name,
-          host.name, log.source, aws.log_group), status}
+        by: {source = {{template "log-source"}}, status}
     | sort lines desc
     | limit 30
   means: >-
-    Log volume per source (the service, workload, function, host or log source that wrote
-    the lines) and status, from the entities the problem affects, with the last
-    line as an example (cut to 300 characters). The counts cover the window, not
-    the problem's lifetime: compare first_seen with event.start from
-    problems-get. A source whose dt.source_entity lists more than three entities
-    can be missed.
+    Log volume per source (the workload, service, function, host or log source
+    that wrote the lines) and status, from the entities the problem affects and,
+    for a problem placed on Kubernetes workloads, from those workloads' pods,
+    with the last line as an example (cut to 300 characters). The counts cover
+    the window, not the problem's lifetime: a source whose first_seen is well
+    before event.start (problems-get) was already failing and is a symptom
+    shared with normal operation, not evidence; one that starts at the problem
+    is. Matching a workload by name can include a same-named workload in
+    another namespace the problem also lists. Not shown: logs of entities the
+    problem only relates to, and sources whose dt.source_entity lists more than
+    three entities.
   emptyMeans: >-
-    No ERROR/WARN line from the affected entities in the window. Either the
-    entities do not ship logs (synthetic monitors, frontends and cloud
-    resources usually do not), the lines have another status (try --status
-    ERROR,WARN,INFO,NONE), or the problem had no update inside the window: the
-    lookup only sees problems updated in the window, so a problem that closed
-    before --from matches nothing. Check the ID with problems-get.
+    No ERROR/WARN line from the affected entities in the window. Not an
+    all-clear for the problem: either the entities do not ship logs (synthetic
+    monitors, frontends and cloud resources usually do not), the lines have
+    another status (try --status ERROR,WARN,INFO,NONE), or the problem had no
+    update inside the window: the lookup only sees problems updated in the
+    window, so a problem that closed before --from matches nothing. Check the
+    ID and its event.start with problems-get.
   next:
     - recipe: problems-get
       with: { id: "{{.id}}" }

@@ -12,3 +12,15 @@
           and (replacePattern(k8s.pod.name, "'-' ALNUM{5,10} '-' ALNUM{5} EOS", "") == {{.}}
             or replacePattern(k8s.pod.name, "'-' INT EOS", "") == {{.}}
             or replacePattern(k8s.pod.name, "'-' ALNUM{5} EOS", "") == {{.}})){{end}}
+
+{{/*
+  dt.davis.problems records that name an entity, called with a quoted entity
+  ID or exact entity name: {{template "problem-affects" .entity}}. Problems
+  carry the entity in places from different generations, none reliable on its
+  own: the Smartscape affected and related entities (id, name, type records),
+  the classic affected ID list, and the root cause.
+*/}}
+{{define "problem-affects"}}(iAny(smartscape.affected_entities[][id] == {{.}} or smartscape.affected_entities[][name] == {{.}})
+        or iAny(smartscape.related_entities[][id] == {{.}} or smartscape.related_entities[][name] == {{.}})
+        or iAny(affected_entity_ids[] == {{.}})
+        or root_cause_entity_id == {{.}} or root_cause_entity_name == {{.}}){{end}}

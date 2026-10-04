@@ -3,14 +3,14 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: problems-get
-  version: 1
+  version: 2
   tags: [problems, davis, root-cause]
 spec:
   summary: Details, root cause and affected entities of one problem (P-xxxxx)
   requires: [davis]
   # A search horizon, not an analysis window: the problem may have started
   # long ago. --from widens the search.
-  timeframe: 7d
+  timeframe: 24h
   params:
     id:
       type: string
@@ -18,29 +18,40 @@ spec:
       positional: true           # dtctl run problems-get P-2410123
       pattern: '^P-\d+$'
       description: Problem display ID
+  # Display IDs are reused (an environment can hold two problems with the same
+  # P-number, one per problem generation), so the latest record of each
+  # distinct problem is kept rather than one record overall.
   dql: |
     fetch dt.davis.problems
     | filter display_id == {{.id}}
     | sort timestamp desc
-    | limit 1
+    | dedup event.id
+    | limit 3
     | fields display_id, event.status, event.start, event.end, event.name,
         event.category, event.description, dt.davis.is_duplicate,
         root_cause_entity_id, root_cause_entity_name,
         affected_entity_ids, affected_entities = smartscape.affected_entities,
+        related_entities = smartscape.related_entities,
+        k8s.cluster.name, k8s.namespace.name, k8s.workload.name, dt.host_group.id,
         dt.davis.affected_users_count, dt.davis.event_ids
   means: >-
     Latest state of the problem. event.end is null while it is ACTIVE.
     affected_entity_ids holds classic entity IDs (empty on Smartscape-only
     environments); affected_entities holds the Smartscape id, type and name of
     each affected entity, and either list can be the longer one.
-    event.description is Davis's markdown narrative of the evidence.
-    dt.davis.event_ids links to the contributing dt.davis.events. If
-    dt.davis.is_duplicate is true, the problem was merged into another one.
+    related_entities, k8s.* and dt.host_group.id place the problem: the
+    cluster, namespace, workloads and host group to scope follow-up recipes
+    with (--cluster, --namespace, --host-group). event.description is Davis's
+    markdown narrative of the evidence; dt.davis.event_ids links to the
+    contributing dt.davis.events. If dt.davis.is_duplicate is true, the problem
+    was merged into another one. Two rows mean the display ID was reused: pick
+    the one whose event.start fits the question. Not shown: the logs, traces
+    and metrics behind the evidence (problems-logs has the logs).
   emptyMeans: >-
-    No problem with this display ID was updated in the last 7 days. It is
-    older (re-run with a longer --from, e.g. --from 30d), the ID is mistyped
-    (display IDs are environment-specific), or it belongs to another
-    environment.
+    No problem with this display ID was updated in the last 24 hours. That is
+    likelier the window than the ID: re-run with --from 30d before doubting
+    the ID. Otherwise the ID is mistyped or belongs to another environment
+    (display IDs are per environment and not unique within one).
   next:
     - recipe: problems-logs
       with: { id: "{{.id}}" }

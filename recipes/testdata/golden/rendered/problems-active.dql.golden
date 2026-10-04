@@ -1,4 +1,4 @@
-# problems-active v1 — window: default 2h
+# problems-active v2 — window: default 1d
 fetch dt.davis.problems
 | filter not(dt.davis.is_duplicate) and event.status == "ACTIVE"
 | fields event.start, display_id, event.name, event.category,
