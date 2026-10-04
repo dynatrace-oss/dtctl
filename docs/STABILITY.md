@@ -210,9 +210,9 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 ## Summary
 
-- commands: 269 stable, 21 experimental, 14 development
+- commands: 269 stable, 27 experimental, 14 development
 - global flags (accepted on every command): 11
-- entries below (commands + flags): 952
+- entries below (commands + flags): 968
 
 ## Surface
 
@@ -814,12 +814,12 @@ get notebooks                        stable
   --watch-only                       stable
 get notifications                    stable
   --type                             stable
+get recipe-sources                   experimental  since 0.42.0
 get recipes                          experimental  since 0.42.0
   --all                              experimental
   --domain                           experimental
   --inventory-budget                 experimental
   --no-inventory                     experimental
-  --refresh                          experimental
   --search                           experimental
   --tag                              experimental
 get scheduling-rules                 stable
@@ -967,6 +967,22 @@ query                                stable
   --to                               experimental  since 0.42.0  (declared)
   --typed                            stable
   --width                            stable
+recipes                              experimental  since 0.42.0
+recipes add                          experimental  since 0.42.0
+  --app                              experimental
+  --archive                          experimental
+  --dir                              experimental
+  --git                              experimental
+  --no-sync                          experimental
+  --path                             experimental
+  --project                          experimental
+  --ref                              experimental
+  --sha256                           experimental
+recipes outdated                     experimental  since 0.42.0
+recipes remove                       experimental  since 0.42.0
+  --project                          experimental
+recipes sync                         experimental  since 0.42.0
+  --update                           experimental
 restore                              stable
 restore dashboard                    stable
   --dry-run                          stable

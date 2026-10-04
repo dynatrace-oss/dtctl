@@ -88,6 +88,10 @@ type Request struct {
 	// Not a stability level: a deprecated command is stable in shape and
 	// satisfies any floor, it merely has a removal date. Off by default.
 	NoDeprecated bool
+	// RecipeApps enables app-shipped recipe bundles for `dtctl run`:
+	// "<app-id>" or "<app-id>@<version>" to pin a bundle document's version.
+	// Without it a request sees the built-in recipes only.
+	RecipeApps []string
 
 	// Files is the request's virtual filesystem: every file argument
 	// (`-f x.yaml`, `--data-file`, ...) resolves against it, and files the
@@ -224,6 +228,7 @@ func executeInner(ctx context.Context, req Request, limits Limits) (*Result, err
 			MinStability:        config.StabilityLevel(req.MinStability),
 			StabilityExceptions: req.StabilityExceptions,
 			NoDeprecated:        req.NoDeprecated,
+			RecipeApps:          req.RecipeApps,
 		},
 		Env:             env,
 		FS:              files,

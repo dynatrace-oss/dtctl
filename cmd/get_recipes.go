@@ -29,7 +29,6 @@ type recipeListOptions struct {
 	tags        []string
 	all         bool
 	noInventory bool
-	refresh     bool
 	budget      float64
 }
 
@@ -53,7 +52,10 @@ Examples:
   dtctl get recipes --domain k8s
   dtctl get recipes --search "slow endpoints"
   dtctl get recipes --tag rca -o wide
-  dtctl get recipes --refresh          # re-list app-shipped recipe bundles now
+
+Recipes come from the built-in set, the sources you declared (see
+'dtctl recipes --help'; synced and pinned with 'dtctl recipes sync'),
+DTCTL_RECIPE_PATH and ~/.config/dtctl/recipes.
 `,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -63,7 +65,6 @@ Examples:
 		opts.tags, _ = cmd.Flags().GetStringSlice("tag")
 		opts.all, _ = cmd.Flags().GetBool("all")
 		opts.noInventory, _ = cmd.Flags().GetBool("no-inventory")
-		opts.refresh, _ = cmd.Flags().GetBool("refresh")
 		opts.budget, _ = cmd.Flags().GetFloat64("inventory-budget")
 		return listRecipes(cmd, opts)
 	},
@@ -75,12 +76,8 @@ func listRecipes(cmd *cobra.Command, opts recipeListOptions) error {
 	if opts.budget == 0 {
 		opts.budget = 10
 	}
-	mode := envRefreshIfStale
-	if opts.refresh {
-		mode = envForceRefresh
-	}
 	src := parsedRecipeEnv()
-	load := loadRecipeBook(cmdContext(cmd), src, mode)
+	load := loadRecipeBook(cmdContext(cmd), src)
 	book := load.book
 
 	if opts.domain != "" && book.Domains[opts.domain] == nil {
@@ -101,12 +98,7 @@ func listRecipes(cmd *cobra.Command, opts recipeListOptions) error {
 	for _, p := range book.Problems {
 		warnings = append(warnings, "skipped: "+p.String())
 	}
-	if load.env.Note != "" {
-		warnings = append(warnings, load.env.Note)
-	}
-	if load.env.Untrusted > 0 {
-		warnings = append(warnings, fmt.Sprintf("%d recipe bundle document(s) ignored: not deployed by an app (no originAppId)", load.env.Untrusted))
-	}
+	warnings = append(warnings, load.notes...)
 
 	filter := &output.InventoryFilter{}
 	hidden := map[string]bool{}
@@ -172,6 +164,9 @@ func listRecipes(cmd *cobra.Command, opts recipeListOptions) error {
 		}
 		if outputFormat == "table" || outputFormat == "wide" || outputFormat == "" {
 			printRecipeListFooter(filter, len(hidden), opts, len(items))
+			if hint := availableAppsHint(availableRecipeApps(cmdContext(cmd), src, true), load.enabledApps); hint != "" {
+				output.PrintHint("%s", hint)
+			}
 		}
 		return nil
 	}
@@ -358,12 +353,8 @@ Examples:
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeRecipeNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv(), envRefreshIfStale)
+		load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv())
 		r := load.book.Get(args[0])
-		if r == nil && load.env.State != "fresh" && load.env.State != "off" {
-			load = loadRecipeBook(cmdContext(cmd), parsedRecipeEnv(), envForceRefresh)
-			r = load.book.Get(args[0])
-		}
 		if r == nil {
 			return unknownRecipeError(load, args[0])
 		}
@@ -462,7 +453,7 @@ func completeRecipeNames(cmd *cobra.Command, args []string, toComplete string) (
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv(), envCacheOnly)
+	load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv())
 	var out []string
 	for _, r := range load.book.Sorted() {
 		if strings.HasPrefix(r.Name(), toComplete) {
@@ -510,7 +501,7 @@ Exit codes: 0 all valid, 1 any invalid, 2/3 as for 'verify query'.
 			return recipeInputErr("--all checks every loaded recipe; it does not combine with names or -f")
 		}
 
-		loader, _ := recipeLoader(cmdContext(cmd), parsedRecipeEnv(), envRefreshIfStale)
+		loader, _ := recipeLoader(cmdContext(cmd), parsedRecipeEnv())
 		book := loader.Load()
 		var results []recipes.VerifyItem
 		var targets []*recipes.Recipe
@@ -705,10 +696,9 @@ func init() {
 	getRecipesCmd.Flags().StringSlice("tag", nil, "only recipes with every one of these tags")
 	getRecipesCmd.Flags().Bool("all", false, "include recipes inventory hid (they need data this environment lacks)")
 	getRecipesCmd.Flags().Bool("no-inventory", false, "do not filter by inventory verdicts (and run no check)")
-	getRecipesCmd.Flags().Bool("refresh", false, "re-list app-shipped recipe bundles now instead of using the hourly cache")
 	getRecipesCmd.Flags().Float64("inventory-budget", 10, "seconds the structural inventory check may take when no verdicts are cached (0 skips it)")
 	_ = getRecipesCmd.RegisterFlagCompletionFunc("domain", func(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv(), envCacheOnly)
+		load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv())
 		return sortedDomainNames(load.book), cobra.ShellCompDirectiveNoFileComp
 	})
 	getCmd.AddCommand(getRecipesCmd)

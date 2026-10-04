@@ -26,6 +26,7 @@ var unsupportedCommands = map[string]string{
 	"doctor":     "it diagnoses the local dtctl installation and config",
 	"completion": "it generates shell completion scripts for a local shell",
 	"serve":      "the service cannot be nested inside itself",
+	"recipes":    "it manages recipe sources, pins and a content store on the local disk; a service request enables app recipes per request instead (Request.RecipeApps)",
 	// inspect is a reader for files dtctl spilled to the local disk. A service
 	// request never spills (the HostDiskSpill capability is not granted, so
 	// results come back inline), and the path it takes would resolve on the

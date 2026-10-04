@@ -65,6 +65,12 @@ type Session struct {
 	// passes any floor, it merely has a removal date. Off by default, because
 	// a host that has not asked to be broken early should not be.
 	NoDeprecated bool
+	// RecipeApps enables the recipe bundles these apps ship to the
+	// environment: "<app-id>" for whatever the environment serves, or
+	// "<app-id>@<version>" for a bundle document at exactly that version.
+	// A session reads no host files, so this — not a sources file — is how a
+	// service turns app recipes on and pins them, per request.
+	RecipeApps []string
 }
 
 // SessionDefaultMinStability is the floor a session-backed invocation gets

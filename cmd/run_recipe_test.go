@@ -32,6 +32,7 @@ type recipeEnv struct {
 	records  string
 	docs     string            // document list JSON; "" serves an empty list
 	contents map[string]string // document id → content
+	apps     []string          // Session.RecipeApps
 }
 
 func newRecipeEnv(t *testing.T) *recipeEnv {
@@ -103,7 +104,7 @@ func (e *recipeEnv) run(t *testing.T, args ...string) (int, string, string) {
 	t.Cleanup(restorePristineTree)
 	var stdout, stderr bytes.Buffer
 	code := Run(args, RunOptions{
-		Session: &Session{EnvironmentURL: e.srv.URL, Token: "t", MinStability: "experimental"},
+		Session: &Session{EnvironmentURL: e.srv.URL, Token: "t", MinStability: "experimental", RecipeApps: e.apps},
 		Stdout:  &stdout,
 		Stderr:  &stderr,
 	})
@@ -267,6 +268,13 @@ func TestRunRecipeFromAppBundle(t *testing.T) {
 	e.contents["doc-app"] = testBundle
 	e.contents["doc-hand"] = strings.ReplaceAll(testBundle, "problems-from-app", "problems-hand-made")
 
+	// Nothing is enabled: a request sees the built-in recipes only, and
+	// does not even list the environment's bundles.
+	code, _, _ := e.run(t, "run", "problems-from-app", "--plain")
+	assert.NotZero(t, code)
+	assert.False(t, e.fetched("/platform/document/v1/documents"), "no app enabled, no listing")
+
+	e.apps = []string{"my.demo.app"}
 	code, _, stderr := e.run(t, "run", "problems-from-app", "--plain", "-o", "json")
 	require.Zero(t, code, "stderr: %s", stderr)
 	assert.Equal(t, "fetch dt.davis.problems | limit 3", strings.TrimSpace(e.lastQuery()))
@@ -274,8 +282,10 @@ func TestRunRecipeFromAppBundle(t *testing.T) {
 	assert.False(t, e.fetched("/platform/document/v1/documents/doc-hand/content"),
 		"a document no app installed is never downloaded")
 
-	code, _, _ = e.run(t, "run", "problems-hand-made", "--plain")
-	assert.NotZero(t, code, "an untrusted bundle contributes no recipe")
+	// A request pins a version; a bundle at another version is skipped.
+	e.apps = []string{"my.demo.app@2"}
+	code, _, _ = e.run(t, "run", "problems-from-app", "--plain")
+	assert.NotZero(t, code, "the pinned version is not what the environment serves")
 }
 
 // TestRecipeUserDirectoryLoads covers the CLI path (no session): the user

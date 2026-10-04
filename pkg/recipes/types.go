@@ -62,13 +62,24 @@ type Source struct {
 	// AppID and BundleVersion identify an app-shipped bundle.
 	AppID         string `json:"appId,omitempty" yaml:"appId,omitempty"`
 	BundleVersion int    `json:"bundleVersion,omitempty" yaml:"bundleVersion,omitempty"`
+	// Name is the declared recipe source the content came from, and Pin the
+	// version sync locked it to (a commit, an archive digest). Both are empty
+	// for the built-in recipes, DTCTL_RECIPE_PATH and the user directory.
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	Pin  string `json:"pin,omitempty" yaml:"pin,omitempty"`
 }
 
 // String is the short form reported as context.recipe.source: "builtin",
-// "user", "org", or "app:<app-id>@<version>".
+// "user", "org", "<source>@<pin>" for a pinned source, or
+// "app:<app-id>@<version>" for an app bundle.
 func (s Source) String() string {
-	if s.Layer == LayerEnvironment && s.AppID != "" {
+	switch {
+	case s.Layer == LayerEnvironment && s.AppID != "":
 		return fmt.Sprintf("app:%s@%d", s.AppID, s.BundleVersion)
+	case s.Name != "" && s.Pin != "":
+		return s.Name + "@" + s.Pin
+	case s.Name != "":
+		return s.Name
 	}
 	return string(s.Layer)
 }

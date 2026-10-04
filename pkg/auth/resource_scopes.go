@@ -119,8 +119,14 @@ var ResourceScopes = map[string]AccessScopes{
 	// Recipes are local content plus the bundles installed apps ship as
 	// documents; listing reads those. Running one is a query, whose scopes
 	// attach to the `run` verb (dqlScopeVerbs).
-	"recipe":   {Read: []string{"document:documents:read"}},
-	"recipes":  {Read: []string{"document:documents:read"}},
+	"recipe":  {Read: []string{"document:documents:read"}},
+	"recipes": {Read: []string{"document:documents:read"}},
+	// `dtctl recipes sync|outdated|add`: an app source lists and reads the
+	// bundle documents its app installed. Git, archive and dir sources need
+	// no platform scope.
+	"sync":     {Read: []string{"document:documents:read"}},
+	"outdated": {Read: []string{"document:documents:read"}},
+	"add":      {Read: []string{"document:documents:read"}},
 	"notebook": {Read: []string{"document:documents:read"}, Write: []string{"document:documents:write"}, Delete: []string{"document:documents:delete"}},
 	"trash":    {Read: []string{"document:trash.documents:read"}, Write: []string{"document:trash.documents:restore"}, Delete: []string{"document:trash.documents:delete"}},
 
@@ -254,6 +260,8 @@ var localResources = map[string]bool{
 	"export": true, "import": true, "list": true, "create": true,
 	// skills (local install)
 	"install": true, "uninstall": true,
+	// recipe sources: the declaration and its lock are local files
+	"recipe-sources": true, "remove": true,
 }
 
 // QueryScopes are the Grail read scopes required by DQL (`query`, `verify`,

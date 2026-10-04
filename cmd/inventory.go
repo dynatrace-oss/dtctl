@@ -304,7 +304,7 @@ func inventoryDefinitions(cmd *cobra.Command) (map[string]*inventory.CapabilityD
 		// the built-in set (and stay under the caller's own --definitions):
 		// an app that adds a signal says how to detect it. Cached bundles
 		// only — inventory must not wait on a bundle listing.
-		load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv(), envCacheOnly)
+		load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv())
 		for name, def := range load.book.Capabilities {
 			base[name] = def
 		}

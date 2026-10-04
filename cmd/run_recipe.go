@@ -64,6 +64,9 @@ const recipeLeafAnnotation = "dtctl.dev/recipe"
 // for the parent's error path. Nil when none were attached this invocation.
 var currentRecipeLoad *recipeLoad
 
+// currentRecipeEnv is the environment the attached book was loaded for.
+var currentRecipeEnv recipeEnvSource
+
 func init() {
 	rootCmd.AddCommand(runCmd)
 	// Recipes are experimental as a mechanism (the framework flags, the
@@ -86,21 +89,14 @@ func init() {
 // recipes, which keeps it (and the stability manifest) free of content.
 func attachRecipeCommands(args []string) {
 	detachRecipeCommands()
-	pos, helpOnly := recipeTarget(args)
+	pos, _ := recipeTarget(args)
 	if len(pos) == 0 || pos[0] != "run" {
 		return
 	}
-	mode := envRefreshIfStale
-	if helpOnly {
-		mode = envCacheOnly
-	}
 	src := rawRecipeEnv(args)
-	load := loadRecipeBook(cmdContext(rootCmd), src, mode)
-	if len(pos) > 1 && load.book.Get(pos[1]) == nil && !helpOnly && load.env.State != "fresh" && load.env.State != "off" {
-		// An app installed a minute ago works on the first try.
-		load = loadRecipeBook(cmdContext(rootCmd), src, envForceRefresh)
-	}
+	load := loadRecipeBook(cmdContext(rootCmd), src)
 	currentRecipeLoad = load
+	currentRecipeEnv = src
 	for _, r := range load.book.Sorted() {
 		c := newRecipeCommand(load, r)
 		runCmd.AddCommand(c)
@@ -114,6 +110,7 @@ func attachRecipeCommands(args []string) {
 // forgets their pristine snapshots.
 func detachRecipeCommands() {
 	currentRecipeLoad = nil
+	currentRecipeEnv = recipeEnvSource{}
 	for _, c := range runCmd.Commands() {
 		if c.Annotations[recipeLeafAnnotation] == "" {
 			continue
@@ -183,8 +180,13 @@ func unknownRecipeError(load *recipeLoad, name string) error {
 			e.Suggestions = append(e.Suggestions, suggest.Suggestion{Value: m.Recipe.Name()})
 			e.Runnable = append(e.Runnable, "dtctl describe recipe "+m.Recipe.Name())
 		}
-		if load.env.Note != "" {
-			e.UsageHint += "\nNote: " + load.env.Note
+		for _, n := range load.notes {
+			e.UsageHint += "\nNote: " + n
+		}
+		// The recipe may be one an app on this environment ships but no
+		// source enables yet. The cached listing answers that without a call.
+		if hint := availableAppsHint(availableRecipeApps(cmdContext(rootCmd), currentRecipeEnv, false), load.enabledApps); hint != "" {
+			e.UsageHint += "\n" + hint
 		}
 	}
 	return e

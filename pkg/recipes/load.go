@@ -69,6 +69,8 @@ type FileLayer struct {
 	FS    fs.FS
 	// Root is how Location paths are reported ("~/.config/dtctl/recipes").
 	Root string
+	// Name and Pin identify a declared recipe source (see Source).
+	Name, Pin string
 }
 
 // BundleDoc is one app-shipped bundle document, already fetched.
@@ -80,8 +82,14 @@ type BundleDoc struct {
 // Loader assembles a Book from the layers in precedence order.
 type Loader struct {
 	Builtin FileLayer
-	// Files are org then user layers (DTCTL_RECIPE_PATH entries, the user
-	// directory), weakest first.
+	// NoBuiltinRecipes leaves the built-in recipes out (a sources file with
+	// `builtin: false`). The built-in domains, scopes and fragments still
+	// load: they are the shared vocabulary other sources' recipes are written
+	// against.
+	NoBuiltinRecipes bool
+	// Files are org then user layers (declared git, archive and dir sources,
+	// DTCTL_RECIPE_PATH entries, the user directory), weakest first; within
+	// a layer a later one wins.
 	Files   []FileLayer
 	Bundles []BundleDoc
 	// DtctlVersion gates bundles by metadata.minDtctlVersion ("" skips the
@@ -118,7 +126,9 @@ func (l Loader) Load() *Book {
 
 	// Recipes merge after every registry is known, so a user recipe may use
 	// a domain an app declared and the reverse.
-	b.addRecipes(builtin.recipes)
+	if !l.NoBuiltinRecipes {
+		b.addRecipes(builtin.recipes)
+	}
 	b.addRecipes(bundles)
 	for _, fc := range files {
 		b.addRecipes(fc.recipes)
@@ -144,7 +154,7 @@ func (b *Book) readFileLayer(fl FileLayer) layerContent {
 			if p == "." {
 				return fs.SkipAll // the layer's directory does not exist
 			}
-			b.problem(Source{Layer: fl.Layer, Location: path.Join(fl.Root, p)}, "%v", err)
+			b.problem(Source{Layer: fl.Layer, Location: path.Join(fl.Root, p), Name: fl.Name, Pin: fl.Pin}, "%v", err)
 			return nil
 		}
 		if d.IsDir() {
@@ -159,7 +169,7 @@ func (b *Book) readFileLayer(fl FileLayer) layerContent {
 	sort.Strings(paths)
 	seen := map[string]string{}
 	for _, p := range paths {
-		src := Source{Layer: fl.Layer, Location: path.Join(fl.Root, p)}
+		src := Source{Layer: fl.Layer, Location: path.Join(fl.Root, p), Name: fl.Name, Pin: fl.Pin}
 		data, err := fs.ReadFile(fl.FS, p)
 		if err != nil {
 			b.problem(src, "%v", err)

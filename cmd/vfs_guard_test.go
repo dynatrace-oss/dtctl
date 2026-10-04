@@ -55,6 +55,13 @@ var hostFileAccessAllowlist = map[string]string{
 	"cmd/edit_settings.go":        "editor round-trip temp file (Editor capability, blocked in a service)",
 	"cmd/edit_workflows.go":       "editor round-trip temp file (Editor capability, blocked in a service)",
 
+	// The recipe content store holds synced recipe sources under dtctl's data
+	// directory — paths dtctl derives from content digests, never one a user
+	// named. A session-backed invocation never reaches it: the loader returns
+	// before the store in session mode, and `recipes` (sync, add, remove) is
+	// blocked in a service.
+	"pkg/recipes/store.go": "content-addressed recipe store under dtctl's data dir — host state; unreachable in a session (loader skips it, `recipes` is blocked)",
+
 	// Test-only helper: golden files are repository state, read and written by
 	// the test suite, never by a command.
 	"cmd/testutil/golden.go": "golden-file helper for tests — repository state, not reachable from a command",
