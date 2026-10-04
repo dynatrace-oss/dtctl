@@ -76,8 +76,16 @@ The envelope adds what an agent needs to trust and continue the result:
 | `context.query` | the rendered DQL, to adapt with `dtctl query` |
 | `context.window` | the resolved `from`/`to` |
 | `context.scope` | the scope filters applied |
-| `context.empty_reason` | on an empty result, code `recipe_empty_means` and what the emptiness means |
+| `context.empty_reason` | on an empty result, code `recipe_empty_means` and what the emptiness means; `recipe_partial` when a scan or record limit cut the result, so an absent row may exist |
+| `context.warnings` | a partial non-empty result: counts are lower bounds, with the flag that lifts the limit |
+| `context.has_more` | the result filled the recipe's final `limit`: it is the top N, not a total |
 | `context.suggestions` | follow-up recipes, with arguments bound from the result (for example `dtctl run problems-get P-12345`) |
+
+`dtctl query` points the other way. In agent mode, when a hand-written query
+reads the same data as a recipe (the same source or metric keys, and fields
+specific to that recipe), its `context.suggestions` names the recipe. On a
+result that worked it does so only for a strong match. On an empty, partial or
+failed result, it appears after any diagnosis of the query itself.
 
 ## Where recipes come from
 

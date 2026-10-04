@@ -169,7 +169,8 @@ Schema rules, enforced by the loader and by `dtctl verify recipe`:
 | `spec.scope` | optional list of scope dimensions from `_scopes.yaml`; the DQL must place `.scope.stage` or `.scope.expr`, and must not when no scope is declared (§10) |
 | `spec.segments` | `on` (default) or `off` for recipes over data that filter segments must not narrow (§10) |
 | `spec.requires` | names defined by `dtctl inventory` (built-in or user definitions) |
-| `spec.next[]` | `recipe` must resolve in the merged book (warning for user layers); `with` binds from params, `bind` from result fields (phase 2); `when: always\|empty\|nonempty` |
+| `spec.next[]` | `recipe` must resolve in the merged book (warning for user layers); `with` binds from params, `bind` from result fields (an array binds only to a `list` param); `when: always\|empty\|nonempty`; `window: {from, to, pad}` derives the target's window from row timestamps, clamped to its `timeframe.max` |
+| `spec.empty` | `no-rows` (default) or `zero-row`: a single all-zero/null row counts as empty, for an aggregate without `by:` |
 
 **Complexity governors**, carried over because the prototype needed them:
 
@@ -226,6 +227,7 @@ Phase 1 types: `string`, `int`, `bool`, `enum` (with `values:`), and
 | `.scope.stage` | `\| filter <expr>` built from the scope flags, or empty (§10) |
 | `.scope.expr` | the same predicate as a bare expression, for `timeseries … filter:`, or empty |
 | `.window.from`, `.window.to` | the resolved window as DQL timestamp expressions; only for `timeframe: {inline: true}` (§3) |
+| `.window.minutes` | the window's length in whole minutes (≥ 1), for per-minute rates; inline only |
 
 **Fragments.** Several skill families share a long prefix. In the security
 skill, four-step pipelines repeat a 20–45 line "latest state per vulnerability"
@@ -402,7 +404,7 @@ matter how large the book grows:
 
 | Level | Call | Returns | Size |
 |---|---|---|---|
-| 0 | `dtctl commands` | `run` with a recipe count and a pointer to `get recipes` | constant, ~50 tokens |
+| 0 | `dtctl commands` | `run` and `get recipes` in the verb tree; with `--brief`/`--full`, a pattern saying when to look for a recipe | constant, ~50 tokens |
 | 1 | `dtctl get recipes` | the **domain index**: domain, one line, `available/total`, sources | one line per domain; ~15–30 domains |
 | 2 | `get recipes --search "<words>"`, `--domain k8s`, `--tag triage` | one line per recipe: name, summary, required params | capped at 25 lines, with `has_more` |
 | 3 | `dtctl describe recipe <name>` | params, scope, `means`, `emptyMeans`, `next`, rendered DQL | one recipe |
@@ -433,11 +435,30 @@ A typical agent bootstrap is one search, or the index plus one domain. Either
 costs a few hundred tokens and replaces dozens of `dtctl commands` and
 failed-DQL calls.
 
-The `dtctl` skill (`skills/dtctl/SKILL.md`) gets one rule: *before writing DQL,
-check `dtctl get recipes --search …`. `dtctl run <name> --dry-run` shows a
-recipe's DQL as a starting point.* There is no recipe content in the skill. The
-prototype found the CLI listing beats skill files, and duplicating content would
-create another copy to keep in sync.
+The first evaluation (docs/dev/RECIPES_EVAL.md) showed that a pull-only design
+is not enough: an agent told nothing ran no recipe in 168 runs, even with the
+dtctl skill force-loaded and its "check recipes first" rule in context. Agents
+write DQL as soon as they have a question, and nothing on that path named a
+recipe. Discovery therefore also *pushes*, at the two points an agent reads
+anyway:
+
+- **The skill names recipes per question type.** `skills/dtctl/SKILL.md` has a
+  table mapping common questions to built-in recipe names, and the DQL
+  reference opens with a pointer to it. That repeats names, not content: the
+  DQL, params and reading notes stay in the recipe. `TestSkillNamesRealRecipes`
+  fails when the table names a recipe that no longer exists.
+- **The query envelope names matching recipes.** `dtctl query` in agent mode
+  matches the statement to recipes structurally: shared data sources and
+  metric keys, fields weighted by how few recipes name them, and the
+  statement's words against recipe names and summaries. After a query that
+  worked, only a strong match is named, ahead of other suggestions. After an
+  empty, partial or failed query, a weaker one is named too, after the
+  diagnosis of the query itself (`field_not_in_sample` stays first). At most
+  two are named. Recipes on another layer's deprecation path are skipped.
+- **`get recipes --search` says when nothing fits.** Matches whose terms hit
+  only descriptions are marked weak, and when every match is weak the warning
+  says so ("no recipe is about …"). The agent can then write DQL instead of
+  forcing a near miss.
 
 **Inventory-aware listing.** `spec.requires` names capabilities from `dtctl
 inventory`. The listing uses them to hide recipes that cannot work here.
@@ -579,6 +600,13 @@ Content is reviewed as content, but it is still tested:
   - no top-level `from:` when a timeframe is declared
   - golden rendered DQL per recipe. A content change shows up as a reviewable
     diff, the same way golden output tests work.
+- **DQL trap lints**, part of `Book.Lint`, so the built-in test fails on any of
+  them: `multi-key-timeseries` (several metric keys without `union: true` keep
+  only series every key reports, which hid every pod without an OOM kill),
+  `sampling-source`, `sampling-unscaled`, `limit-before-aggregate`,
+  `coalesce-filter`, `unaliased-aggregate`, `interval-equals-window`. Each
+  was measured to give a wrong or needlessly expensive answer with no error.
+  They run on the DQL as `describe` renders it.
 - **`dtctl verify recipe --all`** against a live environment, run in the
   existing live/E2E job. It validates every rendered query through the DQL verify
   API with no data scans.

@@ -15,6 +15,7 @@ import (
 	rcp "github.com/dynatrace-oss/dtctl/pkg/recipes"
 	builtin "github.com/dynatrace-oss/dtctl/recipes"
 	"github.com/dynatrace-oss/dtctl/sdk/inventory"
+	dtctlskill "github.com/dynatrace-oss/dtctl/skills/dtctl"
 )
 
 func loadBuiltin(t *testing.T) *rcp.Book {
@@ -38,6 +39,38 @@ func TestBuiltinRecipesLoadCleanly(t *testing.T) {
 		t.Errorf("%s: %s", issue.Recipe, issue.Message)
 	}
 	require.NotEmpty(t, b.Recipes)
+}
+
+// TestSkillNamesRealRecipes: the skill lists recipes by name so an agent
+// meets them without a call; a renamed or removed recipe must not leave the
+// skill pointing at nothing.
+func TestSkillNamesRealRecipes(t *testing.T) {
+	b := loadBuiltin(t)
+	named := regexp.MustCompile("`(?:dtctl (?:run|describe recipe) )?([a-z0-9]+(?:-[a-z0-9]+)+)`")
+	for _, file := range []string{"SKILL.md", "references/DQL-reference.md"} {
+		body, err := fs.ReadFile(dtctlskill.Content, file)
+		require.NoError(t, err)
+		section := string(body)
+		if file == "SKILL.md" {
+			start := strings.Index(section, "## Recipes")
+			require.GreaterOrEqual(t, start, 0, "SKILL.md lost its Recipes section")
+			end := strings.Index(section[start+1:], "\n## ")
+			section = section[start : start+1+end]
+		}
+		seen := 0
+		for _, m := range named.FindAllStringSubmatch(section, -1) {
+			if _, ok := b.Recipes[m[1]]; ok {
+				seen++
+				continue
+			}
+			if strings.Contains(m[1], "-") && b.Domains[strings.SplitN(m[1], "-", 2)[0]] != nil {
+				t.Errorf("%s names recipe %q, which does not exist", file, m[1])
+			}
+		}
+		if file == "SKILL.md" {
+			assert.Greater(t, seen, 20, "the skill's recipe table should name the built-ins")
+		}
+	}
 }
 
 // TestBuiltinRecipeFileLayout keeps the tree navigable: recipes/<domain>/<name>.yaml.

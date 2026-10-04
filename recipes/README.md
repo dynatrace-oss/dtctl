@@ -105,6 +105,8 @@ totals, account-wide security posture); `-S` is then rejected.
 
 dtctl sends the window as the query's default timeframe, so the DQL has **no
 `from:`/`to:`** of its own (validation rejects one in the first command).
+An inline recipe also gets `{{.window.minutes}}`, the window's length in whole
+minutes (at least 1), for rates per minute.
 
 ### `means` and `emptyMeans`
 
@@ -114,13 +116,28 @@ separate "nothing happened" from "you asked wrong": a misspelled name, a
 missing capability, a window too short. dtctl puts it in the agent envelope as
 `empty_reason` when the result is empty.
 
+A recipe that aggregates without `by:` returns one row even when nothing
+happened (`count = 0`). `empty: zero-row` makes that row count as empty: a
+single row whose numbers are all zero or null. A partial result (a scan or
+record limit hit) is never reported as `emptyMeans`, because an absent row may
+exist; the envelope says `recipe_partial` instead.
+
 ### `next`
 
 Follow-up recipes, emitted as runnable `dtctl run …` suggestions. `with:` maps
 target params to templates over this recipe's params (`{service: "{{.service}}"}`);
 `bind:` maps them to fields of a result row: the first of the leading rows
-whose bound fields all hold a value the target param accepts. `when: empty` /
-`when: nonempty` restricts an edge. The window, scope and segments carry over.
+whose bound fields all hold a value the target param accepts. An array field binds only to a
+`list` param, joined with commas. `when: empty` / `when: nonempty` restricts an
+edge. The window, scope and segments carry over, unless `window:` derives one
+from the row:
+
+```yaml
+next:
+  - recipe: logs-for-service
+    bind: {service: dt.service.name}
+    window: {from: event.start, to: event.end, pad: 15m}   # clamped to the target's timeframe.max
+```
 
 ### Fragments
 
@@ -142,6 +159,20 @@ A DQL piece that several recipes must spell identically goes in
 - Service metrics fold most endpoints into `NON_KEY_REQUESTS`; per-endpoint
   numbers come from spans, extrapolated with `span-multiplicity`.
 - An empty string param is rejected, so `""` can't silently mean "all".
+
+The traps that give a wrong answer without an error are lints: `go test
+./recipes/` fails on them, and `dtctl verify recipe` reports them for your own
+recipes.
+
+| Lint | What goes wrong | Fix |
+|---|---|---|
+| `multi-key-timeseries` | a timeseries over several metric keys keeps only the series every key reports; a host without one metric, or a window without an OOM kill, drops out | `union: true` |
+| `sampling-source` | `samplingRatio` on anything but logs and spans: events ignore it with a warning, problems reject it | sample logs or spans only |
+| `sampling-unscaled` | a sampled `count()` under-reports by the ratio | `sum(coalesce(dt.system.sampling_ratio, 1))` |
+| `limit-before-aggregate` | `limit` then `summarize` aggregates an arbitrary subset | limit after aggregating |
+| `coalesce-filter` | `coalesce(a, b) == x` in a filter defeats the field index | `a == x or b == x` |
+| `unaliased-aggregate` | the column is named by the expression, which an adapted query or `--jq` must backquote | `n = count()` |
+| `interval-equals-window` | an interval equal to the window straddles two aligned buckets and reads up to 2x | a smaller interval, or `summarize` |
 
 ## Capabilities (`requires`)
 

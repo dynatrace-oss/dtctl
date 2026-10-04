@@ -6,27 +6,33 @@ import (
 	"unicode"
 )
 
-// Match is a recipe with its search score.
+// Match is a recipe with its search score. Weak marks a match that names no
+// query term in its name, tags or summary — it only mentions one in passing,
+// so it is not "a recipe about" the query.
 type Match struct {
 	Recipe *Recipe
 	Score  int
+	Weak   bool
 }
 
 // Search ranks recipes by keyword overlap with the query: name, tags and
 // summary weigh most, the description and the domain's description less. It
 // is a local ranking — no embeddings, no network — and good enough because
 // summaries are written as the question the recipe answers.
+//
+// A term most recipes contain ("service", "count") ranks little, and the
+// tail of matches scoring under half the best is dropped: a search answers
+// "which recipe is for this", and twenty loosely related names answer it
+// worse than three. Matches all weak, or none, means no recipe is about it.
 func (b *Book) Search(query string, among []*Recipe) []Match {
 	terms := tokenize(query)
 	if len(terms) == 0 {
 		return nil
 	}
-	var out []Match
-	for _, r := range among {
-		fields := []struct {
-			words  []string
-			weight int
-		}{
+	docs := make([][]searchField, len(among))
+	df := make([]int, len(terms))
+	for i, r := range among {
+		fields := []searchField{
 			{tokenize(strings.ReplaceAll(r.Name(), "-", " ")), 4},
 			{lower(r.Metadata.Tags), 3},
 			{tokenize(r.Spec.Summary), 3},
@@ -34,34 +40,43 @@ func (b *Book) Search(query string, among []*Recipe) []Match {
 			{tokenize(r.Spec.Means), 1},
 		}
 		if d := b.Domains[r.Domain()]; d != nil {
-			fields = append(fields, struct {
-				words  []string
-				weight int
-			}{tokenize(d.Description), 1})
+			fields = append(fields, searchField{tokenize(d.Description), 1})
 		}
-		score, hit := 0, 0
-		for _, t := range terms {
-			best := 0
-			for _, f := range fields {
-				for _, w := range f.words {
-					if termMatches(t, w) && f.weight > best {
-						best = f.weight
-					}
-				}
+		docs[i] = fields
+		for j, t := range terms {
+			if bestWeight(t, fields) > 0 {
+				df[j]++
 			}
-			if best > 0 {
-				hit++
+		}
+	}
+	var out []Match
+	for i, r := range among {
+		score, hit, strong := 0, 0, 0
+		for j, t := range terms {
+			best := bestWeight(t, docs[i])
+			if best == 0 {
+				continue
+			}
+			hit++
+			if best >= 3 {
+				strong++
+			}
+			// A term in more than a third of the recipes tells them apart
+			// little: half weight.
+			if df[j]*3 > len(among) {
 				score += best
+			} else {
+				score += 2 * best
 			}
 		}
 		if hit == 0 {
 			continue
 		}
-		// Recipes matching every term rank above any partial match.
-		if hit == len(terms) {
+		// Recipes naming every term up front rank above any partial match.
+		if strong == len(terms) {
 			score += 100
 		}
-		out = append(out, Match{Recipe: r, Score: score})
+		out = append(out, Match{Recipe: r, Score: score, Weak: strong == 0})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Score != out[j].Score {
@@ -69,7 +84,42 @@ func (b *Book) Search(query string, among []*Recipe) []Match {
 		}
 		return out[i].Recipe.Name() < out[j].Recipe.Name()
 	})
+	if len(out) > 0 {
+		top := out[0].Score
+		keep := out[:0]
+		for _, m := range out {
+			if m.Score*2 >= top {
+				keep = append(keep, m)
+			}
+		}
+		out = keep
+	}
+	if len(out) > maxSearchResults {
+		out = out[:maxSearchResults]
+	}
 	return out
+}
+
+// maxSearchResults bounds a search: past it, a list stops answering "which
+// recipe" and becomes the catalog again.
+const maxSearchResults = 8
+
+// searchField is one weighted text of a recipe.
+type searchField struct {
+	words  []string
+	weight int
+}
+
+func bestWeight(term string, fields []searchField) int {
+	best := 0
+	for _, f := range fields {
+		for _, w := range f.words {
+			if termMatches(term, w) && f.weight > best {
+				best = f.weight
+			}
+		}
+	}
+	return best
 }
 
 // termMatches compares with a crude stem: "restart" matches "restarts",

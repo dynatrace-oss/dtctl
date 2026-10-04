@@ -1,5 +1,7 @@
 # DQL Syntax Guide
 
+> **First check for a recipe.** A common question (problems, service errors and latency, pod restarts, host CPU/memory/disk, log error sources, GenAI tokens, vulnerabilities) has a verified query: `dtctl get recipes --search "<words of the question>"`, then `dtctl run <name>`. See the Recipes table in SKILL.md. Write DQL when no recipe fits, or start from one with `dtctl run <name> --dry-run`.
+
 ## Copy These Templates Exactly
 
 **Filter multiple values:**

@@ -19,6 +19,7 @@ dtctl config current-context            # active context
 dtctl config describe-context $(dtctl config current-context) --plain  # env URL + safety level
 dtctl auth status --plain               # token type (OAuth vs API/platform) + safety level
 dtctl inventory                         # what data exists HERE: fetchable objects, buckets, entity census, capabilities
+dtctl get recipes                       # verified queries for common questions, by domain (see Recipes below)
 ```
 
 Safety levels: `readonly`, `readwrite-mine`, `readwrite-all`, `dangerously-unrestricted`.
@@ -27,19 +28,32 @@ Safety levels: `readonly`, `readwrite-mine`, `readwrite-all`, `dangerously-unres
 
 Don't use `dtctl auth whoami` to test connectivity — it needs an OAuth token with `app-engine:apps:run` and returns a spurious 403 for plain API or read-scoped tokens even when reads work. Confirm with a real `get`/`query`.
 
-## Recipes (experimental): check before writing DQL
+## Recipes (experimental): run one before writing DQL
 
-A recipe is a named, verified DQL query with typed parameters, a default window, and a note on how to read the result. Before composing DQL for a common question, look for one:
+A recipe is a named, verified DQL query with typed parameters, a default window, and a note on how to read the result. Each one encodes a trap a hand-written query falls into silently: sampled counts left unscaled, a multi-metric timeseries that drops hosts missing one metric, GenAI spans counted twice, a `limit` taken before aggregating. **When the question matches a row below, run the recipe first**; it costs one call and states what an empty result means.
+
+| Question about | Recipes |
+|---|---|
+| open / recent problems, root cause | `problems-active`, `problems-get`, `problems-history`, `problems-logs` |
+| service errors, latency, throughput | `services-red`, `services-failures`, `services-latency`, `services-list` |
+| traces, slow endpoints, span errors | `traces-errors`, `traces-slow-endpoints`, `traces-get` |
+| log errors, patterns, sources | `logs-error-sources`, `logs-error-patterns`, `logs-for-service`, `logs-for-trace`, `logs-search` |
+| Kubernetes pods, workloads, nodes | `k8s-pod-restarts`, `k8s-workload-status`, `k8s-node-pressure`, `k8s-warning-events`, `k8s-clusters` |
+| hosts CPU, memory, disks | `hosts-cpu-top`, `hosts-memory-top`, `hosts-disk-saturation`, `hosts-census` |
+| capacity, forecasts | `capacity-cpu-saturation`, `capacity-disk-forecast` |
+| LLM / GenAI tokens, models | `genai-token-usage`, `genai-presence` |
+| web vitals, frontend errors | `frontends-web-vitals`, `frontends-errors`, `frontends-list` |
+| vulnerabilities, detections, compliance | `security-vulns-open`, `security-vulns-critical-exploitable`, `security-detections`, `security-compliance-findings` |
+| cloud resources, network, DPS cost | `cloud-inventory`, `network-top-talkers`, `costs-dps-by-capability` |
 
 ```bash
-dtctl get recipes                          # domain index (agent mode); recipes needing absent data are hidden
-dtctl get recipes --search "pod restarts"  # ranked matches with their arguments
+dtctl get recipes --search "pod restarts"  # ranked matches for words of the question, with their arguments
 dtctl describe recipe k8s-pod-restarts     # params, scope flags, window, the rendered DQL
 dtctl run k8s-pod-restarts --namespace=checkout --from=6h
 dtctl run problems-active --dry-run        # print the DQL without running it
 ```
 
-The envelope's `context.query` holds the DQL that ran (adapt it with `dtctl query` when the recipe is close but not exact), `context.empty_reason` explains an empty result, and `context.suggestions` names the next recipe with arguments bound from the result. Nothing fits? Write DQL. Recipes are a shortcut, not a boundary.
+The envelope's `context.query` holds the DQL that ran (adapt it with `dtctl query` when the recipe is close but not exact), `context.empty_reason` explains an empty result, `context.warnings` flags a partial one, and `context.suggestions` names the next recipe with arguments bound from the result. `dtctl query` in agent mode names a matching recipe in its suggestions when one reads the same data; prefer it over iterating on the query. Nothing fits? Write DQL. Recipes are a shortcut, not a boundary.
 
 Which recipes exist is the user's choice: `dtctl recipes add|sync|remove` change their sources and pins, so leave those to the user unless asked. `context.recipe.source` names the source and version that answered.
 

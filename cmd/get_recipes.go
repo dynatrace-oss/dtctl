@@ -137,8 +137,16 @@ func listRecipes(cmd *cobra.Command, opts recipeListOptions) error {
 	if opts.search != "" {
 		ranked := book.Search(opts.search, visible)
 		visible = visible[:0:0]
+		weak := true
 		for _, m := range ranked {
 			visible = append(visible, m.Recipe)
+			weak = weak && m.Weak
+		}
+		switch {
+		case len(ranked) == 0:
+			warnings = append(warnings, fmt.Sprintf("no recipe matches %q: write the query with dtctl query (dtctl get recipes --domain <d> lists a domain's recipes, whose DQL is a starting point)", opts.search))
+		case weak:
+			warnings = append(warnings, fmt.Sprintf("no recipe is about %q: the ones listed only mention it in their description; check their summary before running one, or write the query with dtctl query", opts.search))
 		}
 		if !opts.all && len(hidden) > 0 {
 			if w := hiddenBetterMatches(book, opts.search, candidates, hidden, hiddenFor); w != "" {

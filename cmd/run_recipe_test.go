@@ -483,3 +483,32 @@ func TestRecipeEnvelopeReadsTruncationAndZeroRows(t *testing.T) {
 	ctx = decorate(base, &exec.DQLQueryResponse{}, rows[:limit-1])
 	assert.False(t, ctx.HasMore)
 }
+
+// TestQueryEnvelopeNamesMatchingRecipes: an agent writing DQL for data a
+// recipe covers is told so in the query envelope — only a specific match next
+// to a result that looks fine, a looser one next to an empty result, and
+// nothing for data no recipe reads.
+func TestQueryEnvelopeNamesMatchingRecipes(t *testing.T) {
+	e := newRecipeEnv(t)
+	suggestions := func(args ...string) string {
+		t.Helper()
+		code, stdout, stderr := e.run(t, append([]string{"query"}, append(args, "-A", "-o", "json")...)...)
+		require.Zero(t, code, "stderr: %s", stderr)
+		return string(parseRecipeEnvelope(t, stdout).Context["suggestions"])
+	}
+
+	e.records = `[{"gen_ai.request.model":"m","t":12}]`
+	got := suggestions("fetch spans | filter isNotNull(gen_ai.usage.input_tokens) | summarize t = sum(gen_ai.usage.input_tokens), by:{gen_ai.request.model}")
+	assert.Contains(t, got, "dtctl run genai-token-usage")
+
+	got = suggestions("fetch logs | filter contains(content, \"x\") | limit 5")
+	assert.NotContains(t, got, "dtctl run ", "a generic query next to a good result names no recipe")
+
+	e.records = `[]`
+	got = suggestions("fetch spans | filter request.is_failed == true | summarize n = count(), by:{dt.service.name}")
+	assert.Contains(t, got, "dtctl run services-failures")
+	assert.Contains(t, got, "came back empty")
+
+	got = suggestions("fetch bizevents | summarize n = count()")
+	assert.NotContains(t, got, "dtctl run ", "no recipe reads bizevents")
+}

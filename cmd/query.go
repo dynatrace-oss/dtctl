@@ -289,6 +289,10 @@ Examples:
 		if window != nil {
 			run.TimeframeStart, run.TimeframeEnd = window.FromRFC3339(), window.ToRFC3339()
 		}
+		if agentMode {
+			run.Decorate = decorateQueryWithRecipes(cmd, cfg, query)
+			return withRecipeHints(cmd, cfg, query, runDQL(cmd, cfg, c, run))
+		}
 		return runDQL(cmd, cfg, c, run)
 	},
 }

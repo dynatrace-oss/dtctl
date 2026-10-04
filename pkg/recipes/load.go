@@ -7,6 +7,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -28,6 +29,10 @@ type Book struct {
 	Problems []Problem
 
 	fragments []fragment
+
+	// The recipes' query signatures, built on the first MatchQuery.
+	sigsOnce sync.Once
+	sigs     *querySigs
 }
 
 type fragment struct {

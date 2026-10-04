@@ -237,6 +237,7 @@ var defaultPatterns = []string{
 	"Use 'dtctl apply -f' for idempotent resource management",
 	"Use 'dtctl diff' before 'dtctl apply' to preview changes",
 	"Use 'dtctl query' for ad-hoc DQL queries, not resource-specific flags",
+	"Before writing DQL for a common question (problems, service errors and latency, pod restarts, host saturation, log errors, GenAI tokens, vulnerabilities), look for a recipe (experimental): 'dtctl get recipes --search \"<words of the question>\"', then 'dtctl run <name>' — a verified query that states what an empty result means",
 	"Use '--dry-run' to validate apply operations without executing",
 	"Use '--agent' for JSON output with operational metadata",
 	"Use 'dtctl wait' in CI/CD to poll for conditions",

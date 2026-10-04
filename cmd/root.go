@@ -833,6 +833,10 @@ func errorToDetail(err error) *output.ErrorDetail {
 			StatusCode: queryErr.StatusCode,
 		}
 		addQueryErrorHints(detail, queryErr)
+		var hinted *recipeHintedError
+		if errors.As(err, &hinted) {
+			detail.Suggestions = append(hinted.hints, detail.Suggestions...)
+		}
 		return detail
 	}
 
