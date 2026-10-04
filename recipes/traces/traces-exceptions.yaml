@@ -1,0 +1,70 @@
+# Source: prior art (TUI exception view)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: traces-exceptions
+  version: 1
+  tags: [traces, exceptions, errors, handled, noise]
+spec:
+  summary: Exceptions recorded on spans, by service, type and masked message, with how many sat on failed spans
+  description: >-
+    Every exception span event, failed span or not, grouped by service,
+    exception type and message (numbers, IDs and hex masked). Separates the
+    exception that breaks requests from the one that is thrown and handled
+    all day. For failed requests use services-failures.
+  requires: [spans]
+  timeframe: { default: 1h, max: 1d }
+  scope: [cluster, namespace, tag]
+  params:
+    service:
+      type: string
+      positional: true
+      description: Only this service (exact dt.service.name, see services-list)
+  dql: |
+    fetch spans
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- with .service}}
+    | filter dt.service.name == {{.}}{{end}}
+    | filter iAny(span.events[][span_event.name] == "exception")
+    | fieldsAdd failed = request.is_failed == true or span.status_code == "error",
+        multiplicity = {{template "span-multiplicity"}}
+    | expand ev = span.events
+    | filter ev[span_event.name] == "exception"
+    | fieldsAdd exception.type = toString(ev[exception.type]),
+        message = substring(trim({{template "text-mask" "replaceString(toString(ev[exception.message]), \"\\n\", \" \")"}}), from: 0, to: 200)
+    | summarize { exceptions = toLong(round(sum(multiplicity))),
+                  on_failed = toLong(round(sum(if(failed, multiplicity, else: 0)))),
+                  last_seen = max(start_time), example = takeMax(record(start_time, trace.id)) },
+        by: { dt.service.name, exception.type, message }
+    | fields dt.service.name, exception.type, message, exceptions, on_failed, last_seen,
+        example_trace_id = example[trace.id]
+    | sort exceptions desc
+    | limit 25
+  means: >-
+    Exceptions per service, type and masked message, most frequent first,
+    extrapolated from sampled spans. on_failed is how many of them were on a
+    span that failed (error status, or a failed request). Decision rule: an
+    exception with on_failed near exceptions is breaking work and worth
+    chasing; one with on_failed at or near 0 is caught and handled (a
+    deprecation notice, a not-found, a retry) and is background, however
+    frequent. Check last_seen and compare with an earlier window before
+    calling one new. example_trace_id is the latest trace with it; open it
+    with traces-get. Capped at 25 groups. Not shown: stack traces, and
+    exceptions that were logged but not recorded on a span (logs-error-patterns).
+  emptyMeans: >-
+    No span in the window recorded an exception event. If you named a
+    service, check the name first: dt.service.name is exact and
+    case-sensitive (`dtctl run services-list <fragment>`). Many
+    instrumentations record errors as span status or logs instead of
+    exception events, so try services-failures and logs-error-patterns.
+  next:
+    - recipe: services-list
+      when: empty
+      with: { contains: "{{.service}}" }
+    - recipe: services-failures
+      when: empty
+      with: { service: "{{.service}}" }
+    - recipe: traces-get
+      when: nonempty
+      bind: { trace_id: example_trace_id }
