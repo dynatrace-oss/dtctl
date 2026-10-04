@@ -1,8 +1,8 @@
 # Illustrative only: a recipe bundle as an AI-observability app could ship it
-# (RECIPES_DESIGN.md §13). The platform stores it as one document of type
-# `recipe-bundle`; dtctl reads it from the Document store of the current
-# context. The app's identity comes from the document's originAppId, which is
-# why this file names no app.
+# (RECIPES_DESIGN.md §13). The app stores it as one document of type
+# `ai-agent-resource` named `recipes/<name>.yaml`; dtctl reads it from the
+# Document store of the current context. The app's identity comes from the
+# document's originAppId, which is why this file names no app.
 #
 # Source: dt-obs-genai/SKILL.md (Agent Signals, Evaluation Quality, Empty-State Check)
 apiVersion: dtctl.dev/v1alpha1

@@ -5,8 +5,10 @@ These files illustrate [RECIPES_DESIGN.md](../../RECIPES_DESIGN.md). They are
 
 - The DQL is adapted from the `dynatrace-for-ai` skills (Apache-2.0). Each file
   names its source.
-- None of it has been executed against an environment. Built-in recipes are
-  verified per the design's §9 before they land.
+- None of it has been executed against an environment. The shipped, verified
+  built-in recipes live in [`recipes/`](../../../../recipes/), and their
+  authoring guide is [`recipes/README.md`](../../../../recipes/README.md).
+  Where an example and a built-in differ, the built-in is right.
 
 | File | Exercises |
 |---|---|

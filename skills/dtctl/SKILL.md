@@ -27,6 +27,20 @@ Safety levels: `readonly`, `readwrite-mine`, `readwrite-all`, `dangerously-unres
 
 Don't use `dtctl auth whoami` to test connectivity — it needs an OAuth token with `app-engine:apps:run` and returns a spurious 403 for plain API or read-scoped tokens even when reads work. Confirm with a real `get`/`query`.
 
+## Recipes (experimental): check before writing DQL
+
+A recipe is a named, verified DQL query with typed parameters, a default window, and a note on how to read the result. Before composing DQL for a common question, look for one:
+
+```bash
+dtctl get recipes                          # domain index (agent mode); recipes needing absent data are hidden
+dtctl get recipes --search "pod restarts"  # ranked matches with their arguments
+dtctl describe recipe k8s-pod-restarts     # params, scope flags, window, the rendered DQL
+dtctl run k8s-pod-restarts --namespace=checkout --from=6h
+dtctl run problems-active --dry-run        # print the DQL without running it
+```
+
+The envelope's `context.query` holds the DQL that ran (adapt it with `dtctl query` when the recipe is close but not exact), `context.empty_reason` explains an empty result, and `context.suggestions` names the next recipe with arguments bound from the result. Nothing fits? Write DQL. Recipes are a shortcut, not a boundary.
+
 ## DQL (required reading)
 
 Before writing, modifying, or running any DQL (`dtctl query`, `dtctl wait query`, query files), consult `references/DQL-reference.md` and follow it over any assumption or memory.

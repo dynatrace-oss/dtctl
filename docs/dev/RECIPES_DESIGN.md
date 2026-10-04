@@ -1,6 +1,7 @@
 # Recipes Design
 
-**Status:** Proposed
+**Status:** Proposed. A prototype is implemented on this branch (experimental
+commands); see [Prototype status](#prototype-status).
 **Created:** 2026-10-04
 **Author:** dtctl team
 
@@ -306,9 +307,10 @@ How it works:
 - The `Short` line is the recipe's `summary`.
 - `run` is a verb in the catalog. Listing every recipe there does not scale
   (§11): about 300 names cost about 2k tokens on every agent bootstrap. The
-  minimal `dtctl commands` output therefore shows `run` with a recipe count and
-  a pointer to `get recipes` (§6, level 0). The full catalog lists every
-  recipe.
+  catalog therefore lists `run` alone, and its description points to
+  `get recipes` (§6, level 0). *Prototype:* no catalog level lists recipes,
+  `--full` included. The catalog is environment-independent, which keeps the
+  stability manifest free of content; `get recipes` is the listing.
 
 **Framework flags**, present on every recipe and reserved as param names:
 
@@ -604,7 +606,12 @@ Grail fields (`k8s.cluster.name`, `k8s.namespace.name`, `dt.host_group.id`,
 (`primary_tags.<key>`) meet that bar: Dynatrace enriches them on logs, metrics,
 spans, events and problems, and on the relevant Smartscape nodes. A recipe over
 spans and a recipe over logs can therefore both write
-`k8s.namespace.name == "payments"`, with no per-data-object mapping table.
+`in(k8s.namespace.name, {"payments"})`, with no per-data-object mapping table.
+The predicate is always `in()`, even for one value: on some data objects these
+fields are arrays (`k8s.cluster.name`, `k8s.namespace.name` and
+`dt.host_group.id` on `dt.davis.problems`), where `==` never matches. A
+prototype that rendered `==` returned no problems for `--cluster` on a tenant
+with 181 matching ones.
 
 Anything else changes spelling per data object, and stays a recipe param:
 `service.name` on spans, `dt.service.name` on metrics, `dt.smartscape.service`
@@ -809,7 +816,10 @@ recipe format, validation, rendering, discovery and inventory.
 
 **What an app ships: one document per bundle.**
 
-- Document `type: recipe-bundle`, with YAML content of `kind: RecipeBundle`
+- Document `type: ai-agent-resource`, the type apps already use to ship
+  skills (named `/skills/<skill>/SKILL.md`). A bundle is named
+  `recipes/<name>.yaml` (leading slash optional), and the name is what tells
+  it apart from a skill. Its content is YAML of `kind: RecipeBundle`
   ([example](examples/recipes/bundle-genai.yaml)). A bundle holds `recipes`
   (the same schema as a recipe file), optional new `domains`, optional
   `capabilities` (the `dtctl inventory --definitions` shape), and fragments that
@@ -853,9 +863,13 @@ can, this rule needs a different anchor, such as a list of trusted app IDs.
 content must not put a network call on every `dtctl run --help`:
 
 - The bundle list is one call:
-  `GET /platform/document/v1/documents?filter=type=='recipe-bundle'` with
-  `add-fields=originAppId`. It returns ID, version and origin for every bundle.
-- Bundles are cached per context under `$XDG_CACHE_HOME/dtctl/recipes/<context>/`,
+  `GET /platform/document/v1/documents?filter=type=='ai-agent-resource' and name contains 'recipes/'`.
+  It returns ID, name, version and `originAppId` (returned by default;
+  `add-fields=originAppId` is rejected with a 400) for every candidate. Names
+  that are not bundle names are dropped before the trust check.
+- A bundle is downloaded with `GET .../documents/{id}/content`, the raw
+  content without the multipart envelope of a full document read.
+- Bundles are cached per context in `$XDG_CACHE_HOME/dtctl/recipes/<context>.json`,
   keyed by document ID and version. Content is downloaded only for a new or
   changed version.
 - The list is refreshed at most once per hour per context, and only by the
@@ -958,6 +972,29 @@ examples (§12) are the next candidates, once verified the same way.
 - `DTCTL_RECIPE_PATH` (org layer)
 - context default segments, with `--no-segments`
 
+### Prototype status
+
+The prototype on this branch implements phases 1a and 1b, plus the parts of
+phase 2 that the progressive-disclosure and distribution questions depend on:
+`next` bound from result rows, inventory-aware listing, the environment layer
+(app bundles), and the org layer. It does not implement the `entity` param
+type, context default segments, `--no-segments` or the generated index (the
+built-in set is small enough to parse on every `run`). Every command is
+`experimental` (since 0.42.0). User guide: [docs/RECIPES.md](../RECIPES.md).
+
+Where the prototype differs from the text above:
+
+- **Bundle documents** use the existing `ai-agent-resource` type with names
+  `recipes/<name>.yaml`, not a new `recipe-bundle` type (§13, question 10).
+- **The catalog** lists `run` but no recipes, at any level (§4).
+- **Follow-up commands** are emitted as `--name=value` words (`--segment=`,
+  not `-S`), with the positional slot used only for a value that cannot
+  parse as a flag. A value taken from a result row is data, and must not
+  become a flag of the suggested command.
+- **Built-in content**: 45 recipes across 14 domains, each
+  rendered and run against several live environments before it was committed.
+  `recipes/testdata/golden/rendered/` pins every recipe's rendered DQL.
+
 **Phase 3:**
 - `steps:` (named DQL steps referencing earlier steps' results; parallel when
   independent; only "skip if empty" as control flow)
@@ -1025,8 +1062,10 @@ tokens in/out, cost, wall time, scanned bytes.
    exist for each of the ~15 domains.
 9. Should cost attribution fields (`dt.cost.costcenter`, `dt.cost.product`)
    become scope dimensions once their type is consistent across billing events?
-10. What document `type` do app-shipped skills use, and should recipe bundles
-    follow the same convention (`recipe-bundle` is a placeholder)?
+10. ~~What document `type` do app-shipped skills use?~~ Answered: skills are
+    `ai-agent-resource` documents named `/skills/<skill>/SKILL.md`. Bundles
+    use the same type, named `recipes/<name>.yaml`. Still open: whether the
+    platform should reserve the `recipes/` prefix for this purpose.
 11. Is `originAppId` a sufficient trust anchor (§13), or does dtctl need an
     allowlist of app IDs per context?
 12. Should `requires` support per-value requirements for family recipes
