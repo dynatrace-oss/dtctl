@@ -1,4 +1,4 @@
-# services-failures v1 — window: default 1h
+# services-failures v2 — window: default 1h
 fetch spans
 | filter request.is_root_span == true and request.is_failed == true
 | fieldsAdd multiplicity = coalesce(aggregation.count, 1)

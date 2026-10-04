@@ -5,7 +5,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: services-latency
-  version: 2
+  version: 3
   tags: [services, latency, endpoints, percentiles, slow]
 spec:
   summary: One service's endpoints with p50/p90/p99 latency, ranked by total time spent
@@ -15,7 +15,9 @@ spec:
     services-red for the service-level numbers and traces-slow-endpoints to
     rank endpoints across all services.
   requires: [spans]
-  timeframe: 1h
+  # Inline: the baseline is a second fetch of the same window shifted back, so
+  # the DQL writes both windows itself.
+  timeframe: { default: 1h, max: 1d, inline: true }
   scope: [cluster, namespace, tag]
   params:
     service:
@@ -23,13 +25,40 @@ spec:
       required: true
       positional: true
       description: Service name or part of it, case-insensitive (matched against dt.service.name)
+    baseline:
+      type: enum
+      values: [day, week, none]
+      default: day
+      description: Compare with the same window a day or a week earlier (none skips the second scan)
   dql: |
-    fetch spans
+    {{- define "service-latency-spans"}}
     {{- with .scope.stage}}
     {{.}}{{end}}
     | filter request.is_root_span == true
     | filter contains(dt.service.name, {{.service}}, caseSensitive: false)
-    | fieldsAdd multiplicity = {{template "span-multiplicity"}}
+    | fields dt.service.name, endpoint.name, duration, trace.id, request.is_failed,
+        multiplicity = {{template "span-multiplicity"}}
+    {{- end}}
+    {{- $shift := "-24h"}}{{if eq .baseline "week"}}{{$shift = "-168h"}}{{end}}
+    fetch spans, from: {{.window.from}}, to: {{.window.to}}
+    {{- template "service-latency-spans" .}}
+    {{- if ne .baseline "none"}}
+    | fieldsAdd base = false
+    | append [fetch spans, from: {{timeAdd .window.from $shift}}, to: {{timeAdd .window.to $shift}}
+    {{- template "service-latency-spans" .}}
+        | fieldsAdd base = true]
+    | summarize { requests = toLong(round(sum(if(not(base), multiplicity, else: 0)))),
+                  failed = toLong(round(sum(if(not(base) and request.is_failed, multiplicity, else: 0)))),
+                  time_s = sum(if(not(base), duration / 1s * multiplicity, else: 0)),
+                  p50 = percentile(if(not(base), duration), 50),
+                  p90 = percentile(if(not(base), duration), 90),
+                  p99 = percentile(if(not(base), duration), 99),
+                  max = max(if(not(base), duration)),
+                  slowest = takeMax(if(not(base), record(duration, trace.id))),
+                  base_requests = toLong(round(sum(if(base, multiplicity, else: 0)))),
+                  base_p99 = percentile(if(base, duration), 99) },
+        by: {dt.service.name, endpoint.name}
+    {{- else}}
     | summarize { requests = toLong(round(sum(multiplicity))),
                   failed = toLong(round(sum(if(request.is_failed, multiplicity, else: 0)))),
                   time_s = sum(duration / 1s * multiplicity),
@@ -37,10 +66,16 @@ spec:
                   p99 = percentile(duration, 99), max = max(duration),
                   slowest = takeMax(record(duration, trace.id)) },
         by: {dt.service.name, endpoint.name}
+    {{- end}}
+    | filter requests > 0
     | fields dt.service.name, endpoint.name, requests, failed,
         time_spent_s = round(time_s, decimals: 1),
         p50_ms = round(p50 / 1ms, decimals: 1), p90_ms = round(p90 / 1ms, decimals: 1),
         p99_ms = round(p99 / 1ms, decimals: 1), max_ms = round(max / 1ms, decimals: 1),
+    {{- if ne .baseline "none"}}
+        base_p99_ms = round(base_p99 / 1ms, decimals: 1), base_requests,
+        p99_vs_base = round(toDouble(p99) / toDouble(base_p99), decimals: 2),
+    {{- end}}
         slowest_trace_id = slowest[trace.id]
     | sort time_spent_s desc
     | limit 25
@@ -49,16 +84,19 @@ spec:
     --service (case-insensitive), so "checkout" also finds "checkout-service
     (production)"; dt.service.name says which service a row belongs to. If
     rows from several services appear, the name was too broad: re-run with
-    more of it. Rows are ranked by time_spent_s (requests x
-    duration, in seconds), so the first row is where the service spends most
-    of its time, not necessarily the slowest endpoint. Latencies are in
-    milliseconds. requests and failed are extrapolated from sampled spans (the
-    sampling and aggregation multiplicity), so they approximate the real
-    traffic; percentiles are approximate and computed over the stored spans
-    (p99 can come out slightly above max_ms). An endpoint with a handful of
-    requests has a meaningless p99. slowest_trace_id is the
-    slowest stored trace of that endpoint; open it with traces-get. Capped at
-    25 endpoints.
+    more of it. Rows are ranked by time_spent_s (requests x duration, in
+    seconds), so the first row is where the service spends most of its time,
+    not necessarily the slowest endpoint. Latencies are in milliseconds.
+    requests and failed are extrapolated from sampled spans, so they
+    approximate the real traffic; percentiles are approximate (p99 can come
+    out slightly above max_ms), and an endpoint with a handful of requests has
+    a meaningless p99. base_p99_ms and base_requests are the same endpoint a
+    day (--baseline week: a week) earlier, p99_vs_base their ratio: near 1 is
+    how the endpoint always behaves, well above 1 is a regression, null means
+    no traffic back then. slowest_trace_id is the slowest stored trace of that
+    endpoint; open it with traces-get. Capped at 25 endpoints. Not shown:
+    endpoints with no traffic in the window, and the downstream calls that
+    make an endpoint slow.
   emptyMeans: >-
     No request root spans of any service whose name contains --service in the
     window. Check the spelling with `dtctl run services-list <fragment>`: a

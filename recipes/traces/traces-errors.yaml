@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: traces-errors
-  version: 1
+  version: 2
   tags: [traces, errors, failures, exceptions, recent]
 spec:
   summary: Most recent failed requests with reason, exception and trace id
@@ -40,9 +40,13 @@ spec:
     Dynatrace failure detection marked it failed (http_code, grpc_code,
     exception, span_status, custom_rule). exception.type and exception.message
     are the first exception recorded on that span (the message is cut at 300
-    characters); an exception thrown deeper in the call chain shows only in
-    traces-get. Rows are stored spans, so with sampling not every failed
-    request appears. Capped at 50 rows; use services-failures for totals.
+    characters). Root, not deep: a row is a request that failed as a whole;
+    its cause usually sits deeper in the call chain and shows only in
+    traces-get. Spans with an error status or an exception below a request
+    that succeeded are not listed and are not failures: most exceptions are
+    caught and handled. Rows are stored spans, so with sampling not every
+    failed request appears. Capped at 50 rows; use services-failures for
+    totals.
   emptyMeans: >-
     No failed request in the window. If you named a service, check the name
     first: dt.service.name is exact and case-sensitive, so a typo looks like a

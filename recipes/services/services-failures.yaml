@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: services-failures
-  version: 1
+  version: 2
   tags: [services, failures, errors, exceptions, http, status-codes]
 spec:
   summary: Failed requests by service, endpoint, failure reason, HTTP status and exception type
@@ -47,8 +47,14 @@ spec:
     failures is extrapolated from sampled spans, so it approximates the real
     count; services-red has the exact metric. A proxy and the service behind it
     both report the same failed request, so one incident can appear under two
-    services. example_trace_id is the most recent failed trace of the group;
-    open it with traces-get. Capped at 25 groups.
+    services. Root, not deep: only requests that failed as a whole are
+    counted. A span deeper in the call chain with an error status or an
+    exception (most exceptions are caught and the request still succeeds) is
+    not a failure here; that is the normal background, and blaming it needs a
+    failed root above it. The group to chase is the one with the most failures
+    and a last_seen inside the incident; example_trace_id is its most recent
+    failed trace, open it with traces-get to find the deepest failing span.
+    Capped at 25 groups.
   emptyMeans: >-
     No failed request in the window. If you named a service, check the name
     first: dt.service.name is exact and case-sensitive, so a typo looks like a
