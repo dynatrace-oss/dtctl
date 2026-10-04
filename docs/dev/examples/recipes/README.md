@@ -27,3 +27,4 @@ These files illustrate [RECIPES_DESIGN.md](../../RECIPES_DESIGN.md). They are
 | `costs-dps-by-capability.yaml` | an inline window (`.window`) aligned to UTC days; segments off |
 | `capacity-cpu-saturation.yaml` | a minimum window |
 | `network-top-talkers.yaml` | a bucket-scoped fetch |
+| `bundle-genai.yaml` | an app-shipped bundle (§13): several recipes, capability definitions, the empty-state protocol |

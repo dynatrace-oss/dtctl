@@ -306,8 +306,8 @@ How it works:
 - The `Short` line is the recipe's `summary`.
 - `run` is a verb in the catalog. Listing every recipe there does not scale
   (§11): about 300 names cost about 2k tokens on every agent bootstrap. The
-  minimal `dtctl commands` output therefore shows `run` with its domains and
-  counts (`recipes: {k8s: 28, services: 14, …}`). The full catalog lists every
+  minimal `dtctl commands` output therefore shows `run` with a recipe count and
+  a pointer to `get recipes` (§6, level 0). The full catalog lists every
   recipe.
 
 **Framework flags**, present on every recipe and reserved as param names:
@@ -390,51 +390,104 @@ A recipe is a pre-filled `dtctl query`, not a second query engine.
   stdout and the window to stderr, so
   `dtctl query "$(dtctl run x --dry-run)"` works.
 
-### 6. Discovery for agents
+### 6. Discovery for agents: progressive disclosure
 
-The bootstrap path agents already take is the place to advertise recipes:
+At 300 built-in recipes, a few dozen per app, and more from org layers, a
+flat list is too big to hand an agent. One summary line costs about 25 tokens,
+so 300 recipes cost about 7.5k tokens and 3,000 cost about 75k. Discovery
+therefore has four levels. Each one is a separate call and stays small no
+matter how large the book grows:
 
-1. `dtctl commands` (minimal) lists `run` with its recipe domains and counts.
-2. `dtctl get recipes` is the "briefing" the prototype found agents always read.
-   It is built for a book of hundreds of recipes (§11):
-   - With no filter, agent mode returns the **domain index**: domain, one-line
-     description, count. Human mode prints the full table.
-   - `--domain k8s` gives one line per recipe in that domain: name, summary,
-     required params, scope dimensions.
-   - `--search oom` does keyword ranking over name, summary and tags. There
-     are no embeddings and no network calls.
-   - `--tag` filters. Deprecated recipes are hidden unless `--all` is given.
+| Level | Call | Returns | Size |
+|---|---|---|---|
+| 0 | `dtctl commands` | `run` with a recipe count and a pointer to `get recipes` | constant, ~50 tokens |
+| 1 | `dtctl get recipes` | the **domain index**: domain, one line, `available/total`, sources | one line per domain; ~15–30 domains |
+| 2 | `get recipes --search "<words>"`, `--domain k8s`, `--tag triage` | one line per recipe: name, summary, required params | capped at 25 lines, with `has_more` |
+| 3 | `dtctl describe recipe <name>` | params, scope, `means`, `emptyMeans`, `next`, rendered DQL | one recipe |
 
-   A typical agent bootstrap costs two short calls: the domain index, then one
-   domain. That replaces dozens of `dtctl commands` and failed-DQL calls.
-3. The `dtctl` skill (`skills/dtctl/SKILL.md`) gets one rule: *before writing
-   DQL, check `dtctl get recipes`. `dtctl run <name> --dry-run` shows a recipe's
-   DQL as a starting point.* There is no recipe content in the skill. The prototype
-   found the CLI listing beats skill files, and duplicating content would create
-   another copy to keep in sync.
+- **`--search` is the main path.** The agent already has a question, so the
+  question is the query: `get recipes --search "pods oom killed"`. Matching is a
+  local keyword ranking over name, summary, tags and domain description. There
+  are no embeddings and no network calls. Summaries are written as the question
+  the recipe answers, because that is what they are matched against.
+- **Domains are for navigation; tags are for search.** Every recipe has exactly
+  one domain, taken from its name prefix. Domains come from registries, so they
+  stay a short, curated list even when many owners contribute (§13). Tags are
+  free-form and decentralized, and different owners will spell them differently
+  (`k8s`, `kubernetes`). That makes them good search terms and bad categories:
+  they feed the `--search` ranking and the `--tag` filter, but the index never
+  groups by them.
+- **The index shrinks with the environment.** Recipes that need data the
+  environment does not have are hidden (see below). Domains with nothing
+  available collapse into one line: `unavailable here: k8s, aws, gcp`. On an
+  environment without Kubernetes and one cloud, that removes most of the
+  catalog before the agent reads it.
+- **Every truncation says so** (`context.has_more`, `context.hidden`), with the
+  flag that shows the rest (`--all`). This follows the agent-mode output rule in
+  AGENTS.md.
+- Human mode prints the full table, grouped by domain.
 
-`spec.requires` is used in phase 2: `get recipes --check` runs the inventory's
-structural probes (cheap, no data scans) and marks recipes that cannot work
-here. Phase 1 only validates that the names exist, and shows them in `describe`.
-Nothing is hidden on an unverified guess. A recipe marked unavailable stays
-runnable, because inventory evidence can be wrong.
+A typical agent bootstrap is one search, or the index plus one domain. Either
+costs a few hundred tokens and replaces dozens of `dtctl commands` and
+failed-DQL calls.
+
+The `dtctl` skill (`skills/dtctl/SKILL.md`) gets one rule: *before writing DQL,
+check `dtctl get recipes --search …`. `dtctl run <name> --dry-run` shows a
+recipe's DQL as a starting point.* There is no recipe content in the skill. The
+prototype found the CLI listing beats skill files, and duplicating content would
+create another copy to keep in sync.
+
+**Inventory-aware listing.** `spec.requires` names capabilities from `dtctl
+inventory`. The listing uses them to hide recipes that cannot work here.
+Discovery has real latency (a full `dtctl inventory` runs a budgeted battery of
+queries), so listing never waits for a full run. Three rules keep it fast:
+
+1. **The verdicts are cached.** `dtctl inventory` writes its capability verdicts
+   to a per-context cache (`$XDG_CACHE_HOME/dtctl/inventory/<context>.json`),
+   with a 24h TTL. Capabilities are retention-scoped and change over days, not
+   minutes, so a day-old verdict is still useful. (Today `inventory` persists
+   nothing; this is a deliberate change.) In service mode the cache is in
+   memory, keyed by environment and principal, and never on the host disk.
+2. **A cold cache gets the structural pass only.** With no cached verdict,
+   `get recipes` runs discovery limited to the capabilities its slice requires,
+   and only the structural shapes: data-object catalog, entity census and
+   metric catalog. That is a fixed handful of catalog queries, however many
+   capabilities there are, and none of them scans data. It has a short budget
+   (`--inventory-budget`, default 10s). If the budget runs out, the listing is
+   unfiltered and says so. Probe-shaped capabilities cost one query each, so
+   they are evaluated only by an explicit `dtctl inventory`, and are *unknown*
+   until then.
+3. **Only an `absent` verdict hides a recipe.** `unknown`, or no cache, shows
+   the recipe. Inventory evidence can be wrong, so a hidden recipe still
+   runs: `run` on a recipe whose requirement is absent in the cache executes
+   it and adds a warning with the cited evidence.
+
+The envelope reports what filtering did: `context.inventory: {age: "3h",
+hidden: 112}`, and a suggestion to refresh it (`dtctl inventory`) or see
+everything (`--all`). `--no-inventory` disables the filter for one call.
+
+`requires` is a list, and all of its entries must be present. A family recipe
+whose enum spans providers (`cloud-inventory --provider aws|azure|gcp`) lists
+no provider capability. Per-value requirements are an open question.
 
 ### 7. Where recipes live
 
 | Layer | Location | Phase |
 |---|---|---|
 | Built-in | `recipes/<domain>/*.yaml` at the repo root, embedded with `go:embed` (as `skills/dtctl/` is) | 1 |
+| Environment | recipe bundles shipped by Dynatrace apps, read from the Document store of the current context (§13) | 2 |
 | User | `$XDG_CONFIG_HOME/dtctl/recipes/**/*.yaml` (`~/.config/dtctl/recipes/`) | 1 |
 | Team/org | directories in `DTCTL_RECIPE_PATH` (colon-separated) | 2 |
 | Project | `.dtctl/recipes/`, found by searching upward like `.dtctl.yaml` | 3, DQL-only, trusted only after opt-in (open question) |
-| Pulled bundle | a versioned recipe bundle released independently of dtctl | later, if content cadence demands it |
 
-**Precedence:** user overrides org, which overrides built-in, and a whole recipe
-replaces another recipe of the same name. There is no field-level merge, which
-is where the prototype's complexity came from.
+**Precedence:** user overrides org, which overrides environment, which
+overrides built-in. A whole recipe replaces another recipe of the same name.
+There is no field-level merge, which is where the prototype's complexity came
+from.
 
-- An override is visible: `describe recipe` names the file and what it shadows,
-  and `context.recipe.source` says `user`.
+- An override is visible: `describe recipe` names the file or document and
+  what it shadows, and `context.recipe.source` says `user`, `org`,
+  `app:<app-id>@<version>` or `builtin`.
 - Overriding a built-in is a feature. A team can pin a recipe to its own
   environment's field names.
 - A user layer may add fragments and scope dimensions, but may not redefine
@@ -492,7 +545,8 @@ is where the prototype's complexity came from.
   - Profiles are default-deny, so no existing profile gains recipes silently.
   - Whether the `investigate` preset should include `run` is an open question.
 - **Engine / service mode.**
-  - Built-in recipes are available in the engine.
+  - Built-in recipes are available in the engine. So are app bundles from the
+    request's environment (§13), which are cached in memory only.
   - The user directory is host state: a `Session` does not read it, the same as
     aliases.
   - `verify recipe -f <file>` reads through `readFileFlag` (vfs).
@@ -676,9 +730,11 @@ that way:
 
 - Core (built-in) aims at **300–500** recipes once mature: the union above
   plus areas the skills do not cover yet.
-- Per-extension and per-technology long tail goes to **org and extension
-  layers** (`DTCTL_RECIPE_PATH`, phase 2), owned by whoever owns the
-  extension. An extension could ship its recipes the way it ships dashboards.
+- The per-technology long tail goes to **apps** (§13) and **org layers**
+  (`DTCTL_RECIPE_PATH`), owned by whoever owns the technology. An environment
+  only carries the bundles of the apps it has installed. Even a large total
+  stays manageable in each environment, because inventory filtering (§6) hides
+  what does not apply there.
 - A family parameter whose values come from the environment (all node types, all
   metric keys) is not an enum but a `meta-` discovery recipe plus a string
   param.
@@ -687,7 +743,7 @@ that way:
 
 - **Domains.** Names are `<domain>-<name>`, against a registry in
   `recipes/_domains.yaml` ([example](examples/recipes/_domains.yaml)) of about
-  15 domains. Files live in `recipes/<domain>/`. Domains drive the catalog
+  15 domains, plus any that app bundles add (§13). Files live in `recipes/<domain>/`. Domains drive the catalog
   index, `get recipes --domain` and `CODEOWNERS`, so the Kubernetes team owns
   `recipes/k8s/`.
 - **Discovery** returns the domain index first, then one domain (§6). An agent
@@ -739,6 +795,112 @@ They also show where the skills' knowledge goes:
 None of them has been executed against an environment. They are design
 material, not the initial set.
 
+### 13. Recipes shipped by apps
+
+Dynatrace apps already ship more than code: dashboards, and now skills, which
+the platform stores as documents in the Document store. An app releases on its
+own schedule, and its owner owns what it ships. Recipes fit the same model. The
+team behind an AI-observability app knows the GenAI queries better than dtctl
+does, and should be able to ship and fix them without a dtctl release. The
+environment then carries the recipes for the apps it actually has installed.
+
+This adds one layer, **environment** (§7). It reuses everything else: the
+recipe format, validation, rendering, discovery and inventory.
+
+**What an app ships: one document per bundle.**
+
+- Document `type: recipe-bundle`, with YAML content of `kind: RecipeBundle`
+  ([example](examples/recipes/bundle-genai.yaml)). A bundle holds `recipes`
+  (the same schema as a recipe file), optional new `domains`, optional
+  `capabilities` (the `dtctl inventory --definitions` shape), and fragments that
+  only its own recipes can use.
+- One document per bundle, not one per recipe. That is one list call plus one
+  download per app, and a bundle updates atomically, so an app never shows a
+  half-updated set.
+- `metadata.minDtctlVersion`: an older dtctl skips the bundle and says why,
+  instead of failing on a field it does not know.
+
+**Trust: app-deployed documents only.** Recipe text is prompt input for agents,
+so whoever can write it can steer them. dtctl loads only bundles whose document
+has an `originAppId`, meaning the platform deployed it as part of an app. A
+bundle that a user uploads by hand is ignored. There is no setting to change
+that. Teams that want shared content without an app use the org layer
+(`DTCTL_RECIPE_PATH`), whose files they control. *To verify with the platform:*
+users cannot create or modify a document carrying an `originAppId`. If they
+can, this rule needs a different anchor, such as a list of trusted app IDs.
+
+**Content rules**, enforced when a bundle is loaded:
+
+- DQL recipes only, the same as phase 1, so app recipes are read-only and need
+  no safety gate. When API steps arrive (phase 3), bundles do not get them
+  automatically. That is a separate decision.
+- A recipe name starts with a built-in domain or one the bundle declares. A
+  bundle may add recipes to a built-in domain (`genai`) but cannot re-describe
+  it.
+- Bundles add capabilities but cannot redefine a built-in or another bundle's
+  capability. Merge order for inventory definitions: built-in, then apps, then
+  the user's `--definitions` files, which can override anything.
+- Bundles cannot add scope dimensions, so `--namespace` means the same thing in
+  every recipe whatever its source.
+- If two bundles define the same recipe, domain or capability name, **neither
+  is loaded**. `get recipes` reports the conflict and both sources. Silently
+  picking one would make a recipe's meaning depend on install order.
+- An app recipe may shadow a built-in one. Precedence is user > org >
+  environment > built-in. The app owner is usually the better authority, and
+  `describe recipe` shows the shadowing.
+
+**Loading and caching.** The command tree is built at startup, so remote
+content must not put a network call on every `dtctl run --help`:
+
+- The bundle list is one call:
+  `GET /platform/document/v1/documents?filter=type=='recipe-bundle'` with
+  `add-fields=originAppId`. It returns ID, version and origin for every bundle.
+- Bundles are cached per context under `$XDG_CACHE_HOME/dtctl/recipes/<context>/`,
+  keyed by document ID and version. Content is downloaded only for a new or
+  changed version.
+- The list is refreshed at most once per hour per context, and only by the
+  commands that load the recipe tree (§7). Shell completion and `--help` read
+  the cache only and never touch the network. `get recipes --refresh` forces a
+  refresh.
+- `run <name>` for a name not in the cache forces one refresh before it reports
+  "unknown recipe". An app installed a minute ago works on the first try.
+- Steady state is no calls within the hour, then one list call. Downloads happen
+  only when an app updates.
+- **Failure never spreads.** If the list call fails (offline, 403, missing
+  `document:documents:read` scope), dtctl uses the stale cache and says so. With
+  no cache, it skips the layer with a note naming the cause. Built-in and file
+  recipes are unaffected. `document:documents:read` joins the scopes that `run`
+  and `get recipes` request, as an optional one: without it, only the
+  environment layer is missing.
+- **Service mode.** A bundle comes from the tenant the request targets, using
+  the request's credentials, so it is request state and the engine loads it like
+  any other read. The cache is in memory, keyed by environment and principal,
+  and never on the host disk (Embedding Invariants §2).
+
+**Inventory, shipped by the app.** A bundle's `capabilities` let an app say
+when its recipes apply. The example bundle defines `genai` as a span probe and
+`genai-evaluations` as a bizevents probe, and its recipes require them. On an
+environment with no GenAI traffic, `dtctl inventory` finds `genai` absent and
+the listing hides those recipes (§6). That an app is installed is not evidence
+that its data exists; the capability decides.
+
+**Authoring for app owners.** `dtctl verify recipe -f bundle.yaml` validates a
+bundle offline (schema, templates, domain and capability rules) and, with a
+context, verifies every rendered query against a live environment. An app's CI
+runs it the same way dtctl's CI runs `recipes/`. How the bundle gets into the
+app package is the app toolkit's business, not dtctl's.
+
+**Where this leads.** If apps become the main channel, the built-in set can
+shrink toward the cross-cutting core (problems, logs, services, discovery),
+with technology-specific recipes owned by the apps for those technologies.
+The built-in set stays as the fallback for environments without those apps and
+for offline use. This is a direction, not a phase-2 commitment. It also
+replaces the earlier "independently released recipe bundle" idea: apps already
+release independently.
+
+An app that ships a skill and a recipe bundle can have the skill point to the
+recipes (`dtctl run genai-agent-errors`), so the query exists once.
+
 ## Initial recipe set
 
 The prototype's eval suite is a good source for the first ~12 recipes: most of
@@ -789,8 +951,11 @@ examples (§12) are the next candidates, once verified the same way.
   per-signal scoping, the "service logs are on pods" hop that dynatui, correlate
   and the prototype each solved separately
 - `next` bound from result rows
-- `get recipes --check` against inventory
-- `DTCTL_RECIPE_PATH` (org and extension layers)
+- inventory-aware listing: cached verdicts, the structural pass on a cold
+  cache, `--no-inventory` (§6)
+- the environment layer: app-shipped recipe bundles from the Document store,
+  including their capability definitions (§13)
+- `DTCTL_RECIPE_PATH` (org layer)
 - context default segments, with `--no-segments`
 
 **Phase 3:**
@@ -799,8 +964,6 @@ examples (§12) are the next candidates, once verified the same way.
 - read-only API steps
 - multiple output sections
 - project-local recipes
-- an independently released recipe bundle, if the content cadence outgrows
-  dtctl releases
 
 ## Evaluation
 
@@ -833,7 +996,11 @@ tokens in/out, cost, wall time, scanned bytes.
 | Go-defined catalog (dynatui `catalog.Spec`) | Couples content changes to code changes, the opposite of the goal |
 | Raw template substitution (today's `--set`) | DQL injection by accident; silent empty renders on typos |
 | Recipe content only in skills | Skills are skipped in about half of agent sessions; still an open comparison, which the evaluation settles |
-| Separate recipe repository from day one | Decided against for now: release coupling is acceptable while the set is small, and user overrides cover urgent fixes |
+| Separate recipe repository from day one | Decided against for now: release coupling is acceptable while the set is small, and user overrides cover urgent fixes. App bundles (§13) give independent release where it matters, without a second dtctl-owned repository |
+| One document per recipe in the Document store | Hundreds of downloads on a cold cache, paginated listing, and no atomic update of an app's set |
+| Loading user-uploaded bundle documents | Anyone with document write access could inject agent prompts into every dtctl user of the environment; the org layer covers team content |
+| Running full inventory discovery on `get recipes` | Seconds to minutes of latency on every listing; the cache plus the structural pass bound it |
+| Tags as the navigation axis | Free-form tags from many owners fragment (`k8s`, `kubernetes`); domains are curated, tags feed search |
 
 ## Open questions
 
@@ -858,3 +1025,12 @@ tokens in/out, cost, wall time, scanned bytes.
    exist for each of the ~15 domains.
 9. Should cost attribution fields (`dt.cost.costcenter`, `dt.cost.product`)
    become scope dimensions once their type is consistent across billing events?
+10. What document `type` do app-shipped skills use, and should recipe bundles
+    follow the same convention (`recipe-bundle` is a placeholder)?
+11. Is `originAppId` a sufficient trust anchor (§13), or does dtctl need an
+    allowlist of app IDs per context?
+12. Should `requires` support per-value requirements for family recipes
+    (`--provider aws` needs `aws`), which would hide enum values instead of
+    whole recipes?
+13. Cache lifetimes: 1h for the bundle list and 24h for inventory verdicts are
+    guesses. Should they be context settings?
