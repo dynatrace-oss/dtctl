@@ -122,6 +122,33 @@ def query(cfg_path, iso_dir, dql, binary="dtctl-main", timeout=300):
     return d.get("records", d) if isinstance(d, dict) else d
 
 
+READ_VERBS = ("get", "describe")
+READ_EXECS = ("slo",)  # `exec slo` evaluates an SLO: OperationRead
+
+
+def command_json(cfg_path, iso_dir, args, binary="dtctl-main", timeout=300):
+    """Run a read-only dtctl command with `-o json` and parse its output.
+
+    Only get/describe and `exec slo` are allowed. Some commands print a
+    progress line before the JSON document, so parsing starts at the first
+    line that opens one.
+    """
+    args = list(args)
+    if not (args[0] in READ_VERBS or (args[0] == "exec" and args[1] in READ_EXECS)):
+        raise ValueError(f"not a read-only command: {args}")
+    p = subprocess.run(
+        [str(BIN / binary), "--plain", "--no-agent", *args, "-o", "json"],
+        capture_output=True, text=True, timeout=timeout,
+        env=isolated_env(cfg_path, iso_dir))
+    if p.returncode != 0:
+        raise QueryError(f"{p.stderr.strip()[:500]}\nargs: {args}")
+    lines = p.stdout.splitlines(keepends=True)
+    start = next((i for i, ln in enumerate(lines) if ln.lstrip()[:1] in ("{", "[")), None)
+    if start is None:
+        return None
+    return json.loads("".join(lines[start:]))
+
+
 def num(v):
     """dtctl renders long numbers as strings in JSON; coerce."""
     if v is None:
@@ -156,6 +183,14 @@ def load_tasks(env=None, only=None):
             prompt = expand(prompt, env)
         tasks.append(dict(id=tid, meta=meta, prompt=prompt, rubric=rubric))
     return tasks
+
+
+def load_taskset(name):
+    """Task ids listed in tasks/<name>.txt (one per line, '#' comments)."""
+    f = TASKS / f"{name}.txt"
+    if not f.exists():
+        sys.exit(f"no task set {f}")
+    return {ln.split("#")[0].strip() for ln in f.read_text().splitlines()} - {""}
 
 
 def expand(text, env):

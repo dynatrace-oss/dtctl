@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Run the eval matrix: arms × tasks × reps, one fresh headless `claude -p` each.
 
-    run.py <batch> [--arms A,B] [--tasks t01,t02] [--reps 2] [--parallel N] [--no-gt]
+    run.py <batch> [--arms A,B] [--tasks t01,t02 | --taskset v2] [--reps 2] [--model M]
+           [--parallel N] [--no-gt]
 
 Arms
   A  control: dtctl from origin/main + its dtctl skill + the dt-* skills
@@ -9,6 +10,9 @@ Arms
   C  recipes, no dt-* skills: dtctl from this tree + its dtctl skill only
   A2/B2  A/B plus a system-prompt nudge to load the dtctl skill first (diagnostic)
   B3     B2 plus a nudge to look for a recipe before writing DQL (upper bound)
+  BP     "B+": B, with a one-line recipe pointer added to each dt-* skill that a
+         recipe domain maps to (patched copies in the run's skills dir only)
+  BR     B plus only the recipe nudge (v2 upper bound; no "load the skill" nudge)
 
 Every run gets its own workspace under $EVAL_RUNS_DIR/<batch>/<task>/<arm>-r<rep>:
   cfg/      CLAUDE_CONFIG_DIR: copied credentials + the arm's skills (copies)
@@ -37,6 +41,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -55,11 +60,66 @@ ARMS = {
     # Upper bound: B2 even when nudged never ran a recipe, so B3 is told to
     # look for one. Compare with A2 (equally nudged to its skill).
     "B3": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=True, nudge=True, nudge_recipes=True),
+    # v2. B+: the dt-* skills an agent already loads point at the recipes of
+    # their domain - one line each, generated from the build's own catalog.
+    "BP": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=True, dt_pointers=True),
+    # v2 upper bound: B plus the recipe nudge alone. Unlike B3 it does not also
+    # tell the agent to load the dtctl skill, so it isolates the recipe nudge.
+    "BR": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=True, nudge_recipes=True),
 }
 
 NUDGE = "Before running any command, load the dtctl skill with the Skill tool and follow its guidance."
 NUDGE_RECIPES = (" Before writing any DQL, look for a matching recipe (`dtctl get recipes --search <words>`)"
                  " and use it when one fits.")
+
+
+def system_nudge(arm):
+    a = ARMS[arm]
+    text = (NUDGE if a.get("nudge") else "") + (NUDGE_RECIPES if a.get("nudge_recipes") else "")
+    return text.strip()
+
+
+# B+: which dt-* skill a recipe domain (the recipe name's first word) points
+# from. A domain that maps to no observability skill goes to dt-dql-essentials,
+# the skill every DQL-writing agent loads.
+DOMAIN_SKILLS = {
+    "k8s": ["dt-obs-kubernetes"], "logs": ["dt-obs-logs"], "services": ["dt-obs-services"],
+    "traces": ["dt-obs-tracing"], "problems": ["dt-obs-problems"],
+    "hosts": ["dt-obs-hosts"], "capacity": ["dt-obs-hosts"], "network": ["dt-obs-hosts"],
+    "cloud": ["dt-obs-aws", "dt-obs-azure", "dt-obs-gcp"], "genai": ["dt-obs-genai"],
+    "frontends": ["dt-obs-frontends"], "costs": ["dt-platform-costs"], "security": ["dt-sec-insights"],
+    "changes": ["dt-obs-problems", "dt-obs-kubernetes"],
+}
+POINTER_FALLBACK = "dt-dql-essentials"
+
+
+def recipe_pointers(binary):
+    """{skill: one pointer line} from the build's own recipe catalog."""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = subprocess.run([str(lib.BIN / binary), "--plain", "--no-agent", "get", "recipes", "-o", "json"],
+                           capture_output=True, text=True, check=True,
+                           env=lib.isolated_env(Path(tmp) / "none.yaml", Path(tmp) / "iso"))
+    by_skill = {}
+    for r in json.loads(p.stdout):
+        if r.get("source") != "builtin":
+            continue
+        for sk in DOMAIN_SKILLS.get(r["name"].split("-")[0], [POINTER_FALLBACK]):
+            by_skill.setdefault(sk, []).append(r["name"])
+    return {sk: ("> dtctl ships curated, verified queries (recipes) for this area: "
+                 + ", ".join(f"`{n}`" for n in sorted(names))
+                 + ". Run one with `dtctl run <name>`; `dtctl describe recipe <name>` shows its parameters.")
+            for sk, names in by_skill.items()}
+
+
+def add_pointer(skill_md, line):
+    """Insert the pointer line after the skill's first top-level heading."""
+    lines = skill_md.read_text().splitlines(keepends=True)
+    body = 0
+    if lines and lines[0].strip() == "---":
+        body = next(i for i in range(1, len(lines)) if lines[i].strip() == "---") + 1
+    at = next((i + 1 for i in range(body, len(lines)) if lines[i].startswith("# ")), body)
+    lines[at:at] = ["\n", line + "\n"]
+    skill_md.write_text("".join(lines))
 
 CALL_BUDGET = 20
 MAX_TURNS = 40
@@ -73,7 +133,7 @@ Rules:
 - Use at most {CALL_BUDGET} dtctl invocations in total; further calls are refused.
 - Run every command in the foreground. Never background a command or wait/sleep.
 - Bash is limited to dtctl plus basic text tools (jq, grep, head, tail, sort,
-  uniq, wc, cut, sed, awk, tr, cat, echo, date). If a command is denied,
+  uniq, wc, cut, tr, cat, column, echo, printf, date). If a command is denied,
   adjust it and retry instead of giving up.
 - Report only values you actually measured. If the data cannot answer the
   question, say so instead of guessing.
@@ -185,7 +245,7 @@ def check_no_ancestor_config(path):
                          "every run. Set EVAL_RUNS_DIR outside it (e.g. under /tmp).")
 
 
-def setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant):
+def setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant, pointers=None):
     ws = batch_dir / task["id"] / f"{arm}-r{rep}"
     if ws.exists():
         unlock(ws / "bin")
@@ -203,6 +263,8 @@ def setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant):
     if a["dt_skills"]:
         for sk in sorted(Path(env["EVAL_DFAI_DIR"], "skills").glob("dt-*")):
             shutil.copytree(sk, ws / "cfg" / "skills" / sk.name)
+            if a.get("dt_pointers") and sk.name in (pointers or {}):
+                add_pointer(ws / "cfg" / "skills" / sk.name / "SKILL.md", pointers[sk.name])
     (ws / "cfg" / "settings.json").write_text(json.dumps({"includeCoAuthoredBy": False}))
 
     wrapper = WRAPPER.format(
@@ -232,8 +294,8 @@ def claude_env(ws):
     return e
 
 
-def run_one(env, batch_dir, task, arm, rep, cfg_by_tenant):
-    ws, prompt = setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant)
+def run_one(env, batch_dir, task, arm, rep, cfg_by_tenant, pointers=None):
+    ws, prompt = setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant, pointers)
     allowed = ["Bash(dtctl:*)"] + [f"Bash({f}:*)" for f in FILTERS] + [
         "Skill", f"Read(/{ws / 'cfg' / 'skills'}/**)", f"Read(/{ws / 'work'}/**)"]
     cmd = [shutil.which("claude") or "claude", "-p", prompt,
@@ -245,8 +307,8 @@ def run_one(env, batch_dir, task, arm, rep, cfg_by_tenant):
            "--allowedTools", ",".join(allowed),
            "--disallowedTools", "WebSearch,WebFetch,Task,Agent,Write,Edit,Grep,Glob",
            "--strict-mcp-config", "--no-session-persistence"]
-    if ARMS[arm].get("nudge"):
-        cmd += ["--append-system-prompt", NUDGE + (NUDGE_RECIPES if ARMS[arm].get("nudge_recipes") else "")]
+    if system_nudge(arm):
+        cmd += ["--append-system-prompt", system_nudge(arm)]
     t0 = time.time()
     with open(ws / "transcript.jsonl", "w") as out, open(ws / "claude.err", "w") as err:
         try:
@@ -259,10 +321,15 @@ def run_one(env, batch_dir, task, arm, rep, cfg_by_tenant):
             # credentials do not stay in run dirs, even when the run is interrupted
             (ws / "cfg" / ".credentials.json").unlink(missing_ok=True)
     meta = dict(task=task["id"], arm=arm, rep=rep, rc=rc, wall_s=round(time.time() - t0, 1),
-                model=env["EVAL_MODEL"], binary=ARMS[arm]["binary"],
+                model=env["EVAL_MODEL"], binary=ARMS[arm]["binary"], build=build_rev(ARMS[arm]["binary"]),
                 started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)))
     (ws / "meta.json").write_text(json.dumps(meta, indent=2))
     return meta
+
+
+def build_rev(binary):
+    f = lib.BIN / ("main.rev" if binary == "dtctl-main" else "recipes.rev")
+    return f.read_text().strip() if f.exists() else None
 
 
 def main():
@@ -270,6 +337,8 @@ def main():
     ap.add_argument("batch")
     ap.add_argument("--arms", default="A,B")
     ap.add_argument("--tasks", default="")
+    ap.add_argument("--taskset", default="", help="tasks/<name>.txt: one task id per line")
+    ap.add_argument("--model", default="", help="investigator model (overrides EVAL_MODEL)")
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--rep-offset", type=int, default=0)
     ap.add_argument("--parallel", type=int, default=0)
@@ -277,7 +346,11 @@ def main():
     args = ap.parse_args()
 
     env = lib.load_env()
+    if args.model:
+        env["EVAL_MODEL"] = args.model
     only = set(filter(None, args.tasks.split(",")))
+    if args.taskset:
+        only |= lib.load_taskset(args.taskset)
     tasks = lib.load_tasks(env, only or None)
     arms = args.arms.split(",")
     batch_dir = lib.runs_dir(env) / args.batch
@@ -290,6 +363,11 @@ def main():
         cfg_by_tenant[tenant] = lib.make_readonly_config(
             env, lib.tenant_context(env, tenant), batch_dir / "_cfg" / f"{tenant}.yaml")
 
+    pointers = None
+    if any(ARMS[a].get("dt_pointers") for a in arms):
+        pointers = recipe_pointers("dtctl-recipes")
+        (batch_dir / "_pointers.json").write_text(json.dumps(pointers, indent=2))
+
     ids = [t["id"] for t in tasks]
     if not args.no_gt:
         subprocess.run([sys.executable, str(lib.HERE / "ground_truth.py"), str(gt_dir), "start", *ids], check=True)
@@ -299,7 +377,8 @@ def main():
     par = args.parallel or int(env["EVAL_PARALLEL"])
     print(f"{len(jobs)} runs, {par} in parallel -> {batch_dir}", file=sys.stderr)
     with cf.ThreadPoolExecutor(par) as ex:
-        futs = {ex.submit(run_one, env, batch_dir, t, a, r, cfg_by_tenant): (t["id"], a, r) for t, a, r in jobs}
+        futs = {ex.submit(run_one, env, batch_dir, t, a, r, cfg_by_tenant, pointers): (t["id"], a, r)
+                for t, a, r in jobs}
         for f in cf.as_completed(futs):
             tid, a, r = futs[f]
             try:

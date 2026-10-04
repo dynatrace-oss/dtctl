@@ -12,6 +12,7 @@ cross-check. Where a recipe and this file disagree, read both — that is a
 finding. Queries use the main-branch binary against a read-only config.
 """
 import json
+import re
 import sys
 import time
 import traceback
@@ -350,8 +351,282 @@ def t24(q, env):
                 note="workload_only = the records a k8s.workload.name filter can reach")
 
 
+# ------------------------------------------------------------------ v2 tasks (t25-t39)
+
+def ts(v):
+    """DQL timestamp literal from an ISO string."""
+    return f'toTimestamp({s(v)})'
+
+
+def _problem(q, pid):
+    r = q(f'fetch dt.davis.problems, from:now()-30d | filter display_id=={s(pid)} '
+          '| sort timestamp desc | limit 1 '
+          '| fields event.name, event.status, event.start, event.end, root_cause_entity_id, '
+          'root_cause_entity_name, affected_entity_names, dt.davis.event_ids, '
+          'description=substring(event.description, to:1500)')
+    return r[0] if r else None
+
+
+def _evidence(q, p):
+    """The problem's own events (what the problem record links to), oldest first."""
+    ids = p.get("dt.davis.event_ids") or []
+    if not ids:
+        return []
+    lo, hi = ts(p["event.start"]), ts(p.get("event.end") or p["event.start"])
+    rows = q(f'fetch dt.davis.events, from:{lo}-6h, to:{hi}+1h '
+             f'| filter in(event.id, array({", ".join(s(i) for i in ids)})) '
+             '| summarize n=count(), first=min(event.start), by:{event.name, event.type, '
+             'src=dt.source_entity.name, rc=dt.davis.is_root_cause_relevant} | sort first asc')
+    return [{k: lib.num(v) if k == "n" else v for k, v in r.items()} for r in rows]
+
+
+def t25(q, env):
+    p = _problem(q, env["EVAL_T2_PROBLEM_RC"])
+    if not p:
+        return dict(_error="problem not found in 30 days")
+    start = ts(p["event.start"])
+    changes = q(f'fetch events, from:{start}-2h, to:{start} '
+                '| filter event.kind=="DAVIS_EVENT" and (contains(event.type, "DEPLOYMENT") '
+                'or contains(event.type, "CONFIG") or contains(event.name, "change", caseSensitive: false) '
+                'or contains(event.name, "deploy", caseSensitive: false)) '
+                '| summarize n=count(), first=min(timestamp), by:{event.name, event.type, src=dt.source_entity.name} '
+                '| sort first desc | limit 10')
+    return dict(problem={k: v for k, v in p.items() if k != "dt.davis.event_ids"},
+                evidence=_evidence(q, p), changes_2h_before_start=changes,
+                note="the root cause and its degradation are in `problem`/`evidence`; the likely "
+                     "trigger is the change event closest before the start")
+
+
+def t26(q, env):
+    at, ns = ts(env["EVAL_T2_CHANGE_AT"]), s(env["EVAL_T2_CHANGE_NAMESPACE"])
+    wl = env["EVAL_T2_CHANGE_WORKLOAD"]
+    rows = q(f'fetch events, from:{at}-3h, to:{at}+30m | filter k8s.namespace.name=={ns} '
+             '| filter event.kind=="DAVIS_EVENT" '
+             '| summarize n=count(), first=min(timestamp), last=max(timestamp), '
+             'workloads=collectDistinct(coalesce(k8s.workload.name, dt.source_entity.name), maxLength:4), '
+             'description=takeFirst(substring(coalesce(event.description, dt.event.description), to:300)), '
+             'by:{event.type, event.name} | sort first asc | limit 30')
+    rows = [{k: lib.num(v) if k == "n" else v for k, v in r.items()} for r in rows]
+    return dict(events=rows,
+                about_workload=[r for r in rows if wl in (r.get("workloads") or [])],
+                note="the change is the earliest change-type event about the workload before the "
+                     "symptoms (throttling etc.) start")
+
+
+def t27(q, env):
+    sv = s(env["EVAL_T2_DEEP_SERVICE"])
+    base = f'fetch spans, from:now()-6h | filter dt.service.name=={sv} '
+    req = q(base + '| summarize roots=countIf(request.is_root_span), '
+            'root_failed=countIf(request.is_root_span and request.is_failed)')
+    err = q(base + '| filter span.status_code=="error" '
+            '| summarize n=count(), traces=countDistinct(trace.id), code=takeFirst(http.response.status_code), '
+            'url=takeFirst(substring(url.full, to:120)), msg=takeFirst(substring(span.status_message, to:160)), '
+            'by:{span.name, span.kind} | sort n desc | limit 15')
+    return dict(requests={k: lib.num(v) for k, v in req[0].items()} if req else {},
+                error_spans=[{k: lib.num(v) if k in ("n", "traces") else v for k, v in r.items()} for r in err],
+                note="one failed call can be recorded by several span layers (client span, tool span, "
+                     "tool wrapper); `traces` counts distinct traces")
+
+
+def t28(q, env):
+    sv = s(env["EVAL_T2_EXC_SERVICE"])
+    base = f'fetch spans, from:now()-1h | filter dt.service.name=={sv} '
+    req = q(base + '| summarize roots=countIf(request.is_root_span), '
+            'root_failed=countIf(request.is_root_span and request.is_failed), '
+            'root_with_exception=countIf(request.is_root_span and iAny(span.events[][span_event.name]=="exception"))')
+    exc = q(base + '| filter iAny(span.events[][span_event.name]=="exception") '
+            '| fieldsAdd et=arrayFirst(iCollectArray(if(span.events[][span_event.name]=="exception", '
+            'span.events[][exception.type]))), em=arrayFirst(iCollectArray(if(span.events[][span_event.name]=='
+            '"exception", substring(span.events[][exception.message], to:160)))) '
+            '| summarize n=count(), root=countIf(request.is_root_span), failed=countIf(request.is_failed), '
+            'error_status=countIf(span.status_code=="error"), by:{span.kind, et, em} | sort n desc | limit 8')
+    return dict(requests={k: lib.num(v) for k, v in req[0].items()} if req else {},
+                exceptions=[{k: lib.num(v) if k in ("n", "root", "failed", "error_status") else v
+                             for k, v in r.items()} for r in exc])
+
+
+def t29(q, env):
+    cl, ns = s(env["EVAL_T2_LOG_CLUSTER"]), s(env["EVAL_T2_LOG_NAMESPACE"])
+    prefix = s(env["EVAL_T2_LOG_WORKLOAD"] + "-")
+    base = (f'fetch logs, from:now()-1h | filter k8s.cluster.name=={cl} and k8s.namespace.name=={ns} '
+            f'and startsWith(k8s.pod.name, {prefix}) ')
+    tot = q(base + '| summarize n=count(), errors=countIf(status=="ERROR"), '
+            f'via_workload_field=countIf(k8s.workload.name=={s(env["EVAL_T2_LOG_WORKLOAD"])}), '
+            'with_service_name=countIf(isNotNull(service.name))')
+    top = q(base + '| filter status=="ERROR" '
+            '| fieldsAdd p=replacePattern(replacePattern(substring(content, to:160), "IPADDR", "<ip>"), "DIGIT+", "<n>") '
+            '| summarize n=count(), example=takeFirst(substring(content, to:220)), by:{p} | sort n desc | limit 5')
+    return dict(totals={k: lib.num(v) for k, v in tot[0].items()} if tot else {},
+                top_errors=[dict(count=lib.num(r["n"]), example=r["example"]) for r in top],
+                note="the workload's log records carry neither k8s.workload.name nor service.name; "
+                     "they are reachable through the pod name")
+
+
+def t30(q, env):
+    day = ts(env["EVAL_T1_NEW_DAY"] + "T00:00:00Z")
+    rows = q(f'fetch logs, from:{day}-6d, to:{day}+1d | filter status=="ERROR" '
+             '| fieldsAdd p=replacePattern(replacePattern(replacePattern(substring(content, to:140), '
+             '"UUIDSTRING", "<id>"), "XDIGIT{10,}", "<hex>"), "DIGIT+", "<n>") '
+             f'| fieldsAdd infocus = timestamp >= {day} '
+             '| summarize nf=countIf(infocus), nb=countIf(not infocus), first=min(timestamp), '
+             'src=takeFirst(coalesce(k8s.workload.name, k8s.deployment.name, service.name, log.source)), by:{p} '
+             '| filter nf > 0 | sort nb asc, nf desc | limit 400')
+    new = [r for r in rows if lib.num(r["nb"]) == 0]
+    old_top = sorted((r for r in rows if lib.num(r["nb"]) > 0), key=lambda r: -lib.num(r["nf"]))[:5]
+
+    def conv(r):
+        return dict(template=r["p"], count_on_day=lib.num(r["nf"]), count_before=lib.num(r["nb"]),
+                    first=r["first"], source=r["src"])
+    return dict(new_templates=[conv(r) for r in new[:10]],
+                top_templates_of_day_that_are_not_new=[conv(r) for r in old_top],
+                note="new = error template seen on the day and never in the six days before")
+
+
+def _ms(v):
+    return round(lib.num(v) / 1e6, 1) if v is not None else None
+
+
+def t31(q, env):
+    sv = s(env["EVAL_T2_SHIFT_SERVICE"])
+    f, t = ts(env["EVAL_T2_SHIFT_FROM_TS"]), ts(env["EVAL_T2_SHIFT_TO_TS"])
+    rows = q(f'fetch spans, from:{f}-1h, to:{t} | filter dt.service.name=={sv} and request.is_root_span '
+             f'| fieldsAdd focus = start_time >= {f} '
+             '| summarize nb=countIf(not focus), nf=countIf(focus), '
+             'p50b=percentile(if(not focus, duration), 50), p50f=percentile(if(focus, duration), 50), '
+             'p90b=percentile(if(not focus, duration), 90), p90f=percentile(if(focus, duration), 90), '
+             'by:{endpoint.name} | filter nf > 20 and nb > 20 '
+             '| fieldsAdd shift=toDouble(p90f)/toDouble(p90b) | sort shift desc | limit 15')
+    shifted = [dict(endpoint=r["endpoint.name"], n_before=lib.num(r["nb"]), n_focus=lib.num(r["nf"]),
+                    p50_ms_before=_ms(r["p50b"]), p50_ms_focus=_ms(r["p50f"]),
+                    p90_ms_before=_ms(r["p90b"]), p90_ms_focus=_ms(r["p90f"]),
+                    p90_shift_x=round(lib.num(r["shift"]), 1)) for r in rows]
+    slowest = q(f'fetch spans, from:{f}, to:{t} | filter dt.service.name=={sv} and request.is_root_span '
+                '| summarize n=count(), p90=percentile(duration, 90), by:{endpoint.name} | filter n > 20 '
+                '| sort p90 desc | limit 5')
+    return dict(shifted=shifted,
+                slowest_in_focus_window=[dict(endpoint=r["endpoint.name"], p90_ms=_ms(r["p90"])) for r in slowest],
+                note="the question is about change vs the hour before; an endpoint that is slow in both "
+                     "windows (e.g. a streaming one) did not get slower")
+
+
+def t32(q, env):
+    base = 'fetch spans, from:now()-24h | filter isNotNull(gen_ai.usage.input_tokens) '
+    dd = '| dedup {trace.id, gen_ai.usage.input_tokens, gen_ai.usage.output_tokens} '
+    agg = '| summarize calls=count(), inp=sum(gen_ai.usage.input_tokens)'
+    tot = q(base + dd + agg)[0]
+    naive = q(base + agg)[0]
+    by = q(base + dd + agg + ', by:{dt.service.name} | sort inp desc | limit 5')
+    nby = q(base + agg + ', by:{dt.service.name} | sort inp desc | limit 5')
+
+    def conv(rows):
+        return [dict(service=r["dt.service.name"], calls=lib.num(r["calls"]),
+                     input_tokens=lib.num(r["inp"])) for r in rows]
+    return dict(input_tokens=lib.num(tot["inp"]), calls=lib.num(tot["calls"]),
+                naive_input_tokens=lib.num(naive["inp"]), naive_calls=lib.num(naive["calls"]),
+                by_service=conv(by), naive_by_service=conv(nby),
+                note="some calls are recorded by two spans (two instrumentations); dedup on "
+                     "(trace, input tokens, output tokens)")
+
+
+def t33(q, env):
+    est7 = q('fetch logs, from:now()-7d, samplingRatio:100 '
+             '| summarize sampled=count(), est=sum(dt.system.sampling_ratio)')
+    est1 = q('fetch logs, from:now()-24h, samplingRatio:100 '
+             '| summarize sampled=count(), est=sum(dt.system.sampling_ratio)')
+    exact1 = q('fetch logs, from:now()-24h, scanLimitGBytes:-1 | summarize n=count()')
+    e7, e1, x1 = lib.num(est7[0]["est"]), lib.num(est1[0]["est"]), lib.num(exact1[0]["n"])
+    return dict(total_7d_estimate=e7, estimate_24h=e1, exact_24h=x1,
+                estimator_error_24h_pct=round(100.0 * (e1 - x1) / x1, 2) if x1 else None,
+                note="7d total = sampled count scaled by dt.system.sampling_ratio; the exact 24h count "
+                     "validates the estimator. A plain 7d count stops at the default scan limit and is partial")
+
+
+def t34(q, env):
+    out = {}
+    for w in ("30m", "2h"):
+        r = q(f'fetch security.events, from:now()-{w} '
+              '| filter event.provider=="Dynatrace" and event.level=="ENTITY" and in(event.type, '
+              '{"VULNERABILITY_STATE_REPORT_EVENT","VULNERABILITY_STATUS_CHANGE_EVENT",'
+              '"VULNERABILITY_TRACKING_LINK_CHANGE_EVENT"}) '
+              '| dedup {vulnerability.display_id, affected_entity.id}, sort:{timestamp desc} '
+              '| filter vulnerability.resolution.status=="OPEN" and vulnerability.mute.status=="NOT_MUTED" '
+              '| summarize vulnerabilities=countDistinct(vulnerability.display_id), '
+              'entities=countDistinct(affected_entity.id), pairs=count()')
+        out[w] = {k: lib.num(v) for k, v in r[0].items()} if r else {}
+    best = out["2h"] or out["30m"]
+    return dict(vulnerabilities=best.get("vulnerabilities"), entities=best.get("entities"),
+                pairs=best.get("pairs"), by_window=out,
+                note="latest state per (vulnerability, entity), open and not muted")
+
+
+def t35(q, env):
+    rows = q('timeseries o=sum(dt.kubernetes.container.oom_kills), '
+             'by:{k8s.cluster.name, k8s.namespace.name, k8s.workload.name}, from:now()-7d, interval:1d '
+             '| fieldsAdd t=arraySum(o) | filter t>0 | sort t desc | limit 15')
+    last2h = q('timeseries o=sum(dt.kubernetes.container.oom_kills), from:now()-2h '
+               '| fieldsAdd t=arraySum(o) | fields t')
+    return dict(by_workload=[dict(cluster=r["k8s.cluster.name"], namespace=r["k8s.namespace.name"],
+                                  workload=r["k8s.workload.name"], oom_kills=lib.num(r["t"]),
+                                  per_day=r["o"]) for r in rows],
+                total=sum(lib.num(r["t"]) for r in rows),
+                last_2h_total=lib.num(last2h[0]["t"]) if last2h else 0,
+                note="per_day is oldest-to-newest daily buckets; the last 2 hours alone show nothing")
+
+
+def t36(q, env):
+    rows = q('fetch logs, from:now()-7d | filter contains(content, "JavaScript heap out of memory") '
+             '| fields timestamp, status, k8s.cluster.name, k8s.namespace.name, k8s.pod.name, '
+             'k8s.workload.name, line=substring(content, to:200) | sort timestamp asc | limit 50')
+    return dict(occurrences=rows, count=len(rows),
+                note="the fatal line is logged at ERROR; the stack trace around it at INFO")
+
+
+def t37(q, env):
+    p = _problem(q, env["EVAL_T2_PROBLEM_LAMBDA"])
+    if not p:
+        return dict(_error="problem not found in 30 days")
+    # affected_entity_names also lists the cloud account; the description names the function
+    m = re.search(r"AWS Lambda function, ([^*\n]+?)\*\*", p.get("description") or "")
+    fn = m.group(1).strip() if m else p.get("root_cause_entity_name")
+    logs = q(f'fetch logs, from:now()-6h | filter faas.name=={s(fn)} and status=="ERROR" '
+             '| fieldsAdd p=replacePattern(substring(content, to:220), "DIGIT+", "<n>") '
+             '| summarize n=count(), by:{p} | sort n desc | limit 4')
+    spans = q(f'fetch spans, from:now()-6h | filter faas.name=={s(fn)} and span.status_code=="error" '
+              '| summarize n=count(), msg=takeFirst(substring(span.status_message, to:160)), by:{span.name} '
+              '| sort n desc | limit 5')
+    return dict(problem={k: v for k, v in p.items() if k != "dt.davis.event_ids"}, function=fn,
+                error_logs_6h=[dict(count=lib.num(r["n"]), template=r["p"]) for r in logs],
+                failed_spans_6h=[{k: lib.num(v) if k == "n" else v for k, v in r.items()} for r in spans])
+
+
+# ------------------------------------------------------------------ v2 uncovered
+
+def t38(q, env):
+    slos = q.cmd(["get", "slos"])
+    slos = slos.get("slos", slos) if isinstance(slos, dict) else slos
+    out = []
+    for o in slos or []:
+        r = q.cmd(["exec", "slo", o["id"]]) or {}
+        crit = (o.get("criteria") or [{}])[0]
+        res = (r.get("evaluationResults") or [{}])[0]
+        out.append(dict(name=o.get("name"), target=crit.get("target"), warning=crit.get("warning"),
+                        timeframe=f'{crit.get("timeframeFrom")} -> {crit.get("timeframeTo")}',
+                        status=res.get("status"), value=res.get("value"),
+                        error_budget=res.get("errorBudget")))
+    return dict(slos=out, not_meeting=[x["name"] for x in out if x["status"] != "SUCCESS"])
+
+
+def t39(q, env):
+    rows = q('fetch bizevents, from:now()-24h | filter contains(event.type, "tile") '
+             '| summarize n=count(), by:{event.provider, event.type} | sort event.provider asc, n desc')
+    return dict(by_provider_and_type=[dict(provider=r["event.provider"], type=r["event.type"],
+                                           count=lib.num(r["n"])) for r in rows])
+
+
 TASKS = {f.__name__: f for f in (t01, t02, t03, t04, t05, t06, t07, t08, t09, t10, t11, t12, t13,
-                                 t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24)}
+                                 t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24,
+                                 t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35, t36, t37,
+                                 t38, t39)}
 
 
 def main():
@@ -372,8 +647,12 @@ def main():
             cfgs[ctx] = lib.make_readonly_config(env, ctx, batch / "gt-cfg" / f"{tenant}.yaml")
         iso = batch / "gt-iso" / tenant
         t0 = time.time()
+        def q(dql, cfg=cfgs[ctx], iso=iso):
+            return lib.query(cfg, iso, dql)
+        # a few tasks need a read-only dtctl command (e.g. SLO evaluation), not DQL
+        q.cmd = lambda args, cfg=cfgs[ctx], iso=iso: lib.command_json(cfg, iso, args)
         try:
-            out[tid] = fn(lambda dql: lib.query(cfgs[ctx], iso, dql), env)
+            out[tid] = fn(q, env)
         except Exception as e:  # keep going: one broken query must not lose the rest
             out[tid] = {"_error": f"{type(e).__name__}: {e}"}
             traceback.print_exc()

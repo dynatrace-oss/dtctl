@@ -179,6 +179,7 @@ def collect(batches):
             meta = json.loads((ws / "meta.json").read_text())
             j = json.loads((ws / "judge.json").read_text()) if (ws / "judge.json").exists() else {}
             r = dict(batch=b, task=meta["task"], arm=meta["arm"], rep=meta["rep"], wall_s=meta["wall_s"],
+                     model=meta.get("model"), build=meta.get("build"),
                      rc=meta["rc"], score=j.get("score"), notes=j.get("notes"), err_tags=j.get("errors", []))
             r.update(call_metrics(ws))
             r.update(transcript_metrics(ws))
@@ -213,6 +214,50 @@ def paired(rows, a, b, n_boot=10000, seed=1):
                 per_task=diffs)
 
 
+def paired2(rows, a, b, key="score", tasks=None, n_boot=10000, seed=1):
+    """Two-level bootstrap of the mean per-task difference b - a in `key`.
+
+    Resamples tasks, then the runs within each sampled task and arm, so the CI
+    carries both task heterogeneity and run-to-run noise (v2's primary
+    analysis; `paired` is the task-level-only sensitivity check)."""
+    per = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        if r.get(key) is not None and (tasks is None or r["task"] in tasks):
+            per[r["task"]][r["arm"]].append(r[key])
+    ts = [t for t, v in per.items() if v.get(a) and v.get(b)]
+    if not ts:
+        return None
+    point = mean([mean(per[t][b]) - mean(per[t][a]) for t in ts])
+    rnd = random.Random(seed)
+    boots = []
+    for _ in range(n_boot):
+        d = []
+        for t in (rnd.choice(ts) for _ in ts):
+            xa, xb = per[t][a], per[t][b]
+            d.append(mean([rnd.choice(xb) for _ in xb]) - mean([rnd.choice(xa) for _ in xa]))
+        boots.append(mean(d))
+    boots.sort()
+    return dict(mean=point, lo=boots[int(0.025 * n_boot)], hi=boots[int(0.975 * n_boot)], tasks=len(ts),
+                a_mean=mean([mean(per[t][a]) for t in ts]), b_mean=mean([mean(per[t][b]) for t in ts]))
+
+
+def decision(rows, a, b, meta):
+    """The preregistered v2 decision rule for arm b against control a."""
+    uncovered = {t for t, m in meta.items() if m.get("coverage") == "none"}
+    lift = paired2(rows, a, b)
+    calls = paired2(rows, a, b, key="calls")
+    cost = paired2(rows, a, b, key="cost")
+    harm = paired2(rows, a, b, tasks=uncovered)
+    if not (lift and calls and cost):
+        return None
+    better = lift["mean"] >= 0.20 and lift["lo"] > 0
+    cheaper = (calls["b_mean"] <= 0.75 * calls["a_mean"] and calls["hi"] < 0) or cost["hi"] < 0
+    noninferior = lift["lo"] > -0.10 and cheaper
+    no_harm = harm is None or harm["lo"] > -0.15
+    return dict(lift=lift, calls=calls, cost=cost, harm=harm, better=better, noninferior=noninferior,
+                no_harm=no_harm, benefit=(better or noninferior) and no_harm)
+
+
 def fmt(x, nd=2):
     return "-" if x is None or x != x else f"{x:.{nd}f}"
 
@@ -223,6 +268,11 @@ def main():
     ap.add_argument("--json")
     args = ap.parse_args()
     rows = collect(args.batches)
+    models = sorted({str(r["model"]) for r in rows})
+    if len(models) > 1:
+        sys.exit(f"batches mix investigator models {models}: analyze one model at a time")
+    print(f"Investigator model: {models[0] if models else '-'}; builds: "
+          f"{sorted({(r['arm'], r['build']) for r in rows if r['build']})}\n")
     arms = sorted({r["arm"] for r in rows})
     tasks = sorted({r["task"] for r in rows})
     meta = {t["id"]: t["meta"] for t in lib.load_tasks()}
@@ -264,13 +314,15 @@ def main():
     print("\n## By coverage\n")
     print("| coverage | " + " | ".join(arms) + " |")
     print("|---|" + "---|" * len(arms))
-    for cov in ("covered", "partial", "none"):
+    for cov in ("covered", "partial", "framework", "none"):
         cells = [fmt(mean([r["score"] for r in rows if r["arm"] == a and meta.get(r["task"], {}).get("coverage") == cov]))
                  for a in arms]
         print(f"| {cov} | " + " | ".join(cells) + " |")
 
     print("\n## Paired differences (per-task mean, bootstrap 95% CI over tasks)\n")
-    for a, b in (("A", "B"), ("A", "C"), ("B", "C"), ("A2", "B2"), ("A2", "B3"), ("A", "A2"), ("B", "B2")):
+    pairs = (("A", "B"), ("A", "C"), ("B", "C"), ("A2", "B2"), ("A2", "B3"), ("A", "A2"), ("B", "B2"),
+             ("A", "BP"), ("B", "BP"), ("A", "BR"), ("B", "BR"))
+    for a, b in pairs:
         if a in arms and b in arms:
             p = paired(rows, a, b)
             if p:
@@ -279,6 +331,32 @@ def main():
                 big = {t: round(d, 2) for t, d in sorted(p["per_task"].items()) if abs(d) >= 1}
                 if big:
                     print(f"  - |diff| >= 1: {big}")
+
+    print("\n## Two-level bootstrap (tasks, then runs within task and arm; 95% CI)\n")
+    print("| pair | score diff | calls diff | cost diff $ | uncovered tasks score diff |")
+    print("|---|---|---|---|---|")
+    uncovered = {t for t, m in meta.items() if m.get("coverage") == "none"}
+    for a, b in pairs:
+        if a in arms and b in arms:
+            cells = []
+            for kw in (dict(), dict(key="calls"), dict(key="cost"), dict(tasks=uncovered)):
+                p = paired2(rows, a, b, **kw)
+                nd = 3 if kw.get("key") == "cost" else 2
+                cells.append("-" if not p else f"{p['mean']:+.{nd}f} [{p['lo']:+.{nd}f}, {p['hi']:+.{nd}f}]")
+            print(f"| {b} - {a} | " + " | ".join(cells) + " |")
+
+    print("\n## Preregistered decision rule (v2)\n")
+    for b in ("B", "BP"):
+        if "A" in arms and b in arms:
+            d = decision(rows, "A", b, meta)
+            if d:
+                lift, calls, cost, harm = d["lift"], d["calls"], d["cost"], d["harm"]
+                harm_lo = "-" if not harm else f"{harm['lo']:+.2f}"
+                print(f"- {b} vs A: lift {lift['mean']:+.2f} [{lift['lo']:+.2f}, {lift['hi']:+.2f}] "
+                      f"-> better={d['better']}; calls {calls['a_mean']:.1f} -> {calls['b_mean']:.1f}, "
+                      f"cost {cost['a_mean']:.3f} -> {cost['b_mean']:.3f} -> non-inferior and cheaper="
+                      f"{d['noninferior']}; uncovered lower bound {harm_lo} -> no harm={d['no_harm']}; "
+                      f"BENEFIT={d['benefit']}")
 
     print("\n## Recipe and skill usage\n")
     for a in arms:
@@ -298,6 +376,11 @@ def main():
               f"loading >=1 skill {skill_runs}/{len(rs)}; skills: {dict(sorted(sk.items(), key=lambda x: -x[1]))}")
         if rec:
             print(f"  - recipes run: {dict(sorted(rec.items(), key=lambda x: -x[1]))}")
+    covered = {t for t, m in meta.items() if m.get("coverage") == "covered"}
+    for a in arms:
+        rs = [r for r in rows if r["arm"] == a and r["task"] in covered]
+        if rs:
+            print(f"- {a}: unprompted recipe use on covered tasks {sum(1 for r in rs if r['runs'])}/{len(rs)}")
     sc_with = [r["score"] for r in rows if r["arm"] != "A" and r["runs"]]
     sc_without = [r["score"] for r in rows if r["arm"] != "A" and not r["runs"]]
     print(f"- recipes arms, runs that used a recipe: mean {fmt(mean(sc_with))} (n={len(sc_with)}); "
