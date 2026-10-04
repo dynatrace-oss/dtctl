@@ -200,6 +200,56 @@ The full format (params, scope dimensions, inline windows, fragments,
 [`recipes/README.md`](../recipes/README.md), the authoring guide for
 built-in recipes.
 
+### Cost and correctness cheat-sheet
+
+A recipe runs unattended and its result is read as fact, so a query that is
+merely slow or slightly off in an editor is a wrong answer here.
+
+**Scan cost, the levers in order**
+
+1. **The window.** Default to the shortest window that answers the question
+   (problems: 24h, not 7d) and cap scan-heavy recipes with `timeframe.max`.
+2. **Buckets.** `fetch logs, bucket:{"<name>"}` reads one bucket instead of
+   the table (`dtctl run meta-buckets --table logs` lists them). Recipes
+   cannot hard-code bucket names, which differ per environment.
+3. **Filter early on plain fields.** `==` and `in()` on a field use its
+   index; `lower(field)`, `coalesce(a, b) == x` and full-text `contains` on
+   `content` read every record. Write `a == x or b == x`, and
+   `contains(f, "x", caseSensitive: false)` for case-insensitive matching.
+4. **Subqueries for cross-table filters.** `filter x in [fetch …]` reads only
+   the column it filters; a `lookup` or `join` reads every record in full.
+5. **Sampling** (`samplingRatio:`) works on `fetch logs` and `fetch spans`
+   only. Scale every count back with `sum(coalesce(dt.system.sampling_ratio,
+   1))`. Fine for presence, ratios and rates; wrong for maxima, tail
+   percentiles and rankings by them.
+6. **Never `| limit` before an aggregate**: it is not a sample.
+7. **No `scanLimitGBytes` in recipe DQL.** A capped scan returns plausible,
+   silently low numbers; dtctl reports a stopped scan as `context.partial`.
+
+**Correctness traps**
+
+- `interval:` equal to the window reads up to twice the data (the grid is
+  aligned); use `1m`/`5m` and sum, or `summarize`.
+- A `timeseries` over several metric keys keeps only the series every key
+  reports; add `union: true`.
+- `smartscapeNodes` takes no `from:`: a window degrades fields and adds
+  dead nodes.
+- `countDistinct` is an estimate; `countDistinctExact` is exact up to 1M
+  values. Count events by `event.id`.
+- `takeFirst`/`takeLast` have no defined order; use
+  `takeMax(record(timestamp, x))` for the latest value.
+- Casts fail silently: `toString(trace.id)` against a log's `trace_id`,
+  `toSmartscapeId("…")` for Smartscape ID fields, and classic IDs differ from
+  Smartscape IDs for most entity types.
+- Units: span `duration` is nanoseconds, `dt.service.request.response_time`
+  microseconds, OTel `http.server.request.duration` seconds, Kubernetes CPU
+  millicores.
+
+**What `means` must say**: what a row is and its units, a decision rule that
+tells the finding from the background, and a `Not shown:` sentence naming what
+the recipe leaves out. The full list of measured traps is in the
+[authoring guide](../recipes/README.md#dql-traps-worth-knowing).
+
 ## Embedding
 
 In a session-backed invocation (`pkg/engine`, `dtctl serve`), recipes load from

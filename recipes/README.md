@@ -110,11 +110,24 @@ minutes (at least 1), for rates per minute.
 
 ### `means` and `emptyMeans`
 
-These are what an agent reads instead of guessing. `means` names units
-(microseconds!), what a row is, and traps. `emptyMeans` is mandatory and has to
-separate "nothing happened" from "you asked wrong": a misspelled name, a
-missing capability, a window too short. dtctl puts it in the agent envelope as
-`empty_reason` when the result is empty.
+These are what an agent reads instead of guessing, and it reads them
+literally. Every `means` carries:
+
+- **what a row is**, the units (microseconds!) and what is extrapolated or
+  estimated;
+- **a decision rule**: how to tell the finding from the background in this
+  result ("p99_vs_base near 1 is how the endpoint always behaves, well above
+  1 is a regression", "on_failed near 0 is a handled exception");
+- **`Not shown:`**, one sentence naming what the recipe leaves out and, where
+  one exists, the recipe that has it. An agent that does not know a recipe is
+  root-only, current-only or capped reads its silence as an answer.
+
+`emptyMeans` is mandatory and has to separate "nothing happened" from "you
+asked wrong": a misspelled name, a missing capability, a window too short.
+Where an empty result is weak evidence (logs that do not carry the field,
+events that many environments never send), say "not an all-clear" and name
+the recipe to try instead; a `when: empty` edge makes it runnable. dtctl puts
+it in the agent envelope as `empty_reason` when the result is empty.
 
 A recipe that aggregates without `by:` returns one row even when nothing
 happened (`count = 0`). `empty: zero-row` makes that row count as empty: a
@@ -147,15 +160,58 @@ when the run already looked that far.
 
 A DQL piece that several recipes must spell identically goes in
 `_fragments/*.tmpl` as `{{define "name"}}…{{end}}` and is used with
-`{{template "name"}}`: `span-multiplicity` (sampling extrapolation),
-`log-source` (the source a log record is attributed to),
-`vuln-latest-state`. A fragment nobody uses fails the lint.
+`{{template "name"}}`, or `{{template "name" .param}}` when it takes an
+argument (the fragment sees it as `.`). A fragment nobody uses fails the lint.
+
+| Fragment | Argument | What it spells |
+|---|---|---|
+| `span-multiplicity` | | how many requests one stored span stands for (sampling extrapolation) |
+| `log-source` | | the source a log record is attributed to |
+| `log-template` | | stages that reduce a log line to a masked message template (`template`) |
+| `text-mask` | a string expression | timestamps, IPs, UUIDs, hex and numbers masked, in that order |
+| `k8s-workload-logs` | quoted workload name | a workload's records, recovering the name from the pod name when `k8s.workload.name` is missing |
+| `entity-signal` | quoted entity ID | a record about an entity under its Smartscape ID, classic ID or source entity |
+| `problem-affects` | quoted entity ID or name | a `dt.davis.problems` record that affects or relates to the entity |
+| `vuln-latest-state` | | the latest state of each vulnerability |
+
+Call a fragment inside `{{if .param}}…{{end}}` with `.param` as the argument,
+not inside `{{with .param}}`: the unused-fragment lint does not look inside
+`with` bodies yet.
+
+### Focus and control
+
+"Is this new?" is answered against a control period, in one scan. Declare an
+inline window, take the control length as an int param, and reach back with
+`timeAdd`:
+
+```yaml
+timeframe: { default: 30m, max: 2h, inline: true }
+params:
+  control: { type: int, default: 60, min: 15, max: 360, description: Minutes before the window to compare against }
+dql: |
+  fetch spans, from: {{timeAdd .window.from (printf "-%vm" .control)}}, to: {{.window.to}}
+  | fieldsAdd infocus = start_time >= {{.window.from}}
+  | summarize { now = countIf(infocus), before = countIf(not(infocus)) }, by: { … }
+  | fieldsAdd new = before == 0,
+      per_min = now / toDouble(({{.window.to}} - {{.window.from}}) / 1m), before_per_min = before / {{.control}}
+```
+
+A control on another day (the same hour yesterday, a week ago) is a second
+fetch of the shifted window, `| append [fetch …, from: {{timeAdd .window.from
+"-24h"}}, to: {{timeAdd .window.to "-24h"}} …]`, so the scan doubles: offer
+`none` to skip it. Aggregate with `if(…)` on the period flag, and render a
+separate branch when there is no control, since `if()` over a constant draws
+a warning.
 
 ### DQL traps worth knowing
 
+Each of these returns a wrong or needlessly expensive answer **without an
+error**; most were measured on real environments.
+
 - Scope renders as `in(field, {…})`, even for one value: on
   `dt.davis.problems` the k8s and host-group fields are arrays, where `==`
-  never matches. Write your own array filters the same way.
+  never matches. Write your own array filters the same way, or with
+  `iAny(arr[] == x)`.
 - `arrayFirst(x[][k])` evaluates per element and returns nulls; use
   `arrayFirst(iCollectArray(x[][k]))`.
 - `dt.service.request.response_time` is in microseconds, span `duration` in
@@ -163,6 +219,38 @@ A DQL piece that several recipes must spell identically goes in
 - Service metrics fold most endpoints into `NON_KEY_REQUESTS`; per-endpoint
   numbers come from spans, extrapolated with `span-multiplicity`.
 - An empty string param is rejected, so `""` can't silently mean "all".
+- **Subquery, not lookup, to filter a big table by a small one.**
+  `fetch logs | filter trace_id in [fetch spans | … | fields tid]` reads only
+  the `trace_id` column; the same match as a `lookup` read every log record
+  in full (8 GB against 347 GB on a large environment). The form is
+  `x in [subquery]`; `in(x, [subquery])` is rejected. The subquery sees the
+  outer window.
+- **Casts fail silently.** Span `trace.id` is a UID and log `trace_id` a
+  string: compare `toString(trace.id)`. Smartscape ID fields need
+  `toSmartscapeId("…")`. Classic IDs equal Smartscape IDs only for services,
+  hosts, disks and a few more; `PROCESS_GROUP_INSTANCE-`, `KUBERNETES_*` and
+  cloud IDs differ (`meta-entity-id` maps them). A wrong spelling matches
+  nothing.
+- **Logs carry names, not IDs**, for most Kubernetes data: match a workload by
+  name (`k8s-workload-logs`), and expect a fifth to a third of pod logs to lack
+  `k8s.workload.name`.
+- **Problem display IDs are reused**: one environment can hold two problems
+  `P-…` with the same number. Keep the latest record per `event.id`
+  (`sort timestamp desc | dedup event.id`), not one record per display ID.
+- **A total next to a capped list**: `summarize { v = collectArray(record(…),
+  maxLength: 100000), total = count() } | expand v | fieldsFlatten v, prefix:
+  "" | fieldsRemove v` keeps the rows and adds the total to each. Over no
+  input it still yields one row with `total = 0`: add `| filter total > 0`.
+- **`countDistinct` is an estimate** (`countDistinctApprox`). Use
+  `countDistinctExact` for small counts that are the answer (problems,
+  events), and count events by `event.id`: open events re-emit records.
+- **`takeFirst`/`takeLast` have no defined order.** For the latest value use
+  `takeMax(record(timestamp, x))`.
+- `replacePattern(x, "ISO8601", …)` did not match ISO timestamps; spell the
+  pattern out (see `text-mask`).
+- Most exceptions on spans sit on requests that succeeded, and most
+  error-status spans are below the root: a recipe on failed root spans says
+  so in `means`.
 
 The traps that give a wrong answer without an error are lints: `go test
 ./recipes/` fails on them, and `dtctl verify recipe` reports them for your own
