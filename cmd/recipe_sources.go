@@ -147,13 +147,18 @@ var recipesAddCmd = &cobra.Command{
 		if f.File.Find(spec.Name) != nil {
 			return fmt.Errorf("source %q is already declared in %s (remove it first, or edit the file)", spec.Name, f.Path)
 		}
+		wasTrusted := f.Origin != "project" || !fileExists(f.Path) || projectTrusted(f)
 		f.File.Sources = append(f.File.Sources, spec)
 		if err := writeSourcesFile(f); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Added recipe source %q to %s\n", spec.Name, f.Path)
 		if noSync, _ := cmd.Flags().GetBool("no-sync"); noSync {
-			if f.Origin == "project" {
+			// Re-trust only a file that was trusted before this edit: adding
+			// one source must not silently enable sources someone else put
+			// in the file. An untrusted file goes through sync, which shows
+			// every source it enables.
+			if f.Origin == "project" && wasTrusted {
 				return trustProject(f)
 			}
 			return nil
@@ -175,6 +180,7 @@ var recipesRemoveCmd = &cobra.Command{
 		if f.File.Find(args[0]) == nil {
 			return fmt.Errorf("no recipe source %q in %s", args[0], f.Path)
 		}
+		wasTrusted := f.Origin != "project" || projectTrusted(f)
 		kept := f.File.Sources[:0]
 		for _, s := range f.File.Sources {
 			if s.Name != args[0] {
@@ -197,7 +203,7 @@ var recipesRemoveCmd = &cobra.Command{
 		if err := writeLockFile(f); err != nil {
 			return err
 		}
-		if f.Origin == "project" {
+		if f.Origin == "project" && wasTrusted {
 			if err := trustProject(f); err != nil {
 				return err
 			}
@@ -250,6 +256,11 @@ func declaredDir(dir string, f *recipeSourceFile) (string, error) {
 		}
 	}
 	return abs, nil
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 func writeSourcesFile(f *recipeSourceFile) error {

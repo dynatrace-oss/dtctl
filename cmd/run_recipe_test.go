@@ -288,6 +288,26 @@ func TestRunRecipeFromAppBundle(t *testing.T) {
 	assert.NotZero(t, code, "the pinned version is not what the environment serves")
 }
 
+// TestSessionBundleCacheIsPerEnvironment: two environments serving a bundle
+// under the same document ID and version must each get their own content.
+// A document ID is no secret, so a cache keyed on it alone would let one
+// tenant decide what another tenant's request runs.
+func TestSessionBundleCacheIsPerEnvironment(t *testing.T) {
+	const docs = `[{"id":"doc-same","name":"/recipes/demo.yaml","type":"ai-agent-resource","version":1,"originAppId":"my.demo.app"}]`
+	a, b := newRecipeEnv(t), newRecipeEnv(t)
+	a.docs, b.docs = docs, docs
+	a.contents["doc-same"] = testBundle
+	b.contents["doc-same"] = strings.ReplaceAll(testBundle, "limit 3", "limit 7")
+	a.apps, b.apps = []string{"my.demo.app"}, []string{"my.demo.app"}
+
+	code, _, stderr := a.run(t, "run", "problems-from-app", "--plain", "-o", "json")
+	require.Zero(t, code, "stderr: %s", stderr)
+	code, _, stderr = b.run(t, "run", "problems-from-app", "--plain", "-o", "json")
+	require.Zero(t, code, "stderr: %s", stderr)
+	assert.Equal(t, "fetch dt.davis.problems | limit 7", strings.TrimSpace(b.lastQuery()))
+	assert.True(t, b.fetched("/platform/document/v1/documents/doc-same/content"))
+}
+
 // TestRecipeUserDirectoryLoads covers the CLI path (no session): the user
 // layer is read from disk and shadows nothing it does not name.
 func TestRecipeUserDirectoryLoads(t *testing.T) {

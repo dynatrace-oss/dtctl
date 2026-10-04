@@ -563,7 +563,7 @@ func sessionRecipeBundles(ctx context.Context, src recipeEnvSource) ([]recipes.B
 				notes = append(notes, fmt.Sprintf("app %s bundle %s is at version %d, the request pins %d; skipped", app, r.Name, r.Version, want))
 				continue
 			}
-			data, err := sessionBundles.content(ctx, ds, r)
+			data, err := sessionBundles.content(ctx, key, ds, r)
 			if err != nil {
 				notes = append(notes, fmt.Sprintf("app %s bundle %s: %v", app, r.Name, compactErr(err)))
 				continue
@@ -614,11 +614,12 @@ func (s *sessionBundleCache) list(ctx context.Context, key string, ds documentBu
 	return refs, nil
 }
 
-func (s *sessionBundleCache) content(ctx context.Context, ds documentBundleSource, r recipes.BundleRef) ([]byte, error) {
-	// Document IDs are environment-unique, and the listing only names
-	// documents the request's principal can read, so a content hit never
-	// crosses a permission boundary the listing did not already cross.
-	key := fmt.Sprintf("%s@%d", r.ID, r.Version)
+func (s *sessionBundleCache) content(ctx context.Context, principal string, ds documentBundleSource, r recipes.BundleRef) ([]byte, error) {
+	// Keyed by environment and principal as well as document version: a
+	// document ID is no secret and need not be unique across tenants, so a
+	// key without the principal would let one tenant's request be served
+	// content another tenant's request fetched.
+	key := fmt.Sprintf("%s\x00%s@%d", principal, r.ID, r.Version)
 	s.mu.Lock()
 	data, ok := s.contents[key]
 	s.mu.Unlock()

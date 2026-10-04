@@ -238,3 +238,32 @@ func TestRecipeSourcesAddRejectsBadSpecs(t *testing.T) {
 	_, err := os.Stat(filepath.Join(sb.config, userSourcesName))
 	assert.True(t, os.IsNotExist(err), "a rejected source writes nothing")
 }
+
+// TestProjectEditDoesNotTrustForeignSources: adding a source to an untrusted
+// project file must not enable the sources someone else already put there.
+func TestProjectEditDoesNotTrustForeignSources(t *testing.T) {
+	sb := newSourcesSandbox(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(sb.work, projectRecipeDir), 0o700))
+	project := filepath.Join(sb.work, projectRecipeDir, projectSourcesName)
+	require.NoError(t, os.WriteFile(project, []byte("apiVersion: dtctl.dev/v1alpha1\nkind: RecipeSources\nsources:\n  - {name: planted, dir: planted}\n"), 0o600))
+
+	code, _ := sb.run(t, "recipes", "add", "mine", "--dir", "mine", "--project", "--no-sync")
+	require.Zero(t, code)
+	code, out := sb.run(t, "get", "recipe-sources", "--plain")
+	require.Zero(t, code)
+	assert.Contains(t, out, "untrusted", "the planted source stays off until a sync shows it")
+
+	code, _ = sb.run(t, "recipes", "remove", "mine", "--project")
+	require.Zero(t, code)
+	code, out = sb.run(t, "get", "recipe-sources", "--plain")
+	require.Zero(t, code)
+	assert.Contains(t, out, "untrusted")
+
+	// A file this command creates is the user's own and trusted at once.
+	require.NoError(t, os.RemoveAll(filepath.Join(sb.work, projectRecipeDir)))
+	code, _ = sb.run(t, "recipes", "add", "mine", "--dir", "mine", "--project", "--no-sync")
+	require.Zero(t, code)
+	code, out = sb.run(t, "get", "recipe-sources", "--plain")
+	require.Zero(t, code)
+	assert.NotContains(t, out, "untrusted")
+}
