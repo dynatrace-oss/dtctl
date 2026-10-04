@@ -82,23 +82,73 @@ The envelope adds what an agent needs to trust and continue the result:
 ## Where recipes come from
 
 Recipes load from four layers. On a name clash, a stronger layer replaces a
-weaker one. `describe recipe` shows which layer won and what it shadows.
+weaker one, and `describe recipe` shows which source won and what it
+shadows.
 
-| Layer | Location | Notes |
+| Layer | Location | Updates when |
 |---|---|---|
-| user | `~/.config/dtctl/recipes/**.yaml` | yours |
-| org | directories in `DTCTL_RECIPE_PATH` (`:`-separated) | a team's shared checkout |
-| environment | bundles that installed Dynatrace apps ship | refreshed hourly; `get recipes --refresh` forces it |
-| builtin | compiled into dtctl ([`recipes/`](../recipes/)) | verified against live environments |
+| user | `~/.config/dtctl/recipes/**.yaml` | you edit it (read live) |
+| org | declared `git`, `archive` and `dir` sources, then `DTCTL_RECIPE_PATH` directories | you run `dtctl recipes sync` (`dir` and `DTCTL_RECIPE_PATH` are read live) |
+| environment | declared `app` sources: bundles an installed app ships | you run `dtctl recipes sync` |
+| builtin | compiled into dtctl ([`recipes/`](../recipes/)) | you upgrade dtctl |
 
-**App bundles.** An app ships its recipes as a `RecipeBundle` YAML document
-whose name matches `recipes/<name>.yaml`. It uses the Document store's
-`ai-agent-resource` type, the same mechanism apps already use to ship agent
-skills. dtctl only trusts a document that an installed app created, meaning one
-with an `originAppId`. A hand-made document with the same name is ignored. A
-bundle may also define inventory capabilities that its recipes require. dtctl
-caches bundles per context. A failed refresh falls back to the cache and never
-breaks `run`.
+**Nothing changes under you.** Remote recipes are fetched only by
+`dtctl recipes sync`, which records what it fetched in a lock. `dtctl run`
+reads the lock and a local store and never the network, so the recipes an
+agent sees change only when someone syncs. The agent envelope names the
+version that answered (`context.recipe.source: "team@3f2a1c9e0b7d"`).
+
+### Declare, sync, pin
+
+```bash
+# A GitHub repository, pinned to the commit the ref names now
+dtctl recipes add team --git github.com/<owner>/<repo> --ref main --path recipes
+
+# The recipes an installed app ships to the current environment
+dtctl recipes add genai --app <app-id>
+
+# A tarball anywhere, pinned by its sha256
+dtctl recipes add shared --archive https://example.invalid/recipes.tar.gz
+
+# A local directory, read live while you write recipes
+dtctl recipes add drafts --dir ./my-recipes
+
+dtctl get recipe-sources              # every source, its pin, last sync, status
+dtctl recipes outdated                # which pins moved upstream (changes nothing)
+dtctl recipes sync --update team      # move one pin; prints which recipes changed
+dtctl recipes sync                    # install exactly what the lock names
+dtctl recipes remove drafts
+```
+
+`add` writes `~/.config/dtctl/recipe-sources.yaml` and syncs. The lock is
+`recipe-sources.lock` next to it, and the fetched content lives in
+`~/.local/share/dtctl/recipes/store/`, keyed by content digest.
+
+- **git** sources are GitHub repositories, fetched over HTTPS (no git binary).
+  Set `GITHUB_TOKEN` for a private repository. Other hosts: use an `archive`
+  source.
+- **app** sources load only documents of type `ai-agent-resource` named
+  `recipes/<name>.yaml` that the platform deployed with the app (they carry an
+  `originAppId`); a hand-uploaded document never loads. Pins are per
+  environment, so syncing against one context never moves what another runs.
+  `get recipes` mentions apps on the environment that ship recipes you have
+  not enabled.
+- `builtin: false` in a sources file turns the built-in recipes off (their
+  domains and fragments stay available to other sources).
+
+### Projects
+
+A project can declare its own sources in `.dtctl/recipes.yaml`
+(`dtctl recipes add <name> ... --project`). Commit it with
+`.dtctl/recipes.lock`, and everyone who runs `dtctl recipes sync` in the
+checkout gets byte-identical recipes. dtctl finds the file by walking up from
+the working directory.
+
+A project's sources apply only after you ran `dtctl recipes sync` in it, and
+again after its sources file or lock changes (a `git pull`, for example).
+Until then `get recipe-sources` shows them as `untrusted`. Recipe text is
+prompt input for agents, and a cloned repository must not be able to plant it
+just by being your working directory.
 
 ## Write your own
 
@@ -145,5 +195,8 @@ built-in recipes.
 ## Embedding
 
 In a session-backed invocation (`pkg/engine`, `dtctl serve`), recipes load from
-the built-in and environment layers only. The user and org directories are
-host state, and bundles are cached in memory per environment and principal.
+the built-in set plus the app bundles the request names in
+`Request.RecipeApps` (`<app-id>`, or `<app-id>@<version>` to pin a bundle
+document's version). Sources files, locks, the store and the user directory
+are host state that a request never reads, and `dtctl recipes` is blocked in
+a service. Bundles are cached in memory per environment and principal.

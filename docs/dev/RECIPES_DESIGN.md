@@ -477,19 +477,25 @@ no provider capability. Per-value requirements are an open question.
 | Layer | Location | Phase |
 |---|---|---|
 | Built-in | `recipes/<domain>/*.yaml` at the repo root, embedded with `go:embed` (as `skills/dtctl/` is) | 1 |
-| Environment | recipe bundles shipped by Dynatrace apps, read from the Document store of the current context (§13) | 2 |
+| Environment | `app` sources: the recipe bundles an installed app ships to the environment, synced and pinned per environment (§13, §14) | 2 |
+| Team/org | declared `git`, `archive` and `dir` sources (§14), then directories in `DTCTL_RECIPE_PATH` (colon-separated, read live) | 2 |
 | User | `$XDG_CONFIG_HOME/dtctl/recipes/**/*.yaml` (`~/.config/dtctl/recipes/`) | 1 |
-| Team/org | directories in `DTCTL_RECIPE_PATH` (colon-separated) | 2 |
-| Project | `.dtctl/recipes/`, found by searching upward like `.dtctl.yaml` | 3, DQL-only, trusted only after opt-in (open question) |
+
+Sources are declared in a user file or a project's `.dtctl/recipes.yaml`,
+synced into a local store, and pinned in a lock (§14). A run reads the lock
+and the store and never the network.
 
 **Precedence:** user overrides org, which overrides environment, which
-overrides built-in. A whole recipe replaces another recipe of the same name.
+overrides built-in. Within the org layer a later source wins, and a project
+source replaces a user source of the same name. A whole recipe replaces another recipe of the same name.
 There is no field-level merge, which is where the prototype's complexity came
 from.
 
 - An override is visible: `describe recipe` names the file or document and
-  what it shadows, and `context.recipe.source` says `user`, `org`,
-  `app:<app-id>@<version>` or `builtin`.
+  what it shadows, and `context.recipe.source` says `builtin`, `user`, `org`
+  (`DTCTL_RECIPE_PATH`), `<source>@<pin>` for a declared source
+  (`team@3f2a1c9e0b7d`), or `app:<app-id>@<version>`. An agent's transcript
+  therefore records exactly which version of a recipe answered.
 - Overriding a built-in is a feature. A team can pin a recipe to its own
   environment's field names.
 - A user layer may add fragments and scope dimensions, but may not redefine
@@ -547,10 +553,12 @@ from.
   - Profiles are default-deny, so no existing profile gains recipes silently.
   - Whether the `investigate` preset should include `run` is an open question.
 - **Engine / service mode.**
-  - Built-in recipes are available in the engine. So are app bundles from the
-    request's environment (§13), which are cached in memory only.
-  - The user directory is host state: a `Session` does not read it, the same as
-    aliases.
+  - Built-in recipes are available in the engine. App bundles are too, when
+    the request names their apps in `Request.RecipeApps` (`<app-id>` or
+    `<app-id>@<version>`, §14); they are cached in memory only.
+  - Sources files, locks, the store and the user directory are host state: a
+    `Session` reads none of them, the same as aliases, and `recipes` (sync,
+    add, remove) is blocked in a service.
   - `verify recipe -f <file>` reads through `readFileFlag` (vfs).
 - **Plugins and aliases.**
   - The built-in `run` shadows any `dtctl-run` plugin. Built-ins always win;
@@ -830,14 +838,17 @@ recipe format, validation, rendering, discovery and inventory.
 - `metadata.minDtctlVersion`: an older dtctl skips the bundle and says why,
   instead of failing on a field it does not know.
 
-**Trust: app-deployed documents only.** Recipe text is prompt input for agents,
-so whoever can write it can steer them. dtctl loads only bundles whose document
-has an `originAppId`, meaning the platform deployed it as part of an app. A
-bundle that a user uploads by hand is ignored. There is no setting to change
-that. Teams that want shared content without an app use the org layer
-(`DTCTL_RECIPE_PATH`), whose files they control. *To verify with the platform:*
-users cannot create or modify a document carrying an `originAppId`. If they
-can, this rule needs a different anchor, such as a list of trusted app IDs.
+**Trust: app-deployed documents, from apps you enabled.** Recipe text is
+prompt input for agents, so whoever can write it can steer them. Two rules
+apply. First, dtctl loads only bundles whose document has an `originAppId`,
+meaning the platform deployed it as part of an app; a bundle a user uploads by
+hand is never loaded. Second, an app's bundles load only after someone
+declared that app as a source and synced it (§14). Installing an app on the
+environment is not enough. Declaring the source is the allowlist of app IDs
+that open question 11 asked about. Teams that want shared content without an
+app use a git, archive or dir source, whose content they control. *To verify
+with the platform:* users cannot create or modify a document carrying an
+`originAppId`.
 
 **Content rules**, enforced when a bundle is loaded:
 
@@ -859,8 +870,8 @@ can, this rule needs a different anchor, such as a list of trusted app IDs.
   environment > built-in. The app owner is usually the better authority, and
   `describe recipe` shows the shadowing.
 
-**Loading and caching.** The command tree is built at startup, so remote
-content must not put a network call on every `dtctl run --help`:
+**Fetching.** Bundles are fetched only by `dtctl recipes sync` (§14), never
+by a run:
 
 - The bundle list is one call:
   `GET /platform/document/v1/documents?filter=type=='ai-agent-resource' and name contains 'recipes/'`.
@@ -868,28 +879,20 @@ content must not put a network call on every `dtctl run --help`:
   `add-fields=originAppId` is rejected with a 400) for every candidate. Names
   that are not bundle names are dropped before the trust check.
 - A bundle is downloaded with `GET .../documents/{id}/content`, the raw
-  content without the multipart envelope of a full document read.
-- Bundles are cached per context in `$XDG_CACHE_HOME/dtctl/recipes/<context>.json`,
-  keyed by document ID and version. Content is downloaded only for a new or
-  changed version.
-- The list is refreshed at most once per hour per context, and only by the
-  commands that load the recipe tree (§7). Shell completion and `--help` read
-  the cache only and never touch the network. `get recipes --refresh` forces a
-  refresh.
-- `run <name>` for a name not in the cache forces one refresh before it reports
-  "unknown recipe". An app installed a minute ago works on the first try.
-- Steady state is no calls within the hour, then one list call. Downloads happen
-  only when an app updates.
-- **Failure never spreads.** If the list call fails (offline, 403, missing
-  `document:documents:read` scope), dtctl uses the stale cache and says so. With
-  no cache, it skips the layer with a note naming the cause. Built-in and file
-  recipes are unaffected. `document:documents:read` joins the scopes that `run`
-  and `get recipes` request, as an optional one: without it, only the
-  environment layer is missing.
-- **Service mode.** A bundle comes from the tenant the request targets, using
-  the request's credentials, so it is request state and the engine loads it like
-  any other read. The cache is in memory, keyed by environment and principal,
-  and never on the host disk (Embedding Invariants §2).
+  content without the multipart envelope of a full document read, and only
+  when the lock does not already hold that document version's content.
+- Pins are per environment: the same app source pins document versions on
+  each environment separately, since IDs and versions differ between them.
+- **Discovery without loading.** `get recipes` lists the environment's bundle
+  documents at most once an hour (cached per context) only to print a hint:
+  "1 app on this environment ships recipes that are not enabled: `dtctl
+  recipes add genai --app <id>`". An unknown name in `run` reads the same
+  cache. Nothing loads from this listing.
+- **Service mode.** A request names the apps it wants (`Request.RecipeApps`),
+  optionally with the document version it pins. The bundles come from the
+  tenant the request targets, with the request's credentials, so they are
+  request state; listings are cached in memory for a minute and contents per
+  document version, never on the host disk (Embedding Invariants §2).
 
 **Inventory, shipped by the app.** A bundle's `capabilities` let an app say
 when its recipes apply. The example bundle defines `genai` as a span probe and
@@ -914,6 +917,115 @@ release independently.
 
 An app that ships a skill and a recipe bundle can have the skill point to the
 recipes (`dtctl run genai-agent-errors`), so the query exists once.
+
+### 14. Sources, sync and pinning
+
+The first prototype loaded remote content dynamically: every `run`,
+`get recipes` and `describe recipe` re-listed the environment's bundles once
+an hour, and an unknown name forced a refresh. That made recipes appear the
+moment an app was installed. It also meant:
+
+- **What an agent ran changed without anyone choosing it.** An app update
+  rewrote a bundle, and within the hour every agent on the environment ran
+  different DQL. A demo, a CI job or an evaluation could not count on getting
+  the same recipes twice.
+- **Trust was implicit.** Any installed app could add prompt text for every
+  dtctl user of the environment, and nobody opted in.
+- **The network sat on the run path**, small as the cost was.
+
+The model is now the one package managers use: sources are **declared**, a
+**sync** resolves and fetches them, a **lock** records what sync resolved, and
+a run reads only the lock and a local content-addressed store.
+
+**Declaring.** A sources file lists what to load:
+
+```yaml
+# ~/.config/dtctl/recipe-sources.yaml, or .dtctl/recipes.yaml in a project
+apiVersion: dtctl.dev/v1alpha1
+kind: RecipeSources
+builtin: true                 # false turns the built-in recipes off
+sources:
+  - name: dt-for-ai
+    git: github.com/<owner>/<repo>
+    ref: v1.4.0               # branch, tag or commit; sync pins the commit
+    path: recipes
+  - name: genai
+    app: <app-id>             # bundles this app installed on the environment
+  - name: team
+    archive: https://example.invalid/team-recipes.tar.gz
+  - name: drafts
+    dir: ./recipes            # live, never pinned: for authoring
+```
+
+| Kind | Fetched as | Pinned to |
+|---|---|---|
+| `git` | GitHub over HTTPS: one ref lookup, one tarball. No git binary, so no subprocess and no capability gate. Other hosts use `archive`. `GITHUB_TOKEN` is sent to GitHub only. | the commit the ref resolved to |
+| `archive` | a `.tar.gz` at an https URL, optionally with `sha256` declared up front | the archive's SHA-256 |
+| `app` | the environment's bundle documents for that app (§13) | document ID and version, per environment |
+| `dir` | a local directory, relative to the sources file | nothing: read live on every run |
+
+`builtin: false` leaves the built-in *recipes* out. The built-in domains,
+scope dimensions and fragments still load, because other sources' recipes
+are written against that vocabulary.
+
+**Syncing.** `dtctl recipes sync` installs exactly what the lock names, like
+`npm ci`: a pinned source whose content is already in the store costs no
+request at all, and one whose content is missing (a new machine, a cleaned
+store) is fetched at exactly the locked commit, digest or document version.
+A source the lock does not cover yet, or whose declaration changed (another
+ref, path, URL or app), is resolved and pinned. `sync --update [source...]`
+re-resolves and moves pins, and reports which recipes the move added,
+changed or removed. A source that fails to sync keeps its previous pin, so
+one unreachable source never unpins the others.
+
+**The lock** sits next to its sources file (`recipe-sources.lock`,
+`.dtctl/recipes.lock`). Per source it records the fingerprint of the
+declaration it was resolved for, the commit or archive digest, the digest of
+the stored recipe tree, and for an app source the document versions per
+environment. Tree digests depend on content only (sorted paths and file
+digests), not on how an archive was compressed.
+
+**The store** is `$XDG_DATA_HOME/dtctl/recipes/store/`: `tree/<digest>/` per
+git or archive pin and `blob/<digest>.yaml` per bundle version. Content never
+changes under a digest, so switching contexts, projects or pins back and
+forth fetches nothing twice. It lives under the data directory rather than
+the cache because an app pin the environment has since moved past cannot be
+fetched again: the Document store serves only a document's current content.
+Sync says so and names `--update` as the way on.
+
+Archive extraction keeps `.yaml`/`.yml` files and `_fragments/*.tmpl` under
+the source's path and refuses links, absolute paths and `..` rather than
+skipping them, with limits of 1 MB per file, 32 MB and 5,000 files per tree.
+
+**Projects.** A project's `.dtctl/recipes.yaml` is found by walking up from
+the working directory. Committed with its lock, it gives a team identical
+recipes on every machine. It is honoured only after `dtctl recipes sync` ran
+against exactly its current content and lock. Sync prints the sources it is
+enabling and records a digest of both files in
+`$XDG_STATE_HOME/dtctl/recipes/trusted-projects.json`; a later change (a pull,
+a planted edit) suspends the file until the next sync. A cloned repository
+cannot plant agent prompts just by being the working directory, the same
+reasoning that keeps `.dtctl.yaml` aliases off.
+
+**Commands.**
+
+| Command | Does |
+|---|---|
+| `dtctl recipes add <name> --git/--archive/--app/--dir … [--project]` | declares a source and syncs it (`--no-sync` to only declare) |
+| `dtctl recipes remove <name> [--project]` | removes a source and its pins |
+| `dtctl recipes sync [--update [source...]]` | installs the lock; with `--update`, moves pins |
+| `dtctl recipes outdated` | resolves every source without fetching content and shows which pins moved upstream; changes nothing |
+| `dtctl get recipe-sources` | every source with its pin, last sync and status: `ok`, `live`, `not synced`, `missing`, `untrusted`, `overridden`, `off` |
+
+A source that declares content but contributes none (not synced, content
+missing, an untrusted project) is named in a warning on `get recipes` and in
+the "unknown recipe" error, with the command that fixes it.
+
+**What pinning does not do.** There is no per-recipe pin (`run x@2`) and no
+lockfile of discovered environment state, which was the prototype's
+complexity. A pin covers a whole source. To freeze one recipe while its
+source moves, copy it into the user directory; the higher layer replaces it
+by name and `describe recipe` shows what it shadows.
 
 ## Initial recipe set
 
@@ -969,15 +1081,16 @@ examples (§12) are the next candidates, once verified the same way.
   cache, `--no-inventory` (§6)
 - the environment layer: app-shipped recipe bundles from the Document store,
   including their capability definitions (§13)
-- `DTCTL_RECIPE_PATH` (org layer)
+- declared sources, sync, lock and store (§14), and `DTCTL_RECIPE_PATH`
 - context default segments, with `--no-segments`
 
 ### Prototype status
 
 The prototype on this branch implements phases 1a and 1b, plus the parts of
 phase 2 that the progressive-disclosure and distribution questions depend on:
-`next` bound from result rows, inventory-aware listing, the environment layer
-(app bundles), and the org layer. It does not implement the `entity` param
+`next` bound from result rows, inventory-aware listing, and declared sources
+with sync and pinning (§14), which carry the environment layer (app bundles)
+and the org layer. It does not implement the `entity` param
 type, context default segments, `--no-segments` or the generated index (the
 built-in set is small enough to parse on every `run`). Every command is
 `experimental` (since 0.42.0). User guide: [docs/RECIPES.md](../RECIPES.md).
@@ -986,6 +1099,10 @@ Where the prototype differs from the text above:
 
 - **Bundle documents** use the existing `ai-agent-resource` type with names
   `recipes/<name>.yaml`, not a new `recipe-bundle` type (§13, question 10).
+- **Remote content is synced, not discovered** (§14). The first prototype
+  re-listed app bundles hourly on every run; that is replaced by declared
+  sources, `dtctl recipes sync` and a lock. Project-local sources moved from
+  phase 3 into this model, behind the sync-as-opt-in trust rule.
 - **The catalog** lists `run` but no recipes, at any level (§4).
 - **Follow-up commands** are emitted as `--name=value` words (`--segment=`,
   not `-S`), with the positional slot used only for a value that cannot
@@ -1000,7 +1117,6 @@ Where the prototype differs from the text above:
   independent; only "skip if empty" as control flow)
 - read-only API steps
 - multiple output sections
-- project-local recipes
 
 ## Evaluation
 
@@ -1036,6 +1152,9 @@ tokens in/out, cost, wall time, scanned bytes.
 | Separate recipe repository from day one | Decided against for now: release coupling is acceptable while the set is small, and user overrides cover urgent fixes. App bundles (§13) give independent release where it matters, without a second dtctl-owned repository |
 | One document per recipe in the Document store | Hundreds of downloads on a cold cache, paginated listing, and no atomic update of an app's set |
 | Loading user-uploaded bundle documents | Anyone with document write access could inject agent prompts into every dtctl user of the environment; the org layer covers team content |
+| Loading every installed app's bundles automatically, refreshed hourly (the first prototype) | Recipes changed under running agents without anyone choosing it, and trust was implicit; declared, synced and pinned sources (§14) keep discovery as a hint |
+| A git binary for git sources | A subprocess needs a capability gate and a git install; one ref lookup and one tarball over HTTPS cover pinning |
+| Per-recipe version pins (`run x@2`) | Bookkeeping per recipe for a case that copying the recipe into the user directory already covers; pins are per source |
 | Running full inventory discovery on `get recipes` | Seconds to minutes of latency on every listing; the cache plus the structural pass bound it |
 | Tags as the navigation axis | Free-form tags from many owners fragment (`k8s`, `kubernetes`); domains are curated, tags feed search |
 
@@ -1043,8 +1162,9 @@ tokens in/out, cost, wall time, scanned bytes.
 
 1. Should the `investigate` profile preset include `run` (and `get recipes`,
    `describe recipe`)?
-2. Should project-local recipes ever be trusted without an explicit opt-in? DQL
-   is read-only, but recipe text is prompt input for agents.
+2. ~~Should project-local recipes ever be trusted without an explicit
+   opt-in?~~ Answered: no. A project's sources apply only after
+   `dtctl recipes sync` ran against its current content (§14).
 3. Recipe namespacing: is flat naming with whole-recipe override enough, or do
    team layers need prefixes (`team/name`)?
 4. Should `get recipes` in agent mode include each recipe's params inline, saving
@@ -1066,10 +1186,16 @@ tokens in/out, cost, wall time, scanned bytes.
     `ai-agent-resource` documents named `/skills/<skill>/SKILL.md`. Bundles
     use the same type, named `recipes/<name>.yaml`. Still open: whether the
     platform should reserve the `recipes/` prefix for this purpose.
-11. Is `originAppId` a sufficient trust anchor (§13), or does dtctl need an
-    allowlist of app IDs per context?
+11. ~~Is `originAppId` a sufficient trust anchor, or does dtctl need an
+    allowlist of app IDs?~~ Answered: both apply. Declared `app` sources are
+    the allowlist, and `originAppId` still decides which documents count (§13,
+    §14). Still open: per-context sources files, if one machine's contexts
+    need different apps.
 12. Should `requires` support per-value requirements for family recipes
     (`--provider aws` needs `aws`), which would hide enum values instead of
     whole recipes?
-13. Cache lifetimes: 1h for the bundle list and 24h for inventory verdicts are
-    guesses. Should they be context settings?
+13. Cache lifetimes: 1h for the availability hint's bundle list and 24h for
+    inventory verdicts are guesses. Should they be context settings?
+14. Should `dtctl recipes sync` also offer a scheduled mode (sync when the
+    lock is older than N days, `outdated` as a notice), or is that the job of
+    whoever owns the project lock?

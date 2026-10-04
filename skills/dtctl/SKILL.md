@@ -41,6 +41,8 @@ dtctl run problems-active --dry-run        # print the DQL without running it
 
 The envelope's `context.query` holds the DQL that ran (adapt it with `dtctl query` when the recipe is close but not exact), `context.empty_reason` explains an empty result, and `context.suggestions` names the next recipe with arguments bound from the result. Nothing fits? Write DQL. Recipes are a shortcut, not a boundary.
 
+Which recipes exist is the user's choice: `dtctl recipes add|sync|remove` change their sources and pins, so leave those to the user unless asked. `context.recipe.source` names the source and version that answered.
+
 ## DQL (required reading)
 
 Before writing, modifying, or running any DQL (`dtctl query`, `dtctl wait query`, query files), consult `references/DQL-reference.md` and follow it over any assumption or memory.
