@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: k8s-pod-restarts
-  version: 1
+  version: 2
   tags: [k8s, pods, oom, restarts, crashloop, triage]
 spec:
   summary: Pods whose containers restarted or were OOM-killed in the window
@@ -36,12 +36,18 @@ spec:
     about 12 restarts per hour, so ~12/h is a steady crash loop. Readiness-probe
     failures are not restarts and do not appear here. Pods of the same workload
     (k8s.workload.name) failing together point at the workload, not the node.
+    It does not show failing Jobs and CronJobs: their pods usually fail and are
+    replaced rather than restarted, so a backing-off CronJob has no restarts
+    here; k8s-warning-events shows it (BackOff, BackoffLimitExceeded).
   emptyMeans: >-
     No pod restarted at least min_restarts times and none was OOM-killed in the
-    window. Dynatrace writes these metrics only when a restart happens, so a
-    healthy cluster has no series at all. The same empty result comes from a
-    misspelled --cluster/--namespace (exact, case-sensitive) or from a cluster
-    without Kubernetes monitoring: check the names with `dtctl run k8s-clusters`.
+    window. That is not an all-clear: pods of a failing Job or CronJob, pods
+    that never start (image pull, scheduling, mounts) and readiness failures do
+    not restart, so they never appear here. Run k8s-warning-events for those
+    before calling the cluster healthy. Dynatrace writes these metrics only
+    when a restart happens, so the same empty result also comes from a
+    misspelled --cluster/--namespace (exact, case-sensitive) or a cluster
+    without Kubernetes monitoring (`dtctl run k8s-clusters`).
   next:
     - recipe: k8s-warning-events
       when: nonempty
@@ -49,5 +55,7 @@ spec:
     - recipe: k8s-workload-status
       when: nonempty
       bind: { cluster: k8s.cluster.name, namespace: k8s.namespace.name }
+    - recipe: k8s-warning-events
+      when: empty
     - recipe: k8s-clusters
       when: empty

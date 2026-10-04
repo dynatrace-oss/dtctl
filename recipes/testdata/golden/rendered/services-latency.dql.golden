@@ -1,6 +1,7 @@
-# services-latency v1 — window: default 1h
+# services-latency v2 — window: default 1h
 fetch spans
-| filter request.is_root_span == true and dt.service.name == "<service>"
+| filter request.is_root_span == true
+| filter contains(dt.service.name, "<service>", caseSensitive: false)
 | fieldsAdd multiplicity = coalesce(aggregation.count, 1)
         / ((power(2, 56) - coalesce(sampling.threshold, 0)) * power(2, -56))
 | summarize { requests = toLong(round(sum(multiplicity))),
@@ -9,8 +10,8 @@ fetch spans
               p50 = percentile(duration, 50), p90 = percentile(duration, 90),
               p99 = percentile(duration, 99), max = max(duration),
               slowest = takeMax(record(duration, trace.id)) },
-    by: {endpoint.name}
-| fields endpoint.name, requests, failed,
+    by: {dt.service.name, endpoint.name}
+| fields dt.service.name, endpoint.name, requests, failed,
     time_spent_s = round(time_s, decimals: 1),
     p50_ms = round(p50 / 1ms, decimals: 1), p90_ms = round(p90 / 1ms, decimals: 1),
     p99_ms = round(p99 / 1ms, decimals: 1), max_ms = round(max / 1ms, decimals: 1),

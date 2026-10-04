@@ -5,7 +5,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: services-latency
-  version: 1
+  version: 2
   tags: [services, latency, endpoints, percentiles, slow]
 spec:
   summary: One service's endpoints with p50/p90/p99 latency, ranked by total time spent
@@ -22,12 +22,13 @@ spec:
       type: string
       required: true
       positional: true
-      description: Service name (exact dt.service.name, see services-list)
+      description: Service name or part of it, case-insensitive (matched against dt.service.name)
   dql: |
     fetch spans
     {{- with .scope.stage}}
     {{.}}{{end}}
-    | filter request.is_root_span == true and dt.service.name == {{.service}}
+    | filter request.is_root_span == true
+    | filter contains(dt.service.name, {{.service}}, caseSensitive: false)
     | fieldsAdd multiplicity = {{template "span-multiplicity"}}
     | summarize { requests = toLong(round(sum(multiplicity))),
                   failed = toLong(round(sum(if(request.is_failed, multiplicity, else: 0)))),
@@ -35,8 +36,8 @@ spec:
                   p50 = percentile(duration, 50), p90 = percentile(duration, 90),
                   p99 = percentile(duration, 99), max = max(duration),
                   slowest = takeMax(record(duration, trace.id)) },
-        by: {endpoint.name}
-    | fields endpoint.name, requests, failed,
+        by: {dt.service.name, endpoint.name}
+    | fields dt.service.name, endpoint.name, requests, failed,
         time_spent_s = round(time_s, decimals: 1),
         p50_ms = round(p50 / 1ms, decimals: 1), p90_ms = round(p90 / 1ms, decimals: 1),
         p99_ms = round(p99 / 1ms, decimals: 1), max_ms = round(max / 1ms, decimals: 1),
@@ -44,7 +45,11 @@ spec:
     | sort time_spent_s desc
     | limit 25
   means: >-
-    One row per endpoint of the service, ranked by time_spent_s (requests x
+    One row per endpoint of every service whose dt.service.name contains
+    --service (case-insensitive), so "checkout" also finds "checkout-service
+    (production)"; dt.service.name says which service a row belongs to. If
+    rows from several services appear, the name was too broad: re-run with
+    more of it. Rows are ranked by time_spent_s (requests x
     duration, in seconds), so the first row is where the service spends most
     of its time, not necessarily the slowest endpoint. Latencies are in
     milliseconds. requests and failed are extrapolated from sampled spans (the
@@ -55,12 +60,11 @@ spec:
     slowest stored trace of that endpoint; open it with traces-get. Capped at
     25 endpoints.
   emptyMeans: >-
-    No request root spans of this service in the window. Most often the name
-    does not match: dt.service.name is exact and case-sensitive, and many names
-    carry a suffix such as " (production)"; find it with `dtctl run
-    services-list <fragment>`. Otherwise the service received no traffic in the
-    window, or it is not traced (metrics-only services appear in services-red
-    but have no spans).
+    No request root spans of any service whose name contains --service in the
+    window. Check the spelling with `dtctl run services-list <fragment>`: a
+    Kubernetes workload or process name is not always the service name.
+    Otherwise the service received no traffic in the window, or it is not
+    traced (metrics-only services appear in services-red but have no spans).
   next:
     - recipe: services-list
       when: empty
@@ -69,4 +73,4 @@ spec:
       bind: { trace_id: slowest_trace_id }
     - recipe: services-failures
       when: nonempty
-      with: { service: "{{.service}}" }
+      bind: { service: dt.service.name }

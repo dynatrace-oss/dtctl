@@ -1,4 +1,4 @@
-# security-vulns-open-latest v1 — window: default 1d, fixed
+# security-vulns-open-latest v2 — window: default 1d, fixed
 fetch security.events
 | filter event.provider == "Dynatrace" and event.level == "ENTITY"
 | filter in(event.type, {"VULNERABILITY_STATE_REPORT_EVENT",
@@ -27,5 +27,14 @@ fetch security.events
 | fields vulnerability.display_id, title, risk, level, stack, component, cves,
     entities, function_in_use = in("IN_USE", fn), public_network = in("PUBLIC_NETWORK", exp),
     exploit_available = in("AVAILABLE", xpl), fix_available, open_since
+// Totals over every matching vulnerability, so the 50-row cut is never read as a count.
+| summarize { v = collectArray(record(vulnerability.display_id, title, risk, level, stack,
+      component, cves, entities, function_in_use, public_network, exploit_available,
+      fix_available, open_since), maxLength: 100000),
+    total = count(), total_critical = countIf(level == "CRITICAL"), total_high = countIf(level == "HIGH") }
+| filter total > 0
+| expand v
+| fieldsFlatten v, prefix: ""
+| fieldsRemove v
 | sort risk desc, entities desc
 | limit 50

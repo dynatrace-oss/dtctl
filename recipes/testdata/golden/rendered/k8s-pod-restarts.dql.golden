@@ -1,4 +1,4 @@
-# k8s-pod-restarts v1 — window: default 1h
+# k8s-pod-restarts v2 — window: default 1h
 timeseries { restarts = sum(dt.kubernetes.container.restarts),
              oom_kills = sum(dt.kubernetes.container.oom_kills) },
   by: {k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.pod.name}, union: true

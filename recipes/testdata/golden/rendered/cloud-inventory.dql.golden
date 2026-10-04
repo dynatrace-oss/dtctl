@@ -1,4 +1,4 @@
-# cloud-inventory v2 — window: none (state query; no window)
+# cloud-inventory v3 — window: none (state query; no window)
 smartscapeNodes "AWS_*"
 | filterOut in(type, {"AWS_REGION", "AWS_AVAILABILITY_ZONE", "AZURE_MICROSOFT_RESOURCES_LOCATIONS",
     "AZURE_MICROSOFT_RESOURCES_LOCATIONS_AVAILABILITYZONES", "GCP_REGION", "GCP_ZONE"})

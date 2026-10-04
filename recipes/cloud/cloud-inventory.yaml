@@ -4,7 +4,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: cloud-inventory
-  version: 2
+  version: 3
   tags: [cloud, aws, azure, gcp, inventory]
 spec:
   summary: Cloud resources by type, or one type by account/subscription/project and region
@@ -50,11 +50,22 @@ spec:
     attachments, configurations) count as types of their own. An empty
     account or region is a global or account-less resource.
   emptyMeans: >-
-    Smartscape has no resources of this provider or type. The cloud integration
-    is not configured for this environment, or the type name does not exist
-    (run without --type to list the types that do exist). A scope narrows to
+    Smartscape has no resources of this provider or type. Without --type that
+    means this environment monitors nothing of the provider (no cloud
+    integration, or one that discovered nothing), so every other recipe for it
+    is empty too; check the other providers before concluding there is no
+    cloud at all. With --type, the type name may not exist (run without --type
+    to list the types that do exist). A scope narrows to
     resources carrying that account, subscription, project or primary tag; a
     primary tag is often set on only a few cloud resources.
   next:
     - recipe: cloud-untagged
+      when: nonempty
       with: { provider: "{{.provider}}" }
+    # Empty for one provider: the useful next question is whether another is there.
+    - recipe: cloud-inventory
+      when: empty
+      with: { provider: '{{if eq .provider "aws"}}azure{{else if eq .provider "azure"}}gcp{{else}}aws{{end}}' }
+    - recipe: cloud-inventory
+      when: empty
+      with: { provider: '{{if eq .provider "aws"}}gcp{{else if eq .provider "azure"}}aws{{else}}azure{{end}}' }

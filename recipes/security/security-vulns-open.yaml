@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: security-vulns-open
-  version: 1
+  version: 2
   tags: [security, vulnerabilities, rva, cve]
 spec:
   summary: Open, not muted runtime vulnerabilities ranked by Dynatrace Security Score
@@ -73,6 +73,15 @@ spec:
     | fields vulnerability.display_id, title, risk, level, stack, component, cves,
         entities, function_in_use = in("IN_USE", fn), public_network = in("PUBLIC_NETWORK", exp),
         exploit_available = in("AVAILABLE", xpl), fix_available, open_since
+    // Totals over every matching vulnerability, so the 50-row cut is never read as a count.
+    | summarize { v = collectArray(record(vulnerability.display_id, title, risk, level, stack,
+          component, cves, entities, function_in_use, public_network, exploit_available,
+          fix_available, open_since), maxLength: 100000),
+        total = count(), total_critical = countIf(level == "CRITICAL"), total_high = countIf(level == "HIGH") }
+    | filter total > 0
+    | expand v
+    | fieldsFlatten v, prefix: ""
+    | fieldsRemove v
     | sort risk desc, entities desc
     | limit 50
   means: >-
@@ -83,9 +92,11 @@ spec:
     and exploit_available are the Davis runtime assessment, true when it holds
     on any entity; code-level findings (stack CODE) always score 10 and are
     proven by data flow, so those three do not apply to them. open_since is
-    when the vulnerability last turned OPEN. At most 50 rows: narrow with
-    --min-level, --stack, --component, --cve or --entity rather than reading
-    the cut-off as a total.
+    when the vulnerability last turned OPEN. total, total_critical and
+    total_high count every vulnerability that matched (the same on every row);
+    they are the answer to "how many", not the number of rows, which stops at
+    the 50 highest-scoring. Narrow with --min-level, --stack, --component,
+    --cve or --entity to see the rest.
   emptyMeans: >-
     Nothing open and unmuted at or above --min-level in the current 30m
     snapshot, which is good news only if the snapshot has data. If runtime
