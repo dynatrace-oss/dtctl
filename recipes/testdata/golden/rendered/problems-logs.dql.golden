@@ -1,4 +1,4 @@
-# problems-logs v2 — window: default 2h
+# problems-logs v2 — window: default 2h, max 12h
 fetch logs
 | filter in(status, {"ERROR", "WARN"})
 | filter dt.entity.service in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]

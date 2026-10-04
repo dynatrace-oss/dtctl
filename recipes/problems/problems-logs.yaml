@@ -8,7 +8,9 @@ metadata:
 spec:
   summary: Error and warning logs from the entities a problem affects, per source (P-xxxxx)
   requires: [davis, logs]
-  timeframe: 2h
+  # A long-running problem's whole duration is too many log records to scan;
+  # a window derived from a problem keeps its start, where the onset is.
+  timeframe: { default: 2h, max: 12h }
   params:
     id:
       type: string
@@ -59,16 +61,17 @@ spec:
     | limit 30
   means: >-
     Log volume per source (the workload, service, function, host or log source
-    that wrote the lines) and status, from the entities the problem affects and,
-    for a problem placed on Kubernetes workloads, from those workloads' pods,
-    with the last line as an example (cut to 300 characters). The counts cover
-    the window, not the problem's lifetime: a source whose first_seen is well
-    before event.start (problems-get) was already failing and is a symptom
-    shared with normal operation, not evidence; one that starts at the problem
-    is. Matching a workload by name can include a same-named workload in
-    another namespace the problem also lists. Not shown: logs of entities the
-    problem only relates to, and sources whose dt.source_entity lists more than
-    three entities.
+    that wrote the lines) and status, from the entities the problem affects
+    and, for a problem placed on Kubernetes workloads, from those workloads'
+    pods, with the last line as an example (cut to 300 characters). The counts
+    cover the window, which is the problem's own hours (padded, at most 12h
+    from its start) when run from problems-get's suggestion: a source whose
+    first_seen is well before event.start (problems-get) was already failing
+    and is a symptom shared with normal operation, not evidence; one that
+    starts at the problem is. Matching a workload by name can include a
+    same-named workload in another namespace the problem also lists. Not
+    shown: logs of entities the problem only relates to, and sources whose
+    dt.source_entity lists more than three entities.
   emptyMeans: >-
     No ERROR/WARN line from the affected entities in the window. Not an
     all-clear for the problem: either the entities do not ship logs (synthetic

@@ -50,12 +50,22 @@ spec:
   emptyMeans: >-
     No problem with this display ID was updated in the last 24 hours. That is
     likelier the window than the ID: re-run with --from 30d before doubting
-    the ID. Otherwise the ID is mistyped or belongs to another environment
-    (display IDs are per environment and not unique within one).
+    the ID (the suggested command does). Otherwise the ID is mistyped or
+    belongs to another environment (display IDs are per environment and not
+    unique within one).
+  # The follow-ups run over the problem's own hours, not this search horizon:
+  # an old problem's logs are outside the last 2h, and a reused display ID
+  # is pinned to the latest problem by its window.
   next:
     - recipe: problems-logs
       with: { id: "{{.id}}" }
       when: nonempty
+      window: { from: event.start, to: event.end, pad: 15m }
     - recipe: problems-evidence
       with: { id: "{{.id}}" }
       when: nonempty
+      window: { from: event.start, to: event.end, pad: 15m }
+    - recipe: problems-get
+      with: { id: "{{.id}}" }
+      when: empty
+      window: { from: 30d }
