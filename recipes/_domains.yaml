@@ -8,6 +8,7 @@ domains:
   traces:     distributed traces and spans
   logs:       log search, patterns and error rates
   problems:   Davis problems and events
+  changes:    deployments, configuration changes and restarts
   hosts:      hosts, processes, disks
   cloud:      AWS, Azure and GCP resources
   frontends:  RUM, web vitals, mobile

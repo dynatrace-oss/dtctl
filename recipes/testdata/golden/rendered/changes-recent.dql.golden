@@ -1,0 +1,21 @@
+# changes-recent v1 — window: default 1d, max 7d
+fetch events
+| filter event.kind == "SDLC_EVENT" and not(in(event.type, {"build", "run", "test"}))
+    or in(event.type, {"CUSTOM_DEPLOYMENT", "CUSTOM_CONFIGURATION", "PROCESS_RESTART"})
+    or event.type == "CUSTOM_INFO" and (matchesPhrase(event.name, "deployment") or contains(event.name, "spec change"))
+| fieldsAdd what = coalesce(k8s.workload.name, deployment.name, cicd.deployment.name, component.name,
+      entity.name, artifact.name, deployment.release.product, dt.entity.service.name,
+      dt.entity.process_group_instance.name, dt.entity.host.name, vcs.repository.name, task.title,
+      task.name, event.name),
+    where = coalesce(k8s.namespace.name, deployment.namespace, cicd.deployment.namespace,
+      target.namespace, deployment.environment.name, deployment.environment, deployment.stage),
+    version = coalesce(deployment.release_version, deployment.version, component.version,
+      artifact.version, version)
+| summarize { changes = countDistinctExact(event.id), first = min(timestamp), last = max(timestamp),
+      latest = takeMax(record(timestamp, version, event.name, event.status)),
+      entity = takeAny(coalesce(toString(dt.smartscape_source.id), toString(dt.source_entity))) },
+    by: { event.kind, event.type, event.provider, what, where }
+| fields last, event.type, event.provider, what, where, changes, first,
+    version = latest[version], status = latest[event.status], name = latest[event.name], entity
+| sort last desc
+| limit 30

@@ -1,0 +1,75 @@
+# Source: prior art (TUI problem view change filter)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: changes-recent
+  version: 1
+  tags: [changes, deployments, configuration, restarts, sdlc, root-cause]
+spec:
+  summary: Deployments, configuration changes and restarts, newest first, environment-wide or for one entity
+  description: >-
+    What changed: pipeline (SDLC) deployment and change events, deployment
+    and configuration annotations, process restarts, and Kubernetes
+    deployment spec changes, grouped by what changed and where. The first
+    thing to check when something broke at a known time.
+  timeframe: { default: 24h, max: 7d }
+  scope: [cluster, namespace, host_group]
+  params:
+    entity:
+      type: string
+      description: Only changes to this entity (classic or Smartscape ID, or the workload, deployment or component name)
+    include_builds:
+      type: bool
+      default: false
+      description: Also list pipeline build, run and test events (CI activity that deployed nothing)
+  dql: |
+    fetch events
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter event.kind == "SDLC_EVENT"{{if not .include_builds}} and not(in(event.type, {"build", "run", "test"})){{end}}
+        or in(event.type, {"CUSTOM_DEPLOYMENT", "CUSTOM_CONFIGURATION", "PROCESS_RESTART"})
+        or event.type == "CUSTOM_INFO" and (matchesPhrase(event.name, "deployment") or contains(event.name, "spec change"))
+    | fieldsAdd what = coalesce(k8s.workload.name, deployment.name, cicd.deployment.name, component.name,
+          entity.name, artifact.name, deployment.release.product, dt.entity.service.name,
+          dt.entity.process_group_instance.name, dt.entity.host.name, vcs.repository.name, task.title,
+          task.name, event.name),
+        where = coalesce(k8s.namespace.name, deployment.namespace, cicd.deployment.namespace,
+          target.namespace, deployment.environment.name, deployment.environment, deployment.stage),
+        version = coalesce(deployment.release_version, deployment.version, component.version,
+          artifact.version, version)
+    {{- if .entity}}
+    | filter {{template "entity-signal" .entity}} or what == {{.entity}}{{end}}
+    | summarize { changes = countDistinctExact(event.id), first = min(timestamp), last = max(timestamp),
+          latest = takeMax(record(timestamp, version, event.name, event.status)),
+          entity = takeAny(coalesce(toString(dt.smartscape_source.id), toString(dt.source_entity))) },
+        by: { event.kind, event.type, event.provider, what, where }
+    | fields last, event.type, event.provider, what, where, changes, first,
+        version = latest[version], status = latest[event.status], name = latest[event.name], entity
+    | sort last desc
+    | limit 30
+  means: >-
+    One row per kind of change, what changed (workload, deployment,
+    component, entity, repository or task) and where (namespace or
+    environment), most recent first; changes counts distinct events, first
+    and last bound them in the window, version and status come from the
+    latest one. Decision rule: a change that lands minutes before a problem or
+    regression started is the first suspect even if nothing else names it; a
+    row whose changes are spread evenly over the whole window is routine (a
+    sync loop, a scheduled job) and likely coincidence. entity is the
+    monitored entity the event is attached to, when there is one. Not shown:
+    what the change contained (follow the pipeline or repository), and
+    changes that no tool reported: many environments send no deployment
+    events at all.
+  emptyMeans: >-
+    No change event in the window. That is weak evidence that nothing
+    changed: many environments send no deployment or pipeline events, and
+    Kubernetes spec changes appear only where the cluster is monitored. With
+    --entity, the ID or name may not match (names are exact; try the
+    workload or deployment name, or meta-entity-id for the other ID). Try
+    k8s-warning-events for pod-level churn.
+  next:
+    - recipe: k8s-warning-events
+      when: empty
+    - recipe: meta-entity-id
+      when: empty
+      with: { id: "{{.entity}}" }

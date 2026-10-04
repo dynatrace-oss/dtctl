@@ -14,6 +14,21 @@
             or replacePattern(k8s.pod.name, "'-' ALNUM{5} EOS", "") == {{.}})){{end}}
 
 {{/*
+  Records about one entity on logs, events and spans, called with the quoted
+  entity ID: {{template "entity-signal" .entity}}. An entity is spelled in two
+  ID eras (a Smartscape ID, which needs toSmartscapeId, and the classic
+  dt.entity.* ID, which for most types is a different string) and as the
+  record's source entity. A wrong cast matches nothing rather than failing,
+  so every spelling is tried. Kubernetes objects on logs are matched by name,
+  not ID: use k8s-workload-logs there.
+*/}}
+{{define "entity-signal"}}(dt.smartscape_source.id == toSmartscapeId({{.}}) or dt.source_entity == {{.}}
+        or dt.smartscape.service == toSmartscapeId({{.}}) or dt.entity.service == {{.}}
+        or dt.smartscape.host == toSmartscapeId({{.}}) or dt.entity.host == {{.}}
+        or dt.smartscape.process == toSmartscapeId({{.}}) or dt.entity.process_group_instance == {{.}}
+        or dt.entity.process_group == {{.}}){{end}}
+
+{{/*
   dt.davis.problems records that name an entity, called with a quoted entity
   ID or exact entity name: {{template "problem-affects" .entity}}. Problems
   carry the entity in places from different generations, none reliable on its
