@@ -60,6 +60,21 @@ through `--append-system-prompt`.
   WebFetch, WebSearch and subagents are disallowed. `analyze.py` audits every
   command for paths outside the workspace and for reads of ground truth or
   the repo.
+- **Nothing on the allow-list can start a program.** Anything that can would
+  bypass the wrapper and its verb guard. So `awk` (`system()`, `| getline`),
+  `sed` (GNU `e`, `s///e`, `w`), `xargs`, `env` and `find -exec` are not on
+  the list, and `sort` reaches `/usr/bin/sort` only through a per-run shim
+  that refuses `--compress-program` (and its `--co…` abbreviations). Claude's
+  permission check refuses output redirection to a file in `dontAsk` mode,
+  and `bin/` is locked (0555) in case that ever changes. The real binaries
+  are not on PATH. Called by absolute path, they are refused by the
+  permission rules, and they would find no config under the run's HOME. A
+  probe run that tries each of these vectors leaves no trace of having
+  executed any of them.
+- **Credentials.** The copied `.credentials.json` is deleted when a run ends,
+  including on a timeout or an exception. The read-only dtctl config lives in
+  `<batch>/_cfg/`, outside the agent's cwd and HOME, and carries only a
+  keyring `token-ref`.
 
 ## Running it
 

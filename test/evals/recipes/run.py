@@ -14,14 +14,18 @@ Every run gets its own workspace under $EVAL_RUNS_DIR/<batch>/<task>/<arm>-r<rep
   cfg/      CLAUDE_CONFIG_DIR: copied credentials + the arm's skills (copies)
   home/     HOME
   work/     the agent's cwd (empty: no CLAUDE.md, no repo)
-  bin/dtctl the logging wrapper - the only dtctl on PATH
+  bin/dtctl the logging wrapper - the only dtctl on PATH (bin/ is locked 0555)
+  bin/sort  a shim that refuses --compress-program
   calls/    one record per dtctl invocation (argv, stdout, stderr, rc, seconds)
   transcript.jsonl, prompt.md, meta.json
 
 Read-only is enforced three times over: the wrapper points DTCTL_CONFIG at a
 single-context config with safety-level readonly (chmod 444), refuses mutating
 and config verbs before dtctl sees them, and the claude permission rules only
-allow dtctl and a few text filters in Bash.
+allow dtctl and a few text filters in Bash - none of which can start another
+program. The real binary is not on PATH; called by its absolute path it is
+refused by the permission rules, and would find no config under the run's HOME.
+The read-only config lives in <batch>/_cfg/, outside the agent's cwd and HOME.
 
 Ground truth is measured before (gt-start) and after (gt-end) the batch into
 <batch>/_gt/, a directory no agent rule allows reading.
@@ -139,12 +143,35 @@ exit $rc
 # artifact, so the harmless shell builtins are allowed too. Reading files is
 # possible with these (the skills' references need it); analyze.py audits every
 # command for paths outside the run's workspace.
-FILTERS = ["jq", "head", "tail", "wc", "sort", "uniq", "grep", "cut", "sed", "awk", "tr", "cat", "column",
+#
+# Nothing on this list may be able to run another program, or the wrapper and
+# its verb guard are bypassed. That rules out awk (`system()`, `| getline`),
+# sed (GNU `e` command, `s///e`, `w`), xargs, env and find (`-exec`). `sort` can
+# exec through `--compress-program`, so it stays only behind SORT_SHIM. Output
+# redirection to a file is refused by claude's own permission check in
+# dontAsk mode (observed: `... > /tmp/x` was denied in every run that tried).
+FILTERS = ["jq", "head", "tail", "wc", "sort", "uniq", "grep", "cut", "tr", "cat", "column",
            "cd", "echo", "printf", "date", "ls", "true"]
+
+# GNU sort runs --compress-program; getopt also accepts any unambiguous prefix
+# (`--co`, `--compress`), so refuse every argument that starts with `--co`.
+SORT_SHIM = r"""#!/usr/bin/env bash
+# sort shim for one eval run (generated): refuses --compress-program.
+for a in "$@"; do
+  case "$a" in --) break;; --co*) echo "eval harness: sort --compress-program is not allowed" >&2; exit 2;; esac
+done
+exec /usr/bin/sort "$@"
+"""
 
 
 def q(p):
     return "'" + str(p).replace("'", "'\\''") + "'"
+
+
+def unlock(d):
+    """Make a locked bin/ dir writable again so a rerun can remove the run."""
+    if d.exists():
+        d.chmod(0o755)
 
 
 def check_no_ancestor_config(path):
@@ -161,6 +188,7 @@ def check_no_ancestor_config(path):
 def setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant):
     ws = batch_dir / task["id"] / f"{arm}-r{rep}"
     if ws.exists():
+        unlock(ws / "bin")
         shutil.rmtree(ws)
     for d in ("cfg/skills", "home", "work", "bin", "calls", "iso"):
         (ws / d).mkdir(parents=True, exist_ok=True)
@@ -181,9 +209,12 @@ def setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant):
         calls=q(ws / "calls"), budget=CALL_BUDGET, blocked=" ".join(BLOCKED),
         config_ok=" ".join(CONFIG_OK), cfg=q(cfg_by_tenant[task["meta"]["tenant"]]),
         iso=q(ws / "iso"), binary=q(lib.BIN / a["binary"]))
-    w = ws / "bin" / "dtctl"
-    w.write_text(wrapper)
-    w.chmod(0o755)
+    for name, body in (("dtctl", wrapper), ("sort", SORT_SHIM)):
+        (ws / "bin" / name).write_text(body)
+        (ws / "bin" / name).chmod(0o555)
+    # the agent cannot write files (no Write/Edit, redirection refused), but if
+    # it ever could, replacing bin/dtctl would bypass every guard: lock it
+    (ws / "bin").chmod(0o555)
 
     prompt = PREAMBLE + task["prompt"] + "\n"
     (ws / "prompt.md").write_text(prompt)
@@ -224,12 +255,13 @@ def run_one(env, batch_dir, task, arm, rep, cfg_by_tenant):
             rc = p.returncode
         except subprocess.TimeoutExpired:
             rc = "timeout"
+        finally:
+            # credentials do not stay in run dirs, even when the run is interrupted
+            (ws / "cfg" / ".credentials.json").unlink(missing_ok=True)
     meta = dict(task=task["id"], arm=arm, rep=rep, rc=rc, wall_s=round(time.time() - t0, 1),
                 model=env["EVAL_MODEL"], binary=ARMS[arm]["binary"],
                 started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)))
     (ws / "meta.json").write_text(json.dumps(meta, indent=2))
-    # credentials do not stay in run dirs
-    (ws / "cfg" / ".credentials.json").unlink(missing_ok=True)
     return meta
 
 

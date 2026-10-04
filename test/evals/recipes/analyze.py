@@ -19,9 +19,11 @@ from collections import defaultdict
 from pathlib import Path
 
 import lib
+from run import FILTERS
 
-ALLOWED_BASH = ("dtctl", "jq", "head", "tail", "wc", "sort", "uniq", "grep", "cut", "sed", "awk", "tr", "cat",
-                "column", "cd", "echo", "printf", "date", "ls", "true")
+# the policy in force now; batches run before awk/sed were dropped show any
+# use of them as off-policy, which is what they are under the current rules
+ALLOWED_BASH = ("dtctl", *FILTERS)
 
 
 def argv_of(f):
