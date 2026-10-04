@@ -1,0 +1,65 @@
+# Source: prior art (TUI problem detail, problem correlation detector analysis)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: problems-evidence
+  version: 1
+  tags: [problems, davis, events, evidence, detector, root-cause]
+spec:
+  summary: The Davis events behind one problem (P-xxxxx), with each detector's own query
+  description: >-
+    A problem is a bundle of Davis events, one per detector that fired. This
+    lists them, oldest first, with the entity each fired on and, where the
+    detector is query-based, the DQL it evaluates.
+  requires: [davis, davis-events]
+  # A search horizon: the events must have an update in the window.
+  timeframe: { default: 24h, max: 7d }
+  params:
+    id:
+      type: string
+      required: true
+      positional: true           # dtctl run problems-evidence P-2410123
+      pattern: '^P-\d+$'
+      description: Problem display ID
+  # Open events re-emit records on every refresh, so the latest record of each
+  # event is kept.
+  dql: |
+    fetch dt.davis.events
+    | filter event.id in [fetch dt.davis.problems | filter display_id == {{.id}}
+        | expand eid = dt.davis.event_ids | fields eid]
+    | sort timestamp desc
+    | dedup event.id
+    | fields event.start, event.end, event.status, event.name, event.type, event.category,
+        source = coalesce(dt.service.name, dt.entity.service.name, dt.entity.host.name,
+          dt.entity.process_group.name, k8s.workload.name, dt.entity.cloud_application.name),
+        endpoint.name, source_id = coalesce(toString(dt.smartscape_source.id), toString(dt.source_entity)),
+        root_cause_relevant = dt.davis.is_rootcause_relevant, frequent = dt.davis.is_frequent_event,
+        description = substring(event.description, from: 0, to: 400),
+        detector_config = dt.settings.schema_id, dt.query
+    | sort event.start asc
+    | limit 50
+  means: >-
+    The events that make up the problem, oldest first: the first one is where
+    it began, later ones are spread or consequences. event.type names the
+    detector (SERVICE_ERROR_RATE_INCREASED, HOST_OF_SERVICE_UNAVAILABLE, ...)
+    and source the entity it fired on (null for entity types without a name
+    field here: resolve source_id with meta-entity-id). dt.query is the detector's own query:
+    the detector is the specification, so read what actually alerted before
+    reading the problem title, and re-run it with `dtctl query` over the same
+    hours of earlier days to see whether the breach is new; it is null for
+    built-in and metric-event detectors, where detector_config names the
+    settings schema that defines them. frequent = true
+    marks an event Davis sees often on that entity, which is weak evidence;
+    root_cause_relevant = false marks one Davis did not use for the root
+    cause. Not shown: the logs and traces behind each event (problems-logs,
+    services-failures).
+  emptyMeans: >-
+    No event of this problem had an update in the window. The problem or its
+    events are older (re-run with --from 7d), the ID is mistyped, or the
+    caller cannot read dt.davis.events. Check the ID with problems-get.
+  next:
+    - recipe: problems-get
+      with: { id: "{{.id}}" }
+    - recipe: problems-logs
+      when: nonempty
+      with: { id: "{{.id}}" }

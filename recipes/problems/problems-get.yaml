@@ -56,3 +56,6 @@ spec:
     - recipe: problems-logs
       with: { id: "{{.id}}" }
       when: nonempty
+    - recipe: problems-evidence
+      with: { id: "{{.id}}" }
+      when: nonempty
