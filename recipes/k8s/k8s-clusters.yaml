@@ -34,13 +34,17 @@ spec:
     | limit 200
   means: >-
     One row per Kubernetes cluster Dynatrace currently knows, largest first.
-    k8s.cluster.name is the value --cluster expects, case-sensitive.
-    workloads counts Deployments, StatefulSets and DaemonSets only (no Jobs,
-    CronJobs or bare ReplicaSets). pods counts every pod object, including
+    k8s.cluster.name is the value --cluster expects, case-sensitive. workloads
+    counts Deployments, StatefulSets and DaemonSets only (no Jobs, CronJobs or
+    bare ReplicaSets). pods counts every pod object, including
     Succeeded/Failed ones that still exist. operator_version is the Dynatrace
     Operator version and is null when the cluster is not operator-managed. A
-    null nodes count means the cluster has no node objects left (it was removed
-    or its ActiveGate stopped reporting).
+    null nodes count means the cluster has no node objects left (it was
+    removed or its ActiveGate stopped reporting). Decision rule: a cluster
+    with a null nodes count or no operator_version is not reporting fully, so
+    other k8s recipes will be thin there. Not shown: health or load
+    (k8s-node-pressure, k8s-workload-status), clusters Dynatrace does not
+    monitor, and removed clusters.
   emptyMeans: >-
     No Kubernetes cluster is connected to this environment, so every other k8s
     recipe will be empty too. With --cluster, the name matched no cluster:

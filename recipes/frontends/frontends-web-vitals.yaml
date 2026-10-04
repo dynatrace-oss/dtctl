@@ -51,10 +51,15 @@ spec:
   means: >-
     Google Core Web Vitals at p75 over full page loads (page-summary events;
     SPA soft navigations are not included). LCP and INP are in milliseconds
-    (good below 2500 / 200, poor above 4000 / 500); CLS is unitless (good below
-    0.1, poor above 0.25). INP counts only page loads with an interaction (a
-    recorded INP of 0 means none and is left out), so read inp_p75_ms against with_interaction: a p75 over a handful of loads
-    is noise. Mobile frontends have no web vitals and do not appear.
+    (good below 2500 / 200, poor above 4000 / 500); CLS is unitless (good
+    below 0.1, poor above 0.25). INP counts only page loads with an
+    interaction (a recorded INP of 0 means none and is left out), so read
+    inp_p75_ms against with_interaction: a p75 over a handful of loads is
+    noise. Mobile frontends have no web vitals and do not appear. Decision
+    rule: a metric rated poor on a frontend with enough page loads is the
+    finding; a p75 over a handful of loads is not. Not shown: SPA soft
+    navigations, mobile frontends, per-page breakdowns, and the backend time
+    behind a slow LCP (services-latency).
   emptyMeans: >-
     No page load from this user type in the window. Either no web frontend is
     instrumented with the new RUM (RUM Classic data is not used here), the

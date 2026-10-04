@@ -34,16 +34,19 @@ spec:
     | limit 200
   means: >-
     The data-object catalog: type table is stored data, view is a predefined
-    query over other data. command is how to read it (metrics, smartscape.nodes
-    and smartscape.edges have their own commands, not fetch); usable_with lists
-    every command that accepts it (describe gives the fixed schema,
-    fieldsSnapshot the dynamic fields seen in 24h). has_access is true when
-    the caller can read the table and null for views, where access is
+    query over other data. command is how to read it (metrics,
+    smartscape.nodes and smartscape.edges have their own commands, not fetch);
+    usable_with lists every command that accepts it (describe gives the fixed
+    schema, fieldsSnapshot the dynamic fields seen in 24h). has_access is true
+    when the caller can read the table and null for views, where access is
     decided by the underlying data. Listing an object does not mean it holds
-    data: run a count over a short window for that. dt.entity.* views
-    (classic entity model) are hidden unless --entities is set; there are
-    several hundred, so combine it with --search, since the list stops at
-    200 rows. Environments on the Smartscape-only model have none.
+    data: run a count over a short window for that. dt.entity.* views (classic
+    entity model) are hidden unless --entities is set; there are several
+    hundred, so combine it with --search, since the list stops at 200 rows.
+    Environments on the Smartscape-only model have none. Decision rule: pick
+    the table, then run a short count before building on it. Not shown:
+    whether an object holds data, its fields (describe or fieldsSnapshot), and
+    its buckets and retention (meta-buckets).
   emptyMeans: >-
     No data object matches --search (it is a substring of the name or display
     name, e.g. log, span, davis, smartscape). Without --search an empty result

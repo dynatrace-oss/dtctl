@@ -34,12 +34,14 @@ spec:
   means: >-
     One row per (host, filesystem), fullest first. disk is the mount point (or
     drive letter). avg_used_pct and peak_used_pct are percent of the
-    filesystem's size; avail_gib is the space still available to
-    non-root users at the end of the window, in GiB. A small disk can be 95%
-    full with plenty of room and a large one 80% full with little: read
-    avail_gib, not only the percentage. Kubelet per-pod bind mounts of the
-    root filesystem are left out. For how fast a disk is filling, see
-    capacity-disk-forecast.
+    filesystem's size; avail_gib is the space still available to non-root
+    users at the end of the window, in GiB. A small disk can be 95% full with
+    plenty of room and a large one 80% full with little: read avail_gib, not
+    only the percentage. Kubelet per-pod bind mounts of the root filesystem
+    are left out. For how fast a disk is filling, see capacity-disk-forecast.
+    Decision rule: avail_gib against the disk's daily growth decides urgency,
+    not the percentage alone. Not shown: disks below the threshold, how fast
+    they fill (capacity-disk-forecast), and inode exhaustion.
   emptyMeans: >-
     No monitored disk averaged at or above the threshold. Hosts without
     OneAgent (full-stack or infrastructure mode) report no disk metrics at all:

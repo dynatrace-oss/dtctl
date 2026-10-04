@@ -96,10 +96,13 @@ spec:
     total_high count every vulnerability that matched (the same on every row);
     they are the answer to "how many", not the number of rows, which stops at
     the 50 highest-scoring. Narrow with --min-level, --stack, --component,
-    --cve or --entity to see the rest. This is the latest state each pair reported in
-    24h, not a current snapshot: report it as "latest known state", and note
-    that an entity which stopped reporting keeps its last (possibly stale)
-    state.
+    --cve or --entity to see the rest. This is the latest state each pair
+    reported in 24h, not a current snapshot: report it as "latest known
+    state", and note that an entity which stopped reporting keeps its last
+    (possibly stale) state. Decision rule: as security-vulns-open; an
+    open_since far in the past on an entity that no longer reports may already
+    be gone. Not shown: muted or resolved vulnerabilities, and whether an
+    entity is still running.
   emptyMeans: >-
     No vulnerability at or above --min-level was open and unmuted at any
     point of its latest report in 24h. If no filter was set, runtime

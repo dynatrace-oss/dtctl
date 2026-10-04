@@ -31,8 +31,11 @@ spec:
     The log records that carry this trace_id, oldest first, so they read in
     the order the request ran. span_id ties a line to a span from traces-get.
     source is the most specific name on the record (k8s workload, service,
-    process group, function, log group, log file, host, or failing all
-    of those the ingest channel). Capped at 200.
+    process group, function, log group, log file, host, or failing all of
+    those the ingest channel). Capped at 200. Decision rule: the first ERROR
+    line in time order is usually nearest the cause; lines from another
+    service on the path point at a dependency. Not shown: lines that do not
+    carry the trace ID (often most of them) and lines beyond 200.
   emptyMeans: >-
     No log line carries this trace id in the window. Most traces have no
     correlated logs: the line must be written inside the traced request by a

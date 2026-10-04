@@ -63,7 +63,11 @@ spec:
     OpenTelemetry service.name or process group instead, which services-list
     shows next to the service. A Kubernetes workload also matches pod logs
     that lack k8s.workload.name (recovered from the pod name), which is often
-    a fifth or more of a workload's lines.
+    a fifth or more of a workload's lines. Decision rule: read the newest
+    lines for the failure's own message, then follow its trace_id; 100 rows is
+    a tail, not a count. Not shown: older lines in the window (narrow with
+    --contains or --status), counts (logs-error-patterns), and lines of other
+    services on the same request (logs-for-trace).
   emptyMeans: >-
     No log record of this source matched in the window. The name has to match
     exactly and case-sensitively one of dt.service.name, service.name,

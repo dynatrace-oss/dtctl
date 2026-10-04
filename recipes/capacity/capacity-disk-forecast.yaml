@@ -65,10 +65,13 @@ spec:
     rotation, caches) zig-zag, and a straight line through them under- or
     overstates the risk; compare days_of_data with the window. Filesystems
     with data for less than half the window or none in the last two days, and
-    kubelet per-pod bind mounts, are left out.
-    A scope flag only sees data recorded while the field or tag was set: a
-    primary tag added recently shortens the history (see days_of_data) and
-    changes the fit.
+    kubelet per-pod bind mounts, are left out. A scope flag only sees data
+    recorded while the field or tag was set: a primary tag added recently
+    shortens the history (see days_of_data) and changes the fit. Decision
+    rule: act on days_to_ceiling shorter than the time it takes to clean up or
+    resize, and read avail_gib before the percentage. Not shown: disks that
+    are full but no longer growing (hosts-disk-saturation), inode exhaustion,
+    and disks whose trend is flat or falling.
   emptyMeans: >-
     No filesystem's used-space trend reaches the ceiling within the horizon:
     disks are flat, shrinking, or growing slowly. Raise --horizon-days or lower

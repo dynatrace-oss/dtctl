@@ -129,3 +129,16 @@ func itoa(i int) string {
 	}
 	return itoa(i/10) + digits[i%10:i%10+1]
 }
+
+// TestBuiltinRecipesMeansCarryTheirLimits holds every built-in recipe to the
+// authoring rule for means: besides what a row is, it names what the recipe
+// leaves out, in a sentence that starts with "Not shown:". An agent reads a
+// recipe's silence as an answer, so a root-only, current-only or capped
+// result has to say so.
+func TestBuiltinRecipesMeansCarryTheirLimits(t *testing.T) {
+	b := loadBuiltin(t)
+	for _, r := range b.Sorted() {
+		means := strings.Join(strings.Fields(r.Spec.Means), " ")
+		assert.Contains(t, means, "Not shown:", "%s: means has no \"Not shown:\" sentence", r.Name())
+	}
+}

@@ -65,15 +65,18 @@ spec:
     | limit 50
   means: >-
     One row per provider, risk level, finding type and title over the window;
-    detections is the number of findings (one-shot events, no dedup or
-    state). For Runtime Application Protection (provider OneAgent), actions
-    says whether attacks were Blocked or only Audited (monitored); finding.type
-    is the attack class (SQL injection, SSRF, JNDI injection, CMD injection).
-    For Automated Detections, title is the rule name. attacker_ips counts
-    distinct source IPs (0 when the provider reports none); targets counts the
-    distinct attacked objects, example_target names one. External providers
-    often deliver in batches a few times a day, so a 2h window can miss them.
-    Detections cannot be muted or dismissed in this data.
+    detections is the number of findings (one-shot events, no dedup or state).
+    For Runtime Application Protection (provider OneAgent), actions says
+    whether attacks were Blocked or only Audited (monitored); finding.type is
+    the attack class (SQL injection, SSRF, JNDI injection, CMD injection). For
+    Automated Detections, title is the rule name. attacker_ips counts distinct
+    source IPs (0 when the provider reports none); targets counts the distinct
+    attacked objects, example_target names one. External providers often
+    deliver in batches a few times a day, so a 2h window can miss them.
+    Detections cannot be muted or dismissed in this data. Decision rule:
+    Blocked attacks are handled; Audited ones on an exposed target are the
+    finding. Not shown: vulnerabilities (security-vulns-open), detections
+    older than the window, and dismissal or mute state.
   emptyMeans: >-
     No detection in the window. Detections are sparse and external providers
     deliver in batches, so widen to --from 24h, then 7d, before concluding

@@ -46,7 +46,9 @@ spec:
     that succeeded are not listed and are not failures: most exceptions are
     caught and handled. Rows are stored spans, so with sampling not every
     failed request appears. Capped at 50 rows; use services-failures for
-    totals.
+    totals. Not shown: requests that succeeded with an error span below them,
+    totals (services-failures), and failed requests whose spans were not
+    stored.
   emptyMeans: >-
     No failed request in the window. If you named a service, check the name
     first: dt.service.name is exact and case-sensitive, so a typo looks like a

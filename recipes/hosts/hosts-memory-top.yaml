@@ -46,7 +46,11 @@ spec:
     is where the OOM killer starts. swap_used_pct is null when the host has no
     swap; above about 30% the host is paging. A Kubernetes node near 100% here
     while its pods sit below their limits points at node over-commit, see
-    k8s-node-pressure.
+    k8s-node-pressure. Decision rule: min_avail_gib near 0 or swap_used_pct
+    above about 30% is memory pressure; a high used_pct with healthy
+    min_avail_gib is a busy host, not a problem. Not shown: which process uses
+    the memory, container limits (k8s-node-pressure, k8s-pod-restarts) and the
+    trend over days.
   emptyMeans: >-
     No host reported memory metrics for this scope and window (or none reached
     --min-pct). Hosts need OneAgent (full-stack or infrastructure mode);

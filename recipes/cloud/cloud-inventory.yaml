@@ -47,8 +47,12 @@ spec:
     (subscriptions, projects) and regions (locations) it spans; with --type,
     one row per account and region. Type names follow the provider's API path
     (e.g. AZURE_MICROSOFT_COMPUTE_VIRTUALMACHINES), and sub-resources (rules,
-    attachments, configurations) count as types of their own. An empty
-    account or region is a global or account-less resource.
+    attachments, configurations) count as types of their own. An empty account
+    or region is a global or account-less resource. Decision rule: a type or
+    region that should not be there (an unexpected region, a forgotten
+    account) is the finding; counts are what exists now, not what was used.
+    Not shown: resources of accounts without a cloud integration, deleted
+    resources, and usage or cost.
   emptyMeans: >-
     Smartscape has no resources of this provider or type. Without --type that
     means this environment monitors nothing of the provider (no cloud

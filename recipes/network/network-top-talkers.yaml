@@ -42,7 +42,10 @@ spec:
     bits), the unit link speeds are quoted in. Traffic between containers on
     the same host never reaches a NIC and is not counted. This says how much,
     not with whom: network-host-connections breaks one host's traffic down by
-    peer from OneAgent network flows.
+    peer from OneAgent network flows. Decision rule: peak_mbit_s near the link
+    speed is saturation; a high total with a low peak is steady load. Not
+    shown: peers and processes (network-host-connections),
+    container-to-container traffic on one host, and packet loss.
   emptyMeans: >-
     No host reported NIC traffic for this scope and window. Hosts need OneAgent
     (full-stack or infrastructure mode); discovery-mode hosts and agentless

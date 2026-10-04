@@ -75,7 +75,11 @@ spec:
     or NotReady(false|unknown) in force at the end of the window (the last
     three intervals); such nodes sort first. Nodes that stopped reporting
     before the end of the window (scaled down, deleted) are left out. Units:
-    percent, cores, GiB.
+    percent, cores, GiB. Decision rule: requested near 100% blocks scheduling,
+    used near or above 100% of requested evicts and kills; a pressure
+    condition is acted on by the kubelet already. Not shown: which pods use
+    the capacity, and pods that failed to schedule (k8s-warning-events,
+    FailedScheduling).
   emptyMeans: >-
     No node reached the threshold on requested or used CPU/memory and none
     reports a pressure or not-Ready condition at the end of the window. Nodes whose

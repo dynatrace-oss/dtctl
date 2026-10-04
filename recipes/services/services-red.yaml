@@ -37,8 +37,12 @@ spec:
     percentile response time in milliseconds (the metric is stored in
     microseconds; p95_ms is already converted). Failures follow Dynatrace
     failure detection, not raw HTTP 5xx counts: a 404 may or may not count.
-    With --namespace/--cluster, services outside Kubernetes drop out. Capped at
-    50 services.
+    With --namespace/--cluster, services outside Kubernetes drop out. Capped
+    at 50 services. Decision rule: compare failure_rate_pct and p95_ms with
+    the same service in an earlier window before calling either high; the
+    busiest services are not necessarily the broken ones. Not shown:
+    per-endpoint numbers (services-latency), why requests fail
+    (services-failures), and services beyond the top 50.
   emptyMeans: >-
     No requests were recorded for the selected services in the window. Service
     names match dt.service.name exactly and case-sensitively, so a typo looks

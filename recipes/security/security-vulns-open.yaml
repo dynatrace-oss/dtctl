@@ -96,7 +96,11 @@ spec:
     total_high count every vulnerability that matched (the same on every row);
     they are the answer to "how many", not the number of rows, which stops at
     the 50 highest-scoring. Narrow with --min-level, --stack, --component,
-    --cve or --entity to see the rest.
+    --cve or --entity to see the rest. Decision rule: a high DSS with
+    function_in_use and public_network true is the one to fix first. Not
+    shown: muted or resolved vulnerabilities, vulnerabilities of entities that
+    did not report in the window (security-vulns-open-latest), and fix
+    versions.
   emptyMeans: >-
     Nothing open and unmuted at or above --min-level in the current 30m
     snapshot, which is good news only if the snapshot has data. If runtime

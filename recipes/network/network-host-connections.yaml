@@ -48,18 +48,22 @@ spec:
         mib = round(toDouble(bytes) / 1048576, decimals: 1), flows, new_sessions,
         resets, timeouts, avg_rtt_ms = round(avg_rtt_ms, decimals: 1)
   means: >-
-    One row per (local process, direction, peer IP, server port, transport)
-    on the named host, by traffic. direction is from this host's side:
-    outbound = it opened the connection (the peer is the server and
-    server_port is the peer's listening port), inbound = the peer connected to
-    it (server_port is this host's listening port). mib is bytes in both
-    directions in MiB (1024^2 bytes). resets and timeouts count TCP sessions
-    that ended that way; compare them with new_sessions. avg_rtt_ms is the
-    mean TCP round-trip time in milliseconds. peer_host is filled only when
-    the peer IP belongs to a monitored host; pod IPs and external addresses
-    stay unresolved. With the default reportedConnections: auto setting
-    OneAgent reports mainly problem connections, so totals understate the
-    real traffic; network-top-talkers has the complete byte counts.
+    One row per (local process, direction, peer IP, server port, transport) on
+    the named host, by traffic. direction is from this host's side: outbound =
+    it opened the connection (the peer is the server and server_port is the
+    peer's listening port), inbound = the peer connected to it (server_port is
+    this host's listening port). mib is bytes in both directions in MiB
+    (1024^2 bytes). resets and timeouts count TCP sessions that ended that
+    way; compare them with new_sessions. avg_rtt_ms is the mean TCP round-trip
+    time in milliseconds. peer_host is filled only when the peer IP belongs to
+    a monitored host; pod IPs and external addresses stay unresolved. With the
+    default reportedConnections: auto setting OneAgent reports mainly problem
+    connections, so totals understate the real traffic; network-top-talkers
+    has the complete byte counts. Decision rule: resets or timeouts high
+    against new_sessions to one peer is the broken dependency; bytes alone
+    rank load, not trouble. Not shown: traffic of processes without network
+    flow reporting, peers behind pod IPs or external addresses by name, and
+    total volume (network-top-talkers).
   emptyMeans: >-
     No network flow from this host is in the window. Either the host name is
     not spelled exactly as host.name (case-sensitive; take it from

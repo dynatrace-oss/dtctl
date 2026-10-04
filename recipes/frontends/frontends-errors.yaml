@@ -47,13 +47,18 @@ spec:
     Errors per frontend and type, ranked by occurrences, with the estimated
     number of sessions that hit them. Exceptions and crashes are grouped by
     Dynatrace's fingerprint (error.id) and show the last message; ANRs, whose
-    text differs per occurrence, are one row per frontend; the rest are grouped
-    by their text. error is Dynatrace's display
-    name when it has one, else the exception message (exceptions, crashes,
-    ANRs), "status method URL" for failed requests (the query string is
-    dropped; IDs in the path split a group; status 0 means the request was aborted or never
-    got a response, often an ad blocker or navigation), or the CSP directive and
-    blocked URI. Requests to third-party domains count too.
+    text differs per occurrence, are one row per frontend; the rest are
+    grouped by their text. error is Dynatrace's display name when it has one,
+    else the exception message (exceptions, crashes, ANRs), "status method
+    URL" for failed requests (the query string is dropped; IDs in the path
+    split a group; status 0 means the request was aborted or never got a
+    response, often an ad blocker or navigation), or the CSP directive and
+    blocked URI. Requests to third-party domains count too. Decision rule:
+    rank by affected sessions, not occurrences: an error that one broken
+    client repeats thousands of times can touch a single session. Not shown:
+    errors of frontends without RUM, backend failures behind a failed request
+    (services-failures), and errors from synthetic monitors and bots
+    separately.
   emptyMeans: >-
     No RUM error of this kind from this user type in the window. That is good
     news only if the frontend has traffic: check frontends-list, since a

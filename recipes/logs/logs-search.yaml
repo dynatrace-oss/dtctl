@@ -45,7 +45,10 @@ spec:
     the record: k8s workload, service, process group, function, log group, log
     file or host, else the ingest channel. The match is a case-insensitive
     substring of content only, not of attributes. trace_id, when set, opens
-    the request with traces-get.
+    the request with traces-get. Decision rule: use this to find where a text
+    appears, then switch to logs-error-patterns or logs-for-service for how
+    often. Not shown: counts, matches in attributes rather than the line, and
+    matches beyond the newest 50.
   emptyMeans: >-
     No log line in the window contains the text (case-insensitive substring of
     content; attributes such as service or host names are not searched). Widen

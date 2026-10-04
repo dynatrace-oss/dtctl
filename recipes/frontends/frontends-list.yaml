@@ -32,13 +32,17 @@ spec:
     | sort real_user_sessions desc
     | limit 100
   means: >-
-    One row per frontend that sent RUM events in the window. real_user_sessions
-    is an estimate (countDistinct) over real users only; views, page_loads and
-    errors are event counts across all user types, and synthetic_or_robot
-    counts the views/loads/errors from synthetic monitors and bots. Mobile
-    apps have views but no page_loads. A row with an empty frontend.name holds
-    events not attributed to a frontend. Use frontend.name verbatim in the
-    other frontends-* recipes.
+    One row per frontend that sent RUM events in the window.
+    real_user_sessions is an estimate (countDistinct) over real users only;
+    views, page_loads and errors are event counts across all user types, and
+    synthetic_or_robot counts the views/loads/errors from synthetic monitors
+    and bots. Mobile apps have views but no page_loads. A row with an empty
+    frontend.name holds events not attributed to a frontend. Use frontend.name
+    verbatim in the other frontends-* recipes. Decision rule:
+    real_user_sessions is the size of a frontend; a high synthetic_or_robot
+    share means its numbers are mostly monitors. Not shown: performance
+    (frontends-web-vitals), errors per frontend (frontends-errors), and
+    frontends without RUM.
   emptyMeans: >-
     No frontend sent RUM events in the window. A low-traffic frontend can be
     idle for hours, so widen --from (e.g. 7d) first. Otherwise no application

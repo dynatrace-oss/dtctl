@@ -60,12 +60,15 @@ spec:
     runtime is the provider's identifier (python3.12, nodejs20.x,
     Python|3.12); "container image" means the function ships as an image,
     "(not reported)" means the integration did not collect the resource
-    configuration (a lightweight poller) or, on Azure, a Windows Function
-    App. with_dynatrace_layer
-    counts Lambda functions with a Dynatrace layer attached, i.e.
-    instrumented by OneAgent (always 0 for Azure and GCP, which are not
-    detected this way). Check runtimes against the provider's deprecation
-    schedule yourself; this recipe does not judge them.
+    configuration (a lightweight poller) or, on Azure, a Windows Function App.
+    with_dynatrace_layer counts Lambda functions with a Dynatrace layer
+    attached, i.e. instrumented by OneAgent (always 0 for Azure and GCP, which
+    are not detected this way). Check runtimes against the provider's
+    deprecation schedule yourself; this recipe does not judge them. Decision
+    rule: a runtime on the provider's deprecation list is the finding; compare
+    with_dynatrace_layer with functions to see the instrumentation gap. Not
+    shown: invocations, errors or cost per function, and functions of accounts
+    without a cloud integration.
   emptyMeans: >-
     Smartscape has no function of the selected provider: either there are
     none, or that cloud integration is not configured (run cloud-inventory

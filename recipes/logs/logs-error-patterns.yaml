@@ -50,18 +50,21 @@ spec:
     | sort records desc
     | limit 20
   means: >-
-    One row per message template, most frequent first. pattern is the
-    record's message with timestamps (<ts>), IP addresses (<ip>), UUIDs (<id>),
-    hex ids (<hex>) and numbers (<n>) masked, cut at 200 characters; for a JSON
-    line it is the message field plus " | " and the error field, so a JSON line
-    and its plain-text twin share a row. example is the newest real record
-    (cut at 500 characters). records counts all matching records, errors those
-    with status ERROR (the same unless --min-level WARN). sources counts the
+    One row per message template, most frequent first. pattern is the record's
+    message with timestamps (<ts>), IP addresses (<ip>), UUIDs (<id>), hex ids
+    (<hex>) and numbers (<n>) masked, cut at 200 characters; for a JSON line
+    it is the message field plus " | " and the error field, so a JSON line and
+    its plain-text twin share a row. example is the newest real record (cut at
+    500 characters). records counts all matching records, errors those with
+    status ERROR (the same unless --min-level WARN). sources counts the
     distinct emitters (the same attribution as logs-error-sources), so 1 means
     one workload or service says it. Counts are records, so one chatty retry
     loop can dominate: read the top rows as what is said most, not what is
     most severe, and check whether a template is new before blaming it (a
-    message that was there yesterday did not start today's incident).
+    message that was there yesterday did not start today's incident). Not
+    shown: whether a template is new (logs-error-templates-new compares with
+    the period before), lines below the chosen level, and errors that never
+    reached a log (services-failures).
   emptyMeans: >-
     No record has the normalized status ERROR (or WARN with --min-level WARN)
     in the window; with --service, none of that source (the name must match

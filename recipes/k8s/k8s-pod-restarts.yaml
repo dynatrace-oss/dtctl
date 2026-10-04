@@ -33,12 +33,14 @@ spec:
     restarts >= oom_kills. OOM kills mean the memory limit is too low or the
     process leaks. Restarts without OOM kills usually mean a crash on start or
     a failing liveness probe; CrashLoopBackOff caps a looping container at
-    about 12 restarts per hour, so ~12/h is a steady crash loop. Readiness-probe
-    failures are not restarts and do not appear here. Pods of the same workload
-    (k8s.workload.name) failing together point at the workload, not the node.
-    It does not show failing Jobs and CronJobs: their pods usually fail and are
-    replaced rather than restarted, so a backing-off CronJob has no restarts
-    here; k8s-warning-events shows it (BackOff, BackoffLimitExceeded).
+    about 12 restarts per hour, so ~12/h is a steady crash loop.
+    Readiness-probe failures are not restarts and do not appear here. Pods of
+    the same workload (k8s.workload.name) failing together point at the
+    workload, not the node. It does not show failing Jobs and CronJobs: their
+    pods usually fail and are replaced rather than restarted, so a backing-off
+    CronJob has no restarts here; k8s-warning-events shows it (BackOff,
+    BackoffLimitExceeded). Not shown: pods deleted before the window ended,
+    and the crash reason (logs-for-service on the workload).
   emptyMeans: >-
     No pod restarted at least min_restarts times and none was OOM-killed in the
     window. That is not an all-clear: pods of a failing Job or CronJob, pods

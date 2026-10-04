@@ -32,9 +32,13 @@ spec:
     One row per span, earliest first; the span without span.parent_id (or the
     first request.is_root_span) is the entry point. duration_ms includes the
     time spent in child spans, so the slow part is the deepest slow span, not
-    the first one. request.is_failed is set on request root spans only. A trace
-    that crosses services has one request root per service. Capped at 200
-    spans: a longer trace is cut off at the end.
+    the first one. request.is_failed is set on request root spans only. A
+    trace that crosses services has one request root per service. Capped at
+    200 spans: a longer trace is cut off at the end. Decision rule: walk from
+    the root to the deepest span whose own time (its duration minus its
+    children's) is large, or the deepest failed span; that is where the time
+    or the failure is. Not shown: spans beyond 200, logs (logs-for-trace), and
+    spans that were sampled out.
   emptyMeans: >-
     No span with this trace id in the window. The trace is older than the
     window (pass --from to reach further back, up to span retention), it was

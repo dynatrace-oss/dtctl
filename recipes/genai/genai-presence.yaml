@@ -52,7 +52,10 @@ spec:
     model often appears twice (with and without a region prefix, or under two
     provider spellings) when two instrumentations record each call; those are
     the same traffic, not two models. The "(evaluations)" row counts LLM
-    evaluation bizevents and only appears unscoped.
+    evaluation bizevents and only appears unscoped. Decision rule: a model
+    that appears here but has no with_tokens cannot be costed by
+    genai-token-usage. Not shown: token volume (genai-token-usage), latency,
+    errors or prompt content.
   emptyMeans: >-
     No span in the window carries any gen_ai attribute: the applications in
     scope are not instrumented for AI observability (or send no traffic in the

@@ -73,7 +73,10 @@ spec:
     volume needs the included-volume deduction, and summing raw usage would
     overstate it. Files types are listed separately; Account Management adds
     them to the matching Events capability. No prices: costs depend on the
-    contract rate card.
+    contract rate card. Decision rule: compare a capability with the same days
+    of an earlier window before calling it a spike, since ingest and query
+    follow the week. Not shown: Metrics and Traces ingest, prices, and which
+    query, bucket or user caused the usage.
   emptyMeans: >-
     No billing usage events in these days. This does NOT mean the capability is
     unlicensed or free. Check read access to dt.system.events and that the

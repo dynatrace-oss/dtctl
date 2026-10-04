@@ -43,7 +43,11 @@ spec:
     readiness), "replica failure" = the controller cannot even create pods
     (quota, admission webhook); message carries the controller's reason. A
     workload mid-rollout shows briefly as degraded with updated < desired; one
-    that stays is not converging. Workloads scaled to 0 never appear.
+    that stays is not converging. Workloads scaled to 0 never appear. Decision
+    rule: down beats degraded beats rollout stuck; a workload degraded only
+    while updated < desired is converging. Not shown: workloads scaled to 0,
+    Jobs and CronJobs, and why pods are not ready (k8s-warning-events,
+    k8s-pod-restarts).
   emptyMeans: >-
     Every Deployment, StatefulSet and DaemonSet in scope has all desired pods
     ready and no stuck rollout. Jobs and CronJobs are not covered. An empty

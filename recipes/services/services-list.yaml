@@ -42,8 +42,12 @@ spec:
     k8s.workload.name are filled only when the service runs in exactly one;
     workload_count says how many it spans (0 = not on Kubernetes). Logs are
     usually tagged with the workload, not the service name, so pass the
-    workload to logs-for-service when the service name finds nothing. Capped at
-    100 rows; narrow with a name fragment or --namespace.
+    workload to logs-for-service when the service name finds nothing. Capped
+    at 100 rows; narrow with a name fragment or --namespace. Decision rule:
+    pick the exact dt.service.name from here for the other services-* recipes;
+    a service with failures well above its usual share is a lead. Not shown:
+    services that served no requests in the window, latency (services-red,
+    services-latency), and services beyond 100 rows.
   emptyMeans: >-
     No service received a request in the window. Either nothing is instrumented
     (no OneAgent or OpenTelemetry traces reach this environment), the window is

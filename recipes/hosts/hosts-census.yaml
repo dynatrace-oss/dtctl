@@ -36,9 +36,13 @@ spec:
     hosts; host_group "(none)" means the OneAgent was installed without one.
     The host_group values are what --host-group takes. k8s_nodes counts hosts
     that are Kubernetes nodes. logical_cores and memory_gib are summed totals
-    (memory in GiB, rounded); they are null where the agent did not report them.
-    At most 100 rows, largest groups first: on big environments narrow with a
-    scope flag to see the rest.
+    (memory in GiB, rounded); they are null where the agent did not report
+    them. At most 100 rows, largest groups first: on big environments narrow
+    with a scope flag to see the rest. Decision rule: a host group or OS with
+    an unexpected count is the finding; compare with the cloud provider's
+    inventory for hosts without OneAgent. Not shown: hosts without OneAgent,
+    hosts gone from the topology, and load or health (hosts-cpu-top,
+    hosts-memory-top).
   emptyMeans: >-
     No host is in the topology for this scope. Without scope flags that means
     no OneAgent (or host-reporting integration) is connected. With them, a

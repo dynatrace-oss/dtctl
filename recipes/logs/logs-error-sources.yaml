@@ -56,6 +56,10 @@ spec:
     host.name values (0 = not host-bound, e.g. serverless or forwarded logs).
     status ERROR is the normalized level; a source can be noisy without being
     broken, so compare against its usual volume. Capped at 25 sources.
+    Decision rule: a source whose volume jumped against an earlier window is a
+    lead, a source that is always this loud is not. Not shown: what the errors
+    say (logs-error-patterns), sources below the top 25, and services that
+    fail without logging (services-failures).
   emptyMeans: >-
     No record with the normalized status ERROR in the window. That is not proof
     of health: sources that log failures at another level, or whose level is

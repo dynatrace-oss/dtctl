@@ -41,9 +41,12 @@ spec:
     keys; null means not seen there. A recipe scoped with --tag only sees
     records that carry the key, so a low percentage means a mostly empty
     result. Values are not listed (DQL cannot pivot on a key chosen at run
-    time): list them with dtctl query 'fetch logs | summarize count(),
-    by: {primary_tags.<key>}' or the matching data object. Davis problems
-    and events carry no primary tags.
+    time): list them with dtctl query 'fetch logs | summarize count(), by:
+    {primary_tags.<key>}' or the matching data object. Davis problems and
+    events carry no primary tags. Decision rule: a key carried by most of the
+    data object you query is safe for --tag; a low percentage empties the
+    result. Not shown: tag values, cloud provider tags (cloud-untagged) and
+    keys on Davis problems and events.
   emptyMeans: >-
     No primary Grail tag is set on logs, spans, metrics or Smartscape nodes in
     the last 24h: primary tags are customer-defined and this environment has

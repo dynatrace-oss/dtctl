@@ -37,14 +37,18 @@ spec:
     | limit 50
   means: >-
     Token volume per provider and model over the window; calls is the number
-    of LLM calls. Duplicate spans of one call (same trace and token counts) are
-    counted once, but a model can still appear under two spellings or with an
-    empty provider when instrumentations name it differently.
+    of LLM calls. Duplicate spans of one call (same trace and token counts)
+    are counted once, but a model can still appear under two spellings or with
+    an empty provider when instrumentations name it differently.
     cache_read_tokens is part of input_tokens (prompt caching), null when the
     instrumentation does not report it. Turning tokens into cost needs
-    per-model prices from the user; never assume prices. The default window
-    is 2h because a span scan grows fast on busy environments; widen it with
-    --from once a first run shows the scanned volume is acceptable.
+    per-model prices from the user; never assume prices. The default window is
+    2h because a span scan grows fast on busy environments; widen it with
+    --from once a first run shows the scanned volume is acceptable. Decision
+    rule: compare a model's input_tokens per call over time before calling it
+    a cost problem; a model under two spellings is one model. Not shown:
+    prices or cost, prompts and completions, and calls of instrumentations
+    that do not report tokens (genai-presence shows which do).
   emptyMeans: >-
     No span carries token usage. This is NOT "no AI traffic": run
     genai-presence. If no span has a GenAI model at all, the app is not

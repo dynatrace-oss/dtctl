@@ -45,16 +45,18 @@ spec:
     span_status or custom_rule. http.response.status_code and exception.type
     are empty when the protocol has none or no exception was recorded.
     failures is extrapolated from sampled spans, so it approximates the real
-    count; services-red has the exact metric. A proxy and the service behind it
-    both report the same failed request, so one incident can appear under two
-    services. Root, not deep: only requests that failed as a whole are
+    count; services-red has the exact metric. A proxy and the service behind
+    it both report the same failed request, so one incident can appear under
+    two services. Root, not deep: only requests that failed as a whole are
     counted. A span deeper in the call chain with an error status or an
     exception (most exceptions are caught and the request still succeeds) is
     not a failure here; that is the normal background, and blaming it needs a
     failed root above it. The group to chase is the one with the most failures
     and a last_seen inside the incident; example_trace_id is its most recent
     failed trace, open it with traces-get to find the deepest failing span.
-    Capped at 25 groups.
+    Capped at 25 groups. Not shown: failures of spans below a request that
+    succeeded overall, whether a group is new (services-failure-signatures
+    compares with the period before), and services that are not traced.
   emptyMeans: >-
     No failed request in the window. If you named a service, check the name
     first: dt.service.name is exact and case-sensitive, so a typo looks like a

@@ -54,15 +54,19 @@ spec:
     average CPU usage (percent of all cores); trend_pct is that line's value
     today, daily_growth its slope in percentage points per day, and
     days_to_ceiling = (ceiling - trend_pct) / daily_growth, 0 when the trend
-    is already at or above the ceiling. latest_day_pct is the most recent day's
-    average and includes today's partial day. A daily average hides peaks: a
-    host can saturate at its daily peak long before its average reaches the
-    ceiling. Hosts with data for less than half the window, or none in the
-    last two days, are left out. A straight line ranks risk; it is not a
-    seasonal forecast.
-    A scope flag only sees data recorded while the field or tag was set: a
-    primary tag added recently shortens the history (see days_of_data) and
-    changes the fit.
+    is already at or above the ceiling. latest_day_pct is the most recent
+    day's average and includes today's partial day. A daily average hides
+    peaks: a host can saturate at its daily peak long before its average
+    reaches the ceiling. Hosts with data for less than half the window, or
+    none in the last two days, are left out. A straight line ranks risk; it is
+    not a seasonal forecast. A scope flag only sees data recorded while the
+    field or tag was set: a primary tag added recently shortens the history
+    (see days_of_data) and changes the fit. Decision rule: act on
+    days_to_ceiling shorter than the time it takes to add capacity; a
+    latest_day_pct far above trend_pct is a recent jump the line has not
+    caught up with. Not shown: peaks within a day (hosts-cpu-top), memory and
+    disk (hosts-memory-top, capacity-disk-forecast), and hosts whose trend is
+    flat or falling.
   emptyMeans: >-
     No host's CPU trend reaches the ceiling within the horizon: flat or falling
     usage, or too little history (each host needs data for at least half the

@@ -44,8 +44,10 @@ spec:
     waiting on disk or network storage, not computing (Linux only, null on
     Windows). steal_pct above a few percent means the hypervisor gives the VM
     less CPU than it asks for: a noisy neighbour or an exhausted burst credit,
-    not a workload problem. A host that sits near 100% average is saturated;
-    a high peak with a low average is a spike.
+    not a workload problem. A host that sits near 100% average is saturated; a
+    high peak with a low average is a spike. Not shown: which process uses the
+    CPU, hosts that stopped reporting during the window, and the trend over
+    days (capacity-cpu-saturation).
   emptyMeans: >-
     No host reported CPU metrics for this scope and window (or none reached
     --min-pct). Hosts need OneAgent (full-stack or infrastructure mode);

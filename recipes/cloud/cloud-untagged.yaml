@@ -45,17 +45,21 @@ spec:
     | limit 100
   means: >-
     One row per resource type with at least one resource lacking tags (or
-    lacking --key), out of the account-bound resources of that type
-    (regions, zones and other provider reference data are excluded).
-    accounts_affected counts accounts, subscriptions or projects with such
-    resources. Many sub-resources (rules, attachments, configurations,
-    managed policies) cannot carry tags at all: type_has_tags = true means
-    other resources of the same type are tagged, so the gap is fixable;
-    false means nothing of that type is tagged, which may be a limitation
-    of the type. A key is matched exactly as the provider stores it (AWS and
-    Azure keys are case-sensitive; GCP labels are lowercase). These are cloud
-    provider tags, not Dynatrace primary tags. A misspelled --key makes
-    nearly every resource count as untagged.
+    lacking --key), out of the account-bound resources of that type (regions,
+    zones and other provider reference data are excluded). accounts_affected
+    counts accounts, subscriptions or projects with such resources. Many
+    sub-resources (rules, attachments, configurations, managed policies)
+    cannot carry tags at all: type_has_tags = true means other resources of
+    the same type are tagged, so the gap is fixable; false means nothing of
+    that type is tagged, which may be a limitation of the type. A key is
+    matched exactly as the provider stores it (AWS and Azure keys are
+    case-sensitive; GCP labels are lowercase). These are cloud provider tags,
+    not Dynatrace primary tags. A misspelled --key makes nearly every resource
+    count as untagged. Decision rule: chase rows with type_has_tags = true
+    first, since tagging works there and was missed. Not shown: which
+    resources are untagged (one row per type, not per resource), Dynatrace
+    primary tags (meta-primary-tags), and accounts without a cloud
+    integration.
   emptyMeans: >-
     Every account-bound resource of this provider carries tags (or the
     --key). An empty result is also what a missing cloud integration gives:
