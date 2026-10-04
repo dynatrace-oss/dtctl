@@ -32,6 +32,13 @@ ground truth go to `$EVAL_RUNS_DIR`, outside the repo.
 | A2 | origin/main | main | yes | "load the dtctl skill first" |
 | B2 | this tree | this tree | yes | "load the dtctl skill first" |
 | B3 | this tree | this tree | yes | B2 plus "look for a recipe before writing DQL" |
+| BP (v2 "B+") | this tree | this tree | yes, each domain skill with a one-line pointer to its recipes | none |
+| BR (v2) | this tree | this tree | yes | only "look for a recipe before writing DQL" |
+
+"This tree" is the working tree, or the commit in `RECIPES_REF` when
+`build.sh` is run with it. v2 runs the task set in `tasks/v2.txt`
+(`run.py --taskset v2`), with the investigator model set by `--model`. See
+the v2 preregistration in the write-up.
 
 A, B and C answer the question as asked. A2, B2 and B3 are diagnostic: they
 measure what recipes are worth once an agent reads the skill or uses the

@@ -428,3 +428,263 @@ Batches in this write-up:
 
 They were pooled with `analyze.py full nudge upper rep3`. Runs, transcripts
 and ground truth stay outside the repository.
+
+---
+
+# v2: after the discovery, framework and content work
+
+This section was written and committed **before any v2 run**, pilot
+included. It fixes the hypotheses, arms, tasks, ground truth, analysis and
+the decision rule. The results are appended below it later and must not
+change anything above "v2 results". A deviation from this plan is reported
+as a deviation, together with its reason.
+
+## v2 question
+
+v1 found that agents never reached recipes. Since then the branch has
+changed in three ways:
+
+- **Discovery.** Agent-mode `query` envelopes point at matching recipes.
+  `get recipes --search` is more precise and says when nothing matches. The
+  dtctl skill has a question → recipe table, and its DQL reference points at
+  recipes. Recipes are listed in `dtctl commands`.
+- **Framework.** Recipe envelopes report truncated scans, single-row all-zero
+  summaries and row caps honestly. Recipes support focus-vs-baseline windows
+  and list binding in next-step suggestions.
+- **Content.** About 10 new recipes: failure semantics, exceptions,
+  workload-scoped logs, problem → evidence, new error templates vs a
+  baseline, recent changes, latency shift. Fixes to v1 defects.
+
+The question is the user's: **does this whole thing bring a benefit for AI
+agents?** If not, it makes no sense to ship it.
+
+## Hypotheses
+
+- **H1 (primary).** On the primary model, arm B scores higher than control A
+  (B − A > 0), or scores the same at a lower cost.
+- **H2.** In arm B, agents run a recipe unprompted on a material share of
+  covered tasks. v1: 0 of 168.
+- **H3.** B+ (the `dt-*` skills point at recipes) scores higher than B.
+- **H4.** Recipes do no harm on tasks that no recipe covers.
+- **H5 (secondary model).** B − A on Sonnet points the same way as on Haiku.
+- **H6 (headroom).** BR (B plus an explicit recipe nudge) shows how much of
+  the recipes' value discovery still leaves on the table.
+
+## Decision rule
+
+Recipes **bring a benefit** if and only if, on the primary model:
+
+1. **either** the mean B − A lift is at least +0.20 points (0–3 scale) and
+   its 95% bootstrap CI excludes 0,
+2. **or** B is non-inferior (CI lower bound of B − A above −0.10) **and**
+   cheaper: either mean dtctl calls per run in B are at most 0.75× A's and
+   the paired calls-difference CI excludes 0, or the paired cost-per-run
+   difference has a 95% CI upper bound below 0,
+3. **and in both cases** there is no harm on uncovered tasks: the CI lower
+   bound of B − A over the five uncovered tasks is above −0.15.
+
+The same rule is also reported for B+ vs A, as the "with domain-skill
+pointers" variant. The verdict is reported either way.
+
+## v2 arms
+
+No arm gets a "use recipes" instruction, except BR, which exists to measure
+headroom. The user prompt is byte-identical across arms. It is the v1
+preamble with one correction: the tool list no longer names `sed` and `awk`,
+which v1 had already removed from the allow-list.
+
+| Arm | dtctl | dtctl skill | `dt-*` skills | Appended system prompt |
+|---|---|---|---|---|
+| **A** (control) | `origin/main` | main's | as installed | none |
+| **B** | the build under test | **the build's** | as installed | none |
+| **B+** (`BP`) | the build under test | the build's | as installed, plus one recipe-pointer line per domain skill | none |
+| BR | the build under test | the build's | as installed | "Before writing any DQL, look for a matching recipe (`dtctl get recipes --search <words>`) and use it when one fits." |
+
+- **The dtctl skill differs between arms, deliberately.** A gets main's
+  SKILL.md. B, B+ and BR get the build's SKILL.md, which now has the
+  question → recipe table and the DQL-reference pointer. B − A therefore
+  measures the whole package an agent would receive (binary + skill), not the
+  binary alone. That is the user's question.
+- **`dt-*` skills.** A snapshot of the dynatrace-for-ai skills as installed
+  today (26 `dt-*` skills), identical in every arm. Users have these skills
+  without any change from this repository.
+- **B+ pointer lines.** Each pointer line is generated from the build's own
+  `get recipes` catalog. It is inserted after the first heading of each
+  mapped skill's SKILL.md, in the run's skill copies only. A recipe's domain
+  is the first word of its name:
+
+  | Recipe domain | Skill |
+  |---|---|
+  | `k8s` | `dt-obs-kubernetes` |
+  | `logs` | `dt-obs-logs` |
+  | `services` | `dt-obs-services` |
+  | `traces` | `dt-obs-tracing` |
+  | `problems` | `dt-obs-problems` |
+  | `hosts`, `capacity`, `network` | `dt-obs-hosts` |
+  | `cloud` | `dt-obs-aws`, `dt-obs-azure`, `dt-obs-gcp` |
+  | `genai` | `dt-obs-genai` |
+  | `frontends` | `dt-obs-frontends` |
+  | `costs` | `dt-platform-costs` |
+  | `security` | `dt-sec-insights` |
+  | `changes` | `dt-obs-problems`, `dt-obs-kubernetes` |
+  | anything else | `dt-dql-essentials` |
+
+  The line reads: "dtctl ships curated, verified queries (recipes) for this
+  area: `<names>`. Run one with `dtctl run <name>`; `dtctl describe recipe
+  <name>` shows its parameters." The batch records the exact lines in
+  `_pointers.json`.
+- **Builds.** A is `origin/main` at the time of the scored run. B, B+ and BR
+  use the commit the coordinator announces as final. Both SHAs are recorded
+  per run (`meta.json` `build`) and below.
+- **Isolation and read-only enforcement** are unchanged from v1:
+  - no `awk`/`sed`/`xargs`/`env`/`find` on the allow-list, and `sort` only
+    behind the shim;
+  - a read-only (`safety-level: readonly`) single-context config outside cwd
+    and HOME, and a wrapper-only `dtctl` on PATH that refuses mutating and
+    config verbs;
+  - `bin/` locked;
+  - credentials deleted in `finally`;
+  - no WebFetch, WebSearch, Write, Edit, Agent or Task for investigators;
+  - MCP off, and a runs dir with no `.claude` or `CLAUDE.md` ancestor.
+
+  Only read-only operations are made against the tenants.
+
+## Models
+
+| Role | Model |
+|---|---|
+| Investigator, **primary** | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) |
+| Investigator, secondary | Claude Sonnet (`claude-sonnet-5-5`), arms A and B only |
+| Judge | Claude Opus (`claude-opus-5-5`), blind as in v1: question, rubric, ground truth at batch start and end, and the final answer only |
+
+Haiku is primary for two reasons. v1 recommended re-running with a weaker
+model, and Sonnet sat at a ceiling (A = 2.71, A2 = 2.89) where the eval could
+not resolve small effects. A smaller model is also where pre-verified
+queries should help most. Each model is analyzed on its own; runs from
+different models are never pooled.
+
+## v2 tasks
+
+There are 25 tasks in [`tasks/v2.txt`](../../test/evals/recipes/tasks/v2.txt):
+
+- 10 are kept from v1: the ones v1 found discriminating or trap-laden, plus
+  three uncovered controls;
+- 15 are new. Prompts use natural phrasing and never name a recipe or a
+  recipe-only concept.
+
+Five tasks are uncovered (no recipe applies), and one, t33, depends only on
+the framework's honesty about truncated scans. Coverage labels and covering
+recipes are fixed here. "(planned)" marks a recipe that the content work
+announced but that has not landed at the time of writing. If one does not
+land, the task stays, and the analysis uses the labels below. A sensitivity
+analysis then uses coverage as it actually shipped.
+
+| Task | Tenant | Theme | Coverage | Covering recipes | Trap |
+|---|---|---|---|---|---|
+| t03 | T2 | unhealthy workloads in a cluster, worst one's cause | covered | k8s-warning-events, k8s-pod-restarts, k8s-workload-status, logs-for-service | failing workload is a CronJob/Job |
+| t04 | T2 | highest failure rate among busy services, and why | covered | services-red, services-failures | per-service rate from counts |
+| t06 | T2 | worst frontend INP p75 | covered | frontends-web-vitals | INP in ns, interaction-less loads |
+| t07 | T2 | one model's input tokens and calls | covered | genai-token-usage | double instrumentation |
+| t08 | T2 | open high/critical vulnerabilities | covered | security-vulns-open | latest state per entity; 50-row cap |
+| t19 | T1 | why an agent endpoint is slow | covered | services-latency, traces-slow-endpoints, traces-get | slow by design (LLM loop) |
+| t24 | T1 | a service's log records across environments | partial | logs-for-service | partial k8s field carriage |
+| t10 | T2 | most frequent business event type, 24h | none | none | default 2h window |
+| t11 | T2 | most failing synthetic monitor and why | none | none | domain without recipes |
+| t22 | T1 | failed workflow executions, 24h | none | none | latest page only |
+| t25 | T2 | problem → root cause → evidence → trigger | covered | problems-get, problems-evidence (planned), changes-recent (planned) | multi-hop; trigger is a separate change event |
+| t26 | T2 | what changed before a workload misbehaved | covered | changes-recent (planned), k8s-changes-new (planned) | past window; answer is a spec diff |
+| t27 | T2 | "no failed requests" but users see errors | covered | services-failed-calls (planned), services-failure-signatures (planned), traces-errors | deep client/tool/LLM failures, layered spans |
+| t28 | T2 | exceptions that are not failures | covered | traces-exceptions (planned) | exceptions on non-failed requests |
+| t29 | T2 | a workload's top error messages | covered | logs-for-service (pod-name fallback, planned), logs-error-patterns | logs carry no workload/service field |
+| t30 | T1 | error messages new on a day vs the 6 days before | covered | logs-error-templates-new (planned) | baseline comparison |
+| t31 | T2 | endpoints that got slower in a past window | covered | services-slow-endpoints-shift (planned), traces-slow-endpoints | absolute slowest is slow by design |
+| t32 | T2 | total LLM input tokens and top consumer | covered | genai-token-usage | double counting flips the top service |
+| t33 | T2 | total log records over 7 days | framework | none (partial-scan honesty) | truncated scan |
+| t34 | T2 | open vulnerabilities and affected entities | covered | security-vulns-open (totals planned), security-vulns-open-latest | totals beyond row caps |
+| t35 | T1 | OOM kills in 7 days | covered | k8s-pod-restarts, k8s-warning-events | short window is all zeros |
+| t36 | T2 | a rare log line in 7 days | covered | logs-search | rare event; partial case-insensitive scan |
+| t37 | T2 | problem → affected function → underlying error | covered | problems-get, problems-logs, problems-evidence (planned) | multi-hop into logs |
+| t38 | T2 | SLOs not meeting target | none | none | definition is not status |
+| t39 | T1 | tile impressions vs clicks per application | none | none | discovery; default window |
+
+Rubrics are in the task files. Entity names, problem ids and time windows
+come from `env.sh` (not committed). Tasks with a fixed past window use
+absolute times, so the scored run asks the same question as the pilot.
+
+## Ground truth
+
+Ground truth is measured by independent DQL in `ground_truth.py`, which is
+not copied from any recipe. It runs with the main-branch binary against the
+read-only config, at the start and at the end of every batch. The judge sees
+both measurements.
+
+- Problem tasks (t25, t37) read the problem record and its linked events.
+- t33 is a sampled 7-day count scaled by `dt.system.sampling_ratio`,
+  validated against an exact 24-hour count. Before this prereg, the
+  estimator was within 0.03% on 24 hours.
+- t38 evaluates each SLO with `dtctl exec slo` (a read operation).
+
+## Reps, cost and power
+
+- **Haiku.** A, B and B+ × 25 tasks × R reps, plus BR × 25 × 2. R = 5 if the
+  pilot's per-run cost projects the whole v2 run (investigators plus judge)
+  at $120 or less; otherwise R = 4. R is never below 3.
+- **Sonnet.** A and B × 25 × 2.
+- Arms run interleaved within each task, so drift over a batch hits every arm
+  alike.
+- **Harness failures.** A run that fails for a harness reason (API error,
+  timeout before the first tool call) is re-run once and the re-run is
+  recorded. A run that fails on its own merits is scored as is. A judge
+  failure is re-judged.
+
+**Power.** This is stated honestly up front. With 25 tasks, the CI is
+dominated by how much the effect differs between tasks, which more reps do
+not reduce. If the per-task difference has a standard deviation of 0.5–0.7
+points, the standard error of the mean lift is 0.10–0.14. The minimum lift
+detectable at 80% power is then about +0.3 to +0.4. A true lift of +0.20
+would often fail criterion 1, and its CI could still touch 0. Reps mainly
+stabilise per-task means: v1's run-to-run spread was the larger noise source
+on the hard tasks. Criterion 2 (same score, cheaper) is better powered,
+because calls and cost vary less than scores.
+
+## Analysis
+
+- **Primary.** A two-level paired bootstrap (10,000 resamples):
+  1. resample tasks;
+  2. within each resampled task, resample each arm's runs;
+  3. compute the mean over tasks of the per-task B − A difference.
+
+  The same procedure is applied to dtctl calls per run and cost per run.
+  Implemented as `paired2` in `analyze.py`.
+- **Sensitivity.** The v1 task-level bootstrap over per-task means.
+- **Harm (H4).** The two-level bootstrap restricted to the five uncovered
+  tasks.
+- **H2.** The share of runs on covered tasks that executed at least one
+  `dtctl run`, per arm.
+- **Reported alongside, not part of the rule:**
+  - scanned GB per run, from the envelope's `scannedBytes`;
+  - results cut short by a scan limit;
+  - errored and empty calls;
+  - per-task score tables;
+  - judge error tags.
+
+  An agent's own `contains(lower(...))` is not a correctness defect, because
+  the judge sees only the answer. Its cost shows up as scanned GB.
+- **Not scored.** The pilot runs on an earlier build to shake out the harness
+  and the ground truth. It is reported separately and never pooled with the
+  scored runs.
+
+## Procedure
+
+1. Commit this preregistration.
+2. **Pilot.** One rep, a handful of tasks, both models, on the discovery
+   build (94d420cb, before content), with arms A, B and B+. The pilot
+   checks:
+   - harness, ground truth and rubrics;
+   - per-run cost.
+
+   Any change to tasks or rubrics after the pilot is listed under
+   "deviations" in the results.
+3. Wait for the final build. Run all arms on that SHA, with `origin/main` of
+   the same moment as control. Judge, analyse, and append the results below
+   with the same tables as v1.

@@ -71,7 +71,7 @@ def is_empty(out_text):
 def call_metrics(ws):
     calls = sorted((ws / "calls").glob("*.argv"))
     m = dict(calls=len(calls), errors=0, refused=0, empties=0, runs=0, recipe_list=0, recipe_describe=0,
-             recipes_run=[], queries=0, exec_ms=0)
+             recipes_run=[], queries=0, exec_ms=0, scanned_gb=0.0, scan_unknown=0, partial=0)
     for f in calls:
         stem = f.with_suffix("")
         args = argv_of(f)
@@ -88,6 +88,19 @@ def call_metrics(ws):
         ms = stem.with_suffix(".ms")
         if ms.exists() and ms.read_text().strip().isdigit():
             m["exec_ms"] += int(ms.read_text().strip())
+        # v2: a query's real penalty is what it scans, so record it (from the
+        # envelope's metadata; a call whose output does not carry it counts as
+        # unknown), and whether the result was cut short by a scan limit
+        if pos[:1] in (["query"], ["run"]) or pos[:2] == ["exec", "dql"]:
+            text = (out.read_text(errors="replace") if out.exists() else "") + \
+                   (stem.with_suffix(".err").read_text(errors="replace") if stem.with_suffix(".err").exists() else "")
+            sb = [int(x) for x in re.findall(r'"?scannedBytes"?\s*[:=]\s*"?(\d+)', text)]
+            if sb:
+                m["scanned_gb"] += sum(sb) / 1e9
+            else:
+                m["scan_unknown"] += 1
+            if re.search(r"PARTIAL|scan limit|scanLimit|SCAN_LIMIT", text):
+                m["partial"] += 1
         if pos[:1] == ["run"] and len(pos) > 1:
             m["runs"] += 1
             m["recipes_run"].append(pos[1])
@@ -295,6 +308,11 @@ def main():
               f"{fmt(mean([r['empties'] for r in rs]), 1)} | {fmt(mean([r['runs'] for r in rs]), 1)} | "
               f"{fmt(mean([r['cost'] for r in rs]), 3)} | {fmt(mean([r['in_tokens'] for r in rs]) / 1000, 0)} | "
               f"{fmt(mean([r['out_tokens'] for r in rs]) / 1000, 1)} | {fmt(mean([r['wall_s'] for r in rs]), 0)} |")
+    print("\nScanned per run (GB, from envelope metadata), calls without metadata, results cut by a scan "
+          "limit: " + "; ".join(
+              f"{a}: {fmt(mean([r['scanned_gb'] for r in rows if r['arm'] == a]), 1)} GB, "
+              f"{sum(r['scan_unknown'] for r in rows if r['arm'] == a)} unknown, "
+              f"{sum(r['partial'] for r in rows if r['arm'] == a)} partial" for a in arms))
     print("\nTotals: " + ", ".join(
         f"{a}: ${sum(r['cost'] or 0 for r in rows if r['arm'] == a):.2f}" for a in arms))
 
