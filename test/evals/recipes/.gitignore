@@ -1,0 +1,5 @@
+# tenant-specific settings, binaries, and anything a run produces
+env.sh
+bin/
+runs/
+__pycache__/

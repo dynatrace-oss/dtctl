@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""Run the eval matrix: arms × tasks × reps, one fresh headless `claude -p` each.
+
+    run.py <batch> [--arms A,B] [--tasks t01,t02] [--reps 2] [--parallel N] [--no-gt]
+
+Arms
+  A  control: dtctl from origin/main + its dtctl skill + the dt-* skills
+  B  recipes: dtctl from this tree   + its dtctl skill + the dt-* skills
+  C  recipes, no dt-* skills: dtctl from this tree + its dtctl skill only
+  A2/B2  A/B plus a system-prompt nudge to load the dtctl skill first (diagnostic)
+  B3     B2 plus a nudge to look for a recipe before writing DQL (upper bound)
+
+Every run gets its own workspace under $EVAL_RUNS_DIR/<batch>/<task>/<arm>-r<rep>:
+  cfg/      CLAUDE_CONFIG_DIR: copied credentials + the arm's skills (copies)
+  home/     HOME
+  work/     the agent's cwd (empty: no CLAUDE.md, no repo)
+  bin/dtctl the logging wrapper - the only dtctl on PATH
+  calls/    one record per dtctl invocation (argv, stdout, stderr, rc, seconds)
+  transcript.jsonl, prompt.md, meta.json
+
+Read-only is enforced three times over: the wrapper points DTCTL_CONFIG at a
+single-context config with safety-level readonly (chmod 444), refuses mutating
+and config verbs before dtctl sees them, and the claude permission rules only
+allow dtctl and a few text filters in Bash.
+
+Ground truth is measured before (gt-start) and after (gt-end) the batch into
+<batch>/_gt/, a directory no agent rule allows reading.
+"""
+import argparse
+import concurrent.futures as cf
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import lib
+
+ARMS = {
+    "A": dict(binary="dtctl-main", skill="skill-main", dt_skills=True),
+    "B": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=True),
+    "C": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=False),
+    # Diagnostic pair: A and B, plus a system-prompt nudge to load the dtctl
+    # skill first. The full matrix showed agents never load it on their own,
+    # so B never meets the recipes section; A2/B2 measure recipes *given*
+    # that the agent reads its dtctl skill. The user prompt stays identical.
+    "A2": dict(binary="dtctl-main", skill="skill-main", dt_skills=True, nudge=True),
+    "B2": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=True, nudge=True),
+    # Upper bound: B2 even when nudged never ran a recipe, so B3 is told to
+    # look for one. Compare with A2 (equally nudged to its skill).
+    "B3": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=True, nudge=True, nudge_recipes=True),
+}
+
+NUDGE = "Before running any command, load the dtctl skill with the Skill tool and follow its guidance."
+NUDGE_RECIPES = (" Before writing any DQL, look for a matching recipe (`dtctl get recipes --search <words>`)"
+                 " and use it when one fits.")
+
+CALL_BUDGET = 20
+MAX_TURNS = 40
+TIMEOUT_S = 20 * 60
+
+PREAMBLE = f"""You are answering a question about a Dynatrace environment. Use the `dtctl`
+CLI, which is already configured for the right environment (read-only), to
+answer it from data.
+
+Rules:
+- Use at most {CALL_BUDGET} dtctl invocations in total; further calls are refused.
+- Run every command in the foreground. Never background a command or wait/sleep.
+- Bash is limited to dtctl plus basic text tools (jq, grep, head, tail, sort,
+  uniq, wc, cut, sed, awk, tr, cat, echo, date). If a command is denied,
+  adjust it and retry instead of giving up.
+- Report only values you actually measured. If the data cannot answer the
+  question, say so instead of guessing.
+- End with a short explanation, then a final line that starts with `ANSWER:`
+  and states the answer in one line.
+
+Question:
+"""
+
+# verbs the wrapper refuses before dtctl sees them (readonly would refuse most
+# of them too; this keeps config and keyring untouched as well)
+BLOCKED = ["create", "edit", "apply", "delete", "update", "restore", "share", "unshare",
+           "auth", "skills", "serve", "plugin", "alias", "install", "upgrade", "login", "logout"]
+CONFIG_OK = ["view", "get-contexts", "current-context"]
+
+WRAPPER = r"""#!/usr/bin/env bash
+# dtctl logging wrapper for one eval run (generated).
+calls={calls}
+budget={budget}
+mkdir -p "$calls"
+n=$(ls "$calls" | grep -c '\.argv$')
+# unique and chronological even when the agent runs calls in parallel
+id=$(date +%s%N)-$$
+printf '%s\0' "$@" > "$calls/$id.argv"
+
+verb=""; sub=""; skip=0
+for a in "$@"; do
+  if [ $skip = 1 ]; then skip=0; continue; fi
+  case "$a" in
+    -o|--output|--context|-c|--jq|--config) skip=1; continue;;
+    -*) continue;;
+  esac
+  if [ -z "$verb" ]; then verb=$a; else sub=$a; break; fi
+done
+
+refuse() {{ echo "$1" >&2; echo 2 > "$calls/$id.rc"; echo 0 > "$calls/$id.ms"; echo "$1" > "$calls/$id.refused"; exit 2; }}
+if [ "$n" -ge "$budget" ]; then
+  refuse "eval harness: call budget of $budget dtctl invocations exhausted - answer with what you have"
+fi
+case " {blocked} " in *" $verb "*) refuse "eval harness: '$verb' is not allowed (read-only evaluation)";; esac
+if [ "$verb" = config ] || [ "$verb" = ctx ]; then
+  case " {config_ok} " in *" $sub "*) ;; *) refuse "eval harness: '$verb $sub' is not allowed (read-only evaluation)";; esac
+fi
+
+export DTCTL_CONFIG={cfg}
+export XDG_CONFIG_HOME={iso}/config XDG_CACHE_HOME={iso}/cache XDG_STATE_HOME={iso}/state XDG_DATA_HOME={iso}/data
+unset DTCTL_CONTEXT
+start=$(date +%s%N)
+reads_stdin=0
+for a in "$@"; do case "$a" in -|--file=-|-f=-) reads_stdin=1;; esac; done
+if [ $reads_stdin = 1 ]; then
+  tee "$calls/$id.in" | {binary} "$@" > "$calls/$id.out" 2> "$calls/$id.err"
+  rc=${{PIPESTATUS[1]}}
+else
+  {binary} "$@" > "$calls/$id.out" 2> "$calls/$id.err"
+  rc=$?
+fi
+cat "$calls/$id.out"
+cat "$calls/$id.err" >&2
+echo $rc > "$calls/$id.rc"
+echo $(( ($(date +%s%N) - start) / 1000000 )) > "$calls/$id.ms"
+exit $rc
+"""
+
+# Bash allow-list besides dtctl. Text tools only; the first pilot showed that a
+# denied `cd /tmp; dtctl ...` made an agent give up, which is a harness
+# artifact, so the harmless shell builtins are allowed too. Reading files is
+# possible with these (the skills' references need it); analyze.py audits every
+# command for paths outside the run's workspace.
+FILTERS = ["jq", "head", "tail", "wc", "sort", "uniq", "grep", "cut", "sed", "awk", "tr", "cat", "column",
+           "cd", "echo", "printf", "date", "ls", "true"]
+
+
+def q(p):
+    return "'" + str(p).replace("'", "'\\''") + "'"
+
+
+def check_no_ancestor_config(path):
+    """Claude Code picks up .claude/skills, .claude/settings*.json and CLAUDE.md
+    from every ancestor of its cwd. A runs dir under $HOME would hand every arm
+    the developer's own skills (the first pilot did exactly that), so refuse."""
+    for d in [path, *path.parents]:
+        for name in (".claude", "CLAUDE.md", "CLAUDE.local.md", ".mcp.json"):
+            if (d / name).exists():
+                sys.exit(f"{d / name} is an ancestor of the runs dir {path}: claude would load it into "
+                         "every run. Set EVAL_RUNS_DIR outside it (e.g. under /tmp).")
+
+
+def setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant):
+    ws = batch_dir / task["id"] / f"{arm}-r{rep}"
+    if ws.exists():
+        shutil.rmtree(ws)
+    for d in ("cfg/skills", "home", "work", "bin", "calls", "iso"):
+        (ws / d).mkdir(parents=True, exist_ok=True)
+    a = ARMS[arm]
+
+    # claude config dir: credentials + skills (copies, so nothing points back
+    # into the repo or the dynatrace-for-ai checkout)
+    cred = Path.home() / ".claude" / ".credentials.json"
+    if cred.exists():
+        shutil.copy(cred, ws / "cfg" / ".credentials.json")
+    shutil.copytree(lib.BIN / a["skill"], ws / "cfg" / "skills" / "dtctl")
+    if a["dt_skills"]:
+        for sk in sorted(Path(env["EVAL_DFAI_DIR"], "skills").glob("dt-*")):
+            shutil.copytree(sk, ws / "cfg" / "skills" / sk.name)
+    (ws / "cfg" / "settings.json").write_text(json.dumps({"includeCoAuthoredBy": False}))
+
+    wrapper = WRAPPER.format(
+        calls=q(ws / "calls"), budget=CALL_BUDGET, blocked=" ".join(BLOCKED),
+        config_ok=" ".join(CONFIG_OK), cfg=q(cfg_by_tenant[task["meta"]["tenant"]]),
+        iso=q(ws / "iso"), binary=q(lib.BIN / a["binary"]))
+    w = ws / "bin" / "dtctl"
+    w.write_text(wrapper)
+    w.chmod(0o755)
+
+    prompt = PREAMBLE + task["prompt"] + "\n"
+    (ws / "prompt.md").write_text(prompt)
+    return ws, prompt
+
+
+def claude_env(ws):
+    keep = ["USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
+            "SHELL", "TZ"]
+    e = {k: os.environ[k] for k in keep if k in os.environ}
+    e.update(HOME=str(ws / "home"), CLAUDE_CONFIG_DIR=str(ws / "cfg"),
+             PATH=f"{ws / 'bin'}:/usr/local/bin:/usr/bin:/bin",
+             DISABLE_AUTOUPDATER="1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1",
+             DISABLE_TELEMETRY="1")
+    return e
+
+
+def run_one(env, batch_dir, task, arm, rep, cfg_by_tenant):
+    ws, prompt = setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant)
+    allowed = ["Bash(dtctl:*)"] + [f"Bash({f}:*)" for f in FILTERS] + [
+        "Skill", f"Read(/{ws / 'cfg' / 'skills'}/**)", f"Read(/{ws / 'work'}/**)"]
+    cmd = [shutil.which("claude") or "claude", "-p", prompt,
+           "--model", env["EVAL_MODEL"],
+           "--output-format", "stream-json", "--verbose",
+           "--max-turns", str(MAX_TURNS),
+           "--permission-mode", "dontAsk",
+           "--tools", "Bash,Read,Skill",
+           "--allowedTools", ",".join(allowed),
+           "--disallowedTools", "WebSearch,WebFetch,Task,Agent,Write,Edit,Grep,Glob",
+           "--strict-mcp-config", "--no-session-persistence"]
+    if ARMS[arm].get("nudge"):
+        cmd += ["--append-system-prompt", NUDGE + (NUDGE_RECIPES if ARMS[arm].get("nudge_recipes") else "")]
+    t0 = time.time()
+    with open(ws / "transcript.jsonl", "w") as out, open(ws / "claude.err", "w") as err:
+        try:
+            p = subprocess.run(cmd, cwd=ws / "work", env=claude_env(ws), stdin=subprocess.DEVNULL,
+                               stdout=out, stderr=err, timeout=TIMEOUT_S)
+            rc = p.returncode
+        except subprocess.TimeoutExpired:
+            rc = "timeout"
+    meta = dict(task=task["id"], arm=arm, rep=rep, rc=rc, wall_s=round(time.time() - t0, 1),
+                model=env["EVAL_MODEL"], binary=ARMS[arm]["binary"],
+                started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)))
+    (ws / "meta.json").write_text(json.dumps(meta, indent=2))
+    # credentials do not stay in run dirs
+    (ws / "cfg" / ".credentials.json").unlink(missing_ok=True)
+    return meta
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("batch")
+    ap.add_argument("--arms", default="A,B")
+    ap.add_argument("--tasks", default="")
+    ap.add_argument("--reps", type=int, default=2)
+    ap.add_argument("--rep-offset", type=int, default=0)
+    ap.add_argument("--parallel", type=int, default=0)
+    ap.add_argument("--no-gt", action="store_true")
+    args = ap.parse_args()
+
+    env = lib.load_env()
+    only = set(filter(None, args.tasks.split(",")))
+    tasks = lib.load_tasks(env, only or None)
+    arms = args.arms.split(",")
+    batch_dir = lib.runs_dir(env) / args.batch
+    check_no_ancestor_config(batch_dir)
+    gt_dir = batch_dir / "_gt"
+    gt_dir.mkdir(parents=True, exist_ok=True)
+
+    cfg_by_tenant = {}
+    for tenant in sorted({t["meta"]["tenant"] for t in tasks}):
+        cfg_by_tenant[tenant] = lib.make_readonly_config(
+            env, lib.tenant_context(env, tenant), batch_dir / "_cfg" / f"{tenant}.yaml")
+
+    ids = [t["id"] for t in tasks]
+    if not args.no_gt:
+        subprocess.run([sys.executable, str(lib.HERE / "ground_truth.py"), str(gt_dir), "start", *ids], check=True)
+
+    jobs = [(t, a, r) for r in range(1 + args.rep_offset, args.reps + 1 + args.rep_offset)
+            for t in tasks for a in arms]
+    par = args.parallel or int(env["EVAL_PARALLEL"])
+    print(f"{len(jobs)} runs, {par} in parallel -> {batch_dir}", file=sys.stderr)
+    with cf.ThreadPoolExecutor(par) as ex:
+        futs = {ex.submit(run_one, env, batch_dir, t, a, r, cfg_by_tenant): (t["id"], a, r) for t, a, r in jobs}
+        for f in cf.as_completed(futs):
+            tid, a, r = futs[f]
+            try:
+                m = f.result()
+                print(f"  {tid} {a} r{r}: rc={m['rc']} {m['wall_s']}s", file=sys.stderr)
+            except Exception as e:
+                print(f"  {tid} {a} r{r}: FAILED {e}", file=sys.stderr)
+
+    if not args.no_gt:
+        subprocess.run([sys.executable, str(lib.HERE / "ground_truth.py"), str(gt_dir), "end", *ids], check=True)
+
+
+if __name__ == "__main__":
+    main()
