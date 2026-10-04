@@ -1,0 +1,20 @@
+# capacity-cpu-saturation v1 — window: default 30d, min 14d
+timeseries cpu = avg(dt.host.cpu.usage), interval: 24h, by: {dt.smartscape.host, host.name}
+| fieldsAdd x = if(isNotNull(cpu[]), toDouble(iIndex())), xy = cpu[] * iIndex(),
+    recent = if(iIndex() >= arraySize(cpu) - 2 and isNotNull(cpu[]), 1, else: 0)
+| fieldsAdd xx = x[] * x[]
+| fieldsAdd n = toDouble(arraySize(arrayRemoveNulls(cpu))),
+    sx = arraySum(x), sy = arraySum(cpu), sxy = arraySum(xy), sxx = arraySum(xx)
+| filter n >= arraySize(cpu) / 2 and arraySum(recent) > 0
+| fieldsAdd daily_growth = (n * sxy - sx * sy) / (n * sxx - sx * sx)
+| fieldsAdd trend_pct = (sy - daily_growth * sx) / n + daily_growth * (arraySize(cpu) - 1)
+| fieldsAdd days_to_ceiling = if(trend_pct >= 90, 0,
+    else: if(daily_growth > 0, toLong((90 - trend_pct) / daily_growth)))
+| filter days_to_ceiling <= 90
+| fields host.name, dt.smartscape.host, days_to_ceiling,
+    trend_pct = round(trend_pct, decimals: 1),
+    daily_growth = round(daily_growth, decimals: 2),
+    latest_day_pct = round(arrayLast(cpu), decimals: 1),
+    days_of_data = toLong(n)
+| sort days_to_ceiling asc, daily_growth desc
+| limit 50

@@ -1,0 +1,56 @@
+# Source: dt-obs-genai/references/cost-and-tokens.md (and the skill's empty-state rule)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: genai-token-usage
+  version: 2
+  tags: [genai, llm, tokens, cost]
+spec:
+  summary: LLM token consumption by provider and model
+  requires: [spans]
+  timeframe: { default: 2h, max: 7d }
+  scope: [cluster, namespace, tag]
+  params:
+    model:
+      type: string
+      description: Restrict to one model (exact gen_ai.request.model or gen_ai.response.model)
+  # Two instrumentations (an SDK and a framework, or a wrapper span around the
+  # client span) often record the same call twice, sometimes under different
+  # model spellings. A call is identified by trace and token counts; the
+  # earliest (outermost) span of each is kept.
+  dql: |
+    fetch spans
+    | filter isNotNull(gen_ai.usage.input_tokens) or isNotNull(gen_ai.usage.output_tokens)
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | fieldsAdd model = coalesce(gen_ai.request.model, gen_ai.response.model)
+    {{- if .model}}
+    | filter in({{.model}}, {gen_ai.request.model, gen_ai.response.model}){{end}}
+    | dedup {trace.id, gen_ai.usage.input_tokens, gen_ai.usage.output_tokens}, sort: {start_time asc}
+    | summarize { calls = count(),
+        input_tokens = toLong(sum(gen_ai.usage.input_tokens)),
+        output_tokens = toLong(sum(gen_ai.usage.output_tokens)),
+        cache_read_tokens = toLong(sum(gen_ai.usage.cache_read.input_tokens)) },
+      by: {provider = coalesce(gen_ai.provider.name, gen_ai.system), model}
+    | fieldsAdd total_tokens = coalesce(input_tokens, 0) + coalesce(output_tokens, 0)
+    | sort total_tokens desc
+    | limit 50
+  means: >-
+    Token volume per provider and model over the window; calls is the number
+    of LLM calls. Duplicate spans of one call (same trace and token counts) are
+    counted once, but a model can still appear under two spellings or with an
+    empty provider when instrumentations name it differently.
+    cache_read_tokens is part of input_tokens (prompt caching), null when the
+    instrumentation does not report it. Turning tokens into cost needs
+    per-model prices from the user; never assume prices. The default window
+    is 2h because a span scan grows fast on busy environments; widen it with
+    --from once a first run shows the scanned volume is acceptable.
+  emptyMeans: >-
+    No span carries token usage. This is NOT "no AI traffic": run
+    genai-presence. If no span has a GenAI model at all, the app is not
+    instrumented for AI observability; if such spans exist without usage
+    fields, the instrumentation does not record token counts. A --model value
+    must match the model name exactly.
+  next:
+    - recipe: genai-presence
+      when: empty                # the empty-state protocol, as a ready-to-run suggestion

@@ -1,0 +1,54 @@
+# Source: dt-obs-services/SKILL.md, dt-obs-services/references/service-metrics.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: services-red
+  version: 2
+  tags: [services, red, latency, errors, throughput, health]
+spec:
+  summary: Request rate, failure rate and p95 latency per service
+  description: >-
+    The first look at service health. Built from the service metrics, so it is
+    cheap, unsampled and covers every instrumented service. For the endpoints
+    and failure reasons behind a number, follow up with services-failures or
+    services-latency.
+  requires: [service-metrics]
+  timeframe: 2h
+  scope: [cluster, namespace, tag]
+  params:
+    services:
+      type: list
+      description: Only these services (exact dt.service.name, comma-separated)
+  dql: |
+    timeseries { p95 = percentile(dt.service.request.response_time, 95, scalar: true),
+                 requests = sum(dt.service.request.count, scalar: true),
+                 failures = sum(dt.service.request.failure_count, scalar: true) },
+      by: {dt.service.name}
+      {{- if or .scope.expr .services}}, filter: {{with .scope.expr}}{{.}}{{if $.services}} and {{end}}{{end}}
+      {{- with .services}}in(dt.service.name, {{.}}){{end}}{{end}}
+    | fields dt.service.name, requests = toLong(requests), failures = toLong(failures),
+        failure_rate_pct = round(if(requests > 0, failures * 100.0 / requests, else: 0), decimals: 2),
+        p95_ms = round(p95 / 1000, decimals: 1)
+    | sort requests desc
+    | limit 50
+  means: >-
+    One row per service, busiest first: requests and failures are totals over
+    the window, failure_rate_pct is failures per 100 requests, p95_ms the 95th
+    percentile response time in milliseconds (the metric is stored in
+    microseconds; p95_ms is already converted). Failures follow Dynatrace
+    failure detection, not raw HTTP 5xx counts: a 404 may or may not count.
+    With --namespace/--cluster, services outside Kubernetes drop out. Capped at
+    50 services.
+  emptyMeans: >-
+    No requests were recorded for the selected services in the window. Service
+    names match dt.service.name exactly and case-sensitively, so a typo looks
+    the same as an idle service; find the exact name with `dtctl run
+    services-list <fragment>`. --namespace/--cluster only match services that
+    run on Kubernetes.
+  next:
+    - recipe: services-list
+      when: empty
+    - recipe: services-failures
+      bind: { service: dt.service.name }
+    - recipe: services-latency
+      bind: { service: dt.service.name }

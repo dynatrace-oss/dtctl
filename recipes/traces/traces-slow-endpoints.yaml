@@ -1,0 +1,67 @@
+# Source: dt-obs-tracing/references/performance-analysis.md (exemplar pattern from dt-obs-tracing/SKILL.md)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: traces-slow-endpoints
+  version: 2
+  tags: [traces, latency, endpoints, slow, p99]
+spec:
+  summary: Slowest endpoints across services by p99 root-span duration, with the slowest trace each
+  description: >-
+    Ranks endpoints of all services (or one) by tail latency and hands over the
+    slowest trace of each. For one service's full endpoint profile use
+    services-latency.
+  requires: [spans]
+  timeframe: { default: 1h, max: 1d }
+  scope: [cluster, namespace, tag]
+  params:
+    service:
+      type: string
+      positional: true
+      description: Only this service (exact dt.service.name, see services-list)
+    min_requests:
+      type: int
+      default: 10
+      min: 1
+      description: Skip endpoints with fewer requests in the window (their p99 is noise)
+  dql: |
+    fetch spans
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter request.is_root_span == true
+    {{- with .service}}
+    | filter dt.service.name == {{.}}{{end}}
+    | fieldsAdd multiplicity = {{template "span-multiplicity"}}
+    | summarize { requests = toLong(round(sum(multiplicity))),
+                  p50 = percentile(duration, 50), p99 = percentile(duration, 99),
+                  max = max(duration), slowest = takeMax(record(duration, trace.id)) },
+        by: {dt.service.name, endpoint.name}
+    | filter requests >= {{.min_requests}}
+    | fields dt.service.name, endpoint.name, requests,
+        p50_ms = round(p50 / 1ms, decimals: 1), p99_ms = round(p99 / 1ms, decimals: 1),
+        max_ms = round(max / 1ms, decimals: 1), slowest_trace_id = slowest[trace.id]
+    | sort p99_ms desc
+    | limit 15
+  means: >-
+    Endpoints ranked by the 99th percentile duration of their request root
+    spans, in milliseconds; percentiles are approximate (p99 can come out
+    slightly above max_ms). requests is extrapolated from sampled spans and
+    approximates real traffic; endpoints below --min-requests are left out.
+    Long-running by design (streaming, websockets, batch jobs, background
+    workers) ranks first just like a real regression, so compare p50 to p99
+    before calling an endpoint slow. slowest_trace_id is the slowest stored
+    trace of that endpoint; open it with traces-get. Capped at 15 endpoints.
+  emptyMeans: >-
+    No endpoint had --min-requests request root spans in the window. If you
+    named a service, check the name first: dt.service.name is exact and
+    case-sensitive (`dtctl run services-list <fragment>`). Otherwise the
+    service is not traced (no OneAgent or OpenTelemetry spans), the traffic is
+    too low for the window, or --min-requests is too high.
+  next:
+    - recipe: services-list
+      when: empty
+      with: { contains: "{{.service}}" }
+    - recipe: traces-get
+      bind: { trace_id: slowest_trace_id }
+    - recipe: services-latency
+      bind: { service: dt.service.name }

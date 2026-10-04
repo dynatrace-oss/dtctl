@@ -151,6 +151,9 @@ func (e *DQLExecutor) buildStreamedSpillResponse(query string, result *DQLQueryR
 		Warnings:    warnings,
 		Suggestions: suggestions,
 	}
+	if opts.Decorate != nil {
+		opts.Decorate(ctx, result, nil)
+	}
 
 	return output.Response{
 		OK:              true,

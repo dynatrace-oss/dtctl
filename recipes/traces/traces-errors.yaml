@@ -1,0 +1,59 @@
+# Source: dt-obs-tracing/references/failure-detection.md (Recent Failed Requests, Exception Analysis)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: traces-errors
+  version: 1
+  tags: [traces, errors, failures, exceptions, recent]
+spec:
+  summary: Most recent failed requests with reason, exception and trace id
+  description: >-
+    Individual failed requests, newest first, for one service or all. Each row
+    is one failed request root span with the trace to open. For failures
+    grouped by endpoint and reason use services-failures.
+  requires: [spans]
+  timeframe: 1h
+  scope: [cluster, namespace, tag]
+  params:
+    service:
+      type: string
+      positional: true
+      description: Only this service (exact dt.service.name, see services-list)
+  dql: |
+    fetch spans
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter request.is_root_span == true and request.is_failed == true
+    {{- with .service}}
+    | filter dt.service.name == {{.}}{{end}}
+    | fields start_time, dt.service.name, endpoint.name,
+        failure_reason = arrayFirst(iCollectArray(dt.failure_detection.results[][reason])),
+        http.response.status_code,
+        exception.type = arrayFirst(arrayRemoveNulls(iCollectArray(span.events[][exception.type]))),
+        exception.message = substring(arrayFirst(arrayRemoveNulls(iCollectArray(span.events[][exception.message]))), from: 0, to: 300),
+        duration_ms = round(duration / 1ms, decimals: 1),
+        trace.id
+    | sort start_time desc
+    | limit 50
+  means: >-
+    One row per failed request root span, newest first. failure_reason is why
+    Dynatrace failure detection marked it failed (http_code, grpc_code,
+    exception, span_status, custom_rule). exception.type and exception.message
+    are the first exception recorded on that span (the message is cut at 300
+    characters); an exception thrown deeper in the call chain shows only in
+    traces-get. Rows are stored spans, so with sampling not every failed
+    request appears. Capped at 50 rows; use services-failures for totals.
+  emptyMeans: >-
+    No failed request in the window. If you named a service, check the name
+    first: dt.service.name is exact and case-sensitive, so a typo looks like a
+    healthy service (`dtctl run services-list <fragment>`). A service that is
+    not traced has no spans, and failure detection rules decide what counts as
+    failed, so HTTP 4xx responses often do not.
+  next:
+    - recipe: services-list
+      when: empty
+      with: { contains: "{{.service}}" }
+    - recipe: traces-get
+      bind: { trace_id: trace.id }
+    - recipe: logs-for-trace
+      bind: { trace_id: trace.id }

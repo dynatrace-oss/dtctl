@@ -1,0 +1,17 @@
+# security-detections v1 — window: default 2h
+fetch security.events
+| filter in(event.type, {"DETECTION_FINDING", "SECURITY_EVENT"})
+| filter event.type == "DETECTION_FINDING" or product.name == "Runtime Application Protection"
+| summarize { detections = count(),
+    first_seen = min(timestamp), last_seen = max(timestamp),
+    actions = collectDistinct(finding.action),
+    attacker_ips = arraySize(collectDistinct(actor.ips, expand: true)),
+    targets = countDistinct(object.name),
+    example_target = takeAny(object.name) },
+  by: {provider = event.provider, risk_level = dt.security.risk.level,
+    finding.type, title = coalesce(detection.title, finding.title)}
+| fieldsAdd rank = if(risk_level == "CRITICAL", 4, else: if(risk_level == "HIGH", 3,
+    else: if(risk_level == "MEDIUM", 2, else: 1)))
+| sort rank desc, detections desc
+| fieldsRemove rank
+| limit 50

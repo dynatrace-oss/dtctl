@@ -1,0 +1,11 @@
+# meta-data-objects v1 — window: none (state query; no window)
+fetch dt.system.data_objects
+| filterOut type == "view" and startsWith(name, "dt.entity.")
+| fieldsAdd command = if(in("fetch", usable_with), concat("fetch ", name),
+    else: if(name == "metrics", "timeseries",
+    else: if(name == "smartscape.nodes", "smartscapeNodes",
+    else: if(name == "smartscape.edges", "smartscapeEdges / traverse"))))
+| fields name, display_name, type, command, usable_with, has_access,
+    description = substring(description, to: 160)
+| sort type asc, name asc
+| limit 200

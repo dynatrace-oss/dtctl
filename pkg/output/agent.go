@@ -155,6 +155,41 @@ type ResponseContext struct {
 	MaxFieldChars int `json:"max_field_chars,omitempty"`
 	// TruncatedFields names the fields with at least one clipped value.
 	TruncatedFields []string `json:"truncated_fields,omitempty"`
+
+	// Recipe context (`dtctl run`). Recipe names what ran; Query is the DQL it
+	// rendered, the escape hatch an agent adapts when the recipe is not quite
+	// the question; Window is the effective query window as the response
+	// reported it; Scope lists every filter outside the recipe's own params
+	// that narrowed the result (scope dimensions, filter segments).
+	Recipe *RecipeRef          `json:"recipe,omitempty"`
+	Query  string              `json:"query,omitempty"`
+	Window *TimeWindow         `json:"window,omitempty"`
+	Scope  map[string][]string `json:"scope,omitempty"`
+	// Inventory reports what inventory-aware listing did (`get recipes`).
+	Inventory *InventoryFilter `json:"inventory,omitempty"`
+}
+
+// RecipeRef identifies the recipe behind a `dtctl run` response.
+type RecipeRef struct {
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+	// Source is builtin, user, org, or app:<app-id>@<bundle-version>.
+	Source string `json:"source"`
+}
+
+// TimeWindow is a query window as absolute RFC3339 instants.
+type TimeWindow struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// InventoryFilter says how inventory verdicts narrowed a listing: how old the
+// verdicts were and how many entries they hid. Unfiltered explains a listing
+// that could not be filtered (no verdicts, discovery over budget).
+type InventoryFilter struct {
+	Age        string `json:"age,omitempty"`
+	Hidden     int    `json:"hidden"`
+	Unfiltered string `json:"unfiltered,omitempty"`
 }
 
 // MarkFieldsClipped records on the context that values in fields were clipped
@@ -173,7 +208,8 @@ func (c *ResponseContext) MarkFieldsClipped(max int, fields []string) {
 // names its basis in Evidence (a sample, or the window that was checked), so
 // a consumer never mistakes a sampled observation for a catalog fact.
 type EmptyReason struct {
-	// Code is "field_not_in_sample" or "metric_not_in_window".
+	// Code is "field_not_in_sample", "metric_not_in_window", or
+	// "recipe_empty_means" (a recipe's own reading of an empty result).
 	Code       string   `json:"code"`
 	Field      string   `json:"field,omitempty"`
 	Metric     string   `json:"metric,omitempty"`

@@ -1,0 +1,15 @@
+# frontends-errors v1 — window: default 2h
+fetch user.events
+| filter characteristics.has_error and dt.rum.user_type == "real_user"
+| fieldsAdd error = substring(coalesce(error.display_name, exception.message,
+    if(error.type == "request", concat(toString(http.response.status_code), " ",
+      http.request.method, " ", splitString(url.full, "?")[0])),
+    if(error.type == "csp", concat(csp.effective_directive, " blocked ",
+      splitString(csp.blocked_uri.full, "?")[0]))), to: 200)
+| summarize { occurrences = count(), sessions = countDistinct(dt.rum.session.id),
+    last_seen = max(start_time), error = takeLast(error) },
+  by: {frontend.name, error.type, group = if(error.type == "anr", "anr",
+      else: coalesce(error.id, error))}
+| fields frontend.name, error.type, error, occurrences, sessions, last_seen
+| sort occurrences desc
+| limit 30

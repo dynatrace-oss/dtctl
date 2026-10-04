@@ -1,0 +1,12 @@
+# cloud-untagged v1 — window: none (state query; no window)
+smartscapeNodes "AWS_*"
+| filter isNotNull(aws.account.id)
+| fieldsAdd tag_string = coalesce(toString(`tags:aws`), "{}")
+| fieldsAdd untagged = tag_string == "{}"
+| summarize { resources = count(), untagged = countIf(untagged),
+    accounts_affected = countDistinctExact(if(untagged, aws.account.id)) }, by: {type}
+| filter untagged > 0
+| fieldsAdd untagged_pct = round(100.0 * untagged / resources, decimals: 1),
+    type_has_tags = untagged < resources
+| sort untagged desc
+| limit 100

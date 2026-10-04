@@ -1,0 +1,46 @@
+# Source: dt-obs-tracing/SKILL.md (Trace ID Lookup)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: traces-get
+  version: 1
+  tags: [traces, trace, spans, trace-id, waterfall]
+spec:
+  summary: All spans of one trace in start order, with service, duration and failure
+  description: >-
+    Opens a trace by its id (32 hex characters), as other recipes hand it over
+    in slowest_trace_id, example_trace_id or trace.id.
+  requires: [spans]
+  timeframe: 2h
+  params:
+    trace_id:
+      type: string
+      required: true
+      positional: true
+      pattern: "^[0-9a-fA-F]{32}$"
+      description: Trace id, 32 hex characters
+  dql: |
+    fetch spans
+    | filter trace.id == toUid({{.trace_id}})
+    | fields start_time, dt.service.name, span.name, span.kind,
+        duration_ms = round(duration / 1ms, decimals: 2),
+        request.is_root_span, request.is_failed, http.response.status_code,
+        endpoint.name, span.id, span.parent_id
+    | sort start_time asc
+    | limit 200
+  means: >-
+    One row per span, earliest first; the span without span.parent_id (or the
+    first request.is_root_span) is the entry point. duration_ms includes the
+    time spent in child spans, so the slow part is the deepest slow span, not
+    the first one. request.is_failed is set on request root spans only. A trace
+    that crosses services has one request root per service. Capped at 200
+    spans: a longer trace is cut off at the end.
+  emptyMeans: >-
+    No span with this trace id in the window. The trace is older than the
+    window (pass --from to reach further back, up to span retention), it was
+    never stored (sampled out, or the id came from a log line of an
+    uninstrumented caller), or the id is mistyped.
+  next:
+    - recipe: logs-for-trace
+      when: nonempty
+      with: { trace_id: "{{.trace_id}}" }

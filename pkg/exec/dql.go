@@ -237,6 +237,21 @@ type DQLExecuteOptions struct {
 	// query execution and are only consulted on the spill path.
 	TenantID    string
 	ContextName string
+
+	// Decorate, when set, amends the agent envelope's context after dtctl
+	// built it: `dtctl run` adds the recipe, the rendered query, the window and
+	// the scope, and its own suggestions. records are the rows the envelope
+	// reports, or nil when they streamed to disk unread (never an empty result).
+	Decorate func(ctx *output.ResponseContext, result *DQLQueryResponse, records []map[string]interface{})
+	// EmptyHint is printed to stderr under an empty human-mode result: a
+	// recipe's own reading of what the emptiness means. Agent mode carries
+	// it in context.empty_reason instead (see Decorate).
+	EmptyHint string
+	// SkipEmptyDiagnosis turns off the generic empty-result probes and
+	// window advice: a recipe's query is verified, and its own emptyMeans
+	// knows better than a heuristic (a restart metric that has no series
+	// until something restarts is not a misspelled key).
+	SkipEmptyDiagnosis bool
 }
 
 // DQLVerifyOptions configures DQL query verification
@@ -941,6 +956,9 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 	}
 	if !opts.AgentMode {
 		printNotifications()
+		if len(records) == 0 && opts.EmptyHint != "" {
+			defer output.PrintHint("%s", opts.EmptyHint)
+		}
 	}
 
 	// Apply snapshot decoding if requested
@@ -1204,6 +1222,10 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 		Warnings:    warnings,
 		Suggestions: suggestions,
 		EmptyReason: emptyReason,
+	}
+
+	if opts.Decorate != nil {
+		opts.Decorate(ctx, result, records)
 	}
 
 	// A filter's output has no row structure to cut at, so the budget cannot

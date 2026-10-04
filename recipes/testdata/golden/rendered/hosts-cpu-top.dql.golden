@@ -1,0 +1,13 @@
+# hosts-cpu-top v1 — window: default 1h
+timeseries { cpu = avg(dt.host.cpu.usage),
+             iowait = avg(dt.host.cpu.iowait),
+             steal = avg(dt.host.cpu.steal) },
+  by: {dt.smartscape.host, host.name}
+| fieldsAdd avg_cpu_pct = round(arrayAvg(cpu), decimals: 1),
+    peak_cpu_pct = round(arrayMax(cpu), decimals: 1),
+    iowait_pct = round(arrayAvg(iowait), decimals: 1),
+    steal_pct = round(arrayAvg(steal), decimals: 1)
+| filter avg_cpu_pct >= 0
+| fields host.name, dt.smartscape.host, avg_cpu_pct, peak_cpu_pct, iowait_pct, steal_pct
+| sort avg_cpu_pct desc
+| limit 20

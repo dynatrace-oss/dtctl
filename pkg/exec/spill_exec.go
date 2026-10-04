@@ -162,6 +162,9 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		Suggestions:      suggestions,
 		EmptyReason:      emptyReason,
 	}
+	if opts.Decorate != nil {
+		opts.Decorate(ctx, result, records)
+	}
 
 	resp := output.Response{
 		OK:              true,
@@ -310,6 +313,9 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	if len(rows.clippedFields) > 0 {
 		ctx.MarkFieldsClipped(opts.MaxFieldChars, rows.clippedFields)
 		ctx.Suggestions = append(ctx.Suggestions, fieldClipSuggestion(opts.MaxFieldChars, rows.clippedFields))
+	}
+	if opts.Decorate != nil {
+		opts.Decorate(ctx, result, rows.full)
 	}
 	resp := output.Response{
 		OK:              true,

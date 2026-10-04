@@ -1,0 +1,73 @@
+# Source: dt-obs-network-flows/references/oneagent-flows/oneagent-flows.md
+# (top talkers, direction semantics, connectivity score, RTT) and
+# references/peer-resolution/peer-resolution.md (peer IP to host)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: network-host-connections
+  version: 1
+  tags: [network, flows, connections, peers, dependencies, resets, timeouts, rtt]
+spec:
+  summary: Who one host talks to, per process and peer, with bytes, resets, timeouts and RTT (network flows)
+  description: >-
+    Breaks one host's traffic down by local process, direction and remote
+    peer from OneAgent network flow data, with TCP connection health. Needs
+    network connection monitoring enabled on the host.
+  requires: [hosts]
+  timeframe: 1h
+  params:
+    host:
+      type: string
+      required: true
+      positional: true
+    top:
+      type: int
+      default: 25
+      min: 1
+      max: 200
+  dql: |
+    fetch events, bucket: {"default_network_flows"}
+    | filter host.name == {{.host}}
+    | fieldsAdd direction = if(network_flow.process_is_server, "inbound", else: "outbound"),
+        peer_ip = if(network_flow.process_is_server, network_flow.source.address,
+          else: network_flow.destination.address)
+    | summarize {bytes = sum(network_flow.bytes.rx + network_flow.bytes.tx),
+        flows = count(),
+        new_sessions = sum(network_flow.tcp.sessions.new),
+        resets = sum(network_flow.tcp.sessions.reset),
+        timeouts = sum(network_flow.tcp.sessions.timeout),
+        avg_rtt_ms = avg(network_flow.tcp.rtt / 1ms)},
+        by: {dt.smartscape.process, direction, peer_ip,
+          server_port = network_flow.destination.port, transport = network_flow.network.transport}
+    | sort bytes desc
+    | limit {{.top}}
+    | fieldsAdd process = getNodeName(dt.smartscape.process)
+    | lookup [smartscapeNodes HOST | expand ip | fields ip, peer_host = name],
+        sourceField: peer_ip, lookupField: ip, fields: {peer_host}
+    | fields process, direction, peer_ip, peer_host, server_port, transport,
+        mib = round(toDouble(bytes) / 1048576, decimals: 1), flows, new_sessions,
+        resets, timeouts, avg_rtt_ms = round(avg_rtt_ms, decimals: 1)
+  means: >-
+    One row per (local process, direction, peer IP, server port, transport)
+    on the named host, by traffic. direction is from this host's side:
+    outbound = it opened the connection (the peer is the server and
+    server_port is the peer's listening port), inbound = the peer connected to
+    it (server_port is this host's listening port). mib is bytes in both
+    directions in MiB (1024^2 bytes). resets and timeouts count TCP sessions
+    that ended that way; compare them with new_sessions. avg_rtt_ms is the
+    mean TCP round-trip time in milliseconds. peer_host is filled only when
+    the peer IP belongs to a monitored host; pod IPs and external addresses
+    stay unresolved. With the default reportedConnections: auto setting
+    OneAgent reports mainly problem connections, so totals understate the
+    real traffic; network-top-talkers has the complete byte counts.
+  emptyMeans: >-
+    No network flow from this host is in the window. Either the host name is
+    not spelled exactly as host.name (case-sensitive; take it from
+    `dtctl run network-top-talkers` or `dtctl run hosts-cpu-top`), or network
+    connection monitoring (builtin:network-connection-monitoring) is off for
+    it, its OneAgent is older than 1.337, or it was enabled less than about
+    15 minutes ago. NetFlow and cloud VPC flow logs are stored as logs, not
+    here.
+  next:
+    - recipe: network-top-talkers
+      when: empty

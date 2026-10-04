@@ -1,0 +1,10 @@
+# logs-search v1 — window: default 1h
+fetch logs
+| filter contains(content, "<text>", caseSensitive: false)
+| sort timestamp desc
+| limit 50
+| fields timestamp, status,
+    source = coalesce(k8s.workload.name, dt.service.name, service.name,
+          dt.process_group.detected_name, faas.name, aws.log_group, log.source, host.name,
+          dt.openpipeline.source),
+    host.name, content, trace_id

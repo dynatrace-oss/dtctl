@@ -1,0 +1,7 @@
+# logs-for-service v1 — window: default 1h
+fetch logs
+| filter dt.service.name == "<service>" or service.name == "<service>"
+    or k8s.workload.name == "<service>" or dt.process_group.detected_name == "<service>"
+| sort timestamp desc
+| fields timestamp, status, host.name, k8s.pod.name, content, trace_id
+| limit 100

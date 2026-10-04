@@ -1,0 +1,16 @@
+# logs-error-patterns v2 — window: default 30m, max 1d
+fetch logs
+| filter status == "ERROR"
+| fieldsAdd pattern = replacePattern(
+    substring(trim(replaceString(content, "\n", " ")), from: 0, to: 200),
+    "(UUIDSTRING | [0-9a-fA-F]{8,} | DIGIT+)", "*")
+| summarize { errors = count(),
+              sources = countDistinct(coalesce(k8s.workload.name, dt.service.name, service.name,
+          dt.process_group.detected_name, faas.name, aws.log_group, log.source, host.name,
+          dt.openpipeline.source)),
+              last_seen = max(timestamp),
+              example = takeMax(record(timestamp, content = substring(content, from: 0, to: 500))) },
+    by: {pattern}
+| fields pattern, errors, sources, last_seen, example = example[content]
+| sort errors desc
+| limit 20

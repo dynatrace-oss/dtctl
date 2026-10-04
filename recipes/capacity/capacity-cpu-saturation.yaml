@@ -1,0 +1,76 @@
+# Source: dt-obs-predictive-analytics/references/capacity-forecasting.md and
+# references/trend-detection.md (growth rate, days to saturation). The trend is
+# a least-squares fit over daily averages instead of first-to-last point.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: capacity-cpu-saturation
+  version: 1
+  tags: [capacity, hosts, cpu, forecast, trend, saturation]
+spec:
+  summary: Hosts whose daily CPU trend reaches a ceiling within a horizon, soonest first
+  description: >-
+    Capacity planning for host CPU: fits a straight line through each host's
+    daily average CPU usage and projects when it crosses the ceiling.
+  requires: [host-metrics]
+  # A trend needs history: --from shorter than 14d is rejected.
+  timeframe: { default: 30d, min: 14d }
+  scope: [host_group, cluster, aws_account, azure_subscription, gcp_project, tag]
+  params:
+    ceiling:
+      type: int
+      default: 90
+      min: 1
+      max: 100
+    horizon_days:                # flag: --horizon-days
+      type: int
+      default: 90
+      min: 1
+      max: 3650
+  dql: |
+    timeseries cpu = avg(dt.host.cpu.usage), interval: 24h, by: {dt.smartscape.host, host.name}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd x = if(isNotNull(cpu[]), toDouble(iIndex())), xy = cpu[] * iIndex(),
+        recent = if(iIndex() >= arraySize(cpu) - 2 and isNotNull(cpu[]), 1, else: 0)
+    | fieldsAdd xx = x[] * x[]
+    | fieldsAdd n = toDouble(arraySize(arrayRemoveNulls(cpu))),
+        sx = arraySum(x), sy = arraySum(cpu), sxy = arraySum(xy), sxx = arraySum(xx)
+    | filter n >= arraySize(cpu) / 2 and arraySum(recent) > 0
+    | fieldsAdd daily_growth = (n * sxy - sx * sy) / (n * sxx - sx * sx)
+    | fieldsAdd trend_pct = (sy - daily_growth * sx) / n + daily_growth * (arraySize(cpu) - 1)
+    | fieldsAdd days_to_ceiling = if(trend_pct >= {{.ceiling}}, 0,
+        else: if(daily_growth > 0, toLong(({{.ceiling}} - trend_pct) / daily_growth)))
+    | filter days_to_ceiling <= {{.horizon_days}}
+    | fields host.name, dt.smartscape.host, days_to_ceiling,
+        trend_pct = round(trend_pct, decimals: 1),
+        daily_growth = round(daily_growth, decimals: 2),
+        latest_day_pct = round(arrayLast(cpu), decimals: 1),
+        days_of_data = toLong(n)
+    | sort days_to_ceiling asc, daily_growth desc
+    | limit 50
+  means: >-
+    One row per host whose CPU trend reaches the ceiling within horizon_days,
+    soonest first. The trend is a least-squares line through the host's daily
+    average CPU usage (percent of all cores); trend_pct is that line's value
+    today, daily_growth its slope in percentage points per day, and
+    days_to_ceiling = (ceiling - trend_pct) / daily_growth, 0 when the trend
+    is already at or above the ceiling. latest_day_pct is the most recent day's
+    average and includes today's partial day. A daily average hides peaks: a
+    host can saturate at its daily peak long before its average reaches the
+    ceiling. Hosts with data for less than half the window, or none in the
+    last two days, are left out. A straight line ranks risk; it is not a
+    seasonal forecast.
+    A scope flag only sees data recorded while the field or tag was set: a
+    primary tag added recently shortens the history (see days_of_data) and
+    changes the fit.
+  emptyMeans: >-
+    No host's CPU trend reaches the ceiling within the horizon: flat or falling
+    usage, or too little history (each host needs data for at least half the
+    window). Raise --horizon-days or lower --ceiling to see slower growers. No
+    host-metrics in scope (no OneAgent hosts, or a misspelled --host-group or
+    --cluster) gives the same result: check with `dtctl run hosts-census`.
+  next:
+    - recipe: hosts-cpu-top
+      when: nonempty
+    - recipe: hosts-census
+      when: empty

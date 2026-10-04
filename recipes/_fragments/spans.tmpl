@@ -1,0 +1,8 @@
+{{/*
+  How many requests one stored span stands for: aggregated spans carry a
+  count, sampled spans the threshold they survived. sum() of it extrapolates
+  a sampled span set to the real request count (within ~1% of the service
+  metrics). Source: dt-obs-tracing/references/sampling-extrapolation.md.
+*/}}
+{{define "span-multiplicity"}}coalesce(aggregation.count, 1)
+        / ((power(2, 56) - coalesce(sampling.threshold, 0)) * power(2, -56)){{end}}

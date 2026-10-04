@@ -1,0 +1,9 @@
+# k8s-pod-restarts v1 — window: default 1h
+timeseries { restarts = sum(dt.kubernetes.container.restarts),
+             oom_kills = sum(dt.kubernetes.container.oom_kills) },
+  by: {k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.pod.name}
+| fieldsAdd restarts = coalesce(arraySum(restarts), 0), oom_kills = coalesce(arraySum(oom_kills), 0)
+| filter restarts >= 3 or oom_kills > 0
+| fields k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.pod.name, restarts, oom_kills
+| sort oom_kills desc, restarts desc
+| limit 50

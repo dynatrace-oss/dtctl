@@ -1,0 +1,65 @@
+# Source: dt-obs-frontends/references/error-tracking.md ("Exceptions", "Request Errors"),
+#         dt-obs-frontends/references/mobile-monitoring.md (crashes, ANR)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: frontends-errors
+  version: 1
+  tags: [frontends, rum, errors, exceptions, crashes]
+spec:
+  summary: Top RUM errors per frontend (JS exceptions, failed requests, crashes, ANRs, CSP)
+  requires: [rum]
+  timeframe: 2h
+  params:
+    frontend:
+      type: string
+      positional: true
+      description: Restrict to one frontend (exact frontend.name)
+    kind:
+      type: enum
+      values: [exception, request, crash, anr, csp]
+      description: Only this error type (request = failed HTTP request)
+    user_type:
+      type: enum
+      values: [real_user, synthetic, robot]
+      default: real_user
+      description: Traffic to analyze
+  dql: |
+    fetch user.events
+    | filter characteristics.has_error and dt.rum.user_type == {{.user_type}}
+    {{- if .frontend}}
+    | filter frontend.name == {{.frontend}}{{end}}
+    {{- if .kind}}
+    | filter error.type == {{.kind}}{{end}}
+    | fieldsAdd error = substring(coalesce(error.display_name, exception.message,
+        if(error.type == "request", concat(toString(http.response.status_code), " ",
+          http.request.method, " ", splitString(url.full, "?")[0])),
+        if(error.type == "csp", concat(csp.effective_directive, " blocked ",
+          splitString(csp.blocked_uri.full, "?")[0]))), to: 200)
+    | summarize { occurrences = count(), sessions = countDistinct(dt.rum.session.id),
+        last_seen = max(start_time), error = takeLast(error) },
+      by: {frontend.name, error.type, group = if(error.type == "anr", "anr",
+          else: coalesce(error.id, error))}
+    | fields frontend.name, error.type, error, occurrences, sessions, last_seen
+    | sort occurrences desc
+    | limit 30
+  means: >-
+    Errors per frontend and type, ranked by occurrences, with the estimated
+    number of sessions that hit them. Exceptions and crashes are grouped by
+    Dynatrace's fingerprint (error.id) and show the last message; ANRs, whose
+    text differs per occurrence, are one row per frontend; the rest are grouped
+    by their text. error is Dynatrace's display
+    name when it has one, else the exception message (exceptions, crashes,
+    ANRs), "status method URL" for failed requests (the query string is
+    dropped; IDs in the path split a group; status 0 means the request was aborted or never
+    got a response, often an ad blocker or navigation), or the CSP directive and
+    blocked URI. Requests to third-party domains count too.
+  emptyMeans: >-
+    No RUM error of this kind from this user type in the window. That is good
+    news only if the frontend has traffic: check frontends-list, since a
+    misspelled frontend name (exact frontend.name) or an uninstrumented app
+    looks the same. Mobile apps have no CSP errors and web apps no crashes or
+    ANRs.
+  next:
+    - recipe: frontends-list
+      when: empty

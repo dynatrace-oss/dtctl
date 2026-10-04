@@ -1,0 +1,81 @@
+# Source: dt-platform-costs/references/billing-capabilities.md ("Base Usage", "Workflow + SPM",
+#         unit conversion table) and SKILL.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: costs-dps-by-capability
+  version: 2
+  tags: [costs, dps, billing, usage]
+spec:
+  summary: Billable DPS usage per capability in its own unit, for whole UTC days
+  description: >-
+    Usage per billing event type as Account Management reports it, for every
+    capability except Metrics and Traces ingest, which need included-volume
+    deduction this recipe does not do. Usage only: no prices, no cost.
+  # Billing needs explicit timestamps: usage is emitted up to ~80 min late, so
+  # the fetch runs 2h past the window and attributes by usage.start. `inline`
+  # makes .window.from/.window.to available and skips the default-timeframe
+  # mechanism; `align` rounds the window to UTC midnights. Both render as DQL
+  # timestamp expressions; timeAdd shifts one.
+  timeframe: { default: 7d, align: utc-day, inline: true }
+  segments: off                  # billing events carry no team primary tags
+  # The unit follows the billed field that coalesce picks, in the same order.
+  dql: |
+    fetch dt.system.events, from: {{.window.from}}, to: {{timeAdd .window.to "2h"}}
+    | filter event.kind == "BILLING_USAGE_EVENT"
+    | filter not in(event.type, {"Automation Workflow", "Security Posture Management",
+        "Metrics - Ingest & Process", "Traces - Ingest & Process"})
+    | fieldsAdd effective_start = coalesce(usage.start, timestamp)
+    | filter effective_start >= {{.window.from}} and effective_start < {{.window.to}}
+    | dedup {event.id, event.type}
+    | fieldsAdd usage = coalesce(billed_gibibyte_hours, billed_host_hours, billed_msu_hours,
+        billed_container_hours, billed_bytes, billed_sessions, billed_replay_sessions,
+        billed_property_sessions, billed_pod_hours, billed_synthetic_action_count,
+        billed_http_request_count, billed_test_result_ingestion_count, billed_invocations,
+        `usage.quantity.billable`, `database-instance-hours`),
+      unit = coalesce(if(isNotNull(billed_gibibyte_hours), "GiB-hours"),
+        if(isNotNull(billed_host_hours), "host-hours"),
+        if(isNotNull(billed_msu_hours), "MSU-hours"),
+        if(isNotNull(billed_container_hours), "container-hours"),
+        if(isNotNull(billed_bytes), if(contains(event.type, "Retain"), "GiB-days", else: "GiB")),
+        if(isNotNull(billed_sessions), "sessions"),
+        if(isNotNull(billed_replay_sessions), "replay captures"),
+        if(isNotNull(billed_property_sessions), "properties/session"),
+        if(isNotNull(billed_pod_hours), "pod-hours"),
+        if(isNotNull(billed_synthetic_action_count), "synthetic actions"),
+        if(isNotNull(billed_http_request_count), "synthetic requests"),
+        if(isNotNull(billed_test_result_ingestion_count), "synthetic results"),
+        if(isNotNull(billed_invocations), "invocations"),
+        if(isNotNull(`usage.quantity.billable`), coalesce(usage.unit, "units")),
+        if(isNotNull(`database-instance-hours`), "database-instance-hours"))
+    | fieldsAdd usage = if(unit == "GiB", toDouble(usage) / 1073741824,
+        else: if(unit == "GiB-days", toDouble(usage) / 25769803776, else: toDouble(usage)))
+    | summarize billable_usage = sum(usage), by: {event.type, unit}
+    | append [
+        fetch dt.system.events, from: {{.window.from}}, to: {{.window.to}}
+        | filter event.kind == "BILLING_USAGE_EVENT"
+        | filter in(event.type, {"Automation Workflow", "Security Posture Management"})
+        | fieldsAdd utc_hour = bin(timestamp, 1h)
+        | fieldsAdd dedup_key = if(event.type == "Automation Workflow", record(utc_hour, workflow.id),
+            else: record(utc_hour, dt.entity.kubernetes_node))
+        | dedup {event.type, dedup_key}
+        | summarize billable_usage = toDouble(count()), by: {event.type}
+        | fieldsAdd unit = if(event.type == "Automation Workflow", "workflow-hours", else: "node-hours") ]
+    | fieldsAdd billable_usage = round(billable_usage, decimals: 2)
+    | sort event.type asc
+  means: >-
+    Billable quantity per billing event type over whole UTC days (the window
+    end is exclusive: --from 7d ending today covers the 7 days before today),
+    each in the unit named in unit, so rows cannot be added together. Bytes
+    are converted to GiB (ingest, query: GiB scanned) and GiB-days (retain);
+    Automation Workflow counts workflow-hours and Security Posture Management
+    node-hours. Metrics and Traces ingest are NOT included: their billable
+    volume needs the included-volume deduction, and summing raw usage would
+    overstate it. Files types are listed separately; Account Management adds
+    them to the matching Events capability. No prices: costs depend on the
+    contract rate card.
+  emptyMeans: >-
+    No billing usage events in these days. This does NOT mean the capability is
+    unlicensed or free. Check read access to dt.system.events and that the
+    account is on a Dynatrace Platform Subscription (classic licensing emits no
+    such events).

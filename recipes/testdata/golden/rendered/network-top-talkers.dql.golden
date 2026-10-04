@@ -1,0 +1,15 @@
+# network-top-talkers v1 — window: default 1h
+timeseries { rx = sum(dt.host.net.nic.bytes_rx), tx = sum(dt.host.net.nic.bytes_tx) },
+  by: {dt.smartscape.host, host.name}
+| fieldsAdd rx_bytes = arraySum(rx), tx_bytes = arraySum(tx), both = rx[] + tx[]
+| fieldsAdd total_bytes = rx_bytes + tx_bytes,
+    seconds = toDouble((timeframe[end] - timeframe[start]) / 1s),
+    interval_s = toDouble(interval / 1s)
+| sort total_bytes desc
+| limit 20
+| fields host.name, dt.smartscape.host,
+    total_gib = round(total_bytes / 1073741824, decimals: 2),
+    rx_gib = round(rx_bytes / 1073741824, decimals: 2),
+    tx_gib = round(tx_bytes / 1073741824, decimals: 2),
+    avg_mbit_s = round(total_bytes * 8 / seconds / 1000000, decimals: 1),
+    peak_mbit_s = round(arrayMax(both) * 8 / interval_s / 1000000, decimals: 1)

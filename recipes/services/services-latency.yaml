@@ -1,0 +1,72 @@
+# Source: dt-obs-tracing/references/performance-analysis.md, dt-obs-tracing/references/sampling-extrapolation.md
+# Spans, not the service metrics: the metrics fold every endpoint that is not a
+# key request into "NON_KEY_REQUESTS", so they cannot break a service down.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: services-latency
+  version: 1
+  tags: [services, latency, endpoints, percentiles, slow]
+spec:
+  summary: One service's endpoints with p50/p90/p99 latency, ranked by total time spent
+  description: >-
+    Where a service spends its time: every endpoint with its traffic and
+    latency percentiles, read from the service's request root spans. Use
+    services-red for the service-level numbers and traces-slow-endpoints to
+    rank endpoints across all services.
+  requires: [spans]
+  timeframe: 1h
+  scope: [cluster, namespace, tag]
+  params:
+    service:
+      type: string
+      required: true
+      positional: true
+      description: Service name (exact dt.service.name, see services-list)
+  dql: |
+    fetch spans
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter request.is_root_span == true and dt.service.name == {{.service}}
+    | fieldsAdd multiplicity = {{template "span-multiplicity"}}
+    | summarize { requests = toLong(round(sum(multiplicity))),
+                  failed = toLong(round(sum(if(request.is_failed, multiplicity, else: 0)))),
+                  time_s = sum(duration / 1s * multiplicity),
+                  p50 = percentile(duration, 50), p90 = percentile(duration, 90),
+                  p99 = percentile(duration, 99), max = max(duration),
+                  slowest = takeMax(record(duration, trace.id)) },
+        by: {endpoint.name}
+    | fields endpoint.name, requests, failed,
+        time_spent_s = round(time_s, decimals: 1),
+        p50_ms = round(p50 / 1ms, decimals: 1), p90_ms = round(p90 / 1ms, decimals: 1),
+        p99_ms = round(p99 / 1ms, decimals: 1), max_ms = round(max / 1ms, decimals: 1),
+        slowest_trace_id = slowest[trace.id]
+    | sort time_spent_s desc
+    | limit 25
+  means: >-
+    One row per endpoint of the service, ranked by time_spent_s (requests x
+    duration, in seconds), so the first row is where the service spends most
+    of its time, not necessarily the slowest endpoint. Latencies are in
+    milliseconds. requests and failed are extrapolated from sampled spans (the
+    sampling and aggregation multiplicity), so they approximate the real
+    traffic; percentiles are approximate and computed over the stored spans
+    (p99 can come out slightly above max_ms). An endpoint with a handful of
+    requests has a meaningless p99. slowest_trace_id is the
+    slowest stored trace of that endpoint; open it with traces-get. Capped at
+    25 endpoints.
+  emptyMeans: >-
+    No request root spans of this service in the window. Most often the name
+    does not match: dt.service.name is exact and case-sensitive, and many names
+    carry a suffix such as " (production)"; find it with `dtctl run
+    services-list <fragment>`. Otherwise the service received no traffic in the
+    window, or it is not traced (metrics-only services appear in services-red
+    but have no spans).
+  next:
+    - recipe: services-list
+      when: empty
+      with: { contains: "{{.service}}" }
+    - recipe: traces-get
+      bind: { trace_id: slowest_trace_id }
+    - recipe: services-failures
+      when: nonempty
+      with: { service: "{{.service}}" }

@@ -1,0 +1,18 @@
+# problems-logs v1 — window: default 2h
+fetch logs
+| filter in(status, {"ERROR", "WARN"})
+| filter dt.entity.service in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.entity.host in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.source_entity in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.source_entity[0] in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.source_entity[1] in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.source_entity[2] in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.smartscape_source.id in [fetch dt.davis.problems | filter display_id == "<id>" | expand e = smartscape.affected_entities | fields id = e[id]]
+    or dt.smartscape.service in [fetch dt.davis.problems | filter display_id == "<id>" | expand e = smartscape.affected_entities | fields id = e[id]]
+    or dt.smartscape.host in [fetch dt.davis.problems | filter display_id == "<id>" | expand e = smartscape.affected_entities | fields id = e[id]]
+| summarize { lines = count(), first_seen = min(timestamp), last_seen = max(timestamp),
+      example = takeLast(substring(content, to: 300)) },
+    by: {source = coalesce(dt.service.name, k8s.workload.name, faas.name,
+      host.name, log.source, aws.log_group), status}
+| sort lines desc
+| limit 30

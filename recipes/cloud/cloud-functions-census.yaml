@@ -1,0 +1,73 @@
+# Source: dt-obs-aws/references/serverless-containers.md (Lambda), dt-obs-azure/references/serverless-containers.md
+#         (Function Apps via kind), dt-obs-gcp (Cloud Functions object), combined into one census.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: cloud-functions-census
+  version: 1
+  tags: [cloud, aws, azure, gcp, serverless, lambda, functions, runtimes]
+spec:
+  summary: Serverless functions (Lambda, Azure Function Apps, Cloud Functions) by runtime
+  timeframe: none                # Smartscape state
+  scope: [aws_account, azure_subscription, gcp_project, tag]
+  params:
+    provider:
+      type: enum
+      values: [all, aws, azure, gcp]
+      default: all
+    by:
+      type: enum
+      values: [runtime, account, region]
+      default: runtime
+      render: identifier
+      description: Group by runtime, by account (subscription, project) or by region (location)
+  dql: |
+    smartscapeNodes
+    {{- if eq .provider "aws"}} "AWS_LAMBDA_FUNCTION"
+    {{- else if eq .provider "azure"}} "AZURE_MICROSOFT_WEB_SITES"
+    {{- else if eq .provider "gcp"}} "GCP_CLOUDFUNCTIONS_GOOGLEAPIS_COM_FUNCTION"
+    {{- else}} "AWS_LAMBDA_FUNCTION", "AZURE_MICROSOFT_WEB_SITES", "GCP_CLOUDFUNCTIONS_GOOGLEAPIS_COM_FUNCTION"{{end}}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | parse coalesce(aws.object, azure.object, gcp.object), "JSON:j"
+    | filter type != "AZURE_MICROSOFT_WEB_SITES" or contains(toString(j[configuration][kind]), "functionapp")
+    | fieldsAdd runtime = coalesce(toString(j[configuration][configuration][runtime]),
+        if(toString(j[configuration][configuration][packageType]) == "Image", "container image"),
+        toString(j[configuration][properties][siteConfig][linuxFxVersion]),
+        toString(j[configuration][resource][buildConfig][runtime]))
+    | fieldsAdd runtime = if(startsWith(runtime, "DOCKER|"), "container image",
+        else: coalesce(runtime, "(not reported)")),
+      account = coalesce(aws.account.id, azure.subscription, gcp.project.id),
+      region = coalesce(aws.region, azure.location, gcp.region),
+      dynatrace_layer = contains(toString(j[configuration][configuration][layers]), "Dynatrace")
+    | summarize { functions = count(),
+    {{- if ne .by "account"}}
+        accounts = countDistinct(account),{{end}}
+    {{- if ne .by "region"}}
+        regions = countDistinct(region),{{end}}
+    {{- if ne .by "runtime"}}
+        runtimes = countDistinct(runtime),{{end}}
+        with_dynatrace_layer = countIf(dynatrace_layer) },
+      by: {provider = if(startsWith(type, "AWS_"), "aws",
+        else: if(startsWith(type, "AZURE_"), "azure", else: "gcp")), {{.by}}}
+    | sort functions desc
+    | limit 100
+  means: >-
+    Number of serverless functions per provider and runtime (or account, or
+    region) from the cloud integrations' Smartscape inventory: AWS Lambda
+    functions, Azure Function Apps (one row per app, which can hold many
+    functions; App Service web apps are excluded) and GCP Cloud Functions.
+    runtime is the provider's identifier (python3.12, nodejs20.x,
+    Python|3.12); "container image" means the function ships as an image,
+    "(not reported)" means the integration did not collect the resource
+    configuration (a lightweight poller) or, on Azure, a Windows Function
+    App. with_dynatrace_layer
+    counts Lambda functions with a Dynatrace layer attached, i.e.
+    instrumented by OneAgent (always 0 for Azure and GCP, which are not
+    detected this way). Check runtimes against the provider's deprecation
+    schedule yourself; this recipe does not judge them.
+  emptyMeans: >-
+    Smartscape has no function of the selected provider: either there are
+    none, or that cloud integration is not configured (run cloud-inventory
+    for the provider to tell). An account, subscription or project scope of
+    another provider than --provider always returns nothing.

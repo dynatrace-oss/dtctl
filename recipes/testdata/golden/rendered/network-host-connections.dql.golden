@@ -1,0 +1,22 @@
+# network-host-connections v1 — window: default 1h
+fetch events, bucket: {"default_network_flows"}
+| filter host.name == "<host>"
+| fieldsAdd direction = if(network_flow.process_is_server, "inbound", else: "outbound"),
+    peer_ip = if(network_flow.process_is_server, network_flow.source.address,
+      else: network_flow.destination.address)
+| summarize {bytes = sum(network_flow.bytes.rx + network_flow.bytes.tx),
+    flows = count(),
+    new_sessions = sum(network_flow.tcp.sessions.new),
+    resets = sum(network_flow.tcp.sessions.reset),
+    timeouts = sum(network_flow.tcp.sessions.timeout),
+    avg_rtt_ms = avg(network_flow.tcp.rtt / 1ms)},
+    by: {dt.smartscape.process, direction, peer_ip,
+      server_port = network_flow.destination.port, transport = network_flow.network.transport}
+| sort bytes desc
+| limit 25
+| fieldsAdd process = getNodeName(dt.smartscape.process)
+| lookup [smartscapeNodes HOST | expand ip | fields ip, peer_host = name],
+    sourceField: peer_ip, lookupField: ip, fields: {peer_host}
+| fields process, direction, peer_ip, peer_host, server_port, transport,
+    mib = round(toDouble(bytes) / 1048576, decimals: 1), flows, new_sessions,
+    resets, timeouts, avg_rtt_ms = round(avg_rtt_ms, decimals: 1)

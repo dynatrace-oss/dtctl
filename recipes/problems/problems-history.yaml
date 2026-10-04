@@ -1,0 +1,50 @@
+# Source: dt-obs-problems/references/problem-trending.md ("Problem Duration Trending", "Category Trends"),
+#         dt-obs-problems/SKILL.md ("Recurring Root Causes")
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: problems-history
+  version: 1
+  tags: [problems, davis, mttr, recurring, trend]
+spec:
+  summary: Problem counts and time to resolve, by category, title or root cause
+  requires: [davis]
+  timeframe: { default: 7d, min: 1d }
+  scope: [cluster, namespace, host_group]
+  params:
+    by:
+      type: enum
+      values: [event.category, event.name, root_cause_entity_name]
+      default: event.category
+      render: identifier
+      description: Group by category, problem title (recurring problems) or root-cause entity
+  dql: |
+    fetch dt.davis.problems
+    | filter not(dt.davis.is_duplicate)
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | fieldsAdd duration_min = if(event.status == "CLOSED",
+        toDouble(event.end - event.start) / 60000000000)
+    | summarize { problems = count(), active = countIf(event.status == "ACTIVE"),
+        mttr_min = round(avg(duration_min), decimals: 1),
+        p50_min = round(median(duration_min), decimals: 1),
+        p90_min = round(percentile(duration_min, 90), decimals: 1),
+        last_start = max(event.start) },
+      by: { {{.by}} }
+    | sort problems desc
+    | limit 50
+  means: >-
+    One row per group: problems with an update in the window (Davis duplicates
+    removed), how many are still ACTIVE, and the mean, median and p90 time to
+    resolve in minutes, over the CLOSED ones only. A long-open problem counts
+    but adds no duration, so a low mttr_min next to many active problems is not
+    good news. Grouping by event.name surfaces recurring problems; by
+    root_cause_entity_name, a null group holds the problems without a single
+    identified root cause (most of them).
+  emptyMeans: >-
+    No problem was updated in the window, which on a monitored environment
+    usually means a short window or a scope that matched nothing (values are
+    exact and case-sensitive). An environment without Davis-monitored entities
+    has no problems at all.
+  next:
+    - recipe: problems-active

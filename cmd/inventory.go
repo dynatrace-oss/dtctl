@@ -106,6 +106,10 @@ an instrumentation change or an ingest — use 'dtctl inventory arrivals'.
 		if segNote != "" {
 			inv.Notes = append(inv.Notes, segNote)
 		}
+		// The verdicts filter `dtctl get recipes` for a day. Partial runs
+		// count too: only an absent verdict hides a recipe, and an absent
+		// verdict is never the product of a budget running out.
+		saveInventoryVerdicts(cfg, verdictsFromInventory(inv, false))
 
 		if outputFormat == "table" && !agentMode {
 			printInventoryHuman(inv)
@@ -295,6 +299,15 @@ func inventoryDefinitions(cmd *cobra.Command) (map[string]*inventory.CapabilityD
 	base := inventory.BuiltinDefinitions()
 	if noBuiltin {
 		base = map[string]*inventory.CapabilityDef{}
+	} else {
+		// Capabilities installed apps ship with their recipe bundles join
+		// the built-in set (and stay under the caller's own --definitions):
+		// an app that adds a signal says how to detect it. Cached bundles
+		// only — inventory must not wait on a bundle listing.
+		load := loadRecipeBook(cmdContext(cmd), parsedRecipeEnv(), envCacheOnly)
+		for name, def := range load.book.Capabilities {
+			base[name] = def
+		}
 	}
 	overlays := make([]*inventory.Definitions, 0, len(defFiles))
 	for _, f := range defFiles {

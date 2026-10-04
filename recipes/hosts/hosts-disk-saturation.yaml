@@ -1,0 +1,52 @@
+# Source: dt-obs-hosts/references/host-metrics.md, dt-obs-hosts/SKILL.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: hosts-disk-saturation
+  version: 1
+  tags: [hosts, disk, filesystem, capacity, full]
+spec:
+  summary: Disks above a used-space threshold, per host, with the space left
+  requires: [host-metrics]
+  timeframe: 1h
+  # host_group is a primary field, enriched on host metrics, so the scope
+  # filter can be pushed down into timeseries instead of a getNodeField() lookup.
+  scope: [host_group, cluster, aws_account, azure_subscription, gcp_project, tag]
+  params:
+    threshold:
+      type: int
+      default: 80
+      min: 1
+      max: 100
+  dql: |
+    timeseries { used = avg(dt.host.disk.used.percent), avail = avg(dt.host.disk.avail) },
+      by: {dt.smartscape.host, host.name, dt.smartscape.disk}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd avg_used_pct = round(arrayAvg(used), decimals: 1)
+    | filter avg_used_pct >= {{.threshold}}
+    | fieldsAdd disk = getNodeName(dt.smartscape.disk),
+        peak_used_pct = round(arrayMax(used), decimals: 1),
+        avail_gib = round(arrayLast(avail) / 1073741824, decimals: 1)
+    | filterOut contains(disk, "/kubelet/pods/")
+    | fields host.name, disk, avg_used_pct, peak_used_pct, avail_gib, dt.smartscape.host, dt.smartscape.disk
+    | sort avg_used_pct desc
+    | limit 50
+  means: >-
+    One row per (host, filesystem), fullest first. disk is the mount point (or
+    drive letter). avg_used_pct and peak_used_pct are percent of the
+    filesystem's size; avail_gib is the space still available to
+    non-root users at the end of the window, in GiB. A small disk can be 95%
+    full with plenty of room and a large one 80% full with little: read
+    avail_gib, not only the percentage. Kubelet per-pod bind mounts of the
+    root filesystem are left out. For how fast a disk is filling, see
+    capacity-disk-forecast.
+  emptyMeans: >-
+    No monitored disk averaged at or above the threshold. Hosts without
+    OneAgent (full-stack or infrastructure mode) report no disk metrics at all:
+    they are absent from this result, not healthy. A misspelled --host-group or
+    --cluster gives the same empty result: check with `dtctl run hosts-census`.
+  next:
+    - recipe: capacity-disk-forecast
+      when: nonempty
+    - recipe: hosts-census
+      when: empty

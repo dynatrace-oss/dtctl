@@ -1,0 +1,24 @@
+# frontends-web-vitals v2 — window: default 2h
+fetch user.events
+| filter characteristics.has_page_summary and dt.rum.user_type == "real_user"
+    and isNotNull(frontend.name)
+| summarize { page_loads = count(),
+    lcp = percentile(web_vitals.largest_contentful_paint, 75),
+    inp = percentile(if(web_vitals.interaction_to_next_paint > 0ms,
+      web_vitals.interaction_to_next_paint), 75),
+    cls_p75 = percentile(web_vitals.cumulative_layout_shift, 75),
+    with_interaction = countIf(web_vitals.interaction_to_next_paint > 0ms) },
+  by: {frontend.name}
+| fieldsAdd lcp_p75_ms = round(toDouble(lcp) / 1000000),
+    inp_p75_ms = round(toDouble(inp) / 1000000),
+    cls_p75 = round(cls_p75, decimals: 3)
+| fieldsAdd lcp_rating = if(isNull(lcp_p75_ms), "no_data",
+      else: if(lcp_p75_ms < 2500, "good", else: if(lcp_p75_ms <= 4000, "needs_improvement", else: "poor"))),
+    inp_rating = if(isNull(inp_p75_ms), "no_data",
+      else: if(inp_p75_ms < 200, "good", else: if(inp_p75_ms <= 500, "needs_improvement", else: "poor"))),
+    cls_rating = if(isNull(cls_p75), "no_data",
+      else: if(cls_p75 < 0.1, "good", else: if(cls_p75 <= 0.25, "needs_improvement", else: "poor")))
+| fields frontend.name, page_loads, lcp_p75_ms, lcp_rating, inp_p75_ms, inp_rating,
+    with_interaction, cls_p75, cls_rating
+| sort page_loads desc
+| limit 50

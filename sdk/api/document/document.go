@@ -288,6 +288,20 @@ func (h *Handler) GetMetadata(ctx context.Context, id string) (*DocumentMetadata
 	return &result, nil
 }
 
+// GetContent downloads a document's content alone, without the multipart
+// envelope Get parses.
+func (h *Handler) GetContent(ctx context.Context, id string) ([]byte, error) {
+	resp, err := h.client.HTTP().R().SetContext(ctx).
+		Get(fmt.Sprintf("/platform/document/v1/documents/%s/content", httpclient.PathSegment(id)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get document content: %w", err)
+	}
+	if err := httpclient.CheckResponse(resp); err != nil {
+		return nil, fmt.Errorf("failed to get document content %q: %w", id, err)
+	}
+	return resp.Body(), nil
+}
+
 // Delete deletes a document
 func (h *Handler) Delete(ctx context.Context, id string, version int) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).

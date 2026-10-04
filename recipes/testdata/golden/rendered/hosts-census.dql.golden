@@ -1,0 +1,12 @@
+# hosts-census v1 — window: none (state query; no window)
+smartscapeNodes HOST
+| fieldsAdd os = replaceString(os.type, "OS_TYPE_", ""),
+    cloud = coalesce(cloud.provider, "none"),
+    host_group = coalesce(dt.host_group.id, "(none)")
+| summarize {hosts = count(),
+    k8s_nodes = countIf(isNotNull(k8s.node.name)),
+    logical_cores = sum(toLong(logical_cores)),
+    memory_gib = round(sum(toDouble(memory)) / 1073741824, decimals: 0)},
+    by: {os, cloud, host_group}
+| sort hosts desc
+| limit 100

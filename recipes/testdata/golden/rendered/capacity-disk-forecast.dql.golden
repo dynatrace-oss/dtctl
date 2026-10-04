@@ -1,0 +1,24 @@
+# capacity-disk-forecast v1 — window: default 30d, min 7d
+timeseries { used = avg(dt.host.disk.used.percent), avail = avg(dt.host.disk.avail) },
+  interval: 24h, by: {dt.smartscape.host, host.name, dt.smartscape.disk}
+| fieldsAdd x = if(isNotNull(used[]), toDouble(iIndex())), xy = used[] * iIndex(),
+    recent = if(iIndex() >= arraySize(used) - 2 and isNotNull(used[]), 1, else: 0)
+| fieldsAdd xx = x[] * x[]
+| fieldsAdd n = toDouble(arraySize(arrayRemoveNulls(used))),
+    sx = arraySum(x), sy = arraySum(used), sxy = arraySum(xy), sxx = arraySum(xx)
+| filter n >= arraySize(used) / 2 and arraySum(recent) > 0
+| fieldsAdd daily_growth = (n * sxy - sx * sy) / (n * sxx - sx * sx)
+| fieldsAdd trend_pct = (sy - daily_growth * sx) / n + daily_growth * (arraySize(used) - 1)
+| fieldsAdd days_to_ceiling = if(trend_pct >= 95, 0,
+    else: if(daily_growth > 0, toLong((95 - trend_pct) / daily_growth)))
+| filter days_to_ceiling <= 30
+| fieldsAdd disk = getNodeName(dt.smartscape.disk)
+| filterOut contains(disk, "/kubelet/pods/")
+| fields host.name, disk, days_to_ceiling,
+    used_pct = round(arrayLast(used), decimals: 1),
+    daily_growth = round(daily_growth, decimals: 2),
+    avail_gib = round(arrayLast(avail) / 1073741824, decimals: 1),
+    days_of_data = toLong(n),
+    dt.smartscape.host, dt.smartscape.disk
+| sort days_to_ceiling asc, daily_growth desc
+| limit 50

@@ -1,0 +1,58 @@
+# Source: dt-obs-logs/SKILL.md (Content Search)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: logs-search
+  version: 1
+  tags: [logs, search, grep, text, full-text]
+spec:
+  summary: Recent log lines containing a text, with their source
+  description: >-
+    grep over logs: the 50 most recent records whose content contains the
+    text. It returns lines instead of counting all of them, which keeps a
+    search for a common word cheap; use logs-error-patterns to count.
+  requires: [logs]
+  timeframe: 1h
+  scope: [cluster, namespace, host_group, tag]
+  params:
+    text:
+      type: string
+      required: true
+      positional: true
+      pattern: "\\S"
+      description: Text the log line must contain (case-insensitive substring)
+    status:
+      type: enum
+      values: [ERROR, WARN, INFO, NONE]
+      description: Only records with this normalized status (log level)
+  dql: |
+    fetch logs
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- with .status}}
+    | filter status == {{.}}{{end}}
+    | filter contains(content, {{.text}}, caseSensitive: false)
+    | sort timestamp desc
+    | limit 50
+    | fields timestamp, status,
+        source = {{template "log-source"}},
+        host.name, content, trace_id
+  means: >-
+    The 50 newest matching log records, newest first. 50 rows means there are
+    probably more, and the result says nothing about how often the text occurs
+    (narrow with --status, a scope flag or a shorter window; count ERROR lines
+    with logs-error-patterns --contains). source is the most specific name on
+    the record: k8s workload, service, process group, function, log group, log
+    file or host, else the ingest channel. The match is a case-insensitive
+    substring of content only, not of attributes. trace_id, when set, opens
+    the request with traces-get.
+  emptyMeans: >-
+    No log line in the window contains the text (case-insensitive substring of
+    content; attributes such as service or host names are not searched). Widen
+    the window with --from, drop --status or a scope flag, or search a shorter
+    fragment: a phrase must appear exactly, including punctuation.
+  next:
+    - recipe: logs-error-sources
+      when: empty
+    - recipe: traces-get
+      bind: { trace_id: trace_id }

@@ -1,0 +1,61 @@
+# Source: dt-obs-hosts/SKILL.md (Resource Utilization Monitoring) and
+# references/host-metrics.md (CPU monitoring)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: hosts-cpu-top
+  version: 1
+  tags: [hosts, cpu, utilization, top, iowait, steal]
+spec:
+  summary: Hosts ranked by average CPU usage, with peak, I/O wait and steal
+  requires: [host-metrics]
+  timeframe: 1h
+  scope: [host_group, cluster, aws_account, azure_subscription, gcp_project, tag]
+  params:
+    top:
+      type: int
+      default: 20
+      min: 1
+      max: 500
+    min_pct:                     # flag: --min-pct
+      type: int
+      default: 0
+      min: 0
+      max: 100
+  dql: |
+    timeseries { cpu = avg(dt.host.cpu.usage),
+                 iowait = avg(dt.host.cpu.iowait),
+                 steal = avg(dt.host.cpu.steal) },
+      by: {dt.smartscape.host, host.name}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd avg_cpu_pct = round(arrayAvg(cpu), decimals: 1),
+        peak_cpu_pct = round(arrayMax(cpu), decimals: 1),
+        iowait_pct = round(arrayAvg(iowait), decimals: 1),
+        steal_pct = round(arrayAvg(steal), decimals: 1)
+    | filter avg_cpu_pct >= {{.min_pct}}
+    | fields host.name, dt.smartscape.host, avg_cpu_pct, peak_cpu_pct, iowait_pct, steal_pct
+    | sort avg_cpu_pct desc
+    | limit {{.top}}
+  means: >-
+    One row per host, busiest first. All values are percent of the host's
+    total CPU capacity (all cores together, 0-100), averaged over the window;
+    peak_cpu_pct is the highest single interval (one minute for windows up to
+    a few hours, coarser for longer ones). High iowait_pct means the CPU is
+    waiting on disk or network storage, not computing (Linux only, null on
+    Windows). steal_pct above a few percent means the hypervisor gives the VM
+    less CPU than it asks for: a noisy neighbour or an exhausted burst credit,
+    not a workload problem. A host that sits near 100% average is saturated;
+    a high peak with a low average is a spike.
+  emptyMeans: >-
+    No host reported CPU metrics for this scope and window (or none reached
+    --min-pct). Hosts need OneAgent (full-stack or infrastructure mode);
+    discovery-mode hosts and agentless cloud VMs report no host CPU metric. A
+    misspelled --host-group/--cluster or account ID gives the same empty
+    result: check the values with `dtctl run hosts-census`.
+  next:
+    - recipe: hosts-memory-top
+      when: nonempty
+    - recipe: capacity-cpu-saturation
+      when: nonempty
+    - recipe: hosts-census
+      when: empty

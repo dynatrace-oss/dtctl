@@ -1,0 +1,51 @@
+# Source: dt-obs-hosts/SKILL.md (Host Discovery and Classification, Cost
+# Attribution) and references/inventory-discovery.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: hosts-census
+  version: 1
+  tags: [hosts, inventory, os, cloud, host-groups]
+spec:
+  summary: Monitored hosts counted by OS, cloud provider and host group, with total cores and memory
+  description: >-
+    What runs where: a current host inventory grouped by operating system,
+    cloud provider and OneAgent host group. Use it to learn the host group
+    names --host-group takes.
+  requires: [hosts]
+  timeframe: none
+  scope: [host_group, cluster, aws_account, azure_subscription, gcp_project, tag]
+  dql: |
+    smartscapeNodes HOST
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | fieldsAdd os = replaceString(os.type, "OS_TYPE_", ""),
+        cloud = coalesce(cloud.provider, "none"),
+        host_group = coalesce(dt.host_group.id, "(none)")
+    | summarize {hosts = count(),
+        k8s_nodes = countIf(isNotNull(k8s.node.name)),
+        logical_cores = sum(toLong(logical_cores)),
+        memory_gib = round(sum(toDouble(memory)) / 1073741824, decimals: 0)},
+        by: {os, cloud, host_group}
+    | sort hosts desc
+    | limit 100
+  means: >-
+    One row per (os, cloud, host_group) with the number of hosts Dynatrace
+    currently has in its topology, including hosts monitored in discovery or
+    infrastructure-only mode. cloud is "none" for on-premises or undetected
+    hosts; host_group "(none)" means the OneAgent was installed without one.
+    The host_group values are what --host-group takes. k8s_nodes counts hosts
+    that are Kubernetes nodes. logical_cores and memory_gib are summed totals
+    (memory in GiB, rounded); they are null where the agent did not report them.
+    At most 100 rows, largest groups first: on big environments narrow with a
+    scope flag to see the rest.
+  emptyMeans: >-
+    No host is in the topology for this scope. Without scope flags that means
+    no OneAgent (or host-reporting integration) is connected. With them, a
+    value matched nothing: host group names, cluster names and account IDs are
+    exact and case-sensitive; rerun without the flag to see the values.
+  next:
+    - recipe: hosts-cpu-top
+      when: nonempty
+    - recipe: hosts-memory-top
+      when: nonempty

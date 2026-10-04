@@ -1,0 +1,62 @@
+# Source: dt-obs-hosts/references/host-metrics.md (Memory monitoring, swap,
+# memory pressure)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: hosts-memory-top
+  version: 1
+  tags: [hosts, memory, utilization, top, swap]
+spec:
+  summary: Hosts ranked by memory usage, with the least available memory and swap in use
+  requires: [host-metrics]
+  timeframe: 1h
+  scope: [host_group, cluster, aws_account, azure_subscription, gcp_project, tag]
+  params:
+    top:
+      type: int
+      default: 20
+      min: 1
+      max: 500
+    min_pct:                     # flag: --min-pct
+      type: int
+      default: 0
+      min: 0
+      max: 100
+  dql: |
+    timeseries { used = avg(dt.host.memory.usage),
+                 avail = min(dt.host.memory.avail.bytes),
+                 swap_used = avg(dt.host.memory.swap.used),
+                 swap_total = avg(dt.host.memory.swap.total) },
+      by: {dt.smartscape.host, host.name}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd avg_used_pct = round(arrayAvg(used), decimals: 1),
+        peak_used_pct = round(arrayMax(used), decimals: 1),
+        min_avail_gib = round(arrayMin(avail) / 1073741824, decimals: 2),
+        swap_used_pct = if(arrayAvg(swap_total) > 0,
+          round(100 * arrayAvg(swap_used) / arrayAvg(swap_total), decimals: 1))
+    | filter avg_used_pct >= {{.min_pct}}
+    | fields host.name, dt.smartscape.host, avg_used_pct, peak_used_pct, min_avail_gib, swap_used_pct
+    | sort avg_used_pct desc
+    | limit {{.top}}
+  means: >-
+    One row per host, fullest first. avg_used_pct and peak_used_pct are the
+    share of physical memory in use (percent; page cache and other reclaimable
+    memory count as available, not used). min_avail_gib is the lowest memory
+    available without swapping at any interval in the window, in GiB: near 0
+    is where the OOM killer starts. swap_used_pct is null when the host has no
+    swap; above about 30% the host is paging. A Kubernetes node near 100% here
+    while its pods sit below their limits points at node over-commit, see
+    k8s-node-pressure.
+  emptyMeans: >-
+    No host reported memory metrics for this scope and window (or none reached
+    --min-pct). Hosts need OneAgent (full-stack or infrastructure mode);
+    discovery-mode hosts and agentless cloud VMs report none. A misspelled
+    --host-group/--cluster or account ID gives the same empty result: check
+    the values with `dtctl run hosts-census`.
+  next:
+    - recipe: hosts-cpu-top
+      when: nonempty
+    - recipe: k8s-node-pressure
+      when: nonempty
+    - recipe: hosts-census
+      when: empty

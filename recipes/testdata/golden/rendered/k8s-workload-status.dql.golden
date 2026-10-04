@@ -1,0 +1,21 @@
+# k8s-workload-status v1 — window: none (state query; no window)
+smartscapeNodes K8S_DEPLOYMENT, K8S_STATEFULSET, K8S_DAEMONSET
+| parse k8s.object, "JSON:config"
+| fieldsAdd desired = coalesce(config[spec][replicas], config[status][desiredNumberScheduled]),
+    ready = coalesce(config[status][readyReplicas], config[status][numberReady], 0),
+    available = coalesce(config[status][availableReplicas], config[status][numberAvailable], 0),
+    updated = coalesce(config[status][updatedReplicas], config[status][updatedNumberScheduled], 0),
+    conditions = config[status][conditions]
+| fieldsAdd stuck = coalesce(iAny(conditions[][reason] == "ProgressDeadlineExceeded"), false),
+    replica_failure = coalesce(iAny(conditions[][type] == "ReplicaFailure"
+      and conditions[][status] == "True"), false)
+| filter isNotNull(desired) and (ready < desired or stuck or replica_failure)
+| fieldsAdd missing = desired - ready,
+    status = if(stuck, "rollout stuck", else: if(replica_failure, "replica failure",
+      else: if(ready == 0, "down", else: "degraded"))),
+    message = arrayFirst(arrayRemoveNulls(if(conditions[][reason] == "ProgressDeadlineExceeded"
+      or conditions[][type] == "ReplicaFailure", conditions[][message])))
+| fields k8s.cluster.name, k8s.namespace.name, k8s.workload.kind, k8s.workload.name,
+    status, desired, ready, available, updated, missing, message
+| sort missing desc, k8s.workload.name asc
+| limit 50

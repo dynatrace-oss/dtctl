@@ -1,0 +1,54 @@
+# Source: dt-dql-essentials/references/discovery.md (fieldsSnapshot, relative_count)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: meta-primary-tags
+  version: 1
+  tags: [meta, discovery, primary-tags, scope, tags]
+spec:
+  summary: Primary Grail tag keys in use, and how much of logs, spans, metrics and Smartscape carry each
+  description: >-
+    Lists the keys a --tag key=value scope can use, with their coverage per
+    data object over the last 24h. Run it before scoping a recipe with --tag.
+  timeframe: none                # fieldsSnapshot always covers the last 24h
+  dql: |
+    fieldsSnapshot logs
+    | filter startsWith(field, "primary_tags.")
+    | fieldsAdd data_object = "logs"
+    | append [fieldsSnapshot spans | filter startsWith(field, "primary_tags.")
+        | fieldsAdd data_object = "spans"]
+    | append [fieldsSnapshot metrics | filter startsWith(field, "primary_tags.")
+        | fieldsAdd data_object = "metrics"]
+    | append [fieldsSnapshot smartscape.nodes | filter startsWith(field, "primary_tags.")
+        | fieldsAdd data_object = "smartscape"]
+    | summarize { logs_pct = takeMax(if(data_object == "logs", relative_count)),
+        spans_pct = takeMax(if(data_object == "spans", relative_count)),
+        metrics_pct = takeMax(if(data_object == "metrics", relative_count)),
+        smartscape_pct = takeMax(if(data_object == "smartscape", relative_count)) },
+      by: {field}
+    | fieldsAdd key = substring(field, from: 13),
+        max_pct = arrayMax(array(logs_pct, spans_pct, metrics_pct, smartscape_pct))
+    | fieldsAdd logs_pct = round(logs_pct, decimals: 2), spans_pct = round(spans_pct, decimals: 2),
+        metrics_pct = round(metrics_pct, decimals: 2), smartscape_pct = round(smartscape_pct, decimals: 2)
+    | sort max_pct desc
+    | fields key, logs_pct, spans_pct, metrics_pct, smartscape_pct
+    | limit 100
+  means: >-
+    One row per primary tag key (the part after primary_tags.); --tag
+    key=value filters on it. Each *_pct is the percentage (0-100) of that data
+    object's records, metric series or Smartscape nodes carrying the key in
+    the last 24h, from field statistics that can lag and may omit very rare
+    keys; null means not seen there. A recipe scoped with --tag only sees
+    records that carry the key, so a low percentage means a mostly empty
+    result. Values are not listed (DQL cannot pivot on a key chosen at run
+    time): list them with dtctl query 'fetch logs | summarize count(),
+    by: {primary_tags.<key>}' or the matching data object. Davis problems
+    and events carry no primary tags.
+  emptyMeans: >-
+    No primary Grail tag is set on logs, spans, metrics or Smartscape nodes in
+    the last 24h: primary tags are customer-defined and this environment has
+    not configured any, so --tag scopes cannot match anything here. Use
+    --cluster, --namespace or the recipe's own params instead.
+  next:
+    - recipe: meta-data-objects
+      when: empty

@@ -116,8 +116,13 @@ var ResourceScopes = map[string]AccessScopes{
 	// scope (documents move to trash on delete).
 	"document":  {Read: []string{"document:documents:read"}, Write: []string{"document:documents:write"}, Delete: []string{"document:documents:delete"}},
 	"dashboard": {Read: []string{"document:documents:read"}, Write: []string{"document:documents:write"}, Delete: []string{"document:documents:delete"}},
-	"notebook":  {Read: []string{"document:documents:read"}, Write: []string{"document:documents:write"}, Delete: []string{"document:documents:delete"}},
-	"trash":     {Read: []string{"document:trash.documents:read"}, Write: []string{"document:trash.documents:restore"}, Delete: []string{"document:trash.documents:delete"}},
+	// Recipes are local content plus the bundles installed apps ship as
+	// documents; listing reads those. Running one is a query, whose scopes
+	// attach to the `run` verb (dqlScopeVerbs).
+	"recipe":   {Read: []string{"document:documents:read"}},
+	"recipes":  {Read: []string{"document:documents:read"}},
+	"notebook": {Read: []string{"document:documents:read"}, Write: []string{"document:documents:write"}, Delete: []string{"document:documents:delete"}},
+	"trash":    {Read: []string{"document:trash.documents:read"}, Write: []string{"document:trash.documents:restore"}, Delete: []string{"document:trash.documents:delete"}},
 
 	// Claiming has its own scope and access level: it changes only the caller's
 	// own access to a document, unlike the owner-side :write.

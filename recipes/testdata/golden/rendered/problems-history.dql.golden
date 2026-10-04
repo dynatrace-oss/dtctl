@@ -1,0 +1,13 @@
+# problems-history v1 — window: default 7d, min 1d
+fetch dt.davis.problems
+| filter not(dt.davis.is_duplicate)
+| fieldsAdd duration_min = if(event.status == "CLOSED",
+    toDouble(event.end - event.start) / 60000000000)
+| summarize { problems = count(), active = countIf(event.status == "ACTIVE"),
+    mttr_min = round(avg(duration_min), decimals: 1),
+    p50_min = round(median(duration_min), decimals: 1),
+    p90_min = round(percentile(duration_min, 90), decimals: 1),
+    last_start = max(event.start) },
+  by: { event.category }
+| sort problems desc
+| limit 50

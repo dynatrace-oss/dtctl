@@ -1,0 +1,22 @@
+# meta-primary-tags v1 — window: none (state query; no window)
+fieldsSnapshot logs
+| filter startsWith(field, "primary_tags.")
+| fieldsAdd data_object = "logs"
+| append [fieldsSnapshot spans | filter startsWith(field, "primary_tags.")
+    | fieldsAdd data_object = "spans"]
+| append [fieldsSnapshot metrics | filter startsWith(field, "primary_tags.")
+    | fieldsAdd data_object = "metrics"]
+| append [fieldsSnapshot smartscape.nodes | filter startsWith(field, "primary_tags.")
+    | fieldsAdd data_object = "smartscape"]
+| summarize { logs_pct = takeMax(if(data_object == "logs", relative_count)),
+    spans_pct = takeMax(if(data_object == "spans", relative_count)),
+    metrics_pct = takeMax(if(data_object == "metrics", relative_count)),
+    smartscape_pct = takeMax(if(data_object == "smartscape", relative_count)) },
+  by: {field}
+| fieldsAdd key = substring(field, from: 13),
+    max_pct = arrayMax(array(logs_pct, spans_pct, metrics_pct, smartscape_pct))
+| fieldsAdd logs_pct = round(logs_pct, decimals: 2), spans_pct = round(spans_pct, decimals: 2),
+    metrics_pct = round(metrics_pct, decimals: 2), smartscape_pct = round(smartscape_pct, decimals: 2)
+| sort max_pct desc
+| fields key, logs_pct, spans_pct, metrics_pct, smartscape_pct
+| limit 100

@@ -1,0 +1,63 @@
+# Source: dt-obs-logs/SKILL.md (Log Filtering: count by process group)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: logs-error-sources
+  version: 1
+  tags: [logs, errors, sources, workloads, hosts, triage]
+spec:
+  summary: Workloads, services and hosts emitting the most ERROR logs
+  description: >-
+    Who is logging errors right now. Each ERROR record is attributed to the
+    most specific name it carries (k8s workload, service, process group,
+    function, log group, log file, host, ingest channel). Follow up with
+    logs-for-service on a source, or logs-error-patterns for the messages.
+  requires: [logs]
+  timeframe: { default: 30m, max: 1d }
+  scope: [cluster, namespace, host_group, tag]
+  dql: |
+    fetch logs
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter status == "ERROR"
+    | fieldsAdd source = {{template "log-source"}},
+        source_field = coalesce(
+          if(isNotNull(k8s.workload.name), "k8s.workload.name"),
+          if(isNotNull(dt.service.name), "dt.service.name"),
+          if(isNotNull(service.name), "service.name"),
+          if(isNotNull(dt.process_group.detected_name), "dt.process_group.detected_name"),
+          if(isNotNull(faas.name), "faas.name"),
+          if(isNotNull(aws.log_group), "aws.log_group"),
+          if(isNotNull(log.source), "log.source"),
+          if(isNotNull(host.name), "host.name"),
+          if(isNotNull(dt.openpipeline.source), "dt.openpipeline.source"))
+    | summarize { errors = count(), hosts = countDistinct(host.name), last_seen = max(timestamp) },
+        by: {source, source_field, k8s.namespace.name}
+    | sort errors desc
+    | limit 25
+  means: >-
+    One row per log source, most ERROR records first. source is the first of
+    k8s.workload.name, dt.service.name, service.name,
+    dt.process_group.detected_name, faas.name, aws.log_group, log.source,
+    host.name and dt.openpipeline.source (the ingest channel, such as an OTLP
+    endpoint or a syslog extension) that the record carries, and source_field
+    names which one, so `dtctl run logs-for-service <source> --field
+    <source_field>` returns exactly those records. hosts counts distinct
+    host.name values (0 = not host-bound, e.g. serverless or forwarded logs).
+    status ERROR is the normalized level; a source can be noisy without being
+    broken, so compare against its usual volume. Capped at 25 sources.
+  emptyMeans: >-
+    No record with the normalized status ERROR in the window. That is not proof
+    of health: sources that log failures at another level, or whose level is
+    not parsed, report status NONE or INFO, so try `dtctl run logs-search
+    error` or `exception`. With --namespace/--cluster/--host-group only logs
+    carrying that field count.
+  next:
+    - recipe: logs-search
+      when: empty
+      with: { text: error }
+    - recipe: logs-for-service
+      bind: { service: source, field: source_field }
+      with: { status: ERROR }
+    - recipe: logs-error-patterns
+      when: nonempty

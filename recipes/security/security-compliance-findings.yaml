@@ -1,0 +1,96 @@
+# Source: dt-sec-insights/references/compliance.md (DT SPM steps 1-2, failed rules, rules failing on the most objects)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: security-compliance-findings
+  version: 1
+  tags: [security, compliance, kspm, cis, misconfiguration, kubernetes]
+spec:
+  summary: Kubernetes compliance rules failing in the latest posture scan, by standard and severity
+  description: >-
+    Dynatrace Security Posture Management (KSPM) results for Kubernetes
+    clusters against CIS, DORA, NIST, DISA STIG and similar standards, from
+    the latest completed scan per object. Cloud (CSPM) and VMware posture
+    findings from external integrations are not covered.
+  requires: [security]
+  # Scans complete about hourly per cluster; the latest-scan join needs the
+  # scan inside the window, and a wider one adds no newer data.
+  timeframe: { default: 1h, fixed: true }
+  scope: [cluster]
+  params:
+    status:
+      type: enum
+      values: [FAILED, MANUAL]
+      default: FAILED
+      description: Rules failing on at least one object, or rules needing manual review (none failing)
+    standard:
+      type: string
+      description: Standard short name contains this (case-insensitive), e.g. cis, dora, nist, stig
+    min_severity:
+      type: enum
+      values: [CRITICAL, HIGH, MEDIUM, LOW]
+      default: LOW
+      description: Lowest rule severity to list
+  dql: |
+    fetch security.events
+    | filter event.type == "COMPLIANCE_FINDING" and product.vendor == "Dynatrace"
+        and product.name == "Security Posture Management"
+        and compliance.result.status.level != "NOT_RELEVANT"
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- with .standard}}
+    | filter contains(compliance.standard.short_name, {{.}}, caseSensitive: false)
+        or contains(compliance.standard.name, {{.}}, caseSensitive: false){{end}}
+    {{- if eq .min_severity "CRITICAL"}}
+    | filter compliance.rule.severity.level == "CRITICAL"
+    {{- else if eq .min_severity "HIGH"}}
+    | filter in(compliance.rule.severity.level, {"CRITICAL", "HIGH"})
+    {{- else if eq .min_severity "MEDIUM"}}
+    | filter in(compliance.rule.severity.level, {"CRITICAL", "HIGH", "MEDIUM"})
+    {{- end}}
+    | join [
+        fetch security.events
+        | filter event.type == "COMPLIANCE_SCAN_COMPLETED" and product.vendor == "Dynatrace"
+        | summarize { scan.id = takeLast(scan.id) }, by: {object.id}
+      ], on: {scan.id}, fields: {}
+    | summarize { standard = takeFirst(compliance.standard.short_name),
+        title = takeFirst(compliance.rule.title),
+        severity = takeFirst(compliance.rule.severity.level),
+        failed = countIf(compliance.result.status.level == "FAILED"),
+        manual = countIf(compliance.result.status.level == "MANUAL"),
+        passed = countIf(compliance.result.status.level == "PASSED"),
+        clusters = countDistinct(k8s.cluster.name),
+        example_object = takeAny(if(compliance.result.status.level != "PASSED",
+          concat(compliance.result.object.type, " ", compliance.result.object.name))) },
+      by: {compliance.rule.id}
+    {{- if eq .status "FAILED"}}
+    | filter failed > 0
+    {{- else}}
+    | filter failed == 0 and manual > 0
+    {{- end}}
+    | fieldsAdd rank = if(severity == "CRITICAL", 4, else: if(severity == "HIGH", 3,
+        else: if(severity == "MEDIUM", 2, else: 1)))
+    | sort rank desc, failed desc, manual desc
+    | fields standard, compliance.rule.id, title, severity, failed, manual, passed,
+        clusters, example_object
+    | limit 50
+  means: >-
+    One row per compliance rule (per standard: the same check appears once per
+    standard that contains it, so never sum failures across standards).
+    failed, manual and passed count the assessed Kubernetes objects (cluster,
+    node, workload, role, ...) with that result in their latest scan;
+    clusters counts the clusters they belong to; example_object names one
+    non-passing object. MANUAL means the analyzer cannot evaluate the rule
+    automatically: a review hint, not a defect. Rules that do not apply are
+    excluded. Sorted by severity, then failing objects; at most 50 rows, so
+    narrow with --standard, --min-severity or --cluster rather than reading
+    the cut-off as a total. CIS is the baseline every cluster gets; DORA,
+    NIST and DISA STIG are opt-in.
+  emptyMeans: >-
+    No rule matches in the latest scan. Without filters this means Security
+    Posture Management is not enabled, no cluster completed a scan in the
+    last hour (scans run about hourly per cluster), or the environment only
+    has cloud or VMware posture data from external tools, which this recipe
+    does not read. --standard is a substring of the short name (cis, dora,
+    nist, stig), --cluster must match k8s.cluster.name exactly, and
+    --status MANUAL lists only rules with no failing object.

@@ -1,0 +1,10 @@
+# problems-get v1 — window: default 7d
+fetch dt.davis.problems
+| filter display_id == "<id>"
+| sort timestamp desc
+| limit 1
+| fields display_id, event.status, event.start, event.end, event.name,
+    event.category, event.description, dt.davis.is_duplicate,
+    root_cause_entity_id, root_cause_entity_name,
+    affected_entity_ids, affected_entities = smartscape.affected_entities,
+    dt.davis.affected_users_count, dt.davis.event_ids

@@ -1,0 +1,83 @@
+# Source: dt-obs-predictive-analytics/references/capacity-forecasting.md and
+# references/trend-detection.md (growth rate, days to saturation), applied to
+# dt-obs-hosts/references/host-metrics.md disk metrics. The trend is a
+# least-squares fit over daily averages.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: capacity-disk-forecast
+  version: 1
+  tags: [capacity, hosts, disk, filesystem, forecast, trend, full]
+spec:
+  summary: Disks whose daily used-space trend fills them within a horizon, soonest first
+  description: >-
+    When does this disk run full? Fits a straight line through each
+    filesystem's daily average used space and projects when it crosses the
+    ceiling.
+  requires: [host-metrics]
+  # A trend needs history: --from shorter than 7d is rejected.
+  timeframe: { default: 30d, min: 7d }
+  scope: [host_group, cluster, aws_account, azure_subscription, gcp_project, tag]
+  params:
+    ceiling:
+      type: int
+      default: 95
+      min: 1
+      max: 100
+    horizon_days:                # flag: --horizon-days
+      type: int
+      default: 30
+      min: 1
+      max: 3650
+  dql: |
+    timeseries { used = avg(dt.host.disk.used.percent), avail = avg(dt.host.disk.avail) },
+      interval: 24h, by: {dt.smartscape.host, host.name, dt.smartscape.disk}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd x = if(isNotNull(used[]), toDouble(iIndex())), xy = used[] * iIndex(),
+        recent = if(iIndex() >= arraySize(used) - 2 and isNotNull(used[]), 1, else: 0)
+    | fieldsAdd xx = x[] * x[]
+    | fieldsAdd n = toDouble(arraySize(arrayRemoveNulls(used))),
+        sx = arraySum(x), sy = arraySum(used), sxy = arraySum(xy), sxx = arraySum(xx)
+    | filter n >= arraySize(used) / 2 and arraySum(recent) > 0
+    | fieldsAdd daily_growth = (n * sxy - sx * sy) / (n * sxx - sx * sx)
+    | fieldsAdd trend_pct = (sy - daily_growth * sx) / n + daily_growth * (arraySize(used) - 1)
+    | fieldsAdd days_to_ceiling = if(trend_pct >= {{.ceiling}}, 0,
+        else: if(daily_growth > 0, toLong(({{.ceiling}} - trend_pct) / daily_growth)))
+    | filter days_to_ceiling <= {{.horizon_days}}
+    | fieldsAdd disk = getNodeName(dt.smartscape.disk)
+    | filterOut contains(disk, "/kubelet/pods/")
+    | fields host.name, disk, days_to_ceiling,
+        used_pct = round(arrayLast(used), decimals: 1),
+        daily_growth = round(daily_growth, decimals: 2),
+        avail_gib = round(arrayLast(avail) / 1073741824, decimals: 1),
+        days_of_data = toLong(n),
+        dt.smartscape.host, dt.smartscape.disk
+    | sort days_to_ceiling asc, daily_growth desc
+    | limit 50
+  means: >-
+    One row per (host, filesystem) whose used space reaches the ceiling within
+    horizon_days, soonest first. The trend is a least-squares line through the
+    filesystem's daily average used percent; daily_growth is its slope in
+    percentage points per day and days_to_ceiling = (ceiling - trend today) /
+    daily_growth, 0 when the trend is already at or above the ceiling.
+    used_pct is the latest daily average, avail_gib the space left at the end
+    of the window in GiB. Disks that are cleaned up periodically (log
+    rotation, caches) zig-zag, and a straight line through them under- or
+    overstates the risk; compare days_of_data with the window. Filesystems
+    with data for less than half the window or none in the last two days, and
+    kubelet per-pod bind mounts, are left out.
+    A scope flag only sees data recorded while the field or tag was set: a
+    primary tag added recently shortens the history (see days_of_data) and
+    changes the fit.
+  emptyMeans: >-
+    No filesystem's used-space trend reaches the ceiling within the horizon:
+    disks are flat, shrinking, or growing slowly. Raise --horizon-days or lower
+    --ceiling to see slower growers. Too little history (each disk needs data
+    for at least half the window), no OneAgent hosts in scope, or a misspelled
+    --host-group/--cluster also give an empty result: check with
+    `dtctl run hosts-disk-saturation` and `dtctl run hosts-census`.
+  next:
+    - recipe: hosts-disk-saturation
+      when: nonempty
+    - recipe: hosts-census
+      when: empty

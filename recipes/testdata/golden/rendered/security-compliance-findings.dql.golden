@@ -1,0 +1,27 @@
+# security-compliance-findings v1 — window: default 1h, fixed
+fetch security.events
+| filter event.type == "COMPLIANCE_FINDING" and product.vendor == "Dynatrace"
+    and product.name == "Security Posture Management"
+    and compliance.result.status.level != "NOT_RELEVANT"
+| join [
+    fetch security.events
+    | filter event.type == "COMPLIANCE_SCAN_COMPLETED" and product.vendor == "Dynatrace"
+    | summarize { scan.id = takeLast(scan.id) }, by: {object.id}
+  ], on: {scan.id}, fields: {}
+| summarize { standard = takeFirst(compliance.standard.short_name),
+    title = takeFirst(compliance.rule.title),
+    severity = takeFirst(compliance.rule.severity.level),
+    failed = countIf(compliance.result.status.level == "FAILED"),
+    manual = countIf(compliance.result.status.level == "MANUAL"),
+    passed = countIf(compliance.result.status.level == "PASSED"),
+    clusters = countDistinct(k8s.cluster.name),
+    example_object = takeAny(if(compliance.result.status.level != "PASSED",
+      concat(compliance.result.object.type, " ", compliance.result.object.name))) },
+  by: {compliance.rule.id}
+| filter failed > 0
+| fieldsAdd rank = if(severity == "CRITICAL", 4, else: if(severity == "HIGH", 3,
+    else: if(severity == "MEDIUM", 2, else: 1)))
+| sort rank desc, failed desc, manual desc
+| fields standard, compliance.rule.id, title, severity, failed, manual, passed,
+    clusters, example_object
+| limit 50

@@ -195,6 +195,14 @@ func executeArgs(argv []string) int {
 	}
 	// --- End alias resolution ---
 
+	// --- Recipe commands ---
+	// `run <recipe>` leaves are content, built from the recipe book only for
+	// an invocation that addresses `run` (after alias expansion, so an alias
+	// may name a recipe) and before the profile and stability stages, which
+	// then treat them like any other command.
+	attachRecipeCommands(spanArgs)
+	// --- End recipe commands ---
+
 	// --- Command profile filter ---
 	// Resolve the active profile (DTCTL_PROFILE > context binding > full) and
 	// mask out-of-profile commands before Cobra dispatches, so help, the
@@ -867,6 +875,16 @@ func errorToDetail(err error) *output.ErrorDetail {
 		}
 	}
 
+	// A recipe param, scope or window the recipe rejects: like an empty flag
+	// value, the command is right and the input needs fixing.
+	var recipeErr *recipeInputError
+	if errors.As(err, &recipeErr) {
+		return &output.ErrorDetail{
+			Code:    "validation_error",
+			Message: recipeErr.Error(),
+		}
+	}
+
 	// suggest.FlagError — unknown flag with "did you mean?" suggestion
 	var flagErr *suggest.FlagError
 	if errors.As(err, &flagErr) {
@@ -1204,6 +1222,11 @@ func exitCodeForError(err error) int {
 	}
 
 	if errors.Is(err, errEmptyFlagValue) {
+		return client.ExitUsageError
+	}
+
+	var recipeErr *recipeInputError
+	if errors.As(err, &recipeErr) {
 		return client.ExitUsageError
 	}
 

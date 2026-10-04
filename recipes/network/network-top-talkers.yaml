@@ -1,0 +1,56 @@
+# Source: dt-obs-hosts/references/host-metrics.md (Network monitoring); the
+# top-talkers question from dt-obs-network-flows/SKILL.md, answered from NIC
+# counters, which every OneAgent host reports, instead of the flow bucket.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: network-top-talkers
+  version: 1
+  tags: [network, hosts, bandwidth, throughput, traffic, top]
+spec:
+  summary: Hosts moving the most network traffic, from NIC byte counters, with average and peak Mbit/s
+  requires: [host-metrics]
+  timeframe: 1h
+  scope: [host_group, cluster, aws_account, azure_subscription, gcp_project, tag]
+  params:
+    top:
+      type: int
+      default: 20
+      min: 1
+      max: 200
+  dql: |
+    timeseries { rx = sum(dt.host.net.nic.bytes_rx), tx = sum(dt.host.net.nic.bytes_tx) },
+      by: {dt.smartscape.host, host.name}
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd rx_bytes = arraySum(rx), tx_bytes = arraySum(tx), both = rx[] + tx[]
+    | fieldsAdd total_bytes = rx_bytes + tx_bytes,
+        seconds = toDouble((timeframe[end] - timeframe[start]) / 1s),
+        interval_s = toDouble(interval / 1s)
+    | sort total_bytes desc
+    | limit {{.top}}
+    | fields host.name, dt.smartscape.host,
+        total_gib = round(total_bytes / 1073741824, decimals: 2),
+        rx_gib = round(rx_bytes / 1073741824, decimals: 2),
+        tx_gib = round(tx_bytes / 1073741824, decimals: 2),
+        avg_mbit_s = round(total_bytes * 8 / seconds / 1000000, decimals: 1),
+        peak_mbit_s = round(arrayMax(both) * 8 / interval_s / 1000000, decimals: 1)
+  means: >-
+    One row per host, most traffic first: bytes received (rx) plus transmitted
+    (tx) over all of the host's network interfaces in the window, in GiB
+    (1024^3 bytes). avg_mbit_s is that total spread over the window,
+    peak_mbit_s the busiest single interval, both in megabits per second (10^6
+    bits), the unit link speeds are quoted in. Traffic between containers on
+    the same host never reaches a NIC and is not counted. This says how much,
+    not with whom: network-host-connections breaks one host's traffic down by
+    peer from OneAgent network flows.
+  emptyMeans: >-
+    No host reported NIC traffic for this scope and window. Hosts need OneAgent
+    (full-stack or infrastructure mode); discovery-mode hosts and agentless
+    cloud VMs report no NIC metrics. A misspelled --host-group/--cluster or
+    account ID gives the same empty result: check with `dtctl run hosts-census`.
+  next:
+    - recipe: network-host-connections
+      when: nonempty
+      bind: { host: host.name }
+    - recipe: hosts-census
+      when: empty

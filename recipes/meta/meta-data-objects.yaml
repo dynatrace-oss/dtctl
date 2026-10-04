@@ -1,0 +1,53 @@
+# Source: dt-dql-essentials/references/discovery.md (List all data objects)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: meta-data-objects
+  version: 1
+  tags: [meta, discovery, grail, tables, views, data-objects]
+spec:
+  summary: Grail data objects (tables and views) this environment offers, and which commands read them
+  timeframe: none                # a catalog, not records in a window
+  params:
+    search:
+      type: string
+      description: Name or display name contains this (case-insensitive)
+    entities:
+      type: bool
+      default: false
+      description: Include the classic dt.entity.* views (several hundred)
+  dql: |
+    fetch dt.system.data_objects
+    {{- if not .entities}}
+    | filterOut type == "view" and startsWith(name, "dt.entity.")
+    {{- end}}
+    {{- with .search}}
+    | filter contains(name, {{.}}, caseSensitive: false)
+        or contains(display_name, {{.}}, caseSensitive: false){{end}}
+    | fieldsAdd command = if(in("fetch", usable_with), concat("fetch ", name),
+        else: if(name == "metrics", "timeseries",
+        else: if(name == "smartscape.nodes", "smartscapeNodes",
+        else: if(name == "smartscape.edges", "smartscapeEdges / traverse"))))
+    | fields name, display_name, type, command, usable_with, has_access,
+        description = substring(description, to: 160)
+    | sort type asc, name asc
+    | limit 200
+  means: >-
+    The data-object catalog: type table is stored data, view is a predefined
+    query over other data. command is how to read it (metrics, smartscape.nodes
+    and smartscape.edges have their own commands, not fetch); usable_with lists
+    every command that accepts it (describe gives the fixed schema,
+    fieldsSnapshot the dynamic fields seen in 24h). has_access is true when
+    the caller can read the table and null for views, where access is
+    decided by the underlying data. Listing an object does not mean it holds
+    data: run a count over a short window for that. dt.entity.* views
+    (classic entity model) are hidden unless --entities is set; there are
+    several hundred, so combine it with --search, since the list stops at
+    200 rows. Environments on the Smartscape-only model have none.
+  emptyMeans: >-
+    No data object matches --search (it is a substring of the name or display
+    name, e.g. log, span, davis, smartscape). Without --search an empty result
+    means the caller lacks read access to dt.system.data_objects.
+  next:
+    - recipe: meta-primary-tags
+      when: nonempty

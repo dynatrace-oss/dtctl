@@ -1,0 +1,21 @@
+# cloud-functions-census v1 — window: none (state query; no window)
+smartscapeNodes "AWS_LAMBDA_FUNCTION", "AZURE_MICROSOFT_WEB_SITES", "GCP_CLOUDFUNCTIONS_GOOGLEAPIS_COM_FUNCTION"
+| parse coalesce(aws.object, azure.object, gcp.object), "JSON:j"
+| filter type != "AZURE_MICROSOFT_WEB_SITES" or contains(toString(j[configuration][kind]), "functionapp")
+| fieldsAdd runtime = coalesce(toString(j[configuration][configuration][runtime]),
+    if(toString(j[configuration][configuration][packageType]) == "Image", "container image"),
+    toString(j[configuration][properties][siteConfig][linuxFxVersion]),
+    toString(j[configuration][resource][buildConfig][runtime]))
+| fieldsAdd runtime = if(startsWith(runtime, "DOCKER|"), "container image",
+    else: coalesce(runtime, "(not reported)")),
+  account = coalesce(aws.account.id, azure.subscription, gcp.project.id),
+  region = coalesce(aws.region, azure.location, gcp.region),
+  dynatrace_layer = contains(toString(j[configuration][configuration][layers]), "Dynatrace")
+| summarize { functions = count(),
+    accounts = countDistinct(account),
+    regions = countDistinct(region),
+    with_dynatrace_layer = countIf(dynatrace_layer) },
+  by: {provider = if(startsWith(type, "AWS_"), "aws",
+    else: if(startsWith(type, "AZURE_"), "azure", else: "gcp")), runtime}
+| sort functions desc
+| limit 100

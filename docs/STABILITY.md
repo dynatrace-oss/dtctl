@@ -210,9 +210,9 @@ deprecation cycle. Nothing stated here is relaxed by reaching 1.0.
 
 ## Summary
 
-- commands: 269 stable, 17 experimental, 14 development
+- commands: 269 stable, 21 experimental, 14 development
 - global flags (accepted on every command): 11
-- entries below (commands + flags): 936
+- entries below (commands + flags): 952
 
 ## Surface
 
@@ -592,6 +592,7 @@ describe intent                      stable
 describe license                     stable
 describe lookup                      stable
 describe notebook                    stable
+describe recipe                      experimental  since 0.42.0
 describe scheduling-rule             stable
 describe segment                     stable
 describe settings                    stable
@@ -813,6 +814,14 @@ get notebooks                        stable
   --watch-only                       stable
 get notifications                    stable
   --type                             stable
+get recipes                          experimental  since 0.42.0
+  --all                              experimental
+  --domain                           experimental
+  --inventory-budget                 experimental
+  --no-inventory                     experimental
+  --refresh                          experimental
+  --search                           experimental
+  --tag                              experimental
 get scheduling-rules                 stable
   --interval                         stable
   --limit                            stable
@@ -928,6 +937,7 @@ query                                stable
   --enforce-query-consumption-limit  stable
   --fetch-timeout-seconds            stable
   --file                             stable
+  --from                             experimental  since 0.42.0  (declared)
   --fullscreen                       stable
   --height                           stable
   --include-contributions            stable
@@ -954,6 +964,7 @@ query                                stable
   --spill-threshold                  stable
   --spill-to                         stable
   --timezone                         stable
+  --to                               experimental  since 0.42.0  (declared)
   --typed                            stable
   --width                            stable
 restore                              stable
@@ -973,6 +984,7 @@ restore trash                        stable
 restore workflow                     stable
   --dry-run                          stable
   --force                            experimental  since 0.39.0  (declared)
+run                                  experimental  since 0.42.0
 serve                                development  (opt-in key: serve)
 serve http                           development
   --addr                             development
@@ -1129,6 +1141,10 @@ verify query                         stable
   --locale                           stable
   --set                              stable
   --timezone                         stable
+verify recipe                        experimental  since 0.42.0
+  --all                              experimental
+  --file                             experimental
+  --offline                          experimental
 version                              stable
 wait                                 stable
 wait query                           stable

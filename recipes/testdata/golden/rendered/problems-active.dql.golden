@@ -1,0 +1,9 @@
+# problems-active v1 — window: default 2h
+fetch dt.davis.problems
+| filter not(dt.davis.is_duplicate) and event.status == "ACTIVE"
+| fields event.start, display_id, event.name, event.category,
+    root_cause_entity_name, dt.davis.affected_users_count,
+    affected_entities = coalesce(arraySize(affected_entity_ids),
+      arraySize(smartscape.affected_entities))
+| sort event.start desc
+| limit 50

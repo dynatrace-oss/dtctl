@@ -1,0 +1,74 @@
+# Source: dt-obs-logs/SKILL.md (Process Group-Specific Logs, Log Searching)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: logs-for-service
+  version: 1
+  tags: [logs, service, workload, recent, tail]
+spec:
+  summary: Recent log lines of one service, workload or process group, newest first
+  description: >-
+    The latest log records of one source, optionally only one level or lines
+    containing a text. By default the name is matched against the service,
+    k8s workload and process group fields; --field pins one field, as
+    logs-error-sources hands it over.
+  requires: [logs]
+  timeframe: 1h
+  scope: [cluster, namespace, host_group, tag]
+  params:
+    service:
+      type: string
+      required: true
+      positional: true
+      description: Service, k8s workload or process group name (exact, case-sensitive)
+    field:
+      type: enum
+      values: [dt.service.name, service.name, k8s.workload.name, dt.process_group.detected_name,
+               faas.name, aws.log_group, log.source, host.name, dt.openpipeline.source]
+      render: identifier
+      description: Match only this field (default dt.service.name, service.name, k8s.workload.name or dt.process_group.detected_name)
+    status:
+      type: enum
+      values: [ERROR, WARN, INFO, NONE]
+      description: Only records with this normalized status (log level)
+    contains:
+      type: string
+      description: Only lines containing this text (case-insensitive)
+  dql: |
+    fetch logs
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- if .field}}
+    | filter {{.field}} == {{.service}}
+    {{- else}}
+    | filter dt.service.name == {{.service}} or service.name == {{.service}}
+        or k8s.workload.name == {{.service}} or dt.process_group.detected_name == {{.service}}
+    {{- end}}
+    {{- with .status}}
+    | filter status == {{.}}{{end}}
+    {{- with .contains}}
+    | filter contains(content, {{.}}, caseSensitive: false){{end}}
+    | sort timestamp desc
+    | fields timestamp, status, host.name, k8s.pod.name, content, trace_id
+    | limit 100
+  means: >-
+    The newest 100 matching log records, newest first. status is the
+    normalized level (ERROR, WARN, INFO, NONE); content is the raw line,
+    multi-line for stack traces. trace_id is set when the line was written
+    inside a traced request; open it with traces-get. A Dynatrace service name
+    (dt.service.name) is rarely on a log record: logs carry the k8s workload,
+    OpenTelemetry service.name or process group instead, which services-list
+    shows next to the service.
+  emptyMeans: >-
+    No log record of this source matched in the window. The name has to match
+    exactly and case-sensitively one of dt.service.name, service.name,
+    k8s.workload.name or dt.process_group.detected_name (or the --field you
+    pinned); a Dynatrace service name usually is not on its logs, so try the
+    k8s workload from `dtctl run services-list`, or find the source name with
+    `dtctl run logs-error-sources`. Also check that --status/--contains are not
+    too narrow and that the source ships logs at all.
+  next:
+    - recipe: logs-error-sources
+      when: empty
+    - recipe: traces-get
+      bind: { trace_id: trace_id }

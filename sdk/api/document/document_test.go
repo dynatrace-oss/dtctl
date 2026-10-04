@@ -138,6 +138,30 @@ func TestGetMetadata(t *testing.T) {
 	}
 }
 
+func TestGetContent(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/platform/document/v1/documents/doc-123/content", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write([]byte("kind: RecipeBundle\n"))
+	})
+	mux.HandleFunc("/platform/document/v1/documents/missing/content", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":{"code":404,"message":"not found"}}`))
+	})
+
+	h := NewHandler(newTestClient(t, mux))
+	got, err := h.GetContent(context.Background(), "doc-123")
+	if err != nil {
+		t.Fatalf("GetContent() error: %v", err)
+	}
+	if string(got) != "kind: RecipeBundle\n" {
+		t.Errorf("content = %q", got)
+	}
+	if _, err := h.GetContent(context.Background(), "missing"); err == nil {
+		t.Error("GetContent() of a missing document: want an error")
+	}
+}
+
 func TestDelete(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/platform/document/v1/documents/doc-123", func(w http.ResponseWriter, r *http.Request) {

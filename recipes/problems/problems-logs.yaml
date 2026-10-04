@@ -1,0 +1,67 @@
+# Source: dt-obs-problems/references/problem-correlation.md ("Problem-Specific Error Analysis", "Log Pattern Detection")
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: problems-logs
+  version: 1
+  tags: [problems, davis, logs, correlation, root-cause]
+spec:
+  summary: Error and warning logs from the entities a problem affects, per source (P-xxxxx)
+  requires: [davis, logs]
+  timeframe: 2h
+  params:
+    id:
+      type: string
+      required: true
+      positional: true           # dtctl run problems-logs P-2410123
+      pattern: '^P-\d+$'
+      description: Problem display ID
+    status:
+      type: list
+      default: [ERROR, WARN]
+      description: Log status values to keep (ERROR, WARN, INFO, NONE)
+  # Logs carry classic entity IDs (dt.source_entity, dt.entity.*) or Smartscape
+  # IDs (dt.smartscape*), depending on the environment's generation; the
+  # problem lists both, so both are matched. dt.source_entity can be an array,
+  # and `in [subquery]` matches only a scalar, so its first elements are tested
+  # one by one (an iterative expression is not allowed with a subquery). The
+  # subqueries keep the scan to the entity columns; a lookup or join here
+  # reads every log record in full.
+  dql: |
+    {{- $classic := printf "[fetch dt.davis.problems | filter display_id == %s | expand id = affected_entity_ids | fields id]" .id}}
+    {{- $smartscape := printf "[fetch dt.davis.problems | filter display_id == %s | expand e = smartscape.affected_entities | fields id = e[id]]" .id}}
+    fetch logs
+    | filter in(status, {{.status}})
+    | filter dt.entity.service in {{$classic}}
+        or dt.entity.host in {{$classic}}
+        or dt.source_entity in {{$classic}}
+        or dt.source_entity[0] in {{$classic}}
+        or dt.source_entity[1] in {{$classic}}
+        or dt.source_entity[2] in {{$classic}}
+        or dt.smartscape_source.id in {{$smartscape}}
+        or dt.smartscape.service in {{$smartscape}}
+        or dt.smartscape.host in {{$smartscape}}
+    | summarize { lines = count(), first_seen = min(timestamp), last_seen = max(timestamp),
+          example = takeLast(substring(content, to: 300)) },
+        by: {source = coalesce(dt.service.name, k8s.workload.name, faas.name,
+          host.name, log.source, aws.log_group), status}
+    | sort lines desc
+    | limit 30
+  means: >-
+    Log volume per source (the service, workload, function, host or log source that wrote
+    the lines) and status, from the entities the problem affects, with the last
+    line as an example (cut to 300 characters). The counts cover the window, not
+    the problem's lifetime: compare first_seen with event.start from
+    problems-get. A source whose dt.source_entity lists more than three entities
+    can be missed.
+  emptyMeans: >-
+    No ERROR/WARN line from the affected entities in the window. Either the
+    entities do not ship logs (synthetic monitors, frontends and cloud
+    resources usually do not), the lines have another status (try --status
+    ERROR,WARN,INFO,NONE), or the problem had no update inside the window: the
+    lookup only sees problems updated in the window, so a problem that closed
+    before --from matches nothing. Check the ID with problems-get.
+  next:
+    - recipe: problems-get
+      with: { id: "{{.id}}" }
+      when: empty

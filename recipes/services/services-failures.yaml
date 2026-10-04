@@ -1,0 +1,65 @@
+# Source: dt-obs-tracing/references/failure-detection.md, dt-obs-tracing/references/sampling-extrapolation.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: services-failures
+  version: 1
+  tags: [services, failures, errors, exceptions, http, status-codes]
+spec:
+  summary: Failed requests by service, endpoint, failure reason, HTTP status and exception type
+  description: >-
+    Why requests fail: failed request root spans grouped by what failed and
+    how, with an example trace for each group. Without a service it ranks the
+    failures of every service. For individual failed requests use
+    traces-errors; for failure rates use services-red.
+  requires: [spans]
+  timeframe: 1h
+  scope: [cluster, namespace, tag]
+  params:
+    service:
+      type: string
+      positional: true
+      description: Only this service (exact dt.service.name, see services-list)
+  dql: |
+    fetch spans
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter request.is_root_span == true and request.is_failed == true
+    {{- with .service}}
+    | filter dt.service.name == {{.}}{{end}}
+    | fieldsAdd multiplicity = {{template "span-multiplicity"}},
+        failure_reason = arrayFirst(iCollectArray(dt.failure_detection.results[][reason])),
+        exception.type = arrayFirst(arrayRemoveNulls(iCollectArray(span.events[][exception.type])))
+    | summarize { failures = toLong(round(sum(multiplicity))), last_seen = max(start_time),
+                  example = takeMax(record(start_time, trace.id)) },
+        by: {dt.service.name, endpoint.name, failure_reason, http.response.status_code, exception.type}
+    | fields dt.service.name, endpoint.name, failures, failure_reason,
+        http.response.status_code, exception.type, last_seen,
+        example_trace_id = example[trace.id]
+    | sort failures desc
+    | limit 25
+  means: >-
+    One row per (service, endpoint, failure_reason, HTTP status, exception
+    type), most failures first. failure_reason is why Dynatrace failure
+    detection marked the request failed: http_code, grpc_code, exception,
+    span_status or custom_rule. http.response.status_code and exception.type
+    are empty when the protocol has none or no exception was recorded.
+    failures is extrapolated from sampled spans, so it approximates the real
+    count; services-red has the exact metric. A proxy and the service behind it
+    both report the same failed request, so one incident can appear under two
+    services. example_trace_id is the most recent failed trace of the group;
+    open it with traces-get. Capped at 25 groups.
+  emptyMeans: >-
+    No failed request in the window. If you named a service, check the name
+    first: dt.service.name is exact and case-sensitive, so a typo looks like a
+    healthy service (`dtctl run services-list <fragment>`). A service that is
+    not traced has no spans at all, and failure detection rules decide what
+    counts as failed, so HTTP 4xx responses often do not.
+  next:
+    - recipe: services-list
+      when: empty
+      with: { contains: "{{.service}}" }
+    - recipe: traces-errors
+      bind: { service: dt.service.name }
+    - recipe: traces-get
+      bind: { trace_id: example_trace_id }

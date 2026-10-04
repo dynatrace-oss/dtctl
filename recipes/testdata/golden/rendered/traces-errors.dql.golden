@@ -1,0 +1,12 @@
+# traces-errors v1 — window: default 1h
+fetch spans
+| filter request.is_root_span == true and request.is_failed == true
+| fields start_time, dt.service.name, endpoint.name,
+    failure_reason = arrayFirst(iCollectArray(dt.failure_detection.results[][reason])),
+    http.response.status_code,
+    exception.type = arrayFirst(arrayRemoveNulls(iCollectArray(span.events[][exception.type]))),
+    exception.message = substring(arrayFirst(arrayRemoveNulls(iCollectArray(span.events[][exception.message]))), from: 0, to: 300),
+    duration_ms = round(duration / 1ms, decimals: 1),
+    trace.id
+| sort start_time desc
+| limit 50

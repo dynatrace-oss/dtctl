@@ -1,0 +1,39 @@
+# k8s-node-pressure v1 — window: default 30m
+timeseries { cpu_alloc = sum(dt.kubernetes.node.cpu_allocatable),
+             mem_alloc = sum(dt.kubernetes.node.memory_allocatable),
+             cpu_req = sum(dt.kubernetes.container.requests_cpu),
+             mem_req = sum(dt.kubernetes.container.requests_memory),
+             cpu_use = sum(dt.kubernetes.container.cpu_usage),
+             mem_use = sum(dt.kubernetes.container.memory_working_set) },
+  by: {k8s.cluster.name, k8s.node.name}
+| fieldsAdd live = if(iIndex() >= arraySize(cpu_alloc) - 3 and isNotNull(cpu_alloc[]), 1, else: 0)
+| filter arraySum(live) > 0
+| fieldsAdd cpu_alloc = arrayAvg(cpu_alloc), mem_alloc = arrayAvg(mem_alloc)
+| filter cpu_alloc > 0 and mem_alloc > 0
+| fieldsAdd cpu_requested_pct = round(100 * arrayAvg(cpu_req) / cpu_alloc, decimals: 1),
+    mem_requested_pct = round(100 * arrayAvg(mem_req) / mem_alloc, decimals: 1),
+    cpu_used_pct = round(100 * arrayAvg(cpu_use) / cpu_alloc, decimals: 1),
+    mem_used_pct = round(100 * arrayAvg(mem_use) / mem_alloc, decimals: 1),
+    cpu_allocatable_cores = round(cpu_alloc / 1000, decimals: 2),
+    mem_allocatable_gib = round(mem_alloc / 1073741824, decimals: 1)
+| fieldsAdd key = concat(k8s.cluster.name, "|", k8s.node.name)
+| lookup [
+    timeseries c = max(dt.kubernetes.node.conditions),
+      by: {k8s.cluster.name, k8s.node.name, node_condition, condition_status},
+      filter: in(node_condition, {"Ready", "MemoryPressure", "DiskPressure", "PIDPressure"})
+    | fieldsAdd status = lower(toString(condition_status)),
+        now = if(iIndex() >= arraySize(c) - 3 and isNotNull(c[]), 1, else: 0)
+    | filter arraySum(now) > 0
+      and ((node_condition == "Ready" and status != "true")
+        or (node_condition != "Ready" and status == "true"))
+    | fieldsAdd condition = if(node_condition == "Ready", concat("NotReady(", status, ")"),
+        else: node_condition)
+    | summarize conditions = collectDistinct(condition), by: {k8s.cluster.name, k8s.node.name}
+    | fieldsAdd key = concat(k8s.cluster.name, "|", k8s.node.name)
+  ], sourceField: key, lookupField: key, fields: {conditions}
+| fieldsAdd peak_pct = arrayMax(array(cpu_requested_pct, mem_requested_pct, cpu_used_pct, mem_used_pct))
+| filter peak_pct >= 80 or isNotNull(conditions)
+| fields k8s.cluster.name, k8s.node.name, conditions, cpu_requested_pct, mem_requested_pct,
+    cpu_used_pct, mem_used_pct, cpu_allocatable_cores, mem_allocatable_gib, peak_pct
+| sort isNotNull(conditions) desc, peak_pct desc
+| limit 50

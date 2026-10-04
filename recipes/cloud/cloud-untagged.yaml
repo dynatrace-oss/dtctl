@@ -1,0 +1,67 @@
+# Source: dt-obs-aws/references/resource-management.md, dt-obs-azure/references/resource-management.md
+#         (tag coverage), adapted to the provider tag records on Smartscape nodes.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: cloud-untagged
+  version: 1
+  tags: [cloud, aws, azure, gcp, tags, governance, cost-allocation]
+spec:
+  summary: Cloud resource types with untagged resources, or resources missing one tag key
+  timeframe: none                # Smartscape state
+  scope: [aws_account, azure_subscription, gcp_project, tag]
+  params:
+    provider:
+      type: enum
+      values: [aws, azure, gcp]
+      required: true
+      positional: true
+    key:
+      type: string
+      description: Count resources lacking this cloud tag (GCP label) key, exact and case-sensitive; default is no tags at all
+  # Provider tags live in one record per provider (tags:aws, tags:azure,
+  # tags:gcp_labels). DQL has no dynamic record access, so key presence is
+  # tested on the record's string form.
+  dql: |
+    {{- $acct := "gcp.project.id"}}{{$tags := "`tags:gcp_labels`"}}
+    {{- if eq .provider "aws"}}{{$acct = "aws.account.id"}}{{$tags = "`tags:aws`"}}
+    {{- else if eq .provider "azure"}}{{$acct = "azure.subscription"}}{{$tags = "`tags:azure`"}}{{end}}
+    smartscapeNodes {{if eq .provider "aws"}}"AWS_*"{{else if eq .provider "azure"}}"AZURE_*"{{else}}"GCP_*"{{end}}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter isNotNull({{$acct}})
+    | fieldsAdd tag_string = coalesce(toString({{$tags}}), "{}")
+    {{- if .key}}
+    | fieldsAdd untagged = not(contains(tag_string, concat("\"", {{.key}}, "\":")))
+    {{- else}}
+    | fieldsAdd untagged = tag_string == "{}"
+    {{- end}}
+    | summarize { resources = count(), untagged = countIf(untagged),
+        accounts_affected = countDistinctExact(if(untagged, {{$acct}})) }, by: {type}
+    | filter untagged > 0
+    | fieldsAdd untagged_pct = round(100.0 * untagged / resources, decimals: 1),
+        type_has_tags = untagged < resources
+    | sort untagged desc
+    | limit 100
+  means: >-
+    One row per resource type with at least one resource lacking tags (or
+    lacking --key), out of the account-bound resources of that type
+    (regions, zones and other provider reference data are excluded).
+    accounts_affected counts accounts, subscriptions or projects with such
+    resources. Many sub-resources (rules, attachments, configurations,
+    managed policies) cannot carry tags at all: type_has_tags = true means
+    other resources of the same type are tagged, so the gap is fixable;
+    false means nothing of that type is tagged, which may be a limitation
+    of the type. A key is matched exactly as the provider stores it (AWS and
+    Azure keys are case-sensitive; GCP labels are lowercase). These are cloud
+    provider tags, not Dynatrace primary tags. A misspelled --key makes
+    nearly every resource count as untagged.
+  emptyMeans: >-
+    Every account-bound resource of this provider carries tags (or the
+    --key). An empty result is also what a missing cloud integration gives:
+    run cloud-inventory with the same provider to tell the two apart. A
+    --tag scope keeps only resources with that Dynatrace primary tag, which
+    are usually the tagged ones.
+  next:
+    - recipe: cloud-inventory
+      with: { provider: "{{.provider}}" }
