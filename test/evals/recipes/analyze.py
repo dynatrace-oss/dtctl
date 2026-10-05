@@ -349,15 +349,17 @@ def main():
     meta = {t["id"]: t["meta"] for t in lib.load_tasks()}
 
     print("## Summary per arm\n")
-    print("| arm | runs | score [95% CI] | dtctl calls | cost $/run | scanned GB/run (mean, median) | "
+    print("| arm | runs | score [95% CI] | turns | dtctl calls | cost $/run | wall s/run | scanned GB/run (mean, median) | "
           "runs with a scan-limited result | recipe runs/run | runs with >=1 recipe |")
-    print("|---|---|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|---|---|---|")
     for a in arms:
         rs = [r for r in rows if r["arm"] == a]
         ci = arm_ci(rows, a)
         gb = [r["scanned_gb"] for r in rs]
         print(f"| {a} | {len(rs)} | {fmt(ci['mean'])} [{fmt(ci['lo'])}, {fmt(ci['hi'])}] | "
+              f"{fmt(mean([r.get('turns') for r in rs]), 1)} | "
               f"{fmt(mean([r['calls'] for r in rs]), 1)} | {fmt(mean([r['cost'] for r in rs]), 3)} | "
+              f"{fmt(mean([r['wall_s'] for r in rs]), 0)} | "
               f"{fmt(mean(gb), 1)}, {fmt(st.median(gb), 1)} | {sum(1 for r in rs if r['partial'])} | "
               f"{fmt(mean([r['runs'] for r in rs]), 2)} | {sum(1 for r in rs if r['runs'])}/{len(rs)} |")
 
@@ -422,15 +424,16 @@ def main():
                     print(f"  - |diff| >= 1: {big}")
 
     print("\n## Two-level bootstrap (tasks, then runs within task and arm; 95% CI)\n")
-    print("| pair | score diff | calls diff | cost diff $ | uncovered tasks score diff |")
-    print("|---|---|---|---|---|")
+    print("| pair | score diff | calls diff | turns diff | cost diff $ | wall s diff | uncovered tasks score diff |")
+    print("|---|---|---|---|---|---|---|")
     uncovered = {t for t, m in meta.items() if m.get("coverage") == "none"}
     for a, b in pairs:
         if a in arms and b in arms:
             cells = []
-            for kw in (dict(), dict(key="calls"), dict(key="cost"), dict(tasks=uncovered)):
+            for kw in (dict(), dict(key="calls"), dict(key="turns"), dict(key="cost"), dict(key="wall_s"),
+                       dict(tasks=uncovered)):
                 p = paired2(rows, a, b, **kw)
-                nd = 3 if kw.get("key") == "cost" else 2
+                nd = {"cost": 3, "wall_s": 0}.get(kw.get("key"), 2)
                 cells.append("-" if not p else f"{p['mean']:+.{nd}f} [{p['lo']:+.{nd}f}, {p['hi']:+.{nd}f}]")
             print(f"| {b} - {a} | " + " | ".join(cells) + " |")
 

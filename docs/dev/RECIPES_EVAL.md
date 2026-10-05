@@ -1011,3 +1011,82 @@ a full score on each of those tasks in at least one arm.
 4. **A future eval needs more than five uncovered tasks** if no-harm stays a
    CI-based criterion. With this much variance, five tasks cannot put the
    lower bound within 0.15 of the point estimate.
+
+---
+
+# v3: fewer turns for agents that write their own DQL
+
+## v3 question
+
+v2 found that recipes lift Haiku a lot, but Sonnet, which writes good DQL
+itself, paid for them: +0.4 turns and +$0.010 per run for a +0.18 score that
+was not significant. The transcripts show why. Sonnet writes its own query
+first and meets a recipe through the query hint. It then calls `describe
+recipe` to learn the params, and often rewrites its own query from the DQL.
+Turns, not dtctl calls, set an agent's latency and cost: a Sonnet turn is
+several seconds and most of the run's cost, and a dtctl call is under one
+second.
+
+f21b4f94 moves the recipe's value into responses the agent reads anyway:
+
+- **Trap checks on ad-hoc queries.** `dtctl query` warns, in
+  `context.warnings`, when a statement falls into a trap a recipe knows
+  (GenAI tokens summed over duplicated spans, logs filtered by
+  `dt.service.name`, vulnerability events counted without their latest
+  state, INP percentiles that include zeros), plus the DQL lints.
+- **Runnable hints.** The query hint is a complete `dtctl run` command, with
+  the problem ID, service, scope and window the query already names. The run
+  envelope carries `context.means`, so no `describe` is needed.
+- **`run --follow`** runs the first follow-up in the same call.
+- **Compact output.** A 16KB default budget on a recipe's envelope, a short
+  recipe `--help`, and a leaner `traces-get`.
+
+Does that make recipes pay off for Sonnet in turns and cost, without losing
+Haiku's lift?
+
+## v3 hypotheses
+
+- **H7 (primary, Sonnet): fewer turns.** B − A turns per run < 0.
+- **H8 (Sonnet): no cost penalty.** B − A cost per run ≤ 0.
+- **H9 (Sonnet): quality holds.** B − A score is non-inferior.
+- **H10 (Haiku): the lift holds**, at no extra cost.
+
+## v3 decision rule
+
+Two-level bootstrap (tasks, then runs within task and arm), 10,000
+resamples, 95% CIs, on the v2 taskset (25 tasks):
+
+- **Sonnet benefits** if the score diff's lower bound is above −0.15 *and*
+  either the turns diff's upper bound is below 0 or the cost diff's upper
+  bound is below 0.
+- **Sonnet breaks even** if the score is non-inferior and both point
+  estimates (turns, cost) are ≤ 0, with neither CI excluding 0.
+- **Haiku keeps its lift** if the score diff's lower bound is above 0 and
+  the cost diff's point estimate is at most +$0.005.
+
+Secondary, descriptive only:
+
+- wall time;
+- recipe use on covered tasks;
+- how often `describe recipe` ran;
+- how often a trap warning fired and whether the next query acted on it;
+- `--follow` use;
+- per-task changes against v2's B (different data and day, so not a test).
+
+## v3 arms, models, reps
+
+- **A**: `origin/main` at the time of the run, with main's dtctl skill.
+- **B**: docs/recipes-design at the commit that adds this preregistration
+  (f21b4f94 plus docs and harness only), with that build's dtctl skill.
+- Both arms load the dynatrace-for-ai skills (the v2 snapshot), as in v2.
+- **Sonnet**: 25 tasks × 2 arms × 3 reps = 150 runs.
+- **Haiku**: 25 tasks × 2 arms × 4 reps = 200 runs.
+- Same 20-call budget, deny rules, judge, rubrics and ground-truth code as
+  v2, with ground truth measured per batch.
+- **Spend cap: $60** in total, judging included.
+- A run that hits a harness failure (429 before any tool call) is re-run
+  once.
+
+The environment variables (`env.sh`) were reconstructed from the v2 runs'
+rendered prompts and ground truth, since the file is git-ignored and did not
+survive the worktree. The values are the ones v2 used.
