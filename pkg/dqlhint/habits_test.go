@@ -118,6 +118,48 @@ func TestSuggest_HabitRewrites(t *testing.T) {
 			want:  `fetch logs, from:now()-1d | filter loglevel == "ERROR" | limit 1`,
 			match: "window-outside-fetch",
 		},
+		{
+			name: "stats with a SQL aggregation name, referenced bare later",
+			err: Error{Type: "PARSE_ERROR", Arguments: []string{"`by`"},
+				Query: "fetch logs | stats count_distinct(log.source) by loglevel | sort count_distinct(log.source) desc | limit 1", Span: span(47, 48)},
+			want:  "fetch logs | summarize countDistinct(log.source), by:{loglevel} | sort `countDistinct(log.source)` desc | limit 1",
+			match: "sql-aggregation",
+		},
+		{
+			name: "head",
+			err: Error{Type: "UNKNOWN_COMMAND", Arguments: []string{"head"},
+				Query: "fetch logs | head 3", Span: span(14, 17)},
+			want:  "fetch logs | limit 3",
+			match: "command-synonym",
+		},
+		{
+			name: "distinct, with a later head",
+			err: Error{Type: "UNKNOWN_COMMAND", Arguments: []string{"distinct"},
+				Query: "fetch logs | distinct log.source | head 5", Span: span(14, 21)},
+			want:  "fetch logs | summarize count(), by:{log.source} | limit 5",
+			match: "command-synonym",
+		},
+		{
+			name: "bare count",
+			err: Error{Type: "UNKNOWN_COMMAND", Arguments: []string{"count"},
+				Query: "fetch logs | count", Span: span(14, 18)},
+			want:  "fetch logs | summarize count()",
+			match: "command-synonym",
+		},
+		{
+			name: "KQL where and project",
+			err: Error{Type: "UNKNOWN_COMMAND", Arguments: []string{"where"},
+				Query: `fetch logs | where loglevel == "ERROR" | project content | head 1`, Span: span(14, 18)},
+			want:  `fetch logs | filter loglevel == "ERROR" | fields content | limit 1`,
+			match: "command-synonym",
+		},
+		{
+			name: "eval",
+			err: Error{Type: "UNKNOWN_COMMAND", Arguments: []string{"eval"},
+				Query: "fetch logs | eval x = 1 | limit 1", Span: span(14, 17)},
+			want:  "fetch logs | fieldsAdd x = 1 | limit 1",
+			match: "command-synonym",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -156,6 +198,12 @@ func TestSuggest_HabitsConservative(t *testing.T) {
 			Query: `fetch logs, from:now()-2h | filter x == 1, from:now()-1d`, Span: span(44, 56)}},
 		{"count with an argument and a filter", Error{Type: "UNKNOWN_PARAMETER_DEFINED", Arguments: []string{"filter"},
 			Query: "fetch spans | summarize n = count(x, filter: y)", Span: span(38, 46)}},
+		{"distinct over an expression", Error{Type: "UNKNOWN_COMMAND", Arguments: []string{"distinct"},
+			Query: "fetch logs | distinct lower(log.source)", Span: span(14, 21)}},
+		{"count with arguments", Error{Type: "UNKNOWN_COMMAND", Arguments: []string{"count"},
+			Query: "fetch logs | count by log.source", Span: span(14, 18)}},
+		{"an unknown command with no DQL synonym", Error{Type: "UNKNOWN_COMMAND", Arguments: []string{"groupby"},
+			Query: "fetch logs | groupby log.source", Span: span(14, 20)}},
 		{"unterminated single quote", Error{Type: "PARSE_ERROR_SINGLE_QUOTES",
 			Query: "fetch logs | filter a == 'x", Span: span(26, 27)}},
 	}

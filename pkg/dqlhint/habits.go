@@ -70,6 +70,7 @@ func sqlAggregation(c *queryContext) (hint, bool) {
 
 	// The column list: split on top-level commas, `expr as name` → `name = expr`.
 	var items []string
+	var unnamed [][2]string // original and DQL spelling of each unnamed column
 	from := bodyStart
 	for i := bodyStart; i <= aggEnd; i++ {
 		if i < aggEnd && (code[i] != ',' || c.depth[seg.start+i] != 0) {
@@ -81,12 +82,24 @@ func sqlAggregation(c *queryContext) (hint, bool) {
 		if item == "" {
 			continue
 		}
+		named := assignedRe.MatchString(itemCode)
 		if m := asAliasRe.FindStringSubmatchIndex(itemCode); m != nil {
-			item = item[m[2]:m[3]] + " = " + strings.TrimSpace(item[:m[0]])
+			item, named = item[m[2]:m[3]]+" = "+strings.TrimSpace(item[:m[0]]), true
 		} else if strings.Contains(" "+itemCode+" ", " as ") {
 			return hint{}, false
 		}
-		items = append(items, item)
+		// SQL spellings of the aggregation itself (count_distinct) are renamed
+		// here too, or the retry fails on them.
+		renamed := item
+		if m := callNameRe.FindStringSubmatchIndex(item); m != nil && m[0] == 0 {
+			if to, ok := functionSynonyms[item[m[2]:m[3]]]; ok {
+				renamed = to + item[m[3]:]
+			}
+		}
+		if !named {
+			unnamed = append(unnamed, [2]string{item, renamed})
+		}
+		items = append(items, renamed)
 	}
 	if len(items) == 0 {
 		return hint{}, false
@@ -100,9 +113,82 @@ func sqlAggregation(c *queryContext) (hint, bool) {
 	if fields != "" {
 		out += ", by:{" + fields + "}"
 	}
+	edits := []edit{{seg.start, seg.end, out + tail}}
+	// An unnamed column is a field named after its expression from here on;
+	// the later commands that sort or filter on it bare would fail next.
+	for _, u := range unnamed {
+		if !strings.HasSuffix(u[0], ")") {
+			continue
+		}
+		for off := seg.end; ; {
+			i := strings.Index(c.code[off:], u[0])
+			if i < 0 {
+				break
+			}
+			at := off + i
+			if at == 0 || !isIdentByte(c.code[at-1]) && c.code[at-1] != '`' {
+				edits = append(edits, edit{at, at + len(u[0]), "`" + u[1] + "`"})
+			}
+			off = at + len(u[0])
+		}
+	}
 	return hint{
 		reason: "DQL aggregates with summarize name = aggregation(…), by:{field} — no stats command, no `as` alias, no trailing by",
-		query:  apply(c.q, []edit{{seg.start, seg.end, out + tail}}),
+		query:  apply(c.q, edits),
+	}, true
+}
+
+// assignedRe matches a column that is already named: `name = expr`.
+var assignedRe = regexp.MustCompile(`^` + fieldName + `\s*=[^=]`)
+
+// commandSynonyms are the SQL, KQL and Splunk command words agents pipe into,
+// with the DQL command that does the same. distinct and count are rewritten
+// in commandSynonym, since their DQL form takes different arguments.
+var commandSynonyms = map[string]string{
+	"head": "limit", "take": "limit",
+	"where": "filter", "project": "fields", "select": "fields",
+	"eval": "fieldsAdd", "extend": "fieldsAdd",
+}
+
+// commandSynonym: `| head 5`, `| where …`, `| distinct f`, `| count` — commands
+// DQL spells differently. Every such command in the query is rewritten, so the
+// retry does not fail on the next one.
+func commandSynonym(c *queryContext) (hint, bool) {
+	seg := c.segmentAt(c.start)
+	if seg == nil || !wordAt(c.code, c.start, seg.cmd) {
+		return hint{}, false
+	}
+	if _, ok := commandSynonyms[seg.cmd]; !ok && !slices.Contains([]string{"distinct", "unique", "count"}, seg.cmd) {
+		return hint{}, false
+	}
+	var edits []edit
+	for _, seg := range c.segs {
+		text := c.q[seg.start:seg.end]
+		lead := len(text) - len(strings.TrimLeft(text, " \t\r\n"))
+		tail := trailingSpace.FindString(text)
+		body := strings.TrimSpace(text[lead+len(seg.cmd) : len(text)-len(tail)])
+		var out string
+		switch to, ok := commandSynonyms[seg.cmd]; {
+		case ok:
+			out = to + text[lead+len(seg.cmd):len(text)-len(tail)]
+		case seg.cmd == "distinct" || seg.cmd == "unique":
+			if !fieldListRe.MatchString(body) {
+				return hint{}, false
+			}
+			out = " summarize count(), by:{" + strings.Join(fieldSplitRe.Split(body, -1), ", ") + "}"
+		case seg.cmd == "count" && body == "":
+			out = " summarize count()"
+		default:
+			continue
+		}
+		edits = append(edits, edit{seg.start + lead, seg.end - len(tail), strings.TrimLeft(out, " ")})
+	}
+	if len(edits) == 0 {
+		return hint{}, false
+	}
+	return hint{
+		reason: "DQL spells these commands limit, filter, fields, fieldsAdd and summarize count(), by:{…}",
+		query:  apply(c.q, edits),
 	}, true
 }
 

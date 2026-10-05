@@ -1321,6 +1321,16 @@ func requireSubcommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// A data domain or a resource under another verb (`get problems`,
+	// `find slo`): the commands that read it, as at the top level.
+	if advice := nounAdvice(args[0]); len(advice) > 0 {
+		return &suggest.CommandError{
+			Command:  args[0],
+			Message:  fmt.Sprintf("unknown resource type %q — these commands read it", args[0]),
+			Runnable: advice,
+		}
+	}
+
 	// Check if the first arg looks like an unknown subcommand
 	subcommands := collectSubcommands(cmd)
 	suggestion := suggest.FindClosest(args[0], subcommands)

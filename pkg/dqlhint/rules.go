@@ -38,6 +38,7 @@ var rules = []rule{
 	{"entity-field", []string{"FIELD_DOES_NOT_EXIST"}, entityField},
 	{"count-filter", []string{"UNKNOWN_PARAMETER_DEFINED"}, countFilter},
 	{"window-outside-fetch", []string{"UNKNOWN_PARAMETER_DEFINED"}, windowOutsideFetch},
+	{"command-synonym", []string{"UNKNOWN_COMMAND"}, commandSynonym},
 }
 
 // filterEquals: `filter x = "v"` — a single = is not a comparison in DQL.
