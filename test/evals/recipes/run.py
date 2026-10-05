@@ -8,6 +8,7 @@ Arms
   A  control: dtctl from origin/main + its dtctl skill + the dt-* skills
   B  recipes: dtctl from this tree   + its dtctl skill + the dt-* skills
   C  recipes, no dt-* skills: dtctl from this tree + its dtctl skill only
+  A0/B0  A/B with no skills at all (no dtctl skill, no dt-* skills)
   A2/B2  A/B plus a system-prompt nudge to load the dtctl skill first (diagnostic)
   B3     B2 plus a nudge to look for a recipe before writing DQL (upper bound)
   BP     "B+": B, with a one-line recipe pointer added to each dt-* skill that a
@@ -51,6 +52,10 @@ ARMS = {
     "A": dict(binary="dtctl-main", skill="skill-main", dt_skills=True),
     "B": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=True),
     "C": dict(binary="dtctl-recipes", skill="skill-recipes", dt_skills=False),
+    # v6: no skills at all. Skills were loaded in 11 of 420 v5 runs, so what
+    # an agent meets is dtctl's own output; these arms measure exactly that.
+    "A0": dict(binary="dtctl-main", skill=None, dt_skills=False),
+    "B0": dict(binary="dtctl-recipes", skill=None, dt_skills=False),
     # Diagnostic pair: A and B, plus a system-prompt nudge to load the dtctl
     # skill first. The full matrix showed agents never load it on their own,
     # so B never meets the recipes section; A2/B2 measure recipes *given*
@@ -269,7 +274,8 @@ def setup_run(env, batch_dir, task, arm, rep, cfg_by_tenant, pointers=None):
     cred = Path.home() / ".claude" / ".credentials.json"
     if cred.exists():
         shutil.copy(cred, ws / "cfg" / ".credentials.json")
-    shutil.copytree(lib.BIN / a["skill"], ws / "cfg" / "skills" / "dtctl")
+    if a["skill"]:
+        shutil.copytree(lib.BIN / a["skill"], ws / "cfg" / "skills" / "dtctl")
     if a["dt_skills"]:
         for sk in sorted(Path(env["EVAL_DFAI_DIR"], "skills").glob("dt-*")):
             shutil.copytree(sk, ws / "cfg" / "skills" / sk.name)

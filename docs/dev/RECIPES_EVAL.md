@@ -1505,3 +1505,85 @@ uncovered-task gap is gone in the point estimate but not ruled out.**
    - a recipe's hint or envelope should say where its totals are.
    That targets t08's extra calls.
 4. **Ship 28063d2a, and check it in the next round,** along with 2 and 3.
+
+---
+
+# v6: repairs in dtctl's own output, with and without skills
+
+## v6 question
+
+v5 found that Haiku mostly fails by spending its 20-call budget, about five
+calls per run going to errors (A 5.7, B 5.0). Only 11 of 420 runs loaded a
+skill, so anything the skills say rarely reaches the agent. v6 moves the
+repairs into dtctl's output (a3bc232a, ed5a135e):
+
+- **DQL habits:** SQL and KQL habits get a rewritten query that runs. These
+  are stats/as/by, single quotes, function and command synonyms, bare
+  references to unnamed aggregations, guessed entity fields, count(filter:),
+  and a window on a later command. The repair comes before the recipe hints.
+- **Nouns as commands:** `dtctl <noun>` and `dtctl get <noun>` name the
+  commands that read the noun, not an edit-distance guess.
+- **Platform objects:** a fetch of workflows, SLOs or dashboards points at
+  `dtctl get`.
+- **`--jq`:** with no `-o`, it returns JSON.
+- **Compaction:** the compaction note names the columns in
+  `result.constant`.
+
+**Offline replay, before any run:** v5's errored calls were re-issued with
+the new build, read-only.
+- Of 1,028 errored queries, 431 now get a rewrite as the first suggestion,
+  and 342 of those rewrites run. In v5, 160 got a rewrite first.
+- Of 254 unknown-command errors, 155 now name a command that reads the
+  noun. In v5, 1 did.
+
+The second question is the one the user asked for: **what do skills add?**
+v6 runs every arm with and without skills.
+
+## v6 hypotheses and decision rule
+
+The v3/v5 rule applies to B − A, with skills:
+
+- **Sonnet benefits** if the score diff's lower bound is above −0.15 *and*
+  the upper bound of the turns diff or the cost diff is below 0.
+- **Sonnet breaks even** if the score is non-inferior and both point
+  estimates (turns, cost) are ≤ 0.
+- **Haiku keeps its lift** if the score diff's lower bound is above 0 and the
+  cost diff's point estimate is at most +$0.005.
+
+**H12 (fewer wasted calls, Haiku):** errored dtctl calls per run, B − A, has
+an upper bound below 0. In v5 the point estimate was −0.7.
+
+**H13 (no skills needed):** B0 − A0 meets the same Haiku rule as B − A.
+The recipes and repairs reach the agent through dtctl's output alone.
+
+**H14 (skills add little):** A − A0 and B − B0 each have a CI that includes 0,
+per model. If one excludes 0, report its direction. Prediction: they include
+0, since skills were loaded in about 3% of v5 runs.
+
+**H11 (no harm outside the recipes)** is unchanged, for B − A and B0 − A0.
+
+**Descriptive only:**
+- the runs that ended without an answer;
+- how often a first-suggestion rewrite appeared and whether the next call
+  used it;
+- noun advice shown and taken;
+- skill loads per arm.
+
+## v6 arms, models, reps
+
+- **Builds:**
+  - A and A0 use 8815e206, v5's control. The one later main commit is a
+    skill-text change (#671). Keeping v5's base isolates the branch's work.
+  - B and B0 use docs/recipes-design at the commit that adds this
+    preregistration.
+- **Arms:**
+  - **A**: main, its dtctl skill, and the dt-* skills.
+  - **B**: recipes, its dtctl skill, and the dt-* skills.
+  - **A0**: main, no skills at all.
+  - **B0**: recipes, no skills at all.
+- **Runs:**
+  - Haiku: 30 × 4 × 3 = 360 runs.
+  - Sonnet: 30 × 4 × 2 = 240 runs.
+  - Taskset `v5`.
+- **Spend cap: $85**, judging included. At v5's per-run cost, about $78. A
+  run that hits a harness failure is re-run once.

@@ -412,7 +412,7 @@ def main():
 
     print("\n## Paired differences (per-task mean, bootstrap 95% CI over tasks)\n")
     pairs = (("A", "B"), ("A", "C"), ("B", "C"), ("A2", "B2"), ("A2", "B3"), ("A", "A2"), ("B", "B2"),
-             ("A", "BP"), ("B", "BP"), ("A", "BR"), ("B", "BR"))
+             ("A", "BP"), ("B", "BP"), ("A", "BR"), ("B", "BR"), ("A0", "B0"), ("A0", "A"), ("B0", "B"))
     for a, b in pairs:
         if a in arms and b in arms:
             p = paired(rows, a, b)
