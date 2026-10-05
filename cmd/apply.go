@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -147,6 +148,12 @@ Examples:
   # Apply with wide table (includes URL for dashboards/notebooks)
   dtctl apply -f notebook.yaml -o wide
 
+  # Apply documents and make them readable by everyone in the environment
+  dtctl apply -f dashboards/ --share-environment public
+
+  # ... and print a link for each that grants write access
+  dtctl apply -f dashboards/ --share-environment link,public --share-access read-write
+
 Note: The 'create' command always creates new resources. Use 'apply' to keep
 resources in sync with their file definitions.
 `,
@@ -163,9 +170,12 @@ resources in sync with their file definitions.
 		labels, _ := cmd.Flags().GetStringArray("label")
 		createSnapshot, _ := cmd.Flags().GetBool("create-snapshot")
 		snapshotDescription, _ := cmd.Flags().GetString("snapshot-description")
-		shareEnvironment, _ := cmd.Flags().GetString("share-environment")
-
-		if err := validateShareEnvironmentValue(shareEnvironment); err != nil {
+		shareEnvironment, err := applyShareEnvironmentModes(cmd)
+		if err != nil {
+			return err
+		}
+		shareAccess, _ := cmd.Flags().GetString("share-access")
+		if err := validateShareAccess(cmd, shareEnvironment, shareAccess); err != nil {
 			return err
 		}
 
@@ -265,8 +275,9 @@ resources in sync with their file definitions.
 		// lines appear adjacent to the apply output. Errors are collected rather than
 		// returned immediately so the user always sees the apply results.
 		var shareErr error
-		if shareEnvironment != "" && !dryRun {
-			shareErr = ensureEnvironmentShareForResults(c, results, shareEnvironment)
+		if !shareEnvironment.none() && !dryRun {
+			shareErr = ensureEnvironmentShareForResults(c, results, shareEnvironment, shareAccess,
+				cmd.Flags().Changed("share-access"))
 		}
 
 		// Print structured output using the global -o flag.
@@ -330,49 +341,74 @@ func init() {
 	applyCmd.Flags().StringArray("label", []string{}, "document classification label (repeatable); replaces the document's labels, overriding any in the payload (labels cannot be cleared, only replaced)")
 	applyCmd.Flags().Bool("create-snapshot", false, "snapshot the document's current state before updating it, so the previous version stays available via 'dtctl history'/'dtctl restore' (documents only)")
 	applyCmd.Flags().String("snapshot-description", "", "description for the snapshot created by --create-snapshot (max 128 characters)")
-	applyCmd.Flags().String("share-environment", "", "share the applied notebook/dashboard with everyone in the environment (values: 'read' or 'read-write'; bare --share-environment defaults to 'read')")
-	applyCmd.Flags().Lookup("share-environment").NoOptDefVal = "read"
+	applyCmd.Flags().StringSlice("share-environment", nil, "open the applied documents (dashboards, notebooks, launchpads, ...) to everyone in the environment, as 'share document --environment' does: 'link' (an environment share link, at --share-access), 'public' (isPrivate=false, read access), or both ('link,public')")
+	applyCmd.Flags().String("share-access", "read", "access level of the --share-environment link: 'read' or 'read-write'")
 
 	markFlagRequiredNonEmpty(applyCmd, "file")
 }
 
-// validateShareEnvironmentValue rejects any --share-environment value outside
-// the empty string, "read", or "read-write".
-func validateShareEnvironmentValue(v string) error {
-	switch v {
-	case "", "read", "read-write":
-		return nil
-	default:
-		return fmt.Errorf("invalid --share-environment value %q, must be 'read' or 'read-write'", v)
+// applyShareEnvironmentModes reads --share-environment. It used to take an
+// access level and always did both halves, so those values get an error that
+// spells out the replacement instead of the generic one.
+func applyShareEnvironmentModes(cmd *cobra.Command) (environmentModes, error) {
+	values, _ := cmd.Flags().GetStringSlice("share-environment")
+	for _, v := range values {
+		switch v = strings.TrimSpace(v); v {
+		case "read", "read-write":
+			replacement := "--share-environment link,public"
+			if v == "read-write" {
+				replacement += " --share-access read-write"
+			}
+			return environmentModes{}, fmt.Errorf("--share-environment no longer takes an access level: "+
+				"use %s for what --share-environment %s did, or only 'link' or 'public' for one of the two", replacement, v)
+		}
 	}
+	return parseEnvironmentModes(cmd, "share-environment")
 }
 
-// ensureEnvironmentShareForResults walks apply results and creates an environment share for every notebook/dashboard.
-// Other resource types are silently skipped — environment shares only apply to documents.
+// validateShareAccess checks --share-access, which only means something for
+// a --share-environment link.
+func validateShareAccess(cmd *cobra.Command, modes environmentModes, access string) error {
+	if !cmd.Flags().Changed("share-access") {
+		return nil
+	}
+	if access != "read" && access != "read-write" {
+		return fmt.Errorf("invalid --share-access %q, must be 'read' or 'read-write'", access)
+	}
+	if !modes.link {
+		return fmt.Errorf("--share-access sets the level of the --share-environment link, so it needs --share-environment link")
+	}
+	return nil
+}
+
+// ensureEnvironmentShareForResults walks apply results and opens every document (dashboards,
+// notebooks, and documents of any other type such as launchpads) to the environment in the given
+// modes, as `share document --environment` does. Other resource types are silently skipped —
+// environment shares and isPrivate only apply to documents. replace is whether --share-access was
+// given: only then is an existing link at another level replaced.
 //
 // Per-document failures do not abort the walk: we attempt a share for every eligible
 // result and return a combined error at the end so multi-document applies are partially
 // successful when possible.
-func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyResult, access string) error {
+func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyResult, modes environmentModes,
+	access string, replace bool) error {
 	handler := document.NewHandler(c)
 	var errs []error
 	for _, r := range results {
-		base := extractApplyBase(r)
-		if base == nil {
+		if !isDocumentApplyResult(r) {
 			continue
 		}
-		if base.ResourceType != "notebook" && base.ResourceType != "dashboard" {
+		base := extractApplyBase(r)
+		if base == nil {
 			continue
 		}
 		if base.ID == "" {
 			continue
 		}
-		if _, err := handler.EnsureEnvironmentShare(base.ID, access); err != nil {
+		if err := shareAppliedDocument(handler, c.BaseURL(), base, modes, access, replace); err != nil {
 			output.PrintWarning("failed to share %s %q with environment: %v", base.ResourceType, base.ID, err)
 			errs = append(errs, fmt.Errorf("document %q: %w", base.ID, err))
-			continue
 		}
-		output.PrintInfo("Shared %s %q with environment (%s)", base.ResourceType, base.ID, access)
 	}
 	if len(errs) == 0 {
 		return nil
@@ -387,8 +423,51 @@ func ensureEnvironmentShareForResults(c *client.Client, results []apply.ApplyRes
 	return fmt.Errorf("%d documents failed to share: %s", len(errs), strings.Join(ids, "; "))
 }
 
+// shareAppliedDocument opens one applied document to the environment and
+// reports each half on stderr, so stdout keeps carrying only the apply result.
+func shareAppliedDocument(handler *document.Handler, baseURL string, base *apply.ApplyResultBase,
+	modes environmentModes, access string, replace bool) error {
+	if modes.link {
+		res, err := handler.EnsureEnvironmentLink(base.ID, access, replace)
+		var existing *document.ExistingEnvironmentShareError
+		if errors.As(err, &existing) {
+			level := existing.Share.Level()
+			return fmt.Errorf("it already has a %s environment share (%s), nothing was changed: "+
+				"pass --share-access %s to reuse it, or --share-access %s to replace it (links to it stop working)",
+				level, existing.Share.ID, level, access)
+		}
+		if err != nil {
+			return err
+		}
+		for _, old := range res.Replaced {
+			output.PrintWarning("replaced the %s environment share %s of %s %q: links to it no longer work",
+				old.Level(), old.ID, base.ResourceType, base.ID)
+		}
+		output.PrintInfo("Shared %s %q with environment (%s link): %s", base.ResourceType, base.ID,
+			res.Share.Level(), document.ShareURL(baseURL, res.Share.ID))
+	}
+	if modes.public {
+		if _, err := handler.SetPrivate(base.ID, false); err != nil {
+			return fmt.Errorf("failed to make it public: %w", err)
+		}
+		output.PrintInfo("Made %s %q public to everyone in the environment", base.ResourceType, base.ID)
+	}
+	return nil
+}
+
+// isDocumentApplyResult reports whether an apply result is a Document Service
+// document, the only kind of resource an environment share applies to.
+func isDocumentApplyResult(r apply.ApplyResult) bool {
+	switch r.(type) {
+	case *apply.DashboardApplyResult, *apply.NotebookApplyResult, *apply.DocumentApplyResult:
+		return true
+	}
+	return false
+}
+
 // Declared stable: the invocation and output contract of this command is
 // additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
 func init() {
 	stability.MarkStable(applyCmd)
+	stability.MarkFlag(applyCmd, "share-access", stability.Experimental, "0.42.0")
 }

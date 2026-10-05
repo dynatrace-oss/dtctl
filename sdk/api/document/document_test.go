@@ -416,6 +416,58 @@ func TestDeleteEnvironmentShare(t *testing.T) {
 	}
 }
 
+// TestSetDocumentVisibility pins the PATCH both visibility setters send: the
+// isPrivate form field and the optimistic-locking version, and that a 409 is
+// reported as ErrVersionConflict so callers can re-read and retry.
+func TestSetDocumentVisibility(t *testing.T) {
+	tests := []struct {
+		name        string
+		set         func(h *Handler) error
+		wantPrivate string
+	}{
+		{"public", func(h *Handler) error { return h.SetDocumentPublic(context.Background(), "doc-1", 7) }, "false"},
+		{"private", func(h *Handler) error { return h.SetDocumentPrivate(context.Background(), "doc-1", 7) }, "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPrivate, gotVersion string
+			mux := http.NewServeMux()
+			mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPatch {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Errorf("ParseMultipartForm: %v", err)
+				}
+				gotPrivate = r.FormValue("isPrivate")
+				gotVersion = r.URL.Query().Get("optimistic-locking-version")
+				w.WriteHeader(http.StatusOK)
+			})
+			if err := tt.set(NewHandler(newTestClient(t, mux))); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotPrivate != tt.wantPrivate {
+				t.Errorf("isPrivate = %q, want %q", gotPrivate, tt.wantPrivate)
+			}
+			if gotVersion != "7" {
+				t.Errorf("optimistic-locking-version = %q, want 7", gotVersion)
+			}
+		})
+	}
+
+	t.Run("conflict", func(t *testing.T) {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/platform/document/v1/documents/doc-1", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusConflict)
+		})
+		err := NewHandler(newTestClient(t, mux)).SetDocumentPrivate(context.Background(), "doc-1", 7)
+		if !errors.Is(err, ErrVersionConflict) {
+			t.Errorf("expected ErrVersionConflict, got: %v", err)
+		}
+	})
+}
+
 // TestDirectShareSendNotification pins the one lever the API offers against
 // notifying recipients: send-notification=false is sent only when asked for, on
 // both calls that add recipients, and the API default is otherwise left alone.

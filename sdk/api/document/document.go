@@ -1030,9 +1030,22 @@ func (h *Handler) ClaimEnvironmentShare(ctx context.Context, shareID string) (*E
 // API does not cover: the env-share creates a claimable grant, but isPrivate=false is a
 // separate owner-settable metadata flag.
 func (h *Handler) SetDocumentPublic(ctx context.Context, id string, version int) error {
+	return h.setDocumentPrivate(ctx, id, version, false)
+}
+
+// SetDocumentPrivate flips a document's isPrivate flag to true, the inverse of
+// SetDocumentPublic: everyone in the environment loses the read access that
+// isPrivate=false grants, while the owner and direct-share recipients keep
+// theirs. Requires the current document version for optimistic locking.
+func (h *Handler) SetDocumentPrivate(ctx context.Context, id string, version int) error {
+	return h.setDocumentPrivate(ctx, id, version, true)
+}
+
+// setDocumentPrivate PATCHes the document's isPrivate flag.
+func (h *Handler) setDocumentPrivate(ctx context.Context, id string, version int, private bool) error {
 	resp, err := h.client.HTTP().R().SetContext(ctx).
 		SetQueryParam("optimistic-locking-version", fmt.Sprintf("%d", version)).
-		SetMultipartFormData(map[string]string{"isPrivate": "false"}).
+		SetMultipartFormData(map[string]string{"isPrivate": fmt.Sprintf("%t", private)}).
 		Patch(fmt.Sprintf("/platform/document/v1/documents/%s", httpclient.PathSegment(id)))
 	if err != nil {
 		return fmt.Errorf("failed to update document visibility: %w", err)
