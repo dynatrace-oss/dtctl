@@ -1,0 +1,34 @@
+# v5 task set: the v2 tasks plus five uncovered ones (docs/dev/RECIPES_EVAL.md, "v5")
+# kept from v1: the tasks v1 found discriminating, plus three uncovered controls
+t03
+t04
+t06
+t07
+t08
+t19
+t24
+t10   # uncovered
+t11   # uncovered
+t22   # uncovered
+# new in v2
+t25
+t26
+t27
+t28
+t29
+t30
+t31
+t32
+t33
+t34
+t35
+t36
+t37
+t38   # uncovered
+t39   # uncovered
+# new in v5: uncovered
+t40
+t41
+t42
+t43
+t44

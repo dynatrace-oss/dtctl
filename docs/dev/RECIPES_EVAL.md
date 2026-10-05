@@ -1344,3 +1344,62 @@ B.**
    separates a real cost from one lucky control sample.
 4. **Hint relevance** still needs a signal other than the source name.
    Two replay variants lost recall without gaining precision.
+
+---
+
+# v5: a fresh control, ten uncovered tasks
+
+## v5 question
+
+v4 left three things open:
+
+1. Both v3 and v4 compared against the same control runs. Those runs did
+   unusually well on three uncovered tasks.
+2. The no-harm check rests on five uncovered tasks.
+3. t10 fails on a query that names no window at all.
+
+v5 runs both arms fresh, adds five uncovered tasks, and adds one change.
+478a4474 makes `dtctl query` report `context.window` with its `span`, and a
+`note` when the query named no window and read the default 2h. The skill
+gets a matching line.
+
+**New tasks, all `coverage: none`:**
+- **t40:** event kinds in 24h. A generic `fetch events` query, where the
+  k8s-warning-events hint is known to misfire.
+- **t41:** the top bizevents provider's share over 7d, a window trap.
+- **t42:** the slowest HTTP synthetic monitor. Durations are in ns.
+- **t43:** the most frequent workflow over 7d, and the workflows that always
+  failed.
+- **t44:** the log source with the most records in 1h. Logs hints fire, but
+  no recipe answers this.
+
+Taskset `v5` = `v2` + t40–t44: 30 tasks, 10 of them uncovered.
+
+## v5 hypotheses and decision rule
+
+v3's rule, unchanged, on a fresh A and B:
+
+- **Sonnet benefits** if the score diff's lower bound is above −0.15 *and*
+  either the turns diff's or the cost diff's upper bound is below 0.
+- **Sonnet breaks even** if the score is non-inferior and both point
+  estimates (turns, cost) are ≤ 0, with neither CI excluding 0.
+- **Haiku keeps its lift** if the score diff's lower bound is above 0 and
+  the cost diff's point estimate is at most +$0.005.
+
+**H11 (no harm outside the recipes):** on the 10 uncovered tasks, B − A has
+a lower bound above −0.15, per model. If the bound misses but the point
+estimate is ≥ 0, report it as underpowered, not as harm.
+
+**Descriptive only:**
+- t10 and t41 scores;
+- how often `context.window.note` appeared and whether the next query set a
+  window;
+- hints shown on uncovered tasks, and whether they were taken.
+
+## v5 arms, models, reps
+
+- **A**: `origin/main` (8815e206). **B**: docs/recipes-design at the commit
+  that adds this preregistration.
+- **Sonnet**: 30 × 2 × 3 = 180 runs. **Haiku**: 30 × 2 × 4 = 240 runs.
+- **Spend cap: $60**, judging included. A run that hits a harness failure is
+  re-run once.

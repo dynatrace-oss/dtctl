@@ -623,10 +623,48 @@ def t39(q, env):
                                            count=lib.num(r["n"])) for r in rows])
 
 
+def t40(q, env):
+    rows = q('fetch events, from:now()-24h | summarize n=count(), by:{event.kind} | sort n desc | limit 8')
+    return dict(by_kind=[dict(kind=r["event.kind"], count_24h=lib.num(r["n"])) for r in rows])
+
+
+def t41(q, env):
+    rows = q('fetch bizevents, from:now()-7d | summarize n=count(), by:{event.provider} | sort n desc | limit 6')
+    total = q('fetch bizevents, from:now()-7d | summarize n=count()')
+    tot = lib.num(total[0]["n"]) if total else 0
+    return dict(total_7d=tot,
+                by_provider=[dict(provider=r["event.provider"], count_7d=lib.num(r["n"]),
+                                  share_pct=round(100 * lib.num(r["n"]) / tot, 1) if tot else None) for r in rows])
+
+
+def t42(q, env):
+    rows = q('fetch dt.synthetic.events, from:now()-24h | filter event.type=="http_monitor_execution" '
+             '| summarize n=count(), avg_ms=avg(toDouble(result.statistics.duration)) / 1000000, '
+             'by:{dt.synthetic.monitor.name} | sort avg_ms desc | limit 6')
+    return dict(by_monitor=[dict(monitor=r["dt.synthetic.monitor.name"], executions=lib.num(r["n"]),
+                                 avg_ms=round(float(r["avg_ms"]), 1) if r.get("avg_ms") is not None else None)
+                            for r in rows])
+
+
+def t43(q, env):
+    rows = q('fetch dt.system.events, from:now()-7d | filter event.kind=="WORKFLOW_EVENT" '
+             'and event.type=="WORKFLOW_EXECUTION" and dt.automation_engine.state.is_final==true '
+             '| summarize n=count(), failed=countIf(dt.automation_engine.state!="SUCCESS"), '
+             'by:{dt.automation_engine.workflow.title} | sort n desc')
+    wf = [dict(title=r["dt.automation_engine.workflow.title"], executions=lib.num(r["n"]),
+               failed=lib.num(r["failed"])) for r in rows]
+    return dict(by_workflow=wf[:8], always_failed=[w["title"] for w in wf if w["executions"] and w["failed"] == w["executions"]])
+
+
+def t44(q, env):
+    rows = q('fetch logs, from:now()-1h | summarize n=count(), by:{log.source} | sort n desc | limit 6')
+    return dict(by_source=[dict(source=r["log.source"], count_1h=lib.num(r["n"])) for r in rows])
+
+
 TASKS = {f.__name__: f for f in (t01, t02, t03, t04, t05, t06, t07, t08, t09, t10, t11, t12, t13,
                                  t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24,
                                  t25, t26, t27, t28, t29, t30, t31, t32, t33, t34, t35, t36, t37,
-                                 t38, t39)}
+                                 t38, t39, t40, t41, t42, t43, t44)}
 
 
 def main():
