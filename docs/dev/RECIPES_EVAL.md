@@ -1639,14 +1639,15 @@ two-level bootstrap 95% CI. Haiku ran 90 runs per arm, Sonnet 60.
 
 1. **Haiku's lift almost doubled, and it is cheaper.** In v5, recipes alone
    gave +0.60. v6 adds the dtctl-side repairs and gives +1.16, with 3.8 fewer
-   calls and 1.3 cents less per run. Fully correct runs: 41 of 90 against 11.
+   calls and 1.3 cents less per run. Fully correct runs: 50 of 90 against 15;
+   runs scoring zero: 11 against 42.
    The control scored the same as v5's (0.99 against 0.98), so the rounds
    compare.
 2. **The gain reaches tasks no recipe covers.** On the ten uncovered tasks,
    Haiku went from −0.05 in v5 to +1.40. The repairs are not tied to
    recipes:
-   - t22 (failed workflow runs) went from 0/4 to 3/3 partial credit. The
-     noun advice turned `dtctl workflow executions list` into
+   - t22 (failed workflow runs) went from scores 0, 0, 0, 0 in v5 to 2, 2, 2.
+     The noun advice turned `dtctl workflow executions list` into
      `dtctl get workflow-executions`.
    - t42 (slowest synthetic monitor) went to 3/3/3.
    - t10 and t40 went to 3/3/3.
