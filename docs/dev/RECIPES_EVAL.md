@@ -1470,9 +1470,17 @@ uncovered-task gap is gone in the point estimate but not ruled out.**
 - **t22 (Haiku, −1.5): B never found `dtctl get workflow-executions`.**
   - All four A runs found the command. No B run did. The B runs issued
     11–16 DQL queries looking for a workflow-execution table.
-  - No recipe or hint was involved. The likely cause is that B's skill
-    says much more about DQL and recipes, which pushes the resource
-    commands further down and makes the agent query-first for everything.
+  - No run in either arm loaded the dtctl skill, so the skill text is not
+    the cause. Three of the four A runs called `dtctl --help` early and
+    found the command there. Two B runs saw hints on every exploratory
+    query (16 mentions each) and kept writing DQL. With four runs per arm
+    this may be chance. If not, the hints keep an agent in query mode
+    after the data it wants turned out not to be in Grail.
+- **The skills are available but rarely read.** A dtctl or dt-* skill was
+  loaded in 3 of 90 Sonnet A runs, none of 90 Sonnet B runs, and 4 of 120
+  runs in each Haiku arm. What reaches the agent is the dtctl binary's own
+  output: help, hints, warnings, `context.window`. That is why every
+  change that worked lives in that output.
 - **t44 (Haiku, −1.0):** three B runs grouped by the wrong field
   (`dt.openpipeline.source` rather than `log.source`). No recipe was run.
 - **t08 (Sonnet, B 7.7 calls vs A 2.0):** after the hint, the runs called
@@ -1487,10 +1495,11 @@ uncovered-task gap is gone in the point estimate but not ruled out.**
 
 1. **Keep the design.** Across v3, v4 and v5, Haiku's lift is stable
    (+0.57, +0.59, +0.60) and Sonnet breaks even or better.
-2. **Point the skill back at resource commands.** One line in the
-   recipes section should say that platform objects (workflows and their
-   executions, SLOs, dashboards) come from `get` and `describe`, not DQL.
-   That targets t22.
+2. **Point back at resource commands from inside dtctl, not from the
+   skill.** The skill is rarely read, so a skill line would not reach
+   t22's runs. When a query fails with `unknown_data_object`, the error
+   envelope should suggest `dtctl commands`, because platform objects such
+   as workflow executions come from `get`, not Grail.
 3. **Make recipe output easier to read in agent mode.** Two parts:
    - `--jq` should return JSON records, not a YAML string;
    - a recipe's hint or envelope should say where its totals are.
