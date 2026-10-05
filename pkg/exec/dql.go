@@ -1249,8 +1249,10 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	ap.SetMetadata(envelopeMetadata(query, result, opts))
 	// -o toon asked for a token-efficient encoding of the filtered result; keep
 	// it. Any other non-JSON format the envelope can't carry warns for itself.
+	// With no -o, the result is JSON: a caller who shaped it with jq reads it as
+	// JSON, and an auto-chosen yaml or csv string is what it would trip over.
 	if opts.AutoFormatByDefault {
-		ap.UseAutoByDefault()
+		ap.SetResultFormat("json")
 	} else {
 		ap.SetResultFormat(effectiveFormat)
 	}

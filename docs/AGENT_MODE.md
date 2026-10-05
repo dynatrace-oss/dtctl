@@ -258,7 +258,9 @@ Pass `-o json` to get the previous native-JSON rows back; any other explicit
 `-o` also wins over the default. Other commands keep native JSON unless you pass
 `-o auto` yourself. When the default returns CSV or YAML, `context.suggestions`
 carries one entry naming the `-o json` opt-out; when it returns native JSON
-(empty or scalar results), nothing is added.
+(empty or scalar results), nothing is added. With `--jq` and no `-o`, the
+filter's output is JSON: a program that addresses `.records` reads its answer
+as JSON, so the default does not re-encode it as CSV.
 
 The envelope names the choice in `context.format`, so branch on it before parsing:
 

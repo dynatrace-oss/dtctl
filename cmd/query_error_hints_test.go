@@ -90,3 +90,46 @@ func TestErrorToDetail_QueryErrorWithoutPosition(t *testing.T) {
 		t.Errorf("envelope %s carries empty position fields", raw)
 	}
 }
+
+// TestErrorToDetail_RepairBeforeRecipeHints keeps the query repair ahead of
+// the recipes that read the same data: an agent mid-way through its own query
+// tried the recipe on top and found the one-character fix a turn later.
+func TestErrorToDetail_RepairBeforeRecipeHints(t *testing.T) {
+	qe := &sdkquery.QueryError{
+		StatusCode: 400, Message: "PARSE_ERROR", ErrorType: "PARSE_ERROR",
+		Arguments: []string{"`by`"},
+		Query:     "fetch logs | stats count() by log.source",
+		Position: &sdkquery.SyntaxPosition{
+			Start: &sdkquery.Position{Line: 1, Column: 28},
+			End:   &sdkquery.Position{Line: 1, Column: 29},
+		},
+	}
+	d := errorToDetail(&recipeHintedError{error: qe, hints: []string{"dtctl run recipe logs-top  # recipe"}})
+	if len(d.Suggestions) < 2 {
+		t.Fatalf("Suggestions = %q", d.Suggestions)
+	}
+	if !strings.HasSuffix(d.Suggestions[0], "dtctl query 'fetch logs | summarize count(), by:{log.source}'") {
+		t.Errorf("first suggestion = %q, want the summarize repair", d.Suggestions[0])
+	}
+	if last := d.Suggestions[len(d.Suggestions)-1]; !strings.HasPrefix(last, "dtctl run recipe") {
+		t.Errorf("last suggestion = %q, want the recipe hint", last)
+	}
+}
+
+// TestDqlErrorAdvicePlatformObject points a fetch of a platform resource
+// (evals: `fetch dt.automation.workflow_executions`, `fetch dt.slo`) at the
+// get command that lists it, not at the Grail data-object catalog.
+func TestDqlErrorAdvicePlatformObject(t *testing.T) {
+	for _, guess := range []string{"dt.automation.workflow_executions", "dt.slo", "dashboards"} {
+		s := dqlErrorAdvice(&sdkquery.QueryError{ErrorType: "UNKNOWN_DATA_OBJECT",
+			Message: "UNKNOWN_DATA_OBJECT", Detail: guess + " isn't a valid data object."})
+		if len(s) == 0 || !strings.Contains(s[0], "dtctl get") {
+			t.Errorf("advice for %q = %q, want a dtctl get pointer", guess, s)
+		}
+	}
+	s := dqlErrorAdvice(&sdkquery.QueryError{ErrorType: "UNKNOWN_DATA_OBJECT",
+		Message: "UNKNOWN_DATA_OBJECT", Detail: "usersessions isn't a valid data object."})
+	if len(s) > 0 && strings.Contains(s[0], "dtctl get") {
+		t.Errorf("a Grail near-miss got the platform advice: %q", s)
+	}
+}

@@ -138,13 +138,13 @@ func (e *DQLExecutor) fitToBudget(query string, result *DQLQueryResponse, resp o
 			ctx.Format = used
 			if used != encoding {
 				ctx.Suggestions = slices.DeleteFunc(ctx.Suggestions, func(s string) bool {
-					return s == output.AutoDefaultSuggestion(encoding) || s == compactRowsSuggestion
+					return s == output.AutoDefaultSuggestion(encoding) || strings.HasPrefix(s, compactRowsPrefix)
 				})
 				if opts.AutoFormatByDefault && used != "json" {
 					ctx.Suggestions = append(ctx.Suggestions, output.AutoDefaultSuggestion(used))
 				}
 				if rows.compaction != nil && rows.compaction.Changed(used) {
-					ctx.Suggestions = append(ctx.Suggestions, compactRowsSuggestion)
+					ctx.Suggestions = append(ctx.Suggestions, compactRowsSuggestion(rows.compaction))
 				}
 			}
 		}

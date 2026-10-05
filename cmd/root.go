@@ -511,6 +511,15 @@ func enhanceCommandError(cmd *cobra.Command, err error) error {
 					UsageHint:  syn.hint,
 				}
 			}
+			if !cmd.HasParent() {
+				if advice := nounAdvice(name); len(advice) > 0 {
+					return &suggest.CommandError{
+						Command:  name,
+						Message:  fmt.Sprintf("unknown command %q — dtctl commands are verbs (get, query, run, …); the data or resource is their argument", name),
+						Runnable: advice,
+					}
+				}
+			}
 		}
 		commands := collectSubcommands(cmd)
 		return suggest.ParseCommandError(errStr, commands)
@@ -565,6 +574,10 @@ var streamKeywords = []struct {
 // unknownObjectRe pulls the offending name out of the API's
 // "<name> isn't a valid data object." detail.
 var unknownObjectRe = regexp.MustCompile(`(\S+) isn't a valid data object`)
+
+// platformObjectRe recognizes a fetch of a platform object that lives behind
+// an API, not in Grail (evals: `fetch dt.workflow.execution_events`).
+var platformObjectRe = regexp.MustCompile(`(?i)(workflow|automation|execution|\bslos?\b|dashboard|notebook)\S* isn't a valid data object`)
 
 // nearestStreams suggests real stream names for an unknown data-object guess:
 // keyword routing first, edit distance over coreStreams as fallback.
@@ -621,6 +634,8 @@ func dqlErrorAdvice(e *sdkquery.QueryError) []string {
 		s = append(s, `smartscape is queried via the COMMANDS smartscapeNodes/smartscapeEdges, not fetch — start the query with them: dtctl query 'smartscapeNodes "HOST" | limit 10'`)
 	case e.ErrorType == "UNKNOWN_DATA_OBJECT" && strings.Contains(text, "dt.entity."):
 		s = append(s, `for a current-state entity census use: dtctl query 'smartscapeNodes "<TYPE>" | summarize count()' — dt.entity.* tables are event-lookback views and exist only for some types`)
+	case e.ErrorType == "UNKNOWN_DATA_OBJECT" && platformObjectRe.MatchString(text):
+		s = append(s, "workflows, their executions, SLOs, dashboards and notebooks are not Grail data — list them with dtctl get (e.g. dtctl get workflow-executions, dtctl get slos); the catalog: dtctl commands")
 	case e.ErrorType == "UNKNOWN_DATA_OBJECT":
 		if m := unknownObjectRe.FindStringSubmatch(text); len(m) == 2 {
 			if near := nearestStreams(m[1]); len(near) > 0 {
@@ -833,9 +848,12 @@ func errorToDetail(err error) *output.ErrorDetail {
 			StatusCode: queryErr.StatusCode,
 		}
 		addQueryErrorHints(detail, queryErr)
+		// A repair of the query comes before the recipes that read the same
+		// data: the agent is mid-way through its own query, and a broken one
+		// with a recipe on top cost it a turn to find the fix below.
 		var hinted *recipeHintedError
 		if errors.As(err, &hinted) {
-			detail.Suggestions = append(hinted.hints, detail.Suggestions...)
+			detail.Suggestions = append(detail.Suggestions, hinted.hints...)
 		}
 		return detail
 	}
