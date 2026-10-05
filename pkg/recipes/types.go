@@ -137,8 +137,11 @@ type Spec struct {
 	// Empty says which results read as empty: no rows (the default), or
 	// zero-row, which also counts the single all-zero row a summarize
 	// without by: returns over nothing.
-	Empty      EmptyMode   `json:"empty,omitempty" yaml:"empty,omitempty"`
-	Next       []Next      `json:"next,omitempty" yaml:"next,omitempty"`
+	Empty EmptyMode `json:"empty,omitempty" yaml:"empty,omitempty"`
+	Next  []Next    `json:"next,omitempty" yaml:"next,omitempty"`
+	// Checks are the traps this recipe avoids, as tests on an ad-hoc query:
+	// `dtctl query` warns when one fires (see Book.QueryChecks).
+	Checks     []Check     `json:"checks,omitempty" yaml:"checks,omitempty"`
 	Deprecated *Deprecated `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 

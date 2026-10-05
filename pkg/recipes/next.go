@@ -26,6 +26,25 @@ type Carry struct {
 // skipped. empty selects `when: empty` edges over `when: nonempty` ones.
 func (b *Book) NextCommands(r *Recipe, params map[string]any, carry Carry, empty bool, rows []map[string]any) []string {
 	var out []string
+	for _, s := range b.NextSteps(r, params, carry, empty, rows) {
+		out = append(out, s.Line)
+	}
+	return out
+}
+
+// NextStep is one applicable follow-up: the target, its bound args and
+// carried window/scope, and the command line that runs it.
+type NextStep struct {
+	Recipe *Recipe
+	Args   map[string]string
+	Carry  Carry
+	Line   string
+}
+
+// NextSteps is NextCommands with the parts of each command, for a caller
+// that runs the follow-up itself (`dtctl run --follow`).
+func (b *Book) NextSteps(r *Recipe, params map[string]any, carry Carry, empty bool, rows []map[string]any) []NextStep {
+	var out []NextStep
 	for _, n := range r.Spec.Next {
 		switch n.When {
 		case "empty":
@@ -86,9 +105,45 @@ func (b *Book) NextCommands(r *Recipe, params map[string]any, carry Carry, empty
 				continue // already looked that far back
 			}
 		}
-		out = append(out, CommandLine(target, args, c))
+		kept := map[string]string{}
+		for k, v := range args {
+			kept[k] = v
+		}
+		out = append(out, NextStep{Recipe: target, Args: kept, Carry: c, Line: CommandLine(target, args, c)})
 	}
 	return out
+}
+
+// StepInput turns a follow-up's args and carry into the target's input.
+func (b *Book) StepInput(s NextStep, now time.Time) (Input, error) {
+	in := Input{Params: map[string]any{}, Scope: map[string][]string{}}
+	t := s.Recipe
+	for k, v := range s.Carry.Scope {
+		if contains(t.Spec.Scope, k) {
+			in.Scope[k] = v
+		}
+	}
+	for k, v := range s.Args {
+		if contains(t.Spec.Scope, k) {
+			in.Scope[k] = []string{v}
+			continue
+		}
+		p := t.Spec.Params.Get(k)
+		if p == nil {
+			return in, fmt.Errorf("%s has no param %q", t.Name(), k)
+		}
+		val, err := p.ParseValue(v)
+		if err != nil {
+			return in, err
+		}
+		in.Params[k] = val
+	}
+	w, err := ResolveWindow(t.Spec.Timeframe, s.Carry.From, s.Carry.To, now)
+	if err != nil {
+		return in, err
+	}
+	in.Window = w
+	return in, nil
 }
 
 // carryWindow drops an explicit window the target would read differently: a

@@ -1,4 +1,4 @@
-# frontends-web-vitals v2 — window: default 2h
+# frontends-web-vitals v3 — window: default 2h
 fetch user.events
 | filter characteristics.has_page_summary and dt.rum.user_type == "real_user"
     and isNotNull(frontend.name)

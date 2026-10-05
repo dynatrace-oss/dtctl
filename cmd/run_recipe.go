@@ -260,7 +260,17 @@ func newRecipeCommand(load *recipeLoad, r *recipes.Recipe) *cobra.Command {
 		c.Flags().String("to", "", "end of the window: a duration ago or an RFC3339 timestamp (default now)")
 	}
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "print the rendered DQL (stdout) and window (stderr); execute nothing")
+	c.Flags().Bool("follow", false, "also run the first applicable follow-up recipe (agent mode: context.follow_up)")
+	own := map[string]bool{}
+	c.Flags().VisitAll(func(f *pflag.Flag) { own[f.Name] = true })
 	addDQLExecutionFlags(c, true)
+	// The shared query flags still parse; --help lists the recipe's own, so
+	// an agent reading it gets the recipe, not dtctl query's manual again.
+	c.Flags().VisitAll(func(f *pflag.Flag) {
+		if !own[f.Name] {
+			f.Hidden = true
+		}
+	})
 	c.RunE = func(cmd *cobra.Command, args []string) error {
 		return runRecipe(cmd, args, load, r)
 	}
@@ -371,6 +381,7 @@ func recipeLongHelp(book *recipes.Book, r *recipes.Recipe) string {
 		}
 	}
 	b.WriteString("\n\nSee the DQL: dtctl run " + r.Name() + " --dry-run")
+	b.WriteString("\nAlso takes the execution flags of 'dtctl query' (--max-result-records, --spill, -S/--segment, ...): see 'dtctl query --help'.")
 	return b.String()
 }
 
@@ -519,21 +530,110 @@ func runRecipe(cmd *cobra.Command, args []string, load *recipeLoad, r *recipes.R
 		}
 	}
 
-	run := dqlRun{Query: rendered.DQL, EmptyHint: strings.TrimSpace(r.Spec.EmptyMeans), SkipEmptyDiagnosis: true, IsEmpty: r.IsEmpty}
+	follow, _ := cmd.Flags().GetBool("follow")
+	var rows []map[string]interface{}
+	var executor *exec.DQLExecutor
+	var execOpts exec.DQLExecuteOptions
+	run := dqlRun{Query: rendered.DQL, EmptyHint: strings.TrimSpace(r.Spec.EmptyMeans), SkipEmptyDiagnosis: true, DefaultMaxOutputBytes: recipeOutputBudget}
+	run.IsEmpty = func(records []map[string]interface{}) bool {
+		rows = records
+		return r.IsEmpty(records)
+	}
+	run.Prepared = func(e *exec.DQLExecutor, o exec.DQLExecuteOptions) { executor, execOpts = e, o }
 	if rendered.Window != nil {
 		run.TimeframeStart, run.TimeframeEnd = rendered.Window.FromRFC3339(), rendered.Window.ToRFC3339()
 	}
 	run.Decorate = func(ctx *output.ResponseContext, result *exec.DQLQueryResponse, records []map[string]interface{}) {
-		decorateRecipeContext(ctx, book, r, rendered, inv, scope, warnings, result, records)
+		steps := decorateRecipeContext(ctx, book, r, rendered, inv, scope, warnings, result, records)
+		if follow && executor != nil {
+			ctx.FollowUp = runFollowUp(cmd, book, steps, executor, execOpts)
+		}
 	}
-	return runDQL(cmd, cfg, c, run)
+	if err := runDQL(cmd, cfg, c, run); err != nil || !follow || agentMode {
+		return err
+	}
+	// Outside agent mode the follow-up is a second result of its own, after
+	// the first, as if its command line had been typed next.
+	for _, s := range book.NextSteps(r, rendered.Params, inv.carry, r.IsEmpty(rows), rows) {
+		in, err := book.StepInput(s, time.Now())
+		if err != nil {
+			continue
+		}
+		next, err := book.Render(s.Recipe, in)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "\n# follow-up: %s\n", s.Line)
+		fr := dqlRun{Query: next.DQL, EmptyHint: strings.TrimSpace(s.Recipe.Spec.EmptyMeans), SkipEmptyDiagnosis: true, IsEmpty: s.Recipe.IsEmpty}
+		if next.Window != nil {
+			fr.TimeframeStart, fr.TimeframeEnd = next.Window.FromRFC3339(), next.Window.ToRFC3339()
+		}
+		return runDQL(cmd, cfg, c, fr)
+	}
+	return nil
+}
+
+// recipeOutputBudget bounds a recipe's agent-mode envelope unless the caller
+// sets --max-output-bytes/--max-output-tokens: a recipe answers a question,
+// and an answer that does not fit in 16KB is a list to page through
+// (context.next), not one to read whole.
+const recipeOutputBudget = 16 << 10
+
+// followUpRows is how many of a follow-up's rows the envelope carries.
+const followUpRows = 20
+
+// runFollowUp runs the first of steps that renders, with the first query's
+// executor and limits, and reports it for context.follow_up. Nil when no step
+// applies.
+func runFollowUp(cmd *cobra.Command, book *recipes.Book, steps []recipes.NextStep, executor *exec.DQLExecutor, opts exec.DQLExecuteOptions) *output.FollowUp {
+	for _, s := range steps {
+		in, err := book.StepInput(s, time.Now())
+		if err != nil {
+			continue
+		}
+		next, err := book.Render(s.Recipe, in)
+		if err != nil {
+			continue
+		}
+		fu := &output.FollowUp{Command: s.Line, Query: next.DQL, Records: []map[string]interface{}{}}
+		opts.DefaultTimeframeStart, opts.DefaultTimeframeEnd = "", ""
+		if next.Window != nil {
+			opts.DefaultTimeframeStart, opts.DefaultTimeframeEnd = next.Window.FromRFC3339(), next.Window.ToRFC3339()
+		}
+		opts.Decorate, opts.IsEmpty, opts.ShowProgress = nil, nil, false
+		result, err := executor.ExecuteQueryWithContext(cmdContext(cmd), next.DQL, opts)
+		if err != nil {
+			fu.Error = err.Error()
+			return fu
+		}
+		var records []map[string]interface{}
+		if result != nil {
+			records = result.Records
+			if result.Result != nil && len(result.Result.Records) > 0 {
+				records = result.Result.Records
+			}
+		}
+		fu.Total = len(records)
+		if len(records) > followUpRows {
+			records = records[:followUpRows]
+		}
+		if len(records) > 0 {
+			fu.Records, _ = output.ClipRecordValues(records, output.DefaultAgentMaxFieldChars)
+		}
+		fu.Means = strings.TrimSpace(s.Recipe.Spec.Means)
+		if s.Recipe.IsEmpty(records) {
+			fu.Means = strings.TrimSpace(s.Recipe.Spec.EmptyMeans)
+		}
+		return fu
+	}
+	return nil
 }
 
 // decorateRecipeContext adds the recipe's view to the query envelope: what
 // ran, the rendered query, the effective window and scope, the recipe's own
 // reading of an empty result, and its follow-ups as runnable suggestions.
 func decorateRecipeContext(ctx *output.ResponseContext, book *recipes.Book, r *recipes.Recipe, rendered *recipes.Rendered,
-	inv *recipeInvocation, scope map[string][]string, warnings []string, result *exec.DQLQueryResponse, records []map[string]interface{}) {
+	inv *recipeInvocation, scope map[string][]string, warnings []string, result *exec.DQLQueryResponse, records []map[string]interface{}) []recipes.NextStep {
 	ctx.Verb = "run"
 	ctx.Resource = r.Name()
 	ctx.Recipe = &output.RecipeRef{Name: r.Name(), Version: r.Metadata.Version, Source: r.Source.String()}
@@ -558,6 +658,9 @@ func decorateRecipeContext(ctx *output.ResponseContext, book *recipes.Book, r *r
 	// records is nil only for a result streamed to disk, which is never empty.
 	empty := r.IsEmpty(records)
 	partial := recipePartialCause(result)
+	if !empty {
+		ctx.Means = strings.TrimSpace(r.Spec.Means)
+	}
 	switch {
 	case empty && partial != "":
 		// A scan that stopped early found nothing in the part it read: that
@@ -573,12 +676,17 @@ func decorateRecipeContext(ctx *output.ResponseContext, book *recipes.Book, r *r
 		ctx.HasMore = true
 		ctx.Suggestions = append(ctx.Suggestions, fmt.Sprintf("# the recipe stops at %d rows and returned %d: this is the top of a longer list, not a total — count with dtctl query '<context.query>' after replacing the final | limit with | summarize n = count()", n, n))
 	}
-	next := book.NextCommands(r, rendered.Params, inv.carry, empty && partial == "", records)
+	steps := book.NextSteps(r, rendered.Params, inv.carry, empty && partial == "", records)
+	var next []string
+	for _, s := range steps {
+		next = append(next, s.Line)
+	}
 	adapt := "adapt the recipe: dtctl query '<context.query>'"
 	if requested != nil && rendered.Window != nil {
 		adapt += " --from " + requested.FromRFC3339() + " --to " + requested.ToRFC3339()
 	}
 	ctx.Suggestions = append(append(next, ctx.Suggestions...), adapt)
+	return steps
 }
 
 // windowDiffers reports whether the searched window is not the one sent: the

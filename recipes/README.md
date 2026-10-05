@@ -156,6 +156,30 @@ next:
 `when: empty`, a recipe can suggest itself further back. The edge is dropped
 when the run already looked that far.
 
+### `checks`
+
+The traps the recipe avoids, as tests an ad-hoc `dtctl query` runs against.
+An agent that writes its own DQL never reads the recipe, so the recipe's
+knowledge has to reach it there: when a check fires, the query's
+`context.warnings` carries `warn` and the recipe that does it right.
+
+```yaml
+checks:
+  - match: ['gen_ai\.usage\.(input|output)_tokens', '\b(sum|count)\(']   # all must match
+    unless: ['\bdedup\b']                                                # none may match
+    warn: >-
+      Token usage is recorded on more than one span per call, so summing it
+      counts calls twice. Dedup first: ...
+    example: fetch spans | summarize sum(gen_ai.usage.input_tokens)
+```
+
+Patterns are Go regular expressions over the query with comments removed.
+`warn` is one or two sentences an agent can act on without reading the recipe.
+`dtctl verify recipe` checks that the check fires on its `example` and not on
+the recipe's own DQL. Add a check only for a trap that returns a wrong answer
+without an error, and keep `unless` tight enough that a correct query stays
+quiet.
+
 ### Fragments
 
 A DQL piece that several recipes must spell identically goes in

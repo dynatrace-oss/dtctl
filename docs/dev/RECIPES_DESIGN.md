@@ -455,6 +455,36 @@ anyway:
   empty, partial or failed query, a weaker one is named too, after the
   diagnosis of the query itself (`field_not_in_sample` stays first). At most
   two are named. Recipes on another layer's deprecation path are skipped.
+- **The pointer is a command, not a lookup.** Eval v2 showed a strong agent
+  (Sonnet) gaining correctness from the query hint but paying for it in turns:
+  it ran `describe recipe` to learn the params, then often rewrote its own
+  query from the DQL. Each model turn costs several seconds and far more than
+  the dtctl call it makes, so the hint now binds what the query already names
+  (the `field == "value"` literals the recipe compares a param or scope field
+  with, and a `from:` within the recipe's window bounds) into a command that
+  runs as it stands: `dtctl run problems-evidence P-12345 --from=3d`. A
+  required param the query does not name stays a `<name>` stand-in. A bound
+  required param (the query looks up the very problem or service the recipe
+  takes) also makes the match strong. The run envelope carries the recipe's
+  `means` (`context.means`), so the agent needs no `describe` to read the
+  result either.
+- **The trap reaches the query, not just the recipe.** The value of a recipe
+  is the trap it avoids, and an agent that writes its own DQL never sees it.
+  A recipe can state its trap as `checks:` (regular expressions over the
+  statement, with `unless:` exemptions and a one-sentence fix), and
+  `dtctl query` adds a fired check to `context.warnings` with the recipe that
+  does it right, next to the DQL lints that catch a silently wrong answer. At
+  most three warnings per response. A warning is read in a response the agent
+  reads anyway, so acting on it costs no extra call. Checks are verified in CI
+  (`dtctl verify recipe`): each fires on its own example and not on the
+  recipe's DQL.
+- **Follow-ups in the same call.** `run --follow` runs the first applicable
+  `next` edge after the recipe, with the same executor and limits, and puts
+  up to 20 of its rows in `context.follow_up` (outside agent mode, a second
+  result). A chain such as problem list → evidence then costs one turn instead
+  of two. A recipe's agent envelope is bounded to 16KB by default
+  (`--max-output-bytes` overrides it), and a recipe's `--help` lists only its
+  own flags.
 - **`get recipes --search` says when nothing fits.** Matches whose terms hit
   only descriptions are marked weak, and when every match is weak the warning
   says so ("no recipe is about …"). The agent can then write DQL instead of

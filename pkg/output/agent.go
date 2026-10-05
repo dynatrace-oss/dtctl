@@ -161,10 +161,18 @@ type ResponseContext struct {
 	// the question; Window is the effective query window as the response
 	// reported it; Scope lists every filter outside the recipe's own params
 	// that narrowed the result (scope dimensions, filter segments).
-	Recipe *RecipeRef          `json:"recipe,omitempty"`
+	Recipe *RecipeRef `json:"recipe,omitempty"`
+	// Means is the recipe's own reading of a non-empty result (its spec.means):
+	// what each column is and how to decide on it, so the agent needs no
+	// second call to `describe recipe`. An empty result carries emptyMeans in
+	// EmptyReason instead.
+	Means  string              `json:"means,omitempty"`
 	Query  string              `json:"query,omitempty"`
 	Window *TimeWindow         `json:"window,omitempty"`
 	Scope  map[string][]string `json:"scope,omitempty"`
+	// FollowUp is the first applicable follow-up recipe, already run
+	// (`run --follow`), so the next question costs no second call.
+	FollowUp *FollowUp `json:"follow_up,omitempty"`
 	// Inventory reports what inventory-aware listing did (`get recipes`).
 	Inventory *InventoryFilter `json:"inventory,omitempty"`
 }
@@ -175,6 +183,20 @@ type RecipeRef struct {
 	Version int    `json:"version"`
 	// Source is builtin, user, org, or app:<app-id>@<bundle-version>.
 	Source string `json:"source"`
+}
+
+// FollowUp is a follow-up recipe run inside the same `dtctl run --follow`.
+type FollowUp struct {
+	// Command is the command line that reproduces this result on its own.
+	Command string `json:"command"`
+	Query   string `json:"query,omitempty"`
+	// Records holds at most the first rows; Total counts all of them.
+	Records []map[string]interface{} `json:"records"`
+	Total   int                      `json:"total"`
+	// Means is the follow-up's reading of its result: spec.means, or
+	// spec.emptyMeans when it came back empty.
+	Means string `json:"means,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 // TimeWindow is a query window as absolute RFC3339 instants.

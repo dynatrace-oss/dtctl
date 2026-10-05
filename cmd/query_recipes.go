@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -38,50 +39,99 @@ const maxRecipeHints = 2
 
 // recipeHintsForQuery returns the suggestions naming recipes for query.
 func recipeHintsForQuery(cmd *cobra.Command, cfg *config.Config, query string, mode recipeHintMode) []string {
-	load := loadRecipeBook(cmdContext(cmd), recipeEnvSource{cfg: cfg, newClient: NewClientFromConfig})
-	if load == nil || load.book == nil {
+	book := queryRecipeBook(cmd, cfg)
+	if book == nil {
 		return nil
 	}
-	book := load.book
+	return queryRecipeHints(book, query, queryFromFlag(cmd), mode)
+}
+
+func queryRecipeBook(cmd *cobra.Command, cfg *config.Config) *recipes.Book {
+	load := loadRecipeBook(cmdContext(cmd), recipeEnvSource{cfg: cfg, newClient: NewClientFromConfig})
+	if load == nil {
+		return nil
+	}
+	return load.book
+}
+
+func queryFromFlag(cmd *cobra.Command) string {
+	from, _ := cmd.Flags().GetString("from")
+	return from
+}
+
+func activeRecipes(book *recipes.Book) []*recipes.Recipe {
 	var among []*recipes.Recipe
 	for _, r := range book.Sorted() {
 		if r.Spec.Deprecated == nil {
 			among = append(among, r)
 		}
 	}
+	return among
+}
+
+// queryRecipeHints names the recipes that match query, each as a command
+// the agent can run as it stands: the params, scope and window the query
+// already names are filled in (see recipes.BindQuery). One step to the
+// answer, where a pointer to `describe recipe` was two.
+func queryRecipeHints(book *recipes.Book, query, from string, mode recipeHintMode) []string {
 	var out []string
-	for _, m := range book.MatchQuery(query, among) {
+	for _, m := range book.MatchQuery(query, activeRecipes(book)) {
 		if len(out) == maxRecipeHints {
 			break
 		}
 		if mode == recipeHintOK && !m.Strong || mode != recipeHintOK && m.Score < 3 {
 			continue
 		}
-		out = append(out, recipeHint(m.Recipe, mode))
+		out = append(out, recipeHint(book, m.Recipe, query, from, mode))
 	}
 	return out
 }
 
-func recipeHint(r *recipes.Recipe, mode recipeHintMode) string {
-	lead := "recipe for this data"
+func recipeHint(book *recipes.Book, r *recipes.Recipe, query, from string, mode recipeHintMode) string {
+	lead := "a verified recipe for this question"
 	switch mode {
 	case recipeHintEmpty:
-		lead = "a verified recipe for this data (it may know why this came back empty)"
+		lead = "a verified recipe for this data, which may know why this came back empty"
 	case recipeHintFailed:
 		lead = "a verified recipe for this data, a working starting point"
 	}
-	return fmt.Sprintf("dtctl run %s  -- %s: %s; its DQL and how to read it: dtctl describe recipe %s",
-		r.Name(), lead, r.Spec.Summary, r.Name())
+	return fmt.Sprintf("%s  # %s: %s", recipes.HintCommand(r, book.BindQuery(r, query, from)), lead, strings.TrimSuffix(r.Spec.Summary, "."))
 }
 
-// decorateQueryWithRecipes adds recipe pointers to a query envelope.
+// maxQueryWarnings bounds the trap warnings per response.
+const maxQueryWarnings = 3
+
+// queryRecipeWarnings tests an ad-hoc query against the traps the recipes
+// know (their checks) and the DQL trap lints. A warning reaches the agent
+// in the response it reads anyway and says how to write the query instead,
+// so fixing it costs no extra call.
+func queryRecipeWarnings(book *recipes.Book, query, from string) []string {
+	var out []string
+	for _, hit := range book.QueryChecks(query, activeRecipes(book)) {
+		out = append(out, fmt.Sprintf("%s (%s does this)", hit.Warn, recipes.HintCommand(hit.Recipe, book.BindQuery(hit.Recipe, query, from))))
+	}
+	out = append(out, recipes.LintQuery(query, recipes.QueryWindow(query, from))...)
+	if len(out) > maxQueryWarnings {
+		out = out[:maxQueryWarnings]
+	}
+	return out
+}
+
+// decorateQueryWithRecipes adds recipe pointers and trap warnings to a
+// query envelope.
 func decorateQueryWithRecipes(cmd *cobra.Command, cfg *config.Config, query string) func(*output.ResponseContext, *exec.DQLQueryResponse, []map[string]interface{}) {
 	return func(ctx *output.ResponseContext, result *exec.DQLQueryResponse, records []map[string]interface{}) {
+		book := queryRecipeBook(cmd, cfg)
+		if book == nil {
+			return
+		}
+		from := queryFromFlag(cmd)
+		ctx.Warnings = append(ctx.Warnings, queryRecipeWarnings(book, query, from)...)
 		mode := recipeHintOK
 		if (records != nil && len(records) == 0) || recipePartialCause(result) != "" {
 			mode = recipeHintEmpty
 		}
-		hints := recipeHintsForQuery(cmd, cfg, query, mode)
+		hints := queryRecipeHints(book, query, from, mode)
 		switch {
 		case len(hints) == 0:
 		case ctx.EmptyReason != nil:

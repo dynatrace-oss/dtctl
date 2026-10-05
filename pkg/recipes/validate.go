@@ -188,6 +188,9 @@ func (b *Book) Validate(r *Recipe) error {
 			}
 		}
 	}
+	for i := range s.Checks {
+		errs = append(errs, validateCheck(i, &s.Checks[i])...)
+	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -322,6 +325,9 @@ func (b *Book) Lint(capabilities map[string]bool) []LintIssue {
 			}
 		}
 		for _, msg := range b.DQLLint(r) {
+			out = append(out, LintIssue{r.Name(), msg})
+		}
+		for _, msg := range b.lintChecks(r) {
 			out = append(out, LintIssue{r.Name(), msg})
 		}
 		if r.Spec.Deprecated != nil && r.Spec.Deprecated.ReplacedBy != "" && b.Recipes[r.Spec.Deprecated.ReplacedBy] == nil {

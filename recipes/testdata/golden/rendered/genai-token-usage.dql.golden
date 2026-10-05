@@ -1,4 +1,4 @@
-# genai-token-usage v2 — window: default 2h, max 7d
+# genai-token-usage v3 — window: default 2h, max 7d
 fetch spans
 | filter isNotNull(gen_ai.usage.input_tokens) or isNotNull(gen_ai.usage.output_tokens)
 | fieldsAdd model = coalesce(gen_ai.request.model, gen_ai.response.model)

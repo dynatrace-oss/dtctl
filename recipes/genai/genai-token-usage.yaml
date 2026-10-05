@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: genai-token-usage
-  version: 2
+  version: 3
   tags: [genai, llm, tokens, cost]
 spec:
   summary: LLM token consumption by provider and model
@@ -58,3 +58,13 @@ spec:
   next:
     - recipe: genai-presence
       when: empty                # the empty-state protocol, as a ready-to-run suggestion
+  checks:
+    - match: ['gen_ai\.usage\.(input|output)_tokens', '\b(sum|count)\(']
+      unless: ['\bdedup\b']
+      warn: >-
+        A GenAI call is often recorded by two spans (an SDK span and a
+        framework span, sometimes under two model spellings), so a sum or
+        count over spans can double it. Keep one span per call before
+        summarizing: | dedup {trace.id, gen_ai.usage.input_tokens,
+        gen_ai.usage.output_tokens}, sort: {start_time asc}
+      example: 'fetch spans | filter isNotNull(gen_ai.usage.input_tokens) | summarize t = sum(gen_ai.usage.input_tokens), calls = count()'

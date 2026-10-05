@@ -55,7 +55,7 @@ dtctl run k8s-pod-restarts --namespace=checkout --from=6h
 dtctl run problems-active --dry-run        # print the DQL without running it
 ```
 
-The envelope's `context.query` holds the DQL that ran (adapt it with `dtctl query` when the recipe is close but not exact), `context.empty_reason` explains an empty result, `context.warnings` flags a partial one, and `context.suggestions` names the next recipe with arguments bound from the result. `dtctl query` in agent mode names a matching recipe in its suggestions when one reads the same data; prefer it over iterating on the query. Nothing fits? Write DQL. Recipes are a shortcut, not a boundary.
+The envelope's `context.means` says how to read the result, `context.query` holds the DQL that ran (adapt it with `dtctl query` when the recipe is close but not exact), `context.empty_reason` explains an empty result, `context.warnings` flags a partial one, and `context.suggestions` names the next recipe with arguments bound from the result. Add `--follow` to get that next recipe's result in the same call (`context.follow_up`). `dtctl query` in agent mode names a matching recipe as a ready-to-run command in its suggestions, and its `context.warnings` flags a trap a recipe knows (double-counted GenAI spans, logs filtered by `dt.service.name`); act on those rather than iterating on the query. Nothing fits? Write DQL. Recipes are a shortcut, not a boundary.
 
 Which recipes exist is the user's choice: `dtctl recipes add|sync|remove` change their sources and pins, so leave those to the user unless asked. `context.recipe.source` names the source and version that answered.
 

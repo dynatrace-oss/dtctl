@@ -167,6 +167,13 @@ type dqlRun struct {
 	EmptyHint                    string
 	IsEmpty                      func([]map[string]interface{}) bool
 	SkipEmptyDiagnosis           bool
+	// Prepared, when set, receives the executor and the resolved options
+	// just before the query runs, so Decorate can run a second query with
+	// the same limits, segments and timeframe handling (`run --follow`).
+	Prepared func(*exec.DQLExecutor, exec.DQLExecuteOptions)
+	// DefaultMaxOutputBytes is the agent-mode output budget when neither
+	// --max-output-bytes nor --max-output-tokens is given; 0 means none.
+	DefaultMaxOutputBytes int64
 }
 
 // runDQL executes a query with the execution flags of cmd (see
@@ -353,6 +360,9 @@ func runDQL(cmd *cobra.Command, cfg *config.Config, c *client.Client, run dqlRun
 	if err != nil {
 		return err
 	}
+	if agentMode && jqFilter == "" && bounds.MaxOutputBytes == 0 && !cmd.Flags().Changed("max-output-bytes") && !cmd.Flags().Changed("max-output-tokens") {
+		bounds.MaxOutputBytes = run.DefaultMaxOutputBytes
+	}
 	for _, w := range bounds.Warnings {
 		output.PrintWarning("%s", w)
 	}
@@ -494,5 +504,8 @@ func runDQL(cmd *cobra.Command, cfg *config.Config, c *client.Client, run dqlRun
 		return livePrinter.RunLive(ctx, fetcher)
 	}
 
+	if run.Prepared != nil {
+		run.Prepared(executor, opts)
+	}
 	return executor.ExecuteWithContext(ctx, query, opts)
 }

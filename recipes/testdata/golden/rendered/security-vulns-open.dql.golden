@@ -1,4 +1,4 @@
-# security-vulns-open v3 — window: default 30m, fixed
+# security-vulns-open v4 — window: default 30m, fixed
 fetch security.events
 | filter event.provider == "Dynatrace" and event.level == "ENTITY"
 | filter in(event.type, {"VULNERABILITY_STATE_REPORT_EVENT",

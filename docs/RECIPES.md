@@ -49,6 +49,7 @@ dtctl run services-red --cluster=prod-eu --cluster=prod-us
 dtctl run problems-active --tag=team=payments        # primary Grail tags
 dtctl run problems-active -S my-segment              # filter segments
 dtctl run problems-active --dry-run                  # print the DQL, run nothing
+dtctl run problems-active --follow                   # also run the first follow-up
 ```
 
 - **Params** are the recipe's own flags, listed in `dtctl run <recipe> --help`.
@@ -64,7 +65,13 @@ dtctl run problems-active --dry-run                  # print the DQL, run nothin
   just as they do for `dtctl query`.
 - **Output**: a recipe runs through the same path as `dtctl query`, so `-o`,
   `--jq`, `--spill`, `--max-result-records` and every output format behave as
-  they do there.
+  they do there. `dtctl run <recipe> --help` lists the recipe's own flags only;
+  the query flags parse all the same.
+- **Follow-ups**: `--follow` also runs the first follow-up the result would
+  suggest (a problem's evidence after the problem list, say), with its
+  arguments bound from the result. In agent mode it lands in
+  `context.follow_up`; otherwise it prints as a second result, announced on
+  stderr with its own command line.
 
 ### Agent mode
 
@@ -73,6 +80,7 @@ The envelope adds what an agent needs to trust and continue the result:
 | Field | Meaning |
 |---|---|
 | `context.recipe` | name, version and source layer of the recipe that ran |
+| `context.means` | on a non-empty result, how to read it: the columns and the decision rule (the recipe's `means`) |
 | `context.query` | the rendered DQL, to adapt with `dtctl query` |
 | `context.window` | the resolved `from`/`to` |
 | `context.scope` | the scope filters applied |
@@ -80,12 +88,28 @@ The envelope adds what an agent needs to trust and continue the result:
 | `context.warnings` | a partial non-empty result: counts are lower bounds, with the flag that lifts the limit |
 | `context.has_more` | the result filled the recipe's final `limit`: it is the top N, not a total |
 | `context.suggestions` | follow-up recipes, with arguments bound from the result (for example `dtctl run problems-get P-12345`) |
+| `context.follow_up` | with `--follow`: the first follow-up, already run — its `command`, `query`, up to 20 `records`, `total`, and its `means` (or what its emptiness means) |
+
+A recipe's envelope is bounded to 16KB unless `--max-output-bytes` or
+`--max-output-tokens` says otherwise: an answer longer than that is a list to
+page through, and `context.truncated`/`context.next` mark where it was cut.
 
 `dtctl query` points the other way. In agent mode, when a hand-written query
 reads the same data as a recipe (the same source or metric keys, and fields
 specific to that recipe), its `context.suggestions` names the recipe. On a
 result that worked it does so only for a strong match. On an empty, partial or
-failed result, it appears after any diagnosis of the query itself.
+failed result, it appears after any diagnosis of the query itself. The
+suggestion is a command to run as it stands: the problem ID, service, scope and
+window the query already names are bound into it
+(`dtctl run problems-evidence P-12345 --from=3d`).
+
+It also tests the query against the traps the recipes know. When a query sums
+GenAI tokens without deduplicating the spans, filters logs by
+`dt.service.name`, or counts vulnerability events without taking each one's
+latest state, `context.warnings` says what goes wrong, how to write it instead,
+and which recipe does it right. The same goes for the DQL lints that catch a
+silently wrong answer (a multi-key `timeseries` without `union: true`, an
+`interval:` as long as the window).
 
 ## Where recipes come from
 

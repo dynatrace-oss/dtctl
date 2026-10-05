@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: logs-for-service
-  version: 3
+  version: 4
   tags: [logs, service, workload, recent, tail]
 spec:
   summary: Recent log lines of one service, workload or process group, newest first
@@ -85,3 +85,19 @@ spec:
       when: empty
     - recipe: traces-get
       bind: { trace_id: trace_id }
+  checks:
+    - match: ['fetch\s+logs', 'k8s\.workload\.name\s*==']
+      unless: ['k8s\.pod\.name']
+      warn: >-
+        k8s.workload.name is missing on part of a workload's log records
+        (often a fifth or more), so a filter on it alone undercounts. Also
+        match the records without it by pod name: or
+        (isNull(k8s.workload.name) and startsWith(k8s.pod.name, "<workload>-"))
+      example: 'fetch logs | filter k8s.workload.name == "checkout" | summarize n = count()'
+    - match: ['fetch\s+logs', 'dt\.service\.name\s*==']
+      unless: ['(^|[^.\w])service\.name\s*==', 'k8s\.workload\.name', 'dt\.process_group']
+      warn: >-
+        dt.service.name is rarely on a log record: logs name their source in
+        service.name (OpenTelemetry), k8s.workload.name or
+        dt.process_group.detected_name, so match those too.
+      example: 'fetch logs | filter dt.service.name == "checkout" | summarize n = count()'

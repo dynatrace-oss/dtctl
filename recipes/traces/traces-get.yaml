@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: traces-get
-  version: 1
+  version: 2
   tags: [traces, trace, spans, trace-id, waterfall]
 spec:
   summary: All spans of one trace in start order, with service, duration and failure
@@ -22,23 +22,22 @@ spec:
   dql: |
     fetch spans
     | filter trace.id == toUid({{.trace_id}})
-    | fields start_time, dt.service.name, span.name, span.kind,
-        duration_ms = round(duration / 1ms, decimals: 2),
-        request.is_root_span, request.is_failed, http.response.status_code,
-        endpoint.name, span.id, span.parent_id
+    | fields start_time, dt.service.name, span.name,
+        duration_ms = round(duration / 1ms, decimals: 1),
+        request.is_failed, http.response.status_code, span.id, span.parent_id
     | sort start_time asc
-    | limit 200
+    | limit 100
   means: >-
-    One row per span, earliest first; the span without span.parent_id (or the
-    first request.is_root_span) is the entry point. duration_ms includes the
-    time spent in child spans, so the slow part is the deepest slow span, not
-    the first one. request.is_failed is set on request root spans only. A
-    trace that crosses services has one request root per service. Capped at
-    200 spans: a longer trace is cut off at the end. Decision rule: walk from
-    the root to the deepest span whose own time (its duration minus its
-    children's) is large, or the deepest failed span; that is where the time
-    or the failure is. Not shown: spans beyond 200, logs (logs-for-trace), and
-    spans that were sampled out.
+    One row per span, earliest first; the span without span.parent_id is the
+    entry point. duration_ms includes the time spent in child spans, so the
+    slow part is the deepest slow span, not the first one. request.is_failed
+    is set on request root spans only. A trace that crosses services has one
+    request root per service. Capped at 100 spans: a longer trace is cut off
+    at the end. Decision rule: walk from the root to the deepest span whose
+    own time (its duration minus its children's) is large, or the deepest
+    failed span; that is where the time or the failure is. Not shown: spans
+    beyond 100, span.kind and endpoint.name (adapt context.query), logs
+    (logs-for-trace), and spans that were sampled out.
   emptyMeans: >-
     No span with this trace id in the window. The trace is older than the
     window (pass --from to reach further back, up to span retention), it was

@@ -20,17 +20,20 @@ import (
 type dqlLint struct {
 	code  string
 	check func(r *Recipe, stages []string) string
+	// style marks a rule about how a recipe reads, not a wrong answer: it
+	// is not applied to an agent's own query.
+	style bool
 }
 
 var dqlLints = []dqlLint{
-	{"sampling-source", lintSamplingSource},
-	{"sampling-unscaled", lintSamplingUnscaled},
-	{"limit-before-aggregate", lintLimitBeforeAggregate},
-	{"coalesce-filter", lintCoalesceFilter},
-	{"case-folded-filter", lintCaseFoldedFilter},
-	{"unaliased-aggregate", lintUnaliasedAggregate},
-	{"multi-key-timeseries", lintMultiKeyTimeseries},
-	{"interval-equals-window", lintIntervalEqualsWindow},
+	{"sampling-source", lintSamplingSource, false},
+	{"sampling-unscaled", lintSamplingUnscaled, false},
+	{"limit-before-aggregate", lintLimitBeforeAggregate, false},
+	{"coalesce-filter", lintCoalesceFilter, false},
+	{"case-folded-filter", lintCaseFoldedFilter, false},
+	{"unaliased-aggregate", lintUnaliasedAggregate, true},
+	{"multi-key-timeseries", lintMultiKeyTimeseries, false},
+	{"interval-equals-window", lintIntervalEqualsWindow, false},
 }
 
 // DQLLint returns the trap lints for one recipe, as "code: message".
@@ -42,6 +45,23 @@ func (b *Book) DQLLint(r *Recipe) []string {
 	stages := dqlStages(stripDQLComments(rendered.DQL))
 	var out []string
 	for _, l := range dqlLints {
+		if msg := l.check(r, stages); msg != "" {
+			out = append(out, l.code+": "+msg)
+		}
+	}
+	return out
+}
+
+// LintQuery applies the trap lints to an ad-hoc query, whose window is
+// window (0 when unknown), as "code: message".
+func LintQuery(dql string, window time.Duration) []string {
+	r := &Recipe{Spec: Spec{Timeframe: Timeframe{Default: window}}}
+	stages := dqlStages(stripDQLComments(dql))
+	var out []string
+	for _, l := range dqlLints {
+		if l.style {
+			continue
+		}
 		if msg := l.check(r, stages); msg != "" {
 			out = append(out, l.code+": "+msg)
 		}

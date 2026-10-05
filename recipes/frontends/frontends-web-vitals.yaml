@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: frontends-web-vitals
-  version: 2
+  version: 3
   tags: [frontends, rum, web-vitals, lcp, inp, cls]
 spec:
   summary: p75 LCP, INP and CLS per web frontend, rated against Core Web Vitals thresholds
@@ -72,3 +72,12 @@ spec:
     - recipe: frontends-errors
       when: nonempty
       bind: { frontend: frontend.name }
+  checks:
+    - match: ['web_vitals\.interaction_to_next_paint', '\bpercentile\(']
+      unless: ['interaction_to_next_paint\s*>\s*0']
+      warn: >-
+        A recorded INP of 0 means the page load had no interaction, and
+        counting it pulls the percentile down. Take it over
+        web_vitals.interaction_to_next_paint > 0ms only (the values are
+        durations: divide by 1000000 for milliseconds).
+      example: 'fetch user.events | summarize inp = percentile(web_vitals.interaction_to_next_paint, 75), by: {frontend.name}'

@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: security-vulns-open
-  version: 3
+  version: 4
   tags: [security, vulnerabilities, rva, cve]
 spec:
   summary: Open, not muted runtime vulnerabilities ranked by Dynatrace Security Score
@@ -123,3 +123,15 @@ spec:
       when: empty
     - recipe: security-vulns-critical-exploitable
       when: nonempty
+  checks:
+    - match: ['VULNERABILITY_STATE_REPORT_EVENT', '\bsummarize\b']
+      unless: ['\bdedup\b']
+      warn: >-
+        Vulnerability state reports repeat for every affected entity on every
+        scan, and an earlier report can still say OPEN after a later one
+        resolved it. Keep the latest report per vulnerability and entity
+        first (| dedup {vulnerability.display_id, affected_entity.id}, sort:
+        {timestamp desc}), then filter vulnerability.resolution.status ==
+        "OPEN" and vulnerability.mute.status == "NOT_MUTED", and count
+        distinct vulnerability.display_id.
+      example: 'fetch security.events | filter event.type == "VULNERABILITY_STATE_REPORT_EVENT" | summarize n = count(), by: {vulnerability.risk.level}'

@@ -525,3 +525,82 @@ func TestUnknownRecipeNamesItsLoadProblem(t *testing.T) {
 	assert.Contains(t, err.Error(), `recipe "hosts-long" did not load`)
 	assert.Contains(t, err.Error(), "at most 100 characters")
 }
+
+// TestRunRecipeFollowRunsTheFirstNextStep: --follow runs the follow-up the
+// suggestions would name, in the same call — inside the envelope in agent
+// mode, as a second result after the first otherwise.
+func TestRunRecipeFollowRunsTheFirstNextStep(t *testing.T) {
+	e := newRecipeEnv(t)
+	e.records = `[{"display_id":"P-1","event.name":"High CPU","event.category":"RESOURCE"}]`
+	code, stdout, stderr := e.run(t, "run", "problems-active", "--follow", "-A")
+	require.Zero(t, code, "stderr: %s", stderr)
+	require.Len(t, e.queries, 2)
+	assert.Contains(t, e.queries[1], `display_id == "P-1"`)
+
+	env := parseRecipeEnvelope(t, stdout)
+	require.True(t, env.OK)
+	var fu output.FollowUp
+	require.NoError(t, json.Unmarshal(env.Context["follow_up"], &fu), "context: %v", env.Context)
+	assert.Equal(t, "dtctl run problems-get P-1", fu.Command)
+	assert.Equal(t, 1, fu.Total)
+	assert.NotEmpty(t, fu.Means)
+	assert.Empty(t, fu.Error)
+
+	e2 := newRecipeEnv(t)
+	e2.records = e.records
+	code, stdout, stderr = e2.run(t, "run", "problems-active", "--follow", "--plain", "-o", "json")
+	require.Zero(t, code, "stderr: %s", stderr)
+	require.Len(t, e2.queries, 2)
+	assert.Contains(t, stderr, "# follow-up: dtctl run problems-get P-1")
+	assert.Equal(t, 2, strings.Count(stdout, `"display_id"`), "both results are printed")
+
+	e3 := newRecipeEnv(t)
+	code, stdout, _ = e3.run(t, "run", "problems-active", "-A")
+	require.Zero(t, code)
+	assert.Len(t, e3.queries, 1, "without --follow nothing else runs")
+	assert.NotContains(t, stdout, "follow_up")
+}
+
+// TestRunRecipeEnvelopeCarriesMeansAndABudget: a non-empty result says how
+// to read it, and a long one is cut to the recipe budget unless the caller
+// sets one.
+func TestRunRecipeEnvelopeCarriesMeansAndABudget(t *testing.T) {
+	e := newRecipeEnv(t)
+	var rows []string
+	for i := 0; i < 400; i++ {
+		rows = append(rows, fmt.Sprintf(`{"display_id":"P-%d","event.name":"%s"}`, i, strings.Repeat(fmt.Sprint(i), 30)))
+	}
+	e.records = "[" + strings.Join(rows, ",") + "]"
+	code, stdout, stderr := e.run(t, "run", "problems-active", "-A", "--spill=never")
+	require.Zero(t, code, "stderr: %s stdout: %s", stderr, stdout)
+	env := parseRecipeEnvelope(t, stdout)
+	assert.NotEmpty(t, string(env.Context["means"]))
+	assert.Equal(t, "true", string(env.Context["truncated"]))
+	assert.Equal(t, fmt.Sprint(recipeOutputBudget), string(env.Context["budget_bytes"]))
+
+	code, stdout, stderr = e.run(t, "run", "problems-active", "-A", "--spill=never", "--max-output-bytes", "1MB")
+	require.Zero(t, code, "stderr: %s", stderr)
+	assert.NotContains(t, stdout, `"truncated"`, "an explicit budget wins")
+
+	e.records = `[]`
+	code, stdout, _ = e.run(t, "run", "problems-active", "-A")
+	require.Zero(t, code)
+	assert.NotContains(t, stdout, `"means"`, "an empty result carries empty_reason instead")
+}
+
+// TestQueryEnvelopeWarnsAboutRecipeTraps: an ad-hoc query that falls into a
+// trap a recipe knows is told so, with the recipe that avoids it, and a hint
+// carries the values the query already names.
+func TestQueryEnvelopeWarnsAboutRecipeTraps(t *testing.T) {
+	e := newRecipeEnv(t)
+	e.records = `[{"t":12}]`
+	code, stdout, stderr := e.run(t, "query", "fetch spans | summarize t = sum(gen_ai.usage.input_tokens)", "-A")
+	require.Zero(t, code, "stderr: %s", stderr)
+	env := parseRecipeEnvelope(t, stdout)
+	assert.Contains(t, string(env.Context["warnings"]), "dtctl run genai-token-usage does this")
+
+	code, stdout, stderr = e.run(t, "query", `fetch dt.davis.events | filter display_id == "P-7" | fields event.name`, "-A")
+	require.Zero(t, code, "stderr: %s", stderr)
+	env = parseRecipeEnvelope(t, stdout)
+	assert.Contains(t, string(env.Context["suggestions"]), "dtctl run problems-evidence P-7")
+}

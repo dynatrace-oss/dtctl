@@ -36,6 +36,9 @@ type querySig struct {
 	// (request.is_failed → request, failed; percentile), for matching the
 	// question a recipe's name and summary state.
 	terms []string
+	// params maps a field the recipe compares with a param to the param
+	// (recipe signatures only; see BindQuery).
+	params map[string]string
 }
 
 // dqlWords are the language's own words, which say nothing about the
@@ -121,6 +124,7 @@ func (b *Book) recipeSigs() *querySigs {
 				continue
 			}
 			sig := signatureOf(rendered.DQL)
+			sig.params = paramFields(rendered.DQL)
 			qs.sigs[r.Name()] = sig
 			for f := range sig.fields {
 				qs.df[f]++
@@ -152,10 +156,30 @@ func (b *Book) MatchQuery(dql string, among []*Recipe) []QueryMatch {
 				shared++
 			}
 		}
+		score, strong := 1, false
 		if shared == 0 {
+			// A query on a source no recipe reads (a metric key that does
+			// not exist) can still ask a recipe's question in its words:
+			// interaction_to_next_paint meets frontends-web-vitals. Only
+			// the name counts here, and never as a strong match.
+			words := 0
+			name := tokenize(strings.ReplaceAll(r.Name(), "-", " "))
+			for _, t := range q.terms {
+				if anyTermMatch(t, name) {
+					words++
+				}
+			}
+			if words >= 2 {
+				out = append(out, QueryMatch{Recipe: r, Score: words})
+			}
 			continue
 		}
-		score, strong := 1, false
+		if b.BindQuery(r, dql, "").Subject {
+			// The query looks up what the recipe takes: a problem's
+			// display ID, a service by name.
+			score += 3
+			strong = true
+		}
 		for m := range q.metrics {
 			if sig.metrics[m] {
 				score += 3
