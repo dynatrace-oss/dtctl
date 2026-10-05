@@ -1231,3 +1231,40 @@ cost. Haiku keeps its lift.**
    only pays off if the skill or the envelope prompts it, e.g. by
    suggesting `--follow` on the run whose `next` edge is the obvious
    continuation.
+
+---
+
+## v4 question
+
+47f0ef7f acts on the v3 recommendations:
+
+- **Window-trap warning.** `dtctl query` warns when `filter timestamp >
+  now() - X` reaches past the window the query reads (the default 2h when it
+  names none). On the replay of all earlier queries it fires on 157 of
+  5,024. The sampled hits were all genuine traps. Most were on t10 and t11.
+- **The usual next step under `--follow`.** A `next` edge can be marked
+  `follow: true`. `run --follow` takes it, and every suggestion for a recipe
+  with such an edge already ends in `--follow`. Marked:
+  - problems-get → problems-evidence;
+  - problems-evidence → problems-logs;
+  - k8s-workload-status → k8s-warning-events.
+- **Hint relevance: not shipped.** Dropping the fetch source's name from the
+  query's words cut the expected strong hints from 375 to 270. Precision fell
+  too (24% → 22%), so the change was reverted.
+
+Does B' (47f0ef7f) keep v3's gains, and do the two changes add to them?
+
+## v4 design (lean)
+
+- **Only a new B' arm is run.** A is reused from v3: the same control build
+  (8815e206), taskset, judge, environment and day.
+- **Sonnet**: 25 tasks × 3 reps = 75 runs. **Haiku**: 25 tasks × 4 reps =
+  100 runs.
+- **Spend cap: $35.**
+- Analysis: the same two-level bootstrap, B' − A, with v3's decision rule.
+  The comparison B' − B (v3) is descriptive, since it is the same day but a
+  different run.
+- **Secondary:**
+  - `--follow` use;
+  - window-trap warnings fired and acted on;
+  - score on t10 and t11.
