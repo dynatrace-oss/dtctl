@@ -1268,3 +1268,79 @@ Does B' (47f0ef7f) keep v3's gains, and do the two changes add to them?
   - `--follow` use;
   - window-trap warnings fired and acted on;
   - score on t10 and t11.
+
+---
+
+# v4 results
+
+Everything above this line is unchanged.
+
+## v4 verdict
+
+**Recipes still pay off for both models. The two v4 changes are sound but
+too rarely exercised to move the totals: B' is indistinguishable from v3's
+B.**
+
+| B − A (two-level 95% CI) | Sonnet v3 | Sonnet v4 (B') | Haiku v3 | Haiku v4 (B') |
+|---|---|---|---|---|
+| score | +0.27 [+0.05, +0.53] | +0.21 [−0.01, +0.48] | +0.57 [+0.09, +1.05] | **+0.59 [+0.03, +1.14]** |
+| turns | −0.91 [−1.76, −0.05] | −0.49 [−1.32, +0.35] | −0.7 | **−1.89 [−3.92, +0.05]** |
+| dtctl calls | −1.29 [−2.44, −0.23] | −0.48 [−1.59, +0.65] | −1.0 | **−1.91 [−3.83, −0.08]** |
+| cost $/run | −0.011 [−0.021, −0.001] | −0.005 [−0.015, +0.005] | +0.0045 [−0.007, +0.016] | −0.001 [−0.013, +0.010] |
+| wall s/run | −4 [−7, −1] | −3 [−6, +0] | 0 | −1 [−9, +8] |
+| uncovered tasks | 0 | 0 | −0.70 [−1.45, +0.05] | −0.50 [−1.15, +0.15] |
+
+- **By v3's rule, Sonnet breaks even in v4.** The score is non-inferior
+  (lower bound −0.01 > −0.15). Turns and cost both point down, but neither
+  interval excludes 0. v3 met "benefits".
+- **Haiku keeps its lift**, and it now costs no more than control. B' makes
+  1.9 fewer dtctl calls per run (interval excludes 0) and 1.9 fewer turns.
+- **B' − B (v4 against v3, descriptive):**
+  - Sonnet: score −0.05 [−0.23, +0.09], turns +0.41 [−0.24, +1.13], cost
+    +$0.006 [−0.002, +0.014].
+  - Haiku: score +0.02 [−0.38, +0.44], turns −1.12 [−3.02, +0.68], cost
+    −$0.006 [−0.018, +0.005].
+  - Every interval includes 0. The two rounds measure the same thing twice.
+
+## v4 runs
+
+- B' 4a954d52, A reused from v3 (8815e206, same taskset and environment).
+- Sonnet: 75 runs (`v4-sonnet`). Haiku: 100 runs (`v4-haiku`). Every run
+  finished rc 0, with no 429, and all were judged.
+- **Spend: $23.28**, under the $35 cap. Sonnet $9.50, Haiku $13.78.
+- Analysis batches `v4c-<model>` link v3's A runs next to v4's B' runs.
+
+## What the v4 changes did
+
+- **Window-trap warning.**
+  - Sonnet never hit it: it always sets `from:` itself.
+  - In Haiku it fired in 11 runs, and every one widened the window in a later
+    query. Some repeated the trap once or twice first.
+  - It did not reach t10, which stayed at 1 1 1 1. The t10 runs in v4 wrote
+    no timestamp filter. They counted bizevents over the default 2h and
+    reported that as 24h, and nothing in the query says it is wrong.
+- **`--follow`**: 2 runs per model (Sonnet 5 calls, Haiku 3). It was used
+  more than in v3 (0), but still rarely.
+- **Sonnet's per-task changes against v3's B do not trace to v4's changes:**
+  - t27 went 3 3 3 → 2 2 2 on judged counts. No recipe and no warning was
+    involved.
+  - t08 and t39 took more turns. The t39 runs explored without a recipe.
+    The t08 runs called the recipe's `--help` and `--dry-run` before
+    running it.
+
+## v4 recommendations
+
+1. **Keep v3's design and v4's two additions.** The window warning was
+   followed every time it fired. The marked edges cost nothing. Neither
+   moves the totals.
+2. **Say the window in the query envelope.** t10's remaining failure is a
+   query with no window at all, so a lint has nothing to match. A
+   `context.window` such as "last 2h (default; --from widens it)" would let
+   the agent compare the window against the question's. This is a dtctl
+   query change, not a recipe change.
+3. **Run a fresh control next time.** Haiku's uncovered-task gap repeated
+   (−0.50 after −0.70), but both rounds compare against the same A runs,
+   and those A runs did unusually well on t10, t38 and t39. Only a new A
+   separates a real cost from one lucky control sample.
+4. **Hint relevance** still needs a signal other than the source name.
+   Two replay variants lost recall without gaining precision.
