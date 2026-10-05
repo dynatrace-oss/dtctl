@@ -134,10 +134,14 @@ func HintCommand(r *Recipe, qb QueryBinding) string {
 // fetch names a window.
 const DefaultQueryWindow = 2 * time.Hour
 
+// NamesWindow reports whether a query names its own window (from:, to: or
+// timeframe:).
+func NamesWindow(dql string) bool { return windowArg.MatchString(stripDQLComments(dql)) }
+
 // EffectiveQueryWindow is QueryWindow, or DefaultQueryWindow when the query
 // names no window at all; 0 when the window is absolute.
 func EffectiveQueryWindow(dql, from string) time.Duration {
-	if from == "" && !windowArg.MatchString(stripDQLComments(dql)) {
+	if from == "" && !NamesWindow(dql) {
 		return DefaultQueryWindow
 	}
 	return QueryWindow(dql, from)

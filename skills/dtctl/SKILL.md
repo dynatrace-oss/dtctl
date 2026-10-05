@@ -63,6 +63,8 @@ Which recipes exist is the user's choice: `dtctl recipes add|sync|remove` change
 
 Before writing, modifying, or running any DQL (`dtctl query`, `dtctl wait query`, query files), consult `references/DQL-reference.md` and follow it over any assumption or memory.
 
+A query without `from:` (or `--from`) reads only the last 2h. When the question names a period ("last 24h", "this week"), set it, and check `context.window.span` in the response against it.
+
 ```bash
 dtctl query "fetch logs | filter status='ERROR' | limit 100" -o json --plain
 dtctl query -f query.dql --set host=h-123 --set timerange=2h -o json --plain   # Go-template vars

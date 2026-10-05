@@ -38,6 +38,7 @@ type recipeEnv struct {
 	docs     string            // document list JSON; "" serves an empty list
 	contents map[string]string // document id → content
 	apps     []string          // Session.RecipeApps
+	window   string            // analysisTimeframe JSON in query responses
 }
 
 func newRecipeEnv(t *testing.T) *recipeEnv {
@@ -56,7 +57,11 @@ func newRecipeEnv(t *testing.T) *recipeEnv {
 			}
 			_ = json.Unmarshal(body, &req)
 			e.queries = append(e.queries, req.Query)
-			_, _ = io.WriteString(w, `{"state":"SUCCEEDED","result":{"records":`+e.records+`}}`)
+			meta := ""
+			if e.window != "" {
+				meta = `,"metadata":{"grail":{"analysisTimeframe":` + e.window + `}}`
+			}
+			_, _ = io.WriteString(w, `{"state":"SUCCEEDED","result":{"records":`+e.records+meta+`}}`)
 		case r.URL.Path == "/platform/document/v1/documents":
 			docs := e.docs
 			if docs == "" {
@@ -624,4 +629,27 @@ func TestQueryEnvelopeWarnsAboutRecipeTraps(t *testing.T) {
 	require.Zero(t, code, "stderr: %s", stderr)
 	env = parseRecipeEnvelope(t, stdout)
 	assert.Contains(t, string(env.Context["suggestions"]), "dtctl run problems-evidence P-7")
+}
+
+// TestQueryEnvelopeSaysTheWindow: a query's envelope carries the window it
+// searched with its length, and says so when that is the default because the
+// query named none.
+func TestQueryEnvelopeSaysTheWindow(t *testing.T) {
+	e := newRecipeEnv(t)
+	e.records = `[{"n":3}]`
+	e.window = `{"start":"2026-01-01T08:00:00Z","end":"2026-01-01T10:00:00Z"}`
+	code, stdout, stderr := e.run(t, "query", "fetch bizevents | summarize n = count()", "-A")
+	require.Zero(t, code, "stderr: %s", stderr)
+	var w output.TimeWindow
+	require.NoError(t, json.Unmarshal(parseRecipeEnvelope(t, stdout).Context["window"], &w))
+	assert.Equal(t, "2h", w.Span)
+	assert.Contains(t, w.Note, "names no window, so it read the default last 2h")
+
+	e.window = `{"start":"2025-12-31T10:00:00Z","end":"2026-01-01T10:00:00Z"}`
+	code, stdout, stderr = e.run(t, "query", "fetch bizevents, from: now()-24h | summarize n = count()", "-A")
+	require.Zero(t, code, "stderr: %s", stderr)
+	w = output.TimeWindow{}
+	require.NoError(t, json.Unmarshal(parseRecipeEnvelope(t, stdout).Context["window"], &w))
+	assert.Equal(t, "24h", w.Span)
+	assert.Empty(t, w.Note, "the query named its window")
 }

@@ -204,7 +204,7 @@ var (
 	// timestamp > now() - 24h.
 	timestampFilter = regexp.MustCompile(`\b(?:timestamp|start_time|end_time)\s*>=?\s*now\(\)\s*-\s*(\d+[smhdw])\b`)
 	// windowArg is a fetch's own window.
-	windowArg = regexp.MustCompile(`\b(?:from|timeframe)\s*:`)
+	windowArg = regexp.MustCompile(`\b(?:from|to|timeframe)\s*:`)
 )
 
 // lintFilterBeyondWindow: a filter cannot reach past the window the fetch

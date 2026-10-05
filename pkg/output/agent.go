@@ -166,6 +166,7 @@ type ResponseContext struct {
 	// what each column is and how to decide on it, so the agent needs no
 	// second call to `describe recipe`. An empty result carries emptyMeans in
 	// EmptyReason instead.
+	// Window is also set on `dtctl query`: the window the query searched.
 	Means  string              `json:"means,omitempty"`
 	Query  string              `json:"query,omitempty"`
 	Window *TimeWindow         `json:"window,omitempty"`
@@ -203,6 +204,12 @@ type FollowUp struct {
 type TimeWindow struct {
 	From string `json:"from"`
 	To   string `json:"to"`
+	// Span is the window's length (2h, 24h, 7d), so a reader can hold it
+	// against the question without subtracting timestamps. Set by `dtctl
+	// query`.
+	Span string `json:"span,omitempty"`
+	// Note says the window is the default one: the query named none.
+	Note string `json:"note,omitempty"`
 }
 
 // InventoryFilter says how inventory verdicts narrowed a listing: how old the

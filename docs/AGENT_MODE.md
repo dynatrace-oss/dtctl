@@ -282,6 +282,19 @@ spill threshold (unlike an explicit `-o csv`/`-o yaml`, which print raw bytes)
 and the threshold is measured in the chosen encoding. A spilled result is a
 `result-file` manifest as usual and carries no `context.format`.
 
+### Query window: `context.window`
+
+`dtctl query` reports the window the query searched, as the response's own
+metadata states it, with its length in `span`. A query that names no window
+(no `from:`/`to:`/`timeframe:`, no `--from`/`--to`) reads the default last 2h,
+and `note` says so, because a count over 2h reads exactly like a count over
+24h:
+
+```json
+"window": {"from": "2026-01-01T08:00:00Z", "to": "2026-01-01T10:00:00Z", "span": "2h",
+           "note": "the query names no window, so it read the default last 2h; widen it with fetch ..., from: now()-24h or --from 24h"}
+```
+
 ### Empty query results: `context.empty_reason`
 
 A misspelled field name or metric key makes DQL succeed with zero rows. On an

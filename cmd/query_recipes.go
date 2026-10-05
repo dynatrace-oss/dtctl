@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -121,6 +122,7 @@ func queryRecipeWarnings(book *recipes.Book, query, from string) []string {
 // query envelope.
 func decorateQueryWithRecipes(cmd *cobra.Command, cfg *config.Config, query string) func(*output.ResponseContext, *exec.DQLQueryResponse, []map[string]interface{}) {
 	return func(ctx *output.ResponseContext, result *exec.DQLQueryResponse, records []map[string]interface{}) {
+		ctx.Window = queryWindowContext(result, cmd.Flags().Changed("from") || cmd.Flags().Changed("to") || recipes.NamesWindow(query))
 		book := queryRecipeBook(cmd, cfg)
 		if book == nil {
 			return
@@ -141,6 +143,44 @@ func decorateQueryWithRecipes(cmd *cobra.Command, cfg *config.Config, query stri
 			ctx.Suggestions = append(hints, ctx.Suggestions...)
 		}
 	}
+}
+
+// queryWindowContext is the window a query searched, from the response's
+// own metadata, with its length spelled out. A query that names no window
+// reads the last 2h, and an agent asked about "the last 24h" that forgets
+// from: gets a confident count of 2h with nothing in the response saying
+// so; the note does (measured: a bizevents count reported as 24h was 2h in
+// every run of one evaluation task).
+func queryWindowContext(result *exec.DQLQueryResponse, named bool) *output.TimeWindow {
+	g := result.GetMetadata()
+	if g == nil || g.AnalysisTimeframe == nil || g.AnalysisTimeframe.Start == "" {
+		return nil
+	}
+	w := &output.TimeWindow{From: g.AnalysisTimeframe.Start, To: g.AnalysisTimeframe.End}
+	start, err1 := time.Parse(time.RFC3339, w.From)
+	end, err2 := time.Parse(time.RFC3339, w.To)
+	if err1 != nil || err2 != nil || !end.After(start) {
+		return w
+	}
+	w.Span = spanString(end.Sub(start))
+	if !named {
+		w.Note = "the query names no window, so it read the default last " + w.Span + "; widen it with fetch ..., from: now()-24h or --from 24h"
+	}
+	return w
+}
+
+// spanString is d in the largest whole unit, days from 2d on: 7d, 24h, 15m.
+func spanString(d time.Duration) string {
+	d = d.Round(time.Minute)
+	switch {
+	case d >= 48*time.Hour && d%(24*time.Hour) == 0:
+		return fmt.Sprintf("%dd", d/(24*time.Hour))
+	case d >= time.Hour && d%time.Hour == 0:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	case d%time.Minute == 0 && d > 0:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	}
+	return d.String()
 }
 
 // recipeHintedError carries recipe pointers on a failed query to the error
