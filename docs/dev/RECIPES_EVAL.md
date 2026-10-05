@@ -1090,3 +1090,144 @@ Secondary, descriptive only:
 The environment variables (`env.sh`) were reconstructed from the v2 runs'
 rendered prompts and ground truth, since the file is git-ignored and did not
 survive the worktree. The values are the ones v2 used.
+
+---
+
+# v3 results
+
+Everything above this line is unchanged.
+
+## v3 verdict
+
+**Sonnet now benefits on all three criteria: higher score, fewer turns, lower
+cost. Haiku keeps its lift.**
+
+| Sonnet, B − A (two-level 95% CI) | v2 (7095ff0a) | v3 (c124892b) |
+|---|---|---|
+| score | +0.18 [−0.02, +0.44] | **+0.27 [+0.05, +0.53]** |
+| turns | +0.4 | **−0.91 [−1.76, −0.05]** |
+| dtctl calls | +0.30 [−0.58, +1.18] | **−1.29 [−2.44, −0.23]** |
+| cost $/run | +0.010 [+0.002, +0.020] | **−0.011 [−0.021, −0.001]** |
+| wall s/run | 0 | **−4 [−7, −1]** |
+
+- **H7 (fewer turns): yes.** **H8 (no cost penalty): yes, and B is
+  cheaper.** **H9 (quality): yes, B is better**, not just non-inferior. By
+  the rule, **Sonnet benefits.** B is 12% cheaper and 21% faster per run
+  than A, and it scores higher.
+- **H10 (Haiku keeps its lift): yes, by the letter of the rule.** The lift
+  is +0.57 [+0.09, +1.05]. The cost diff is +$0.0045 [−0.007, +0.016], just
+  under the +$0.005 bound. Haiku's turns, calls and wall time do not
+  change. But Haiku on the five uncovered tasks fell by −0.70 [−1.45,
+  +0.05] (see "Haiku on uncovered tasks").
+- The mechanism worked as designed. Sonnet in B never called `describe
+  recipe` (0 of 75 runs; v2: 13 of 50). It ran a recipe in 21 of 54
+  covered-task runs (v2: 6 of 36), and 21 of its runs took a hinted
+  command.
+
+## v3 runs
+
+- A: `origin/main` 8815e206 (unchanged since v2). B: c124892b. Both arms use
+  the v2 dynatrace-for-ai skills snapshot.
+- Sonnet: 25 × 2 × 3 = 150 runs (`v3-sonnet`). Haiku: 25 × 2 × 4 = 200
+  runs (`v3-haiku`). Every run finished rc 0, with no 429 and none re-run.
+  All 350 were judged.
+- Spend: $47.78 in total, under the $60 cap. Sonnet $19.00, Haiku $28.29,
+  and a 4-run unscored smoke test $0.48. The smoke test was not in the
+  preregistration; it only checked the reconstructed `env.sh`.
+- Policy: no off-policy dtctl call ran. Four runs (two per arm) used
+  `paste` or `date` in a pipeline, or tripped the audit's path heuristic on
+  a service name. All were benign.
+
+## Sonnet (primary for v3)
+
+| arm | runs | score [95% CI] | turns | dtctl calls | cost $/run | wall s/run | runs with ≥1 recipe |
+|---|---|---|---|---|---|---|---|
+| A | 75 | 2.56 [2.21, 2.84] | 5.5 | 5.4 | 0.092 | 19 | 0/75 |
+| B | 75 | 2.83 [2.59, 2.99] | 4.5 | 4.1 | 0.081 | 15 | 21/75 |
+
+- Per task, B was better on 7 tasks, worse on none and tied on 18. The
+  uncovered tasks scored 3 in every run of both arms.
+- **t32 (GenAI tokens): 1 1 1 → 3 3 3.** In v2 every Sonnet run summed the
+  doubly recorded spans. Now the first query's envelope carries the
+  `genai-token-usage` check, and the next query deduplicates. It takes 2.3
+  calls. This is the trap warning doing exactly what it was built for.
+- **Fewer calls on the investigations.**
+
+  | task | A calls | B calls | A scores | B scores | how |
+  |---|---|---|---|---|---|
+  | t03 | 13.7 | 6.0 | 2 3 0 | 3 3 3 | |
+  | t25 | 10.7 | 3.7 | | | the hint bound the problem ID into `run problems-evidence P-…` |
+  | t35 | 7.0 | 2.0 | | | |
+  | t28 | 13.3 | 9.3 | 3 1 2 | 3 3 2 | |
+- Trap warnings fired in 20 B runs, and the next query acted on 11 of
+  them.
+- One lint fired (`interval-equals-window`, twice).
+
+## Haiku
+
+| arm | runs | score [95% CI] | turns | dtctl calls | cost $/run | wall s/run | runs with ≥1 recipe |
+|---|---|---|---|---|---|---|---|
+| A | 100 | 1.10 [0.71, 1.52] | 19.0 | 17.6 | 0.101 | 57 | 0/100 |
+| B | 100 | 1.67 [1.28, 2.04] | 18.3 | 16.6 | 0.105 | 57 | 52/100 |
+
+- Fully correct runs (3): A 25, B 38. Zero-score runs: A 48, B 28.
+- Unprompted recipe use on covered tasks: 49 of 72. `describe recipe`
+  dropped to 2 calls (v2: 31).
+- Gains of 2 points or more: t04 (+2.75), t29, t32 and t34 (+2.25 each).
+- Haiku uses the query-side changes far less than Sonnet. Trap
+  warnings fired in 6 runs, and the next query acted on 5 of them. The
+  `multi-key-timeseries` lint fired 13 times. Haiku mostly runs recipes
+  directly, as in v2.
+
+### Haiku on uncovered tasks
+
+| task | A scores | B scores | v2 A | v2 B |
+|---|---|---|---|---|
+| t10 | 3 1 1 3 | 0 0 1 1 | 0.8 | 1.0 |
+| t38 | 3 0 1 3 | 1 1 1 1 | 1.2 | 1.2 |
+| t39 | 2 3 0 1 | 0 0 3 0 | 0.0 | 0.6 |
+| t11, t22 | | | | |
+
+- On t11 and t22 the arms are about even.
+- On t10, t38 and t39, B was worse in v3 but even or better in v2, with the
+  same control binary. A's runs on these tasks did unusually well this
+  time, so most of the gap is run-to-run variance on five tasks.
+- The forensics found one real cost:
+  - **No recipe involved.** In t10 and t38, none of the losing B runs ran a
+    recipe or got a trap warning. Two t10 losses filtered
+    `timestamp > now() - 24h` under the default 2h window and counted 2h
+    of data. t38's B runs listed the SLOs and never evaluated them.
+  - **A hint pulled the agent off course (t39 B-r4).** A `logs-search`
+    hint on a `fetch logs` query led the agent to run `logs-search` three
+    times. The answer was in bizevents, and the run scored 0.
+  - **The label overstates generic matches.** On generic `fetch events`
+    queries (`summarize count(), by:{event.type}`), the hint names
+    `k8s-warning-events` "for this question". The words of the source name
+    count as words of the question, and that pushes the match over the
+    strong threshold.
+- **Tried and reverted:** counting source words for score but not for
+  strength. On a replay of the 5,024 queries from v2, this cut the strong
+  hints that named an expected recipe from 375 to 245. Their precision did
+  not improve (24% → 23%), and Sonnet's first-query hits fell from 17 to
+  15. Sonnet's v3 gain runs on those hints, so this needs a better
+  relevance signal, not a lower threshold.
+
+## v3 recommendations
+
+1. **Keep the v3 design.** Trap checks, runnable hints, `context.means`,
+   `--follow` and the output budget turned recipes from a cost into a
+   saving for Sonnet. They kept the Haiku lift.
+2. **Add a check for the window trap.** It cost Haiku points on an
+   uncovered task: `filter timestamp > now() - X` with X longer than the
+   default window (and no `from:`) silently searches 2h. That trap is the
+   query's own, not a recipe's, so it belongs in the DQL lints that
+   `dtctl query` already runs.
+3. **Hint relevance on generic queries.** Fixing it needs a signal that
+   tells a generic events query from a k8s-events one: the filter fields,
+   not the source's name. Measure it on the replay before shipping. Then
+   re-run the uncovered tasks with more reps; v2's advice of more than five
+   uncovered tasks stands.
+4. `--follow` was not used by either model in v3. It costs nothing, but it
+   only pays off if the skill or the envelope prompts it, e.g. by
+   suggesting `--follow` on the run whose `next` edge is the obvious
+   continuation.
