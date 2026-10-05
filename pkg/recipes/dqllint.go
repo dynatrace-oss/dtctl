@@ -34,6 +34,7 @@ var dqlLints = []dqlLint{
 	{"unaliased-aggregate", lintUnaliasedAggregate, true},
 	{"multi-key-timeseries", lintMultiKeyTimeseries, false},
 	{"interval-equals-window", lintIntervalEqualsWindow, false},
+	{"filter-beyond-window", lintFilterBeyondWindow, false},
 }
 
 // DQLLint returns the trap lints for one recipe, as "code: message".
@@ -196,6 +197,53 @@ func lintIntervalEqualsWindow(r *Recipe, stages []string) string {
 		}
 	}
 	return ""
+}
+
+var (
+	// timestampFilter is a lower bound on the record time in a filter:
+	// timestamp > now() - 24h.
+	timestampFilter = regexp.MustCompile(`\b(?:timestamp|start_time|end_time)\s*>=?\s*now\(\)\s*-\s*(\d+[smhdw])\b`)
+	// windowArg is a fetch's own window.
+	windowArg = regexp.MustCompile(`\b(?:from|timeframe)\s*:`)
+)
+
+// lintFilterBeyondWindow: a filter cannot reach past the window the fetch
+// reads, so `filter timestamp > now() - 24h` with the default window searches
+// the last 2h only and says nothing about it. Measured: agents concluded
+// "nothing happened yesterday" from exactly this query.
+func lintFilterBeyondWindow(r *Recipe, stages []string) string {
+	window := r.Spec.Timeframe.Default
+	if window <= 0 {
+		return ""
+	}
+	for i, s := range stages {
+		if stageCmd(s) != "fetch" || windowArg.MatchString(s) {
+			continue
+		}
+		for _, f := range stages[i+1:] {
+			if stageCmd(f) != "filter" {
+				continue
+			}
+			m := timestampFilter.FindStringSubmatch(f)
+			if m == nil {
+				continue
+			}
+			if d, err := ParseDuration(m[1]); err == nil && d > window {
+				return fmt.Sprintf("filters the last %s but the query reads only %s, so older records were never fetched; widen the window instead: fetch ..., from: now()-%s (or --from %s)", m[1], formatWindow(window), m[1], m[1])
+			}
+		}
+	}
+	return ""
+}
+
+func formatWindow(d time.Duration) string {
+	if d%(24*time.Hour) == 0 {
+		return fmt.Sprintf("%dd", d/(24*time.Hour))
+	}
+	if d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", d/time.Hour)
+	}
+	return d.String()
 }
 
 // stageCmd is the command word of a pipeline stage.

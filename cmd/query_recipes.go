@@ -110,7 +110,7 @@ func queryRecipeWarnings(book *recipes.Book, query, from string) []string {
 	for _, hit := range book.QueryChecks(query, activeRecipes(book)) {
 		out = append(out, fmt.Sprintf("%s (%s does this)", hit.Warn, recipes.HintCommand(hit.Recipe, book.BindQuery(hit.Recipe, query, from))))
 	}
-	out = append(out, recipes.LintQuery(query, recipes.QueryWindow(query, from))...)
+	out = append(out, recipes.LintQuery(query, recipes.EffectiveQueryWindow(query, from))...)
 	if len(out) > maxQueryWarnings {
 		out = out[:maxQueryWarnings]
 	}

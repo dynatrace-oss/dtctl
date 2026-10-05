@@ -156,6 +156,12 @@ next:
 `when: empty`, a recipe can suggest itself further back. The edge is dropped
 when the run already looked that far.
 
+`follow: true` marks the edge an investigation usually takes next. `dtctl run
+--follow` runs it in preference to the edges listed before it, and every
+command line that suggests this recipe (a `next` suggestion, a hint on
+`dtctl query`) ends in `--follow`, so the agent gets both results in one call.
+Mark at most one edge per recipe, and only one whose target is cheap.
+
 ### `checks`
 
 The traps the recipe avoids, as tests an ad-hoc `dtctl query` runs against.

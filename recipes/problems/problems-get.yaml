@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: problems-get
-  version: 2
+  version: 3
   tags: [problems, davis, root-cause]
 spec:
   summary: Details, root cause and affected entities of one problem (P-xxxxx)
@@ -62,6 +62,7 @@ spec:
       when: nonempty
       window: { from: event.start, to: event.end, pad: 15m }
     - recipe: problems-evidence
+      follow: true
       with: { id: "{{.id}}" }
       when: nonempty
       window: { from: event.start, to: event.end, pad: 15m }

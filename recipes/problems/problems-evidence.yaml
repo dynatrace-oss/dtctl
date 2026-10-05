@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: problems-evidence
-  version: 2
+  version: 3
   tags: [problems, davis, events, evidence, detector, root-cause]
 spec:
   summary: The Davis events behind one problem (P-xxxxx), with each detector's own query
@@ -64,6 +64,7 @@ spec:
     - recipe: problems-get
       with: { id: "{{.id}}" }
     - recipe: problems-logs
+      follow: true
       when: nonempty
       with: { id: "{{.id}}" }
       window: { from: event.start, to: event.end, pad: 15m }

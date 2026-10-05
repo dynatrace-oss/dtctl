@@ -478,13 +478,15 @@ anyway:
   reads anyway, so acting on it costs no extra call. Checks are verified in CI
   (`dtctl verify recipe`): each fires on its own example and not on the
   recipe's DQL.
-- **Follow-ups in the same call.** `run --follow` runs the first applicable
-  `next` edge after the recipe, with the same executor and limits, and puts
+- **Follow-ups in the same call.** `run --follow` runs the applicable `next`
+  edge marked `follow: true`, else the first one, after the recipe, with the same executor and limits, and puts
   up to 20 of its rows in `context.follow_up` (outside agent mode, a second
   result). A chain such as problem list → evidence then costs one turn instead
   of two. A recipe's agent envelope is bounded to 16KB by default
   (`--max-output-bytes` overrides it), and a recipe's `--help` lists only its
-  own flags.
+  own flags. Agents did not add `--follow` on their own (0 uses in the v3
+  evaluation), so a suggestion for a recipe with a marked edge carries the
+  flag already: the agent copies the line it was given.
 - **`get recipes --search` says when nothing fits.** Matches whose terms hit
   only descriptions are marked weak, and when every match is weak the warning
   says so ("no recipe is about …"). The agent can then write DQL instead of

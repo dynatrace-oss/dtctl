@@ -105,3 +105,57 @@ func TestBindQueryReadsParamsScopeAndWindow(t *testing.T) {
 	assert.Equal(t, 2*time.Hour, QueryWindow("fetch logs, from: -6h", "2h"), "--from wins")
 	assert.Zero(t, QueryWindow("fetch logs", ""))
 }
+
+func TestLintQueryFilterBeyondWindow(t *testing.T) {
+	q := "fetch events | filter timestamp > now() - 24h | limit 5"
+	w := EffectiveQueryWindow(q, "")
+	assert.Equal(t, DefaultQueryWindow, w)
+	got := LintQuery(q, w)
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0], "filter-beyond-window: filters the last 24h but the query reads only 2h")
+
+	assert.Empty(t, LintQuery(q, EffectiveQueryWindow(q, "2d")), "--from reaches far enough")
+	q = "fetch events, from: now()-24h | filter timestamp > now() - 24h"
+	assert.Empty(t, LintQuery(q, EffectiveQueryWindow(q, "")), "the fetch names its own window")
+	q = `fetch events, from: "2026-01-01T00:00:00Z" | filter timestamp > now() - 24h`
+	assert.Zero(t, EffectiveQueryWindow(q, ""), "an absolute window is unknown")
+	assert.Empty(t, LintQuery(q, EffectiveQueryWindow(q, "")))
+	assert.Empty(t, LintQuery("fetch events | filter timestamp > now() - 1h", DefaultQueryWindow))
+}
+
+func TestFollowEdgeOrdersStepsAndMarksTheLine(t *testing.T) {
+	b := loadBook(t, map[string]string{
+		"costs/costs-a.yaml": recipeYAML("costs-a", `
+summary: a
+timeframe: 2h
+dql: fetch spans | limit 1
+means: m
+emptyMeans: e
+next:
+  - recipe: costs-b
+  - recipe: costs-c
+    follow: true
+`),
+		"costs/costs-b.yaml": recipeYAML("costs-b", `
+summary: b
+timeframe: 2h
+dql: fetch spans | limit 1
+means: m
+emptyMeans: e
+`),
+		"costs/costs-c.yaml": recipeYAML("costs-c", `
+summary: c
+timeframe: 2h
+dql: fetch spans | limit 1
+means: m
+emptyMeans: e
+`),
+	})
+	require.Empty(t, b.Problems)
+	a := b.Get("costs-a")
+	steps := b.NextSteps(a, nil, Carry{}, false, nil)
+	require.Len(t, steps, 2)
+	assert.Equal(t, "costs-c", FollowOrder(steps)[0].Recipe.Name())
+	assert.Equal(t, "dtctl run costs-a --follow", WithFollow(a, "dtctl run costs-a"))
+	assert.Equal(t, "dtctl run costs-b", WithFollow(b.Get("costs-b"), "dtctl run costs-b"))
+}

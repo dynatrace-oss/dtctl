@@ -374,6 +374,9 @@ type Next struct {
 	// Window takes the follow-up's window from the bound row instead of
 	// carrying this invocation's: a problem's own start and end, padded.
 	Window *NextWindow `json:"window,omitempty" yaml:"window,omitempty"`
+	// Follow marks the edge as the usual next step: `run --follow` takes it
+	// before the others, and a command line for this recipe offers --follow.
+	Follow bool `json:"follow,omitempty" yaml:"follow,omitempty"`
 }
 
 // NextWindow names the row fields that hold a follow-up's window. To may be

@@ -27,7 +27,7 @@ type Carry struct {
 func (b *Book) NextCommands(r *Recipe, params map[string]any, carry Carry, empty bool, rows []map[string]any) []string {
 	var out []string
 	for _, s := range b.NextSteps(r, params, carry, empty, rows) {
-		out = append(out, s.Line)
+		out = append(out, s.Suggestion())
 	}
 	return out
 }
@@ -38,6 +38,7 @@ type NextStep struct {
 	Recipe *Recipe
 	Args   map[string]string
 	Carry  Carry
+	Follow bool
 	Line   string
 }
 
@@ -109,7 +110,7 @@ func (b *Book) NextSteps(r *Recipe, params map[string]any, carry Carry, empty bo
 		for k, v := range args {
 			kept[k] = v
 		}
-		out = append(out, NextStep{Recipe: target, Args: kept, Carry: c, Line: CommandLine(target, args, c)})
+		out = append(out, NextStep{Recipe: target, Args: kept, Carry: c, Follow: n.Follow, Line: CommandLine(target, args, c)})
 	}
 	return out
 }
@@ -397,4 +398,35 @@ func ShellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// Suggestion is the step's command line as offered to run next: with
+// --follow when the target has a usual next step of its own.
+func (s NextStep) Suggestion() string { return WithFollow(s.Recipe, s.Line) }
+
+// WithFollow adds --follow to a command line for r when one of r's edges is
+// marked follow: the usual next step then arrives in the same call.
+func WithFollow(r *Recipe, line string) string {
+	for _, n := range r.Spec.Next {
+		if n.Follow {
+			return line + " --follow"
+		}
+	}
+	return line
+}
+
+// FollowOrder is steps with the follow-marked ones first, in their order.
+func FollowOrder(steps []NextStep) []NextStep {
+	out := make([]NextStep, 0, len(steps))
+	for _, s := range steps {
+		if s.Follow {
+			out = append(out, s)
+		}
+	}
+	for _, s := range steps {
+		if !s.Follow {
+			out = append(out, s)
+		}
+	}
+	return out
 }

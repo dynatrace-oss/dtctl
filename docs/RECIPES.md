@@ -67,9 +67,11 @@ dtctl run problems-active --follow                   # also run the first follow
   `--jq`, `--spill`, `--max-result-records` and every output format behave as
   they do there. `dtctl run <recipe> --help` lists the recipe's own flags only;
   the query flags parse all the same.
-- **Follow-ups**: `--follow` also runs the first follow-up the result would
+- **Follow-ups**: `--follow` also runs the follow-up the result would
   suggest (a problem's evidence after the problem list, say), with its
-  arguments bound from the result. In agent mode it lands in
+  arguments bound from the result: the one the recipe marks as usual, or else
+  the first. A suggested command line already ends in `--follow` when its
+  recipe has such a usual next step. In agent mode it lands in
   `context.follow_up`; otherwise it prints as a second result, announced on
   stderr with its own command line.
 
@@ -109,7 +111,8 @@ GenAI tokens without deduplicating the spans, filters logs by
 latest state, `context.warnings` says what goes wrong, how to write it instead,
 and which recipe does it right. The same goes for the DQL lints that catch a
 silently wrong answer (a multi-key `timeseries` without `union: true`, an
-`interval:` as long as the window).
+`interval:` as long as the window, a `filter timestamp > now() - 24h` that
+reaches past the 2h a query reads when it names no window).
 
 ## Where recipes come from
 

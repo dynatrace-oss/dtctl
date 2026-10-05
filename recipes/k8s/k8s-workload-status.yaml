@@ -4,7 +4,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: k8s-workload-status
-  version: 1
+  version: 2
   tags: [k8s, workloads, deployments, replicas, rollout, availability, triage]
 spec:
   summary: Deployments, StatefulSets and DaemonSets with fewer ready pods than desired, or a stuck rollout
@@ -56,6 +56,7 @@ spec:
     `dtctl run k8s-clusters`.
   next:
     - recipe: k8s-warning-events
+      follow: true
       when: nonempty
       bind: { cluster: k8s.cluster.name, namespace: k8s.namespace.name }
     - recipe: k8s-pod-restarts

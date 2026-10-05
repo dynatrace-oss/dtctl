@@ -1,4 +1,4 @@
-# k8s-workload-status v1 — window: none (state query; no window)
+# k8s-workload-status v2 — window: none (state query; no window)
 smartscapeNodes K8S_DEPLOYMENT, K8S_STATEFULSET, K8S_DAEMONSET
 | parse k8s.object, "JSON:config"
 | fieldsAdd desired = coalesce(config[spec][replicas], config[status][desiredNumberScheduled]),

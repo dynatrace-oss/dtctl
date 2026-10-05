@@ -561,6 +561,27 @@ func TestRunRecipeFollowRunsTheFirstNextStep(t *testing.T) {
 	assert.NotContains(t, stdout, "follow_up")
 }
 
+// TestRunRecipeFollowPrefersTheMarkedEdge: --follow takes the edge marked
+// follow: true over an earlier one, and a suggestion for a recipe with such
+// an edge offers --follow.
+func TestRunRecipeFollowPrefersTheMarkedEdge(t *testing.T) {
+	e := newRecipeEnv(t)
+	e.records = `[{"display_id":"P-1","event.start":"2026-01-01T10:00:00Z","event.end":"2026-01-01T11:00:00Z"}]`
+	code, stdout, stderr := e.run(t, "run", "problems-get", "P-1", "--follow", "-A")
+	require.Zero(t, code, "stderr: %s", stderr)
+	env := parseRecipeEnvelope(t, stdout)
+	var fu output.FollowUp
+	require.NoError(t, json.Unmarshal(env.Context["follow_up"], &fu), "context: %v", env.Context)
+	assert.True(t, strings.HasPrefix(fu.Command, "dtctl run problems-evidence P-1"), "the marked edge, not the first one: %s", fu.Command)
+	assert.NotContains(t, fu.Command, "--follow", "the follow-up ran one hop")
+
+	e2 := newRecipeEnv(t)
+	e2.records = `[{"display_id":"P-1","event.name":"High CPU"}]`
+	code, stdout, _ = e2.run(t, "run", "problems-active", "-A")
+	require.Zero(t, code)
+	assert.Contains(t, stdout, "dtctl run problems-get P-1 --follow")
+}
+
 // TestRunRecipeEnvelopeCarriesMeansAndABudget: a non-empty result says how
 // to read it, and a long one is cut to the recipe budget unless the caller
 // sets one.

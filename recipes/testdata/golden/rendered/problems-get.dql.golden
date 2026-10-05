@@ -1,4 +1,4 @@
-# problems-get v2 — window: default 1d
+# problems-get v3 — window: default 1d
 fetch dt.davis.problems
 | filter display_id == "<id>"
 | sort timestamp desc

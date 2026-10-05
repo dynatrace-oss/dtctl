@@ -127,7 +127,20 @@ func HintCommand(r *Recipe, qb QueryBinding) string {
 			line += " --" + p.FlagName() + "=<" + p.Name + ">"
 		}
 	}
-	return line
+	return WithFollow(r, line)
+}
+
+// DefaultQueryWindow is what a query reads when neither --from nor its
+// fetch names a window.
+const DefaultQueryWindow = 2 * time.Hour
+
+// EffectiveQueryWindow is QueryWindow, or DefaultQueryWindow when the query
+// names no window at all; 0 when the window is absolute.
+func EffectiveQueryWindow(dql, from string) time.Duration {
+	if from == "" && !windowArg.MatchString(stripDQLComments(dql)) {
+		return DefaultQueryWindow
+	}
+	return QueryWindow(dql, from)
 }
 
 // QueryWindow is the length of a query's relative window, from its --from

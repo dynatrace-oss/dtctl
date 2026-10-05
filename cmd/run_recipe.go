@@ -260,7 +260,7 @@ func newRecipeCommand(load *recipeLoad, r *recipes.Recipe) *cobra.Command {
 		c.Flags().String("to", "", "end of the window: a duration ago or an RFC3339 timestamp (default now)")
 	}
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "print the rendered DQL (stdout) and window (stderr); execute nothing")
-	c.Flags().Bool("follow", false, "also run the first applicable follow-up recipe (agent mode: context.follow_up)")
+	c.Flags().Bool("follow", false, "also run the usual follow-up recipe, or the first applicable one (agent mode: context.follow_up)")
 	own := map[string]bool{}
 	c.Flags().VisitAll(func(f *pflag.Flag) { own[f.Name] = true })
 	addDQLExecutionFlags(c, true)
@@ -554,7 +554,7 @@ func runRecipe(cmd *cobra.Command, args []string, load *recipeLoad, r *recipes.R
 	}
 	// Outside agent mode the follow-up is a second result of its own, after
 	// the first, as if its command line had been typed next.
-	for _, s := range book.NextSteps(r, rendered.Params, inv.carry, r.IsEmpty(rows), rows) {
+	for _, s := range recipes.FollowOrder(book.NextSteps(r, rendered.Params, inv.carry, r.IsEmpty(rows), rows)) {
 		in, err := book.StepInput(s, time.Now())
 		if err != nil {
 			continue
@@ -586,7 +586,7 @@ const followUpRows = 20
 // executor and limits, and reports it for context.follow_up. Nil when no step
 // applies.
 func runFollowUp(cmd *cobra.Command, book *recipes.Book, steps []recipes.NextStep, executor *exec.DQLExecutor, opts exec.DQLExecuteOptions) *output.FollowUp {
-	for _, s := range steps {
+	for _, s := range recipes.FollowOrder(steps) {
 		in, err := book.StepInput(s, time.Now())
 		if err != nil {
 			continue
@@ -679,7 +679,7 @@ func decorateRecipeContext(ctx *output.ResponseContext, book *recipes.Book, r *r
 	steps := book.NextSteps(r, rendered.Params, inv.carry, empty && partial == "", records)
 	var next []string
 	for _, s := range steps {
-		next = append(next, s.Line)
+		next = append(next, s.Suggestion())
 	}
 	adapt := "adapt the recipe: dtctl query '<context.query>'"
 	if requested != nil && rendered.Window != nil {
