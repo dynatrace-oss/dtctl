@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: logs-for-service
-  version: 2
+  version: 3
   tags: [logs, service, workload, recent, tail]
 spec:
   summary: Recent log lines of one service, workload or process group, newest first
@@ -65,7 +65,11 @@ spec:
     that lack k8s.workload.name (recovered from the pod name), which is often
     a fifth or more of a workload's lines. Decision rule: read the newest
     lines for the failure's own message, then follow its trace_id; 100 rows is
-    a tail, not a count. Not shown: older lines in the window (narrow with
+    a tail, not a count. To count a source's records, adapt the default
+    (unpinned) query from context.query: --field matches one field only, so a
+    count over it misses the records that name the source in another field
+    (a service's logs often carry service.name on some lines and only the k8s
+    workload on others). Not shown: older lines in the window (narrow with
     --contains or --status), counts (logs-error-patterns), and lines of other
     services on the same request (logs-for-trace).
   emptyMeans: >-

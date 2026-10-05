@@ -1,4 +1,4 @@
-# problems-evidence v1 — window: default 1d, max 7d
+# problems-evidence v2 — window: default 1d, max 7d
 fetch dt.davis.events
 | filter event.id in [fetch dt.davis.problems | filter display_id == "<id>"
     | expand eid = dt.davis.event_ids | fields eid]

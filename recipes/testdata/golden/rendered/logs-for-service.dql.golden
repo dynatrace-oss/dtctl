@@ -1,4 +1,4 @@
-# logs-for-service v2 — window: default 1h
+# logs-for-service v3 — window: default 1h
 fetch logs
 | filter dt.service.name == "<service>" or service.name == "<service>"
     or dt.process_group.detected_name == "<service>"

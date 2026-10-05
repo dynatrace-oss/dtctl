@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: problems-evidence
-  version: 1
+  version: 2
   tags: [problems, davis, events, evidence, detector, root-cause]
 spec:
   summary: The Davis events behind one problem (P-xxxxx), with each detector's own query
@@ -51,7 +51,10 @@ spec:
     settings schema that defines them. frequent = true
     marks an event Davis sees often on that entity, which is weak evidence;
     root_cause_relevant = false marks one Davis did not use for the root
-    cause. Not shown: the logs and traces behind each event (problems-logs,
+    cause. Decision rule: the events say where and when, not what failed; for
+    an error-rate, failure or unavailability event, run problems-logs next
+    (suggested with the problem's own hours) and report the error it shows,
+    not the event's description. Not shown: the logs and traces behind each event (problems-logs,
     services-failures).
   emptyMeans: >-
     No event of this problem had an update in the window. The problem or its
@@ -63,3 +66,4 @@ spec:
     - recipe: problems-logs
       when: nonempty
       with: { id: "{{.id}}" }
+      window: { from: event.start, to: event.end, pad: 15m }
