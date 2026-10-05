@@ -1403,3 +1403,96 @@ estimate is ≥ 0, report it as underpowered, not as harm.
 - **Sonnet**: 30 × 2 × 3 = 180 runs. **Haiku**: 30 × 2 × 4 = 240 runs.
 - **Spend cap: $60**, judging included. A run that hits a harness failure is
   re-run once.
+
+---
+
+# v5 results
+
+Everything above this line is unchanged.
+
+## v5 verdict
+
+**Haiku keeps its lift against a fresh control. Sonnet breaks even, as in
+v4. Recipes do no harm on uncovered tasks for Sonnet. For Haiku the
+uncovered-task gap is gone in the point estimate but not ruled out.**
+
+| B − A (two-level 95% CI) | Sonnet v5 | Haiku v5 |
+|---|---|---|
+| score | +0.18 [−0.04, +0.41] | **+0.60 [+0.17, +1.03]** |
+| turns | −0.21 [−0.92, +0.44] | −0.62 [−2.34, +1.19] |
+| dtctl calls | +0.04 [−0.87, +1.06] | −0.68 [−2.37, +1.07] |
+| cost $/run | −0.002 [−0.010, +0.006] | +0.004 [−0.008, +0.016] |
+| wall s/run | −1 [−4, +1] | +2 [−5, +8] |
+| uncovered tasks (10) | +0.13 [+0.00, +0.37] | −0.05 [−0.70, +0.62] |
+
+- **Sonnet breaks even.** The score is non-inferior (lower bound −0.04 >
+  −0.15), turns and cost both point down, and neither interval excludes 0.
+- **Haiku keeps its lift**, just inside the cost limit: +$0.004 against a
+  limit of +$0.005. Covered tasks go from 0.75 to 1.69.
+- **H11 holds for Sonnet** (lower bound 0.00). **For Haiku it is not met.**
+  The lower bound is −0.70, and the point estimate (−0.05) is just below 0,
+  so the preregistered "underpowered" reading does not apply. Against the
+  old control the gap was −0.70 and −0.50. One task carries most of what is
+  left (t22, below).
+- **The fresh control did better than v3's A for Sonnet** (4.7 turns and
+  $0.083 per run, against 5.5 turns and $0.092). So part of v3's Sonnet
+  efficiency gain was control-sample luck. That is what v4's
+  recommendation 3 suspected.
+
+## v5 runs
+
+- A 8815e206, B 168bbc85. Sonnet: 180 runs. Haiku: 240 runs. Every run was
+  judged, with no 429.
+- **Deviation:** the Haiku batch's login expired after 91 runs. The next
+  148 runs failed to authenticate before doing anything, and so did their
+  judging. After a fresh login the 148 runs were re-run once, as the
+  preregistration allows for harness failures. All 148 finished rc 0. The
+  ground-truth end snapshot was re-measured after the re-runs, so it
+  brackets every run.
+- **Spend: $54.03**, under the $60 cap. Sonnet $21.46, Haiku $32.58
+  (failed runs cost nothing).
+- The hint fix 28063d2a (each recipe word counts once) was committed after
+  the v5 build. It is validated by replay only, not by this round.
+
+## What v5 showed
+
+- **The window note works.**
+  - Haiku B: the note appeared in 103 of 120 runs, and 79 of those then
+    set a window.
+  - t41 (a 7d share) went from 1 1 1 1 to 3 3 3 3. Every B run read the
+    note and re-ran with `from: now()-7d`.
+  - Sonnet saw the note in 6 runs and set a window after 5 of them.
+  - t10 for Haiku stayed mixed: A 1 1 0 3, B 1 3 3 0.
+- **Hints did not mislead on uncovered tasks.** Hints were shown in 14 of
+  30 Sonnet runs and 27 of 40 Haiku runs, and no run ran a recipe because
+  of one. t40's generic events query drew the k8s-warning-events hint that
+  28063d2a now suppresses. It was ignored.
+- **t22 (Haiku, −1.5): B never found `dtctl get workflow-executions`.**
+  - All four A runs found the command. No B run did. The B runs issued
+    11–16 DQL queries looking for a workflow-execution table.
+  - No recipe or hint was involved. The likely cause is that B's skill
+    says much more about DQL and recipes, which pushes the resource
+    commands further down and makes the agent query-first for everything.
+- **t44 (Haiku, −1.0):** three B runs grouped by the wrong field
+  (`dt.openpipeline.source` rather than `log.source`). No recipe was run.
+- **t08 (Sonnet, B 7.7 calls vs A 2.0):** after the hint, the runs called
+  the recipe's `--help`, `--dry-run` and `--show-query`, and then several
+  `-o json` runs piped through jq. Two things made the output hard to
+  read:
+  - with `--jq` in agent mode, the records arrive as one YAML-encoded
+    string;
+  - the totals sit in `result.constant`, which the runs found late.
+
+## v5 recommendations
+
+1. **Keep the design.** Across v3, v4 and v5, Haiku's lift is stable
+   (+0.57, +0.59, +0.60) and Sonnet breaks even or better.
+2. **Point the skill back at resource commands.** One line in the
+   recipes section should say that platform objects (workflows and their
+   executions, SLOs, dashboards) come from `get` and `describe`, not DQL.
+   That targets t22.
+3. **Make recipe output easier to read in agent mode.** Two parts:
+   - `--jq` should return JSON records, not a YAML string;
+   - a recipe's hint or envelope should say where its totals are.
+   That targets t08's extra calls.
+4. **Ship 28063d2a, and check it in the next round,** along with 2 and 3.
