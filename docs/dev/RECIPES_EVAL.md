@@ -688,3 +688,326 @@ because calls and cost vary less than scores.
 3. Wait for the final build. Run all arms on that SHA, with `origin/main` of
    the same moment as control. Judge, analyse, and append the results below
    with the same tables as v1.
+
+---
+
+# v2 results
+
+Everything above this line is the preregistration and is unchanged.
+
+## v2 verdict
+
+**Recipes help Haiku a lot, but the primary arm misses the preregistered
+rule on its no-harm check. The variant with domain-skill pointers passes.**
+
+- **B − A (primary): +0.60 points [+0.22, +0.99]** on the 0–3 scale. That
+  clears criterion 1 by a wide margin. But criterion 3 fails: on the five
+  uncovered tasks, B − A is +0.28 with a CI of [−0.40, +1.00], and the rule
+  needs the lower bound above −0.15. **By the rule as written, B is "no
+  benefit".** The point estimate on uncovered tasks is positive. The
+  check fails because five tasks give a wide CI, and one uncovered task
+  (t11) went down by 0.6. Nothing in that task's runs touches a recipe (see
+  "Where recipes made answers worse").
+- **B+ − A: +0.46 [+0.10, +0.82]**, uncovered +0.56 [−0.00, +1.24]. **B+
+  meets every criterion: benefit.**
+- **H2 (agents reach recipes) holds.** Unprompted, agents ran a recipe in
+  49 of 90 covered-task runs in B and 47 of 90 in B+. In v1 the figure was
+  0 of 168.
+- **H3 (pointers beat B) is not supported.** B+ − B is −0.14 [−0.47, +0.20].
+- Cost is a wash: $0.106 per run in B vs $0.108 in A. Calls are 9% lower
+  (16.5 vs 18.1, CI excludes 0), short of criterion 2's 25%.
+- **H5 (Sonnet points the same way): yes, but not significantly.** Sonnet
+  B − A is +0.18 [−0.02, +0.44] (A 2.66, B 2.84), with no task worse. Sonnet
+  sits near the ceiling, ran a recipe in only 6 of 36 covered-task runs, and
+  cost $0.010 more per run [+0.002, +0.020]. On Sonnet the rule is not met.
+- **H6 (headroom): BR's nudge adds a little more.** BR − A is +0.84
+  [+0.30, +1.36]. BR − B is +0.24 [−0.18, +0.66], not significant, but it
+  takes 3.6 fewer calls [−5.8, −1.5]. Discovery now captures most of what
+  the nudge gets.
+
+What the user asked: does this whole thing bring a benefit for AI agents?
+On the primary model, yes in effect size: a 54% higher mean score, half as
+many zero scores (30 vs 61 of 125), and the same cost. The strict
+preregistered rule is not met for B, because the no-harm check is
+underpowered on five tasks. It is met for B+.
+
+## Deviations from the preregistration
+
+1. **Pilot build.** The plan said to pilot on the discovery build
+   (94d420cb). The pilot ran on the final build, 7095ff0a, because the
+   content landed before the pilot could run (a spend limit delayed it). It
+   is still reported separately and not pooled.
+2. **Harness: explicit deny rules.** In the pilot, claude ran `sed` and
+   `xargs wc -l` without an allow rule. It treats them as read-only on its
+   own. The preregistration promised no `sed`/`xargs` for investigators. So
+   before the scored runs, every program that can run another one was added
+   to `--disallowedTools` (`sed`, `awk`, `xargs`, `env`, `find`, `python`,
+   `perl`, `node`, shells, `tee`, `cp`, `mv`, `rm`, `curl`, …). A probe run
+   confirmed that each is refused and the allow-listed filters still work.
+   This applies to every arm alike.
+3. **Analysis fixes, no rule change.** The policy audit now separates
+   attempts that claude's permission check denied from calls that ran. It
+   skips heredoc bodies and joins continued lines before reading program
+   names. Reads of a run's own files (a spilled query result, claude's
+   persisted tool output) count as inside the workspace. For scanned GB, a
+   failed query counts as zero, and so does query metadata without
+   `scannedBytes` (timeseries and entity queries scan no bytes). Only a
+   successful call whose output dropped the metadata (`--jq`, csv) counts as
+   unknown. A per-arm summary table with a score CI was added.
+4. **`services-failed-calls` did not ship.** t27 stays "covered": it is
+   still covered by `services-failure-signatures` and `traces-errors`, both
+   of which shipped. All other "(planned)" recipes shipped, so the
+   coverage-as-shipped sensitivity analysis equals the primary one.
+5. **Spend cap.** The coordinator capped total spend at $100, not the
+   prereg's $120 threshold for R. The pilot projected about $85, so R = 5 as
+   planned.
+6. **Account spend limit.** The account's spend limit hit during the run.
+   It refused the Sonnet batch (every run got a 429 before its first tool
+   call) and 27 of the 50 BR judgements. Under the harness-failure rule,
+   these were re-run once after the limit reset. The 27 missing BR
+   judgements were judged, and all 50 BR runs are now judged. The Sonnet
+   batch was re-run in full with fresh ground truth: 100 runs, all rc 0, no
+   429, all judged. No investigator run that had made a tool call was
+   discarded.
+7. Ground truth, rubrics and task prompts are unchanged since the
+   preregistration.
+
+## Builds and runs
+
+- Control A: `origin/main` 8815e206 with main's dtctl skill.
+- B, B+ and BR: docs/recipes-design 7095ff0a with that build's dtctl skill
+  (55 built-in recipes). B+ pointer lines went into 14 `dt-*` skills.
+- Haiku: A, B and B+ × 25 tasks × 5 reps (375 runs, batch `v2-haiku`), plus
+  BR × 25 × 2 (`v2-haiku-br`). Sonnet: A and B × 25 × 2 (`v2-sonnet`).
+- Every run finished with rc 0. No run was re-run, apart from those under
+  deviation 6.
+- Spend: $79.73 in total, investigators plus judge, pilots included.
+  Haiku scored: $54.38. BR: $6.54. Sonnet: $12.92. Pilots: $5.88. That is
+  under the $100 cap.
+
+## Haiku (primary)
+
+### Summary per arm
+
+| arm | runs | score [95% CI] | dtctl calls | cost $/run | scanned GB/run (mean, median) | runs with a scan-limited result | recipe runs/run | runs with ≥1 recipe |
+|---|---|---|---|---|---|---|---|---|
+| A | 125 | 1.12 [0.78, 1.47] | 18.1 | 0.108 | 75.4, 1.4 | 47 | 0.00 | 0/125 |
+| B | 125 | 1.72 [1.39, 2.06] | 16.5 | 0.106 | 90.7, 0.9 | 44 | 1.16 | 52/125 |
+| B+ | 125 | 1.58 [1.23, 1.93] | 16.7 | 0.104 | 82.9, 0.6 | 41 | 1.08 | 48/125 |
+| BR (nudged) | 50 | 1.96 [1.54, 2.38] | 12.9 | 0.091 | 123.2, 0.8 | 9 | 1.72 | 31/50 |
+
+- Fully correct (3) / zero: A 28 / 61, B 48 / 30, B+ 43 / 37 of 125.
+- Runs that hit the 20-call budget: A 67, B 52, B+ 52.
+- **Scanned GB is dominated by one task.** t33 (count all log records over 7
+  days) accounts for 1,429 GB per run in A, 1,781 in B and 1,835 in B+.
+  Without t33 the means are 19.0 (A), 20.3 (B) and 9.9 (B+) GB per run. The
+  medians (1.4, 0.9, 0.6) show that a typical run scans less with recipes.
+  Calls whose output carried no scan metadata (`--jq`, csv): A 58, B 49,
+  B+ 39 of about 2,100 per arm.
+
+### Decision rule (two-level bootstrap, 10,000 resamples)
+
+| pair | score diff | calls diff | cost diff $ | uncovered tasks score diff | verdict |
+|---|---|---|---|---|---|
+| **B − A** | **+0.60 [+0.22, +0.99]** | −1.60 [−3.09, −0.14] | −0.002 [−0.013, +0.008] | +0.28 [−0.40, +1.00] | criterion 1 met; **criterion 3 fails** (−0.40 ≤ −0.15) → no benefit by the rule |
+| **B+ − A** | **+0.46 [+0.10, +0.82]** | −1.43 [−2.93, +0.07] | −0.005 [−0.014, +0.005] | +0.56 [−0.00, +1.24] | criteria 1 and 3 met → **benefit** |
+| B+ − B | −0.14 [−0.47, +0.20] | +0.17 [−1.12, +1.50] | −0.002 [−0.011, +0.006] | +0.28 [−0.28, +0.80] | H3 not supported |
+| BR − A | +0.84 [+0.30, +1.36] | −5.21 [−7.99, −2.47] | −0.017 [−0.033, −0.000] | +0.20 [−0.64, +1.16] | headroom only, not part of the rule |
+| BR − B | +0.24 [−0.18, +0.66] | −3.61 [−5.83, −1.46] | −0.014 [−0.029, +0.001] | −0.08 [−0.72, +0.64] | headroom only |
+
+BR has 2 reps per task and the other arms have 5. The two-level bootstrap
+handles the unequal counts.
+
+Sensitivity check (task-level bootstrap, v1's method): B − A +0.60
+[+0.30, +0.93], with B better on 19 tasks, worse on 4 and tied on 2.
+B+ − A +0.46 [+0.20, +0.72], better on 17, worse on 6, tied on 2.
+
+### By coverage
+
+| coverage | tasks | A | B | B+ |
+|---|---|---|---|---|
+| covered | 18 | 0.99 | 1.73 | 1.48 |
+| partial | 1 | 3.00 | 2.60 | 2.40 |
+| framework (t33) | 1 | 1.20 | 1.80 | 1.80 |
+| none | 5 | 1.20 | 1.48 | 1.76 |
+
+### Per task (score per rep)
+
+| task | coverage | A | B | B+ | B − A |
+|---|---|---|---|---|---|
+| t03 | covered | 3 2 0 1 0 | 3 0 2 0 1 | 2 2 2 0 0 | 0.0 |
+| t04 | covered | 0 0 3 0 0 | 2 3 3 3 2 | 3 2 0 2 0 | +2.0 |
+| t06 | covered | 0 0 0 0 0 | 0 0 3 0 3 | 0 0 3 0 3 | +1.2 |
+| t07 | covered | 0 0 0 0 0 | 3 3 3 3 3 | 0 2 3 0 3 | +3.0 |
+| t08 | covered | 0 3 0 3 0 | 3 0 3 3 3 | 3 3 3 0 0 | +1.2 |
+| t10 | none | 0 1 3 0 0 | 1 1 1 1 1 | 1 3 1 3 0 | +0.2 |
+| t11 | none | 2 3 2 2 2 | 2 2 2 2 0 | 2 2 2 2 2 | −0.6 |
+| t19 | covered | 0 0 2 2 0 | 3 2 1 2 2 | 2 1 1 1 2 | +1.2 |
+| t22 | none | 0 3 3 0 3 | 3 3 3 3 3 | 3 3 3 3 3 | +1.2 |
+| t24 | partial | 3 3 3 3 3 | 3 1 3 3 3 | 3 3 3 0 3 | −0.4 |
+| t25 | covered | 3 3 0 2 2 | 3 3 3 3 3 | 3 3 3 3 3 | +1.0 |
+| t26 | covered | 0 0 2 1 3 | 3 3 0 0 3 | 2 2 1 1 3 | +0.6 |
+| t27 | covered | 1 1 0 1 2 | 2 0 1 2 3 | 3 2 1 1 2 | +0.6 |
+| t28 | covered | 0 0 0 0 0 | 1 1 1 0 1 | 0 1 0 0 1 | +0.8 |
+| t29 | covered | 0 3 3 0 3 | 0 2 2 0 2 | 2 2 0 1 0 | −0.6 |
+| t30 | covered | 2 1 0 0 1 | 3 0 1 1 0 | 2 1 0 0 0 | +0.2 |
+| t31 | covered | 3 0 1 0 0 | 2 0 0 0 3 | 3 0 0 3 3 | +0.2 |
+| t32 | covered | 0 0 0 0 2 | 1 0 0 2 3 | 1 0 0 0 2 | +0.8 |
+| t33 | framework | 3 0 0 0 3 | 0 3 3 0 3 | 3 3 3 0 0 | +0.6 |
+| t34 | covered | 2 2 0 3 0 | 2 2 3 0 2 | 0 3 1 0 0 | +0.4 |
+| t35 | covered | 2 2 0 2 0 | 3 1 0 2 2 | 3 3 3 3 3 | +0.2 |
+| t36 | covered | 3 0 3 3 3 | 3 3 3 3 3 | 0 3 3 3 3 | +0.6 |
+| t37 | covered | 1 1 1 1 1 | 0 1 1 1 1 | 0 1 1 1 1 | −0.2 |
+| t38 | none | 2 2 1 0 1 | 2 1 2 1 0 | 2 1 3 2 2 | 0.0 |
+| t39 | none | 0 0 0 0 0 | 3 0 0 0 0 | 0 1 0 0 0 | +0.6 |
+
+### Do agents reach recipes? (H2)
+
+- Unprompted recipe use on covered tasks: A 0/90, **B 49/90, B+ 47/90**
+  (v1: 0/168). Across all tasks, 1.16 recipe runs per run in B and 1.08 in
+  B+.
+- `get recipes` browsing: B 29 runs, B+ 31.
+- Most-run recipes in B: `services-failures` 16, `services-red` 15,
+  `genai-token-usage` 12, `problems-evidence` 12, `k8s-warning-events` 11,
+  `k8s-pod-restarts` 8. B+'s pointers shifted use toward the domain they
+  name: `logs-search` 10, `changes-recent` 10, `logs-error-patterns` 9.
+- On covered tasks, B runs that used a recipe scored 2.02 (n = 51) and
+  those that did not scored 1.53 (n = 49). For B+ the figures were 1.83 and
+  1.27. This is not causal: agents pick when to use a recipe.
+- Skills were almost never loaded (A 8, B 6, B+ 4 of 125 runs). The
+  recipes reach agents through `dtctl` itself (the envelope hints, the
+  skill's question table and `dtctl commands`), not through skill loading.
+
+### Where the lift comes from
+
+- **t07 (+3.0).** `genai-token-usage` deduplicates the double-instrumented
+  model. Control reported that the model had no data in all 5 runs. B was
+  fully correct in all 5.
+- **t04 (+2.0), t25 (+1.0), t19, t06, t08 (+1.2 each).** In control, Haiku
+  spent its 20 calls exploring and answered "could not retrieve within the
+  limit" or "no data". `services-red`, `problems-evidence`,
+  `frontends-web-vitals` and `security-vulns-open` give it one call to a
+  correct table.
+- **t22 (+1.2, uncovered).** This gain is not from recipes. Control
+  sometimes looked in events or logs instead of workflow executions. Both
+  recipe arms got it right every time, so the build's other changes (skill
+  and envelope hints) helped here too. B − A measures the whole package,
+  as preregistered.
+
+### Where recipes made answers worse
+
+Per-task B − A was negative on t11 (−0.6), t29 (−0.6), t24 (−0.4) and t37
+(−0.2). B+ − A was negative on t24 (−0.6), t34 (−0.6), t29 (−0.8), t11,
+t30 and t37 (−0.2 each). Each run was checked:
+
+- **t34, open vulnerabilities, recipe-caused.** `security-vulns-open` and
+  `security-vulns-open-latest` default to `--min-level HIGH`. Their `means`
+  calls `total` "the answer to how many", but `total` counts only the
+  vulnerabilities at or above the level. Three runs reported about 210
+  (HIGH and CRITICAL only) as the number of open vulnerabilities. The true
+  number is 728, so those runs scored 0–2: B r2, B+ r1 and B+ r4. The two runs
+  that got 728 exactly (B r3, B+ r2) ran the same recipe, then re-ran its
+  DQL from `describe recipe` without the risk filter. **Fix:
+  default to all levels for a count, or make `total` say "at or above
+  --min-level" and suggest `--min-level LOW` when asked "how many".**
+- **t24, records across environments, recipe-caused once.**
+  `logs-for-service` took the workload-only route in one run (B r2),
+  giving 147,812 instead of about 210k. The recipe's partial k8s field
+  carriage is the same trap v1 found. B+ r4 used the query's
+  `scannedRecords` metadata as the count, which is not related to recipes.
+- **t11 (uncovered), t29, t37: not recipe-caused.** t11's loss is one run
+  (B r5) that concluded no monitor failed after struggling with spilled
+  1,000-row results; no recipe was involved. t29 swings with run-to-run
+  noise in both arms: the same pod-name attribution trap, and double counts
+  over two hours. t37 is 1 in nearly every run of every arm. Agents stop
+  at the problem's description. `problems-evidence` (used in 3 B runs)
+  does not lead them on to `problems-logs`, which holds the actual error.
+  So recipes did not help t37, but they did not hurt either.
+
+### Policy audit
+
+- **Calls that ran outside the allow-list: 2 runs** (3 with BR). One used
+  `nl` to number lines. One set two shell variables with `$(date …)` and
+  echoed them. In BR, one used `paste`. None of them can run another
+  program. No run read or wrote outside its
+  workspace, and none touched ground truth or the repository.
+- **Attempts that claude's permission check denied: 41 runs (82
+  findings).** These were mostly `python3`, `sed`, `bc`, output redirection,
+  and Write, which does not exist for investigators.
+- No mutating verb reached a tenant. The wrapper refused 5 calls for a
+  disallowed verb. Every other refusal (267) was the call budget.
+
+### Headroom: BR (nudged to look for a recipe first)
+
+- With the nudge, agents ran a recipe in 31 of 50 runs (29 of 36 on
+  covered tasks) and browsed the catalog in 37. That is not unprompted use.
+- BR is the best Haiku arm, at 1.96, with the fewest calls (12.9) and the
+  lowest cost ($0.091). By coverage: covered 2.08, framework 3.00, none 1.40,
+  partial 1.50.
+- BR − B is +0.24 and not significant. Without any instruction, discovery
+  already gets B most of the way to BR. The remaining gap is mostly in calls
+  (−3.6 per run), not in correctness.
+- Where BR lost to B: t36 r1 ran `k8s-pod-restarts` three times and
+  answered with unrelated container OOM kills instead of the rare heap-OOM
+  log line. A recipe steered it to the wrong entity. t24 r1 used a 2-hour
+  window for a 1-hour question, which is not recipe-related.
+
+## Sonnet (secondary)
+
+| arm | runs | score [95% CI] | dtctl calls | cost $/run | scanned GB/run (mean, median) | runs with a scan-limited result | recipe runs/run | runs with ≥1 recipe |
+|---|---|---|---|---|---|---|---|---|
+| A | 50 | 2.66 [2.36, 2.90] | 4.3 | 0.084 | 142.3, 1.5 | 2 | 0.00 | 0/50 |
+| B | 50 | 2.84 [2.60, 3.00] | 4.6 | 0.094 | 142.3, 1.9 | 3 | 0.22 | 6/50 |
+
+- **B − A: +0.18 [−0.02, +0.44]** (two-level). The task-level sensitivity
+  check gives +0.18 [+0.04, +0.38]: B better on 5 tasks, worse on none,
+  tied on 20. Calls +0.30 [−0.58, +1.18]. Cost +$0.010 [+0.002, +0.020].
+  Uncovered tasks +0.20 [+0.00, +0.60].
+- By the rule: lift CI touches 0, and B is not cheaper, so there is **no
+  benefit on Sonnet**. H5 holds only as a direction.
+- Sonnet ran a recipe in 6 of 36 covered-task runs and browsed the catalog
+  in 13 of 50. Runs used `frontends-web-vitals`, `traces-get`,
+  `logs-error-templates-new`, `k8s-warning-events`, `problems-evidence` and
+  `changes-recent`.
+- Gains: t06 (+2, `frontends-web-vitals` gave the exact p75 INP) and t11 (+1,
+  uncovered, exact count). **No task scored lower in B than in A.**
+- Sonnet answered most tasks correctly in 4–5 calls, so there was little
+  for recipes to add. t32 scored 1 in every run of both arms. Each run
+  wrote one query, summed the doubly recorded spans, and stopped.
+  `genai-token-usage` would have deduplicated them, but no Sonnet run used
+  it.
+- Policy: no off-policy call ran. 8 runs made attempts that claude's
+  permission check denied.
+
+## Pilot (7095ff0a, not scored, not pooled)
+
+Haiku, 8 tasks × A/B/B+ × 1 rep: A 1.38, B 1.38, B+ 1.75. Recipe use on
+covered tasks: B 4/6, B+ 3/6. Sonnet, 8 tasks × A/B × 1 rep: A 2.62, B 2.88.
+The pilot found the `sed`/`xargs` gap (deviation 2) and the audit and
+scan-metadata problems (deviation 3). It found no ground-truth or rubric
+problem. Every low score traced to the agent's answer, and Sonnet reached
+a full score on each of those tasks in at least one arm.
+
+## v2 recommendations
+
+1. **Ship recipes.** On Haiku, recipes turned "ran out of calls" and "found
+   no data" into correct answers on the hardest tasks, at the same cost.
+   Agents now find them unprompted. On Sonnet they did no harm and cost
+   about 12% more per run.
+   - **The pointer lines are optional.** B+ passed the rule and B did not,
+     but B+ scored no better than B (−0.14 [−0.47, +0.20]). The difference
+     in verdicts comes from the noise in the five-task harm check, not from
+     a measured effect of the pointers.
+2. **Recipe defects found here** were fixed on docs/recipes-design after
+   the run. The fixes were not measured; this eval used 7095ff0a.
+   - Vulnerability totals counted only `--min-level` and above (t34):
+     3e0d61f0.
+   - `logs-for-service` totals took the workload-only route (t24):
+     29ee5d53.
+   - `problems-evidence` did not lead on to the logs (t37): 29ee5d53.
+3. **`k8s-pod-restarts` pulled a nudged agent away from a log question**
+   (BR t36). Its `means` could say that it covers container restarts and
+   OOM kills, not application heap OOM in logs.
+4. **A future eval needs more than five uncovered tasks** if no-harm stays a
+   CI-based criterion. With this much variance, five tasks cannot put the
+   lower bound within 0.15 of the point estimate.
