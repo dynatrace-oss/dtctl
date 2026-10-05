@@ -1,4 +1,4 @@
-# security-vulns-open-latest v2 — window: default 1d, fixed
+# security-vulns-open-latest v3 — window: default 1d, fixed
 fetch security.events
 | filter event.provider == "Dynatrace" and event.level == "ENTITY"
 | filter in(event.type, {"VULNERABILITY_STATE_REPORT_EVENT",
@@ -23,18 +23,21 @@ fetch security.events
 | filter in("OPEN", res) and in("NOT_MUTED", mute)
 | fieldsAdd level = if(risk >= 9, "CRITICAL", else: if(risk >= 7, "HIGH",
     else: if(risk >= 4, "MEDIUM", else: if(risk >= 0.1, "LOW", else: "NONE"))))
-| filter risk >= 7
 | fields vulnerability.display_id, title, risk, level, stack, component, cves,
     entities, function_in_use = in("IN_USE", fn), public_network = in("PUBLIC_NETWORK", exp),
     exploit_available = in("AVAILABLE", xpl), fix_available, open_since
-// Totals over every matching vulnerability, so the 50-row cut is never read as a count.
+// Totals over every level, before --min-level cuts the list: the 50-row
+// cut and the level filter are never read as a count.
 | summarize { v = collectArray(record(vulnerability.display_id, title, risk, level, stack,
       component, cves, entities, function_in_use, public_network, exploit_available,
       fix_available, open_since), maxLength: 100000),
-    total = count(), total_critical = countIf(level == "CRITICAL"), total_high = countIf(level == "HIGH") }
+    total = count(), total_critical = countIf(level == "CRITICAL"), total_high = countIf(level == "HIGH"),
+    total_medium = countIf(level == "MEDIUM"), total_low = countIf(level == "LOW"),
+    total_none = countIf(level == "NONE") }
 | filter total > 0
 | expand v
 | fieldsFlatten v, prefix: ""
 | fieldsRemove v
+| filter risk >= 7
 | sort risk desc, entities desc
 | limit 50
