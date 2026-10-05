@@ -1587,3 +1587,104 @@ per model. If one excludes 0, report its direction. Prediction: they include
   - Taskset `v5`.
 - **Spend cap: $85**, judging included. At v5's per-run cost, about $78. A
   run that hits a harness failure is re-run once.
+
+---
+
+# v6 results
+
+Everything above this line is unchanged.
+
+## v6 verdict
+
+| hypothesis | Haiku | Sonnet |
+|---|---|---|
+| B − A, decision rule | **lift kept**: +1.16 [+0.71, +1.60], cost −$0.013 [−0.025, −0.001] | **non-inferior** +0.17 [−0.02, +0.40]; turns +0.15, cost +$0.001, so neither "benefits" nor "breaks even" by the letter of the rule |
+| H12, errored calls B − A | **met**: −1.49 [−2.36, −0.66] | n/a (0.5 per run) |
+| H13, B0 − A0 (no skills) | **met**: +0.83 [+0.46, +1.22], cost −$0.020 | breaks even: +0.10 [−0.05, +0.27], turns −0.23, cost −$0.001 |
+| H14, A − A0 | −0.07 [−0.40, +0.27]: includes 0 | −0.08 [−0.37, +0.15]: includes 0; cost **+$0.021** [+0.013, +0.029] |
+| H14, B − B0 | +0.26 [−0.09, +0.61]: includes 0 | −0.02 [−0.22, +0.17]: includes 0; cost **+$0.024** [+0.017, +0.031] |
+| H11, uncovered B − A | +1.40 [+0.70, +2.10] | +0.00 [+0.00, +0.00] (all at 3) |
+| H11, uncovered B0 − A0 | +0.77 [+0.23, +1.30] | +0.00 [−0.20, +0.20]: underpowered, not harm |
+
+All scores are per-task mean differences on the 0–3 rubric, with a
+two-level bootstrap 95% CI. Haiku ran 90 runs per arm, Sonnet 60.
+
+## v6 runs
+
+- **Builds:**
+  - A and A0: 8815e206.
+  - B and B0: f2a8ee47.
+  - Taskset `v5`, 30 tasks.
+- **Runs:**
+  - Sonnet: 240 runs.
+  - Haiku: 360 runs.
+  - $74.53 in all, judging included. The cap was $85.
+- **Harness failures:**
+  - 28 Sonnet runs hit an account spend limit (HTTP 429) and were re-run
+    after it reset.
+  - The eval's tmpfs filled during the Haiku batch. 73 runs never started
+    or never finished, and 3 finished runs had dtctl calls fail with
+    ENOSPC. All 76 were re-run once, after the run data moved to disk.
+  - End ground truth for Haiku was measured after the re-runs.
+  - The preregistration allows one re-run for a harness failure.
+
+| arm | Haiku score | calls | cost $/run | 20-call budget hit | no answer | Sonnet score | cost $/run |
+|---|---|---|---|---|---|---|---|
+| A (main + skills) | 0.99 | 17.4 | 0.104 | 50/90 | 29/90 | 2.67 | 0.080 |
+| A0 (main, no skills) | 1.06 | 17.9 | 0.108 | 52/90 | 25/90 | 2.75 | 0.059 |
+| B (recipes + skills) | 2.14 | 13.5 | 0.091 | 21/90 | 7/90 | 2.83 | 0.081 |
+| B0 (recipes, no skills) | 1.89 | 13.3 | 0.088 | 30/90 | 12/90 | 2.85 | 0.058 |
+
+## What v6 showed
+
+1. **Haiku's lift almost doubled, and it is cheaper.** In v5, recipes alone
+   gave +0.60. v6 adds the dtctl-side repairs and gives +1.16, with 3.8 fewer
+   calls and 1.3 cents less per run. Fully correct runs: 41 of 90 against 11.
+   The control scored the same as v5's (0.99 against 0.98), so the rounds
+   compare.
+2. **The gain reaches tasks no recipe covers.** On the ten uncovered tasks,
+   Haiku went from −0.05 in v5 to +1.40. The repairs are not tied to
+   recipes:
+   - t22 (failed workflow runs) went from 0/4 to 3/3 partial credit. The
+     noun advice turned `dtctl workflow executions list` into
+     `dtctl get workflow-executions`.
+   - t42 (slowest synthetic monitor) went to 3/3/3.
+   - t10 and t40 went to 3/3/3.
+3. **Errors no longer eat the budget.**
+   - Errored calls per run fell by 1.5.
+   - Runs that hit the 20-call budget fell from 50 to 21 of 90.
+   - Runs that ended with no answer fell from 29 to 7.
+   - A runnable rewrite came first after 103 errors in B. The next call ran
+     it 37 times, and 29 of those succeeded.
+   - Noun advice was shown 60 times and followed 39 times.
+4. **Skills add nothing measurable, and they cost Sonnet money.**
+   - Skills were loaded in 13 of 600 runs.
+   - With or without skills, scores are the same within noise for both
+     models: every A − A0 and B − B0 interval includes 0.
+   - For Sonnet, carrying the skill catalog costs $0.02 more per run, about
+     +35%.
+   - B0 is the cheapest arm for both models.
+   - B − B0 for Haiku (+0.26) leans positive but is not significant.
+5. **Sonnet stays at its ceiling.** All arms score 2.67–2.85. Recipes are
+   non-inferior, with no turn or cost change.
+
+**Caveat:** B bundles recipes and the repairs, so v6 cannot split the gain
+between them. v5 (recipes alone) and v6 ran on the same tasks with
+comparable controls. Read across them, roughly half of Haiku's lift comes
+from each.
+
+## v6 recommendations
+
+1. **Propose the branch as it is.** The case for it is Haiku's numbers:
+   - +1.16 points;
+   - fewer calls;
+   - lower cost;
+   - no harm outside the recipes.
+2. **Put agent guidance in dtctl's output, not in skills.** Skills are rarely
+   loaded, they don't change scores, and for Sonnet they cost about a third
+   more per run.
+3. **Next targets are the tasks still near zero for Haiku:**
+   - t28 (traces investigation);
+   - t39 (bizevents);
+   - t43 (always-failing workflows);
+   - t37, where every arm scores 1, so it is probably the rubric or the task.
