@@ -201,14 +201,20 @@ func (b *Book) MatchQuery(dql string, among []*Recipe) []QueryMatch {
 		}
 		// The words the query is made of against the question the recipe
 		// states: "failed" in request.is_failed meets services-failures.
+		// Each of the recipe's words counts once: "event" and "events" in
+		// one query are one concept, not two matches.
 		words := 0
 		name := tokenize(strings.ReplaceAll(r.Name(), "-", " "))
 		about := append(lower(r.Metadata.Tags), tokenize(r.Spec.Summary)...)
+		hit := map[string]bool{}
 		for _, t := range q.terms {
-			switch {
-			case anyTermMatch(t, name):
-				words += 2
-			case anyTermMatch(t, about):
+			if w := firstTermMatch(t, name); w != "" {
+				if !hit[w] {
+					hit[w] = true
+					words += 2
+				}
+			} else if w := firstTermMatch(t, about); w != "" && !hit[w] {
+				hit[w] = true
 				words++
 			}
 		}
@@ -225,6 +231,15 @@ func (b *Book) MatchQuery(dql string, among []*Recipe) []QueryMatch {
 		return out[i].Recipe.Name() < out[j].Recipe.Name()
 	})
 	return out
+}
+
+func firstTermMatch(t string, words []string) string {
+	for _, w := range words {
+		if termMatches(t, w) {
+			return w
+		}
+	}
+	return ""
 }
 
 func anyTermMatch(t string, words []string) bool {
