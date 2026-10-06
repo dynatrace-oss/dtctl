@@ -1689,3 +1689,62 @@ from each.
    - t39 (bizevents);
    - t43 (always-failing workflows);
    - t37, where every arm scores 1, so it is probably the rubric or the task.
+
+# v7: dtctl explains empty, capped and sampled results
+
+## v7 question
+
+In v6, most of the runs where Haiku still scored 0 or 1 in the recipes arms
+fell into a few classes:
+- "no data" concluded from an empty or sampled result when data existed
+  (t06, t11, t28, t29, t35, t36, t39);
+- counts taken from a listing capped at 1,000 rows (t43, all 6 runs);
+- answers that restate a record instead of evaluating it (t37, t38);
+- a wrong statistic, e.g. a typical duration read off a single trace (t19).
+
+v7 fixes them in dtctl's output, in two increments, each measured against the
+build before it:
+
+- **v7a** (e41a7bb3):
+  - an empty result whose filter compares a field with a string lists the
+    values that field actually has, and names one that differs only in case
+    or by a prefix/suffix (`empty_reason` code `value_not_found`);
+  - an unsorted `| limit N` that returns exactly N rows is labelled a
+    sample, not the data;
+  - a workflow-execution listing at its 1,000-row cap stops advising a
+    larger `--limit`, which cannot help, and offers the per-workflow count
+    query instead.
+- **v7b**: recipe output that evaluates rather than restates (problem
+  evidence, SLO status), unit and statistic notes on duration results, and
+  a runnable example per resource in `dtctl commands`. Its scope is fixed in
+  its own preregistration, after v7a.
+
+## v7 hypotheses and decision rule
+
+For each increment, B0 is the new build and A0 the build before it.
+
+**H15 (the targeted tasks improve):** on the tasks the increment targets,
+B0 − A0 has a lower bound above 0. For v7a these are t06, t11, t28, t29,
+t35, t36, t39 and t43.
+
+**H16 (no harm elsewhere):** over all 30 tasks, B0 − A0 has a lower bound
+above −0.15, and the cost diff's point estimate is at most +$0.005 per run.
+
+**Descriptive only:**
+- how often each new advice line appeared, and whether the next call
+  followed it;
+- the time the empty-result value probe added.
+
+## v7 arms, models, reps
+
+- **Model:** Haiku only. Sonnet was at 2.7–2.85 in every v6 arm and had
+  nothing left to show here.
+- **No skills:** v6 found no effect from skills (loaded in 13 of 600 runs),
+  so both arms run without them.
+- **v7a builds:**
+  - A0 uses 9c00b30d, the v6 recipes build (its code is v6's B0).
+  - B0 uses e41a7bb3.
+- **Runs:** 30 tasks × 2 arms × 3 reps = 180 runs per increment, taskset
+  `v5`.
+- **Spend cap: $25 per increment**, judging included. A run that hits a
+  harness failure is re-run once.
