@@ -573,9 +573,7 @@ func TestBuildSpillResponse_AgentDefaultsCompose(t *testing.T) {
 	}
 }
 
-// TestCompactRowsSuggestionNamesConstantKeys pins that the compaction note
-// says which columns moved to result.constant: a total is constant
-// across a query's rows, and agents read the records, found no total, and re-queried.
+// TestCompactRowsSuggestionNamesConstantKeys pins that the note names the columns moved to result.constant.
 func TestCompactRowsSuggestionNamesConstantKeys(t *testing.T) {
 	s := compactRowsSuggestion(&output.Compaction{Constant: map[string]interface{}{"total": 3, "share": 0.5}})
 	if !strings.HasPrefix(s, compactRowsPrefix) || !strings.Contains(s, "result.constant: share, total;") {

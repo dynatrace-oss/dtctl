@@ -13,16 +13,10 @@ import (
 // windowArg finds a query that names its own window.
 var windowArg = regexp.MustCompile(`\b(?:from|to|timeframe)\s*:`)
 
-// queryNamesWindow reports whether a query names its own window (from:, to:
-// or timeframe:), ignoring comments and string literals.
+// queryNamesWindow reports whether a query sets from:, to: or timeframe:, ignoring comments and strings.
 func queryNamesWindow(dql string) bool { return windowArg.MatchString(dqlCode(dql)) }
 
-// queryWindowContext is the window a query searched, from the response's
-// own metadata, with its length spelled out. A query that names no window
-// reads the last 2h, and an agent asked about "the last 24h" that forgets
-// from: gets a confident count of 2h with nothing in the response saying
-// so; the note does (measured: a bizevents count reported as 24h was 2h in
-// every run of one evaluation task).
+// queryWindowContext describes the window a query searched; a query naming none reads the default 2h, which the note makes visible.
 func queryWindowContext(result *exec.DQLQueryResponse, named bool) *output.TimeWindow {
 	g := result.GetMetadata()
 	if g == nil || g.AnalysisTimeframe == nil || g.AnalysisTimeframe.Start == "" {
@@ -55,9 +49,7 @@ func spanString(d time.Duration) string {
 	return d.String()
 }
 
-// dqlCode is dql with // comments and the contents of quoted strings and
-// identifiers removed, so a pattern matched against it sees only code: a
-// `fieldsAdd note = "from: x"` names no window.
+// dqlCode is dql without comments and quoted contents, so matches see only code.
 func dqlCode(dql string) string {
 	var b strings.Builder
 	for _, line := range strings.Split(dql, "\n") {

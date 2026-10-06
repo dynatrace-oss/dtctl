@@ -7,9 +7,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/exec"
 )
 
-// TestQueryWindowContext: the envelope carries the window a query searched
-// with its length, and says so when that is the default because the query
-// named none.
+// TestQueryWindowContext pins the window note, flagged when it is the default.
 func TestQueryWindowContext(t *testing.T) {
 	resp := func(start, end string) *exec.DQLQueryResponse {
 		var r exec.DQLQueryResponse

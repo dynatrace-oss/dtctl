@@ -57,8 +57,7 @@ Examples:
 			return err
 		}
 
-		// A definition is not a status: agents listed the SLOs and their
-		// targets and reported that as which ones are failing.
+		// A definition is not a status; point at exec slo.
 		if ap := enrichAgent(printer, "get", "slo"); ap != nil && len(list.SLOs) > 0 {
 			ap.SetSuggestions([]string{sloEvaluateAdvice})
 		}

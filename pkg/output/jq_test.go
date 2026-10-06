@@ -231,9 +231,7 @@ func TestDescribeJQInput(t *testing.T) {
 	}
 }
 
-// TestApplyJQ_IteratingAMissingKeyIsAShapeMismatch: '.result.records[]' on
-// the payload fails inside jq ("cannot iterate over: null") rather than
-// resolving to null, and is the same envelope-vs-payload mistake.
+// TestApplyJQ_IteratingAMissingKeyIsAShapeMismatch pins that iterating a missing key is a shape mismatch.
 func TestApplyJQ_IteratingAMissingKeyIsAShapeMismatch(t *testing.T) {
 	in := map[string]interface{}{"records": []interface{}{map[string]interface{}{"n": 1}}}
 	_, err := ApplyJQ(".result.records[] | .n", in)

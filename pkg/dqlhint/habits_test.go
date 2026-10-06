@@ -2,10 +2,7 @@ package dqlhint
 
 import "testing"
 
-// The fixtures are the error type, position and query of payloads captured
-// from a live environment for the habits agents carried into DQL most often in
-// agent evaluations. Every corrected query was run against the same
-// environment and succeeded.
+// Fixtures are error payloads captured from a live environment; each corrected query ran successfully.
 func TestSuggest_HabitRewrites(t *testing.T) {
 	tests := []struct {
 		name  string

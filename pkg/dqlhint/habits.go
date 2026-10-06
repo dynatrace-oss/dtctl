@@ -9,15 +9,9 @@ import (
 // bareArg is arg i without the backticks some error types quote it in.
 func (c *queryContext) bareArg(i int) string { return strings.Trim(c.arg(i), "`") }
 
-// The rules in this file answer habits carried over from SQL, Splunk and
-// general-purpose languages: the mistakes agents made most often in agent
-// evaluations, each one a query that fails on
-// its first try and costs a turn to repair.
+// Rules for habits carried over from SQL, Splunk and general-purpose languages.
 
-// sqlAggregation: `stats count() as n by f` — DQL has no stats command, names
-// a column with `n = count()` rather than `as`, and groups with the by:
-// parameter. The whole command is rewritten at once, so a query carrying all
-// three habits is fixed in one retry rather than three.
+// sqlAggregation: `stats count() as n by f` is rewritten whole, so one retry fixes all three habits.
 func sqlAggregation(c *queryContext) (hint, bool) {
 	seg := c.segmentAt(c.start)
 	if seg == nil {
@@ -51,7 +45,7 @@ func sqlAggregation(c *queryContext) (hint, bool) {
 		return hint{}, false
 	}
 
-	// The grouping clause: a trailing `by` keyword at the command's top level.
+	// The grouping clause: a trailing top-level `by`.
 	aggEnd, fields := bodyEnd, ""
 	for i := bodyStart; i < bodyEnd; i++ {
 		if c.depth[seg.start+i] == 0 && wordAt(code, i, "by") {
@@ -88,8 +82,7 @@ func sqlAggregation(c *queryContext) (hint, bool) {
 		} else if strings.Contains(" "+itemCode+" ", " as ") {
 			return hint{}, false
 		}
-		// SQL spellings of the aggregation itself (count_distinct) are renamed
-		// here too, or the retry fails on them.
+		// Rename SQL aggregation spellings (count_distinct) too.
 		renamed := item
 		if m := callNameRe.FindStringSubmatchIndex(item); m != nil && m[0] == 0 {
 			if to, ok := functionSynonyms[item[m[2]:m[3]]]; ok {
@@ -114,8 +107,7 @@ func sqlAggregation(c *queryContext) (hint, bool) {
 		out += ", by:{" + fields + "}"
 	}
 	edits := []edit{{seg.start, seg.end, out + tail}}
-	// An unnamed column is a field named after its expression from here on;
-	// the later commands that sort or filter on it bare would fail next.
+	// Later commands sorting or filtering on an unnamed column need its expression as name.
 	for _, u := range unnamed {
 		if !strings.HasSuffix(u[0], ")") {
 			continue
@@ -141,18 +133,14 @@ func sqlAggregation(c *queryContext) (hint, bool) {
 // assignedRe matches a column that is already named: `name = expr`.
 var assignedRe = regexp.MustCompile(`^` + fieldName + `\s*=[^=]`)
 
-// commandSynonyms are the SQL, KQL and Splunk command words agents pipe into,
-// with the DQL command that does the same. distinct and count are rewritten
-// in commandSynonym, since their DQL form takes different arguments.
+// commandSynonyms map SQL, KQL and Splunk command words to DQL; distinct and count go through commandSynonym.
 var commandSynonyms = map[string]string{
 	"head": "limit", "take": "limit",
 	"where": "filter", "project": "fields", "select": "fields",
 	"eval": "fieldsAdd", "extend": "fieldsAdd",
 }
 
-// commandSynonym: `| head 5`, `| where …`, `| distinct f`, `| count` — commands
-// DQL spells differently. Every such command in the query is rewritten, so the
-// retry does not fail on the next one.
+// commandSynonym rewrites every foreign command word so the retry does not fail on the next.
 func commandSynonym(c *queryContext) (hint, bool) {
 	seg := c.segmentAt(c.start)
 	if seg == nil || !wordAt(c.code, c.start, seg.cmd) {
@@ -195,9 +183,7 @@ func commandSynonym(c *queryContext) (hint, bool) {
 // asAliasRe matches the `as name` suffix of a column expression.
 var asAliasRe = regexp.MustCompile(`\s+as\s+(` + fieldName + `)$`)
 
-// singleQuotes: `filter loglevel == 'ERROR'` — DQL strings take double quotes.
-// Every single-quoted literal is rewritten; SQL's doubled ” is an escaped
-// quote inside one.
+// singleQuotes: DQL strings take double quotes; SQL's doubled '' is an escaped quote.
 func singleQuotes(c *queryContext) (hint, bool) {
 	q := c.q
 	var out strings.Builder
@@ -249,9 +235,7 @@ func singleQuotes(c *queryContext) (hint, bool) {
 	return hint{reason: "DQL strings take double quotes", query: out.String()}, true
 }
 
-// functionSynonyms maps function names agents carry over from other languages
-// to the DQL function that does the same. Only exact renames are listed: the
-// arguments stay as they are.
+// functionSynonyms maps exact renames only; arguments stay as they are.
 var functionSynonyms = map[string]string{
 	"toLower": "lower", "tolower": "lower", "toLowerCase": "lower", "lowercase": "lower", "lcase": "lower",
 	"toUpper": "upper", "toupper": "upper", "toUpperCase": "upper", "uppercase": "upper", "ucase": "upper",
@@ -267,18 +251,12 @@ var functionSynonyms = map[string]string{
 	"ifnull": "coalesce", "nvl": "coalesce",
 }
 
-// caseFoldingCompare are the string tests that take caseSensitive: false, so
-// wrapping their subject in lower() is never needed.
+// caseFoldingCompare are the string tests that take caseSensitive: false.
 var caseFoldingCompare = []string{"contains", "startsWith", "endsWith"}
 
 var callNameRe = regexp.MustCompile(`([A-Za-z_][\w.]*)\s*\(`)
 
-// functionSynonym: `toLower(x)`, `tonumber(x)`, `len(x)` — the DQL function
-// has another name. A case conversion wrapped around the subject of
-// contains/startsWith/endsWith becomes caseSensitive: false instead, which
-// also spares the conversion of every record; elsewhere in a filter the
-// conversion is left alone, because folding the case of a field the filter
-// compares defeats the index the comparison could use.
+// functionSynonym renames functions; a case conversion around a contains/startsWith/endsWith subject becomes caseSensitive: false, but is left alone elsewhere (it defeats the index).
 func functionSynonym(c *queryContext) (hint, bool) {
 	name := c.bareArg(0)
 	if name == "" || !wordAt(c.code, c.start, name) {
@@ -315,8 +293,7 @@ func functionSynonym(c *queryContext) (hint, bool) {
 	return hint{reason: reason, query: apply(c.q, edits)}, true
 }
 
-// foldingEdit rewrites one case-conversion call to target, starting at
-// nameStart with its argument list opening at open.
+// foldingEdit rewrites one case-conversion call to target.
 func foldingEdit(c *queryContext, nameStart, open int, target string) (edit, bool) {
 	closing := c.closingParen(open)
 	if closing < 0 {
@@ -362,9 +339,7 @@ func identBefore(s string, end int) string {
 	return s[k:j]
 }
 
-// aggregationReference: `summarize count(), by:{f} | sort count() desc` — an
-// unnamed aggregation becomes a field literally named `count()`, which later
-// commands must quote in backticks; written bare, it is a new aggregation.
+// aggregationReference: an unnamed aggregation becomes a field named `count()` that later commands must backtick-quote.
 func aggregationReference(c *queryContext) (hint, bool) {
 	ref := strings.TrimSpace(c.q[c.start:min(c.end+1, len(c.q))])
 	if ref == "" || !strings.HasSuffix(ref, ")") || c.code[c.start:c.start+len(ref)] != ref {
@@ -427,8 +402,7 @@ func producesUnnamed(c *queryContext, seg segment, ref string) bool {
 	}
 }
 
-// entityFieldNames maps the field names agents guess on the classic entity
-// tables to the ones those tables carry.
+// entityFieldNames maps guessed field names to the ones entity tables carry.
 var entityFieldNames = map[string]string{
 	"name": "entity.name", "display_name": "entity.name", "displayName": "entity.name", "displayname": "entity.name",
 	"entity_name": "entity.name", "entityName": "entity.name",
@@ -437,9 +411,7 @@ var entityFieldNames = map[string]string{
 
 var entityFetchRe = regexp.MustCompile(`^\s*fetch\s+dt\.entity\.[a-z_]+\b`)
 
-// entityField: `fetch dt.entity.service | fields name` — the classic entity
-// tables name an entity entity.name and its ID id. Every use of the guessed
-// name is rewritten.
+// entityField: entity tables use entity.name and id; every use is rewritten.
 func entityField(c *queryContext) (hint, bool) {
 	field := c.bareArg(0)
 	target, ok := entityFieldNames[field]
@@ -466,8 +438,7 @@ func entityField(c *queryContext) (hint, bool) {
 
 var countFilterRe = regexp.MustCompile(`\bcount\s*\(\s*filter\s*:`)
 
-// countFilter: `count(filter: failed == true)` — DQL counts conditionally with
-// countIf(condition). Every such call is rewritten.
+// countFilter: DQL counts conditionally with countIf(condition).
 func countFilter(c *queryContext) (hint, bool) {
 	if c.bareArg(0) != "filter" {
 		return hint{}, false
@@ -493,8 +464,7 @@ var (
 	fetchWindowRe = regexp.MustCompile(`\b(?:from|to|timeframe)\s*:`)
 )
 
-// windowOutsideFetch: `fetch logs | filter x, from:now()-1d` — the window is a
-// parameter of fetch, so it moves there.
+// windowOutsideFetch: the window is a parameter of fetch, so it moves there.
 func windowOutsideFetch(c *queryContext) (hint, bool) {
 	if p := c.bareArg(0); !slices.Contains(windowParams, p) || !wordAt(c.code, c.start, p) || c.depth[c.start] != 0 {
 		return hint{}, false

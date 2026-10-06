@@ -19,10 +19,7 @@ const (
 	compactSummarySuggestion = "# summary compacted: one-value columns in result.constant, all-null in result.null_columns; --compact=false for the full profile"
 )
 
-// compactRowsSuggestion says how to read compacted rows, naming the columns
-// that went to result.constant: a total repeated in every row of a result is
-// found there, and an agent that does not know looks for it in the
-// rows (evals: several jq attempts on one security task).
+// compactRowsSuggestion says how to read compacted rows, naming the columns moved to result.constant.
 func compactRowsSuggestion(c *output.Compaction) string {
 	s := compactRowsPrefix + "row = result.constant + record, absent key = null; --compact=false for full rows"
 	if c == nil || len(c.Constant) == 0 {

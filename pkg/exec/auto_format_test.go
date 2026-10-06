@@ -203,10 +203,7 @@ func TestBuildSpillResponse_AutoByDefault(t *testing.T) {
 	}
 }
 
-// TestPrintResults_AgentJQWithoutFormatIsJSON pins that --jq with no -o comes
-// back as JSON even when the filtered rows would encode as CSV: an agent
-// that wrote `--jq '.records[] | ...'` reads the answer as JSON, and a CSV
-// string in its place cost it the next call (evals).
+// TestPrintResults_AgentJQWithoutFormatIsJSON pins JSON output for --jq with no -o.
 func TestPrintResults_AgentJQWithoutFormatIsJSON(t *testing.T) {
 	records := []map[string]interface{}{{"host": "a", "count": float64(1)}, {"host": "b", "count": float64(2)}}
 	e := &DQLExecutor{}

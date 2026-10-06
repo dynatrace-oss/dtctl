@@ -7,9 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// dataNouns are the data domains agents promote to top-level commands (evals:
-// `dtctl problems`, `dtctl dql`, `dtctl synthetic`, `dtctl services`), each
-// with a DQL starting point that reads it.
+// dataNouns are data domains agents guess as top-level commands, each with a DQL starting point.
 var dataNouns = map[string]string{
 	"dql":             `dtctl query 'fetch logs, from:now()-1h | limit 10'`,
 	"sql":             `dtctl query 'fetch logs, from:now()-1h | limit 10'`,
@@ -41,16 +39,12 @@ var dataNouns = map[string]string{
 	"hosts":           `dtctl query 'smartscapeNodes "HOST" | limit 10'`,
 }
 
-// nounAdvice answers `dtctl <noun>` with the commands that do read that noun:
-// a get resource it names and a DQL starting point.
-// Edit distance answers these with an unrelated command (`slo` → "did you mean
-// ctx?"), and an agent tries it. Nil when nothing reads the noun.
+// nounAdvice returns the commands that read a noun, or nil.
 func nounAdvice(name string) []string {
 	n := strings.ToLower(name)
 	var out []string
 	named := getResourcesNamed(n)
-	// A guessed compound ("slo-status", "workflow-runs") names its resource
-	// in its first word.
+	// A guessed compound ("slo-status") names its resource in its first word.
 	if head, _, found := strings.Cut(n, "-"); found && len(named) == 0 {
 		named = getResourcesNamed(head)
 	}
@@ -66,9 +60,7 @@ func nounAdvice(name string) []string {
 	return append(out, "dtctl commands  # the full catalog")
 }
 
-// getResourcesNamed returns the `dtctl get` resources the noun names, in
-// either number, and the ones it prefixes ("workflow" → workflows,
-// workflow-executions).
+// getResourcesNamed returns the get resources a noun names, or prefixes.
 func getResourcesNamed(n string) []string {
 	var get *cobra.Command
 	for _, c := range rootCmd.Commands() {

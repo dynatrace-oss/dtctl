@@ -714,15 +714,11 @@ type Minimal struct {
 	StabilityExceptions []string                `json:"stability_exceptions,omitempty" yaml:"stability_exceptions,omitempty"`
 	Verbs               map[string]*MinimalVerb `json:"verbs" yaml:"verbs"`
 	Aliases             map[string]string       `json:"resource_aliases,omitempty" yaml:"resource_aliases,omitempty"`
-	// Examples are runnable starting points for reading data, so an agent
-	// that bootstraps from this catalog sees one working invocation of each
-	// common shape instead of guessing nouns (`dtctl slo list`) and DQL.
-	// Only examples whose command is present in this catalog are listed.
+	// Examples are runnable starting points, listed only when their command is in the catalog.
 	Examples []string `json:"examples,omitempty" yaml:"examples,omitempty"`
 }
 
-// minimalExamples are the investigation starting points the compact catalog
-// offers, read-only and environment-independent.
+// minimalExamples are read-only, environment-independent starting points.
 var minimalExamples = []string{
 	`dtctl query 'fetch logs, from:now()-24h | filter loglevel == "ERROR" | summarize count(), by:{dt.service.name} | sort ` + "`count()`" + ` desc | limit 10'`,
 	`dtctl get workflow-executions --started-since 7d`,
@@ -770,9 +766,7 @@ func NewMinimal(l *Listing) *Minimal {
 	return m
 }
 
-// exampleAvailable reports whether an example's verb, and its resource when
-// the verb lists resources, are in the catalog: a profile or stability floor
-// that hides a command hides its example too.
+// exampleAvailable reports whether an example's command is in the catalog.
 func exampleAvailable(ex string, verbs map[string]*MinimalVerb) bool {
 	f := strings.Fields(ex)
 	if len(f) < 2 {

@@ -88,9 +88,7 @@ func ApplyJQ(filter string, input interface{}) (interface{}, error) {
 			break
 		}
 		if runErr, ok := v.(error); ok {
-			// "cannot iterate over: null" from .result.records[] is the
-			// same mistake as a path that resolves to null: the filter
-			// reached for a key the input does not have.
+			// "cannot iterate over: null" is the same missing-key mistake as a path resolving to null.
 			if key := leadingJQKey(filter); key != "" && !hasJQKey(generic, key) {
 				if _, isObj := generic.(map[string]interface{}); isObj {
 					return nil, jqShapeMismatch(filter, generic)
@@ -140,8 +138,7 @@ func jqShapeMismatch(filter string, input interface{}) error {
 
 var leadingKeyRe = regexp.MustCompile(`^\s*\.([A-Za-z_][A-Za-z0-9_]*)`)
 
-// leadingJQKey is the first object key a filter addresses (".result.x" →
-// "result"), or "".
+// leadingJQKey is the first object key a filter addresses, or "".
 func leadingJQKey(filter string) string {
 	if m := leadingKeyRe.FindStringSubmatch(filter); m != nil {
 		return m[1]

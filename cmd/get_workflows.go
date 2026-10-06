@@ -380,8 +380,7 @@ func parseExecTime(s string, endOfDay bool) (string, error) {
 			return t.UTC().Format(time.RFC3339), nil
 		}
 	}
-	// A duration ago, as --from takes it elsewhere ("7d", "12h"): agents
-	// wrote it here too and got an error.
+	// A duration ago ("7d", "12h"), as --from takes it elsewhere.
 	if d, err := parseAgo(s); err == nil {
 		return time.Now().Add(-d).UTC().Format(time.RFC3339), nil
 	}
@@ -404,10 +403,7 @@ func init() {
 	stability.MarkStable(getWorkflowsCmd)
 }
 
-// executionsCapAdvice explains a truncated execution listing. Below the cap,
-// raising --limit fetches the rest. At the cap it cannot (the API returns at
-// most workflow.MaxExecutionLimit), and agents counted the capped page as the
-// whole window, so the advice says so and narrows instead.
+// executionsCapAdvice explains a truncated listing; at MaxExecutionLimit raising --limit cannot help.
 func executionsCapAdvice(shown, total int, limit int64) []string {
 	if limit > 0 && limit < workflow.MaxExecutionLimit {
 		return []string{fmt.Sprintf("Showing %d of %d. Raise --limit (currently %d, at most %d) or narrow the window with --started-since/--state.", shown, total, limit, workflow.MaxExecutionLimit)}

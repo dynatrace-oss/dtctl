@@ -567,8 +567,7 @@ var streamKeywords = []struct {
 // "<name> isn't a valid data object." detail.
 var unknownObjectRe = regexp.MustCompile(`(\S+) isn't a valid data object`)
 
-// platformObjectRe recognizes a fetch of a platform object that lives behind
-// an API, not in Grail (evals: `fetch dt.workflow.execution_events`).
+// platformObjectRe matches a fetch of a platform object served by an API, not Grail.
 var platformObjectRe = regexp.MustCompile(`(?i)(workflow|automation|execution|\bslos?\b|dashboard|notebook)\S* isn't a valid data object`)
 
 // nearestStreams suggests real stream names for an unknown data-object guess:
@@ -1291,8 +1290,7 @@ func requireSubcommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// A data domain or a resource under another verb (`get problems`,
-	// `find slo`): the commands that read it, as at the top level.
+	// A data domain or resource under another verb: name the commands that read it.
 	if advice := nounAdvice(args[0]); len(advice) > 0 {
 		return &suggest.CommandError{
 			Command:  args[0],

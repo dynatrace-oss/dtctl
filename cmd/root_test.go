@@ -1753,9 +1753,7 @@ func withCapturedStdout(t *testing.T, buf *bytes.Buffer, fn func()) {
 	}
 }
 
-// TestNounAdvice answers `dtctl <noun>` with the commands that read it
-// (evals: `dtctl slo` drew "did you mean ctx?", and agents ran it), and leaves
-// a typo of a verb to edit distance.
+// TestNounAdvice pins that `dtctl <noun>` names the commands reading it, not an edit-distance guess.
 func TestNounAdvice(t *testing.T) {
 	cases := []struct {
 		noun string

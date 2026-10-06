@@ -12,8 +12,7 @@ func TestExecutionsCapAdvice(t *testing.T) {
 	if len(below) != 1 || !strings.Contains(below[0], "Raise --limit") {
 		t.Errorf("below the cap: %q", below)
 	}
-	// At the cap it cannot: the advice must not offer --limit, and says the
-	// listing is incomplete.
+	// At the cap --limit cannot help: advice must not offer it.
 	for _, limit := range []int64{1000, 5000, 0} {
 		at := executionsCapAdvice(1000, 2297, limit)
 		if len(at) != 1 || strings.Contains(at[0], "Raise --limit") || !strings.Contains(at[0], "incomplete") {

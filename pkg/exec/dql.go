@@ -239,9 +239,7 @@ type DQLExecuteOptions struct {
 	TenantID    string
 	ContextName string
 
-	// Decorate, when set, amends the agent envelope's context after dtctl
-	// built it: `dtctl query` adds the window it searched. records are the rows the envelope
-	// reports, or nil when they streamed to disk unread (never an empty result).
+	// Decorate amends the agent envelope context; records is nil when rows streamed to disk.
 	Decorate func(ctx *output.ResponseContext, result *DQLQueryResponse, records []map[string]interface{})
 }
 
@@ -856,11 +854,7 @@ func lookbackAdvice(query string) []string {
 	return []string{fmt.Sprintf("# dt.entity.%s is an event-LOOKBACK view (entities seen in the query window), not the live topology — for a current-state census or inventory use: dtctl query 'smartscapeNodes \"%s\" | summarize count()'", m[1], t)}
 }
 
-// sampleAdvice rides a fetch whose unsorted `| limit N` let exactly N rows
-// through: those are whichever records were read first, not a representative
-// sample. Agents read 20 such rows, saw only successes, and reported that
-// nothing failed. A sorted limit is a deliberate top-N and gets no advice, and
-// an aggregation anywhere makes the rows a summary, not a sample.
+// sampleAdvice warns that an unsorted `| limit N` returns the first records read, not a sample.
 func sampleAdvice(query string, rows int) []string {
 	stages := splitStages(query)
 	if len(stages) < 2 || fetchStageRe.FindStringSubmatch(stages[0]) == nil {
@@ -885,10 +879,7 @@ func sampleAdvice(query string, rows int) []string {
 	return nil
 }
 
-// durationAdvice names the result columns Grail types as durations, which
-// arrive as nanosecond integers: agents read 54525000 as seconds or as ms.
-// Without an aggregation in the query it adds how to get a typical value,
-// since agents also took one slow trace's duration as the typical one.
+// durationAdvice names duration columns, which arrive as nanosecond integers.
 func durationAdvice(query string, result *DQLQueryResponse) []string {
 	if result == nil {
 		return nil
@@ -1294,8 +1285,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	ap.SetMetadata(envelopeMetadata(query, result, opts))
 	// -o toon asked for a token-efficient encoding of the filtered result; keep
 	// it. Any other non-JSON format the envelope can't carry warns for itself.
-	// With no -o, the result is JSON: a caller who shaped it with jq reads it as
-	// JSON, and an auto-chosen yaml or csv string is what it would trip over.
+	// With no -o the result is JSON, not an auto-chosen yaml or csv string.
 	if opts.AutoFormatByDefault {
 		ap.SetResultFormat("json")
 	} else {

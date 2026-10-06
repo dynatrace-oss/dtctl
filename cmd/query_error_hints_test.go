@@ -91,9 +91,7 @@ func TestErrorToDetail_QueryErrorWithoutPosition(t *testing.T) {
 	}
 }
 
-// TestDqlErrorAdvicePlatformObject points a fetch of a platform resource
-// (evals: `fetch dt.automation.workflow_executions`, `fetch dt.slo`) at the
-// get command that lists it, not at the Grail data-object catalog.
+// TestDqlErrorAdvicePlatformObject points a fetch of a platform resource at its get command.
 func TestDqlErrorAdvicePlatformObject(t *testing.T) {
 	for _, guess := range []string{"dt.automation.workflow_executions", "dt.slo", "dashboards"} {
 		s := dqlErrorAdvice(&sdkquery.QueryError{ErrorType: "UNKNOWN_DATA_OBJECT",
