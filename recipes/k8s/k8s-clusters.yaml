@@ -1,0 +1,58 @@
+# Source: dt-obs-kubernetes/references/cluster-inventory.md (list clusters,
+# operator metadata, resource distribution per cluster)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: k8s-clusters
+  version: 1
+  tags: [k8s, clusters, inventory, nodes]
+spec:
+  summary: Monitored Kubernetes clusters with version, distribution and node/pod/workload counts
+  description: >-
+    Start here to learn the exact cluster names the other k8s recipes take
+    with --cluster. Current topology state, so there is no time window.
+  requires: [k8s]
+  timeframe: none
+  scope: [cluster]
+  dql: |
+    smartscapeNodes K8S_CLUSTER
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | fields k8s.cluster.name, k8s.cluster.uid, k8s.cluster.version, k8s.cluster.distribution,
+        operator_version = dt.metadata[operator_version]
+    | lookup [
+        smartscapeNodes K8S_NODE, K8S_NAMESPACE, K8S_POD, K8S_DEPLOYMENT, K8S_STATEFULSET, K8S_DAEMONSET
+        | summarize {nodes = countIf(type == "K8S_NODE"),
+            namespaces = countIf(type == "K8S_NAMESPACE"),
+            pods = countIf(type == "K8S_POD"),
+            workloads = countIf(in(type, {"K8S_DEPLOYMENT", "K8S_STATEFULSET", "K8S_DAEMONSET"}))},
+            by: {k8s.cluster.uid}
+      ], sourceField: k8s.cluster.uid, lookupField: k8s.cluster.uid,
+      fields: {nodes, namespaces, pods, workloads}
+    | fieldsRemove k8s.cluster.uid
+    | sort nodes desc, k8s.cluster.name asc
+    | limit 200
+  means: >-
+    One row per Kubernetes cluster Dynatrace currently knows, largest first.
+    k8s.cluster.name is the value --cluster expects, case-sensitive. workloads
+    counts Deployments, StatefulSets and DaemonSets only (no Jobs, CronJobs or
+    bare ReplicaSets). pods counts every pod object, including
+    Succeeded/Failed ones that still exist. operator_version is the Dynatrace
+    Operator version and is null when the cluster is not operator-managed. A
+    null nodes count means the cluster has no node objects left (it was
+    removed or its ActiveGate stopped reporting). Decision rule: a cluster
+    with a null nodes count or no operator_version is not reporting fully, so
+    other k8s recipes will be thin there. Not shown: health or load
+    (k8s-node-pressure, k8s-workload-status), clusters Dynatrace does not
+    monitor, and removed clusters.
+  emptyMeans: >-
+    No Kubernetes cluster is connected to this environment, so every other k8s
+    recipe will be empty too. With --cluster, the name matched no cluster:
+    names are exact and case-sensitive; rerun without --cluster to list them.
+  next:
+    - recipe: k8s-workload-status
+      when: nonempty
+    - recipe: k8s-pod-restarts
+      when: nonempty
+    - recipe: k8s-node-pressure
+      when: nonempty

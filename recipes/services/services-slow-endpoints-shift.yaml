@@ -1,0 +1,88 @@
+# Source: prior art (problem correlation: latency shift against a control period)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: services-slow-endpoints-shift
+  version: 1
+  tags: [services, latency, endpoints, slowdown, regression, failures]
+spec:
+  summary: Endpoints whose p90 latency rose against the period just before, split into failed and ok requests
+  description: >-
+    Which endpoints got slower just now: p90 of request root spans in the
+    window against the control period right before it, ranked by the ratio,
+    with the median of failed and of successful requests in the window so a
+    slowdown can be told apart from slow failures (timeouts).
+  requires: [spans]
+  # Inline: the fetch reaches back over the control period too.
+  timeframe: { default: 30m, max: 2h, inline: true }
+  scope: [cluster, namespace, tag]
+  params:
+    service:
+      type: string
+      positional: true
+      description: Only this service (exact dt.service.name, see services-list)
+    control:
+      type: int
+      default: 60
+      min: 15
+      max: 360
+      description: Minutes before the window to compare against
+    min_requests:
+      type: int
+      default: 10
+      min: 3
+      description: Skip endpoints with fewer stored requests in the window or the control period
+  dql: |
+    fetch spans, from: {{timeAdd .window.from (printf "-%vm" .control)}}, to: {{.window.to}}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter request.is_root_span == true
+    {{- if .service}}
+    | filter dt.service.name == {{.service}}{{end}}
+    | fieldsAdd infocus = start_time >= {{.window.from}}, failed = request.is_failed == true
+    | summarize { requests = countIf(infocus), control_requests = countIf(not(infocus)),
+                  p90 = percentile(if(infocus, duration), 90),
+                  control_p90 = percentile(if(not(infocus), duration), 90),
+                  failed = countIf(infocus and failed),
+                  p50_failed = percentile(if(infocus and failed, duration), 50),
+                  p50_ok = percentile(if(infocus and not(failed), duration), 50),
+                  control_p50_ok = percentile(if(not(infocus) and not(failed), duration), 50) },
+        by: { dt.service.name, endpoint.name }
+    | filter requests >= {{.min_requests}} and control_requests >= {{.min_requests}}
+    | fields dt.service.name, endpoint.name,
+        p90_ratio = round(toDouble(p90) / toDouble(control_p90), decimals: 2),
+        p90_ms = round(p90 / 1ms, decimals: 1), control_p90_ms = round(control_p90 / 1ms, decimals: 1),
+        p50_ok_ms = round(p50_ok / 1ms, decimals: 1), control_p50_ok_ms = round(control_p50_ok / 1ms, decimals: 1),
+        p50_failed_ms = round(p50_failed / 1ms, decimals: 1),
+        requests, failed, control_requests
+    | sort p90_ratio desc
+    | limit 20
+  means: >-
+    Endpoints ranked by p90_ratio, the window's p90 over the control
+    period's (the --control minutes before it); requests counts stored root
+    spans, not extrapolated traffic. Decision rule: a ratio of 1.5 or more is
+    a shift. If p50_ok_ms also rose against control_p50_ok_ms, successful
+    requests slowed down: a real slowdown. If p50_ok_ms held and
+    p50_failed_ms is far above it, the latency is the failures' tail
+    (timeouts): explain why they fail, not a slowdown (services-failures).
+    Percentiles are approximate. Endpoints without --min-requests in both
+    periods are left out, so a brand-new endpoint does not appear. Not shown:
+    which downstream call got slower (traces-get on a slow trace from
+    traces-slow-endpoints), and shifts against yesterday (services-latency
+    has a day-over-day baseline).
+  emptyMeans: >-
+    No endpoint had --min-requests stored requests in both the window and
+    the control period. If you named a service, check the name first:
+    dt.service.name is exact and case-sensitive (`dtctl run services-list
+    <fragment>`). Otherwise traffic is low (lower --min-requests or widen the
+    window) or the service is not traced.
+  next:
+    - recipe: services-list
+      when: empty
+      with: { contains: "{{.service}}" }
+    - recipe: services-failure-signatures
+      when: nonempty
+      bind: { service: dt.service.name }
+    - recipe: traces-slow-endpoints
+      when: nonempty
+      bind: { service: dt.service.name }

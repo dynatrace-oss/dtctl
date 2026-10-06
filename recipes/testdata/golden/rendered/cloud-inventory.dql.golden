@@ -1,0 +1,8 @@
+# cloud-inventory v3 — window: none (state query; no window)
+smartscapeNodes "AWS_*"
+| filterOut in(type, {"AWS_REGION", "AWS_AVAILABILITY_ZONE", "AZURE_MICROSOFT_RESOURCES_LOCATIONS",
+    "AZURE_MICROSOFT_RESOURCES_LOCATIONS_AVAILABILITYZONES", "GCP_REGION", "GCP_ZONE"})
+| summarize { resources = count(), accounts = countDistinct(aws.account.id),
+    regions = countDistinct(aws.region) }, by: {type}
+| sort resources desc
+| limit 200

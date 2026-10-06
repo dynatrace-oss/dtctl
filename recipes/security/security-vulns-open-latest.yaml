@@ -1,0 +1,124 @@
+# Source: dt-sec-insights/references/vulnerabilities-dynatrace.md (latest-known-state fallback; steps 1-4 as security-vulns-open)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: security-vulns-open-latest
+  version: 3
+  tags: [security, vulnerabilities, rva, cve]
+spec:
+  summary: Latest known state of open vulnerabilities over 24h, when the 30m snapshot is empty
+  requires: [security]
+  # The fallback for an empty or stale 30m snapshot: the latest state per
+  # (vulnerability, entity) seen in 24h. Same output as security-vulns-open.
+  timeframe: { default: 24h, fixed: true }
+  # RVA events carry entity names in related_entities.*, not the primary
+  # fields scopes and segments filter on; use --entity instead.
+  segments: off
+  params:
+    min_level:
+      type: enum
+      values: [CRITICAL, HIGH, MEDIUM, LOW]
+      default: HIGH
+      description: Lowest risk level to list (DSS >= 9 / 7 / 4 / 0.1)
+    stack:
+      type: enum
+      values: [CODE_LIBRARY, SOFTWARE, CODE, CONTAINER_ORCHESTRATION]
+      description: Only third-party libraries, runtime/OS packages, code-level, or container/K8s findings
+    component:
+      type: string
+      description: Vulnerable component name contains this (case-insensitive), e.g. log4j
+    cve:
+      type: string
+      pattern: '^CVE-[0-9]{4}-[0-9]+$'
+      description: Only vulnerabilities referencing this CVE
+    entity:
+      type: string
+      description: Exact name of an affected process group, host or node, or of a related workload, cluster, service, application or database
+  dql: |
+    {{template "vuln-latest-state" .}}
+    {{- with .stack}}
+    | filter vulnerability.stack == {{.}}{{end}}
+    {{- with .component}}
+    | filter contains(affected_entity.vulnerable_component.name, {{.}}, caseSensitive: false){{end}}
+    {{- with .cve}}
+    | filter in({{.}}, vulnerability.references.cve){{end}}
+    {{- with .entity}}
+    | filter affected_entity.name == {{.}}
+        or in({{.}}, related_entities.hosts.names)
+        or in({{.}}, related_entities.kubernetes_workloads.names)
+        or in({{.}}, related_entities.kubernetes_clusters.names)
+        or in({{.}}, related_entities.services.names)
+        or in({{.}}, related_entities.applications.names)
+        or in({{.}}, related_entities.databases.names){{end}}
+    | summarize { title = takeFirst(vulnerability.title),
+        stack = takeAny(vulnerability.stack),
+        risk = round(takeMax(if(vulnerability.mute.status != "MUTED",
+                     vulnerability.risk.score, else: 0)), decimals: 1),
+        component = takeFirst(affected_entity.vulnerable_component.name),
+        cves = takeFirst(vulnerability.references.cve),
+        fix_available = takeAny(vulnerability.is_fix_available),
+        open_since = toTimestamp(takeMin(if(vulnerability.resolution.status == "OPEN",
+          vulnerability.resolution.change_date))),
+        res = collectDistinct(vulnerability.resolution.status),
+        mute = collectDistinct(vulnerability.mute.status),
+        fn = collectDistinct(vulnerability.davis_assessment.vulnerable_function_status),
+        exp = collectDistinct(vulnerability.davis_assessment.exposure_status),
+        xpl = collectDistinct(vulnerability.davis_assessment.exploit_status),
+        entities = countDistinct(affected_entity.id) },
+      by: {vulnerability.display_id}
+    | filter in("OPEN", res) and in("NOT_MUTED", mute)
+    | fieldsAdd level = if(risk >= 9, "CRITICAL", else: if(risk >= 7, "HIGH",
+        else: if(risk >= 4, "MEDIUM", else: if(risk >= 0.1, "LOW", else: "NONE"))))
+    | fields vulnerability.display_id, title, risk, level, stack, component, cves,
+        entities, function_in_use = in("IN_USE", fn), public_network = in("PUBLIC_NETWORK", exp),
+        exploit_available = in("AVAILABLE", xpl), fix_available, open_since
+    // Totals over every level, before --min-level cuts the list: the 50-row
+    // cut and the level filter are never read as a count.
+    | summarize { v = collectArray(record(vulnerability.display_id, title, risk, level, stack,
+          component, cves, entities, function_in_use, public_network, exploit_available,
+          fix_available, open_since), maxLength: 100000),
+        total = count(), total_critical = countIf(level == "CRITICAL"), total_high = countIf(level == "HIGH"),
+        total_medium = countIf(level == "MEDIUM"), total_low = countIf(level == "LOW"),
+        total_none = countIf(level == "NONE") }
+    | filter total > 0
+    | expand v
+    | fieldsFlatten v, prefix: ""
+    | fieldsRemove v
+    | filter risk >= {{if eq .min_level "CRITICAL"}}9{{else if eq .min_level "HIGH"}}7{{else if eq .min_level "MEDIUM"}}4{{else}}0.1{{end}}
+    | sort risk desc, entities desc
+    | limit 50
+  means: >-
+    One row per vulnerability that is open and not muted on at least one
+    affected entity, ranked by the Dynatrace Security Score (DSS, 0-10, not
+    CVSS; muted entities do not count toward it). entities is the number of
+    affected process groups, hosts or nodes. function_in_use, public_network
+    and exploit_available are the Davis runtime assessment, true when it holds
+    on any entity; code-level findings (stack CODE) always score 10 and are
+    proven by data flow, so those three do not apply to them. open_since is
+    when the vulnerability last turned OPEN. total counts every open, unmuted
+    vulnerability that matched the filters at any score, DSS 0 included, and
+    total_critical, total_high, total_medium, total_low and total_none
+    split it by level
+    (the same on every row); they are the answer to "how many", not the number
+    of rows: --min-level (default HIGH) only cuts which rows are listed, and
+    the list stops at the 50 highest-scoring. Narrow with --min-level, --stack, --component,
+    --cve or --entity to see the rest. This is the latest state each pair
+    reported in 24h, not a current snapshot: report it as "latest known
+    state", and note that an entity which stopped reporting keeps its last
+    (possibly stale) state. Decision rule: as security-vulns-open; an
+    open_since far in the past on an entity that no longer reports may already
+    be gone. Not shown: muted or resolved vulnerabilities, and whether an
+    entity is still running.
+  emptyMeans: >-
+    Lower-level vulnerabilities may still be open: --min-level LOW lists
+    every scored one.
+    No vulnerability at or above --min-level was open and unmuted at any
+    point of its latest report in 24h. If no filter was set, runtime
+    vulnerability analytics is not reporting at all (not enabled, or no
+    supported OneAgent technology); that is not the same as "no
+    vulnerabilities". A filter that matches nothing returns the same:
+    --entity needs an exact name, --component a substring of the library or
+    package name.
+  next:
+    - recipe: security-vulns-open
+      when: nonempty

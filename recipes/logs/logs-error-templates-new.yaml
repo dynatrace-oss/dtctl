@@ -1,0 +1,86 @@
+# Source: prior art (problem correlation: error templates new against a control period)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: logs-error-templates-new
+  version: 1
+  tags: [logs, errors, patterns, new, regression, root-cause]
+spec:
+  summary: One service's or workload's error log templates, new ones first, against a control period
+  description: >-
+    Which error messages started just now: the ERROR (or WARN) lines of one
+    service or Kubernetes workload reduced to message templates, as in
+    logs-error-patterns, each counted in the window and in the control
+    period right before it. Templates absent from the control period come
+    first.
+  requires: [logs]
+  # Inline: the fetch reaches back over the control period too.
+  timeframe: { default: 30m, max: 2h, inline: true }
+  scope: [cluster, namespace, host_group, tag]
+  params:
+    service:
+      type: string
+      required: true
+      positional: true
+      description: Service, k8s workload or process group (exact name)
+    control:
+      type: int
+      default: 60
+      min: 15
+      max: 360
+      description: Minutes before the window to compare against
+    min_level:
+      type: enum
+      values: [ERROR, WARN]
+      default: ERROR
+      description: Lowest normalized status to include; WARN adds warnings (often ten times the errors)
+  dql: |
+    fetch logs, from: {{timeAdd .window.from (printf "-%vm" .control)}}, to: {{.window.to}}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- if eq .min_level "WARN"}}
+    | filter in(status, {"ERROR", "WARN"})
+    {{- else}}
+    | filter status == "ERROR"{{end}}
+    | filter dt.service.name == {{.service}} or service.name == {{.service}}
+        or dt.process_group.detected_name == {{.service}}
+        or {{template "k8s-workload-logs" .service}}
+    {{template "log-template"}}
+    | fieldsAdd infocus = timestamp >= {{.window.from}}
+    | summarize { records = countIf(infocus), before = countIf(not(infocus)),
+                  first_seen = min(if(infocus, timestamp)), last_seen = max(if(infocus, timestamp)),
+                  pods = countDistinct(if(infocus, k8s.pod.name)),
+                  example = takeMax(if(infocus, record(timestamp, content = substring(content, from: 0, to: 500)))) },
+        by: {pattern = template}
+    | filter records > 0
+    | fieldsAdd new = before == 0,
+        per_min = toDouble(records) / {{.window.minutes}},
+        before_per_min = toDouble(before) / {{.control}}
+    | fields pattern, new, records, before, surge = if(before > 0, round(per_min / before_per_min, decimals: 1)),
+        first_seen, last_seen, pods, example = example[content]
+    | sort new desc, records desc
+    | limit 20
+  means: >-
+    One row per message template (as in logs-error-patterns) of --service in
+    the window: records in the window, before in the --control minutes
+    before it, new = true when it did not occur there at all, surge the
+    ratio of the per-minute rates otherwise. New templates come first, then
+    by count. Decision rule: a new template whose first_seen sits at the
+    onset of the symptom is the lead to follow; an old template with surge
+    near 1 is how this service always logs and is background, however
+    frequent. pods counts distinct pods (estimate) that wrote it. Not shown:
+    whether the template is new for the whole environment or only for this
+    service, and templates older than the control period (a template that
+    recurs every few hours can look new: widen --control).
+  emptyMeans: >-
+    No ERROR line of --service in the window. Check the name first: it is
+    matched exactly against dt.service.name, service.name, the process group
+    name and the Kubernetes workload (logs-error-sources lists the names that
+    log errors). Otherwise the service logged no errors in the window, or its
+    logs have another status (try --min-level WARN).
+  next:
+    - recipe: logs-error-sources
+      when: empty
+    - recipe: logs-for-service
+      when: nonempty
+      with: { service: "{{.service}}" }

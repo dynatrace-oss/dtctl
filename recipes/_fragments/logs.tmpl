@@ -1,0 +1,9 @@
+{{/*
+  The most specific name a log record carries: k8s workload, service,
+  process group, function, log group, log file, host, else the ingest
+  channel. One definition, so every logs recipe attributes a record to the
+  same source and logs-for-service can follow one up.
+*/}}
+{{define "log-source"}}coalesce(k8s.workload.name, dt.service.name, service.name,
+          dt.process_group.detected_name, faas.name, aws.log_group, log.source, host.name,
+          dt.openpipeline.source){{end}}

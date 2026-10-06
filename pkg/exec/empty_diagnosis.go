@@ -71,7 +71,7 @@ func (e *DQLExecutor) probeRunner() probeFunc {
 // include today's windowAdvice unchanged. A result cut short by a limit is
 // not diagnosed: the limit may be why it is empty.
 func (e *DQLExecutor) emptyResultAdvice(query string, result *DQLQueryResponse, records []map[string]interface{}, opts DQLExecuteOptions) (*output.EmptyReason, []string) {
-	if !isEmptyResult(records) {
+	if !isEmptyResult(records) || opts.SkipEmptyDiagnosis {
 		return nil, nil
 	}
 	var reason *output.EmptyReason

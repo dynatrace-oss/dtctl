@@ -116,7 +116,7 @@ func TestPolicyRestrictsIsFalseAtTheWeakestFloor(t *testing.T) {
 }
 
 func TestRegisterDeclaresEvenWhenDisabled(t *testing.T) {
-	r := &Registry{features: map[string]string{}}
+	r := &Registry{features: map[string][]string{}}
 	r.Declare("account", "account")
 
 	// A disabled feature must still be nameable: Cobra cannot attach an error

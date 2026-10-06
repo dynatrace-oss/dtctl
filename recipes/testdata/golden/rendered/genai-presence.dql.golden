@@ -1,0 +1,26 @@
+# genai-presence v1 — window: default 2h, max 7d
+fetch spans
+| filter isNotNull(gen_ai.request.model) or isNotNull(gen_ai.response.model)
+    or isNotNull(gen_ai.operation.name) or isNotNull(gen_ai.provider.name)
+    or isNotNull(gen_ai.system)
+| summarize { spans = count(),
+    with_tokens = countIf(isNotNull(gen_ai.usage.input_tokens) or isNotNull(gen_ai.usage.output_tokens)),
+    with_cache = countIf(isNotNull(gen_ai.usage.cache_read.input_tokens)
+      or isNotNull(gen_ai.usage.cache_creation.input_tokens)),
+    with_finish_reason = countIf(isNotNull(gen_ai.response.finish_reasons)),
+    agent_spans = countIf(isNotNull(gen_ai.agent.name)),
+    tool_calls = countIf(gen_ai.operation.name == "execute_tool"),
+    conversations = countDistinct(gen_ai.conversation.id),
+    errors = countIf(span.status_code == "error"),
+    services = countDistinct(dt.service.name),
+    last_seen = max(start_time) },
+  by: {provider = coalesce(gen_ai.provider.name, gen_ai.system),
+    model = coalesce(gen_ai.request.model, gen_ai.response.model)}
+| sort spans desc
+| limit 50
+| append [
+    fetch bizevents
+    | filter event.type == "gen_ai.evaluation.result"
+    | summarize { evaluations = count(), last_seen = max(timestamp) }
+    | filter evaluations > 0
+    | fieldsAdd provider = "(evaluations)" ]

@@ -1,0 +1,15 @@
+# problems-evidence v3 — window: default 1d, max 7d
+fetch dt.davis.events
+| filter event.id in [fetch dt.davis.problems | filter display_id == "<id>"
+    | expand eid = dt.davis.event_ids | fields eid]
+| sort timestamp desc
+| dedup event.id
+| fields event.start, event.end, event.status, event.name, event.type, event.category,
+    source = coalesce(dt.service.name, dt.entity.service.name, dt.entity.host.name,
+      dt.entity.process_group.name, k8s.workload.name, dt.entity.cloud_application.name),
+    endpoint.name, source_id = coalesce(toString(dt.smartscape_source.id), toString(dt.source_entity)),
+    root_cause_relevant = dt.davis.is_rootcause_relevant, frequent = dt.davis.is_frequent_event,
+    description = substring(event.description, from: 0, to: 400),
+    detector_config = dt.settings.schema_id, dt.query
+| sort event.start asc
+| limit 50

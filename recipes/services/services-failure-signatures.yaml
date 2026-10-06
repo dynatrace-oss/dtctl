@@ -1,0 +1,99 @@
+# Source: prior art (problem correlation: failure signatures with rate and surge)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: services-failure-signatures
+  version: 1
+  tags: [services, failures, errors, exceptions, surge, new, versions]
+spec:
+  summary: One service's failure signatures per endpoint, with rate, share and surge against a control period
+  description: >-
+    How a service fails, and whether that is new: failed requests grouped by
+    endpoint and signature (exception message, else status message, else
+    HTTP status, else failure reason; variable parts masked), each with its
+    rate in the window, its rate in a control period before it, the share of
+    the endpoint's requests it hits and the service versions it was seen on.
+  requires: [spans]
+  # Inline: the fetch reaches back over the control period too.
+  timeframe: { default: 30m, max: 2h, inline: true }
+  scope: [cluster, namespace, tag]
+  params:
+    service:
+      type: string
+      required: true
+      positional: true
+      description: Exact dt.service.name (see services-list)
+    control:
+      type: int
+      default: 60
+      min: 15
+      max: 360
+      description: Minutes before the window to compare against
+  # One scan: per (endpoint, signature) the focus and control request counts,
+  # then per endpoint the totals, carried back to each signature row with
+  # collectArray/expand. A request that did not fail has the empty signature,
+  # so it counts toward the totals and is dropped afterwards.
+  dql: |
+    fetch spans, from: {{timeAdd .window.from (printf "-%vm" .control)}}, to: {{.window.to}}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter dt.service.name == {{.service}}
+    | filter request.is_root_span == true
+    | fieldsAdd infocus = start_time >= {{.window.from}}, failed = request.is_failed == true,
+        multiplicity = {{template "span-multiplicity"}},
+        message = arrayFirst(arrayRemoveNulls(iCollectArray(span.events[][exception.message])))
+    | fieldsAdd signature = if(failed, coalesce(
+          substring(trim({{template "text-mask" "replaceString(toString(coalesce(message, span.status_message)), \"\\n\", \" \")"}}), from: 0, to: 160),
+          concat("HTTP ", toString(http.response.status_code)),
+          arrayFirst(iCollectArray(dt.failure_detection.results[][reason])), "failed"), else: ""),
+        version = coalesce(service.version, deployment.release_version, container.image.version)
+    | summarize { f = sum(if(infocus, multiplicity, else: 0)), b = sum(if(not(infocus), multiplicity, else: 0)),
+                  versions = collectDistinct(if(infocus and failed, version), maxLength: 3),
+                  first_seen = min(if(infocus and failed, start_time)),
+                  example = takeMax(if(infocus and failed, record(start_time, trace.id))) },
+        by: { endpoint.name, signature }
+    | summarize { v = collectArray(record(signature, f, b, versions, first_seen, example), maxLength: 1000),
+                  requests = sum(f) },
+        by: { endpoint.name }
+    | expand v
+    | fieldsFlatten v, prefix: ""
+    | fieldsRemove v
+    | filter signature != "" and f > 0
+    | fieldsAdd per_min = toDouble(f) / {{.window.minutes}}, control_per_min = toDouble(b) / {{.control}}
+    | fields endpoint.name, signature, failures = toLong(round(f)), share = round(toDouble(f) / requests, decimals: 3),
+        requests = toLong(round(requests)), per_min = round(per_min, decimals: 2),
+        control_per_min = round(control_per_min, decimals: 2), new = b == 0,
+        surge = if(b > 0, round(per_min / control_per_min, decimals: 1)),
+        versions, first_seen, example_trace_id = example[trace.id]
+    | sort failures desc
+    | limit 20
+  means: >-
+    One row per endpoint and failure signature in the window, most failures
+    first. failures and requests are extrapolated from sampled spans; share
+    is the fraction of the endpoint's requests that failed this way. per_min
+    is the rate in the window, control_per_min the same signature's rate in
+    the --control minutes before it. Decision rule: new = true (absent from
+    the control period) or a surge of 3 or more is what changed, and its
+    first_seen dates the onset; a signature with surge near 1 was failing
+    just as much before and is background, however many failures it has.
+    versions lists up to three service versions it was seen on; a new
+    version next to a new signature points at a deployment. Signatures are
+    masked (numbers become <n>), so HTTP statuses are kept as they are only
+    when there is no message. Not shown: failures of downstream services
+    (services-failures without --service), and requests that failed below
+    the root span but succeeded overall.
+  emptyMeans: >-
+    No failed request of this service in the window. Check the name first:
+    dt.service.name is exact and case-sensitive (`dtctl run services-list
+    <fragment>`). A service that is not traced has no spans, and failure
+    detection decides what counts as failed (HTTP 4xx often does not).
+  next:
+    - recipe: services-list
+      when: empty
+      with: { contains: "{{.service}}" }
+    - recipe: traces-get
+      when: nonempty
+      bind: { trace_id: example_trace_id }
+    - recipe: services-failure-logs
+      when: nonempty
+      with: { service: "{{.service}}" }

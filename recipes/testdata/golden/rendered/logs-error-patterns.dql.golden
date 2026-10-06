@@ -1,0 +1,20 @@
+# logs-error-patterns v3 — window: default 30m, max 1d
+fetch logs
+| filter status == "ERROR"
+| parse content, "JSON:log.json"
+| fieldsAdd log.msg = toString(coalesce(log.json[message], log.json[msg], log.json[errorMessage],
+      log.json[error_message], content)),
+    log.err = toString(coalesce(log.json[error], log.json[err], log.json[exception]))
+| fieldsAdd template = substring(trim(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replaceString(if(isNull(log.err) or log.err == log.msg, log.msg, else: concat(log.msg, " | ", log.err)), "\n", " "),
+      "DIGIT{4} '-' DIGIT{2} '-' DIGIT{2} [T ] DIGIT{2} ':' DIGIT{2} ':' DIGIT{2} ([.,] DIGIT+)? 'Z'?", "<ts>"),
+      "IPADDR", "<ip>"), "UUIDSTRING", "<id>"), "'0x' XDIGIT+", "<hex>"), "XDIGIT{10,}", "<hex>"), "INT", "<n>")), from: 0, to: 200)
+| summarize { records = count(), errors = countIf(status == "ERROR"),
+              sources = countDistinct(coalesce(k8s.workload.name, dt.service.name, service.name,
+          dt.process_group.detected_name, faas.name, aws.log_group, log.source, host.name,
+          dt.openpipeline.source)),
+              last_seen = max(timestamp),
+              example = takeMax(record(timestamp, content = substring(content, from: 0, to: 500))) },
+    by: {pattern = template}
+| fields pattern, records, errors, sources, last_seen, example = example[content]
+| sort records desc
+| limit 20

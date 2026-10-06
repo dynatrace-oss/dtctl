@@ -238,6 +238,7 @@ var defaultPatterns = []string{
 	"Use 'dtctl apply -f' for idempotent resource management",
 	"Use 'dtctl diff' before 'dtctl apply' to preview changes",
 	"Use 'dtctl query' for ad-hoc DQL queries, not resource-specific flags",
+	"Before writing DQL for a common question (problems, service errors and latency, pod restarts, host saturation, log errors, GenAI tokens, vulnerabilities), look for a recipe (experimental): 'dtctl get recipes --search \"<words of the question>\"', then 'dtctl run <name>' — a verified query that states what an empty result means",
 	"Use '--dry-run' to validate apply operations without executing",
 	"Use '--agent' for JSON output with operational metadata",
 	"Use 'dtctl wait' in CI/CD to poll for conditions",
@@ -284,11 +285,22 @@ func Build(root *cobra.Command) *Listing {
 		Aliases:        ResourceAliases,
 		ResourceScopes: collectResourceScopes(verbs),
 		TimeFormats:    defaultTimeFormats,
-		Patterns:       defaultPatterns,
+		Patterns:       patternsFor(verbs),
 		Antipatterns:   defaultAntipatterns,
 		Plugins:        plugin.Discover(os.Getenv("PATH"), commandNames(root)),
 	}
 	return listing
+}
+
+// patternsFor drops the patterns that name a verb the catalog does not
+// carry (recipes are a development feature: without it there is no `run`).
+func patternsFor(verbs map[string]*Verb) []string {
+	if _, ok := verbs["run"]; ok {
+		return defaultPatterns
+	}
+	return slices.DeleteFunc(slices.Clone(defaultPatterns), func(p string) bool {
+		return strings.Contains(p, "'dtctl run ")
+	})
 }
 
 // commandNames collects the built-in command names and aliases for plugin
@@ -516,7 +528,7 @@ func flagKey(f *pflag.Flag) string {
 
 // dqlScopeVerbs read Grail data via DQL; their scopes attach to the verb rather
 // than to a managed resource.
-var dqlScopeVerbs = map[string]bool{"query": true, "verify": true, "wait": true, "inventory": true}
+var dqlScopeVerbs = map[string]bool{"query": true, "verify": true, "wait": true, "inventory": true, "run": true}
 
 // populateVerbScopes fills in a verb's required scopes from the canonical
 // auth.ResourceScopes table: per-resource for resource-bearing verbs, and a flat
@@ -721,6 +733,8 @@ type Minimal struct {
 // minimalExamples are read-only, environment-independent starting points.
 var minimalExamples = []string{
 	`dtctl query 'fetch logs, from:now()-24h | filter loglevel == "ERROR" | summarize count(), by:{dt.service.name} | sort ` + "`count()`" + ` desc | limit 10'`,
+	`dtctl get recipes --search "<question words>"  # verified queries for common questions`,
+	`dtctl run problems-active  # a recipe: currently open problems`,
 	`dtctl get workflow-executions --started-since 7d`,
 	`dtctl get slos  # definitions; dtctl exec slo <id> evaluates one`,
 	`dtctl describe <resource> <id>`,

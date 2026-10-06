@@ -1,0 +1,66 @@
+# Source: dt-obs-kubernetes/references/workload-health.md (Deployment Replica
+# Health, Stuck Rollout Detection), extended to StatefulSets and DaemonSets
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: k8s-workload-status
+  version: 2
+  tags: [k8s, workloads, deployments, replicas, rollout, availability, triage]
+spec:
+  summary: Deployments, StatefulSets and DaemonSets with fewer ready pods than desired, or a stuck rollout
+  requires: [k8s]
+  timeframe: none
+  scope: [cluster, namespace]
+  dql: |
+    smartscapeNodes K8S_DEPLOYMENT, K8S_STATEFULSET, K8S_DAEMONSET
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | parse k8s.object, "JSON:config"
+    | fieldsAdd desired = coalesce(config[spec][replicas], config[status][desiredNumberScheduled]),
+        ready = coalesce(config[status][readyReplicas], config[status][numberReady], 0),
+        available = coalesce(config[status][availableReplicas], config[status][numberAvailable], 0),
+        updated = coalesce(config[status][updatedReplicas], config[status][updatedNumberScheduled], 0),
+        conditions = config[status][conditions]
+    | fieldsAdd stuck = coalesce(iAny(conditions[][reason] == "ProgressDeadlineExceeded"), false),
+        replica_failure = coalesce(iAny(conditions[][type] == "ReplicaFailure"
+          and conditions[][status] == "True"), false)
+    | filter isNotNull(desired) and (ready < desired or stuck or replica_failure)
+    | fieldsAdd missing = desired - ready,
+        status = if(stuck, "rollout stuck", else: if(replica_failure, "replica failure",
+          else: if(ready == 0, "down", else: "degraded"))),
+        message = arrayFirst(arrayRemoveNulls(if(conditions[][reason] == "ProgressDeadlineExceeded"
+          or conditions[][type] == "ReplicaFailure", conditions[][message])))
+    | fields k8s.cluster.name, k8s.namespace.name, k8s.workload.kind, k8s.workload.name,
+        status, desired, ready, available, updated, missing, message
+    | sort missing desc, k8s.workload.name asc
+    | limit 50
+  means: >-
+    Current state from the Kubernetes API, no window. desired is spec.replicas
+    (a DaemonSet: the number of nodes it should run on); ready, available and
+    updated are pod counts from the workload's status. status: "down" = no pod
+    ready, "degraded" = some missing, "rollout stuck" = the Deployment passed
+    progressDeadlineSeconds (bad image, quota, unschedulable, failing
+    readiness), "replica failure" = the controller cannot even create pods
+    (quota, admission webhook); message carries the controller's reason. A
+    workload mid-rollout shows briefly as degraded with updated < desired; one
+    that stays is not converging. Workloads scaled to 0 never appear. Decision
+    rule: down beats degraded beats rollout stuck; a workload degraded only
+    while updated < desired is converging. Not shown: workloads scaled to 0,
+    Jobs and CronJobs, and why pods are not ready (k8s-warning-events,
+    k8s-pod-restarts).
+  emptyMeans: >-
+    Every Deployment, StatefulSet and DaemonSet in scope has all desired pods
+    ready and no stuck rollout. Jobs and CronJobs are not covered. An empty
+    result also comes from a misspelled --cluster/--namespace (exact,
+    case-sensitive) or a cluster that is not connected: check with
+    `dtctl run k8s-clusters`.
+  next:
+    - recipe: k8s-warning-events
+      follow: true
+      when: nonempty
+      bind: { cluster: k8s.cluster.name, namespace: k8s.namespace.name }
+    - recipe: k8s-pod-restarts
+      when: nonempty
+      bind: { cluster: k8s.cluster.name, namespace: k8s.namespace.name }
+    - recipe: k8s-clusters
+      when: empty

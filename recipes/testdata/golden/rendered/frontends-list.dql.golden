@@ -1,0 +1,13 @@
+# frontends-list v1 — window: default 6h
+fetch user.events
+| filter characteristics.has_view_summary or characteristics.has_page_summary
+    or characteristics.has_error
+| summarize { real_user_sessions = countDistinct(if(dt.rum.user_type == "real_user", dt.rum.session.id)),
+    views = countIf(characteristics.has_view_summary),
+    page_loads = countIf(characteristics.has_page_summary),
+    errors = countIf(characteristics.has_error),
+    synthetic_or_robot = countIf(dt.rum.user_type != "real_user"),
+    last_seen = max(start_time) },
+  by: {frontend.name, frontend.type}
+| sort real_user_sessions desc
+| limit 100

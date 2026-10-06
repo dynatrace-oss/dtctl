@@ -1,0 +1,43 @@
+# costs-dps-by-capability v2 — window: default 7d, aligned to utc-day, written into the query
+fetch dt.system.events, from: toTimestamp("2026-01-08T00:00:00Z"), to: toTimestamp("2026-01-15T02:00:00Z")
+| filter event.kind == "BILLING_USAGE_EVENT"
+| filter not in(event.type, {"Automation Workflow", "Security Posture Management",
+    "Metrics - Ingest & Process", "Traces - Ingest & Process"})
+| fieldsAdd effective_start = coalesce(usage.start, timestamp)
+| filter effective_start >= toTimestamp("2026-01-08T00:00:00Z") and effective_start < toTimestamp("2026-01-15T00:00:00Z")
+| dedup {event.id, event.type}
+| fieldsAdd usage = coalesce(billed_gibibyte_hours, billed_host_hours, billed_msu_hours,
+    billed_container_hours, billed_bytes, billed_sessions, billed_replay_sessions,
+    billed_property_sessions, billed_pod_hours, billed_synthetic_action_count,
+    billed_http_request_count, billed_test_result_ingestion_count, billed_invocations,
+    `usage.quantity.billable`, `database-instance-hours`),
+  unit = coalesce(if(isNotNull(billed_gibibyte_hours), "GiB-hours"),
+    if(isNotNull(billed_host_hours), "host-hours"),
+    if(isNotNull(billed_msu_hours), "MSU-hours"),
+    if(isNotNull(billed_container_hours), "container-hours"),
+    if(isNotNull(billed_bytes), if(contains(event.type, "Retain"), "GiB-days", else: "GiB")),
+    if(isNotNull(billed_sessions), "sessions"),
+    if(isNotNull(billed_replay_sessions), "replay captures"),
+    if(isNotNull(billed_property_sessions), "properties/session"),
+    if(isNotNull(billed_pod_hours), "pod-hours"),
+    if(isNotNull(billed_synthetic_action_count), "synthetic actions"),
+    if(isNotNull(billed_http_request_count), "synthetic requests"),
+    if(isNotNull(billed_test_result_ingestion_count), "synthetic results"),
+    if(isNotNull(billed_invocations), "invocations"),
+    if(isNotNull(`usage.quantity.billable`), coalesce(usage.unit, "units")),
+    if(isNotNull(`database-instance-hours`), "database-instance-hours"))
+| fieldsAdd usage = if(unit == "GiB", toDouble(usage) / 1073741824,
+    else: if(unit == "GiB-days", toDouble(usage) / 25769803776, else: toDouble(usage)))
+| summarize billable_usage = sum(usage), by: {event.type, unit}
+| append [
+    fetch dt.system.events, from: toTimestamp("2026-01-08T00:00:00Z"), to: toTimestamp("2026-01-15T00:00:00Z")
+    | filter event.kind == "BILLING_USAGE_EVENT"
+    | filter in(event.type, {"Automation Workflow", "Security Posture Management"})
+    | fieldsAdd utc_hour = bin(timestamp, 1h)
+    | fieldsAdd dedup_key = if(event.type == "Automation Workflow", record(utc_hour, workflow.id),
+        else: record(utc_hour, dt.entity.kubernetes_node))
+    | dedup {event.type, dedup_key}
+    | summarize billable_usage = toDouble(count()), by: {event.type}
+    | fieldsAdd unit = if(event.type == "Automation Workflow", "workflow-hours", else: "node-hours") ]
+| fieldsAdd billable_usage = round(billable_usage, decimals: 2)
+| sort event.type asc

@@ -1,0 +1,13 @@
+# problems-get v3 — window: default 1d
+fetch dt.davis.problems
+| filter display_id == "<id>"
+| sort timestamp desc
+| dedup event.id
+| limit 3
+| fields display_id, event.status, event.start, event.end, event.name,
+    event.category, event.description, dt.davis.is_duplicate,
+    root_cause_entity_id, root_cause_entity_name,
+    affected_entity_ids, affected_entities = smartscape.affected_entities,
+    related_entities = smartscape.related_entities,
+    k8s.cluster.name, k8s.namespace.name, k8s.workload.name, dt.host_group.id,
+    dt.davis.affected_users_count, dt.davis.event_ids

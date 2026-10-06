@@ -1,0 +1,15 @@
+# services-failures v2 — window: default 1h
+fetch spans
+| filter request.is_root_span == true and request.is_failed == true
+| fieldsAdd multiplicity = coalesce(aggregation.count, 1)
+        / ((power(2, 56) - coalesce(sampling.threshold, 0)) * power(2, -56)),
+    failure_reason = arrayFirst(iCollectArray(dt.failure_detection.results[][reason])),
+    exception.type = arrayFirst(arrayRemoveNulls(iCollectArray(span.events[][exception.type])))
+| summarize { failures = toLong(round(sum(multiplicity))), last_seen = max(start_time),
+              example = takeMax(record(start_time, trace.id)) },
+    by: {dt.service.name, endpoint.name, failure_reason, http.response.status_code, exception.type}
+| fields dt.service.name, endpoint.name, failures, failure_reason,
+    http.response.status_code, exception.type, last_seen,
+    example_trace_id = example[trace.id]
+| sort failures desc
+| limit 25

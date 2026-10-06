@@ -1,0 +1,86 @@
+# Source: dt-obs-kubernetes/SKILL.md (Fetch Kubernetes Events via DQL, event
+# reasons table). The Warning/Normal type is not stored on the event records,
+# so it is taken from the dt.kubernetes.events metric, which carries it.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: k8s-warning-events
+  version: 1
+  tags: [k8s, events, warnings, backoff, scheduling, oom, evictions, probes, triage]
+spec:
+  summary: Kubernetes Warning events (BackOff, FailedScheduling, probe failures) with the latest message
+  description: >-
+    The why behind pod restarts and unavailable workloads: Kubernetes events of
+    type Warning, grouped per workload (or object) and reason, with the most
+    recent message. Narrow it with --pod or --reason.
+  requires: [k8s]
+  timeframe: 1h
+  scope: [cluster, namespace, tag]
+  params:
+    pod:
+      type: string
+    reason:
+      type: string
+  dql: |
+    fetch events
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter event.provider == "KUBERNETES_EVENT" and in(event.status_transition, {"CREATED", "UPDATED"})
+    {{- with .pod}}
+    | filter k8s.pod.name == {{.}} or dt.kubernetes.event.involved_object.name == {{.}}{{end}}
+    {{- with .reason}}
+    | filter dt.kubernetes.event.reason == {{.}}{{end}}
+    | fieldsAdd reason = dt.kubernetes.event.reason,
+        object_kind = dt.kubernetes.event.involved_object.kind,
+        object = dt.kubernetes.event.involved_object.name
+    | fieldsAdd key = concat(object_kind, "|", reason)
+    | lookup [
+        timeseries n = sum(dt.kubernetes.events),
+          by: {k8s.event.involved_object.kind, k8s.event.reason},
+          filter: k8s.event.type == "Warning"
+          {{- with .scope.expr}} and {{.}}{{end}}
+        | fields key = concat(k8s.event.involved_object.kind, "|", k8s.event.reason)
+      ], sourceField: key, lookupField: key, fields: {warning_key = key}
+    | filter isNotNull(warning_key)
+    | fieldsAdd subject = coalesce(k8s.workload.name, object)
+    | sort timestamp asc
+    | summarize {events = countDistinct(dt.kubernetes.event.uid),
+        objects = countDistinct(object),
+        last_seen = max(timestamp),
+        example_object = takeLast(object),
+        message = takeLast(substring(dt.kubernetes.event.message, from: 0, to: 300))},
+        by: {k8s.cluster.name, k8s.namespace.name, object_kind, subject, reason}
+    | sort events desc, last_seen desc
+    | limit 50
+  means: >-
+    One row per (cluster, namespace, object kind, workload or object, reason).
+    subject is the owning workload when Dynatrace knows it, else the object's
+    own name (a node, a Job, a custom resource); example_object is one
+    concrete object. events counts distinct Kubernetes events, not
+    repetitions: one event the kubelet repeats every few seconds (a failing
+    probe) counts once. message is the most recent one, cut at 300 characters.
+    Common reasons: BackOff (crash loop), Unhealthy (probe failed),
+    FailedScheduling (no node fits: read the message for insufficient
+    cpu/memory or taints), FailedMount, OOMKilling, Evicted. Only events
+    Dynatrace's Kubernetes event filters ingest are here; the event type comes
+    from the dt.kubernetes.events metric. A single restart or OOM kill often
+    leaves no Warning event at all: k8s-pod-restarts counts those from
+    metrics. Decision rule: a reason on many objects of one workload is the
+    workload's problem, the same reason across workloads on one node is the
+    node's; compare with the period before the incident (k8s-changes-new)
+    before blaming a routine warning. Not shown: Normal events (scaling,
+    rollouts: changes-recent), events the ingest filters drop, and restarts
+    and OOM kills that left no event (k8s-pod-restarts).
+  emptyMeans: >-
+    No Warning event was ingested in the window for this scope. That is either
+    a quiet cluster or Kubernetes event monitoring being off for it (events are
+    opt-in per cluster). A misspelled --cluster/--namespace/--pod/--reason
+    gives the same result: names and reasons are exact and case-sensitive
+    (FailedScheduling, not failedscheduling). Check names with `dtctl run
+    k8s-clusters`; a pod deleted before the window started has no events in it.
+  next:
+    - recipe: k8s-pod-restarts
+      when: nonempty
+      bind: { cluster: k8s.cluster.name, namespace: k8s.namespace.name }
+    - recipe: k8s-clusters
+      when: empty

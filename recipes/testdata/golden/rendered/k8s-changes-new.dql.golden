@@ -1,0 +1,18 @@
+# k8s-changes-new v1 — window: default 1h, max 6h, written into the query
+fetch events, from: toTimestamp("2026-01-15T10:00:00Z"), to: toTimestamp("2026-01-15T12:00:00Z")
+| filter event.provider == "KUBERNETES_EVENT" or contains(toString(event.name), "spec change")
+| fieldsAdd n = toString(event.name)
+| filter contains(n, "spec change") or startsWith(n, "Stopping container") or startsWith(n, "Scaled ")
+    or startsWith(n, "Created job") or startsWith(n, "Deleted") or contains(n, "\"changes\"")
+| fieldsAdd infocus = timestamp >= toTimestamp("2026-01-15T11:00:00Z"), eid = coalesce(event.id, toString(timestamp)),
+    change = replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(n,
+      "UUIDSTRING", "<id>"), "DIGIT{6,} '-' ALNUM{5}", "<pod>"),
+      "'-' [bcdfghjklmnpqrstvwxz2456789]{5} ' '", "-<pod> "), "XDIGIT{10,}", "<hex>"), "DIGIT{3,}", "<n>")
+| summarize { events = countDistinctExact(if(infocus, eid)), before = countDistinctExact(if(not(infocus), eid)),
+              first = min(if(infocus, timestamp)), last = max(if(infocus, timestamp)) },
+    by: { k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.workload.kind, change }
+| filter events > 0 and before == 0
+| fields first, last, k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.workload.kind,
+    change, events
+| sort first asc
+| limit 25

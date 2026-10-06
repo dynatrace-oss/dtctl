@@ -1,0 +1,53 @@
+# Source: dt-obs-problems/SKILL.md (standard pattern; root cause and affected entities)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: problems-active
+  version: 2
+  tags: [problems, davis, triage]
+spec:
+  summary: Currently open Davis problems with root cause and blast radius
+  requires: [davis]
+  timeframe: 24h
+  scope: [cluster, namespace, host_group]
+  params:
+    category:
+      type: enum
+      values: [AVAILABILITY, ERROR, SLOWDOWN, RESOURCE_CONTENTION, CUSTOM_ALERT,
+        MONITORING_UNAVAILABLE, INFO]
+    entity:
+      type: string
+      description: Only problems that affect or relate to this entity (ID or exact name)
+  dql: |
+    fetch dt.davis.problems
+    | filter not(dt.davis.is_duplicate) and event.status == "ACTIVE"
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- if .category}}
+    | filter event.category == {{.category}}{{end}}
+    {{- if .entity}}
+    | filter {{template "problem-affects" .entity}}{{end}}
+    | fields event.start, display_id, event.name, event.category,
+        root_cause_entity_name, dt.davis.affected_users_count,
+        affected_entities = coalesce(arraySize(affected_entity_ids),
+          arraySize(smartscape.affected_entities))
+    | sort event.start desc
+    | limit 50
+  means: >-
+    Open problems, newest first, Davis duplicates removed, at most 50 rows.
+    affected_entities counts the entities in the blast radius;
+    root_cause_entity_name is null when Davis found no single cause, and
+    dt.davis.affected_users_count is null unless real users were impacted.
+    Start with the problem that has a root cause and the most affected users or
+    entities; problems-get shows its entities and where it is placed. Not
+    shown: closed problems (problems-history) and anomalies that never became
+    a problem.
+  emptyMeans: >-
+    No problem whose latest update falls in the last 24 hours is ACTIVE. A long-running problem with no update
+    inside the window is missed, so widen --from before concluding nothing is
+    wrong. With a scope, --category or --entity, the value may simply not match
+    (values are exact and case-sensitive; an entity matches by ID or exact
+    name). ("OPEN" is not a status value.)
+  next:
+    - recipe: problems-get
+      bind: { id: display_id }

@@ -1,0 +1,8 @@
+# meta-buckets v1 — window: none (state query; no window)
+fetch dt.system.buckets
+| filter records > 0
+| fields name, table = dt.system.table, records,
+    size_gb = round(toDouble(estimated_uncompressed_bytes) / 1000000000, decimals: 1),
+    retention_days, display_name
+| sort records desc
+| limit 100

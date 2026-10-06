@@ -1,0 +1,21 @@
+# services-slow-endpoints-shift v1 — window: default 30m, max 2h, written into the query
+fetch spans, from: toTimestamp("2026-01-15T10:30:00Z"), to: toTimestamp("2026-01-15T12:00:00Z")
+| filter request.is_root_span == true
+| fieldsAdd infocus = start_time >= toTimestamp("2026-01-15T11:30:00Z"), failed = request.is_failed == true
+| summarize { requests = countIf(infocus), control_requests = countIf(not(infocus)),
+              p90 = percentile(if(infocus, duration), 90),
+              control_p90 = percentile(if(not(infocus), duration), 90),
+              failed = countIf(infocus and failed),
+              p50_failed = percentile(if(infocus and failed, duration), 50),
+              p50_ok = percentile(if(infocus and not(failed), duration), 50),
+              control_p50_ok = percentile(if(not(infocus) and not(failed), duration), 50) },
+    by: { dt.service.name, endpoint.name }
+| filter requests >= 10 and control_requests >= 10
+| fields dt.service.name, endpoint.name,
+    p90_ratio = round(toDouble(p90) / toDouble(control_p90), decimals: 2),
+    p90_ms = round(p90 / 1ms, decimals: 1), control_p90_ms = round(control_p90 / 1ms, decimals: 1),
+    p50_ok_ms = round(p50_ok / 1ms, decimals: 1), control_p50_ok_ms = round(control_p50_ok / 1ms, decimals: 1),
+    p50_failed_ms = round(p50_failed / 1ms, decimals: 1),
+    requests, failed, control_requests
+| sort p90_ratio desc
+| limit 20

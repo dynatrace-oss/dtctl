@@ -1,0 +1,20 @@
+# logs-error-sources v2 — window: default 30m, max 1d
+fetch logs
+| filter status == "ERROR"
+| fieldsAdd source = coalesce(k8s.workload.name, dt.service.name, service.name,
+          dt.process_group.detected_name, faas.name, aws.log_group, log.source, host.name,
+          dt.openpipeline.source),
+    source_field = coalesce(
+      if(isNotNull(k8s.workload.name), "k8s.workload.name"),
+      if(isNotNull(dt.service.name), "dt.service.name"),
+      if(isNotNull(service.name), "service.name"),
+      if(isNotNull(dt.process_group.detected_name), "dt.process_group.detected_name"),
+      if(isNotNull(faas.name), "faas.name"),
+      if(isNotNull(aws.log_group), "aws.log_group"),
+      if(isNotNull(log.source), "log.source"),
+      if(isNotNull(host.name), "host.name"),
+      if(isNotNull(dt.openpipeline.source), "dt.openpipeline.source"))
+| summarize { records = count(), errors = countIf(status == "ERROR"), hosts = countDistinct(host.name), last_seen = max(timestamp) },
+    by: {source, source_field, k8s.namespace.name}
+| sort records desc
+| limit 25

@@ -1,0 +1,91 @@
+# Source: dt-sec-insights/references/detections.md (provider routing, canonical 2h window, attack-type breakdown)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: security-detections
+  version: 1
+  tags: [security, detections, attacks, rap, threats]
+spec:
+  summary: Security detections (attacks, threat findings) grouped by provider, type and risk level
+  description: >-
+    Runtime Application Protection attacks, Automated Detections rule hits and
+    detection findings from external providers (cloud threat detection,
+    SIEM), counted per kind of finding. Vulnerabilities and compliance
+    findings are separate recipes.
+  requires: [security]
+  timeframe: 2h
+  # Only Runtime Application Protection detections carry k8s enrichment;
+  # setting a scope therefore drops external and rule-based findings.
+  scope: [cluster, namespace]
+  params:
+    source:
+      type: enum
+      values: [all, dynatrace, rap, automated, external]
+      default: all
+      description: All providers, Dynatrace only, Runtime Application Protection, Automated Detections rules, or external providers
+    min_level:
+      type: enum
+      values: [CRITICAL, HIGH, MEDIUM, LOW]
+      default: LOW
+      description: Lowest risk level to include
+  dql: |
+    fetch security.events
+    | filter in(event.type, {"DETECTION_FINDING", "SECURITY_EVENT"})
+    | filter event.type == "DETECTION_FINDING" or product.name == "Runtime Application Protection"
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- if eq .source "dynatrace"}}
+    | filter product.vendor == "Dynatrace"
+    {{- else if eq .source "rap"}}
+    | filter product.name == "Runtime Application Protection"
+    {{- else if eq .source "automated"}}
+    | filter event.provider == "Dynatrace Automated Detections"
+    {{- else if eq .source "external"}}
+    | filterOut event.provider == "Dynatrace" or product.vendor == "Dynatrace"
+    {{- end}}
+    {{- if eq .min_level "CRITICAL"}}
+    | filter dt.security.risk.level == "CRITICAL"
+    {{- else if eq .min_level "HIGH"}}
+    | filter in(dt.security.risk.level, {"CRITICAL", "HIGH"})
+    {{- else if eq .min_level "MEDIUM"}}
+    | filter in(dt.security.risk.level, {"CRITICAL", "HIGH", "MEDIUM"})
+    {{- end}}
+    | summarize { detections = count(),
+        first_seen = min(timestamp), last_seen = max(timestamp),
+        actions = collectDistinct(finding.action),
+        attacker_ips = arraySize(collectDistinct(actor.ips, expand: true)),
+        targets = countDistinct(object.name),
+        example_target = takeAny(object.name) },
+      by: {provider = event.provider, risk_level = dt.security.risk.level,
+        finding.type, title = coalesce(detection.title, finding.title)}
+    | fieldsAdd rank = if(risk_level == "CRITICAL", 4, else: if(risk_level == "HIGH", 3,
+        else: if(risk_level == "MEDIUM", 2, else: 1)))
+    | sort rank desc, detections desc
+    | fieldsRemove rank
+    | limit 50
+  means: >-
+    One row per provider, risk level, finding type and title over the window;
+    detections is the number of findings (one-shot events, no dedup or state).
+    For Runtime Application Protection (provider OneAgent), actions says
+    whether attacks were Blocked or only Audited (monitored); finding.type is
+    the attack class (SQL injection, SSRF, JNDI injection, CMD injection). For
+    Automated Detections, title is the rule name. attacker_ips counts distinct
+    source IPs (0 when the provider reports none); targets counts the distinct
+    attacked objects, example_target names one. External providers often
+    deliver in batches a few times a day, so a 2h window can miss them.
+    Detections cannot be muted or dismissed in this data. Decision rule:
+    Blocked attacks are handled; Audited ones on an exposed target are the
+    finding. Not shown: vulnerabilities (security-vulns-open), detections
+    older than the window, and dismissal or mute state.
+  emptyMeans: >-
+    No detection in the window. Detections are sparse and external providers
+    deliver in batches, so widen to --from 24h, then 7d, before concluding
+    there are none, and report the window used. Still empty means no attack
+    protection or detection source sends findings here (Runtime Application
+    Protection off, no Automated Detections rules, no external integration),
+    which is not the same as "not attacked". --source and --min-level narrow;
+    a --cluster or --namespace scope keeps only Runtime Application Protection
+    findings.
+  next:
+    - recipe: security-vulns-critical-exploitable
+      when: nonempty

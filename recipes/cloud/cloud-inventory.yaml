@@ -1,0 +1,72 @@
+# Source: dt-obs-aws/references/resource-management.md, dt-obs-azure/references/resource-management.md,
+#         dt-obs-gcp (GCP_* wildcard). Collapses ~100 per-type inventory blocks into one family.
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: cloud-inventory
+  version: 3
+  tags: [cloud, aws, azure, gcp, inventory]
+spec:
+  summary: Cloud resources by type, or one type by account/subscription/project and region
+  timeframe: none                # Smartscape state; a window changes field values
+  scope: [aws_account, azure_subscription, gcp_project, tag]
+  params:
+    provider:
+      type: enum
+      values: [aws, azure, gcp]
+      required: true
+      positional: true           # dtctl run cloud-inventory azure
+    type:
+      type: string
+      pattern: '^(AWS|AZURE|GCP)_[A-Z0-9_]+$'
+      description: One Smartscape type, e.g. AWS_RDS_DBINSTANCE; breaks it down by account and region
+  # Without --type: one row per resource type (bounded even on environments
+  # with tens of thousands of type/account/region combinations). With --type:
+  # where that type's resources live. Regions, zones and locations are
+  # provider reference data, not resources, and are left out.
+  dql: |
+    {{- $acct := "gcp.project.id"}}{{$region := "gcp.region"}}
+    {{- if eq .provider "aws"}}{{$acct = "aws.account.id"}}{{$region = "aws.region"}}
+    {{- else if eq .provider "azure"}}{{$acct = "azure.subscription"}}{{$region = "azure.location"}}{{end}}
+    smartscapeNodes {{if .type}}{{.type}}{{else if eq .provider "aws"}}"AWS_*"{{else if eq .provider "azure"}}"AZURE_*"{{else}}"GCP_*"{{end}}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filterOut in(type, {"AWS_REGION", "AWS_AVAILABILITY_ZONE", "AZURE_MICROSOFT_RESOURCES_LOCATIONS",
+        "AZURE_MICROSOFT_RESOURCES_LOCATIONS_AVAILABILITYZONES", "GCP_REGION", "GCP_ZONE"})
+    {{- if .type}}
+    | summarize resources = count(), by: {type, {{$acct}}, {{$region}}}
+    {{- else}}
+    | summarize { resources = count(), accounts = countDistinct({{$acct}}),
+        regions = countDistinct({{$region}}) }, by: {type}
+    {{- end}}
+    | sort resources desc
+    | limit 200
+  means: >-
+    Current Smartscape inventory of discovered cloud resources. Without
+    --type, one row per resource type with the number of accounts
+    (subscriptions, projects) and regions (locations) it spans; with --type,
+    one row per account and region. Type names follow the provider's API path
+    (e.g. AZURE_MICROSOFT_COMPUTE_VIRTUALMACHINES), and sub-resources (rules,
+    attachments, configurations) count as types of their own. An empty account
+    or region is a global or account-less resource. Decision rule: a type or
+    region that should not be there (an unexpected region, a forgotten
+    account) is the finding; counts are what exists now, not what was used.
+    Not shown: resources of accounts without a cloud integration, deleted
+    resources, and usage or cost.
+  emptyMeans: >-
+    Smartscape has no resources of this provider or type. Without --type that
+    means this environment monitors nothing of the provider (no cloud
+    integration, or one that discovered nothing), so every other recipe for it
+    is empty too; check the other providers before concluding there is no
+    cloud at all. With --type, the type name may not exist (run without --type
+    to list the types that do exist). A scope narrows to
+    resources carrying that account, subscription, project or primary tag; a
+    primary tag is often set on only a few cloud resources.
+  next:
+    # Empty for one provider: the useful next question is whether another is there.
+    - recipe: cloud-inventory
+      when: empty
+      with: { provider: '{{if eq .provider "aws"}}azure{{else if eq .provider "azure"}}gcp{{else}}aws{{end}}' }
+    - recipe: cloud-inventory
+      when: empty
+      with: { provider: '{{if eq .provider "aws"}}gcp{{else if eq .provider "azure"}}aws{{else}}azure{{end}}' }

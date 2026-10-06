@@ -1,6 +1,7 @@
 package stability
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -21,12 +22,12 @@ import (
 // testable.
 type Registry struct {
 	mu       sync.RWMutex
-	features map[string]string // feature key → command path
+	features map[string][]string // feature key → command paths
 }
 
 // defaultRegistry is the process-wide registry. Development-tier features
 // register into it from their package's init or wiring code.
-var defaultRegistry = &Registry{features: map[string]string{}}
+var defaultRegistry = &Registry{features: map[string][]string{}}
 
 // DefaultRegistry returns the process-wide development-feature registry.
 func DefaultRegistry() *Registry { return defaultRegistry }
@@ -35,7 +36,8 @@ func DefaultRegistry() *Registry { return defaultRegistry }
 // relative to root — e.g. "account" or "serve"). Declaring is independent of
 // registering the command: a feature must be declared even when it is
 // disabled, because that is the only way a disabled command can be named in a
-// block message.
+// block message. A feature may gate several commands (recipes gate `run`,
+// `get recipes`, `describe recipe` and `verify recipe`); each is declared.
 func (r *Registry) Declare(feature, path string) {
 	feature = normalizeKey(feature)
 	if feature == "" {
@@ -43,7 +45,9 @@ func (r *Registry) Declare(feature, path string) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.features[feature] = path
+	if !slices.Contains(r.features[feature], path) {
+		r.features[feature] = append(r.features[feature], path)
+	}
 }
 
 // Features returns the registered feature keys in sorted order.
@@ -58,13 +62,12 @@ func (r *Registry) Features() []string {
 	return keys
 }
 
-// Path returns the command path a feature gates, and false when the feature is
-// not registered.
+// Path returns the command paths a feature gates, comma-joined; false when unregistered.
 func (r *Registry) Path(feature string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	path, ok := r.features[normalizeKey(feature)]
-	return path, ok
+	paths, ok := r.features[normalizeKey(feature)]
+	return strings.Join(paths, ", "), ok
 }
 
 // FeatureForCommand returns the feature key gating the given command path (or
@@ -77,9 +80,11 @@ func (r *Registry) FeatureForCommand(path string) (string, bool) {
 	// Longest match wins, so a feature gating a subtree does not shadow a more
 	// specific one nested inside it.
 	best, bestLen := "", -1
-	for feature, gated := range r.features {
-		if segmentPrefix(gated, path) && len(gated) > bestLen {
-			best, bestLen = feature, len(gated)
+	for feature, paths := range r.features {
+		for _, gated := range paths {
+			if segmentPrefix(gated, path) && len(gated) > bestLen {
+				best, bestLen = feature, len(gated)
+			}
 		}
 	}
 	return best, bestLen >= 0
@@ -92,9 +97,9 @@ func (r *Registry) EnabledPaths(enabledKeys map[string]bool) []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var paths []string
-	for feature, path := range r.features {
+	for feature, gated := range r.features {
 		if enabledKeys[session.DevelopmentAll] || enabledKeys[normalizeKey(feature)] {
-			paths = append(paths, path)
+			paths = append(paths, gated...)
 		}
 	}
 	sort.Strings(paths)

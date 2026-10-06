@@ -1,0 +1,55 @@
+# Source: dt-obs-frontends/SKILL.md ("Identify the frontend", data model), references/characteristics.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: frontends-list
+  version: 1
+  tags: [frontends, rum, inventory, sessions]
+spec:
+  summary: Web and mobile frontends with RUM traffic, by real-user sessions
+  requires: [rum]
+  timeframe: 6h
+  params:
+    type:
+      type: enum
+      values: [web, mobile]
+      description: Only web or only mobile frontends
+  # Only view-summary, page-summary and error events are read: every session
+  # with a view has one, and skipping clicks and requests cuts the scan ~7x.
+  dql: |
+    fetch user.events
+    | filter characteristics.has_view_summary or characteristics.has_page_summary
+        or characteristics.has_error
+    {{- if .type}}
+    | filter frontend.type == {{.type}}{{end}}
+    | summarize { real_user_sessions = countDistinct(if(dt.rum.user_type == "real_user", dt.rum.session.id)),
+        views = countIf(characteristics.has_view_summary),
+        page_loads = countIf(characteristics.has_page_summary),
+        errors = countIf(characteristics.has_error),
+        synthetic_or_robot = countIf(dt.rum.user_type != "real_user"),
+        last_seen = max(start_time) },
+      by: {frontend.name, frontend.type}
+    | sort real_user_sessions desc
+    | limit 100
+  means: >-
+    One row per frontend that sent RUM events in the window.
+    real_user_sessions is an estimate (countDistinct) over real users only;
+    views, page_loads and errors are event counts across all user types, and
+    synthetic_or_robot counts the views/loads/errors from synthetic monitors
+    and bots. Mobile apps have views but no page_loads. A row with an empty
+    frontend.name holds events not attributed to a frontend. Use frontend.name
+    verbatim in the other frontends-* recipes. Decision rule:
+    real_user_sessions is the size of a frontend; a high synthetic_or_robot
+    share means its numbers are mostly monitors. Not shown: performance
+    (frontends-web-vitals), errors per frontend, and frontends without RUM.
+  emptyMeans: >-
+    No frontend sent RUM events in the window. A low-traffic frontend can be
+    idle for hours, so widen --from (e.g. 7d) first. Otherwise no application
+    is instrumented
+    with the new RUM (RUM Classic data is not in user.events), or the
+    environment's RUM data is not readable with this token. With --type, there
+    may simply be no frontend of that type.
+  next:
+    - recipe: frontends-web-vitals
+      when: nonempty
+      bind: { frontend: frontend.name }

@@ -1,0 +1,10 @@
+# logs-for-trace v1 — window: default 2h
+fetch logs
+| filter trace_id == lower("<trace_id>")
+| fields timestamp, status,
+    source = coalesce(k8s.workload.name, dt.service.name, service.name,
+          dt.process_group.detected_name, faas.name, aws.log_group, log.source, host.name,
+          dt.openpipeline.source),
+    content, span_id
+| sort timestamp asc
+| limit 200

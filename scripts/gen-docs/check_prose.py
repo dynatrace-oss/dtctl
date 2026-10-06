@@ -49,13 +49,16 @@ REDIRECT_PREFIX = "https://github.com/dynatrace-oss/dtctl/blob/main/"
 FLAG = r"(--[A-Za-z0-9][A-Za-z0-9-]*)"
 
 # Commands hidden behind a registration gate are absent from a stock binary, so
-# probing them would report every documented `serve`/`account` example as
-# missing. The docs describe them (clearly marked experimental), so the checker
+# probing them would report every documented `serve`/`account`/`run` example
+# as missing. The docs describe them (clearly marked by tier), so the checker
 # has to see them too.
 PROBE_ENV = {
     **os.environ,
     "DTCTL_EXPERIMENTAL_SERVE": "1",
     "DTCTL_EXPERIMENTAL_ACCOUNT": "1",
+    # Every development feature (recipes and the rest): their user guides
+    # document commands a stock binary does not register.
+    "DTCTL_DEVELOPMENT": "all",
     # Never touch the developer's real keyring or config while probing --help.
     "DTCTL_DISABLE_KEYRING": "1",
 }

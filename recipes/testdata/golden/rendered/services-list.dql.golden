@@ -1,0 +1,14 @@
+# services-list v1 — window: default 1h
+timeseries { requests = sum(dt.service.request.count, scalar: true),
+             failures = sum(dt.service.request.failure_count, scalar: true) },
+  by: {dt.service.name, k8s.namespace.name, k8s.workload.name}, union: true
+| summarize { requests = toLong(sum(requests)), failures = toLong(sum(failures)),
+              namespaces = arrayRemoveNulls(collectDistinct(k8s.namespace.name)),
+              workloads = arrayRemoveNulls(collectDistinct(k8s.workload.name)) },
+    by: {dt.service.name}
+| fieldsAdd k8s.namespace.name = if(arraySize(namespaces) == 1, namespaces[0]),
+    k8s.workload.name = if(arraySize(workloads) == 1, workloads[0]),
+    workload_count = arraySize(workloads)
+| fields dt.service.name, requests, failures, k8s.namespace.name, k8s.workload.name, workload_count
+| sort requests desc
+| limit 100

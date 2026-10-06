@@ -1,0 +1,36 @@
+# services-latency v3 — window: default 1h, max 1d, written into the query
+fetch spans, from: toTimestamp("2026-01-15T11:00:00Z"), to: toTimestamp("2026-01-15T12:00:00Z")
+| filter request.is_root_span == true
+| filter contains(dt.service.name, "<service>", caseSensitive: false)
+| fields dt.service.name, endpoint.name, duration, trace.id, request.is_failed,
+    multiplicity = coalesce(aggregation.count, 1)
+        / ((power(2, 56) - coalesce(sampling.threshold, 0)) * power(2, -56))
+| fieldsAdd base = false
+| append [fetch spans, from: toTimestamp("2026-01-14T11:00:00Z"), to: toTimestamp("2026-01-14T12:00:00Z")
+| filter request.is_root_span == true
+| filter contains(dt.service.name, "<service>", caseSensitive: false)
+| fields dt.service.name, endpoint.name, duration, trace.id, request.is_failed,
+    multiplicity = coalesce(aggregation.count, 1)
+        / ((power(2, 56) - coalesce(sampling.threshold, 0)) * power(2, -56))
+    | fieldsAdd base = true]
+| summarize { requests = toLong(round(sum(if(not(base), multiplicity, else: 0)))),
+              failed = toLong(round(sum(if(not(base) and request.is_failed, multiplicity, else: 0)))),
+              time_s = sum(if(not(base), duration / 1s * multiplicity, else: 0)),
+              p50 = percentile(if(not(base), duration), 50),
+              p90 = percentile(if(not(base), duration), 90),
+              p99 = percentile(if(not(base), duration), 99),
+              max = max(if(not(base), duration)),
+              slowest = takeMax(if(not(base), record(duration, trace.id))),
+              base_requests = toLong(round(sum(if(base, multiplicity, else: 0)))),
+              base_p99 = percentile(if(base, duration), 99) },
+    by: {dt.service.name, endpoint.name}
+| filter requests > 0
+| fields dt.service.name, endpoint.name, requests, failed,
+    time_spent_s = round(time_s, decimals: 1),
+    p50_ms = round(p50 / 1ms, decimals: 1), p90_ms = round(p90 / 1ms, decimals: 1),
+    p99_ms = round(p99 / 1ms, decimals: 1), max_ms = round(max / 1ms, decimals: 1),
+    base_p99_ms = round(base_p99 / 1ms, decimals: 1), base_requests,
+    p99_vs_base = round(toDouble(p99) / toDouble(base_p99), decimals: 2),
+    slowest_trace_id = slowest[trace.id]
+| sort time_spent_s desc
+| limit 25

@@ -1,0 +1,8 @@
+# traces-get v2 — window: default 2h
+fetch spans
+| filter trace.id == toUid("<trace_id>")
+| fields start_time, dt.service.name, span.name,
+    duration_ms = round(duration / 1ms, decimals: 1),
+    request.is_failed, http.response.status_code, span.id, span.parent_id
+| sort start_time asc
+| limit 100
