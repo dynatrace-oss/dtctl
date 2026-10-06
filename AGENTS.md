@@ -602,8 +602,10 @@ to the process-level default when the context carries no invocation, which is
 what keeps the CLI unchanged. Code that runs while a command is being *built* has
 no context yet: it is handed its storage explicitly.
 
-*Guard*: `go test ./cmd/ -run TestNewCommandTreeMatchesSingleton` — the fresh
-tree has the singleton's surface, command by command and flag by flag.
+*Guards*: `go test ./cmd/ -run TestNewCommandTreeMatchesSingleton` — the fresh
+tree has the singleton's surface, command by command and flag by flag — and
+`go test -race ./pkg/engine/ -run TestConcurrent`, which runs a corpus on
+overlapping invocations and requires every result to equal the serialized one.
 
 Design and rationale: [docs/dev/CONCURRENT_EXECUTION.md](docs/dev/CONCURRENT_EXECUTION.md).
 

@@ -11,10 +11,11 @@ the run. See [SERVICE_ENGINE_DESIGN.md](SERVICE_ENGINE_DESIGN.md)
 
 A host that evaluates many invocations in one process, most of them waiting on a
 platform round trip, needs each invocation to carry a tree and state of its own
-instead. This document describes the pieces that make that possible. They are
-behavior-neutral for the CLI and for the serialized engine: every accessor
-falls back to the process-level default when an invocation carries nothing of
-its own.
+instead. This document describes the pieces that make that possible and how a
+host [opts in](#opting-in). The pieces are behavior-neutral for the CLI and for
+the serialized engine: every accessor falls back to the process-level default
+when an invocation carries nothing of its own, and nothing turns concurrent
+execution on by default.
 
 ## The command tree
 
@@ -95,7 +96,9 @@ calls runs on until its next call.
    writers from its caller. Guards: `TestNoProcessStreamWritesOnRequestPaths`,
    `TestRequestPathsInjectTheirStreams`.
 3. **A command reads the tree it runs from**, not the singleton, and takes its
-   per-run state from the context, never from a package variable.
+   per-run state from the context, never from a package variable. Guards:
+   `TestConcurrentSurfaceReadBleed`, `TestConcurrentCommandSpecificFlagBleed`,
+   `TestConcurrentRunNeverLacksACommandContext`.
 
 ## Adding a command
 
@@ -107,3 +110,94 @@ calls runs on until its next call.
    helpers in `cmd/invocation.go`.
 
 `TestNewCommandTreeMatchesSingleton` fails if steps 2 and 3 disagree.
+
+## Opting in
+
+`RunOptions.Concurrent` runs one invocation on a tree and state of its own,
+without the whole-run lock. `pkg/engine` exposes it as an engine option:
+
+```go
+eng := engine.New(engine.Limits{MaxQueued: 64}, engine.WithConcurrentExecution(32))
+res, err := eng.ExecuteWithLimits(ctx, req, limits)
+```
+
+`WithConcurrentExecution(n)` is the only way in: no `Limits` field and no default
+turns it on, so the CLI, `dtctl serve`, the package-level `Execute` and an
+`Engine` built without the option keep running one invocation at a time
+(`TestConcurrencyIsOptIn`). An `Engine` owns its admission budget — a slot per
+concurrent invocation and a queue depth, with `MaxQueued` raised to `n` if it is
+lower, since it counts requests waiting *or* running — so independent callers in
+one process no longer share one queue.
+
+`Run` takes `runMu` shared for a concurrent invocation and exclusive for a
+serialized one. A process therefore runs either one serialized invocation or any
+number of concurrent ones, never a mix. That is what lets cobra's global
+`OnInitialize` hook tell them apart: it cannot be told which invocation it runs
+for, so a count of active concurrent runs (`concurrentActive`) makes it skip
+`initConfig`'s process-wide half, which a concurrent tree runs itself, with its
+own context, from its root's `PersistentPreRunE`.
+
+A panic in a command fails its own invocation (exit code `ExitError`, message on
+its stderr) rather than the embedding process.
+
+When the context ended the run, a concurrent engine returns the context's error
+instead of leaving the caller to infer it from what the command made of being
+cut off — a query, for one, reports "Query cancelled." and exits 0. The
+serialized engine reports what the command returned, as it always has.
+
+## Gates
+
+Each of these has failed at least once during development, and each is held by a
+test that runs under `-race`.
+
+| Test | What it holds |
+|---|---|
+| `cmd` `TestNewCommandTreeMatchesSingleton` | the fresh tree is the singleton's surface |
+| `pkg/engine` `TestConcurrentEqualsSerialized` | a corpus run concurrently many times over, at two stability floors, is byte-identical to the serialized engine in a pristine process, and nothing reaches the host's own stdout/stderr |
+| `pkg/engine` `TestConcurrentOutputEqualsCLI` | the same corpus against the real CLI binary |
+| `pkg/engine` `TestConcurrentDryRunSendsNoWrite` | `--dry-run` sends no write, with or without `--plain`/`--yes` |
+| `pkg/engine` `TestConcurrentTenantsStayIsolated` | tenants running at once each reach only their own environment, with only their own token |
+| `pkg/engine` `TestConcurrentRequestDecidesItsOwnSurface` | a request's profile applies, and the host's `DTCTL_MIN_STABILITY` does not |
+| `pkg/engine` `TestConcurrentCommandSpecificFlagBleed`, `TestConcurrentSurfaceReadBleed` | overlapping runs of one command that differ only in a flag each see their own value, and `commands` keeps reporting the masked surface while peers run |
+| `pkg/engine` `TestConcurrentDeadlineEndsAStalledRequest` | a request whose upstream never answers returns at the context deadline, including from handlers that call the SDK with `context.Background()` |
+| `pkg/engine` `TestConcurrencyIsOptIn`, `TestSerializedEngineStillSerializes` | nothing makes the default engine concurrent |
+
+## Costs
+
+Measured on a 4-vCPU x86 host (two cores, two hyperthreads each) against a local
+mock environment, with `get workflows`:
+
+- **Memory.** About 0.7–0.9 MiB of live heap per in-flight command
+  (`TestConcurrentMemoryFootprint`). Measured from outside the process, resident
+  memory is about 2 MiB per command, since GC headroom and goroutine stacks come on
+  top; a native dtctl process per command is about 25 MiB resident, whether it is
+  computing or waiting on a response.
+- **CPU.** About 1.9 ms per command in the serialized engine and 3.2 to 3.9 ms in
+  concurrent mode (1 to 64 in flight): roughly twice, because each command builds
+  a tree. A process per command costs about 12 ms of CPU on the same host.
+- **Instance-per-request WebAssembly** (`GOOS=wasip1` under wazero, one fresh
+  instance per command, a precompiled module, instance memory outside the Go
+  heap) costs about 55 ms of CPU just to start the instance, of which about 16 ms
+  is copying the module's 22 MiB data segment, plus about 35 MiB per in-flight
+  instance and a roughly 400 MiB per-process baseline for the compiled module.
+  Instances also cannot reach the network without a host-side bridge, since
+  `wasip1` has no sockets.
+
+## Limitations
+
+1. **The tree is wired twice.** The CLI's tree is attached in `init()` and the
+   fresh tree in `newCommandTree`. `TestNewCommandTreeMatchesSingleton` holds them
+   together, but one factory both use would remove the duplication.
+2. **Colour resolution is process-wide.** `pkg/output` decides colour once per
+   process from `NO_COLOR`, `FORCE_COLOR` and the terminal. Agent mode forces plain
+   output, so every engine request agrees; a host that sets `FORCE_COLOR` would
+   colour non-agent output.
+3. **A hung command cannot be killed.** The context deadline ends the HTTP
+   requests a command has in flight; nothing preempts arbitrary in-process code,
+   and the query execute is deliberately detached for a short grace.
+4. **Invocations share a heap.** An out-of-memory kill takes every request in
+   flight. The host has to bound memory itself: `GOMEMLIMIT`, a concurrency limit
+   sized against the container, and output caps (`Limits.MaxOutputBytes`).
+5. **Host settings still reach requests in two places.** `pkg/tracing` reads
+   `OTEL_*` and `TRACEPARENT` from the process, and the `commands` catalog lists
+   plugins found on the host's `PATH`. Neither carries tenant data.
