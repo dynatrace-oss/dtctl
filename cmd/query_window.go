@@ -14,8 +14,8 @@ import (
 var windowArg = regexp.MustCompile(`\b(?:from|to|timeframe)\s*:`)
 
 // queryNamesWindow reports whether a query names its own window (from:, to:
-// or timeframe:), ignoring // comments.
-func queryNamesWindow(dql string) bool { return windowArg.MatchString(stripDQLComments(dql)) }
+// or timeframe:), ignoring comments and string literals.
+func queryNamesWindow(dql string) bool { return windowArg.MatchString(dqlCode(dql)) }
 
 // queryWindowContext is the window a query searched, from the response's
 // own metadata, with its length spelled out. A query that names no window
@@ -55,12 +55,13 @@ func spanString(d time.Duration) string {
 	return d.String()
 }
 
-// stripDQLComments drops // comments outside string literals.
-func stripDQLComments(dql string) string {
+// dqlCode is dql with // comments and the contents of quoted strings and
+// identifiers removed, so a pattern matched against it sees only code: a
+// `fieldsAdd note = "from: x"` names no window.
+func dqlCode(dql string) string {
 	var b strings.Builder
 	for _, line := range strings.Split(dql, "\n") {
 		var quote byte
-		cut := len(line)
 		for i := 0; i < len(line); i++ {
 			c := line[i]
 			if quote != 0 {
@@ -68,19 +69,18 @@ func stripDQLComments(dql string) string {
 					i++
 				} else if c == quote {
 					quote = 0
+					b.WriteByte(c)
 				}
 				continue
 			}
-			if c == '"' || c == '`' {
-				quote = c
-				continue
-			}
 			if c == '/' && i+1 < len(line) && line[i+1] == '/' {
-				cut = i
 				break
 			}
+			if c == '"' || c == '`' {
+				quote = c
+			}
+			b.WriteByte(c)
 		}
-		b.WriteString(line[:cut])
 		b.WriteByte('\n')
 	}
 	return b.String()

@@ -31,6 +31,18 @@ func TestQueryWindowContext(t *testing.T) {
 	if queryNamesWindow("fetch logs // from: now()-7d") {
 		t.Error("a from: inside a comment names no window")
 	}
+	for _, q := range []string{
+		`fetch logs | fieldsAdd note = "from: example"`,
+		"fetch logs | filter content == \"to: x // y\" | fieldsAdd `timeframe:` = 1",
+		`fetch logs | filter content == "say \"from: x\""`,
+	} {
+		if queryNamesWindow(q) {
+			t.Errorf("a window keyword inside a literal names no window: %s", q)
+		}
+	}
+	if !queryNamesWindow(`fetch logs | filter content == "a // b", from: now()-7d`) {
+		t.Error("a from: after a literal holding // still names the window")
+	}
 	if got := spanString(7 * 24 * 3600e9); got != "7d" {
 		t.Errorf("spanString(7d) = %q", got)
 	}
