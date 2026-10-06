@@ -16,7 +16,7 @@ type commandTree struct {
 }
 
 // newCommandTree builds a complete, freshly allocated dtctl command tree for
-// one concurrent invocation. The root persistent flags,
+// one concurrent invocation (RunOptions.Concurrent). The root persistent flags,
 // --dry-run and get's --limit/--fields bind to storage on the invocation ctx
 // carries, and every command-specific flag binds to a constructor-local
 // variable, so nothing one request parses is shared with another. Storage is

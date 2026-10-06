@@ -80,7 +80,8 @@ func cmdContext(cmd *cobra.Command) context.Context {
 // while concurrent invocations run, and has none, would resolve the process's
 // state instead of its invocation's: code that prepares a command before cobra
 // has handed it the invocation's context (a constructor, say) must be given the
-// invocation, or the storage, explicitly.
+// invocation, or the storage, explicitly. See
+// TestConcurrentRunNeverLacksACommandContext.
 var onMissingCommandContext func(cmd *cobra.Command)
 
 // rootCmd represents the base command
