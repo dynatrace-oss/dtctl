@@ -83,14 +83,58 @@ Examples:
 			return err
 		}
 
-		// Default to JSON output for analyzer results since table doesn't show the actual data
+		return printAnalyzerResult(cmd, result)
+	},
+}
+
+// printAnalyzerResult prints the raw result, or in agent mode a shaped one:
+// no echoed input or DQL types, nulls dropped, embedded timeseries under
+// --series/--precision (agent defaults: summary, 4 digits).
+func printAnalyzerResult(cmd *cobra.Command, result *analyzer.ExecuteResult) error {
+	if !agentMode {
+		// Default to JSON: the table shows no data.
 		outputFormat, _ := cmd.Flags().GetString("output")
 		if outputFormat == "" || outputFormat == "table" {
 			outputFormat = "json"
 		}
-		printer := output.NewPrinter(outputFormat)
-		return printer.Print(result)
-	},
+		return output.NewPrinter(outputFormat).Print(result)
+	}
+	series, _ := cmd.Flags().GetString("series")
+	precision, _ := cmd.Flags().GetInt("precision")
+	opts, err := querySeriesOptions(series, cmd.Flags().Changed("series"), precision, cmd.Flags().Changed("precision"))
+	if err != nil {
+		return err
+	}
+	shaped, eff := shapeAnalyzerForAgent(result, opts.Mode, opts.Precision)
+	printer := NewPrinter()
+	if ap := enrichAgent(printer, "exec", "analyzer"); ap != nil {
+		var hints []string
+		if eff.NoFindings {
+			hints = append(hints, "# analyzer finished SUCCESSFUL with an empty output: nothing detected in the timeframe, not missing data")
+		}
+		if h := analyzerSeriesAdvice(eff.SeriesEffect, opts); h != "" {
+			hints = append(hints, h)
+		}
+		hints = append(hints, "# the echoed input and DQL types are omitted in agent mode; drop -A for the raw result")
+		ap.SetSuggestions(hints)
+	}
+	return printer.Print(shaped)
+}
+
+// analyzerSeriesAdvice names the opt-out for an agent-mode default that changed
+// the result (mirrors exec.defaultSeriesAdvice for query).
+func analyzerSeriesAdvice(eff output.SeriesEffect, opts seriesOptions) string {
+	summarized := eff.Summarized && opts.SeriesDefaulted
+	rounded := eff.Rounded && opts.PrecisionDefaulted
+	switch {
+	case summarized && rounded:
+		return fmt.Sprintf("# timeseries summarized and numbers rounded to %d significant digits (agent-mode default) — add --series=full --precision 0 for the raw values", opts.Precision)
+	case summarized:
+		return "# timeseries summarized (agent-mode default) — add --series=full for the raw datapoints"
+	case rounded:
+		return fmt.Sprintf("# numbers rounded to %d significant digits (agent-mode default) — add --precision 0 for full precision", opts.Precision)
+	}
+	return ""
 }
 
 // addAnalyzerInputFlags registers the input-source flags shared by
@@ -151,7 +195,19 @@ func init() {
 	// Becomes a duration flag in 1.0; a bare integer errors
 	// (contrib breaking-changes/timeout-duration.md).
 	stability.MarkFlag(execAnalyzerCmd, "timeout", stability.Experimental, pre10Since)
+
+	execAnalyzerCmd.Flags().String("series", "full", `how to render timeseries embedded in the result (agent mode only):
+full = every datapoint; summary = per-series min/avg/max/p95/last/n and a sparkline;
+downsample:N = at most N points per series
+default: summary in agent mode`)
+	execAnalyzerCmd.Flags().Int("precision", 0, `round numbers in the result to N significant digits (agent mode only)
+0 = full precision; default: 4 in agent mode`)
+	stability.MarkFlag(execAnalyzerCmd, "series", stability.Experimental, analyzerSeriesSince)
+	stability.MarkFlag(execAnalyzerCmd, "precision", stability.Experimental, analyzerSeriesSince)
 }
+
+// analyzerSeriesSince is the release that added --series/--precision to exec analyzer.
+const analyzerSeriesSince = "0.42.0"
 
 // Declared stable: the invocation and output contract of this command is
 // additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
