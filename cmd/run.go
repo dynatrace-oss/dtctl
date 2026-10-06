@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"sync/atomic"
 
@@ -74,14 +73,14 @@ var runCtx = context.Background()
 // runMu serializes invocations. The command tree is package state (277
 // command values wired by init), so two interleaved executions would share
 // flag values and tree mutations. In-process callers therefore queue;
-// parallelism comes from running more instances — the model a WASI spike
-// measured at 20-47ms per-instance overhead — or more processes.
+// parallelism comes from running more instances or more processes.
 // See docs/dev/SERVICE_ENGINE_DESIGN.md ("Serialization").
 var runMu sync.Mutex
 
-// runActive is true while an invocation executes (between runMu acquisition
-// and release).
-var runActive atomic.Bool
+// runActive counts the invocations currently executing. A counter rather
+// than a flag: concurrent invocations overlap, and the first to finish must
+// not report the others as done.
+var runActive atomic.Int64
 
 // RunActive reports whether a Run invocation is currently executing. Long-
 // running commands that themselves embed Run — `dtctl serve` accepting
@@ -90,7 +89,7 @@ var runActive atomic.Bool
 // lifetime and deadlock every request (main dispatches serve outside Run for
 // exactly this reason).
 func RunActive() bool {
-	return runActive.Load()
+	return runActive.Load() > 0
 }
 
 // Run executes one dtctl invocation in-process and returns its exit code.
@@ -100,56 +99,74 @@ func RunActive() bool {
 // unlike Execute it never terminates the process, and every invocation starts
 // from a pristine command tree — flag values reset to declared defaults, and
 // per-run tree mutations (command-profile masks, scope-preflight wraps)
-// undone. Concurrent calls are safe and execute one at a time.
+// undone. Concurrent calls are safe; they execute one at a time.
 func Run(argv []string, opts RunOptions) int {
 	runMu.Lock()
 	defer runMu.Unlock()
-	runActive.Store(true)
-	defer runActive.Store(false)
+	runActive.Add(1)
+	defer runActive.Add(-1)
 
 	ctx := opts.Context
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	prevCtx := runCtx
-	runCtx = ctx
-	defer func() { runCtx = prevCtx }()
 
 	granted := AllCapabilities()
 	if opts.Capabilities != nil {
 		granted = *opts.Capabilities
 	}
+
+	// The invocation travels on the context threaded into the command tree, so
+	// every accessor below — streams, environment, capabilities, session —
+	// resolves to it rather than to the package globals.
+	inv := &invocation{
+		session: opts.Session,
+		blocked: opts.BlockedCommands,
+		caps:    granted,
+	}
+	ctx = withInvocation(ctx, inv)
+	// Registered first, so it runs last: nothing the deferred cleanups below
+	// resolve through ctx may see the invocation already ended.
+	defer inv.ended.Store(true)
+
+	// The package globals are kept up to date as well, so that a caller
+	// reaching for them directly (tests, SetCapabilities) sees what it always
+	// did.
+	prevCtx := runCtx
+	runCtx = ctx
+	defer func() { runCtx = prevCtx }()
+
 	prev := SetCapabilities(granted)
 	defer SetCapabilities(prev)
 
 	runBlocked = opts.BlockedCommands
 	defer func() { runBlocked = nil }()
 
-	cleanup, err := applyRunEnvironment(opts)
+	cleanup, err := applyRunEnvironment(ctx, opts)
 	if err != nil {
 		// A malformed RunOptions is an embedding-caller bug, not a command
 		// error — report it on the caller's stderr with a usage exit code.
-		reportOptionsError(opts, err)
+		reportOptionsError(ctx, opts, err)
 		return client.ExitUsageError
 	}
 	defer cleanup()
 
-	restoreStdio, err := redirectStdio(opts.Stdout, opts.Stderr, opts.Stdin)
+	restoreStdio, err := redirectStdio(ctx, opts.Stdout, opts.Stderr, opts.Stdin)
 	if err != nil {
-		reportOptionsError(opts, err)
+		reportOptionsError(ctx, opts, err)
 		return client.ExitUsageError
 	}
 	defer restoreStdio()
 
-	restorePristineTree()
+	restorePristineTree(ctx)
 	return executeArgs(argv)
 }
 
 // reportOptionsError surfaces a RunOptions problem on the invocation's stderr
 // (falling back to the process stderr), without going through the redirected
 // stream machinery that may itself be the thing that failed.
-func reportOptionsError(opts RunOptions, err error) {
-	w := io.Writer(os.Stderr)
+func reportOptionsError(ctx context.Context, opts RunOptions, err error) {
+	w := io.Writer(currentStderr(ctx))
 	if opts.Stderr != nil {
 		w = opts.Stderr
 	}
@@ -214,13 +231,16 @@ func capturePristineState(c *cobra.Command) pristineCommandState {
 // mutations (scope-preflight wraps, profile masks) from a clean slate, so
 // nothing from one invocation — a --context override, a profile mask, an
 // output format — can leak into the next.
-func restorePristineTree() {
+func restorePristineTree(ctx context.Context) {
 	pristineOnce.Do(func() {
 		pristineTree = make(map[*cobra.Command]pristineCommandState)
 		walkPristineRoots(func(c *cobra.Command) {
 			pristineTree[c] = capturePristineState(c)
 		})
 	})
+	// Resolved once: it is the same for every command, and the lookup behind it
+	// is not free — doing it per command made a serialized run ~4x costlier.
+	runContext := ctx
 	walkPristineRoots(func(c *cobra.Command) {
 		state, ok := pristineTree[c]
 		if !ok {
@@ -239,7 +259,7 @@ func restorePristineTree() {
 		restoreFlagHelp(c.Flags(), state.flags)
 		restoreFlagHelp(c.PersistentFlags(), state.flags)
 		// No command sets IO writers at registration time, so pristine means
-		// nil: cobra then resolves os.Stdout/os.Stderr dynamically at print
+		// nil: cobra then resolves currentStdout()/currentStderr() dynamically at print
 		// time. A caller-bound writer (tests do this) must not outlive its
 		// invocation.
 		c.SetOut(nil)
@@ -250,7 +270,7 @@ func restorePristineTree() {
 		// the context of the invocation that first executed it — by then
 		// cancelled, since the engine cancels each request's context when it
 		// ends. Rebind the whole tree to this invocation's context.
-		c.SetContext(runCtx)
+		c.SetContext(runContext)
 		resetFlagSet(c.Flags())
 		resetFlagSet(c.PersistentFlags())
 	})

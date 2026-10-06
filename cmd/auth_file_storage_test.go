@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -27,15 +28,15 @@ func stubFileStorageConsent(t *testing.T, interactive, answer bool) *int {
 	t.Cleanup(func() { authIsInteractiveFunc, authConfirmFunc = origInteractive, origConfirm })
 
 	asked := 0
-	authIsInteractiveFunc = func() bool { return interactive }
-	authConfirmFunc = func(string) bool { asked++; return answer }
+	authIsInteractiveFunc = func(context.Context) bool { return interactive }
+	authConfirmFunc = func(context.Context, string) bool { asked++; return answer }
 	return &asked
 }
 
 func TestOfferFileTokenStorage_AcceptRemembersChoice(t *testing.T) {
 	asked := stubFileStorageConsent(t, true, true)
 
-	if !offerFileTokenStorage(errNoSecretService) {
+	if !offerFileTokenStorage(context.Background(), errNoSecretService) {
 		t.Fatal("accepting the prompt should enable file storage")
 	}
 	if *asked != 1 {
@@ -53,7 +54,7 @@ func TestOfferFileTokenStorage_AcceptRemembersChoice(t *testing.T) {
 func TestOfferFileTokenStorage_DeclineChangesNothing(t *testing.T) {
 	stubFileStorageConsent(t, true, false)
 
-	if offerFileTokenStorage(errNoSecretService) {
+	if offerFileTokenStorage(context.Background(), errNoSecretService) {
 		t.Fatal("declining must not enable file storage")
 	}
 	if _, err := os.Stat(config.FileTokenStorageConsentPath()); err == nil {
@@ -74,7 +75,7 @@ func TestOfferFileTokenStorage_NeverSilent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			asked := stubFileStorageConsent(t, tt.interactive, true)
-			if offerFileTokenStorage(tt.err) {
+			if offerFileTokenStorage(context.Background(), tt.err) {
 				t.Error("must not fall back to file storage")
 			}
 			if *asked != 0 {
@@ -88,11 +89,11 @@ func TestOfferFileTokenStorage_NeverSilent(t *testing.T) {
 }
 
 func TestTokenStorageUnavailableSuggestions_LeadWithTheFix(t *testing.T) {
-	absent := tokenStorageUnavailableSuggestions(errNoSecretService, "box", "https://x.apps.dynatrace.com")
+	absent := tokenStorageUnavailableSuggestions(context.Background(), errNoSecretService, "box", "https://x.apps.dynatrace.com")
 	if !strings.Contains(absent[0], "asked once") || !strings.Contains(absent[0], config.EnvTokenStorage) {
 		t.Errorf("first suggestion should be the one-step fix, got %q", absent[0])
 	}
-	locked := tokenStorageUnavailableSuggestions(errors.New("keyring probe failed: "+config.ErrMsgCollectionUnlock), "box", "https://x.apps.dynatrace.com")
+	locked := tokenStorageUnavailableSuggestions(context.Background(), errors.New("keyring probe failed: "+config.ErrMsgCollectionUnlock), "box", "https://x.apps.dynatrace.com")
 	if strings.Contains(locked[0], "asked once") {
 		t.Errorf("a locked keyring is not 'no keyring': %q", locked[0])
 	}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -84,7 +85,7 @@ func TestEnsureEnvironmentShareForResults_SkipsNonDocuments(t *testing.T) {
 		&apply.SLOApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "slo-1", ResourceType: "slo"}},
 		&apply.DashboardApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "db-1", ResourceType: "dashboard"}},
 	}
-	if err := ensureEnvironmentShareForResults(c, results, "read"); err != nil {
+	if err := ensureEnvironmentShareForResults(context.Background(), c, results, "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := counts["nb-1"]; got == nil || atomic.LoadInt64(got) != 1 {
@@ -109,7 +110,7 @@ func TestEnsureEnvironmentShareForResults_SkipsEmptyID(t *testing.T) {
 	results := []apply.ApplyResult{
 		&apply.NotebookApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "", ResourceType: "notebook"}},
 	}
-	if err := ensureEnvironmentShareForResults(c, results, "read"); err != nil {
+	if err := ensureEnvironmentShareForResults(context.Background(), c, results, "read"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(counts) != 0 {
@@ -128,7 +129,7 @@ func TestEnsureEnvironmentShareForResults_ContinuesAfterFailure(t *testing.T) {
 		&apply.NotebookApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "nb-bad", ResourceType: "notebook"}},
 		&apply.DashboardApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "db-ok", ResourceType: "dashboard"}},
 	}
-	err := ensureEnvironmentShareForResults(c, results, "read")
+	err := ensureEnvironmentShareForResults(context.Background(), c, results, "read")
 	if err == nil {
 		t.Fatal("expected error from failing share")
 	}
@@ -149,7 +150,7 @@ func TestEnsureEnvironmentShareForResults_MultipleFailuresCombined(t *testing.T)
 		&apply.NotebookApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "nb-1", ResourceType: "notebook"}},
 		&apply.DashboardApplyResult{ApplyResultBase: apply.ApplyResultBase{ID: "db-1", ResourceType: "dashboard"}},
 	}
-	err := ensureEnvironmentShareForResults(c, results, "read")
+	err := ensureEnvironmentShareForResults(context.Background(), c, results, "read")
 	if err == nil {
 		t.Fatal("expected combined error")
 	}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -232,19 +233,40 @@ var sessionScrubbedEnvVars = []string{
 //
 // Order matters: session scrubbing first, then opts.Env, so an embedding
 // caller can explicitly re-grant a variable the scrub removed.
-func applyRunEnvironment(opts RunOptions) (cleanup func(), err error) {
+func applyRunEnvironment(ctx context.Context, opts RunOptions) (cleanup func(), err error) {
 	if opts.Session != nil {
 		if err := opts.Session.validate(); err != nil {
 			return nil, err
 		}
 	}
 
+	// A concurrent invocation records its
+	// environment on itself instead of calling os.Setenv, because the process
+	// environment is shared and a scrub applied for one tenant would blank the
+	// variable for every other in-flight request. The overlay is read back by
+	// cmd.getenv/lookupEnv, and by sdk/session through the Config each
+	// invocation gets (withInvocationEnv); a DTCTL_* read through os.Getenv
+	// anywhere else sees the host's value instead.
+	inv := current(ctx)
+	concurrent := inv != nil && inv.concurrent
+	if concurrent && inv.env == nil {
+		inv.env = make(map[string]envValue, len(sessionScrubbedEnvVars)+len(opts.Env)+1)
+	}
+
 	var saved []envSnapshot
 	set := func(key, value string) {
+		if concurrent {
+			inv.env[key] = envValue{value: value, present: true}
+			return
+		}
 		saved = append(saved, snapshotEnv(key))
 		_ = os.Setenv(key, value)
 	}
 	unset := func(key string) {
+		if concurrent {
+			inv.env[key] = envValue{}
+			return
+		}
 		saved = append(saved, snapshotEnv(key))
 		_ = os.Unsetenv(key)
 	}
@@ -260,6 +282,14 @@ func applyRunEnvironment(opts RunOptions) (cleanup func(), err error) {
 	}
 	for key, value := range opts.Env {
 		set(key, value)
+	}
+
+	if concurrent {
+		// The session already lives on the invocation (set in Run); the
+		// filesystem joins it, and vfsEnv hands each consumer this invocation's
+		// own rather than whatever the process has installed globally.
+		inv.fs = opts.FS
+		return func() {}, nil
 	}
 
 	runSession = opts.Session

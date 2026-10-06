@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,7 +29,7 @@ func TestErrorToDetail_QueryErrorPositionAndFix(t *testing.T) {
 		},
 	})
 
-	d := errorToDetail(err)
+	d := errorToDetail(context.Background(), err)
 
 	if d.Code != "parse_error" {
 		t.Errorf("Code = %q, want parse_error", d.Code)
@@ -55,7 +56,7 @@ func TestErrorToDetail_QueryErrorPositionAndFix(t *testing.T) {
 // TestErrorToDetail_QueryErrorKeepsExistingAdvice keeps the pre-existing
 // advice after the new rewrite when both apply.
 func TestErrorToDetail_QueryErrorKeepsExistingAdvice(t *testing.T) {
-	d := errorToDetail(&sdkquery.QueryError{
+	d := errorToDetail(context.Background(), &sdkquery.QueryError{
 		StatusCode: 400,
 		Message:    "UNKNOWN_DATA_OBJECT",
 		ErrorType:  "UNKNOWN_DATA_OBJECT",
@@ -81,7 +82,7 @@ func TestErrorToDetail_QueryErrorKeepsExistingAdvice(t *testing.T) {
 // TestErrorToDetail_QueryErrorWithoutPosition leaves an error without a
 // reported position free of position and snippet.
 func TestErrorToDetail_QueryErrorWithoutPosition(t *testing.T) {
-	d := errorToDetail(&sdkquery.QueryError{StatusCode: 400, Message: "bad", ErrorType: "SYNTAX_ERROR"})
+	d := errorToDetail(context.Background(), &sdkquery.QueryError{StatusCode: 400, Message: "bad", ErrorType: "SYNTAX_ERROR"})
 	if d.Position != nil || d.Snippet != "" || len(d.Suggestions) != 0 {
 		t.Errorf("detail = %+v, want no position, snippet or suggestions", d)
 	}

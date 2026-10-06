@@ -13,11 +13,14 @@ import (
 )
 
 // execAnalyzerCmd executes a Davis analyzer
-var execAnalyzerCmd = &cobra.Command{
-	Use:     "analyzer <analyzer-name>",
-	Aliases: []string{"az"},
-	Short:   "Execute a Davis AI analyzer",
-	Long: `Execute a Davis AI analyzer with the given input.
+var execAnalyzerCmd = newExecAnalyzerCmd()
+
+func newExecAnalyzerCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:     "analyzer <analyzer-name>",
+		Aliases: []string{"az"},
+		Short:   "Execute a Davis AI analyzer",
+		Long: `Execute a Davis AI analyzer with the given input.
 
 Examples:
   # Execute analyzer with input from file
@@ -38,75 +41,93 @@ Examples:
   # Output as JSON
   dtctl exec analyzer dt.statistics.GenericForecastAnalyzer -f input.json -o json
 `,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		analyzerName := args[0]
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			analyzerName := args[0]
 
-		// Running an analyzer computes over data and persists nothing, so it is a
-		// read despite being a POST.
-		_, c, err := SetupWithSafety(safety.OperationRead)
-		if err != nil {
-			return err
-		}
-
-		handler := analyzer.NewHandler(c)
-
-		// Build input from flags (shared with "verify analyzer")
-		input, err := buildAnalyzerInput(cmd)
-		if err != nil {
-			return err
-		}
-
-		// Handle validate-only mode
-		validateOnly, _ := cmd.Flags().GetBool("validate")
-		if validateOnly {
-			result, err := handler.Validate(analyzerName, input)
+			// Running an analyzer computes over data and persists nothing, so it is a
+			// read despite being a POST.
+			_, c, err := setupWithSafety(cmdContext(cmd), safety.OperationRead)
 			if err != nil {
 				return err
 			}
-			printer := NewPrinter()
-			return printer.Print(result)
-		}
 
-		// Execute analyzer
-		wait, _ := cmd.Flags().GetBool("wait")
-		timeout, _ := cmd.Flags().GetInt("timeout")
+			handler := analyzer.NewHandler(c)
 
-		var result *analyzer.ExecuteResult
-		if wait {
-			result, err = handler.ExecuteAndWait(cmd.Context(), analyzerName, input, timeout)
-		} else {
-			result, err = handler.Execute(analyzerName, input, 30)
-		}
+			// Build input from flags (shared with "verify analyzer")
+			input, err := buildAnalyzerInput(cmd)
+			if err != nil {
+				return err
+			}
 
-		if err != nil {
-			return err
-		}
+			// Handle validate-only mode
+			validateOnly, _ := cmd.Flags().GetBool("validate")
+			if validateOnly {
+				result, err := handler.Validate(analyzerName, input)
+				if err != nil {
+					return err
+				}
+				printer := newPrinterCtx(cmdContext(cmd))
+				return printer.Print(result)
+			}
 
-		return printAnalyzerResult(cmd, result)
-	},
+			// Execute analyzer
+			wait, _ := cmd.Flags().GetBool("wait")
+			timeout, _ := cmd.Flags().GetInt("timeout")
+
+			var result *analyzer.ExecuteResult
+			if wait {
+				result, err = handler.ExecuteAndWait(cmd.Context(), analyzerName, input, timeout)
+			} else {
+				result, err = handler.Execute(analyzerName, input, 30)
+			}
+
+			if err != nil {
+				return err
+			}
+
+			return printAnalyzerResult(cmd, result)
+		},
+	}
+	c.Flags().Bool("validate", false, "validate input without executing")
+	c.Flags().Bool("wait", true, "wait for analyzer execution to complete")
+	stability.MarkFlag(c, "wait", stability.Experimental, pre10Since)
+	c.Flags().Int("timeout", 300, "timeout in seconds when waiting for completion")
+	stability.MarkFlag(c, "timeout", stability.Experimental, pre10Since)
+	c.Flags().String("series", "full", `how to render timeseries embedded in the result (agent mode only):
+full = every datapoint; summary = per-series min/avg/max/p95/last/n and a sparkline;
+downsample:N = at most N points per series
+default: summary in agent mode`)
+	c.Flags().Int("precision", 0, `round numbers in the result to N significant digits (agent mode only)
+0 = full precision; default: 4 in agent mode`)
+	stability.MarkFlag(c, "series", stability.Experimental, analyzerSeriesSince)
+	stability.MarkFlag(c, "precision", stability.Experimental, analyzerSeriesSince)
+	stability.MarkStable(c)
+	addAnalyzerInputFlags(c)
+	return c
 }
 
 // printAnalyzerResult prints the raw result, or in agent mode a shaped one:
 // no echoed input or DQL types, nulls dropped, embedded timeseries under
 // --series/--precision (agent defaults: summary, 4 digits).
 func printAnalyzerResult(cmd *cobra.Command, result *analyzer.ExecuteResult) error {
-	if !agentMode {
+	ctx := cmdContext(cmd)
+	if !agentMode(ctx) {
 		// Default to JSON: the table shows no data.
 		outputFormat, _ := cmd.Flags().GetString("output")
 		if outputFormat == "" || outputFormat == "table" {
 			outputFormat = "json"
 		}
-		return output.NewPrinter(outputFormat).Print(result)
+		return newPrinter(ctx, outputFormat).Print(result)
 	}
 	series, _ := cmd.Flags().GetString("series")
 	precision, _ := cmd.Flags().GetInt("precision")
-	opts, err := querySeriesOptions(series, cmd.Flags().Changed("series"), precision, cmd.Flags().Changed("precision"))
+	opts, err := querySeriesOptions(ctx, series, cmd.Flags().Changed("series"), precision, cmd.Flags().Changed("precision"))
 	if err != nil {
 		return err
 	}
 	shaped, eff := shapeAnalyzerForAgent(result, opts.Mode, opts.Precision)
-	printer := NewPrinter()
+	printer := newPrinterCtx(ctx)
 	if ap := enrichAgent(printer, "exec", "analyzer"); ap != nil {
 		var hints []string
 		if eff.NoFindings {
@@ -160,7 +181,7 @@ func buildAnalyzerInput(cmd *cobra.Command) (map[string]interface{}, error) {
 
 	switch {
 	case inputFile != "":
-		content, err := readFileFlag("file", inputFile)
+		content, err := readFileFlag(cmdContext(cmd), "file", inputFile)
 		if err != nil {
 			return nil, err
 		}
@@ -183,34 +204,8 @@ func buildAnalyzerInput(cmd *cobra.Command) (map[string]interface{}, error) {
 	}
 }
 
-func init() {
-	// Analyzer flags
-	addAnalyzerInputFlags(execAnalyzerCmd)
-	execAnalyzerCmd.Flags().Bool("validate", false, "validate input without executing")
-	execAnalyzerCmd.Flags().Bool("wait", true, "wait for analyzer execution to complete")
-	// Waiting becomes unconditional in 1.0, so --wait=false — valid today —
-	// stops working (contrib breaking-changes/exec-wait-default.md).
-	stability.MarkFlag(execAnalyzerCmd, "wait", stability.Experimental, pre10Since)
-	execAnalyzerCmd.Flags().Int("timeout", 300, "timeout in seconds when waiting for completion")
-	// Becomes a duration flag in 1.0; a bare integer errors
-	// (contrib breaking-changes/timeout-duration.md).
-	stability.MarkFlag(execAnalyzerCmd, "timeout", stability.Experimental, pre10Since)
-
-	execAnalyzerCmd.Flags().String("series", "full", `how to render timeseries embedded in the result (agent mode only):
-full = every datapoint; summary = per-series min/avg/max/p95/last/n and a sparkline;
-downsample:N = at most N points per series
-default: summary in agent mode`)
-	execAnalyzerCmd.Flags().Int("precision", 0, `round numbers in the result to N significant digits (agent mode only)
-0 = full precision; default: 4 in agent mode`)
-	stability.MarkFlag(execAnalyzerCmd, "series", stability.Experimental, analyzerSeriesSince)
-	stability.MarkFlag(execAnalyzerCmd, "precision", stability.Experimental, analyzerSeriesSince)
-}
-
 // analyzerSeriesSince is the release that added --series/--precision to exec analyzer.
 const analyzerSeriesSince = "0.42.0"
 
 // Declared stable: the invocation and output contract of this command is
 // additive-only. Stable is never implied -- see AGENTS.md "Stability Tiers".
-func init() {
-	stability.MarkStable(execAnalyzerCmd)
-}

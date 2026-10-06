@@ -39,14 +39,16 @@ var dataNouns = map[string]string{
 	"hosts":           `dtctl query 'smartscapeNodes "HOST" | limit 10'`,
 }
 
-// nounAdvice returns the commands that read a noun, or nil.
-func nounAdvice(name string) []string {
+// nounAdvice returns the commands that read a noun, or nil. It reads root, the
+// tree the invocation runs, not the singleton: an invocation on a tree of its
+// own must not walk (and so lazily sort) another one's.
+func nounAdvice(root *cobra.Command, name string) []string {
 	n := strings.ToLower(name)
 	var out []string
-	named := getResourcesNamed(n)
+	named := getResourcesNamed(root, n)
 	// A guessed compound ("slo-status") names its resource in its first word.
 	if head, _, found := strings.Cut(n, "-"); found && len(named) == 0 {
-		named = getResourcesNamed(head)
+		named = getResourcesNamed(root, head)
 	}
 	for _, r := range named {
 		out = append(out, "dtctl get "+r)
@@ -61,9 +63,9 @@ func nounAdvice(name string) []string {
 }
 
 // getResourcesNamed returns the get resources a noun names, or prefixes.
-func getResourcesNamed(n string) []string {
+func getResourcesNamed(root *cobra.Command, n string) []string {
 	var get *cobra.Command
-	for _, c := range rootCmd.Commands() {
+	for _, c := range root.Commands() {
 		if c.Name() == "get" {
 			get = c
 		}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +65,7 @@ func TestSetContextGlobalWritesGlobalConfig(t *testing.T) {
 		t.Fatalf("read local config: %v", err)
 	}
 
-	if err := setContext("my-environment", contextSettings{
+	if err := setContext(context.Background(), "my-environment", contextSettings{
 		environment: "https://abc12345.apps.dynatrace.com",
 		tokenRef:    "my-token",
 		global:      true,
@@ -98,7 +99,7 @@ func TestSetContextWithoutGlobalWritesLocalConfig(t *testing.T) {
 	projectDir, globalPath := chdirWithLocalConfig(t)
 	localPath := filepath.Join(projectDir, config.LocalConfigName)
 
-	if err := setContext("my-environment", contextSettings{
+	if err := setContext(context.Background(), "my-environment", contextSettings{
 		environment: "https://abc12345.apps.dynatrace.com",
 		tokenRef:    "my-token",
 	}); err != nil {
