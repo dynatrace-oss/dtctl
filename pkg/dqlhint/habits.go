@@ -183,7 +183,7 @@ func commandSynonym(c *queryContext) (hint, bool) {
 // asAliasRe matches the `as name` suffix of a column expression.
 var asAliasRe = regexp.MustCompile(`\s+as\s+(` + fieldName + `)$`)
 
-// singleQuotes: DQL strings take double quotes; SQL's doubled '' is an escaped quote.
+// singleQuotes: DQL strings take double quotes; a doubled single quote is SQL's escape.
 func singleQuotes(c *queryContext) (hint, bool) {
 	q := c.q
 	var out strings.Builder
