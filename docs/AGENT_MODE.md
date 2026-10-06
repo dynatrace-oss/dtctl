@@ -317,7 +317,6 @@ dtctl runs one small, bounded probe before it suggests widening the time window:
 | Query shape | Probe | Finding |
 |---|---|---|
 | `fetch <object> \| filter …` / `summarize … by:` | the query's own `fetch` stage with `\| limit 100`, and the field names in its `filter`/`filterOut` stages and `by:` clause compared against the sampled records | `field_not_in_sample` |
-| `fetch <object> \| filter <field> == "<value>"` (or `contains`/`matchesValue`/`matchesPhrase`/`startsWith`/`endsWith`), every field present in the sample | the query's own `fetch` stage grouped by that field: its most frequent values (at most 200 groups). A value that differs from the compared one only in case or by a prefix/suffix is a finding; otherwise the top five values are listed as advice | `value_not_found` |
 | `timeseries …` | the metric keys that reported series in the query window (at most its last 2h), listed with the `metrics` command | `metric_not_in_window` |
 
 The probes are capped (1 GB scan, 10 s read time, bounded result size), run only
@@ -326,11 +325,7 @@ and never fail the query. If a probe errors, comes back
 partial, or finds an empty sample, the envelope keeps the widen-the-window advice
 and has no `empty_reason`.
 
-The value probe runs only after a complete field sample found every field, and
-it may report from a scan its limits cut short: a near value it saw exists,
-whatever the rest of the window holds, and the advice says the scan was partial.
-
-`context.empty_reason` is set only when a missing name or value has a close match that
+`context.empty_reason` is set only when a missing name has a close match that
 *was* observed, which is what a typo looks like. That advice replaces the
 widen-the-window suggestion, because a wider window cannot fix a misspelled
 name:

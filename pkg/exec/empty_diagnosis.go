@@ -2,11 +2,9 @@ package exec
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -48,11 +46,6 @@ const (
 	emptyProbeBudget = 20 * time.Second
 	// emptyProbeMetricWindow is the longest window the metric-key probe lists.
 	emptyProbeMetricWindow = 2 * time.Hour
-	// emptyProbeValueGroups bounds the value listing of the value probe.
-	emptyProbeValueGroups = 200
-	// emptyProbeValuesShown is how many of the most frequent values a
-	// finding names.
-	emptyProbeValuesShown = 5
 	// emptyProbeMaxMetricKeys caps the metric key listing; a listing that hits
 	// the cap is treated as partial and proves nothing.
 	emptyProbeMaxMetricKeys = 50000
@@ -89,14 +82,7 @@ func (e *DQLExecutor) emptyResultAdvice(query string, result *DQLQueryResponse, 
 		if keys := queriedMetricKeys(result); len(keys) > 0 {
 			reason, suggestions = diagnoseMetricKeys(ctx, probe, keys, result, opts)
 		} else if obj, fields := referencedFields(query); obj != "" && len(fields) > 0 {
-			var sampled bool
-			reason, suggestions, sampled = diagnoseFields(ctx, probe, query, obj, fields, opts)
-			// Every field name occurred in a complete sample, so the filter's
-			// value is the next suspect: agents concluded "no data" off a value
-			// that differs from the stored one only in case or a suffix.
-			if sampled && reason == nil && len(suggestions) == 0 {
-				reason, suggestions = diagnoseValue(ctx, probe, query, obj, opts)
-			}
+			reason, suggestions = diagnoseFields(ctx, probe, query, obj, fields, opts)
 		}
 	}
 	if reason == nil {
@@ -130,9 +116,8 @@ func probeIsPartial(r *DQLQueryResponse) bool {
 }
 
 // diagnoseFields samples the user's fetch stage and reports referenced fields
-// that occur in none of the sampled records. sampled reports whether a
-// complete, non-empty sample was read.
-func diagnoseFields(ctx context.Context, probe probeFunc, query, object string, fields []string, opts DQLExecuteOptions) (reason *output.EmptyReason, suggestions []string, sampled bool) {
+// that occur in none of the sampled records.
+func diagnoseFields(ctx context.Context, probe probeFunc, query, object string, fields []string, opts DQLExecuteOptions) (*output.EmptyReason, []string) {
 	stages := splitStages(query)
 	probeOpts := baseProbeOptions(opts)
 	probeOpts.MaxResultRecords = emptyProbeSampleRecords
@@ -145,11 +130,11 @@ func diagnoseFields(ctx context.Context, probe probeFunc, query, object string, 
 	// A sample cut short by a limit is skewed toward whatever was read first,
 	// so it is not used as evidence.
 	if err != nil || resp == nil || probeIsPartial(resp) {
-		return nil, nil, false
+		return nil, nil
 	}
 	sample := resp.GetRecords()
 	if len(sample) == 0 {
-		return nil, nil, false
+		return nil, nil
 	}
 	seen := map[string]bool{}
 	var keys []string
@@ -162,6 +147,8 @@ func diagnoseFields(ctx context.Context, probe probeFunc, query, object string, 
 		}
 	}
 
+	var reason *output.EmptyReason
+	var suggestions []string
 	n := len(sample)
 	for _, f := range fields {
 		if seen[f] {
@@ -184,7 +171,7 @@ func diagnoseFields(ctx context.Context, probe probeFunc, query, object string, 
 			}
 		}
 	}
-	return reason, suggestions, true
+	return reason, suggestions
 }
 
 // queriedMetricKeys returns the metric keys Grail reports for a timeseries
@@ -596,166 +583,4 @@ func aliasIndex(s string) int {
 		}
 	}
 	return -1
-}
-
-// fieldOperand matches a field reference: a dotted identifier or a
-// backtick-quoted name.
-const fieldOperand = "(`[^`]+`|[A-Za-z_][A-Za-z0-9_.]*)"
-
-var (
-	// eqValueRe matches `field == "value"`.
-	eqValueRe = regexp.MustCompile(fieldOperand + `\s*==\s*"((?:[^"\\]|\\.)*)"`)
-	// callValueRe matches a string-matching call on a field, e.g.
-	// `contains(field, "value")`.
-	callValueRe = regexp.MustCompile(`\b(?:contains|matchesValue|matchesPhrase|startsWith|endsWith)\(\s*` + fieldOperand + `\s*,\s*"((?:[^"\\]|\\.)*)"`)
-)
-
-// filterValueCondition returns the first string comparison a fetch query's
-// leading filter stages make on a field — the field and the value it is
-// compared with. It walks the same shape-preserving stages as
-// referencedFields, so the field belongs to the fetched records.
-func filterValueCondition(query string) (field, value string) {
-	stages := splitStages(query)
-	if len(stages) == 0 || fetchStageRe.FindStringSubmatch(stages[0]) == nil {
-		return "", ""
-	}
-	for _, st := range stages[1:] {
-		cmd, rest := splitCommand(st)
-		switch strings.ToLower(cmd) {
-		case "filter":
-			best := -1
-			for _, re := range []*regexp.Regexp{eqValueRe, callValueRe} {
-				if m := re.FindStringSubmatchIndex(rest); m != nil && (best < 0 || m[0] < best) {
-					best = m[0]
-					field, value = rest[m[2]:m[3]], rest[m[4]:m[5]]
-				}
-			}
-			if best >= 0 {
-				return field, value
-			}
-		case "filterout", "sort", "limit", "dedup":
-		default:
-			return "", ""
-		}
-	}
-	return "", ""
-}
-
-// valueCount is one group of the value probe.
-type valueCount struct {
-	value string
-	null  bool
-	n     int64
-}
-
-// diagnoseValue lists the most frequent values of the field the query's
-// first filter compares with a string, over the query's own fetch stage, and
-// reports the values that differ from the compared one only in case or by a
-// prefix/suffix. A near match is the structured finding; otherwise the listing
-// is plain advice, since the value may simply be absent in this window.
-func diagnoseValue(ctx context.Context, probe probeFunc, query, object string, opts DQLExecuteOptions) (*output.EmptyReason, []string) {
-	field, value := filterValueCondition(query)
-	if field == "" {
-		return nil, nil
-	}
-	stages := splitStages(query)
-	probeOpts := baseProbeOptions(opts)
-	probeOpts.MaxResultRecords = emptyProbeValueGroups
-	probeOpts.DefaultTimeframeStart = opts.DefaultTimeframeStart
-	probeOpts.DefaultTimeframeEnd = opts.DefaultTimeframeEnd
-	resp, err := probe(ctx, fmt.Sprintf("%s | summarize n = count(), by:{v = %s} | sort n desc | limit %d", stages[0], field, emptyProbeValueGroups), probeOpts)
-	if err != nil || resp == nil {
-		return nil, nil
-	}
-	var groups []valueCount
-	for _, r := range resp.GetRecords() {
-		if _, ok := r["v"]; !ok {
-			continue
-		}
-		g := valueCount{n: countValue(r["n"])}
-		switch v := r["v"].(type) {
-		case nil:
-			g.null = true
-		case string:
-			g.value = v
-		default:
-			g.value = fmt.Sprint(v)
-		}
-		groups = append(groups, g)
-	}
-	if len(groups) == 0 {
-		return nil, nil
-	}
-	basis := "in the query window"
-	if probeIsPartial(resp) {
-		basis = "in the part of the query window a bounded scan read"
-	}
-	name := strings.Trim(field, "`")
-	if len(groups) == 1 && groups[0].null {
-		return nil, []string{fmt.Sprintf("# `%s` is empty (null) on every `%s` record %s, so no filter on it can match — the value is likely carried by another field", name, object, basis)}
-	}
-	needle := strings.ToLower(strings.Trim(value, "*"))
-	var near []string
-	for _, g := range groups {
-		if g.null || g.value == value {
-			continue
-		}
-		c := strings.ToLower(g.value)
-		if needle != "" && (c == needle || (len(needle) >= 3 && strings.Contains(c, needle)) || (len(c) >= 3 && strings.Contains(needle, c))) {
-			near = append(near, g.value)
-			if len(near) == 3 {
-				break
-			}
-		}
-	}
-	top := make([]string, 0, emptyProbeValuesShown)
-	for _, g := range groups[:min(len(groups), emptyProbeValuesShown)] {
-		top = append(top, fmt.Sprintf("%s (%d)", quoteValue(g), g.n))
-	}
-	if len(near) == 0 {
-		return nil, []string{fmt.Sprintf("# no `%s` record %s has `%s` matching %q; its most frequent values are %s — check the value, or whether another field carries it", object, basis, name, value, strings.Join(top, ", "))}
-	}
-	quoted := make([]string, len(near))
-	for i, v := range near {
-		quoted[i] = strconv.Quote(clipValue(v))
-	}
-	return &output.EmptyReason{
-			Code:       "value_not_found",
-			Field:      name,
-			DataObject: object,
-			DidYouMean: near,
-			Evidence:   fmt.Sprintf("no `%s` value %s matches %q, but %s exist (values of `%s` grouped over the query's fetch stage)", name, basis, value, strings.Join(quoted, ", "), name),
-		}, []string{
-			fmt.Sprintf("# `%s` has no value matching %q %s, but it has %s — string comparisons are exact and case-sensitive; use the stored value, or `contains(%s, %q, caseSensitive: false)`, before concluding there is no data", name, value, basis, strings.Join(quoted, ", "), field, strings.Trim(value, "*")),
-		}
-}
-
-func quoteValue(g valueCount) string {
-	if g.null {
-		return "null"
-	}
-	return strconv.Quote(clipValue(g.value))
-}
-
-// clipValue shortens a value for display; log lines can be kilobytes long.
-func clipValue(v string) string {
-	if len(v) > 60 {
-		return v[:57] + "..."
-	}
-	return v
-}
-
-// countValue reads a count() result, which Grail may encode as a number or,
-// for a long, as a string.
-func countValue(v interface{}) int64 {
-	switch n := v.(type) {
-	case string:
-		i, _ := strconv.ParseInt(n, 10, 64)
-		return i
-	case json.Number:
-		i, _ := n.Int64()
-		return i
-	}
-	f, _ := toFloat64(v)
-	return int64(f)
 }

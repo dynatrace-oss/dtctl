@@ -188,8 +188,7 @@ func (c *ResponseContext) MarkFieldsClipped(max int, fields []string) {
 // names its basis in Evidence (a sample, or the window that was checked), so
 // a consumer never mistakes a sampled observation for a catalog fact.
 type EmptyReason struct {
-	// Code is "field_not_in_sample", "metric_not_in_window" or
-	// "value_not_found".
+	// Code is "field_not_in_sample" or "metric_not_in_window".
 	Code       string   `json:"code"`
 	Field      string   `json:"field,omitempty"`
 	Metric     string   `json:"metric,omitempty"`
