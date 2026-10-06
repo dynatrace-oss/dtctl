@@ -110,7 +110,7 @@ func (b *Book) NextSteps(r *Recipe, params map[string]any, carry Carry, empty bo
 		for k, v := range args {
 			kept[k] = v
 		}
-		out = append(out, NextStep{Recipe: target, Args: kept, Carry: c, Follow: n.Follow, Line: CommandLine(target, args, c)})
+		out = append(out, NextStep{Recipe: target, Args: kept, Carry: c, Follow: n.Follow || firstRowHas(rows, n.FollowIf), Line: CommandLine(target, args, c)})
 	}
 	return out
 }
@@ -429,4 +429,18 @@ func FollowOrder(steps []NextStep) []NextStep {
 		}
 	}
 	return out
+}
+
+// firstRowHas reports whether want is non-empty and the first result row
+// holds each of its field values.
+func firstRowHas(rows []map[string]any, want map[string]string) bool {
+	if len(want) == 0 || len(rows) == 0 {
+		return false
+	}
+	for k, v := range want {
+		if got, ok := rows[0][k]; !ok || fmt.Sprint(got) != v {
+			return false
+		}
+	}
+	return true
 }

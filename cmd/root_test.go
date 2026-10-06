@@ -1765,6 +1765,8 @@ func TestNounAdvice(t *testing.T) {
 		{"workflow", []string{"dtctl get workflows", "dtctl get workflow-executions"}},
 		{"problems", []string{"fetch dt.davis.problems"}},
 		{"synthetic", []string{"fetch dt.synthetic.events"}},
+		{"slo-status", []string{"dtctl get slos"}},
+		{"workflow-runs", []string{"dtctl get workflows", "dtctl get workflow-executions"}},
 	}
 	for _, tc := range cases {
 		err := enhanceCommandError(rootCmd, fmt.Errorf(`unknown command %q for "dtctl"`, tc.noun))

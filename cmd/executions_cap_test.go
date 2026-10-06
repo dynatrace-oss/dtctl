@@ -3,6 +3,7 @@ package cmd
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestExecutionsCapAdvice(t *testing.T) {
@@ -18,5 +19,19 @@ func TestExecutionsCapAdvice(t *testing.T) {
 		if strings.Contains(strings.Join(at, " "), "Raise --limit") || len(at) != 2 || !strings.HasPrefix(at[1], "dtctl query 'fetch dt.system.events") {
 			t.Errorf("limit %d: %q", limit, at)
 		}
+	}
+}
+
+func TestParseExecTimeDurationAgo(t *testing.T) {
+	got, err := parseExecTime("7d", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts, err := time.Parse(time.RFC3339, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(ts); d < 7*24*time.Hour-time.Minute || d > 7*24*time.Hour+time.Minute {
+		t.Errorf("parseExecTime(7d) = %s, %v ago", got, d)
 	}
 }

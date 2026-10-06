@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -897,6 +898,38 @@ func sampleAdvice(query string, rows int) []string {
 	return nil
 }
 
+// durationAdvice names the result columns Grail types as durations, which
+// arrive as nanosecond integers: agents read 54525000 as seconds or as ms.
+// Without an aggregation in the query it adds how to get a typical value,
+// since agents also took one slow trace's duration as the typical one.
+func durationAdvice(query string, result *DQLQueryResponse) []string {
+	if result == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var cols []string
+	for _, g := range result.GetTypes() {
+		for name, ct := range g.Mappings {
+			if ct.Type == "duration" && !seen[name] {
+				seen[name] = true
+				cols = append(cols, name)
+			}
+		}
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	sort.Strings(cols)
+	if len(cols) > 4 {
+		cols = cols[:4]
+	}
+	advice := fmt.Sprintf("# %s: durations in NANOSECONDS (1 ms = 1,000,000) — convert before reporting", backtickList(cols))
+	if topLevelIndex(strings.ToLower(query), "summarize") < 0 && topLevelIndex(strings.ToLower(query), "maketimeseries") < 0 {
+		advice += fmt.Sprintf("; one record's duration is not a typical one, use e.g. `| summarize p50 = percentile(%s, 50), p90 = percentile(%s, 90)`", cols[0], cols[0])
+	}
+	return []string{advice}
+}
+
 // allAggregatesZero reports whether a single result row carries only zero
 // numeric values (DQL long aggregates arrive as JSON strings) — the shape a
 // `summarize count()` produces when nothing matched.
@@ -1247,6 +1280,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
 	suggestions = append(suggestions, sampleAdvice(query, len(records))...)
+	suggestions = append(suggestions, durationAdvice(query, result)...)
 	suggestions = append(suggestions, metaAdvice...)
 	suggestions = append(suggestions, seriesAdvice(opts)...)
 

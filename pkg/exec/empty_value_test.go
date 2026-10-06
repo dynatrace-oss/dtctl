@@ -106,3 +106,24 @@ func TestSampleAdvice(t *testing.T) {
 		}
 	}
 }
+
+func TestDurationAdvice(t *testing.T) {
+	typed := func(cols map[string]string) *DQLQueryResponse {
+		m := map[string]ColumnType{}
+		for k, v := range cols {
+			m[k] = ColumnType{Type: v}
+		}
+		return &DQLQueryResponse{State: "SUCCEEDED", Result: &DQLResult{Types: []ColumnTypes{{Mappings: m}}}}
+	}
+	got := durationAdvice(`fetch spans | sort duration desc | limit 3`, typed(map[string]string{"duration": "duration", "span.name": "string"}))
+	if len(got) != 1 || !strings.Contains(got[0], "`duration`: durations in NANOSECONDS") || !strings.Contains(got[0], "percentile(duration, 50)") {
+		t.Errorf("raw durations: %q", got)
+	}
+	got = durationAdvice(`fetch spans | summarize p50 = percentile(duration, 50)`, typed(map[string]string{"p50": "duration"}))
+	if len(got) != 1 || strings.Contains(got[0], "percentile") {
+		t.Errorf("aggregated durations need no percentile hint: %q", got)
+	}
+	if got := durationAdvice(`fetch logs`, typed(map[string]string{"content": "string"})); got != nil {
+		t.Errorf("no duration column: %q", got)
+	}
+}

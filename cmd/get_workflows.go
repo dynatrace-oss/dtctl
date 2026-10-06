@@ -11,6 +11,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
 	"github.com/dynatrace-oss/dtctl/pkg/prompt"
+	"github.com/dynatrace-oss/dtctl/pkg/recipes"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/resolver"
 	"github.com/dynatrace-oss/dtctl/pkg/resources/workflow"
 	"github.com/dynatrace-oss/dtctl/pkg/safety"
@@ -347,7 +348,7 @@ func init() {
 	getWorkflowExecutionsCmd.Flags().Int64("limit", 100, "Maximum number of executions to return (max 1000)")
 	getWorkflowExecutionsCmd.Flags().String("state", "", "Filter by state: RUNNING, SUCCESS, ERROR, CANCELLED, UNKNOWN")
 	getWorkflowExecutionsCmd.Flags().String("trigger", "", "Filter by trigger type: Manual, Schedule, Event, Workflow")
-	getWorkflowExecutionsCmd.Flags().String("started-since", "", "Show executions started at or after this time (YYYY-MM-DD or ISO 8601)")
+	getWorkflowExecutionsCmd.Flags().String("started-since", "", "Show executions started at or after this time (a duration ago such as 7d, YYYY-MM-DD or ISO 8601)")
 	getWorkflowExecutionsCmd.Flags().String("started-until", "", "Show executions started at or before this time (YYYY-MM-DD = end of day 23:59:59, or ISO 8601)")
 	getWorkflowsCmd.Flags().Bool("mine", false, "Show only workflows owned by current user")
 	getWorkflowsCmd.Flags().String("filter", "", "Search workflows by title")
@@ -379,10 +380,15 @@ func parseExecTime(s string, endOfDay bool) (string, error) {
 			return t.UTC().Format(time.RFC3339), nil
 		}
 	}
+	// A duration ago, as --from takes it elsewhere ("7d", "12h"): agents
+	// wrote it here too and got an error.
+	if d, err := recipes.ParseDuration(s); err == nil {
+		return time.Now().Add(-d).UTC().Format(time.RFC3339), nil
+	}
 	// Fall back to date-only
 	t, err := time.Parse("2006-01-02", s)
 	if err != nil {
-		return "", fmt.Errorf("use YYYY-MM-DD or ISO 8601 (e.g. 2006-01-02T15:04:05Z)")
+		return "", fmt.Errorf("use a duration ago (7d, 12h), YYYY-MM-DD or ISO 8601 (e.g. 2006-01-02T15:04:05Z)")
 	}
 	if endOfDay {
 		t = t.Add(23*time.Hour + 59*time.Minute + 59*time.Second)

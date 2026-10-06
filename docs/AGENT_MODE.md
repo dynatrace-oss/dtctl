@@ -297,6 +297,17 @@ and `note` says so, because a count over 2h reads exactly like a count over
            "note": "the query names no window, so it read the default last 2h; widen it with fetch ..., from: now()-24h or --from 24h"}
 ```
 
+### Result notes: samples and durations
+
+Two suggestions describe what a non-empty result is *not*:
+
+- an unsorted `| limit N` that returned exactly N rows: these are the first
+  records read, not a representative sample, so they cannot show how often
+  something occurs or that it never does;
+- columns Grail types as `duration`: their values are nanoseconds, and when
+  the query does not aggregate, one record's duration is not a typical one
+  (`percentile(<col>, 50)` is).
+
 ### Empty query results: `context.empty_reason`
 
 A misspelled field name or metric key makes DQL succeed with zero rows. On an

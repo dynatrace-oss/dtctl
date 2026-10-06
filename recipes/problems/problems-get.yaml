@@ -3,7 +3,7 @@ apiVersion: dtctl.dev/v1alpha1
 kind: Recipe
 metadata:
   name: problems-get
-  version: 3
+  version: 4
   tags: [problems, davis, root-cause]
 spec:
   summary: Details, root cause and affected entities of one problem (P-xxxxx)
@@ -56,10 +56,13 @@ spec:
   # The follow-ups run over the problem's own hours, not this search horizon:
   # an old problem's logs are outside the last 2h, and a reused display ID
   # is pinned to the latest problem by its window.
+  # --follow reads an error problem's logs, where the failing call's own
+  # message is, and any other problem's evidence.
   next:
     - recipe: problems-logs
       with: { id: "{{.id}}" }
       when: nonempty
+      followIf: { event.category: ERROR }
       window: { from: event.start, to: event.end, pad: 15m }
     - recipe: problems-evidence
       follow: true

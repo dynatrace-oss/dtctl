@@ -377,6 +377,12 @@ type Next struct {
 	// Follow marks the edge as the usual next step: `run --follow` takes it
 	// before the others, and a command line for this recipe offers --follow.
 	Follow bool `json:"follow,omitempty" yaml:"follow,omitempty"`
+	// FollowIf makes the edge the usual next step only for a result whose
+	// first row holds these field values ({event.category: ERROR}): an error
+	// problem's cause is in its logs, a slowdown's in its evidence. The edge
+	// is suggested either way, and `run --follow` takes it ahead of a
+	// `follow: true` edge.
+	FollowIf map[string]string `json:"followIf,omitempty" yaml:"followIf,omitempty"`
 }
 
 // NextWindow names the row fields that hold a follow-up's window. To may be

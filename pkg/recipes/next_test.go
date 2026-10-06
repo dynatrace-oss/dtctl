@@ -290,3 +290,33 @@ next:
 		assert.Contains(t, b.Problems[0].Message, want, spec)
 	}
 }
+
+func TestFollowIfMarksTheEdgeForMatchingRows(t *testing.T) {
+	b := loadBook(t, map[string]string{
+		"services/services-pget.yaml": recipeYAML("services-pget", `
+summary: get
+timeframe: 2h
+dql: fetch dt.davis.problems
+means: m
+emptyMeans: e
+next:
+  - recipe: services-plogs
+    when: nonempty
+    followIf: {event.category: ERROR}
+  - recipe: services-pev
+    when: nonempty
+    follow: true
+`),
+		"services/services-plogs.yaml": recipeYAML("services-plogs", "summary: logs\ntimeframe: 2h\ndql: fetch logs\nmeans: m\nemptyMeans: e\n"),
+		"services/services-pev.yaml":   recipeYAML("services-pev", "summary: ev\ntimeframe: 2h\ndql: fetch events\nmeans: m\nemptyMeans: e\n"),
+	})
+	require.Empty(t, b.Problems)
+	r := b.Get("services-pget")
+	first := func(rows []map[string]any) string {
+		return FollowOrder(b.NextSteps(r, nil, Carry{}, false, rows))[0].Recipe.Name()
+	}
+	assert.Equal(t, "services-plogs", first([]map[string]any{{"event.category": "ERROR"}}))
+	assert.Equal(t, "services-pev", first([]map[string]any{{"event.category": "SLOWDOWN"}}))
+	// Suggested either way.
+	assert.Len(t, b.NextSteps(r, nil, Carry{}, false, []map[string]any{{"event.category": "SLOWDOWN"}}), 2)
+}

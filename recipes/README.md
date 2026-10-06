@@ -162,6 +162,11 @@ command line that suggests this recipe (a `next` suggestion, a hint on
 `dtctl query`) ends in `--follow`, so the agent gets both results in one call.
 Mark at most one edge per recipe, and only one whose target is cheap.
 
+`followIf: {<field>: <value>}` marks an edge as the next step only when the
+first result row holds those values, and `--follow` then takes it ahead of the
+`follow: true` edge. problems-get reads an ERROR problem's logs and any other
+problem's evidence this way. The edge is suggested either way.
+
 ### `checks`
 
 The traps the recipe avoids, as tests an ad-hoc `dtctl query` runs against.

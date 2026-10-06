@@ -50,7 +50,13 @@ var dataNouns = map[string]string{
 func nounAdvice(name string) []string {
 	n := strings.ToLower(name)
 	var out []string
-	for _, r := range getResourcesNamed(n) {
+	named := getResourcesNamed(n)
+	// A guessed compound ("slo-status", "workflow-runs") names its resource
+	// in its first word.
+	if head, _, found := strings.Cut(n, "-"); found && len(named) == 0 {
+		named = getResourcesNamed(head)
+	}
+	for _, r := range named {
 		out = append(out, "dtctl get "+r)
 	}
 	// A resource the noun names is the answer; recipe search would add
