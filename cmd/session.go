@@ -247,7 +247,8 @@ func applyRunEnvironment(ctx context.Context, opts RunOptions) (cleanup func(), 
 	// variable for every other in-flight request. The overlay is read back by
 	// cmd.getenv/lookupEnv, and by sdk/session through the Config each
 	// invocation gets (withInvocationEnv); a DTCTL_* read through os.Getenv
-	// anywhere else sees the host's value instead.
+	// anywhere else sees the host's value instead
+	// (TestConcurrentRequestDecidesItsOwnSurface).
 	inv := current(ctx)
 	concurrent := inv != nil && inv.concurrent
 	if concurrent && inv.env == nil {

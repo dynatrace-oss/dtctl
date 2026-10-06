@@ -45,6 +45,8 @@ var processStreamAllowed = map[string]string{
 // host's log instead of the tenant's response: the response loses it, and the
 // log gains tenant data. In cmd/ write to currentStdout(ctx)/currentStderr(ctx)
 // or the command's own writers; a pkg/ type takes its streams from its caller.
+// TestConcurrentEqualsSerialized (pkg/engine) checks the same at run time for
+// its corpus; this checks every line.
 func TestNoProcessStreamWritesOnRequestPaths(t *testing.T) {
 	for _, dir := range []string{".", "../pkg"} {
 		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
