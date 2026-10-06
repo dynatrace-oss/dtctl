@@ -3,7 +3,7 @@ package exec
 import (
 	"bytes"
 	"fmt"
-	"os"
+	"io"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -52,7 +52,7 @@ func (e *DQLExecutor) trySpill(query string, result *DQLQueryResponse, records [
 	if !handled {
 		return false, nil
 	}
-	return true, output.EncodeEnvelope(os.Stdout, resp)
+	return true, output.EncodeEnvelope(e.outW(), resp)
 }
 
 // buildSpillResponse makes the inline-vs-spill decision (D5/D19-buffered),
@@ -72,7 +72,7 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 	// in the display encoding (D24); a spill file keeps the full rows.
 	inline := newInlineRows(records, compaction, opts.MaxFieldChars)
 	inline.types = emittedTypes(result, opts)
-	measured, encoding := measureInline(inline, displayFormat, inlineLayout(opts, displayFormat))
+	measured, encoding := measureInline(inline, displayFormat, inlineLayout(e.outW(), opts, displayFormat))
 	switch opts.Spill.Mode {
 	case SpillAuto:
 		if measured <= opts.Spill.Threshold {
@@ -433,10 +433,12 @@ func compactionFor(records []map[string]interface{}, opts DQLExecuteOptions) *ou
 // (up to about 2.5x smaller than the same rows indented, for narrow rows), and indented at the depth
 // of result.records on a terminal. Outside agent mode printRecords prints
 // {"records": [...]} with the indenting JSON printer, or for -o jsonl the
-// rows one compact line each with JSONLPrinter.
-func inlineLayout(opts DQLExecuteOptions, format string) output.JSONLayout {
+// rows one compact line each with JSONLPrinter. stdout is the writer this
+// invocation prints to, not the process's: the layout depends on whether it is
+// a terminal.
+func inlineLayout(stdout io.Writer, opts DQLExecuteOptions, format string) output.JSONLayout {
 	if opts.AgentMode {
-		return output.EnvelopeRecordsLayout(os.Stdout)
+		return output.EnvelopeRecordsLayout(stdout)
 	}
 	if strings.ToLower(strings.TrimSpace(format)) == "jsonl" {
 		return output.JSONLinesLayout

@@ -3,7 +3,6 @@ package exec
 import (
 	"fmt"
 	"math"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -95,7 +94,7 @@ func mergeSorted(a, b []string) []string {
 func (e *DQLExecutor) fitToBudget(query string, result *DQLQueryResponse, resp output.Response, rows inlineRows, encoding string, auto bool, opts DQLExecuteOptions) output.Response {
 	budget := opts.MaxOutputBytes
 	size := func(r output.Response) int64 {
-		n, err := output.EnvelopeSize(os.Stdout, r)
+		n, err := output.EnvelopeSize(e.outW(), r)
 		if err != nil {
 			return math.MaxInt64
 		}

@@ -26,6 +26,7 @@ type WaitConfig struct {
 	Quiet        bool
 	Verbose      bool
 	ProgressOut  io.Writer // Where to write progress messages (default: stderr)
+	Out          io.Writer // Where PrintResults writes (default: stdout)
 }
 
 // QueryWaiter polls a query until a condition is met
@@ -296,7 +297,7 @@ func (w *QueryWaiter) PrintResults(result *Result) error {
 		return nil
 	}
 
-	printer := output.NewPrinter(w.config.OutputFormat)
+	printer := output.NewPrinterWithOpts(output.PrinterOptions{Format: w.config.OutputFormat, Writer: w.config.Out})
 	if w.config.OutputFormat == "table" {
 		if len(result.Records) == 0 {
 			return nil

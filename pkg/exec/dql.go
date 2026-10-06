@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"runtime"
@@ -54,12 +55,46 @@ type DQLExecutor struct {
 	tokenRefresher func() (string, error)
 	// probe overrides the runner for empty-result diagnostic queries (tests).
 	probe probeFunc
+	// stdout and stderr receive the executor's output; nil means the process
+	// streams. vfsEnv resolves query files; the zero value is the process's.
+	stdout io.Writer
+	stderr io.Writer
+	vfsEnv vfs.Env
 }
 
 // NewDQLExecutor creates a new DQL executor
 func NewDQLExecutor(c *client.Client) *DQLExecutor {
 	sdk := sdkquery.NewHandler(httpclient.Wrap(c.HTTP()))
 	return &DQLExecutor{client: c, sdk: sdk}
+}
+
+// WithStreams directs the executor's results to stdout and its notices,
+// progress and diagnostics to stderr, for a caller that owns the invocation's
+// streams. nil keeps the process stream.
+func (e *DQLExecutor) WithStreams(stdout, stderr io.Writer) *DQLExecutor {
+	e.stdout, e.stderr = stdout, stderr
+	return e
+}
+
+// WithVFS sets the filesystem and stdin the executor reads query files from.
+// The zero Env keeps the process's.
+func (e *DQLExecutor) WithVFS(env vfs.Env) *DQLExecutor {
+	e.vfsEnv = env
+	return e
+}
+
+func (e *DQLExecutor) outW() io.Writer {
+	if e.stdout == nil {
+		return os.Stdout
+	}
+	return e.stdout
+}
+
+func (e *DQLExecutor) errW() io.Writer {
+	if e.stderr == nil {
+		return os.Stderr
+	}
+	return e.stderr
 }
 
 // WithTokenRefresher sets an optional callback that is invoked when a poll request
@@ -393,7 +428,7 @@ func (e *DQLExecutor) runQuery(ctx context.Context, query string, opts DQLExecut
 	// interactive TTY, so piped/agent/structured output is untouched. Stop()
 	// erases the line on error and cancellation; Complete() replaces it with a
 	// summary on success.
-	reporter := output.NewProgressReporter(opts.ShowProgress, opts.AgentMode)
+	reporter := output.NewProgressReporterTo(opts.ShowProgress, opts.AgentMode, e.errW())
 	defer reporter.Stop()
 
 	// Remember the last live scan totals so the completion summary can fall back
@@ -442,9 +477,9 @@ func (e *DQLExecutor) runQuery(ctx context.Context, query string, opts DQLExecut
 		// emit one to separate the message from a shell's "^C" echo.
 		if ctx.Err() != nil {
 			if !drawing {
-				fmt.Fprintln(os.Stderr)
+				fmt.Fprintln(e.errW())
 			}
-			fmt.Fprintln(os.Stderr, "Query cancelled.")
+			fmt.Fprintln(e.errW(), "Query cancelled.")
 			return nil, nil
 		}
 		// Enhance known error types with CLI-specific hints.
@@ -945,14 +980,14 @@ func (e *DQLExecutor) PrintNotifications(notifications []QueryNotification) {
 			severity = "INFO"
 		}
 		if severity == "WARNING" || severity == "WARN" {
-			output.PrintWarning("%s", n.Message)
+			output.FprintWarning(e.errW(), "%s", n.Message)
 			if hint := getHintForNotification(n.NotificationType, n.Message); hint != "" {
-				output.PrintHint("%s", hint)
+				output.FprintHint(e.errW(), "%s", hint)
 			}
 		} else if severity == "ERROR" {
-			output.PrintHumanError("%s", n.Message)
+			output.FprintHumanError(e.errW(), "%s", n.Message)
 			if hint := getHintForNotification(n.NotificationType, n.Message); hint != "" {
-				output.PrintHint("%s", hint)
+				output.FprintHint(e.errW(), "%s", hint)
 			}
 		}
 	}
@@ -986,7 +1021,7 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 		// Approximations ride with the notifications: stderr here, the
 		// envelope's context.warnings in agent mode.
 		for _, w := range approximationWarnings(result) {
-			output.PrintWarning("%s", w)
+			output.FprintWarning(e.errW(), "%s", w)
 		}
 		notifications := result.GetNotifications()
 		if len(notifications) == 0 {
@@ -994,7 +1029,7 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 		}
 		e.PrintNotifications(notifications)
 		if advice := unsortedSummarizeAdvice(query, notifications); advice != "" {
-			output.PrintHint("%s", advice)
+			output.FprintHint(e.errW(), "%s", advice)
 		}
 	}
 	if !opts.AgentMode {
@@ -1087,7 +1122,7 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 	// printed, so the auto printer decides after the filter instead.
 	if output.IsAutoFormat(effectiveFormat) && opts.JQFilter == "" {
 		choice := output.ChooseAutoFormat(records)
-		output.FprintAutoChoice(os.Stderr, choice)
+		output.FprintAutoChoice(e.errW(), choice)
 		effectiveFormat = choice.Format
 	}
 
@@ -1098,12 +1133,14 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 	// auto run that picks csv warns and one that picks yaml does not.
 	if opts.TypesRequested {
 		if w := includeTypesInertWarning(effectiveFormat, len(records)); w != "" {
-			output.PrintWarning("%s", w)
+			output.FprintWarning(e.errW(), "%s", w)
 		}
 	}
 
 	printer := output.NewPrinterWithOpts(output.PrinterOptions{
 		Format:     effectiveFormat,
+		Writer:     e.outW(),
+		Notice:     e.errW(),
 		JQFilter:   opts.JQFilter,
 		Width:      opts.Width,
 		Height:     opts.Height,
@@ -1126,7 +1163,7 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 			return err
 		}
 		if meta != nil {
-			fmt.Fprint(os.Stderr, output.FormatMetadataFooter(meta, opts.MetadataFields))
+			fmt.Fprint(e.errW(), output.FormatMetadataFooter(meta, opts.MetadataFields))
 		}
 		return nil
 
@@ -1135,7 +1172,7 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 			return nil
 		}
 		if meta != nil {
-			fmt.Fprint(os.Stderr, output.FormatMetadataCSVComments(meta, opts.MetadataFields))
+			fmt.Fprint(e.errW(), output.FormatMetadataCSVComments(meta, opts.MetadataFields))
 		}
 		return printer.PrintList(records)
 
@@ -1154,7 +1191,7 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 
 	case "chart", "sparkline", "spark", "barchart", "bar", "braille", "br":
 		if meta != nil {
-			output.PrintWarning("--metadata is not supported with chart output formats")
+			output.FprintWarning(e.errW(), "--metadata is not supported with chart output formats")
 		}
 		if len(records) > 0 {
 			return printer.Print(map[string]interface{}{"records": records})
@@ -1276,7 +1313,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 		ctx.Warnings = append(ctx.Warnings, "--max-output-bytes/--max-output-tokens are not applied to --jq output; narrow the filter to bound it")
 	}
 
-	ap := output.NewAgentPrinter(os.Stdout, ctx)
+	ap := output.NewAgentPrinter(e.outW(), ctx)
 	ap.SetJQFilter(opts.JQFilter)
 	// Clipped after the filter ran, so the filter matches on full values.
 	ap.SetMaxFieldChars(opts.MaxFieldChars)
@@ -1408,15 +1445,15 @@ func (e *DQLExecutor) CancelQuery(requestToken string) {
 	defer cancel()
 
 	if err := handler.Cancel(ctx, requestToken); err != nil {
-		fmt.Fprintf(os.Stderr, "\nFailed to cancel query: %v\n", err)
+		fmt.Fprintf(e.errW(), "\nFailed to cancel query: %v\n", err)
 		return
 	}
-	fmt.Fprintln(os.Stderr, "\nQuery cancelled.")
+	fmt.Fprintln(e.errW(), "\nQuery cancelled.")
 }
 
 // ExecuteFromFile executes a DQL query from a file
 func (e *DQLExecutor) ExecuteFromFile(filename string, outputFormat string) error {
-	data, err := vfs.ReadFile(filename)
+	data, err := e.vfsEnv.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
