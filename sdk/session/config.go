@@ -76,6 +76,9 @@ type Config struct {
 	// the inline Tokens list. When true, GetToken never consults the keyring,
 	// file store, or OAuth machinery — only the values carried in the struct.
 	inlineOnly bool
+	// env, when set, answers the environment lookups this Config's methods
+	// make instead of the process environment. See WithEnv.
+	env func(key string) (string, bool)
 }
 
 // SealInlineCredentials marks this config as inline-only: token resolution will
