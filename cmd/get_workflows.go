@@ -241,7 +241,7 @@ Examples:
 			// server total exceeds what was returned so agents don't assume completeness.
 			if list.Count > len(list.Results) {
 				ap.SetHasMore(true)
-				suggestions = append(suggestions, fmt.Sprintf("Showing %d of %d. Raise --limit (currently %d) or narrow the window with --started-since/--state.", len(list.Results), list.Count, limit))
+				suggestions = append(suggestions, executionsCapAdvice(len(list.Results), list.Count, limit)...)
 			}
 			ap.SetSuggestions(suggestions)
 		}
@@ -396,4 +396,23 @@ func init() {
 	stability.MarkStable(deleteWorkflowCmd)
 	stability.MarkStable(getWorkflowExecutionsCmd)
 	stability.MarkStable(getWorkflowsCmd)
+}
+
+// executionCountQuery counts final workflow executions per workflow from the
+// automation engine's events, which, unlike the execution listing, have no
+// page cap.
+const executionCountQuery = `dtctl query 'fetch dt.system.events, from:now()-7d | filter event.kind == "WORKFLOW_EVENT" and event.type == "WORKFLOW_EXECUTION" and dt.automation_engine.state.is_final == true | summarize executions = count(), failed = countIf(dt.automation_engine.state != "SUCCESS"), by:{dt.automation_engine.workflow.title} | sort executions desc'`
+
+// executionsCapAdvice explains a truncated execution listing. Below the cap,
+// raising --limit fetches the rest. At the cap it cannot (the API returns at
+// most workflow.MaxExecutionLimit), and agents counted the capped page as the
+// whole window, so the advice says so and offers the count query instead.
+func executionsCapAdvice(shown, total int, limit int64) []string {
+	if limit > 0 && limit < workflow.MaxExecutionLimit {
+		return []string{fmt.Sprintf("Showing %d of %d. Raise --limit (currently %d, at most %d) or narrow the window with --started-since/--state.", shown, total, limit, workflow.MaxExecutionLimit)}
+	}
+	return []string{
+		fmt.Sprintf("Showing %d of %d: the listing returns at most %d executions, so counts taken from it are incomplete. To count executions per workflow, query the execution events:", shown, total, workflow.MaxExecutionLimit),
+		executionCountQuery,
+	}
 }

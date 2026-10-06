@@ -299,6 +299,7 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, rows.full, opts)
 	notifSuggestions = append(notifSuggestions, emptySuggestions...)
 	notifSuggestions = append(notifSuggestions, lookbackAdvice(query)...)
+	notifSuggestions = append(notifSuggestions, sampleAdvice(query, len(rows.full))...)
 	notifSuggestions = append(notifSuggestions, seriesAdvice(opts)...)
 	if encodeWarning != "" {
 		notifWarnings = append(notifWarnings, encodeWarning)

@@ -868,6 +868,35 @@ func lookbackAdvice(query string) []string {
 	return []string{fmt.Sprintf("# dt.entity.%s is an event-LOOKBACK view (entities seen in the query window), not the live topology — for a current-state census or inventory use: dtctl query 'smartscapeNodes \"%s\" | summarize count()'", m[1], t)}
 }
 
+// sampleAdvice rides a fetch whose unsorted `| limit N` let exactly N rows
+// through: those are whichever records were read first, not a representative
+// sample. Agents read 20 such rows, saw only successes, and reported that
+// nothing failed. A sorted limit is a deliberate top-N and gets no advice, and
+// an aggregation anywhere makes the rows a summary, not a sample.
+func sampleAdvice(query string, rows int) []string {
+	stages := splitStages(query)
+	if len(stages) < 2 || fetchStageRe.FindStringSubmatch(stages[0]) == nil {
+		return nil
+	}
+	sorted := false
+	for _, st := range stages[1:] {
+		cmd, rest := splitCommand(st)
+		switch strings.ToLower(cmd) {
+		case "summarize", "maketimeseries", "fieldssummary", "append", "join", "lookup":
+			return nil
+		case "sort":
+			sorted = true
+		case "limit":
+			n, err := strconv.Atoi(strings.TrimSpace(rest))
+			if err != nil || n != rows || sorted || n == 0 {
+				return nil
+			}
+			return []string{fmt.Sprintf("# these %d rows are the first records `limit %d` let through, not a representative sample — they cannot show how often something occurs or that it never does; aggregate before concluding, e.g. `| summarize count(), by:{<field>}`", n, n)}
+		}
+	}
+	return nil
+}
+
 // allAggregatesZero reports whether a single result row carries only zero
 // numeric values (DQL long aggregates arrive as JSON strings) — the shape a
 // `summarize count()` produces when nothing matched.
@@ -1217,6 +1246,7 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
 	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
+	suggestions = append(suggestions, sampleAdvice(query, len(records))...)
 	suggestions = append(suggestions, metaAdvice...)
 	suggestions = append(suggestions, seriesAdvice(opts)...)
 
