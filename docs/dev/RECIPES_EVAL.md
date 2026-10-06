@@ -1761,3 +1761,90 @@ v7b (2bb4aed3) against v7a (e41a7bb3), same design:
 - `problems-get --follow` reads an ERROR problem's logs (recipe `followIf`).
 
 H15's targeted tasks for v7b are t19, t37 and t38. H16 is unchanged.
+
+# v7 results
+
+## v7 verdict
+
+Neither increment meets H15 or H16. Over 30 tasks, both are
+indistinguishable from the build before them. v7a explains empty, sampled
+and capped results; v7b adds SLO, duration and catalog notes. Pooled, the
+v7b build against the v6 build is −0.11 [−0.53, +0.31].
+
+One task moved clearly: t38 (SLO status) went from 1, 2, 1 at 21 calls to
+3, 3, 3 at 5 calls. With `get slos` naming `dtctl exec slo`, Haiku stops
+reading targets as status. All the other targeted tasks are within run-to-run
+noise.
+
+90 runs per arm cannot resolve a ±0.3 change on Haiku. The same v7a build
+scored 1.84 in one batch and 1.86 in the next, while single tasks swing from
+3, 3, 3 to 0, 0, 0 between batches (t31, traced below).
+
+## v7 runs
+
+Per arm: 90 runs, Haiku, no skills, taskset `v5`. There were no 429s and no
+missing results, and all runs were judged. Each increment cost about $22,
+judging included.
+
+| increment | arm (build) | score [95% CI] | fully correct | zero | calls | cost $/run |
+|---|---|---|---|---|---|---|
+| v7a | A0 (9c00b30d) | 1.98 [1.59, 2.34] | 49 | 17 | 13.0 | 0.089 |
+| v7a | B0 (e41a7bb3) | 1.84 [1.43, 2.23] | 42 | 21 | 12.9 | 0.087 |
+| v7b | A0 (e41a7bb3) | 1.86 [1.51, 2.20] | 39 | 17 | 13.7 | 0.096 |
+| v7b | B0 (2bb4aed3) | 1.87 [1.48, 2.23] | 44 | 22 | 13.0 | 0.086 |
+
+| B0 − A0 (two-level bootstrap) | v7a | v7b |
+|---|---|---|
+| score, all 30 tasks | −0.13 [−0.53, +0.24] | +0.01 [−0.42, +0.44] |
+| score, targeted | +0.25 [−0.38, +0.92] | +0.44 [−0.33, +1.56] |
+| score, untargeted | −0.27 [−0.74, +0.18] | −0.04 [−0.51, +0.42] |
+| score, uncovered | −0.20 [−0.90, +0.47] | +0.17 [−0.63, +0.97] |
+| cost $/run | −0.003 | −0.011 [−0.027, +0.004] |
+
+## What v7 showed
+
+**The agent reads the new notes.**
+
+| note | shown | in runs | next call follows it |
+|---|---|---|---|
+| empty-result value probe | 42 (v7a), 49 (v7b) | 29 | another query 41 and 45 times |
+| sample label on `limit N` | about 110 per batch | — | — |
+| duration (ns) label | 47 | 18 | — |
+| `get slos` → `exec slo` | 3 | 3 | 3 of 3 |
+
+None of them visibly misled a run.
+
+**t31, the largest single drop in v7a (3, 3, 3 → 0, 0, 0), is noise.**
+In all three B0 runs Haiku guessed wrong on its first query (`fetch
+metrics`, `entities()`, a `metric query` command) before any v7a output
+appeared. In v7b the same build scored 0, 0, 3 and 3, 0, 3.
+
+**The workflow-execution cap note did not change t43.** At the 1,000-row cap
+it offers a DQL count instead of a larger `--limit`. It was shown in 3 runs
+per batch and followed once in v7b.
+
+**t37 shows where a recipe edge stops short.** `problems-get --from 30d`
+now lists `problems-logs` first for an ERROR problem (`followIf`). Yet in
+all three runs Haiku answered right after it, restating the problem title,
+without reading the logs. A ranked next step is not enough when the agent
+believes it already has the answer.
+
+**Probe latency:**
+
+| empty results | median | p90 |
+|---|---|---|
+| with the value probe | 1.6 s | 3.0 s |
+| other empty results | 1.0 s | 1.3–1.5 s |
+
+## v7 recommendations
+
+- **Keep the SLO note.** It is the only clear win, and it saves calls.
+- **Keep the empty-result, sample and duration notes as hygiene.** They are
+  correct, read, cheap and showed no harm, but v7 does not show a score
+  gain from them. Don't claim one.
+- **For t37-like tasks, say what is missing, not only what comes next.**
+  A note such as "the problem record names its category, not the cause —
+  run problems-logs for the error" is the next thing to try.
+- **Stop measuring single-feature increments on 90 Haiku runs per arm.**
+  Either replay the targeted tasks with more reps, or bundle changes until
+  the expected effect is above ±0.4.
