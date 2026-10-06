@@ -1748,3 +1748,16 @@ above −0.15, and the cost diff's point estimate is at most +$0.005 per run.
   `v5`.
 - **Spend cap: $25 per increment**, judging included. A run that hits a
   harness failure is re-run once.
+
+## v7b scope (fixed before its run)
+
+v7b (2bb4aed3) against v7a (e41a7bb3), same design:
+- `get slos` says a definition is not a status and names `dtctl exec slo`;
+- duration columns are labelled nanoseconds, with a percentile hint when
+  the query does not aggregate;
+- `dtctl commands` lists six runnable starting points;
+- a guessed compound resource (`slo-status`) resolves by its first word;
+- `--started-since 7d` works on `get workflow-executions`;
+- `problems-get --follow` reads an ERROR problem's logs (recipe `followIf`).
+
+H15's targeted tasks for v7b are t19, t37 and t38. H16 is unchanged.
