@@ -1,0 +1,31 @@
+# logs-error-templates-new v1 — window: default 30m, max 2h, written into the query
+fetch logs, from: toTimestamp("2026-01-15T10:30:00Z"), to: toTimestamp("2026-01-15T12:00:00Z")
+| filter status == "ERROR"
+| filter dt.service.name == "<service>" or service.name == "<service>"
+    or dt.process_group.detected_name == "<service>"
+    or (k8s.workload.name == "<service>"
+        or isNull(k8s.workload.name) and startsWith(k8s.pod.name, concat("<service>", "-"))
+          and (replacePattern(k8s.pod.name, "'-' ALNUM{5,10} '-' ALNUM{5} EOS", "") == "<service>"
+            or replacePattern(k8s.pod.name, "'-' INT EOS", "") == "<service>"
+            or replacePattern(k8s.pod.name, "'-' ALNUM{5} EOS", "") == "<service>"))
+| parse content, "JSON:log.json"
+| fieldsAdd log.msg = toString(coalesce(log.json[message], log.json[msg], log.json[errorMessage],
+      log.json[error_message], content)),
+    log.err = toString(coalesce(log.json[error], log.json[err], log.json[exception]))
+| fieldsAdd template = substring(trim(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replaceString(if(isNull(log.err) or log.err == log.msg, log.msg, else: concat(log.msg, " | ", log.err)), "\n", " "),
+      "DIGIT{4} '-' DIGIT{2} '-' DIGIT{2} [T ] DIGIT{2} ':' DIGIT{2} ':' DIGIT{2} ([.,] DIGIT+)? 'Z'?", "<ts>"),
+      "IPADDR", "<ip>"), "UUIDSTRING", "<id>"), "'0x' XDIGIT+", "<hex>"), "XDIGIT{10,}", "<hex>"), "INT", "<n>")), from: 0, to: 200)
+| fieldsAdd infocus = timestamp >= toTimestamp("2026-01-15T11:30:00Z")
+| summarize { records = countIf(infocus), before = countIf(not(infocus)),
+              first_seen = min(if(infocus, timestamp)), last_seen = max(if(infocus, timestamp)),
+              pods = countDistinct(if(infocus, k8s.pod.name)),
+              example = takeMax(if(infocus, record(timestamp, content = substring(content, from: 0, to: 500)))) },
+    by: {pattern = template}
+| filter records > 0
+| fieldsAdd new = before == 0,
+    per_min = toDouble(records) / 30,
+    before_per_min = toDouble(before) / 60
+| fields pattern, new, records, before, surge = if(before > 0, round(per_min / before_per_min, decimals: 1)),
+    first_seen, last_seen, pods, example = example[content]
+| sort new desc, records desc
+| limit 20

@@ -239,8 +239,15 @@ type DQLExecuteOptions struct {
 	TenantID    string
 	ContextName string
 
-	// Decorate amends the agent envelope context; records is nil when rows streamed to disk.
+	// Decorate amends the agent envelope context (`dtctl run` adds recipe fields); records is nil when rows streamed to disk.
 	Decorate func(ctx *output.ResponseContext, result *DQLQueryResponse, records []map[string]interface{})
+	// EmptyHint is printed to stderr under an empty human-mode result (a recipe's reading
+	// of it); agent mode carries it in context.empty_reason.
+	EmptyHint string
+	// IsEmpty decides when EmptyHint applies; nil means "no rows".
+	IsEmpty func([]map[string]interface{}) bool
+	// SkipEmptyDiagnosis turns off the generic empty-result probes; a recipe's emptyMeans knows better.
+	SkipEmptyDiagnosis bool
 }
 
 // DQLVerifyOptions configures DQL query verification
@@ -999,6 +1006,12 @@ func (e *DQLExecutor) printRecords(query string, result *DQLQueryResponse, recor
 	}
 	if !opts.AgentMode {
 		printNotifications()
+		empty := len(records) == 0 || (opts.IsEmpty != nil && opts.IsEmpty(records))
+		// A cut-short read that found nothing is not the absence the hint
+		// describes; the notification printed above already says so.
+		if empty && opts.EmptyHint != "" && !anyPartial(result.GetNotifications()) {
+			defer output.PrintHint("%s", opts.EmptyHint)
+		}
 	}
 
 	// Apply snapshot decoding if requested
@@ -1422,4 +1435,14 @@ func (e *DQLExecutor) ExecuteFromFile(filename string, outputFormat string) erro
 	}
 
 	return e.Execute(string(data), outputFormat)
+}
+
+// anyPartial reports whether any notification says the result is incomplete.
+func anyPartial(notifications []QueryNotification) bool {
+	for _, n := range notifications {
+		if ResultIsPartial(n) {
+			return true
+		}
+	}
+	return false
 }

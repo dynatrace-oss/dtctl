@@ -106,6 +106,10 @@ an instrumentation change or an ingest — use 'dtctl inventory arrivals'.
 		if segNote != "" {
 			inv.Notes = append(inv.Notes, segNote)
 		}
+		// Partial runs count: an absent verdict is never produced by an exhausted budget.
+		if recipesEnabled() {
+			saveInventoryVerdicts(cfg, verdictsFromInventory(inv, false))
+		}
 
 		if outputFormat == "table" && !agentMode {
 			printInventoryHuman(inv)
@@ -133,11 +137,8 @@ func loadDefinitionsFile(path string) (*inventory.Definitions, error) {
 	return defs, nil
 }
 
-// inventoryMaxResultRecords must exceed the largest `| limit` in the discovery
-// battery (10000, the metric catalog): the executor's default client cap is
-// 1000 records, which silently under-cuts the catalog queries on big tenants —
-// on one, the metric catalog lost every dt.* key to the cut and turned live
-// metric families into fabricated absences.
+// inventoryMaxResultRecords must exceed the largest discovery `| limit` (10000);
+// the executor's default 1000-record cap silently truncates the catalog queries.
 const inventoryMaxResultRecords = 20000
 
 // inventoryRunner adapts the DQL executor to the discovery Runner interface.

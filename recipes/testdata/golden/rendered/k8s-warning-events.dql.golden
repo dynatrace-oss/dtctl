@@ -1,0 +1,24 @@
+# k8s-warning-events v1 — window: default 1h
+fetch events
+| filter event.provider == "KUBERNETES_EVENT" and in(event.status_transition, {"CREATED", "UPDATED"})
+| fieldsAdd reason = dt.kubernetes.event.reason,
+    object_kind = dt.kubernetes.event.involved_object.kind,
+    object = dt.kubernetes.event.involved_object.name
+| fieldsAdd key = concat(object_kind, "|", reason)
+| lookup [
+    timeseries n = sum(dt.kubernetes.events),
+      by: {k8s.event.involved_object.kind, k8s.event.reason},
+      filter: k8s.event.type == "Warning"
+    | fields key = concat(k8s.event.involved_object.kind, "|", k8s.event.reason)
+  ], sourceField: key, lookupField: key, fields: {warning_key = key}
+| filter isNotNull(warning_key)
+| fieldsAdd subject = coalesce(k8s.workload.name, object)
+| sort timestamp asc
+| summarize {events = countDistinct(dt.kubernetes.event.uid),
+    objects = countDistinct(object),
+    last_seen = max(timestamp),
+    example_object = takeLast(object),
+    message = takeLast(substring(dt.kubernetes.event.message, from: 0, to: 300))},
+    by: {k8s.cluster.name, k8s.namespace.name, object_kind, subject, reason}
+| sort events desc, last_seen desc
+| limit 50

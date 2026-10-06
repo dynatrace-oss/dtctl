@@ -1,0 +1,25 @@
+# problems-logs v2 — window: default 2h, max 12h
+fetch logs
+| filter in(status, {"ERROR", "WARN"})
+| filter dt.entity.service in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.entity.host in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.source_entity in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.source_entity[0] in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.source_entity[1] in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.source_entity[2] in [fetch dt.davis.problems | filter display_id == "<id>" | expand id = affected_entity_ids | fields id]
+    or dt.smartscape_source.id in [fetch dt.davis.problems | filter display_id == "<id>" | expand e = smartscape.affected_entities | fields id = e[id]]
+    or dt.smartscape.service in [fetch dt.davis.problems | filter display_id == "<id>" | expand e = smartscape.affected_entities | fields id = e[id]]
+    or dt.smartscape.host in [fetch dt.davis.problems | filter display_id == "<id>" | expand e = smartscape.affected_entities | fields id = e[id]]
+    or k8s.namespace.name in [fetch dt.davis.problems | filter display_id == "<id>" | expand v = k8s.namespace.name | fields v]
+      and (k8s.workload.name in [fetch dt.davis.problems | filter display_id == "<id>" | expand v = k8s.workload.name | fields v]
+        or isNull(k8s.workload.name)
+          and (replacePattern(k8s.pod.name, "'-' ALNUM{5,10} '-' ALNUM{5} EOS", "") in [fetch dt.davis.problems | filter display_id == "<id>" | expand v = k8s.workload.name | fields v]
+            or replacePattern(k8s.pod.name, "'-' INT EOS", "") in [fetch dt.davis.problems | filter display_id == "<id>" | expand v = k8s.workload.name | fields v]
+            or replacePattern(k8s.pod.name, "'-' ALNUM{5} EOS", "") in [fetch dt.davis.problems | filter display_id == "<id>" | expand v = k8s.workload.name | fields v]))
+| summarize { lines = count(), first_seen = min(timestamp), last_seen = max(timestamp),
+      example = takeLast(substring(content, to: 300)) },
+    by: {source = coalesce(k8s.workload.name, dt.service.name, service.name,
+          dt.process_group.detected_name, faas.name, aws.log_group, log.source, host.name,
+          dt.openpipeline.source), status}
+| sort lines desc
+| limit 30

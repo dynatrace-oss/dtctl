@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtctl/pkg/recipes"
 )
 
 // dataNouns are data domains agents guess as top-level commands, each with a DQL starting point.
@@ -51,6 +53,16 @@ func nounAdvice(name string) []string {
 	for _, r := range named {
 		out = append(out, "dtctl get "+r)
 	}
+	// A named resource is the answer; recipe search runs only for nouns a recipe
+	// is named or tagged with, so a typo keeps its did-you-mean.
+	if load := searchableRecipeBook(len(out) == 0); load != nil && recipeNoun(load.book, n) {
+		for _, m := range load.book.Search(n, load.book.Sorted()) {
+			if m.Weak || len(out) >= 3 {
+				break
+			}
+			out = append(out, recipes.HintCommand(m.Recipe, recipes.QueryBinding{})+"  # "+m.Recipe.Spec.Summary)
+		}
+	}
 	if q, ok := dataNouns[n]; ok {
 		out = append(out, q)
 	}
@@ -88,4 +100,30 @@ func getResourcesNamed(n string) []string {
 	}
 	exact = append(exact, prefixed...)
 	return exact[:min(len(exact), 2)]
+}
+
+// searchableRecipeBook is the recipe book to search for a noun, or nil when
+// the search should not run: want is false, or recipes are not enabled.
+func searchableRecipeBook(want bool) *recipeLoad {
+	if !want || !recipesEnabled() {
+		return nil
+	}
+	if load := loadRecipeBook(); load.book != nil {
+		return load
+	}
+	return nil
+}
+
+// recipeNoun reports whether a recipe's name or tags carry the noun as a word.
+func recipeNoun(book *recipes.Book, n string) bool {
+	singular := strings.TrimSuffix(n, "s")
+	for _, r := range book.Sorted() {
+		words := append(strings.Split(r.Name(), "-"), r.Metadata.Tags...)
+		for _, w := range words {
+			if w = strings.ToLower(w); w == n || w == singular || strings.TrimSuffix(w, "s") == singular {
+				return true
+			}
+		}
+	}
+	return false
 }

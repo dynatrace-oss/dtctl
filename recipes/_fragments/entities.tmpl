@@ -1,0 +1,41 @@
+{{/*
+  Records of one Kubernetes workload, called with the quoted name as its
+  argument: {{template "k8s-workload-logs" .workload}}. Container logs
+  collected without Kubernetes enrichment carry the pod name but no
+  k8s.workload.name (a fifth to a third of pod logs on some environments), so
+  the name is also recovered from the pod name: Deployment and CronJob pods
+  end in -<hash>-<5 chars>, StatefulSet pods in -<ordinal>, DaemonSet and Job
+  pods in -<5 chars>.
+*/}}
+{{define "k8s-workload-logs"}}(k8s.workload.name == {{.}}
+        or isNull(k8s.workload.name) and startsWith(k8s.pod.name, concat({{.}}, "-"))
+          and (replacePattern(k8s.pod.name, "'-' ALNUM{5,10} '-' ALNUM{5} EOS", "") == {{.}}
+            or replacePattern(k8s.pod.name, "'-' INT EOS", "") == {{.}}
+            or replacePattern(k8s.pod.name, "'-' ALNUM{5} EOS", "") == {{.}})){{end}}
+
+{{/*
+  Records about one entity on logs, events and spans, called with the quoted
+  entity ID: {{template "entity-signal" .entity}}. An entity is spelled in two
+  ID eras (a Smartscape ID, which needs toSmartscapeId, and the classic
+  dt.entity.* ID, which for most types is a different string) and as the
+  record's source entity. A wrong cast matches nothing rather than failing,
+  so every spelling is tried. Kubernetes objects on logs are matched by name,
+  not ID: use k8s-workload-logs there.
+*/}}
+{{define "entity-signal"}}(dt.smartscape_source.id == toSmartscapeId({{.}}) or dt.source_entity == {{.}}
+        or dt.smartscape.service == toSmartscapeId({{.}}) or dt.entity.service == {{.}}
+        or dt.smartscape.host == toSmartscapeId({{.}}) or dt.entity.host == {{.}}
+        or dt.smartscape.process == toSmartscapeId({{.}}) or dt.entity.process_group_instance == {{.}}
+        or dt.entity.process_group == {{.}}){{end}}
+
+{{/*
+  dt.davis.problems records that name an entity, called with a quoted entity
+  ID or exact entity name: {{template "problem-affects" .entity}}. Problems
+  carry the entity in places from different generations, none reliable on its
+  own: the Smartscape affected and related entities (id, name, type records),
+  the classic affected ID list, and the root cause.
+*/}}
+{{define "problem-affects"}}(iAny(smartscape.affected_entities[][id] == {{.}} or smartscape.affected_entities[][name] == {{.}})
+        or iAny(smartscape.related_entities[][id] == {{.}} or smartscape.related_entities[][name] == {{.}})
+        or iAny(affected_entity_ids[] == {{.}})
+        or root_cause_entity_id == {{.}} or root_cause_entity_name == {{.}}){{end}}

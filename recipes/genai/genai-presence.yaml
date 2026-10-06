@@ -1,0 +1,66 @@
+# Source: dt-obs-genai/SKILL.md (Empty-State Check)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: genai-presence
+  version: 1
+  tags: [genai, llm, agents, presence]
+spec:
+  summary: Which GenAI providers and models send spans, and which signal families they carry
+  requires: [spans]
+  timeframe: { default: 2h, max: 7d }
+  scope: [cluster, namespace, tag]
+  # One row per provider and model, with a count per signal family, so an
+  # empty GenAI answer can be told apart from missing instrumentation. The
+  # evaluation row comes from bizevents, which carry no k8s or tag
+  # attribution, so it is left out when a scope is set.
+  dql: |
+    fetch spans
+    | filter isNotNull(gen_ai.request.model) or isNotNull(gen_ai.response.model)
+        or isNotNull(gen_ai.operation.name) or isNotNull(gen_ai.provider.name)
+        or isNotNull(gen_ai.system)
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | summarize { spans = count(),
+        with_tokens = countIf(isNotNull(gen_ai.usage.input_tokens) or isNotNull(gen_ai.usage.output_tokens)),
+        with_cache = countIf(isNotNull(gen_ai.usage.cache_read.input_tokens)
+          or isNotNull(gen_ai.usage.cache_creation.input_tokens)),
+        with_finish_reason = countIf(isNotNull(gen_ai.response.finish_reasons)),
+        agent_spans = countIf(isNotNull(gen_ai.agent.name)),
+        tool_calls = countIf(gen_ai.operation.name == "execute_tool"),
+        conversations = countDistinct(gen_ai.conversation.id),
+        errors = countIf(span.status_code == "error"),
+        services = countDistinct(dt.service.name),
+        last_seen = max(start_time) },
+      by: {provider = coalesce(gen_ai.provider.name, gen_ai.system),
+        model = coalesce(gen_ai.request.model, gen_ai.response.model)}
+    | sort spans desc
+    | limit 50
+    {{- if not .scope.stage}}
+    | append [
+        fetch bizevents
+        | filter event.type == "gen_ai.evaluation.result"
+        | summarize { evaluations = count(), last_seen = max(timestamp) }
+        | filter evaluations > 0
+        | fieldsAdd provider = "(evaluations)" ]{{end}}
+  means: >-
+    One row per provider and model seen on GenAI spans; the count columns say
+    which signal families exist (with_tokens feeds genai-token-usage,
+    with_cache prompt caching, agent_spans and tool_calls agent analytics,
+    conversations session analytics, with_finish_reason guardrails). A row
+    with an empty model is agent or tool spans, which carry no model. The same
+    model often appears twice (with and without a region prefix, or under two
+    provider spellings) when two instrumentations record each call; those are
+    the same traffic, not two models. The "(evaluations)" row counts LLM
+    evaluation bizevents and only appears unscoped. Decision rule: a model
+    that appears here but has no with_tokens cannot be costed by
+    genai-token-usage. Not shown: token volume (genai-token-usage), latency,
+    errors or prompt content.
+  emptyMeans: >-
+    No span in the window carries any gen_ai attribute: the applications in
+    scope are not instrumented for AI observability (or send no traffic in the
+    window; widen with --from 24h). A scope that matches nothing returns the
+    same, so retry without --cluster, --namespace or --tag before concluding.
+  next:
+    - recipe: genai-token-usage
+      when: nonempty

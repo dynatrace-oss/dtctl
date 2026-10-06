@@ -1,0 +1,11 @@
+{{/*
+  Latest state per (vulnerability, affected entity) from Dynatrace RVA.
+  Source: dt-sec-insights/references/vulnerabilities-dynatrace.md, step 1.
+  Used by the security-vulns-* recipes, which add their own filters and
+  aggregation after it.
+*/}}
+{{define "vuln-latest-state"}}fetch security.events
+| filter event.provider == "Dynatrace" and event.level == "ENTITY"
+| filter in(event.type, {"VULNERABILITY_STATE_REPORT_EVENT",
+    "VULNERABILITY_STATUS_CHANGE_EVENT", "VULNERABILITY_TRACKING_LINK_CHANGE_EVENT"})
+| dedup {vulnerability.display_id, affected_entity.id}, sort: {timestamp desc}{{end}}

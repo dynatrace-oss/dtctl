@@ -1,0 +1,39 @@
+# Source: prior art (classic-to-Smartscape id resolution)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: meta-entity-id
+  version: 1
+  tags: [meta, entities, smartscape, classic, id, lookup]
+spec:
+  summary: Resolve an entity ID or name to its Smartscape ID, classic ID, type and name
+  description: >-
+    Entities have two IDs: the Smartscape ID that dt.smartscape.* fields and
+    smartscapeNodes use, and the classic dt.entity.* ID that problems, older
+    events and API responses carry. For most types they are different
+    strings (PROCESS_GROUP_INSTANCE- vs PROCESS-, KUBERNETES_CLUSTER- vs
+    K8S_CLUSTER-), and a filter with the wrong one matches nothing without an
+    error. This finds the entity under either ID or its exact name.
+  timeframe: none                # current topology
+  params:
+    id:
+      type: string
+      required: true
+      positional: true           # dtctl run meta-entity-id PROCESS_GROUP_INSTANCE-0123456789ABCDEF
+      description: Classic ID, Smartscape ID, or exact entity name
+  dql: |
+    smartscapeNodes "*"
+    | filter id_classic == {{.id}} or toString(id) == {{.id}} or name == {{.id}}
+    | fields id, id_classic, type, name
+    | limit 20
+  means: >-
+    The entity under both IDs. Use id with dt.smartscape.* fields and
+    toSmartscapeId(), id_classic with dt.entity.* fields and dt.source_entity;
+    when they are equal (services, hosts, disks) either works. id_classic is
+    null for entities that exist only in Smartscape. A name can match several
+    entities, one per type or environment segment: pick by type. Not shown:
+    relationships (which host or cluster it runs on).
+  emptyMeans: >-
+    No current entity has this ID or exact name. The entity may be gone
+    (Smartscape lists current entities only), the name may differ in case or
+    spacing, or the ID is from another environment.

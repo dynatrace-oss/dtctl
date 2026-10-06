@@ -1,0 +1,43 @@
+# security-vulns-open v4 — window: default 30m, fixed
+fetch security.events
+| filter event.provider == "Dynatrace" and event.level == "ENTITY"
+| filter in(event.type, {"VULNERABILITY_STATE_REPORT_EVENT",
+    "VULNERABILITY_STATUS_CHANGE_EVENT", "VULNERABILITY_TRACKING_LINK_CHANGE_EVENT"})
+| dedup {vulnerability.display_id, affected_entity.id}, sort: {timestamp desc}
+| summarize { title = takeFirst(vulnerability.title),
+    stack = takeAny(vulnerability.stack),
+    risk = round(takeMax(if(vulnerability.mute.status != "MUTED",
+                 vulnerability.risk.score, else: 0)), decimals: 1),
+    component = takeFirst(affected_entity.vulnerable_component.name),
+    cves = takeFirst(vulnerability.references.cve),
+    fix_available = takeAny(vulnerability.is_fix_available),
+    open_since = toTimestamp(takeMin(if(vulnerability.resolution.status == "OPEN",
+      vulnerability.resolution.change_date))),
+    res = collectDistinct(vulnerability.resolution.status),
+    mute = collectDistinct(vulnerability.mute.status),
+    fn = collectDistinct(vulnerability.davis_assessment.vulnerable_function_status),
+    exp = collectDistinct(vulnerability.davis_assessment.exposure_status),
+    xpl = collectDistinct(vulnerability.davis_assessment.exploit_status),
+    entities = countDistinct(affected_entity.id) },
+  by: {vulnerability.display_id}
+| filter in("OPEN", res) and in("NOT_MUTED", mute)
+| fieldsAdd level = if(risk >= 9, "CRITICAL", else: if(risk >= 7, "HIGH",
+    else: if(risk >= 4, "MEDIUM", else: if(risk >= 0.1, "LOW", else: "NONE"))))
+| fields vulnerability.display_id, title, risk, level, stack, component, cves,
+    entities, function_in_use = in("IN_USE", fn), public_network = in("PUBLIC_NETWORK", exp),
+    exploit_available = in("AVAILABLE", xpl), fix_available, open_since
+// Totals over every level, before --min-level cuts the list: the 50-row
+// cut and the level filter are never read as a count.
+| summarize { v = collectArray(record(vulnerability.display_id, title, risk, level, stack,
+      component, cves, entities, function_in_use, public_network, exploit_available,
+      fix_available, open_since), maxLength: 100000),
+    total = count(), total_critical = countIf(level == "CRITICAL"), total_high = countIf(level == "HIGH"),
+    total_medium = countIf(level == "MEDIUM"), total_low = countIf(level == "LOW"),
+    total_none = countIf(level == "NONE") }
+| filter total > 0
+| expand v
+| fieldsFlatten v, prefix: ""
+| fieldsRemove v
+| filter risk >= 7
+| sort risk desc, entities desc
+| limit 50

@@ -1,0 +1,63 @@
+# Source: dt-obs-kubernetes/SKILL.md (OOM-kill and restart queries, merged)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: k8s-pod-restarts
+  version: 2
+  tags: [k8s, pods, oom, restarts, crashloop, triage]
+spec:
+  summary: Pods whose containers restarted or were OOM-killed in the window
+  requires: [k8s-metrics]
+  timeframe: 1h
+  # cluster/namespace are scope dimensions, not params: every scoped recipe
+  # spells them --cluster/--namespace and means k8s.cluster.name/k8s.namespace.name.
+  scope: [cluster, namespace, tag]
+  params:
+    min_restarts:                # flag: --min-restarts
+      type: int
+      default: 3
+      min: 1
+  dql: |
+    timeseries { restarts = sum(dt.kubernetes.container.restarts),
+                 oom_kills = sum(dt.kubernetes.container.oom_kills) },
+      by: {k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.pod.name}, union: true
+      {{- with .scope.expr}}, filter: {{.}}{{end}}
+    | fieldsAdd restarts = coalesce(arraySum(restarts), 0), oom_kills = coalesce(arraySum(oom_kills), 0)
+    | filter restarts >= {{.min_restarts}} or oom_kills > 0
+    | fields k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.pod.name, restarts, oom_kills
+    | sort oom_kills desc, restarts desc
+    | limit 50
+  means: >-
+    One row per pod: container restarts and OOM kills counted in the window
+    (summed over the pod's containers). An OOM kill is also a restart, so
+    restarts >= oom_kills. OOM kills mean the memory limit is too low or the
+    process leaks. Restarts without OOM kills usually mean a crash on start or
+    a failing liveness probe; CrashLoopBackOff caps a looping container at
+    about 12 restarts per hour, so ~12/h is a steady crash loop.
+    Readiness-probe failures are not restarts and do not appear here. Pods of
+    the same workload (k8s.workload.name) failing together point at the
+    workload, not the node. It does not show failing Jobs and CronJobs: their
+    pods usually fail and are replaced rather than restarted, so a backing-off
+    CronJob has no restarts here; k8s-warning-events shows it (BackOff,
+    BackoffLimitExceeded). Not shown: pods deleted before the window ended,
+    and the crash reason (logs-for-service on the workload).
+  emptyMeans: >-
+    No pod restarted at least min_restarts times and none was OOM-killed in the
+    window. That is not an all-clear: pods of a failing Job or CronJob, pods
+    that never start (image pull, scheduling, mounts) and readiness failures do
+    not restart, so they never appear here. Run k8s-warning-events for those
+    before calling the cluster healthy. Dynatrace writes these metrics only
+    when a restart happens, so the same empty result also comes from a
+    misspelled --cluster/--namespace (exact, case-sensitive) or a cluster
+    without Kubernetes monitoring (`dtctl run k8s-clusters`).
+  next:
+    - recipe: k8s-warning-events
+      when: nonempty
+      bind: { cluster: k8s.cluster.name, namespace: k8s.namespace.name, pod: k8s.pod.name }
+    - recipe: k8s-workload-status
+      when: nonempty
+      bind: { cluster: k8s.cluster.name, namespace: k8s.namespace.name }
+    - recipe: k8s-warning-events
+      when: empty
+    - recipe: k8s-clusters
+      when: empty

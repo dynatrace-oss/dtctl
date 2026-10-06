@@ -195,6 +195,12 @@ func executeArgs(argv []string) int {
 	}
 	// --- End alias resolution ---
 
+	// --- Recipe commands ---
+	// `run <recipe>` leaves are built only for an invocation addressing `run`
+	// (after alias expansion), before the profile and stability stages.
+	attachRecipeCommands(spanArgs)
+	// --- End recipe commands ---
+
 	// --- Command profile filter ---
 	// Resolve the active profile (DTCTL_PROFILE > context binding > full) and
 	// mask out-of-profile commands before Cobra dispatches, so help, the
@@ -839,6 +845,11 @@ func errorToDetail(err error) *output.ErrorDetail {
 			StatusCode: queryErr.StatusCode,
 		}
 		addQueryErrorHints(detail, queryErr)
+		// The query repair comes before recipe hints for the same data.
+		var hinted *recipeHintedError
+		if errors.As(err, &hinted) {
+			detail.Suggestions = append(detail.Suggestions, hinted.hints...)
+		}
 		return detail
 	}
 
@@ -878,6 +889,15 @@ func errorToDetail(err error) *output.ErrorDetail {
 		return &output.ErrorDetail{
 			Code:    "validation_error",
 			Message: err.Error(),
+		}
+	}
+
+	// A param, scope or window the recipe rejects: fix the input, not the command.
+	var recipeErr *recipeInputError
+	if errors.As(err, &recipeErr) {
+		return &output.ErrorDetail{
+			Code:    "validation_error",
+			Message: recipeErr.Error(),
 		}
 	}
 
@@ -1218,6 +1238,11 @@ func exitCodeForError(err error) int {
 	}
 
 	if errors.Is(err, errEmptyFlagValue) {
+		return client.ExitUsageError
+	}
+
+	var recipeErr *recipeInputError
+	if errors.As(err, &recipeErr) {
 		return client.ExitUsageError
 	}
 

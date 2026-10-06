@@ -30,7 +30,7 @@ func queryWindowContext(result *exec.DQLQueryResponse, named bool) *output.TimeW
 	}
 	w.Span = spanString(end.Sub(start))
 	if !named {
-		w.Note = "the query names no window, so it read the default last " + w.Span + "; widen it with fetch ..., from: now()-24h"
+		w.Note = "the query names no window, so it read the default last " + w.Span + "; widen it with fetch ..., from: now()-24h or --from 24h"
 	}
 	return w
 }

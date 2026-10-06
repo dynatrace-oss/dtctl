@@ -1,0 +1,73 @@
+# Source: prior art (problem correlation: logs written inside failed traces)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: services-failure-logs
+  version: 1
+  tags: [services, failures, logs, traces, correlation, root-cause]
+spec:
+  summary: Log lines written inside one service's failed traces, per source and status
+  description: >-
+    What the code said while the requests failed: every log line whose
+    trace ID belongs to a trace in which the service had a failed request or
+    an error span, from any service on the path, grouped by the source that
+    wrote it.
+  requires: [spans, logs]
+  # Every log line in the window is checked against the failed traces, so the
+  # window stays short.
+  timeframe: { default: 30m, max: 2h }
+  scope: [cluster, namespace]
+  params:
+    service:
+      type: string
+      required: true
+      positional: true
+      description: The service whose failed traces to follow (exact dt.service.name, see services-list)
+  # `in [subquery]` keeps the log scan to the trace_id column; a lookup or
+  # join here reads every log record in full (40x the bytes on a large
+  # environment). Span trace.id is a UID and log trace_id a string, and a
+  # mismatched comparison matches nothing without an error, hence toString.
+  dql: |
+    fetch logs
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter trace_id in [fetch spans
+        | filter dt.service.name == {{.service}}
+        | filter request.is_failed == true or span.status_code == "error"
+        | fields tid = toString(trace.id)]
+    | summarize { lines = count(), traces = countDistinctExact(trace_id),
+          first_seen = min(timestamp), last_seen = max(timestamp),
+          example = takeMax(record(timestamp, content = substring(content, from: 0, to: 300))) },
+        by: { source = {{template "log-source"}}, status }
+    | fields source, status, lines, traces, first_seen, last_seen, example = example[content]
+    | sort lines desc
+    | limit 25
+  means: >-
+    One row per source (workload, service, process, host) and log status,
+    counted over lines that carry the trace ID of a failed trace of
+    --service; traces is how many distinct failed traces the lines came
+    from. A source other than --service is a dependency on the failing path:
+    an ERROR line there, starting with the failures, is the likelier cause.
+    INFO lines in failed traces are often the access log of the failure
+    itself (a 5xx status line), not a cause. The example is the latest line.
+    Not shown: logs without a trace ID (most lines on many environments; the
+    service may log the failure without one), and failed traces whose spans
+    were not stored (sampling).
+  emptyMeans: >-
+    No log line carries the trace ID of a failed trace of --service in the
+    window. Either the service had no failure in the window (check
+    services-failures), its logs carry no trace IDs (trace context
+    injection is off; often only a fraction of lines carry one), or the name
+    is not exact (`dtctl run services-list <fragment>`). This is not
+    evidence that the failures left no trace in the logs: try
+    logs-error-patterns with --service.
+  next:
+    - recipe: services-failures
+      when: empty
+      with: { service: "{{.service}}" }
+    - recipe: logs-error-patterns
+      when: empty
+      with: { service: "{{.service}}" }
+    - recipe: logs-error-patterns
+      when: nonempty
+      bind: { service: source }

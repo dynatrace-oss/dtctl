@@ -1,0 +1,12 @@
+# logs-for-service v4 — window: default 1h
+fetch logs
+| filter dt.service.name == "<service>" or service.name == "<service>"
+    or dt.process_group.detected_name == "<service>"
+    or (k8s.workload.name == "<service>"
+        or isNull(k8s.workload.name) and startsWith(k8s.pod.name, concat("<service>", "-"))
+          and (replacePattern(k8s.pod.name, "'-' ALNUM{5,10} '-' ALNUM{5} EOS", "") == "<service>"
+            or replacePattern(k8s.pod.name, "'-' INT EOS", "") == "<service>"
+            or replacePattern(k8s.pod.name, "'-' ALNUM{5} EOS", "") == "<service>"))
+| sort timestamp desc
+| fields timestamp, status, host.name, k8s.pod.name, content, trace_id
+| limit 100

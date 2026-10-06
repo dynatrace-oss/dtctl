@@ -1,0 +1,44 @@
+# Source: dt-obs-tracing/references/logs-correlation.md
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: logs-for-trace
+  version: 1
+  tags: [logs, traces, trace-id, correlation]
+spec:
+  summary: Log lines written inside one trace, in time order
+  description: >-
+    The logs correlated with a trace by trace_id, as traces-get, traces-errors
+    and services-failures hand trace ids over.
+  requires: [logs]
+  timeframe: 2h
+  params:
+    trace_id:
+      type: string
+      required: true
+      positional: true
+      pattern: "^[0-9a-fA-F]{32}$"
+      description: Trace id, 32 hex characters
+  dql: |
+    fetch logs
+    | filter trace_id == lower({{.trace_id}})
+    | fields timestamp, status,
+        source = {{template "log-source"}},
+        content, span_id
+    | sort timestamp asc
+    | limit 200
+  means: >-
+    The log records that carry this trace_id, oldest first, so they read in
+    the order the request ran. span_id ties a line to a span from traces-get.
+    source is the most specific name on the record (k8s workload, service,
+    process group, function, log group, log file, host, or failing all of
+    those the ingest channel). Capped at 200. Decision rule: the first ERROR
+    line in time order is usually nearest the cause; lines from another
+    service on the path point at a dependency. Not shown: lines that do not
+    carry the trace ID (often most of them) and lines beyond 200.
+  emptyMeans: >-
+    No log line carries this trace id in the window. Most traces have no
+    correlated logs: the line must be written inside the traced request by a
+    logger that OneAgent or OpenTelemetry enriches with the trace context.
+    Also check the window covers the trace (--from) and that the id is the
+    full 32-character hex form.

@@ -1,0 +1,68 @@
+# Source: prior art (problem correlation: Kubernetes changes new against a control period)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: k8s-changes-new
+  version: 1
+  tags: [k8s, changes, events, new, deployments, scaling, root-cause]
+spec:
+  summary: Kubernetes changes (spec, scaling, jobs, deletions) new in the window against a control period
+  description: >-
+    Kubernetes change events in the window whose kind did not occur in the
+    control period just before it, per namespace and workload. Routine
+    churn (a CronJob that runs every few minutes, an autoscaler that always
+    scales) is in both periods and drops out, so what remains changed around
+    the time in question.
+  requires: [k8s]
+  # Inline: the fetch reaches back over the control period too.
+  timeframe: { default: 1h, max: 6h, inline: true }
+  scope: [cluster, namespace]
+  params:
+    control:
+      type: int
+      default: 60
+      min: 15
+      max: 360
+      description: Minutes before the window to compare against
+  dql: |
+    fetch events, from: {{timeAdd .window.from (printf "-%vm" .control)}}, to: {{.window.to}}
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    | filter event.provider == "KUBERNETES_EVENT" or contains(toString(event.name), "spec change")
+    | fieldsAdd n = toString(event.name)
+    | filter contains(n, "spec change") or startsWith(n, "Stopping container") or startsWith(n, "Scaled ")
+        or startsWith(n, "Created job") or startsWith(n, "Deleted") or contains(n, "\"changes\"")
+    | fieldsAdd infocus = timestamp >= {{.window.from}}, eid = coalesce(event.id, toString(timestamp)),
+        change = replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(n,
+          "UUIDSTRING", "<id>"), "DIGIT{6,} '-' ALNUM{5}", "<pod>"),
+          "'-' [bcdfghjklmnpqrstvwxz2456789]{5} ' '", "-<pod> "), "XDIGIT{10,}", "<hex>"), "DIGIT{3,}", "<n>")
+    | summarize { events = countDistinctExact(if(infocus, eid)), before = countDistinctExact(if(not(infocus), eid)),
+                  first = min(if(infocus, timestamp)), last = max(if(infocus, timestamp)) },
+        by: { k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.workload.kind, change }
+    | filter events > 0 and before == 0
+    | fields first, last, k8s.cluster.name, k8s.namespace.name, k8s.workload.name, k8s.workload.kind,
+        change, events
+    | sort first asc
+    | limit 25
+  means: >-
+    Kubernetes changes in the window, per workload and change (pod names,
+    IDs and numbers masked), that did not happen at all in the --control
+    minutes before it, earliest first. Decision rule: a change whose first
+    lands just before the symptom started is the suspect; several workloads
+    changing in the same minute is a rollout or a node event, not
+    coincidence. events counts occurrences in the window. Not shown: changes
+    that also happened in the control period (routine churn; changes-recent
+    lists everything), warnings such as back-offs and failed scheduling
+    (k8s-warning-events), and changes on clusters without event ingest.
+  emptyMeans: >-
+    No Kubernetes change in the window that was absent from the control
+    period. Either nothing changed, every change is routine (it also
+    happened before; widen --control or see changes-recent), or the cluster
+    does not send Kubernetes events (check k8s-warning-events, which reads
+    the same events). With a scope, the name may not match (exact and
+    case-sensitive).
+  next:
+    - recipe: changes-recent
+      when: empty
+    - recipe: k8s-warning-events
+      when: empty

@@ -1,0 +1,80 @@
+# Source: dt-obs-frontends/references/web-vitals.md ("Core Web Vitals (Page Loads)", thresholds)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: frontends-web-vitals
+  version: 3
+  tags: [frontends, rum, web-vitals, lcp, inp, cls]
+spec:
+  summary: p75 LCP, INP and CLS per web frontend, rated against Core Web Vitals thresholds
+  requires: [rum]
+  timeframe: 2h
+  params:
+    frontend:
+      type: string
+      positional: true
+      description: Restrict to one frontend (exact frontend.name)
+    user_type:
+      type: enum
+      values: [real_user, synthetic, robot]
+      default: real_user
+      description: Traffic to rate; Core Web Vitals are about real users
+  # Page-summary events, not the dt.frontend.web.page.* metrics: the events
+  # give the sample size, CLS in its real unit, and cover frontends the
+  # metrics miss. A recorded INP of 0 means the page had no interaction.
+  dql: |
+    fetch user.events
+    | filter characteristics.has_page_summary and dt.rum.user_type == {{.user_type}}
+        and isNotNull(frontend.name)
+    {{- if .frontend}}
+    | filter frontend.name == {{.frontend}}{{end}}
+    | summarize { page_loads = count(),
+        lcp = percentile(web_vitals.largest_contentful_paint, 75),
+        inp = percentile(if(web_vitals.interaction_to_next_paint > 0ms,
+          web_vitals.interaction_to_next_paint), 75),
+        cls_p75 = percentile(web_vitals.cumulative_layout_shift, 75),
+        with_interaction = countIf(web_vitals.interaction_to_next_paint > 0ms) },
+      by: {frontend.name}
+    | fieldsAdd lcp_p75_ms = round(toDouble(lcp) / 1000000),
+        inp_p75_ms = round(toDouble(inp) / 1000000),
+        cls_p75 = round(cls_p75, decimals: 3)
+    | fieldsAdd lcp_rating = if(isNull(lcp_p75_ms), "no_data",
+          else: if(lcp_p75_ms < 2500, "good", else: if(lcp_p75_ms <= 4000, "needs_improvement", else: "poor"))),
+        inp_rating = if(isNull(inp_p75_ms), "no_data",
+          else: if(inp_p75_ms < 200, "good", else: if(inp_p75_ms <= 500, "needs_improvement", else: "poor"))),
+        cls_rating = if(isNull(cls_p75), "no_data",
+          else: if(cls_p75 < 0.1, "good", else: if(cls_p75 <= 0.25, "needs_improvement", else: "poor")))
+    | fields frontend.name, page_loads, lcp_p75_ms, lcp_rating, inp_p75_ms, inp_rating,
+        with_interaction, cls_p75, cls_rating
+    | sort page_loads desc
+    | limit 50
+  means: >-
+    Google Core Web Vitals at p75 over full page loads (page-summary events;
+    SPA soft navigations are not included). LCP and INP are in milliseconds
+    (good below 2500 / 200, poor above 4000 / 500); CLS is unitless (good
+    below 0.1, poor above 0.25). INP counts only page loads with an
+    interaction (a recorded INP of 0 means none and is left out), so read
+    inp_p75_ms against with_interaction: a p75 over a handful of loads is
+    noise. Mobile frontends have no web vitals and do not appear. Decision
+    rule: a metric rated poor on a frontend with enough page loads is the
+    finding; a p75 over a handful of loads is not. Not shown: SPA soft
+    navigations, mobile frontends, per-page breakdowns, and the backend time
+    behind a slow LCP (services-latency).
+  emptyMeans: >-
+    No page load from this user type in the window. Either no web frontend is
+    instrumented with the new RUM (RUM Classic data is not used here), the
+    frontend name does not match frontend.name exactly (list them with
+    frontends-list), or the frontend is a mobile app or a single-page app
+    without full page loads in the window.
+  next:
+    - recipe: frontends-list
+      when: empty
+  checks:
+    - match: ['web_vitals\.interaction_to_next_paint', '\bpercentile\(']
+      unless: ['interaction_to_next_paint\s*>\s*0']
+      warn: >-
+        A recorded INP of 0 means the page load had no interaction, and
+        counting it pulls the percentile down. Take it over
+        web_vitals.interaction_to_next_paint > 0ms only (the values are
+        durations: divide by 1000000 for milliseconds).
+      example: 'fetch user.events | summarize inp = percentile(web_vitals.interaction_to_next_paint, 75), by: {frontend.name}'

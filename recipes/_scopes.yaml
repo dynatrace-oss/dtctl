@@ -1,0 +1,38 @@
+# Scope dimensions: the cross-cutting filters every scoped recipe accepts
+# under the same flag name with the same meaning.
+#
+# Only primary Grail fields and primary Grail tags qualify. Dynatrace enriches
+# them on every signal (logs, metrics, spans, events, problems) and on the
+# relevant Smartscape nodes, so one predicate is valid in every recipe. No
+# per-data-object mapping is needed. Anything else (service name, host name,
+# endpoint) is a recipe param, because its spelling differs per data object.
+apiVersion: dtctl.dev/v1alpha1
+kind: RecipeScopes
+scopes:
+  cluster:
+    field: k8s.cluster.name
+    description: Kubernetes cluster name
+  namespace:
+    field: k8s.namespace.name
+    description: Kubernetes namespace
+  host_group:
+    field: dt.host_group.id          # holds the host group *name*
+    description: OneAgent host group
+  aws_account:
+    field: aws.account.id
+    description: AWS account ID
+  azure_subscription:
+    field: azure.subscription
+    description: Azure subscription ID
+  gcp_project:
+    field: gcp.project.id
+    description: GCP project ID
+  tag:
+    fieldPattern: "primary_tags.{key}"   # --tag team=payments -> primary_tags.team == "payments"
+    form: key=value
+    description: Primary Grail tag (customer-defined)
+
+# Deliberately NOT scope dimensions:
+#   dt.security_context  - a permission field; record-level IAM already applies it
+#   dt.cost.costcenter / dt.cost.product - string on some billing events,
+#                          record[] on others; cost recipes take explicit params

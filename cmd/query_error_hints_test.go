@@ -91,6 +91,29 @@ func TestErrorToDetail_QueryErrorWithoutPosition(t *testing.T) {
 	}
 }
 
+// TestErrorToDetail_RepairBeforeRecipeHints pins the query repair ahead of recipe hints.
+func TestErrorToDetail_RepairBeforeRecipeHints(t *testing.T) {
+	qe := &sdkquery.QueryError{
+		StatusCode: 400, Message: "PARSE_ERROR", ErrorType: "PARSE_ERROR",
+		Arguments: []string{"`by`"},
+		Query:     "fetch logs | stats count() by log.source",
+		Position: &sdkquery.SyntaxPosition{
+			Start: &sdkquery.Position{Line: 1, Column: 28},
+			End:   &sdkquery.Position{Line: 1, Column: 29},
+		},
+	}
+	d := errorToDetail(&recipeHintedError{error: qe, hints: []string{"dtctl run recipe logs-top  # recipe"}})
+	if len(d.Suggestions) < 2 {
+		t.Fatalf("Suggestions = %q", d.Suggestions)
+	}
+	if !strings.HasSuffix(d.Suggestions[0], "dtctl query 'fetch logs | summarize count(), by:{log.source}'") {
+		t.Errorf("first suggestion = %q, want the summarize repair", d.Suggestions[0])
+	}
+	if last := d.Suggestions[len(d.Suggestions)-1]; !strings.HasPrefix(last, "dtctl run recipe") {
+		t.Errorf("last suggestion = %q, want the recipe hint", last)
+	}
+}
+
 // TestDqlErrorAdvicePlatformObject points a fetch of a platform resource at its get command.
 func TestDqlErrorAdvicePlatformObject(t *testing.T) {
 	for _, guess := range []string{"dt.automation.workflow_executions", "dt.slo", "dashboards"} {

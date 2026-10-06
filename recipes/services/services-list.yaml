@@ -1,0 +1,63 @@
+# Source: dt-obs-services/references/service-metrics.md (Kubernetes Context, Request Throughput)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: services-list
+  version: 1
+  tags: [services, inventory, names, discovery]
+spec:
+  summary: Services that served requests in the window, busiest first, with their k8s workload
+  description: >-
+    The service names other recipes take (services-failures, services-latency,
+    traces-slow-endpoints, logs-for-service). Built from the request-count
+    metric, so it is cheap and lists only services that received traffic.
+  requires: [service-metrics]
+  timeframe: 1h
+  scope: [cluster, namespace, tag]
+  params:
+    contains:
+      type: string
+      positional: true
+      description: Only services whose name contains this text (case-insensitive)
+  dql: |
+    timeseries { requests = sum(dt.service.request.count, scalar: true),
+                 failures = sum(dt.service.request.failure_count, scalar: true) },
+      by: {dt.service.name, k8s.namespace.name, k8s.workload.name}, union: true
+      {{- if or .scope.expr .contains}}, filter: {{with .scope.expr}}{{.}}{{if $.contains}} and {{end}}{{end}}
+      {{- with .contains}}contains(dt.service.name, {{.}}, caseSensitive: false){{end}}{{end}}
+    | summarize { requests = toLong(sum(requests)), failures = toLong(sum(failures)),
+                  namespaces = arrayRemoveNulls(collectDistinct(k8s.namespace.name)),
+                  workloads = arrayRemoveNulls(collectDistinct(k8s.workload.name)) },
+        by: {dt.service.name}
+    | fieldsAdd k8s.namespace.name = if(arraySize(namespaces) == 1, namespaces[0]),
+        k8s.workload.name = if(arraySize(workloads) == 1, workloads[0]),
+        workload_count = arraySize(workloads)
+    | fields dt.service.name, requests, failures, k8s.namespace.name, k8s.workload.name, workload_count
+    | sort requests desc
+    | limit 100
+  means: >-
+    One row per Dynatrace service (dt.service.name, the exact, case-sensitive
+    name other recipes take). requests and failures are totals over the window
+    from the service metrics, not sampled. k8s.namespace.name and
+    k8s.workload.name are filled only when the service runs in exactly one;
+    workload_count says how many it spans (0 = not on Kubernetes). Logs are
+    usually tagged with the workload, not the service name, so pass the
+    workload to logs-for-service when the service name finds nothing. Capped
+    at 100 rows; narrow with a name fragment or --namespace. Decision rule:
+    pick the exact dt.service.name from here for the other services-* recipes;
+    a service with failures well above its usual share is a lead. Not shown:
+    services that served no requests in the window, latency (services-red,
+    services-latency), and services beyond 100 rows.
+  emptyMeans: >-
+    No service received a request in the window. Either nothing is instrumented
+    (no OneAgent or OpenTelemetry traces reach this environment), the window is
+    too short for idle services, or the name fragment / scope matched nothing:
+    the fragment is a substring of dt.service.name, and --namespace/--cluster
+    drop services that do not run on Kubernetes.
+  next:
+    - recipe: services-red
+      when: nonempty
+    - recipe: services-failures
+      bind: { service: dt.service.name }
+    - recipe: services-latency
+      bind: { service: dt.service.name }

@@ -1,0 +1,16 @@
+# k8s-clusters v1 — window: none (state query; no window)
+smartscapeNodes K8S_CLUSTER
+| fields k8s.cluster.name, k8s.cluster.uid, k8s.cluster.version, k8s.cluster.distribution,
+    operator_version = dt.metadata[operator_version]
+| lookup [
+    smartscapeNodes K8S_NODE, K8S_NAMESPACE, K8S_POD, K8S_DEPLOYMENT, K8S_STATEFULSET, K8S_DAEMONSET
+    | summarize {nodes = countIf(type == "K8S_NODE"),
+        namespaces = countIf(type == "K8S_NAMESPACE"),
+        pods = countIf(type == "K8S_POD"),
+        workloads = countIf(in(type, {"K8S_DEPLOYMENT", "K8S_STATEFULSET", "K8S_DAEMONSET"}))},
+        by: {k8s.cluster.uid}
+  ], sourceField: k8s.cluster.uid, lookupField: k8s.cluster.uid,
+  fields: {nodes, namespaces, pods, workloads}
+| fieldsRemove k8s.cluster.uid
+| sort nodes desc, k8s.cluster.name asc
+| limit 200

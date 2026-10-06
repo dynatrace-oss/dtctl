@@ -1,0 +1,18 @@
+# Domain registry. Every recipe name starts with "<domain>-". Domains drive
+# grouping in `dtctl get recipes`, the compact catalog, and CODEOWNERS.
+apiVersion: dtctl.dev/v1alpha1
+kind: RecipeDomains
+domains:
+  k8s:        Kubernetes clusters, workloads, pods and nodes
+  services:   service health, RED metrics, runtimes
+  traces:     distributed traces and spans
+  logs:       log search, patterns and error rates
+  problems:   Davis problems and events
+  changes:    deployments, configuration changes and restarts
+  hosts:      hosts, processes, disks
+  cloud:      AWS, Azure and GCP resources
+  frontends:  RUM, web vitals, mobile
+  genai:      LLM and agent observability
+  security:   vulnerabilities and detections
+  costs:      DPS consumption and cost allocation
+  meta:       environment discovery (buckets, data objects, entity IDs)

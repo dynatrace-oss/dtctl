@@ -1783,7 +1783,10 @@ func TestNounAdvice(t *testing.T) {
 		}
 	}
 	// The same advice under a verb: `dtctl get problems`, `dtctl find slo`.
-	for noun, want := range map[string]string{"problems": "fetch dt.davis.problems", "slo": "dtctl get slos"} {
+	// Recipes are a development feature: opt in for the recipe suggestion.
+	applyDevelopmentRegistration(map[string]bool{recipesFeature: true})
+	t.Cleanup(func() { applyDevelopmentRegistration(nil) })
+	for noun, want := range map[string]string{"problems": "dtctl run problems-active", "slo": "dtctl get slos"} {
 		err := requireSubcommand(findCmd, []string{noun})
 		if got := strings.Join(errorToDetail(err).Suggestions, "\n"); !strings.Contains(got, want) {
 			t.Errorf("find %s: suggestions lack %q:\n%s", noun, want, got)

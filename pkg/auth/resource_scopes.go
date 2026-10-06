@@ -239,6 +239,9 @@ var localResources = map[string]bool{
 	"set-credentials": true, "delete-credentials": true,
 	"migrate-tokens": true, "init": true,
 	"view": true, "current": true, "set": true,
+	// recipes are built-in or user-directory content; running one is a
+	// query, whose scopes attach to the `run` verb (dqlScopeVerbs)
+	"recipe": true, "recipes": true,
 	// development-feature opt-in listing (reads the binary's own registry)
 	"list-development": true,
 	// ctx aliases

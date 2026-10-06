@@ -1,0 +1,20 @@
+# traces-exceptions v1 — window: default 1h, max 1d
+fetch spans
+| filter iAny(span.events[][span_event.name] == "exception")
+| fieldsAdd failed = request.is_failed == true or span.status_code == "error",
+    multiplicity = coalesce(aggregation.count, 1)
+        / ((power(2, 56) - coalesce(sampling.threshold, 0)) * power(2, -56))
+| expand ev = span.events
+| filter ev[span_event.name] == "exception"
+| fieldsAdd exception.type = toString(ev[exception.type]),
+    message = substring(trim(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replaceString(toString(ev[exception.message]), "\n", " "),
+      "DIGIT{4} '-' DIGIT{2} '-' DIGIT{2} [T ] DIGIT{2} ':' DIGIT{2} ':' DIGIT{2} ([.,] DIGIT+)? 'Z'?", "<ts>"),
+      "IPADDR", "<ip>"), "UUIDSTRING", "<id>"), "'0x' XDIGIT+", "<hex>"), "XDIGIT{10,}", "<hex>"), "INT", "<n>")), from: 0, to: 200)
+| summarize { exceptions = toLong(round(sum(multiplicity))),
+              on_failed = toLong(round(sum(if(failed, multiplicity, else: 0)))),
+              last_seen = max(start_time), example = takeMax(record(start_time, trace.id)) },
+    by: { dt.service.name, exception.type, message }
+| fields dt.service.name, exception.type, message, exceptions, on_failed, last_seen,
+    example_trace_id = example[trace.id]
+| sort exceptions desc
+| limit 25

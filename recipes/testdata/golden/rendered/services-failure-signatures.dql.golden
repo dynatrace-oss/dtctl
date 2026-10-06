@@ -1,0 +1,35 @@
+# services-failure-signatures v1 — window: default 30m, max 2h, written into the query
+fetch spans, from: toTimestamp("2026-01-15T10:30:00Z"), to: toTimestamp("2026-01-15T12:00:00Z")
+| filter dt.service.name == "<service>"
+| filter request.is_root_span == true
+| fieldsAdd infocus = start_time >= toTimestamp("2026-01-15T11:30:00Z"), failed = request.is_failed == true,
+    multiplicity = coalesce(aggregation.count, 1)
+        / ((power(2, 56) - coalesce(sampling.threshold, 0)) * power(2, -56)),
+    message = arrayFirst(arrayRemoveNulls(iCollectArray(span.events[][exception.message])))
+| fieldsAdd signature = if(failed, coalesce(
+      substring(trim(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replacePattern(replaceString(toString(coalesce(message, span.status_message)), "\n", " "),
+      "DIGIT{4} '-' DIGIT{2} '-' DIGIT{2} [T ] DIGIT{2} ':' DIGIT{2} ':' DIGIT{2} ([.,] DIGIT+)? 'Z'?", "<ts>"),
+      "IPADDR", "<ip>"), "UUIDSTRING", "<id>"), "'0x' XDIGIT+", "<hex>"), "XDIGIT{10,}", "<hex>"), "INT", "<n>")), from: 0, to: 160),
+      concat("HTTP ", toString(http.response.status_code)),
+      arrayFirst(iCollectArray(dt.failure_detection.results[][reason])), "failed"), else: ""),
+    version = coalesce(service.version, deployment.release_version, container.image.version)
+| summarize { f = sum(if(infocus, multiplicity, else: 0)), b = sum(if(not(infocus), multiplicity, else: 0)),
+              versions = collectDistinct(if(infocus and failed, version), maxLength: 3),
+              first_seen = min(if(infocus and failed, start_time)),
+              example = takeMax(if(infocus and failed, record(start_time, trace.id))) },
+    by: { endpoint.name, signature }
+| summarize { v = collectArray(record(signature, f, b, versions, first_seen, example), maxLength: 1000),
+              requests = sum(f) },
+    by: { endpoint.name }
+| expand v
+| fieldsFlatten v, prefix: ""
+| fieldsRemove v
+| filter signature != "" and f > 0
+| fieldsAdd per_min = toDouble(f) / 30, control_per_min = toDouble(b) / 60
+| fields endpoint.name, signature, failures = toLong(round(f)), share = round(toDouble(f) / requests, decimals: 3),
+    requests = toLong(round(requests)), per_min = round(per_min, decimals: 2),
+    control_per_min = round(control_per_min, decimals: 2), new = b == 0,
+    surge = if(b > 0, round(per_min / control_per_min, decimals: 1)),
+    versions, first_seen, example_trace_id = example[trace.id]
+| sort failures desc
+| limit 20

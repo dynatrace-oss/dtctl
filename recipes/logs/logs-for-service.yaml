@@ -1,0 +1,103 @@
+# Source: dt-obs-logs/SKILL.md (Process Group-Specific Logs, Log Searching)
+apiVersion: dtctl.dev/v1alpha1
+kind: Recipe
+metadata:
+  name: logs-for-service
+  version: 4
+  tags: [logs, service, workload, recent, tail]
+spec:
+  summary: Recent log lines of one service, workload or process group, newest first
+  description: >-
+    The latest log records of one source, optionally only one level or lines
+    containing a text. By default the name is matched against the service,
+    k8s workload and process group fields; --field pins one field, as
+    logs-error-sources hands it over.
+  requires: [logs]
+  timeframe: 1h
+  scope: [cluster, namespace, host_group, tag]
+  params:
+    service:
+      type: string
+      required: true
+      positional: true
+      description: Service, k8s workload or process group name (exact, case-sensitive)
+    field:
+      type: enum
+      values: [dt.service.name, service.name, k8s.workload.name, dt.process_group.detected_name,
+               faas.name, aws.log_group, log.source, host.name, dt.openpipeline.source]
+      render: identifier
+      description: Match only this field (default dt.service.name, service.name, k8s.workload.name or dt.process_group.detected_name)
+    status:
+      type: enum
+      values: [ERROR, WARN, INFO, NONE]
+      description: Only records with this normalized status (log level)
+    contains:
+      type: string
+      description: Only lines containing this text (case-insensitive)
+  dql: |
+    fetch logs
+    {{- with .scope.stage}}
+    {{.}}{{end}}
+    {{- if eq (print .field) "k8s.workload.name"}}
+    | filter {{template "k8s-workload-logs" .service}}
+    {{- else if .field}}
+    | filter {{.field}} == {{.service}}
+    {{- else}}
+    | filter dt.service.name == {{.service}} or service.name == {{.service}}
+        or dt.process_group.detected_name == {{.service}}
+        or {{template "k8s-workload-logs" .service}}
+    {{- end}}
+    {{- with .status}}
+    | filter status == {{.}}{{end}}
+    {{- with .contains}}
+    | filter contains(content, {{.}}, caseSensitive: false){{end}}
+    | sort timestamp desc
+    | fields timestamp, status, host.name, k8s.pod.name, content, trace_id
+    | limit 100
+  means: >-
+    The newest 100 matching log records, newest first. status is the
+    normalized level (ERROR, WARN, INFO, NONE); content is the raw line,
+    multi-line for stack traces. trace_id is set when the line was written
+    inside a traced request; open it with traces-get. A Dynatrace service name
+    (dt.service.name) is rarely on a log record: logs carry the k8s workload,
+    OpenTelemetry service.name or process group instead, which services-list
+    shows next to the service. A Kubernetes workload also matches pod logs
+    that lack k8s.workload.name (recovered from the pod name), which is often
+    a fifth or more of a workload's lines. Decision rule: read the newest
+    lines for the failure's own message, then follow its trace_id; 100 rows is
+    a tail, not a count. To count a source's records, adapt the default
+    (unpinned) query from context.query: --field matches one field only, so a
+    count over it misses the records that name the source in another field
+    (a service's logs often carry service.name on some lines and only the k8s
+    workload on others). Not shown: older lines in the window (narrow with
+    --contains or --status), counts (logs-error-patterns), and lines of other
+    services on the same request (logs-for-trace).
+  emptyMeans: >-
+    No log record of this source matched in the window. The name has to match
+    exactly and case-sensitively one of dt.service.name, service.name,
+    k8s.workload.name or dt.process_group.detected_name (or the --field you
+    pinned); a Dynatrace service name usually is not on its logs, so try the
+    k8s workload from `dtctl run services-list`, or find the source name with
+    `dtctl run logs-error-sources`. Also check that --status/--contains are not
+    too narrow and that the source ships logs at all.
+  next:
+    - recipe: logs-error-sources
+      when: empty
+    - recipe: traces-get
+      bind: { trace_id: trace_id }
+  checks:
+    - match: ['fetch\s+logs', 'k8s\.workload\.name\s*==']
+      unless: ['k8s\.pod\.name']
+      warn: >-
+        k8s.workload.name is missing on part of a workload's log records
+        (often a fifth or more), so a filter on it alone undercounts. Also
+        match the records without it by pod name: or
+        (isNull(k8s.workload.name) and startsWith(k8s.pod.name, "<workload>-"))
+      example: 'fetch logs | filter k8s.workload.name == "checkout" | summarize n = count()'
+    - match: ['fetch\s+logs', 'dt\.service\.name\s*==']
+      unless: ['(^|[^.\w])service\.name\s*==', 'k8s\.workload\.name', 'dt\.process_group']
+      warn: >-
+        dt.service.name is rarely on a log record: logs name their source in
+        service.name (OpenTelemetry), k8s.workload.name or
+        dt.process_group.detected_name, so match those too.
+      example: 'fetch logs | filter dt.service.name == "checkout" | summarize n = count()'

@@ -156,20 +156,57 @@ type ResponseContext struct {
 	// TruncatedFields names the fields with at least one clipped value.
 	TruncatedFields []string `json:"truncated_fields,omitempty"`
 
-	// Window is the window `dtctl query` searched, as the response's own
-	// metadata states it.
-	Window *TimeWindow `json:"window,omitempty"`
+	// Recipe context (`dtctl run`; Window is also set by `dtctl query`). Query is the
+	// rendered DQL; Scope lists the filters beyond the recipe's own params.
+	Recipe *RecipeRef `json:"recipe,omitempty"`
+	// Means is the recipe's reading of a non-empty result (spec.means); an empty
+	// result carries emptyMeans in EmptyReason instead.
+	Means  string              `json:"means,omitempty"`
+	Query  string              `json:"query,omitempty"`
+	Window *TimeWindow         `json:"window,omitempty"`
+	Scope  map[string][]string `json:"scope,omitempty"`
+	// FollowUp is the first applicable follow-up recipe, already run (`run --follow`).
+	FollowUp *FollowUp `json:"follow_up,omitempty"`
+	// Inventory reports what inventory-aware listing did (`get recipes`).
+	Inventory *InventoryFilter `json:"inventory,omitempty"`
+}
+
+// RecipeRef identifies the recipe behind a `dtctl run` response.
+type RecipeRef struct {
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+	// Source is builtin, user, org, or app:<app-id>@<bundle-version>.
+	Source string `json:"source"`
+}
+
+// FollowUp is a follow-up recipe run inside the same `dtctl run --follow`.
+type FollowUp struct {
+	// Command is the command line that reproduces this result on its own.
+	Command string `json:"command"`
+	Query   string `json:"query,omitempty"`
+	// Records holds at most the first rows; Total counts all of them.
+	Records []map[string]interface{} `json:"records"`
+	Total   int                      `json:"total"`
+	// Means is the follow-up's spec.means, or spec.emptyMeans when empty.
+	Means string `json:"means,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 // TimeWindow is a query window as absolute RFC3339 instants.
 type TimeWindow struct {
 	From string `json:"from"`
 	To   string `json:"to"`
-	// Span is the window's length (2h, 24h, 7d), so a reader can hold it
-	// against the question without subtracting timestamps.
+	// Span is the window length (2h, 7d); set by `dtctl query`.
 	Span string `json:"span,omitempty"`
 	// Note says the window is the default one: the query named none.
 	Note string `json:"note,omitempty"`
+}
+
+// InventoryFilter says how inventory verdicts narrowed a listing; Unfiltered says why it could not.
+type InventoryFilter struct {
+	Age        string `json:"age,omitempty"`
+	Hidden     int    `json:"hidden"`
+	Unfiltered string `json:"unfiltered,omitempty"`
 }
 
 // MarkFieldsClipped records on the context that values in fields were clipped
@@ -188,7 +225,7 @@ func (c *ResponseContext) MarkFieldsClipped(max int, fields []string) {
 // names its basis in Evidence (a sample, or the window that was checked), so
 // a consumer never mistakes a sampled observation for a catalog fact.
 type EmptyReason struct {
-	// Code is "field_not_in_sample" or "metric_not_in_window".
+	// Code is "field_not_in_sample", "metric_not_in_window", "recipe_empty_means" or "recipe_partial".
 	Code       string   `json:"code"`
 	Field      string   `json:"field,omitempty"`
 	Metric     string   `json:"metric,omitempty"`

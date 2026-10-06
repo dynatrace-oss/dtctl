@@ -48,6 +48,9 @@ type dryRunReport struct {
 
 	// verb and resource override what the command tree reports; see As.
 	verb, resource string
+
+	// ctx, when set, is the envelope context (see WithContext).
+	ctx *output.ResponseContext
 }
 
 // dryRunLine is one line of the human rendering. A line with a label is an
@@ -139,6 +142,12 @@ func (r *dryRunReport) Detail(key, format string, args ...interface{}) *dryRunRe
 	return r
 }
 
+// WithContext supplies the envelope context; verb and resource are filled in when empty.
+func (r *dryRunReport) WithContext(ctx *output.ResponseContext) *dryRunReport {
+	r.ctx = ctx
+	return r
+}
+
 // Payload records the request body the command would have sent. It is embedded
 // as JSON rather than as a string, so an agent can diff a dry run against the
 // real request instead of parsing the human preview back out of the message.
@@ -189,10 +198,17 @@ func (r *dryRunReport) Print() error {
 	// at a terminal. A dry run piped to an agent must be compact like every other
 	// envelope dtctl emits — indenting it would spend a third more tokens on
 	// whitespace, for the one audience this rendering exists to serve.
+	ctx := r.ctx
+	if ctx == nil {
+		ctx = &output.ResponseContext{}
+	}
+	if ctx.Verb == "" {
+		ctx.Verb, ctx.Resource = verb, resource
+	}
 	return output.EncodeEnvelope(os.Stdout, output.Response{
 		OK:      true,
 		Result:  plan,
-		Context: &output.ResponseContext{Verb: verb, Resource: resource},
+		Context: ctx,
 	})
 }
 
