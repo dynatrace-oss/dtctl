@@ -49,7 +49,7 @@ func DefaultLimits() Limits {
 // pass DefaultLimits()'s own (generous) values back if a caller needs to
 // widen just one field.
 func ExecuteWithLimits(ctx context.Context, req Request, limits Limits) (*Result, error) {
-	return executeInner(ctx, req, limits.withDefaults())
+	return executeInner(ctx, req, limits.withDefaults(), defaultAdmission, false)
 }
 
 // withDefaults fills zero-value fields from DefaultLimits().
