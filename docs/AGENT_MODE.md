@@ -258,7 +258,9 @@ Pass `-o json` to get the previous native-JSON rows back; any other explicit
 `-o` also wins over the default. Other commands keep native JSON unless you pass
 `-o auto` yourself. When the default returns CSV or YAML, `context.suggestions`
 carries one entry naming the `-o json` opt-out; when it returns native JSON
-(empty or scalar results), nothing is added.
+(empty or scalar results), nothing is added. With `--jq` and no `-o`, the
+filter's output is JSON: a program that addresses `.records` reads its answer
+as JSON, so the default does not re-encode it as CSV.
 
 The envelope names the choice in `context.format`, so branch on it before parsing:
 
@@ -282,6 +284,30 @@ spill threshold (unlike an explicit `-o csv`/`-o yaml`, which print raw bytes)
 and the threshold is measured in the chosen encoding. A spilled result is a
 `result-file` manifest as usual and carries no `context.format`.
 
+### Query window: `context.window`
+
+`dtctl query` reports the window the query searched, as the response's own
+metadata states it, with its length in `span`. A query that names no window
+(no `from:`/`to:`/`timeframe:`, no `--default-timeframe-start`/`-end`) reads the default last 2h,
+and `note` says so, because a count over 2h reads exactly like a count over
+24h:
+
+```json
+"window": {"from": "2026-01-01T08:00:00Z", "to": "2026-01-01T10:00:00Z", "span": "2h",
+           "note": "the query names no window, so it read the default last 2h; widen it with fetch ..., from: now()-24h"}
+```
+
+### Result notes: samples and durations
+
+Two suggestions describe what a non-empty result is *not*:
+
+- an unsorted `| limit N` that returned exactly N rows: these are the first
+  records read, not a representative sample, so they cannot show how often
+  something occurs or that it never does;
+- columns Grail types as `duration`: their values are nanoseconds, and when
+  the query does not aggregate, one record's duration is not a typical one
+  (`percentile(<col>, 50)` is).
+
 ### Empty query results: `context.empty_reason`
 
 A misspelled field name or metric key makes DQL succeed with zero rows. On an
@@ -291,6 +317,7 @@ dtctl runs one small, bounded probe before it suggests widening the time window:
 | Query shape | Probe | Finding |
 |---|---|---|
 | `fetch <object> \| filter …` / `summarize … by:` | the query's own `fetch` stage with `\| limit 100`, and the field names in its `filter`/`filterOut` stages and `by:` clause compared against the sampled records | `field_not_in_sample` |
+| `fetch <object> \| filter <field> == "<value>"` (or `contains`/`matchesValue`/`matchesPhrase`/`startsWith`/`endsWith`), every field present in the sample | the query's own `fetch` stage grouped by that field: its most frequent values (at most 200 groups). A value that differs from the compared one only in case or by a prefix/suffix is a finding; otherwise the top five values are listed as advice | `value_not_found` |
 | `timeseries …` | the metric keys that reported series in the query window (at most its last 2h), listed with the `metrics` command | `metric_not_in_window` |
 
 The probes are capped (1 GB scan, 10 s read time, bounded result size), run only
@@ -299,7 +326,11 @@ and never fail the query. If a probe errors, comes back
 partial, or finds an empty sample, the envelope keeps the widen-the-window advice
 and has no `empty_reason`.
 
-`context.empty_reason` is set only when a missing name has a close match that
+The value probe runs only after a complete field sample found every field, and
+it may report from a scan its limits cut short: a near value it saw exists,
+whatever the rest of the window holds, and the advice says the scan was partial.
+
+`context.empty_reason` is set only when a missing name or value has a close match that
 *was* observed, which is what a typo looks like. That advice replaces the
 widen-the-window suggestion, because a wider window cannot fix a misspelled
 name:

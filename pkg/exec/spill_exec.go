@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/pkg/output"
@@ -14,9 +15,30 @@ import (
 // Compaction advice (#578). Compaction is the agent-mode default, so when it
 // changed what the agent sees it says how to read it and how to opt out.
 const (
-	compactRowsSuggestion    = "# rows compacted: row = result.constant + record, absent key = null; --compact=false for full rows"
+	compactRowsPrefix        = "# rows compacted: "
 	compactSummarySuggestion = "# summary compacted: one-value columns in result.constant, all-null in result.null_columns; --compact=false for the full profile"
 )
+
+// compactRowsSuggestion says how to read compacted rows, naming the columns
+// that went to result.constant: a total repeated in every row of a result is
+// found there, and an agent that does not know looks for it in the
+// rows (evals: several jq attempts on one security task).
+func compactRowsSuggestion(c *output.Compaction) string {
+	s := compactRowsPrefix + "row = result.constant + record, absent key = null; --compact=false for full rows"
+	if c == nil || len(c.Constant) == 0 {
+		return s
+	}
+	keys := make([]string, 0, len(c.Constant))
+	for k := range c.Constant {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if len(keys) > 8 {
+		keys = append(keys[:8], "…")
+	}
+	return compactRowsPrefix + "the same in every row, so listed once in result.constant: " + strings.Join(keys, ", ") +
+		"; row = result.constant + record, absent key = null; --compact=false for full rows"
+}
 
 const userPathPrivacyWarning = "spill path is a user-chosen location and opts out of the managed privacy guarantees (no TTL pruning, no per-context partitioning, best-effort 0600 only); you own its lifetime"
 
@@ -162,6 +184,9 @@ func (e *DQLExecutor) buildSpillResponse(query string, result *DQLQueryResponse,
 		Suggestions:      suggestions,
 		EmptyReason:      emptyReason,
 	}
+	if opts.Decorate != nil {
+		opts.Decorate(ctx, result, records)
+	}
 
 	resp := output.Response{
 		OK:              true,
@@ -274,6 +299,8 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, rows.full, opts)
 	notifSuggestions = append(notifSuggestions, emptySuggestions...)
 	notifSuggestions = append(notifSuggestions, lookbackAdvice(query)...)
+	notifSuggestions = append(notifSuggestions, sampleAdvice(query, len(rows.full))...)
+	notifSuggestions = append(notifSuggestions, durationAdvice(query, result)...)
 	notifSuggestions = append(notifSuggestions, seriesAdvice(opts)...)
 	if encodeWarning != "" {
 		notifWarnings = append(notifWarnings, encodeWarning)
@@ -282,7 +309,7 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 		notifSuggestions = append(notifSuggestions, output.AutoDefaultSuggestion(encoding))
 	}
 	if rows.compaction != nil && rows.compaction.Changed(encoding) {
-		notifSuggestions = append(notifSuggestions, compactRowsSuggestion)
+		notifSuggestions = append(notifSuggestions, compactRowsSuggestion(rows.compaction))
 	}
 
 	total := len(rows.full)
@@ -310,6 +337,9 @@ func (e *DQLExecutor) inlineRecordsResponse(query string, result *DQLQueryRespon
 	if len(rows.clippedFields) > 0 {
 		ctx.MarkFieldsClipped(opts.MaxFieldChars, rows.clippedFields)
 		ctx.Suggestions = append(ctx.Suggestions, fieldClipSuggestion(opts.MaxFieldChars, rows.clippedFields))
+	}
+	if opts.Decorate != nil {
+		opts.Decorate(ctx, result, rows.full)
 	}
 	resp := output.Response{
 		OK:              true,

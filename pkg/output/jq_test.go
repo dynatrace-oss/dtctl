@@ -230,3 +230,24 @@ func TestDescribeJQInput(t *testing.T) {
 		})
 	}
 }
+
+// TestApplyJQ_IteratingAMissingKeyIsAShapeMismatch: '.result.records[]' on
+// the payload fails inside jq ("cannot iterate over: null") rather than
+// resolving to null, and is the same envelope-vs-payload mistake.
+func TestApplyJQ_IteratingAMissingKeyIsAShapeMismatch(t *testing.T) {
+	in := map[string]interface{}{"records": []interface{}{map[string]interface{}{"n": 1}}}
+	_, err := ApplyJQ(".result.records[] | .n", in)
+	var jqErr *JQError
+	if !errors.As(err, &jqErr) || jqErr.Code != JQShapeMismatchCode {
+		t.Fatalf("err = %v, want a %s error", err, JQShapeMismatchCode)
+	}
+	if len(jqErr.Suggestions) == 0 || !strings.Contains(jqErr.Suggestions[0], "result payload") {
+		t.Errorf("suggestions = %#v, want the envelope-vs-payload hint first", jqErr.Suggestions)
+	}
+
+	// A real type error on a key that exists stays a plain error.
+	_, err = ApplyJQ(".records[] | .n[]", in)
+	if err == nil || errors.As(err, &jqErr) {
+		t.Fatalf("err = %v, want a plain jq error", err)
+	}
+}

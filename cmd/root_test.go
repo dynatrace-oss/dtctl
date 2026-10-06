@@ -1752,3 +1752,48 @@ func withCapturedStdout(t *testing.T, buf *bytes.Buffer, fn func()) {
 		t.Fatalf("failed to read captured stdout: %v", err)
 	}
 }
+
+// TestNounAdvice answers `dtctl <noun>` with the commands that read it
+// (evals: `dtctl slo` drew "did you mean ctx?", and agents ran it), and leaves
+// a typo of a verb to edit distance.
+func TestNounAdvice(t *testing.T) {
+	cases := []struct {
+		noun string
+		want []string
+	}{
+		{"slo", []string{"dtctl get slos"}},
+		{"workflow", []string{"dtctl get workflows", "dtctl get workflow-executions"}},
+		{"problems", []string{"fetch dt.davis.problems"}},
+		{"synthetic", []string{"fetch dt.synthetic.events"}},
+		{"slo-status", []string{"dtctl get slos"}},
+		{"workflow-runs", []string{"dtctl get workflows", "dtctl get workflow-executions"}},
+	}
+	for _, tc := range cases {
+		err := enhanceCommandError(rootCmd, fmt.Errorf(`unknown command %q for "dtctl"`, tc.noun))
+		var cmdErr *suggest.CommandError
+		if !errors.As(err, &cmdErr) {
+			t.Fatalf("%s: expected CommandError, got %T", tc.noun, err)
+		}
+		if cmdErr.Suggestion != nil {
+			t.Errorf("%s: kept the edit-distance guess %q", tc.noun, cmdErr.Suggestion.Value)
+		}
+		got := strings.Join(errorToDetail(err).Suggestions, "\n")
+		for _, w := range append(tc.want, "dtctl commands") {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: suggestions lack %q:\n%s", tc.noun, w, got)
+			}
+		}
+	}
+	// The same advice under a verb: `dtctl get problems`, `dtctl find slo`.
+	for noun, want := range map[string]string{"problems": "fetch dt.davis.problems", "slo": "dtctl get slos"} {
+		err := requireSubcommand(findCmd, []string{noun})
+		if got := strings.Join(errorToDetail(err).Suggestions, "\n"); !strings.Contains(got, want) {
+			t.Errorf("find %s: suggestions lack %q:\n%s", noun, want, got)
+		}
+	}
+	for _, typo := range []string{"quer", "getx", "account"} {
+		if a := nounAdvice(typo); a != nil {
+			t.Errorf("%s is no noun dtctl reads, got %q", typo, a)
+		}
+	}
+}

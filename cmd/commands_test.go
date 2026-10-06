@@ -52,7 +52,7 @@ func TestCommandsCmd_DefaultIsMinimalTOON(t *testing.T) {
 	require.Contains(t, out, "tool: dtctl")
 	require.Contains(t, out, "command_model: verb-noun")
 	require.Contains(t, out, "verbs:")
-	require.NotContains(t, out, "{")
+	require.False(t, strings.HasPrefix(strings.TrimSpace(out), "{"), "JSON output")
 
 	// Minimal: no per-verb detail fields.
 	require.NotContains(t, out, "mutating")

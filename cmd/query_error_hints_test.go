@@ -90,3 +90,21 @@ func TestErrorToDetail_QueryErrorWithoutPosition(t *testing.T) {
 		t.Errorf("envelope %s carries empty position fields", raw)
 	}
 }
+
+// TestDqlErrorAdvicePlatformObject points a fetch of a platform resource
+// (evals: `fetch dt.automation.workflow_executions`, `fetch dt.slo`) at the
+// get command that lists it, not at the Grail data-object catalog.
+func TestDqlErrorAdvicePlatformObject(t *testing.T) {
+	for _, guess := range []string{"dt.automation.workflow_executions", "dt.slo", "dashboards"} {
+		s := dqlErrorAdvice(&sdkquery.QueryError{ErrorType: "UNKNOWN_DATA_OBJECT",
+			Message: "UNKNOWN_DATA_OBJECT", Detail: guess + " isn't a valid data object."})
+		if len(s) == 0 || !strings.Contains(s[0], "dtctl get") {
+			t.Errorf("advice for %q = %q, want a dtctl get pointer", guess, s)
+		}
+	}
+	s := dqlErrorAdvice(&sdkquery.QueryError{ErrorType: "UNKNOWN_DATA_OBJECT",
+		Message: "UNKNOWN_DATA_OBJECT", Detail: "usersessions isn't a valid data object."})
+	if len(s) > 0 && strings.Contains(s[0], "dtctl get") {
+		t.Errorf("a Grail near-miss got the platform advice: %q", s)
+	}
+}

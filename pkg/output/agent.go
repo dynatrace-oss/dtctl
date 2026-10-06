@@ -155,6 +155,21 @@ type ResponseContext struct {
 	MaxFieldChars int `json:"max_field_chars,omitempty"`
 	// TruncatedFields names the fields with at least one clipped value.
 	TruncatedFields []string `json:"truncated_fields,omitempty"`
+
+	// Window is the window `dtctl query` searched, as the response's own
+	// metadata states it.
+	Window *TimeWindow `json:"window,omitempty"`
+}
+
+// TimeWindow is a query window as absolute RFC3339 instants.
+type TimeWindow struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	// Span is the window's length (2h, 24h, 7d), so a reader can hold it
+	// against the question without subtracting timestamps.
+	Span string `json:"span,omitempty"`
+	// Note says the window is the default one: the query named none.
+	Note string `json:"note,omitempty"`
 }
 
 // MarkFieldsClipped records on the context that values in fields were clipped
@@ -173,7 +188,8 @@ func (c *ResponseContext) MarkFieldsClipped(max int, fields []string) {
 // names its basis in Evidence (a sample, or the window that was checked), so
 // a consumer never mistakes a sampled observation for a catalog fact.
 type EmptyReason struct {
-	// Code is "field_not_in_sample" or "metric_not_in_window".
+	// Code is "field_not_in_sample", "metric_not_in_window" or
+	// "value_not_found".
 	Code       string   `json:"code"`
 	Field      string   `json:"field,omitempty"`
 	Metric     string   `json:"metric,omitempty"`

@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -237,6 +238,11 @@ type DQLExecuteOptions struct {
 	// query execution and are only consulted on the spill path.
 	TenantID    string
 	ContextName string
+
+	// Decorate, when set, amends the agent envelope's context after dtctl
+	// built it: `dtctl query` adds the window it searched. records are the rows the envelope
+	// reports, or nil when they streamed to disk unread (never an empty result).
+	Decorate func(ctx *output.ResponseContext, result *DQLQueryResponse, records []map[string]interface{})
 }
 
 // DQLVerifyOptions configures DQL query verification
@@ -850,6 +856,67 @@ func lookbackAdvice(query string) []string {
 	return []string{fmt.Sprintf("# dt.entity.%s is an event-LOOKBACK view (entities seen in the query window), not the live topology — for a current-state census or inventory use: dtctl query 'smartscapeNodes \"%s\" | summarize count()'", m[1], t)}
 }
 
+// sampleAdvice rides a fetch whose unsorted `| limit N` let exactly N rows
+// through: those are whichever records were read first, not a representative
+// sample. Agents read 20 such rows, saw only successes, and reported that
+// nothing failed. A sorted limit is a deliberate top-N and gets no advice, and
+// an aggregation anywhere makes the rows a summary, not a sample.
+func sampleAdvice(query string, rows int) []string {
+	stages := splitStages(query)
+	if len(stages) < 2 || fetchStageRe.FindStringSubmatch(stages[0]) == nil {
+		return nil
+	}
+	sorted := false
+	for _, st := range stages[1:] {
+		cmd, rest := splitCommand(st)
+		switch strings.ToLower(cmd) {
+		case "summarize", "maketimeseries", "fieldssummary", "append", "join", "lookup":
+			return nil
+		case "sort":
+			sorted = true
+		case "limit":
+			n, err := strconv.Atoi(strings.TrimSpace(rest))
+			if err != nil || n != rows || sorted || n == 0 {
+				return nil
+			}
+			return []string{fmt.Sprintf("# these %d rows are the first records `limit %d` let through, not a representative sample — they cannot show how often something occurs or that it never does; aggregate before concluding, e.g. `| summarize count(), by:{<field>}`", n, n)}
+		}
+	}
+	return nil
+}
+
+// durationAdvice names the result columns Grail types as durations, which
+// arrive as nanosecond integers: agents read 54525000 as seconds or as ms.
+// Without an aggregation in the query it adds how to get a typical value,
+// since agents also took one slow trace's duration as the typical one.
+func durationAdvice(query string, result *DQLQueryResponse) []string {
+	if result == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var cols []string
+	for _, g := range result.GetTypes() {
+		for name, ct := range g.Mappings {
+			if ct.Type == "duration" && !seen[name] {
+				seen[name] = true
+				cols = append(cols, name)
+			}
+		}
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	sort.Strings(cols)
+	if len(cols) > 4 {
+		cols = cols[:4]
+	}
+	advice := fmt.Sprintf("# %s: durations in NANOSECONDS (1 ms = 1,000,000) — convert before reporting", backtickList(cols))
+	if topLevelIndex(strings.ToLower(query), "summarize") < 0 && topLevelIndex(strings.ToLower(query), "maketimeseries") < 0 {
+		advice += fmt.Sprintf("; one record's duration is not a typical one, use e.g. `| summarize p50 = percentile(%s, 50), p90 = percentile(%s, 90)`", cols[0], cols[0])
+	}
+	return []string{advice}
+}
+
 // allAggregatesZero reports whether a single result row carries only zero
 // numeric values (DQL long aggregates arrive as JSON strings) — the shape a
 // `summarize count()` produces when nothing matched.
@@ -1193,6 +1260,8 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	emptyReason, emptySuggestions := e.emptyResultAdvice(query, result, records, opts)
 	suggestions = append(suggestions, emptySuggestions...)
 	suggestions = append(suggestions, lookbackAdvice(query)...)
+	suggestions = append(suggestions, sampleAdvice(query, len(records))...)
+	suggestions = append(suggestions, durationAdvice(query, result)...)
 	suggestions = append(suggestions, metaAdvice...)
 	suggestions = append(suggestions, seriesAdvice(opts)...)
 
@@ -1204,6 +1273,10 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 		Warnings:    warnings,
 		Suggestions: suggestions,
 		EmptyReason: emptyReason,
+	}
+
+	if opts.Decorate != nil {
+		opts.Decorate(ctx, result, records)
 	}
 
 	// A filter's output has no row structure to cut at, so the budget cannot
@@ -1221,8 +1294,10 @@ func (e *DQLExecutor) printAgentJQ(query string, result *DQLQueryResponse, recor
 	ap.SetMetadata(envelopeMetadata(query, result, opts))
 	// -o toon asked for a token-efficient encoding of the filtered result; keep
 	// it. Any other non-JSON format the envelope can't carry warns for itself.
+	// With no -o, the result is JSON: a caller who shaped it with jq reads it as
+	// JSON, and an auto-chosen yaml or csv string is what it would trip over.
 	if opts.AutoFormatByDefault {
-		ap.UseAutoByDefault()
+		ap.SetResultFormat("json")
 	} else {
 		ap.SetResultFormat(effectiveFormat)
 	}

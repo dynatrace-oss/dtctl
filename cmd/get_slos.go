@@ -57,9 +57,17 @@ Examples:
 			return err
 		}
 
+		// A definition is not a status: agents listed the SLOs and their
+		// targets and reported that as which ones are failing.
+		if ap := enrichAgent(printer, "get", "slo"); ap != nil && len(list.SLOs) > 0 {
+			ap.SetSuggestions([]string{sloEvaluateAdvice})
+		}
 		return printer.PrintList(list.SLOs)
 	},
 }
+
+// sloEvaluateAdvice says how to get an SLO's status from its definition.
+const sloEvaluateAdvice = "these are SLO definitions (targets), not their status — evaluate each with 'dtctl exec slo <id>' for its current value, status and error budget"
 
 // getSLOTemplatesCmd retrieves SLO templates
 var getSLOTemplatesCmd = &cobra.Command{

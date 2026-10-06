@@ -500,6 +500,10 @@ Examples:
 			MaxOutputBytes:               bounds.MaxOutputBytes,
 			TenantID:                     spillTenantID,
 			ContextName:                  spillContextName,
+			Decorate: func(ctx *output.ResponseContext, result *exec.DQLQueryResponse, _ []map[string]interface{}) {
+				named := defaultTimeframeStart != "" || defaultTimeframeEnd != "" || queryNamesWindow(query)
+				ctx.Window = queryWindowContext(result, named)
+			},
 			// The progress bar is a user-facing affordance of the `query`
 			// command only; opt in here (subject to --no-progress) so internal
 			// query callers stay silent by default.
