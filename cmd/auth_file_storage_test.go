@@ -45,10 +45,9 @@ func TestOfferFileTokenStorage_AcceptRemembersChoice(t *testing.T) {
 		t.Errorf("choice was not persisted: %v", err)
 	}
 
-	// Next login on this machine must not ask again.
-	if !offerFileTokenStorage(errNoSecretService) || *asked != 1 {
-		t.Errorf("second login should reuse the remembered choice (asked=%d)", *asked)
-	}
+	// Whether a later login skips the question depends on the live keyring
+	// probe (consent applies only while the keyring is absent), which is
+	// covered with an injected probe in sdk/session.
 }
 
 func TestOfferFileTokenStorage_DeclineChangesNothing(t *testing.T) {

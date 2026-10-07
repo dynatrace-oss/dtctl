@@ -199,18 +199,28 @@ func KeyringBackend() string {
 // or once per machine by consenting to it (see PersistFileTokenStorage).
 //
 // The environment variable always wins: any other non-empty value, such as
-// "keyring", overrides a persisted consent. The persisted consent is ignored
-// while the keyring is disabled (DTCTL_DISABLE_KEYRING), which is how embedded
-// sessions keep away from host credential stores.
+// "keyring", overrides a persisted consent.
+//
+// A persisted consent answers "what should I do on a machine with no keyring?",
+// so it applies only while the keyring is definitively absent (see
+// IsKeyringAbsent). If the keyring is later installed, it is used again; if it
+// is merely locked or broken, the failure surfaces instead of tokens quietly
+// landing in plaintext. Consent is also ignored while the keyring is disabled
+// (DTCTL_DISABLE_KEYRING), which is how embedded sessions keep away from host
+// credential stores.
 func IsFileTokenStorage() bool {
 	if v := os.Getenv(EnvTokenStorage); v != "" {
 		return strings.EqualFold(v, "file")
 	}
-	if isKeyringDisabled() {
+	if isKeyringDisabled() || !hasFileStorageConsent() {
 		return false
 	}
-	return hasFileStorageConsent()
+	return IsKeyringAbsent(checkKeyring())
 }
+
+// checkKeyring is CheckKeyring behind a seam so tests can model a keyring that
+// is absent, locked or present without a real D-Bus.
+var checkKeyring = CheckKeyring
 
 // fileStorageConsentPath is the marker recording that the user agreed to keep
 // OAuth tokens in files on this machine. It lives beside the token files
@@ -234,6 +244,11 @@ func PersistFileTokenStorage() error {
 	}
 	if err := os.WriteFile(path, []byte("file\n"), oauthTokenFileMode); err != nil {
 		return fmt.Errorf("failed to record token storage choice: %w", err)
+	}
+	// WriteFile applies the mode only when it creates the file; tighten a marker
+	// that already existed with looser permissions.
+	if err := os.Chmod(path, oauthTokenFileMode); err != nil && runtime.GOOS != "windows" {
+		return fmt.Errorf("failed to restrict %s: %w", path, err)
 	}
 	return nil
 }
