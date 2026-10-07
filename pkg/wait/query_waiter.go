@@ -25,8 +25,8 @@ type WaitConfig struct {
 	OutputFormat string
 	Quiet        bool
 	Verbose      bool
-	ProgressOut  io.Writer // Where to write progress messages (default: stderr)
-	Out          io.Writer // Where PrintResults writes (default: stdout)
+	ProgressOut  io.Writer // Where to write progress messages (default: os.Stderr, even if Out is set)
+	Out          io.Writer // Where PrintResults writes (default: os.Stdout); progress goes to ProgressOut
 }
 
 // QueryWaiter polls a query until a condition is met

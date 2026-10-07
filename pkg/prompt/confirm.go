@@ -15,7 +15,8 @@ func Confirm(message string) bool {
 }
 
 // ConfirmWith is Confirm on the given streams, for a caller that owns the
-// invocation's input and output instead of the process's.
+// invocation's input and output instead of the process's. It buffers in
+// per call, so pass a *bufio.Reader when confirming more than once on one in.
 func ConfirmWith(in io.Reader, out io.Writer, message string) bool {
 	fmt.Fprintf(out, "%s [y/N]: ", message)
 
