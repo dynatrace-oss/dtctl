@@ -225,11 +225,12 @@ var sessionScrubbedEnvVars = []string{
 }
 
 // applyRunEnvironment installs the invocation's session and environment
-// variables and returns a cleanup restoring the previous process state. The
-// env mutations are process-wide, which is safe because invocations are
-// serialized (runMu) — but a host application reading the same variables
-// concurrently from other goroutines will observe them; hosts that care
-// should not share the process with unrelated env consumers.
+// variables and returns a cleanup restoring the previous process state. For a
+// serialized invocation the env mutations are process-wide, which is safe
+// because it holds runMu exclusively — but a host application reading the
+// same variables concurrently from other goroutines will observe them; hosts
+// that care should not share the process with unrelated env consumers. A
+// concurrent invocation mutates nothing process-wide (below).
 //
 // Order matters: session scrubbing first, then opts.Env, so an embedding
 // caller can explicitly re-grant a variable the scrub removed.

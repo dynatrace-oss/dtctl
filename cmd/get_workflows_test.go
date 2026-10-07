@@ -144,11 +144,9 @@ func TestGetWorkflowExecutionsCmd_ListWithFilters(t *testing.T) {
 
 	origCfgFile := cfgFile(context.Background())
 	origPlain := plainMode(context.Background())
-	origFilter := workflowFilter
 	defer func() {
 		gFlags.cfgFile = origCfgFile
 		gFlags.plainMode = origPlain
-		workflowFilter = origFilter
 	}()
 
 	gFlags.cfgFile = configPath
@@ -235,18 +233,15 @@ func TestGetWorkflowExecutionsCmd_HasMore(t *testing.T) {
 	origCfgFile := cfgFile(context.Background())
 	origPlain := plainMode(context.Background())
 	origAgent := agentMode(context.Background())
-	origFilter := workflowFilter
 	defer func() {
 		gFlags.cfgFile = origCfgFile
 		gFlags.plainMode = origPlain
 		gFlags.agentMode = origAgent
-		workflowFilter = origFilter
 	}()
 
 	gFlags.cfgFile = configPath
 	gFlags.plainMode = true
 	gFlags.agentMode = true
-	workflowFilter = ""
 
 	testutil.ResetCommandFlags(getWorkflowExecutionsCmd)
 

@@ -12,9 +12,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-// forceDelete skips confirmation prompts for delete and restore commands
-var forceDelete bool
-
 // deleteCmd represents the delete command
 var deleteCmd = newDeleteCmd()
 

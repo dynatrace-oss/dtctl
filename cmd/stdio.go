@@ -12,10 +12,10 @@ import (
 // os.Stdin (rather than threading writers through every command) catches
 // every output path at once — fmt.Print*, the output package, cobra help,
 // error envelopes — which is exactly the CLI-identical byte stream the
-// service contract wants (docs/dev/SERVICE_ENGINE_DESIGN.md). Safe because
-// invocations are
-// serialized (runMu) and the pristine-tree restore clears any cobra-bound
-// writers.
+// service contract wants (docs/dev/SERVICE_ENGINE_DESIGN.md). Safe for a
+// serialized invocation because it holds runMu exclusively and the
+// pristine-tree restore clears any cobra-bound writers; a concurrent
+// invocation never swaps the process streams (below).
 //
 // The returned cleanup restores the process streams and blocks until all
 // piped output has been drained into the destination writers.

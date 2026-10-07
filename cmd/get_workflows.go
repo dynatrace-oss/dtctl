@@ -18,9 +18,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-// workflowFilter holds the workflow ID filter for executions
-var workflowFilter string
-
 // minAutomationChunkSize is the smallest allowed --chunk-size for listing any
 // limit/offset-paginated Automation API resource (workflows, scheduling rules).
 // Smaller pages multiply the request count for no benefit and risk hammering the API.

@@ -202,6 +202,18 @@ Examples:
 	c.Flags().StringVar(&updateGCPMonitoringConfigLocationFiltering, "locationFiltering", "", "Comma-separated locations to monitor, or 'all' to remove the location filter")
 	c.Flags().StringVar(&updateGCPMonitoringConfigFeatureSets, "featureSets", "", "Comma-separated feature sets")
 	c.Flags().StringVar(&updateGCPMonitoringConfigFeatureSets, "featuresets", "", "Alias for --featureSets")
+	// At least one is required and a flag left out keeps the stored value, so
+	// an explicitly empty one is rejected rather than read as "left out".
+	for _, name := range []string{"locationFiltering", "featureSets", "featuresets"} {
+		rejectEmptyFlag(c, name)
+	}
+	// Every path through this command needs a flag the rename takes away
+	// (both --locationFiltering and --featureSets), so at a stable floor it has
+	// no usable invocation left. Marking the command says that plainly instead
+	// of hiding the flags and then failing on a "required" flag help no longer
+	// lists. Renamed to kebab-case in 1.0 (contrib
+	// breaking-changes/cloud-flags-kebab-case.md); the spelling aliases are
+	// removed outright.
 	stability.Mark(c, stability.Experimental, pre10Since)
 	stability.MarkFlag(c, "locationFiltering", stability.Experimental, pre10Since)
 	stability.MarkFlag(c, "featureSets", stability.Experimental, pre10Since)
@@ -212,23 +224,4 @@ Examples:
 func init() {
 	updateGCPProviderCmd.AddCommand(updateGCPConnectionCmd)
 	updateGCPProviderCmd.AddCommand(updateGCPMonitoringConfigCmd)
-	// Every path through this command needs a flag the rename takes away
-	// At least one is required and a flag left out keeps the stored value, so
-	// an explicitly empty one is rejected rather than read as "left out".
-	for _, name := range []string{"locationFiltering", "featureSets", "featuresets"} {
-		rejectEmptyFlag(updateGCPMonitoringConfigCmd, name)
-	}
-	// (--serviceAccountId is required), so at a stable floor it has no usable
-	// invocation left. Marking the command says that plainly instead of
-	// hiding the flags and then failing on a "required" flag help no
-	// longer lists.
-	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
-	// the spelling aliases are removed outright.
-	// Every path through this command needs a flag the rename takes away
-	// (both --locationFiltering and --featureSets), so at a stable floor it has no usable
-	// invocation left. Marking the command says that plainly instead of
-	// hiding the flags and then failing on a "required" flag help no
-	// longer lists.
-	// Renamed to kebab-case in 1.0 (contrib breaking-changes/cloud-flags-kebab-case.md);
-	// the spelling aliases are removed outright.
 }

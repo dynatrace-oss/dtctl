@@ -14,10 +14,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var (
-	createGCPConnectionName string
-)
-
 var createGCPConnectionCmd = newCreateGCPConnectionCmd()
 
 func newCreateGCPConnectionCmd() *cobra.Command {
@@ -68,12 +64,12 @@ Examples:
 
 			created, err := handler.Create(gcpconnection.GCPConnectionCreate{Value: value})
 			if err != nil {
-				printGCPPrincipalHint(cmdContext(cmd), handler, createGCPConnectionServiceAccountID)
+				printGCPPrincipalHint(cmdContext(cmd), handler, createGCPConnectionName, createGCPConnectionServiceAccountID)
 				return err
 			}
 
 			output.FprintSuccess(currentStderr(cmdContext(cmd)), "GCP connection created: %s", created.ObjectID)
-			printGCPPrincipalHint(cmdContext(cmd), handler, createGCPConnectionServiceAccountID)
+			printGCPPrincipalHint(cmdContext(cmd), handler, createGCPConnectionName, createGCPConnectionServiceAccountID)
 			return nil
 		},
 	}
@@ -89,7 +85,7 @@ Examples:
 	return c
 }
 
-func printGCPPrincipalHint(ctx context.Context, handler *gcpconnection.Handler, serviceAccountID string) {
+func printGCPPrincipalHint(ctx context.Context, handler *gcpconnection.Handler, connectionName, serviceAccountID string) {
 	principal, err := handler.GetDynatracePrincipal()
 	if err != nil {
 		return
@@ -143,7 +139,7 @@ func printGCPPrincipalHint(ctx context.Context, handler *gcpconnection.Handler, 
 	fmt.Fprintln(currentStdout(ctx), "  --role=\"roles/iam.serviceAccountTokenCreator\"")
 	fmt.Fprintln(currentStdout(ctx))
 	fmt.Fprintln(currentStdout(ctx), "5) Update connection in Dynatrace with customer service account:")
-	fmt.Fprintf(currentStdout(ctx), "dtctl update gcp connection --name %q --serviceAccountId \"${CUSTOMER_SA_EMAIL}\"\n", createGCPConnectionName)
+	fmt.Fprintf(currentStdout(ctx), "dtctl update gcp connection --name %q --serviceAccountId \"${CUSTOMER_SA_EMAIL}\"\n", connectionName)
 	fmt.Fprintln(currentStdout(ctx))
 	fmt.Fprintln(currentStdout(ctx), "Optional: check Domain Restricted Sharing policy allows Dynatrace customer:")
 	fmt.Fprintln(currentStdout(ctx), "gcloud resource-manager org-policies describe constraints/iam.allowedPolicyMemberDomains \\")

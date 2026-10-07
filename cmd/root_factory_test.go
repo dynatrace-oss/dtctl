@@ -109,8 +109,12 @@ func describeFlags(b *strings.Builder, kind string, fs *pflag.FlagSet) {
 		if _, byCobra := f.Annotations[cobra.FlagSetByCobraAnnotation]; byCobra {
 			return
 		}
-		lines = append(lines, fmt.Sprintf("%s flag --%s -%s type=%s default=%q value=%q hidden=%v deprecated=%q usage=%q annotations=%s",
-			kind, f.Name, f.Shorthand, f.Value.Type(), f.DefValue, f.Value.String(), f.Hidden, f.Deprecated, f.Usage, sortedFlagAnnotations(f.Annotations)))
+		// The value's Go type as well as its pflag type: a wrapper such as
+		// nonEmptyStringValue (rejectEmptyFlag) delegates Type(), so a
+		// constructor that forgot the wrapper would otherwise match the
+		// singleton while accepting an empty value the CLI rejects.
+		lines = append(lines, fmt.Sprintf("%s flag --%s -%s type=%s value_type=%T default=%q value=%q hidden=%v deprecated=%q usage=%q annotations=%s",
+			kind, f.Name, f.Shorthand, f.Value.Type(), f.Value, f.DefValue, f.Value.String(), f.Hidden, f.Deprecated, f.Usage, sortedFlagAnnotations(f.Annotations)))
 	})
 	sort.Strings(lines)
 	for _, l := range lines {

@@ -23,10 +23,10 @@ func setupDocumentCmdTest(t *testing.T, srvURL string, level config.SafetyLevel)
 	t.Setenv("DTCTL_DISABLE_KEYRING", "1")
 	t.Setenv(config.EnvTokenStorage, "file")
 	configPath := filepath.Join(t.TempDir(), "config")
-	origCfgFile, origDryRun, origForce, origPlain := cfgFile(context.Background()), dryRun(context.Background()), forceDelete, plainMode(context.Background())
+	origCfgFile, origDryRun, origPlain := cfgFile(context.Background()), dryRun(context.Background()), plainMode(context.Background())
 	restorePristineTree(context.Background())
 	t.Cleanup(func() {
-		gFlags.cfgFile, gFlags.dryRun, forceDelete, gFlags.plainMode = origCfgFile, origDryRun, origForce, origPlain
+		gFlags.cfgFile, gFlags.dryRun, gFlags.plainMode = origCfgFile, origDryRun, origPlain
 		restorePristineTree(context.Background())
 	})
 	gFlags.cfgFile, gFlags.dryRun = configPath, false
