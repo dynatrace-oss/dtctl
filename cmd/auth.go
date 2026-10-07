@@ -15,6 +15,7 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/diagnostic"
 	"github.com/dynatrace-oss/dtctl/pkg/output"
+	"github.com/dynatrace-oss/dtctl/pkg/prompt"
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
@@ -30,6 +31,69 @@ var (
 	authCheckKeyringFunc  = config.CheckKeyring
 	authEnsureKeyringFunc = config.EnsureKeyringCollection
 )
+
+// Hooks for the one-time file-storage consent prompt in auth login. They
+// default to the real terminal checks and can be overridden in tests.
+var (
+	authIsInteractiveFunc = func() bool {
+		return !GetPlainMode() && !GetAgentMode() && isTerminal(os.Stdin) && isStderrTerminal()
+	}
+	authConfirmFunc = prompt.Confirm
+)
+
+// offerFileTokenStorage handles a keyring failure that file storage can solve.
+// It returns true when file storage is in place for this login, either because
+// the user already chose it or because they just agreed to it.
+//
+// It never switches silently: tokens in a file are a weaker store than a
+// keyring, so the user decides, and only when the machine has no keyring at all
+// (a locked or broken keyring stays an error) and a person is there to answer.
+// The answer is remembered, so the question is asked once per machine.
+func offerFileTokenStorage(keyringErr error) bool {
+	if config.IsFileTokenStorage() {
+		output.PrintWarning("Keyring unavailable; using file-based token storage (%s)", config.OAuthStorageBackend())
+		output.PrintWarning("Tokens will be stored in plaintext. Ensure only you can read the file.")
+		return true
+	}
+	if !config.IsKeyringAbsent(keyringErr) || !authIsInteractiveFunc() {
+		return false
+	}
+	output.PrintWarning("No system keyring found on this machine (%v)", keyringErr)
+	if !authConfirmFunc(fmt.Sprintf("Store OAuth tokens in %s instead? (owner-only, not encrypted)", config.OAuthStorageBackend())) {
+		return false
+	}
+	if err := config.PersistFileTokenStorage(); err != nil {
+		output.PrintWarning("Could not remember this choice (%v); set %s=file to repeat it", err, config.EnvTokenStorage)
+		_ = os.Setenv(config.EnvTokenStorage, "file") // this invocation only
+		return true
+	}
+	output.PrintInfo("Remembered. To undo: delete %s, or set %s=keyring", config.FileTokenStorageConsentPath(), config.EnvTokenStorage)
+	return true
+}
+
+// tokenStorageUnavailableSuggestions lists the ways out when no token storage
+// could be set up, most relevant first.
+func tokenStorageUnavailableSuggestions(keyringErr error, contextName, environment string) []string {
+	var s []string
+	if config.IsKeyringAbsent(keyringErr) {
+		s = append(s,
+			fmt.Sprintf("No keyring on this machine: run `dtctl auth login` in a terminal to be asked once, or set %s=file", config.EnvTokenStorage))
+	} else {
+		s = append(s,
+			fmt.Sprintf("Unlock or repair the keyring, or set %s=file to use file-based token storage", config.EnvTokenStorage))
+	}
+	s = append(s,
+		fmt.Sprintf("Or skip OAuth with a platform token: dtctl config set-context %s --environment %q --token-ref my-token", contextName, environment),
+		"  dtctl config set-credentials my-token --token <YOUR_PLATFORM_TOKEN>",
+		"Token scopes: dtctl help token-scopes",
+	)
+	if isKeyringDisabled() {
+		s = append(s, fmt.Sprintf("Unset %s if it was set unintentionally", config.EnvDisableKeyring))
+	}
+	return s
+}
+
+func isKeyringDisabled() bool { return os.Getenv(config.EnvDisableKeyring) != "" }
 
 // authClientCredentialsFunc performs the client credentials grant during
 // auth login. It defaults to the real implementation and can be overridden in
@@ -466,6 +530,13 @@ Token storage:
   read — re-authenticate after switching. Useful for headless systems, WSL,
   containers, or Windows Admin sessions where keyring writes fail.
 
+  On a machine with no keyring at all (typical for headless Linux), a login run
+  in a terminal asks once whether to use the file store instead, and remembers
+  the answer. dtctl never switches to files silently, and non-interactive runs
+  (scripts, CI, --plain, --agent) never ask: set DTCTL_TOKEN_STORAGE=file there.
+  To undo a remembered choice, delete the marker file doctor names, or set
+  DTCTL_TOKEN_STORAGE=keyring.
+
 If neither keyring nor file storage is available, use API token authentication
 instead (dtctl config set-credentials).
 
@@ -622,24 +693,13 @@ Non-interactive login (CI/CD):
 				}
 			}
 			if !recovered {
-				// Keyring is unavailable — check if file-based storage can be used instead
-				if config.IsFileTokenStorage() {
-					output.PrintWarning("Keyring unavailable; using file-based token storage (%s)", config.OAuthStorageBackend())
-					output.PrintWarning("Tokens will be stored in plaintext. Ensure only you can read the file.")
-				} else {
+				// Keyring is unavailable — use file-based storage if the user has
+				// chosen it (or agrees to it now); otherwise explain the way out.
+				if !offerFileTokenStorage(keyringErr) {
 					return &diagnostic.Error{
-						Operation: "auth login",
-						Message:   fmt.Sprintf("OAuth login requires a token storage backend, but the system keyring is unavailable: %v", keyringErr),
-						Suggestions: []string{
-							fmt.Sprintf("Set %s=file to use file-based token storage (recommended for headless/WSL/CI)", config.EnvTokenStorage),
-							"Or use token-based authentication instead:",
-							fmt.Sprintf("  dtctl config set-context %s --environment %q --token-ref my-token", contextName, environment),
-							"  dtctl config set-credentials my-token --token <YOUR_PLATFORM_TOKEN>",
-							"Create a platform token at: https://myaccount.dynatrace.com/platformTokens (Account Management > My platform tokens > Platform token)",
-							"For required token scopes, see: dtctl help token-scopes (or docs/TOKEN_SCOPES.md)",
-							"On Linux, ensure a Secret Service provider is running (e.g. gnome-keyring-daemon --start --components=secrets)",
-							fmt.Sprintf("Unset %s if it was set unintentionally", config.EnvDisableKeyring),
-						},
+						Operation:   "auth login",
+						Message:     fmt.Sprintf("OAuth login requires a token storage backend, but the system keyring is unavailable: %v", keyringErr),
+						Suggestions: tokenStorageUnavailableSuggestions(keyringErr, contextName, environment),
 					}
 				}
 			}

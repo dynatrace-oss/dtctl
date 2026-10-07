@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -155,6 +156,10 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 		// Explicit file storage bypasses the keyring for OAuth tokens, so a
 		// reachable keyring is not where they go.
 		detail := fmt.Sprintf("file-based (%s=file)", config.EnvTokenStorage)
+		if os.Getenv(config.EnvTokenStorage) == "" {
+			detail = fmt.Sprintf("file-based (chosen once; undo: delete %s or set %s=keyring)",
+				config.FileTokenStorageConsentPath(), config.EnvTokenStorage)
+		}
 		if keyringErr != nil {
 			detail += fmt.Sprintf("; keyring unavailable: %v", keyringErr)
 		}
@@ -168,7 +173,11 @@ func runDoctorChecksWithClient(httpClient *http.Client) []checkResult {
 		if strings.Contains(keyringErr.Error(), config.ErrMsgCollectionUnlock) {
 			detail += " (run 'dtctl auth login' to create the collection automatically)"
 		}
-		detail += fmt.Sprintf(" (set %s=file to use file-based token storage)", config.EnvTokenStorage)
+		if config.IsKeyringAbsent(keyringErr) {
+			detail += fmt.Sprintf(" (no keyring here: 'dtctl auth login' offers file-based token storage, or set %s=file)", config.EnvTokenStorage)
+		} else {
+			detail += fmt.Sprintf(" (set %s=file to use file-based token storage)", config.EnvTokenStorage)
+		}
 		results = append(results, checkResult{
 			Name:   "Token storage",
 			Status: "warn",

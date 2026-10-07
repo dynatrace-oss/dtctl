@@ -12,7 +12,17 @@ Browser-based SSO login with automatic token refresh:
 dtctl auth login --context my-env --environment "https://abc12345.apps.dynatrace.com"
 ```
 
-Tokens are stored securely in your OS keyring. To log out:
+Tokens are stored securely in your OS keyring.
+
+**No keyring (headless Linux, fresh VMs, containers):** run `auth login` in a
+terminal and dtctl asks once whether to keep tokens in files under
+`~/.local/share/dtctl/oauth-tokens/` (owner-only, not encrypted) instead. Your
+answer is remembered on that machine. dtctl never switches silently, and scripts
+or CI never get the question: set `DTCTL_TOKEN_STORAGE=file` there. To undo a
+remembered choice, delete the marker file `dtctl doctor` names, or set
+`DTCTL_TOKEN_STORAGE=keyring`.
+
+To log out:
 
 ```bash
 dtctl auth logout

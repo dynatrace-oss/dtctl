@@ -71,10 +71,9 @@ Dynatrace Account Management console (myaccount.dynatrace.com).`,
 				}
 			}
 			if !recovered {
-				if !config.IsFileTokenStorage() {
-					return fmt.Errorf("token storage unavailable: %v\n\nSet DTCTL_TOKEN_STORAGE=file to use file-based fallback", keyringErr)
+				if !offerFileTokenStorage(keyringErr) {
+					return fmt.Errorf("token storage unavailable: %v\n\nSet %s=file to use file-based storage, or run this in a terminal to be asked once", keyringErr, config.EnvTokenStorage)
 				}
-				output.PrintWarning("Keyring unavailable; using file-based token storage (%s)", config.OAuthStorageBackend())
 			}
 		}
 
