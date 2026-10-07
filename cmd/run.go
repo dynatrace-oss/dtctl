@@ -33,7 +33,8 @@ type RunOptions struct {
 	// Env sets environment variables for the duration of the invocation
 	// (restored afterwards), e.g. DTCTL_PROFILE to select a command profile
 	// per request. Applied after session scrubbing, so an explicit entry wins.
-	// The mutation is process-wide while the invocation runs — see
+	// For a serialized invocation the mutation is process-wide while it runs;
+	// a Concurrent one records the entries on itself instead — see
 	// applyRunEnvironment.
 	Env map[string]string
 
@@ -189,6 +190,14 @@ func Run(argv []string, opts RunOptions) (code int) {
 	defer restoreStdio()
 
 	if opts.Concurrent {
+		// Colour is decided once per process from the host (pkg/output: its
+		// NO_COLOR and FORCE_COLOR, and whether its stdout is a terminal), and
+		// this invocation prints to none of that: its stdout is the caller's
+		// writer. Pin colour off, so a host started from a terminal or with
+		// FORCE_COLOR set does not colour a tenant's response. A serialized run
+		// resets the cache for itself (restorePristineTree).
+		output.PinColorOff()
+
 		// In a process serving many tenants, one command's panic must fail
 		// that request, not every request in flight. Registered after the
 		// stream redirect so the report lands on this invocation's stderr, and

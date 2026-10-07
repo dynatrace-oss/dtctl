@@ -19,6 +19,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/pkg/config"
 	"github.com/dynatrace-oss/dtctl/pkg/engine"
+	"github.com/dynatrace-oss/dtctl/pkg/output"
 )
 
 // The gates for concurrent execution (docs/dev/CONCURRENT_EXECUTION.md).
@@ -425,4 +426,29 @@ func TestConcurrentRequestDecidesItsOwnSurface(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(res.Stdout), `"code":"profile_blocked"`,
 		"the request's profile did not apply")
+}
+
+// TestConcurrentOutputNeverCarriesColour holds colour to the invocation. The
+// output package decides colour once per process, from the host's NO_COLOR and
+// FORCE_COLOR and whether the host's stdout is a terminal; the serialized engine
+// scrubs the variables and pipes the stream, so the host never reaches a
+// response. A concurrent invocation does neither (its scrub is an overlay the
+// output package does not read, and its stdout is the caller's writer), so Run
+// pins colour off for it instead. Without the pin, a host started from a
+// terminal, or with FORCE_COLOR set, coloured every non-agent response.
+func TestConcurrentOutputNeverCarriesColour(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+	// The decision is cached per process. Start undecided, as a host whose
+	// first invocation is concurrent would be; nothing runs while this resets.
+	output.ResetColorCache()
+	t.Cleanup(output.ResetColorCache)
+
+	env := newTenantEnv(t)
+	eng := engine.New(engine.Limits{MaxQueued: 4, MaxDuration: time.Minute}, engine.WithConcurrentExecution(2))
+	for _, c := range []string{"get buckets", "get --help"} {
+		res, err := eng.Execute(context.Background(), tenantRequest(env.URL, "dt0c01.TENANT.COLOUR", c))
+		require.NoError(t, err)
+		require.NotContains(t, string(res.Stdout), "\x1b[", "%q: the host's FORCE_COLOR coloured a tenant's response", c)
+		require.NotContains(t, string(res.Stderr), "\x1b[", "%q: the host's FORCE_COLOR coloured a tenant's response", c)
+	}
 }

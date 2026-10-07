@@ -157,7 +157,7 @@ func Execute(ctx context.Context, req Request) (*Result, error) {
 // package-level Execute. Built with WithConcurrentExecution, it runs several
 // invocations at once in this process, each on a command tree of its own
 // (cmd.RunOptions.Concurrent) — see docs/dev/CONCURRENT_EXECUTION.md for what that
-// costs and what it guarantees.
+// costs and what it guarantees. The zero value is not usable; build one with New.
 type Engine struct {
 	limits     Limits
 	adm        *admission
@@ -414,16 +414,25 @@ func contextEnded(ctx context.Context) error {
 // ExecuteWithLimits runs one invocation against this engine's admission
 // budget but with per-request limits. It is how a caller applies the
 // deadline the request asked for — Limits.MaxDuration becomes the context
-// timeout — without building a new Engine (and a new slot) per request. The
-// context is the invocation's only deadline: a concurrent invocation carries it
-// on every outgoing request, and nothing preempts code between requests.
+// timeout — without building a new Engine (and a new slot) per request. A
+// zero field in limits is filled from the engine's own budget, not from
+// DefaultLimits, so a host that sized MaxOutputBytes at construction keeps it
+// on a request that only names a MaxDuration. The context is the invocation's
+// only deadline: a concurrent invocation carries it on every outgoing request,
+// and nothing preempts code between requests.
 func (e *Engine) ExecuteWithLimits(ctx context.Context, req Request, limits Limits) (*Result, error) {
+	return executeInner(ctx, req, e.effectiveLimits(limits), e.adm, e.concurrent)
+}
+
+// effectiveLimits is the budget one ExecuteWithLimits call runs under: the
+// request's limits, with the engine's filling in what the request left out.
+func (e *Engine) effectiveLimits(limits Limits) Limits {
 	// Admission is a property of the engine, not of a request: the slot
 	// channel was sized at construction and MaxQueued guards it, so a request
-	// may not raise or lower either. Taking them from limits would
-	// also mean a caller that set only MaxDuration silently got MaxQueued=4
-	// from the defaults, shedding requests the engine had capacity for.
-	merged := limits.withDefaults()
+	// may not raise or lower it. Taking it from limits would also mean a
+	// caller that set only MaxDuration silently got MaxQueued=4 from the
+	// defaults, shedding requests the engine had capacity for.
+	merged := limits.withDefaultsFrom(e.limits)
 	merged.MaxQueued = e.limits.MaxQueued
-	return executeInner(ctx, req, merged, e.adm, e.concurrent)
+	return merged
 }

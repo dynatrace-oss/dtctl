@@ -406,3 +406,26 @@ func TestConcurrentMemoryFootprint(t *testing.T) {
 		})
 	}
 }
+
+// TestEngineExecuteWithLimitsFillsFromTheEngine pins where a per-request budget
+// gets what it leaves out: the engine's limits, not DefaultLimits. A host that
+// sized MaxOutputBytes at construction and names only a MaxDuration per request
+// would otherwise silently run under the default cap.
+func TestEngineExecuteWithLimitsFillsFromTheEngine(t *testing.T) {
+	e := New(Limits{MaxQueued: 7, MaxDuration: 9 * time.Second, MaxOutputBytes: 123, MaxFileBytes: 456})
+
+	got := e.effectiveLimits(Limits{MaxDuration: time.Second})
+	want := Limits{MaxQueued: 7, MaxDuration: time.Second, MaxOutputBytes: 123, MaxFileBytes: 456}
+	if got != want {
+		t.Errorf("effectiveLimits(MaxDuration only) = %+v, want %+v", got, want)
+	}
+
+	// Admission belongs to the engine: a request may not resize it.
+	if got := e.effectiveLimits(Limits{MaxQueued: 99}); got.MaxQueued != 7 {
+		t.Errorf("effectiveLimits(MaxQueued: 99).MaxQueued = %d, want the engine's 7", got.MaxQueued)
+	}
+	// An engine built on defaults still fills from defaults.
+	if got := New(Limits{}).effectiveLimits(Limits{}); got != DefaultLimits() {
+		t.Errorf("effectiveLimits on a default engine = %+v, want DefaultLimits", got)
+	}
+}

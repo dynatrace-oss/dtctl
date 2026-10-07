@@ -138,7 +138,16 @@ for, so a count of active concurrent runs (`concurrentActive`) makes it skip
 own context, from its root's `PersistentPreRunE`.
 
 A panic in a command fails its own invocation (exit code `ExitError`, message on
-its stderr) rather than the embedding process.
+its stderr) rather than the embedding process. The recovery covers the goroutine
+the command runs on; a panic in a goroutine the command starts still ends the
+process, as it does in the CLI.
+
+A serialized invocation (the package-level `Execute`, `dtctl serve`) and
+concurrent ones exclude each other on `runMu`, and the wait for it is not
+context-aware: while a serialized invocation runs, every new concurrent request
+holds its admission slot and waits, its `MaxDuration` already counting, and may
+return `context.DeadlineExceeded` without having run. A process that opts in to
+concurrent execution should not also run serialized invocations.
 
 When the context ended the run, a concurrent engine returns the context's error
 instead of leaving the caller to infer it from what the command made of being
@@ -161,6 +170,7 @@ test that runs under `-race`.
 | `pkg/engine` `TestConcurrentCommandSpecificFlagBleed`, `TestConcurrentSurfaceReadBleed` | overlapping runs of one command that differ only in a flag each see their own value, and `commands` keeps reporting the masked surface while peers run |
 | `pkg/engine` `TestConcurrentDeadlineEndsAStalledRequest` | a request whose upstream never answers returns at the context deadline, including from handlers that call the SDK with `context.Background()` |
 | `pkg/engine` `TestConcurrencyIsOptIn`, `TestSerializedEngineStillSerializes` | nothing makes the default engine concurrent |
+| `pkg/engine` `TestConcurrentOutputNeverCarriesColour` | the host's `FORCE_COLOR` (or a terminal on its stdout) does not colour a response |
 
 ## Costs
 
@@ -189,15 +199,25 @@ mock environment, with `get workflows`:
    fresh tree in `newCommandTree`. `TestNewCommandTreeMatchesSingleton` holds them
    together, but one factory both use would remove the duplication.
 2. **Colour resolution is process-wide.** `pkg/output` decides colour once per
-   process from `NO_COLOR`, `FORCE_COLOR` and the terminal. Agent mode forces plain
-   output, so every engine request agrees; a host that sets `FORCE_COLOR` would
-   colour non-agent output.
+   process from the host's `NO_COLOR`, `FORCE_COLOR` and terminal, none of which
+   a concurrent invocation prints to, and the session's scrub of those variables
+   lives in the invocation's overlay, which `pkg/output` does not read. A
+   concurrent `Run` therefore pins colour off for the process
+   (`output.PinColorOff`); a serialized run resets the cache for itself. Agent
+   mode is plain regardless.
 3. **A hung command cannot be killed.** The context deadline ends the HTTP
    requests a command has in flight; nothing preempts arbitrary in-process code,
    and the query execute is deliberately detached for a short grace.
 4. **Invocations share a heap.** An out-of-memory kill takes every request in
    flight. The host has to bound memory itself: `GOMEMLIMIT`, a concurrency limit
    sized against the container, and output caps (`Limits.MaxOutputBytes`).
-5. **Host settings still reach requests in two places.** `pkg/tracing` reads
+5. **Host settings still reach requests in a few places.** `pkg/tracing` reads
    `OTEL_*` and `TRACEPARENT` from the process, and the `commands` catalog lists
-   plugins found on the host's `PATH`. Neither carries tenant data.
+   plugins found on the host's `PATH`. Neither carries tenant data. The scrub
+   of `sessionScrubbedEnvVars` is an overlay on the concurrent path, so a
+   `DTCTL_*` variable something reads with `os.Getenv` outside the overlay
+   accessors still sees the host's value: `sdk/session`'s keyring and
+   token-storage switches (`DTCTL_DISABLE_KEYRING`, `DTCTL_TOKEN_STORAGE`),
+   which a sealed session config never reaches, and `DTCTL_CONFIG`, which the
+   host-config load for alias resolution honours before the session check
+   skips the result. A request's output does not depend on any of them.
