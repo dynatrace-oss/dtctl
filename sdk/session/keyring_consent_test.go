@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/adrg/xdg"
@@ -55,7 +56,8 @@ func TestFileTokenStorageConsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
+	// Windows does not model POSIX permission bits.
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o600 {
 		t.Errorf("consent marker mode = %o, want 600", perm)
 	}
 
