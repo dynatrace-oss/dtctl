@@ -151,8 +151,13 @@ concurrent execution should not also run serialized invocations.
 
 When the context ended the run, a concurrent engine returns the context's error
 instead of leaving the caller to infer it from what the command made of being
-cut off — a query, for one, reports "Query cancelled." and exits 0. The
-serialized engine reports what the command returned, as it always has.
+cut off — a query, for one, reports "Query cancelled." and exits 0. It returns
+the `Result` as well, whatever the exit code: the command may have written
+before it was cut off (a `create` whose POST succeeded, its `Files`), and a host
+that retries on a timeout needs to see that. A nil `Result` with the error still
+means the request never ran. The check also consults the clock, so a command
+that returns on the deadline is reported as cut off. The serialized engine
+reports what the command returned, with a nil error, as it always has.
 
 ## Gates
 
@@ -169,6 +174,7 @@ test that runs under `-race`.
 | `pkg/engine` `TestConcurrentRequestDecidesItsOwnSurface` | a request's profile applies, and the host's `DTCTL_MIN_STABILITY` does not |
 | `pkg/engine` `TestConcurrentCommandSpecificFlagBleed`, `TestConcurrentSurfaceReadBleed` | overlapping runs of one command that differ only in a flag each see their own value, and `commands` keeps reporting the masked surface while peers run |
 | `pkg/engine` `TestConcurrentDeadlineEndsAStalledRequest` | a request whose upstream never answers returns at the context deadline, including from handlers that call the SDK with `context.Background()` |
+| `pkg/engine` `TestConcurrentDeadlineKeepsTheResult` | a command the deadline cut off returns its `Result` with the context's error, even at exit 0 |
 | `pkg/engine` `TestConcurrencyIsOptIn`, `TestSerializedEngineStillSerializes` | nothing makes the default engine concurrent |
 | `pkg/engine` `TestConcurrentOutputNeverCarriesColour` | the host's `FORCE_COLOR` (or a terminal on its stdout) does not colour a response |
 

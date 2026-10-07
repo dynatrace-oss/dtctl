@@ -65,8 +65,43 @@ func TestConcurrentDeadlineEndsAStalledRequest(t *testing.T) {
 
 			elapsed := time.Since(start)
 			require.Less(t, elapsed, 5*time.Second, "the command outlived its budget by far")
-			require.Nil(t, res)
+			require.NotNil(t, res, "the command ran, so its Result comes back with the error")
 			require.ErrorIs(t, err, context.DeadlineExceeded, "the deadline is reported as the context's error")
 		})
 	}
+}
+
+// TestConcurrentDeadlineKeepsTheResult: a command the deadline cut off returns
+// what it wrote alongside the context's error, even when it exits 0.
+func TestConcurrentDeadlineKeepsTheResult(t *testing.T) {
+	stalled := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/platform/storage/query/v1/query:execute":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"state":"RUNNING","requestToken":"tok"}`))
+		case "/platform/storage/query/v1/query:poll":
+			select {
+			case <-r.Context().Done():
+			case <-stalled:
+			}
+			_, _ = w.Write([]byte(`{"state":"RUNNING","requestToken":"tok"}`))
+		default:
+			w.WriteHeader(http.StatusAccepted)
+		}
+	}))
+	t.Cleanup(func() {
+		close(stalled)
+		upstream.Close()
+	})
+
+	eng := engine.New(engine.Limits{MaxQueued: 2, MaxDuration: time.Minute}, engine.WithConcurrentExecution(2))
+	res, err := eng.ExecuteWithLimits(context.Background(),
+		tenantRequest(upstream.URL, "tok", `query "fetch logs" --plain`), engine.Limits{MaxDuration: 300 * time.Millisecond})
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NotNil(t, res, "the command ran: its Result must come back with the error")
+	require.Zero(t, res.ExitCode, "a cancelled query exits 0")
+	require.Contains(t, string(res.Stderr), "Query cancelled.")
 }

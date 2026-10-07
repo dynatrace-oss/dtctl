@@ -143,10 +143,14 @@ type Result struct {
 
 // Execute runs one dtctl invocation and returns its outcome.
 //
-// A non-nil error means the request never ran: it is malformed (no command,
-// missing tenant credentials, an unparsable command string) or its context
-// was already done. Everything after the run starts — including command
-// failures — is expressed CLI-style in Result: exit code plus stdout/stderr.
+// A non-nil error with a nil Result means the request never ran: it is
+// malformed (no command, missing tenant credentials, an unparsable command
+// string), was shed at admission, or its context ended before it started.
+// Everything after the run starts — including command failures — is expressed
+// CLI-style in Result: exit code plus stdout/stderr. The one exception is an
+// Engine built with WithConcurrentExecution whose context ended while the
+// command ran: it returns the Result as produced together with the context's
+// error, whatever the exit code (a cancelled query exits 0).
 func Execute(ctx context.Context, req Request) (*Result, error) {
 	return ExecuteWithLimits(ctx, req, DefaultLimits())
 }
@@ -211,7 +215,8 @@ func New(limits Limits, opts ...Option) *Engine {
 // unless it was built with WithConcurrentExecution.
 func (e *Engine) MaxConcurrent() int { return cap(e.adm.slot) }
 
-// Execute runs one invocation against this engine's budget.
+// Execute runs one invocation against this engine's budget. Its Result and
+// error read as the package-level Execute documents.
 func (e *Engine) Execute(ctx context.Context, req Request) (*Result, error) {
 	return executeInner(ctx, req, e.limits, e.adm, e.concurrent)
 }
@@ -318,24 +323,26 @@ func executeInner(ctx context.Context, req Request, limits Limits, adm *admissio
 		Concurrent: concurrent,
 	})
 
-	// The context is the invocation's only deadline. When it ended the run, say
-	// so, rather than leave the caller to infer it from whatever the command
-	// made of being cut off: a query reports "Query cancelled." and exits 0.
-	// Only a concurrent engine does this; the serialized one reports what the
-	// command returned, as it always has.
-	if concurrent {
-		if err := contextEnded(timeoutCtx); err != nil {
-			return nil, err
-		}
-	}
-
-	return &Result{
+	res := &Result{
 		ExitCode:  code,
 		Stdout:    stdout.Bytes(),
 		Stderr:    stderr.Bytes(),
 		Files:     files.Files(),
 		Truncated: stdout.truncated || stderr.truncated,
-	}, nil
+	}
+
+	// The context is the invocation's only deadline. When it ended the run, say
+	// so, rather than leave the caller to infer it from whatever the command
+	// made of being cut off: a query reports "Query cancelled." and exits 0.
+	// The Result still comes back, since the command may have written before it
+	// was cut off. Only a concurrent engine does this; the serialized one
+	// reports what the command returned, as it always has.
+	if concurrent {
+		if err := contextEnded(timeoutCtx); err != nil {
+			return res, err
+		}
+	}
+	return res, nil
 }
 
 // argv resolves the request's argument vector: Argv verbatim when set,
@@ -419,7 +426,9 @@ func contextEnded(ctx context.Context) error {
 // DefaultLimits, so a host that sized MaxOutputBytes at construction keeps it
 // on a request that only names a MaxDuration. The context is the invocation's
 // only deadline: a concurrent invocation carries it on every outgoing request,
-// and nothing preempts code between requests.
+// and nothing preempts code between requests. A concurrent invocation the
+// deadline cut off returns its Result together with the context's error (see
+// Execute).
 func (e *Engine) ExecuteWithLimits(ctx context.Context, req Request, limits Limits) (*Result, error) {
 	return executeInner(ctx, req, e.effectiveLimits(limits), e.adm, e.concurrent)
 }
