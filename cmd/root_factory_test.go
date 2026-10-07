@@ -113,8 +113,8 @@ func describeFlags(b *strings.Builder, kind string, fs *pflag.FlagSet) {
 		// nonEmptyStringValue (rejectEmptyFlag) delegates Type(), so a
 		// constructor that forgot the wrapper would otherwise match the
 		// singleton while accepting an empty value the CLI rejects.
-		lines = append(lines, fmt.Sprintf("%s flag --%s -%s type=%s value_type=%T default=%q value=%q hidden=%v deprecated=%q usage=%q annotations=%s",
-			kind, f.Name, f.Shorthand, f.Value.Type(), f.Value, f.DefValue, f.Value.String(), f.Hidden, f.Deprecated, f.Usage, sortedFlagAnnotations(f.Annotations)))
+		lines = append(lines, fmt.Sprintf("%s flag --%s -%s type=%s value_type=%T default=%q noopt=%q value=%q hidden=%v deprecated=%q usage=%q annotations=%s",
+			kind, f.Name, f.Shorthand, f.Value.Type(), f.Value, f.DefValue, f.NoOptDefVal, f.Value.String(), f.Hidden, f.Deprecated, f.Usage, sortedFlagAnnotations(f.Annotations)))
 	})
 	sort.Strings(lines)
 	for _, l := range lines {

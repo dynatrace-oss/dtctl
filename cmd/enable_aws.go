@@ -13,8 +13,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 var enableAWSProviderCmd = newEnableAWSProviderCmd()
 
 func newEnableAWSProviderCmd() *cobra.Command {

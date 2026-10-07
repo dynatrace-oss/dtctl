@@ -14,8 +14,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 var updateGCPConnectionCmd = newUpdateGCPConnectionCmd()
 
 func newUpdateGCPConnectionCmd() *cobra.Command {

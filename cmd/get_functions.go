@@ -7,8 +7,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 // getFunctionsCmd retrieves App Engine functions
 var getFunctionsCmd = newGetFunctionsCmd()
 

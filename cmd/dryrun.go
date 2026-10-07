@@ -406,7 +406,11 @@ func dryRunUnavailableMessage(cmd *cobra.Command) string {
 // subcommand for a workflow or a login, so "use 'dtctl verify'" dead-ended
 // every caller it was written for.
 func verifyAlternativeFor(cmd *cobra.Command) string {
-	for _, sub := range verifyCmd.Commands() {
+	verify, _, err := cmd.Root().Find([]string{"verify"})
+	if err != nil || verify.Name() != "verify" {
+		return ""
+	}
+	for _, sub := range verify.Commands() {
 		if sub == cmd || !sub.HasAlias(cmd.Name()) && sub.Name() != cmd.Name() {
 			continue
 		}

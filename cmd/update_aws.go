@@ -14,8 +14,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 var updateAWSConnectionCmd = newUpdateAWSConnectionCmd()
 
 func newUpdateAWSConnectionCmd() *cobra.Command {

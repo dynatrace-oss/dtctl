@@ -214,4 +214,12 @@ func TestRejectionSuggestsVerifyOnlyWhenItExists(t *testing.T) {
 			}
 		})
 	}
+
+	// A per-invocation tree must look up its own verify, not the singleton's.
+	fresh := newCommandTree(withInvocation(context.Background(), &invocation{concurrent: true})).root
+	for path, want := range map[string]string{"verify query": "", "query": "dtctl verify query"} {
+		c, _, err := fresh.Find(strings.Fields(path))
+		require.NoError(t, err)
+		require.Equal(t, want, verifyAlternativeFor(c), "fresh tree: %s", path)
+	}
 }

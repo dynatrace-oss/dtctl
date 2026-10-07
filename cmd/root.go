@@ -1972,41 +1972,6 @@ func init() {
 	})
 	cobra.AddTemplateFunc("flagUsages", helpFlagUsages)
 
-	// Custom usage template with bold section headers.
-	// NOTE: This is a copy of Cobra's default usage template with {{bold ...}} wrappers.
-	// If upgrading Cobra, compare against the upstream default template for changes:
-	//   https://github.com/spf13/cobra/blob/main/command.go (search "usageTemplate")
-	rootCmd.SetUsageTemplate(`{{bold "Usage:"}}{{if .Runnable}}
-  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
-  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
-
-{{bold "Aliases:"}}
-  {{.NameAndAliases}}{{end}}{{if .HasExample}}
-
-{{bold "Examples:"}}
-{{.Example}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
-
-{{bold "Available Commands:"}}{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
-
-{{bold .Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
-
-{{bold "Additional Commands:"}}{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
-
-{{bold "Flags:"}}
-{{flagUsages .LocalFlags | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
-
-{{bold "Global Flags:"}}
-{{flagUsages .InheritedFlags | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
-
-{{bold "Additional help topics:"}}{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
-  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
-
-Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
-`)
-
 	// Delegate to the shared helper so newCommandTree uses the same setup.
 	registerRootPersistentFlags(rootCmd, &gFlags)
 }

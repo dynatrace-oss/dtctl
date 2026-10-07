@@ -19,8 +19,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 // authCheckKeyringFunc and authEnsureKeyringFunc are the functions used to
 // probe and recover the keyring in auth login. They default to the real
 // implementations and can be overridden in tests.

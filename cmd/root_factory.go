@@ -548,7 +548,7 @@ func registerRootPersistentFlags(c *cobra.Command, flags *rootFlags) {
 		_ = viper.BindPFlag("verbose", c.PersistentFlags().Lookup("verbose"))
 	}
 
-	// Bold template (same as rootCmd's init — applied once per tree).
+	// Cobra's default usage template with bold headers; re-diff it on a Cobra upgrade.
 	c.SetUsageTemplate(`{{bold "Usage:"}}{{if .Runnable}}
   {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
   {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}

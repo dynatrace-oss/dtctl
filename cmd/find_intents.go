@@ -11,8 +11,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 // findIntentsCmd finds intents that match given data
 var findIntentsCmd = newFindIntentsCmd()
 

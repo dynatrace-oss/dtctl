@@ -13,8 +13,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 var enableAzureProviderCmd = newEnableAzureProviderCmd()
 
 func newEnableAzureProviderCmd() *cobra.Command {

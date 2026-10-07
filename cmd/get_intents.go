@@ -7,8 +7,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 // getIntentsCmd retrieves App Engine intents
 var getIntentsCmd = newGetIntentsCmd()
 

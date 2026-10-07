@@ -14,8 +14,6 @@ import (
 	"github.com/dynatrace-oss/dtctl/pkg/stability"
 )
 
-var ()
-
 // openIntentCmd generates and optionally opens an intent URL
 var openIntentCmd = newOpenIntentCmd()
 
