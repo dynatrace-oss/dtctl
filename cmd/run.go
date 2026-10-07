@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -75,6 +76,10 @@ type RunOptions struct {
 	// session and capabilities travel on its context instead of being swapped
 	// process-wide. A panic in the command fails this invocation (exit code
 	// ExitError, message on its stderr) rather than the embedding process.
+	//
+	// Requires a Session: config resolution reads the host's contexts, which a
+	// tree of its own cannot select (--context), so Run refuses the combination
+	// with ExitUsageError.
 	Concurrent bool
 }
 
@@ -122,6 +127,10 @@ func RunActive() bool {
 // undone. Concurrent calls are safe; they execute one at a time unless
 // opts.Concurrent is set, in which case each runs on a tree of its own.
 func Run(argv []string, opts RunOptions) (code int) {
+	if opts.Concurrent && opts.Session == nil {
+		reportOptionsError(context.Background(), opts, errors.New("RunOptions.Concurrent requires a Session"))
+		return client.ExitUsageError
+	}
 	if opts.Concurrent {
 		runMu.RLock()
 		defer runMu.RUnlock()
