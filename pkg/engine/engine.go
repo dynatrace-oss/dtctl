@@ -294,6 +294,7 @@ func executeInner(ctx context.Context, req Request, limits Limits, adm *admissio
 	files := vfs.NewMapFS(req.Files)
 	stdout := &cappedBuffer{limit: limits.MaxOutputBytes}
 	stderr := &cappedBuffer{limit: limits.MaxOutputBytes}
+	started := false
 	code := cmd.Run(argv, cmd.RunOptions{
 		// Grant nothing: no plugins, shell aliases, hooks, editors, or
 		// browser opens. Everything a request needs happens in-process.
@@ -321,7 +322,15 @@ func executeInner(ctx context.Context, req Request, limits Limits, adm *admissio
 		// Overlapping invocations only when the engine was built with
 		// WithConcurrentExecution; everything else stays serialized.
 		Concurrent: concurrent,
+		OnStart:    func() { started = true },
 	})
+	// Only a concurrent Run gives up before starting: its context ended while a
+	// serialized invocation held the lock.
+	if !started {
+		if err := timeoutCtx.Err(); err != nil {
+			return nil, err
+		}
+	}
 
 	res := &Result{
 		ExitCode:  code,

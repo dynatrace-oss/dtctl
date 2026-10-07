@@ -80,7 +80,14 @@ type RunOptions struct {
 	// Requires a Session: config resolution reads the host's contexts, which a
 	// tree of its own cannot select (--context), so Run refuses the combination
 	// with ExitUsageError.
+	//
+	// Its wait for a serialized invocation to finish ends with Context: Run
+	// then returns ExitError without having started (OnStart is not called).
 	Concurrent bool
+
+	// OnStart, when set, is called on Run's goroutine once the invocation holds
+	// the invocation lock, before anything else of it runs.
+	OnStart func()
 }
 
 // runCtx holds the active invocation's context, threaded into the Cobra tree
@@ -131,8 +138,16 @@ func Run(argv []string, opts RunOptions) (code int) {
 		reportOptionsError(context.Background(), opts, errors.New("RunOptions.Concurrent requires a Session"))
 		return client.ExitUsageError
 	}
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	if opts.Concurrent {
-		runMu.RLock()
+		if err := rlockRun(ctx); err != nil {
+			reportOptionsError(ctx, opts, fmt.Errorf("gave up waiting for a serialized invocation to finish: %w", err))
+			return client.ExitError
+		}
 		defer runMu.RUnlock()
 		concurrentActive.Add(1)
 		defer concurrentActive.Add(-1)
@@ -142,10 +157,8 @@ func Run(argv []string, opts RunOptions) (code int) {
 	}
 	runActive.Add(1)
 	defer runActive.Add(-1)
-
-	ctx := opts.Context
-	if ctx == nil {
-		ctx = context.Background()
+	if opts.OnStart != nil {
+		opts.OnStart()
 	}
 
 	granted := AllCapabilities()
@@ -233,6 +246,29 @@ func Run(argv []string, opts RunOptions) (code int) {
 	}
 	restorePristineTree(ctx)
 	return executeArgs(argv)
+}
+
+// rlockRun takes runMu shared, or gives up when ctx ends first; a lock acquired
+// after giving up is released at once.
+func rlockRun(ctx context.Context) error {
+	if runMu.TryRLock() {
+		return nil
+	}
+	acquired := make(chan struct{})
+	go func() {
+		runMu.RLock()
+		close(acquired)
+	}()
+	select {
+	case <-acquired:
+		return nil
+	case <-ctx.Done():
+		go func() {
+			<-acquired
+			runMu.RUnlock()
+		}()
+		return ctx.Err()
+	}
 }
 
 // reportOptionsError surfaces a RunOptions problem on the invocation's stderr

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,4 +105,57 @@ func TestConcurrentDeadlineKeepsTheResult(t *testing.T) {
 	require.NotNil(t, res, "the command ran: its Result must come back with the error")
 	require.Zero(t, res.ExitCode, "a cancelled query exits 0")
 	require.Contains(t, string(res.Stderr), "Query cancelled.")
+}
+
+// TestConcurrentWaitForSerializedEndsAtTheDeadline: a concurrent request queued
+// behind a serialized invocation gives up at its own deadline without running.
+func TestConcurrentWaitForSerializedEndsAtTheDeadline(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	blocking := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-time.After(1500 * time.Millisecond):
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(blocking.Close)
+
+	var hits atomic.Int64
+	idle := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(idle.Close)
+
+	serialized := make(chan struct{})
+	go func() {
+		defer close(serialized)
+		_, _ = engine.Execute(context.Background(), tenantRequest(blocking.URL, "tok", "get workflows"))
+	}()
+	t.Cleanup(func() {
+		close(release)
+		<-serialized
+	})
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the serialized invocation never reached its upstream")
+	}
+
+	const budget = 200 * time.Millisecond
+	eng := engine.New(engine.Limits{MaxQueued: 2, MaxDuration: time.Minute}, engine.WithConcurrentExecution(2))
+	start := time.Now()
+	res, err := eng.ExecuteWithLimits(context.Background(),
+		tenantRequest(idle.URL, "tok", "get workflows"), engine.Limits{MaxDuration: budget})
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Nil(t, res, "the request never ran")
+	require.Less(t, elapsed, budget+500*time.Millisecond, "the wait outlived the request's deadline")
+	require.Zero(t, hits.Load(), "a request that never ran reached its upstream")
 }

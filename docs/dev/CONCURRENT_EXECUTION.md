@@ -143,11 +143,13 @@ the command runs on; a panic in a goroutine the command starts still ends the
 process, as it does in the CLI.
 
 A serialized invocation (the package-level `Execute`, `dtctl serve`) and
-concurrent ones exclude each other on `runMu`, and the wait for it is not
-context-aware: while a serialized invocation runs, every new concurrent request
-holds its admission slot and waits, its `MaxDuration` already counting, and may
-return `context.DeadlineExceeded` without having run. A process that opts in to
-concurrent execution should not also run serialized invocations.
+concurrent ones exclude each other on `runMu`. A concurrent request's wait for
+it ends with its context: while a serialized invocation runs, every new
+concurrent request holds its admission slot and waits, its `MaxDuration` already
+counting, and when that ends first it returns the context's error and a nil
+`Result` without having run (`Run` exits `ExitError` before calling `OnStart`,
+and the shared lock it acquires later is released at once). A process that opts
+in to concurrent execution should not also run serialized invocations.
 
 When the context ended the run, a concurrent engine returns the context's error
 instead of leaving the caller to infer it from what the command made of being
@@ -174,6 +176,7 @@ test that runs under `-race`.
 | `pkg/engine` `TestConcurrentRequestDecidesItsOwnSurface` | a request's profile applies, and the host's `DTCTL_MIN_STABILITY` does not |
 | `pkg/engine` `TestConcurrentCommandSpecificFlagBleed`, `TestConcurrentSurfaceReadBleed` | overlapping runs of one command that differ only in a flag each see their own value, and `commands` keeps reporting the masked surface while peers run |
 | `pkg/engine` `TestConcurrentDeadlineEndsAStalledRequest` | a request whose upstream never answers returns at the context deadline, including from handlers that call the SDK with `context.Background()` |
+| `pkg/engine` `TestConcurrentWaitForSerializedEndsAtTheDeadline` | a concurrent request queued behind a serialized invocation returns at its own deadline, never having run |
 | `pkg/engine` `TestConcurrentDeadlineKeepsTheResult` | a command the deadline cut off returns its `Result` with the context's error, even at exit 0 |
 | `pkg/engine` `TestConcurrencyIsOptIn`, `TestSerializedEngineStillSerializes` | nothing makes the default engine concurrent |
 | `pkg/engine` `TestConcurrentOutputNeverCarriesColour` | the host's `FORCE_COLOR` (or a terminal on its stdout) does not colour a response |
