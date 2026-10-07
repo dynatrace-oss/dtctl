@@ -22,6 +22,9 @@ func shapeAnalyzerForAgent(r *analyzer.ExecuteResult, mode output.SeriesMode, di
 	if r.RequestToken != "" {
 		out["requestToken"] = r.RequestToken
 	}
+	if r.TTLInSeconds != 0 {
+		out["ttlInSeconds"] = r.TTLInSeconds
+	}
 	if r.Result == nil {
 		return out, eff
 	}

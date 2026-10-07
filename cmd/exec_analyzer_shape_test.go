@@ -83,3 +83,11 @@ func TestShapeForAgentNoFindings(t *testing.T) {
 	assert.False(t, hasOutput)
 	assert.Equal(t, "SUCCESSFUL", res["resultStatus"])
 }
+
+func TestShapeForAgentKeepsPollHandle(t *testing.T) {
+	r := &analyzer.ExecuteResult{RequestToken: "tok-1", TTLInSeconds: 120,
+		Result: &analyzer.AnalyzerResult{ResultStatus: "PENDING", ExecutionStatus: "RUNNING"}}
+	shaped, _ := shapeAnalyzerForAgent(r, output.SeriesMode{Kind: output.SeriesSummary}, 4)
+	assert.Equal(t, "tok-1", shaped["requestToken"])
+	assert.EqualValues(t, 120, shaped["ttlInSeconds"])
+}
