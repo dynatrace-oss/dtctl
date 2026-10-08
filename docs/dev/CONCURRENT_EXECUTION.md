@@ -148,8 +148,9 @@ it ends with its context: while a serialized invocation runs, every new
 concurrent request holds its admission slot and waits, its `MaxDuration` already
 counting, and when that ends first it returns the context's error and a nil
 `Result` without having run (`Run` exits `ExitError` before calling `OnStart`,
-and the shared lock it acquires later is released at once). A process that opts
-in to concurrent execution should not also run serialized invocations.
+and its wait leaves the lock's queue holding nothing, so a request that gives up
+leaves no goroutine behind). A process that opts in to concurrent execution
+should not also run serialized invocations.
 
 When the context ended the run, a concurrent engine returns the context's error
 instead of leaving the caller to infer it from what the command made of being
@@ -227,6 +228,7 @@ mock environment, with `get workflows`:
    `DTCTL_*` variable something reads with `os.Getenv` outside the overlay
    accessors still sees the host's value: `sdk/session`'s keyring and
    token-storage switches (`DTCTL_DISABLE_KEYRING`, `DTCTL_TOKEN_STORAGE`),
-   which a sealed session config never reaches, and `DTCTL_CONFIG`, which the
-   host-config load for alias resolution honours before the session check
-   skips the result. A request's output does not depend on any of them.
+   which a sealed session config never reaches. A request's output does not
+   depend on any of them, and a session-backed invocation reads no host config
+   file: alias resolution, the one stage that loads it before the session is
+   consulted, skips the load (`TestSessionInvocationsReadNoHostConfig`).

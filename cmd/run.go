@@ -106,8 +106,9 @@ var runCtx = context.Background()
 // one, which takes it exclusively. A process therefore runs either one
 // serialized invocation or any number of concurrent ones, never a mix — which
 // is what lets the global OnInitialize hook tell them apart (initConfigHook).
-// See docs/dev/CONCURRENT_EXECUTION.md.
-var runMu sync.RWMutex
+// See docs/dev/CONCURRENT_EXECUTION.md, and runLock for why it is not a
+// sync.RWMutex.
+var runMu = newRunLock()
 
 // runActive counts the invocations currently executing. A counter rather
 // than a flag: concurrent invocations overlap, and the first to finish must
@@ -144,7 +145,7 @@ func Run(argv []string, opts RunOptions) (code int) {
 	}
 
 	if opts.Concurrent {
-		if err := rlockRun(ctx); err != nil {
+		if err := runMu.RLock(ctx); err != nil {
 			reportOptionsError(ctx, opts, fmt.Errorf("gave up waiting for a serialized invocation to finish: %w", err))
 			return client.ExitError
 		}
@@ -246,29 +247,6 @@ func Run(argv []string, opts RunOptions) (code int) {
 	}
 	restorePristineTree(ctx)
 	return executeArgs(argv)
-}
-
-// rlockRun takes runMu shared, or gives up when ctx ends first; a lock acquired
-// after giving up is released at once.
-func rlockRun(ctx context.Context) error {
-	if runMu.TryRLock() {
-		return nil
-	}
-	acquired := make(chan struct{})
-	go func() {
-		runMu.RLock()
-		close(acquired)
-	}()
-	select {
-	case <-acquired:
-		return nil
-	case <-ctx.Done():
-		go func() {
-			<-acquired
-			runMu.RUnlock()
-		}()
-		return ctx.Err()
-	}
 }
 
 // reportOptionsError surfaces a RunOptions problem on the invocation's stderr
