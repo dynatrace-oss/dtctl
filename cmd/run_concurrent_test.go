@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -31,26 +32,93 @@ func TestRunConcurrentRequiresSession(t *testing.T) {
 	}
 }
 
-func TestRLockRunGivesUpAndReleasesLate(t *testing.T) {
-	runMu.Lock()
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	err := rlockRun(ctx)
-	runMu.Unlock()
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("rlockRun = %v, want DeadlineExceeded", err)
+// A concurrent invocation that gives up waiting behind a serialized one leaves
+// nothing behind: no goroutine waits on its behalf, and nothing it acquires
+// later is left to release. A sync.RWMutex left two goroutines per abandoned
+// wait for as long as the serialized invocation ran.
+func TestRunLockAbandonedWaitsLeaveNothingBehind(t *testing.T) {
+	l := newRunLock()
+	l.Lock()
+
+	const abandoned = 50
+	before := runtime.NumGoroutine()
+	for range abandoned {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+		err := l.RLock(ctx)
+		cancel()
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("RLock behind an exclusive hold = %v, want DeadlineExceeded", err)
+		}
+	}
+	if left := runtime.NumGoroutine() - before; left > 2 {
+		t.Errorf("%d abandoned waits left %d goroutines behind while the serialized invocation still runs", abandoned, left)
+	}
+	l.Unlock()
+
+	// Nothing was acquired on an abandoned wait's behalf: the lock is free.
+	if !l.sem.TryAcquire(runLockExclusive) {
+		t.Fatal("the lock is not free after the exclusive hold ended")
+	}
+	l.Unlock()
+}
+
+// A serialized invocation waiting for running concurrent ones holds back the
+// concurrent ones that arrive after it, as a waiting writer does for a
+// sync.RWMutex, so a steady stream of concurrent requests cannot starve it; the
+// held-back ones run once it is done.
+func TestRunLockWaitingSerializedHoldsBackLaterConcurrent(t *testing.T) {
+	l := newRunLock()
+	if err := l.RLock(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 
-	locked := make(chan struct{})
+	exclusive := make(chan struct{})
 	go func() {
-		runMu.Lock()
-		close(locked)
+		l.Lock()
+		close(exclusive)
 	}()
+	waitUntil(t, func() bool { return !l.sem.TryAcquire(0) }, "the serialized invocation to queue")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := l.RLock(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("RLock behind a waiting serialized invocation = %v, want DeadlineExceeded", err)
+	}
+
+	l.RUnlock()
 	select {
-	case <-locked:
-		runMu.Unlock()
+	case <-exclusive:
 	case <-time.After(5 * time.Second):
-		t.Fatal("the shared lock acquired after giving up was never released")
+		t.Fatal("the serialized invocation never got the lock after the concurrent one finished")
+	}
+	l.Unlock()
+	if err := l.RLock(context.Background()); err != nil {
+		t.Fatalf("RLock once the serialized invocation is done = %v", err)
+	}
+	l.RUnlock()
+}
+
+// An uncontended lock is taken whatever the context's state, so a concurrent
+// invocation behaves as it did on a sync.RWMutex when no serialized invocation
+// is around.
+func TestRunLockUncontendedIgnoresTheContext(t *testing.T) {
+	l := newRunLock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := l.RLock(ctx); err != nil {
+		t.Fatalf("uncontended RLock with an ended context = %v, want nil", err)
+	}
+	l.RUnlock()
+}
+
+func waitUntil(t *testing.T, cond func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

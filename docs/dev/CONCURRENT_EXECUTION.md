@@ -148,8 +148,9 @@ it ends with its context: while a serialized invocation runs, every new
 concurrent request holds its admission slot and waits, its `MaxDuration` already
 counting, and when that ends first it returns the context's error and a nil
 `Result` without having run (`Run` exits `ExitError` before calling `OnStart`,
-and the shared lock it acquires later is released at once). A process that opts
-in to concurrent execution should not also run serialized invocations.
+and its wait leaves the lock's queue holding nothing, so a request that gives up
+leaves no goroutine behind). A process that opts in to concurrent execution
+should not also run serialized invocations.
 
 When the context ended the run, a concurrent engine returns the context's error
 instead of leaving the caller to infer it from what the command made of being
