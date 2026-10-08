@@ -176,9 +176,9 @@ func executeTree(root, get *cobra.Command, argv []string) int {
 	// resolution (the real command will produce the proper error later).
 	// Session-backed invocations skip aliases entirely: they are a host-config
 	// convenience, and a tenant request must not expand through the host's
-	// alias table.
+	// alias table (see aliasConfig).
 	spanArgs := argv
-	if cfg, err := config.Load(); err == nil && currentSession(cmdContext(root)) == nil {
+	if cfg, err := aliasConfig(cmdContext(root)); err == nil {
 		// Security: warn when an auto-discovered local .dtctl.yaml carries
 		// code-execution keys (aliases / apply hooks) that are ignored. This
 		// makes adoption of an untrusted per-project config visible instead of
@@ -2141,4 +2141,25 @@ func initConfig(ctx context.Context) {
 			fmt.Fprintln(currentStderr(ctx), "Using config file:", viper.ConfigFileUsed())
 		}
 	}
+}
+
+// errNoAliasesForSession is aliasConfig's answer for a session-backed
+// invocation, which has no alias table.
+var errNoAliasesForSession = errors.New("a session-backed invocation does not resolve aliases")
+
+// loadHostConfig loads the host's own config: DTCTL_CONFIG, a local
+// .dtctl.yaml, or the global one. A variable so tests can see whether it is
+// called.
+var loadHostConfig = config.Load
+
+// aliasConfig loads the config alias resolution reads. A session-backed
+// invocation gets none, without anything being read: it is detached from the
+// host's config, and reading the host's files only to discard them would still
+// open them on a tenant's behalf (DTCTL_CONFIG, a .dtctl.yaml above the host's
+// working directory, the global config).
+func aliasConfig(ctx context.Context) (*config.Config, error) {
+	if currentSession(ctx) != nil {
+		return nil, errNoAliasesForSession
+	}
+	return loadHostConfig()
 }

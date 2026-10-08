@@ -227,6 +227,7 @@ mock environment, with `get workflows`:
    `DTCTL_*` variable something reads with `os.Getenv` outside the overlay
    accessors still sees the host's value: `sdk/session`'s keyring and
    token-storage switches (`DTCTL_DISABLE_KEYRING`, `DTCTL_TOKEN_STORAGE`),
-   which a sealed session config never reaches, and `DTCTL_CONFIG`, which the
-   host-config load for alias resolution honours before the session check
-   skips the result. A request's output does not depend on any of them.
+   which a sealed session config never reaches. A request's output does not
+   depend on any of them, and a session-backed invocation reads no host config
+   file: alias resolution, the one stage that loads it before the session is
+   consulted, skips the load (`TestSessionInvocationsReadNoHostConfig`).
